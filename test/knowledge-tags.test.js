@@ -39,6 +39,8 @@ test('an Agent resolves before it creates, through two compact tools', async () 
   assert.deepEqual(change.inputSchema.properties.namespace.enum, ['personal', 'project'],
     'shared vocabulary changes are not offered to Agents');
   assert.equal(change.inputSchema.properties.operationActor, undefined);
+  assert.match(resolve.description, /Similarity is lexical only; record a synonym with add_alias\./);
+  assert.match(change.description, /else namespace personal/);
   for (const tool of [resolve, change]) {
     assert.ok(Buffer.byteLength(JSON.stringify(tool)) < 1500, `${tool.name} stays compact`);
   }

@@ -9,7 +9,7 @@ export const KNOWLEDGE_TAG_DEFINITIONS = [
   {
     name: 'resolve_knowledge_tags',
     title: 'READ · Find a tag to reuse',
-    description: 'Find a tag to reuse before creating one: personal + this project, by name, alias, description or similarity. similar is a candidate, not the same tag. Tags never grant access or confirm knowledge.',
+    description: 'Find a tag to reuse before creating one: personal + this project, by name, alias, description or similarity. similar is a candidate, not the same tag. Similarity is lexical only; record a synonym with add_alias. Tags never grant access or confirm knowledge.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
@@ -20,7 +20,7 @@ export const KNOWLEDGE_TAG_DEFINITIONS = [
   {
     name: 'change_knowledge_tags',
     title: 'WRITE · Create, alias or attach a tag',
-    description: 'create (name, reason; project-scoped by default) returns an exact/alias match instead, or similar candidates until distinctFrom names each one judged different; Agent tags start provisional. add_alias makes a synonym reuse tagId. attach/detach tagId on one item. Never merges tags or changes items.',
+    description: 'create (name, reason; this project by default, else namespace personal) returns an exact/alias match instead, or candidates until distinctFrom lists every one judged different; Agent tags start provisional. add_alias makes a synonym reuse tagId; on a personal or active tag it is only a proposal. attach/detach tagId on one item. Never merges tags or changes items.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),

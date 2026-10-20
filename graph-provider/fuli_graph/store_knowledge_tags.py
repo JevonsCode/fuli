@@ -3,13 +3,14 @@
 (space)-[:HAS_KNOWLEDGE_TAG]->(tag)-[:HAS_TAG_REVISION]->(revision) keeps every
 vocabulary change; (tag)-[:TAGS]->(link) names one knowledge item by kind and
 ID, because a tag may label a relationship as well as an entity. Every write
-takes the personal space's lock first, so a creation and an alias of the same
-word, or two Agents creating one concept, are decided one after the other
-(G4-4). Tag and link IDs are deterministic and unique-constrained as well.
+takes the personal space's lock first inside one transaction; a creation or an
+alias is decided by the domain under that same lock, so two Agents creating one
+concept or two near-duplicates are judged one after the other (G4-4). Tag and
+link IDs are deterministic and unique-constrained as well.
 """
 from contextlib import asynccontextmanager
 
-from .knowledge_management import _implicit_project_id, _read_assignment, _read_item
+from .knowledge_management import _read_assignment, _read_item, _source_project_ids
 from .provider_values import native_datetime
 from .store_transactions import query_store_transaction
 
@@ -27,74 +28,33 @@ class Neo4jKnowledgeTagVocabulary:
     def __init__(self, store):
         self._store = store
 
-    async def find_by_key(self, space_id, namespace_keys, key):
-        return await _find_by_key(self._store.runtime.driver, space_id, namespace_keys, key)
+    def reader(self, space_id):
+        return Neo4jTagReader(self._store.runtime.driver, space_id)
 
-    async def list_visible(self, space_id, namespace_keys, limit):
-        records, _, _ = await self._store.runtime.driver.execute_query(
-            'MATCH (tag:FuliKnowledgeTag {space_id: $space_id}) '
-            'WHERE tag.namespace_key IN $namespaces AND tag.status IN $statuses '
-            'RETURN tag ORDER BY tag.name_key LIMIT $limit',
-            space_id=space_id, namespaces=namespace_keys, statuses=VISIBLE_STATUSES,
-            limit=limit, routing_='r')
-        return [_tag(record['tag']) for record in records]
-
-    async def get(self, space_id, tag_id):
-        return await _get(self._store.runtime.driver, space_id, tag_id)
-
-    async def create(self, space_id, tag, namespace_keys, revision):
+    @asynccontextmanager
+    async def locked(self, space_id):
+        """Reads inside see every earlier decision; the next writer waits for this one."""
         async with self._locked(space_id) as driver:
-            existing = await _find_by_key(driver, space_id, namespace_keys, tag['name_key'])
-            if existing:
-                return existing[0], False
-            records, _, _ = await driver.execute_query(
-                '''
-                MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
-                MERGE (tag:FuliKnowledgeTag {id: $tag.id})
-                ON CREATE SET tag += $tag
-                MERGE (space)-[:HAS_KNOWLEDGE_TAG]->(tag)
-                WITH tag, tag.created_at = $tag.created_at AS created
-                FOREACH (_ IN CASE WHEN created THEN [1] ELSE [] END |
-                  CREATE (revision:FuliKnowledgeTagRevision)
-                  SET revision += $revision, revision.version = 1
-                  MERGE (tag)-[:HAS_TAG_REVISION]->(revision))
-                RETURN tag, created
-                ''', space_id=space_id, tag=tag, revision=revision)
-            return _tag(records[0]['tag']), records[0]['created']
+            yield Neo4jLockedTagVocabulary(driver, space_id)
 
-    async def add_alias(self, space_id, tag_id, alias, alias_key, namespace_keys, revision):
-        async with self._locked(space_id) as driver:
-            tag = await _get(driver, space_id, tag_id)
-            if alias_key == tag['name_key'] or alias_key in tag['alias_keys']:
-                return 'unchanged', tag
-            others = [other for other in await _find_by_key(driver, space_id, namespace_keys, alias_key)
-                      if other['id'] != tag_id]
-            if others:
-                return 'conflict', others[0]
-            records, _, _ = await driver.execute_query(
-                '''
-                MATCH (tag:FuliKnowledgeTag {id: $tag_id, space_id: $space_id})
-                SET tag.aliases = tag.aliases + $alias, tag.alias_keys = tag.alias_keys + $alias_key,
-                    tag.version = tag.version + 1, tag.updated_at = $revision.created_at
-                CREATE (revision:FuliKnowledgeTagRevision)
-                SET revision += $revision, revision.version = tag.version
-                MERGE (tag)-[:HAS_TAG_REVISION]->(revision)
-                RETURN tag
-                ''', space_id=space_id, tag_id=tag_id, alias=alias, alias_key=alias_key,
-                revision=revision)
-            return 'added', _tag(records[0]['tag'])
-
-    async def item_project(self, space, item_kind, item_id):
-        """Whether the item exists here, and the project it belongs to (None: global)."""
+    async def item_scope(self, space, item_kind, item_id):
+        """None when the item is missing here, else (kind, project_ids):
+        ('global', []) only for explicitly global profile knowledge;
+        ('projects', ids) for a project-scoped, assigned or project-sourced item,
+        several ids when several projects' episodes mention it;
+        ('unknown', []) when no source is known."""
         current = await _read_item(self._store, space, item_id, item_kind)
         if current is None:
-            return False, None
+            return None
         if current.get('preference_scope') not in (None, 'global') and current.get('preference_project_id'):
-            return True, current['preference_project_id']
+            return 'projects', [current['preference_project_id']]
         assignment = await _read_assignment(self._store, space['id'], item_id, item_kind)
         if assignment:
-            return True, assignment.project_id
-        return True, await _implicit_project_id(self._store, space, item_id, item_kind)
+            return 'projects', [assignment.project_id]
+        if current.get('profile_aspect') and current.get('preference_scope') == 'global':
+            return 'global', []
+        sources = await _source_project_ids(self._store, space, item_id, item_kind)
+        return ('projects', sources) if sources else ('unknown', [])
 
     async def attach(self, space_id, link, limit):
         async with self._locked(space_id) as driver:
@@ -169,29 +129,68 @@ class Neo4jKnowledgeTagVocabulary:
             yield scoped.runtime.driver
 
 
-async def _find_by_key(driver, space_id, namespace_keys, key):
-    records, _, _ = await driver.execute_query(
-        'MATCH (tag:FuliKnowledgeTag {space_id: $space_id}) '
-        'WHERE tag.namespace_key IN $namespaces AND tag.status IN $statuses '
-        'AND (tag.name_key = $key OR $key IN tag.alias_keys) '
-        'RETURN tag ORDER BY tag.name_key = $key DESC, tag.created_at',
-        space_id=space_id, namespaces=namespace_keys, statuses=VISIBLE_STATUSES, key=key,
-        routing_='r')
-    return [_tag(record['tag']) for record in records]
+class Neo4jTagReader:
+    """One personal space's visible vocabulary; resolve and the locked writes share it."""
+
+    def __init__(self, driver, space_id):
+        self._driver, self._space_id = driver, space_id
+
+    async def find_by_key(self, namespace_keys, key):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (tag:FuliKnowledgeTag {space_id: $space_id}) '
+            'WHERE tag.namespace_key IN $namespaces AND tag.status IN $statuses '
+            'AND (tag.name_key = $key OR $key IN tag.alias_keys) '
+            'RETURN tag ORDER BY tag.name_key = $key DESC, tag.created_at',
+            space_id=self._space_id, namespaces=namespace_keys, statuses=VISIBLE_STATUSES,
+            key=key, routing_='r')
+        return [_tag(record['tag']) for record in records]
+
+    async def list_visible(self, namespace_keys, limit):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (tag:FuliKnowledgeTag {space_id: $space_id}) '
+            'WHERE tag.namespace_key IN $namespaces AND tag.status IN $statuses '
+            'RETURN tag ORDER BY tag.name_key LIMIT $limit',
+            space_id=self._space_id, namespaces=namespace_keys, statuses=VISIBLE_STATUSES,
+            limit=limit, routing_='r')
+        return [_tag(record['tag']) for record in records]
+
+    async def get(self, tag_id):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (tag:FuliKnowledgeTag {id: $tag_id, space_id: $space_id}) '
+            'WHERE tag.status IN $statuses RETURN tag',
+            tag_id=tag_id, space_id=self._space_id, statuses=VISIBLE_STATUSES, routing_='r')
+        return _tag(records[0]['tag']) if records else None
 
 
-async def _get(driver, space_id, tag_id):
-    records, _, _ = await driver.execute_query(
-        'MATCH (tag:FuliKnowledgeTag {id: $tag_id, space_id: $space_id}) '
-        'WHERE tag.status IN $statuses RETURN tag',
-        tag_id=tag_id, space_id=space_id, statuses=VISIBLE_STATUSES, routing_='r')
-    return _tag(records[0]['tag']) if records else None
+class Neo4jLockedTagVocabulary(Neo4jTagReader):
+    """Writes the domain decided under the space lock this transaction holds."""
+
+    async def insert(self, tag, revision):
+        records, _, _ = await self._driver.execute_query(
+            '''
+            MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+            CREATE (space)-[:HAS_KNOWLEDGE_TAG]->(tag:FuliKnowledgeTag)
+            SET tag = $tag
+            CREATE (tag)-[:HAS_TAG_REVISION]->(revision:FuliKnowledgeTagRevision)
+            SET revision = $revision, revision.version = 1
+            RETURN tag
+            ''', space_id=self._space_id, tag=tag, revision=revision)
+        return _tag(records[0]['tag'])
+
+    async def save_aliases(self, tag_id, fields, revision):
+        records, _, _ = await self._driver.execute_query(
+            '''
+            MATCH (tag:FuliKnowledgeTag {id: $tag_id, space_id: $space_id})
+            SET tag += $fields, tag.version = tag.version + 1, tag.updated_at = $revision.created_at
+            CREATE (tag)-[:HAS_TAG_REVISION]->(revision:FuliKnowledgeTagRevision)
+            SET revision = $revision, revision.version = tag.version
+            RETURN tag
+            ''', space_id=self._space_id, tag_id=tag_id, fields=fields, revision=revision)
+        return _tag(records[0]['tag'])
 
 
 def _tag(node) -> dict:
     tag = dict(node)
     for field in _DATETIME_FIELDS:
         tag[field] = native_datetime(tag.get(field))
-    tag.setdefault('aliases', [])
-    tag.setdefault('alias_keys', [])
     return tag

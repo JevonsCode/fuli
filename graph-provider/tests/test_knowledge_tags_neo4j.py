@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from knowledge_tag_scenarios import SCENARIOS, create, post, resolve
+from knowledge_tag_scenarios import SCENARIOS, alias, create, post, resolve
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 
 
@@ -52,6 +52,37 @@ class Neo4jWorld:
         ''', item_id=item_id, group_id=await self.group_id(), name=name,
             project_id=project_id, space_id=self.space)
         return {'item_kind': 'entity', 'item_id': item_id}
+
+    async def sourced_item(self, kind, project_ids):
+        """A non-preference item mentioned only by the given projects' episodes."""
+        self.counter += 1
+        item_id = f'{self.space}-sourced-{self.counter}'
+        episodes = [{'uuid': f'{item_id}-episode-{project}', 'project': project}
+                    for project in project_ids]
+        await self.driver.execute_query('''
+            UNWIND $episodes AS episode
+            CREATE (:Episodic {uuid: episode.uuid, group_id: $group_id, name: 'Synthetic episode',
+                               fuli_personal_project_id: episode.project})
+        ''', episodes=episodes, group_id=await self.group_id())
+        if kind == 'entity':
+            await self.driver.execute_query('''
+                CREATE (item:Entity {uuid: $item_id, group_id: $group_id, name: 'Synthetic concept',
+                                     summary: 'Synthetic concept'})
+                WITH item
+                UNWIND $episode_ids AS episode_id
+                MATCH (episode:Episodic {uuid: episode_id})
+                CREATE (episode)-[:MENTIONS]->(item)
+            ''', item_id=item_id, group_id=await self.group_id(),
+                episode_ids=[episode['uuid'] for episode in episodes])
+        else:
+            await self.driver.execute_query('''
+                CREATE (:Entity {uuid: $item_id + '-from', group_id: $group_id, name: 'From'})
+                       -[:RELATES_TO {uuid: $item_id, group_id: $group_id, name: 'RELATES_TO',
+                                      fact: 'Synthetic fact', episodes: $episode_ids}]->
+                       (:Entity {uuid: $item_id + '-to', group_id: $group_id, name: 'To'})
+            ''', item_id=item_id, group_id=await self.group_id(),
+                episode_ids=[episode['uuid'] for episode in episodes])
+        return {'item_kind': kind, 'item_id': item_id}
 
     async def item_state(self, item):
         records, _, _ = await self.driver.execute_query(
@@ -127,8 +158,53 @@ async def one_node_one_revision(world):
     assert dict(records[0]) == {'tags': 1, 'revisions': 1, 'links': 1, 'versions': [1]}
 
 
+async def alias_history_in_storage(world):
+    """Alias statuses, proposals and their history are stored, not only returned."""
+    await world.project('class')
+    draft = (await create(world, '户外学习', 'class'))['tag']
+    mine = (await create(world, '观察记录', 'class', operation_actor='human', reason='mine'))['tag']
+    await alias(world, draft['id'], '野外课', 'class')
+    await alias(world, mine['id'], '观察日志', 'class')
+    await alias(world, mine['id'], '观察日志', 'class', operation_actor='human', reason='accept')
+    records, _, _ = await world.driver.execute_query('''
+        MATCH (tag:FuliKnowledgeTag {space_id: $space})-[:HAS_TAG_REVISION]->(revision)
+        WITH tag, revision ORDER BY revision.version
+        RETURN tag.name AS name, tag.aliases AS aliases, tag.alias_statuses AS statuses,
+               tag.proposed_aliases AS proposed, tag.version AS version,
+               collect([revision.action, revision.alias_status, revision.version]) AS history
+        ORDER BY name
+    ''', space=world.space)
+    assert [dict(record) for record in records] == [
+        {'name': '户外学习', 'aliases': ['野外课'], 'statuses': ['provisional'], 'proposed': [],
+         'version': 2, 'history': [['create', None, 1], ['add_alias', 'provisional', 2]]},
+        {'name': '观察记录', 'aliases': ['观察日志'], 'statuses': ['active'], 'proposed': [],
+         'version': 3, 'history': [['create', None, 1], ['propose_alias', 'proposed', 2],
+                                   ['add_alias', 'active', 3]]}]
+    created, _, _ = await world.driver.execute_query('''
+        MATCH (:FuliKnowledgeTag {space_id: $space})-[:HAS_TAG_REVISION]->(revision {action: 'create'})
+        RETURN DISTINCT revision.similarity_version AS version
+    ''', space=world.space)
+    assert [record['version'] for record in created] == ['lexical-hash/fuli-embed-v1/384@0.35']
+
+
+async def stale_personal_tag_is_rechecked_under_the_lock(world):
+    """A personal tag created after a project create's first look still wins under the lock."""
+    await world.project('novel')
+    results = await asyncio.gather(create(world, '写作', namespace='personal'),
+                                   create(world, '写作', 'novel'))
+    personal, project = results
+    assert personal['outcome'] == 'created'
+    if project['outcome'] == 'existing':
+        assert project['tag']['id'] == personal['tag']['id']
+    else:
+        # The project tag came first; a personal tag never scans project vocabularies.
+        assert (project['outcome'], project['tag']['namespace']) == ('created', 'project')
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize('scenario', [alias_races_create, one_node_one_revision],
+@pytest.mark.parametrize('scenario', [alias_races_create, one_node_one_revision,
+                                      alias_history_in_storage,
+                                      stale_personal_tag_is_rechecked_under_the_lock],
                          ids=lambda scenario: scenario.__name__)
 async def test_concurrent_vocabulary_writes_on_neo4j(scenario):
     await run_in_world(scenario)

@@ -54,7 +54,9 @@ const BASELINE = Object.freeze({
   // rec#5 section 3 tags: resolve_knowledge_tags and one change_knowledge_tags
   // for create/alias/attach/detach (two schemas, not five), full profile only:
   // 177,222 -> 179,167 B (+1,945 B). Chat reaches them through fuli_call; chat is unchanged.
-  fullToolSchemaBytes: 179167,
+  // D-07 review: similarity is lexical only, personal scope is explicit, an
+  // alias on a personal or active tag is a proposal: 179,167 -> 179,295 B (+128 B).
+  fullToolSchemaBytes: 179295,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

@@ -52,6 +52,9 @@ class AgentStructuredLLM(LLMClient):
 class LocalHashEmbedder(EmbedderClient):
     """Small deterministic multilingual embedder with no model or network dependency."""
 
+    # Names the feature hashing; changing it changes every similarity score.
+    version = 'fuli-embed-v1'
+
     def __init__(self, dimensions: int):
         if dimensions < 64:
             raise ValueError('Local hash embeddings require at least 64 dimensions')
@@ -80,7 +83,7 @@ class LocalHashEmbedder(EmbedderClient):
             digest = hashlib.blake2b(
                 feature.encode('utf-8'),
                 digest_size=8,
-                person=b'fuli-embed-v1',
+                person=self.version.encode('ascii'),
             ).digest()
             bucket = int.from_bytes(digest[:4], 'big') % self.dimensions
             vector[bucket] += 1.0 if digest[4] & 1 else -1.0

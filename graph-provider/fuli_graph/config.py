@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     neo4j_password: str = Field(min_length=8)
     neo4j_database: str = 'neo4j'
     embedding_dim: int = 384
+    # Cosine of the local lexical-hash embedding at which a tag is proposed as a
+    # similar candidate; it is never merged. Unrelated random names stay below it
+    # (measured in test_knowledge_tags_http.py).
+    tag_similarity_threshold: float = Field(default=0.35, gt=0, le=1)
     graph_limit: int = 500
     search_limit: int = 20
     staffing_demand_window_days: int = Field(default=30, ge=1, le=365)

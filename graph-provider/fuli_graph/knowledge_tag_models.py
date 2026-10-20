@@ -4,7 +4,9 @@ The governance fields are fixed; the words are open. A tag lives in one
 namespace: the person's own vocabulary (personal), one personal project
 (project) or, once governance exists, a shared vocabulary (shared, refused for
 now). Status starts at provisional for Agent-proposed tags and active for a
-person's own; merged and retired arrive with governance.
+person's own; merged and retired arrive with governance. Status is tag
+governance only: an active tag never makes a preference human-confirmed and
+never grants a permission.
 """
 import unicodedata
 from datetime import datetime
@@ -22,8 +24,10 @@ TagNamespace = Literal['personal', 'project', 'shared']
 StoredTagNamespace = Literal['personal', 'project']
 TagStatus = Literal['provisional', 'active']
 TagMatch = Literal['exact', 'alias', 'similar']
-TagMatchBasis = Literal['name', 'alias', 'description', 'semantic']
+# lexical-hash: the Provider's local character n-gram hash, never a semantic judgment.
+TagMatchBasis = Literal['name', 'alias', 'description', 'lexical-hash']
 TAG_NAME_MAX = 80
+DISTINCT_FROM_MAX = 50
 _FORBIDDEN_CATEGORIES = {'Cc', 'Cs', 'Co', 'Cn'}
 
 
@@ -72,7 +76,7 @@ class KnowledgeTagCreate(_KnowledgeTagWrite):
                                  max_length=35)
     reason: str = Field(min_length=1, max_length=500)
     # Similar candidates the caller judged to mean something else (G4-3).
-    distinct_from: list[str] = Field(default_factory=list, max_length=50)
+    distinct_from: list[str] = Field(default_factory=list, max_length=DISTINCT_FROM_MAX)
 
     @field_validator('name')
     @classmethod
@@ -116,6 +120,11 @@ class KnowledgeTagRecord(StrictModel):
     status: TagStatus
     description: str | None
     aliases: list[str]
+    # Aliases in effect that an Agent added and a person has not yet confirmed.
+    provisional_aliases: list[str]
+    # Agent proposals for an active or personal tag; they change no resolve
+    # until a person adds the same alias.
+    proposed_aliases: list[str]
     language: str | None
     version: int
     source: KnowledgeTagSource
@@ -133,6 +142,8 @@ class KnowledgeTagCandidate(StrictModel):
     basis: TagMatchBasis
     description: str | None
     aliases: list[str]
+    # Status of the alias that matched, when match is alias.
+    alias_status: TagStatus | None = None
 
 
 class KnowledgeTagReference(StrictModel):
@@ -142,22 +153,39 @@ class KnowledgeTagReference(StrictModel):
     status: TagStatus
 
 
+class KnowledgeTagDecisionCandidate(KnowledgeTagReference):
+    """Just enough to decide with one more call: attach it, alias it, or distinct_from it."""
+    match: TagMatch
+    basis: TagMatchBasis
+
+
 class KnowledgeTagResolveResult(StrictModel):
     query: str
     candidates: list[KnowledgeTagCandidate]
+    # True when the similarity scan stopped at its cap: absence proves nothing.
+    truncated: bool
+    similarity_version: str
 
 
 class KnowledgeTagCreateResult(StrictModel):
     outcome: Literal['created', 'existing', 'needs_decision']
     tag: KnowledgeTagRecord | None
-    candidates: list[KnowledgeTagCandidate]
+    normalized: str
+    candidates: list[KnowledgeTagDecisionCandidate]
+    # Candidates still to acknowledge; more than the few shown when large.
+    undecided: int = 0
+    truncated: bool
+    similarity_version: str
     guidance: str | None = None
 
 
 class KnowledgeTagAliasResult(StrictModel):
-    outcome: Literal['added', 'unchanged', 'conflict']
+    outcome: Literal['added', 'proposed', 'unchanged', 'conflict']
     tag: KnowledgeTagRecord
-    conflict: KnowledgeTagCandidate | None = None
+    normalized: str
+    # On conflict: every visible tag that already holds the word.
+    candidates: list[KnowledgeTagDecisionCandidate] = Field(default_factory=list)
+    guidance: str | None = None
 
 
 class KnowledgeTagLinkResult(StrictModel):

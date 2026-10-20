@@ -4,16 +4,18 @@ Tags only help find knowledge. Nothing here reads or changes an item's content,
 confirmation, authority or evidence, and a tag never widens what a caller may
 see: the visible vocabulary is the personal one plus the current project's.
 Similar tags are returned as candidates and never merged; a synonym becomes the
-same tag only through an explicit alias.
+same tag only through an explicit alias. Every create and alias is decided and
+written under the personal space's lock, so concurrent near-duplicates are
+judged one after the other (G4-4).
 """
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
 from .knowledge_tag_models import (
+    DISTINCT_FROM_MAX,
     KnowledgeTagAliasCreate,
     KnowledgeTagAliasResult,
-    KnowledgeTagCandidate,
     KnowledgeTagCreate,
     KnowledgeTagCreateResult,
     KnowledgeTagLinkChange,
@@ -26,27 +28,28 @@ from .knowledge_tag_models import (
     KnowledgeTagResolveResult,
     KnowledgeTagScope,
 )
+from .knowledge_tag_similarity import (
+    decision_candidate,
+    find_candidates,
+    similarity_version,
+    tag_candidate,
+)
 from .name_identity import identity_key
 from .personal_project_access import authorize_personal_project
 from .provider_values import now_utc, stable_uuid
 
 PERSONAL_NAMESPACE = 'personal'
-# Bounds the similarity scan; exact and alias matches are looked up by key.
-MAX_SCANNED_TAGS = 2000
 MAX_TAGS_PER_ITEM = 32
 # A decision shows a few candidates at a time, never the whole vocabulary.
 MAX_DECISION_CANDIDATES = 5
-# Cosine of the provider's local-hash embedding over name and aliases. It is
-# lexical (shared character n-grams) and only ever proposes a candidate. Random
-# unrelated 16-character names reach about 0.32 through hash collisions, so the
-# bar sits above that noise; containment of one name in another is checked
-# separately and exactly.
-SIMILARITY_THRESHOLD = 0.35
-MIN_CONTAINED_NAME = 2
-_MATCH_ORDER = {'exact': 0, 'alias': 1, 'similar': 2}
-_NEEDS_DECISION = ('Similar tags exist. Reuse one (attach it, or add_alias if your word is a synonym), '
-                   'or create again with distinctFrom naming each candidate you judged different.')
+_NEEDS_DECISION = ('Reuse a candidate (attach it; add_alias for a synonym) or create again with '
+                   'distinctFrom listing every candidate id. A project candidate exists only there.')
+_TOO_MANY = (f'More similar tags than distinctFrom can list ({DISTINCT_FROM_MAX}): '
+             'reuse one or choose a more specific name.')
+_ALIAS_HELD = 'Another visible tag already holds this word: attach that tag instead.'
+_ALIAS_PROPOSED = 'Saved as a proposal; resolve ignores it until a person adds the same alias.'
 _SHARED_REFUSED = 'shared vocabulary changes need governance and are not available yet'
+_NO_CURRENT_PROJECT = 'with no current project, set namespace personal explicitly'
 
 
 def project_namespace(project_id: str) -> str:
@@ -55,49 +58,79 @@ def project_namespace(project_id: str) -> str:
 
 async def resolve_tags(store, actor: dict, request: KnowledgeTagResolve) -> KnowledgeTagResolveResult:
     space, namespaces = await _visible_scope(store, actor, request, 'reader')
-    candidates = await _candidates(store, space['id'], namespaces, request.query)
-    return KnowledgeTagResolveResult(query=request.query, candidates=candidates[:request.limit])
+    candidates = await find_candidates(
+        store, store.knowledge_tag_vocabulary().reader(space['id']), identity_key(request.query),
+        key_namespaces=namespaces, scan_namespaces=namespaces)
+    return KnowledgeTagResolveResult(query=request.query, candidates=candidates.found[:request.limit],
+                                     truncated=candidates.truncated,
+                                     similarity_version=similarity_version(store))
 
 
 async def create_tag(store, actor: dict, request: KnowledgeTagCreate) -> KnowledgeTagCreateResult:
-    if request.namespace == 'shared':
-        raise HTTPException(status_code=403, detail=_SHARED_REFUSED)
-    namespace = request.namespace or ('project' if request.personal_project_id else 'personal')
-    if namespace == 'project' and not request.personal_project_id:
-        raise HTTPException(status_code=422, detail='a project tag needs personal_project_id')
-    space, namespaces = await _visible_scope(store, actor, request, 'maintainer')
-    candidates = await _candidates(store, space['id'], namespaces, request.name)
-    reusable = [candidate for candidate in candidates if candidate.match != 'similar']
-    if reusable:
-        return await _existing(store, space['id'], reusable[0].id, candidates)
-    undecided = [candidate for candidate in candidates if candidate.id not in request.distinct_from]
-    if undecided:
-        return KnowledgeTagCreateResult(outcome='needs_decision', tag=None,
-                                        candidates=undecided[:MAX_DECISION_CANDIDATES],
-                                        guidance=_NEEDS_DECISION)
-    namespace_key = (project_namespace(request.personal_project_id)
-                     if namespace == 'project' else PERSONAL_NAMESPACE)
-    tag = _new_tag(actor, space['id'], request, namespace, namespace_key,
-                   [candidate.id for candidate in candidates])
-    stored, created = await store.knowledge_tag_vocabulary().create(
-        space['id'], tag, namespaces, _revision(tag, 'create', request, tag['created_at']))
-    return KnowledgeTagCreateResult(outcome='created' if created else 'existing',
-                                    tag=tag_record(stored), candidates=[])
+    namespace = _new_tag_namespace(request)
+    space, visible = await _visible_scope(store, actor, request, 'maintainer')
+    key = identity_key(request.name)
+    acknowledged = set(request.distinct_from)
+    version = similarity_version(store)
+    # A personal tag is judged against the personal vocabulary only; a same-name
+    # tag of the current project still shows, as a scope difference to decide.
+    scanned = visible if namespace == 'project' else [PERSONAL_NAMESPACE]
+    async with store.knowledge_tag_vocabulary().locked(space['id']) as vocabulary:
+        candidates = await find_candidates(store, vocabulary, key, key_namespaces=visible,
+                                           scan_namespaces=scanned)
+        decided = {'normalized': key, 'truncated': candidates.truncated,
+                   'similarity_version': version}
+        reused = _reused(candidates.found, namespace, acknowledged)
+        if reused:
+            others = [decision_candidate(candidate) for candidate in candidates.found
+                      if candidate.id != reused.id]
+            return KnowledgeTagCreateResult(
+                outcome='existing', tag=tag_record(await vocabulary.get(reused.id)),
+                candidates=others[:MAX_DECISION_CANDIDATES], **decided)
+        undecided = [candidate for candidate in candidates.found if candidate.id not in acknowledged]
+        if undecided:
+            return KnowledgeTagCreateResult(
+                outcome='needs_decision', tag=None, undecided=len(undecided),
+                candidates=[decision_candidate(candidate)
+                            for candidate in undecided[:MAX_DECISION_CANDIDATES]],
+                guidance=_TOO_MANY if len(candidates.found) > DISTINCT_FROM_MAX else _NEEDS_DECISION,
+                **decided)
+        tag = _new_tag(actor, space['id'], request, namespace, key,
+                       {candidate.id for candidate in candidates.found})
+        stored = await vocabulary.insert(tag, _revision(
+            tag, 'create', request, tag['created_at'], similarity_version=version))
+    return KnowledgeTagCreateResult(outcome='created', tag=tag_record(stored), candidates=[], **decided)
 
 
 async def add_tag_alias(store, actor: dict, request: KnowledgeTagAliasCreate) -> KnowledgeTagAliasResult:
     space, namespaces = await _visible_scope(store, actor, request, 'maintainer')
-    tag = await _visible_tag(store, space['id'], namespaces, request.tag_id)
-    alias_key = identity_key(request.alias)
-    outcome, value = await store.knowledge_tag_vocabulary().add_alias(
-        space['id'], tag['id'], request.alias, alias_key, namespaces,
-        _revision(tag, 'add_alias', request, now_utc(), alias=request.alias))
-    if outcome == 'conflict':
-        # The word already names another visible tag; an alias never makes two tags one.
-        held = ('exact', 'name') if value['name_key'] == alias_key else ('alias', 'alias')
-        return KnowledgeTagAliasResult(outcome=outcome, tag=tag_record(tag),
-                                       conflict=_candidate(value, *held))
-    return KnowledgeTagAliasResult(outcome=outcome, tag=tag_record(value))
+    key = identity_key(request.alias)
+    async with store.knowledge_tag_vocabulary().locked(space['id']) as vocabulary:
+        tag = await _visible_tag(vocabulary, namespaces, request.tag_id)
+        if key == tag['name_key'] or key in tag['alias_keys']:
+            return KnowledgeTagAliasResult(outcome='unchanged', tag=tag_record(tag), normalized=key)
+        holders = [other for other in await vocabulary.find_by_key(namespaces, key)
+                   if other['id'] != tag['id']]
+        if holders:
+            # A merge in disguise: an alias never makes two visible tags share a word.
+            return KnowledgeTagAliasResult(
+                outcome='conflict', tag=tag_record(tag), normalized=key, guidance=_ALIAS_HELD,
+                candidates=[decision_candidate(_held(other, key)) for other in holders])
+        if request.operation_actor == 'human' or _agent_alias_takes_effect(tag):
+            status = 'active' if request.operation_actor == 'human' else 'provisional'
+            outcome, fields = 'added', _with_alias(tag, request.alias, key, status)
+        elif key in tag['proposed_alias_keys']:
+            return KnowledgeTagAliasResult(outcome='unchanged', tag=tag_record(tag), normalized=key,
+                                           guidance=_ALIAS_PROPOSED)
+        else:
+            status, outcome = 'proposed', 'proposed'
+            fields = {'proposed_aliases': [*tag['proposed_aliases'], request.alias],
+                      'proposed_alias_keys': [*tag['proposed_alias_keys'], key]}
+        stored = await vocabulary.save_aliases(tag['id'], fields, _revision(
+            tag, 'add_alias' if outcome == 'added' else 'propose_alias', request, now_utc(),
+            alias=request.alias, alias_status=status))
+    return KnowledgeTagAliasResult(outcome=outcome, tag=tag_record(stored), normalized=key,
+                                   guidance=_ALIAS_PROPOSED if outcome == 'proposed' else None)
 
 
 async def attach_tag(store, actor: dict, request: KnowledgeTagLinkChange) -> KnowledgeTagLinkResult:
@@ -133,12 +166,59 @@ async def tag_metrics(store, actor: dict, request: KnowledgeTagMetricsQuery) -> 
 def tag_record(tag: dict) -> KnowledgeTagRecord:
     return KnowledgeTagRecord(
         id=tag['id'], name=tag['name'], namespace=tag['namespace_kind'], status=tag['status'],
-        description=tag.get('description'), aliases=list(tag.get('aliases') or []),
+        description=tag.get('description'), aliases=list(tag['aliases']),
+        provisional_aliases=[alias for alias, status in zip(tag['aliases'], tag['alias_statuses'])
+                             if status == 'provisional'],
+        proposed_aliases=list(tag['proposed_aliases']),
         language=tag.get('language'), version=int(tag['version']),
         source={'kind': tag['source_kind'], 'application': tag.get('source_application'),
                 'reason': tag['source_reason']},
         distinct_from=list(tag.get('distinct_from') or []),
         created_at=tag['created_at'], updated_at=tag['updated_at'])
+
+
+def _new_tag_namespace(request: KnowledgeTagCreate) -> str:
+    if request.namespace == 'shared':
+        raise HTTPException(status_code=403, detail=_SHARED_REFUSED)
+    if request.namespace == 'project' and not request.personal_project_id:
+        raise HTTPException(status_code=422, detail='a project tag needs personal_project_id')
+    if request.namespace:
+        return request.namespace
+    # Never widen silently: without a project the caller names the personal scope.
+    if not request.personal_project_id:
+        raise HTTPException(status_code=422, detail=_NO_CURRENT_PROJECT)
+    return 'project'
+
+
+def _reused(candidates, namespace: str, acknowledged: set[str]):
+    """The tag a creation returns instead: same word in its own namespace, or a
+    personal tag (visible in every project) the caller did not judge different."""
+    keyed = [candidate for candidate in candidates if candidate.match != 'similar']
+    own = [candidate for candidate in keyed if candidate.namespace == namespace]
+    if own:
+        return own[0]
+    if namespace == 'project':
+        return next((candidate for candidate in keyed if candidate.id not in acknowledged), None)
+    return None
+
+
+def _agent_alias_takes_effect(tag: dict) -> bool:
+    # An Agent may grow its own project's provisional tag; an active or personal
+    # tag changes meaning for a person or for every project, so it only proposes.
+    return tag['namespace_kind'] == 'project' and tag['status'] == 'provisional'
+
+
+def _with_alias(tag: dict, alias: str, key: str, status: str) -> dict:
+    keep = [index for index, proposed in enumerate(tag['proposed_alias_keys']) if proposed != key]
+    return {'aliases': [*tag['aliases'], alias], 'alias_keys': [*tag['alias_keys'], key],
+            'alias_statuses': [*tag['alias_statuses'], status],
+            'proposed_aliases': [tag['proposed_aliases'][index] for index in keep],
+            'proposed_alias_keys': [tag['proposed_alias_keys'][index] for index in keep]}
+
+
+def _held(tag: dict, key: str):
+    return (tag_candidate(tag, 'exact', 'name') if tag['name_key'] == key
+            else tag_candidate(tag, 'alias', 'alias'))
 
 
 async def _visible_scope(store, actor: dict, request: KnowledgeTagScope, role: str):
@@ -151,58 +231,8 @@ async def _visible_scope(store, actor: dict, request: KnowledgeTagScope, role: s
     return space, namespaces
 
 
-async def _candidates(store, space_id: str, namespaces: list[str], text: str):
-    """Exact name, then alias, then similar; each tag once, its strongest match."""
-    key = identity_key(text)
-    vocabulary = store.knowledge_tag_vocabulary()
-    found = {}
-    for tag in await vocabulary.find_by_key(space_id, namespaces, key):
-        found[tag['id']] = (_candidate(tag, 'exact', 'name') if tag['name_key'] == key
-                            else _candidate(tag, 'alias', 'alias'))
-    scanned = [tag for tag in await vocabulary.list_visible(space_id, namespaces, MAX_SCANNED_TAGS)
-               if tag['id'] not in found]
-    for tag, basis in await _similar(store, key, scanned):
-        found[tag['id']] = _candidate(tag, 'similar', basis)
-    return sorted(found.values(), key=lambda candidate: (
-        _MATCH_ORDER[candidate.match], candidate.status != 'active', identity_key(candidate.name)))
-
-
-async def _similar(store, key: str, tags: list[dict]):
-    lexical = [(tag, basis) for tag in tags if (basis := _lexical_basis(key, tag))]
-    described = {tag['id'] for tag, _ in lexical}
-    rest = [tag for tag in tags if tag['id'] not in described]
-    if not rest:
-        return lexical
-    texts = [key, *(' '.join([tag['name_key'], *tag['alias_keys']]) for tag in rest)]
-    query, *vectors = await store.runtime.embedder.create_batch(texts)
-    semantic = [(tag, 'semantic') for tag, vector in zip(rest, vectors)
-                if sum(left * right for left, right in zip(query, vector)) >= SIMILARITY_THRESHOLD]
-    return lexical + semantic
-
-
-def _lexical_basis(key: str, tag: dict) -> str | None:
-    if any(min(len(key), len(name)) >= MIN_CONTAINED_NAME and (key in name or name in key)
-           for name in [tag['name_key'], *tag['alias_keys']]):
-        return 'name'
-    return 'description' if key in identity_key(tag.get('description') or '') else None
-
-
-def _candidate(tag: dict, match: str, basis: str) -> KnowledgeTagCandidate:
-    return KnowledgeTagCandidate(
-        id=tag['id'], name=tag['name'], namespace=tag['namespace_kind'], status=tag['status'],
-        match=match, basis=basis, description=tag.get('description'),
-        aliases=list(tag.get('aliases') or []))
-
-
-async def _existing(store, space_id, tag_id, candidates):
-    tag = await store.knowledge_tag_vocabulary().get(space_id, tag_id)
-    others = [candidate for candidate in candidates if candidate.id != tag_id]
-    return KnowledgeTagCreateResult(outcome='existing', tag=tag_record(tag),
-                                    candidates=others[:MAX_DECISION_CANDIDATES])
-
-
-async def _visible_tag(store, space_id: str, namespaces: list[str], tag_id: str) -> dict:
-    tag = await store.knowledge_tag_vocabulary().get(space_id, tag_id)
+async def _visible_tag(reader, namespaces: list[str], tag_id: str) -> dict:
+    tag = await reader.get(tag_id)
     # Another project's tag is reported exactly like a missing one.
     if tag is None or tag['namespace_key'] not in namespaces:
         raise HTTPException(status_code=404, detail='knowledge tag not found')
@@ -211,13 +241,27 @@ async def _visible_tag(store, space_id: str, namespaces: list[str], tag_id: str)
 
 async def _link_scope(store, actor: dict, request: KnowledgeTagLinkChange):
     space, namespaces = await _visible_scope(store, actor, request, 'maintainer')
-    tag = await _visible_tag(store, space['id'], namespaces, request.tag_id)
-    found, owner = await store.knowledge_tag_vocabulary().item_project(
-        space, request.item_kind, request.item_id)
-    # Global knowledge is visible everywhere; project knowledge only in its project.
-    if not found or owner not in (None, request.personal_project_id):
+    vocabulary = store.knowledge_tag_vocabulary()
+    tag = await _visible_tag(vocabulary.reader(space['id']), namespaces, request.tag_id)
+    scope = await vocabulary.item_scope(space, request.item_kind, request.item_id)
+    # Unknown, missing and out-of-scope items answer alike.
+    if not _taggable_here(scope, request.personal_project_id):
         raise HTTPException(status_code=404, detail='knowledge item not found')
     return space, namespaces, tag
+
+
+def _taggable_here(scope, project_id: str | None) -> bool:
+    """Only explicitly global knowledge is taggable everywhere. Project knowledge,
+    including knowledge from several projects, only in one of its own projects;
+    knowledge of unknown source only in the personal scope, never from a project."""
+    if scope is None:
+        return False
+    kind, project_ids = scope
+    if kind == 'global':
+        return True
+    if kind == 'projects':
+        return project_id in project_ids
+    return project_id is None
 
 
 async def _link_result(store, space_id, namespaces, request, outcome) -> KnowledgeTagLinkResult:
@@ -229,9 +273,10 @@ async def _link_result(store, space_id, namespaces, request, outcome) -> Knowled
                                     status=tag['status']) for tag in tags])
 
 
-def _new_tag(actor, space_id, request: KnowledgeTagCreate, namespace, namespace_key, seen_ids):
+def _new_tag(actor, space_id, request: KnowledgeTagCreate, namespace, name_key, seen_ids):
     created_at = now_utc()
-    name_key = identity_key(request.name)
+    namespace_key = (project_namespace(request.personal_project_id)
+                     if namespace == 'project' else PERSONAL_NAMESPACE)
     status = 'active' if request.operation_actor == 'human' else 'provisional'
     return {
         'id': stable_uuid(space_id, 'knowledge-tag', namespace_key, name_key),
@@ -239,21 +284,25 @@ def _new_tag(actor, space_id, request: KnowledgeTagCreate, namespace, namespace_
         'namespace_project_id': request.personal_project_id if namespace == 'project' else None,
         'namespace_key': namespace_key, 'name': request.name, 'name_key': name_key,
         'description': request.description, 'language': request.language,
-        'aliases': [], 'alias_keys': [], 'status': status, 'initial_status': status,
+        'aliases': [], 'alias_keys': [], 'alias_statuses': [],
+        'proposed_aliases': [], 'proposed_alias_keys': [],
+        'status': status, 'initial_status': status,
         'source_kind': request.operation_actor, 'source_application': request.source_application,
         'source_reason': request.reason,
-        # Only the candidates actually shown are recorded as judged different.
-        'distinct_from': sorted(set(request.distinct_from) & set(seen_ids)),
+        # Only the candidates actually judged are recorded as different.
+        'distinct_from': sorted(set(request.distinct_from) & seen_ids),
         'created_by': actor['id'], 'created_at': created_at, 'updated_at': created_at, 'version': 1,
     }
 
 
-def _revision(tag: dict, action: str, request, created_at, *, alias=None) -> dict:
+def _revision(tag: dict, action: str, request, created_at, *, alias=None, alias_status=None,
+              similarity_version=None) -> dict:
     """One history entry; the port stamps the tag version it produced."""
     return {
         'id': stable_uuid(tag['space_id'], 'knowledge-tag-revision', tag['id'], action,
                           alias or '', created_at.isoformat()),
         'space_id': tag['space_id'], 'tag_id': tag['id'], 'action': action, 'alias': alias,
+        'alias_status': alias_status, 'similarity_version': similarity_version,
         'reason': request.reason, 'actor_kind': request.operation_actor,
         'source_application': request.source_application, 'created_at': created_at,
     }
