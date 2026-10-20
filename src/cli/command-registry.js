@@ -30,6 +30,8 @@ Install and Agent connection:
   app delete APP_ID [--data [--output DIR]] | export APP_ID --output DIR  (delete code first, data second) [--runtime-config FILE]
   models set-key SECRET_REF [--data-dir DIR]  (built-in Agent model API key; hidden entry or stdin, never echoed)
   models check assistant|bole|jefa|tonborg [--data-dir DIR]  (synthetic connection check of one role's model backend)
+  session start|stop|restart|status [--client claude_code|codex] [--json]  (FULI for the client session this runs in, e.g. "!fuli session stop" in Claude Code or Codex)
+  session default on|off|status [--json]  (whether new sessions start with FULI on; open sessions keep theirs)
   worker dispatch --bindings FILE [--runtime-config FILE]  (trusted local host; pipe {plan, idempotencyKey} on stdin)
   update [setup options]  (already latest: no restart; otherwise refresh existing connections only)
   setup --connected-only [setup options]  (repair existing connections without adding clients)

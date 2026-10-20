@@ -1080,12 +1080,35 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.sessionCapturePauseStore.state(sessionId);
   }
 
-  hasPausedCaptureSession(sourceApplication) {
-    return this.sessionCapturePauseStore.anyPaused(sourceApplication);
+  hasSessionWithoutCapture(sourceApplication) {
+    return this.sessionCapturePauseStore.anyWithoutCapture(sourceApplication);
+  }
+
+  hasStoppedSession() {
+    return this.sessionCapturePauseStore.anyStopped();
   }
 
   setSessionCapturePause(sessionId, change) {
     return this.sessionCapturePauseStore.set(sessionId, change);
+  }
+
+  // FULI on or off for one host session and for new sessions (rec#5 C3b);
+  // decisions read it through session-layer-decision.js.
+  setSessionFuli(sessionId, change) {
+    return this.sessionCapturePauseStore.setEnabled(sessionId, change);
+  }
+
+  sessionFuliDefault() {
+    return this.sessionCapturePauseStore.defaultSetting();
+  }
+
+  setSessionFuliDefault(enabled) {
+    return this.sessionCapturePauseStore.setDefault(enabled);
+  }
+
+  // A session seen at task entry keeps the default it started under.
+  pinSessionFuliDefault(sessionId, sourceApplication) {
+    return this.sessionCapturePauseStore.pinDefault(sessionId, sourceApplication);
   }
 
   // The local record of how this session's native transcript was last

@@ -7,6 +7,7 @@ import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
 import { hostNotificationOutput, isHostNotificationEntry } from './host-notification.js';
+import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext } from '../../conversations/session-fuli-entry.js';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
@@ -18,7 +19,7 @@ import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 
-export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask } = {}) {
+export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
   const sessionId = input?.session_id;
   if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {
@@ -32,6 +33,9 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
       throw new TypeError('Claude task entry requires cwd and prompt');
     }
     if (isHostNotificationEntry(input)) return hostNotificationOutput(event);
+    // A session FULI is off for (rec#5 C3b) gets no task entry.
+    const off = await entryRefusal?.();
+    if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
     const context = await invoke('begin_task_context', {
       sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source
     });
@@ -69,6 +73,10 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
     leases = (dependencies.createLeases ?? createRuntimeLeaseClient)({ runtimeConfigPath });
     const request = { signal: dependencies.signal };
     const output = await leases.withGraphLease('claude-code-lifecycle', () => withCaptureLookups(async () => {
+      // The person's /fuli line is answered here and never reaches the model.
+      const command = event === 'UserPromptSubmit' ? await sessionFuliCommandResult(app, { sessionId: input.session_id,
+        sourceApplication: 'claude_code', prompt: input.prompt, projectPath: input.cwd }) : null;
+      if (command) return claudeSessionCommandOutput(command);
       if (PREFERENCE_RESET_EVENTS.includes(event)) return claudeLifecycleOutput(event, input,
         (name, parameters) => (dependencies.callTool ?? callAgentTool)(app, name, parameters, request),
         { delivery: app.preferenceDelivery, currentTask: app.taskContextRegistry?.current?.bind(app.taskContextRegistry) });
@@ -82,13 +90,19 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
           const context = await (dependencies.callTool ?? callAgentTool)(app, name, parameters, request);
           if (name === 'begin_task_context') onContext(context);
           return context;
-        }, { delivery: app.preferenceDelivery }) });
+        }, { delivery: app.preferenceDelivery, entryRefusal: () => sessionFuliEntryRefusal(app,
+          { sessionId: input.session_id, sourceApplication: 'claude_code' }) }) });
     }), request);
     return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
       { sourceApplication: 'claude_code', version: FULI_VERSION, sessionId: input.session_id })) : output;
   } finally {
     await Promise.allSettled([close(leases), close(app)]);
   }
+}
+
+// Claude Code shows a blocked prompt's reason to the person and sends nothing to the model.
+function claudeSessionCommandOutput(result) {
+  return { decision: 'block', reason: `FULI: ${result.message}` };
 }
 
 async function close(resource) { await resource?.close(); }

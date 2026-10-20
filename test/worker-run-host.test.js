@@ -400,3 +400,22 @@ test('a worker whose session link cannot be kept never starts work', async () =>
   for (const step of ['seal', 'admit', 'dispatch', 'prompt']) assert.equal(calls.includes(step), false, step);
   assert.ok(calls.includes('close-run') && calls.includes('close-process'), 'the started process is still cleaned up');
 });
+
+// rec#5 C3b: no worker starts or is prompted for a coordinator session FULI is off for.
+test('a worker of a session FULI is off for starts no process', async () => {
+  const { input, calls } = fixture();
+  const asked = [];
+  const result = await createWorkerRunAttempt({ ...input, sessionFuliOff: sessionId => { asked.push(sessionId); return true; } }).run();
+  assert.deepEqual(result.outcome, { status: 'blocked', code: 'worker_session_stopped' });
+  assert.deepEqual(asked, ['parent-native-session']);
+  for (const step of ['prepare', 'claim', 'start', 'session', 'seal', 'dispatch', 'prompt']) assert.equal(calls.includes(step), false, step);
+});
+
+test('a coordinator stopped while its worker was being prepared sends that worker no prompt', async () => {
+  const { input, calls } = fixture();
+  const result = await createWorkerRunAttempt({ ...input, linkCaptureSession: () => {},
+    sessionFuliOff: sessionId => sessionId === 'child-native-session' }).run();
+  assert.deepEqual(result.outcome, { status: 'blocked', code: 'worker_session_stopped' });
+  for (const step of ['dispatch', 'prompt']) assert.equal(calls.includes(step), false, step);
+  assert.ok(calls.includes('close-run') && calls.includes('close-process'), 'the started process is cleaned up');
+});

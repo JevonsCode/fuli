@@ -387,6 +387,18 @@ only that session at once, without a confirmation: the Agent calls `update_captu
 starts are paused with it, "继续记" (`sessionPaused: false`) resumes from then on, and nothing written
 while paused is recorded later. The pause lives in the local runtime directory and ends with the session.
 
+To turn FULI off for one session altogether, the person types `/fuli stop` (Claude Code and Cursor, where
+setup installs the `fuli` command Skill) or `fuli stop` (any client; Codex accepts no custom slash command).
+The prompt hook answers the line itself, so the model never sees it: from then on that session gets no
+injected memory, preferences or recall, records nothing and starts no collaboration (workers, loans, other
+Agents, role work), while other sessions, the local service and existing memories stay as they are.
+`fuli start` turns it back on within the existing settings (a pause or a stricter global, client or project
+setting still applies), `fuli restart` also gives the next turn the full context again, and `fuli status`
+shows the session and the default; nothing said while FULI was off is recorded later. Context already sent
+to the model cannot be taken back, so isolation needs a new session. The same switch runs from a shell the
+client started (`!fuli session stop`), and `fuli session default off` makes new sessions start with FULI
+off until started; sessions already open keep theirs.
+
 Run these local contract tests to check that the README and project-path behavior still match the
 implementation:
 

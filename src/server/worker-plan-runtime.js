@@ -43,11 +43,14 @@ export async function createWorkerPlanRuntime({ runtimeConfigPath, workerRuntime
   }
   const config = provider ? null : readGraphRuntimeConfig(runtimeConfigPath);
   const localLeases = leases ?? createRuntimeLeaseClient({ runtimeConfigPath });
-  // Workers record nothing while the session that started them is paused.
+  // Workers record nothing while the session that started them is paused, and
+  // none starts or prompts while FULI is off for it (rec#5 C3b); a state that
+  // cannot be read counts as off.
   const sessionPauses = new SessionCapturePauseStore(sessionCapturePausePathForRuntime(runtimeConfigPath));
   const host = createWorkerPlanHost({ provider: provider ?? new GraphitiProviderClient({
     baseUrl: config.personal.providerUrl, accessToken: config.personal.accessToken }),
   leases: localLeases, workerRuntimeBindings: bindings, attemptOptions: { ...attemptOptions,
-    linkCaptureSession: (child, parent) => sessionPauses.link(child, parent) } });
+    linkCaptureSession: (child, parent) => sessionPauses.link(child, parent),
+    sessionFuliOff: sessionId => { try { return sessionPauses.state(sessionId).stopped; } catch { return true; } } } });
   return { host, async close() { await host.close(); if (!leases) await localLeases.close(); } };
 }

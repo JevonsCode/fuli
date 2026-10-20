@@ -12,6 +12,7 @@ import { runGraphMigrateCommand } from './cli/graph-migrate-command.js';
 import { runEmployeeCommand } from './cli/employee-command.js';
 import { runAppCommand } from './cli/app-command.js';
 import { runModelsCommand } from './cli/models-command.js';
+import { runSessionCommand } from './cli/session-command.js';
 import { runWorkerCommand } from './cli/worker-command.js';
 import { runSetupCommand } from './cli/setup-command.js';
 import { runConnectCommand } from './cli/connect-command.js';
@@ -69,6 +70,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (command === 'models') {
     assertSupportedNodeVersion();
     return runModelsCommand(commandArgs, { env });
+  }
+  if (command === 'session') {
+    assertSupportedNodeVersion();
+    return runSessionCommand(commandArgs, { env });
   }
   if (command === 'worker') {
     assertSupportedNodeVersion();

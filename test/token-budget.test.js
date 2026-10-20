@@ -5,6 +5,7 @@ import { listAgentTools } from '../src/agent-tools.js';
 import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
+import { sessionFuliOffContext } from '../src/conversations/session-fuli-entry.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
@@ -76,7 +77,11 @@ const BASELINE = Object.freeze({
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.
-  projectEntryChars: 1775
+  projectEntryChars: 1775,
+  // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
+  // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
+  // other number above is unchanged; the switch adds no tool, schema or instruction text.
+  sessionOffEntryChars: 302
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -135,7 +140,9 @@ async function measure() {
     chatToolSchemaBytes: await listedChatBytes(),
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
-    projectEntryChars: await projectEntryChars() };
+    projectEntryChars: await projectEntryChars(),
+    sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'policy_unavailable']
+      .map(reason => sessionFuliOffContext({ reason }).length)) };
 }
 
 test('per-session token cost never grows past the recorded baseline', async () => {

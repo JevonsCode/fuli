@@ -311,6 +311,14 @@ Code、Codex 和 Cursor 生命周期适配器。已加载、获信任的入口 H
 （`reason: session_paused`）。之前的记录保留，该会话派出的 worker 一并暂停；说「继续记」（`sessionPaused: false`）
 从此恢复，暂停期间的内容不会补记。暂停状态存在本地运行目录，会话结束即失效。
 
+要让某个会话整体停用 FULI，由用户自己输入 `/fuli stop`（Claude Code 和 Cursor，setup 会安装 `fuli` 命令 Skill）
+或 `fuli stop`（所有客户端；Codex 不支持自定义斜杠命令）。这一行由提示词 Hook 直接答复，模型看不到：此后该会话不再注入
+记忆、偏好和召回，不再自动记录，也不再自动发起协作（worker、借调、其他 Agent、角色任务）；其他会话、本地服务和已有记忆不变。
+`fuli start` 在现有设置内重新启用（暂停或更严格的全局、客户端、项目设置照样生效），`fuli restart` 还会让下一轮重新拿到完整
+上下文，`fuli status` 显示本会话和默认设置；停用期间的对话不会补录。已发给模型的上下文无法撤回，需要完全隔离请新开会话。
+在客户端启动的 shell 里也可以运行同一开关（`!fuli session stop`）；`fuli session default off` 让新会话默认不启用、
+需显式启用，已打开的会话保持原状。
+
 本地可先运行下面两个契约测试，验证 README 说明和项目路径解析仍与实现一致：
 
 ```bash

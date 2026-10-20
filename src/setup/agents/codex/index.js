@@ -1,5 +1,5 @@
 import { connectCodex, disconnectCodex } from '../../codex-config.js';
-import { adaptAgentForReviewSkill } from '../../review-skill-adapters.js';
+import { adaptAgentForCommandSkills } from '../../command-skill-adapters.js';
 import { existingFuliArgs, replaceFuliTable } from '../../codex-config.js';
 import { installedToolProfile } from '../../installed-tool-profile.js';
 import { hasCodexTomlHookDefinitions, hasCurrentCodexLifecycleHooks, hasCurrentCodexTomlLifecycleHooks, withCodexTomlLifecycleHooks } from '../../../agents/codex/lifecycle-hooks.js';
@@ -11,7 +11,7 @@ export const adapter = {
     const projectSkillName = 'grilling-project';
     const operationSkillName = 'operating-fuli';
     const codexHome = typeof env.CODEX_HOME === 'string' && env.CODEX_HOME.trim() ? env.CODEX_HOME : pathApi.join(homeDir, '.codex');
-    return adaptAgentForReviewSkill({
+    return adaptAgentForCommandSkills({
       id: 'codex',
       label: 'Codex',
       command: 'codex',
