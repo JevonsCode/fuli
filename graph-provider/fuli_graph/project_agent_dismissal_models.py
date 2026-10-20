@@ -5,6 +5,7 @@ few reusable sentences later Agents of the same occupation or project may look
 up on demand; they are never pushed into another Agent's task context.
 """
 
+import unicodedata
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -18,6 +19,22 @@ MAX_DISMISSAL_LESSONS = 3
 MAX_HANDOFF_BYTES = 512 * 1024
 DEFAULT_LESSON_LIMIT = 5
 MAX_LESSON_LIMIT = 10
+
+# Stand-ins people or Agents type instead of a reason, compared without case,
+# spaces or punctuation. A real reason says what went wrong. The Node host
+# refuses the same list before it renders a handoff; test/agent-dismissal.test.js
+# keeps them equal.
+PLACEHOLDER_REASONS = frozenset({
+    'archivedbyuser', 'archived', 'archive', 'dismiss', 'dismissed', 'fired', 'noreason', 'none',
+    'unknown', 'test', 'todo', 'tbd', '无', '没有', '没有理由', '无理由', '不知道', '开除', '归档', '离职',
+})
+
+
+def bare_reason(value: str) -> str:
+    """The reason lowercased without whitespace, punctuation or symbols."""
+    return ''.join(character for character in value.lower() if not character.isspace()
+                   and unicodedata.category(character)[0] not in {'P', 'S'})
+
 
 DismissalText = Annotated[str, StringConstraints(
     strip_whitespace=True, min_length=4, max_length=DISMISSAL_TEXT_LIMIT)]
@@ -46,6 +63,9 @@ class ProjectAgentDismissal(StrictModel):
 
     @model_validator(mode='after')
     def normalize(self):
+        if bare_reason(self.reason) in PLACEHOLDER_REASONS:
+            raise ValueError('the dismissal reason is a placeholder; '
+                             'ask the user why this Agent is being dismissed')
         self.lessons = unique_text_list(self.lessons, 'dismissal lessons',
                                         maximum=DISMISSAL_TEXT_LIMIT) or [self.reason]
         reject_credentials(self, 'Agent dismissal')

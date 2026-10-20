@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -108,6 +108,16 @@ test('an upsert can never archive an Agent, on any entry that reaches the workfl
     profile: { name: 'Synthetic engineer', responsibility: 'Maintain the sample.', status: 'archived' } }),
   /dismiss_project_agent/);
   assert.deepEqual(written, []);
+});
+
+test('the host refuses exactly the placeholder reasons the Provider refuses', () => {
+  // The Provider model is the authority; both sides must list the same stand-ins.
+  const words = (path, pattern) => [...readFileSync(new URL(path, import.meta.url), 'utf8').match(pattern)[1]
+    .matchAll(/'([^']+)'/g)].map(match => match[1]).sort();
+  const provider = words('../graph-provider/fuli_graph/project_agent_dismissal_models.py', /PLACEHOLDER_REASONS = frozenset\(\{([^}]*)\}\)/);
+  const host = words('../src/graphiti/project-agent-dismissal.js', /PLACEHOLDER_REASONS = new Set\(\[([^\]]*)\]\)/);
+  assert.ok(provider.length > 10);
+  assert.deepEqual(host, provider);
 });
 
 test('task start reports only a count and the query for earlier dismissal lessons', async () => {

@@ -132,3 +132,44 @@ async def test_a_test_role_archive_returns_the_reason_on_the_record():
     assert record.archive_reason == 'archived test role'
     assert record.archived_at == datetime(2026, 10, 20, tzinfo=UTC)
     assert record.work_status == 'ended'
+
+
+@pytest.mark.parametrize('reason', [
+    'none', 'None.', ' NONE ', 'Archived by user', 'archived-by-user!', 'no reason',
+    'dismissed', 'TBD...', '没有理由', '无理由。', '不知道。',
+])
+def test_a_placeholder_is_not_a_reason(reason):
+    with pytest.raises(ValidationError, match='placeholder'):
+        request(reason=reason)
+
+
+@pytest.mark.asyncio
+async def test_the_dismissal_route_refuses_a_placeholder_before_any_write():
+    from types import SimpleNamespace
+    from typing import Annotated
+
+    import httpx
+    from fastapi import Depends, FastAPI
+
+    from fuli_graph.project_agent_dismissal_routes import register_project_agent_dismissal_routes
+
+    calls = []
+
+    async def dismiss(*args):
+        calls.append(args)
+
+    async def actor():
+        return {'id': 'principal-1'}
+
+    app = FastAPI()
+    register_project_agent_dismissal_routes(
+        app, SimpleNamespace(dismiss_project_agent=dismiss), Annotated[dict, Depends(actor)])
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url='http://fixture',
+    ) as client:
+        for reason in ['none', 'Archived by user.']:
+            refused = await client.post('/v1/project-agents/engineer/dismissal', json={
+                'personal_space_id': 'personal-space', 'reason': reason, 'lessons': [],
+                'handoff': HANDOFF})
+            assert refused.status_code == 422, refused.text
+    assert calls == []

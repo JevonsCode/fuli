@@ -10,7 +10,8 @@ import { scopedAgentMemoryView } from './project-agent-memory.js';
 const MIN_REASON_LENGTH = 4;
 const LESSON_TOOL = 'list_agent_dismissal_lessons';
 // Stand-ins people or Agents type instead of a reason, compared without case,
-// spaces or punctuation. A real reason says what went wrong.
+// spaces or punctuation. A real reason says what went wrong. The Provider's
+// dismissal model is the authority; test/agent-dismissal.test.js keeps both lists equal.
 const PLACEHOLDER_REASONS = new Set([
   'archivedbyuser', 'archived', 'archive', 'dismiss', 'dismissed', 'fired', 'noreason', 'none',
   'unknown', 'test', 'todo', 'tbd', '无', '没有', '没有理由', '无理由', '不知道', '开除', '归档', '离职'

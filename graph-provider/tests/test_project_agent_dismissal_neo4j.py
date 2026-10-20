@@ -84,10 +84,13 @@ async def test_upsert_cannot_archive_and_dismissal_requires_a_reason():
         url = '/v1/project-agents/reasonless/dismissal'
         missing = dismissal(scope)
         del missing['reason']
-        for body in [missing, dismissal(scope, reason='   '), dismissal(scope, reason='ok')]:
+        for body in [missing, dismissal(scope, reason='   '), dismissal(scope, reason='ok'),
+                     dismissal(scope, reason='none', lessons=[]),
+                     dismissal(scope, reason='Archived by user.', lessons=[])]:
             rejected = await client.post(url, json=body)
             assert rejected.status_code == 422, rejected.text
         assert (await agent(client, scope, 'reasonless'))['profile']['status'] == 'active'
+        assert (await lessons(client, scope, occupation='engineering'))['total'] == 0
 
 
 @pytest.mark.asyncio
