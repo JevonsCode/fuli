@@ -1,5 +1,6 @@
 const READ_TOOLS = new Set([
   'get_judgment_policy', 'list_judgments', 'get_agent_pins',
+  'get_model_usage',
   'find_agents', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status',
   'get_agent_quality_gate',
   'plan_agent_collaboration', 'list_agent_loans',
@@ -17,6 +18,7 @@ const READ_TOOLS = new Set([
   'get_external_knowledge_conflict_policy',
   'list_employee_templates',
   'list_employee_tools',
+  'list_agent_apps',
   'verify_task_checkpoint',
   'read_task_preferences',
   'search_current_project_knowledge',
@@ -32,6 +34,8 @@ const READ_TOOLS = new Set([
   'get_project_agent_context',
   'get_project_agent_memory',
   'export_project_agent_memory',
+  'list_agent_dismissal_lessons',
+  'get_agent_handoff',
   'view_project_agent_task',
   'view_project_agent_activity',
   'get_project_agent_coordination_policy',
@@ -76,6 +80,7 @@ const WRITE_TOOLS = new Set([
   'delete_public_project',
   'recruit_employee',
   'call_employee_tool',
+  'submit_agent_app_version',
   'begin_task_context',
   'checkpoint_task_knowledge',
   'checkpoint_project_agent_memory',
@@ -95,7 +100,7 @@ const WRITE_TOOLS = new Set([
   'review_human_knowledge_change',
   'upsert_personal_project',
   'upsert_project_agent',
-  'delete_project_agent',
+  'dismiss_project_agent',
   'cleanup_test_project_agents',
   'create_project_agent_assignment',
   'end_project_agent_assignment',
@@ -137,6 +142,7 @@ const WRITE_TOOLS = new Set([
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set([
+  'dismiss_project_agent',
   'delete_external_knowledge_binding',
   'delete_public_project',
   'recruit_employee',
@@ -157,9 +163,9 @@ export function annotationsFor(name) {
   return {
     readOnlyHint: readOnly,
     destructiveHint: DESTRUCTIVE_TOOLS.has(name),
-    idempotentHint: readOnly || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'recruit_employee' || name === 'upsert_personal_project' ||
+    idempotentHint: readOnly || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'recruit_employee' || name === 'submit_agent_app_version' || name === 'upsert_personal_project' ||
       name === 'upsert_project_agent' ||
-      name === 'delete_project_agent' ||
+      name === 'dismiss_project_agent' ||
       name === 'cleanup_test_project_agents' ||
       name === 'create_project_agent_assignment' ||
       name === 'coordinate_project_agent_task' ||

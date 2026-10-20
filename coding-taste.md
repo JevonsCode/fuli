@@ -43,8 +43,10 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Promise-based sleep | `node:timers/promises` (`setTimeout as delay`) | Do not hand-roll `new Promise((resolve) => setTimeout(resolve, ms))`. |
 | Atomic text and JSON file writes | `src/storage/json-file.js` (`writeTextFileAtomic`, `writeJsonFileAtomic`) | Keeps the existing file mode; new files are private. |
 | One-line display text | `src/text/single-line.js` | |
+| Parsing a model's JSON answer | `src/text/model-json.js` (`parseModelJson`) | Tolerates one Markdown code fence. Judgment and the model port share it. |
 | Lifecycle hook stdin reading and size limit | `src/agents/lifecycle-input.js` | Common to every Agent; only the output format stays in `src/agents/<agent>/`. |
-| CLI line output and terminal confirmation | `src/cli/terminal-io.js` | |
+| CLI line output, terminal confirmation and hidden secret entry | `src/cli/terminal-io.js` | |
+| Model API calls of the built-in Agents | `src/model-backends/port.js` | Budget, egress, retry, validation and usage live in the port; protocols only in `src/model-backends/adapters/`. |
 | Web date and time display | `web/src/lib/date-time.ts` (`formatDateTime`), `web/src/lib/relative-time.ts` | Pass `currentLocale()`; never a hard-coded or browser-default locale. |
 | Web identity, debounce | `web/src/lib/identity.ts`, `web/src/lib/debounce.ts` | |
 | Web short display ids (unique prefix of a list) | `web/src/lib/short-ids.ts` (`shortUniqueIds`) | Mark a cut with … and keep the full id in a title or copy control. |
@@ -53,7 +55,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Web theme tokens and Tailwind preset | `web/src/styles/theme/` | Base → semantic → component tokens; a skin re-points semantic tokens only. |
 | Web class merging (`cn`) | `web/src/lib/class-names.ts` | |
 | Web modal behavior | `web/src/composables/useModalDialog.ts` | |
-| Web shadcn-vue components | `web/src/components/ui/*` (Button, Dialog, Tabs, Card, Accordion, Table, DropdownMenu, Badge) | Source copies; each `index.ts` records the upstream commit and every local change. Copy only the parts a page uses. |
+| Web shadcn-vue components | `web/src/components/ui/*` (Button, Dialog, Tabs, Card, Accordion, Table, DropdownMenu, Badge; form controls Input, Textarea, Select, Switch, Checkbox, RadioGroup, Label, Field) | Source copies; each `index.ts` records the upstream commit and every local change. Copy only the parts a page uses. Forms compose Field + Label + a control; there is no form framework (no vee-validate). |
 | Web page title (the one H1) | `web/src/layouts/page-title.ts` (`usePageTitle`) and route `meta.title` | The shell renders the H1; a page about one record names itself. Pages never render their own `h1`. |
 | Web page canvas | route `meta.layout` (`canvas` / `form`), `--canvas-max` / `--form-max` in `web/src/styles/tokens.css` | Collections use 1/2/3/4 columns by canvas width (container queries). |
 | Web quick look (Peek) | `web/src/composables/useRoutePeek.ts` with the shadcn-vue `Dialog` | `?item=<space>/<id>`; opening adds history, closing goes Back. |

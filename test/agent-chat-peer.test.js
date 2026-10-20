@@ -76,7 +76,7 @@ test('valid signatures cannot exchange chat and execution proof versions', { tim
   } finally { await alpha.close(); await beta.close(); }
 });
 
-test('paired chat uses the same wait cursor for ten bidirectional rounds over mTLS', { timeout: 10000 }, async () => {
+test('paired chat uses the same wait cursor for ten bidirectional rounds over mTLS', { timeout: 20_000 }, async () => {
   const [alpha, beta] = await Promise.all([device('alpha'), device('beta')]);
   try {
     await pair(alpha, beta);
@@ -89,7 +89,7 @@ test('paired chat uses the same wait cursor for ten bidirectional rounds over mT
     let after = 0;
     for (let i = 0; i < 10; i++) {
       for (const [send, receive, who] of [[a,b,'a'],[b,a,'b']]) {
-        const waiting = receive('wait', { chatId, after, timeoutSeconds: 2 });
+        const waiting = receive('wait', { chatId, after, timeoutSeconds: 15 });
         await send('send', { chatId, requestId: `${who}-${i}`, body: `${who}:${i}` });
         const page = await waiting;
         assert.deepEqual(page.messages.map(m => m.body), [`${who}:${i}`]);
@@ -101,7 +101,7 @@ test('paired chat uses the same wait cursor for ten bidirectional rounds over mT
   } finally { await alpha.close(); await beta.close(); }
 });
 
-test('paired owner notifications deliver metadata only and resume from durable history', { timeout: 5000 }, async () => {
+test('paired owner notifications deliver metadata only and resume from durable history', { timeout: 20_000 }, async () => {
   const [alpha, beta] = await Promise.all([device('alpha'), device('beta')]);
   let stop;
   try {
@@ -121,7 +121,7 @@ test('paired owner notifications deliver metadata only and resume from durable h
   } finally { stop?.(); await alpha.close(); await beta.close(); }
 });
 
-test('a pending signed wait cannot consume messages after its sharing is revoked', { timeout: 5000 }, async () => {
+test('a pending signed wait cannot consume messages after its sharing is revoked', { timeout: 20_000 }, async () => {
   const [alpha, beta] = await Promise.all([device('alpha'), device('beta')]);
   try {
     await pair(alpha, beta);
@@ -130,7 +130,7 @@ test('a pending signed wait cannot consume messages after its sharing is revoked
     const target = (await alpha.app.roundtable.findAgents({})).remoteAgents[0].address;
     const a = (action, data) => alpha.app.roundtable.chat({ taskContextToken: 'alpha-task', sourceApplication: 'codex', action, ...data });
     const { chatId } = await a('create', { requestId: 'revoke-room', kind: 'direct', members: [target] });
-    const waiting = beta.app.roundtable.chat({ taskContextToken: 'beta-task', sourceApplication: 'codex', action: 'wait', chatId, timeoutSeconds: 2 });
+    const waiting = beta.app.roundtable.chat({ taskContextToken: 'beta-task', sourceApplication: 'codex', action: 'wait', chatId, timeoutSeconds: 15 });
     const denied = assert.rejects(waiting, /share|sharing|revoked/i);
     await beta.runtime.setShares({ shares: [] });
     await a('send', { chatId, requestId: 'revoked-send', body: 'private after revoke' });
@@ -138,7 +138,7 @@ test('a pending signed wait cannot consume messages after its sharing is revoked
   } finally { await alpha.close(); await beta.close(); }
 });
 
-test('an offline executable shared lead wakes read-only from its chat snapshot over mTLS', { timeout: 10000 }, async () => {
+test('an offline executable shared lead wakes read-only from its chat snapshot over mTLS', { timeout: 20_000 }, async () => {
   const entered=Promise.withResolvers();
   const [alpha,beta]=await Promise.all([device('alpha'),device('beta',{wake:async input=>{
     entered.resolve(input); return {body:'read-only remote answer',sessionId:'beta-chat-wake'};

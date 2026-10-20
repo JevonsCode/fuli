@@ -6,14 +6,15 @@ from uuid import uuid4
 import pytest
 
 from fuli_graph.provider_values import stable_uuid
+from fuli_graph.system_agents import hr_profile
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 from test_system_hr_identity_neo4j import _create_space, _query
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('responsibility, expected', [
-    ('HR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。',
-     'AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。'),
+    ('HR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。', hr_profile().responsibility),
+    ('AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。', hr_profile().responsibility),
     ('HR：这是用户自定义的职责。', 'HR：这是用户自定义的职责。'),
 ])
 async def test_bole_role_copy_upgrade_preserves_custom_profile_and_employee_number(responsibility, expected):

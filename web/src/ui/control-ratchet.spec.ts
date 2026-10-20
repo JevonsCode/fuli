@@ -22,7 +22,7 @@ describe('design system adoption', () => {
     const button = outsideDesignSystem.reduce((sum, source) => sum + (source.match(/<button\b/g)?.length ?? 0), 0)
     const toggle = outsideDesignSystem.reduce((sum, source) => sum + (source.match(/role="switch"/g)?.length ?? 0), 0)
     expect(button, 'use Button (components/ui/button) or UiIconButton instead of a new <button>').toBeLessThanOrEqual(BASELINE.button)
-    expect(toggle, 'use UiToggle instead of a new switch').toBeLessThanOrEqual(BASELINE.switch)
+    expect(toggle, 'use Switch (components/ui/switch) or UiToggle instead of a new switch').toBeLessThanOrEqual(BASELINE.switch)
   })
 
   it('keeps one button system: no legacy button classes anywhere', () => {

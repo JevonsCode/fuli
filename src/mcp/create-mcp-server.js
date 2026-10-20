@@ -55,6 +55,7 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   recruit_employee: 64 * 1024,
   list_employee_tools: 64 * 1024,
   call_employee_tool: 64 * 1024,
+  list_agent_apps: 32 * 1024,
   begin_task_context: 128 * 1024,
   checkpoint_task_knowledge: 16 * 1024,
   get_collaboration_preferences: 128 * 1024,
@@ -75,6 +76,10 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   // result fails instead of returning a partial Markdown file.
   export_project_agent_memory: 512 * 1024,
   checkpoint_project_agent_memory: 64 * 1024,
+  dismiss_project_agent: 8 * 1024,
+  list_agent_dismissal_lessons: 32 * 1024,
+  // A stored handoff is the 512 KiB document plus its identity fields.
+  get_agent_handoff: 600 * 1024,
   coordinate_project_agent_task: 256 * 1024,
   acquire_runtime_lease: 4 * 1024,
   refresh_runtime_lease: 4 * 1024,
@@ -97,7 +102,7 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
 const NATIVE_CHOICE_TOOLS = new Set(['checkpoint_task_knowledge', 'review_with_tonborg',
   'list_judgments', 'request_agent_attention', 'list_agent_attention']);
 // A truncated result would be a misleading partial file, so these fail instead.
-const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory']);
+const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory', 'get_agent_handoff']);
 const NATIVE_CONTEXT = Symbol('fuli.nativeMcpRequestContext');
 
 export function createMcpServer(
@@ -372,7 +377,7 @@ async function invokeTool(tool, input, requestContext = null) {
       return employeeToolCatalogResult(value, { limitBytes });
     }
     const itemLimit = ({ list_agent_interfaces: 200, list_project_agent_tasks: 200,
-      list_preference_conflicts: 1000, list_external_knowledge_bindings: 200,
+      list_preference_conflicts: 1000, list_external_knowledge_bindings: 200, list_agent_apps: 200,
       get_collaboration_preferences: 1000 })[tool.definition.name];
     const result = successToolResult(value, { limitBytes, itemLimit, preserveHumanInteraction });
     if (COMPLETE_RESULT_TOOLS.has(tool.definition.name) && result.structuredContent.truncated) {

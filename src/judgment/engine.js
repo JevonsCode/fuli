@@ -6,6 +6,7 @@ import { assessRouting } from './routing.js';
 import { assessAcceptance } from './acceptance.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
+import { parseModelJson } from '../text/model-json.js';
 import { PREFERENCE_RECEIPT_RULES, PREFERENCE_RECEIPT_VERSION, preferenceDeliveryRecord, preferenceHold,
   readJudgmentPreferences } from './preference-receipt.js';
 
@@ -80,7 +81,7 @@ export function createJudgmentEngine({ app, judge = runJudgment } = {}) {
         && !store.reviewed(space, project, candidate.candidate_key, fingerprint(candidate), policyVersion(policy))).slice(0, input.limit));
       if (candidates.length) {
         const answer = await judge({ client: policy.client, quality: policy.quality, prompt: reviewPrompt(policy, evidenceContext, candidates) });
-        const parsed = parse(answerSchema, parseAnswer(answer.body));
+        const parsed = parse(answerSchema, parseModelJson(answer.body));
         if (parsed.decisions.length !== candidates.length || new Set(parsed.decisions.map(d => d.target)).size !== candidates.length
           || parsed.decisions.some(d => !candidates.some(c => c.candidate_key === d.target))) throw new TypeError('Judgment targets do not match evidence');
         for (const decision of parsed.decisions) {
@@ -174,11 +175,6 @@ export function createJudgmentEngine({ app, judge = runJudgment } = {}) {
     return reviewAcrossScopes(service, input, true);
   }, assess: (service, input) => assessRouting({ app, judge, context, service, input }),
   accept: (service, input) => assessAcceptance({ app, judge, context, service, input }) };
-}
-
-export function parseAnswer(body) {
-  const trimmed = body.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-  return JSON.parse(trimmed);
 }
 
 function reviewPrompt(policy, context, candidates) {

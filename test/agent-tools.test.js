@@ -31,7 +31,10 @@ const NAMES = [
   'recruit_employee',
   'list_employee_tools',
   'call_employee_tool',
+  'submit_agent_app_version',
+  'list_agent_apps',
   'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
+  'get_model_usage',
   'get_agent_score_card',
   'manage_project_agent_schedule', 'control_project_agent_task_run',
   'read_task_preferences',
@@ -71,7 +74,9 @@ const NAMES = [
   'get_agent_conversation_policy', 'update_agent_conversation_policy',
   'get_agent_quality_gate', 'record_agent_verification', 'plan_agent_collaboration',
   'request_agent_loan', 'decide_agent_loan', 'list_agent_loans',
-  'delete_project_agent',
+  'dismiss_project_agent',
+  'list_agent_dismissal_lessons',
+  'get_agent_handoff',
   'cleanup_test_project_agents',
   'create_project_agent_assignment',
   'list_project_agent_assignments',
@@ -320,6 +325,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   const calls = [];
   const app = {
     judgment: Object.fromEntries(['policy', 'records', 'review', 'assess', 'accept', 'pins', 'pin'].map(name => [name, async input => calls.push([`judgment-${name}`, input])])),
+    modelBackends: { usage: input => calls.push(['model-usage', input]) },
     taskSchedules: { manage: async input => calls.push(['task-schedules', input]) },
     controlProjectAgentTaskRun: async input => calls.push(['task-run-control', input]),
     queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
@@ -363,6 +369,11 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       describeTools: async (input) => calls.push(['employee-tools', input]),
       callTool: async (input) => calls.push(['employee-call', input])
     },
+    agentApps: {
+      submit: async (input) => calls.push(['app-submit', input]),
+      list: (input) => calls.push(['app-list', input]),
+      read: (input) => calls.push(['app-read', input])
+    },
     beginTaskContext: async (input) => calls.push(['begin-task', input]),
     readTaskPreferences: async (input) => calls.push(['read-task-preferences', input]),
     checkpointTaskKnowledge: async (input) => calls.push(['checkpoint-task', input]),
@@ -404,7 +415,9 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     getProjectAgentMemory: async (input) => calls.push(['get-agent-memory', input]),
     exportProjectAgentMemory: async (input) => calls.push(['export-agent-memory', input]),
     checkpointProjectAgentMemory: async (input) => calls.push(['checkpoint-agent-memory', input]),
-    deleteProjectAgent: async (input) => calls.push(['delete-project-agent', input]),
+    dismissProjectAgent: async (input) => calls.push(['dismiss-project-agent', input]),
+    listAgentDismissalLessons: async (input) => calls.push(['dismissal-lessons', input]),
+    getAgentHandoff: async (input) => calls.push(['agent-handoff', input]),
     cleanupProjectAgentTestRoles: async (input) =>
       calls.push(['cleanup-test-project-agents', input]),
     createProjectAgentAssignment: async (input) =>
@@ -501,8 +514,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-create', 'external-check', 'external-sync', 'external-retrieve',
     'external-targets', 'external-delete', 'external-conflict-policy',
     'external-update-policy', 'defer-preference-conflict', 'delete-public-project',
-    'employee-list', 'employee-recruit', 'employee-tools', 'employee-call',
-    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'agent-score-card', 'task-schedules', 'task-run-control',
+    'employee-list', 'employee-recruit', 'employee-tools', 'employee-call', 'app-submit', 'app-list',
+    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'model-usage', 'agent-score-card', 'task-schedules', 'task-run-control',
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',
@@ -517,7 +530,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'get-project-agent', 'get-agent-memory', 'export-agent-memory', 'checkpoint-agent-memory',
     'conversations-list', 'conversations-events', 'conversation-resume', 'conversations-policy', 'conversation-policy',
     'verification-query', 'verification-record', 'collaboration-plan', 'loan-request', 'loan-decide', 'loan-query',
-    'delete-project-agent', 'cleanup-test-project-agents',
+    'dismiss-project-agent', 'dismissal-lessons', 'agent-handoff', 'cleanup-test-project-agents',
     'create-project-agent-assignment', 'list-project-agent-assignments',
     'end-project-agent-assignment', 'replace-project-agent-assignment',
     'coordinate-project-agent-task',

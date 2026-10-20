@@ -1,5 +1,7 @@
 import { dirname, join } from 'node:path';
 import { createEmployeeService } from '../employees/service.js';
+import { agentAppRoot, createAgentAppService } from '../agent-apps/service.js';
+import { listAgentTools } from '../agent-tools.js';
 import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
 import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js';
@@ -8,6 +10,7 @@ import { createJudgmentService } from '../judgment/service.js';
 import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
 import { createTaskScheduleService } from '../task-schedules/service.js';
+import { openModelBackendRuntime } from '../model-backends/runtime.js';
 import { TaskScheduleStore } from '../task-schedules/store.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
@@ -132,8 +135,12 @@ export function openFederatedGraphApplication({
     app.agentSnapshots = createAgentDirectorySnapshots({ root: paths.agentDirectoryRoot,
       providerIdentity: resolved.personal.providerUrl });
     app.employees = createEmployeeService({ app, runtimeConfigPath });
+    app.agentApps = createAgentAppService({ root: agentAppRoot(runtimeConfigPath),
+      providerIdentity: resolved.personal.providerUrl, resolveOwner: (owner) => app.getProjectAgent(owner),
+      toolNames: () => listAgentTools().map(({ name }) => name) });
     app.judgment = createJudgmentService({ app, engine: createJudgmentEngine({ app }),
       openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
+    app.modelBackends = openModelBackendRuntime(paths);
     app.taskSchedules = createTaskScheduleService({ app,
       openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
     app.roundtableHost = createFuliRoundtableHost(app);
@@ -1079,7 +1086,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roundtable?.close(); this.peer?.close(); return this.employees?.close(); }
+  close() { this.judgment?.close(); this.taskSchedules?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); this.agentApps?.close(); return this.employees?.close(); }
 
   // View records rank knowledge by what a session looked at: a behavior trace
   // that stops with automatic recording. Reading itself needs none (rec#11 D-01).

@@ -188,13 +188,35 @@ function layerArtifact({ personalProjectId = null, revision, current }) {
 export function renderAgentMemoryExport({ agent, personalProjectId = null, revision, current, generatedAt }) {
   const identity = identityArtifact(agent).render(null);
   const layer = layerArtifact({ personalProjectId, revision, current }).render(generatedAt);
-  const name = (value) => /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value) ? value : key(value).slice(0, 12);
-  const scope = personalProjectId === null ? 'global' : `project-${name(personalProjectId)}`;
+  const scope = personalProjectId === null ? 'global' : `project-${fileLabel(personalProjectId)}`;
   return {
-    filename: `fuli-${name(agent.agentId)}-${scope}-memory-r${revision}.md`,
+    filename: `fuli-${fileLabel(agent.agentId)}-${scope}-memory-r${revision}.md`,
     // Each part keeps its own notice so either can be read on its own.
     markdown: `${identity}\n${layer}`
   };
+}
+
+/**
+ * The handoff an Agent leaves when it is dismissed: identity, why it left, the
+ * lessons kept, and every memory layer the caller read and scope-checked.
+ */
+export function renderAgentHandoff({ agent, reason, lessons, layers, generatedAt }) {
+  const identity = identityArtifact(agent).render(null);
+  const projects = (agent.assignments ?? []).filter(item => item.status === 'active')
+    .map(item => `\`${line(item.personalProjectId)}\``);
+  const departure = document('# Handoff: dismissal', [
+    `- Prepared: ${generatedAt}`,
+    ...(projects.length ? [`- Assignments ended: ${projects.join(', ')}`] : [])
+  ], [['Reason', text(reason)], ['Lessons', list(lessons)]]);
+  const memory = layers.length
+    ? layers.map(layer => layerArtifact(layer).render(generatedAt))
+    : [document('# Working memory', ['- Scope: none'], [['Summary', 'This Agent keeps no reviewed working memory.']])];
+  return { filename: `fuli-${fileLabel(agent.agentId)}-handoff.md`, markdown: [identity, departure, ...memory].join('\n') };
+}
+
+// A safe ID is used as is; anything else becomes a short stable hash.
+function fileLabel(value) {
+  return /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value) ? value : key(value).slice(0, 12);
 }
 
 function layerFile(personalProjectId) {

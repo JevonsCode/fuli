@@ -416,95 +416,6 @@ class StoreProjectAgents:
             personal_project_id,
         )
 
-    async def archive_project_agent(
-        self,
-        actor: dict,
-        personal_space_id: str,
-        agent_id: str,
-        *,
-        reason: str,
-    ) -> ProjectAgentRecord:
-        """Archive one reusable identity while preserving every audit edge."""
-
-        self._require_personal()
-        if agent_id == SYSTEM_ASSISTANT_AGENT_ID:
-            raise HTTPException(422, 'the system assistant cannot be archived')
-        if agent_id == SYSTEM_COORDINATOR_AGENT_ID:
-            raise HTTPException(
-                status_code=422,
-                detail='the project manager cannot be archived',
-            )
-        if agent_id == SYSTEM_HR_AGENT_ID:
-            raise HTTPException(
-                status_code=422,
-                detail='the system AR cannot be archived',
-            )
-        await self.authorize(actor, personal_space_id, 'maintainer')
-        if not reason.strip():
-            raise HTTPException(status_code=422, detail='archive reason is required')
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})-
-                  [:HAS_PROJECT_AGENT_IDENTITY]->
-                  (agent:FuliProjectAgent {agent_id: $agent_id})
-            // Serialize task-participant creation with lifecycle termination.
-            // The lock must be taken before the open-work snapshot is read.
-            SET agent._task_lifecycle_lock = true
-            REMOVE agent._task_lifecycle_lock
-            WITH space, agent
-            OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_TASK]->
-                  (task:FuliProjectAgentTask)-
-                  [participant:HAS_PARTICIPANT]->(agent)
-            WITH space, agent, collect(DISTINCT {
-              task_id: task.task_id,
-              status: participant.status
-            }) AS tasks
-            WITH space, agent, [item IN tasks
-                         WHERE item.task_id IS NOT NULL
-                           AND item.status IN [
-                             'awaiting_recruitment', 'backlog', 'queued', 'running',
-                             'paused', 'blocked', 'awaiting_review'
-                           ]] AS open_tasks
-            WHERE (agent.status = 'archived' OR size(open_tasks) = 0)
-              AND NOT EXISTS {
-                MATCH (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject)-
-                      [:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(policy:FuliProjectAgentCoordinationPolicy)
-                WHERE policy.team_lead_agent_id = agent.agent_id
-              }
-            SET agent.status = 'archived',
-                agent.archive_reason = coalesce(agent.archive_reason, $reason),
-                agent.archived_at = coalesce(agent.archived_at, $updated_at),
-                agent.updated_at = $updated_at
-            WITH space, agent
-            OPTIONAL MATCH (space)-[:CONTAINS_PROJECT]->
-                           (:FuliPersonalProject)-
-                           [:HAS_PROJECT_AGENT_ASSIGNMENT]->
-                           (assignment:FuliProjectAgentAssignment {status: 'active'})-
-                           [:ASSIGNED_AGENT]->(agent)
-            SET assignment.status = 'ended',
-                assignment.end_reason = $reason,
-                assignment.ended_at = $updated_at,
-                assignment.updated_at = $updated_at,
-                assignment.revision = coalesce(assignment.revision, 0) + 1
-            RETURN agent
-            ''',
-            personal_space_id=personal_space_id,
-            agent_id=agent_id,
-            reason=reason.strip(),
-            updated_at=now_utc(),
-        )
-        if not records:
-            raise HTTPException(
-                status_code=409,
-                detail='Agent is missing, has non-terminal task work, or is a project lead; hand off before archiving',
-            )
-        return await self.get_project_agent(
-            actor,
-            personal_space_id,
-            None,
-            agent_id,
-        )
-
     async def _project_agent_rows(
         self,
         personal_space_id: str,
@@ -1208,6 +1119,11 @@ class StoreProjectAgents:
             recruitment_source_application=raw.get(
                 'recruitment_source_application'
             ),
+            archived_at=(
+                native_datetime(raw['archived_at'])
+                if raw.get('archived_at') else None
+            ),
+            archive_reason=raw.get('archive_reason'),
             created_at=native_datetime(raw['created_at']),
             updated_at=native_datetime(raw['updated_at']),
         )
