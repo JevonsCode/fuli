@@ -958,7 +958,6 @@ function unique<T>(values: T[]) { return [...new Set(values)] }
   <section class="view project-agents-view" :aria-label="t('projectAgents.aria')">
     <header class="project-agents-header">
       <div>
-        <h2>{{ t('projectAgents.title') }}</h2>
         <p v-if="!pageLoading && !pageError" class="project-agents-header-meta" aria-live="polite"><strong>{{ t('projectAgents.stats.active', { count: activeCount }) }}</strong> · {{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}<span class="project-agents-header-note">{{ t('projectAgents.stats.noOnlineClaim') }}</span></p>
       </div>
       <div class="project-agent-header-actions">

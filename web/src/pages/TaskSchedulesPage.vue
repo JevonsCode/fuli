@@ -1,8 +1,21 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import TextField from '@/components/TextField.vue'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import {
+  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { focusReturnTarget, useFocusReturn } from '@/composables/useFocusReturn'
+import { useRoutePeek } from '@/composables/useRoutePeek'
+import SchedulePeek from '@/features/task-schedules/SchedulePeek.vue'
+import {
+  readScheduleTableQuery, SCHEDULE_COLUMNS, SCHEDULE_SORTS, SCHEDULE_STATE_FILTERS, scheduleColumnVisible, scheduleTableLocationQuery,
+  visibleSchedules, type ScheduleColumn, type ScheduleTableQuery,
+} from '@/features/task-schedules/schedule-table'
 import { ApiError, getJson } from '@/api/client'
 import { formatDate } from '@/features/project-agents/task-labels'
 import { normalizeTask } from '@/features/project-agents/task-evidence'
@@ -10,10 +23,10 @@ import {
   createSchedule, intervalMs, intervalTooShort, listSchedules, scheduleRunLabel, scheduleRuns, scheduleState, setScheduleEnabled, updateSchedule,
   type ScheduleRun, type ScheduleUnit, type StartMode, type TaskSchedule,
 } from '@/features/task-schedules/task-schedules'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { Button } from '@/components/ui/button'
-import { UiChip, UiDialog, UiEmpty, UiSelect, UiToolbar } from '@/ui'
+import { UiDialog, UiIcon, UiSelect } from '@/ui'
 
 // 定时任务: schedules that create a project task at a fixed interval. The page
 // shows planned slots as plans, never as guaranteed runs, and reloads after a
@@ -198,6 +211,7 @@ async function verifyCreate() {
 
 // A schedule run names only its task; the task is read when opened, to find
 // the Agent whose page shows it.
+const route = useRoute()
 const router = useRouter()
 const openingTask = ref('')
 const openTaskError = ref('')
@@ -217,100 +231,259 @@ async function openTask(schedule: TaskSchedule, taskId: string) {
   }
 }
 
-// The latest 50 tasks a schedule created, read on request.
-const runsOpen = ref('')
+// The table: filters and sort in the URL, rows in the chosen order.
+const tableQuery = computed(() => readScheduleTableQuery(route.query))
+function setTableQuery(change: Partial<ScheduleTableQuery>) {
+  void router.replace({ query: scheduleTableLocationQuery(route.query, { ...tableQuery.value, ...change }) })
+}
+const rows = computed(() => visibleSchedules(schedules.value, tableQuery.value, projectName, currentLocale()))
+const stateOptions = computed(() => SCHEDULE_STATE_FILTERS.map(value => ({
+  value, label: value === 'all' ? t('taskSchedules.filter.allStates') : t(`taskSchedules.state.${value}`) })))
+const sortOptions = computed(() => SCHEDULE_SORTS.map(value => ({
+  value, label: t(value === 'next' ? 'taskSchedules.filter.sortNext' : 'taskSchedules.filter.sortName') })))
+const stateTone = (schedule: TaskSchedule) =>
+  ({ enabled: 'success', paused: 'secondary', circuit_open: 'warning', unknown: 'secondary' } as const)[scheduleState(schedule)]
+
+// Optional columns: low-priority ones appear once the table is wide enough;
+// the person's own choice is remembered in this browser only.
+const COLUMN_STORAGE_KEY = 'fuli.schedules.columns'
+function readColumnChoices(): Partial<Record<ScheduleColumn, boolean>> {
+  try { return JSON.parse(localStorage.getItem(COLUMN_STORAGE_KEY) ?? '{}') ?? {} } catch { return {} }
+}
+const columnChoices = ref(readColumnChoices())
+const tableWidth = ref(0)
+const tableArea = ref<HTMLElement | null>(null)
+let resizeObserver: ResizeObserver | undefined
+onMounted(() => {
+  if (typeof ResizeObserver === 'undefined') return
+  resizeObserver = new ResizeObserver(([entry]) => { tableWidth.value = entry?.contentRect.width ?? 0 })
+  if (tableArea.value) resizeObserver.observe(tableArea.value)
+})
+onBeforeUnmount(() => resizeObserver?.disconnect())
+const shows = (column: ScheduleColumn) => scheduleColumnVisible(column, tableWidth.value, columnChoices.value)
+function chooseColumn(column: ScheduleColumn, visible: boolean) {
+  columnChoices.value = { ...columnChoices.value, [column]: visible }
+  try { localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(columnChoices.value)) } catch { /* storage may be unavailable */ }
+}
+
+// Details: the name opens a quick look (?item=<space>/<schedule>) that a
+// refresh or a shared link reopens once the list is read.
+const peek = useRoutePeek()
+const peekSchedule = computed(() => peek.item.value && peek.item.value.spaceId === spaceId.value
+  ? schedules.value.find(item => item.id === peek.item.value?.id) : undefined)
+const peekMissing = computed(() => Boolean(peek.item.value) && !peekSchedule.value
+  && (peek.item.value?.spaceId !== spaceId.value || (loaded.value && !loading.value)))
+// A shared link whose list could not be read says so in the quick look too.
+const peekLoadError = computed(() => !peekSchedule.value && !peekMissing.value && !loading.value ? loadError.value : '')
+const focusReturn = useFocusReturn(tableArea, 'task-schedules', computed(() => rows.value.length > 0))
+let peekOpener: HTMLElement | null = null
+let lastPeekId = ''
+// While the quick look hands over to the edit or resume dialog, that dialog keeps focus.
+let handingOver = false
+function openPeek(schedule: TaskSchedule) {
+  const active = document.activeElement
+  peekOpener = active instanceof HTMLElement && active !== document.body ? active : null
+  peek.open({ spaceId: spaceId.value, id: schedule.id })
+}
+function peekOpenChange(open: boolean) { if (!open) peek.close() }
+// Opening lands on Edit, the safe main action, rather than on a task link or Pause.
+function focusPeekAction(event: Event) {
+  const action = (event.target as HTMLElement | null)?.querySelector<HTMLElement>('[data-peek-edit]')
+  if (!action) return
+  event.preventDefault()
+  action.focus()
+}
+function returnFocusFromPeek(event: Event) {
+  event.preventDefault()
+  const opener = peekOpener
+  peekOpener = null
+  if (handingOver) { handingOver = false; return }
+  if (opener?.isConnected) opener.focus({ preventScroll: true })
+  else focusReturnTarget(tableArea.value, lastPeekId)
+}
+function handOver(action: () => void) {
+  handingOver = true
+  peek.close()
+  action()
+}
+
+// The latest 50 tasks a schedule created, read when its quick look opens.
 const runsLoading = ref(false)
 const runsError = ref(false)
 const scheduleRunList = ref<ScheduleRun[]>([])
-async function toggleRuns(schedule: TaskSchedule) {
-  if (runsOpen.value === schedule.id) { runsOpen.value = ''; return }
-  runsOpen.value = schedule.id
+let runsFor = ''
+watch(peekSchedule, async (schedule) => {
+  if (!schedule) { runsFor = ''; return }
+  lastPeekId = schedule.id
+  focusReturn.remember(schedule.id)
+  if (runsFor === schedule.id) return
+  runsFor = schedule.id
   runsLoading.value = true
   runsError.value = false
   scheduleRunList.value = []
+  openTaskError.value = ''
   try {
     const result = await scheduleRuns(spaceId.value, schedule.id)
-    if (runsOpen.value === schedule.id) scheduleRunList.value = result.runs
+    if (runsFor === schedule.id) scheduleRunList.value = result.runs
   } catch {
-    if (runsOpen.value === schedule.id) runsError.value = true
+    if (runsFor === schedule.id) runsError.value = true
   } finally {
-    runsLoading.value = false
+    if (runsFor === schedule.id) runsLoading.value = false
   }
-}
+}, { immediate: true })
 </script>
 
 <template>
-  <section class="view page-stack task-schedules-view">
-    <p class="page-lede">{{ t('taskSchedules.lede') }}</p>
-    <UiToolbar>
-      <template #end>
-        <GrowthLoading v-if="loading && schedules.length" variant="inline" :label="t('taskSchedules.loading')" />
-        <Button variant="ghost" size="sm" :disabled="loading" @click="load">{{ t('taskSchedules.refresh') }}</Button>
-        <Button size="sm" data-schedule-new @click="openCreate">{{ t('taskSchedules.new') }}</Button>
-      </template>
-    </UiToolbar>
-    <p v-if="actionError" role="alert" class="inline-error">{{ actionError }}</p>
-    <p v-if="loadError" role="alert" class="inline-error">
-      {{ loadError }} <Button size="sm" variant="ghost" @click="load">{{ t('taskSchedules.retryRead') }}</Button>
-    </p>
+  <section class="view task-schedules-view">
+    <div class="mx-auto flex min-h-0 w-full max-w-(--canvas-max) flex-1 flex-col gap-3">
+      <p class="page-lede m-0 text-sm text-muted-foreground">{{ t('taskSchedules.lede') }}</p>
+      <!-- Toolbar: filters and sort (in the URL), then column choice and actions. -->
+      <div class="task-schedules-toolbar flex flex-wrap items-center gap-2">
+        <label class="task-schedules-search">
+          <span class="ui-sr-only">{{ t('taskSchedules.filter.search') }}</span>
+          <input type="search" maxlength="120" :value="tableQuery.search" :placeholder="t('taskSchedules.filter.search')"
+            data-schedule-search @input="setTableQuery({ search: ($event.target as HTMLInputElement).value })" />
+        </label>
+        <UiSelect class="task-schedules-select" :model-value="tableQuery.state" :options="stateOptions" :label="t('taskSchedules.filter.state')"
+          data-schedule-state-filter @update:model-value="setTableQuery({ state: $event as ScheduleTableQuery['state'] })" />
+        <UiSelect class="task-schedules-select" :model-value="tableQuery.sort" :options="sortOptions" :label="t('taskSchedules.filter.sort')"
+          data-schedule-sort @update:model-value="setTableQuery({ sort: $event as ScheduleTableQuery['sort'] })" />
+        <div class="ml-auto flex flex-wrap items-center gap-2">
+          <GrowthLoading v-if="loading && schedules.length" variant="inline" :label="t('taskSchedules.loading')" />
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button variant="outline" size="sm" data-schedule-columns>
+                {{ t('taskSchedules.columns.menu') }}<UiIcon name="chevron-down" :size="14" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>{{ t('taskSchedules.columns.menu') }}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem v-for="column in SCHEDULE_COLUMNS" :key="column.key" :model-value="shows(column.key)"
+                :data-schedule-column-toggle="column.key" @update:model-value="chooseColumn(column.key, $event === true)" @select.prevent>
+                {{ t(`taskSchedules.columns.${column.key}`) }}
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="ghost" size="sm" :disabled="loading" @click="load">{{ t('taskSchedules.refresh') }}</Button>
+          <Button size="sm" data-schedule-new @click="openCreate">{{ t('taskSchedules.new') }}</Button>
+        </div>
+      </div>
+      <p v-if="actionError" role="alert" class="inline-error m-0">{{ actionError }}</p>
+      <!-- A failed refresh keeps the rows already read; a failed first read says so in place of the table. -->
+      <p v-if="loadError && schedules.length" role="alert" class="inline-error m-0">
+        {{ loadError }} <Button size="sm" variant="ghost" @click="load">{{ t('taskSchedules.retryRead') }}</Button>
+      </p>
 
-    <GrowthLoading v-if="loading && !schedules.length" variant="compact" :label="t('taskSchedules.loading')" />
-    <UiEmpty v-else-if="loaded && !schedules.length" class="ui-list" :text="t('taskSchedules.empty')" />
-    <div v-if="schedules.length" class="ui-list">
-      <article v-for="schedule in schedules" :key="schedule.id" class="ui-list-row" :data-schedule-row="schedule.id">
-        <div class="ui-list-main">
-          <strong class="ui-list-heading">{{ schedule.body.title }}</strong>
-          <p class="ui-list-text">{{ projectName(schedule.personalProjectId) }} · {{ t('taskSchedules.every', { count: schedule.body.every.count, unit: t(`taskSchedules.unit.${schedule.body.every.unit}`) }) }}</p>
-          <div class="ui-list-meta">
-            <UiChip :tone="scheduleState(schedule) === 'enabled' ? 'accent' : scheduleState(schedule) === 'circuit_open' ? 'warning' : 'neutral'">
-              {{ t(`taskSchedules.state.${scheduleState(schedule)}`) }}
-            </UiChip>
-            <span :title="t('taskSchedules.nextHint')">{{ t('taskSchedules.next') }} · {{ formatDate(schedule.nextRunAt) }} ({{ timeZone }})</span>
-            <span>{{ t(`taskSchedules.startMode.${schedule.body.startMode}`) }}</span>
-            <span>{{ t('taskSchedules.threshold', { count: schedule.body.failureThreshold }) }}</span>
-          </div>
-          <p class="task-schedule-runs">
-            <span>{{ t('taskSchedules.recent') }} ·</span>
-            <template v-if="schedule.recentRuns?.length">
-              <span v-for="run in schedule.recentRuns" :key="run.slot" class="task-schedule-run" :title="run.lastError ?? undefined">
-                {{ formatDate(run.slot) }} · {{ scheduleRunLabel(run) }}
-              </span>
-            </template>
-            <span v-else>{{ t('taskSchedules.noRuns') }}</span>
-          </p>
+      <!-- The table area is the page's one vertical scroller: the header row
+           sticks, and a narrow screen scrolls sideways only inside it. -->
+      <div ref="tableArea" class="task-schedules-table-area flex min-h-0 flex-1 flex-col">
+        <GrowthLoading v-if="loading && !schedules.length" variant="compact" :label="t('taskSchedules.loading')" />
+        <div v-else-if="loadError && !schedules.length" class="ui-empty rounded-lg border bg-card text-destructive" role="alert" data-schedule-load-error>
+          <p class="m-0">{{ loadError }}</p>
+          <Button class="mt-3" size="sm" variant="outline" @click="load">{{ t('taskSchedules.retryRead') }}</Button>
         </div>
-        <div class="ui-list-actions">
-          <Button variant="ghost" size="sm" data-schedule-edit @click="openEdit(schedule)">{{ t('taskSchedules.edit') }}</Button>
-          <Button variant="ghost" size="sm" :aria-expanded="runsOpen === schedule.id" data-schedule-runs @click="toggleRuns(schedule)">
-            {{ t('taskSchedules.runs') }}
-          </Button>
-          <Button v-if="schedule.enabled" variant="ghost" size="sm" :loading="busyId === schedule.id" :loading-label="t('taskSchedules.pausing')"
-            data-schedule-pause @click="toggle(schedule, false)">{{ t('taskSchedules.pause') }}</Button>
-          <Button v-else variant="ghost" size="sm" :disabled="busyId === schedule.id" data-schedule-resume @click="resumeTarget = schedule">
-            {{ t('taskSchedules.resume') }}
-          </Button>
+        <div v-else-if="loaded && !schedules.length" class="ui-empty rounded-lg border bg-card" data-schedule-empty>
+          <p class="m-0">{{ t('taskSchedules.empty') }}</p>
+          <Button class="mt-3" size="sm" @click="openCreate">{{ t('taskSchedules.new') }}</Button>
         </div>
-        <div v-if="runsOpen === schedule.id" class="task-schedule-run-panel" data-schedule-run-panel>
-          <GrowthLoading v-if="runsLoading" variant="inline" :label="t('taskSchedules.loadingRuns')" />
-          <p v-else-if="runsError" role="alert" class="inline-error">{{ t('taskSchedules.runsFailed') }}</p>
-          <p v-else-if="!scheduleRunList.length">{{ t('taskSchedules.noRuns') }}</p>
-          <template v-else>
-            <p class="ui-meta">{{ t('taskSchedules.latest50') }}</p>
-            <ol class="task-schedule-run-list">
-              <li v-for="run in scheduleRunList" :key="run.slot">
-                <span>{{ formatDate(run.slot) }}</span>
-                <span :title="run.lastError ?? undefined">{{ scheduleRunLabel(run) }}</span>
-                <Button v-if="run.taskId" variant="ghost" size="sm" :loading="openingTask === run.taskId" :loading-label="t('taskSchedules.openingTask')"
-                  :aria-label="t('taskSchedules.openTaskLabel', { id: run.taskId })" data-schedule-open-task @click="openTask(schedule, run.taskId)">
-                  {{ t('taskSchedules.openTask') }} <code>{{ run.taskId.slice(0, 8) }}</code>
+        <Table v-else-if="schedules.length" class="task-schedules-table min-w-[760px]"
+          container-class="min-h-0 shrink rounded-lg border bg-card">
+          <TableHeader class="sticky top-0 z-[1] bg-card shadow-[0_1px_0_var(--border)] [&_tr]:border-b-0">
+            <TableRow class="hover:bg-transparent">
+              <TableHead class="min-w-[220px] pl-4">{{ t('taskSchedules.columns.name') }}</TableHead>
+              <TableHead v-if="shows('project')">{{ t('taskSchedules.columns.project') }}</TableHead>
+              <TableHead v-if="shows('interval')">{{ t('taskSchedules.columns.interval') }}</TableHead>
+              <TableHead>{{ t('taskSchedules.columns.state') }}</TableHead>
+              <TableHead v-if="shows('next')" :title="t('taskSchedules.nextHint')">{{ t('taskSchedules.columns.next') }}</TableHead>
+              <TableHead v-if="shows('startMode')">{{ t('taskSchedules.columns.startMode') }}</TableHead>
+              <TableHead v-if="shows('threshold')">{{ t('taskSchedules.columns.threshold') }}</TableHead>
+              <TableHead v-if="shows('recent')">{{ t('taskSchedules.columns.recent') }}</TableHead>
+              <TableHead class="w-12 pr-4 text-right"><span class="sr-only">{{ t('taskSchedules.columns.actions') }}</span></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-for="schedule in rows" :key="schedule.id" :data-schedule-row="schedule.id" :data-return-focus="schedule.id"
+              :data-state="peekSchedule?.id === schedule.id ? 'selected' : undefined">
+              <TableCell class="pl-4">
+                <Button variant="link" class="task-schedule-name h-auto min-h-0 justify-start p-0 text-left text-sm font-semibold whitespace-normal text-foreground hover:text-primary"
+                  :title="schedule.body.title" aria-haspopup="dialog" data-schedule-open @click="openPeek(schedule)">
+                  <span class="line-clamp-2 [overflow-wrap:anywhere]">{{ schedule.body.title }}</span>
                 </Button>
-              </li>
-            </ol>
-            <p v-if="openTaskError" role="alert" class="inline-error">{{ openTaskError }}</p>
-          </template>
-        </div>
-      </article>
+              </TableCell>
+              <TableCell v-if="shows('project')" class="max-w-[260px]">
+                <span class="line-clamp-2 [overflow-wrap:anywhere]" :title="projectName(schedule.personalProjectId)">{{ projectName(schedule.personalProjectId) }}</span>
+              </TableCell>
+              <TableCell v-if="shows('interval')" class="whitespace-nowrap">
+                {{ t('taskSchedules.every', { count: schedule.body.every.count, unit: t(`taskSchedules.unit.${schedule.body.every.unit}`) }) }}
+              </TableCell>
+              <TableCell class="whitespace-nowrap">
+                <GrowthLoading v-if="busyId === schedule.id" variant="inline" :label="t(schedule.enabled ? 'taskSchedules.pausing' : 'taskSchedules.resuming')" />
+                <Badge v-else :variant="stateTone(schedule)">{{ t(`taskSchedules.state.${scheduleState(schedule)}`) }}</Badge>
+              </TableCell>
+              <TableCell v-if="shows('next')" class="tabular-nums" :title="t('taskSchedules.nextHint')">
+                <span class="whitespace-nowrap">{{ formatDate(schedule.nextRunAt) }}</span>
+                <span class="block text-xs whitespace-nowrap text-muted-foreground">({{ timeZone }})</span>
+              </TableCell>
+              <TableCell v-if="shows('startMode')" class="whitespace-nowrap">{{ t(`taskSchedules.startMode.${schedule.body.startMode}`) }}</TableCell>
+              <TableCell v-if="shows('threshold')" class="whitespace-nowrap">{{ t('taskSchedules.thresholdCount', { count: schedule.body.failureThreshold }) }}</TableCell>
+              <TableCell v-if="shows('recent')" class="text-xs">
+                <ul v-if="schedule.recentRuns?.length" class="task-schedule-runs m-0 grid list-none gap-0.5 p-0">
+                  <li v-for="run in schedule.recentRuns" :key="run.slot" class="task-schedule-run whitespace-nowrap" :title="run.lastError ?? undefined">
+                    <span class="tabular-nums text-muted-foreground">{{ formatDate(run.slot) }}</span> · {{ scheduleRunLabel(run) }}
+                  </li>
+                </ul>
+                <span v-else class="text-muted-foreground">{{ t('taskSchedules.noRuns') }}</span>
+              </TableCell>
+              <TableCell class="pr-4 text-right">
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button variant="ghost" size="icon-sm" :aria-label="t('taskSchedules.rowActions', { name: schedule.body.title })"
+                      :title="t('taskSchedules.columns.actions')" data-schedule-actions>
+                      <UiIcon name="more" :size="16" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem data-schedule-runs @select="openPeek(schedule)">{{ t('taskSchedules.details') }}</DropdownMenuItem>
+                    <DropdownMenuItem data-schedule-edit @select="openEdit(schedule)">{{ t('taskSchedules.edit') }}</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem v-if="schedule.enabled" :disabled="busyId === schedule.id" data-schedule-pause @select="toggle(schedule, false)">
+                      {{ t('taskSchedules.pause') }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem v-else :disabled="busyId === schedule.id" data-schedule-resume @select="resumeTarget = schedule">
+                      {{ t('taskSchedules.resume') }}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+            </TableRow>
+            <TableEmpty v-if="!rows.length" :colspan="9">{{ t('taskSchedules.noMatch') }}</TableEmpty>
+          </TableBody>
+        </Table>
+      </div>
     </div>
+
+    <Dialog :open="Boolean(peek.item.value)" @update:open="peekOpenChange">
+      <DialogContent size="lg" data-schedule-peek @open-auto-focus="focusPeekAction" @close-auto-focus="returnFocusFromPeek">
+        <SchedulePeek
+          :schedule="peekSchedule"
+          :missing="peekMissing"
+          :load-error="peekLoadError"
+          :project-name="peekSchedule ? projectName(peekSchedule.personalProjectId) : ''"
+          :time-zone="timeZone"
+          :pausing="busyId === peekSchedule?.id"
+          :runs="{ loading: runsLoading, error: runsError, items: scheduleRunList }"
+          :opening-task="openingTask"
+          :open-task-error="openTaskError"
+          @edit="peekSchedule && handOver(() => openEdit(peekSchedule!))"
+          @pause="peekSchedule && toggle(peekSchedule, false)"
+          @resume="peekSchedule && handOver(() => { resumeTarget = peekSchedule! })"
+          @open-task="peekSchedule && openTask(peekSchedule, $event)"
+          @retry="load"
+          @close="peek.close()"
+        />
+      </DialogContent>
+    </Dialog>
 
     <UiDialog :open="Boolean(resumeTarget)" size="sm" :title="t('taskSchedules.resumeTitle')" :busy="busyId === resumeTarget?.id" @close="resumeTarget = null">
       <p>{{ resumeTarget?.body.title }}</p>
@@ -375,13 +548,18 @@ async function toggleRuns(schedule: TaskSchedule) {
 </template>
 
 <style scoped>
-.task-schedule-runs { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 4px 0 0; font-size: 13px; }
+/* The table area scrolls, not the page, so the toolbar and the table's header
+   row stay in view without a second scrollbar. */
+.task-schedules-view { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 16px; scrollbar-gutter: stable; }
+.task-schedules-search { flex: 1 1 220px; max-width: 320px; }
+.task-schedules-search input { box-sizing: border-box; width: 100%; }
+.task-schedules-view :deep(.task-schedules-select) { flex: 0 0 168px; min-width: 0; }
+.task-schedules-table :deep(td), .task-schedules-table :deep(th) { vertical-align: top; }
+.task-schedules-table :deep(td) { padding-block: 12px; }
+.task-schedules-table :deep(th) { vertical-align: middle; }
+.task-schedule-name:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .task-schedule-form { display: grid; gap: 12px; margin: 0; padding: 0; border: 0; }
 .task-schedule-planned { margin: 0; font-size: 13px; }
-.task-schedule-run-panel { grid-column: 1 / -1; display: grid; gap: 6px; }
-.task-schedule-run-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
-.task-schedule-run-list li { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-.task-schedule-run-list code { overflow-wrap: anywhere; }
 .task-schedule-interval { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 0; padding: 0; border: 0; }
 .task-schedule-interval input { width: 96px; min-height: 36px; }
 .task-schedule-start { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }

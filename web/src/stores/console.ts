@@ -21,8 +21,6 @@ export const useConsoleStore = defineStore('console', () => {
   const refreshError = ref('')
   let refreshVersion = 0
   let refreshController: AbortController | undefined
-  const settingsSaveState = ref<'idle' | 'saving' | 'applying' | 'saved' | 'error'>('idle')
-  const settingsSaving = computed(() => ['saving', 'applying'].includes(settingsSaveState.value))
   const feedback = ref<{ message: string; tone: FeedbackTone } | null>(null)
 
   const activePersonalSpace = computed(() => {
@@ -146,8 +144,6 @@ export const useConsoleStore = defineStore('console', () => {
     state,
     runtimeStatus,
     refreshError,
-    settingsSaving,
-    settingsSaveState,
     feedback,
     activePersonalSpace,
     publicRuntimeStatus,

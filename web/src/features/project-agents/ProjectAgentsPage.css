@@ -4,7 +4,6 @@
 .project-agent-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .project-agents-view { min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 20px 32px 24px; overflow: hidden; }
 .project-agents-header, .project-agent-section-heading, .project-agent-section-tools, .project-agent-detail-actions, .project-agent-assignment-card header, .project-agent-learning-card header, .project-agent-day-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.project-agents-header h2 { color: var(--color-ink); font-size: 20px; }
 .project-agents-header-meta { color: var(--color-muted); font-size: 12px; }
 .project-agents-header-meta strong { color: var(--color-ink); font-weight: 700; }
 .project-agents-header-note { margin-inline-start: 12px; }

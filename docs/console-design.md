@@ -43,9 +43,11 @@ Use the system font stack. Primary content is 14–16px, page titles 25px and se
 
 ## Layout
 
-Desktop uses a 224px sidebar, a concise top bar and one scrolling content region. At 920px and below, navigation becomes a keyboard-accessible drawer. Desktop Agent cards measured 276px wide with 16px grid spacing; the directory uses three, two or one columns according to available width. Knowledge inspectors stack below the list on smaller screens and stay hidden until an item is selected.
+Desktop uses a 224px sidebar, a concise top bar and one scrolling content region. At 920px and below, navigation becomes a keyboard-accessible drawer. Knowledge inspectors stack below the list on smaller screens and stay hidden until an item is selected.
 
-The home page leads with pending decisions, followed by current work and recent projects. Agent profiles lead with current work; history, collaboration, conversations and management use tabs. Secondary configuration and explanations use disclosures.
+Pages rebuilt on the D-03 layout (home, the Agent directory and profile, settings, schedules) share one work canvas: centred, at most 1840px wide, with the top bar's title lined up with it. Wider screens add columns instead of stretching a card: collections use one to four columns by canvas width, and tables show their low-priority columns. Forms keep one 896px column. There is no list-beside-detail split: a name opens the record's own page, and a quick look opens a centred dialog whose `?item=` keeps it in the URL. Back restores the collection's filters, scroll and focus. The top bar is the only H1; a record page shows the record's name there, section tabs use state words, and no section repeats the title.
+
+The home page leads with pending decisions, followed by current work and recent projects. Agent profiles lead with an overview of current work; history, collaboration, conversations and management use tabs. Settings uses a few topic tabs over one form with card groups; low-frequency items sit in accordion sections, and the save area ends the form. Secondary configuration and explanations use disclosures.
 
 Graph labels follow zoom level. Below 0.72, retain project names and reveal other labels on hover, keyboard focus, selection or search. Keep accessible names and original labels available at every scale.
 
@@ -53,7 +55,7 @@ The About page uses its dark ink treatment across the full page. Keep the closin
 
 ## Elevation & Depth
 
-Cards use a light border without decorative shadow. Reserve the shared popover and dialog shadows for floating surfaces. Avoid nested boxes around ordinary list rows.
+Cards use a light border without decorative shadow. A selected or previewed card lifts: full surface, a stronger hairline and a light shadow, never a side accent bar; the focus ring stays a separate outline. Reserve the shared popover and dialog shadows for floating surfaces. Avoid nested boxes around ordinary list rows.
 
 ## Shapes
 
@@ -61,9 +63,9 @@ Controls, cards and dialogs use the shared 10/16/20px radii. Keep spacing on the
 
 ## Components
 
-- `UiButton` and the shared button classes own action styling. Preserve native button refs when focus restoration depends on them.
+- shadcn-vue components in `web/src/components/ui` (Button, Dialog, Tabs, Card, Accordion, Table, DropdownMenu, Badge) own their controls; pages use them as they are rather than wrapping them. Preserve native button refs when focus restoration depends on them.
 - `TextField`, `SearchableSelect` and native form controls share 40px sizing, readable labels, focus rings and control boundaries.
-- `UiDisclosure` keeps optional detail reachable with a native summary. Invalid settings fields reveal their enclosing sections.
+- `UiDisclosure` keeps optional detail reachable with a native summary. An invalid settings field opens its tab and section, takes focus and names itself beside the save button.
 - `GrowthLoading` provides page, compact and inline forms of one three-arc SVG animation. The loading composable delays the mark by 120ms and keeps a revealed mark for at least 180ms. Reduced motion renders the static mark. Refreshing data preserves existing content.
 - Member availability and task status are distinct. Missing, failed or truncated task data must never be presented as idle.
 

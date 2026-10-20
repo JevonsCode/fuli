@@ -1,11 +1,13 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, type RouteRecordRaw } from 'vue-router'
+import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getJson } from '@/api/client'
 import { useConsoleStore } from '@/stores/console'
 import AppShell from './AppShell.vue'
+import { usePageTitle } from './page-title'
 
 vi.mock('@/api/client', () => ({
   getJson: vi.fn(),
@@ -32,7 +34,7 @@ beforeEach(() => {
   })
 })
 
-async function setup(path: string, capabilities: Record<string, boolean> = {}) {
+async function setup(path: string, capabilities: Record<string, boolean> = {}, extraRoutes: RouteRecordRaw[] = []) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const store = useConsoleStore()
@@ -52,8 +54,8 @@ async function setup(path: string, capabilities: Record<string, boolean> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      ...extraRoutes,
       { path: '/', component: page, meta: { title: '星图' } },
-      { path: '/settings', name: 'settings', component: { template: '<form id="settings-form"></form>' }, meta: { title: '设置' } },
       { path: '/:pathMatch(.*)*', component: page, meta: { title: '页面' } },
     ],
   })
@@ -144,12 +146,64 @@ describe('AppShell', () => {
     quiet.wrapper.unmount()
   })
 
-  it('shows the settings save button only on the settings page, bound to its form', async () => {
-    const { wrapper, router } = await setup('/')
-    expect(wrapper.find('button[form="settings-form"]').exists()).toBe(false)
-    await router.push('/settings')
+  it('renders one H1: a record page names itself, the route title is only the fallback', async () => {
+    const profile = defineComponent({ setup() { usePageTitle('Ada Lovelace'); return () => h('div', { class: 'routed-page' }) } })
+    const { wrapper, router } = await setup('/agents/personal-1/agent-a', {}, [
+      { path: '/agents/:spaceId/:agentId', component: profile, meta: { title: 'agentProfiles.profile', layout: 'canvas' } },
+    ])
+    expect(wrapper.findAll('h1').map(heading => heading.text())).toEqual(['Ada Lovelace'])
+    expect(document.title).toBe('Ada Lovelace · 复利')
+    await router.push('/')
     await flushPromises()
-    expect(wrapper.get('button[form="settings-form"]').attributes('type')).toBe('submit')
+    expect(wrapper.findAll('h1').map(heading => heading.text())).toEqual(['星图'])
+    wrapper.unmount()
+  })
+
+  it('gives a detail page its own name alone: no section tabs beside it', async () => {
+    const profile = defineComponent({ setup() { usePageTitle('Ada Lovelace'); return () => h('div', { class: 'routed-page' }) } })
+    const { wrapper, router } = await setup('/agents/personal-1/agent-a', {}, [
+      { path: '/agents/:spaceId/:agentId', component: profile, meta: { title: 'agentProfiles.profile', layout: 'canvas', detail: true } },
+    ])
+    expect(wrapper.get('h1').text()).toBe('Ada Lovelace')
+    expect(wrapper.find('.section-tabs').exists()).toBe(false)
+    // The rail still says where the page belongs.
+    expect(wrapper.get('[data-destination="agents"]').classes()).toContain('is-active')
+    await router.push('/project-agents')
+    await flushPromises()
+    expect(wrapper.findAll('[data-section]').length).toBeGreaterThan(1)
+    wrapper.unmount()
+  })
+
+  it('keeps the floating design lab off pages with a sticky save bar', async () => {
+    const { wrapper, router } = await setup('/settings', {}, [
+      { path: '/settings', component: { template: '<div />' }, meta: { title: '设置', layout: 'form', saveBar: true } },
+    ])
+    expect(wrapper.find('[data-design-lab-open]').exists()).toBe(false)
+    await router.push('/project-agents')
+    await flushPromises()
+    expect(wrapper.find('[data-design-lab-open]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('names section tabs by state words, never repeating the page title', async () => {
+    const { wrapper } = await setup('/project-agents')
+    expect(wrapper.get('h1').text()).toBe('Agents')
+    expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['全部', '编排', '定时任务', '职业'])
+    wrapper.unmount()
+  })
+
+  it('lines the top bar up with the canvas or form column of rebuilt pages only', async () => {
+    const { wrapper, router } = await setup('/canvas', {}, [
+      { path: '/canvas', component: { template: '<div />' }, meta: { title: '画布', layout: 'canvas' } },
+      { path: '/form', component: { template: '<div />' }, meta: { title: '表单', layout: 'form' } },
+    ])
+    expect(wrapper.get('.app-main').attributes('data-layout')).toBe('canvas')
+    await router.push('/form')
+    await flushPromises()
+    expect(wrapper.get('.app-main').attributes('data-layout')).toBe('form')
+    await router.push('/')
+    await flushPromises()
+    expect(wrapper.get('.app-main').attributes('data-layout')).toBeUndefined()
     wrapper.unmount()
   })
 
