@@ -24,6 +24,8 @@
    rebuilt on utilities. */
 @source "../../components/ui";
 @source "../../ui/UiIconButton.vue";
+/* The representative pages rebuilt on the D-03 canvas (rec#11). */
+@source "../../pages/OverviewPage.vue";
 
 @import "./base.css";
 @import "./semantic.css";
