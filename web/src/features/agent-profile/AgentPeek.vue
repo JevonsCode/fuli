@@ -13,6 +13,7 @@ import { useNow } from "@/composables/useNow";
 import type { ProjectAgentRecord } from "@/types";
 import { agentIdentityStyle } from "./agent-identity-color";
 import { occupationLabels } from "./agent-occupation";
+import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
 import { agentPinsText } from "./agent-pins";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentDisplayName, profileProjectIds } from "./profile-model";
@@ -20,12 +21,15 @@ import { agentDisplayName, profileProjectIds } from "./profile-model";
 // The quick look at one Agent: who it is, what it is doing now, where it
 // works, and one quick change (pin). Everything else is on the full page.
 // It renders inside the collection's Dialog, so the title is the dialog's name.
+// A collection may name the projects itself (编排 counts policy membership)
+// and put its own quick change in the actions slot instead of pin.
 const props = defineProps<{
   state: "loading" | "error" | "unavailable" | "ready";
   error?: string;
   agent?: ProjectAgentRecord;
   entry?: AgentWorkbenchEntry;
   projectNames: Record<string, string>;
+  projectLabels?: string[];
   managesAllProjects?: boolean;
   pinned?: boolean;
   pinPending?: boolean;
@@ -34,7 +38,8 @@ const emit = defineEmits<{ "toggle-pin": [pinned: boolean]; "open-full": []; ret
 
 const name = computed(() => (props.agent ? agentDisplayName(props.agent) : ""));
 const occupation = computed(() => occupationLabels(props.agent?.occupation));
-const projects = computed(() => (props.agent ? profileProjectIds(props.agent) : []).map((id) => props.projectNames[id] || id));
+const projects = computed(() => props.projectLabels
+  ?? (props.agent ? profileProjectIds(props.agent) : []).map((id) => props.projectNames[id] || id));
 const workStatus = computed(() => props.entry?.status ?? "unreported");
 const workStatusLabel = computed(() => {
   const key = `agentRedesign.workStatus.${workStatus.value}`;
@@ -91,7 +96,7 @@ const pinLabel = computed(() =>
             <span class="agent-card-work-status-text">{{ workStatusLabel }}</span>
           </span>
           <RouterLink v-if="entry?.taskId" class="min-w-0 font-semibold text-foreground no-underline [overflow-wrap:anywhere] hover:text-primary hover:underline"
-            :to="{ path: '/project-agents/manage', query: { agent: agent.agentId, task: entry.taskId } }">
+            :to="{ path: agentManagementPath(agent.personalSpaceId, agent.agentId), query: { task: entry.taskId } }">
             {{ entry.title ?? t("agentRedesign.workbench.titleNotLoaded") }}
           </RouterLink>
           <span v-if="runningFor" class="text-xs text-muted-foreground">{{ t("agentRedesign.workbench.runningFor", { duration: runningFor }) }}</span>
@@ -113,16 +118,18 @@ const pinLabel = computed(() =>
       </div>
     </dl>
     <DialogFooter class="border-t pt-4">
-      <Button
-        variant="outline"
-        data-peek-pin
-        :aria-pressed="Boolean(pinned)"
-        :loading="pinPending"
-        :loading-label="pinLabel"
-        @click="emit('toggle-pin', !pinned)"
-      >
-        <PinIcon :filled="pinned" class="size-4" />{{ pinLabel }}
-      </Button>
+      <slot name="actions">
+        <Button
+          variant="outline"
+          data-peek-pin
+          :aria-pressed="Boolean(pinned)"
+          :loading="pinPending"
+          :loading-label="pinLabel"
+          @click="emit('toggle-pin', !pinned)"
+        >
+          <PinIcon :filled="pinned" class="size-4" />{{ pinLabel }}
+        </Button>
+      </slot>
       <Button data-peek-open-full @click="emit('open-full')">{{ t("agentProfiles.openFullPage") }}</Button>
     </DialogFooter>
   </template>
