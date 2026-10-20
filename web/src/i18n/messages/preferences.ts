@@ -3,7 +3,7 @@ export const preferenceMessages = {
     detail: {
       accessDenied: "访问权限已撤回，请重新读取授权状态。",
       scopeUnknown: "范围待核实",
-      toggle: "展开或收起：{title}",
+      open: "查看详情：{title}",
       evidenceCount: "{count} 条证据",
       noEvidence: "未附证据",
       basis: "依据",
@@ -176,7 +176,7 @@ export const preferenceMessages = {
     detail: {
       accessDenied: "Access was revoked. Reload the authorized state.",
       scopeUnknown: "Scope needs review",
-      toggle: "Expand or collapse: {title}",
+      open: "View details: {title}",
       evidenceCount: "{count} evidence record | {count} evidence records",
       noEvidence: "No evidence attached",
       basis: "Basis",

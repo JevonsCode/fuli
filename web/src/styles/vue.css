@@ -25,25 +25,12 @@
   overflow-wrap: anywhere;
 }
 
-.inspector-placeholder {
-  color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
 .feedback,
 .project-card,
 .knowledge-row {
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-
-.vue-knowledge-view {
-  display: flex;
-  flex-direction: column;
-  padding: 18px 24px 20px;
-  overflow: hidden;
-}
 
 .vue-knowledge-view .knowledge-layout {
   min-height: 0;

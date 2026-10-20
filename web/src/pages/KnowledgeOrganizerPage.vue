@@ -12,7 +12,7 @@ import KnowledgeBatchConfirmDialog from '@/features/knowledge/KnowledgeBatchConf
 import { reconcileKnowledgeWrites } from '@/features/knowledge/knowledge-write-lifecycle'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
-import KnowledgeInspector from '@/features/knowledge/KnowledgeInspector.vue'
+import KnowledgePeek from '@/features/knowledge/KnowledgePeek.vue'
 import {
   appendKnowledgeGraphPage,
   batchConfirmationGroups,
@@ -28,6 +28,7 @@ import {
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 
@@ -272,15 +273,14 @@ function openReplacement(item: KnowledgeItem) {
 </script>
 
 <template>
-  <section
-    class="view knowledge-organizer"
-  >
+  <section class="view knowledge-organizer">
+    <div class="organizer-canvas">
     <UiStatRow :items="reviewStats" :label="t('knowledge.workspace.organizer.reviewFilterAria')"
       @select="key => selectReviewState(key as 'all' | KnowledgeReviewState)" />
     <UiToolbar class="organizer-toolbar">
       <label class="organizer-search">
         <span class="ui-sr-only">{{ t('knowledge.workspace.organizer.filterKnowledge') }}</span>
-        <input v-model="query" type="search" :placeholder="t('knowledge.workspace.organizer.searchPlaceholder')" />
+        <Input v-model="query" type="search" :placeholder="t('knowledge.workspace.organizer.searchPlaceholder')" />
       </label>
       <UiSegmented v-model="activeQuadrant" data-organizer-quadrants :options="quadrantSegments"
         :label="t('knowledge.workspace.organizer.quadrantFilterAria')" />
@@ -300,11 +300,7 @@ function openReplacement(item: KnowledgeItem) {
       :label="t('common.status.loadingKnowledge')"
     />
     <div v-else-if="initialLoading" class="view-loading" aria-busy="true" />
-    <div
-      v-else
-      class="organizer-layout"
-      :class="{ 'has-selection': selectedItem }"
-    >
+    <div v-else class="organizer-layout">
       <!-- @vue-generic {import('@/types').KnowledgeItem} -->
       <VirtualDirectoryList
         class="organizer-directory"
@@ -360,16 +356,19 @@ function openReplacement(item: KnowledgeItem) {
           </div>
         </template>
       </VirtualDirectoryList>
-
-      <KnowledgeInspector
-        :item="selectedItem"
-        :graph="graph"
-        editable
-        @confirm="confirmingItem = $event"
-        @edit="editingItem = $event"
-        @open-replacement="openReplacement"
-      />
     </div>
+    </div>
+
+    <KnowledgePeek
+      :item="selectedItem"
+      :suspended="Boolean(editingItem || confirmingItem)"
+      :graph="graph"
+      editable
+      @confirm="confirmingItem = $event"
+      @edit="editingItem = $event"
+      @open-replacement="openReplacement"
+      @close="selectedItem = null"
+    />
 
     <KnowledgeEditDialog
       :item="editingItem"
@@ -405,17 +404,24 @@ function openReplacement(item: KnowledgeItem) {
 .knowledge-organizer {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 18px 24px 20px;
   overflow: hidden;
+  padding-bottom: 20px;
+  scrollbar-gutter: stable;
+}
+
+/* One centred work canvas (D-03); an item opens in a quick look over it. */
+.organizer-canvas {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-height: 0;
+  max-width: var(--canvas-max);
+  margin-inline: auto;
 }
 
 .organizer-search { flex: 1 1 260px; min-width: 200px; }
-.organizer-search input {
-  width: 100%; height: var(--control-height-sm); padding: 0 12px; border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-control); color: var(--color-ink); background: var(--color-surface); font: inherit; font-size: 13px;
-}
-.organizer-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 .organizer-result-summary { color: var(--color-muted); font-size: 12px; white-space: nowrap; }
 
 .organizer-layout {
@@ -427,14 +433,6 @@ function openReplacement(item: KnowledgeItem) {
   border-radius: var(--radius-control);
   overflow: hidden;
   background: var(--color-surface);
-}
-
-.organizer-layout.has-selection {
-  grid-template-columns: minmax(0, 1fr) 340px;
-}
-
-.organizer-layout:not(.has-selection) :deep(.graph-inspector) {
-  display: none;
 }
 
 .organizer-directory {
@@ -477,8 +475,11 @@ function openReplacement(item: KnowledgeItem) {
   background: var(--color-surface);
 }
 
+/* The open row lifts as a card while its quick look is up (never a side bar). */
 .organizer-row.selected {
-  background: var(--color-accent-soft);
+  position: relative;
+  z-index: 1;
+  box-shadow: inset 0 0 0 1px var(--color-border-strong), var(--shadow-md);
 }
 
 .organizer-item-copy {
@@ -601,10 +602,6 @@ function openReplacement(item: KnowledgeItem) {
     flex-basis: 100%;
   }
 
-  .organizer-layout.has-selection {
-    grid-template-columns: minmax(0, 1fr) 280px;
-  }
-
   .organizer-table-head,
   .organizer-row {
     grid-template-columns: minmax(210px, 1fr) 108px 104px;
@@ -622,7 +619,4 @@ function openReplacement(item: KnowledgeItem) {
 
 }
 
-@media (max-width: 720px) {
-  .organizer-layout.has-selection { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 1fr) minmax(160px, .8fr); }
-}
 </style>

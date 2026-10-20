@@ -45,6 +45,12 @@ describe('localized route metadata', () => {
     expect(router.resolve('/inbox').meta.layout).toBeUndefined()
   })
 
+  it('puts the memory pages (knowledge, preferences, taste, organize) on the work canvas', () => {
+    const paths = ['/knowledge', '/knowledge/personal/space/directory', '/knowledge/personal/space/graph/entity/item',
+      '/preferences', '/preferences/writing', '/organize']
+    expect(paths.map(path => router.resolve(path).meta.layout)).toEqual(paths.map(() => 'canvas'))
+  })
+
   it('titles the taste page the same as its section tab', () => {
     const route = router.resolve('/preferences/writing')
     expect(route.name).toBe('writing-taste')

@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -223,6 +223,31 @@ describe('KnowledgeOrganizerPage', () => {
     await flushPromises()
     expect(wrapper.get('[data-stat="ai_reviewed"] strong').text()).toBe('0')
     expect(wrapper.get('[data-stat="pending"] strong').text()).toBe('2')
+    wrapper.unmount()
+  })
+
+  it('opens an item in a quick look over the one list instead of a column beside it', async () => {
+    getJson.mockResolvedValue({ space_id: 'personal-space', nodes: [knowledgeNode(1, 'Peek item')], edges: [], truncated: false, next_offset: null })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = {
+      mode: 'personal_only', activePersonalSpaceId: 'personal-space',
+      personalSpaces: [{ id: 'personal-space', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
+    }
+    const wrapper = mount(KnowledgeOrganizerPage, { global: { plugins: [pinia], stubs: { KnowledgeBatchConfirmDialog: true } } })
+    await flushPromises()
+    const peek = () => new DOMWrapper(document.body).find('[data-knowledge-peek]')
+
+    await wrapper.get('.organizer-row').trigger('click')
+    await flushPromises()
+    expect(peek().get('h2').text()).toBe('Peek item')
+    expect(wrapper.get('.organizer-row').classes()).toContain('selected')
+    expect(wrapper.find('.knowledge-inspector').exists()).toBe(false)
+
+    await peek().trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(peek().exists()).toBe(false)
+    expect(wrapper.get('.organizer-row').classes()).not.toContain('selected')
     wrapper.unmount()
   })
 

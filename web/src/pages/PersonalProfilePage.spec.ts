@@ -1,4 +1,4 @@
-import { config, flushPromises, mount } from '@vue/test-utils'
+import { config, DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,6 +18,9 @@ vi.mock('@/api/client', () => ({
 import UiSelect from '@/ui/UiSelect.vue'
 import { useConsoleStore } from '@/stores/console'
 import PersonalProfilePage from './PersonalProfilePage.vue'
+
+// A preference's detail is a quick look: a dialog rendered at the end of <body>.
+const body = () => new DOMWrapper(document.body)
 
 const RouterLinkStub = defineComponent({
   props: { to: { type: String, required: true } },
@@ -39,14 +42,14 @@ describe('PersonalProfilePage', () => {
     getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? profileGraph() : []))
     const { wrapper } = await fixture()
     await wrapper.get('.personal-profile-open').trigger('click')
-    await wrapper.get('.inspector-edit-action').trigger('click')
+    await body().get('.inspector-edit-action').trigger('click')
     getJson.mockRejectedValue(Object.assign(new Error('synthetic secret response'), { status: 503 }))
     await wrapper.get('button[aria-label="刷新"]').trigger('click')
     await finishProfileLoading()
     expect(wrapper.text()).toContain('更新失败，显示上次结果')
     expect(wrapper.text()).toContain('全局品味')
     expect(wrapper.find('.knowledge-edit-dialog').exists()).toBe(false)
-    expect(wrapper.find('.inspector-edit-action').exists()).toBe(false)
+    expect(body().find('.inspector-edit-action').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('synthetic secret response')
     wrapper.unmount()
   })
@@ -71,11 +74,12 @@ describe('PersonalProfilePage', () => {
     getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? profileGraph() : []))
     const { wrapper } = await fixture()
     await wrapper.get('.personal-profile-open').trigger('click')
-    await wrapper.get('.inspector-edit-action').trigger('click')
+    await body().get('.inspector-edit-action').trigger('click')
     getJson.mockRejectedValue(Object.assign(new Error('private error'), { status }))
     await wrapper.get('button[aria-label="刷新"]').trigger('click')
     await finishProfileLoading()
     expect(wrapper.text()).not.toContain('全局品味')
+    expect(body().find('[data-knowledge-peek]').exists()).toBe(false)
     expect(wrapper.find('.knowledge-edit-dialog').exists()).toBe(false)
     expect(wrapper.find('[data-profile-count]').exists()).toBe(false)
     getJson.mockRejectedValue(Object.assign(new Error('private error'), { status: 503 }))
@@ -97,7 +101,7 @@ describe('PersonalProfilePage', () => {
     await wrapper.get('[data-profile-reload]').trigger('click')
     await finishProfileLoading()
     await wrapper.get('.personal-profile-open').trigger('click')
-    expect(wrapper.find('.inspector-edit-action').exists()).toBe(true)
+    expect(body().find('.inspector-edit-action').exists()).toBe(true)
     let deny!: (error: unknown) => void
     getJson.mockImplementation((url: string) => url.startsWith('/api/graph') ? Promise.reject({ status: 503 }) : new Promise((_, reject) => { deny = reject }))
     await wrapper.get('button[aria-label="刷新"]').trigger('click')
@@ -116,9 +120,9 @@ describe('PersonalProfilePage', () => {
     getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? graph : []))
     const { wrapper } = await fixture()
     await wrapper.get('.personal-profile-open').trigger('click')
-    expect(wrapper.get('.preference-summary').text()).toContain('范围待核实')
-    expect(wrapper.find('.inspector-edit-action').exists()).toBe(false)
-    expect(wrapper.find('.inspector-confirm-action').exists()).toBe(false)
+    expect(body().get('.preference-summary').text()).toContain('范围待核实')
+    expect(body().find('.inspector-edit-action').exists()).toBe(false)
+    expect(body().find('.inspector-confirm-action').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -130,17 +134,34 @@ describe('PersonalProfilePage', () => {
     getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? nextGraph : []))
     const { wrapper } = await fixture()
     await wrapper.findAll('.personal-profile-open')[1]!.trigger('click')
-    expect(wrapper.get('.preference-body').text()).toContain('RELATIONSHIP-SENTINEL')
+    expect(body().get('.preference-body').text()).toContain('RELATIONSHIP-SENTINEL')
     await wrapper.get('button[aria-label="刷新"]').trigger('click')
     await finishProfileLoading()
-    expect(wrapper.get('.preference-body').text()).toContain('RELATIONSHIP-SENTINEL')
-    await wrapper.get('.inspector-edit-action').trigger('click')
+    expect(body().get('.preference-body').text()).toContain('RELATIONSHIP-SENTINEL')
+    await body().get('.inspector-edit-action').trigger('click')
     await wrapper.get('[data-profile-aspects] button:nth-child(2)').trigger('click')
     await flushPromises()
     expect(wrapper.find('.knowledge-edit-dialog').exists()).toBe(false)
-    expect(wrapper.find('.preference-detail').exists()).toBe(false)
+    expect(body().find('.preference-detail').exists()).toBe(false)
     wrapper.unmount()
   })
+  it('opens a preference in a quick look over the list and lifts its row until it closes', async () => {
+    const { wrapper } = await fixture()
+    await wrapper.get('.personal-profile-open').trigger('click')
+    await flushPromises()
+    const peek = body().get('[data-knowledge-peek]')
+    expect(peek.attributes('role')).toBe('dialog')
+    expect(peek.get('h2').text()).toBe(wrapper.get('.personal-profile-row.selected strong').text())
+    expect(peek.find('.preference-detail').exists()).toBe(true)
+    // The list keeps every row whole; no detail opens inline.
+    expect(wrapper.find('.preference-detail').exists()).toBe(false)
+    await peek.trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(body().find('[data-knowledge-peek]').exists()).toBe(false)
+    expect(wrapper.find('.personal-profile-row.selected').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('opens a visible replacement beyond the first 100 rows after changing filters', async () => {
     const graph = profileGraph()
     graph.nodes = Array.from({ length: 101 }, (_, index) => preferenceNode(`replacement-${index}`, `Synthetic replacement ${index}`, 'taste'))
@@ -148,7 +169,7 @@ describe('PersonalProfilePage', () => {
     getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? graph : []))
     const { wrapper } = await fixture()
     await wrapper.get('.personal-profile-open').trigger('click')
-    await wrapper.get('.preference-risk button').trigger('click')
+    await body().get('.preference-risk button').trigger('click')
     await flushPromises()
     expect(wrapper.get('.personal-profile-row.selected').text()).toContain('Synthetic replacement 100')
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(101)
@@ -532,9 +553,9 @@ describe('PersonalProfilePage', () => {
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(1)
     expect(wrapper.get('.personal-profile-row').text()).toContain('全局品味')
     expect(wrapper.get('.personal-profile-row').classes()).toContain('pending-review')
-    expect(wrapper.get('.inspector-confirm-action').text()).toBe('确认这条偏好')
+    expect(body().get('.inspector-confirm-action').text()).toBe('确认这条偏好')
 
-    await wrapper.get('.inspector-confirm-action').trigger('click')
+    await body().get('.inspector-confirm-action').trigger('click')
 
     expect(wrapper.get('.knowledge-confirm-dialog').text()).toContain('确认这条偏好')
     expect(wrapper.get('.knowledge-confirm-dialog').text()).toContain('全局品味')

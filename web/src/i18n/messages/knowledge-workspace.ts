@@ -276,8 +276,6 @@ export const knowledgeWorkspaceMessages = {
       classificationReasonable: '合理',
       classificationAdjust: '需调整',
       conflictClassification: '冲突：{conflict} · 分类：{classification}',
-      placeholderTitle: '选择一个节点或关系',
-      placeholderCopy: '点击后查看完整说明、来源证据和关联关系。',
     },
   },
   'en-US': {
@@ -557,8 +555,6 @@ export const knowledgeWorkspaceMessages = {
       classificationReasonable: 'Reasonable',
       classificationAdjust: 'Needs adjustment',
       conflictClassification: 'Conflict: {conflict} · classification: {classification}',
-      placeholderTitle: 'Select a node or relationship',
-      placeholderCopy: 'Select an item to view its full description, source evidence, and relationships.',
     },
   },
 } as const

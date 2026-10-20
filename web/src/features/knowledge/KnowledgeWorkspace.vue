@@ -6,6 +6,8 @@ import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import UiSelect from '@/ui/UiSelect.vue'
 import { UiToggle } from '@/ui'
 import { filterListedProjectGraph, isListedProject } from '@/features/projects/project-list-visibility'
@@ -29,7 +31,7 @@ import type {
 import GraphCanvas from './GraphCanvas.vue'
 import GraphRelationLegend from './GraphRelationLegend.vue'
 import KnowledgeDirectoryPanel from './KnowledgeDirectoryPanel.vue'
-import KnowledgeInspector from './KnowledgeInspector.vue'
+import KnowledgePeek from './KnowledgePeek.vue'
 import { reconcileKnowledgeWrites } from './knowledge-write-lifecycle'
 import KnowledgeWorkspaceDialogs from './KnowledgeWorkspaceDialogs.vue'
 import ProjectHierarchyAside from './ProjectHierarchyAside.vue'
@@ -108,6 +110,8 @@ let loadSequence = 0
 let searchSequence = 0
 let searchAbortController: AbortController | null = null
 let loadedGraphContextKey: string | null = null
+// True while the item in the URL is the entry this page pushed (see closePeek).
+let peekPushed = false
 
 const scope = computed<KnowledgeScope>(() => {
   if (props.personalProjectsOnly) return 'personal'
@@ -347,6 +351,11 @@ const editable = computed(() => scope.value === 'personal')
 const activePersonalProject = computed(() =>
   personalProjects.value.find(({ project_id }) => project_id === projectId.value) ?? null,
 )
+// A form opened from the quick look takes its place until it closes.
+const peekSuspended = computed(() => Boolean(
+  editingItem.value || confirmingItem.value || projectActionItem.value
+  || publishingProject.value || managingProject.value,
+))
 const manageableSelectedProject = computed(() =>
   projectForMaterial(selectedItem.value),
 )
@@ -418,7 +427,10 @@ watch(mode, async () => {
 
 watch(
   [() => route.params.itemKind, () => route.params.itemId],
-  () => selectDeepLinkedItem(),
+  ([, itemId]) => {
+    if (!itemId) peekPushed = false
+    selectDeepLinkedItem()
+  },
 )
 
 onBeforeUnmount(() => {
@@ -532,18 +544,17 @@ function publicProject(): PublicProject | null {
   return store.state?.projects.find(({ id }) => id === spaceId.value) ?? null
 }
 
+// This workspace's path in a view, optionally with one item's quick look open.
+function workspacePath(nextMode: KnowledgeMode, item?: Pick<KnowledgeItem, 'itemKind' | 'id'> | null) {
+  const target = { itemKind: item?.itemKind, itemId: item?.id }
+  return props.personalProjectsOnly
+    ? personalProjectsPath(spaceId.value, nextMode, projectId.value, target)
+    : knowledgePath(scope.value, spaceId.value, nextMode, { projectId: projectId.value, ...target })
+}
+
 async function changeMode(nextMode: KnowledgeMode, replace = false) {
   const item = selectedItem.value
-  const path = props.personalProjectsOnly
-    ? personalProjectsPath(spaceId.value, nextMode, projectId.value, {
-        itemKind: item?.itemKind,
-        itemId: item?.id,
-      })
-    : knowledgePath(scope.value, spaceId.value, nextMode, {
-        projectId: projectId.value,
-        itemKind: item?.itemKind,
-        itemId: item?.id,
-      })
+  const path = workspacePath(nextMode, item)
   const query = { ...route.query }
   if (nextMode === 'graph') delete query.section
   else if (props.personalProjectsOnly && item) {
@@ -718,23 +729,29 @@ async function selectItem(item: KnowledgeItem) {
     await openProjectOverview(overviewProjectId, false)
     return
   }
+  // Opening a quick look adds a history entry, so Back closes it; moving
+  // from one open item to another replaces it.
+  const replace = Boolean(selectedItem.value)
   selectedItem.value = item
-  const path = props.personalProjectsOnly
-    ? personalProjectsPath(spaceId.value, mode.value, projectId.value, {
-        itemKind: item.itemKind,
-        itemId: item.id,
-      })
-    : knowledgePath(scope.value, spaceId.value, mode.value, {
-        projectId: projectId.value,
-        itemKind: item.itemKind,
-        itemId: item.id,
-      })
+  const path = workspacePath(mode.value, item)
   const query = { ...route.query }
   if (mode.value === 'directory' && props.personalProjectsOnly) {
     if (isManagementKnowledgeItem(item)) query.section = 'materials'
     else delete query.section
   }
-  await router.replace({ path, query })
+  peekPushed = peekPushed || !replace
+  await router[replace ? 'replace' : 'push']({ path, query })
+}
+
+// Closing the quick look goes Back when opening it pushed the entry on
+// screen; a deep link or a jump between items drops the item instead.
+async function closePeek() {
+  if (peekPushed) {
+    peekPushed = false
+    router.back()
+    return
+  }
+  await router.replace({ path: workspacePath(mode.value), query: route.query })
 }
 
 function selectNode(node: KnowledgeNode) {
@@ -813,16 +830,7 @@ function editActiveProjectProfile() {
 }
 
 async function openItemInMode(item: KnowledgeItem, nextMode: KnowledgeMode) {
-  const path = props.personalProjectsOnly
-    ? personalProjectsPath(spaceId.value, nextMode, projectId.value, {
-        itemKind: item.itemKind,
-        itemId: item.id,
-      })
-    : knowledgePath(scope.value, spaceId.value, nextMode, {
-        projectId: projectId.value,
-        itemKind: item.itemKind,
-        itemId: item.id,
-      })
+  const path = workspacePath(nextMode, item)
   const query = { ...route.query }
   if (nextMode === 'directory' && props.personalProjectsOnly) {
     if (isManagementKnowledgeItem(item)) query.section = 'materials'
@@ -839,26 +847,19 @@ async function openItemInMode(item: KnowledgeItem, nextMode: KnowledgeMode) {
       'q', 'type', 'quadrant', 'profile', 'status', 'human',
     ]) delete query[name]
   }
+  peekPushed = false
   await router.push({ path, query })
 }
 
 async function openReplacement(item: KnowledgeItem) {
-  const path = props.personalProjectsOnly
-    ? personalProjectsPath(spaceId.value, 'directory', projectId.value, {
-        itemKind: item.itemKind,
-        itemId: item.id,
-      })
-    : knowledgePath(scope.value, spaceId.value, 'directory', {
-        projectId: projectId.value,
-        itemKind: item.itemKind,
-        itemId: item.id,
-      })
+  const path = workspacePath('directory', item)
   const query = { ...route.query }
   for (const name of [
     'q', 'type', 'quadrant', 'profile', 'human', 'section',
   ]) delete query[name]
   if (item.invalidAt) query.status = 'historical'
   else delete query.status
+  peekPushed = false
   await router.push({ path, query })
 }
 
@@ -998,12 +999,16 @@ function queryValues(value: unknown) {
     class="view graph-view vue-knowledge-view"
     :class="{ 'graph-canvas-active': mode === 'graph', 'is-project-overview': mode === 'overview' }"
   >
+    <div class="knowledge-canvas">
     <div class="knowledge-view-heading">
-      <div class="knowledge-mode-switch" role="tablist" :aria-label="t('knowledge.workspace.workspace.view.modeAria')">
-        <button v-if="overviewAvailable" type="button" role="tab" :aria-selected="mode === 'overview'" @click="changeMode('overview')">{{ t('projects.overview.tab') }}</button>
-        <button type="button" role="tab" :aria-selected="mode === 'directory'" @click="changeMode('directory')">{{ t('knowledge.workspace.workspace.view.directory') }}</button>
-        <button type="button" role="tab" :aria-selected="mode === 'graph'" @click="changeMode('graph')">{{ t('knowledge.workspace.workspace.view.graph') }}</button>
-      </div>
+      <!-- The view is part of the URL; the tabs only change the route. -->
+      <Tabs :model-value="mode" class="knowledge-mode-tabs" @update:model-value="changeMode($event as KnowledgeMode)">
+        <TabsList :aria-label="t('knowledge.workspace.workspace.view.modeAria')">
+          <TabsTrigger v-if="overviewAvailable" value="overview" data-knowledge-mode="overview">{{ t('projects.overview.tab') }}</TabsTrigger>
+          <TabsTrigger value="directory" data-knowledge-mode="directory">{{ t('knowledge.workspace.workspace.view.directory') }}</TabsTrigger>
+          <TabsTrigger value="graph" data-knowledge-mode="graph">{{ t('knowledge.workspace.workspace.view.graph') }}</TabsTrigger>
+        </TabsList>
+      </Tabs>
       <template v-if="mode !== 'overview'">
         <GrowthLoading v-if="searching && !projectDiscovery?.checking" variant="inline" :label="t('knowledge.workspace.workspace.search.searching')" />
         <GrowthLoading v-else-if="loading && graph && !showInitialLoading && (mode !== 'graph' || graphView?.nodes.length)" variant="inline" :label="t('common.status.loadingKnowledge')" />
@@ -1074,7 +1079,7 @@ function queryValues(value: unknown) {
       </details>
 
       <form class="search-form" role="search" :aria-label="t('knowledge.workspace.workspace.search.aria')" @submit.prevent="submitSearch">
-        <input
+        <Input
           type="search"
           :placeholder="
             mode === 'directory' && directorySection === 'materials'
@@ -1088,13 +1093,10 @@ function queryValues(value: unknown) {
           "
           autocomplete="off"
           enterkeyhint="search"
-          :value="searchDraft"
-          @input="handleSearchInput(($event.currentTarget as HTMLInputElement).value)"
+          :model-value="searchDraft"
+          @update:model-value="handleSearchInput(String($event))"
         />
       </form>
-
-
-
       <div class="graph-view-actions">
         <Button size="sm" variant="ghost"
           v-if="
@@ -1154,7 +1156,7 @@ function queryValues(value: unknown) {
       :label="t('common.status.loadingKnowledge')"
     />
     <div v-else-if="initialLoading" class="view-loading" aria-busy="true" />
-    <div v-else class="knowledge-layout" :class="{ 'has-selection': Boolean(selectedItem) }">
+    <div v-else class="knowledge-layout">
       <KnowledgeDirectoryPanel
         v-if="mode === 'directory'"
         :personal-projects-only="personalProjectsOnly"
@@ -1232,28 +1234,30 @@ function queryValues(value: unknown) {
           <div v-else class="graph-empty">{{ t('knowledge.workspace.workspace.view.noGraph') }}</div>
         </div>
       </div>
-
-      <KnowledgeInspector
-        :item="selectedItem"
-        :graph="graph"
-        :editable="editable"
-        :current-project-id="projectId"
-        :can-publish-project="store.state?.capabilities?.publishProject"
-        :can-manage-project="Boolean(manageableSelectedProject)"
-        :mode="mode"
-        @confirm="confirmingItem = $event"
-        @edit="editingItem = $event"
-        @create-project="projectActionItem = $event"
-        @open-project="openPersonalProject"
-        @publish-project="publishPersonalProject"
-        @open-directory="openItemInMode($event, 'directory')"
-        @open-graph="openItemInMode($event, 'graph')"
-        @open-replacement="openReplacement"
-        @manage-project="manageProjectMaterial"
-      />
     </div>
     <p v-if="mode === 'graph'" class="graph-hint">{{ t('knowledge.workspace.workspace.view.graphHint') }}</p>
+    <KnowledgePeek
+      :item="selectedItem"
+      :suspended="peekSuspended"
+      :graph="graph"
+      :editable="editable"
+      :current-project-id="projectId"
+      :can-publish-project="store.state?.capabilities?.publishProject"
+      :can-manage-project="Boolean(manageableSelectedProject)"
+      :mode="mode"
+      @confirm="confirmingItem = $event"
+      @edit="editingItem = $event"
+      @create-project="projectActionItem = $event"
+      @open-project="openPersonalProject"
+      @publish-project="publishPersonalProject"
+      @open-directory="openItemInMode($event, 'directory')"
+      @open-graph="openItemInMode($event, 'graph')"
+      @open-replacement="openReplacement"
+      @manage-project="manageProjectMaterial"
+      @close="closePeek"
+    />
     </template>
+    </div>
 
     <KnowledgeWorkspaceDialogs
       :editing-item="editingItem"
