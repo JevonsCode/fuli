@@ -402,6 +402,17 @@ body { margin: 0; min-width: 320px; }
 }
 .knowledge-row-type { color: var(--color-ink); font-weight: 620; }
 .knowledge-row-source, .knowledge-row-time { color: var(--color-muted); }
+/* Minutes in a roomy table; below about a 1400px window the date alone, so the
+   type and time columns no longer cut off. The full time is the cell's title. */
+.knowledge-time-day { display: none; }
+@container knowledge-directory (max-width: 1100px) {
+  .knowledge-table-head, .knowledge-row {
+    grid-template-columns: minmax(200px, 1.6fr) minmax(72px, .5fr) minmax(92px, .65fr)
+      minmax(128px, 1fr) minmax(110px, .85fr) minmax(76px, .5fr) minmax(52px, .38fr);
+  }
+  .knowledge-time-minute { display: none; }
+  .knowledge-time-day { display: inline; }
+}
 .knowledge-row-quadrant {
   width: fit-content; border-radius: 999px; padding: 3px 7px; color: var(--color-muted);
   background: var(--color-surface-subtle); font-size: 12px; font-weight: 650; white-space: nowrap;
@@ -583,7 +594,13 @@ body { margin: 0; min-width: 320px; }
 }
 .evidence-source-action:hover { color: var(--color-ink); text-decoration: underline; }
 .evidence-source-action:disabled { color: var(--color-muted); cursor: not-allowed; text-decoration: none; }
-.inspector-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+/* The quick look's footer: sticks to the dialog's bottom edge while the record
+   scrolls. The offsets cancel the dialog's p-6 padding so it spans edge to edge. */
+.inspector-actions {
+  position: sticky; z-index: 2; bottom: -24px; display: flex; flex-wrap: wrap; gap: 8px;
+  margin: 16px -24px -24px; padding: 12px 24px; border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
 .inspector-history { display: grid; }
 .history-row { padding: 9px 0; border-top: 1px solid var(--color-border); }
 .history-row strong { color: var(--color-ink); font-size: 12px; }

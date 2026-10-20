@@ -20,7 +20,9 @@ const props = defineProps<{
   mode?: 'directory' | 'graph' | 'preference'
   suspended?: boolean
 }>()
-const emit = defineEmits<{ close: [] }>()
+// closeAutoFocus lets a page send focus back itself (its opener, or a row after
+// a direct link); without a listener the dialog's own return applies.
+const emit = defineEmits<{ close: []; closeAutoFocus: [event: Event] }>()
 
 const open = computed(() => Boolean(props.item) && !props.suspended)
 const title = computed(() => {
@@ -47,6 +49,7 @@ function openAutoFocus(event: Event) {
 // Stepping aside for a form: that form takes focus, not the row behind.
 function closeAutoFocus(event: Event) {
   if (props.suspended) event.preventDefault()
+  else emit('closeAutoFocus', event)
 }
 </script>
 

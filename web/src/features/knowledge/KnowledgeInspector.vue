@@ -339,6 +339,20 @@ function preferenceScopeLabel(item: KnowledgeItem) {
         <p class="inspector-reasoning">{{ item.reasoningSummary }}</p>
       </template>
 
+      <template v-if="related.length">
+        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.relations') }}</h4>
+        <div class="inspector-relations">
+          <div v-for="edge in related" :key="edge.id" class="inspector-relation">
+            <strong class="relation-type">{{ edge.type }}</strong>
+            <p class="relation-target">{{ edge.fact || t('knowledge.workspace.inspector.relationshipFallback') }}</p>
+          </div>
+        </div>
+      </template>
+
+      <KnowledgeRecords :item="item" :conversation-launchers="conversationLaunchers" />
+
+      <!-- The quick look's footer: last in the body and sticky, so the actions
+           stay in reach however long the record is. -->
       <div v-if="hasActions" class="inspector-actions">
         <Button size="sm" class="inspector-confirm-action"
           v-if="canConfirm"
@@ -393,18 +407,6 @@ function preferenceScopeLabel(item: KnowledgeItem) {
             : t('knowledge.workspace.inspector.correctOrAssign') }}
         </Button>
       </div>
-
-      <template v-if="related.length">
-        <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.relations') }}</h4>
-        <div class="inspector-relations">
-          <div v-for="edge in related" :key="edge.id" class="inspector-relation">
-            <strong class="relation-type">{{ edge.type }}</strong>
-            <p class="relation-target">{{ edge.fact || t('knowledge.workspace.inspector.relationshipFallback') }}</p>
-          </div>
-        </div>
-      </template>
-
-      <KnowledgeRecords :item="item" :conversation-launchers="conversationLaunchers" />
     </template>
   </div>
 </template>

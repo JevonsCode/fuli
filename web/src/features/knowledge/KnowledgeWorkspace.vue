@@ -50,6 +50,7 @@ import {
   personalProjectIdForItem,
   projectMaterialTypeLabel,
   quadrantLabel,
+  knowledgeItemKey,
 } from './model'
 import {
    discoverPersonalProjectResults,
@@ -801,7 +802,7 @@ function selectDeepLinkedItem() {
     return
   }
   if (selectedItem.value && mode.value === 'directory') {
-    const key = itemKey(selectedItem.value)
+    const key = knowledgeItemKey(selectedItem.value)
     void nextTick(() => {
       const row = [...document.querySelectorAll<HTMLElement>('[data-item-key]')]
         .find((element) => element.dataset.itemKey === key)
@@ -975,9 +976,6 @@ function sourceLabel(item: KnowledgeItem) {
   return `${scopeLabel} · ${t('common.counts.sources', { count: item.evidence.length })}`
 }
 
-function itemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
-  return `${item.itemKind}:${item.id}`
-}
 
 function choiceKey(choiceScope: KnowledgeScope, choiceSpaceId: string, choiceProjectId: string | null) {
   return JSON.stringify([choiceScope, choiceSpaceId, choiceProjectId])

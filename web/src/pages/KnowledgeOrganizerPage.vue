@@ -13,6 +13,7 @@ import { reconcileKnowledgeWrites } from '@/features/knowledge/knowledge-write-l
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import KnowledgePeek from '@/features/knowledge/KnowledgePeek.vue'
+import { useKnowledgeItemPeek } from '@/features/knowledge/useKnowledgeItemPeek'
 import {
   appendKnowledgeGraphPage,
   batchConfirmationGroups,
@@ -24,6 +25,7 @@ import {
   quadrantLabel,
   reviewStateLabel,
   type KnowledgeReviewState,
+  knowledgeItemKey,
 } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -39,7 +41,6 @@ const loadingMore = ref(false)
 const query = ref('')
 const activeQuadrant = ref('all')
 const activeReviewState = ref<'all' | KnowledgeReviewState>('all')
-const selectedItem = ref<KnowledgeItem | null>(null)
 const confirmingItem = ref<KnowledgeItem | null>(null)
 const editingItem = ref<KnowledgeItem | null>(null)
 const batchDialogOpen = ref(false)
@@ -102,6 +103,17 @@ const reviewChoices = computed<Array<{
 ])
 
 const items = computed(() => knowledgeItems(graph.value))
+const pageElement = ref<HTMLElement | null>(null)
+// The open item is part of the URL (?item=<space>/<kind>:<id>); see useKnowledgeItemPeek.
+const peek = useKnowledgeItemPeek({
+  spaceId: computed(() => store.activePersonalSpace?.id),
+  items,
+  settled: computed(() => Boolean(graph.value) && !loading.value && !loadingMore.value),
+  root: pageElement,
+})
+const selectedItem = peek.item
+// Set while a replacement opens: its filters change under the open quick look on purpose.
+let replacing = false
 const confirmationGroups = computed(() => batchConfirmationGroups(items.value))
 const quadrantCounts = computed(() =>
   Object.fromEntries(
@@ -169,11 +181,12 @@ watch(
 
 watch(visibleItems, (visible) => {
   if (
-    selectedItem.value
+    !replacing
+    && selectedItem.value
     && !visible.some(({ id, itemKind }) =>
       id === selectedItem.value?.id && itemKind === selectedItem.value?.itemKind)
   ) {
-    selectedItem.value = null
+    void peek.close()
   }
 })
 
@@ -184,7 +197,7 @@ onBeforeUnmount(() => {
 function revokeKnowledgeAccess() {
   ++loadVersion
   graph.value = null
-  selectedItem.value = null
+  void peek.close()
   confirmingItem.value = null
   editingItem.value = null
   batchDialogOpen.value = false
@@ -214,10 +227,6 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       graph.value = receivedPage ? appendKnowledgeGraphPage(graph.value, page) : page
       reconcileKnowledgeWrites(spaceId, knowledgeItems(page))
       receivedPage = true
-      if (selectedItem.value) {
-        selectedItem.value = items.value.find(({ id, itemKind }) =>
-          id === selectedItem.value?.id && itemKind === selectedItem.value?.itemKind) ?? null
-      }
       loading.value = false
       if (!page.truncated) break
       const nextOffset = page.next_offset
@@ -240,9 +249,6 @@ async function load(spaceId = store.activePersonalSpace?.id) {
   }
 }
 
-function itemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
-  return `${item.itemKind}:${item.id}`
-}
 
 // The same stat row and toolbar as every memory page: confirmation counts on
 // top (each one a filter), discovery source as one segmented control.
@@ -263,17 +269,22 @@ function selectReviewState(value: 'all' | KnowledgeReviewState) {
   activeReviewState.value = value
 }
 
-function openReplacement(item: KnowledgeItem) {
+async function openReplacement(item: KnowledgeItem) {
+  replacing = true
   query.value = ''
   activeQuadrant.value = item.originQuadrant
   activeReviewState.value = 'all'
-  selectedItem.value = item
+  try {
+    await peek.open(item)
+  } finally {
+    replacing = false
+  }
 }
 
 </script>
 
 <template>
-  <section class="view knowledge-organizer">
+  <section ref="pageElement" class="view knowledge-organizer">
     <div class="organizer-canvas">
     <UiStatRow :items="reviewStats" :label="t('knowledge.workspace.organizer.reviewFilterAria')"
       @select="key => selectReviewState(key as 'all' | KnowledgeReviewState)" />
@@ -308,7 +319,7 @@ function openReplacement(item: KnowledgeItem) {
         :row-height="ROW_HEIGHT"
         :active-index="selectedItemIndex"
         :reset-key="virtualListResetKey"
-        :item-key="itemKey"
+        :item-key="knowledgeItemKey"
         min-width="var(--organizer-list-min-width)"
         :label="t('knowledge.workspace.organizer.directoryAria')"
       >
@@ -327,7 +338,9 @@ function openReplacement(item: KnowledgeItem) {
             type="button"
             class="organizer-row"
             :class="{ selected: selectedItem?.id === item.id }"
-            @click="selectedItem = item"
+            :data-return-focus="knowledgeItemKey(item)"
+            aria-haspopup="dialog"
+            @click="peek.open(item)"
           >
             <span class="organizer-item-copy">
               <strong>{{ item.title }}</strong>
@@ -340,7 +353,7 @@ function openReplacement(item: KnowledgeItem) {
               {{ reviewStateLabel(item) }}
             </span>
             <span class="organizer-basis">{{ confirmationBasisSummary(item) }}</span>
-            <time>{{ formatTime(latestItemValue(item)) }}</time>
+            <time :title="formatTime(latestItemValue(item))">{{ formatTime(latestItemValue(item), 'minute') }}</time>
           </button>
         </template>
 
@@ -367,7 +380,8 @@ function openReplacement(item: KnowledgeItem) {
       @confirm="confirmingItem = $event"
       @edit="editingItem = $event"
       @open-replacement="openReplacement"
-      @close="selectedItem = null"
+      @close="peek.close()"
+      @close-auto-focus="peek.returnFocus"
     />
 
     <KnowledgeEditDialog

@@ -44,6 +44,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
+        layout: 'canvas',
       },
     },
     {
@@ -52,6 +53,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
+        layout: 'canvas',
         description: 'routes.personalProjects.description',
       },
     },
@@ -61,6 +63,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
+        layout: 'canvas',
         description: 'routes.personalProjects.description',
       },
     },
@@ -70,6 +73,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
+        layout: 'canvas',
       },
     },
     {

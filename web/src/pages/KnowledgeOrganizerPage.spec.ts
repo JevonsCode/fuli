@@ -1,6 +1,7 @@
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { MINIMUM_LOADING_DISPLAY_MS } from '@/composables/useMinimumLoadingDisplay'
 
@@ -281,6 +282,70 @@ describe('KnowledgeOrganizerPage', () => {
     expect(wrapper.get('.growth-loading').text()).toBe('正在读取知识…')
     expect(wrapper.find('.organizer-layout').exists()).toBe(false)
     wrapper.unmount()
+  })
+})
+
+describe('KnowledgeOrganizerPage quick look in the URL (D-03 §2)', () => {
+  async function routed(path: string, nodes = [knowledgeNode(1, 'Peek item'), knowledgeNode(2, 'Other item')]) {
+    getJson.mockResolvedValue({ space_id: 'personal-space', nodes, edges: [], truncated: false, next_offset: null })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = {
+      mode: 'personal_only', activePersonalSpaceId: 'personal-space',
+      personalSpaces: [{ id: 'personal-space', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
+    }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/organize', component: { template: '<div />' } }] })
+    await router.push(path)
+    await router.isReady()
+    const wrapper = mount(KnowledgeOrganizerPage, {
+      attachTo: document.body,
+      global: { plugins: [pinia, router], stubs: { KnowledgeBatchConfirmDialog: true } },
+    })
+    await flushPromises()
+    return { router, wrapper }
+  }
+  const peek = () => new DOMWrapper(document.body).find('[data-knowledge-peek]')
+  const row = (wrapper: Awaited<ReturnType<typeof routed>>['wrapper'], key: string) =>
+    wrapper.get(`.organizer-row[data-return-focus="${key}"]`)
+
+  it('names the item and its space in the URL, and Back closes it with focus on the opener', async () => {
+    const { router, wrapper } = await routed('/organize')
+    const opener = row(wrapper, 'entity:knowledge-2')
+    ;(opener.element as HTMLElement).focus()
+    await opener.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.item).toBe('personal-space/entity%3Aknowledge-2')
+    expect(peek().get('h2').text()).toBe('Other item')
+    expect(opener.classes()).toContain('selected')
+
+    router.back()
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/organize')
+    expect(peek().exists()).toBe(false)
+    expect(document.activeElement).toBe(opener.element)
+    wrapper.unmount()
+  })
+
+  it('reopens the same item on direct entry; Esc drops it from the URL and focuses its row', async () => {
+    const { router, wrapper } = await routed('/organize?item=personal-space%2Fentity%253Aknowledge-1')
+    expect(peek().get('h2').text()).toBe('Peek item')
+    expect(row(wrapper, 'entity:knowledge-1').classes()).toContain('selected')
+
+    await peek().trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(peek().exists()).toBe(false)
+    expect(router.currentRoute.value.fullPath).toBe('/organize')
+    expect(document.activeElement).toBe(row(wrapper, 'entity:knowledge-1').element)
+    wrapper.unmount()
+  })
+
+  it('drops an item the read collection does not hold, or one from another space', async () => {
+    for (const item of ['personal-space%2Fentity%253Amissing', 'other-space%2Fentity%253Aknowledge-1']) {
+      const { router, wrapper } = await routed(`/organize?item=${item}`)
+      expect(peek().exists()).toBe(false)
+      expect(router.currentRoute.value.query.item).toBeUndefined()
+      wrapper.unmount()
+    }
   })
 })
 

@@ -8,6 +8,7 @@ import UiSelect from '@/ui/UiSelect.vue'
 import {
   batchConfirmationBasis,
   quadrantLabel,
+  knowledgeItemKey,
 } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
@@ -56,7 +57,7 @@ const selectedGroup = computed(() =>
 const reviewableItems = computed(() => selectedGroup.value?.items.slice(0, 200) ?? [])
 const selectedItems = computed(() => {
   const selected = new Set(selectedItemKeys.value)
-  return reviewableItems.value.filter((item) => selected.has(itemKey(item)))
+  return reviewableItems.value.filter((item) => selected.has(knowledgeItemKey(item)))
 })
 const allSelected = computed(
   () =>
@@ -93,19 +94,16 @@ watch(
 )
 
 watch(selectedGroupKey, () => {
-  selectedItemKeys.value = reviewableItems.value.map(itemKey)
+  selectedItemKeys.value = reviewableItems.value.map(knowledgeItemKey)
   acknowledged.value = false
   localError.value = ''
 }, { immediate: true })
 
-function itemKey(item: KnowledgeItem) {
-  return `${item.itemKind}:${item.id}`
-}
 
 function toggleAll() {
   selectedItemKeys.value = allSelected.value
     ? []
-    : reviewableItems.value.map(itemKey)
+    : reviewableItems.value.map(knowledgeItemKey)
   acknowledged.value = false
 }
 
@@ -213,8 +211,8 @@ function fail(message: string) {
         </div>
         <p v-if="(selectedGroup?.items.length ?? 0) > 200" class="ui-meta">{{ t('knowledge.dialogs.batch.limit') }}</p>
         <div class="batch-review-list">
-          <label v-for="item in reviewableItems" :key="itemKey(item)" class="batch-review-item">
-            <input v-model="selectedItemKeys" type="checkbox" :value="itemKey(item)" />
+          <label v-for="item in reviewableItems" :key="knowledgeItemKey(item)" class="batch-review-item">
+            <input v-model="selectedItemKeys" type="checkbox" :value="knowledgeItemKey(item)" />
             <span>
               <strong>{{ item.title }}</strong>
               <small>{{ quadrantLabel(item.originQuadrant) }} · {{ item.type }}</small>

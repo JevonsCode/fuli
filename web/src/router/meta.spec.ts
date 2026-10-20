@@ -51,6 +51,14 @@ describe('localized route metadata', () => {
     expect(paths.map(path => router.resolve(path).meta.layout)).toEqual(paths.map(() => 'canvas'))
   })
 
+  it('puts every personal project view (directory, graph, item, one project) on the work canvas', () => {
+    const paths = ['/personal/space/projects/directory', '/personal/space/projects/graph/entity/item',
+      '/personal/space/projects/project-1/graph', '/personal/space/projects/project-1/directory/entity/item']
+    expect(paths.map(path => router.resolve(path).name))
+      .toEqual(['personal-projects', 'personal-projects-item', 'personal-project', 'personal-project-item'])
+    expect(paths.map(path => router.resolve(path).meta.layout)).toEqual(paths.map(() => 'canvas'))
+  })
+
   it('titles the taste page the same as its section tab', () => {
     const route = router.resolve('/preferences/writing')
     expect(route.name).toBe('writing-taste')

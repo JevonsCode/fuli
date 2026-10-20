@@ -2,6 +2,7 @@ import { config, DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { MINIMUM_LOADING_DISPLAY_MS, LOADING_VISIBILITY_DELAY_MS } from '@/composables/useMinimumLoadingDisplay'
 
@@ -711,6 +712,87 @@ describe('PersonalProfilePage', () => {
       '已交给 AI',
     )
     expect(wrapper.text()).toContain('待 AI 使用时判断')
+  })
+})
+
+describe('PersonalProfilePage quick look in the URL (D-03 §2)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    getJson.mockReset()
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? profileGraph() : []))
+  })
+  afterEach(() => vi.useRealTimers())
+
+  async function routed(path: string) {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = { mode: 'personal_only', activePersonalSpaceId: 'personal-space', personalSpaces: [{ id: 'personal-space', name: 'Synthetic' }], personalProjects: [], projects: [], subscriptions: [] }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/preferences', component: { template: '<div />' } }] })
+    await router.push(path)
+    await router.isReady()
+    const wrapper = mount(PersonalProfilePage, { attachTo: document.body, global: { plugins: [pinia, router] } })
+    await finishProfileLoading()
+    return { router, wrapper }
+  }
+  const peek = () => body().find('[data-knowledge-peek]')
+  const opener = (wrapper: Awaited<ReturnType<typeof routed>>['wrapper'], key: string) =>
+    wrapper.get(`[data-return-focus="${key}"] .personal-profile-open`)
+
+  it('names the preference and its space in the URL, and Back closes it with focus on the opener', async () => {
+    const { router, wrapper } = await routed('/preferences?aspect=judgment_preference')
+    const button = opener(wrapper, 'entity:project-a')
+    ;(button.element as HTMLElement).focus()
+    await button.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ aspect: 'judgment_preference', item: 'personal-space/entity%3Aproject-a' })
+    expect(peek().get('h2').text()).toBe('A 项目判断')
+
+    router.back()
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/preferences?aspect=judgment_preference')
+    expect(peek().exists()).toBe(false)
+    expect(document.activeElement).toBe(button.element)
+    wrapper.unmount()
+  })
+
+  it('reopens the same preference on direct entry; Esc drops it from the URL and focuses its row', async () => {
+    const { router, wrapper } = await routed('/preferences?item=personal-space%2Fentity%253Aglobal')
+    expect(peek().get('h2').text()).toBe('全局品味')
+    expect(wrapper.get('[data-return-focus="entity:global"]').classes()).toContain('selected')
+
+    await peek().trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(peek().exists()).toBe(false)
+    expect(router.currentRoute.value.fullPath).toBe('/preferences')
+    expect(document.activeElement).toBe(opener(wrapper, 'entity:global').element)
+    wrapper.unmount()
+  })
+
+  it('drops a preference the read profile does not hold', async () => {
+    const { router, wrapper } = await routed('/preferences?item=personal-space%2Fentity%253Amissing')
+    expect(peek().exists()).toBe(false)
+    expect(router.currentRoute.value.query.item).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('keeps the replacement and its aspect together in the URL', async () => {
+    const graph = profileGraph()
+    graph.nodes = Array.from({ length: 101 }, (_, index) => preferenceNode(`replacement-${index}`, `Synthetic replacement ${index}`, 'taste'))
+    Object.assign(graph.nodes[0]!, { invalid_at: '2026-10-18T10:00:00Z', replaced_by_item_kind: 'entity', replaced_by_item_id: 'replacement-100' })
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? graph : []))
+    const { router, wrapper } = await routed('/preferences')
+    await opener(wrapper, 'entity:replacement-0').trigger('click')
+    await flushPromises()
+    await body().get('.preference-risk button').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ aspect: 'taste', item: 'personal-space/entity%3Areplacement-100' })
+    expect(peek().get('h2').text()).toBe('Synthetic replacement 100')
+    // Opening pushed one entry; moving to the replacement replaced it.
+    router.back()
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/preferences')
+    expect(peek().exists()).toBe(false)
+    wrapper.unmount()
   })
 })
 

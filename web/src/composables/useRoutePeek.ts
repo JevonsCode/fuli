@@ -1,5 +1,5 @@
-import { computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, inject, ref, watch } from 'vue'
+import { routeLocationKey, routerKey } from 'vue-router'
 
 // A quick look (Peek) is part of the URL as ?item=<space>/<id>, so a refresh
 // or a shared link opens the same record even before (or without) the
@@ -24,32 +24,45 @@ function readPeekItem(value: unknown): PeekItem | null {
   }
 }
 
+// Embedded without a router (component previews and tests) the quick look is
+// local state: it opens and closes the same way, only without history.
+function localPeek() {
+  const item = ref<PeekItem | null>(null)
+  return {
+    item: computed(() => item.value),
+    open: async (next: PeekItem) => { item.value = next },
+    close: async () => { item.value = null },
+  }
+}
+
 export function useRoutePeek() {
-  const route = useRoute()
-  const router = useRouter()
+  const route = inject(routeLocationKey, null)
+  const router = inject(routerKey, null)
+  if (!route || !router) return localPeek()
   const item = computed(() => readPeekItem(route.query[PEEK_QUERY]))
   // True while the entry on screen is the one this page pushed: closing then
   // goes Back, so the history holds no second copy of the collection.
   let pushed = false
   watch(item, value => { if (!value) pushed = false })
 
-  function open(next: PeekItem) {
+  // Opening resolves once the URL names the item, so a caller can wait for it.
+  async function open(next: PeekItem) {
     const value = peekItemValue(next)
-    if (route.query[PEEK_QUERY] === value) return
+    if (route!.query[PEEK_QUERY] === value) return
     const replace = Boolean(item.value)
     pushed = pushed || !replace
-    void router[replace ? 'replace' : 'push']({ query: { ...route.query, [PEEK_QUERY]: value } })
+    await router![replace ? 'replace' : 'push']({ query: { ...route!.query, [PEEK_QUERY]: value } })
   }
 
-  function close() {
+  async function close() {
     if (!item.value) return
     if (pushed) {
       pushed = false
-      router.back()
+      router!.back()
       return
     }
-    const { [PEEK_QUERY]: _closed, ...query } = route.query
-    void router.replace({ query })
+    const { [PEEK_QUERY]: _closed, ...query } = route!.query
+    await router!.replace({ query })
   }
 
   return { item, open, close }

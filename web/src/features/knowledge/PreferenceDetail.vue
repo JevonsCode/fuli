@@ -10,10 +10,8 @@ import { classificationExplanation, confirmationActorLabel, endpointId, formatTi
 const props = defineProps<{ item: KnowledgeItem; graph: KnowledgeGraph | null; editable?: boolean; scopeLabel?: string; statusLabel?: string; conversationLaunchers?: ConversationLauncherConfiguration }>()
 const emit = defineEmits<{ confirm: [item: KnowledgeItem]; edit: [item: KnowledgeItem]; openReplacement: [item: KnowledgeItem] }>()
 const bodyElement = ref<HTMLElement | null>(null)
-const recordsElement = ref<HTMLElement | null>(null)
 const fullText = ref(false)
 const longText = ref(false)
-const recordsOpen = ref(false)
 const managed = computed(() => isManagementKnowledgeItem(props.item))
 const canConfirm = computed(() => props.editable && !managed.value && !props.item.invalidAt && props.item.classificationExplicit && knowledgeReviewState(props.item) === 'pending')
 const basis = computed(() => props.item.confirmationBasis)
@@ -64,11 +62,6 @@ onBeforeUnmount(() => {
   if (measureFrame !== null) cancelAnimationFrame(measureFrame)
 })
 watch(() => props.item.body, () => { fullText.value = false; void nextTick(scheduleBodyMeasurement) })
-async function showEvidence() {
-  recordsOpen.value = true
-  await nextTick()
-  recordsElement.value?.querySelector<HTMLElement>('.inspector-evidence, summary')?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' })
-}
 </script>
 <template>
   <div class="preference-detail">
@@ -89,8 +82,6 @@ async function showEvidence() {
       </div>
       <p ref="bodyElement" class="preference-body" :class="{ 'is-preview': longText && !fullText }">{{ item.body }}</p>
       <Button v-if="longText" variant="ghost" :aria-expanded="fullText" @click="fullText = !fullText">{{ t(fullText ? 'preferences.detail.hideText' : 'preferences.detail.fullText') }}</Button>
-      <Button v-if="item.evidence.length" variant="link" class="preference-evidence-link" data-evidence-jump @click="showEvidence">{{ t('preferences.detail.evidenceCount', { count: item.evidence.length }) }} ↓</Button>
-      <span v-else>{{ t('preferences.detail.noEvidence') }}</span>
     </section>
     <UiDisclosure :title="t('preferences.detail.basis')" data-preference-basis>
       <p>{{ classificationExplanation(item) }}</p>
@@ -108,25 +99,27 @@ async function showEvidence() {
       </dl>
       <p v-if="item.humanEdited">{{ t(`knowledge.workspace.inspector.humanReview.${item.humanChangeStatus === 'unseen' ? 'unseen' : item.humanChangeStatus === 'viewed' ? 'viewed' : 'reviewed'}`) }} · {{ t('knowledge.workspace.inspector.humanVersion', { version: item.humanChangeVersion }) }}</p>
     </UiDisclosure>
-    <div ref="recordsElement">
-      <UiDisclosure :title="t('preferences.detail.records', { count: item.evidence.length })" :open="recordsOpen" data-preference-records @toggle="recordsOpen = ($event.target as HTMLDetailsElement).open">
-        <KnowledgeRecords :item="item" :conversation-launchers="conversationLaunchers" raw-fields />
-        <template v-if="related.length"><h4>{{ t('preferences.detail.shownRelations') }}</h4><pre>{{ JSON.stringify(related, null, 2) }}</pre></template>
-        <h4>{{ t('knowledge.workspace.inspector.technicalDetails') }}</h4>
-        <pre data-raw-record>{{ JSON.stringify(item.raw, null, 2) }}</pre>
-      </UiDisclosure>
-    </div>
+    <!-- The evidence count lives in this one disclosure's title; no separate jump link. -->
+    <UiDisclosure :title="t('preferences.detail.records', { count: item.evidence.length })" data-preference-records>
+      <KnowledgeRecords :item="item" :conversation-launchers="conversationLaunchers" raw-fields />
+      <template v-if="related.length"><h4>{{ t('preferences.detail.shownRelations') }}</h4><pre>{{ JSON.stringify(related, null, 2) }}</pre></template>
+      <h4>{{ t('knowledge.workspace.inspector.technicalDetails') }}</h4>
+      <pre data-raw-record>{{ JSON.stringify(item.raw, null, 2) }}</pre>
+    </UiDisclosure>
   </div>
 </template>
 <style scoped>
-.preference-detail { display: grid; gap: 24px; min-width: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+.preference-detail { display: grid; min-width: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+/* The two disclosures sit flush, one hairline apart, and the last one ends the dialog without spare space. */
+.preference-summary { margin-bottom: 16px; }
+.preference-detail > .ui-disclosure { padding-block: 2px; }
+.preference-detail > .ui-disclosure[open] { padding-bottom: 14px; }
 .preference-summary { display: grid; gap: 12px; max-width: 760px; min-width: 0; font-size: 14px; }
 .preference-context { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .preference-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
 .preference-actions :deep(button) { min-height: 44px; white-space: normal; }
 .preference-body { margin: 0; white-space: pre-wrap; line-height: 1.65; font-size: 16px; }
 .preference-body.is-preview { display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
-.preference-evidence-link { justify-self: start; min-height: 44px; padding: 0; }
 .preference-risk { margin: 0; color: var(--color-ink); font-weight: 600; }
 .preference-risk p { font-weight: 400; }
 .preference-basis { display: grid; gap: 12px; }
