@@ -65,6 +65,8 @@ const HANDLERS = Object.freeze({
   recruit_employee: (app, input) => employeeService(app).recruit(input),
   list_employee_tools: (app, input) => employeeService(app).describeTools(input),
   call_employee_tool: (app, input) => employeeService(app).callTool(input),
+  submit_agent_app_version: (app, input) => agentApps(app).submit(input),
+  list_agent_apps: (app, input) => input.appId ? agentApps(app).read(input) : agentApps(app).list(input),
   begin_task_context: (app, input) => app.beginTaskContext(input),
   read_task_preferences: (app, input) => app.readTaskPreferences(input),
   checkpoint_task_knowledge: (app, input) =>
@@ -138,7 +140,9 @@ const HANDLERS = Object.freeze({
     personalProjectId: input?.personalProjectId ?? null }, () => app.upsertProjectAgent(input)),
   list_project_agents: (app, input) => app.listCurrentProjectAgents(input),
   get_project_agent: (app, input) => app.getProjectAgent(input),
-  delete_project_agent: (app, input) => app.deleteProjectAgent(input),
+  dismiss_project_agent: (app, input) => app.dismissProjectAgent(input),
+  list_agent_dismissal_lessons: (app, input) => app.listAgentDismissalLessons(input),
+  get_agent_handoff: (app, input) => app.getAgentHandoff(input),
   cleanup_test_project_agents: (app, input) => {
     assertTestToolsEnabled({ FULI_ENABLE_TEST_TOOLS: activeTestToolsEnabled() ? '1' : '0' });
     return app.cleanupProjectAgentTestRoles(input);
@@ -250,6 +254,11 @@ const HANDLERS = Object.freeze({
 function employeeService(app) {
   if (!app.employees) throw new Error('Employee runtime is unavailable');
   return app.employees;
+}
+
+function agentApps(app) {
+  if (!app.agentApps) throw new ApplicationError('agent_apps_unavailable', 'Agent apps need a local FULI installation', { status: 503 });
+  return app.agentApps;
 }
 
 function modelBackends(app) {

@@ -504,6 +504,11 @@ onMounted(() => {
               <Card as="section" class="agent-resume-section" aria-labelledby="agent-history-recent-heading">
                 <h2 id="agent-history-recent-heading">{{ t("agentProfiles.recent") }}</h2>
                 <ol class="agent-work-timeline">
+                  <li v-if="agent.archiveReason" data-profile-departure>
+                    <h3>{{ t("agentProfiles.departure") }}</h3>
+                    <p>{{ agent.archiveReason }}</p>
+                    <small>{{ date(agent.archivedAt) }}</small>
+                  </li>
                   <li v-for="task in tasks.slice(0, 12)" :key="task.taskId">
                     <div class="agent-section-heading">
                       <RouterLink :to="{ path: '/project-agents/manage', query: { agent: agent.agentId, task: task.taskId } }">
@@ -522,7 +527,7 @@ onMounted(() => {
                   </li>
                 </ol>
                 <p
-                  v-if="!detailsLoading && !tasks.length && !agent.recruitmentReason && !agent.recruitedAt"
+                  v-if="!detailsLoading && !tasks.length && !agent.archiveReason && !agent.recruitmentReason && !agent.recruitedAt"
                   class="agent-muted"
                 >
                   {{ t("agentProfiles.noExperience") }}

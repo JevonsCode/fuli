@@ -71,6 +71,14 @@ async def seed_agent(client, space_id, project='sample-project', agent='engineer
     assert response.status_code == 200, response.text
 
 
+async def dismiss_agent(client, space_id, agent_id, reason='Synthetic dismissal for this acceptance.'):
+    """The only way a non-test Agent leaves; the handoff is a synthetic stand-in."""
+    return await client.post(f'/v1/project-agents/{agent_id}/dismissal', json={
+        'personal_space_id': space_id, 'reason': reason,
+        'handoff': {'filename': 'synthetic-handoff.md', 'markdown': '# Synthetic handoff\n'},
+    })
+
+
 def write_payload(space_id, **changes):
     return {
         'personal_space_id': space_id, 'personal_project_id': 'sample-project',
@@ -398,9 +406,7 @@ async def test_memory_isolated_by_project_agent_and_personal_space():
             'personal_space_id': other_space.json()['id'], 'personal_project_id': 'sample-project',
         })
         assert response.status_code == 404
-        archived = await client.delete('/v1/project-agents/engineer', params={
-            'personal_space_id': space_id, 'reason': 'Synthetic archival test',
-        })
+        archived = await dismiss_agent(client, space_id, 'engineer', 'Synthetic archival test')
         assert archived.status_code == 200, archived.text
         rejected = await client.put('/v1/project-agents/engineer/memory', json=write_payload(space_id,
             expected_revision=1, idempotency_key='after-archive'))

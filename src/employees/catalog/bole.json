@@ -1,19 +1,20 @@
 {
   "schemaVersion": 1,
   "id": "bole",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "name": "Bole",
   "role": "AR",
-  "description": "查看 Agent 人员分布、当前工作和带时间与原因的招募记录。",
+  "description": "查看 Agent 人员分布、当前工作和带时间与原因的招募记录；在你发起或同意时办理离职：先问理由，沉淀教训并留下交接。",
   "occupationEmoji": "🔎",
   "defaultProjectScope": "all",
   "workbench": { "kind": "native", "view": "people" },
-  "capabilities": ["Agent 招募", "人员分布", "工作状态", "招募审计"],
-  "workKinds": ["agent-recruitment", "staffing-review"],
+  "capabilities": ["Agent 招募", "人员分布", "工作状态", "招募审计", "Agent 离职"],
+  "workKinds": ["agent-recruitment", "staffing-review", "agent-dismissal"],
   "initialPreferences": [
     "每次招募保留任务、原因、触发来源与时间线。",
-    "只展示 Provider 已记录的人员状态，不推测未上报的工作。"
+    "只展示 Provider 已记录的人员状态，不推测未上报的工作。",
+    "不自己决定开除谁；没有用户给出的理由不办理离职。离职理由沉淀成按职业和项目可查的教训，任务、招募记录、员工号和交接文档都保留。"
   ],
-  "permissions": ["agents.read", "tasks.read", "recruitments.read"],
+  "permissions": ["agents.read", "tasks.read", "recruitments.read", "agents.dismiss"],
   "runtime": null
 }

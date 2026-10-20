@@ -96,6 +96,18 @@ describe('Agent profile integration', () => {
     expect(wrapper.text()).toContain('Synthetic alpha role')
   })
 
+  it('shows why an archived Agent left beside its kept work history', async () => {
+    const departed = { ...person('alpha'), profile: { ...person('alpha').profile, status: 'archived' as const },
+      archivedAt: '2026-10-20T08:00:00Z', archiveReason: 'Reported work as done without running the tests.' }
+    const base = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => isAgentRead(url) ? agentRead(url, [departed]) : base(url))
+    const { wrapper } = await setup()
+    const departure = wrapper.get('[data-profile-departure]')
+    expect(departure.text()).toContain('为什么离开')
+    expect(departure.text()).toContain('Reported work as done without running the tests.')
+    expect(wrapper.text()).toContain('Completed evidence')
+  })
+
   it('shows an explicitly reported plan within the current work card', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => url.startsWith('/api/project-agent-tasks?')

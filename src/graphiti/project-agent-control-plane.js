@@ -10,6 +10,7 @@ import { acceptTopicProposal, declineTopicProposal, listTopicProposals } from '.
 import { agentProjectResolution } from './agent-knowledge-workflows.js';
 import { listAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
+import { dismissProjectAgent, getAgentHandoff, listAgentDismissalLessons } from './project-agent-dismissal.js';
 import {
   getProjectAgentMemory,
   inspectProjectAgentMemory,
@@ -25,7 +26,7 @@ import {
   decideProjectAgentRecruitment as decideProjectAgentRecruitmentWorkflow,
   deleteExecutor as deleteExecutorWorkflow,
   deleteExecutorRoutingRule as deleteExecutorRoutingRuleWorkflow,
-  deleteProjectAgent as deleteProjectAgentWorkflow,
+  archiveTestProjectAgent as archiveTestProjectAgentWorkflow,
   updateProjectAgentOccupation as updateProjectAgentOccupationWorkflow,
   endProjectAgentAssignment as endProjectAgentAssignmentWorkflow,
   findProjectAgentTaskByIdempotencyKey as findProjectAgentTaskByIdempotencyKeyWorkflow,
@@ -184,9 +185,24 @@ export class ProjectAgentControlPlaneApplication {
     return getProjectAgentWorkflow(this, input);
   }
 
-  async deleteProjectAgent(input) {
+  async archiveTestProjectAgent(input) {
     this.#assertSpace(input.personalSpaceId);
-    return deleteProjectAgentWorkflow(this, input);
+    return archiveTestProjectAgentWorkflow(this, input);
+  }
+
+  async dismissProjectAgent(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return dismissProjectAgent(this, input);
+  }
+
+  async listAgentDismissalLessons(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return listAgentDismissalLessons(this, input);
+  }
+
+  async getAgentHandoff(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return getAgentHandoff(this, input);
   }
 
   async updateProjectAgentOccupation(input) {

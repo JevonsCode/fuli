@@ -622,17 +622,6 @@ async def test_only_bole_system_identity_can_use_hr_type():
 
 
 @pytest.mark.asyncio
-async def test_bole_system_hr_cannot_be_archived():
-    with pytest.raises(HTTPException, match='system AR cannot be archived'):
-        await StoreStub(SequentialDriver([])).archive_project_agent(
-            {'id': 'principal-1'},
-            'personal-space',
-            SYSTEM_HR_AGENT_ID,
-            reason='not allowed',
-        )
-
-
-@pytest.mark.asyncio
 async def test_bole_cannot_be_deactivated_through_profile_upsert():
     profile = project_agent_profile().model_copy(update={
         'agent_type': 'hr', 'status': 'inactive',
@@ -731,43 +720,6 @@ async def test_occupation_is_read_only_from_an_explicit_edit():
     assert result[0].occupation.role == 'design'
     assert result[0].occupation.tags == ['research']
     assert result[1].occupation is None
-
-
-@pytest.mark.asyncio
-async def test_archiving_agent_preserves_history_and_ends_assignments():
-    profile = project_agent_profile()
-    archived = raw_agent(profile)
-    archived['status'] = 'archived'
-    driver = SequentialDriver([
-        [{'agent': archived}],
-        [{
-            'agent': archived,
-            'assignment_rows': [],
-            'task_rows': [],
-            'observed_clients': [],
-        }],
-    ])
-
-    result = await StoreStub(driver).archive_project_agent(
-        {'id': 'principal-1'},
-        'personal-space',
-        'activity-agent',
-        reason='职责已移交',
-    )
-
-    assert result.profile.status == 'archived'
-    assert result.work_status == 'ended'
-    query, parameters = driver.calls[0]
-    assert 'HAS_PARTICIPANT' in query
-    assert 'agent._task_lifecycle_lock' in query
-    assert query.index('agent._task_lifecycle_lock') < query.index(
-        'HAS_PROJECT_AGENT_TASK'
-    )
-    assert 'MATCH (space)-[:CONTAINS_PROJECT]->' in query
-    assert '[:HAS_PROJECT_AGENT_ASSIGNMENT]->' in query
-    assert 'FuliProjectAgentAssignment' in query
-    assert 'coalesce(agent.archive_reason, $reason)' in query
-    assert parameters['reason'] == '职责已移交'
 
 
 class StoreStub(StoreProjectAgents):

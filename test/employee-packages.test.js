@@ -63,6 +63,10 @@ test('Bole is a built-in native specialist instead of an installable package', (
   assert.equal(entry.manifest.role, 'AR');
   assert.deepEqual(entry.manifest.workbench, { kind: 'native', view: 'people' });
   assert.equal(entry.manifest.runtime, null);
+  // Dismissal is Bole's duty under the same stable identity.
+  assert.equal(entry.manifest.id, 'bole');
+  assert.ok(entry.manifest.permissions.includes('agents.dismiss'));
+  assert.match(entry.manifest.description, /离职.*先问理由/);
 });
 
 test('local packages cannot replace a native workbench or claim a native view', (t) => {

@@ -41,7 +41,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('PATCH /api/external-knowledge/conflict-policy', 'update_external_knowledge_conflict_policy'),
   agent('PUT /api/personal-projects', 'upsert_personal_project'),
   agent('PUT /api/project-agents', 'upsert_project_agent'),
-  agent('DELETE /api/project-agents/:agentId', 'delete_project_agent'),
+  agent('DELETE /api/project-agents/:agentId', 'cleanup_test_project_agents'),
   local('PUT /api/project-agents/:agentId/occupation', 'A long-term occupation is set by a person; an Agent never infers it from one task.'),
   local('POST /api/occupations', 'The occupation catalog and the duties each occupation carries are defined by a person.'),
   local('PUT /api/occupations/:key', 'Renaming, rewording or restoring an occupation changes what people assign; a person decides it.'),
@@ -90,6 +90,12 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('POST /api/employee-templates/:templateId/call', 'call_employee_tool'),
   local('PATCH /employee-workspaces/:templateId/:projectId/api/work-items/:itemId/status', 'Completing a Jefa work item records explicit human acceptance in the native workbench.'),
   local('PATCH /employee-workspaces/:templateId/:projectId/api/projects/:projectId/sharing', 'Changing public project visibility requires explicit local human approval; the read-only report never grants access to private tasks.'),
+  local('POST /api/agent-apps/:appId/approve', 'Approving Agent-written code for its exact digest, permissions, data scope and resident service has no Agent tool; it comes through the CLI or local console and records presence as unverified.'),
+  local('POST /api/agent-apps/:appId/disable', 'Stopping an Agent app is a local user decision.'),
+  local('POST /api/agent-apps/:appId/rollback', 'Activating an earlier approved app version is a local user decision checked against the app data and current authorization.'),
+  local('POST /api/agent-apps/:appId/delete-code', 'Deleting an Agent app\'s code and pages is a local user decision; its data is kept.'),
+  local('POST /api/agent-apps/:appId/data-deletion', 'Only the local user starts deleting an Agent app\'s data, which first offers an export.'),
+  local('POST /api/agent-apps/:appId/delete-data', 'Permanently deleting an Agent app\'s data needs a second explicit confirmation from the local user.'),
 ]);
 
 export function agentInterfaceCatalog() {
@@ -114,9 +120,11 @@ export function agentInterfaceCatalog() {
       { domain: 'projects', toolNames: ['list_knowledge_spaces', 'list_personal_projects', 'list_project_releases', 'list_project_relations'] },
       { domain: 'knowledge', toolNames: ['search_knowledge_graph', 'get_knowledge_graph', 'get_user_taste_skill', 'list_preference_conflicts'] },
       { domain: 'people-and-tasks', toolNames: ['get_project_team', 'list_project_agents', 'list_project_agent_assignments', 'list_project_agent_tasks', 'view_project_agent_task', 'view_project_agent_activity', 'list_project_agent_recruitments'] },
+      { domain: 'agent-dismissal', toolNames: ['list_agent_dismissal_lessons', 'get_agent_handoff'], guidance: 'Only Bole dismisses an Agent, with dismiss_project_agent, after the user initiates or approves it and gives the reason. Lessons are looked up on demand by occupation or project; the handoff is read when taking over the work.' },
       { domain: 'agent-memory', toolNames: ['get_project_agent_memory', 'export_project_agent_memory'], readRoutes: ['GET /api/project-agents/:agentId/memory', 'GET /api/project-agents/:agentId/memory/export'], guidance: 'Export returns generated Markdown for one scope from a fresh database read. The database stays authoritative; edited exports or directory files are never imported. Change memory with checkpoint_project_agent_memory.' },
       { domain: 'roundtable', toolNames: ['find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status'], readRoutes: ['GET /api/roundtable/agents', 'GET /api/roundtable/chats', 'GET /api/roundtable/chats/:chatId', 'GET /api/roundtable/threads', 'GET /api/roundtable/threads/:threadId', 'GET /api/roundtable/messages/:messageId'], guidance: 'agent_chat is pure member-scoped direct/group communication; use after/limit to page messages and afterChat/transport to page local or peer rooms. Creation and sends require stable request IDs; membership edits require the current revision. No chat grants execution, memory access or knowledge weight. Pairing and explicit shares remain owner actions. message_agent is the separate execution path, limited to shared remote project leads. Unknown execution may have run and is not retried. A reply is not evidence of execution or human approval. When task entry returns requested_agent_id, keep the selected Agent identity and follow requested_agent_guidance.' },
       { domain: 'employees-and-boards', toolNames: ['list_employee_templates', 'list_employee_tools', 'call_employee_tool'], guidance: 'Discover the employee read_board and other read tools before invoking them with exact project scope.' },
+      { domain: 'agent-apps', toolNames: ['list_agent_apps', 'submit_agent_app_version'], readRoutes: ['GET /api/agent-apps', 'GET /api/agent-apps/:appId'], guidance: 'Submit an app version only for a real, repeated need. It stays pending until its exact digest is approved through the CLI or local console (fuli app approve); Agent tools cannot approve, disable, roll back or delete apps.' },
       { domain: 'external-knowledge', toolNames: ['list_external_knowledge_connectors', 'discover_external_knowledge_sources', 'list_external_knowledge_bindings', 'retrieve_external_knowledge_binding', 'get_external_knowledge_conflict_policy'], readRoutes: ['POST /api/external-knowledge/discover', 'POST /api/external-knowledge/bindings/:bindingId/retrieve'] },
       { domain: 'executors', toolNames: ['list_executors', 'get_executor', 'list_executor_routing_rules', 'list_project_agent_routing_learning'] },
       { domain: 'agent-score-card', toolNames: ['get_agent_score_card'], readRoutes: ['GET /api/project-agents/:agentId/score-card', 'GET /api/project-agents/:agentId/score-card/evidence'], guidance: 'Bole\'s zero-token score card from recorded outcomes and Tonborg verdicts: separate dimensions with their samples, no total. 数据不足 is no conclusion. Tiers and tool flags are for people to read; they never trigger an action. Task IDs come only with dimension.' },
