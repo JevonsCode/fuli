@@ -241,6 +241,9 @@ test('provider client maps every persistent knowledge review endpoint', async ()
     personal_space_id: 'personal-1', review_id: 'review-1',
     candidate_key: 'entity:one', outcome: 'delegated_to_ai'
   });
+  await client.readKnowledgeReviewDecision({
+    personal_space_id: 'personal-1', review_id: 'review-1', candidate_key: 'entity:one'
+  });
   await client.finishKnowledgeReview({
     personal_space_id: 'personal-1', review_id: 'review-1', disposition: 'paused'
   });
@@ -249,6 +252,7 @@ test('provider client maps every persistent knowledge review endpoint', async ()
     '/v1/knowledge/reviews/start',
     '/v1/knowledge/reviews/candidates',
     '/v1/knowledge/reviews/progress',
+    '/v1/knowledge/reviews/decision',
     '/v1/knowledge/reviews/finish'
   ]);
   assert.equal(calls.every(({ options }) => options.method === 'POST'), true);

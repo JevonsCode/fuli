@@ -10,7 +10,9 @@ import { createJudgmentService } from '../judgment/service.js';
 import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
 import { createTaskScheduleService } from '../task-schedules/service.js';
-import { openModelBackendRuntime } from '../model-backends/runtime.js';
+import { openModelBackendRuntime, openRoleWorkRuntime } from '../model-backends/runtime.js';
+import { createJudgmentBackend } from '../judgment/backend.js';
+import { roleWorkSessions } from './role-work-sessions.js';
 import { TaskScheduleStore } from '../task-schedules/store.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
@@ -80,6 +82,7 @@ import {
 import {
   finishKnowledgeReview as finishKnowledgeReviewWorkflow,
   listKnowledgeReviewCandidates as listKnowledgeReviewCandidatesWorkflow,
+  readKnowledgeReviewDecision as readKnowledgeReviewDecisionWorkflow,
   recordKnowledgeReviewProgress as recordKnowledgeReviewProgressWorkflow,
   startKnowledgeReview as startKnowledgeReviewWorkflow
 } from './knowledge-review.js';
@@ -96,6 +99,7 @@ import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-projec
 import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
+import { knowledgeTags } from './knowledge-tags.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -138,9 +142,12 @@ export function openFederatedGraphApplication({
     app.agentApps = createAgentAppService({ root: agentAppRoot(runtimeConfigPath),
       providerIdentity: resolved.personal.providerUrl, resolveOwner: (owner) => app.getProjectAgent(owner),
       toolNames: () => listAgentTools().map(({ name }) => name) });
-    app.judgment = createJudgmentService({ app, engine: createJudgmentEngine({ app }),
-      openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
     app.modelBackends = openModelBackendRuntime(paths);
+    app.roleWork = openRoleWorkRuntime(paths, { port: app.modelBackends, verifySession: roleWorkSessions(app),
+      resumers: { tonborg: work => app.judgment.resumeWork(work) } });
+    app.judgment = createJudgmentService({ app,
+      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge: app.roleWork }) }),
+      openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
     app.taskSchedules = createTaskScheduleService({ app,
       openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
     app.roundtableHost = createFuliRoundtableHost(app);
@@ -497,6 +504,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return recordKnowledgeReviewProgressWorkflow(this, input);
   }
 
+  async readKnowledgeReviewDecision(input) {
+    return readKnowledgeReviewDecisionWorkflow(this, input);
+  }
+
   async finishKnowledgeReview(input) {
     return finishKnowledgeReviewWorkflow(this, input);
   }
@@ -597,6 +608,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       body.replacement_item_kind = input.replacementItemKind;
     }
     return this.personal.reviseKnowledgeItem(input.itemId, body);
+  }
+
+  async knowledgeTags(operation, input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    return knowledgeTags(this, operation, input);
   }
 
   async listPreferenceConflicts({
@@ -1086,7 +1102,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.judgment?.close(); this.taskSchedules?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); this.agentApps?.close(); return this.employees?.close(); }
+  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roleWork?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); this.agentApps?.close(); return this.employees?.close(); }
 
   // View records rank knowledge by what a session looked at: a behavior trace
   // that stops with automatic recording. Reading itself needs none (rec#11 D-01).

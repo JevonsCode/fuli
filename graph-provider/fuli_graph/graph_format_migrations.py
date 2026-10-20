@@ -13,6 +13,8 @@ from .graph_format_schema import (
     BASELINE_LABELS,
     BASELINE_RULES,
     CONTROL_PLANE_RULES,
+    KNOWLEDGE_TAG_LABELS,
+    KNOWLEDGE_TAG_RULES,
     SchemaRule,
 )
 
@@ -97,6 +99,11 @@ GRAPH_MIGRATIONS = (
         'graph/9-group-id-separators', 9, 'rewrite',
         "Graphiti group IDs without ':' on every node and relationship of a space",
         backfills.pending_group_id_separators, backfills.apply_group_id_separators,
+    ),
+    GraphMigration(
+        'graph/10-knowledge-tags', 10, 'schema',
+        'open tag vocabulary: tag identity constraints and the tag link lookup index',
+        rules=KNOWLEDGE_TAG_RULES, labels=KNOWLEDGE_TAG_LABELS,
     ),
 )
 

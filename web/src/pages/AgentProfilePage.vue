@@ -11,6 +11,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { getJson } from "@/api/client";
 import { useConsoleStore } from "@/stores/console";
 import { t } from "@/i18n";
+import BackLink from "@/components/BackLink.vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import UiDisclosure from "@/components/UiDisclosure.vue";
 import AgentName from "@/features/agent-profile/AgentName.vue";
@@ -44,6 +45,7 @@ import { personalProjectsPath } from "@/router/paths";
 import { readProjectTeam, type ProjectTeam } from "@/features/projects/project-team-api";
 import { usePageTitle } from "@/layouts/page-title";
 import { taskStatusTone } from "@/features/project-agents/task-labels";
+import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
 
 type ProfileTab =
   | "overview"
@@ -119,14 +121,9 @@ const activeTab = computed<ProfileTab>({
 // The shell's one H1 is this Agent's real name; the route title is only the
 // fallback while it loads or when the Agent is unavailable.
 usePageTitle(() => (agent.value ? agentDisplayName(agent.value) : ""));
-// Back to the directory restores its filters, scroll and focused card when
-// the directory is the page this one was opened from.
-function backToDirectory(event: MouseEvent) {
-  const back = (router.options.history.state as { back?: unknown } | null)?.back;
-  if (typeof back !== "string" || !/^\/project-agents(\?|$)/.test(back)) return;
-  event.preventDefault();
-  router.back();
-}
+// "← 全部 Agent" goes Back when the directory opened this page, restoring its
+// filters, scroll and focused card.
+const openedFromDirectory = /^\/project-agents(\?|$)/;
 const collaborators = computed(() =>
   agent.value ? collaboratorsFor(agent.value.agentId, tasks.value) : [],
 );
@@ -303,9 +300,7 @@ onMounted(() => {
     :aria-label="agent ? agentDisplayName(agent) : t('agentProfiles.profile')"
   >
     <div class="@container mx-auto grid w-full max-w-(--canvas-max) gap-4">
-      <RouterLink class="agent-profile-back" to="/project-agents" @click="backToDirectory">
-        ← {{ t("agentProfiles.back") }}
-      </RouterLink>
+      <BackLink class="agent-profile-back" to="/project-agents" :from="openedFromDirectory">{{ t("agentProfiles.back") }}</BackLink>
 
       <GrowthLoading
         v-if="(loading || store.runtimeStatus === 'loading') && !agent"
@@ -421,7 +416,7 @@ onMounted(() => {
                 </div>
                 <ul v-if="currentWork.length" class="agent-current-work-list">
                   <li v-for="task in currentWork" :key="task.taskId">
-                    <RouterLink :to="{ path: '/project-agents/manage', query: { agent: agent.agentId, task: task.taskId } }">
+                    <RouterLink :to="{ path: agentManagementPath(agent.personalSpaceId, agent.agentId), query: { task: task.taskId } }">
                       {{ task.title }}
                     </RouterLink>
                     <Badge :variant="taskStatusTone(task.status)">{{ t(`projectAgents.taskStatus.${task.status}`) }}</Badge>
@@ -511,7 +506,7 @@ onMounted(() => {
                   </li>
                   <li v-for="task in tasks.slice(0, 12)" :key="task.taskId">
                     <div class="agent-section-heading">
-                      <RouterLink :to="{ path: '/project-agents/manage', query: { agent: agent.agentId, task: task.taskId } }">
+                      <RouterLink :to="{ path: agentManagementPath(agent.personalSpaceId, agent.agentId), query: { task: task.taskId } }">
                         {{ task.title }}
                       </RouterLink>
                       <span>{{ t(`projectAgents.taskStatus.${task.status}`) }}</span>
@@ -640,7 +635,7 @@ onMounted(() => {
               <p class="agent-muted">{{ t("agentProfiles.locked") }}</p>
               <div class="agent-profile-management-links">
                 <Button as-child variant="outline">
-                  <RouterLink data-open-management :to="{ path: '/project-agents/manage', query: { agent: agent.agentId } }">
+                  <RouterLink data-open-management :to="agentManagementPath(agent.personalSpaceId, agent.agentId)">
                     {{ t("agentProfiles.openManagement") }}
                   </RouterLink>
                 </Button>

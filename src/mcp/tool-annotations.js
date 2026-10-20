@@ -48,6 +48,7 @@ const READ_TOOLS = new Set([
   'get_executor_routing_rule',
   'list_project_agent_routing_learning',
   'get_agent_score_card',
+  'resolve_knowledge_tags',
   'list_knowledge_review_candidates',
   'list_workflow_candidates',
   'recommend_next_workflow_steps',
@@ -61,7 +62,7 @@ const READ_TOOLS = new Set([
 
 const WRITE_TOOLS = new Set([
   'agent_chat',
-  'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'pin_agent',
+  'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'pin_agent', 'role_work',
   'manage_project_agent_schedule', 'control_project_agent_task_run',
   'message_agent', 'reply_agent_message', 'cancel_agent_message',
   'record_agent_verification',
@@ -94,6 +95,7 @@ const WRITE_TOOLS = new Set([
   'search_connected_knowledge',
   'record_knowledge_usage',
   'record_knowledge_feedback',
+  'change_knowledge_tags',
   'apply_common_knowledge_promotion',
   'get_knowledge_graph',
   'search_human_knowledge_changes',
@@ -163,7 +165,7 @@ export function annotationsFor(name) {
   return {
     readOnlyHint: readOnly,
     destructiveHint: DESTRUCTIVE_TOOLS.has(name),
-    idempotentHint: readOnly || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'recruit_employee' || name === 'submit_agent_app_version' || name === 'upsert_personal_project' ||
+    idempotentHint: readOnly || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'role_work' || name === 'recruit_employee' || name === 'submit_agent_app_version' || name === 'upsert_personal_project' ||
       name === 'upsert_project_agent' ||
       name === 'dismiss_project_agent' ||
       name === 'cleanup_test_project_agents' ||

@@ -31,10 +31,27 @@ export function policyLabel(policy: ProjectAgentExecutorPolicy | null | undefine
   return policy?.mode ?? 'flexible'
 }
 
-export function taskStatusLabel(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string) {
-  const key = `projectAgents.taskStatus.${status}`
+/** A reported enum value through its label table; an unknown value stays as reported. */
+function tableLabel(table: string, value: string) {
+  const key = `projectAgents.${table}.${value}`
   const translated = t(key)
-  return translated === key ? status : translated
+  return translated === key ? value : translated
+}
+
+export function taskStatusLabel(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string) {
+  return tableLabel('taskStatus', status)
+}
+
+export function recruitmentStatusLabel(status: string) {
+  return tableLabel('recruitmentStatus', status)
+}
+
+export function recruitmentPositionLabel(positionKind: string) {
+  return tableLabel('recruitmentPosition', positionKind)
+}
+
+export function memoryScopeLabel(scope: string | null | undefined) {
+  return scope ? tableLabel('memoryScopes', scope) : t('projectAgents.notReported')
 }
 
 /**
@@ -55,10 +72,7 @@ export function sourceLabel(source: ConversationSourceApplication | null | undef
 }
 
 export function participantRoleLabel(role: string | null | undefined) {
-  if (!role) return t('projectAgents.notReported')
-  const key = `projectAgents.participantRoles.${role}`
-  const translated = t(key)
-  return translated === key ? role : translated
+  return role ? tableLabel('participantRoles', role) : t('projectAgents.notReported')
 }
 
 export function actualExecution(task: ProjectAgentTaskRecord): ProjectAgentActualExecution | null {

@@ -3,7 +3,7 @@ export type JudgmentQuality = 'quality' | 'balanced' | 'economy'
 export type JudgmentClient = 'codex' | 'claude_code'
 export type JudgmentOutcome = 'approve' | 'escalate' | 'recommend' | 'failed'
 export type JudgmentKind = 'review' | 'routing' | 'acceptance'
-export type JudgmentExecutionStatus = 'not_applied' | 'applied' | 'stale' | 'failed'
+export type JudgmentExecutionStatus = 'not_applied' | 'applying' | 'applied' | 'stale' | 'failed'
 export type JudgmentFeedbackVote = 'up' | 'down' | null
 
 export interface JudgmentPolicySelection {

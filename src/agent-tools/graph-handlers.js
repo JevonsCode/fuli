@@ -4,10 +4,12 @@ import { activeTestToolsEnabled } from '../app/agent-request-context.js';
 import { agentInterfaceCatalog } from './interface-catalog.js';
 import { captureDecision, captureDisabled, describeCapture } from '../graphiti/capture-decision.js';
 import { captureNotice } from '../graphiti/capture-notice.js';
+import { knowledgeTagChange } from '../graphiti/knowledge-tags.js';
 
 const HANDLERS = Object.freeze({
   get_judgment_policy: (app, input) => app.judgment.policy(input),
   get_model_usage: (app, input) => modelBackends(app).usage(input),
+  role_work: (app, { action, ...input }) => roleWork(app)[action === 'submit' ? 'submit' : 'claim'](input),
   manage_project_agent_schedule: (app, input) => app.taskSchedules.manage(input),
   control_project_agent_task_run: (app, input) => app.controlProjectAgentTaskRun({ ...input, agentInvocation: true }),
   list_judgments: (app, input) => app.judgment.records(input),
@@ -103,6 +105,11 @@ const HANDLERS = Object.freeze({
     () => app.recordKnowledgeUsage(input)),
   record_knowledge_feedback: (app, input) => captureGuard(app, sessionCaptureScope(input),
     () => app.recordKnowledgeFeedback(input)),
+  resolve_knowledge_tags: (app, input) => app.knowledgeTags('resolve', input),
+  // A tag an Agent creates, aliases or attaches is recorded vocabulary, so it
+  // follows the capture decision and always stays Agent-attributed.
+  change_knowledge_tags: (app, input) => captureGuard(app, sessionCaptureScope(input),
+    () => app.knowledgeTags(knowledgeTagChange(input?.action), { ...input, operationActor: 'agent' })),
   search_current_project_knowledge: (app, input) =>
     app.searchCurrentProjectKnowledge(input),
   discover_common_knowledge_candidates: (app, input) =>
@@ -263,6 +270,11 @@ function agentApps(app) {
 function modelBackends(app) {
   if (!app.modelBackends) throw new Error('Model backends need a local FULI installation');
   return app.modelBackends;
+}
+
+function roleWork(app) {
+  if (!app.roleWork) throw new Error('Role work packages need a local FULI installation');
+  return app.roleWork;
 }
 
 function settingsGuide(app) {

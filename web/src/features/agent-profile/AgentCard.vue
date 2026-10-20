@@ -21,6 +21,7 @@ import { agentPinsText } from "./agent-pins";
 import { agentIdentityStyle } from "./agent-identity-color";
 import { loopPhaseDelay } from "@/lib/motion-phase";
 import { occupationLabels } from "./agent-occupation";
+import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
 import type { ProjectAgentRecord } from "@/types";
 
 const WORKING_RING_MS = 2400;
@@ -72,8 +73,8 @@ const runningFor = computed(() =>
     : null,
 );
 const taskLink = computed(() => ({
-  path: "/project-agents/manage",
-  query: { agent: props.agent.agentId, task: props.entry?.taskId ?? "" },
+  path: agentManagementPath(props.spaceId, props.agent.agentId),
+  query: { task: props.entry?.taskId ?? "" },
 }));
 const statusDetail = computed(() => workbenchStatusDetail(props.entry));
 const occupation = computed(() => occupationLabels(props.agent.occupation));
@@ -260,15 +261,6 @@ function surfaceClick(event: MouseEvent) {
 </template>
 
 <style scoped>
-.agent-card:has(:focus-visible) { border-color: var(--color-border-strong); }
-.agent-card-name {
-  display: -webkit-box; min-width: 0; overflow: hidden; color: var(--color-ink); font-size: 16px; font-weight: 650; line-height: 1.35;
-  text-decoration: none; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-}
-.agent-card-name:hover { color: var(--color-accent); }
-/* The whole name line is the visible target, so its focus ring hugs the text. */
-.agent-card-name:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 4px; }
-
 .agent-card-pin {
   color: var(--color-muted);
 }

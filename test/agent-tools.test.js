@@ -34,7 +34,7 @@ const NAMES = [
   'submit_agent_app_version',
   'list_agent_apps',
   'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
-  'get_model_usage',
+  'get_model_usage', 'role_work',
   'get_agent_score_card',
   'manage_project_agent_schedule', 'control_project_agent_task_run',
   'read_task_preferences',
@@ -50,6 +50,7 @@ const NAMES = [
   'search_knowledge_graph',
   'search_connected_knowledge',
   'record_knowledge_usage',
+  'resolve_knowledge_tags', 'change_knowledge_tags',
   'record_knowledge_feedback',
   'search_current_project_knowledge',
   'discover_common_knowledge_candidates',
@@ -326,6 +327,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   const app = {
     judgment: Object.fromEntries(['policy', 'records', 'review', 'assess', 'accept', 'pins', 'pin'].map(name => [name, async input => calls.push([`judgment-${name}`, input])])),
     modelBackends: { usage: input => calls.push(['model-usage', input]) },
+    roleWork: { claim: input => calls.push(['role-work-claim', input]), submit: input => calls.push(['role-work-submit', input]) },
     taskSchedules: { manage: async input => calls.push(['task-schedules', input]) },
     controlProjectAgentTaskRun: async input => calls.push(['task-run-control', input]),
     queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
@@ -388,6 +390,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     recordDecisionTrace: async (input) => calls.push(['decision-trace', input]),
     searchKnowledge: async (input) => calls.push(['search', input]),
     recordKnowledgeUsage: async (input) => calls.push(['knowledge-usage', input]),
+    knowledgeTags: async (operation, input) => calls.push(['tags-' + operation, input]),
     recordKnowledgeFeedback: async (input) =>
       calls.push(['knowledge-feedback', input]),
     searchCurrentProjectKnowledge: async (input) =>
@@ -505,7 +508,10 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   const previousTestTools = process.env.FULI_ENABLE_TEST_TOOLS;
   process.env.FULI_ENABLE_TEST_TOOLS = '1';
   try {
-    for (const name of NAMES.filter((value) => !ROUNDTABLE_TOOL_NAMES.includes(value))) await callAgentTool(app, name, { probe: name });
+    for (const name of NAMES.filter((value) => !ROUNDTABLE_TOOL_NAMES.includes(value))) {
+      // A tag change names its write; every other probe is the bare tool name.
+      await callAgentTool(app, name, name === 'change_knowledge_tags' ? { probe: name, action: 'create' } : { probe: name });
+    }
   assert.deepEqual(calls.map(([name]) => name), [
     'request-attention', 'list-attention', 'cancel-attention',
     'agent-tasks', 'preference-conflicts',
@@ -515,12 +521,13 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-targets', 'external-delete', 'external-conflict-policy',
     'external-update-policy', 'defer-preference-conflict', 'delete-public-project',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call', 'app-submit', 'app-list',
-    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'model-usage', 'agent-score-card', 'task-schedules', 'task-run-control',
+    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'model-usage', 'role-work-claim', 'agent-score-card', 'task-schedules', 'task-run-control',
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',
     'capture', 'workflow-observation', 'decision-trace', 'search', 'connected-search',
-    'get-capture-policy', 'knowledge-usage', 'get-capture-policy', 'knowledge-feedback',
+    'get-capture-policy', 'knowledge-usage', 'tags-resolve', 'get-capture-policy', 'tags-create',
+    'get-capture-policy', 'knowledge-feedback',
     'current-project-search', 'common-candidates', 'personal-global-candidates',
     'preview-personal-global-decision',
     'preview-common-promotion', 'apply-common-promotion',

@@ -23,7 +23,7 @@ export async function handleApiRequest({
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
-  if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends })) return true;
+  if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork })) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {
     sendJson(response, 200, {

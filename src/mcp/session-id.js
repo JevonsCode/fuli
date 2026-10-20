@@ -11,6 +11,8 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'get_agent_message_status', 'cancel_agent_message',
   'get_agent_quality_gate', 'record_agent_verification',
   'assess_task_completion',
+  // The session answering a work package is the client of this process.
+  'role_work',
   'plan_agent_collaboration', 'request_agent_loan', 'decide_agent_loan', 'list_agent_loans',
   'list_agent_conversations', 'read_agent_conversation', 'resume_agent_conversation',
   'get_agent_conversation_policy', 'update_agent_conversation_policy',
@@ -41,7 +43,7 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
 // capture decision: their client is this MCP process's, never the payload's,
 // so a client's own switch applies to them (rec#5 C1, rec#11 D-01).
 const CAPTURE_SOURCE_TOOLS = new Set([
-  'record_knowledge_usage', 'record_knowledge_feedback', 'revise_personal_knowledge',
+  'record_knowledge_usage', 'record_knowledge_feedback', 'revise_personal_knowledge', 'change_knowledge_tags',
   'upsert_personal_project', 'upsert_project_agent', 'get_knowledge_graph',
   'search_human_knowledge_changes', 'search_current_project_knowledge',
   'search_connected_knowledge', 'get_user_taste_skill'

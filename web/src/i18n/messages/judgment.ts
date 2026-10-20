@@ -84,6 +84,7 @@ export const judgmentMessages = {
       },
       executionStatus: {
         not_applied: '尚未执行',
+        applying: '执行中，待核对结果',
         applied: '已执行',
         stale: '已过期',
         failed: '执行失败',
@@ -189,6 +190,7 @@ export const judgmentMessages = {
       },
       executionStatus: {
         not_applied: 'Not applied',
+        applying: 'Applying; result being confirmed',
         applied: 'Applied',
         stale: 'Stale',
         failed: 'Execution failed',

@@ -51,8 +51,10 @@ const BASELINE = Object.freeze({
   // rec#8 model backends part 1: full-profile get_model_usage reads the model usage ledger and budget windows (+629 B).
   // Bole score card: get_agent_score_card serves the card and its task IDs in one tool (+1,065 B).
   // rec#5 C2: capture-policy tools take the caller's directory and the project mode (+1,215 B).
-  // Merged: 172,573 -> 179,065 B (+6,492 B). Chat is unchanged.
-  fullToolSchemaBytes: 179065,
+  // rec#8 part 2 (D-04 §2): full-profile role_work lets the current session answer a built-in Agent's handed-off work package instead of FULI starting a CLI; review_with_tonborg names that path (+1,009 B).
+  // rec#5 section 3 tags: resolve_knowledge_tags and one change_knowledge_tags for create/alias/attach/detach, full profile only, chat reaches them via fuli_call (+1,945 B; D-07 review wording +128 B).
+  // Merged: 172,573 -> 182,147 B (+9,574 B), measured. Chat is unchanged.
+  fullToolSchemaBytes: 182147,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

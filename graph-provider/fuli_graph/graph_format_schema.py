@@ -155,6 +155,17 @@ CONTROL_PLANE_RULES = (
     _node_index('fuli_project_agent_aggregate_lookup', 'FuliProjectAgentExecutorOutcomeAggregate', 'personal_space_id', 'personal_project_id', 'agent_id', 'work_kind', 'executor_id', 'model_strategy_key'),
 )
 
+# The open tag vocabulary (#239): one identity per namespace and normalized
+# name (G4-4), revisions and item links.
+KNOWLEDGE_TAG_RULES = (
+    _unique('fuli_knowledge_tag_id', 'FuliKnowledgeTag', 'id'),
+    _unique('fuli_knowledge_tag_identity', 'FuliKnowledgeTag', 'space_id', 'namespace_key', 'name_key'),
+    _unique('fuli_knowledge_tag_revision_id', 'FuliKnowledgeTagRevision', 'id'),
+    _unique('fuli_knowledge_tag_link_id', 'FuliKnowledgeTagLink', 'id'),
+    _node_index('fuli_knowledge_tag_link_item', 'FuliKnowledgeTagLink', 'space_id', 'item_kind', 'item_id'),
+)
+KNOWLEDGE_TAG_LABELS = frozenset({'FuliKnowledgeTag', 'FuliKnowledgeTagRevision', 'FuliKnowledgeTagLink'})
+
 # Every Fuli label in the code when the format registry was introduced.
 BASELINE_LABELS = frozenset({
     'FuliAgentAttention',

@@ -22,6 +22,8 @@ from .knowledge_review_models import (
     KnowledgeReviewCandidatePage,
     KnowledgeReviewCandidateRequest,
     KnowledgeReviewDecision,
+    KnowledgeReviewDecisionLookup,
+    KnowledgeReviewDecisionLookupResult,
     KnowledgeReviewFinish,
     KnowledgeReviewProgress,
     KnowledgeReviewRun,
@@ -120,6 +122,7 @@ from .knowledge_batch_confirmation import confirm_knowledge_batch
 from .knowledge_review import (
     finish_knowledge_review,
     list_knowledge_review_candidates,
+    read_knowledge_review_decision,
     record_knowledge_review_progress,
     start_knowledge_review,
 )
@@ -138,6 +141,7 @@ from .project_knowledge import (
     review_personal_project_relation,
 )
 from .project_agent_routes import register_project_agent_routes
+from .knowledge_tag_routes import register_knowledge_tag_routes
 from .preference_conflicts import (
     complete_preference_conflict,
     defer_preference_conflict,
@@ -327,6 +331,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return await store.get_personal_project(actor, personal_space_id, project_id)
 
     register_project_agent_routes(application, store, Actor)
+    register_knowledge_tag_routes(application, store, Actor)
 
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(
@@ -609,6 +614,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
     ) -> KnowledgeReviewDecision:
         return await record_knowledge_review_progress(store, actor, request)
+
+    @application.post(
+        '/v1/knowledge/reviews/decision',
+        response_model=KnowledgeReviewDecisionLookupResult,
+    )
+    async def review_decision(
+        request: KnowledgeReviewDecisionLookup,
+        actor: Actor,
+    ) -> KnowledgeReviewDecisionLookupResult:
+        return await read_knowledge_review_decision(store, actor, request)
 
     @application.post(
         '/v1/knowledge/reviews/finish',

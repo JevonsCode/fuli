@@ -33,7 +33,7 @@ import { AGENT_DISMISSAL_DEFINITIONS } from './agent-dismissal-definitions.js';
 import { EMPLOYEE_TOOL_DEFINITIONS } from './employee-definitions.js';
 import { AGENT_APP_TOOL_DEFINITIONS } from './agent-app-definitions.js';
 import { JUDGMENT_TOOL_DEFINITIONS } from './judgment-definitions.js';
-import { MODEL_USAGE_DEFINITIONS } from './model-usage-definitions.js';
+import { MODEL_BACKEND_DEFINITIONS } from './model-backend-definitions.js';
 import { TASK_SCHEDULE_DEFINITIONS } from './task-schedule-definitions.js';
 import { TASK_RUN_DEFINITIONS } from './task-run-definitions.js';
 import { TASK_PREFERENCE_DEFINITIONS } from './task-preference-definitions.js';
@@ -41,6 +41,7 @@ import { AGENT_INTERFACE_DEFINITIONS } from './interface-definitions.js';
 import { AGENT_ATTENTION_DEFINITIONS } from './agent-attention-definitions.js';
 import { AGENT_SCORE_CARD_DEFINITIONS } from './agent-score-card-definitions.js';
 import { KNOWLEDGE_USAGE_DEFINITION, knowledgeUsageItems } from './knowledge-usage-definitions.js';
+import { KNOWLEDGE_TAG_DEFINITIONS } from './knowledge-tag-definitions.js';
 
 const id = boundedString(256);
 const label = boundedString(512);
@@ -292,7 +293,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...EMPLOYEE_TOOL_DEFINITIONS,
   ...AGENT_APP_TOOL_DEFINITIONS,
   ...JUDGMENT_TOOL_DEFINITIONS,
-  ...MODEL_USAGE_DEFINITIONS,
+  ...MODEL_BACKEND_DEFINITIONS,
   ...AGENT_SCORE_CARD_DEFINITIONS,
   ...TASK_SCHEDULE_DEFINITIONS, ...TASK_RUN_DEFINITIONS,
   ...TASK_PREFERENCE_DEFINITIONS,
@@ -517,6 +518,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
     }, ['personalSpaceId', 'personalProjectId', 'query'])
   },
   KNOWLEDGE_USAGE_DEFINITION,
+  ...KNOWLEDGE_TAG_DEFINITIONS,
   {
     name: 'record_knowledge_feedback',
     title: 'WRITE · Record negative knowledge evidence',

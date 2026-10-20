@@ -67,7 +67,12 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', refreshAttention)
   attention.setSpace('')
 })
-watchEffect(() => updateDocumentTitle(recordTitle.value || route.meta.title))
+// Every navigation, a query change too, retitles the tab: the router's own
+// afterEach writes the route title, so a record page names itself again.
+watchEffect(() => {
+  void route.fullPath
+  updateDocumentTitle(recordTitle.value || route.meta.title)
+})
 </script>
 
 <template>

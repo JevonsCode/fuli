@@ -31,6 +31,17 @@ export function recordKnowledgeReviewProgress(app, input) {
   });
 }
 
+// The decision a review run holds for one candidate ({ decision: null } when
+// none): the receipt of a write whose reply was lost.
+export function readKnowledgeReviewDecision(app, input) {
+  assertActivePersonalSpace(app, input.personalSpaceId);
+  return app.personal.readKnowledgeReviewDecision({
+    personal_space_id: input.personalSpaceId,
+    review_id: input.reviewId,
+    candidate_key: input.candidateKey
+  });
+}
+
 export function finishKnowledgeReview(app, input) {
   assertActivePersonalSpace(app, input.personalSpaceId);
   return app.personal.finishKnowledgeReview({
