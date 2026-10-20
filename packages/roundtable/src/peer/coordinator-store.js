@@ -1,7 +1,7 @@
 import { CHAT_SCHEMA, createChatStore } from '../roundtable/chat-store.js';
 import { openFormattedDatabase, sqliteFormat } from '../storage/sqlite-format.js';
 
-const COORDINATOR_FORMAT = sqliteFormat({
+export const COORDINATOR_FORMAT = sqliteFormat({
   store: 'peer-coordinator',
   schema: `
     CREATE TABLE IF NOT EXISTS nodes (

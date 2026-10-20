@@ -8,6 +8,7 @@ on top of the disposable-graph flags; every graph here is synthetic.
 
 import os
 
+import httpx
 import pytest
 from neo4j import AsyncGraphDatabase
 
@@ -301,3 +302,87 @@ class _Maintenance:
     async def execute_query(self, query, **parameters):
         records, summary, keys = await self.driver.execute_query(query, **parameters)
         return records, summary, keys
+
+
+async def _graph_bytes(driver):
+    """Everything a format report could change: schema, ledger, nodes, edges."""
+    schema = await _rows(driver, 'SHOW CONSTRAINTS YIELD name RETURN name ORDER BY name')
+    indexes = await _rows(driver, 'SHOW INDEXES YIELD name RETURN name ORDER BY name')
+    nodes = await _rows(driver, '''
+        MATCH (n) RETURN labels(n) AS labels, properties(n) AS properties
+        ORDER BY elementId(n)
+    ''')
+    edges = await _rows(driver, 'MATCH ()-[r]->() RETURN type(r) AS type, count(*) AS n ORDER BY type')
+    return repr((schema, indexes, nodes, edges))
+
+
+async def _report(settings):
+    from fuli_graph.app import create_app
+
+    # No lifespan: the report needs no format check and must not run one.
+    app = create_app(settings)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url='http://fixture'
+    ) as client:
+        response = await client.get('/health/data-format')
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.mark.asyncio
+async def test_the_format_report_reads_an_unversioned_graph_without_changing_it(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _create_rules(driver, {'graph/1-baseline-schema'})
+    await driver.execute_query(
+        "MATCH (s:FuliSpace {id: 'legacy-space'}) SET s.group_id = 'legacy:personal:legacy-space'"
+    )
+    before = await _graph_bytes(driver)
+
+    report = await _report(settings)
+
+    assert await _graph_bytes(driver) == before
+    assert report['state'] == 'pending_confirmation' and report['version'] is None
+    steps = {step['id']: step['state'] for step in report['steps']}
+    assert steps['graph/1-baseline-schema'] == 'detected'
+    assert steps['graph/3-control-plane-schema'] == 'automatic'
+    assert steps['graph/9-group-id-separators'] == 'pending_confirmation'
+    assert report['ledger'] == []
+
+
+@pytest.mark.asyncio
+async def test_the_format_report_names_newer_and_half_applied_graphs_without_changing_them(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _seed_started(driver, 'graph/9-group-id-separators', 8)
+    before = await _graph_bytes(driver)
+    half = await _report(settings)
+    assert await _graph_bytes(driver) == before
+    assert half['state'] == 'half_applied'
+    assert half['steps'] == [{'id': 'graph/9-group-id-separators', 'state': 'half_applied',
+                              'detail': 'started and did not finish'}]
+    assert [event['status'] for event in half['ledger']] == ['started']
+
+    await driver.execute_query(
+        "MATCH (f:FuliDataFormat {store: 'graph'}) SET f.version = $version",
+        version=GRAPH_FORMAT_VERSION + 1,
+    )
+    before = await _graph_bytes(driver)
+    newer = await _report(settings)
+    assert await _graph_bytes(driver) == before
+    assert newer['state'] == 'newer_format' and newer['version'] == GRAPH_FORMAT_VERSION + 1
+
+
+@pytest.mark.asyncio
+async def test_a_refused_write_names_the_store_and_steps(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _seed_started(driver, 'graph/9-group-id-separators', 8)
+
+    async with provider_client(settings, ACCESS_TOKEN) as (client, _):
+        health = (await client.get('/health')).json()['data_format']
+        write = await client.post('/v1/spaces', json={'name': 'Refused', 'kind': 'personal'})
+
+    assert health['store'] == 'graph' and health['pending'] == ['graph/9-group-id-separators']
+    assert write.json()['detail']['store'] == 'graph'
+    assert write.json()['detail']['steps'] == ['graph/9-group-id-separators']

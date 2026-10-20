@@ -5,7 +5,7 @@ import { EmployeeError } from '../employees/manifest.js';
 export const DEFAULT_PINS = Object.freeze(['employee.bole', 'employee.jefa', 'employee.tonborg']);
 export const DEFAULT_POLICY = Object.freeze({ mode: 'manual', quality: 'quality', client: 'codex' });
 const conflict = () => new EmployeeError('This record changed. Reload and try again.', 409, 'judgment_conflict');
-const JUDGMENT_FORMAT = sqliteFormat({
+export const JUDGMENT_FORMAT = sqliteFormat({
   store: 'judgment',
   schema: `
     CREATE TABLE IF NOT EXISTS judgment_settings(space TEXT, key TEXT, revision INTEGER NOT NULL, value TEXT, PRIMARY KEY(space,key));

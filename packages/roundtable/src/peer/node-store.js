@@ -1,6 +1,6 @@
 import { openFormattedDatabase, sqliteFormat } from '../storage/sqlite-format.js';
 
-const NODE_FORMAT = sqliteFormat({
+export const NODE_FORMAT = sqliteFormat({
   store: 'peer-node',
   schema: `
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at TEXT NOT NULL);

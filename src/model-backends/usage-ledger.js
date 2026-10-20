@@ -25,7 +25,7 @@ const SUBSET_FIELDS = new Set(['cachedInput', 'cacheWriteInput', 'reasoning']);
 const UNKNOWN_USAGE = Object.freeze({ inputTokens: null, outputTokens: null, totalTokens: null, cachedInputTokens: null,
   cacheWriteInputTokens: null, reasoningTokens: null, definition: null });
 
-const MODEL_USAGE_FORMAT = sqliteFormat({
+export const MODEL_USAGE_FORMAT = sqliteFormat({
   store: 'model-usage',
   schema: `
       CREATE TABLE IF NOT EXISTS model_attempts(

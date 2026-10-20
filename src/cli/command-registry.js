@@ -35,6 +35,9 @@ Install and Agent connection:
   setup --connected-only [setup options]  (repair existing connections without adding clients)
   uninstall [--yes] [--data-dir DIR]
 
+Data formats:
+  migrate status [--json] [--data-dir DIR]  (every store's format version, ledger and pending steps; read only, safe while FULI runs)
+
 Graph data portability:
   graph export --output DIR [--mode container|native] [--data-dir DIR]
   graph import --input DIR [--target-mode container|native] [--yes] [--data-dir DIR]

@@ -28,7 +28,7 @@ const SAME_WORK = `role = :role AND operation = :operation AND space = :space AN
 const COLUMNS = 'package_id, role, operation, request_id, space, project, session_ref, evidence_version, policy_version, '
   + 'status, reason, created_at, expires_at, invalid_submissions, request, resume, fallback_receipt';
 
-const ROLE_WORK_FORMAT = sqliteFormat({
+export const ROLE_WORK_FORMAT = sqliteFormat({
   store: 'role-work',
   schema: `
       CREATE TABLE IF NOT EXISTS role_work(

@@ -10,7 +10,7 @@ const OPEN_CLAIM = "task_id IS NULL AND status IN ('claimed','unresolved')";
 // Checked in the same statement that claims or retries, so a pause saved by any
 // process meanwhile wins over a scan or a lookup that started before it.
 const SCHEDULE_ENABLED = 'EXISTS (SELECT 1 FROM task_schedules WHERE id = task_schedule_runs.schedule AND enabled = 1)';
-const TASK_SCHEDULE_FORMAT = sqliteFormat({
+export const TASK_SCHEDULE_FORMAT = sqliteFormat({
   store: 'task-schedules',
   schema: `
     CREATE TABLE IF NOT EXISTS task_schedules(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL,

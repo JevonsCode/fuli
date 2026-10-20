@@ -2,7 +2,7 @@ import { openFormattedDatabase, sqliteFormat } from '../storage/sqlite-format.js
 import { CHAT_SCHEMA, createChatStore } from './chat-store.js';
 import { ATTENTION_INBOX_SCHEMA, createAttentionInboxStore } from './attention-inbox-store.js';
 
-const ROUNDTABLE_FORMAT = sqliteFormat({
+export const ROUNDTABLE_FORMAT = sqliteFormat({
   store: 'roundtable',
   schema: `
     CREATE TABLE IF NOT EXISTS threads (

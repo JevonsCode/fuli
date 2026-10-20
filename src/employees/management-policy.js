@@ -25,7 +25,7 @@ export function parseEmployeeManagement(value) {
 
 // Employee policy is local host configuration, not a public project fact or a
 // Provider model/executor policy. SQLite CAS also protects independent MCP hosts.
-const EMPLOYEE_MANAGEMENT_FORMAT = sqliteFormat({
+export const EMPLOYEE_MANAGEMENT_FORMAT = sqliteFormat({
   store: 'employee-management',
   schema: `CREATE TABLE IF NOT EXISTS employee_management (
     space_id TEXT NOT NULL, template_id TEXT NOT NULL,

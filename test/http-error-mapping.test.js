@@ -7,7 +7,7 @@ import {
 } from '../src/app/application-error.js';
 import { ProviderRequestError } from '../src/graphiti/provider-client.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
-import { newerFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
+import { newerFormatError, pendingMigrationError } from '../packages/roundtable/src/storage/data-format-error.js';
 
 test('HTTP error mapping treats application not-found and validation errors as bad requests', () => {
   for (const code of [ApplicationErrorCode.NOT_FOUND, ApplicationErrorCode.VALIDATION]) {
@@ -58,5 +58,9 @@ test('HTTP error mapping distinguishes provider outages and timeouts', () => {
 
 test('HTTP error mapping answers a store this version cannot use with its reason (rec#17)', () => {
   const blocked = newerFormatError('judgment', 4, 1);
-  assert.deepEqual(mapHttpError(blocked), { status: 503, body: { error: blocked.message, code: 'data_format_blocked' } });
+  assert.deepEqual(mapHttpError(blocked), { status: 503,
+    body: { error: blocked.message, code: 'data_format_blocked', store: 'judgment', steps: [] } });
+  const pending = pendingMigrationError('task-schedules', { id: 'task-schedules/3-run-recovery', summary: 'runs' }, '1 row');
+  assert.deepEqual(mapHttpError(pending).body.steps, ['task-schedules/3-run-recovery']);
+  assert.equal(mapHttpError(pending).body.store, 'task-schedules');
 });

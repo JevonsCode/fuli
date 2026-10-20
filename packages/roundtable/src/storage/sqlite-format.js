@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { DataFormatError, newerFormatError, pendingMigrationError } from './data-format-error.js';
 
@@ -38,6 +38,9 @@ const BACKUP_PROCESS = fileURLToPath(new URL('./sqlite-backup-process.js', impor
 // other kind always waits for a person.
 const AUTOMATIC_KINDS = new Set(['add-columns']);
 const KINDS = new Set(['add-columns', 'backfill']);
+// How a step that has not run yet is reported by inspectSqliteStore.
+const INSPECTED_STATES = Object.freeze({ baseline_detected: 'detected', applied: 'automatic',
+  pending_confirmation: 'pending_confirmation' });
 
 // Validates a store's declaration once, at module load.
 export function sqliteFormat({ store, schema, migrations = [], pragmas = '', readableVersions = [] }) {
@@ -111,7 +114,8 @@ function migrate(database, path, format, { backup, now }) {
   if (interrupted.length) {
     return { error: new DataFormatError(format.store, 'data_format_interrupted',
       `FULI store "${format.store}" has a migration (${interrupted.join(', ')}) that started and did not finish. `
-      + 'FULI does not use the store until that migration is completed or the store is restored from a backup.') };
+      + 'FULI does not use the store until that migration is completed or the store is restored from a backup.',
+      interrupted) };
   }
   if (version === format.version) return { access: 'write' };
   const record = ledgerWriter(database, now);
@@ -129,7 +133,7 @@ function migrate(database, path, format, { backup, now }) {
   const changes = steps.filter((step) => step !== pending
     || recorded.get(step.migration_id)?.status !== step.status || recorded.get(step.migration_id)?.detail !== step.detail);
   if (!changes.length) return { error: pendingMigrationError(format.store, pending.migration, pending.detail) };
-  const backupRef = takeBackup(path, format, version, backup);
+  const backupRef = takeBackup(path, format, version, backup, steps.map((step) => step.migration_id));
   for (const step of steps) {
     if (step.status === 'applied') step.run();
     record({ ...step, backup_ref: backupRef });
@@ -164,26 +168,122 @@ function planSteps(database, format, version) {
         detail: added.length ? `created ${added.join(', ')}` : 'every baseline table and index exists' });
       reached = 1;
     }
-    for (const migration of format.migrations.filter(({ to }) => to > reached)) {
-      const step = { migration, migration_id: migration.id, from_version: migration.to - 1, to_version: migration.to,
-        kind: migration.kind, run: () => applyMigration(database, migration) };
-      if (version === 0 && missingColumns(database, migration).length === 0) {
-        steps.push({ ...step, status: 'baseline_detected', detail: 'every column exists' });
-        continue;
-      }
-      const rows = AUTOMATIC_KINDS.has(migration.kind) ? 0 : migration.rowsToBackfill(database);
-      if (rows) {
-        steps.push({ ...step, status: 'pending_confirmation', detail: `${rows} existing rows need a backfill` });
-        break;
-      }
-      steps.push({ ...step, status: 'applied', detail: migration.kind === 'backfill'
-        ? 'added columns; no existing row needed a backfill' : `added ${Object.keys(migration.columns).join(', ')}` });
-    }
-    return steps;
+    return [...steps, ...classifyMigrations(database, format, version, reached).map((step) => ({ ...step,
+      migration_id: step.migration.id, from_version: step.migration.to - 1, to_version: step.migration.to,
+      kind: step.migration.kind, run: () => applyMigration(database, step.migration) }))];
   } finally {
     database.exec('ROLLBACK TO format_plan');
     database.exec('RELEASE format_plan');
   }
+}
+
+// Each registered step after reached, read-only: in effect already (an
+// unversioned store only), whitelisted, or waiting for a person, which ends
+// the list.
+function classifyMigrations(database, format, version, reached) {
+  const steps = [];
+  for (const migration of format.migrations.filter(({ to }) => to > reached)) {
+    if (version === 0 && missingColumns(database, migration).length === 0) {
+      steps.push({ migration, status: 'baseline_detected', detail: 'every column exists' });
+      continue;
+    }
+    const rows = AUTOMATIC_KINDS.has(migration.kind) || !userTables(database).includes(migration.table)
+      ? 0 : migration.rowsToBackfill(database);
+    if (rows) {
+      steps.push({ migration, status: 'pending_confirmation', detail: `${rows} existing rows need a backfill` });
+      break;
+    }
+    steps.push({ migration, status: 'applied', detail: migration.kind === 'backfill'
+      ? 'added columns; no existing row needed a backfill' : `added ${Object.keys(migration.columns).join(', ')}` });
+  }
+  return steps;
+}
+
+// What opening the store would find and do, without changing a byte: no DDL,
+// no backup, no ledger row, no version stamp, and no -wal/-shm left beside a
+// store FULI is not using. For `fuli migrate status` and the console's
+// startup report; never a substitute for openFormattedDatabase.
+export function inspectSqliteStore(path, format) {
+  const report = { store: format.store, kind: 'sqlite', target: format.version, version: null, ledger: [], steps: [] };
+  if (!existsSync(path)) return { ...report, state: 'absent', note: 'created at the current version on first use' };
+  let database;
+  try {
+    database = openReadOnly(path);
+  } catch (error) {
+    return { ...report, state: 'unavailable', note: `cannot be opened read-only (${error.message})` };
+  }
+  try {
+    return { ...report, ...inspectOpenStore(database, format) };
+  } catch (error) {
+    return { ...report, state: 'unavailable', note: `cannot be read (${error.message})` };
+  } finally {
+    database.close();
+  }
+}
+
+// A WAL store whose log is gone has no live writer and is read as immutable,
+// so SQLite creates no log or index; a live one is read through its own log.
+function openReadOnly(path) {
+  let database;
+  if (!walMode(path)) database = new DatabaseSync(path, { readOnly: true });
+  else if (existsSync(`${path}-wal`)) {
+    if (!existsSync(`${path}-shm`)) throw new Error('its write-ahead log has no index; start FULI once');
+    database = new DatabaseSync(path, { readOnly: true });
+  } else {
+    const uri = pathToFileURL(path);
+    uri.searchParams.set('immutable', '1');
+    database = new DatabaseSync(uri, { readOnly: true });
+  }
+  database.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
+  return database;
+}
+
+// Bytes 18 and 19 of the SQLite header are 2 for a write-ahead-log database.
+function walMode(path) {
+  const header = Buffer.alloc(20);
+  const descriptor = openSync(path, 'r');
+  try { readSync(descriptor, header, 0, 20, 0); } finally { closeSync(descriptor); }
+  return header[18] === 2 && header[19] === 2;
+}
+
+function inspectOpenStore(database, format) {
+  const version = userVersion(database);
+  const ledger = userTables(database).includes(LEDGER_TABLE)
+    ? database.prepare(`SELECT migration_id, from_version, to_version, status, backup_ref, detail, recorded_at
+      FROM ${LEDGER_TABLE} ORDER BY seq`).all().map((row) => ({ migrationId: row.migration_id,
+      fromVersion: row.from_version, toVersion: row.to_version, status: row.status, backupRef: row.backup_ref,
+      detail: row.detail, recordedAt: row.recorded_at }))
+    : [];
+  if (version > format.version) {
+    return { version, ledger, state: format.readableVersions.includes(version) ? 'newer_readable' : 'newer_format' };
+  }
+  const interrupted = unfinished(database);
+  if (interrupted.length) {
+    return { version, ledger, state: 'half_applied',
+      steps: interrupted.map((id) => ({ id, state: 'half_applied', detail: 'started and did not finish' })) };
+  }
+  if (version === format.version) return { version, ledger, state: 'current' };
+  if (version === 0 && !userTables(database).length) {
+    return { version, ledger, state: 'empty', note: 'built at the current version on first use' };
+  }
+  const steps = [];
+  if (version === 0) {
+    const declared = new DatabaseSync(':memory:');
+    let missing;
+    try {
+      declared.exec(format.schema);
+      const existing = new Set(schemaNames(database));
+      missing = schemaNames(declared).filter((name) => !existing.has(name));
+    } finally { declared.close(); }
+    steps.push({ id: `${format.store}/1-baseline`, state: missing.length ? 'automatic' : 'detected',
+      detail: missing.length ? `creates ${missing.join(', ')}; unique indexes are checked against existing rows then`
+        : 'every baseline table and index exists' });
+  }
+  for (const step of classifyMigrations(database, format, version, Math.max(version, 1))) {
+    steps.push({ id: step.migration.id, state: INSPECTED_STATES[step.status], detail: step.detail });
+  }
+  return { version, ledger, steps,
+    state: steps.some((step) => step.state === 'pending_confirmation') ? 'pending_confirmation' : 'upgrade_on_open' };
 }
 
 function newerAccess(format, version) {
@@ -198,7 +298,7 @@ function applyMigration(database, migration) {
   if (migration.kind === 'backfill') migration.backfill(database);
 }
 
-function takeBackup(path, format, version, backup) {
+function takeBackup(path, format, version, backup, stepIds) {
   if (path === ':memory:') return null;
   const directory = join(dirname(path), BACKUP_DIRECTORY);
   const name = `${basename(path)}.v${version}-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`;
@@ -208,7 +308,7 @@ function takeBackup(path, format, version, backup) {
   } catch (error) {
     throw new DataFormatError(format.store, 'data_format_backup_failed',
       `FULI store "${format.store}" needs a format upgrade, but the backup before it failed `
-      + `(${error.message}); nothing was changed.`);
+      + `(${error.message}); nothing was changed.`, stepIds);
   }
   return `${BACKUP_DIRECTORY}/${name}`;
 }

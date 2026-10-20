@@ -30,7 +30,9 @@ export async function handleApiRequest({
       status: 'ready',
       service: 'fuli-local-console',
       pid: process.pid,
-      version: FULI_VERSION
+      version: FULI_VERSION,
+      // Local stores this FULI cannot use as they are (rec#17), by store and step.
+      ...(app.dataFormatNotices ? { dataFormats: app.dataFormatNotices() } : {})
     });
     return true;
   }

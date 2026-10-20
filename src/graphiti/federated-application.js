@@ -103,6 +103,7 @@ import { createSessionPreferenceDelivery } from '../conversations/preference-ses
 import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import { knowledgeTags } from './knowledge-tags.js';
+import { dataFormatNotices } from '../data-format/format-notices.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -133,6 +134,7 @@ export function openFederatedGraphApplication({
     refreshPersonalToken: personalTokenRefresher(runtimeConfigPath, resolved.personal)
   });
   if (typeof runtimeConfigPath === 'string' && runtimeConfigPath) {
+    app.dataFormatNotices = dataFormatNotices(dirname(runtimeConfigPath));
     app.preferenceDelivery = createSessionPreferenceDelivery({
       directory: join(dirname(runtimeConfigPath), 'preference-delivery'), env });
     const paths = resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) });

@@ -158,7 +158,7 @@ export class AgentAppStore {
 
 const sqlList = (values) => values.map((value) => `'${value}'`).join(', ');
 
-const AGENT_APP_FORMAT = sqliteFormat({
+export const AGENT_APP_FORMAT = sqliteFormat({
   store: 'agent-apps',
   schema: `
     CREATE TABLE IF NOT EXISTS agent_apps (

@@ -11,7 +11,7 @@ const EMPTY_REGISTRY = Object.freeze({ version: CURRENT_VERSION, bindings: [] })
 const STORE = 'external-knowledge';
 // A version 1 registry still reads, converted in memory; writing it would
 // restructure every binding, which waits for a person (rec#17 D-09).
-const BINDING_TARGETS = Object.freeze({ id: 'external-knowledge/2-binding-targets', from: 1, to: 2,
+export const BINDING_TARGETS_MIGRATION = Object.freeze({ id: 'external-knowledge/2-binding-targets', from: 1, to: 2,
   summary: 'each binding’s single project target becomes a list of targets' });
 
 export class ExternalKnowledgeRegistry {
@@ -76,7 +76,7 @@ export class ExternalKnowledgeRegistry {
   #writable() {
     const document = this.#stored();
     if (document.version === 1) {
-      refusePendingJsonMigration(this.filePath, { store: STORE, migration: BINDING_TARGETS,
+      refusePendingJsonMigration(this.filePath, { store: STORE, migration: BINDING_TARGETS_MIGRATION,
         detail: `${document.bindings.length} bindings were written by an earlier FULI` });
     }
     return clone(document);

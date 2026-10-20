@@ -50,6 +50,23 @@ async def read_graph_ledger(driver) -> GraphLedger:
     return GraphLedger(int(version) if version is not None else None, latest, details)
 
 
+async def read_graph_ledger_events(driver) -> list[dict]:
+    """Every ledger event, oldest first: IDs, versions, statuses and counts."""
+    records, _, _ = await driver.execute_query(
+        '''
+        MATCH (:FuliDataFormat {store: $store})-[:HAS_FORMAT_EVENT]->(event:FuliDataFormatEvent)
+        RETURN event.migration_id AS migrationId, event.from_version AS fromVersion,
+               event.to_version AS toVersion, event.status AS status,
+               event.backup_ref AS backupRef, event.detail AS detail,
+               toString(event.recorded_at) AS recordedAt
+        ORDER BY event.seq
+        ''',
+        store=GRAPH_STORE,
+        routing_='r',
+    )
+    return [dict(record) for record in records]
+
+
 @dataclass(frozen=True)
 class LedgerStep:
     migration_id: str

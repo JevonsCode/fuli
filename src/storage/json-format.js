@@ -48,3 +48,35 @@ export function refusePendingJsonMigration(filePath, { store, migration, detail,
   }
   throw pendingMigrationError(store, migration, detail);
 }
+
+// A JSON data file as `fuli migrate status` reports it, read only. versions:
+// the versions this FULI reads and writes; pendingFrom: an older version it
+// still reads whose rewrite waits for a person (migration names that step).
+export function inspectJsonStore(filePath, { store, versions, pendingFrom = null, migration = null }) {
+  const report = { store, kind: 'json', target: Math.max(...versions), version: null,
+    ledger: ledgerEvents(filePath), steps: [] };
+  let document;
+  try {
+    document = JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { ...report, state: 'absent' };
+    if (error instanceof SyntaxError) return { ...report, state: 'unreadable', note: 'not valid JSON' };
+    return { ...report, state: 'unavailable', note: `cannot be read (${error.code ?? error.message})` };
+  }
+  const version = document?.version;
+  if (!Number.isInteger(version)) return { ...report, state: 'unversioned', note: 'written before versioning' };
+  if (version > report.target) return { ...report, version, state: 'newer_format' };
+  if (version === pendingFrom) {
+    return { ...report, version, state: 'pending_confirmation',
+      steps: [{ id: migration.id, state: 'pending_confirmation', detail: migration.summary }] };
+  }
+  return { ...report, version, state: versions.includes(version) ? 'current' : 'unsupported' };
+}
+
+function ledgerEvents(filePath) {
+  try {
+    return readJsonFile(`${filePath}.format-ledger.json`, { events: [] }).events ?? [];
+  } catch {
+    return [{ status: 'unreadable', detail: 'the format ledger beside this file is not valid JSON' }];
+  }
+}

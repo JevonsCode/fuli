@@ -329,4 +329,18 @@ async def test_provider_routes_answer_503_with_the_format_reason_before_the_chec
 
     assert response.status_code == 503
     assert response.json()['detail']['code'] == 'data_format_blocked'
+    assert response.json()['detail']['store'] == 'graph'
     assert 'not been checked' in response.json()['detail']['message']
+
+
+@pytest.mark.asyncio
+async def test_the_format_report_reads_in_read_access_mode_even_when_the_graph_is_refused():
+    client = RecordingClient()
+    driver = guarded_driver(REFUSED, client)
+
+    await driver.read_only().execute_query('SHOW CONSTRAINTS YIELD name')
+
+    assert client.queries[0][1]['routing_'] == RoutingControl.READ
+    assert REFUSED.refusal().detail() == {'code': 'data_format_blocked',
+                                          'message': 'synthetic newer-format reason',
+                                          'store': 'graph', 'steps': []}

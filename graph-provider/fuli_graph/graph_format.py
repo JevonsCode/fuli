@@ -26,6 +26,7 @@ from neo4j.exceptions import ClientError
 from .graph_format_ledger import (
     LedgerStep,
     read_graph_ledger,
+    read_graph_ledger_events,
     record_graph_event,
     stamp_graph_version,
 )
@@ -48,10 +49,15 @@ _MIGRATIONS = {migration.id: migration for migration in GRAPH_MIGRATIONS}
 class GraphFormatUnavailable(Exception):
     """A graph operation the current data format does not allow."""
 
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, steps: tuple[str, ...] = ()):
         super().__init__(message)
         self.code = code
         self.message = message
+        self.steps = steps
+
+    def detail(self) -> dict:
+        return {'code': self.code, 'message': self.message, 'store': 'graph',
+                'steps': list(self.steps)}
 
 
 @dataclass(frozen=True)
@@ -75,7 +81,9 @@ class GraphFormatState:
 
     def refusal(self) -> GraphFormatUnavailable:
         code = 'data_format_read_only' if self.access == 'read' else 'data_format_blocked'
-        return GraphFormatUnavailable(code, self.message or 'The graph cannot be written now.')
+        return GraphFormatUnavailable(
+            code, self.message or 'The graph cannot be written now.', self.pending
+        )
 
 
 UNCHECKED = GraphFormatState(
@@ -91,13 +99,16 @@ async def prepare_graph_format(driver, settings, *, now=now_utc) -> GraphFormatS
     """driver is the unguarded maintenance handle; nothing else runs meanwhile."""
     ledger = await read_graph_ledger(driver)
     if ledger.version is not None and ledger.version > GRAPH_FORMAT_VERSION:
-        return _newer(ledger.version)
+        state = _newer(ledger.version)
+        logger.warning('graph format: store graph is at version %s: %s', ledger.version, state.message)
+        return state
     unfinished = [
         migration_id for migration_id, status in ledger.latest.items()
         if status == 'started'
         and not (migration_id in _MIGRATIONS and _MIGRATIONS[migration_id].automatic)
     ]
     if unfinished:
+        logger.warning('graph format: store graph has steps %s half applied', ', '.join(unfinished))
         return GraphFormatState(
             'read', 'interrupted', ledger.version,
             f'A graph migration ({", ".join(unfinished)}) started and did not finish. FULI '
@@ -120,31 +131,49 @@ async def prepare_graph_format(driver, settings, *, now=now_utc) -> GraphFormatS
     return _current()
 
 
-async def _advance(driver, settings, migration, ledger, now) -> GraphFormatState | None:
-    unversioned = ledger.version is None
+@dataclass(frozen=True)
+class _Decision:
+    state: str  # 'detected', 'automatic' or 'pending_confirmation'
+    detail: str
+    missing: tuple = ()
+
+
+async def _decide(driver, settings, migration) -> _Decision:
+    """How one step stands against the graph, from reads only."""
     if not migration.automatic:
         count = await migration.pending(driver, settings)
         if not count:
-            await record_graph_event(
-                driver, _step(migration), 'baseline_detected', now=now,
-                detail='no record needs this step',
-            )
-            return None
-        detail = f'{count} records need this step; it changes existing records'
-        return await _pending(driver, migration, ledger, now, detail)
-    missing = await _missing_rules(driver, migration.rules)
-    if not missing:
-        await record_graph_event(
-            driver, _step(migration), 'baseline_detected' if unversioned else 'applied',
-            now=now, detail=_schema_detail(migration, 'all declared rules already exist'),
+            return _Decision('detected', 'no record needs this step')
+        return _Decision(
+            'pending_confirmation', f'{count} records need this step; it changes existing records'
         )
-        return None
+    missing = tuple(await _missing_rules(driver, migration.rules))
+    if not missing:
+        return _Decision('detected', 'all declared rules already exist')
     conflicts = await _unique_conflicts(driver, missing)
     if conflicts:
-        detail = 'existing records conflict with ' + ', '.join(
+        return _Decision('pending_confirmation', 'existing records conflict with ' + ', '.join(
             f'{name} ({count} duplicate values)' for name, count in conflicts
+        ))
+    return _Decision('automatic', f'creates {", ".join(rule.name for rule in missing)}', missing)
+
+
+async def _advance(driver, settings, migration, ledger, now) -> GraphFormatState | None:
+    decision = await _decide(driver, settings, migration)
+    if decision.state == 'pending_confirmation':
+        return await _pending(driver, migration, ledger, now, decision.detail)
+    if decision.state == 'detected':
+        if not migration.automatic:
+            await record_graph_event(
+                driver, _step(migration), 'baseline_detected', now=now, detail=decision.detail
+            )
+            return None
+        await record_graph_event(
+            driver, _step(migration), 'baseline_detected' if ledger.version is None else 'applied',
+            now=now, detail=_schema_detail(migration, decision.detail),
         )
-        return await _pending(driver, migration, ledger, now, detail)
+        return None
+    missing = decision.missing
     await record_graph_event(
         driver, _step(migration), 'started', now=now, detail=NO_BACKUP_NOTE
     )
@@ -172,7 +201,9 @@ async def _pending(driver, migration, ledger, now, detail) -> GraphFormatState:
         await record_graph_event(
             driver, _step(migration), 'pending_confirmation', now=now, detail=detail
         )
-    logger.warning('graph format %s needs confirmation: %s', migration.id, detail)
+    logger.warning(
+        'graph format: store graph step %s needs confirmation: %s', migration.id, detail
+    )
     return GraphFormatState(
         'read', 'pending_confirmation', migration.from_version,
         f'The graph needs migration {migration.id} ({migration.summary}): {detail}. '
@@ -270,3 +301,39 @@ async def _run_rule(driver, rule) -> None:
         # IF NOT EXISTS can still race an equivalent rule created concurrently.
         if 'EquivalentSchemaRuleAlreadyExists' not in str(error):
             raise
+
+
+async def inspect_graph_format(driver, settings) -> dict:
+    """What prepare_graph_format would find and do, from reads only: no DDL,
+    no ledger event, no version stamp. The caller's driver runs every query in
+    Neo4j's read access mode, so Neo4j itself would refuse a write here."""
+    ledger = await read_graph_ledger(driver)
+    report = {
+        'store': 'graph', 'kind': 'neo4j', 'version': ledger.version,
+        'target': GRAPH_FORMAT_VERSION, 'ledger': await read_graph_ledger_events(driver),
+        'steps': [],
+    }
+    if ledger.version is not None and ledger.version > GRAPH_FORMAT_VERSION:
+        readable = ledger.version in READABLE_NEWER_VERSIONS
+        return {**report, 'state': 'newer_readable' if readable else 'newer_format'}
+    started = [
+        {'id': migration_id, 'state': 'half_applied', 'detail': 'started and did not finish'}
+        for migration_id, status in ledger.latest.items() if status == 'started'
+    ]
+    if started:
+        return {**report, 'state': 'half_applied', 'steps': started}
+    if ledger.version == GRAPH_FORMAT_VERSION:
+        return {**report, 'state': 'current'}
+    if ledger.version is None and await _empty(driver):
+        return {**report, 'state': 'empty', 'note': 'built at the current version on start'}
+    steps = []
+    for migration in GRAPH_MIGRATIONS:
+        if migration.to_version <= (ledger.version or 0):
+            continue
+        decision = await _decide(driver, settings, migration)
+        steps.append({'id': migration.id, 'state': decision.state, 'detail': decision.detail})
+        if decision.state == 'pending_confirmation':
+            break
+    pending = any(step['state'] == 'pending_confirmation' for step in steps)
+    return {**report, 'steps': steps,
+            'state': 'pending_confirmation' if pending else 'upgrade_on_start'}

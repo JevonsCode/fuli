@@ -26,6 +26,7 @@ import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
 import { startTaskScheduler } from './task-schedules/scheduler.js';
+import { dataFormatNoticeLine } from './data-format/format-notices.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -57,6 +58,8 @@ export async function createServer(options = {}) {
     closeApplicationOnShutdown
   });
   const application = runtime.application;
+  // Every local store this FULI cannot use as it is, named with its steps.
+  for (const notice of application.dataFormatNotices?.() ?? []) console.warn(dataFormatNoticeLine(notice));
   let externalKnowledge;
   let connectedKnowledge;
   let system = null;

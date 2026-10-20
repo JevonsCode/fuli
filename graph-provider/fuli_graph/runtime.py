@@ -139,6 +139,11 @@ class ManagedNeo4jDriver(Neo4jDriver):
     def maintenance(self) -> '_MaintenanceDriver':
         return _MaintenanceDriver(self)
 
+    def read_only(self) -> '_ReadOnlyDriver':
+        """Reads for the format report, in Neo4j's read access mode whatever
+        the format state: Neo4j itself refuses any write through it."""
+        return _ReadOnlyDriver(self)
+
     def _access_mode(self) -> str:
         if self.format.access == 'none':
             raise self.format.refusal()
@@ -198,6 +203,15 @@ class _MaintenanceDriver:
 
     def transaction(self):
         return Neo4jDriver.transaction(self._driver)
+
+
+class _ReadOnlyDriver:
+    def __init__(self, driver: ManagedNeo4jDriver):
+        self._driver = driver
+
+    async def execute_query(self, cypher_query_, **kwargs):
+        kwargs['routing_'] = RoutingControl.READ
+        return await Neo4jDriver.execute_query(self._driver, cypher_query_, **kwargs)
 
 
 async def _completed_index_build() -> None:
