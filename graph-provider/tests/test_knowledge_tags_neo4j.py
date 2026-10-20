@@ -165,7 +165,10 @@ async def alias_history_in_storage(world):
     mine = (await create(world, '观察记录', 'class', operation_actor='human', reason='mine'))['tag']
     await alias(world, draft['id'], '野外课', 'class')
     await alias(world, mine['id'], '观察日志', 'class')
-    await alias(world, mine['id'], '观察日志', 'class', operation_actor='human', reason='accept')
+    # First confirmation upgrades; a second confirmation does not duplicate.
+    for _ in range(2):
+        await alias(world, draft['id'], '野外课', 'class', operation_actor='human', reason='accept')
+        await alias(world, mine['id'], '观察日志', 'class', operation_actor='human', reason='accept')
     records, _, _ = await world.driver.execute_query('''
         MATCH (tag:FuliKnowledgeTag {space_id: $space})-[:HAS_TAG_REVISION]->(revision)
         WITH tag, revision ORDER BY revision.version
@@ -175,8 +178,9 @@ async def alias_history_in_storage(world):
         ORDER BY name
     ''', space=world.space)
     assert [dict(record) for record in records] == [
-        {'name': '户外学习', 'aliases': ['野外课'], 'statuses': ['provisional'], 'proposed': [],
-         'version': 2, 'history': [['create', None, 1], ['add_alias', 'provisional', 2]]},
+        {'name': '户外学习', 'aliases': ['野外课'], 'statuses': ['active'], 'proposed': [],
+         'version': 3, 'history': [['create', None, 1], ['add_alias', 'provisional', 2],
+                                   ['confirm_alias', 'active', 3]]},
         {'name': '观察记录', 'aliases': ['观察日志'], 'statuses': ['active'], 'proposed': [],
          'version': 3, 'history': [['create', None, 1], ['propose_alias', 'proposed', 2],
                                    ['add_alias', 'active', 3]]}]

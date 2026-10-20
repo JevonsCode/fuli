@@ -108,7 +108,13 @@ async def add_tag_alias(store, actor: dict, request: KnowledgeTagAliasCreate) ->
     async with store.knowledge_tag_vocabulary().locked(space['id']) as vocabulary:
         tag = await _visible_tag(vocabulary, namespaces, request.tag_id)
         if key == tag['name_key'] or key in tag['alias_keys']:
-            return KnowledgeTagAliasResult(outcome='unchanged', tag=tag_record(tag), normalized=key)
+            if not _confirms_provisional(tag, key, request.operation_actor):
+                return KnowledgeTagAliasResult(outcome='unchanged', tag=tag_record(tag), normalized=key)
+            # A person adding an Agent's provisional alias accepts it: same entry, now active.
+            stored = await vocabulary.save_aliases(tag['id'], _with_alias_status(tag, key, 'active'),
+                                                   _revision(tag, 'confirm_alias', request, now_utc(),
+                                                             alias=request.alias, alias_status='active'))
+            return KnowledgeTagAliasResult(outcome='added', tag=tag_record(stored), normalized=key)
         holders = [other for other in await vocabulary.find_by_key(namespaces, key)
                    if other['id'] != tag['id']]
         if holders:
@@ -214,6 +220,17 @@ def _with_alias(tag: dict, alias: str, key: str, status: str) -> dict:
             'alias_statuses': [*tag['alias_statuses'], status],
             'proposed_aliases': [tag['proposed_aliases'][index] for index in keep],
             'proposed_alias_keys': [tag['proposed_alias_keys'][index] for index in keep]}
+
+
+def _confirms_provisional(tag: dict, key: str, operation_actor: str) -> bool:
+    return (operation_actor == 'human' and key in tag['alias_keys']
+            and tag['alias_statuses'][tag['alias_keys'].index(key)] == 'provisional')
+
+
+def _with_alias_status(tag: dict, key: str, status: str) -> dict:
+    statuses = list(tag['alias_statuses'])
+    statuses[tag['alias_keys'].index(key)] = status
+    return {'alias_statuses': statuses}
 
 
 def _held(tag: dict, key: str):

@@ -327,6 +327,23 @@ async def test_an_agent_alias_takes_effect_only_on_its_own_provisional_project_t
 
 
 @pytest.mark.asyncio
+async def test_a_person_confirming_a_provisional_alias_records_one_revision():
+    async with memory_world() as world:
+        await world.project('class')
+        draft = (await create(world, '户外学习', 'class'))['tag']
+        await alias(world, draft['id'], '野外课', 'class')
+        for _ in range(2):
+            await alias(world, draft['id'], '野外课', 'class', operation_actor='human', reason='accept')
+        assert [(revision['action'], revision['alias_status'], revision['actor_kind'],
+                 revision['version']) for revision in world.vocabulary.revisions] == [
+            ('create', None, 'agent', 1), ('add_alias', 'provisional', 'agent', 2),
+            ('confirm_alias', 'active', 'human', 3)]
+        stored = world.vocabulary.tags[draft['id']]
+        assert (stored['aliases'], stored['alias_keys'], stored['alias_statuses']) == (
+            ['野外课'], ['野外课'], ['active'])
+
+
+@pytest.mark.asyncio
 async def test_distinct_from_must_name_every_candidate():
     async with memory_world() as world:
         world.vocabulary.seed(['garden', 'garden plan', 'garden plans for spring'])

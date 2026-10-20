@@ -295,6 +295,33 @@ async def tags_never_grant_or_confirm(world):
                                  'item_kind': 'entity', 'item_id': 'missing-item'}, 404)
 
 
+async def a_person_confirms_an_alias_once(world):
+    """A person adding an Agent's provisional alias or proposal accepts it once;
+    repeating it, or an Agent re-adding it, changes nothing."""
+    await world.project('class')
+    draft = (await create(world, '户外学习', 'class'))['tag']
+    added = (await alias(world, draft['id'], '野外课', 'class'))['tag']
+    assert (added['provisional_aliases'], added['version']) == (['野外课'], 2)
+    assert (await alias(world, draft['id'], '野外课', 'class'))['outcome'] == 'unchanged'
+    mine = (await create(world, '观察记录', 'class', operation_actor='human', reason='mine'))['tag']
+    assert (await alias(world, mine['id'], '观察日志', 'class'))['outcome'] == 'proposed'
+    for tag, word in ((draft, '野外课'), (mine, '观察日志')):
+        first = await alias(world, tag['id'], f' {word} ', 'class', operation_actor='human',
+                            reason='accept')
+        accepted = first['tag']
+        assert first['outcome'] == 'added', first
+        assert (accepted['id'], first['normalized'], accepted['aliases'],
+                accepted['provisional_aliases'], accepted['proposed_aliases'],
+                accepted['version']) == (tag['id'], word, [word], [], [], 3)
+        for actor in ('human', 'agent'):
+            again = await alias(world, tag['id'], word, 'class', operation_actor=actor, reason='again')
+            assert (again['outcome'], again['tag']['aliases'], again['tag']['version']) == (
+                'unchanged', [word], 3)
+        found = await resolve(world, word, 'class')
+        assert [(item['id'], item['match'], item['alias_status']) for item in found
+                if item['match'] == 'alias'] == [(tag['id'], 'alias', 'active')]
+
+
 SCENARIOS = [synonym_reuse, new_domain_grows, near_duplicates_stay_apart, concurrent_create,
              concurrent_near_duplicates, alias_changes_similarity_in_turn, no_cross_project_leak,
-             item_scope_is_never_guessed, tags_never_grant_or_confirm]
+             item_scope_is_never_guessed, tags_never_grant_or_confirm, a_person_confirms_an_alias_once]
