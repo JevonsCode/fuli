@@ -43,6 +43,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Promise-based sleep | `node:timers/promises` (`setTimeout as delay`) | Do not hand-roll `new Promise((resolve) => setTimeout(resolve, ms))`. |
 | Atomic text and JSON file writes | `src/storage/json-file.js` (`writeTextFileAtomic`, `writeJsonFileAtomic`) | Keeps the existing file mode; new files are private. |
 | One-line display text | `src/text/single-line.js` | |
+| Parsing a model's JSON answer | `src/text/model-json.js` (`parseModelJson`) | Tolerates one Markdown code fence. Judgment and the model port share it. |
 | Lifecycle hook stdin reading and size limit | `src/agents/lifecycle-input.js` | Common to every Agent; only the output format stays in `src/agents/<agent>/`. |
 | CLI line output and terminal confirmation | `src/cli/terminal-io.js` | |
 | Web date and time display | `web/src/lib/date-time.ts` (`formatDateTime`), `web/src/lib/relative-time.ts` | Pass `currentLocale()`; never a hard-coded or browser-default locale. |
