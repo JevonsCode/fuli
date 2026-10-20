@@ -175,6 +175,48 @@ describe('ProjectAgentDetailPage', () => {
     expect(otherReads()).toBe(assignmentsRead)
   })
 
+  it('scrolls to the task a new scope names once its card is shown, and never on a tab switch or refresh', async () => {
+    const scrolled: Element[] = []
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this) }
+    try {
+      const task = (id: string, project: string) => ({
+        task_id: id, title: `任务 ${id}`, personal_space_id: 'personal-1', personal_project_id: project, status: 'running',
+        participants: [{ agent_id: 'shared-agent', role: 'lead', status: 'running' }],
+      })
+      getJson.mockImplementation((url: string) => {
+        if (!url.startsWith('/api/project-agent-tasks?') || !url.includes('limit=')) return orchestrationResponse(url)
+        const project = new URL(url, 'http://test.local').searchParams.get('personalProjectId')
+        if (project === 'project-b') return Promise.resolve({ tasks: [
+          ...Array.from({ length: 12 }, (_, index) => task(`before-${index + 1}`, 'project-b')), task('target', 'project-b'),
+        ] })
+        return Promise.resolve({ tasks: [task('task-a', 'project-a')] })
+      })
+      const { wrapper, router } = await mountPage(false, `${AGENT_PAGE}?project=project-a&task=task-a`)
+      await flushPromises()
+      expect(scrolled.map(element => element.id)).toEqual(['task-task-a'])
+
+      scrolled.length = 0
+      await router.push(`${AGENT_PAGE}?project=project-b&task=target&tab=execution`)
+      await flushPromises()
+      const cards = wrapper.findAll('.project-agent-task-list > *')
+      expect(cards).toHaveLength(13)
+      expect(cards[12]!.attributes('id')).toBe('task-target')
+      expect(scrolled).toEqual([cards[12]!.element])
+      expect(wrapper.get('[data-manage-panel="work"]').attributes('hidden')).toBeUndefined()
+
+      await wrapper.get('[data-manage-tab="execution"]').trigger('mousedown', { button: 0 })
+      await flushPromises()
+      await wrapper.get('[data-manage-tab="work"]').trigger('mousedown', { button: 0 })
+      await flushPromises()
+      await wrapper.get('[data-detail-refresh]').trigger('click')
+      await flushPromises()
+      expect(scrolled).toHaveLength(1)
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+
   it('lands a new task link on the work tab, then leaves the tabs to the person', async () => {
     const { wrapper, router } = await mountPage(false, `${AGENT_PAGE}?task=task-target&tab=execution`)
     await flushPromises()

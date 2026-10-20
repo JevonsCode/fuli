@@ -149,11 +149,22 @@ watch(linkedTask, (task) => {
   if (task && activeTab.value !== 'work') activeTab.value = 'work'
 }, { immediate: true })
 
-watch([linkedTask, details.loading], async ([task, busy]) => {
-  if (busy || !task) return
+// Each new task link (a new ?task= or ?project= scope) is located once, as
+// soon as its task list is read and its card is on the page. A refresh or a
+// tab switch is not a new link and never scrolls.
+const pageRoot = ref<HTMLElement | null>(null)
+let pendingLocate = ''
+watch([linkedProject, linkedTask], ([, task]) => { pendingLocate = task }, { immediate: true })
+const taskListStatus = computed(() => details.state('tasks').status)
+watch([linkedProject, linkedTask, taskListStatus, () => agent.value?.tasks], async () => {
+  const task = pendingLocate
+  if (!task || taskListStatus.value !== 'ready') return
   await nextTick()
-  document.getElementById(`task-${task}`)?.scrollIntoView?.({ block: 'nearest' })
-})
+  const target = [...(pageRoot.value?.querySelectorAll<HTMLElement>('[id^="task-"]') ?? [])].find(({ id }) => id === `task-${task}`)
+  if (!target || pendingLocate !== task) return
+  pendingLocate = ''
+  target.scrollIntoView?.({ block: 'nearest' })
+}, { immediate: true })
 
 const activityDay = ref('')
 watch(() => agent.value?.agentId, () => { activityDay.value = '' })
@@ -273,7 +284,7 @@ async function cleanup(person: ProjectAgentRecord) {
 </script>
 
 <template>
-  <section class="view project-agent-manage" :aria-label="title">
+  <section ref="pageRoot" class="view project-agent-manage" :aria-label="title">
     <div class="@container mx-auto grid w-full max-w-(--canvas-max) gap-4">
       <BackLink class="agent-profile-back" :to="collectionPath" :from="openedFromCollection">{{ t('shell.sections.orchestrate') }}</BackLink>
 
