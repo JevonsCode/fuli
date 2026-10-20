@@ -44,7 +44,9 @@ const CAPTURE_SOURCE_TOOLS = new Set([
   'record_knowledge_usage', 'record_knowledge_feedback', 'revise_personal_knowledge',
   'upsert_personal_project', 'upsert_project_agent', 'get_knowledge_graph',
   'search_human_knowledge_changes', 'search_current_project_knowledge',
-  'search_connected_knowledge', 'get_user_taste_skill'
+  'search_connected_knowledge', 'get_user_taste_skill',
+  // A session pause resolves its task token for this client only.
+  'update_capture_policy'
 ]);
 
 const SESSION_ID_TOOLS = new Set([

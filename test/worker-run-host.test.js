@@ -380,3 +380,23 @@ test('lost dispatch acknowledgement is never repeated and lost terminal evidence
     assert.ok(result.cleanup.errors.includes('worker_result_record_failed'));
   }
 });
+
+// rec#5 C3-6: a worker never records past a pause of the session that started it.
+test('the host links the worker session to the coordinator session before sealing it', async () => {
+  const { input, calls } = fixture();
+  const links = [];
+  const result = await createWorkerRunAttempt({ ...input, linkCaptureSession: (child, parent) => {
+    calls.push('link'); links.push([child, parent]);
+  } }).run();
+  assert.deepEqual(links, [['child-native-session', 'parent-native-session']]);
+  assert.ok(calls.indexOf('link') > calls.indexOf('session') && calls.indexOf('link') < calls.indexOf('seal'), calls.join(','));
+  assert.equal(result.outcome.status, 'completed');
+});
+
+test('a worker whose session link cannot be kept never starts work', async () => {
+  const { input, calls } = fixture();
+  const result = await createWorkerRunAttempt({ ...input, linkCaptureSession: () => { throw new Error('disk full'); } }).run();
+  assert.deepEqual(result.outcome, { status: 'failed', code: 'worker_capture_link_failed' });
+  for (const step of ['seal', 'admit', 'dispatch', 'prompt']) assert.equal(calls.includes(step), false, step);
+  assert.ok(calls.includes('close-run') && calls.includes('close-process'), 'the started process is still cleaned up');
+});

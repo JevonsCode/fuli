@@ -17,8 +17,9 @@ import { captureNotice } from './capture-notice.js';
 //   directory, so FULI cannot show it is outside every project (C1-4).
 // A write that names neither a project nor a directory belongs to no registered
 // project, like work in an unregistered folder. When it names both, both must
-// allow it. The session layer (rec#5 C3) will read sessionId; callers already
-// pass it.
+// allow it.
+// - sessionId: the host session the write comes from. A paused session, or one
+//   started by a paused session, records nothing from the pause on (rec#5 C3).
 
 const ALLOWED = Object.freeze({ allowed: true, reason: null, layer: null });
 const OUTSIDE_PROJECTS = Object.freeze({ personalProjectId: null });
@@ -44,7 +45,8 @@ export async function describeCapture(application, scope = {}) {
     personalProjectId: project?.personalProjectId ?? null, captured: decision.allowed,
     reason: decision.reason, layer: decision.layer,
     ...(decision.reason === 'project_off' ? { offSince: projectOffSince(settings, project.personalProjectId) } : {}),
-    notice: captureNotice(decision.reason) } };
+    ...(decision.since ? { pausedSince: decision.since } : {}),
+    notice: captureNotice(decision.reason, decision.since) } };
 }
 
 // The scope of a write made for a FULI task context. Task entry already
@@ -76,19 +78,37 @@ async function decide(application, scope) {
   if ((policy.disabledSources ?? []).includes(scope.sourceApplication ?? 'other')) {
     return { policy, decision: denied('client_off', 'client') };
   }
-  if (!usesProjectModes(settings)) return { policy, settings, decision: ALLOWED };
-  let projects;
+  let project = null;
+  if (usesProjectModes(settings)) {
+    let projects;
+    try {
+      projects = await writeProjects(application, scope);
+    } catch {
+      // The project could not be resolved, so the settings cannot be applied.
+      return { policy, settings, decision: denied('policy_unavailable', 'project') };
+    }
+    for (const candidate of projects) {
+      const reason = projectCaptureReason(settings, candidate);
+      if (reason) return { policy, settings, project: candidate, decision: denied(reason, 'project') };
+    }
+    project = projects[0];
+  }
+  return { policy, settings, project, decision: sessionDecision(application, scope.sessionId) };
+}
+
+// A write that names no host session has no session to pause. A pause that
+// cannot be read is never taken for "not paused" (C3-5). Every FULI
+// application and the capture window's port carry the session layer; a port
+// composed without one (a test double) has no paused sessions.
+function sessionDecision(application, sessionId) {
+  if (!sessionId || !application.getSessionCapturePause) return ALLOWED;
+  let session;
   try {
-    projects = await writeProjects(application, scope);
+    session = application.getSessionCapturePause(sessionId);
   } catch {
-    // The project could not be resolved, so the settings cannot be applied.
-    return { policy, settings, decision: denied('policy_unavailable', 'project') };
+    return denied('policy_unavailable', 'session');
   }
-  for (const project of projects) {
-    const reason = projectCaptureReason(settings, project);
-    if (reason) return { policy, settings, project, decision: denied(reason, 'project') };
-  }
-  return { policy, settings, project: projects[0], decision: ALLOWED };
+  return session.paused ? { ...denied('session_paused', 'session'), since: session.since } : ALLOWED;
 }
 
 function understoodSettings(policy) {
@@ -138,14 +158,18 @@ function denied(reason, layer) {
   return { allowed: false, reason, layer };
 }
 
-// The settings every layer of the decision reads, as one comparable value;
-// null when it cannot be read. Transcript turns written while it changed
-// cannot be attributed to one decision, so they are not imported
-// (conversations/transcript-capture-gap.js). A layer with its own stored
-// state (project modes, session pause) belongs in this value too.
-export function captureSettingsVersion(application) {
+// The settings every layer of the decision reads for one host session, as one
+// comparable value; null when it cannot be read. Transcript turns written
+// while it changed cannot be attributed to one decision, so they are not
+// imported (conversations/transcript-capture-gap.js). The session layer adds
+// its own generation only when the session has a pause record, so a pause or
+// resume in one session never moves the value of another (C3-3).
+export function captureSettingsVersion(application, sessionId = null) {
   try {
-    return application.getCapturePolicyVersion() ?? null;
+    const settings = application.getCapturePolicyVersion() ?? null;
+    const session = sessionId && application.getSessionCapturePause
+      ? application.getSessionCapturePause(sessionId).version : null;
+    return settings === null || !session ? settings : `${settings}|session:${session}`;
   } catch {
     return null;
   }

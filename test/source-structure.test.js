@@ -55,12 +55,19 @@ test('the Vue browser entry remains an orchestration layer', () => {
 // window forwarding the reader) or wire the store. Any other line that touches
 // the settings or their store, in any file, fails until it asks the port.
 const CAPTURE_PORT = 'src/graphiti/capture-decision.js';
-const CAPTURE_SETTINGS_OWNERS = new Set([CAPTURE_PORT, 'src/graphiti/capture-policy.js']);
-const CAPTURE_SETTINGS_ACCESS = /getCapturePolicy|capturePolicyStore|CapturePolicyStore|\bpolicyStore\b|capture-policy\.js/;
+// The session layer (rec#5 C3) is part of the settings: its pause records are
+// read only by the port too.
+const CAPTURE_SETTINGS_OWNERS = new Set([CAPTURE_PORT, 'src/graphiti/capture-policy.js', 'src/graphiti/capture-session-pause.js']);
+const CAPTURE_SETTINGS_ACCESS = /getCapturePolicy|capturePolicyStore|CapturePolicyStore|\bpolicyStore\b|capture-policy\.js|getSessionCapturePause|SessionCapturePauseStore|sessionCapturePauseStore|capture-session-pause\.js/;
 const CAPTURE_SETTINGS_CALL_SITES = new Map([
   ['src/http/graph-api-router.js', ['sendJson(response, 200, app.getCapturePolicy());']],
   ['src/conversations/capture-window.js', ['getCapturePolicy: application.getCapturePolicy?.bind(application),',
-    'getCapturePolicyVersion: application.getCapturePolicyVersion?.bind(application), personal: {']],
+    'getCapturePolicyVersion: application.getCapturePolicyVersion?.bind(application),',
+    'getSessionCapturePause: application.getSessionCapturePause?.bind(application), personal: {']],
+  // The worker host only links a worker's session to the session that started it.
+  ['src/server/worker-plan-runtime.js', [
+    "import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from '../graphiti/capture-session-pause.js';",
+    'const sessionPauses = new SessionCapturePauseStore(sessionCapturePausePathForRuntime(runtimeConfigPath));']],
   ['src/graphiti/federated-application.js', [
     'CapturePolicyStore,', "} from './capture-policy.js';", 'capturePolicyStore,',
     'const policyStore = capturePolicyStore ?? new CapturePolicyStore(', 'capturePolicyStore: policyStore,',
@@ -68,7 +75,12 @@ const CAPTURE_SETTINGS_CALL_SITES = new Map([
     'this.capturePolicyStore = capturePolicyStore;', 'getCapturePolicy() {', 'return this.capturePolicyStore.read();',
     'getCapturePolicyVersion() {', 'return this.capturePolicyStore.version();',
     'advanceCapturePolicyVersion() {', 'return this.capturePolicyStore.advanceVersion();',
-    'return this.capturePolicyStore.update(input);', 'capturePolicy: this.getCapturePolicy(),'
+    'return this.capturePolicyStore.update(input);', 'capturePolicy: this.getCapturePolicy(),',
+    "import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';",
+    'sessionCapturePauseStore: new SessionCapturePauseStore(sessionCapturePausePathForRuntime(runtimeConfigPath)),',
+    'sessionCapturePauseStore = new SessionCapturePauseStore(),', 'this.sessionCapturePauseStore = sessionCapturePauseStore;',
+    'getSessionCapturePause(sessionId) {', 'return this.sessionCapturePauseStore.state(sessionId);',
+    'return this.sessionCapturePauseStore.set(sessionId, change);'
   ]]
 ]);
 
@@ -92,6 +104,7 @@ test('capture writes are decided only by the capture port', () => {
     ['src/example.js', 'return this.capturePolicyStore.read();'],
     ['src/example.js', "import { CapturePolicyStore } from './capture-policy.js';"],
     ['src/graphiti/federated-application.js', 'if (allowsCapture(this.getCapturePolicy())) write();'],
-    ['src/graphiti/federated-application.js', 'const settings = policyStore.read();']
+    ['src/graphiti/federated-application.js', 'const settings = policyStore.read();'],
+    ['src/example.js', 'if (app.getSessionCapturePause(sessionId).paused) return;']
   ]) assert.equal(captureDecisionsOutsidePort(path, bypass).length, 1, `${path}: ${bypass}`);
 });

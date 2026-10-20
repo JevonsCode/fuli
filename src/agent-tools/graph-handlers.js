@@ -37,7 +37,10 @@ const HANDLERS = Object.freeze({
     personalProjectId: input?.personalProjectId ?? null, projectPath: input?.projectPath ?? null,
     sessionId: input?.sessionId ?? null }),
   explain_settings: (app) => settingsGuide(app),
-  update_capture_policy: (app, input) => app.updateCapturePolicy(input),
+  // sessionPaused pauses or resumes only the caller's session; every other
+  // field is a long-term setting. The client is this MCP process's.
+  update_capture_policy: (app, { sourceApplication, ...input } = {}) => input.sessionPaused === undefined
+    ? app.updateCapturePolicy(input) : app.pauseSessionCapture({ ...input, sourceApplication }),
   list_external_knowledge_connectors: (app) => externalKnowledge(app).listConnectorTypes(),
   discover_external_knowledge_sources: (app, input) => externalKnowledge(app).discover(input),
   list_external_knowledge_bindings: (app) => externalKnowledge(app).listBindings(),
@@ -301,7 +304,7 @@ export function dispatchGraphTool(app, name, input) {
 async function captureGuard(app, scope, operation) {
   const capture = await captureDecision(app, scope);
   return capture.allowed ? operation() : { route: 'disabled', ...captureDisabled(capture),
-    notice: captureNotice(capture.reason), guidance: CAPTURE_OFF_GUIDANCE };
+    notice: captureNotice(capture.reason, capture.since), guidance: CAPTURE_OFF_GUIDANCE };
 }
 
 const CAPTURE_OFF_GUIDANCE = 'Automatic recording is off, so nothing from this call was saved. Do not retry or describe it as saved; the user can still make explicit changes in the FULI console.';

@@ -19,12 +19,15 @@ export function transcriptLifecycle(options) {
 async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, sourceApplication, event, adapter, run,
   captureTimeoutMs = 750, signal }) {
   const entry = event === 'UserPromptSubmit';
+  // The version is read before the decision: a change in between then either
+  // denies here or stops every write of this run (capture-window.js).
+  const settings = captureSettingsVersion(application, input?.session_id ?? null);
   const captureCheck = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
   const enabled = captureCheck.allowed;
   // Each entry says when automatic recording is off (rec#11 D-01); Stop stays
   // quiet. A hook that skipped a stretch because the settings changed, or that
   // could not keep a denial safely, says so.
-  const notice = entry ? captureNotice(captureCheck.reason) : null;
+  const notice = entry ? captureNotice(captureCheck.reason, captureCheck.since) : null;
   let captureState = null;
   const withCaptureNotice = (value, skipped) => {
     const lines = [...new Set([notice, captureNotice(skipped), captureNotice(captureState)].filter(Boolean))]
@@ -35,7 +38,6 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
   // synchronized, or while a decision denied, are skipped, not imported
   // (transcript-capture-gap.js). A denial is kept locally first, so a Provider
   // that cannot take its marker now cannot make the stretch importable later.
-  const settings = captureSettingsVersion(application);
   const ledger = input?.session_id ? transcriptCaptureLedger(runtimeConfigPath, input, sourceApplication) : null;
   if (!enabled) captureState = await keepDenial(application, ledger, settings, captureCheck.reason);
   const notRecorded = enabled ? (ledger ? await ledger.skipReason(settings) : UNATTRIBUTABLE) : null;
@@ -55,9 +57,17 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
   try {
     return await withTranscriptGuard(runtimeConfigPath, input, sourceApplication, enabled, async guard => {
       const capture = async operation => {
-        try { return await captureWindow(application, guard, operation, { timeoutMs: captureTimeoutMs, signal }); }
-        catch { return { status: 'unsaved', entryBlocked: entry, code: 'transcript_capture_timeout',
-          reason: 'Native transcript import was deferred; preferences and current task context are independent' }; }
+        try {
+          return await captureWindow(application, guard, operation, { timeoutMs: captureTimeoutMs, signal, settings,
+            sessionId: input?.session_id ?? null });
+        } catch (error) {
+          // A stretch that a settings change interrupted is skipped at the next sync.
+          return error?.code === 'capture_changed'
+            ? { status: 'unsaved', entryBlocked: entry, code: 'capture_changed',
+              reason: 'Capture settings changed during this import; nothing more was written' }
+            : { status: 'unsaved', entryBlocked: entry, code: 'transcript_capture_timeout',
+              reason: 'Native transcript import was deferred; preferences and current task context are independent' };
+        }
       };
       let sync = await capture((app, held) => syncConversationTranscript(app, input, sourceApplication, adapter, held,
         { notRecorded }));

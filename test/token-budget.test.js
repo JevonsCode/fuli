@@ -52,7 +52,9 @@ const BASELINE = Object.freeze({
   // Bole score card: get_agent_score_card serves the card and its task IDs in one tool (+1,065 B).
   // rec#5 C2: capture-policy tools take the caller's directory and the project mode (+1,215 B).
   // Merged: 172,573 -> 179,065 B (+6,492 B). Chat is unchanged.
-  fullToolSchemaBytes: 179065,
+  // rec#5 C3: update_capture_policy takes sessionPaused and the task token, so "这次别记" pauses
+  // one session without a new tool: 179,065 -> 179,384 B (+319 B). Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 179384,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

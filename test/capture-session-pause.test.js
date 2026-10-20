@@ -1,0 +1,271 @@
+// rec#5 C3, C4-3 and C5: "这次别记" pauses automatic recording of one host session.
+// Synthetic fixtures only (test/fixtures/capture-project-fixture.js): temporary
+// directories, a recording Provider double and the in-memory task registry. No FULI
+// data directory, live Provider, port-2727 service or client configuration is used.
+import assert from 'node:assert/strict';
+import { appendFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import test from 'node:test';
+
+import { callAgentTool } from '../src/agent-tools.js';
+import { captureDecision } from '../src/graphiti/capture-decision.js';
+import { sessionCapturePausePathForRuntime } from '../src/graphiti/capture-session-pause.js';
+import { normalizeAgentSessionInput } from '../src/mcp/session-id.js';
+import { claudeEntry, codexEntry, codexStop, cursorEntry, finishTask, fixture, PRIVATE, receiptOf,
+  transcriptRow } from './fixtures/capture-project-fixture.js';
+
+const PAUSED_AT = '2026-10-20T06:32:00.000Z';
+const pad = value => String(value).padStart(2, '0');
+// The receipt shows the pause in the machine's local time.
+const PAUSED = `本会话已暂停记录（自 ${pad(new Date(PAUSED_AT).getHours())}:${pad(new Date(PAUSED_AT).getMinutes())} 起）`;
+const UNREADABLE = '记录设置读取失败，本次未自动记录';
+const SESSION = 'synthetic-codex-session';
+
+// The Agent's call on "接下来这段别记了" / "好了，继续记吧". The MCP layer names the
+// client; the session comes from the task the host bound, never from the model.
+function setPaused(f, context, sessionPaused, sourceApplication = 'codex') {
+  return callAgentTool(f.app, 'update_capture_policy', { sessionPaused, taskContextToken: context.taskContextToken,
+    sourceApplication });
+}
+
+const lastNotice = receipt => receipt.split(' · ').at(-1);
+
+// A Codex session whose native transcript the Stop hook imports, as the real hook does.
+async function transcriptSession(f, session = 'synthetic-transcript-session') {
+  const transcriptPath = join(f.root, `${session}.jsonl`);
+  await writeFile(transcriptPath, `${JSON.stringify({ type: 'session_meta', payload: { id: session } })}\n`);
+  f.app.personal.currentTaskContext = async query => ({ token: `fuli-task-${query.session_id}`,
+    project_agent_id: 'lead-novel', personal_project_id: 'novel' });
+  const task = f.app.taskContextRegistry.begin({ sessionId: session, personalProjectId: 'novel',
+    projectAgentId: 'lead-novel', sourceApplication: 'codex' });
+  const input = { session_id: session, cwd: f.dirs.novel, transcript_path: transcriptPath };
+  await codexStop(f, input);
+  return { input, context: { taskContextToken: task.token },
+    say: text => appendFile(transcriptPath, transcriptRow(text)), stop: () => codexStop(f, input) };
+}
+
+const imported = f => f.captureWrites().filter(write => write.kind === 'conversation').map(write => write.content).join(' | ');
+
+test('C3-1 C4-3 C5 one sentence pauses this session at once; later turns record nothing, earlier ones stay', async (t) => {
+  const f = await fixture(t);
+  const first = await codexEntry(f, f.dirs.novel, { prompt: 'Outline chapter one.' });
+  await finishTask(f, first.context);
+  const earlier = structuredClone(f.captureWrites());
+  assert.ok(earlier.some(write => write.kind === 'knowledge'), 'the session was being recorded');
+
+  f.clock.now = PAUSED_AT;
+  const paused = await setPaused(f, first.context, true);
+  assert.equal(paused.status, 'session_paused');
+  assert.equal(paused.since, PAUSED_AT);
+  assert.equal(lastNotice(receiptOf(paused)), `${PAUSED}；你明确提交的修改仍会保存`, 'no confirmation, just the receipt');
+
+  for (let turn = 0; turn < 3; turn += 1) {
+    const entry = await codexEntry(f, f.dirs.novel, { prompt: `Turn ${turn}: ${PRIVATE}.` });
+    assert.ok(lastNotice(receiptOf(entry.context)).startsWith(PAUSED), `every turn says so (C5-1): ${receiptOf(entry.context)}`);
+    assert.ok(entry.output.systemMessage.includes(PAUSED), 'the hook says it at entry too');
+    const checkpoint = await finishTask(f, entry.context);
+    assert.equal(checkpoint.capture_status, 'capture_disabled', 'no knowledge or preference evidence');
+    assert.ok(lastNotice(receiptOf(checkpoint)).startsWith(PAUSED));
+    assert.equal(JSON.stringify([entry.context.agent_receipt, checkpoint.agent_receipt]).includes(PRIVATE), false);
+  }
+  const usage = await callAgentTool(f.app, 'record_knowledge_usage', { sourceApplication: 'codex', sessionId: SESSION,
+    personalProjectId: 'novel', items: [] });
+  assert.deepEqual([usage.route, usage.reason, usage.layer], ['disabled', 'session_paused', 'session']);
+  const policy = await callAgentTool(f.app, 'get_capture_policy', { sourceApplication: 'codex', sessionId: SESSION,
+    projectPath: f.dirs.novel });
+  assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.pausedSince], [false, 'session_paused', PAUSED_AT]);
+  assert.deepEqual(f.captureWrites(), earlier, 'nothing new is written and nothing earlier is removed');
+});
+
+test('C3-1 C3-2 paused native turns are never imported, and recording resumes from the resuming turn', async (t) => {
+  const f = await fixture(t);
+  const s = await transcriptSession(f);
+  await s.say('turn-before');
+  await s.stop();
+  await setPaused(f, s.context, true);
+  await s.say(`turn-while-paused ${PRIVATE}`);
+  await s.stop();
+  assert.match(imported(f), /\[Not recorded: automatic recording was off \(session_paused\)/, 'a content-free marker');
+
+  const resumed = await setPaused(f, s.context, false);
+  assert.equal(resumed.status, 'session_resumed');
+  assert.doesNotMatch(receiptOf(resumed), /暂停/);
+  // The resuming turn's own prompt was written while paused.
+  await s.say(`resuming turn ${PRIVATE}`);
+  await s.stop();
+  await s.say('turn-after');
+  await s.stop();
+  assert.match(imported(f), /turn-before/);
+  assert.match(imported(f), /turn-after/);
+  assert.equal(imported(f).includes(PRIVATE), false, 'the paused stretch is never backfilled');
+});
+
+test('C3-2 a pause and resume no hook saw still never backfills the paused stretch', async (t) => {
+  const f = await fixture(t);
+  const s = await transcriptSession(f);
+  await setPaused(f, s.context, true);
+  await s.say(`turn-while-paused ${PRIVATE}`);
+  await setPaused(f, s.context, false);
+  await s.stop();
+  await s.say('turn-after');
+  await s.stop();
+  assert.equal(imported(f).includes(PRIVATE), false);
+  assert.match(imported(f), /capture settings changed, so this stretch could not be confirmed/);
+  assert.match(imported(f), /turn-after/);
+});
+
+test('C3-3 pausing one session leaves another session recording normally', async (t) => {
+  const f = await fixture(t);
+  const a = await transcriptSession(f, 'synthetic-session-a');
+  const b = await transcriptSession(f, 'synthetic-session-b');
+  await b.say('b-before');
+  await b.stop();
+  await setPaused(f, a.context, true);
+  await a.say(`a-paused ${PRIVATE}`);
+  await a.stop();
+  await b.say('b-after');
+  await b.stop();
+  assert.equal(imported(f).includes(PRIVATE), false);
+  assert.match(imported(f), /b-before/);
+  assert.match(imported(f), /b-after/);
+  assert.doesNotMatch(imported(f), /capture settings changed/, 'the other session is not even unattributable');
+
+  const other = await codexEntry(f, f.dirs.novel, { session: 'synthetic-other-session' });
+  assert.doesNotMatch(receiptOf(other.context), /暂停/);
+  const before = f.knowledge.length;
+  await finishTask(f, other.context);
+  assert.ok(f.knowledge.length > before, 'the other session still records knowledge');
+});
+
+test('C3-4 a session closed while paused leaves the next session recording without a pause', async (t) => {
+  const f = await fixture(t);
+  const yesterday = await codexEntry(f, f.dirs.novel, { session: 'synthetic-yesterday' });
+  await setPaused(f, yesterday.context, true);
+  f.clock.now = '2026-10-21T09:00:00.000Z';
+  const today = await codexEntry(f, f.dirs.novel, { session: 'synthetic-today' });
+  assert.doesNotMatch(receiptOf(today.context), /暂停/);
+  const before = f.knowledge.length;
+  await finishTask(f, today.context);
+  assert.ok(f.knowledge.length > before);
+});
+
+async function pauseRecord(f) {
+  const directory = sessionCapturePausePathForRuntime(f.runtimeConfigPath);
+  const files = await readdir(directory);
+  assert.equal(files.length, 1);
+  return join(directory, files[0]);
+}
+
+test('C3-5 a removed pause record means the latest readable state, and its stretch is still not imported', async (t) => {
+  const f = await fixture(t);
+  const s = await transcriptSession(f);
+  await setPaused(f, s.context, true);
+  // The paused turn ends: its Stop hook keeps the denial for this session.
+  await s.say(`turn-while-paused ${PRIVATE}`);
+  await s.stop();
+  await s.say(`turn-after-removal ${PRIVATE}`);
+  await rm(await pauseRecord(f));
+  await s.stop();
+  await s.say('turn-after');
+  await s.stop();
+  assert.equal(imported(f).includes(PRIVATE), false, 'an uncertain stretch is skipped');
+  assert.match(imported(f), /turn-after/, 'then the session records per its settings again');
+});
+
+test('C3-5 a pause record that cannot be read records nothing and says why', async (t) => {
+  const f = await fixture(t);
+  const s = await transcriptSession(f);
+  await setPaused(f, s.context, true);
+  await writeFile(await pauseRecord(f), '{ not json');
+  await s.say(`turn-unknown ${PRIVATE}`);
+  await s.stop();
+  assert.equal(imported(f).includes(PRIVATE), false);
+  assert.deepEqual(await captureDecision(f.app, { sourceApplication: 'codex', sessionId: s.input.session_id }),
+    { allowed: false, reason: 'policy_unavailable', layer: 'session' });
+  const entry = await codexEntry(f, f.dirs.novel, { session: s.input.session_id });
+  assert.ok(lastNotice(receiptOf(entry.context)).startsWith(UNREADABLE), receiptOf(entry.context));
+  const before = f.knowledge.length;
+  assert.equal((await finishTask(f, entry.context)).capture_status, 'capture_disabled');
+  assert.equal(f.knowledge.length, before);
+});
+
+test('C3-6 a worker session started by a paused session records nothing, whenever the pause came', async (t) => {
+  const f = await fixture(t);
+  const parent = await codexEntry(f, f.dirs.novel, { session: 'synthetic-parent' });
+  const decide = session => captureDecision(f.app, { sourceApplication: 'codex', sessionId: session });
+  // The worker host links each worker session to the session that started it.
+  f.sessionPauses.link('synthetic-worker-1', 'synthetic-parent');
+  assert.equal((await decide('synthetic-worker-1')).allowed, true);
+  await setPaused(f, parent.context, true);
+  f.sessionPauses.link('synthetic-worker-2', 'synthetic-parent');
+  f.sessionPauses.link('synthetic-worker-2-child', 'synthetic-worker-2');
+  for (const worker of ['synthetic-worker-1', 'synthetic-worker-2', 'synthetic-worker-2-child']) {
+    assert.deepEqual(await decide(worker), { allowed: false, reason: 'session_paused', layer: 'session', since: '2026-10-20T08:00:00.000Z' },
+      worker);
+  }
+  // A worker's own task cannot resume what its parent paused.
+  const worker = f.app.taskContextRegistry.begin({ sessionId: 'synthetic-worker-1', personalProjectId: 'novel',
+    projectAgentId: 'lead-novel', sourceApplication: 'codex' });
+  await setPaused(f, { taskContextToken: worker.token }, false);
+  assert.equal((await decide('synthetic-worker-1')).reason, 'session_paused');
+  await setPaused(f, parent.context, false);
+  assert.equal((await decide('synthetic-worker-2-child')).allowed, true);
+});
+
+test('a capture that started before the pause and writes after it writes nothing', async (t) => {
+  const f = await fixture(t);
+  const s = await transcriptSession(f);
+  await s.say(`turn-in-flight ${PRIVATE}`);
+  // Hold the Stop hook's sync at its session read, after the hook decided to
+  // capture and before it writes; the person pauses meanwhile.
+  const conversation = f.app.personal.conversation;
+  let held = false;
+  f.app.personal.conversation = async (operation, input, options) => {
+    if (!held && operation === 'query' && input.mode === 'session') {
+      held = true;
+      await setPaused(f, s.context, true);
+    }
+    return conversation(operation, input, options);
+  };
+  await s.stop();
+  assert.equal(held, true, 'the capture was in flight when the pause landed');
+  assert.equal(imported(f).includes(PRIVATE), false, 'its write was refused');
+  f.app.personal.conversation = conversation;
+  await setPaused(f, s.context, false);
+  await s.stop();
+  await s.say('turn-after');
+  await s.stop();
+  assert.equal(imported(f).includes(PRIVATE), false, 'and it is not imported after the resume either');
+  assert.match(imported(f), /turn-after/);
+});
+
+test('C4-5 Claude Code, Codex and Cursor pause the same way and say the same thing', async (t) => {
+  const f = await fixture(t);
+  const entries = { claude_code: await claudeEntry(f, f.dirs.novel), codex: await codexEntry(f, f.dirs.novel),
+    cursor: await cursorEntry(f, f.dirs.novel) };
+  for (const [client, entry] of Object.entries(entries)) {
+    assert.equal(lastNotice(receiptOf(await setPaused(f, entry.context, true, client))).startsWith('本会话已暂停记录'), true, client);
+  }
+  const again = { claude_code: await claudeEntry(f, f.dirs.novel), codex: await codexEntry(f, f.dirs.novel),
+    cursor: await cursorEntry(f, f.dirs.novel) };
+  const notices = Object.entries(again).map(([client, entry]) => [client, lastNotice(receiptOf(entry.context))]);
+  assert.equal(new Set(notices.map(([, notice]) => notice)).size, 1, JSON.stringify(notices));
+  for (const [client, entry] of Object.entries(again)) await finishTask(f, entry.context, client);
+  assert.equal(f.knowledge.length, 0);
+});
+
+test('a pause changes only the session and never rides along with a long-term change', async (t) => {
+  const f = await fixture(t);
+  const entry = await codexEntry(f, f.dirs.novel);
+  await assert.rejects(callAgentTool(f.app, 'update_capture_policy', { sessionPaused: true, enabled: false,
+    taskContextToken: entry.context.taskContextToken, sourceApplication: 'codex' }), /long-term settings/);
+  await assert.rejects(callAgentTool(f.app, 'update_capture_policy', { sessionPaused: true, sourceApplication: 'codex' }),
+    /taskContextToken/);
+  await assert.rejects(setPaused(f, entry.context, true, 'cursor'), /unknown|superseded/i,
+    'a token of another client does not pause this session');
+  assert.equal(f.app.getCapturePolicy().enabled, true);
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'codex', sessionId: SESSION })).allowed, true);
+  // The client is the MCP process's, never the payload's.
+  assert.equal(normalizeAgentSessionInput('update_capture_policy', { sessionPaused: true, sourceApplication: 'cursor' },
+    null, 'host-session', () => new Date(), 'codex').sourceApplication, 'codex');
+});
