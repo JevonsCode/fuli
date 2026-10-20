@@ -46,10 +46,10 @@ const BASELINE = Object.freeze({
   // Attention replies: request_agent_attention says to ask in the live
   // conversation first (the console is the away inbox) and read_agent_messages
   // names the answers it now returns: 172,415 -> 172,573 B (+158 B). Chat is unchanged.
-  // rec#8 model backends part 1: one full-profile read tool, get_model_usage,
-  // reads the built-in Agents' model usage ledger and budget windows:
-  // 172,573 -> 173,202 B (+629 B). The chat profile is unchanged.
-  fullToolSchemaBytes: 173202,
+  // rec#8 model backends part 1: full-profile get_model_usage reads the model usage ledger and budget windows (+629 B).
+  // rec#5 C2: capture policy takes the caller's directory, sets the project mode and asks to confirm a long-term change (+1,215 B).
+  // Together 172,573 -> 174,417 B. Chat is unchanged.
+  fullToolSchemaBytes: 174417,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

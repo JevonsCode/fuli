@@ -11,7 +11,7 @@ import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { agentMemoryRecord, prepareProjectAgentMemory } from './project-agent-memory.js';
 import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
-import { captureDisabled } from './capture-decision.js';
+import { captureDisabled, taskCaptureScope } from './capture-decision.js';
 import { checkpointCaptureDecision, storedCheckpoint } from './checkpoint-capture.js';
 import { receiptNotices } from './capture-notice.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
@@ -170,8 +170,11 @@ export async function checkpointTaskKnowledge(application, {
     throw validationError('Task checkpoint belongs to another remote session');
   }
   // One decision for every write of this checkpoint, kept across its retries.
-  const captureCheck = checkpointCaptureDecision(application, task);
-  const captureKnowledge = async input => captureCheck.allowed ? application.captureSessionKnowledge(input)
+  // Its writes are decided by the task's project, including a global
+  // preference learned there.
+  const captureScope = taskCaptureScope(task);
+  const captureCheck = await checkpointCaptureDecision(application, task);
+  const captureKnowledge = async input => captureCheck.allowed ? application.captureSessionKnowledge(input, { captureScope })
     : { route: 'disabled', ...captureDisabled(captureCheck) };
   // experiences and remember are compact forms of one routed capture.
   if (experiences !== null || remember !== null) {
@@ -241,10 +244,10 @@ export async function checkpointTaskKnowledge(application, {
   } : null;
   // Local validation has no side effects. Reject correctable input before
   // binding an immutable checkpoint or advancing the Agent's memory revision.
-  if (captureInput) application.validateCaptureSessionKnowledge(captureInput);
+  if (captureInput) await application.validateCaptureSessionKnowledge(captureInput, { captureScope });
   const scopedInputs = scopedCaptures?.map(batch => ({ scope: batch.scope,
     input: taskCaptureInput(application.config.personal.spaceId, task, batch) }));
-  for (const batch of scopedInputs ?? []) application.validateCaptureSessionKnowledge(batch.input);
+  for (const batch of scopedInputs ?? []) await application.validateCaptureSessionKnowledge(batch.input, { captureScope });
   // The Provider owns the full commit model and scope authorization. Validate
   // every scoped batch before claiming the checkpoint or advancing memory.
   if (scopedInputs && captureCheck.allowed) await application.preflightPersonalKnowledgeCaptures(scopedInputs.map(batch => batch.input));
