@@ -13,6 +13,7 @@ import { employeeTemplateIdForAgent, employeeTemplates, type EmployeeRecruitment
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
 import ProjectScopePicker from '@/features/employees/ProjectScopePicker.vue'
 import { currentAssignmentsFor, currentWorkEntry } from '@/features/project-agents/agent-roster-records'
+import { linkedTaskOwner } from '@/features/project-agents/linked-task-owner'
 import {
   agentManagementPath,
   agentSearchText,
@@ -59,15 +60,38 @@ onMounted(() => {
 
 // An older link names one Agent (?agent=, often with ?task=): it opens that
 // Agent's own page, keeping the task scope and its #task- anchor. A task link
-// without an Agent opens the page of the Agent doing it, once that is known.
+// without an Agent opens the page of the Agent responsible for it, once the
+// space's Agents are read: from their open work, or else from the task itself,
+// so an ended task opens too.
 const linkedAgent = computed(() => typeof route.query.agent === 'string' ? route.query.agent : '')
 const linkedTask = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
-watch([spaceId, linkedAgent, linkedTask, agents], ([space, agentId, taskId]) => {
-  if (!space) return
-  const owner = agentId || (taskId && agents.value.find((agent) => agent.tasks?.some((task) => task.taskId === taskId))?.agentId)
-  if (!owner) return
+const linkedProject = computed(() => typeof route.query.project === 'string' ? route.query.project : '')
+const resolvingTask = ref('')
+const taskLinkUnavailable = ref(false)
+function openAgentPage(space: string, agentId: string) {
   const { agent: _linked, ...query } = route.query
-  void router.replace({ path: agentManagementPath(space, owner), query, hash: route.hash })
+  void router.replace({ path: agentManagementPath(space, agentId), query, hash: route.hash })
+}
+let taskLookup = 0
+watch([spaceId, linkedAgent, linkedTask, roster.loading], async ([space, agentId, taskId, rosterLoading]) => {
+  const lookup = ++taskLookup
+  resolvingTask.value = ''
+  taskLinkUnavailable.value = false
+  if (!space) return
+  if (agentId) return openAgentPage(space, agentId)
+  if (!taskId) return
+  // Finding the Agent starts with the space's Agents, so one indicator covers both reads.
+  resolvingTask.value = taskId
+  if (rosterLoading) return
+  const owner = agents.value.find((agent) => agent.tasks?.some((task) => task.taskId === taskId))?.agentId
+    || await linkedTaskOwner({
+      personalSpaceId: space, taskId, personalProjectId: linkedProject.value,
+      spaceAgentId: (id) => roster.find(id)?.agentId,
+    })
+  if (lookup !== taskLookup) return
+  resolvingTask.value = ''
+  if (owner) openAgentPage(space, owner)
+  else taskLinkUnavailable.value = true
 }, { immediate: true })
 
 // Filters are the URL (?project=, ?status=, ?q=); see orchestration-filters.
@@ -229,9 +253,9 @@ async function employeeRecruited(result: EmployeeRecruitmentResult) {
 
 <template>
   <section ref="scroller" class="view project-agents-view" :aria-label="t('projectAgents.aria')">
-    <GrowthLoading v-if="linkedAgent" :label="t('projectAgents.opening')" />
+    <GrowthLoading v-if="linkedAgent || resolvingTask" :label="linkedAgent ? t('projectAgents.opening') : t('projectAgents.openingTask')" />
     <div v-else class="@container mx-auto grid w-full max-w-(--canvas-max) gap-4">
-      <!-- One toolbar: filters first, then the count and the actions. It stays
+      <!-- One toolbar: filters, then a row with the count and the actions. It stays
            in reach on tall screens and scrolls away on short ones. -->
       <div class="project-agents-toolbar">
         <div class="project-agents-filters">
@@ -247,10 +271,12 @@ async function employeeRecruited(result: EmployeeRecruitmentResult) {
           <p v-if="!pageLoading && !pageError" class="project-agents-header-meta" aria-live="polite">
             <strong>{{ t('projectAgents.stats.active', { count: activeCount }) }}</strong> · {{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}<span class="project-agents-header-note">{{ t('projectAgents.stats.noOnlineClaim') }}</span>
           </p>
-          <Button size="sm" variant="ghost" :disabled="!spaceId" @click="openCreate">{{ t('projectAgents.add') }}</Button>
+          <Button class="project-agents-actions-start" size="sm" variant="ghost" :disabled="!spaceId" @click="openCreate">{{ t('projectAgents.add') }}</Button>
           <Button size="sm" :disabled="!spaceId" @click="recruitDialogOpen = true">{{ t('employees.recruit') }}</Button>
         </div>
       </div>
+
+      <p v-if="taskLinkUnavailable" class="ui-card project-agents-link-notice" role="status" data-task-link-unavailable>{{ t('projectAgents.taskLinkUnavailable') }}</p>
 
       <ProjectAgentFirstTask v-if="!pageLoading && !pageError && !projects.length" :personal-space-id="spaceId" />
 
@@ -343,7 +369,10 @@ async function employeeRecruited(result: EmployeeRecruitmentResult) {
 }
 .project-agents-search input:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .project-agents-status-filter { flex: 0 0 auto; }
-.project-agents-summary { margin-inline-start: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; min-width: 0; }
+/* Its own row under the filters at every width: the count starts where the
+   filters do, the actions end the row. */
+.project-agents-summary { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+.project-agents-actions-start { margin-inline-start: auto; }
 .project-agents-header-meta { margin: 0; color: var(--color-muted); font-size: 12px; }
 .project-agents-header-meta strong { color: var(--color-ink); font-weight: 700; }
 .project-agents-header-note { margin-inline-start: 12px; }
@@ -354,5 +383,6 @@ async function employeeRecruited(result: EmployeeRecruitmentResult) {
 .project-agents-state strong { color: var(--color-ink); font-size: 14px; }
 .project-agents-state p { max-width: 52ch; margin: 0; line-height: 1.6; }
 .project-agents-state.is-error { color: var(--color-danger); }
+.project-agents-link-notice { margin: 0; padding: 12px 16px; color: var(--color-muted); font-size: 13px; }
 .project-agent-grid { margin: 0; padding: 0; list-style: none; }
 </style>

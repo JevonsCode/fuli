@@ -16,7 +16,8 @@ import { taskStatusLabel } from './task-labels'
 // One Agent in 编排's collection, built like the directory's AgentCard: the
 // name opens the Agent's management page, "quick look" (or a click on the
 // card's empty surface) asks the collection for a Peek, and the card lifts
-// while its Peek is open.
+// while its Peek is open. Running work shows as the status dot beside the
+// task, never as a ring on the avatar (that reads as selected).
 const props = defineProps<{
   agent: ProjectAgentRecord
   spaceId: string
@@ -53,7 +54,6 @@ function surfaceClick(event: MouseEvent) {
     <div class="flex items-start gap-3">
       <span
         class="agent-portrait small agent-card-identity"
-        :class="{ 'is-working': work?.status === 'running' }"
         :style="agentIdentityStyle(agent.agentId)"
         v-bind="agent.profile.occupationEmoji
           ? { role: 'img', 'aria-label': `${t('projectAgents.fields.occupationEmoji')}: ${agent.profile.occupationEmoji}` }
@@ -90,7 +90,7 @@ function surfaceClick(event: MouseEvent) {
     </p>
     <div class="agent-card-meta mt-auto flex items-center justify-between gap-3 border-t pt-2.5">
       <div class="agent-card-project-list project-agent-row-projects min-w-0 flex-1">
-        <Badge v-for="group in chips.slice(0, MAX_PROJECT_CHIPS)" :key="group.name" variant="secondary" class="block max-w-[160px]" :title="group.name">
+        <Badge v-for="group in chips.slice(0, MAX_PROJECT_CHIPS)" :key="group.name" variant="secondary" class="project-agent-chip" :title="group.name">
           {{ group.name }}<template v-if="group.count > 1"> ×{{ group.count }}</template>
         </Badge>
         <Badge v-if="chips.length > MAX_PROJECT_CHIPS" variant="secondary">+{{ chips.length - MAX_PROJECT_CHIPS }}</Badge>
@@ -110,3 +110,14 @@ function surfaceClick(event: MouseEvent) {
     </div>
   </article>
 </template>
+
+<style scoped>
+/* A long project name or task title takes a second line before it is cut. */
+.project-agent-chip {
+  display: -webkit-box; max-width: 100%; border-radius: var(--radius-control); line-height: 1.4;
+  white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.project-agent-row-work .agent-card-current-task {
+  display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+</style>

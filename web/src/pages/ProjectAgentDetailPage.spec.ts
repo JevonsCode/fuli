@@ -134,6 +134,98 @@ describe('ProjectAgentDetailPage', () => {
     expect((task.get('[data-task-details]').element as HTMLDetailsElement).open).toBe(true)
   })
 
+  it('re-reads the task list when only the link scope changes for the same Agent, ignoring a stale answer', async () => {
+    const pending = new Map<string, (value: unknown) => void>()
+    const taskFor = (project: string, taskId: string) => ({ tasks: [{
+      task_id: taskId, title: `${project} 的任务`, personal_space_id: 'personal-1', personal_project_id: project, status: 'running',
+      participants: [{ agent_id: 'shared-agent', role: 'lead', status: 'running' }],
+    }] })
+    getJson.mockImplementation((url: string) => {
+      if (!url.startsWith('/api/project-agent-tasks?') || !url.includes('limit=')) return orchestrationResponse(url)
+      const project = new URL(url, 'http://test.local').searchParams.get('personalProjectId') ?? ''
+      if (project === 'project-b') return new Promise((resolve) => pending.set(project, resolve))
+      return Promise.resolve(taskFor(project, project === 'project-a' ? 'task-a' : 'task-c'))
+    })
+    const scopedReads = () => getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/project-agent-tasks?') && String(url).includes('limit=')).length
+    const otherReads = () => getJson.mock.calls.filter(([url]) => String(url).includes('agentId=shared-agent')).length
+    const { wrapper, router } = await mountPage(false, `${AGENT_PAGE}?project=project-a&task=task-a`)
+    await flushPromises()
+    expect(wrapper.find('#task-task-a').exists()).toBe(true)
+    const assignmentsRead = otherReads()
+
+    await router.push(`${AGENT_PAGE}?project=project-b&task=task-b`)
+    await flushPromises()
+    expect(pending.has('project-b')).toBe(true)
+    await router.push(`${AGENT_PAGE}?project=project-c&task=task-c`)
+    await flushPromises()
+    expect(wrapper.find('#task-task-c').exists()).toBe(true)
+    // B answers last, for a scope the page has left: it is not shown.
+    pending.get('project-b')!(taskFor('project-b', 'task-b'))
+    await flushPromises()
+    expect(wrapper.find('#task-task-b').exists()).toBe(false)
+    expect(wrapper.find('#task-task-c').exists()).toBe(true)
+    // Only the task list was read again; the Agent's other sources were not.
+    expect(otherReads()).toBe(assignmentsRead)
+
+    const reads = scopedReads()
+    await wrapper.get('[data-manage-tab="execution"]').trigger('mousedown', { button: 0 })
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ project: 'project-c', task: 'task-c', tab: 'execution' })
+    expect(scopedReads()).toBe(reads)
+    expect(otherReads()).toBe(assignmentsRead)
+  })
+
+  it('lands a new task link on the work tab, then leaves the tabs to the person', async () => {
+    const { wrapper, router } = await mountPage(false, `${AGENT_PAGE}?task=task-target&tab=execution`)
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ task: 'task-target' })
+    expect(wrapper.get('[data-manage-panel="work"]').attributes('hidden')).toBeUndefined()
+
+    await wrapper.get('[data-manage-tab="execution"]').trigger('mousedown', { button: 0 })
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ task: 'task-target', tab: 'execution' })
+    expect(wrapper.get('[data-manage-panel="execution"]').attributes('hidden')).toBeUndefined()
+
+    await router.push(`${AGENT_PAGE}?task=task-next&tab=execution`)
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ task: 'task-next' })
+    expect(wrapper.get('[data-manage-panel="work"]').attributes('hidden')).toBeUndefined()
+  })
+
+  it('keeps the H1 on the linked id until the Agent is known, never a section name', async () => {
+    getJson.mockImplementation((url: string) => url.includes('/api/project-agents?')
+      ? Promise.reject(new Error('provider unavailable')) : orchestrationResponse(url))
+    const { wrapper } = await mountPage()
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('provider unavailable')
+    expect(pageTitle.value.text).toBe('shared-agent')
+  })
+
+  it('shows reported enums through their labels and keeps the profile link in 资料', async () => {
+    const agent = { ...structuredClone(agents[0]!), memoryScope: 'task_only' }
+    getJson.mockImplementation((url: string) => {
+      if (url.includes('/api/project-agents?')) return Promise.resolve([agent])
+      if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [{
+        recruitment_id: 'recruitment-label', personal_space_id: 'personal-1', personal_project_id: 'project-a',
+        task_id: 'task-1', coordinator_agent_id: 'coordinator', position_kind: 'durable', work_kind: 'frontend',
+        required_capabilities: [], reason_code: 'capacity', reason: '需要长期协作者', status: 'awaiting_confirmation',
+        proposed_agent_id: 'shared-agent', revision: 1, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z',
+      }] })
+      return orchestrationResponse(url)
+    })
+    const { wrapper } = await mountPage()
+    await flushPromises()
+    const recruitment = wrapper.get('[data-manage-panel="recruitment"]').text()
+    expect(recruitment).toContain('长期岗位 · frontend')
+    expect(wrapper.get('[data-recruitment-status]').text()).toBe('待确认')
+    expect(recruitment).not.toContain('awaiting_confirmation')
+    const profile = wrapper.get('[data-manage-panel="profile"]')
+    expect(profile.text()).toContain('仅限任务')
+    expect(profile.text()).not.toContain('task_only')
+    expect(profile.find('[data-agent-profile-link]').attributes('href')).toBe('/agents/personal-1/shared-agent')
+    expect(wrapper.get('.project-agent-summary').find('[data-agent-profile-link]').exists()).toBe(false)
+  })
+
   it.each(['target-agent', 'legacy-target'])('opens a task deep-link Agent whose assignment is in another project (%s)', async (routeAgent) => {
     const target = structuredClone(agents[0]!)
     target.agentId = 'target-agent'
@@ -709,9 +801,15 @@ describe('ProjectAgentDetailPage', () => {
     const heatmap = heatmapViewport.get('.project-agent-heatmap')
     const cells = wrapper.findAll('.project-agent-heat-cell')
 
+    // Calendar order: oldest first, weeks padded to Monday..Sunday without fake days
+    // (Saturday 8/15 and Sunday 8/16 close one week, Monday 8/17 opens the next).
     expect(cells).toHaveLength(3)
-    expect(cells[0].attributes('aria-label')).toContain('8月17日')
-    expect(cells[2].attributes('aria-label')).toContain('8月15日')
+    expect(cells[0].attributes('aria-label')).toContain('8月15日')
+    expect(cells[2].attributes('aria-label')).toContain('8月17日')
+    expect(wrapper.findAll('.project-agent-heat-pad')).toHaveLength(11)
+    expect(wrapper.get('[data-activity-total]').text()).toBe('过去一年 1 次贡献')
+    expect(wrapper.get('.project-agent-calendar-months').text()).toBe('8月')
+    expect(wrapper.get('.project-agent-calendar-legend').text()).toContain('少')
     expect(cells[1].attributes('aria-label')).toContain('0')
     expect(cells[0].element.tagName).toBe('BUTTON')
     expect(cells[0].attributes('aria-pressed')).toBe('false')

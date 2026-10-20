@@ -77,6 +77,9 @@ export function useProjectAgentDetails(
   const executorBusy = ref('')
   const executorBusyAction = ref<'authorize' | 'revoke' | ''>('')
   let version = 0
+  // The task list also follows the link's project and task scope, which can
+  // change on its own (same Agent, another ?project= or ?task=).
+  let taskVersion = 0
 
   function emptyStates(status: DetailSourceStatus = 'idle'): Record<DetailSource, DetailSourceState> {
     return Object.fromEntries(DETAIL_SOURCES.map((source) => [source, { status, error: '' }])) as Record<DetailSource, DetailSourceState>
@@ -97,9 +100,7 @@ export function useProjectAgentDetails(
     return requested === version && id === agentId.value && space === spaceId.value
   }
 
-  async function loadScopedTasks(space: string, id: string) {
-    const project = link.project.value
-    const taskId = link.task.value
+  async function loadScopedTasks(space: string, id: string, project: string, taskId: string) {
     // The provider's Agent filter only matches participants. Read the authorized
     // space and apply the shared ownership rules so owner-only tasks remain visible.
     const query = new URLSearchParams({ personalSpaceId: space, limit: '200' })
@@ -156,6 +157,36 @@ export function useProjectAgentDetails(
     roster.update(person.agentId, (item) => ({ ...item, ...patch }))
   }
 
+  function taskScope() { return { project: link.project.value, task: link.task.value } }
+  function isCurrentTaskScope(requested: number, scope: { project: string; task: string }) {
+    return requested === taskVersion && scope.project === link.project.value && scope.task === link.task.value
+  }
+
+  /** Re-reads only the task list, for a new project or task scope of the same Agent. */
+  async function refreshTasks() {
+    const person = agent.value
+    const space = spaceId.value
+    if (!person || !space) return
+    const id = person.agentId
+    const requested = version
+    const scope = taskScope()
+    const taskRequested = ++taskVersion
+    setState(id, 'tasks', { status: 'loading', error: '' })
+    const current = () => isCurrent(requested, id, space) && isCurrentTaskScope(taskRequested, scope)
+    try {
+      const value = await loadScopedTasks(space, id, scope.project, scope.task)
+      if (!current()) return
+      apply(person, 'tasks', value, space)
+      setState(id, 'tasks', { status: 'ready', error: '' })
+    } catch (cause) {
+      if (!current()) return
+      setState(id, 'tasks', {
+        status: 'error',
+        error: cause instanceof Error ? cause.message : t('projectAgents.detail.sectionUnavailable'),
+      })
+    }
+  }
+
   async function refresh() {
     const person = agent.value
     const space = spaceId.value
@@ -169,9 +200,11 @@ export function useProjectAgentDetails(
     const range = activityRange()
     const activityQuery = new URLSearchParams({ personalSpaceId: space, agentId: id, fromDate: range.fromDate, toDate: range.toDate })
     const spaceQuery = encodeURIComponent(space)
+    const scope = taskScope()
+    const taskRequested = ++taskVersion
     const requests: Record<DetailSource, Promise<unknown>> = {
       assignments: getJson<unknown>(`/api/project-agent-assignments?${query}`),
-      tasks: loadScopedTasks(space, id),
+      tasks: loadScopedTasks(space, id, scope.project, scope.task),
       activity: getJson<unknown>(`/api/project-agent-activity?${activityQuery}`),
       recruitments: getJson<unknown>(`/api/project-agent-recruitments?personalSpaceId=${spaceQuery}`),
       executors: getJson<unknown>(`/api/executors?personalSpaceId=${spaceQuery}`),
@@ -182,10 +215,12 @@ export function useProjectAgentDetails(
       try {
         const value = await requests[source]
         if (!isCurrent(requested, id, space)) return
+        if (source === 'tasks' && !isCurrentTaskScope(taskRequested, scope)) return
         apply(person, source, value, space)
         setState(id, source, { status: 'ready', error: '' })
       } catch (cause) {
         if (!isCurrent(requested, id, space)) return
+        if (source === 'tasks' && !isCurrentTaskScope(taskRequested, scope)) return
         setState(id, source, {
           status: 'error',
           error: cause instanceof Error ? cause.message : t('projectAgents.detail.sectionUnavailable'),
@@ -196,9 +231,14 @@ export function useProjectAgentDetails(
   }
 
   // Reads once the Agent is known (a direct link waits for the roster), and
-  // again when the page moves to another Agent or space.
-  watch([agentId, spaceId], ([id, space]) => {
-    if (id && space) void refresh()
+  // again when the page moves to another Agent or space. A new project or task
+  // scope for the same Agent re-reads its task list only; anything else in the
+  // URL (the open tab) reads nothing.
+  watch([agentId, spaceId, link.project, link.task], ([id, space], previous) => {
+    if (!id || !space) return
+    const [previousId, previousSpace] = previous ?? []
+    if (id !== previousId || space !== previousSpace) void refresh()
+    else void refreshTasks()
   }, { immediate: true })
 
   async function updateLearning(evidence: ProjectAgentLearningEvidence, action: 'ignore' | 'reset', contributionEvidenceId?: string) {

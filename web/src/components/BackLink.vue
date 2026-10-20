@@ -14,7 +14,17 @@ const props = defineProps<{
 }>()
 const router = useRouter()
 
+// RouterLink's own guard: a modified or non-primary click, or a link that
+// opens elsewhere, stays with the browser (a new tab or window).
+function opensElsewhere(event: MouseEvent) {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return true
+  if (event.button !== undefined && event.button !== 0) return true
+  const target = (event.currentTarget as Element | null)?.getAttribute?.('target')
+  return Boolean(target && /\b_blank\b/i.test(target))
+}
+
 function go(event: MouseEvent, navigate: (event?: MouseEvent) => unknown) {
+  if (opensElsewhere(event)) return
   const back = (router.options.history.state as { back?: unknown } | null)?.back
   if (typeof back === 'string' && props.from.test(back)) {
     event.preventDefault()

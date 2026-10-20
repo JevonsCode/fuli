@@ -15,13 +15,14 @@ import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vu
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
 import AgentConversations from '@/features/project-agents/AgentConversations.vue'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
+import { activityWeeks } from '@/features/project-agents/activity-calendar'
 import { assignmentsFor, currentAssignmentsFor, dedupeById, unique } from '@/features/project-agents/agent-roster-records'
 import EmployeeWorkHistory from '@/features/project-agents/EmployeeWorkHistory.vue'
 import ExecutorRoutingDialog from '@/features/project-agents/ExecutorRoutingDialog.vue'
 import { agentManagementPath } from '@/features/project-agents/orchestration-filters'
 import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
 import ProjectAgentTaskCard from '@/features/project-agents/ProjectAgentTaskCard.vue'
-import { formatDate, policyLabel, sourceLabel, strategyLabel, taskStatusLabel } from '@/features/project-agents/task-labels'
+import { formatDate, memoryScopeLabel, policyLabel, recruitmentPositionLabel, recruitmentStatusLabel, sourceLabel, strategyLabel, taskStatusLabel } from '@/features/project-agents/task-labels'
 import { useProjectAgentDetails, type DetailSource } from '@/features/project-agents/useProjectAgentDetails'
 import { useProjectAgentRoster } from '@/features/project-agents/useProjectAgentRoster'
 import ProjectAgentDialog from '@/features/projects/ProjectAgentDialog.vue'
@@ -84,10 +85,12 @@ onMounted(() => {
   if (store.runtimeStatus === 'idle') void store.refresh()
 })
 
-// The shell's one H1 is the Agent's real name; the route title is only the
-// fallback while it loads or when the Agent is unavailable.
+// The shell's one H1 is the Agent's real name. Until it is known (loading,
+// an error, an unavailable Agent) the H1 is the id the link names, so the
+// title never jumps to a section name and back.
 const name = computed(() => (agent.value ? agentDisplayName(agent.value) : ''))
-usePageTitle(name)
+const title = computed(() => name.value || routeAgentId.value)
+usePageTitle(title)
 
 // A link may use an Agent's earlier id; the page settles on its current one.
 watch(agent, (person) => {
@@ -128,7 +131,7 @@ const tabs = computed(() => {
   return list
 })
 // The open tab is part of the URL; switching replaces the entry instead of
-// adding history. A task link always lands on the work it names.
+// adding history.
 const activeTab = computed<ManageTab>({
   get: () => {
     const tab = route.query.tab
@@ -139,6 +142,12 @@ const activeTab = computed<ManageTab>({
     void router.replace({ query: tab === 'work' ? query : { ...query, tab }, hash: route.hash })
   },
 })
+
+// A link that names a new task opens the work tab, where that task is shown.
+// Afterwards the tabs are the person's again, though ?task= stays in the URL.
+watch(linkedTask, (task) => {
+  if (task && activeTab.value !== 'work') activeTab.value = 'work'
+}, { immediate: true })
 
 watch([linkedTask, details.loading], async ([task, busy]) => {
   if (busy || !task) return
@@ -154,8 +163,22 @@ function activityIntensity(day: ProjectAgentActivityDay, result: ProjectAgentAct
   const maximum = Math.max(...result.days.map(({ total }) => total), 0)
   return !maximum || !day.total ? 0 : Math.min(4, Math.ceil((day.total / maximum) * 4))
 }
+const activityCalendar = computed(() => activityWeeks(activity.value?.days ?? []))
+const activityTotal = computed(() => (activity.value?.days ?? []).reduce((sum, { total }) => sum + total, 0))
+// Weekday names from a known Monday (2024-01-01), in the page's locale.
+const weekdayLabels = computed(() => Array.from({ length: 7 }, (_, index) => formatDateTime(
+  `2024-01-0${index + 1}T00:00:00Z`, currentLocale(), { weekday: 'short', timeZone: 'UTC' }, { missing: '' })))
+// A calendar wider than its card opens on the latest weeks.
+const calendar = ref<HTMLElement | null>(null)
+watch([calendar, activityCalendar], async () => {
+  await nextTick()
+  if (calendar.value) calendar.value.scrollLeft = calendar.value.scrollWidth
+})
+function formatMonth(month: string) {
+  return formatDateTime(`${month}-01T00:00:00Z`, currentLocale(), { month: 'short', timeZone: 'UTC' }, { missing: '' })
+}
 function formatDateOnly(value: string | null | undefined) {
-  return formatDateTime(value && `${value}T00:00:00Z`, currentLocale(), { month: 'short', day: 'numeric' }, {
+  return formatDateTime(value && `${value}T00:00:00Z`, currentLocale(), { month: 'short', day: 'numeric', timeZone: 'UTC' }, {
     missing: t('projectAgents.notReported'),
     invalid: value ?? undefined,
   })
@@ -250,7 +273,7 @@ async function cleanup(person: ProjectAgentRecord) {
 </script>
 
 <template>
-  <section class="view project-agent-manage" :aria-label="name || t('projectAgents.pageTitle')">
+  <section class="view project-agent-manage" :aria-label="title">
     <div class="@container mx-auto grid w-full max-w-(--canvas-max) gap-4">
       <BackLink class="agent-profile-back" :to="collectionPath" :from="openedFromCollection">{{ t('shell.sections.orchestrate') }}</BackLink>
 
@@ -290,7 +313,6 @@ async function cleanup(person: ProjectAgentRecord) {
             <Button variant="outline" size="sm" data-detail-refresh :disabled="details.loading.value" @click="details.refresh()">{{ t('projectAgents.detail.refresh') }}</Button>
             <Button variant="outline" size="sm" data-agent-edit @click="dialogOpen = true">{{ t('projectAgents.edit') }}</Button>
             <Button v-if="agent.profile.cleanupEligible" variant="outline" size="sm" data-agent-cleanup :disabled="details.loading.value" :loading="details.cleanupBusy.value" :loading-label="t('projectAgents.source.cleanupLoading')" @click="cleanup(agent)">{{ t('projectAgents.source.cleanup') }}</Button>
-            <Button variant="ghost" size="sm" as-child><RouterLink :to="agentProfilePath(agent.personalSpaceId, agent.agentId)" data-agent-profile-link>{{ t('projectAgents.openProfile') }}</RouterLink></Button>
           </div>
         </Card>
         <p v-if="details.notice.value" class="project-agent-detail-notice" role="status">{{ details.notice.value }}</p>
@@ -353,11 +375,28 @@ async function cleanup(person: ProjectAgentRecord) {
           <TabsContent value="activity" class="project-agent-panel" data-manage-panel="activity">
             <Card as="section" class="project-agent-card-section" data-detail-section="activity">
               <ProjectAgentDetailState v-bind="sourceState('activity')" :label="loadingLabel('activity')" @retry="details.refresh">
-                <div class="project-agent-section-heading"><h2>{{ t('projectAgents.sections.activity') }}</h2><span v-if="activity">{{ activity.days.length }}</span></div>
-                <div v-if="activity?.days.length" class="project-agent-heatmap-wrap project-agent-heatmap-viewport">
-                  <div class="project-agent-heatmap" role="list" :aria-label="t('projectAgents.activity.aria')">
-                    <button v-for="day in activity.days" :key="day.date" type="button" role="listitem" :class="['project-agent-heat-cell', `intensity-${activityIntensity(day, activity)}`, { selected: activityDay === day.date }]" :aria-label="`${formatDateOnly(day.date)} · ${day.total}`" :aria-pressed="activityDay === day.date" @click="activityDay = day.date"><span class="ui-sr-only">{{ formatDateOnly(day.date) }} · {{ day.total }}</span></button>
+                <div class="project-agent-section-heading"><h2>{{ t('projectAgents.sections.activity') }}</h2><span v-if="activity?.days.length" data-activity-total>{{ t('projectAgents.activity.total', { count: activityTotal }) }}</span></div>
+                <div v-if="activity?.days.length" class="project-agent-heatmap-wrap">
+                  <!-- Weeks as columns (Monday on top), sized to the card: a year
+                       fills the width, a short range keeps readable cells. -->
+                  <div ref="calendar" class="project-agent-calendar project-agent-heatmap-viewport" :style="{ '--weeks': activityCalendar.length }">
+                    <div class="project-agent-calendar-months" aria-hidden="true"><span v-for="week in activityCalendar" :key="week.key">{{ week.month ? formatMonth(week.month) : '' }}</span></div>
+                    <div class="project-agent-calendar-weekdays" aria-hidden="true"><span v-for="(label, index) in weekdayLabels" :key="index">{{ index % 2 === 0 ? label : '' }}</span></div>
+                    <div class="project-agent-heatmap" role="list" :aria-label="t('projectAgents.activity.aria')">
+                      <template v-for="week in activityCalendar" :key="week.key">
+                        <template v-for="(day, index) in week.days" :key="day?.date ?? `${week.key}:${index}`">
+                          <button v-if="day" type="button" role="listitem" :class="['project-agent-heat-cell', `intensity-${activityIntensity(day, activity)}`, { selected: activityDay === day.date }]" :title="`${formatDateOnly(day.date)} · ${day.total}`" :aria-label="`${formatDateOnly(day.date)} · ${day.total}`" :aria-pressed="activityDay === day.date" @click="activityDay = day.date"><span class="ui-sr-only">{{ formatDateOnly(day.date) }} · {{ day.total }}</span></button>
+                          <span v-else class="project-agent-heat-pad" aria-hidden="true" />
+                        </template>
+                      </template>
+                    </div>
                   </div>
+                  <p class="project-agent-calendar-legend" :title="t('projectAgents.activity.legend')">
+                    <span>{{ t('projectAgents.activity.less') }}</span>
+                    <span v-for="level in 5" :key="level" :class="['project-agent-heat-swatch', `intensity-${level - 1}`]" aria-hidden="true" />
+                    <span>{{ t('projectAgents.activity.more') }}</span>
+                    <span class="ui-sr-only">{{ t('projectAgents.activity.legend') }}</span>
+                  </p>
                   <article v-if="selectedActivityDay" class="project-agent-day-detail">
                     <header><strong>{{ formatDateOnly(selectedActivityDay.date) }}</strong><span>{{ selectedActivityDay.total }}</span></header>
                     <p v-if="!selectedActivityDay.tasks?.length" class="project-agent-muted">{{ t('projectAgents.activity.noTasks') }}</p>
@@ -382,7 +421,7 @@ async function cleanup(person: ProjectAgentRecord) {
                 <div class="project-agent-section-heading"><h2 id="project-agent-recruitment-heading">{{ t('projectAgents.sections.recruitment') }}</h2><span>{{ recruitments.length }}</span></div>
                 <div v-if="recruitments.length" class="project-agent-recruitment-list">
                   <article v-for="recruitment in recruitments" :key="recruitment.recruitmentId" class="project-agent-recruitment-card">
-                    <header><strong>{{ recruitment.positionKind }} · {{ recruitment.workKind || t('projectAgents.notReported') }}</strong><div class="project-agent-card-actions"><Badge :variant="recruitment.status === 'awaiting_confirmation' ? 'warning' : 'secondary'">{{ recruitment.status }}</Badge><Button size="sm" variant="outline" v-if="recruitment.status === 'awaiting_confirmation'" data-recruitment-approve :disabled="Boolean(details.recruitmentBusy.value)" :loading="details.recruitmentBusy.value === recruitment.recruitmentId && details.recruitmentBusyAction.value === 'approve'" :loading-label="t('projectAgents.recruitment.approving')" @click="details.decideRecruitment(recruitment, 'approve')">{{ t('projectAgents.recruitment.approve') }}</Button><Button size="sm" variant="ghost" v-if="recruitment.status === 'awaiting_confirmation'" :disabled="Boolean(details.recruitmentBusy.value)" :loading="details.recruitmentBusy.value === recruitment.recruitmentId && details.recruitmentBusyAction.value === 'cancel'" :loading-label="t('projectAgents.recruitment.cancelling')" @click="details.decideRecruitment(recruitment, 'cancel')">{{ t('projectAgents.recruitment.cancel') }}</Button></div></header>
+                    <header><strong>{{ recruitmentPositionLabel(recruitment.positionKind) }} · {{ recruitment.workKind || t('projectAgents.notReported') }}</strong><div class="project-agent-card-actions"><Badge :variant="recruitment.status === 'awaiting_confirmation' ? 'warning' : 'secondary'" data-recruitment-status>{{ recruitmentStatusLabel(recruitment.status) }}</Badge><Button size="sm" variant="outline" v-if="recruitment.status === 'awaiting_confirmation'" data-recruitment-approve :disabled="Boolean(details.recruitmentBusy.value)" :loading="details.recruitmentBusy.value === recruitment.recruitmentId && details.recruitmentBusyAction.value === 'approve'" :loading-label="t('projectAgents.recruitment.approving')" @click="details.decideRecruitment(recruitment, 'approve')">{{ t('projectAgents.recruitment.approve') }}</Button><Button size="sm" variant="ghost" v-if="recruitment.status === 'awaiting_confirmation'" :disabled="Boolean(details.recruitmentBusy.value)" :loading="details.recruitmentBusy.value === recruitment.recruitmentId && details.recruitmentBusyAction.value === 'cancel'" :loading-label="t('projectAgents.recruitment.cancelling')" @click="details.decideRecruitment(recruitment, 'cancel')">{{ t('projectAgents.recruitment.cancel') }}</Button></div></header>
                     <dl class="project-agent-compact-meta"><div><dt>{{ t('projectAgents.recruitment.hr') }}</dt><dd>{{ recruitment.hrAgentId || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.trigger') }}</dt><dd>{{ sourceLabel(recruitment.triggerSourceApplication) }}</dd></div><div><dt>{{ t('projectAgents.recruitment.reason') }}</dt><dd>{{ recruitment.reason || recruitment.reasonCode || t('projectAgents.notReported') }}</dd></div><div><dt>{{ t('projectAgents.recruitment.time') }}</dt><dd>{{ formatDate(recruitment.fulfilledAt || recruitment.createdAt) }}</dd></div></dl>
                     <small>{{ t('projectAgents.recruitment.testSource') }} · {{ recruitment.testSource || t('projectAgents.notReported') }}</small>
                   </article>
@@ -474,11 +513,12 @@ async function cleanup(person: ProjectAgentRecord) {
             <Card as="section" class="project-agent-card-section" :aria-label="t('projectAgents.profileDetails')">
               <dl class="project-agent-detail-meta">
                 <div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ currentAssignmentsFor(agent).length }}</dd></div>
-                <div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ agent.memoryScope ?? t('projectAgents.notReported') }}</dd></div>
+                <div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ memoryScopeLabel(agent.memoryScope) }}</dd></div>
                 <div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${agent.profile.status}`) }}</dd></div>
                 <div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(agent.recruitmentSourceApplication) }}<small v-if="agent.recruitmentReason">{{ agent.recruitmentReason }}</small></dd></div>
                 <div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(agent.updatedAt) }}</dd></div>
               </dl>
+              <Button class="project-agent-profile-link" variant="outline" size="sm" as-child><RouterLink :to="agentProfilePath(agent.personalSpaceId, agent.agentId)" data-agent-profile-link>{{ t('projectAgents.openProfile') }}</RouterLink></Button>
             </Card>
           </TabsContent>
         </Tabs>

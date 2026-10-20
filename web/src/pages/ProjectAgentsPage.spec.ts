@@ -289,6 +289,41 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     expect(router.currentRoute.value.fullPath).toBe('/project-agents/manage/personal-1/shared-agent?project=project-a&task=task-open')
   })
 
+  it.each([
+    ['completed', { status: 'completed' }],
+    ['failed', { status: 'failed' }],
+    ['cancelled', { status: 'cancelled' }],
+    ['outside the open-work list', { status: 'running' }],
+  ])('opens the Agent page for a task-only link to a %s task, read on its own', async (_case, fields) => {
+    getJson.mockImplementation((url: string) => {
+      if (url.startsWith('/api/project-agent-tasks/old-task?')) return Promise.resolve({
+        task_id: 'old-task', title: '已结束的任务', personal_space_id: 'personal-1', personal_project_id: 'project-a',
+        owner_agent_id: 'shared-agent', participants: [{ agent_id: 'shared-agent', role: 'lead', status: fields.status }], ...fields,
+      })
+      return orchestrationResponse(url)
+    })
+    const { router } = await mountPage(false, '/project-agents/manage?task=old-task')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/project-agents/manage/personal-1/shared-agent?task=old-task')
+    expect(getJson).toHaveBeenCalledWith('/api/project-agent-tasks/old-task?personalSpaceId=personal-1')
+  })
+
+  it.each([
+    ['does not exist', () => Promise.reject(new Error('not found'))],
+    ['belongs to another space', () => Promise.resolve({ task_id: 'old-task', title: '别处的任务', personal_space_id: 'personal-2',
+      status: 'completed', owner_agent_id: 'shared-agent', participants: [] })],
+    ['names no Agent of this space', () => Promise.resolve({ task_id: 'old-task', title: '外来任务', personal_space_id: 'personal-1',
+      status: 'completed', owner_agent_id: 'stranger', participants: [{ agent_id: 'stranger', role: 'lead', status: 'completed' }] })],
+  ])('stays on the collection and says so when a linked task %s', async (_case, answer) => {
+    getJson.mockImplementation((url: string) => url.startsWith('/api/project-agent-tasks/old-task?')
+      ? answer() : orchestrationResponse(url))
+    const { wrapper, router } = await mountPage(false, '/project-agents/manage?task=old-task')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/project-agents/manage')
+    expect(wrapper.get('[data-task-link-unavailable]').text()).toBe(t('projectAgents.taskLinkUnavailable'))
+    expect(wrapper.findAll('.project-agent-card')).toHaveLength(1)
+  })
+
   it('creating an Agent opens its page', async () => {
     const { wrapper, router } = await mountPage()
     await flushPromises()

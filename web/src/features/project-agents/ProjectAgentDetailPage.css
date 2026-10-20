@@ -16,9 +16,9 @@
 .project-agent-detail { container-type: inline-size; display: grid; gap: var(--space-4, 16px); }
 .project-agent-panel { display: grid; gap: var(--space-4, 16px); }
 .project-agent-card-section { gap: 0; padding-inline: var(--space-6, 24px); }
-.project-agent-execution-grid { display: grid; gap: var(--space-4, 16px); }
+.project-agent-execution-grid { display: grid; align-items: start; gap: var(--space-4, 16px); }
 @container (min-width: 960px) {
-  .project-agent-execution-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .project-agent-execution-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .project-agent-section-heading, .project-agent-section-tools, .project-agent-assignment-card header, .project-agent-learning-card header, .project-agent-recruitment-card header, .project-agent-day-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -26,7 +26,7 @@
 .project-agent-section-heading h2, .employee-project-overview-heading h2 { margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 650; }
 .project-agent-section-heading > span, .project-agent-section-tools > span { color: var(--color-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .project-agent-section-tools { margin-top: 8px; justify-content: flex-start; }
-.project-agent-section-heading .project-agent-section-tools { margin-top: 0; }
+.project-agent-section-heading .project-agent-section-tools { margin-top: 0; gap: 20px; }
 .project-agent-card-section p, .project-agent-card-section li { color: var(--color-ink); font-size: 14px; line-height: 1.6; }
 .project-agent-muted { color: var(--color-muted) !important; }
 .project-agent-blocked { color: var(--color-danger) !important; }
@@ -63,16 +63,37 @@
 .project-agent-detail-meta div, .project-agent-compact-meta div { min-width: 0; }
 .project-agent-detail-meta dt, .project-agent-compact-meta dt { color: var(--color-muted); font-size: 12px; font-weight: 650; }
 .project-agent-detail-meta dd, .project-agent-compact-meta dd { margin: 4px 0 0; overflow-wrap: anywhere; color: var(--color-ink); font-size: 13px; }
+.project-agent-profile-link { justify-self: start; align-self: flex-start; width: fit-content; margin-top: 16px; }
 .project-agent-detail-meta dd small { display: block; margin-top: 3px; color: var(--color-muted); font-size: 12px; line-height: 1.4; }
 @container (max-width: 640px) { .project-agent-compact-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-/* Contribution activity: a year of days, scrolling inside its own box. */
-.project-agent-heatmap-viewport { min-width: 0; max-width: 100%; overflow-x: clip; contain: layout inline-size paint; }
-.project-agent-heatmap { width: 100%; max-width: 100%; display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, minmax(10px, 1fr)); grid-auto-columns: minmax(10px, 18px); justify-content: start; gap: 3px; margin-top: 9px; overflow-x: auto; padding: 0; }
-.project-agent-heat-cell { appearance: none; box-sizing: border-box; aspect-ratio: 1; min-width: 9px; margin: 0; padding: 0; border: 1px solid var(--color-border); border-radius: 3px; background: var(--color-surface-subtle); cursor: pointer; }
-.project-agent-heat-cell.intensity-1 { background: var(--color-surface-subtle); }
-.project-agent-heat-cell:is(.intensity-2, .intensity-3, .intensity-4) { background: var(--color-muted); }
-.project-agent-heat-cell:focus-visible, .project-agent-heat-cell.selected { border: 2px solid var(--color-accent); outline: none; box-shadow: none; }
+/* Contribution activity: weeks as columns sized to the card (a year fills
+   the width; a short range keeps cells readable), weekday labels on the
+   left, months above, a legend below. Too narrow a card scrolls the grid
+   inside its own box, opened on the latest weeks. */
+.project-agent-calendar {
+  --heat-gap: 3px; --heat-labels: 32px;
+  --heat-cell: clamp(10px, calc((100cqw - var(--heat-labels) - 8px - (var(--weeks) - 1) * var(--heat-gap)) / var(--weeks)), 28px);
+  container-type: inline-size; min-width: 0; max-width: 100%; margin-top: 12px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin;
+  display: grid; grid-template-columns: var(--heat-labels) max-content; grid-template-rows: auto auto; column-gap: 8px; row-gap: 4px;
+}
+.project-agent-calendar-months { grid-column: 2; display: grid; grid-template-columns: repeat(var(--weeks), var(--heat-cell)); gap: var(--heat-gap); color: var(--color-muted); font-size: 11px; line-height: 1.4; }
+.project-agent-calendar-months span { overflow: visible; white-space: nowrap; }
+.project-agent-calendar-weekdays { grid-column: 1; grid-row: 2; display: grid; grid-template-rows: repeat(7, var(--heat-cell)); gap: var(--heat-gap); color: var(--color-muted); font-size: 11px; }
+.project-agent-calendar-weekdays span { display: flex; align-items: center; white-space: nowrap; }
+.project-agent-heatmap { grid-column: 2; grid-row: 2; display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, var(--heat-cell)); grid-auto-columns: var(--heat-cell); gap: var(--heat-gap); margin: 0; padding: 0; }
+.project-agent-heat-cell, .project-agent-heat-swatch { appearance: none; box-sizing: border-box; width: 100%; aspect-ratio: 1; margin: 0; padding: 0; border: 1px solid var(--color-border); border-radius: 3px; background: var(--color-surface-subtle); }
+.project-agent-heat-cell { cursor: pointer; }
+.project-agent-heat-pad { display: block; }
+.project-agent-heat-cell.intensity-1, .project-agent-heat-swatch.intensity-1 { border-color: transparent; background: color-mix(in oklab, var(--color-accent) 25%, var(--color-surface-subtle)); }
+.project-agent-heat-cell.intensity-2, .project-agent-heat-swatch.intensity-2 { border-color: transparent; background: color-mix(in oklab, var(--color-accent) 50%, var(--color-surface-subtle)); }
+.project-agent-heat-cell.intensity-3, .project-agent-heat-swatch.intensity-3 { border-color: transparent; background: color-mix(in oklab, var(--color-accent) 75%, var(--color-surface-subtle)); }
+.project-agent-heat-cell.intensity-4, .project-agent-heat-swatch.intensity-4 { border-color: transparent; background: var(--color-accent); }
+.project-agent-heat-cell:focus-visible, .project-agent-heat-cell.selected { outline: 2px solid var(--color-ink); outline-offset: 1px; }
+.project-agent-calendar-legend { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin: 10px 0 0; color: var(--color-muted) !important; font-size: 12px !important; }
+.project-agent-calendar-legend .project-agent-heat-swatch { width: 12px; }
+.project-agent-calendar-legend > span:first-child { margin-inline-end: 4px; }
+.project-agent-calendar-legend > span:nth-last-child(2) { margin-inline-start: 4px; }
 .project-agent-day-detail { margin-top: 12px; padding: 12px; border-radius: var(--radius-control); background: var(--color-surface-subtle); }
 .project-agent-day-detail ul { margin: 8px 0 0; padding-left: 17px; }
 .project-agent-day-detail li { margin-top: 6px; }
