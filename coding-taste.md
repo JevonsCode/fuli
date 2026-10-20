@@ -43,8 +43,10 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Promise-based sleep | `node:timers/promises` (`setTimeout as delay`) | Do not hand-roll `new Promise((resolve) => setTimeout(resolve, ms))`. |
 | Atomic text and JSON file writes | `src/storage/json-file.js` (`writeTextFileAtomic`, `writeJsonFileAtomic`) | Keeps the existing file mode; new files are private. |
 | One-line display text | `src/text/single-line.js` | |
+| Parsing a model's JSON answer | `src/text/model-json.js` (`parseModelJson`) | Tolerates one Markdown code fence. Judgment and the model port share it. |
 | Lifecycle hook stdin reading and size limit | `src/agents/lifecycle-input.js` | Common to every Agent; only the output format stays in `src/agents/<agent>/`. |
-| CLI line output and terminal confirmation | `src/cli/terminal-io.js` | |
+| CLI line output, terminal confirmation and hidden secret entry | `src/cli/terminal-io.js` | |
+| Model API calls of the built-in Agents | `src/model-backends/port.js` | Budget, egress, retry, validation and usage live in the port; protocols only in `src/model-backends/adapters/`. |
 | Web date and time display | `web/src/lib/date-time.ts` (`formatDateTime`), `web/src/lib/relative-time.ts` | Pass `currentLocale()`; never a hard-coded or browser-default locale. |
 | Web identity, debounce | `web/src/lib/identity.ts`, `web/src/lib/debounce.ts` | |
 | Web short display ids (unique prefix of a list) | `web/src/lib/short-ids.ts` (`shortUniqueIds`) | Mark a cut with … and keep the full id in a title or copy control. |
