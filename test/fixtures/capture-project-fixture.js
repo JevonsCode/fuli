@@ -50,6 +50,7 @@ export async function fixture(t, { registered = REGISTERED } = {}) {
   const knowledge = [];
   const cursors = new Map();
   const app = new FederatedGraphApplication(CONFIG, { capturePolicyStore: store, sessionCapturePauseStore: sessionPauses,
+    runtimeConfigPath,
     taskContextRegistry: new TaskContextRegistry(),
     fetchImpl: async url => { throw new Error(`Unexpected Provider request ${new URL(url).pathname}`); } });
   app.upsertPersonalProject = async input => {

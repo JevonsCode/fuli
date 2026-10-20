@@ -9,7 +9,9 @@ import test from 'node:test';
 
 import { callAgentTool } from '../src/agent-tools.js';
 import { captureDecision } from '../src/graphiti/capture-decision.js';
+import { captureWindow } from '../src/conversations/capture-window.js';
 import { sessionCapturePausePathForRuntime } from '../src/graphiti/capture-session-pause.js';
+import { openFederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { normalizeAgentSessionInput } from '../src/mcp/session-id.js';
 import { claudeEntry, codexEntry, codexStop, cursorEntry, finishTask, fixture, PRIVATE, receiptOf,
   transcriptRow } from './fixtures/capture-project-fixture.js';
@@ -110,7 +112,7 @@ test('C3-2 a pause and resume no hook saw still never backfills the paused stret
   await s.say('turn-after');
   await s.stop();
   assert.equal(imported(f).includes(PRIVATE), false);
-  assert.match(imported(f), /capture settings changed, so this stretch could not be confirmed/);
+  assert.match(imported(f), /\[Not recorded: automatic recording was off \(session_paused\)/, 'the pause call kept it in the ledger');
   assert.match(imported(f), /turn-after/);
 });
 
@@ -268,4 +270,94 @@ test('a pause changes only the session and never rides along with a long-term ch
   // The client is the MCP process's, never the payload's.
   assert.equal(normalizeAgentSessionInput('update_capture_policy', { sessionPaused: true, sourceApplication: 'cursor' },
     null, 'host-session', () => new Date(), 'codex').sourceApplication, 'codex');
+});
+
+test('C3-5 a pause record removed before any hook ran still keeps the paused stretch out', async (t) => {
+  const f = await fixture(t);
+  const s = await transcriptSession(f);
+  await s.say('turn-before');
+  await s.stop();
+  await setPaused(f, s.context, true);
+  await s.say(`turn-while-paused ${PRIVATE}`);
+  await rm(await pauseRecord(f));
+  await s.stop();
+  await s.say('turn-after');
+  await s.stop();
+  assert.equal(imported(f).includes(PRIVATE), false, 'the pause call kept the stretch out in the session ledger first');
+  assert.match(imported(f), /\[Not recorded: automatic recording was off \(session_paused\)/);
+  assert.match(imported(f), /turn-after/);
+});
+
+test('C3-5 pause, removed record and resume with no hook in between never import the paused stretch', async (t) => {
+  const f = await fixture(t);
+  const s = await transcriptSession(f);
+  await setPaused(f, s.context, true);
+  await s.say(`turn-while-paused ${PRIVATE}`);
+  await rm(await pauseRecord(f));
+  assert.equal((await setPaused(f, s.context, false)).status, 'session_resumed');
+  await s.stop();
+  await s.say('turn-after');
+  await s.stop();
+  assert.equal(imported(f).includes(PRIVATE), false);
+  assert.match(imported(f), /turn-after/);
+});
+
+test('a pause whose ledger entry cannot be kept does not pause and does not say it did', async (t) => {
+  const f = await fixture(t);
+  const entry = await codexEntry(f, f.dirs.novel);
+  // The session ledgers' directory cannot be created.
+  await writeFile(join(f.root, 'runtime', 'transcript-capture'), 'not a directory');
+  const result = await setPaused(f, entry.context, true);
+  assert.deepEqual([result.status, result.paused], ['unsaved', false]);
+  assert.doesNotMatch(receiptOf(result), /暂停/);
+  assert.match(result.guidance, /did not change/);
+  await assert.rejects(readdir(sessionCapturePausePathForRuntime(f.runtimeConfigPath)), { code: 'ENOENT' },
+    'the pause record was never written');
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'codex', sessionId: SESSION })).allowed, true);
+});
+
+test('both production compositions carry the session layer, so only test doubles lack it', async (t) => {
+  const f = await fixture(t);
+  const runtimeConfigPath = join(f.root, 'runtime', 'graph-runtime.json');
+  await writeFile(runtimeConfigPath, JSON.stringify({ version: 1, workspaces: [], personal: {
+    providerUrl: 'http://127.0.0.1:8787', accessToken: 'synthetic-token', principalId: 'synthetic-person',
+    spaceId: 'synthetic-space' } }));
+  const paused = await codexEntry(f, f.dirs.novel);
+  assert.equal((await setPaused(f, paused.context, true)).status, 'session_paused');
+  const opened = openFederatedGraphApplication({ runtimeConfigPath, env: {} });
+  try {
+    assert.equal(typeof opened.getSessionCapturePause, 'function');
+    assert.equal(typeof opened.sessionTranscriptLedger('codex', SESSION)?.deny, 'function');
+    // It reads the same runtime directory the fixture paused in.
+    assert.equal(opened.getSessionCapturePause(SESSION).paused, true);
+  } finally {
+    await opened.close();
+  }
+  const port = await captureWindow(f.app, null, async window => window, { timeoutMs: 30_000 });
+  assert.equal(typeof port.getSessionCapturePause, 'function');
+  assert.equal(port.getSessionCapturePause(SESSION).paused, true);
+});
+
+test('C3-2 the resuming turn keeps its checkpoint, skips its own transcript and the next turn imports', async (t) => {
+  const f = await fixture(t);
+  const s = await transcriptSession(f);
+  const entry = await codexEntry(f, f.dirs.novel, { session: s.input.session_id });
+  await setPaused(f, entry.context, true);
+  await s.say(`turn-while-paused ${PRIVATE}`);
+  await s.stop();
+  // "好了，继续记吧": the prompt is written while still paused, then the Agent resumes.
+  const resuming = await codexEntry(f, f.dirs.novel, { session: s.input.session_id, prompt: 'Resume recording.' });
+  await s.say('resuming-turn-words');
+  await setPaused(f, resuming.context, false);
+  const before = f.knowledge.length;
+  const checkpoint = await finishTask(f, resuming.context);
+  assert.notEqual(checkpoint.capture_status, 'capture_disabled');
+  assert.ok(f.knowledge.length > before, 'the resuming turn records its knowledge');
+  await s.stop();
+  assert.doesNotMatch(imported(f), /resuming-turn-words/, 'its transcript was written while paused');
+  await s.say('turn-after');
+  await s.stop();
+  assert.match(imported(f), /turn-after/);
+  // The checkpoint's own work log is recorded; nothing from the paused transcript is.
+  assert.doesNotMatch(imported(f), /turn-while-paused/);
 });

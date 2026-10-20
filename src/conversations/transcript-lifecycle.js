@@ -46,7 +46,9 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
     // A denial found inside the sync (the session's task is in a project that
     // is not recorded) is kept the same way.
     if (sync?.status === 'capture_disabled') captureState ??= await keepDenial(application, ledger, settings, sync.reason);
-    else if (['saved', 'ready'].includes(sync?.status)) ledger.record(settings);
+    // A pause or switch saved meanwhile keeps what it wrote to the ledger.
+    else if (['saved', 'ready'].includes(sync?.status)
+      && captureSettingsVersion(application, input.session_id) === settings) ledger.record(settings);
   };
   let started = false, output, context;
   const invoke = async () => {

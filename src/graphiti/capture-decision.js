@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { debuglog } from 'node:util';
 import { projectCaptureReason, projectOffSince, storedProjectSettings, usesProjectModes } from './capture-project-mode.js';
 import { isTemporaryProjectId } from './temporary-project-scope.js';
 import { captureNotice } from './capture-notice.js';
@@ -22,6 +23,8 @@ import { captureNotice } from './capture-notice.js';
 //   started by a paused session, records nothing from the pause on (rec#5 C3).
 
 const ALLOWED = Object.freeze({ allowed: true, reason: null, layer: null });
+// NODE_DEBUG=fuli-capture shows decisions made without a session layer.
+const debug = debuglog('fuli-capture');
 const OUTSIDE_PROJECTS = Object.freeze({ personalProjectId: null });
 
 // Directory lookups shared by the decisions of one hook run or tool request:
@@ -101,7 +104,11 @@ async function decide(application, scope) {
 // application and the capture window's port carry the session layer; a port
 // composed without one (a test double) has no paused sessions.
 function sessionDecision(application, sessionId) {
-  if (!sessionId || !application.getSessionCapturePause) return ALLOWED;
+  if (!sessionId) return ALLOWED;
+  if (!application.getSessionCapturePause) {
+    debug('capture decision for a session on a port without a session layer; no session is paused there');
+    return ALLOWED;
+  }
   let session;
   try {
     session = application.getSessionCapturePause(sessionId);
