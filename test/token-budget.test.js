@@ -47,9 +47,10 @@ const BASELINE = Object.freeze({
   // conversation first (the console is the away inbox) and read_agent_messages
   // names the answers it now returns: 172,415 -> 172,573 B (+158 B). Chat is unchanged.
   // Bole dismissal (rec#8): dismiss_project_agent asks why first, plus list_agent_dismissal_lessons and get_agent_handoff (+1,740 B).
-  // rec#5 C2: get_capture_policy reports recording; update_capture_policy restates long-term changes and waits (+1,215 B).
-  // Together: 172,573 -> 175,528 B (+2,955 B). Chat is unchanged.
-  fullToolSchemaBytes: 175528,
+  // Bole score card: get_agent_score_card serves the card and its task IDs in one tool (+1,065 B).
+  // rec#5 C2: capture-policy tools take the caller's directory and the project mode (+1,215 B).
+  // Merged: 172,573 -> 176,593 B (+4,020 B). Chat is unchanged.
+  fullToolSchemaBytes: 176593,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

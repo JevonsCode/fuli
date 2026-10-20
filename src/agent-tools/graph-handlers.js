@@ -201,6 +201,8 @@ const HANDLERS = Object.freeze({
     app.recordProjectAgentTaskOutcome(input),
   list_project_agent_routing_learning: (app, input) =>
     app.listProjectAgentRoutingLearning(input),
+  get_agent_score_card: (app, input) =>
+    (input.dimension ? app.listAgentScoreEvidence(input) : app.getAgentScoreCard(input)),
   ignore_project_agent_routing_learning: (app, input) =>
     app.ignoreProjectAgentRoutingLearning(input),
   reset_project_agent_routing_learning: (app, input) =>

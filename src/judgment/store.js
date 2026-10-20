@@ -81,6 +81,11 @@ export class JudgmentStore {
       : this.db.prepare('SELECT id FROM judgment_records WHERE space=? AND project=? ORDER BY rowid DESC LIMIT ?').all(space, personalProjectId ?? '', limit);
     return rows.map(({ id }) => this.get(space, id));
   }
+  acceptances(space, agentId, personalProjectId = null) {
+    return this.db.prepare(`SELECT id FROM judgment_records WHERE space=? AND json_extract(body,'$.kind')='acceptance'
+      AND json_extract(body,'$.agentId')=? AND (? IS NULL OR project=?) ORDER BY rowid`)
+      .all(space, agentId, personalProjectId, personalProjectId).map(({ id }) => this.get(space, id));
+  }
   reviewed(space, project, target, evidenceFingerprint, policyVersion) {
     const row = this.db.prepare(`SELECT id FROM judgment_records WHERE space=? AND project=?
       AND json_extract(body,'$.target')=? AND json_extract(body,'$.evidenceFingerprint')=?

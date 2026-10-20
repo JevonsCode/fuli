@@ -1,6 +1,7 @@
 import { withOccupationDemand } from './occupation-staffing.js';
 import { occupationCatalog } from './occupation-catalog.js';
 import { workerRunRecord } from './worker-run-view.js';
+import { getAgentScoreCard, listAgentScoreEvidence } from './agent-score-card.js';
 import { retryProjectAgentTask, stopProjectAgentTaskRun } from './project-agent-run-control.js';
 import { planAgentCollaboration, agentLoan, agentVerification } from './agent-collaboration.js';
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
@@ -402,6 +403,16 @@ export class ProjectAgentControlPlaneApplication {
   async listProjectAgentRoutingLearning(input) {
     this.#assertSpace(input.personalSpaceId);
     return listProjectAgentRoutingLearningWorkflow(this, input);
+  }
+
+  async getAgentScoreCard(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return getAgentScoreCard(this, input);
+  }
+
+  async listAgentScoreEvidence(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return listAgentScoreEvidence(this, input);
   }
 
   async ignoreProjectAgentRoutingLearning(input) {

@@ -8,6 +8,7 @@ from .store_agent_loans import StoreAgentLoans
 from .store_agent_verification import StoreAgentVerification
 from .store_knowledge import StoreKnowledge
 from .store_project_agent_executors import StoreProjectAgentExecutors
+from .store_project_agent_score_card import StoreProjectAgentScoreCard
 from .store_project_agent_memory import StoreProjectAgentMemory
 from .store_project_agent_context import StoreProjectAgentContext
 from .default_project_lead import StoreDefaultProjectLead
@@ -44,6 +45,7 @@ class GraphStore(
     StoreTaskContexts,
     StoreProjectAgentWorkerRuns,
     StoreProjectAgentExecutors,
+    StoreProjectAgentScoreCard,
     StoreProjectAgentTasks,
     StorePublication,
     StoreKnowledge,

@@ -5,6 +5,7 @@ import { handleTaskEventsRequest } from './task-events-api-router.js';
 import { handleTaskSchedulesRequest } from './task-schedules-api-router.js';
 import { handleOccupationRequest } from './occupation-api-router.js';
 import { handleTopicProposalsRequest } from './topic-proposals-api-router.js';
+import { handleAgentScoreCardRequest } from './agent-score-card-api-router.js';
 
 export async function handleGraphApiRequest({
   request,
@@ -17,6 +18,7 @@ export async function handleGraphApiRequest({
   if (await handleTaskSchedulesRequest({ request, response, url, app })) return true;
   if (await handleOccupationRequest({ request, response, url, app })) return true;
   if (await handleTopicProposalsRequest({ request, response, url, app })) return true;
+  if (await handleAgentScoreCardRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
     sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
     return true;
