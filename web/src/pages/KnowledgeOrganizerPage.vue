@@ -103,15 +103,19 @@ const reviewChoices = computed<Array<{
 ])
 
 const items = computed(() => knowledgeItems(graph.value))
+// Every page of the last read arrived; a later-page failure leaves a partial list.
+const complete = ref(false)
+const readFailed = ref(false)
 const pageElement = ref<HTMLElement | null>(null)
 // The open item is part of the URL (?item=<space>/<kind>:<id>); see useKnowledgeItemPeek.
 const peek = useKnowledgeItemPeek({
   spaceId: computed(() => store.activePersonalSpace?.id),
   items,
-  settled: computed(() => Boolean(graph.value) && !loading.value && !loadingMore.value),
+  settled: computed(() => complete.value && !loading.value && !loadingMore.value),
   root: pageElement,
 })
 const selectedItem = peek.item
+const linkPending = peek.pending
 // Set while a replacement opens: its filters change under the open quick look on purpose.
 let replacing = false
 const confirmationGroups = computed(() => batchConfirmationGroups(items.value))
@@ -197,6 +201,7 @@ onBeforeUnmount(() => {
 function revokeKnowledgeAccess() {
   ++loadVersion
   graph.value = null
+  complete.value = false
   void peek.close()
   confirmingItem.value = null
   editingItem.value = null
@@ -213,6 +218,8 @@ async function load(spaceId = store.activePersonalSpace?.id) {
   confirmingItem.value = null
   editingItem.value = null
   loadingMore.value = false
+  complete.value = false
+  readFailed.value = false
   let receivedPage = false
   try {
     let offset = 0
@@ -228,7 +235,10 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       reconcileKnowledgeWrites(spaceId, knowledgeItems(page))
       receivedPage = true
       loading.value = false
-      if (!page.truncated) break
+      if (!page.truncated) {
+        complete.value = true
+        break
+      }
       const nextOffset = page.next_offset
       if (!Number.isInteger(nextOffset) || (nextOffset as number) <= offset) {
         throw new Error(t('knowledge.workspace.organizer.paginationError'))
@@ -240,6 +250,7 @@ async function load(spaceId = store.activePersonalSpace?.id) {
   } catch (error) {
     if (version !== loadVersion) return
     if (!receivedPage) graph.value = null
+    readFailed.value = true
     store.reportError(error)
   } finally {
     if (version === loadVersion) {
@@ -305,6 +316,10 @@ async function openReplacement(item: KnowledgeItem) {
       </template>
     </UiToolbar>
 
+    <p v-if="linkPending && readFailed && !loading" class="organizer-link-incomplete" role="alert" data-organizer-link-incomplete>
+      {{ t('knowledge.workspace.organizer.linkedItemIncomplete') }}
+      <Button variant="outline" size="sm" @click="load()">{{ t('common.actions.retry') }}</Button>
+    </p>
     <GrowthLoading v-if="loading && graph && !loadingMore && !showInitialLoading" variant="inline" :label="t('common.status.loadingKnowledge')" />
     <GrowthLoading
       v-if="showInitialLoading"
@@ -436,6 +451,7 @@ async function openReplacement(item: KnowledgeItem) {
 }
 
 .organizer-search { flex: 1 1 260px; min-width: 200px; }
+.organizer-link-incomplete { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0; color: var(--color-ink); font-size: 13px; }
 .organizer-result-summary { color: var(--color-muted); font-size: 12px; white-space: nowrap; }
 
 .organizer-layout {

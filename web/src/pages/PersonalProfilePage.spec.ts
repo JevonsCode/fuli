@@ -775,6 +775,18 @@ describe('PersonalProfilePage quick look in the URL (D-03 §2)', () => {
     wrapper.unmount()
   })
 
+  it('keeps a linked preference in the URL when the profile read fails, and reopens it on reload', async () => {
+    getJson.mockRejectedValue(Object.assign(new Error('synthetic 503'), { status: 503 }))
+    const { router, wrapper } = await routed('/preferences?item=personal-space%2Fentity%253Aglobal')
+    expect(router.currentRoute.value.query.item).toBe('personal-space/entity%3Aglobal')
+    expect(peek().exists()).toBe(false)
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? profileGraph() : []))
+    await wrapper.get('[data-profile-reload]').trigger('click')
+    await finishProfileLoading()
+    expect(peek().get('h2').text()).toBe('全局品味')
+    wrapper.unmount()
+  })
+
   it('keeps the replacement and its aspect together in the URL', async () => {
     const graph = profileGraph()
     graph.nodes = Array.from({ length: 101 }, (_, index) => preferenceNode(`replacement-${index}`, `Synthetic replacement ${index}`, 'taste'))

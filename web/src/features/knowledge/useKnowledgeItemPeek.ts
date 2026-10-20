@@ -15,7 +15,7 @@ import { knowledgeItemKey } from './model'
 export function useKnowledgeItemPeek(options: {
   spaceId: Ref<string | undefined>
   items: Ref<KnowledgeItem[]>
-  /** True once the collection has finished reading, so a missing item is really missing. */
+  /** True only once the whole collection was read successfully, so a missing item is really missing. */
   settled: Ref<boolean>
   root: Ref<HTMLElement | null>
 }) {
@@ -27,8 +27,9 @@ export function useKnowledgeItemPeek(options: {
   const item = computed(() =>
     key.value ? options.items.value.find(candidate => knowledgeItemKey(candidate) === key.value) ?? null : null)
 
-  // An item the read collection does not hold (removed, or from another
-  // space) leaves the URL instead of waiting there unseen.
+  // An item the completely read collection does not hold (removed, or from
+  // another space) leaves the URL instead of waiting there unseen. A partial
+  // read never decides that: the link stays until a retry reads the rest.
   watch([options.settled, peek.item, item], ([settled, requested, found]) => {
     if (settled && requested && !found) void peek.close()
   })
@@ -52,5 +53,8 @@ export function useKnowledgeItemPeek(options: {
     else focusReturnTarget(options.root.value, lastKey)
   }
 
-  return { item, open, close: peek.close, returnFocus }
+  /** The URL names an item in this space that the collection does not hold (yet). */
+  const pending = computed(() => Boolean(key.value) && !item.value)
+
+  return { item, pending, open, close: peek.close, returnFocus }
 }

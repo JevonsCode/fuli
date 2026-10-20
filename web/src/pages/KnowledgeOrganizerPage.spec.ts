@@ -347,6 +347,58 @@ describe('KnowledgeOrganizerPage quick look in the URL (D-03 §2)', () => {
       wrapper.unmount()
     }
   })
+
+  describe('with the linked item on a later page', () => {
+    const link = '/organize?item=personal-space%2Fentity%253Aknowledge-2'
+    const first = (nextOffset: unknown = 1) => ({ space_id: 'personal-space', nodes: [knowledgeNode(1, 'First page item')], edges: [], truncated: true, next_offset: nextOffset })
+    const second = { space_id: 'personal-space', nodes: [knowledgeNode(2, 'Later page item')], edges: [], truncated: false, next_offset: null }
+    function pages(later: () => Promise<unknown>, firstPage = first()) {
+      getJson.mockImplementation((url: string) =>
+        new URLSearchParams(url.split('?')[1]).get('offset') === '0' ? Promise.resolve(firstPage) : later())
+    }
+    async function routedPaged(path: string) {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      useConsoleStore().state = {
+        mode: 'personal_only', activePersonalSpaceId: 'personal-space',
+        personalSpaces: [{ id: 'personal-space', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
+      }
+      const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/organize', component: { template: '<div />' } }] })
+      await router.push(path)
+      await router.isReady()
+      const wrapper = mount(KnowledgeOrganizerPage, { attachTo: document.body, global: { plugins: [pinia, router], stubs: { KnowledgeBatchConfirmDialog: true } } })
+      await flushPromises()
+      return { router, wrapper }
+    }
+
+    it('opens it once every page has arrived', async () => {
+      pages(() => Promise.resolve(second))
+      const { router, wrapper } = await routedPaged(link)
+      expect(peek().get('h2').text()).toBe('Later page item')
+      expect(router.currentRoute.value.query.item).toBe('personal-space/entity%3Aknowledge-2')
+      wrapper.unmount()
+    })
+
+    it.each([
+      ['a later page fails (503)', () => pages(() => Promise.reject(Object.assign(new Error('synthetic 503'), { status: 503 })))],
+      ['a page returns an invalid next offset', () => pages(() => Promise.resolve(second), first(0))],
+      ['the first page fails', () => getJson.mockRejectedValue(Object.assign(new Error('synthetic 503'), { status: 503 }))],
+    ])('keeps the link and offers a retry when %s', async (_case, arrange) => {
+      arrange()
+      const { router, wrapper } = await routedPaged(link)
+      expect(router.currentRoute.value.query.item).toBe('personal-space/entity%3Aknowledge-2')
+      expect(peek().exists()).toBe(false)
+      const notice = wrapper.get('[data-organizer-link-incomplete]')
+
+      pages(() => Promise.resolve(second))
+      await notice.get('button').trigger('click')
+      await flushPromises()
+      expect(peek().get('h2').text()).toBe('Later page item')
+      expect(wrapper.find('[data-organizer-link-incomplete]').exists()).toBe(false)
+      expect(router.currentRoute.value.query.item).toBe('personal-space/entity%3Aknowledge-2')
+      wrapper.unmount()
+    })
+  })
 })
 
 function knowledgeNode(index: number, name = `知识 ${index}`) {
