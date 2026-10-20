@@ -27,9 +27,9 @@ import { ApplicationError, ApplicationErrorCode } from '../app/application-error
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import {
   CapturePolicyStore,
-  capturePolicyFor,
   capturePolicyPathForRuntime
 } from './capture-policy.js';
+import { captureDecision, captureDisabled } from './capture-decision.js';
 import {
   AgentAccessPolicyStore,
   agentAccessPolicyPathForRuntime
@@ -217,23 +217,19 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return recordDecisionTraceWorkflow(this, input);
   }
 
-  validateCaptureSessionKnowledge(input) {
-    if (this.getCapturePolicy(input?.sourceApplication).enabled) this.#prepareKnowledgeCapture(input);
+  // captureScope: the write's own scope when it differs from the target, as for
+  // a task checkpoint whose global preference was learned in the task's project.
+  async validateCaptureSessionKnowledge(input, { captureScope = knowledgeCaptureScope(input) } = {}) {
+    if ((await captureDecision(this, captureScope)).allowed) this.#prepareKnowledgeCapture(input);
   }
 
   async preflightPersonalKnowledgeCaptures(inputs) {
     return preflightTaskCaptures(this.personal, inputs, input => this.#prepareKnowledgeCapture(input));
   }
 
-  async captureSessionKnowledge(input) {
-    const capturePolicy = this.getCapturePolicy(input?.sourceApplication);
-    if (!capturePolicy.enabled) {
-      return {
-        route: 'disabled',
-        status: 'capture_disabled',
-        capturePolicy
-      };
-    }
+  async captureSessionKnowledge(input, { captureScope = knowledgeCaptureScope(input) } = {}) {
+    const capture = await captureDecision(this, captureScope);
+    if (!capture.allowed) return { route: 'disabled', ...captureDisabled(capture) };
     const { episode, workspace, commit } = this.#prepareKnowledgeCapture(input);
     if (input.targetKind === 'personal') {
       const result = await this.personal.commit(commit);
@@ -256,14 +252,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async recordWorkflowTransitionObservation(input) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
-    const capturePolicy = this.getCapturePolicy(input.sourceApplication);
-    if (!capturePolicy.enabled) {
-      return {
-        route: 'disabled',
-        status: 'capture_disabled',
-        capturePolicy
-      };
-    }
+    const capture = await captureDecision(this, { sourceApplication: input.sourceApplication,
+      personalProjectId: input.personalProjectId ?? null, sessionId: input.hostSessionId ?? null });
+    if (!capture.allowed) return { route: 'disabled', ...captureDisabled(capture) };
     assertNoCredentials(input);
     const result = await this.personal.recordWorkflowObservation(
       providerWorkflowTransitionObservation(input)
@@ -289,8 +280,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   } = {}) {
     let projectResolution = await this.#resolvePreferenceProject({ personalProjectId, projectPath });
     if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
-      && this.getCapturePolicy(sourceApplication).enabled) {
-      // Every task gets a FULI Agent, so a task in an unregistered repository registers it.
+      && (await captureDecision(this, { sourceApplication, projectPath, sessionId,
+        personalProjectId: projectResolution.repositoryProjectId })).allowed) {
+      // Every task gets a FULI Agent, so a task in an unregistered repository
+      // registers it, unless neither the folder nor the project it would
+      // become is recorded.
       projectResolution = await registerRepositoryProject(this, projectResolution, { sessionId, projectPath });
     }
     projectResolution = await resolveTaskEntryProject(this, projectResolution, {
@@ -300,7 +294,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
       sourceSessionId, sessionId, turnId, workKind, workflow, requiredCapabilities,
       limit, agentInvocation, agentToolName
-    }, (items, toolName) => this.#recordAgentViews(items, toolName));
+    }, (items, toolName) => this.#recordAgentViews(items, toolName, { sourceApplication, projectPath,
+      personalProjectId: projectResolution.personalProjectId, sessionId: sessionId ?? sourceSessionId }));
     return finishTaskEntryPreferences(this, preferences, { agentInvocation, agentToolName,
       sessionId, sourceApplication, sourceSessionId, taskPrompt, workKind, workflow });
   }
@@ -311,13 +306,15 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     personalProjectId = null,
     projectPath = null,
     taskPrompt = null,
-    limit = 100
+    limit = 100,
+    sourceApplication = 'other'
   } = {}) {
     const context = await this.getCollaborationPreferences({
       personalProjectId,
       projectPath,
       taskPrompt,
       limit,
+      sourceApplication,
       agentInvocation: true,
       agentToolName: 'get_user_taste_skill'
     });
@@ -383,10 +380,18 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
+  // FULI's project for a directory, by the rules task entry uses: a
+  // repository root, or the original repository of a worktree.
+  resolveProjectPath(projectPath) {
+    return this.#resolvePreferenceProject({ personalProjectId: null, projectPath });
+  }
+
   searchKnowledge(input) {
     return searchFederatedKnowledge(this, input, {
       workspaceFor: providerUrl => this.#workspace(providerUrl),
-      recordAgentViews: (items, toolName) => this.#recordAgentViews(items, toolName)
+      recordAgentViews: (items, toolName) => this.#recordAgentViews(items, toolName, {
+        sourceApplication: input.sourceApplication, personalProjectId: input.personalProjectId ?? null,
+        sessionId: input.sourceSessionId ?? null })
     });
   }
 
@@ -444,7 +449,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     limit = 500,
     offset = null,
     agentInvocation = false,
-    agentToolName = 'get_knowledge_graph'
+    agentToolName = 'get_knowledge_graph',
+    sourceApplication = null
   }) {
     if (!providerUrl) {
       if (spaceId !== this.config.personal.spaceId) {
@@ -460,7 +466,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
         await this.#recordAgentViews([
           ...result.nodes.map(({ id }) => ({ item_id: id, item_kind: 'entity' })),
           ...result.edges.map(({ id }) => ({ item_id: id, item_kind: 'relationship' }))
-        ], agentToolName);
+        ], agentToolName, { sourceApplication, personalProjectId });
       }
       return mergeExternalKnowledgeProjection(
         this.externalKnowledge, result, spaceId, personalProjectId
@@ -727,7 +733,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     status = 'all',
     limit = 50,
     agentInvocation = false,
-    agentToolName = 'search_human_knowledge_changes'
+    agentToolName = 'search_human_knowledge_changes',
+    sourceApplication = null
   }) {
     this.#assertActivePersonalSpace(personalSpaceId);
     const result = await this.personal.searchHumanChanges({
@@ -742,7 +749,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
           item_id: itemId,
           item_kind: itemKind
         })),
-        agentToolName
+        agentToolName,
+        { sourceApplication }
       );
     }
     return result;
@@ -1014,8 +1022,19 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return { personal, workspaces };
   }
 
-  getCapturePolicy(sourceApplication = null) {
-    return capturePolicyFor(this.capturePolicyStore.read(), sourceApplication);
+  // The stored settings, for settings surfaces. Write decisions ask captureDecision().
+  getCapturePolicy() {
+    return this.capturePolicyStore.read();
+  }
+
+  // Which stored settings a decision was made under; see captureSettingsVersion().
+  getCapturePolicyVersion() {
+    return this.capturePolicyStore.version();
+  }
+
+  // See advanceCaptureSettingsVersion().
+  advanceCapturePolicyVersion() {
+    return this.capturePolicyStore.advanceVersion();
   }
 
   updateCapturePolicy(input) {
@@ -1062,7 +1081,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   close() { this.judgment?.close(); this.taskSchedules?.close(); this.roundtable?.close(); this.peer?.close(); return this.employees?.close(); }
 
-  async #recordAgentViews(items, toolName) {
+  // View records rank knowledge by what a session looked at: a behavior trace
+  // that stops with automatic recording. Reading itself needs none (rec#11 D-01).
+  async #recordAgentViews(items, toolName, scope) {
+    if (!items.length || !(await captureDecision(this, scope)).allowed) return;
     const unique = new Map(items.map((item) => [
       `${item.item_kind}:${item.item_id}`,
       item
@@ -1121,6 +1143,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (!workspace) throw new TypeError('Public project provider is not configured');
     return { ...workspace, providerUrl: requested };
   }
+}
+
+function knowledgeCaptureScope(input) {
+  return { sourceApplication: input?.sourceApplication, personalProjectId: input?.personalProjectId ?? null,
+    sessionId: input?.sessionId ?? null };
 }
 
 function assertNoCredentials(input) {

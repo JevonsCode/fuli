@@ -71,7 +71,8 @@ test('checkpoint sends explicit usage in both atomic requests and replays the Pr
   const app = new FederatedGraphApplication({ version: 1, personal: {
     providerUrl: 'http://127.0.0.1:8787', accessToken: 'personal-token',
     principalId: 'person-local', spaceId: 'personal-space'
-  }, workspaces: [] }, { capturePolicyStore: { read: () => ({ enabled: false }) }, fetchImpl: async (url, options) => {
+  }, workspaces: [] }, { capturePolicyStore: { read: () => ({ enabled: true }) }, fetchImpl: async (url, options) => {
+    if (new URL(url).pathname === '/v1/agent-conversations/append') return Response.json({ status: 'saved', conversation_id: 'c' });
     assert.equal(new URL(url).pathname, `/v1/task-contexts/${context.token}`
       + (options?.method === 'PUT' ? '/checkpoint' : ''));
     if (options?.method === 'PUT') {

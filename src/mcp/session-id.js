@@ -4,6 +4,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WORKFLOW_OBSERVATION_TOOL = 'record_workflow_transition_observation';
 const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'search_knowledge_graph',
+  // The caller's client decides whether its own turns are recorded.
+  'get_capture_policy',
   'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message',
   'agent_chat',
   'get_agent_message_status', 'cancel_agent_message',
@@ -32,6 +34,16 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'preflight_executor',
   'report_executor_health',
   'record_project_agent_executor_actual'
+]);
+
+// Tools outside the Project Agent set whose writes or view records follow the
+// capture decision: their client is this MCP process's, never the payload's,
+// so a client's own switch applies to them (rec#5 C1, rec#11 D-01).
+const CAPTURE_SOURCE_TOOLS = new Set([
+  'record_knowledge_usage', 'record_knowledge_feedback', 'revise_personal_knowledge',
+  'upsert_personal_project', 'upsert_project_agent', 'get_knowledge_graph',
+  'search_human_knowledge_changes', 'search_current_project_knowledge',
+  'search_connected_knowledge', 'get_user_taste_skill'
 ]);
 
 const SESSION_ID_TOOLS = new Set([
@@ -121,6 +133,9 @@ export function normalizeAgentSessionInput(
         nativeThreadId && nativeThreadId === hostSessionId) } : {}),
       ...(name === 'call_employee_tool' ? { sourceSessionVerified: Boolean(nativeThreadId && nativeThreadId === hostSessionId) } : {}),
     };
+  }
+  if (CAPTURE_SOURCE_TOOLS.has(name) && input && typeof input === 'object' && !Array.isArray(input)) {
+    input = { ...input, sourceApplication: normalizeMcpSourceApplication(sourceApplication) };
   }
   if (!nativeThreadId || !SESSION_ID_TOOLS.has(name)) return input;
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input;

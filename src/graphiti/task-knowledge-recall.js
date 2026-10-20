@@ -98,7 +98,7 @@ function positiveDeliveryClauses(prompt) {
   return prompt.replace(negated, ' ');
 }
 
-export async function recallTaskKnowledge(application, resolution, taskPrompt) {
+export async function recallTaskKnowledge(application, resolution, taskPrompt, { sourceApplication = null, sessionId = null } = {}) {
   const plan = planTaskKnowledgeRecall(taskPrompt);
   if (plan.status !== 'planned') return recallWithoutSearch(plan.status, plan);
   if (!resolution.personalProjectId) {
@@ -120,6 +120,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt) {
       limit: 6,
       includeHistorical: false,
       includePending: true,
+      sourceApplication, sourceSessionId: sessionId,
       agentInvocation: true,
       agentToolName: 'automatic_task_knowledge_recall'
     })

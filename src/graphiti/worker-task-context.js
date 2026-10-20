@@ -4,6 +4,7 @@ import { beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { projectAgentRecord } from './project-agent-mapping.js';
 import { selectedTaskEntryPreferences } from './task-entry-preferences.js';
 import { validateWorkerDescriptor } from './worker-descriptor.js';
+import { captureDecision, taskCaptureScope } from './capture-decision.js';
 const OWN_LAYER_TOOLS = new Set([
   'get_project_agent_memory', 'list_agent_conversations', 'read_agent_conversation'
 ]);
@@ -126,11 +127,13 @@ export function createWorkerTaskContext(application, descriptor) {
     const preferences = await selectedTaskEntryPreferences(application,
       { status: 'matched', basis: 'worker_run', personalProjectId }, input,
       { status: 'ready', reason: 'worker_run_admitted', agent, match_basis: ['sealed_worker_run'] },
-      recordAgentViews, { includeManagement: false, includeMessages: false });
+      (items, toolName) => recordAgentViews(items, toolName, task), { includeManagement: false, includeMessages: false });
     const result = await beginTaskFromPreferences(application, preferences, input, { existingTask: task });
     return withWorkerTaskGuidance(result, run, coordination);
   }
-  async function recordAgentViews(items, toolName) {
+  // View records stop with automatic recording, as for every other entry (rec#11 D-01).
+  async function recordAgentViews(items, toolName, task) {
+    if (!(await captureDecision(application, taskCaptureScope(task))).allowed) return;
     const values = [...new Map(items.map(item => [`${item.item_kind}:${item.item_id}`, item])).values()];
     for (let index = 0; index < values.length; index += 200) {
       await application.personal.recordAgentViews({ personal_space_id: scope.personal_space_id,

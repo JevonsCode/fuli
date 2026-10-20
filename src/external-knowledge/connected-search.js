@@ -33,6 +33,7 @@ export class ConnectedKnowledgeSearch {
         limit,
         includeHistorical: input.includeHistorical === true,
         includePending: input.includePending !== false,
+        sourceApplication: input.sourceApplication ?? null,
         agentInvocation: true,
         agentToolName: 'search_connected_knowledge'
       }),

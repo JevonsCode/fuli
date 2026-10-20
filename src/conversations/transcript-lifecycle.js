@@ -1,15 +1,51 @@
 import { transcriptGuardFailureMessage, withTranscriptGuard } from './transcript-guard.js';
-import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry, withTranscriptNotice } from './sync-transcript.js';
+import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry, transcriptCaptureScope,
+  withTranscriptNotice } from './sync-transcript.js';
+import { captureDecision, captureSettingsVersion, withCaptureLookups } from '../graphiti/capture-decision.js';
+import { keepDenial, transcriptCaptureLedger, UNATTRIBUTABLE } from './transcript-capture-gap.js';
+import { captureNotice } from '../graphiti/capture-notice.js';
 import { recoverFailedTranscriptEntry } from './fallback-transcript-boundary.js';
 import { captureWindow, withCaptureBudget } from './capture-window.js';
 
 // Transcript ownership is fail-closed; preference/task entry is independent.
 // Both native adapters use this port so a capture failure cannot suppress a
 // successful entry or cause a second begin after a partial runtime failure.
-export async function transcriptLifecycle({ application, runtimeConfigPath, input, sourceApplication, event, adapter, run,
+// Every capture decision of one hook run, including its task entry, shares
+// one lookup of the session's directory.
+export function transcriptLifecycle(options) {
+  return withCaptureLookups(() => hookTranscriptLifecycle(options));
+}
+
+async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, sourceApplication, event, adapter, run,
   captureTimeoutMs = 750, signal }) {
   const entry = event === 'UserPromptSubmit';
-  const enabled = application.getCapturePolicy?.(sourceApplication).enabled;
+  const captureCheck = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  const enabled = captureCheck.allowed;
+  // Each entry says when automatic recording is off (rec#11 D-01); Stop stays
+  // quiet. A hook that skipped a stretch because the settings changed, or that
+  // could not keep a denial safely, says so.
+  const notice = entry ? captureNotice(captureCheck.reason) : null;
+  let captureState = null;
+  const withCaptureNotice = (value, skipped) => {
+    const lines = [...new Set([notice, captureNotice(skipped), captureNotice(captureState)].filter(Boolean))]
+      .map(text => `Fuli: ${text}`);
+    return lines.length ? { ...value, systemMessage: [value.systemMessage, ...lines].filter(Boolean).join('\n') } : value;
+  };
+  // Turns written while the capture settings changed since this session last
+  // synchronized, or while a decision denied, are skipped, not imported
+  // (transcript-capture-gap.js). A denial is kept locally first, so a Provider
+  // that cannot take its marker now cannot make the stretch importable later.
+  const settings = captureSettingsVersion(application);
+  const ledger = input?.session_id ? transcriptCaptureLedger(runtimeConfigPath, input, sourceApplication) : null;
+  if (!enabled) captureState = await keepDenial(application, ledger, settings, captureCheck.reason);
+  const notRecorded = enabled ? (ledger ? await ledger.skipReason(settings) : UNATTRIBUTABLE) : null;
+  const settle = async sync => {
+    if (!ledger || !enabled) return;
+    // A denial found inside the sync (the session's task is in a project that
+    // is not recorded) is kept the same way.
+    if (sync?.status === 'capture_disabled') captureState ??= await keepDenial(application, ledger, settings, sync.reason);
+    else if (['saved', 'ready'].includes(sync?.status)) ledger.record(settings);
+  };
   let started = false, output, context;
   const invoke = async () => {
     started = true;
@@ -23,7 +59,9 @@ export async function transcriptLifecycle({ application, runtimeConfigPath, inpu
         catch { return { status: 'unsaved', entryBlocked: entry, code: 'transcript_capture_timeout',
           reason: 'Native transcript import was deferred; preferences and current task context are independent' }; }
       };
-      let sync = await capture((app, held) => syncConversationTranscript(app, input, sourceApplication, adapter, held));
+      let sync = await capture((app, held) => syncConversationTranscript(app, input, sourceApplication, adapter, held,
+        { notRecorded }));
+      const skipped = sync.skipped ?? null;
       if (entry && sync.entryBlocked) {
         await invoke();
         // Only a held guard and the fresh entry's exact native ownership can
@@ -51,7 +89,8 @@ export async function transcriptLifecycle({ application, runtimeConfigPath, inpu
           return claimTranscriptBoundary(app, input, sourceApplication, sync, adapter, entryGuard ? held : null);
         });
       }
-      return withTranscriptNotice(output, sync);
+      await settle(sync);
+      return withCaptureNotice(withTranscriptNotice(output, sync), skipped);
     });
   } catch (error) {
     // An entry failure is a real entry failure. Never retry it and accidentally

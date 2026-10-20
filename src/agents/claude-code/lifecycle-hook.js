@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
+import { transcriptCaptureScope } from '../../conversations/sync-transcript.js';
+import { captureDecision, withCaptureLookups } from '../../graphiti/capture-decision.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
@@ -66,11 +68,13 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
     app = (dependencies.openApplication ?? openFederatedGraphApplication)({ runtimeConfigPath });
     leases = (dependencies.createLeases ?? createRuntimeLeaseClient)({ runtimeConfigPath });
     const request = { signal: dependencies.signal };
-    const output = await leases.withGraphLease('claude-code-lifecycle', async () => {
+    const output = await leases.withGraphLease('claude-code-lifecycle', () => withCaptureLookups(async () => {
       if (PREFERENCE_RESET_EVENTS.includes(event)) return claudeLifecycleOutput(event, input,
         (name, parameters) => (dependencies.callTool ?? callAgentTool)(app, name, parameters, request),
         { delivery: app.preferenceDelivery, currentTask: app.taskContextRegistry?.current?.bind(app.taskContextRegistry) });
-      if (app.getCapturePolicy?.('claude_code').enabled && input.transcript_path) dependencies.onTranscriptGuard?.();
+      if (input.transcript_path && (await captureDecision(app, transcriptCaptureScope(input, 'claude_code'))).allowed) {
+        dependencies.onTranscriptGuard?.();
+      }
       return transcriptLifecycle({ application: app, runtimeConfigPath, input, event, sourceApplication: 'claude_code',
         captureTimeoutMs: dependencies.captureTimeoutMs, signal: dependencies.signal,
         adapter: { normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript },
@@ -79,7 +83,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
           if (name === 'begin_task_context') onContext(context);
           return context;
         }, { delivery: app.preferenceDelivery }) });
-    }, request);
+    }), request);
     return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
       { sourceApplication: 'claude_code', version: FULI_VERSION, sessionId: input.session_id })) : output;
   } finally {

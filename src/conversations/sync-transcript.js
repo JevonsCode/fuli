@@ -3,24 +3,55 @@ import { transcriptDigest, TRANSCRIPT_SCAN_PAGE_LIMIT } from './transcript-guard
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { appendTranscriptPage } from './transcript-append.js';
 import { recoverFallbackTranscript } from './fallback-transcript-boundary.js';
+import { captureDecision, captureDisabled } from '../graphiti/capture-decision.js';
+import { notRecordedEvent, skipTranscriptWhileOff } from './transcript-capture-gap.js';
 
 const pending = reason => ({ status: 'partial', entryBlocked: true, reason });
 const retryReason = 'Transcript handoff is pending. Retry task entry to continue its saved progress; no new Agent context was supplied';
 
-export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null) {
-  if (!application.getCapturePolicy?.(sourceApplication).enabled) return { status: 'capture_disabled' };
+// What a host hook knows about the session whose transcript it would capture.
+// Every host works in some directory: a hook that does not report it cannot
+// show that its session is outside a project FULI must not record.
+export function transcriptCaptureScope(input, sourceApplication) {
+  const projectPath = typeof input?.cwd === 'string' && input.cwd.trim() ? input.cwd : null;
+  return { sourceApplication, projectPath, sessionId: input?.session_id ?? null,
+    ...(projectPath ? {} : { projectUnknown: true }) };
+}
+
+// The transcript is saved under the session's current task, which may belong
+// to a project other than the directory: both have to be recorded.
+function taskTranscriptScope(input, sourceApplication, task) {
+  return { ...transcriptCaptureScope(input, sourceApplication), personalProjectId: task.personal_project_id ?? null };
+}
+
+// Nothing of a task that is not recorded is ever imported, so no handoff for
+// it stays pending: a later recorded task starts from its own prompt. Its
+// turns are skipped like any other off period (transcript-capture-gap.js).
+async function skippedTaskTranscript(application, input, sourceApplication, adapter, decision, guard) {
+  if (guard?.value) await guard.clear();
+  return skipTranscriptWhileOff(application, input, sourceApplication, adapter, decision);
+}
+
+// notRecorded names why the pending interval must be skipped instead of
+// imported (transcript-capture-gap.js); the cursor still advances as usual.
+export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null,
+  { notRecorded = null } = {}) {
+  const capture = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  if (!capture.allowed) return skipTranscriptWhileOff(application, input, sourceApplication, adapter, capture);
   if (!input?.transcript_path) return { status: 'partial', reason: 'Host did not supply a visible transcript' };
   if (guard?.expired) return pending('Transcript guard lifetime expired; this unverified interval was not imported');
   if (guard?.value?.phase === 'scan' && (guard.value.scanPages ?? 0) >= TRANSCRIPT_SCAN_PAGE_LIMIT) {
     return pending('Transcript scan budget limit reached; this unverified interval was not imported');
   }
-  let committedPages = 0, ownershipKnown = false;
+  let committedPages = 0, ownershipKnown = false, skipped = false;
   try {
     const lookup = await lookupTranscriptTask(application, input, sourceApplication);
     if (lookup.failure) return lookup.failure;
     const task = lookup.task;
     ownershipKnown = true;
     if (!task?.project_agent_id) return guard?.value ? pending(retryReason) : { status: 'unassigned' };
+    const taskCapture = await captureDecision(application, taskTranscriptScope(input, sourceApplication, task));
+    if (!taskCapture.allowed) return skippedTaskTranscript(application, input, sourceApplication, adapter, taskCapture, guard);
     const scope = { personal_space_id: application.config.personal.spaceId, personal_project_id: task.personal_project_id,
       agent_id: task.project_agent_id, source_application: sourceApplication };
     const policy = await application.personal.conversation('query', { ...scope, mode: 'policy' });
@@ -85,10 +116,13 @@ export async function syncConversationTranscript(application, input, sourceAppli
       userMessages += batch.userMessages ?? 0; omitted ||= batch.omitted === true;
       // Without a durable guard, an unmatched user record cannot be attributed
       // to the prior owner merely because the file currently ends after it.
-      if (!guard && typeof input.prompt === 'string' && userMessages && !batch.atPromptBoundary) return pending(retryReason);
+      if (!notRecorded && !guard && typeof input.prompt === 'string' && userMessages && !batch.atPromptBoundary) return pending(retryReason);
+      const from = session.cursor ?? 0;
       result = await appendTranscriptPage(application, { ...scope, session_id: input.session_id,
-        task_context_token: task.token, events: batch.events, expected_cursor: session.cursor ?? 0, cursor: batch.cursor });
+        task_context_token: task.token, expected_cursor: from, cursor: batch.cursor,
+        events: !notRecorded ? batch.events : batch.cursor > from ? [notRecordedEvent(from, batch.cursor, notRecorded)] : [] });
       if (result.status === 'saved') committedPages++;
+      if (result.status === 'saved' && notRecorded && batch.cursor > from) skipped = true;
       if (!batch.hasMore && guard?.value?.ambiguousFrom !== undefined && batch.cursor < guard.value.boundary) {
         const boundary = guard.value.boundary;
         result = await appendTranscriptPage(application, { ...scope, session_id: input.session_id,
@@ -97,7 +131,7 @@ export async function syncConversationTranscript(application, input, sourceAppli
             content: '[Visible transcript content omitted: ambiguous task ownership; original remains in native history.]' }] });
         batch.cursor = boundary;
       }
-      if (!batch.hasMore) return { ...result, cursor: batch.cursor,
+      if (!batch.hasMore) return { ...result, cursor: batch.cursor, ...(skipped ? { skipped: notRecorded } : {}),
         atPromptBoundary: Boolean(guard?.value || batch.atPromptBoundary || (typeof input.prompt === 'string' && !userMessages && !omitted && batch.completeRecord)),
         entryBlocked: Boolean(guard?.value && typeof input.prompt !== 'string'),
         coverage: 'supported_visible_events', parser: 'jsonl-v1', ...(guard?.value && typeof input.prompt !== 'string' ? { reason: retryReason } : {}) };
@@ -129,11 +163,15 @@ export function withTranscriptNotice(output, sync) {
 // prompt. Failed flushes keep the old owner, so new Agents cannot inherit an
 // unrelated session tail. Native files remain available for explicit recovery.
 export async function claimTranscriptBoundary(application, input, sourceApplication, sync, adapter, guard = null) {
-  if (!application.getCapturePolicy?.(sourceApplication).enabled || !input.transcript_path) return sync;
+  if (!input.transcript_path) return sync;
+  const capture = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
+  if (!capture.allowed) return captureDisabled(capture);
   try {
     const task = await application.personal.currentTaskContext({ personal_space_id: application.config.personal.spaceId,
       session_id: input.session_id, source_application: sourceApplication });
     if (!task?.project_agent_id) return sync;
+    const taskCapture = await captureDecision(application, taskTranscriptScope(input, sourceApplication, task));
+    if (!taskCapture.allowed) return skippedTaskTranscript(application, input, sourceApplication, adapter, taskCapture, guard);
     if (guard?.value && (guard.value.phase !== 'claim' || guard.value.nextOwner !== transcriptDigest(task.token))) return pending('Transcript claim does not match the task entry that created it');
     const scope = { personal_space_id: application.config.personal.spaceId,
       personal_project_id: task.personal_project_id, agent_id: task.project_agent_id,

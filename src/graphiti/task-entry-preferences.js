@@ -6,6 +6,8 @@ import { applyAgentAssignment } from './task-agent-assignment.js';
 import { triageCandidates } from './conversation-triage.js';
 import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
 import { ATTENTION_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/attention-inbox.js';
+import { captureDecision } from './capture-decision.js';
+import { receiptNotices } from './capture-notice.js';
 
 export function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
@@ -48,7 +50,8 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
       workflow,
       limit,
       agentInvocation,
-      agentToolName
+      agentToolName,
+      sourceApplication
     },
     (items, toolName) => recordAgentViews(items, toolName)
   );
@@ -78,6 +81,12 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
   // An unclaimed conversation gets names only, so its finishing host can label it.
   const triage = selection?.agent?.agentId === ASSISTANT_AGENT_ID && !projectResolution.personalProjectId
     ? await triageCandidates(application) : null;
+  // The entry receipt says when automatic recording is off, and that a project
+  // the person asked for was still created (rec#11 D-01). The task begins in
+  // this project, so the receipt gives the decision its writes will get.
+  const capture = await captureDecision(application, { sourceApplication,
+    personalProjectId: projectResolution.personalProjectId ?? null, sessionId: sessionId ?? sourceSessionId });
+  const notices = receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : []);
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),
@@ -87,7 +96,7 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
       name: context?.role?.name, sourceApplication,
-      assignmentStatus: selection?.status, assignmentReason: selection?.reason
+      assignmentStatus: selection?.status, assignmentReason: selection?.reason, notices
     }) };
 }
 
