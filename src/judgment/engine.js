@@ -31,11 +31,12 @@ export function createJudgmentEngine({ app, judge = runJudgment } = {}) {
     if (input.personalProjectId && app.employees) await app.employees.authorize({ templateId: 'tonborg', ...input, sourceApplication: policy.client, ensureAssignment });
   }
   // taskScope carries only the work kind, session and workflow the caller actually knows.
+  const readPreferences = (project, taskScope = {}) => readJudgmentPreferences(app, { personalProjectId: project,
+    projectAgentId: project ? 'employee.tonborg' : null, taskScope });
   async function context(service, input, policy = service.store().policy(input.personalSpaceId, input.personalProjectId ?? ''), taskScope = {}) {
     const project = input.personalProjectId ?? null;
     await authorize(input, policy, { ensureAssignment: true });
-    const preferences = await readJudgmentPreferences(app, { personalProjectId: project,
-      projectAgentId: project ? 'employee.tonborg' : null, taskScope });
+    const preferences = await readPreferences(project, taskScope);
     let memory = null;
     if (project) {
       try { memory = await app.inspectProjectAgentMemory({ personalSpaceId: input.personalSpaceId, personalProjectId: project, agentId: 'employee.tonborg', limit: 1 }); }
@@ -97,6 +98,9 @@ export function createJudgmentEngine({ app, judge = runJudgment } = {}) {
             const fresh = current.candidates.find(c => c.candidate_key === decision.target);
             if (!fresh || fingerprint(fresh) !== fingerprint(candidate) || policyVersion(store.policy(space, project)) !== policyVersion(policy)) {
               record = store.execute(space, record.id, 'stale', { reason: 'Evidence or policy changed. Review again.' });
+            } else if (fingerprint(await readPreferences(project || null)) !== fingerprint(evidenceContext.preferences)) {
+              // The approval was judged against the receipt it saw; a changed or unreadable receipt defers the write.
+              record = store.execute(space, record.id, 'stale', { reason: 'Scoped preferences changed. Review again.' });
             } else {
               try {
                 await authorize(input, policy);

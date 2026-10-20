@@ -213,6 +213,36 @@ test('acceptance does not complete a task when its scoped preferences changed du
   assert.equal(writes.length, 0);
 });
 
+test('a review approval is not written back when its scoped preferences changed during judgment', async t => {
+  const ask = rule('ask', 'Ask me before marking knowledge reviewed');
+  const changes = [
+    ['a rule is added', [], [ask]],
+    ['a rule is removed', [ask], []],
+    ['a rule changes scope', [ask], [{ ...ask, preference_scope: 'project' }]]];
+  for (const [label, before, after] of changes) {
+    let reads = 0;
+    const { service, writes } = fixture(t, () => completePreferences({ effective: ++reads === 1 ? before : after }));
+    const reviewed = await service.review(review);
+    assert.equal(reads, 2, label);
+    assert.equal(reviewed.records[0].outcome, 'approve', label);
+    assert.equal(reviewed.records[0].execution.status, 'stale', label);
+    assert.equal(writes.length, 0, label);
+    assert.equal(service.store().reviewed('s', 'p', candidate.candidate_key, fingerprint(candidate),
+      reviewed.records[0].policyVersion), false, label);
+  }
+});
+
+test('a review approval is not written back when the second preference read fails', async t => {
+  let reads = 0;
+  const { service, writes } = fixture(t, () => {
+    if (++reads === 1) return completePreferences();
+    throw Object.assign(new Error('Provider offline'), { code: 'provider_unavailable' });
+  });
+  const reviewed = await service.review(review);
+  assert.equal(reviewed.records[0].execution.status, 'stale');
+  assert.equal(writes.length, 0);
+});
+
 test('a review judged with an older preference context is judged again, and the old record stays readable', async t => {
   const { service, prompts } = fixture(t, completePreferences());
   const policy = service.store().policy('s', 'p');
