@@ -11,7 +11,8 @@ import { UiEmpty, UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat }
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import { reconcileKnowledgeWrites } from '@/features/knowledge/knowledge-write-lifecycle'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
-import KnowledgeInspector from '@/features/knowledge/KnowledgeInspector.vue'
+import KnowledgePeek from '@/features/knowledge/KnowledgePeek.vue'
+import { useKnowledgeItemPeek } from '@/features/knowledge/useKnowledgeItemPeek'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import PreferenceConflictDialog from '@/features/preferences/PreferenceConflictDialog.vue'
 import {
@@ -28,6 +29,7 @@ import {
   profileAspectLabel,
   reviewStateLabel,
   type KnowledgeReviewState,
+  knowledgeItemKey,
 } from '@/features/knowledge/model'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -55,6 +57,8 @@ const router = useRouter() as ReturnType<typeof useRouter> | undefined
 watch(() => route?.query.aspect, aspect => {
   activeAspect.value = typeof aspect === 'string' && PROFILE_ASPECTS.includes(aspect) ? aspect : 'all'
 }, { immediate: true })
+// The pending ?aspect= update, so a replacement opens on the URL that includes it.
+let aspectSync: Promise<unknown> = Promise.resolve()
 watch(activeAspect, aspect => {
   if (!route || !router) return
   const current = typeof route.query.aspect === 'string' ? route.query.aspect : 'all'
@@ -62,12 +66,11 @@ watch(activeAspect, aspect => {
   const query = { ...route.query }
   if (aspect === 'all') delete query.aspect
   else query.aspect = aspect
-  void router.replace({ query })
+  aspectSync = router.replace({ query })
 })
 const activeScope = ref('all')
 const activeReviewState = ref<'all' | KnowledgeReviewState>('all')
 const conflictsOnly = ref(false)
-const selectedItem = ref<KnowledgeItem | null>(null)
 const confirmingItem = ref<KnowledgeItem | null>(null)
 const editingItem = ref<KnowledgeItem | null>(null)
 const activeConflict = ref<PreferenceConflict | null>(null)
@@ -78,11 +81,21 @@ let loadVersion = 0
 let loadController: AbortController | null = null
 
 const items = computed(() => personalProfileItems(graph.value))
+// The open preference is part of the URL (?item=<space>/<kind>:<id>); see useKnowledgeItemPeek.
+const peek = useKnowledgeItemPeek({
+  spaceId: computed(() => store.activePersonalSpace?.id),
+  items,
+  settled: computed(() => snapshotReady.value && !loading.value),
+  root: pageElement,
+})
+const selectedItem = peek.item
+// Set while a replacement opens: its filters change under the open quick look on purpose.
+let replacing = false
 const conflicts = computed(() =>
   detectPreferenceConflicts(items.value, conflictRecords.value),
 )
 const conflictingIds = computed(
-  () => new Set(conflicts.value.flatMap(({ left, right }) => [itemKey(left), itemKey(right)])),
+  () => new Set(conflicts.value.flatMap(({ left, right }) => [knowledgeItemKey(left), knowledgeItemKey(right)])),
 )
 const aiResolvedIds = computed(
   () => new Set(
@@ -212,16 +225,10 @@ function selectStat(key: string) {
   else toggleReviewState(key as KnowledgeReviewState)
 }
 const isSelected = (item: KnowledgeItem) => selectedItem.value?.id === item.id && selectedItem.value?.itemKind === item.itemKind
-// Details open inline under their row; a second click closes them.
-async function toggleItem(item: KnowledgeItem) {
-  selectedItem.value = isSelected(item) ? null : item
+// Details open in a quick look over the list (D-03); its row lifts meanwhile.
+function openItem(item: KnowledgeItem) {
   closeForms()
-  if (selectedItem.value) {
-    await nextTick()
-    const row = pageElement.value?.querySelector('.personal-profile-row.selected')
-    const bounds = row?.querySelector('.personal-profile-open')?.getBoundingClientRect()
-    if (bounds && (bounds.top < 72 || bounds.bottom > window.innerHeight - 80)) row?.scrollIntoView?.({ block: 'start', behavior: 'instant' })
-  }
+  void peek.open(item)
 }
 
 function closeForms() {
@@ -232,7 +239,6 @@ function closeForms() {
 function clearPrivateContent() {
   graph.value = null
   conflictRecords.value = []
-  selectedItem.value = null
   snapshotReady.value = false
   deferringConflictId.value = ''
   closeForms()
@@ -245,6 +251,7 @@ function revokeAccess() {
   clearReadTimers()
   loading.value = false
   clearPrivateContent()
+  void peek.close()
   loadFailed.value = true
   safeFocus()
 }
@@ -281,10 +288,11 @@ watch(
   [activeAspect, activeScope, activeReviewState, conflictsOnly],
   () => {
     if (
-      selectedItem.value
-      && (!visibleItems.value.some(item => itemKey(item) === itemKey(selectedItem.value!)) || conflictsOnly.value)
+      !replacing
+      && selectedItem.value
+      && (!visibleItems.value.some(item => knowledgeItemKey(item) === knowledgeItemKey(selectedItem.value!)) || conflictsOnly.value)
     ) {
-      selectedItem.value = null
+      void peek.close()
       closeForms()
       safeFocus()
     }
@@ -340,10 +348,6 @@ async function load(spaceId = store.activePersonalSpace?.id) {
     conflictRecords.value = Array.isArray(nextConflictRecords) ? nextConflictRecords : []
     reconcileKnowledgeWrites(spaceId, personalProfileItems(nextGraph))
     snapshotReady.value = true
-    if (selectedItem.value) {
-      selectedItem.value = items.value.find(item => itemKey(item) === itemKey(selectedItem.value!)) ?? null
-      if (!selectedItem.value) safeFocus()
-    }
   } catch (error) {
     if (requestVersion !== loadVersion || controller.signal.aborted) return
     const status = Number((error as { status?: number })?.status) || null
@@ -362,7 +366,7 @@ async function load(spaceId = store.activePersonalSpace?.id) {
 function statusLabel(item: KnowledgeItem) {
   const label = reviewStateLabel(item)
   const conflict = conflicts.value.find(
-    ({ left, right }) => itemKey(left) === itemKey(item) || itemKey(right) === itemKey(item),
+    ({ left, right }) => knowledgeItemKey(left) === knowledgeItemKey(item) || knowledgeItemKey(right) === knowledgeItemKey(item),
   )
   if (conflict?.aiRecord) {
     return `${label} · ${t('preferences.profile.statusSuffix.aiPending')}`
@@ -370,15 +374,12 @@ function statusLabel(item: KnowledgeItem) {
   if (conflict) {
     return `${label} · ${t('preferences.profile.statusSuffix.conflict')}`
   }
-  if (aiResolvedIds.value.has(itemKey(item))) {
+  if (aiResolvedIds.value.has(knowledgeItemKey(item))) {
     return `${label} · ${t('preferences.profile.statusSuffix.aiResolved')}`
   }
   return label
 }
 
-function itemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
-  return `${item.itemKind}:${item.id}`
-}
 
 function scopeLabel(item: KnowledgeItem) {
   if (!knownScope(item)) return t('preferences.detail.scopeUnknown')
@@ -422,25 +423,34 @@ function conflictScopeLabel(conflict: PreferenceConflict) {
 async function openReplacement(item: KnowledgeItem) {
   const spaceId = store.activePersonalSpace?.id
   const version = loadVersion
-  activeAspect.value = item.profileAspect ?? 'all'
-  activeScope.value = item.preferenceScope === 'project' && item.preferenceProjectId
-    ? `project:${item.preferenceProjectId}`
-    : 'global'
-  conflictsOnly.value = false
-  activeReviewState.value = 'all'
-  // The filter watcher resets pagination. Complete that update before locating
-  // the target; otherwise a replacement after row 100 vanishes on the next tick.
+  const current = () => spaceId === store.activePersonalSpace?.id && version === loadVersion
+  replacing = true
+  try {
+    activeAspect.value = item.profileAspect ?? 'all'
+    activeScope.value = item.preferenceScope === 'project' && item.preferenceProjectId
+      ? `project:${item.preferenceProjectId}`
+      : 'global'
+    conflictsOnly.value = false
+    activeReviewState.value = 'all'
+    // The filter watcher resets pagination and the aspect goes into the URL.
+    // Complete both before locating the target; otherwise a replacement after
+    // row 100 vanishes on the next tick, or the aspect and the item overwrite
+    // each other in the URL.
+    await nextTick()
+    await aspectSync
+    if (!current()) return
+    const index = visibleItems.value.findIndex(candidate => knowledgeItemKey(candidate) === knowledgeItemKey(item))
+    if (index < 0) return
+    shownLimit.value = Math.max(PAGE, index + 1)
+    await peek.open(item)
+  } finally {
+    replacing = false
+  }
   await nextTick()
-  if (spaceId !== store.activePersonalSpace?.id || version !== loadVersion) return
-  const index = visibleItems.value.findIndex(candidate => itemKey(candidate) === itemKey(item))
-  if (index < 0) return
-  shownLimit.value = Math.max(PAGE, index + 1)
-  selectedItem.value = item
-  await nextTick()
-  if (spaceId !== store.activePersonalSpace?.id || version !== loadVersion) return
-  const trigger = pageElement.value?.querySelector<HTMLElement>('.personal-profile-row.selected .personal-profile-open')
-  trigger?.focus({ preventScroll: true })
-  trigger?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' })
+  if (!current()) return
+  // The quick look now shows the replacement; its row is in view behind it.
+  pageElement.value?.querySelector<HTMLElement>('.personal-profile-row.selected')
+    ?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' })
 }
 
 
@@ -455,9 +465,8 @@ function toggleReviewState(state: KnowledgeReviewState) {
     : state
   conflictsOnly.value = false
   activeReviewState.value = nextState
-  if (nextState !== 'all') {
-    selectedItem.value = visibleItems.value.at(0) ?? null
-  }
+  const first = nextState === 'all' ? undefined : visibleItems.value.at(0)
+  if (first) void peek.open(first)
 }
 
 function toggleConflictWorkbench(forceOpen = false) {
@@ -465,7 +474,7 @@ function toggleConflictWorkbench(forceOpen = false) {
   conflictsOnly.value = nextState
   if (nextState) {
     activeReviewState.value = 'all'
-    selectedItem.value = null
+    void peek.close()
   }
 }
 
@@ -517,7 +526,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 </script>
 
 <template>
-  <section ref="pageElement" class="view page-stack vue-personal-profile">
+  <section ref="pageElement" class="view vue-personal-profile">
+    <div class="profile-canvas">
     <UiStatRow v-if="graph" :items="stats" :label="t('preferences.profile.summaryAria')" @select="selectStat" />
 
     <UiToolbar>
@@ -643,48 +653,47 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
     <div v-else-if="graph" class="ui-list personal-profile-list" :aria-label="t('preferences.profile.directory.aria')">
       <article
         v-for="item in shownItems"
-        :key="itemKey(item)"
+        :key="knowledgeItemKey(item)"
+        :data-return-focus="knowledgeItemKey(item)"
         class="personal-profile-row"
         :class="{
           selected: isSelected(item),
           'pending-review': knowledgeReviewState(item) === 'pending',
-          'ai-resolved-conflict': aiResolvedIds.has(itemKey(item)),
+          'ai-resolved-conflict': aiResolvedIds.has(knowledgeItemKey(item)),
         }"
       >
-        <button :id="`preference-heading-${encodeURIComponent(itemKey(item))}`" class="personal-profile-open" type="button" :aria-label="t('preferences.detail.toggle', { title: item.title })" :aria-expanded="isSelected(item)" :aria-controls="`preference-detail-${encodeURIComponent(itemKey(item))}`" @click="toggleItem(item)">
+        <button class="personal-profile-open" type="button" aria-haspopup="dialog" :aria-label="t('preferences.detail.open', { title: item.title })" @click="openItem(item)">
           <span class="profile-aspect-mark" :class="item.profileAspect">{{ profileAspectLabel(item.profileAspect) }}</span>
-          <span class="personal-profile-copy"><strong role="heading" aria-level="2">{{ item.title }}</strong><small v-if="!isSelected(item)">{{ item.body }}</small></span>
-          <span v-if="!isSelected(item)" class="personal-profile-origin">
-            <strong :class="{ 'has-conflict': conflictingIds.has(itemKey(item)) }">{{ statusLabel(item) }}</strong>
+          <span class="personal-profile-copy"><strong role="heading" aria-level="2">{{ item.title }}</strong><small>{{ item.body }}</small></span>
+          <span class="personal-profile-origin">
+            <strong :class="{ 'has-conflict': conflictingIds.has(knowledgeItemKey(item)) }">{{ statusLabel(item) }}</strong>
             <small>
               {{ scopeLabel(item) }} ·
               {{ t('preferences.profile.directory.sourceCount', { count: item.evidence.length }) }}
             </small>
           </span>
-          <time v-if="!isSelected(item)">{{ formatTime(latestItemValue(item)) }}</time>
-          <span v-else aria-hidden="true">⌃</span>
+          <time :title="formatTime(latestItemValue(item))">{{ formatTime(latestItemValue(item), 'minute') }}</time>
         </button>
-        <KnowledgeInspector
-          v-if="isSelected(item)"
-          class="personal-profile-detail"
-          :id="`preference-detail-${encodeURIComponent(itemKey(item))}`"
-          :key="`${store.activePersonalSpace?.id}:${itemKey(item)}`"
-          mode="preference"
-          :item="item"
-          :graph="graph"
-          :editable="snapshotReady && knownScope(item)"
-          :preference-scope-label="scopeLabel(item)"
-          :preference-status-label="statusLabel(item)"
-          @confirm="confirmingItem = $event"
-          @edit="editingItem = $event"
-          @open-replacement="openReplacement"
-        />
       </article>
-      <button v-if="shownItems.length < visibleItems.length" class="personal-profile-more" type="button" data-profile-more
+      <Button v-if="shownItems.length < visibleItems.length" variant="ghost" class="personal-profile-more" data-profile-more
         @click="shownLimit += PAGE">
         {{ t('preferences.profile.directory.showMore', { count: Math.min(PAGE, visibleItems.length - shownItems.length) }) }}
-      </button>
+      </Button>
     </div>
+    <KnowledgePeek
+      mode="preference"
+      :item="selectedItem"
+      :suspended="Boolean(editingItem || confirmingItem)"
+      :graph="graph"
+      :editable="Boolean(selectedItem) && snapshotReady && knownScope(selectedItem!)"
+      :preference-scope-label="selectedItem ? scopeLabel(selectedItem) : ''"
+      :preference-status-label="selectedItem ? statusLabel(selectedItem) : ''"
+      @confirm="confirmingItem = $event"
+      @edit="editingItem = $event"
+      @open-replacement="openReplacement"
+      @close="peek.close()"
+      @close-auto-focus="peek.returnFocus"
+    />
     <KnowledgeEditDialog
       :item="editingItem"
       :personal-space-id="store.activePersonalSpace?.id ?? ''"
@@ -713,6 +722,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       @resolved="load()"
       @edit="editConflictItem"
     />
+    </div>
   </section>
 </template>
 
@@ -902,17 +912,6 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   color: var(--color-ink);
 }
 
-.personal-profile-detail :deep(.inspector-classification.state-pending),
-.personal-profile-detail :deep(.inspector-classification.state-needs_review) {
-  border-color: var(--color-warning-soft);
-  background: var(--color-warning-soft);
-}
-
-.personal-profile-detail :deep(.inspector-classification.state-pending strong),
-.personal-profile-detail :deep(.inspector-classification.state-needs_review strong) {
-  color: var(--color-warning);
-}
-
 @media (max-width: 860px) {
   .preference-conflict-workbench > header,
   .preference-conflict-card-heading,
@@ -939,10 +938,11 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   }
 }
 
-.personal-profile-row { display: grid; }
-.personal-profile-row + .personal-profile-row { border-top: 1px solid var(--color-border); }
+/* Each preference is a card; wider canvases add a column instead of stretching the card. */
+.personal-profile-row { display: grid; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .personal-profile-open {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(140px, 220px) auto; align-items: center; gap: 14px;
+  /* Fixed aspect, status and date columns, so titles and statuses line up from card to card. */
+  display: grid; grid-template-columns: 4.75rem minmax(0, 1fr) 11rem 7.5rem; align-items: center; gap: 14px;
   width: 100%; padding: 14px 16px; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer;
 }
 .personal-profile-open:hover, .personal-profile-row.selected .personal-profile-open { background: var(--color-surface-hover); }
@@ -950,26 +950,31 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 .personal-profile-copy, .personal-profile-origin { display: grid; gap: 4px; min-width: 0; }
 .personal-profile-copy strong { color: var(--color-ink); font-size: 14px; font-weight: 600; }
 .personal-profile-copy small { display: -webkit-box; overflow: hidden; color: var(--color-ink-soft); font-size: 13px; line-height: 1.55; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.personal-profile-origin, .personal-profile-open time { justify-items: end; text-align: right; }
+.personal-profile-open time { white-space: nowrap; }
+.profile-aspect-mark { justify-self: start; max-width: 100%; text-align: center; }
 .personal-profile-origin strong { color: var(--color-ink-soft); font-size: 12px; font-weight: 600; }
 .personal-profile-origin small, .personal-profile-open time { color: var(--color-faint); font-size: 12px; }
-.personal-profile-detail { margin: 0 16px 14px; padding: 14px 16px; border: 1px solid var(--color-border); border-left: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); }
-.personal-profile-more { width: 100%; padding: 12px; border: 0; border-top: 1px solid var(--color-border); color: var(--color-accent); background: transparent; font: inherit; font-size: 13px; cursor: pointer; }
+.personal-profile-more { grid-column: 1 / -1; width: 100%; color: var(--color-accent); }
 .personal-profile-scope-filter { width: min(240px, 28vw); }
 @media (max-width: 720px) {
   .personal-profile-open { grid-template-columns: auto minmax(0, 1fr); }
-  .personal-profile-origin, .personal-profile-open time { grid-column: 2; }
+  .personal-profile-origin, .personal-profile-open time { grid-column: 2; justify-items: start; text-align: left; }
 }
 </style>
 
 <style scoped>
-.vue-personal-profile { padding-bottom: calc(80px + env(safe-area-inset-bottom) + 16px); min-width: 0; }
-.personal-profile-list { overflow: visible; }
+.vue-personal-profile { padding-bottom: calc(80px + env(safe-area-inset-bottom) + 16px); min-width: 0; scrollbar-gutter: stable; }
+/* One centred work canvas (D-03); a preference opens in a quick look over it. */
+.profile-canvas { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: var(--canvas-max); margin-inline: auto; container: profile-canvas / inline-size; }
+.personal-profile-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; overflow: visible; border: 0; border-radius: 0; background: transparent; }
+@container profile-canvas (min-width: 1280px) { .personal-profile-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .personal-profile-row { min-width: 0; scroll-margin-top: 80px; }
-.personal-profile-row.selected { border: 1px solid var(--color-border-strong); border-radius: var(--radius-card, 12px); background: var(--color-surface); box-shadow: var(--shadow-md); }
-.personal-profile-row.selected .personal-profile-open { grid-template-columns: auto minmax(0, 1fr) auto; background: transparent; }
+/* The open row lifts as a card while its quick look is up (never a side bar). */
+.personal-profile-row.selected { position: relative; z-index: 1; border-color: var(--color-border-strong); background: var(--color-surface); box-shadow: var(--shadow-md); }
+.personal-profile-row.selected .personal-profile-open { background: transparent; }
 .personal-profile-copy strong, .personal-profile-origin { overflow-wrap: anywhere; white-space: normal; }
-.personal-profile-detail { margin: 0; padding: 0 16px 16px; border: 0; background: transparent; }
-.personal-profile-open { min-height: 44px; }
+.personal-profile-open { min-height: 44px; border-radius: inherit; }
 .preference-read-error { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--color-ink); }
 @media (max-width: 720px) { .personal-profile-scope-filter { width: 100%; } }
 </style>

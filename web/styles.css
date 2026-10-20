@@ -115,19 +115,16 @@ body { margin: 0; min-width: 320px; }
 }
 
 .graph-view {
-  padding: 18px 24px 20px; overflow: hidden; display: flex; flex-direction: column;
+  overflow: hidden; display: flex; flex-direction: column; scrollbar-gutter: stable;
 }
 .graph-view.graph-canvas-active { overflow: hidden; }
-/* The view switch looks like every other segmented control (no nested tab row). */
-.knowledge-view-heading { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.knowledge-mode-switch { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--color-surface-subtle); }
-.knowledge-mode-switch button {
-  min-height: 28px; padding: 3px 12px; border: 0; border-radius: 7px; color: var(--color-muted); background: transparent;
-  font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color var(--motion-fast), color var(--motion-fast);
+/* One centred work canvas (D-03); an item opens in a quick look over it. */
+.knowledge-canvas {
+  display: flex; flex: 1; flex-direction: column; width: 100%; min-height: 0;
+  max-width: var(--canvas-max); margin-inline: auto;
 }
-.knowledge-mode-switch button:hover { color: var(--color-ink); }
-.knowledge-mode-switch button[aria-selected="true"] { color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-xs); }
-.knowledge-mode-switch button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.knowledge-mode-tabs { flex: 1 1 auto; min-width: 0; }
+.knowledge-view-heading { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .graph-toolbar {
   min-height: 48px; display: flex; flex-wrap: wrap; gap: 8px 10px;
   align-items: center; padding: 8px 0;
@@ -218,11 +215,9 @@ body { margin: 0; min-width: 320px; }
 .graph-controls { display: flex; gap: 3px; }
 .knowledge-layout {
   min-height: 0; flex: 1; display: grid; align-items: stretch;
-  grid-template-columns: minmax(0, 1fr) var(--inspector-width); border: 1px solid var(--color-border-strong);
+  grid-template-columns: minmax(0, 1fr); border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-card); overflow: hidden; background: var(--color-surface); isolation: isolate;
 }
-.graph-view:not(.graph-canvas-active) .knowledge-layout:not(.has-selection) { grid-template-columns: minmax(0, 1fr); }
-.graph-view:not(.graph-canvas-active) .knowledge-layout:not(.has-selection) .graph-inspector { display: none; }
 .knowledge-directory-panel {
   min-width: 0; min-height: 0; display: flex; flex-direction: column;
   overflow-x: hidden; overflow-y: hidden;
@@ -278,8 +273,11 @@ body { margin: 0; min-width: 320px; }
   color: var(--color-ink); background: var(--color-surface); text-align: left;
 }
 .project-material-row:hover { background: var(--color-surface); }
-.project-material-row.selected {
-  background: var(--color-surface-subtle); box-shadow: inset 0 0 0 1px var(--color-accent);
+/* The open row lifts as a card while its quick look is up: full surface, a
+   stronger hairline and a light shadow (never a side bar). */
+.project-material-row.selected, .knowledge-row.selected {
+  position: relative; z-index: 1; background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-border-strong), var(--shadow-md);
 }
 .project-material-copy { min-width: 0; display: grid; gap: 4px; }
 .project-material-copy strong {
@@ -314,7 +312,6 @@ body { margin: 0; min-width: 320px; }
 .knowledge-table-head > span,
 .knowledge-row > span { min-width: 0; }
 .knowledge-row:hover { background: var(--color-surface); }
-.knowledge-row.selected { background: var(--color-surface-subtle); box-shadow: inset 0 0 0 1px var(--color-accent); }
 .knowledge-row-content { min-width: 0; display: grid; gap: 4px; }
 .knowledge-row-title {
   min-width: 0; display: flex; align-items: center; gap: 7px;
@@ -339,6 +336,17 @@ body { margin: 0; min-width: 320px; }
 }
 .knowledge-row-type { color: var(--color-ink); font-weight: 620; }
 .knowledge-row-source, .knowledge-row-time { color: var(--color-muted); }
+/* Minutes in a roomy table; below about a 1400px window the date alone, so the
+   type and time columns no longer cut off. The full time is the cell's title. */
+.knowledge-time-day { display: none; }
+@container knowledge-directory (max-width: 1100px) {
+  .knowledge-table-head, .knowledge-row {
+    grid-template-columns: minmax(200px, 1.6fr) minmax(72px, .5fr) minmax(92px, .65fr)
+      minmax(128px, 1fr) minmax(110px, .85fr) minmax(76px, .5fr) minmax(52px, .38fr);
+  }
+  .knowledge-time-minute { display: none; }
+  .knowledge-time-day { display: inline; }
+}
 .knowledge-row-quadrant {
   width: fit-content; border-radius: 999px; padding: 3px 7px; color: var(--color-muted);
   background: var(--color-surface-subtle); font-size: 12px; font-weight: 650; white-space: nowrap;
@@ -390,15 +398,8 @@ body { margin: 0; min-width: 320px; }
   .knowledge-status { grid-column: 2; grid-row: 2; padding-block: 0; font-weight: 400; }
   .knowledge-column-quadrant, .knowledge-row-quadrant, .knowledge-column-validity { display: none; }
 }
-.graph-inspector {
-  position: static; align-self: stretch; padding: 18px; background: var(--color-surface);
-  border-left: 1px solid var(--color-border); overflow: auto; overscroll-behavior: contain;
-}
-.graph-canvas-active .graph-inspector {
-  position: static; align-self: stretch; overflow: auto;
-}
-.graph-inspector h3 { font-size: 16px; margin-bottom: 8px; overflow-wrap: anywhere; }
-.graph-inspector .muted { color: var(--color-muted); font-size: 12px; line-height: 1.55; }
+/* Inside the quick look the header names the item; the first section needs no extra gap. */
+.knowledge-inspector > :first-child { margin-top: 0; }
 .inspector-classification {
   display: grid; gap: 7px; margin-top: 15px; padding: 11px 12px;
   border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface);
@@ -527,8 +528,13 @@ body { margin: 0; min-width: 320px; }
 }
 .evidence-source-action:hover { color: var(--color-ink); text-decoration: underline; }
 .evidence-source-action:disabled { color: var(--color-muted); cursor: not-allowed; text-decoration: none; }
-.inspector-actions { display: grid; gap: 7px; margin-top: 16px; }
-.inspector-actions button { width: 100%; }
+/* The quick look's footer: sticks to the dialog's bottom edge while the record
+   scrolls. The offsets cancel the dialog's p-6 padding so it spans edge to edge. */
+.inspector-actions {
+  position: sticky; z-index: 2; bottom: -24px; display: flex; flex-wrap: wrap; gap: 8px;
+  margin: 16px -24px -24px; padding: 12px 24px; border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
 .inspector-history { display: grid; }
 .history-row { padding: 9px 0; border-top: 1px solid var(--color-border); }
 .history-row strong { color: var(--color-ink); font-size: 12px; }

@@ -28,13 +28,14 @@ const destinations = computed(() => navDestinations({
 }))
 const destination = computed(() => activeDestination(destinations.value, route.path))
 const section = computed(() => activeSection(destination.value, route.path))
-// A page about one record names itself (an Agent's real name). Otherwise, on
-// a section's own page the tabs already name it, so the heading names the
-// destination (对话 beside 圆桌 | 待决策) instead of repeating the active tab;
-// a selected conversation keeps the 对话 heading. Everything else uses the
-// route's meta.title.
+// A page about one record names itself (an Agent's real name). Otherwise,
+// anywhere inside a section the tabs already name it, so the heading names
+// the destination (对话 beside 圆桌 | 待决策, 记忆 beside 知识 | 偏好) instead
+// of repeating the active tab, on the section's deeper paths too (a selected
+// conversation, an opened knowledge item). Everything else uses the route's
+// meta.title.
 const recordTitle = computed(() => pageTitle.value.path === route.path ? pageTitle.value.text : '')
-const title = computed(() => recordTitle.value || (route.path === '/preferences' ? t('routes.preferences.title') : destination.value && (destination.value.sections.length > 1) && (section.value?.to === route.path || route.path.startsWith('/roundtables/'))
+const title = computed(() => recordTitle.value || (destination.value && destination.value.sections.length > 1 && section.value && !route.meta.detail
   ? t(`shell.destinations.${destination.value.key}`)
   : routeMetaText(route.meta.title, 'routes.overview.title')))
 const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true)

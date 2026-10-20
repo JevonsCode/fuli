@@ -1,5 +1,5 @@
 import { currentLocale, t } from '@/i18n'
-import { DATE_TIME_FULL, formatDateTime } from '@/lib/date-time'
+import { DATE_ONLY, DATE_TIME_FULL, DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import type {
   ConfirmationActor,
   ConfirmationStatus,
@@ -321,8 +321,16 @@ export function latestItemValue(item: KnowledgeItem) {
   )
 }
 
-export function formatTime(value?: string | null) {
-  return formatDateTime(value, currentLocale(), DATE_TIME_FULL, { missing: t('knowledge.domain.items.notRecorded') })
+/** A knowledge item's stable identity inside its space: its kind and id. */
+export function knowledgeItemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
+  return `${item.itemKind}:${item.id}`
+}
+
+const TIME_PRECISION = { second: DATE_TIME_FULL, minute: DATE_TIME_MINUTE, day: DATE_ONLY }
+
+/** A recorded time; list columns pass a coarser precision than details. */
+export function formatTime(value?: string | null, precision: keyof typeof TIME_PRECISION = 'second') {
+  return formatDateTime(value, currentLocale(), TIME_PRECISION[precision], { missing: t('knowledge.domain.items.notRecorded') })
 }
 
 export function knowledgeReviewState(item: KnowledgeItem): KnowledgeReviewState {

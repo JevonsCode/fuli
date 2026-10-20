@@ -33,6 +33,9 @@
 @source "../../pages/SettingsPage.vue";
 @source "../../pages/TaskSchedulesPage.vue";
 @source "../../features/task-schedules/SchedulePeek.vue";
+/* Memory pages on the D-03 canvas: the knowledge quick look and the taste rules. */
+@source "../../features/knowledge/KnowledgePeek.vue";
+@source "../../pages/WritingTastePage.vue";
 /* 编排 on the same canvas: the collection, its cards and each Agent's page. */
 @source "../../pages/ProjectAgentsPage.vue";
 @source "../../features/project-agents/ProjectAgentCard.vue";

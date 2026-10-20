@@ -12,8 +12,10 @@ import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import { formatTime, personalProfileItems } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { UiChip, UiEmpty, UiIconButton, UiStatRow, UiToolbar, type UiStat } from '@/ui'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { UiEmpty, UiIconButton, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import type {
   KnowledgeGraph,
   KnowledgeItem,
@@ -52,7 +54,7 @@ const stats = computed<UiStat[]>(() => {
     })),
   ]
 })
-const evidenceTone = (rule: WritingTasteRule) => rule.evidence_status === 'Confirmed' ? 'accent' : rule.evidence_status === 'Working hypothesis' ? 'warning' : 'neutral'
+const evidenceTone = (rule: WritingTasteRule) => rule.evidence_status === 'Confirmed' ? 'default' : rule.evidence_status === 'Working hypothesis' ? 'warning' : 'secondary'
 const pageCopy = computed(() => {
   if (profile.value?.status === 'active') return t('writingTaste.page.activeCopy')
   if (profile.value?.status === 'preview_ready') return t('writingTaste.page.previewCopy')
@@ -193,7 +195,10 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 </script>
 
 <template>
-  <section class="view page-stack writing-taste-view">
+  <section class="view writing-taste-view">
+    <!-- One centred work canvas (D-03): rules are a card collection that adds
+         columns as the canvas widens instead of stretching one row. -->
+    <div class="@container mx-auto flex w-full max-w-(--canvas-max) flex-col gap-4">
     <GrowthLoading v-if="loading && profile && !showInitialLoading" variant="inline" :label="t('writingTaste.page.loading')" />
     <GrowthLoading v-if="showInitialLoading" :label="t('writingTaste.page.loading')" />
 
@@ -220,32 +225,37 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 
       <pre v-if="showAgentPreview && profile.agent_markdown" class="ui-list writing-taste-agent-preview" data-agent-preview :aria-label="t('writingTaste.page.agentPreviewTitle')">{{ profile.agent_markdown }}</pre>
 
-      <div v-if="profile.rules.length" class="ui-list">
-        <article v-for="rule in profile.rules" :key="`${rule.item_kind}:${rule.item_id}`" class="ui-list-row" data-writing-rule>
-          <div class="ui-list-main">
-            <strong class="ui-list-heading">{{ rule.title }}</strong>
-            <p class="ui-list-text">{{ rule.instruction }}</p>
-            <UiDisclosure v-if="rule.reason || rule.contexts.length" :title="t('ui.details')">
-              <p v-if="rule.reason">{{ rule.reason }}</p>
-              <p v-if="rule.contexts.length">{{ t('writingTaste.page.contexts', { contexts: rule.contexts.join('、') }) }}</p>
-            </UiDisclosure>
-            <div class="ui-list-meta">
-              <UiChip :tone="evidenceTone(rule)">{{ t(`writingTaste.evidenceStatus.${rule.evidence_status}`) }}</UiChip>
-              <UiChip v-if="rule.has_conflict" tone="danger">{{ t('writingTaste.page.conflict') }}</UiChip>
-              <span>{{ scopeLabel(rule) }}</span>
-              <span>{{ t('writingTaste.page.evidence', { evidence: rule.evidence_count }) }}</span>
-              <span>{{ t('writingTaste.page.sessions', { sessions: rule.session_count }) }}</span>
-              <span v-if="rule.updated_at">{{ t('writingTaste.page.updated', { time: formatTime(rule.updated_at) }) }}</span>
+      <ul v-if="profile.rules.length" class="m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[760px]:grid-cols-2 @min-[1280px]:grid-cols-3">
+        <li v-for="rule in profile.rules" :key="`${rule.item_kind}:${rule.item_id}`" class="min-w-0">
+          <Card as="article" class="h-full" data-writing-rule>
+            <CardHeader>
+              <CardTitle class="text-base [overflow-wrap:anywhere]">{{ rule.title }}</CardTitle>
+              <CardDescription class="text-sm leading-[1.6] text-foreground-soft [overflow-wrap:anywhere]">{{ rule.instruction }}</CardDescription>
+            </CardHeader>
+            <div class="grid flex-1 content-start gap-3 px-5">
+              <UiDisclosure v-if="rule.reason || rule.contexts.length" :title="t('ui.details')">
+                <p v-if="rule.reason">{{ rule.reason }}</p>
+                <p v-if="rule.contexts.length">{{ t('writingTaste.page.contexts', { contexts: rule.contexts.join('、') }) }}</p>
+              </UiDisclosure>
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                <Badge :variant="evidenceTone(rule)">{{ t(`writingTaste.evidenceStatus.${rule.evidence_status}`) }}</Badge>
+                <Badge v-if="rule.has_conflict" variant="destructive">{{ t('writingTaste.page.conflict') }}</Badge>
+                <span>{{ scopeLabel(rule) }}</span>
+                <span>{{ t('writingTaste.page.evidence', { evidence: rule.evidence_count }) }}</span>
+                <span>{{ t('writingTaste.page.sessions', { sessions: rule.session_count }) }}</span>
+                <span v-if="rule.updated_at">{{ t('writingTaste.page.updated', { time: formatTime(rule.updated_at) }) }}</span>
+              </div>
             </div>
-          </div>
-          <div v-if="itemForRule(rule)" class="ui-list-actions">
-            <Button variant="ghost" size="sm" data-rule-edit @click="editRule(rule)">{{ t('writingTaste.page.edit') }}</Button>
-            <Button variant="outline" v-if="rule.evidence_status !== 'Confirmed'" size="sm" data-rule-confirm @click="confirmRule(rule)">{{ t('writingTaste.page.confirm') }}</Button>
-          </div>
-        </article>
-      </div>
+            <div v-if="itemForRule(rule)" class="flex justify-end gap-2 border-t px-5 pt-4">
+              <Button variant="ghost" size="sm" data-rule-edit @click="editRule(rule)">{{ t('writingTaste.page.edit') }}</Button>
+              <Button variant="outline" v-if="rule.evidence_status !== 'Confirmed'" size="sm" data-rule-confirm @click="confirmRule(rule)">{{ t('writingTaste.page.confirm') }}</Button>
+            </div>
+          </Card>
+        </li>
+      </ul>
       <UiEmpty v-else class="ui-list" :text="t('writingTaste.page.rulesEmpty')" />
     </template>
+    </div>
 
     <KnowledgeEditDialog
       :item="editingItem"
@@ -271,5 +281,6 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 </template>
 
 <style scoped>
+.writing-taste-view { scrollbar-gutter: stable; }
 .writing-taste-agent-preview { margin: 0; padding: 14px 16px; overflow: auto; color: var(--color-ink-soft); font-family: var(--font-mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
 </style>

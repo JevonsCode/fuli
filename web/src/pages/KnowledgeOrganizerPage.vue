@@ -12,7 +12,8 @@ import KnowledgeBatchConfirmDialog from '@/features/knowledge/KnowledgeBatchConf
 import { reconcileKnowledgeWrites } from '@/features/knowledge/knowledge-write-lifecycle'
 import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
-import KnowledgeInspector from '@/features/knowledge/KnowledgeInspector.vue'
+import KnowledgePeek from '@/features/knowledge/KnowledgePeek.vue'
+import { useKnowledgeItemPeek } from '@/features/knowledge/useKnowledgeItemPeek'
 import {
   appendKnowledgeGraphPage,
   batchConfirmationGroups,
@@ -24,10 +25,12 @@ import {
   quadrantLabel,
   reviewStateLabel,
   type KnowledgeReviewState,
+  knowledgeItemKey,
 } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 
@@ -38,7 +41,6 @@ const loadingMore = ref(false)
 const query = ref('')
 const activeQuadrant = ref('all')
 const activeReviewState = ref<'all' | KnowledgeReviewState>('all')
-const selectedItem = ref<KnowledgeItem | null>(null)
 const confirmingItem = ref<KnowledgeItem | null>(null)
 const editingItem = ref<KnowledgeItem | null>(null)
 const batchDialogOpen = ref(false)
@@ -101,6 +103,21 @@ const reviewChoices = computed<Array<{
 ])
 
 const items = computed(() => knowledgeItems(graph.value))
+// Every page of the last read arrived; a later-page failure leaves a partial list.
+const complete = ref(false)
+const readFailed = ref(false)
+const pageElement = ref<HTMLElement | null>(null)
+// The open item is part of the URL (?item=<space>/<kind>:<id>); see useKnowledgeItemPeek.
+const peek = useKnowledgeItemPeek({
+  spaceId: computed(() => store.activePersonalSpace?.id),
+  items,
+  settled: computed(() => complete.value && !loading.value && !loadingMore.value),
+  root: pageElement,
+})
+const selectedItem = peek.item
+const linkPending = peek.pending
+// Set while a replacement opens: its filters change under the open quick look on purpose.
+let replacing = false
 const confirmationGroups = computed(() => batchConfirmationGroups(items.value))
 const quadrantCounts = computed(() =>
   Object.fromEntries(
@@ -168,11 +185,12 @@ watch(
 
 watch(visibleItems, (visible) => {
   if (
-    selectedItem.value
+    !replacing
+    && selectedItem.value
     && !visible.some(({ id, itemKind }) =>
       id === selectedItem.value?.id && itemKind === selectedItem.value?.itemKind)
   ) {
-    selectedItem.value = null
+    void peek.close()
   }
 })
 
@@ -183,7 +201,8 @@ onBeforeUnmount(() => {
 function revokeKnowledgeAccess() {
   ++loadVersion
   graph.value = null
-  selectedItem.value = null
+  complete.value = false
+  void peek.close()
   confirmingItem.value = null
   editingItem.value = null
   batchDialogOpen.value = false
@@ -199,6 +218,8 @@ async function load(spaceId = store.activePersonalSpace?.id) {
   confirmingItem.value = null
   editingItem.value = null
   loadingMore.value = false
+  complete.value = false
+  readFailed.value = false
   let receivedPage = false
   try {
     let offset = 0
@@ -213,12 +234,11 @@ async function load(spaceId = store.activePersonalSpace?.id) {
       graph.value = receivedPage ? appendKnowledgeGraphPage(graph.value, page) : page
       reconcileKnowledgeWrites(spaceId, knowledgeItems(page))
       receivedPage = true
-      if (selectedItem.value) {
-        selectedItem.value = items.value.find(({ id, itemKind }) =>
-          id === selectedItem.value?.id && itemKind === selectedItem.value?.itemKind) ?? null
-      }
       loading.value = false
-      if (!page.truncated) break
+      if (!page.truncated) {
+        complete.value = true
+        break
+      }
       const nextOffset = page.next_offset
       if (!Number.isInteger(nextOffset) || (nextOffset as number) <= offset) {
         throw new Error(t('knowledge.workspace.organizer.paginationError'))
@@ -230,6 +250,7 @@ async function load(spaceId = store.activePersonalSpace?.id) {
   } catch (error) {
     if (version !== loadVersion) return
     if (!receivedPage) graph.value = null
+    readFailed.value = true
     store.reportError(error)
   } finally {
     if (version === loadVersion) {
@@ -239,9 +260,6 @@ async function load(spaceId = store.activePersonalSpace?.id) {
   }
 }
 
-function itemKey(item: Pick<KnowledgeItem, 'itemKind' | 'id'>) {
-  return `${item.itemKind}:${item.id}`
-}
 
 // The same stat row and toolbar as every memory page: confirmation counts on
 // top (each one a filter), discovery source as one segmented control.
@@ -262,25 +280,29 @@ function selectReviewState(value: 'all' | KnowledgeReviewState) {
   activeReviewState.value = value
 }
 
-function openReplacement(item: KnowledgeItem) {
+async function openReplacement(item: KnowledgeItem) {
+  replacing = true
   query.value = ''
   activeQuadrant.value = item.originQuadrant
   activeReviewState.value = 'all'
-  selectedItem.value = item
+  try {
+    await peek.open(item)
+  } finally {
+    replacing = false
+  }
 }
 
 </script>
 
 <template>
-  <section
-    class="view knowledge-organizer"
-  >
+  <section ref="pageElement" class="view knowledge-organizer">
+    <div class="organizer-canvas">
     <UiStatRow :items="reviewStats" :label="t('knowledge.workspace.organizer.reviewFilterAria')"
       @select="key => selectReviewState(key as 'all' | KnowledgeReviewState)" />
     <UiToolbar class="organizer-toolbar">
       <label class="organizer-search">
         <span class="ui-sr-only">{{ t('knowledge.workspace.organizer.filterKnowledge') }}</span>
-        <input v-model="query" type="search" :placeholder="t('knowledge.workspace.organizer.searchPlaceholder')" />
+        <Input v-model="query" type="search" :placeholder="t('knowledge.workspace.organizer.searchPlaceholder')" />
       </label>
       <UiSegmented v-model="activeQuadrant" data-organizer-quadrants :options="quadrantSegments"
         :label="t('knowledge.workspace.organizer.quadrantFilterAria')" />
@@ -294,17 +316,17 @@ function openReplacement(item: KnowledgeItem) {
       </template>
     </UiToolbar>
 
+    <p v-if="linkPending && readFailed && !loading" class="organizer-link-incomplete" role="alert" data-organizer-link-incomplete>
+      {{ t('knowledge.workspace.organizer.linkedItemIncomplete') }}
+      <Button variant="outline" size="sm" @click="load()">{{ t('common.actions.retry') }}</Button>
+    </p>
     <GrowthLoading v-if="loading && graph && !loadingMore && !showInitialLoading" variant="inline" :label="t('common.status.loadingKnowledge')" />
     <GrowthLoading
       v-if="showInitialLoading"
       :label="t('common.status.loadingKnowledge')"
     />
     <div v-else-if="initialLoading" class="view-loading" aria-busy="true" />
-    <div
-      v-else
-      class="organizer-layout"
-      :class="{ 'has-selection': selectedItem }"
-    >
+    <div v-else class="organizer-layout">
       <!-- @vue-generic {import('@/types').KnowledgeItem} -->
       <VirtualDirectoryList
         class="organizer-directory"
@@ -312,7 +334,7 @@ function openReplacement(item: KnowledgeItem) {
         :row-height="ROW_HEIGHT"
         :active-index="selectedItemIndex"
         :reset-key="virtualListResetKey"
-        :item-key="itemKey"
+        :item-key="knowledgeItemKey"
         min-width="var(--organizer-list-min-width)"
         :label="t('knowledge.workspace.organizer.directoryAria')"
       >
@@ -331,7 +353,9 @@ function openReplacement(item: KnowledgeItem) {
             type="button"
             class="organizer-row"
             :class="{ selected: selectedItem?.id === item.id }"
-            @click="selectedItem = item"
+            :data-return-focus="knowledgeItemKey(item)"
+            aria-haspopup="dialog"
+            @click="peek.open(item)"
           >
             <span class="organizer-item-copy">
               <strong>{{ item.title }}</strong>
@@ -344,7 +368,7 @@ function openReplacement(item: KnowledgeItem) {
               {{ reviewStateLabel(item) }}
             </span>
             <span class="organizer-basis">{{ confirmationBasisSummary(item) }}</span>
-            <time>{{ formatTime(latestItemValue(item)) }}</time>
+            <time :title="formatTime(latestItemValue(item))">{{ formatTime(latestItemValue(item), 'minute') }}</time>
           </button>
         </template>
 
@@ -360,16 +384,20 @@ function openReplacement(item: KnowledgeItem) {
           </div>
         </template>
       </VirtualDirectoryList>
-
-      <KnowledgeInspector
-        :item="selectedItem"
-        :graph="graph"
-        editable
-        @confirm="confirmingItem = $event"
-        @edit="editingItem = $event"
-        @open-replacement="openReplacement"
-      />
     </div>
+    </div>
+
+    <KnowledgePeek
+      :item="selectedItem"
+      :suspended="Boolean(editingItem || confirmingItem)"
+      :graph="graph"
+      editable
+      @confirm="confirmingItem = $event"
+      @edit="editingItem = $event"
+      @open-replacement="openReplacement"
+      @close="peek.close()"
+      @close-auto-focus="peek.returnFocus"
+    />
 
     <KnowledgeEditDialog
       :item="editingItem"
@@ -405,17 +433,25 @@ function openReplacement(item: KnowledgeItem) {
 .knowledge-organizer {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 18px 24px 20px;
   overflow: hidden;
+  padding-bottom: 20px;
+  scrollbar-gutter: stable;
+}
+
+/* One centred work canvas (D-03); an item opens in a quick look over it. */
+.organizer-canvas {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-height: 0;
+  max-width: var(--canvas-max);
+  margin-inline: auto;
 }
 
 .organizer-search { flex: 1 1 260px; min-width: 200px; }
-.organizer-search input {
-  width: 100%; height: var(--control-height-sm); padding: 0 12px; border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-control); color: var(--color-ink); background: var(--color-surface); font: inherit; font-size: 13px;
-}
-.organizer-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.organizer-link-incomplete { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0; color: var(--color-ink); font-size: 13px; }
 .organizer-result-summary { color: var(--color-muted); font-size: 12px; white-space: nowrap; }
 
 .organizer-layout {
@@ -427,14 +463,6 @@ function openReplacement(item: KnowledgeItem) {
   border-radius: var(--radius-control);
   overflow: hidden;
   background: var(--color-surface);
-}
-
-.organizer-layout.has-selection {
-  grid-template-columns: minmax(0, 1fr) 340px;
-}
-
-.organizer-layout:not(.has-selection) :deep(.graph-inspector) {
-  display: none;
 }
 
 .organizer-directory {
@@ -477,8 +505,11 @@ function openReplacement(item: KnowledgeItem) {
   background: var(--color-surface);
 }
 
+/* The open row lifts as a card while its quick look is up (never a side bar). */
 .organizer-row.selected {
-  background: var(--color-accent-soft);
+  position: relative;
+  z-index: 1;
+  box-shadow: inset 0 0 0 1px var(--color-border-strong), var(--shadow-md);
 }
 
 .organizer-item-copy {
@@ -601,10 +632,6 @@ function openReplacement(item: KnowledgeItem) {
     flex-basis: 100%;
   }
 
-  .organizer-layout.has-selection {
-    grid-template-columns: minmax(0, 1fr) 280px;
-  }
-
   .organizer-table-head,
   .organizer-row {
     grid-template-columns: minmax(210px, 1fr) 108px 104px;
@@ -622,7 +649,4 @@ function openReplacement(item: KnowledgeItem) {
 
 }
 
-@media (max-width: 720px) {
-  .organizer-layout.has-selection { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 1fr) minmax(160px, .8fr); }
-}
 </style>

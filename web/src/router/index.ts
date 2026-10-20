@@ -30,15 +30,13 @@ export const router = createRouter({
       path: '/preferences',
       name: 'personal-profile',
       component: () => import('@/pages/PersonalProfilePage.vue'),
-      meta: {
-        title: 'routes.preferences.title',
-      },
+      meta: { title: 'routes.preferences.title', layout: 'canvas' },
     },
     {
       path: '/preferences/writing',
       name: 'writing-taste',
       component: () => import('@/pages/WritingTastePage.vue'),
-      meta: { title: 'routes.writingTaste.title' },
+      meta: { title: 'routes.writingTaste.title', layout: 'canvas' },
     },
     {
       path: '/personal/:spaceId/projects/:projectId/:mode/:itemKind/:itemId',
@@ -46,6 +44,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
+        layout: 'canvas',
       },
     },
     {
@@ -54,6 +53,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
+        layout: 'canvas',
         description: 'routes.personalProjects.description',
       },
     },
@@ -63,6 +63,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
+        layout: 'canvas',
         description: 'routes.personalProjects.description',
       },
     },
@@ -72,15 +73,14 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
+        layout: 'canvas',
       },
     },
     {
       path: '/organize',
       name: 'knowledge-organizer',
       component: () => import('@/pages/KnowledgeOrganizerPage.vue'),
-      meta: {
-        title: 'routes.organizer.title',
-      },
+      meta: { title: 'routes.organizer.title', layout: 'canvas' },
     },
     {
       path: '/project-agents',
@@ -113,31 +113,31 @@ export const router = createRouter({
       path: '/knowledge',
       name: 'knowledge-default',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title' },
+      meta: { title: 'routes.knowledge.title', layout: 'canvas' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:projectId/:mode/:itemKind/:itemId',
       name: 'project-knowledge-item',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title' },
+      meta: { title: 'routes.knowledge.title', layout: 'canvas' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:mode/:itemKind/:itemId',
       name: 'knowledge-item',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title' },
+      meta: { title: 'routes.knowledge.title', layout: 'canvas' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:projectId/:mode',
       name: 'project-knowledge',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title' },
+      meta: { title: 'routes.knowledge.title', layout: 'canvas' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:mode',
       name: 'knowledge',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title' },
+      meta: { title: 'routes.knowledge.title', layout: 'canvas' },
     },
     {
       path: '/inbox',

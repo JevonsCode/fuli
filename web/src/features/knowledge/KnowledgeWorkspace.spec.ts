@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -33,6 +33,9 @@ vi.mock('./GraphCanvas.vue', async () => {
 import { useConsoleStore } from '@/stores/console'
 import KnowledgeWorkspace from './KnowledgeWorkspace.vue'
 import { t } from '@/i18n'
+
+// An item's details are a quick look: a dialog rendered at the end of <body>.
+const body = () => new DOMWrapper(document.body)
 
 const purposeId = 'project-profile:project-1:purpose'
 const graph = {
@@ -89,6 +92,39 @@ describe('KnowledgeWorkspace', () => {
     expect(wrapper.find('.knowledge-confirm-dialog').exists()).toBe(false)
     wrapper.unmount()
   })
+  it('opens an item as a quick look over the one canvas and closes it with Back', async () => {
+    const pinia = createPinia(); setActivePinia(pinia)
+    useConsoleStore().state = { mode: 'personal_only', activePersonalSpaceId: 'space-1', personalSpaces: [{ id: 'space-1', name: 'Synthetic' }], personalProjects: [], projects: [], subscriptions: [] }
+    const page = { template: '<div />' }
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/knowledge/:scope/:spaceId/:mode', component: page },
+      { path: '/knowledge/:scope/:spaceId/:mode/:itemKind/:itemId', component: page },
+    ] })
+    await router.push('/knowledge/personal/space-1/directory'); await router.isReady()
+    const wrapper = mount(KnowledgeWorkspace, { global: { plugins: [pinia, router] } })
+    await finishInitialLoading()
+    // No inspector column: the list is the only thing on the canvas.
+    expect(wrapper.find('.knowledge-inspector').exists()).toBe(false)
+
+    await wrapper.get('[data-item-key="entity:knowledge-1"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/knowledge/personal/space-1/directory/entity/knowledge-1')
+    const peek = body().get('[data-knowledge-peek]')
+    expect(peek.get('h2').text()).toBe('知识一')
+    expect(peek.find('.inspector-confirm-action').exists()).toBe(true)
+    expect(wrapper.get('[data-item-key="entity:knowledge-1"]').classes()).toContain('selected')
+
+    const back = vi.spyOn(router, 'back')
+    await peek.get('[aria-label="关闭"]').trigger('click')
+    await flushPromises()
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/knowledge/personal/space-1/directory'))
+    await flushPromises()
+    expect(body().find('[data-knowledge-peek]').exists()).toBe(false)
+    // Opening pushed the item, so closing went Back instead of adding an entry.
+    expect(back).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(0)
@@ -201,7 +237,7 @@ describe('KnowledgeWorkspace', () => {
     expect(wrapper.get('#directory-tab-materials').attributes('aria-selected')).toBe('true')
     expect(wrapper.findAll('.project-material-row')).toHaveLength(3)
 
-    await wrapper.get('.inspector-actions button[data-variant="outline"]').trigger('click')
+    await body().get('.inspector-actions button[data-variant="outline"]').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.params.mode).toBe('graph')
@@ -495,7 +531,7 @@ describe('KnowledgeWorkspace', () => {
     })
     await finishInitialLoading()
 
-    await wrapper.get('.inspector-confirm-action').trigger('click')
+    await body().get('.inspector-confirm-action').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('[data-testid="confirm-dialog-stub"]').attributes('data-project-id'))
@@ -747,7 +783,7 @@ describe('KnowledgeWorkspace', () => {
     })
     await finishInitialLoading()
 
-    await wrapper.get('.inspector-replacement-link').trigger('click')
+    await body().get('.inspector-replacement-link').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.params.itemId).toBe('knowledge-current')

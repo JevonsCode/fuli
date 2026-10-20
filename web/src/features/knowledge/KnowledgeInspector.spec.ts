@@ -10,7 +10,6 @@ describe('KnowledgeInspector', () => {
     const raw = { id: 'same', source: 'a', target: 'b', type: 'PREFERS', fact: 'FACT-SENTINEL', profile_aspect: 'taste', preference_scope: 'global', source_extra: 'UNKNOWN-RAW', evidence: [{ id: 'E-ID', name: 'E-NAME', summary: 'E-SUMMARY', source_description: 'E-DESCRIPTION', source_excerpt: 'E-LONG'.repeat(2000), source_uri: 'javascript:alert(1)', session_id: 'not a legal session!', source_turn_id: 'TURN', personal_project_id: 'P-PROJECT', unknown: 'E-UNKNOWN' }], revisions: [{ id: 'R', reason: 'REV', extra: 'REV-UNKNOWN' }], audit_events: [{ id: 'A', reason: 'AUDIT', extra: 'AUDIT-UNKNOWN' }], assignments: [{ extra: 'ASSIGNMENT' }], project_references: [{ extra: 'PROJECT-REF' }], conflicts: [{ extra: 'CONFLICT' }] }
     const { knowledgeItemFromEdge } = await import('./model')
     const wrapper = mount(KnowledgeInspector, { props: { mode: 'preference', item: knowledgeItemFromEdge(raw as never, new Map()), graph: { nodes: [], edges: [raw as never] }, editable: true } })
-    await wrapper.get('[data-evidence-jump]').trigger('click')
     expect(wrapper.get('[data-raw-record]').text()).toBe(JSON.stringify(raw, null, 2))
     expect(wrapper.findAll('a').some(a => a.attributes('href')?.startsWith('javascript:'))).toBe(false)
     expect(wrapper.find('a.evidence-source-action').exists()).toBe(false)
@@ -38,8 +37,9 @@ describe('KnowledgeInspector', () => {
     expect(wrapper.find('h3').exists()).toBe(false)
     expect(wrapper.get('.preference-summary').text()).toContain('Body sentinel')
     expect(wrapper.find('.inspector-confirm-action').exists()).toBe(true)
-    await wrapper.get('[data-evidence-jump]').trigger('click')
-    expect(wrapper.get('[data-preference-records]').attributes('open')).toBeDefined()
+    // The evidence count is the records disclosure's own title, not a second jump link.
+    expect(wrapper.find('[data-evidence-jump]').exists()).toBe(false)
+    expect(wrapper.get('[data-preference-records] summary').text()).toBe('原始证据与记录（1 条证据）')
     for (const sentinel of ['E-name', 'E-summary', 'E-description', 'E-excerpt', 'E-unknown', 'R-reason', 'R-unknown', 'A-sentinel']) expect(wrapper.get('[data-preference-records]').text()).toContain(sentinel)
     expect(wrapper.get('[data-preference-records] pre[data-raw-record]').text()).toBe(JSON.stringify(node, null, 2))
     expect(wrapper.emitted('confirm')).toBeUndefined()
