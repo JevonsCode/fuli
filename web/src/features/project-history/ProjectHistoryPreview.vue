@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -9,6 +10,9 @@ import { buildHistoryPreview, type HistoryPreview, type ProjectPreview } from '.
 
 const props = defineProps<{ spaceId: string }>()
 
+// The bar under the projects starts a read-only preview; the result opens in a
+// centred dialog, so the projects keep the page and the table gets the width.
+const open = ref(false)
 const preview = ref<HistoryPreview | null>(null)
 const loading = ref(false)
 const failed = ref(false)
@@ -25,9 +29,23 @@ const names = computed(() => new Map((preview.value?.projects ?? [])
 
 watch(() => props.spaceId, () => {
   controller?.abort()
+  open.value = false
   preview.value = null
   failed.value = false
 })
+// Closing stops a read in progress; the last finished preview stays for the next opening.
+function openChange(value: boolean) {
+  open.value = value
+  if (!value && loading.value) {
+    controller?.abort()
+    loading.value = false
+    progress.value = null
+  }
+}
+function start() {
+  open.value = true
+  void generate()
+}
 onBeforeUnmount(() => controller?.abort())
 
 async function generate() {
@@ -74,85 +92,100 @@ function mergeLabel(item: ProjectPreview) {
 
 <template>
   <section class="project-history" aria-labelledby="project-history-heading">
-    <header class="project-history-header">
-      <div>
-        <h3 id="project-history-heading">{{ t('projectHistory.title') }}</h3>
-        <p class="project-history-hint">{{ t('projectHistory.hint') }}</p>
-      </div>
-      <GrowthLoading v-if="loading" variant="inline" :label="loadingLabel" />
-      <Button size="sm" variant="ghost" v-else data-generate @click="generate">
-        {{ preview ? t('projectHistory.regenerate') : t('projectHistory.generate') }}
-      </Button>
-    </header>
-
-    <div v-if="failed" class="project-history-state" role="alert">
-      <p>{{ t('projectHistory.failed') }}</p>
+    <div class="min-w-0">
+      <h2 id="project-history-heading" class="m-0 text-sm font-semibold">{{ t('projectHistory.title') }}</h2>
+      <p class="project-history-hint">{{ t('projectHistory.hint') }}</p>
     </div>
+    <Button size="sm" variant="outline" class="shrink-0" data-generate aria-haspopup="dialog" @click="start">
+      {{ preview ? t('projectHistory.regenerate') : t('projectHistory.generate') }}
+    </Button>
 
-    <template v-if="preview">
-      <p v-if="!preview.projects.length" class="project-history-hint">{{ t('projectHistory.empty') }}</p>
-      <template v-else>
-        <p v-if="preview.complete" class="project-history-summary" data-completeness="complete">
-          {{ t('projectHistory.complete', { count: preview.projects.length }) }}
-        </p>
-        <p v-else class="project-history-summary is-incomplete" data-completeness="incomplete" role="status">
-          {{ t('projectHistory.incomplete', { incomplete: preview.incompleteCount, count: preview.projects.length }) }}
-        </p>
-        <p class="project-history-hint" data-memory-unknown>{{ t('projectHistory.memoryUnknown') }}</p>
-        <div class="project-history-table-wrap">
-          <table class="project-history-table">
-            <thead>
-              <tr>
-                <th scope="col">{{ t('projectHistory.columns.project') }}</th>
-                <th scope="col">{{ t('projectHistory.columns.origin') }}</th>
-                <th scope="col">{{ t('projectHistory.columns.knowledge') }}</th>
-                <th scope="col">{{ t('projectHistory.columns.tasks') }}</th>
-                <th scope="col">{{ t('projectHistory.columns.assignments') }}</th>
-                <th scope="col">{{ t('projectHistory.columns.relations') }}</th>
-                <th scope="col">{{ t('projectHistory.columns.suggestion') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="item in preview.projects"
-                :key="item.evidence.project.project_id"
-                :data-project="item.evidence.project.project_id"
-                :data-suggestion="item.suggestion"
-              >
-                <th scope="row">
-                  <span>{{ item.evidence.project.profile.name }}</span>
-                  <small>{{ item.evidence.project.project_id }}</small>
-                  <small v-if="item.sameNameCount" :title="t('projectHistory.sameNameNote')">
-                    {{ t('projectHistory.sameName', { count: item.sameNameCount }) }} · {{ t('projectHistory.sameNameNote') }}
-                  </small>
-                </th>
-                <td>{{ t(`projectHistory.origin.${item.origin}`) }}</td>
-                <td>{{ countLabel(item.evidence.knowledge) }}</td>
-                <td>{{ countLabel(item.evidence.tasks) }}</td>
-                <td>{{ countLabel(item.evidence.assignments) }}</td>
-                <td>{{ relationLabel(item) }}</td>
-                <td>
-                  <span>{{ t(`projectHistory.suggestion.${item.suggestion}`) }}</span>
-                  <small v-if="item.mergeWith.length">{{ mergeLabel(item) }}</small>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+    <Dialog :open="open" @update:open="openChange">
+      <DialogContent class="max-w-[min(1120px,calc(100%-32px))]" data-project-history-dialog>
+        <DialogHeader>
+          <DialogTitle>{{ t('projectHistory.title') }}</DialogTitle>
+          <DialogDescription>{{ t('projectHistory.hint') }}</DialogDescription>
+        </DialogHeader>
+
+        <GrowthLoading v-if="loading" variant="compact" :label="loadingLabel" />
+        <div v-else-if="failed" class="project-history-state" role="alert">
+          <p class="m-0">{{ t('projectHistory.failed') }}</p>
         </div>
-      </template>
-    </template>
+
+        <template v-if="preview && !loading">
+          <p v-if="!preview.projects.length" class="project-history-hint">{{ t('projectHistory.empty') }}</p>
+          <template v-else>
+            <p v-if="preview.complete" class="project-history-summary" data-completeness="complete">
+              {{ t('projectHistory.complete', { count: preview.projects.length }) }}
+            </p>
+            <p v-else class="project-history-summary is-incomplete" data-completeness="incomplete" role="status">
+              {{ t('projectHistory.incomplete', { incomplete: preview.incompleteCount, count: preview.projects.length }) }}
+            </p>
+            <p class="project-history-hint" data-memory-unknown>{{ t('projectHistory.memoryUnknown') }}</p>
+            <div class="project-history-table-wrap">
+              <table class="project-history-table">
+                <thead>
+                  <tr>
+                    <th scope="col">{{ t('projectHistory.columns.project') }}</th>
+                    <th scope="col">{{ t('projectHistory.columns.origin') }}</th>
+                    <th scope="col">{{ t('projectHistory.columns.knowledge') }}</th>
+                    <th scope="col">{{ t('projectHistory.columns.tasks') }}</th>
+                    <th scope="col">{{ t('projectHistory.columns.assignments') }}</th>
+                    <th scope="col">{{ t('projectHistory.columns.relations') }}</th>
+                    <th scope="col">{{ t('projectHistory.columns.suggestion') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="item in preview.projects"
+                    :key="item.evidence.project.project_id"
+                    :data-project="item.evidence.project.project_id"
+                    :data-suggestion="item.suggestion"
+                  >
+                    <th scope="row">
+                      <span>{{ item.evidence.project.profile.name }}</span>
+                      <small>{{ item.evidence.project.project_id }}</small>
+                      <small v-if="item.sameNameCount" :title="t('projectHistory.sameNameNote')">
+                        {{ t('projectHistory.sameName', { count: item.sameNameCount }) }} · {{ t('projectHistory.sameNameNote') }}
+                      </small>
+                    </th>
+                    <td>{{ t(`projectHistory.origin.${item.origin}`) }}</td>
+                    <td>{{ countLabel(item.evidence.knowledge) }}</td>
+                    <td>{{ countLabel(item.evidence.tasks) }}</td>
+                    <td>{{ countLabel(item.evidence.assignments) }}</td>
+                    <td>{{ relationLabel(item) }}</td>
+                    <td>
+                      <span>{{ t(`projectHistory.suggestion.${item.suggestion}`) }}</span>
+                      <small v-if="item.mergeWith.length">{{ mergeLabel(item) }}</small>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+        </template>
+
+        <DialogFooter v-if="!loading && (preview || failed)" class="flex justify-end border-t pt-4">
+          <Button size="sm" variant="outline" data-regenerate @click="generate">{{ t('projectHistory.regenerate') }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </section>
 </template>
 
 <style scoped>
-.project-history { display: grid; gap: 12px; margin-top: 24px; padding: 16px; border: 1px solid var(--color-border); border-radius: 12px; }
-.project-history-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.project-history-header h3 { margin: 0; }
-.project-history-hint, .project-history-summary { margin: 4px 0 0; color: var(--color-muted); line-height: 1.6; }
-.project-history-summary.is-incomplete { color: var(--color-warning, var(--color-text)); font-weight: 600; }
-.project-history-state { color: var(--color-danger, var(--color-text)); }
+/* A slim bar under the projects, on the page gutter; the preview itself is a dialog. */
+.project-history {
+  display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px;
+  /* The right padding keeps the button clear of the floating design-lab launcher in the bottom-right corner. */
+  margin: 0 var(--page-gutter) 12px; padding: 10px 72px 10px 16px; border: 1px solid var(--color-border);
+  border-radius: var(--radius-card); background: var(--color-surface);
+}
+.project-history-hint, .project-history-summary { margin: 2px 0 0; color: var(--color-muted); font-size: 13px; line-height: 1.6; }
+.project-history-summary.is-incomplete { color: var(--color-warning); font-weight: 600; }
+.project-history-state { color: var(--color-danger); }
 .project-history-table-wrap { overflow-x: auto; }
-.project-history-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.project-history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .project-history-table th, .project-history-table td { padding: 8px; border-top: 1px solid var(--color-border); text-align: left; vertical-align: top; }
 .project-history-table small { display: block; color: var(--color-muted); overflow-wrap: anywhere; }
 </style>

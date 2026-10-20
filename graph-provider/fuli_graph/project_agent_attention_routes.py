@@ -1,6 +1,6 @@
 from typing import Annotated, Any
 
-from fastapi import Query
+from fastapi import Path, Query
 
 from .project_agent_attention_models import (
     AgentAttentionCreate, AgentAttentionDecision, AgentAttentionList,
@@ -26,6 +26,14 @@ def register_project_agent_attention_routes(application, store, Actor: Any):
         return await store.list_agent_attention(
             actor, personal_space_id, personal_project_id, agent_id, status, limit, offset,
         )
+
+    @application.get('/v1/agent-attention/{request_id}', response_model=AgentAttentionRecord)
+    async def get_request(
+        actor: Actor,
+        request_id: Annotated[str, Path(min_length=1, max_length=128)],
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+    ):
+        return await store.get_agent_attention(actor, personal_space_id, request_id)
 
     @application.post('/v1/agent-attention/cancel', response_model=AgentAttentionRecord)
     async def cancel(request: AgentAttentionDecision, actor: Actor):

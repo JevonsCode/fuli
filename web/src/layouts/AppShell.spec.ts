@@ -181,6 +181,17 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
+  it('refreshes the waiting requests from the top bar, so the inbox needs no refresh of its own', async () => {
+    const { wrapper, store } = await setup('/')
+    const refresh = vi.spyOn(store, 'refresh').mockResolvedValue(undefined as never)
+    const attentionReads = () => vi.mocked(getJson).mock.calls.filter(([url]) => String(url).startsWith('/api/agent-attention?')).length
+    const before = attentionReads()
+    await wrapper.get('[data-shell-refresh]').trigger('click'); await flushPromises()
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(attentionReads()).toBeGreaterThan(before)
+    wrapper.unmount()
+  })
+
   it('keeps the floating design lab off pages with a sticky save bar', async () => {
     const { wrapper, router } = await setup('/settings', {}, [
       { path: '/settings', component: { template: '<div />' }, meta: { title: '设置', layout: 'form', saveBar: true } },

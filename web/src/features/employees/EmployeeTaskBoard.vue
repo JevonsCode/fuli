@@ -315,7 +315,8 @@ onBeforeUnmount(() => {
   <section class="employee-all-projects" aria-labelledby="employee-all-projects-title">
     <header class="employee-all-projects-header">
       <div class="employee-all-projects-heading">
-        <h2 id="employee-all-projects-title">{{ t('employees.allProjects.title') }}</h2>
+        <!-- A shared read-only report is named by its own page title; the board keeps its name for assistive technology only. -->
+        <h2 id="employee-all-projects-title" :class="{ 'sr-only': readOnly }">{{ t('employees.allProjects.title') }}</h2>
       </div>
       <div class="employee-all-projects-controls">
         <Button v-if="canMoveTasks" class="employee-board-create" @click="emit('create-task')">+ {{ t('employees.task.create') }}</Button>

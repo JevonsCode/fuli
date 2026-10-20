@@ -17,6 +17,9 @@ describe('public report', () => {
     await flushPromises()
     expect(getJson).toHaveBeenCalledExactlyOnceWith(`/employee-workspaces/jefa/${encodeURIComponent(id)}/api/public/share-00000000-0000-0000-0000-000000000001`)
     expect(wrapper.text()).toContain('Visible report')
+    // One visible title: the page names the report; the board's own name stays for assistive technology.
+    expect(wrapper.findAll('h1').map(heading => heading.text())).toEqual(['对外报告'])
+    expect(wrapper.get('#employee-all-projects-title').classes()).toContain('sr-only')
   })
 
   it('distinguishes a valid empty report from failed projects without loading private data', async () => {
