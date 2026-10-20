@@ -256,7 +256,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'capture_session_knowledge',
     'record_workflow_transition_observation', 'record_decision_trace',
     'search_knowledge_graph', 'search_connected_knowledge',
-    'record_knowledge_usage', 'record_knowledge_feedback',
+    'record_knowledge_usage', 'resolve_knowledge_tags', 'change_knowledge_tags', 'record_knowledge_feedback',
     'search_current_project_knowledge',
     'discover_common_knowledge_candidates',
     'discover_personal_global_preference_candidates',

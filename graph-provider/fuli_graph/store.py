@@ -7,6 +7,7 @@ from .store_conversation_triage import StoreConversationTriage
 from .store_agent_loans import StoreAgentLoans
 from .store_agent_verification import StoreAgentVerification
 from .store_knowledge import StoreKnowledge
+from .store_knowledge_tags import StoreKnowledgeTags
 from .store_project_agent_executors import StoreProjectAgentExecutors
 from .store_project_agent_score_card import StoreProjectAgentScoreCard
 from .store_project_agent_memory import StoreProjectAgentMemory
@@ -49,6 +50,7 @@ class GraphStore(
     StoreProjectAgentTasks,
     StorePublication,
     StoreKnowledge,
+    StoreKnowledgeTags,
     StoreRecords,
 ):
     def __init__(self, runtime: GraphitiRuntime, settings: Settings):

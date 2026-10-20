@@ -63,6 +63,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Web return to a collection | `web/src/composables/useScrollRestoration.ts`, `web/src/composables/useFocusReturn.ts` | Cards and rows carry `data-return-focus="<id>"`. |
 | Task status as a badge tone | `web/src/features/project-agents/task-labels.ts` (`taskStatusTone`) | |
 | Roundtable (agent-to-agent asks, chat, wake, LAN peers) | `packages/roundtable/` (`fuli-roundtable`) | Reaches its host only through `src/host.js`; FULI's host is `src/graphiti/roundtable-host.js`. Agent-specific wake adapters live in `packages/roundtable/src/agents/<agent>/`. |
+| Identity of names people type (tags; NFKC, line-break and space collapse, lowercase, idempotent) | `graph-provider/fuli_graph/name_identity.py` (`identity_key`, `display_name`) | Never strips punctuation, accents, ZWJ or non-BMP characters. Existing stored keys (`topic_key`, project names) keep their own rule until migrated. |
 | Python shared values | `provider_values.py` (`json_object`, `sha256_text`), `model_validation.py` (`unique_text_list`), `models.py` (`stored_confirmation_basis`), `auth.py` (`token_hash`) | Do not redefine a private `_helper` that one of these already provides. |
 
 Python follows the same rule: a private `_helper` copied into a second module is a signal to promote it

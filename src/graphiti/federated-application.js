@@ -99,6 +99,7 @@ import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-projec
 import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
+import { knowledgeTags } from './knowledge-tags.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -607,6 +608,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       body.replacement_item_kind = input.replacementItemKind;
     }
     return this.personal.reviseKnowledgeItem(input.itemId, body);
+  }
+
+  async knowledgeTags(operation, input) {
+    this.#assertActivePersonalSpace(input.personalSpaceId);
+    return knowledgeTags(this, operation, input);
   }
 
   async listPreferenceConflicts({
