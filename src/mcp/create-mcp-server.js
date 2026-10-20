@@ -55,6 +55,7 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   recruit_employee: 64 * 1024,
   list_employee_tools: 64 * 1024,
   call_employee_tool: 64 * 1024,
+  list_agent_apps: 32 * 1024,
   begin_task_context: 128 * 1024,
   checkpoint_task_knowledge: 16 * 1024,
   get_collaboration_preferences: 128 * 1024,
@@ -376,7 +377,7 @@ async function invokeTool(tool, input, requestContext = null) {
       return employeeToolCatalogResult(value, { limitBytes });
     }
     const itemLimit = ({ list_agent_interfaces: 200, list_project_agent_tasks: 200,
-      list_preference_conflicts: 1000, list_external_knowledge_bindings: 200,
+      list_preference_conflicts: 1000, list_external_knowledge_bindings: 200, list_agent_apps: 200,
       get_collaboration_preferences: 1000 })[tool.definition.name];
     const result = successToolResult(value, { limitBytes, itemLimit, preserveHumanInteraction });
     if (COMPLETE_RESULT_TOOLS.has(tool.definition.name) && result.structuredContent.truncated) {
