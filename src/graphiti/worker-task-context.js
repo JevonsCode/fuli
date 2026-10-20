@@ -133,7 +133,7 @@ export function createWorkerTaskContext(application, descriptor) {
   }
   // View records stop with automatic recording, as for every other entry (rec#11 D-01).
   async function recordAgentViews(items, toolName, task) {
-    if (!captureDecision(application, taskCaptureScope(task)).allowed) return;
+    if (!(await captureDecision(application, taskCaptureScope(task))).allowed) return;
     const values = [...new Map(items.map(item => [`${item.item_kind}:${item.item_id}`, item])).values()];
     for (let index = 0; index < values.length; index += 200) {
       await application.personal.recordAgentViews({ personal_space_id: scope.personal_space_id,

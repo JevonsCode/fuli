@@ -10,6 +10,8 @@ import { projectAgentRecord } from './project-agent-mapping.js';
 import { PROJECT_AGENT_CONTINUITY_GUIDANCE, projectAgentRoleContext, projectAgentRoleTextOverflows } from './project-agent-task-entry.js';
 import { loadProjectTeamContext } from './project-agent-team-context.js';
 import { applyAgentAssignment } from './task-agent-assignment.js';
+import { captureDecision, taskCaptureScope } from './capture-decision.js';
+import { receiptNotices } from './capture-notice.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { createTaskPreferencePager } from './task-preference-pages.js';
 
@@ -90,7 +92,8 @@ export async function readTaskPreferences(application, {
     task_guidance: taskKnowledgeGuidance(),
     ...(judgment ? { judgment_context: judgment } : {}),
     agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
-      agentId: task.projectAgentId, name: rawAgent.profile?.name ?? null, sourceApplication: task.sourceApplication }),
+      agentId: task.projectAgentId, name: rawAgent.profile?.name ?? null, sourceApplication: task.sourceApplication,
+      notices: receiptNotices(await captureDecision(application, taskCaptureScope(task))) }),
     preference_delivery: { status: 'complete' }, preferences_complete: true,
     same_task_recovery_available: true, truncated: false
   };

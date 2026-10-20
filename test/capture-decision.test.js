@@ -116,7 +116,9 @@ async function everyWritePath(f) {
 async function assertLedgerHoldsNoContent(f) {
   for (const name of await readdir(join(f.directory, 'transcript-capture'))) {
     const ledger = JSON.parse(await readFile(join(f.directory, 'transcript-capture', name), 'utf8'));
-    assert.deepEqual(Object.keys(ledger), ['version', 'settings']);
+    // A pending denial is kept as its reason code only.
+    assert.deepEqual(Object.keys(ledger).filter(key => key !== 'pending'), ['version', 'settings']);
+    if ('pending' in ledger) assert.match(ledger.pending, /^[a-z_]+$/);
     assert.equal(JSON.stringify(ledger).includes(PRIVATE), false);
   }
 }
@@ -183,22 +185,22 @@ test('an unreadable capture policy records nothing and still serves reads', asyn
   assert.ok(Array.isArray(search.facts));
 });
 
-test('a missing policy reader is a decision, never permission to write', () => {
-  assert.deepEqual(captureDecision({}, { sourceApplication: 'codex' }),
+test('a missing policy reader is a decision, never permission to write', async () => {
+  assert.deepEqual(await captureDecision({}, { sourceApplication: 'codex' }),
     { allowed: false, reason: 'policy_unavailable', layer: 'policy' });
   for (const policy of [null, { enabled: 'yes' }, { enabled: true, disabledSources: 'codex' }]) {
-    assert.equal(captureDecision({ getCapturePolicy: () => policy }, {}).reason, 'policy_unavailable');
+    assert.equal((await captureDecision({ getCapturePolicy: () => policy }, {})).reason, 'policy_unavailable');
   }
 });
 
 test('an older adapter that names only its client still gets that client decision', async (t) => {
   const f = await fixture(t, policyFile({ enabled: true, disabledSources: ['codex', 'other'] }));
-  assert.deepEqual(captureDecision(f.app, { sourceApplication: 'codex' }),
+  assert.deepEqual(await captureDecision(f.app, { sourceApplication: 'codex' }),
     { allowed: false, reason: 'client_off', layer: 'client' });
-  assert.deepEqual(captureDecision(f.app, { sourceApplication: 'claude_code' }),
+  assert.deepEqual(await captureDecision(f.app, { sourceApplication: 'claude_code' }),
     { allowed: true, reason: null, layer: null });
   // A write that names no client is an unknown client, as at every other FULI boundary.
-  assert.equal(captureDecision(f.app, {}).reason, 'client_off');
+  assert.equal((await captureDecision(f.app, {})).reason, 'client_off');
 
   assert.equal((await callAgentTool(f.app, 'capture_session_knowledge', knowledgeEpisode('codex'))).reason, 'client_off');
   assert.deepEqual(f.writes(), []);

@@ -8,7 +8,7 @@ import { captureDecision, taskCaptureScope } from './capture-decision.js';
 // period did not, and a retry resends exactly the claim already stored.
 const UNCAPTURED = /^Capture was off for this task \((\w+): (\w+)\); FULI kept no summary\.$/;
 
-export function checkpointCaptureDecision(application, task) {
+export async function checkpointCaptureDecision(application, task) {
   const stored = UNCAPTURED.exec(task.checkpoint?.reason ?? '');
   return stored ? { allowed: false, reason: stored[2], layer: stored[1] }
     : captureDecision(application, taskCaptureScope(task));

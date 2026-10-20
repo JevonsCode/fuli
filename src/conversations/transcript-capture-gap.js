@@ -1,7 +1,7 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { captureDisabled } from '../graphiti/capture-decision.js';
+import { advanceCaptureSettingsVersion, captureDisabled } from '../graphiti/capture-decision.js';
 import { writeJsonFileAtomic } from '../storage/json-file.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { transcriptDigest } from './transcript-guard.js';
@@ -16,13 +16,24 @@ import { verifiedTranscriptEnd } from './transcript-reader.js';
 // imported. Project modes and session pause reuse this through the decision
 // (they deny) and the settings version (they change it).
 export const UNATTRIBUTABLE = 'capture_changed';
+// A denial could not be kept in the session's record and the settings
+// generation moved instead; or nothing local could be written at all.
+const STATE_UNSAVED = 'capture_state_unsaved';
+const STATE_UNWRITABLE = 'capture_state_unwritable';
+
+// Sessions whose denial this process could not keep, with the settings
+// version it was made under. While that version holds, every sync of the
+// session skips. A newer version already makes the old record stale, and a
+// denial or sync record that is saved again ends it.
+const unkeptDenials = new Map();
 
 // A denial says recording was off; a settings change only says FULI could
 // not confirm the stretch was allowed. Neither names any skipped content.
 export function notRecordedEvent(from, to, reason) {
   const why = reason === UNATTRIBUTABLE
     ? 'capture settings changed, so this stretch could not be confirmed as allowed and was skipped'
-    : `automatic recording was off (${reason})`;
+    : reason === STATE_UNSAVED ? 'the capture state could not be saved safely, so this stretch was skipped'
+      : `automatic recording was off (${reason})`;
   return { event_id: `jsonl-v1:${from}:${to}:not_recorded`, role: 'tool', kind: 'tool_result',
     content: `[Not recorded: ${why}; native bytes ${from} to ${to} remain in native history.]` };
 }
@@ -50,25 +61,72 @@ export async function skipTranscriptWhileOff(application, input, sourceApplicati
   }
 }
 
-// The settings generation this host session was last synchronized under. A
-// session without one is unattributable unless no settings were ever saved.
-// The generation is global for now (any client's switch moves it); see
-// the capture settings store's version() for the planned per-layer generations.
+// What this host session's transcript was last handled under, kept locally:
+// the settings generation of its last sync, and a denial no recorded sync has
+// skipped yet. A session without a record is unattributable unless no settings
+// were ever saved. The generation is global for now (any client's switch moves
+// it); see the capture settings store's version() for the planned per-layer
+// generations.
 export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplication) {
   const path = join(dirname(runtimeConfigPath), 'transcript-capture',
     `${transcriptDigest(`${runtimeConfigPath}\0${sourceApplication}\0${input.session_id}`)}.json`);
+  const stored = async () => {
+    try { return JSON.parse(await readFile(path, 'utf8')); }
+    catch { return null; }
+  };
   return {
-    async unattributable(version) {
-      if (version === null) return true;
-      let stored = null;
-      try { stored = JSON.parse(await readFile(path, 'utf8')).settings ?? null; }
-      catch { /* missing or unreadable: compare against no record */ }
-      return stored === null ? version !== 'absent' : stored !== version;
+    // Why the next stretch must be skipped instead of imported, or null. A
+    // pending denial comes first: the Provider may have been unable to take
+    // its marker while the settings never changed (dot's #228 review).
+    async skipReason(version) {
+      if (version === null) return UNATTRIBUTABLE;
+      if (unkeptDenials.get(path) === version) return STATE_UNSAVED;
+      const record = await stored();
+      if (typeof record?.pending === 'string') return record.pending;
+      const settings = record?.settings ?? null;
+      return (settings === null ? version !== 'absent' : settings !== version) ? UNATTRIBUTABLE : null;
     },
+    // Kept before anything else when a decision denies: 'kept'. If it cannot
+    // be kept the record is removed, since a denial means settings were saved
+    // and a session with no record is skipped, never imported: 'removed'. If
+    // the old record cannot be removed either it stays readable, so it must
+    // not be trusted again in this process: 'unkept' (see keepDenial()).
+    async deny(version, reason) {
+      const pending = (await stored())?.pending;
+      try {
+        writeJsonFileAtomic(path, { version: 1, settings: version,
+          pending: typeof pending === 'string' ? pending : reason });
+        unkeptDenials.delete(path);
+        return 'kept';
+      } catch { /* try removing the old record */ }
+      try {
+        await rm(path, { force: true });
+        unkeptDenials.delete(path);
+        return 'removed';
+      } catch {
+        unkeptDenials.set(path, version);
+        return 'unkept';
+      }
+    },
+    // After a sync that covered the stretch, by importing it or by a marker
+    // the Provider saved. This clears a pending denial.
     record(version) {
       if (version === null) return;
-      try { writeJsonFileAtomic(path, { version: 1, settings: version }); }
-      catch { /* the next sync stays unattributable, which only skips more */ }
+      try {
+        writeJsonFileAtomic(path, { version: 1, settings: version });
+        unkeptDenials.delete(path);
+      } catch { /* the next sync stays unattributable, which only skips more */ }
     }
   };
+}
+
+// Keeps a denial for the session's later syncs. Returns null when that is
+// safe, or the transcript state a hook must report. A denial the session's
+// record could not keep moves the settings generation, a second channel in
+// another file, so the old record is stale for every process. If that cannot
+// be saved either, only this process knows: a new process could trust the
+// old record, so the hook says so and the person has to check by hand.
+export async function keepDenial(application, ledger, version, reason) {
+  if (!ledger || await ledger.deny(version, reason) !== 'unkept') return null;
+  return advanceCaptureSettingsVersion(application) ? STATE_UNSAVED : STATE_UNWRITABLE;
 }

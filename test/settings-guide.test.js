@@ -14,7 +14,8 @@ const guide = () => describeSettings({
 test('settings guide gives current values, effects and a filtered settings link', () => {
   const { settings, guidance } = guide();
   const byKey = Object.fromEntries(settings.map((entry) => [entry.key, entry]));
-  assert.deepEqual(byKey.capture.value, { enabled: false, disabledSources: ['cursor'] });
+  assert.deepEqual(byKey.capture.value, { enabled: false, disabledSources: ['cursor'], projectMode: 'all',
+    excludedProjectIds: [], selectedProjectIds: [], unregisteredDirectories: 'capture' });
   assert.equal(byKey.lanAccess.value, true);
   assert.equal(byKey.lanAccess.restart, true);
   assert.equal(byKey.ports.settingsUrl, 'http://127.0.0.1:2727/settings?setting=ports');
@@ -32,4 +33,14 @@ test('explain_settings reads through the app and is unavailable without a local 
   const explained = await callAgentTool({ explainSettings: () => guide() }, 'explain_settings', {});
   assert.equal(explained.settings[0].key, 'capture');
   assert.throws(() => callAgentTool({}, 'explain_settings', {}), /local installation/);
+});
+
+test('the capture setting explains which projects are recorded (rec#5 C2)', () => {
+  const { settings } = describeSettings({ settings: DEFAULT_RUNTIME_SETTINGS, consoleUrl: 'http://127.0.0.1:2727',
+    capturePolicy: { enabled: true, disabledSources: [], projectMode: 'selected', selectedProjectIds: ['thesis'],
+      excludedProjectIds: [], unregisteredDirectories: 'skip' } });
+  const capture = settings.find(entry => entry.key === 'capture');
+  assert.deepEqual([capture.value.projectMode, capture.value.selectedProjectIds, capture.value.unregisteredDirectories],
+    ['selected', ['thesis'], 'skip']);
+  assert.match(capture.effect, /selectedProjectIds/);
 });
