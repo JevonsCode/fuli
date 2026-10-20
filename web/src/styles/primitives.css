@@ -67,8 +67,7 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(2px);
 .ui-segmented-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; vertical-align: -1px; }
 .ui-segmented small { margin-left: 4px; color: var(--color-faint); font-variant-numeric: tabular-nums; }
 
-/* Page rhythm shared by list pages: stat row, one-line lede, toolbar, list. */
-.view.page-stack { display: flex; flex-direction: column; gap: 14px; }
+/* Page rhythm shared by list pages: one-line lede, list titles. */
 .page-lede { margin: -4px 0 0; color: var(--color-muted); font-size: 13px; line-height: 1.6; }
 .list-title { display: inline-flex; align-items: baseline; gap: 8px; margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 650; }
 .list-title span { color: var(--color-faint); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }

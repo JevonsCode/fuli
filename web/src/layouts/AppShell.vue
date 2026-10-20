@@ -38,7 +38,6 @@ const recordTitle = computed(() => pageTitle.value.path === route.path ? pageTit
 const title = computed(() => recordTitle.value || (destination.value && destination.value.sections.length > 1 && section.value && !route.meta.detail
   ? t(`shell.destinations.${destination.value.key}`)
   : routeMetaText(route.meta.title, 'routes.overview.title')))
-const dedicatedWorkspace = computed(() => route.meta.dedicatedWorkspace === true)
 // Rebuilt pages share one centred work canvas (or the narrower form column);
 // the top bar lines its title up with that column.
 const layout = computed(() => route.meta.layout)
@@ -87,7 +86,7 @@ watchEffect(() => {
     <NavRail :destinations="destinations" :active-key="destination?.key" :attention-count="attention.total"
       :runtime-ready="store.runtimeStatus === 'ready'" :space-id="activeSpaceId" />
     <main class="app-main" :data-layout="layout">
-      <header v-if="!dedicatedWorkspace" class="app-topbar">
+      <header class="app-topbar">
         <div class="app-topbar-inner">
           <h1 class="app-title">{{ title }}</h1>
           <SectionTabs :sections="sectionTabs" :active-key="section?.key" />

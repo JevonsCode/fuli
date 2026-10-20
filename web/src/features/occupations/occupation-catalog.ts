@@ -75,6 +75,8 @@ export function useOccupationCatalog(spaceId: Ref<string>) {
   const path = (key: string) => `/api/occupations/${encodeURIComponent(key)}`
   return {
     entries: computed(() => (loadedSpace.value === spaceId.value ? entries.value : [])),
+    /** True once this space's whole catalog has been read; a failed or pending read is not a complete answer. */
+    loaded: computed(() => Boolean(spaceId.value) && loadedSpace.value === spaceId.value),
     active: computed(() => (loadedSpace.value === spaceId.value ? entries.value.filter(entry => entry.status === 'active') : [])),
     loading,
     error,

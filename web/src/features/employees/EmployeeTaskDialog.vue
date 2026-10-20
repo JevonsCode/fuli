@@ -8,9 +8,10 @@ import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import { employeeErrorMessage } from './catalog'
 import type { EmployeeBoardItem } from './EmployeeTaskBoard.vue'
+import { boardTaskPeekId, type BoardTaskRef } from './board-task-peek'
 
 type Task = EmployeeBoardItem & { acceptanceCriteria?: string[] }
-const props = defineProps<{ open: boolean; item: EmployeeBoardItem | null; projects: { id: string; name: string }[]; defaultProjectId?: string; personalSpaceId: string; canWrite: boolean }>()
+const props = defineProps<{ open: boolean; item: BoardTaskRef | null; projects: { id: string; name: string }[]; defaultProjectId?: string; personalSpaceId: string; canWrite: boolean }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 const busy = ref(false)
 const loading = ref(false)
@@ -27,7 +28,8 @@ let request = { signature: '', id: '' }
 const valid = computed(() => props.canWrite && !loading.value && !error.value && Boolean(project.value) && title.value.trim().length >= 2)
 const projectOptions = computed(() => props.projects.map(option => ({ value: option.id, label: option.name })))
 const priorityOptions = computed(() => ['critical', 'high', 'medium', 'low'].map(value => ({ value, label: t(`employees.task.priorities.${value}`) })))
-watch([() => props.open, () => props.item, () => props.personalSpaceId], () => { void load() }, { immediate: true })
+// The task is named by identity, so a new object for the same task does not reload over the person's edits.
+watch([() => props.open, () => props.item && boardTaskPeekId(props.item), () => props.personalSpaceId], () => { void load() }, { immediate: true })
 async function call<T>(tool: string, args: Record<string, unknown>) {
   return postJson<T>('/api/employee-templates/jefa/call', { personalSpaceId: props.personalSpaceId, personalProjectId: project.value, tool, arguments: args })
 }

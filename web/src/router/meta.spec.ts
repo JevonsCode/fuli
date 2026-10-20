@@ -44,8 +44,20 @@ describe('localized route metadata', () => {
     expect(router.resolve('/project-agents/manage').meta.detail).toBeUndefined()
     expect(router.resolve('/project-agents').meta.detail).toBeUndefined()
     expect(router.resolve('/settings').meta.saveBar).toBe(true)
-    // Pages not rebuilt yet keep their own layout.
-    expect(router.resolve('/project-agents/occupations').meta.layout).toBeUndefined()
+  })
+
+  it('puts 职业 and the specialist Agent workbench on the work canvas; the workbench is a detail page under the shell H1', () => {
+    expect(router.resolve('/project-agents/occupations').meta.layout).toBe('canvas')
+    expect(router.resolve('/project-agents/occupations').meta.detail).toBeUndefined()
+    const workbench = router.resolve('/employees/jefa')
+    expect(workbench.name).toBe('employee-workbench')
+    expect(workbench.meta.layout).toBe('canvas')
+    expect(workbench.meta.detail).toBe(true)
+  })
+
+  it('leaves only the shared report and the conversations without a D-03 layout', () => {
+    expect(router.getRoutes().filter(route => !route.redirect && !route.meta.layout).map(route => route.path).sort())
+      .toEqual(['/reports/jefa', '/roundtables/:threadId?', '/roundtables/chat/:chatId'])
   })
 
   it('puts the inbox, connections, projects, about and not-found pages on the D-03 layouts', () => {
@@ -98,7 +110,6 @@ describe('localized route metadata', () => {
   it('localizes the employee workbench title in both supported languages', () => {
     const route = router.resolve('/employees/jefa')
     expect(routeMetaText(route.meta.title)).toBe('专属 Agent')
-    expect(route.meta.dedicatedWorkspace).toBe(true)
     setLocale('en-US', { persist: false })
     expect(routeMetaText(route.meta.title)).toBe('Specialist Agents')
   })

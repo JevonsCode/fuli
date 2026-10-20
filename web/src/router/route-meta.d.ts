@@ -13,7 +13,6 @@ declare module 'vue-router' {
     detail?: boolean
     /** The page keeps a sticky save bar at the bottom; floating tools stay off it. */
     saveBar?: boolean
-    dedicatedWorkspace?: boolean
     publicReport?: boolean
   }
 }

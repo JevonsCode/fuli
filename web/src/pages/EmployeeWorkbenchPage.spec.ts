@@ -16,6 +16,7 @@ import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
 import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
 import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedConversationsPanel.vue'
 import { projectBoardFilterKey } from '@/features/employees/project-board-filter'
+import { pageTitle } from '@/layouts/page-title'
 
 const mounted: Array<{ unmount: () => void }> = []
 function defaultConsoleState(): ConsoleState {
@@ -170,7 +171,10 @@ describe('employee workbench', () => {
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.getComponent(EmployeeTaskBoard).props('visibleProjectIds')).toEqual(['project-a'])
     expect(wrapper.vm.$route.query.project).toBe('project-a')
-    expect(wrapper.get('h1').text()).toBe('Jefa 项目经理')
+    // The name is the shell's one H1; the page adds only the role.
+    expect(pageTitle.value.text).toBe('Jefa')
+    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(wrapper.get('[data-employee-role]').text()).toBe('项目经理')
     expect(wrapper.text()).not.toContain('员工工作台')
     expect(postJson.mock.calls.some(([, body]) => body.tool === 'read_board' && body.personalProjectId === 'project-a')).toBe(true)
   })
@@ -438,7 +442,7 @@ describe('employee workbench', () => {
     const wrapper = await setup('/employees/unknown')
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.text()).toContain('这位专属 Agent 暂不可用')
-    expect(wrapper.get('.employee-workbench-state a').attributes('href')).toBe('/project-agents')
+    expect(wrapper.get('.employee-workbench-back').attributes('href')).toBe('/project-agents')
   })
 
   it('opens Bole as a native people panel without requiring a project or runtime iframe', async () => {
@@ -494,7 +498,8 @@ describe('employee workbench', () => {
 
     const wrapper = await setup('/employees/tonborg?project=project-a')
 
-    expect(wrapper.get('h1').text()).toContain('决策员')
+    expect(pageTitle.value.text).toBe('Tonborg')
+    expect(wrapper.get('[data-employee-role]').text()).toBe('决策员')
     expect(wrapper.get('.employee-workbench-mark img').attributes('src')).toContain('tonborg-avatar.webp')
     expect(wrapper.findComponent(JudgmentWorkbench).props('personalSpaceId')).toBe('space-a')
     expect(wrapper.find('iframe').exists()).toBe(false)
@@ -781,4 +786,50 @@ describe('Jefa bounded progressive reads', () => {
     expect(wrapper.text()).not.toContain('撤权后晚到私密正文')
   })
 
+  it('opens a board task as a quick look in the URL, and Back closes it without reading the board again', async () => {
+    twoProjects()
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string; tool: string; arguments?: { workItemId?: string } }) => body.tool === 'get_task'
+      ? { item: { id: body.arguments?.workItemId, projectId: body.personalProjectId, title: '已打开的任务', summary: '详情正文', status: 'planned', updatedAt: '2026-10-18T17:00:00Z' } }
+      : { items: [{ id: `t-${body.personalProjectId}`, projectId: body.personalProjectId, title: `任务 ${body.personalProjectId}`, status: 'planned' }], total: 1, truncated: false })
+    const wrapper = await setup('/employees/jefa')
+    const boardReads = () => postJson.mock.calls.filter(([, body]) => body.tool === 'read_board').length
+    const reads = boardReads()
+    await wrapper.get('[aria-label="在 项目 B 中查看任务：任务 project-b"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.$route.query.item).toBe('space-a/project-b%3At-project-b')
+    expect(wrapper.getComponent(EmployeeTaskDialog).props('item')).toEqual({ projectId: 'project-b', id: 't-project-b' })
+    // The open task lifts as a card on the board.
+    expect(wrapper.get('[data-board-task="project-b:t-project-b"]').classes()).toContain('is-selected')
+    wrapper.vm.$router.back()
+    await flushPromises()
+    expect(wrapper.vm.$route.query.item).toBeUndefined()
+    expect(wrapper.getComponent(EmployeeTaskDialog).props('open')).toBe(false)
+    expect(boardReads()).toBe(reads)
+  })
+
+  it('reads a shared task link by its exact project and id, even when the board does not list it', async () => {
+    twoProjects()
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string; tool: string; arguments?: { workItemId?: string } }) => body.tool === 'get_task'
+      ? { item: { id: body.arguments?.workItemId, projectId: body.personalProjectId, title: '不在第一页的任务', summary: '按身份读取', status: 'done', updatedAt: '2026-10-18T17:00:00Z' } }
+      : { items: [], total: 0, truncated: false })
+    const wrapper = await setup('/employees/jefa?item=space-a%2Fproject-b%253Aold-task')
+    const dialog = wrapper.getComponent(EmployeeTaskDialog)
+    expect(dialog.props('open')).toBe(true)
+    expect(postJson).toHaveBeenCalledWith('/api/employee-templates/jefa/call', {
+      personalSpaceId: 'space-a', personalProjectId: 'project-b', tool: 'get_task', arguments: { workItemId: 'old-task' },
+    })
+    expect(dialog.get('textarea').element).toHaveProperty('value', '按身份读取')
+  })
+
+  it('keeps a shared task link open when the catalog read fails for a reason other than access', async () => {
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?')) throw new ApiError('down', 503)
+      return original(url)
+    })
+    postJson.mockResolvedValue({ item: { id: 'a1', projectId: 'project-a', title: '任务', summary: '仍可读取', status: 'planned', updatedAt: '2026-10-18T17:00:00Z' } })
+    const wrapper = await setup('/employees/jefa?item=space-a%2Fproject-a%253Aa1')
+    expect(wrapper.getComponent(EmployeeTaskDialog).props('open')).toBe(true)
+    expect(wrapper.vm.$route.query.item).toBe('space-a/project-a%3Aa1')
+  })
 })

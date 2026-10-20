@@ -5,6 +5,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import ProjectScopePicker from './ProjectScopePicker.vue'
+import { boardTaskPeekId, type BoardTaskRef } from './board-task-peek'
 
 import type { EmployeeBoardItem, EmployeeBoardStatus, EmployeeProjectBoard } from './task-board-model'
 export type { EmployeeBoardItem, EmployeeBoardStatus, EmployeeProjectBoard } from './task-board-model'
@@ -22,6 +23,8 @@ const props = defineProps<{
   allowReadOnlyDetails?: boolean
   resettableFilter?: boolean
   filterStorageUnavailable?: boolean
+  /** The task whose details are open; its card lifts. */
+  selectedTask?: BoardTaskRef | null
 }>()
 
 const emit = defineEmits<{
@@ -100,6 +103,9 @@ function projectName(projectId: string) {
 }
 function showAllProjects() {
   emit('update:visible-project-ids', props.projects.map((project) => project.id))
+}
+function isSelected(item: EmployeeBoardItem) {
+  return props.selectedTask?.projectId === item.projectId && props.selectedTask.id === item.id
 }
 function itemKey(item: EmployeeBoardItem) {
   return `${item.projectId}:${item.id}`
@@ -382,7 +388,8 @@ onBeforeUnmount(() => {
             v-for="(item, index) in itemsForColumn(column.value)"
             :key="itemKey(item)"
             class="employee-all-projects-task"
-            :class="{ 'is-placeholder': isPlaceholder(item), 'is-saving': isMoving(item) }"
+            :class="{ 'is-placeholder': isPlaceholder(item), 'is-saving': isMoving(item), 'is-selected': isSelected(item) }"
+            :data-board-task="boardTaskPeekId(item)"
             :data-drag-placeholder="isPlaceholder(item) ? 'true' : undefined"
             :aria-hidden="isPlaceholder(item) ? 'true' : undefined"
           >
@@ -464,6 +471,8 @@ onBeforeUnmount(() => {
 .employee-all-projects-list { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 8px; overflow-y: auto; padding: 0 8px 10px; }
 .employee-all-projects-task { position: relative; display: flex; width: 100%; flex: 0 0 auto; flex-direction: column; align-items: stretch; gap: 7px; padding: 0; border: 0; border-radius: 12px; background: var(--color-surface); color: var(--color-ink); font: inherit; text-align: left; box-shadow: var(--shadow-sm); box-sizing: border-box; }
 .employee-all-projects-task:hover:not(.is-placeholder) { background: var(--color-surface); box-shadow: var(--shadow-md); }
+/* The open task lifts as a whole card: a hairline and a deeper shadow, never a side bar. */
+.employee-all-projects-task.is-selected { box-shadow: 0 0 0 1px var(--color-border-strong), var(--shadow-md); }
 .employee-all-projects-task-open { display: flex; width: 100%; flex-direction: column; align-items: stretch; gap: 7px; padding: 11px 38px 11px 12px; border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .employee-all-projects-task-open:focus-visible, .employee-all-projects-drag-handle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .employee-all-projects-task-open:disabled { cursor: wait; }
