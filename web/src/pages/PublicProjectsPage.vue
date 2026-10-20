@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import PublishQueue from '@/features/publishing/PublishQueue.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { deleteJson, getJson, postJson } from '@/api/client'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { focusReturnTarget } from '@/composables/useFocusReturn'
+import { useRoutePeek } from '@/composables/useRoutePeek'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
@@ -27,7 +32,6 @@ const FULI_WORKSPACE_PROTOCOL = 'fuli-workspace-v1'
 
 const store = useConsoleStore()
 const router = useRouter()
-const selectedProject = ref<PublicProject | null>(null)
 const releases = ref<ProjectRelease[]>([])
 const relations = ref<ProjectRelation[]>([])
 const detailLoading = ref(false)
@@ -43,6 +47,12 @@ let detailRequestVersion = 0
 let detailController: AbortController | null = null
 
 const projects = computed(() => store.state?.projects ?? [])
+// Details are a quick look (Peek) in the URL: ?item=<provider>/<project>.
+const peek = useRoutePeek()
+const selectedProject = computed(() => {
+  const item = peek.item.value
+  return item ? projects.value.find(({ providerUrl, id }) => providerUrl === item.spaceId && id === item.id) ?? null : null
+})
 const workspaces = computed(() => store.state?.providers?.workspaces ?? [])
 const subscribedKeys = computed(
   () => new Set(
@@ -159,11 +169,31 @@ async function toggleSubscription(project: PublicProject) {
   }
 }
 
-async function openDetails(project: PublicProject) {
-  closeDetails()
-  selectedProject.value = project
-  releases.value = []
-  relations.value = []
+// Focus goes back to the card button that opened the details, or to the card after a link.
+const scroller = ref<HTMLElement | null>(null)
+let detailsOpener: HTMLElement | null = null
+let lastDetailsKey = ''
+function openDetails(project: PublicProject) {
+  const active = document.activeElement
+  detailsOpener = active instanceof HTMLElement && active !== document.body ? active : null
+  peek.open({ spaceId: project.providerUrl, id: project.id })
+}
+function detailsOpenChange(open: boolean) { if (!open) peek.close() }
+function returnFocusFromDetails(event: Event) {
+  event.preventDefault()
+  const opener = detailsOpener
+  detailsOpener = null
+  if (opener?.isConnected) opener.focus({ preventScroll: true })
+  else focusReturnTarget(scroller.value, lastDetailsKey)
+}
+watch(() => selectedProject.value && projectKey(selectedProject.value), (key) => {
+  clearDetails()
+  if (!key || !selectedProject.value) return
+  lastDetailsKey = key
+  void loadDetails(selectedProject.value)
+}, { immediate: true })
+
+async function loadDetails(project: PublicProject) {
   if (!supportsGraphitiProjectOperations(project.providerUrl)) return
 
   const requestVersion = ++detailRequestVersion
@@ -198,9 +228,10 @@ async function openDetails(project: PublicProject) {
   }
 }
 
+// The graph replaces the details in history, so Back returns to the collection.
 async function openGraph(project: PublicProject) {
-  closeDetails()
-  await router.push(knowledgePath('public', project.id, 'graph'))
+  clearDetails()
+  await router.replace(knowledgePath('public', project.id, 'graph'))
 }
 
 function cancelDetailRequest() {
@@ -210,9 +241,8 @@ function cancelDetailRequest() {
   detailLoading.value = false
 }
 
-function closeDetails() {
+function clearDetails() {
   cancelDetailRequest()
-  selectedProject.value = null
   releases.value = []
   relations.value = []
 }
@@ -246,7 +276,7 @@ async function deleteProject() {
   try {
     const query = new URLSearchParams({ providerUrl: project.providerUrl })
     await deleteJson(`/api/projects/${encodeURIComponent(project.id)}?${query}`)
-    selectedProject.value = null
+    if (selectedProject.value && projectKey(selectedProject.value) === projectKey(project)) peek.close()
     deletionProject.value = null
     store.notify(t('pages.publicProjects.deleted', { name: project.name }))
     await store.refresh()
@@ -300,153 +330,162 @@ function formatDate(value?: string) {
 </script>
 
 <template>
-  <section class="view">
-    <div class="space-heading public-space-heading">
-      <span class="space-heading-icon" aria-hidden="true"><span class="nav-icon nav-icon-public-project" /></span>
-      <div><p>{{ t('pages.publicProjects.intro') }}</p></div>
-      <div class="public-space-stats" :aria-label="t('pages.publicProjects.overviewAria')">
-        <span><strong>{{ projects.length }}</strong>{{ t('pages.publicProjects.discoverable') }}</span>
-        <span><strong>{{ store.state?.subscriptions.length ?? 0 }}</strong>{{ t('pages.publicProjects.subscribedCount') }}</span>
+  <section ref="scroller" class="view public-projects-view">
+    <div class="@container mx-auto flex w-full max-w-(--canvas-max) flex-col gap-4">
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <p class="page-lede m-0 text-sm text-muted-foreground">{{ t('pages.publicProjects.intro') }}</p>
+        <p class="public-space-stats m-0 ml-auto flex gap-4 text-sm text-muted-foreground" :aria-label="t('pages.publicProjects.overviewAria')">
+          <span><strong class="mr-1 text-foreground">{{ projects.length }}</strong>{{ t('pages.publicProjects.discoverable') }}</span>
+          <span><strong class="mr-1 text-foreground">{{ store.state?.subscriptions.length ?? 0 }}</strong>{{ t('pages.publicProjects.subscribedCount') }}</span>
+        </p>
       </div>
-    </div>
 
-    <PublishQueue />
+      <PublishQueue />
 
-    <div class="project-grid">
-      <article v-for="project in projects" :key="projectKey(project)" class="project-card">
-        <div class="project-card-heading">
-          <div><h4>{{ project.name }}</h4></div>
-          <div class="project-card-heading-actions">
-            <Button
-              v-if="project.can_manage && supportsGraphitiProjectOperations(project.providerUrl)"
-              variant="outline"
-              class="project-manage-action"
-              @click="openProjectDeletion(project)"
-            >
-              {{ t('pages.publicProjects.manage') }}
-            </Button>
-            <div class="completion-badge">
-              <strong>{{ project.profile?.assessment?.score ?? '—' }}</strong>
-              <span>{{ project.profile?.assessment ? t('pages.publicProjects.coverage') : t('pages.publicProjects.noSummary') }}</span>
+      <ul v-if="projects.length" class="m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4">
+        <li v-for="project in projects" :key="projectKey(project)" class="min-w-0">
+          <article class="project-card flex h-full min-w-0 flex-col gap-3 rounded-lg border bg-card p-4 transition-[border-color,box-shadow] hover:border-border-strong"
+            :class="{ 'is-selected border-border-strong shadow-md': selectedProject && projectKey(selectedProject) === projectKey(project) }"
+            :data-return-focus="projectKey(project)">
+            <header class="flex min-w-0 items-start gap-3">
+              <h2 class="m-0 min-w-0 flex-1 text-base leading-snug font-semibold [overflow-wrap:anywhere]">{{ project.name }}</h2>
+              <span class="project-coverage grid shrink-0 justify-items-end text-xs text-muted-foreground">
+                <strong class="text-lg leading-none text-foreground">{{ project.profile?.assessment?.score ?? '—' }}</strong>
+                {{ project.profile?.assessment ? t('pages.publicProjects.coverage') : t('pages.publicProjects.noSummary') }}
+              </span>
+            </header>
+            <p class="project-purpose m-0 line-clamp-3 text-sm text-muted-foreground" :title="projectPurpose(project)">{{ projectPurpose(project) }}</p>
+            <div class="flex min-w-0 flex-wrap gap-1.5">
+              <Badge v-for="(source, index) in project.profile?.sources ?? []" :key="index" variant="outline">{{ source.kind ?? t('pages.publicProjects.material') }}</Badge>
+              <span v-if="!project.profile?.sources?.length" class="text-xs text-muted-foreground">{{ t('pages.publicProjects.noSources') }}</span>
             </div>
+            <div class="mt-auto flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 border-t pt-3 text-xs text-muted-foreground">
+              <Badge :variant="project.isOwner ? 'success' : 'secondary'">{{ project.isOwner ? 'Owner' : project.role ?? 'Reader' }}</Badge>
+              <span>{{ project.isOwner ? t('pages.publicProjects.publishedByYou') : t('pages.publicProjects.publiclyDiscoverable') }}</span>
+              <span v-if="project.current_release && supportsGraphitiProjectOperations(project.providerUrl)" class="project-release-meta ml-auto">
+                <strong class="text-foreground">{{ project.current_release.version }}</strong> · {{ formatDate(project.current_release.published_at) }}
+              </span>
+            </div>
+            <footer class="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" data-project-subscription @click="toggleSubscription(project)">
+                {{ subscribedKeys.has(projectKey(project)) ? t('pages.publicProjects.unsubscribe') : t('pages.publicProjects.subscribe') }}
+              </Button>
+              <Button v-if="project.can_manage && supportsGraphitiProjectOperations(project.providerUrl)" variant="ghost" size="sm"
+                class="project-manage-action" @click="openProjectDeletion(project)">{{ t('pages.publicProjects.manage') }}</Button>
+              <Button size="sm" class="ml-auto" data-project-details aria-haspopup="dialog" @click="openDetails(project)">{{ t('common.actions.viewDetails') }}</Button>
+            </footer>
+          </article>
+        </li>
+      </ul>
+      <p v-else class="project-empty m-0 rounded-lg border border-dashed bg-card p-10 text-center text-sm text-muted-foreground">{{ t('pages.publicProjects.noProjects') }}</p>
+
+      <Card as="section" class="project-relations-card" aria-labelledby="public-project-relations-title">
+        <div class="flex flex-wrap items-center justify-between gap-3 px-5">
+          <CardTitle id="public-project-relations-title" as="h2" class="text-base">{{ t('pages.publicProjects.relationsTitle') }}</CardTitle>
+            <Button size="sm" data-add-relation :disabled="!relationProjects.length" :aria-expanded="relationOpen" @click="relationOpen = !relationOpen">
+              {{ t('pages.publicProjects.addRelation') }}
+            </Button>
+        </div>
+        <p v-if="maintainable.length && !relationProjects.length" class="m-0 px-5 text-sm text-muted-foreground">
+          {{ t('pages.publicProjects.providerOperationsUnavailable') }}
+        </p>
+        <form v-if="relationOpen" class="compact-relation-form grid items-end gap-3 px-5 @min-[720px]:grid-cols-3" @submit.prevent="createRelation">
+          <label class="grid min-w-0 gap-1 text-xs text-muted-foreground">{{ t('pages.publicProjects.sourceProject') }}
+            <UiSelect
+              v-model="relationSource"
+              :options="maintainableOptions"
+              :label="t('pages.publicProjects.sourceProjectLabel')"
+              :placeholder="t('pages.publicProjects.chooseProject')"
+              searchable
+              required
+              @change="relationTarget = ''"
+            />
+          </label>
+          <label class="grid min-w-0 gap-1 text-xs text-muted-foreground">{{ t('pages.publicProjects.relation') }}
+            <UiSelect
+              v-model="relationType"
+              :options="relationTypeOptions"
+              :label="t('pages.publicProjects.relationTypeLabel')"
+            />
+          </label>
+          <label class="grid min-w-0 gap-1 text-xs text-muted-foreground">{{ t('pages.publicProjects.targetProject') }}
+            <UiSelect
+              v-model="relationTarget"
+              :options="relationTargetOptions"
+              :label="t('pages.publicProjects.targetProjectLabel')"
+              :placeholder="t('pages.publicProjects.chooseProject')"
+              searchable
+              required
+            />
+          </label>
+          <div class="compact-relation-preview grid gap-1 rounded-md border bg-secondary px-3 py-2.5 text-xs @min-[720px]:col-span-3" aria-live="polite">
+            <span class="font-semibold text-muted-foreground">{{ t('pages.publicProjects.preview') }}</span>
+            <strong>
+              {{ relationSourceProject?.name || t('pages.publicProjects.sourceProject') }}
+              {{ relationTypeLabel }}
+              {{ relationTargetProject?.name || t('pages.publicProjects.targetProject') }}
+            </strong>
+            <p v-if="relationType === 'PART_OF'" class="m-0 text-muted-foreground">
+              {{ t('pages.publicProjects.parentConfirmation') }}
+            </p>
+            <p v-else class="m-0 text-muted-foreground">{{ t('pages.publicProjects.relationBoundary') }}</p>
           </div>
-        </div>
-        <p class="project-purpose">{{ projectPurpose(project) }}</p>
-        <div class="evidence-row">
-          <span v-for="(source, index) in project.profile?.sources ?? []" :key="index" class="status-chip">{{ source.kind ?? t('pages.publicProjects.material') }}</span>
-          <span v-if="!project.profile?.sources?.length" class="muted">{{ t('pages.publicProjects.noSources') }}</span>
-        </div>
-        <div class="project-access">
-          <span class="status-chip" :class="{ owner: project.isOwner }">{{ project.isOwner ? 'Owner' : project.role ?? 'Reader' }}</span>
-          <span class="muted">{{ project.isOwner ? t('pages.publicProjects.publishedByYou') : t('pages.publicProjects.publiclyDiscoverable') }}</span>
-          <span
-            v-if="project.current_release && supportsGraphitiProjectOperations(project.providerUrl)"
-            class="project-release-meta"
-          >
-            <strong>{{ project.current_release.version }}</strong>
-            <span>{{ formatDate(project.current_release.published_at) }}</span>
-          </span>
-        </div>
-        <footer class="project-card-footer">
-          <Button variant="outline" size="sm" @click="toggleSubscription(project)">
-            {{ subscribedKeys.has(projectKey(project)) ? t('pages.publicProjects.unsubscribe') : t('pages.publicProjects.subscribe') }}
-          </Button>
-          <Button size="sm" @click="openDetails(project)">{{ t('common.actions.viewDetails') }}</Button>
-        </footer>
-      </article>
-      <div v-if="!projects.length" class="empty-state project-empty">{{ t('pages.publicProjects.noProjects') }}</div>
+          <Button size="sm" type="submit" class="justify-self-start">{{ t('pages.publicProjects.addRelation') }}</Button>
+        </form>
+      </Card>
     </div>
 
-    <section class="project-section">
-      <div class="section-toolbar compact-toolbar relation-section-toolbar">
-        <div><h3>{{ t('pages.publicProjects.relationsTitle') }}</h3></div>
-        <Button size="sm" :disabled="!relationProjects.length" @click="relationOpen = !relationOpen">
-          {{ t('pages.publicProjects.addRelation') }}
-        </Button>
-      </div>
-      <p v-if="maintainable.length && !relationProjects.length" class="muted">
-        {{ t('pages.publicProjects.providerOperationsUnavailable') }}
-      </p>
-      <form v-if="relationOpen" class="relation-composer relation-composer-form compact-relation-form" @submit.prevent="createRelation">
-        <label>{{ t('pages.publicProjects.sourceProject') }}
-          <UiSelect
-            v-model="relationSource"
-            :options="maintainableOptions"
-            :label="t('pages.publicProjects.sourceProjectLabel')"
-            :placeholder="t('pages.publicProjects.chooseProject')"
-            searchable
-            required
-            @change="relationTarget = ''"
-          />
-        </label>
-        <label>{{ t('pages.publicProjects.relation') }}
-          <UiSelect
-            v-model="relationType"
-            :options="relationTypeOptions"
-            :label="t('pages.publicProjects.relationTypeLabel')"
-          />
-        </label>
-        <label>{{ t('pages.publicProjects.targetProject') }}
-          <UiSelect
-            v-model="relationTarget"
-            :options="relationTargetOptions"
-            :label="t('pages.publicProjects.targetProjectLabel')"
-            :placeholder="t('pages.publicProjects.chooseProject')"
-            searchable
-            required
-          />
-        </label>
-        <div class="compact-relation-preview" aria-live="polite">
-          <span>{{ t('pages.publicProjects.preview') }}</span>
-          <strong>
-            {{ relationSourceProject?.name || t('pages.publicProjects.sourceProject') }}
-            {{ relationTypeLabel }}
-            {{ relationTargetProject?.name || t('pages.publicProjects.targetProject') }}
-          </strong>
-          <p v-if="relationType === 'PART_OF'">
-            {{ t('pages.publicProjects.parentConfirmation') }}
-          </p>
-          <p v-else>{{ t('pages.publicProjects.relationBoundary') }}</p>
-        </div>
-        <Button size="sm" type="submit">{{ t('pages.publicProjects.addRelation') }}</Button>
-      </form>
-    </section>
-
-    <UiDialog v-if="selectedProject" open class="public-project-details" size="lg"
-      :title="selectedProject.name" :description="projectPurpose(selectedProject)" @close="closeDetails">
-      <template v-if="selectedProjectSupportsDetails">
-        <section class="project-latest-release">
-          <h3>{{ t('pages.publicProjects.latestRelease') }}</h3>
-          <p v-if="selectedProject.current_release">
-            <strong>{{ selectedProject.current_release.version }}</strong>
-            · {{ formatDate(selectedProject.current_release.published_at) }}
-          </p>
-          <p v-else class="ui-muted">{{ t('pages.publicProjects.noRelease') }}</p>
-        </section>
-        <div class="project-detail-columns">
-          <section>
-            <h3>{{ t('pages.publicProjects.releaseHistory') }}</h3>
-            <GrowthLoading v-if="detailLoading" variant="compact" :label="t('pages.publicProjects.loading')" />
-            <article v-for="release in releases" :key="release.version" class="project-release-item">
-              <strong>{{ release.version }}</strong><p>{{ release.update_summary }}</p><small>{{ formatDate(release.published_at) }}</small>
-            </article>
-            <p v-if="!detailLoading && !releases.length" class="ui-muted">{{ t('pages.publicProjects.noReleaseHistory') }}</p>
-          </section>
-          <section>
-            <h3>{{ t('pages.publicProjects.relationsTitle') }}</h3>
-            <article v-for="relation in relations" :key="relation.id" class="project-detail-relation">
-              <strong>{{ relation.relation_type }}</strong><small>{{ relation.status ?? 'active' }}</small>
-            </article>
-            <p v-if="!detailLoading && !relations.length" class="ui-muted">{{ t('pages.publicProjects.noRelations') }}</p>
-          </section>
-        </div>
-      </template>
-      <p v-else class="ui-muted">{{ t('pages.publicProjects.providerOperationsUnavailableTitle') }}</p>
-      <template #footer>
-        <span class="public-project-dialog-note">{{ t('pages.publicProjects.contentManagementSeparated') }}</span>
-        <Button @click="openGraph(selectedProject)">{{ t('pages.publicProjects.viewGraph') }}</Button>
-      </template>
-    </UiDialog>
+    <Dialog :open="Boolean(peek.item.value)" @update:open="detailsOpenChange">
+      <DialogContent size="lg" class="public-project-details" data-public-project-peek @close-auto-focus="returnFocusFromDetails">
+        <template v-if="selectedProject">
+          <DialogHeader>
+            <DialogTitle class="text-xl leading-tight [overflow-wrap:anywhere]">{{ selectedProject.name }}</DialogTitle>
+            <DialogDescription>{{ projectPurpose(selectedProject) }}</DialogDescription>
+          </DialogHeader>
+          <template v-if="selectedProjectSupportsDetails">
+            <section class="grid gap-1">
+              <h3 class="m-0 text-sm font-semibold">{{ t('pages.publicProjects.latestRelease') }}</h3>
+              <p v-if="selectedProject.current_release" class="m-0 text-sm">
+                <strong>{{ selectedProject.current_release.version }}</strong>
+                · {{ formatDate(selectedProject.current_release.published_at) }}
+              </p>
+              <p v-else class="m-0 text-sm text-muted-foreground">{{ t('pages.publicProjects.noRelease') }}</p>
+            </section>
+            <div class="project-detail-columns grid gap-6 sm:grid-cols-2">
+              <section class="grid content-start gap-2">
+                <h3 class="m-0 text-sm font-semibold">{{ t('pages.publicProjects.releaseHistory') }}</h3>
+                <GrowthLoading v-if="detailLoading" variant="compact" :label="t('pages.publicProjects.loading')" />
+                <article v-for="release in releases" :key="release.version" class="grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 border-t pt-2 text-xs">
+                  <strong class="row-span-2">{{ release.version }}</strong>
+                  <p class="m-0 text-muted-foreground">{{ release.update_summary }}</p>
+                  <small class="text-muted-foreground">{{ formatDate(release.published_at) }}</small>
+                </article>
+                <p v-if="!detailLoading && !releases.length" class="m-0 text-sm text-muted-foreground">{{ t('pages.publicProjects.noReleaseHistory') }}</p>
+              </section>
+              <section class="grid content-start gap-2">
+                <h3 class="m-0 text-sm font-semibold">{{ t('pages.publicProjects.relationsTitle') }}</h3>
+                <article v-for="relation in relations" :key="relation.id" class="flex justify-between gap-3 border-t pt-2 text-xs">
+                  <strong>{{ relation.relation_type }}</strong><small class="text-muted-foreground">{{ relation.status ?? 'active' }}</small>
+                </article>
+                <p v-if="!detailLoading && !relations.length" class="m-0 text-sm text-muted-foreground">{{ t('pages.publicProjects.noRelations') }}</p>
+              </section>
+            </div>
+          </template>
+          <p v-else class="m-0 text-sm text-muted-foreground">{{ t('pages.publicProjects.providerOperationsUnavailableTitle') }}</p>
+          <DialogFooter class="flex flex-wrap items-center gap-3 border-t pt-4">
+            <span class="mr-auto text-xs text-muted-foreground">{{ t('pages.publicProjects.contentManagementSeparated') }}</span>
+            <Button data-open-graph @click="openGraph(selectedProject)">{{ t('pages.publicProjects.viewGraph') }}</Button>
+          </DialogFooter>
+        </template>
+        <template v-else>
+          <DialogHeader>
+            <DialogTitle>{{ t('common.actions.viewDetails') }}</DialogTitle>
+            <DialogDescription :class="{ 'sr-only': !store.state }">{{ t(store.state ? 'pages.publicProjects.unavailable' : 'common.status.loadingConsole') }}</DialogDescription>
+          </DialogHeader>
+          <GrowthLoading v-if="!store.state" variant="compact" :label="t('common.status.loadingConsole')" />
+        </template>
+      </DialogContent>
+    </Dialog>
 
     <UiDialog v-if="deletionProject" open class="public-project-deletion" size="sm" :busy="deletionBusy" :error="deletionError"
       :title="t('pages.publicProjects.deleteTitle')" :description="t('pages.publicProjects.deleteCopy')" @close="closeProjectDeletion">
@@ -455,7 +494,7 @@ function formatDate(value?: string) {
         <input v-model="deletionName" autocomplete="off" :disabled="deletionBusy" />
       </label>
       <template #footer>
-        <span class="public-project-dialog-note">{{ t('pages.publicProjects.deleteWarning') }}</span>
+        <span class="mr-auto text-xs text-muted-foreground">{{ t('pages.publicProjects.deleteWarning') }}</span>
         <Button variant="destructive" :disabled="!deletionMatches" :loading="deletionBusy" :loading-label="t('pages.publicProjects.deleting')" @click="deleteProject">{{ t('pages.publicProjects.deletePermanently') }}</Button>
       </template>
     </UiDialog>
@@ -463,9 +502,5 @@ function formatDate(value?: string) {
 </template>
 
 <style scoped>
-.public-project-details h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
-.public-project-details p { margin: 0; }
-.project-latest-release { padding: 0; border: 0; }
-.project-detail-columns { padding: 0; }
-.public-project-dialog-note { margin-right: auto; color: var(--color-muted); font-size: 12px; }
+.public-projects-view { scrollbar-gutter: stable; }
 </style>

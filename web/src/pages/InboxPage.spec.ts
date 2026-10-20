@@ -49,24 +49,31 @@ async function setup(path: string) {
   return { router, wrapper }
 }
 
-const textarea = (wrapper: ReturnType<typeof mount>) => wrapper.get('textarea').element as HTMLTextAreaElement
+const textarea = () => document.querySelector('textarea') as HTMLTextAreaElement
+const dialogTitle = () => document.querySelector('[role=dialog] [data-slot=dialog-title]')?.textContent ?? ''
+async function type(value: string) {
+  textarea().value = value
+  textarea().dispatchEvent(new Event('input', { bubbles: true })); await flushPromises()
+}
 
 describe('Inbox page', () => {
-  it('opens the linked request as a page and keeps an unsent reply across navigation', async () => {
+  it('opens a linked request as a quick look and keeps an unsent reply across navigation', async () => {
     const { router, wrapper } = await setup('/inbox?agent=agent-a&request=request-b')
-    expect(wrapper.find('dialog').exists()).toBe(false)
+    // The link becomes the request's quick look in place: ?item=<space>/<request>.
+    expect(router.currentRoute.value.query).toEqual({ agent: 'agent-a', item: 'space-a/request-b' })
+    expect(dialogTitle()).toBe('Synthetic request-b')
     expect(wrapper.get('.attention-request.is-selected').text()).toContain('Synthetic request-b')
     expect(getJson.mock.calls.some(([url]) => String(url).includes('agentId=agent-a'))).toBe(true)
 
-    await wrapper.get('textarea').setValue('Synthetic unsent reply')
+    await type('Synthetic unsent reply')
     await router.push('/elsewhere'); await flushPromises()
     expect(useAgentAttention().open).toBe(false)
     await router.push('/inbox?agent=agent-a&request=request-b'); await flushPromises()
-    expect(textarea(wrapper).value).toBe('Synthetic unsent reply')
+    expect(textarea().value).toBe('Synthetic unsent reply')
     expect(postJson).not.toHaveBeenCalled()
   })
 
-  it('follows a new linked request while another one is still selected', async () => {
+  it('follows a new linked request while another one is still open', async () => {
     const { router, wrapper } = await setup('/inbox?request=request-a')
     expect(wrapper.get('.attention-request.is-selected').text()).toContain('Synthetic request-a')
     await router.push('/inbox?request=request-b'); await flushPromises()
@@ -75,13 +82,28 @@ describe('Inbox page', () => {
     expect(wrapper.get('.attention-request.is-selected').text()).toContain('Synthetic request-a')
   })
 
-  it('removes a confirmed reply and updates the pending count', async () => {
-    const { wrapper } = await setup('/inbox')
+  it('opens a request from its card and closes back to the queue', async () => {
+    const { router, wrapper } = await setup('/inbox')
+    expect(document.querySelector('[role=dialog]')).toBeNull()
+    await wrapper.findAll('.attention-request-title')[1]!.trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ item: 'space-a/request-b' })
+    expect(dialogTitle()).toBe('Synthetic request-b')
+    document.querySelector<HTMLElement>('[role=dialog]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises(); await new Promise(resolve => setTimeout(resolve, 0)); await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(document.querySelector('[role=dialog]')).toBeNull()
+  })
+
+  it('removes a confirmed reply, closes its quick look and updates the pending count', async () => {
+    const { router, wrapper } = await setup('/inbox')
     expect(wrapper.get('.attention-page-count').text()).toContain('2')
-    await wrapper.get('textarea').setValue('Synthetic decision')
-    await wrapper.get('form').trigger('submit'); await flushPromises()
+    await wrapper.get('.attention-request-title').trigger('click'); await flushPromises()
+    await type('Synthetic decision')
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
+    await new Promise(resolve => setTimeout(resolve, 0)); await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', expect.objectContaining({ requestId: 'request-a', choice: null, note: 'Synthetic decision' }))
     expect(wrapper.findAll('.attention-request').map(item => item.text())).toEqual([expect.stringContaining('Synthetic request-b')])
     expect(wrapper.get('.attention-page-count').text()).toContain('1')
+    expect(router.currentRoute.value.query).toEqual({})
   })
 })

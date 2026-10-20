@@ -105,6 +105,7 @@ export const router = createRouter({
       meta: {
         title: 'routes.publicProjects.title',
         description: 'routes.publicProjects.description',
+        layout: 'canvas',
       },
     },
     {
@@ -143,6 +144,7 @@ export const router = createRouter({
       component: () => import('@/pages/InboxPage.vue'),
       meta: {
         title: 'attention.title',
+        layout: 'canvas',
       },
     },
     { path: '/review', redirect: '/public-projects' },
@@ -153,6 +155,7 @@ export const router = createRouter({
       meta: {
         title: 'routes.connections.title',
         description: 'routes.connections.description',
+        layout: 'form',
       },
     },
     {
@@ -171,13 +174,14 @@ export const router = createRouter({
       component: () => import('@/pages/AboutPage.vue'),
       meta: {
         title: 'routes.about.title',
+        layout: 'form',
       },
     },
     {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('@/pages/NotFoundPage.vue'),
-      meta: { title: 'common.errors.pageNotFound' },
+      meta: { title: 'common.errors.pageNotFound', layout: 'form' },
     },
   ],
   scrollBehavior: (to, from, savedPosition) => savedPosition

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardTitle } from '@/components/ui/card'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
@@ -587,12 +589,13 @@ function readmeHelpUrl(fragment: string) {
 </script>
 
 <template>
-  <section class="view connections-view">
-    <div class="service-connection-grid" :aria-label="t('pages.connections.statusAria')">
+  <section class="view connections-view [scrollbar-gutter:stable]">
+    <div class="mx-auto flex w-full max-w-(--form-max) flex-col gap-4">
+    <div class="service-connection-grid" role="group" :aria-label="t('pages.connections.statusAria')">
       <article class="service-connection-card" :data-status="personalReady ? 'ready' : 'error'">
         <header>
           <span class="service-connection-icon local" aria-hidden="true"><span class="nav-icon nav-icon-personal-project" /></span>
-          <div><h3>{{ t('pages.connections.localGraphiti') }}</h3></div>
+          <div><h2>{{ t('pages.connections.localGraphiti') }}</h2></div>
           <span class="service-state">{{ personalReady ? t('common.status.connected') : t('common.status.connectionError') }}</span>
         </header>
         <UiDisclosure :title="t('ui.connectionDetails')"><dl><div><dt>{{ t('pages.connections.storage') }}</dt><dd>Neo4j</dd></div><div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.localPurpose') }}</dd></div></dl></UiDisclosure>
@@ -601,7 +604,7 @@ function readmeHelpUrl(fragment: string) {
       <article class="service-connection-card" :data-status="store.publicRuntimeStatus">
         <header>
           <span class="service-connection-icon public" aria-hidden="true"><span class="nav-icon nav-icon-public-project" /></span>
-          <div class="connection-title-row"><h3>{{ t('pages.connections.publicService') }}</h3><span class="feature-badge beta">BETA</span></div>
+          <div class="flex min-w-0 items-center gap-2"><h2>{{ t('pages.connections.publicService') }}</h2><Badge variant="warning">BETA</Badge></div>
           <span class="service-state">{{ store.publicRuntimeStatus === 'ready' ? t('common.status.connected') : store.publicRuntimeStatus === 'error' ? t('common.status.connectionError') : t('common.status.notConnected') }}</span>
         </header>
         <dl>
@@ -611,9 +614,9 @@ function readmeHelpUrl(fragment: string) {
       </article>
     </div>
 
-    <section class="external-knowledge-section">
-      <div class="section-title section-title-with-help">
-        <h3>{{ t('pages.connections.externalTitle') }}</h3>
+    <Card as="section" class="external-knowledge-section" aria-labelledby="external-knowledge-title">
+      <div class="flex flex-wrap items-center gap-2 px-5">
+        <CardTitle id="external-knowledge-title" as="h2" class="text-base">{{ t('pages.connections.externalTitle') }}</CardTitle>
         <a
           class="section-help-link"
           data-testid="external-knowledge-help"
@@ -625,6 +628,7 @@ function readmeHelpUrl(fragment: string) {
         >?</a>
         <span class="external-binding-count">{{ t('pages.connections.bindingCount', { count: bindings.length }) }}</span>
       </div>
+      <div class="grid gap-3 px-5">
       <GrowthLoading v-if="externalLoading || externalBusy" variant="compact" :label="t(externalLoading ? 'pages.connections.loadingBindings' : externalAction)" />
       <div class="external-binding-list">
         <article v-for="binding in bindings" :key="binding.id" class="external-binding-row" :data-status="binding.status">
@@ -687,7 +691,7 @@ function readmeHelpUrl(fragment: string) {
             </div>
           </div>
         </article>
-        <div v-if="!externalLoading && !bindings.length" class="compact-empty">{{ t('pages.connections.noExternalBindings') }}</div>
+        <div v-if="!externalLoading && !bindings.length" class="py-4 text-xs text-muted-foreground">{{ t('pages.connections.noExternalBindings') }}</div>
       </div>
 
       <UiDisclosure :title="t('pages.connections.connect')" :open="!bindings.length">
@@ -797,10 +801,12 @@ function readmeHelpUrl(fragment: string) {
         </Button>
       </form>
       </UiDisclosure>
-    </section>
+      </div>
+    </Card>
 
-    <UiDisclosure v-if="personalProjects.length" class="conflict-policy-section" :open="conflictError" :title="t('pages.connections.conflictTitle')">
-      <div class="section-title section-title-with-help">
+    <Card v-if="personalProjects.length" as="section" class="conflict-policy-section py-0" :aria-label="t('pages.connections.conflictTitle')">
+    <UiDisclosure class="px-5 py-4" :open="conflictError" :title="t('pages.connections.conflictTitle')">
+      <div class="flex">
         <a
           class="section-help-link"
           data-testid="conflict-policy-help"
@@ -843,9 +849,13 @@ function readmeHelpUrl(fragment: string) {
         <Button variant="outline" size="sm" @click="loadConflictPolicy">{{ t('common.actions.retry') }}</Button>
       </div>
     </UiDisclosure>
+    </Card>
 
-    <section v-if="store.state?.capabilities?.subscribeProject" class="connection-subscriptions">
-      <div class="section-title"><h3>{{ t('pages.connections.subscriptionsTitle') }} <span class="feature-badge beta">BETA</span></h3></div>
+    <Card v-if="store.state?.capabilities?.subscribeProject" as="section" class="connection-subscriptions" aria-labelledby="connection-subscriptions-title">
+      <div class="flex items-center gap-2 px-5">
+        <CardTitle id="connection-subscriptions-title" as="h2" class="text-base">{{ t('pages.connections.subscriptionsTitle') }}</CardTitle><Badge variant="warning">BETA</Badge>
+      </div>
+      <div class="grid gap-2 px-5">
       <GrowthLoading v-if="subscriptionBusy" variant="inline" :label="t(subscriptionAction)" />
       <div class="subscription-list">
         <div v-for="subscription in subscriptions" :key="`${subscription.provider_url}:${subscription.project_id}`" class="subscription-row">
@@ -853,7 +863,7 @@ function readmeHelpUrl(fragment: string) {
           <div><strong>{{ subscription.project_name ?? subscription.project_id }}</strong><span>{{ t('pages.connections.sharedProject') }}</span></div>
           <Button variant="outline" size="sm" class="subscription-action" :disabled="subscriptionBusy" @click="unsubscribe(subscription)">{{ t('pages.connections.unsubscribe') }}</Button>
         </div>
-        <div v-if="!subscriptions.length" class="empty-state">{{ t('pages.connections.noSubscriptions') }}</div>
+        <div v-if="!subscriptions.length" class="py-4 text-xs text-muted-foreground">{{ t('pages.connections.noSubscriptions') }}</div>
       </div>
       <form class="subscription-form" @submit.prevent="subscribe">
         <UiSelect
@@ -867,6 +877,8 @@ function readmeHelpUrl(fragment: string) {
         />
         <Button type="submit" :disabled="subscriptionBusy || !selectedProjectKey || !store.activePersonalSpace">{{ t('pages.connections.subscribe') }}</Button>
       </form>
-    </section>
+      </div>
+    </Card>
+    </div>
   </section>
 </template>

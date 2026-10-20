@@ -1,15 +1,17 @@
-.attention-nav-status { display: inline-flex; align-items: center; gap: 6px; justify-self: end; }
 .attention-page-body { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .attention-outcome { flex: 0 0 auto; margin: 0; padding: 12px 24px; border-radius: var(--radius-control); background: var(--color-success-soft); color: var(--color-ink); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .attention-outcome.is-unavailable { background: var(--color-warning-soft); }
-.attention-more { margin-top: 8px; width: 100%; }
-.attention-task-link { display: inline-block; margin-top: 16px; color: var(--color-accent); font-size: 13px; text-underline-offset: 4px; }
-.attention-workspace .attention-mobile-picker { display: none; margin: 8px 12px; }
+.attention-more { align-self: center; }
+/* The request's title is its name: it opens the quick look. */
+.attention-request-title {
+  padding: 0; border: 0; background: none; color: var(--color-ink); font: inherit; font-size: 15px; font-weight: 650;
+  line-height: 1.45; text-align: left; overflow-wrap: anywhere; cursor: pointer;
+}
+.attention-request-title:hover:not(:disabled) { color: var(--color-accent); }
+.attention-request-title:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 4px; }
+.attention-request-title:disabled { cursor: default; }
+.attention-task-link { justify-self: start; color: var(--color-accent); font-size: 13px; text-underline-offset: 4px; }
 .attention-error { flex: 0 0 auto; border-radius: var(--radius-control); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
 .attention-empty { flex: 1; align-content: center; display: grid; justify-items: center; gap: 16px; padding: 72px 24px; text-align: center; color: var(--color-muted); }
 .attention-empty > span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-size: 24px; }
 .attention-empty p { margin: 0; font-size: 14px; }
-@media (max-width: 640px) {
-  .attention-workspace .attention-mobile-picker { display: grid; }
-  .attention-request-list { display: none; }
-}

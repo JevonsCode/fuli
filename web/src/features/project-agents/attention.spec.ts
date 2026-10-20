@@ -6,7 +6,6 @@ vi.mock('@/api/client', () => ({ getJson, postJson }))
 import { attentionTaskHref, useAgentAttention } from './attention-store'
 import AgentHand from './AgentHand.vue'
 import AttentionWorkspace from './AttentionWorkspace.vue'
-import { UiSelectStub } from '@/test-support/UiSelectStub'
 
 const item = { requestId: 'request-a', personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'agent-a', taskId: null,
   title: '选择方案', detail: '有两个可行的方案。', requestedAction: '请明确选择 A 或 B。', kind: 'question', status: 'open' as const, revision: 2, createdAt: '2026-09-04T00:00:00Z' }
@@ -101,7 +100,7 @@ describe('Agent attention', () => {
   })
 
   it('renders the requested action, preserves a failed reply draft, and makes no write on opening', async () => {
-    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [], openRequestId: 'request-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises(); useAgentAttention().show('agent-a'); await flushPromises()
     expect(document.body.textContent).toContain('Milo')
     expect(document.body.textContent).toContain('请明确选择 A 或 B。')
@@ -117,7 +116,7 @@ describe('Agent attention', () => {
   })
   it('requires an explicit selection and sends the selected reply with its optional note', async () => {
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : { items: [{ ...item, kind: 'review' }], total: 1, counts: {} })
-    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [], openRequestId: 'request-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises(); useAgentAttention().show(); await flushPromises()
     expect((document.querySelector('button[type=submit]') as HTMLButtonElement).disabled).toBe(true)
     expect(document.querySelector('input:checked')).toBeNull()
@@ -131,17 +130,16 @@ describe('Agent attention', () => {
     wrapper.unmount()
   })
 
-  it('keeps independent drafts while switching requests through the mobile selector', async () => {
+  it('keeps independent drafts while switching between request quick looks', async () => {
     const second = { ...item, requestId: 'request-b', title: '第二个问题' }
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : { items: [item, second], total: 2, counts: {} })
-    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { UiSelect: UiSelectStub, RouterLink: RouterLinkStub } } })
+    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [], openRequestId: 'request-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises(); useAgentAttention().show(); await flushPromises()
     const textarea = document.querySelector('textarea')!
     textarea.value = '第一个回复'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await flushPromises()
-    const select = document.querySelector('select[aria-label]') as HTMLSelectElement
-    select.value = 'request-b'; select.dispatchEvent(new Event('change', { bubbles: true })); await flushPromises()
+    await wrapper.setProps({ openRequestId: 'request-b' }); await flushPromises()
     expect(document.querySelector('textarea')!.value).toBe('')
-    select.value = 'request-a'; select.dispatchEvent(new Event('change', { bubbles: true })); await flushPromises()
+    await wrapper.setProps({ openRequestId: 'request-a' }); await flushPromises()
     expect(document.querySelector('textarea')!.value).toBe('第一个回复')
     expect((document.querySelector('input[value=other]') as HTMLInputElement).checked).toBe(true)
     expect(postJson).not.toHaveBeenCalled()
@@ -161,15 +159,14 @@ describe('Agent attention', () => {
     const second = { ...item, requestId: 'request-b', title: '第二个问题' }
     let items = [item, second]
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : { items, total: 2, counts: {} })
-    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { UiSelect: UiSelectStub, RouterLink: RouterLinkStub } } })
+    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [], openRequestId: 'request-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises(); const store = useAgentAttention(); store.show(); await flushPromises()
     const textarea = document.querySelector('textarea')!
     textarea.value = '仍需保留的说明'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await flushPromises()
-    const select = document.querySelector('select[aria-label]') as HTMLSelectElement
-    select.value = 'request-b'; select.dispatchEvent(new Event('change', { bubbles: true })); await flushPromises()
+    await wrapper.setProps({ openRequestId: 'request-b' }); await flushPromises()
     items = [{ ...item, revision: 3 }, second]; await store.refresh(); await flushPromises()
     expect(document.body.textContent).not.toContain('请求已更新')
-    select.value = 'request-a'; select.dispatchEvent(new Event('change', { bubbles: true })); await flushPromises()
+    await wrapper.setProps({ openRequestId: 'request-a' }); await flushPromises()
     expect(document.body.textContent).toContain('请求已更新')
     expect(document.querySelector('textarea')!.value).toBe('仍需保留的说明')
     expect(document.querySelector('input:checked')).toBeNull()
@@ -186,7 +183,7 @@ describe('Agent attention', () => {
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : {
       items: [{ ...item, personalSpaceId: url.includes('space-b') ? 'space-b' : 'space-a' }], total: 1, counts: {},
     })
-    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [], openRequestId: 'request-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises(); const store = useAgentAttention(); store.show(); await flushPromises()
     const submit = async () => {
       ;(document.querySelector('input[value=clarify]') as HTMLInputElement).click(); await flushPromises()
@@ -194,18 +191,18 @@ describe('Agent attention', () => {
     }
     await submit()
     await wrapper.setProps({ personalSpaceId: 'space-b' }); await flushPromises(); store.show(); await flushPromises()
-    expect((document.querySelector('.attention-request') as HTMLButtonElement).disabled).toBe(false)
+    expect((document.querySelector('.attention-request-title') as HTMLButtonElement).disabled).toBe(false)
     await submit()
     finishes[0]!(); await flushPromises()
-    expect((document.querySelector('.attention-request') as HTMLButtonElement).disabled).toBe(true)
+    expect((document.querySelector('.attention-request-title') as HTMLButtonElement).disabled).toBe(true)
     finishes[1]!(); await flushPromises()
-    expect((document.querySelector('.attention-request') as HTMLButtonElement).disabled).toBe(false)
+    expect((document.querySelector('.attention-request-title') as HTMLButtonElement).disabled).toBe(false)
     expect(postJson.mock.calls.map(([, payload]) => payload.personalSpaceId)).toEqual(['space-a', 'space-b'])
     wrapper.unmount()
   })
 
   it('does not announce a submission when the request list is only refreshing', async () => {
-    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [], openRequestId: 'request-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises(); const store = useAgentAttention(); store.show(); await flushPromises()
     store.loading = true; await flushPromises()
     const submit = document.querySelector('button[type=submit]') as HTMLButtonElement
@@ -230,7 +227,7 @@ describe('Agent attention', () => {
   it('does not label the next request as submitting while refreshing after a confirmed reply', async () => {
     const second = { ...item, requestId: 'request-b', title: '第二个问题' }
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/project-agents/') ? [] : { items: [item, second], total: 2, counts: {} })
-    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [], openRequestId: 'request-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises(); const store = useAgentAttention(); store.show(); await flushPromises()
     let finish!: (value: unknown) => void
     getJson.mockImplementation(() => new Promise(resolve => { finish = resolve }))
@@ -238,11 +235,14 @@ describe('Agent attention', () => {
     ;(document.querySelector('input[value=clarify]') as HTMLInputElement).click(); await flushPromises()
     document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
     expect(document.body.textContent).toContain('第二个问题')
+    await wrapper.setProps({ openRequestId: 'request-b' }); await flushPromises()
     expect(document.body.textContent).not.toContain('正在提交')
     expect((document.querySelector('button[type=submit]') as HTMLButtonElement).disabled).toBe(true)
     finish({ items: [second], total: 1, counts: {} }); await flushPromises()
     finish({ items: [second], total: 1, counts: {} }); await flushPromises()
     expect(postJson).toHaveBeenCalledTimes(1)
+    // The reply finished after another request was opened: that quick look stays.
+    expect(wrapper.emitted('close')).toBeUndefined()
     wrapper.unmount()
   })
 
@@ -251,7 +251,7 @@ describe('Agent attention', () => {
       ? { agentId: 'agent-a', personalSpaceId: 'space-a', profile: { name: '工程师', displayName: 'Milo' } }
       : { items: postJson.mock.calls.length ? [] : [{ ...item, kind: 'blocked' }], total: postJson.mock.calls.length ? 0 : 1, counts: {} })
     postJson.mockResolvedValue({ status: 'resolved', delivery: { status: 'inbox', agentId: 'agent-a' } })
-    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [] }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    const wrapper = mount(AttentionWorkspace, { attachTo: document.body, props: { personalSpaceId: 'space-a', projects: [], openRequestId: 'request-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises(); const store = useAgentAttention(); store.show(); await flushPromises()
     ;(document.querySelector('input[value=done]') as HTMLInputElement).click(); await flushPromises()
     document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
@@ -259,6 +259,8 @@ describe('Agent attention', () => {
     const outcome = document.querySelector('.attention-outcome[role=status]')!
     expect(outcome.textContent).toBe('已送达 Milo，它下次进入任务时会看到「选择方案」的回复。')
     expect(document.body.textContent).toContain('暂时没有需要你处理的事情')
+    // The answered request left the queue, so its quick look asks to close.
+    expect(wrapper.emitted('close')).toHaveLength(1)
     store.lastReply = { requestId: 'request-a', title: '选择方案', status: 'woken', agentId: 'agent-a' }; await flushPromises()
     expect(outcome.textContent).toBe('已唤醒 Milo 正在等待的会话，它已收到「选择方案」的回复。')
     expect(document.body.textContent).not.toMatch(/继续工作|已恢复/)

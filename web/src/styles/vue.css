@@ -32,7 +32,6 @@
 }
 
 .feedback,
-.project-card,
 .knowledge-row {
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
@@ -50,63 +49,6 @@
   flex: 1;
 }
 
-.compact-relation-form {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr)) auto;
-  align-items: end;
-  gap: 12px;
-  padding: 16px;
-}
-
-.compact-relation-form label {
-  display: grid;
-  gap: 5px;
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
-.compact-relation-form select {
-  min-width: 0;
-}
-
-.compact-relation-form .ui-select {
-  width: 100%;
-  min-width: 0;
-}
-
-.compact-relation-preview {
-  grid-column: 1 / -1;
-  display: grid;
-  gap: 4px;
-  padding: 11px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-}
-
-.compact-relation-preview span {
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.compact-relation-preview strong {
-  color: var(--color-ink);
-  font-size: 12px;
-}
-
-.compact-relation-preview p {
-  color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-@media (max-width: 1180px) {
-  .compact-relation-form {
-    grid-template-columns: repeat(2, minmax(180px, 1fr));
-  }
-}
 .locale-switcher {
   display: inline-flex;
   align-items: center;

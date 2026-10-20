@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { t } from '@/i18n'
 import EmployeeTaskBoard, { type EmployeeProjectBoard } from '@/features/employees/EmployeeTaskBoard.vue'
 import { publicProjectReport, reportProjects } from '@/features/employees/shared-report'
@@ -35,27 +36,42 @@ async function load() {
 </script>
 
 <template>
+  <!-- A shared link opens outside the console shell, so this page renders its own one H1. -->
   <main class="shared-jefa-report">
-    <header><strong>Jefa</strong><h1>{{ t('employees.share.title') }}</h1><span>{{ t('employees.share.readOnly') }}</span></header>
-    <GrowthLoading v-if="loading" :label="t('employees.loadingReport')" />
-    <div v-else-if="error" class="report-state" role="alert"><p>{{ error }}</p><Button variant="outline" @click="load">{{ t('employees.retry') }}</Button></div>
-    <template v-else>
-      <p v-if="failed" class="report-warning">{{ t('employees.share.unavailableCount', { count: failed }) }}</p>
-      <div v-if="!publicTaskCount" class="report-state" role="status"><h2>{{ t('employees.shareContent.emptyTitle') }}</h2><p>{{ t('employees.shareContent.emptyReport', { count: boards.length }) }}</p><Button variant="outline" @click="load">{{ t('common.actions.refresh') }}</Button></div>
-      <EmployeeTaskBoard v-else v-model:visible-project-ids="visible" :boards="boards.filter(board => visible.includes(board.project.id))" :projects="boards.map(board => board.project)" :failed-projects="0" :can-move-tasks="false" read-only @retry="load" />
-    </template>
+    <header class="shared-jefa-report-bar">
+      <div class="mx-auto flex w-full max-w-(--canvas-max) flex-wrap items-baseline gap-x-4 gap-y-1">
+        <strong class="text-xl">Jefa</strong>
+        <h1 class="m-0 text-lg font-semibold">{{ t('employees.share.title') }}</h1>
+        <span class="ml-auto text-xs text-muted-foreground">{{ t('employees.share.readOnly') }}</span>
+      </div>
+    </header>
+    <div class="shared-jefa-report-canvas mx-auto flex min-h-0 w-full flex-1 flex-col">
+      <GrowthLoading v-if="loading" :label="t('employees.loadingReport')" />
+      <Card v-else-if="error" class="report-state" role="alert">
+        <p>{{ error }}</p>
+        <Button variant="outline" @click="load">{{ t('employees.retry') }}</Button>
+      </Card>
+      <template v-else>
+        <p v-if="failed" class="report-warning">{{ t('employees.share.unavailableCount', { count: failed }) }}</p>
+        <Card v-if="!publicTaskCount" class="report-state" role="status">
+          <h2 class="m-0 text-lg font-semibold">{{ t('employees.shareContent.emptyTitle') }}</h2>
+          <p>{{ t('employees.shareContent.emptyReport', { count: boards.length }) }}</p>
+          <Button variant="outline" @click="load">{{ t('common.actions.refresh') }}</Button>
+        </Card>
+        <EmployeeTaskBoard v-else v-model:visible-project-ids="visible" :boards="boards.filter(board => visible.includes(board.project.id))" :projects="boards.map(board => board.project)" :failed-projects="0" :can-move-tasks="false" read-only @retry="load" />
+      </template>
+    </div>
   </main>
 </template>
 
 <style scoped>
-.shared-jefa-report { height: 100dvh; display: flex; flex-direction: column; min-height: 0; background: var(--color-surface); overflow: hidden; }
-.shared-jefa-report > header { display: flex; align-items: center; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--color-border); }
-header strong { color: var(--color-ink); font-size: 22px; }
-header h1 { margin: 0; font-size: 18px; }
-header span { margin-left: auto; font-size: 12px; color: var(--color-muted); }
-.report-state { margin: auto; padding: 24px; text-align: center; }
-.report-state h2 { font-size: 18px; }
-.report-state p { max-width: 44ch; color: var(--color-muted); line-height: 1.7; }
-.report-state [data-slot="button"] { min-height: 44px; }
+/* The report is a board (a full work area): one canvas, centred on wide screens.
+   The board keeps its own 24px inset, so the bar uses the same one and the
+   canvas is that much wider: the title and the board start on one line. */
+.shared-jefa-report { height: 100dvh; display: flex; flex-direction: column; min-height: 0; background: var(--color-surface); color: var(--color-ink); overflow: hidden; }
+.shared-jefa-report-bar { flex: 0 0 auto; padding: 16px 24px; border-bottom: 1px solid var(--color-border); }
+.shared-jefa-report-canvas { max-width: calc(var(--canvas-max) + 48px); }
+.report-state { align-items: center; max-width: 520px; margin: 48px auto; padding: 32px 24px; text-align: center; }
+.report-state p { max-width: 44ch; margin: 0; color: var(--color-muted); line-height: 1.7; }
 .report-warning { margin: 12px 24px 0; font-size: 13px; color: var(--color-warning); }
 </style>
