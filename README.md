@@ -369,6 +369,19 @@ you submit yourself in the FULI console and an explicit `新项目：` request s
 existing knowledge keeps working. Session turns written while automatic recording is off are skipped
 with a content-free marker and are never imported after it comes back on.
 
+Capture can also be limited to projects. `projectMode` is `all` (the default), `all_except` with
+`excludedProjectIds`, or `selected` with `selectedProjectIds`; `unregisteredDirectories`
+(`skip` by default under `selected`, `capture` otherwise) decides work outside every registered
+project. A directory resolves to its project the same way task entry does, so a worktree of a
+repository is that repository's project. A project that is not recorded returns
+`reason: project_off`, an unregistered directory `project_unregistered`, and every task receipt
+ends with the reason and that explicit edits still save, for example
+`此项目未开启记忆；你明确提交的修改仍会保存`. Switching a project off never hides or
+deletes what it already recorded; `projectsOffSince` keeps when it stopped. Agents read the
+settings with `get_capture_policy` (pass `projectPath` to learn about the current project) and
+change them with `update_capture_policy` only after restating the change and getting the user's
+confirmation; the settings page uses `PATCH /api/capture-policy`.
+
 Run these local contract tests to check that the README and project-path behavior still match the
 implementation:
 

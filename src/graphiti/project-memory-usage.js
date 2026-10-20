@@ -9,7 +9,7 @@ export async function recordProjectMemoryUsage(app, input) {
   const context = await app.taskContextRegistry.context(input.taskContextToken, input.sourceApplication);
   // Cross-project usage weights project relations from a session's reads, so it
   // stops with automatic recording (rec#11 D-01).
-  const capture = captureDecision(app, taskCaptureScope(context));
+  const capture = await captureDecision(app, taskCaptureScope(context));
   if (!capture.allowed) return { recorded: false, reason: capture.reason, layer: capture.layer };
   if (!context.personalProjectId || context.personalProjectId === input.targetProjectId) {
     return { recorded: false, reason: 'not_cross_project' };

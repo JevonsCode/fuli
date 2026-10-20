@@ -129,10 +129,12 @@ Use `capture_session_knowledge` with a small, coherent batch:
 
 If `capture_session_knowledge`, a checkpoint, knowledge usage, feedback, a correction or automatic
 project creation returns `capture_disabled`, nothing was stored: automatic recording is off.
-`reason` is `global_off` or `client_off` when the user switched it off, and `policy_unavailable`
-when FULI could not read the capture settings. Do not retry, do not create a fallback record
-elsewhere, and do not describe the skipped write as stored. Edits the user submits in the FULI
-console still save, and existing knowledge may still be queried.
+`reason` is `global_off` or `client_off` when the user switched it off, `project_off` when the user
+does not record this project, `project_unregistered` when the work is outside every registered
+project and such work is not recorded, and `policy_unavailable` when FULI could not read the
+capture settings or resolve the project. The receipt already says so; copy it unchanged. Do not
+retry, do not create a fallback record elsewhere, and do not describe the skipped write as stored.
+Edits the user submits in the FULI console still save, and existing knowledge may still be queried.
 
 For an owned task, follow its `checkpoint_required` and `checkpoint_guidance`. Routine tasks
 with nothing new to record may use the entry receipt without a model checkpoint; eligible

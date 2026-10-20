@@ -8,6 +8,13 @@ export type CapabilityName =
 export interface CapturePolicy {
   enabled: boolean
   disabledSources?: string[]
+  // rec#5 C2: which projects are recorded, and since when each one is not.
+  projectMode?: 'all' | 'all_except' | 'selected'
+  excludedProjectIds?: string[]
+  selectedProjectIds?: string[]
+  unregisteredDirectories?: 'capture' | 'skip'
+  projectsOffSince?: Record<string, string>
+  unlistedProjectsOffSince?: string | null
   updatedAt?: string | null
 }
 

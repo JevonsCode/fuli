@@ -222,16 +222,18 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return recordDecisionTraceWorkflow(this, input);
   }
 
-  validateCaptureSessionKnowledge(input) {
-    if (captureDecision(this, knowledgeCaptureScope(input)).allowed) this.#prepareKnowledgeCapture(input);
+  // captureScope: the write's own scope when it differs from the target, as for
+  // a task checkpoint whose global preference was learned in the task's project.
+  async validateCaptureSessionKnowledge(input, { captureScope = knowledgeCaptureScope(input) } = {}) {
+    if ((await captureDecision(this, captureScope)).allowed) this.#prepareKnowledgeCapture(input);
   }
 
   async preflightPersonalKnowledgeCaptures(inputs) {
     return preflightTaskCaptures(this.personal, inputs, input => this.#prepareKnowledgeCapture(input));
   }
 
-  async captureSessionKnowledge(input) {
-    const capture = captureDecision(this, knowledgeCaptureScope(input));
+  async captureSessionKnowledge(input, { captureScope = knowledgeCaptureScope(input) } = {}) {
+    const capture = await captureDecision(this, captureScope);
     if (!capture.allowed) return { route: 'disabled', ...captureDisabled(capture) };
     const { episode, workspace, commit } = this.#prepareKnowledgeCapture(input);
     if (input.targetKind === 'personal') {
@@ -255,7 +257,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async recordWorkflowTransitionObservation(input) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
-    const capture = captureDecision(this, { sourceApplication: input.sourceApplication,
+    const capture = await captureDecision(this, { sourceApplication: input.sourceApplication,
       personalProjectId: input.personalProjectId ?? null, sessionId: input.hostSessionId ?? null });
     if (!capture.allowed) return { route: 'disabled', ...captureDisabled(capture) };
     assertNoCredentials(input);
@@ -283,8 +285,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   } = {}) {
     let projectResolution = await this.#resolvePreferenceProject({ personalProjectId, projectPath });
     if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
-      && captureDecision(this, { sourceApplication, projectPath, sessionId }).allowed) {
-      // Every task gets a FULI Agent, so a task in an unregistered repository registers it.
+      && (await captureDecision(this, { sourceApplication, projectPath, sessionId,
+        personalProjectId: projectResolution.repositoryProjectId })).allowed) {
+      // Every task gets a FULI Agent, so a task in an unregistered repository
+      // registers it, unless neither the folder nor the project it would
+      // become is recorded.
       projectResolution = await registerRepositoryProject(this, projectResolution, { sessionId, projectPath });
     }
     projectResolution = await resolveTaskEntryProject(this, projectResolution, {
@@ -378,6 +383,12 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       basis: null,
       personalProjectId: null
     };
+  }
+
+  // FULI's project for a directory, by the rules task entry uses: a
+  // repository root, or the original repository of a worktree.
+  resolveProjectPath(projectPath) {
+    return this.#resolvePreferenceProject({ personalProjectId: null, projectPath });
   }
 
   searchKnowledge(input) {
@@ -1026,6 +1037,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.capturePolicyStore.version();
   }
 
+  // See advanceCaptureSettingsVersion().
+  advanceCapturePolicyVersion() {
+    return this.capturePolicyStore.advanceVersion();
+  }
+
   updateCapturePolicy(input) {
     return this.capturePolicyStore.update(input);
   }
@@ -1073,7 +1089,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   // View records rank knowledge by what a session looked at: a behavior trace
   // that stops with automatic recording. Reading itself needs none (rec#11 D-01).
   async #recordAgentViews(items, toolName, scope) {
-    if (!items.length || !captureDecision(this, scope).allowed) return;
+    if (!items.length || !(await captureDecision(this, scope)).allowed) return;
     const unique = new Map(items.map((item) => [
       `${item.item_kind}:${item.item_id}`,
       item

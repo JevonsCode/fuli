@@ -3,6 +3,7 @@ import { dispatchGraphTool } from './agent-tools/graph-handlers.js';
 import { runWithAgentRequestContext } from './app/agent-request-context.js';
 import { ROUNDTABLE_TOOL_DEFINITIONS, ROUNDTABLE_TOOL_NAMES, callRoundtableTool } from './agent-roundtable/tools.js';
 import { ApplicationError } from './app/application-error.js';
+import { withCaptureLookups } from './graphiti/capture-decision.js';
 
 const TOOL_DEFINITIONS = [...GRAPH_TOOL_DEFINITIONS, ...ROUNDTABLE_TOOL_DEFINITIONS];
 
@@ -18,7 +19,7 @@ export function callAgentTool(app, name, input = {}, requestContext = null) {
     requestContext,
     () => ROUNDTABLE_TOOL_NAMES.includes(name)
       ? callRoundtableTool(app.roundtable, name, input)
-      : dispatchGraphTool(app, name, input)
+      : withCaptureLookups(() => dispatchGraphTool(app, name, input))
   );
 }
 
