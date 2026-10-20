@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { MODEL_ADAPTERS } from './adapters/registry.js';
-import { budgetBlock, callLimits, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
+import { budgetBlock, callLimits, ceilingCost, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
 import { decisionContract } from './decision-contract.js';
 import { egressAllowed } from './egress.js';
 import { FAILURE_STATUS, isFallbackEligible, modelFailure } from './failures.js';
@@ -20,6 +20,9 @@ const TRANSIENT_RETRY_LIMIT = 1;
 const REPAIR_LIMIT = 1;
 const BASE_BACKOFF_MS = 1000;
 const MIN_ATTEMPT_MS = 1000;
+// A live attempt aborts at its timeout; a reservation still unsettled this
+// long after that belongs to a process that stopped before settling it.
+const RESERVATION_GRACE_MS = 60_000;
 
 const USAGE_NOTES = 'One record per actual model API attempt; requests count distinct requestIds. '
   + 'reported is null when no attempt reported that value: unknown, never 0. '
@@ -80,8 +83,6 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     const contract = decisionContract(request);
     const prompt = decisionPrompt(request, contract.providerSchema);
     const limits = callLimits(roleConfig.budget, request.budget);
-    const estimatedInputTokens = estimateTokens(prompt);
-    if (estimatedInputTokens > limits.maxInputTokens) return stop('budget_exhausted', 'per_call_input');
     const deadline = startedAt + limits.timeoutMs;
     const formatKey = `${target.protocol} ${target.endpoint} ${target.model}`;
     mode = adapter.outputMode === 'json_schema' && promptOnly.has(formatKey) ? 'prompt' : adapter.outputMode;
@@ -93,29 +94,46 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     for (;;) {
       const remainingMs = deadline - now().getTime();
       if (remainingMs < MIN_ATTEMPT_MS) return stop('transient', 'timeout');
-      const blocked = budgetBlock({ budget: roleConfig.budget, pricing: target.pricing, estimatedInputTokens,
-        maxOutputTokens: limits.maxOutputTokens,
-        window: ledger.window({ role: request.role, since: windowStart(roleConfig.budget, now()) }) });
-      if (blocked) return stop('budget_exhausted', blocked);
+      // Each attempt is checked as it will go out: a repair adds turns and
+      // prompt mode writes the schema into the prompt.
+      const outgoing = promptForMode({ ...prompt, turns }, mode);
+      const inputTokens = estimateTokens(outgoing);
+      if (inputTokens > limits.maxInputTokens) return stop('budget_exhausted', 'per_call_input');
 
       const attemptStarted = now();
-      const result = await adapter.call({ connection: target, secret, request, mode, signal: AbortSignal.timeout(remainingMs),
-        prompt: promptForMode({ ...prompt, turns }, mode), maxOutputTokens: limits.maxOutputTokens, fetchImpl });
-      const verdict = !result.ok ? { failure: result.failure }
-        : result.payload !== undefined ? contract.validatePayload(result.payload) : contract.validateReply(result.reply);
-      const attempt = {
+      const pending = {
         requestId: request.requestId, attemptId: randomUUID(), attemptNumber: attempts.length + 1, purpose, channel: 'model_api',
         role: request.role, operation: request.operation, personalSpaceId: request.scope.personalSpaceId,
         personalProjectId: request.scope.personalProjectId, connectionId: target.id, protocol: target.protocol,
-        endpointHost: new URL(target.endpoint).host, requestedModel: target.model, actualModel: result.actualModel,
-        outputMode: mode, startedAt: attemptStarted.toISOString(), durationMs: now().getTime() - attemptStarted.getTime(),
+        endpointHost: new URL(target.endpoint).host, requestedModel: target.model, outputMode: mode,
+        startedAt: attemptStarted.toISOString(), budgetCeilingTokens: inputTokens + limits.maxOutputTokens,
+        costCurrency: target.pricing?.currency ?? null
+      };
+      const blocked = ledger.reserve({ attempt: pending, ceilingCost: ceilingCost(target.pricing, inputTokens, limits.maxOutputTokens),
+        expiresAt: new Date(attemptStarted.getTime() + remainingMs + RESERVATION_GRACE_MS).toISOString(),
+        since: windowStart(roleConfig.budget, attemptStarted), now: attemptStarted.toISOString(),
+        check: window => budgetBlock({ budget: roleConfig.budget, pricing: target.pricing, window,
+          estimatedInputTokens: inputTokens, maxOutputTokens: limits.maxOutputTokens }) });
+      if (blocked) return stop('budget_exhausted', blocked);
+
+      let result;
+      try {
+        result = await adapter.call({ connection: target, secret, request, mode, signal: AbortSignal.timeout(remainingMs),
+          prompt: outgoing, maxOutputTokens: limits.maxOutputTokens, fetchImpl });
+      } catch (error) {
+        ledger.settleUnknown(pending, { durationMs: now().getTime() - attemptStarted.getTime(), failureReason: 'attempt_error' });
+        throw error;
+      }
+      const verdict = !result.ok ? { failure: result.failure }
+        : result.payload !== undefined ? contract.validatePayload(result.payload) : contract.validateReply(result.reply);
+      const attempt = {
+        ...pending, actualModel: result.actualModel, durationMs: now().getTime() - attemptStarted.getTime(),
         outcome: verdict.ok ? 'succeeded' : verdict.issues ? 'invalid_output' : 'failed',
         failureClass: verdict.ok ? null : verdict.failure?.failureClass ?? 'configuration',
         failureReason: verdict.ok ? null : verdict.failure?.reason ?? 'invalid_output',
-        usage: result.usage, budgetCeilingTokens: estimatedInputTokens + limits.maxOutputTokens,
-        estimatedCost: estimateCost(result.usage, target.pricing), costCurrency: target.pricing?.currency ?? null
+        usage: result.usage, estimatedCost: estimateCost(result.usage, target.pricing)
       };
-      ledger.record(attempt);
+      ledger.settle(attempt);
       attempts.push(attempt);
 
       if (verdict.ok) {

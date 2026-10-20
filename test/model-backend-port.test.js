@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { createModelBackendPort } from '../src/model-backends/port.js';
@@ -81,10 +85,9 @@ function anthropicStream(content, { start = { input_tokens: 100, output_tokens: 
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), {
   status, headers: { 'content-type': 'application/json', ...headers } });
 
-function harness(roles, { connections, responses = [], keys = KEYS, raw } = {}) {
+function harness(roles, { connections, responses = [], keys = KEYS, raw, ledger = new ModelUsageLedger(':memory:') } = {}) {
   const calls = [];
   const waits = [];
-  const ledger = new ModelUsageLedger(':memory:');
   let next = 0;
   const port = createModelBackendPort({
     readConfig: () => readModelBackendConfig('model-backends.json', { read: () => raw ?? config(roles, connections) }),
@@ -313,6 +316,140 @@ test('C6: an attempt with unknown usage counts at its ceiling, a per-call input 
   assert.equal(capped.calls.length, 0);
 });
 
+function gate() {
+  let open;
+  const opened = new Promise(resolve => { open = resolve; });
+  return { open, after: response => () => opened.then(() => response) };
+}
+
+const windowOf = (ledger, roleId) => ledger.window({ role: roleId, since: '2026-10-19T00:00:00.000Z' });
+const ceilings = ledger => ledger.db.prepare('SELECT budget_ceiling_tokens AS ceiling FROM model_attempts ORDER BY attempt_number')
+  .all().map(row => row.ceiling);
+
+test('C6: concurrent attempts of one role reserve their ceiling first, so together they never pass the window', async () => {
+  const held = gate();
+  const shared = { ...role('local').budget, maxTokensPerWindow: 1500 };
+  const { port, calls, ledger } = harness({ bole: role('local', { budget: shared }) },
+    { responses: [held.after(openAiStream(answer(), { usage: null }))] });
+
+  const first = port.decide(request());
+  const second = await port.decide(request({ requestId: 'req-2' }));
+  assert.equal(second.modelReceipt.status, 'paused');
+  assert.equal(second.modelReceipt.reason, 'window_tokens');
+  assert.equal(calls.length, 1);
+  const ceiling = windowOf(ledger, 'bole').reservedTokens;
+  assert.ok(ceiling > 750 && ceiling <= 1500, `one attempt ceiling ${ceiling} must fit once, not twice`);
+
+  held.open();
+  assert.equal((await first).modelReceipt.status, 'completed');
+  // Unknown usage settles at the reserved ceiling.
+  assert.deepEqual(ceilings(ledger), [ceiling]);
+  assert.equal(windowOf(ledger, 'bole').reservedTokens, ceiling);
+  assert.equal(ledger.db.prepare('SELECT COUNT(*) AS n FROM model_reservations').get().n, 0);
+});
+
+test('C6: concurrent priced attempts reserve their cost ceiling against the cost cap', async () => {
+  const held = gate();
+  const capped = { ...role('claude').budget, maxCostPerWindow: 0.015 };
+  const { port, calls, ledger } = harness({ tonborg: role('claude', { budget: capped }) },
+    { responses: [held.after(anthropicStream(answer()))] });
+
+  const first = port.decide(request({ role: 'tonborg' }));
+  await new Promise(setImmediate);
+  const second = await port.decide(request({ role: 'tonborg', requestId: 'req-2' }));
+  assert.equal(second.modelReceipt.reason, 'window_cost');
+  assert.equal(calls.length, 1);
+  assert.ok(windowOf(ledger, 'tonborg').estimatedCost > 0.0075, 'the in-flight attempt holds its cost ceiling');
+
+  held.open();
+  assert.equal((await first).modelReceipt.status, 'completed');
+  assert.equal(windowOf(ledger, 'tonborg').estimatedCost, 0.00064);
+});
+
+test('C6: two ports sharing one ledger file see the in-flight reservations of each other', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'fuli-ledger-'));
+  const ledgers = [new ModelUsageLedger(join(dir, 'usage.sqlite')), new ModelUsageLedger(join(dir, 'usage.sqlite'))];
+  t.after(() => { ledgers.forEach(ledger => ledger.close()); rmSync(dir, { recursive: true, force: true }); });
+  const held = gate();
+  const shared = { ...role('local').budget, maxTokensPerWindow: 1500 };
+  const one = harness({ bole: role('local', { budget: shared }) }, { ledger: ledgers[0], responses: [held.after(openAiStream(answer()))] });
+  const two = harness({ bole: role('local', { budget: shared }) }, { ledger: ledgers[1], responses: [openAiStream(answer())] });
+
+  const first = one.port.decide(request());
+  const second = await two.port.decide(request({ requestId: 'req-2' }));
+  assert.equal(second.modelReceipt.reason, 'window_tokens');
+  assert.equal(two.calls.length, 0);
+  held.open();
+  assert.equal((await first).modelReceipt.status, 'completed');
+});
+
+test('C6: a reservation left by a crashed process keeps counting at its ceiling and is reclaimed only after it expires', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'fuli-ledger-'));
+  const path = join(dir, 'usage.sqlite');
+  const ledger = new ModelUsageLedger(path);
+  t.after(() => { ledger.close(); rmSync(dir, { recursive: true, force: true }); });
+  // Another process reserves an attempt and exits without settling it.
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    const { ModelUsageLedger } = await import(${JSON.stringify(new URL('../src/model-backends/usage-ledger.js', import.meta.url).href)});
+    const ledger = new ModelUsageLedger(${JSON.stringify(path)});
+    const pending = ${JSON.stringify(pendingAttempt({ requestId: 'crashed', budgetCeilingTokens: 1200 }))};
+    const blocked = ledger.reserve({ attempt: pending, ceilingCost: null, expiresAt: '2026-10-20T12:01:00.000Z',
+      since: '2026-10-19T12:00:00.000Z', now: '2026-10-20T11:59:00.000Z', check: () => null });
+    process.exit(blocked ? 2 : 0);`], { encoding: 'utf8' });
+  assert.equal(child.status, 0, child.stderr);
+
+  const shared = { ...role('local').budget, maxTokensPerWindow: 1500 };
+  const { port, calls } = harness({ bole: role('local', { budget: shared }) }, { ledger, responses: [openAiStream(answer())] });
+  const paused = await port.decide(request());
+  assert.equal(paused.modelReceipt.reason, 'window_tokens');
+  assert.equal(calls.length, 0);
+  assert.equal(windowOf(ledger, 'bole').reservedTokens, 1200);
+
+  // Expired: it becomes an attempt with unknown usage and still counts at its ceiling.
+  const later = createModelBackendPort({ readConfig: () => readModelBackendConfig('m.json', { read: () => config({ bole: role('local', { budget: shared }) }) }),
+    secrets: { read: async () => null }, ledger, fetchImpl: async () => openAiStream(answer()),
+    now: () => new Date('2026-10-20T12:05:00.000Z') });
+  assert.equal((await later.decide(request({ requestId: 'req-3' }))).modelReceipt.reason, 'window_tokens');
+  assert.equal(ledger.db.prepare('SELECT COUNT(*) AS n FROM model_reservations').get().n, 0);
+  const reclaimed = ledger.db.prepare("SELECT * FROM model_attempts WHERE request_id = 'crashed'").get();
+  assert.equal(reclaimed.outcome, 'failed');
+  assert.equal(reclaimed.failure_reason, 'unsettled');
+  assert.equal(reclaimed.total_tokens, null);
+  assert.equal(reclaimed.budget_ceiling_tokens, 1200);
+});
+
+test('C6: a repair turn is re-estimated, and one that grows past the per-call input limit is not sent', async () => {
+  const invalid = `{"decision": "propose", "reason": "${'x'.repeat(1800)}`;
+  const probe = harness({ bole: role('local') }, { responses: [openAiStream(invalid), openAiStream(answer())] });
+  assert.equal((await probe.port.decide(request())).modelReceipt.status, 'completed');
+  const [initialCeiling, repairCeiling] = ceilings(probe.ledger);
+  assert.ok(repairCeiling > initialCeiling + 500, 'the repair attempt carries its own, larger ceiling');
+
+  const initialInput = initialCeiling - role('local').budget.maxOutputTokens;
+  const tight = { ...role('local').budget, maxInputTokens: initialInput + 10 };
+  const { port, calls } = harness({ bole: role('local', { budget: tight }) }, { responses: [openAiStream(invalid), openAiStream(answer())] });
+  const result = await port.decide(request());
+  assert.equal(result.modelReceipt.status, 'paused');
+  assert.equal(result.modelReceipt.reason, 'per_call_input');
+  assert.equal(result.modelReceipt.attempts, 1);
+  assert.equal(calls.length, 1);
+});
+
+test('C6: a format fallback is re-estimated with the schema it writes into the prompt', async () => {
+  const unsupported = () => json(400, { error: { message: "response_format type 'json_schema' is not supported", type: 'invalid_request_error' } });
+  const probe = harness({ bole: role('local') }, { responses: [unsupported(), openAiStream(answer())] });
+  await probe.port.decide(request());
+  const [initialCeiling, fallbackCeiling] = ceilings(probe.ledger);
+  assert.ok(fallbackCeiling > initialCeiling, 'the prompt-mode attempt carries its own, larger ceiling');
+
+  const initialInput = initialCeiling - role('local').budget.maxOutputTokens;
+  const tight = { ...role('local').budget, maxInputTokens: initialInput };
+  const { port, calls } = harness({ bole: role('local', { budget: tight }) }, { responses: [unsupported(), openAiStream(answer())] });
+  const result = await port.decide(request());
+  assert.equal(result.modelReceipt.reason, 'per_call_input');
+  assert.equal(calls.length, 1);
+});
+
 test('C7: unapproved project or unassigned content is blocked before any request is built', async () => {
   for (const blocked of [
     request({ evidence: [{ id: 'e9', personalProjectId: 'beta', text: 'Beta private plan.' }] }),
@@ -506,4 +643,9 @@ function attempt(overrides) {
     outcome: 'succeeded', failureClass: null, failureReason: null, usage: usage({}), budgetCeilingTokens: 1000,
     estimatedCost: null, costCurrency: null, ...overrides
   };
+}
+
+function pendingAttempt(overrides) {
+  const { actualModel, durationMs, outcome, failureClass, failureReason, usage: _usage, estimatedCost, ...pending } = attempt(overrides);
+  return pending;
 }

@@ -32,8 +32,13 @@ export function budgetBlock({ budget, pricing, window, estimatedInputTokens, max
   if (budget.maxCostPerWindow === null) return null;
   const highestPrice = Math.max(pricing.inputPerMillionTokens, pricing.outputPerMillionTokens) / PER_MILLION;
   const spent = window.estimatedCost + window.unpricedTokens * highestPrice;
-  const next = (estimatedInputTokens * pricing.inputPerMillionTokens + maxOutputTokens * pricing.outputPerMillionTokens) / PER_MILLION;
-  return spent + next > budget.maxCostPerWindow ? 'window_cost' : null;
+  return spent + ceilingCost(pricing, estimatedInputTokens, maxOutputTokens) > budget.maxCostPerWindow ? 'window_cost' : null;
+}
+
+// The most one attempt may cost at configured prices; null without prices.
+export function ceilingCost(pricing, estimatedInputTokens, maxOutputTokens) {
+  if (!pricing) return null;
+  return (estimatedInputTokens * pricing.inputPerMillionTokens + maxOutputTokens * pricing.outputPerMillionTokens) / PER_MILLION;
 }
 
 // A labelled estimate from configured unit prices; null when prices or the
