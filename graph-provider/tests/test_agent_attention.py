@@ -95,6 +95,23 @@ async def test_counts_cover_full_set_not_only_page():
 
 
 @pytest.mark.asyncio
+async def test_one_request_is_read_by_exact_identity_inside_the_readable_space():
+    store = Store([{'request': raw_request(request_id='request-101', status='resolved')}])
+    result = await store.get_agent_attention({'actor': 'reader'}, 'space', 'request-101')
+    assert result.request_id == 'request-101' and result.status == 'resolved'
+    assert store.authorize.call_args.args == ({'actor': 'reader'}, 'space', 'reader')
+    query, = store.driver.execute_query.call_args.args
+    params = store.driver.execute_query.call_args.kwargs
+    assert "{id: $space_id, kind: 'personal'}" in query and 'request_id: $request_id' in query
+    assert 'SKIP' not in query and '$offset' not in query
+    assert params['space_id'] == 'space' and params['request_id'] == 'request-101'
+    store.driver.execute_query.return_value = ([], None, None)
+    with pytest.raises(HTTPException) as exc:
+        await store.get_agent_attention({}, 'space', 'missing')
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_request_scope_and_idempotency_are_checked_before_return(monkeypatch):
     authorize_agent = AsyncMock()
     monkeypatch.setattr('fuli_graph.store_project_agent_attention.authorize_project_agent', authorize_agent)

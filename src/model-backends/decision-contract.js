@@ -58,6 +58,18 @@ export function decisionContract({ output, decisions, evidence }) {
   };
 }
 
+// The host's envelope around a validated answer, whoever gave it: the model
+// port or the current session completing a work package.
+export function decisionEnvelope(request, value) {
+  return {
+    role: request.role, operation: request.operation, requestId: request.requestId, sourceEventId: request.sourceEventId,
+    scope: request.scope,
+    evidence: { refs: value.evidenceIds, evidenceVersion: request.versions.evidence, policyVersion: request.versions.policy },
+    decision: value.decision, payload: value.payload, reason: value.reason, uncertainty: value.uncertainty,
+    execution: { status: 'pending' }
+  };
+}
+
 function payloadJsonSchema(output) {
   if (output.type === 'choice') {
     return objectSchema({ choice: enumSchema(output.options.map(option => option.id)) }, ['choice']);

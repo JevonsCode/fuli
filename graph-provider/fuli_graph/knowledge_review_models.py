@@ -186,6 +186,20 @@ class KnowledgeReviewDecision(StrictModel):
     ai_review_project_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
+class KnowledgeReviewDecisionLookup(StrictModel):
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    review_id: str = Field(min_length=1, max_length=256)
+    candidate_key: str = Field(
+        min_length=3,
+        max_length=520,
+        pattern=r'^(entity|relationship):.+$',
+    )
+
+
+class KnowledgeReviewDecisionLookupResult(StrictModel):
+    decision: KnowledgeReviewDecision | None = None
+
+
 class KnowledgeReviewFinish(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     review_id: str = Field(min_length=1, max_length=256)

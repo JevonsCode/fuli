@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { listAgentTools, callAgentTool } from '../src/agent-tools.js';
 import { jsonSchemaToZod } from '../src/mcp/tool-schema.js';
-import { attentionInput, attentionRecord, listAgentAttention, changeAgentAttention } from '../src/graphiti/agent-attention.js';
+import { attentionInput, attentionRecord, listAgentAttention, getAgentAttention, changeAgentAttention } from '../src/graphiti/agent-attention.js';
+import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
+import { handleAgentAttentionRequest } from '../src/http/agent-attention-api-router.js';
 import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
 import { successToolResult } from '../src/mcp/tool-result.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -79,4 +81,23 @@ test('attention maps scope, revisions and responses without losing complete coun
   } } }, { personalSpaceId: 'space' });
   assert.equal(result.counts.agent, 201);
   assert.equal(result.items[0].requestId, 'one');
+});
+
+test('a linked request is read by exact identity in its space, not from a page of the queue', async () => {
+  const calls = [];
+  const provider = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async url => { calls.push(String(url)); return new Response(JSON.stringify({ request_id: 'request/101', personal_space_id: 'space', status: 'resolved', revision: 3 }), { status: 200, headers: { 'content-type': 'application/json' } }); } });
+  const application = { personal: provider };
+  const record = await getAgentAttention(application, { personalSpaceId: 'space', requestId: 'request/101' });
+  assert.deepEqual(record, { requestId: 'request/101', personalSpaceId: 'space', status: 'resolved', revision: 3 });
+  assert.equal(calls[0], 'http://provider.test/v1/agent-attention/request%2F101?personal_space_id=space');
+  await assert.rejects(getAgentAttention(application, { personalSpaceId: 'space', requestId: ' ' }), TypeError);
+
+  let sent;
+  const response = { writeHead: status => { sent = { status }; }, setHeader() {}, end: body => { sent.body = JSON.parse(body); } };
+  const app = { getAgentAttention: input => ({ seen: input }) };
+  const handled = await handleAgentAttentionRequest({ request: { method: 'GET' }, response, app,
+    url: new URL('http://fuli.test/api/agent-attention/request?personalSpaceId=space&requestId=request-101') });
+  assert.equal(handled, true);
+  assert.deepEqual(sent.body, { seen: { personalSpaceId: 'space', requestId: 'request-101' } });
 });

@@ -196,6 +196,10 @@ export class GraphitiProviderClient {
     const query = new URLSearchParams(Object.entries(input).filter(([, value]) => value != null));
     return this.#request(`/v1/agent-attention?${query}`);
   }
+  getAgentAttention(personalSpaceId, requestId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(`/v1/agent-attention/${encodeURIComponent(requestId)}?${query}`);
+  }
   changeAgentAttention(operation, input) {
     const paths = { create: '/v1/agent-attention', cancel: '/v1/agent-attention/cancel', respond: '/v1/agent-attention/respond' };
     if (!Object.hasOwn(paths, operation)) throw new TypeError('Unknown attention operation');
@@ -704,6 +708,11 @@ export class GraphitiProviderClient {
   }
   recordKnowledgeReviewProgress(input) {
     return this.#request('/v1/knowledge/reviews/progress', {
+      method: 'POST', body: input
+    });
+  }
+  readKnowledgeReviewDecision(input) {
+    return this.#request('/v1/knowledge/reviews/decision', {
       method: 'POST', body: input
     });
   }

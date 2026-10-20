@@ -1,5 +1,5 @@
 import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
-import { nonEmptyText } from '../validation/values.js';
+import { nonEmptyText, requiredString } from '../validation/values.js';
 
 const fields = {
   personalSpaceId: 'personal_space_id', personalProjectId: 'personal_project_id',
@@ -23,6 +23,12 @@ export async function listAgentAttention(application, input) {
   const value = await application.personal.listAgentAttention(attentionInput(input));
   const items = value.items.map(attentionRecord);
   return { ...attentionInteraction(items.find(item => item.status === 'open')), ...value, items };
+}
+
+// A linked request is read by its identity, so a page of the open queue never hides it.
+export async function getAgentAttention(application, { personalSpaceId, requestId }) {
+  return attentionRecord(await application.personal.getAgentAttention(
+    requiredString(personalSpaceId, 'personalSpaceId', 128), requiredString(requestId, 'requestId', 128)));
 }
 
 export async function changeAgentAttention(application, operation, input) {

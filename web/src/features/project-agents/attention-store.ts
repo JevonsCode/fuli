@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { getJson, postJson } from '@/api/client'
+import { ApiError, getJson, postJson } from '@/api/client'
 import { t } from '@/i18n'
 import type { AttentionAnswer, AttentionDelivery, AttentionReplyDraft } from './attention-replies'
 
@@ -10,6 +10,17 @@ export interface AgentAttention {
   revision: number; status: 'open' | 'resolved' | 'cancelled'; createdAt: string
 }
 interface AttentionList { items: AgentAttention[]; total: number; counts: Record<string, number> }
+/**
+ * A request opened by its link, read by its identity apart from the queue's pages.
+ * `missing`: no such request in this space; `failed`: the read itself did not work.
+ */
+export interface LinkedAttention { requestId: string; state: 'loading' | 'found' | 'missing' | 'failed'; item?: AgentAttention; error?: string }
+/**
+ * What a request's quick look shows: the request still being read, an open request
+ * with its reply form, one already handled, none with that identity in this space,
+ * or a read that failed.
+ */
+export type AttentionPeekState = 'loading' | 'open' | 'handled' | 'missing' | 'failed'
 /** What became of the last reply sent from this console: shown until the next one or a space change. */
 interface AttentionReplyOutcome extends AttentionDelivery { requestId: string; title: string }
 
@@ -32,10 +43,12 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   const drafts = ref<Record<string, AttentionReplyDraft & { revision: number }>>({})
   const responseErrors = ref<Record<string, string>>({})
   const lastReply = ref<AttentionReplyOutcome | null>(null)
+  const linked = ref<LinkedAttention | null>(null)
   const loading = ref(false)
   const error = ref('')
   let version = 0
   let previewVersion = 0
+  let linkedVersion = 0
 
   function applyPreview(id: string, result: AttentionList) {
     previewSpaceId.value = id
@@ -60,6 +73,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   async function refresh() {
     const current = ++version
     if (!spaceId.value) return
+    const linkedBefore = linkedVersion
     loading.value = true
     const currentPreview = ++previewVersion
     previewSpaceId.value = spaceId.value
@@ -79,6 +93,11 @@ export const useAgentAttention = defineStore('agent-attention', () => {
         const result = await getJson<AttentionList>(`/api/agent-attention?${scope}&limit=100`)
         if (current !== version) return
         items.value = result.items.filter(item => item.personalSpaceId === spaceId.value && (!agentId.value || item.agentId === agentId.value)); filteredTotal.value = result.total
+        // A request opened by its link and not on this page is read again by itself, unless
+        // it was already read while this queue was loading; a handled one is final.
+        const link = linked.value
+        if (link && linkedVersion === linkedBefore && link.item?.status !== 'resolved' && link.item?.status !== 'cancelled'
+          && !items.value.some(item => item.requestId === link.requestId)) void loadRequest(link.requestId)
       }
       error.value = ''
     } catch (cause) {
@@ -116,11 +135,32 @@ export const useAgentAttention = defineStore('agent-attention', () => {
       if (current === previewVersion) previewLoading.value = false
     }
   }
+  // Reads one request by its exact identity in the current space, open or already handled.
+  // A reread of the same request keeps showing what was read before.
+  async function loadRequest(requestId: string) {
+    const space = spaceId.value
+    if (!space || !requestId) return
+    const current = ++linkedVersion
+    const previous = linked.value?.requestId === requestId ? linked.value.item : undefined
+    linked.value = { requestId, state: 'loading', item: previous }
+    try {
+      const query = new URLSearchParams({ personalSpaceId: space, requestId })
+      const item = await getJson<AgentAttention>(`/api/agent-attention/request?${query}`)
+      if (current !== linkedVersion || space !== spaceId.value) return
+      linked.value = item.personalSpaceId === space ? { requestId, state: 'found', item } : { requestId, state: 'missing' }
+    } catch (cause) {
+      if (current !== linkedVersion || space !== spaceId.value) return
+      linked.value = cause instanceof ApiError && cause.status === 404
+        ? { requestId, state: 'missing' }
+        : { requestId, state: 'failed', item: previous, error: cause instanceof Error ? cause.message : String(cause) }
+    }
+  }
   function setSpace(id: string) {
     if (spaceId.value === id) return
     version++; spaceId.value = id; counts.value = {}; items.value = []; total.value = 0
     filteredTotal.value = 0; error.value = ''; open.value = false; loading.value = false
     agentId.value = ''; drafts.value = {}; responseErrors.value = {}; lastReply.value = null
+    linkedVersion++; linked.value = null
     resetPreview()
     if (id) void refresh()
   }
@@ -157,6 +197,9 @@ export const useAgentAttention = defineStore('agent-attention', () => {
       counts.value = { ...counts.value, [item.agentId]: Math.max(0, (counts.value[item.agentId] ?? 0) - 1) }
       if (!agentId.value || agentId.value === item.agentId) filteredTotal.value = Math.max(0, filteredTotal.value - 1)
       delete drafts.value[item.requestId]
+      // Answered here: its quick look, and a link back to it, show it as handled without another read.
+      linkedVersion++
+      linked.value = { requestId: item.requestId, state: 'found', item: { ...item, status: 'resolved', revision: item.revision + 1 } }
       if (previewSpaceId.value === originalSpace) {
         previewItems.value = previewItems.value.filter(candidate => candidate.requestId !== item.requestId)
         previewTotal.value = Math.max(0, previewTotal.value - 1)
@@ -166,8 +209,8 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   }
   return {
     spaceId, counts, total, items, filteredTotal, previewItems, previewTotal, previewSpaceId,
-    previewLoading, previewLoaded, previewError, agentId, open, loading, error, drafts, responseErrors, lastReply,
-    setSpace, show, refresh, refreshPreview, more, respond,
+    previewLoading, previewLoaded, previewError, agentId, open, loading, error, drafts, responseErrors, lastReply, linked,
+    setSpace, show, refresh, refreshPreview, loadRequest, more, respond,
   }
 })
 

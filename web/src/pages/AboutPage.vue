@@ -35,16 +35,17 @@ import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
 </template>
 
 <style scoped>
+/* The form column (--form-max) the shell's title lines up with. */
 .about-view {
-  min-height: 0;
-  flex: 1 1 auto;
-  padding: clamp(40px, 6vw, 72px) 28px 96px;
+  padding-top: clamp(24px, 4vw, 48px);
+  padding-bottom: 96px;
   color: var(--color-ink);
-  background: var(--color-bg);
+  scrollbar-gutter: stable;
 }
 
 .about-content {
-  width: min(760px, 100%);
+  width: 100%;
+  max-width: var(--form-max);
   display: grid;
   gap: 72px;
   margin: 0 auto;
@@ -110,7 +111,7 @@ import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
 }
 
 @media (max-width: 680px) {
-  .about-view { padding: 32px 20px 64px; }
+  .about-view { padding-top: 32px; padding-bottom: 64px; }
   .about-content { gap: 56px; }
   .about-opening { padding-bottom: 44px; }
   .about-opening-copy { font-size: 14px; }

@@ -9,7 +9,8 @@ const PEEK_QUERY = 'item'
 
 interface PeekItem { spaceId: string; id: string }
 
-function peekItemValue(item: PeekItem) {
+/** The ?item= value for a record; a page that turns its own link into a Peek uses it. */
+export function peekItemValue(item: PeekItem) {
   return `${encodeURIComponent(item.spaceId)}/${encodeURIComponent(item.id)}`
 }
 

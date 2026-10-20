@@ -1,7 +1,7 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const deleteJson = vi.hoisted(() => vi.fn())
 const getJson = vi.hoisted(() => vi.fn())
@@ -9,11 +9,14 @@ const postJson = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/client', () => ({ deleteJson, getJson, postJson }))
 
+import { peekItemValue } from '@/composables/useRoutePeek'
 import { useConsoleStore } from '@/stores/console'
 import { UiSelectStub } from '@/test-support/UiSelectStub'
 import PublicProjectsPage from './PublicProjectsPage.vue'
 
 describe('PublicProjectsPage', () => {
+  afterEach(() => { document.body.innerHTML = '' })
+
   beforeEach(() => {
     deleteJson.mockReset()
     deleteJson.mockResolvedValue({})
@@ -97,12 +100,12 @@ describe('PublicProjectsPage', () => {
     expect(cards[0].text()).toContain('查看详情')
     expect(cards[0].text()).toContain('v1.0.0')
 
-    await cards[0].get('[data-variant="default"]').trigger('click')
+    await cards[0].get('[data-project-details]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('.public-project-details').text()).toContain('首次发布')
-    expect(wrapper.get('.public-project-details').text()).toContain('PART_OF')
+    expect(details().text()).toContain('首次发布')
+    expect(details().text()).toContain('PART_OF')
 
-    await wrapper.get('.relation-section-toolbar [data-variant="default"]').trigger('click')
+    await wrapper.get('[data-add-relation]').trigger('click')
     await wrapper.get('[aria-label="关系来源项目"]').setValue('project-a')
     await wrapper.get('[aria-label="项目关系类型"]').setValue('PART_OF')
     await wrapper.get('[aria-label="关系目标项目"]').setValue('project-b')
@@ -183,18 +186,15 @@ describe('PublicProjectsPage', () => {
     })
 
     const cards = wrapper.findAll('.project-card')
-    await cards[0].get('[data-variant="default"]').trigger('click')
+    await cards[0].get('[data-project-details]').trigger('click')
     await flushPromises()
     expect(pending.map(({ url }) => url)).toEqual([
       expect.stringContaining('/api/projects/project-a/releases'),
       expect.stringContaining('/api/project-relations'),
     ])
 
-    await wrapper
-      .get('.public-project-details button')
-      .trigger('click')
-    await flushPromises()
-    await cards[1].get('[data-variant="default"]').trigger('click')
+    await closeDetails()
+    await cards[1].get('[data-project-details]').trigger('click')
     await flushPromises()
 
     pending[2]?.resolve({
@@ -211,9 +211,9 @@ describe('PublicProjectsPage', () => {
     })
     await flushPromises()
 
-    const details = wrapper.get('.public-project-details')
-    expect(details.text()).toContain('B-release')
-    expect(details.text()).toContain('DEPENDS_ON')
+    const shown = details()
+    expect(shown.text()).toContain('B-release')
+    expect(shown.text()).toContain('DEPENDS_ON')
 
     pending[0]?.resolve({
       releases: [{ version: 'A-release', update_summary: 'A 版本', published_at: '2026-08-01' }],
@@ -229,13 +229,13 @@ describe('PublicProjectsPage', () => {
     })
     await flushPromises()
 
-    expect(details.text()).toContain('B-release')
-    expect(details.text()).not.toContain('A-release')
-    expect(details.text()).not.toContain('PART_OF')
+    expect(shown.text()).toContain('B-release')
+    expect(shown.text()).not.toContain('A-release')
+    expect(shown.text()).not.toContain('PART_OF')
     wrapper.unmount()
   })
 
-  it('opens public project dialogs as modal and restores focus after Escape', async () => {
+  it('opens details as a quick look and deletion as a modal, restoring focus after Escape', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useConsoleStore()
@@ -266,16 +266,18 @@ describe('PublicProjectsPage', () => {
       },
     })
 
-    const detailsTrigger = wrapper.get('.project-card [data-variant="default"]')
+    const detailsTrigger = wrapper.get('.project-card [data-project-details]')
     ;(detailsTrigger.element as HTMLElement).focus()
     await detailsTrigger.trigger('click')
-    await flushPromises()
-    const details = wrapper.get('.public-project-details')
-    expect((details.element as HTMLDialogElement).open).toBe(true)
-    expect(document.activeElement).toBe(details.get('button').element)
+    await settleNavigation()
+    // The details are a quick look in the URL; the card lifts while it is open.
+    expect(router.currentRoute.value.query.item).toBe('https%3A%2F%2Fprovider.example/project-a')
+    expect(details().attributes('role')).toBe('dialog')
+    expect(wrapper.get('.project-card').classes()).toContain('is-selected')
 
-    await details.trigger('cancel')
-    await flushPromises()
+    await closeDetails()
+    expect(router.currentRoute.value.query.item).toBeUndefined()
+    expect(document.querySelector('.public-project-details')).toBeNull()
     expect(document.activeElement).toBe(detailsTrigger.element)
 
     const deletionTrigger = wrapper.get('.project-card .project-manage-action')
@@ -289,6 +291,29 @@ describe('PublicProjectsPage', () => {
     await deletion.trigger('cancel')
     await flushPromises()
     expect(document.activeElement).toBe(deletionTrigger.element)
+    wrapper.unmount()
+  })
+
+  it('opens a linked project quick look directly and says when the project is not listed', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = {
+      mode: 'connected', activePersonalSpaceId: 'personal-1', personalSpaces: [{ id: 'personal-1', name: '我' }], personalProjects: [],
+      providers: { personal: { status: 'ready' }, workspaces: [{ status: 'ready', providerUrl: 'https://provider.example' }] },
+      projects: [{ id: 'project-a', name: '项目 A', providerUrl: 'https://provider.example', role: 'reader' }],
+      subscriptions: [],
+    }
+    const router = await readyRouter()
+    await router.push({ path: '/', query: { item: peekItemValue({ spaceId: 'https://provider.example', id: 'project-a' }) } })
+    const wrapper = mount(PublicProjectsPage, { global: { plugins: [pinia, router], stubs: { UiSelect: UiSelectStub, PublishQueue: true } } })
+    await flushPromises()
+    expect(details().text()).toContain('项目 A')
+    expect(details().text()).toContain('首次发布')
+
+    await router.replace({ path: '/', query: { item: peekItemValue({ spaceId: 'https://provider.example', id: 'project-gone' }) } })
+    await flushPromises()
+    expect(details().text()).toContain('这个公共项目不在当前列表中')
     wrapper.unmount()
   })
 
@@ -357,27 +382,24 @@ describe('PublicProjectsPage', () => {
     expect(fuliCard.find('.project-manage-action').exists()).toBe(false)
     expect(fuliCard.find('.project-release-meta').exists()).toBe(false)
 
-    await fuliCard.get('[data-variant="default"]').trigger('click')
+    await fuliCard.get('[data-project-details]').trigger('click')
     await flushPromises()
     expect(getJson).not.toHaveBeenCalled()
-    expect(wrapper.get('.public-project-details').text())
+    expect(details().text())
       .toContain('该服务不提供版本记录或项目关系')
-    expect(wrapper.find('.project-detail-columns').exists()).toBe(false)
+    expect(document.querySelector('.project-detail-columns')).toBeNull()
 
-    await wrapper
-      .get('.public-project-details button')
-      .trigger('click')
-    await flushPromises()
-    await graphitiCard.get('[data-variant="default"]').trigger('click')
+    await closeDetails()
+    await graphitiCard.get('[data-project-details]').trigger('click')
     await flushPromises()
     expect(getJson).toHaveBeenCalledTimes(2)
     expect(getJson.mock.calls.every(([url]) =>
       url.includes('graphiti-project') || url.includes('projectId=graphiti-project')))
       .toBe(true)
-    expect(wrapper.get('.public-project-details').text())
+    expect(details().text())
       .toContain('首次发布')
 
-    const addRelation = wrapper.get('.relation-section-toolbar [data-variant="default"]')
+    const addRelation = wrapper.get('[data-add-relation]')
     expect(addRelation.attributes('disabled')).toBeUndefined()
     await addRelation.trigger('click')
     const relationSource = wrapper.get('[aria-label="关系来源项目"]')
@@ -387,6 +409,23 @@ describe('PublicProjectsPage', () => {
       .not.toContain('fuli-workspace-project')
   })
 })
+
+// Details are a quick look (Peek) in a portal, so they are read from the document.
+function details() {
+  const element = document.querySelector<HTMLElement>('.public-project-details')
+  if (!element) throw new Error('Project details are not open')
+  return new DOMWrapper(element)
+}
+
+async function settleNavigation() {
+  await flushPromises(); await new Promise(resolve => setTimeout(resolve, 0)); await flushPromises()
+}
+
+async function closeDetails() {
+  document.querySelector<HTMLElement>('.public-project-details')!
+    .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await settleNavigation()
+}
 
 async function readyRouter() {
   const router = createRouter({

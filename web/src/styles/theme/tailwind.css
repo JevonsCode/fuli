@@ -40,6 +40,15 @@
 @source "../../pages/ProjectAgentsPage.vue";
 @source "../../features/project-agents/ProjectAgentCard.vue";
 @source "../../pages/ProjectAgentDetailPage.vue";
+/* Inbox, connections, projects, the shared report and not-found on the D-03 canvas. */
+@source "../../pages/InboxPage.vue";
+@source "../../features/project-agents/AttentionWorkspace.vue";
+@source "../../features/project-agents/AttentionPeek.vue";
+@source "../../pages/ConnectionsPage.vue";
+@source "../../pages/PublicProjectsPage.vue";
+@source "../../features/project-history/ProjectHistoryPreview.vue";
+@source "../../pages/SharedJefaReportPage.vue";
+@source "../../pages/NotFoundPage.vue";
 
 @import "./base.css";
 @import "./semantic.css";

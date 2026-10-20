@@ -12,6 +12,13 @@ export async function handleAgentAttentionRequest({ request, response, url, app 
     }));
     return true;
   }
+  if (url.pathname === '/api/agent-attention/request' && request.method === 'GET') {
+    sendJson(response, 200, await app.getAgentAttention({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      requestId: url.searchParams.get('requestId')
+    }));
+    return true;
+  }
   if (url.pathname === '/api/agent-attention' && request.method === 'POST') {
     sendJson(response, 200, await app.requestAgentAttention(await readJson(request)));
     return true;

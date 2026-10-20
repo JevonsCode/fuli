@@ -5,15 +5,14 @@ import test from 'node:test';
 const connectionStyles = readFileSync('web/src/styles/connections.css', 'utf8');
 const styles = `${readFileSync('web/styles.css', 'utf8')}\n${connectionStyles}`;
 
-test('external knowledge sections use compact spacing and accessible help links', () => {
-  const sectionRule = styles.match(
-    /\.external-knowledge-section, \.conflict-policy-section\s*\{(?<body>[^}]*)\}/
-  );
+test('connection sections are cards on the form column and keep accessible help links', () => {
+  const page = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
+  // D-03: each section is a shared Card in the one form column; no hand-made dividers.
+  assert.match(page, /<Card as="section" class="external-knowledge-section"/);
+  assert.match(page, /<Card v-if="personalProjects.length" as="section" class="conflict-policy-section/);
+  assert.match(page, /max-w-\(--form-max\)/);
+  assert.doesNotMatch(styles, /\.external-knowledge-section, \.conflict-policy-section/);
   const helpRule = styles.match(/\.section-help-link\s*\{(?<body>[^}]*)\}/);
-
-  assert.ok(sectionRule?.groups?.body);
-  assert.match(sectionRule.groups.body, /margin-top:\s*14px/);
-  assert.match(sectionRule.groups.body, /padding-top:\s*12px/);
 
   assert.ok(helpRule?.groups?.body);
   assert.match(helpRule.groups.body, /width:\s*17px/);
