@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { resolveClientCommand, runProcess, parseFinalAnswer } from '../../packages/roundtable/src/roundtable/wake.js';
 import { judgmentArgs } from '../agents/judgment-registry.js';
 
-// A bounded evaluation in an empty directory. Client adapters disable custom
+// The legacy CLI judgment adapter (D-04 §6): it runs only when Tonborg's
+// policy opts in with backend legacy_cli (see backend.js). A bounded
+// evaluation in an empty directory. Client adapters disable custom
 // hooks/MCP/tools; supplied evidence is data, not instructions or permissions.
 export async function runJudgment({ client, quality, prompt, env = process.env, run = runProcess }) {
   const command = resolveClientCommand(client, { env });

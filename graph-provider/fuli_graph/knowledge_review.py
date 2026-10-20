@@ -9,6 +9,8 @@ from .knowledge_review_models import (
     KnowledgeReviewCandidatePage,
     KnowledgeReviewCandidateRequest,
     KnowledgeReviewDecision,
+    KnowledgeReviewDecisionLookup,
+    KnowledgeReviewDecisionLookupResult,
     KnowledgeReviewFinish,
     KnowledgeReviewProgress,
     KnowledgeReviewRun,
@@ -260,6 +262,38 @@ async def record_knowledge_review_progress(
     if not records:
         raise HTTPException(status_code=404, detail='active knowledge review not found')
     return _review_decision(dict(records[0]['decision']))
+
+
+async def read_knowledge_review_decision(
+    store,
+    actor: dict,
+    request: KnowledgeReviewDecisionLookup,
+) -> KnowledgeReviewDecisionLookupResult:
+    """Return the decision a review run holds for one candidate, if any.
+
+    A caller whose write reply was lost settles it against this record: the
+    decision is keyed by run and candidate, so it is the write's own receipt.
+    """
+
+    store._require_personal()
+    space = await _personal_space(store, actor, request.personal_space_id, 'maintainer')
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
+              [:HAS_KNOWLEDGE_REVIEW]->(:FuliKnowledgeReviewRun {id: $review_id})-
+              [:HAS_REVIEW_DECISION]->(decision:FuliKnowledgeReviewDecision {
+                candidate_key: $candidate_key
+              })
+        RETURN decision LIMIT 1
+        ''',
+        space_id=space['id'],
+        review_id=request.review_id,
+        candidate_key=request.candidate_key,
+        routing_='r',
+    )
+    return KnowledgeReviewDecisionLookupResult(
+        decision=_review_decision(dict(records[0]['decision'])) if records else None
+    )
 
 
 async def _record_ai_review_progress(

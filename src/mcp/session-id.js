@@ -11,6 +11,8 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'get_agent_message_status', 'cancel_agent_message',
   'get_agent_quality_gate', 'record_agent_verification',
   'assess_task_completion',
+  // The session answering a work package is the client of this process.
+  'role_work',
   'plan_agent_collaboration', 'request_agent_loan', 'decide_agent_loan', 'list_agent_loans',
   'list_agent_conversations', 'read_agent_conversation', 'resume_agent_conversation',
   'get_agent_conversation_policy', 'update_agent_conversation_policy',

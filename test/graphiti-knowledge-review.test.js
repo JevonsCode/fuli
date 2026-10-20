@@ -21,6 +21,7 @@ test('persistent knowledge review stays personal and preserves every outcome', a
       '/v1/knowledge/reviews/start': { review_id: 'review-1' },
       '/v1/knowledge/reviews/candidates': { candidates: [] },
       '/v1/knowledge/reviews/progress': { decision_id: 'decision-1' },
+      '/v1/knowledge/reviews/decision': { decision: null },
       '/v1/knowledge/reviews/finish': { review_id: 'review-1', status: 'paused' }
     })
   });
@@ -42,6 +43,11 @@ test('persistent knowledge review stays personal and preserves every outcome', a
     outcome: 'deferred',
     note: 'User chose to revisit this next time.'
   });
+  assert.deepEqual(await app.readKnowledgeReviewDecision({
+    personalSpaceId: 'personal-space',
+    reviewId: 'review-1',
+    candidateKey: 'entity:item-1'
+  }), { decision: null });
   await app.finishKnowledgeReview({
     personalSpaceId: 'personal-space',
     reviewId: 'review-1',
@@ -52,6 +58,7 @@ test('persistent knowledge review stays personal and preserves every outcome', a
     '/v1/knowledge/reviews/start',
     '/v1/knowledge/reviews/candidates',
     '/v1/knowledge/reviews/progress',
+    '/v1/knowledge/reviews/decision',
     '/v1/knowledge/reviews/finish'
   ]);
   assert.deepEqual(calls[0].body, {
@@ -61,7 +68,8 @@ test('persistent knowledge review stays personal and preserves every outcome', a
   });
   assert.equal(calls[2].body.candidate_key, 'entity:item-1');
   assert.equal(calls[2].body.outcome, 'deferred');
-  assert.equal(calls[3].body.disposition, 'paused');
+  assert.deepEqual(calls[3].body, { personal_space_id: 'personal-space', review_id: 'review-1', candidate_key: 'entity:item-1' });
+  assert.equal(calls[4].body.disposition, 'paused');
 });
 
 function providerFetch(calls, routes) {
