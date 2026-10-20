@@ -47,6 +47,7 @@ const NAMES = [
   'search_knowledge_graph',
   'search_connected_knowledge',
   'record_knowledge_usage',
+  'resolve_knowledge_tags', 'change_knowledge_tags',
   'record_knowledge_feedback',
   'search_current_project_knowledge',
   'discover_common_knowledge_candidates',
@@ -377,6 +378,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     recordDecisionTrace: async (input) => calls.push(['decision-trace', input]),
     searchKnowledge: async (input) => calls.push(['search', input]),
     recordKnowledgeUsage: async (input) => calls.push(['knowledge-usage', input]),
+    knowledgeTags: async (operation, input) => calls.push(['tags-' + operation, input]),
     recordKnowledgeFeedback: async (input) =>
       calls.push(['knowledge-feedback', input]),
     searchCurrentProjectKnowledge: async (input) =>
@@ -492,7 +494,10 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   const previousTestTools = process.env.FULI_ENABLE_TEST_TOOLS;
   process.env.FULI_ENABLE_TEST_TOOLS = '1';
   try {
-    for (const name of NAMES.filter((value) => !ROUNDTABLE_TOOL_NAMES.includes(value))) await callAgentTool(app, name, { probe: name });
+    for (const name of NAMES.filter((value) => !ROUNDTABLE_TOOL_NAMES.includes(value))) {
+      // A tag change names its write; every other probe is the bare tool name.
+      await callAgentTool(app, name, name === 'change_knowledge_tags' ? { probe: name, action: 'create' } : { probe: name });
+    }
   assert.deepEqual(calls.map(([name]) => name), [
     'request-attention', 'list-attention', 'cancel-attention',
     'agent-tasks', 'preference-conflicts',
@@ -507,7 +512,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',
     'capture', 'workflow-observation', 'decision-trace', 'search', 'connected-search',
-    'get-capture-policy', 'knowledge-usage', 'get-capture-policy', 'knowledge-feedback',
+    'get-capture-policy', 'knowledge-usage', 'tags-resolve', 'get-capture-policy', 'tags-create',
+    'get-capture-policy', 'knowledge-feedback',
     'current-project-search', 'common-candidates', 'personal-global-candidates',
     'preview-personal-global-decision',
     'preview-common-promotion', 'apply-common-promotion',

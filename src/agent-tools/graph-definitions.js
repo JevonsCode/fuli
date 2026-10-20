@@ -38,6 +38,7 @@ import { AGENT_INTERFACE_DEFINITIONS } from './interface-definitions.js';
 import { AGENT_ATTENTION_DEFINITIONS } from './agent-attention-definitions.js';
 import { AGENT_SCORE_CARD_DEFINITIONS } from './agent-score-card-definitions.js';
 import { KNOWLEDGE_USAGE_DEFINITION, knowledgeUsageItems } from './knowledge-usage-definitions.js';
+import { KNOWLEDGE_TAG_DEFINITIONS } from './knowledge-tag-definitions.js';
 
 const id = boundedString(256);
 const label = boundedString(512);
@@ -512,6 +513,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
     }, ['personalSpaceId', 'personalProjectId', 'query'])
   },
   KNOWLEDGE_USAGE_DEFINITION,
+  ...KNOWLEDGE_TAG_DEFINITIONS,
   {
     name: 'record_knowledge_feedback',
     title: 'WRITE · Record negative knowledge evidence',
