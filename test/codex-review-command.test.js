@@ -10,9 +10,11 @@ import { callAgentTool } from '../src/agent-tools.js';
 import { runCodexLifecycleCommand, runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { isCodexReviewCommand } from '../src/agents/codex/review-command.js';
 import { requestSessionFuliDefault } from '../src/graphiti/session-fuli-switch.js';
-import { reviewSkillTrigger } from '../src/setup/command-skill-adapters.js';
 import { replaceFuliGlobalInstructions } from '../src/setup/codex-bootstrap.js';
 import { claudeEntry, cursorEntry, fixture } from './fixtures/capture-project-fixture.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
+
+const reviewSkillTrigger = (id) => builtInClientPack(id).commandSkills.review;
 
 const SESSION = '8e9f0a1b-2c3d-4e4f-9a5b-6c7d8e9f0a1b';
 const REVIEW = /run the installed `flreview` Skill as an exact \/flreview invocation/;
@@ -78,7 +80,7 @@ test('Claude Code and Cursor keep their native /flreview Skill command; their ho
 });
 
 test('the Codex bootstrap no longer pays every session for a `/flreview` line Codex never delivers', () => {
-  const managed = replaceFuliGlobalInstructions('');
+  const managed = replaceFuliGlobalInstructions('', builtInClientPack('codex').instructions.global);
   assert.doesNotMatch(managed, /flreview/);
   assert.equal(reviewSkillTrigger('codex').userCommand, 'fuli review');
 });

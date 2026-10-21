@@ -7,6 +7,9 @@ import test from 'node:test';
 import { parse } from 'smol-toml';
 
 import { withCodexLifecycleHooks, withCodexTomlLifecycleHooks } from '../src/agents/codex/lifecycle-hooks.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
+
+const CODEX_HOOKS = builtInClientPack('codex').lifecycleHooks;
 
 for (const shell of ['powershell.exe', 'pwsh.exe']) {
   test(`Codex Windows commands preserve literal paths and argv in ${shell}`, { skip: process.platform !== 'win32' }, t => {
@@ -32,8 +35,8 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
       const runtimeConfigPath = join(directory, 'graph-runtime.json');
       const context = { nodePath: join(alias, basename(node)), platform: 'win32',
         codexLifecycleHookPath: script, runtimeConfigPath };
-      const json = withCodexLifecycleHooks({}, { context });
-      const toml = parse(withCodexTomlLifecycleHooks('', { context }));
+      const json = withCodexLifecycleHooks({}, { context, hooks: CODEX_HOOKS });
+      const toml = parse(withCodexTomlLifecycleHooks('', { context, hooks: CODEX_HOOKS }));
       for (const event of ['UserPromptSubmit', 'Stop']) {
         const command = json.hooks[event][0].hooks[0].command;
         assert.equal(toml.hooks[event][0].hooks[0].command, command);
@@ -56,6 +59,6 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
 test('Codex non-Windows commands retain their POSIX shell contract', () => {
   const context = { nodePath: '/usr/local/bin/node', platform: 'linux',
     codexLifecycleHookPath: '/tmp/argv.mjs', runtimeConfigPath: '/tmp/runtime.json' };
-  const command = withCodexLifecycleHooks({}, { context }).hooks.UserPromptSubmit[0].hooks[0].command;
+  const command = withCodexLifecycleHooks({}, { context, hooks: CODEX_HOOKS }).hooks.UserPromptSubmit[0].hooks[0].command;
   assert.equal(command, "'/usr/local/bin/node' '/tmp/argv.mjs' '--fuli-lifecycle' '--runtime-config' '/tmp/runtime.json' '--event' 'UserPromptSubmit'");
 });

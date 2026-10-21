@@ -7,6 +7,9 @@ import {
   disconnectClaudeCode,
   hasCurrentClaudeCodeHooks
 } from '../src/setup/claude-code-config.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
+
+const PACK = builtInClientPack('claude-code');
 
 const AGENT = Object.freeze({
   id: 'claude-code',
@@ -23,7 +26,7 @@ const CONTEXT = Object.freeze({
 
 test('Claude Code connection keeps unrelated config and installs deterministic task hooks', () => {
   const writes = new Map();
-  const result = connectClaudeCode(AGENT, CONTEXT, {
+  const result = connectClaudeCode(PACK, AGENT, CONTEXT, {
     readConfig: (filePath) => filePath === AGENT.configPath
       ? {
           theme: 'dark',
@@ -96,7 +99,7 @@ test('Claude Code connection keeps unrelated config and installs deterministic t
 
 test('Claude Code setup preserves an explicitly selected full tool profile', () => {
   const writes = new Map();
-  connectClaudeCode(AGENT, CONTEXT, {
+  connectClaudeCode(PACK, AGENT, CONTEXT, {
     readConfig: path => path === AGENT.configPath ? { mcpServers: { fuli: {
       args: ['old-server', '--tool-profile', 'full']
     } } } : {},
@@ -107,7 +110,7 @@ test('Claude Code setup preserves an explicitly selected full tool profile', () 
 
 test('Claude Code setup rejects a missing explicit profile value before writing', () => {
   let writes = 0;
-  assert.throws(() => connectClaudeCode(AGENT, CONTEXT, {
+  assert.throws(() => connectClaudeCode(PACK, AGENT, CONTEXT, {
     readConfig: path => path === AGENT.configPath ? { mcpServers: { fuli: { args: ['--tool-profile'] } } } : {},
     writeConfig: () => { writes++; }
   }), /tool profile/);
@@ -116,13 +119,13 @@ test('Claude Code setup rejects a missing explicit profile value before writing'
 
 test('Claude Code hook timeout can be increased by an isolated acceptance runtime', () => {
   const writes = new Map();
-  connectClaudeCode(AGENT, CONTEXT, {
+  connectClaudeCode(PACK, AGENT, CONTEXT, {
     readConfig: (filePath) => filePath === AGENT.configPath
       ? {}
       : {},
     writeConfig: (filePath, value) => writes.set(filePath, value)
   });
-  connectClaudeCode(AGENT, { ...CONTEXT, hookTimeoutSec: 240 }, {
+  connectClaudeCode(PACK, AGENT, { ...CONTEXT, hookTimeoutSec: 240 }, {
     readConfig: (filePath) => filePath === AGENT.configPath
       ? writes.get(filePath) ?? {}
       : writes.get(filePath) ?? {},
@@ -139,12 +142,12 @@ test('Claude Code hook timeout can be increased by an isolated acceptance runtim
 
 test('Claude Code hook status requires the exact managed command, timeout and status message', () => {
   const writes = new Map();
-  connectClaudeCode(AGENT, CONTEXT, {
+  connectClaudeCode(PACK, AGENT, CONTEXT, {
     readConfig: () => ({}),
     writeConfig: (filePath, value) => writes.set(filePath, value)
   });
   const current = writes.get(AGENT.settingsPath);
-  assert.equal(hasCurrentClaudeCodeHooks(current, CONTEXT), true);
+  assert.equal(hasCurrentClaudeCodeHooks(PACK, current, CONTEXT), true);
 
   for (const mutate of [
     (settings) => { settings.hooks.UserPromptSubmit.at(-1).hooks[0].command += ' --extra'; },
@@ -158,7 +161,7 @@ test('Claude Code hook status requires the exact managed command, timeout and st
   ]) {
     const outdated = structuredClone(current);
     mutate(outdated);
-    assert.equal(hasCurrentClaudeCodeHooks(outdated, CONTEXT), false);
+    assert.equal(hasCurrentClaudeCodeHooks(PACK, outdated, CONTEXT), false);
   }
 
   const customTimeout = structuredClone(current);
@@ -166,7 +169,7 @@ test('Claude Code hook status requires the exact managed command, timeout and st
     customTimeout.hooks[event].at(-1).hooks[0].timeout = 240;
     customTimeout.hooks[event].at(-1).hooks[0].command = claudeLifecycleCommand(CONTEXT, event, 240);
   }
-  assert.equal(hasCurrentClaudeCodeHooks(customTimeout, { ...CONTEXT, hookTimeoutSec: 240 }), true);
+  assert.equal(hasCurrentClaudeCodeHooks(PACK, customTimeout, { ...CONTEXT, hookTimeoutSec: 240 }), true);
 });
 
 test('Claude Code migrates legacy MCP hooks while preserving unrelated handlers in the same group', () => {
@@ -177,17 +180,17 @@ test('Claude Code migrates legacy MCP hooks while preserving unrelated handlers 
     ] }],
     Stop: [{ hooks: [{ type: 'mcp_tool', server: 'fuli', tool: 'verify_task_checkpoint' }] }]
   } }]]);
-  assert.equal(hasCurrentClaudeCodeHooks(files.get(AGENT.settingsPath), CONTEXT), false);
+  assert.equal(hasCurrentClaudeCodeHooks(PACK, files.get(AGENT.settingsPath), CONTEXT), false);
   const io = { readConfig: path => files.get(path), writeConfig: (path, value) => files.set(path, value) };
-  connectClaudeCode(AGENT, CONTEXT, io);
+  connectClaudeCode(PACK, AGENT, CONTEXT, io);
   const settings = files.get(AGENT.settingsPath);
   assert.deepEqual(settings.hooks.UserPromptSubmit[0], {
     matcher: '*', hooks: [{ type: 'command', command: 'keep-other-hook' }]
   });
   assert.equal(settings.hooks.Stop.length, 1);
   assert.equal(JSON.stringify(settings.hooks).includes('mcp_tool'), false);
-  assert.equal(hasCurrentClaudeCodeHooks(settings, CONTEXT), true);
-  assert.equal(connectClaudeCode(AGENT, CONTEXT, io).newTaskRequired, false);
+  assert.equal(hasCurrentClaudeCodeHooks(PACK, settings, CONTEXT), true);
+  assert.equal(connectClaudeCode(PACK, AGENT, CONTEXT, io).newTaskRequired, false);
 });
 
 test('Claude Code connection is idempotent and disconnect removes only Fuli entries', () => {
@@ -208,9 +211,9 @@ test('Claude Code connection is idempotent and disconnect removes only Fuli entr
     fileExists: (filePath) => files.has(filePath)
   };
 
-  connectClaudeCode(AGENT, CONTEXT, io);
+  connectClaudeCode(PACK, AGENT, CONTEXT, io);
   const first = structuredClone(Object.fromEntries(files));
-  connectClaudeCode(AGENT, CONTEXT, io);
+  connectClaudeCode(PACK, AGENT, CONTEXT, io);
   assert.deepEqual(Object.fromEntries(files), first);
 
   const result = disconnectClaudeCode(AGENT, io);
@@ -227,7 +230,7 @@ test('Claude Code connection is idempotent and disconnect removes only Fuli entr
 
 test('Claude Code config rejects malformed JSON object shapes before writing', () => {
   let written = false;
-  assert.throws(() => connectClaudeCode(AGENT, CONTEXT, {
+  assert.throws(() => connectClaudeCode(PACK, AGENT, CONTEXT, {
     readConfig: (filePath) => filePath === AGENT.configPath
       ? { mcpServers: [] }
       : {},

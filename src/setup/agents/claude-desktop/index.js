@@ -1,4 +1,5 @@
-import { connectClaudeDesktop, disconnectClaudeDesktop } from '../../claude-desktop-config.js';
+import { CLAUDE_DESKTOP_SERVER_ARGS, connectClaudeDesktop, disconnectClaudeDesktop } from '../../claude-desktop-config.js';
+import { installedToolProfile } from '../../installed-tool-profile.js';
 import { jsonRegistration } from '../registration.js';
 function detect({ platform, env, homeDir, pathApi, fileExists }) {
   const appData = platform === 'win32' ? nonEmpty(env.APPDATA)
@@ -18,5 +19,9 @@ export const adapter = {
  id: 'claude-desktop', detect,
  connect(agent, context, dependencies = {}) { return (dependencies.connectClaudeDesktopConfig ?? connectClaudeDesktop)(agent, context); },
  disconnect(agent, dependencies = {}) { return (dependencies.disconnectClaudeDesktopConfig ?? disconnectClaudeDesktop)(agent); },
- status(agent, context, readers) { return { registration: jsonRegistration(agent, context, readers, { source: 'claude', profile: true }) }; }
+ status(agent, context, readers) {
+   return { registration: jsonRegistration(agent, readers, (server) => ({ command: context.nodePath,
+     args: [context.mcpServerPath, '--runtime-config', context.runtimeConfigPath,
+       ...CLAUDE_DESKTOP_SERVER_ARGS.slice(0, -1), installedToolProfile(server?.args, context.toolProfile)] })) };
+ }
 };

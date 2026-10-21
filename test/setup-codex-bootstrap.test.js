@@ -7,6 +7,9 @@ import {
   removeFuliGlobalInstructions,
   replaceFuliGlobalInstructions
 } from '../src/setup/codex-bootstrap.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
+
+const INSTRUCTIONS = builtInClientPack('codex').instructions.global;
 
 const AGENT = Object.freeze({
   globalInstructionsPath: '/codex/AGENTS.md',
@@ -15,8 +18,8 @@ const AGENT = Object.freeze({
 
 test('Codex global instructions preserve unrelated guidance and keep a short bootstrap', () => {
   const source = '# Existing guidance\n\nKeep this.\n';
-  const first = replaceFuliGlobalInstructions(source);
-  const second = replaceFuliGlobalInstructions(first);
+  const first = replaceFuliGlobalInstructions(source, INSTRUCTIONS);
+  const second = replaceFuliGlobalInstructions(first, INSTRUCTIONS);
   const managed = first.slice(first.indexOf('<!-- BEGIN FULI'));
 
   assert.equal(second, first);
@@ -58,12 +61,12 @@ test('Codex bootstrap writes the active override and becomes current', () => {
     writeText: (path, value) => texts.set(path, value)
   };
 
-  const installed = installCodexBootstrap(AGENT, {}, io);
+  const installed = installCodexBootstrap(AGENT, INSTRUCTIONS, io);
   assert.equal(installed.changed, true);
   assert.equal(texts.get(AGENT.globalInstructionsPath), '# Base\n');
   assert.match(
     texts.get(AGENT.globalInstructionsOverridePath),
     /get_collaboration_preferences/
   );
-  assert.equal(isCodexBootstrapCurrent(AGENT, {}, io), true);
+  assert.equal(isCodexBootstrapCurrent(AGENT, INSTRUCTIONS, io), true);
 });

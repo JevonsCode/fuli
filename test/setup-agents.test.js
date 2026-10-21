@@ -73,7 +73,7 @@ test('Claude connection delegates to its lifecycle-aware config connector', () =
   const agent = discoverAgents({ commandExists: () => true })[1];
   const calls = [];
   const connected = connectAgent(agent, CONTEXT, {
-    connectClaudeCodeConfig(selectedAgent, context) {
+    connectConfig(selectedAgent, context) {
       calls.push([selectedAgent, context]);
       return {
         id: selectedAgent.id,
@@ -93,7 +93,7 @@ test('Codex connection delegates to its shared config connector', () => {
   const codex = discoverAgents({ commandExists: () => true })[0];
   const calls = [];
   const connected = connectAgent(codex, CONTEXT, {
-    connectCodexConfig(agent, context) {
+    connectConfig(agent, context) {
       calls.push([agent, context]);
       return { id: agent.id, label: agent.label, status: 'connected' };
     }
@@ -107,7 +107,7 @@ test('Cursor connection delegates to its JSON config connector', () => {
   const cursor = discoverAgents({ commandExists: () => true })[2];
   const calls = [];
   const connected = connectAgent(cursor, CONTEXT, {
-    connectCursorConfig(agent, context) {
+    connectConfig(agent, context) {
       calls.push([agent, context]);
       return { id: agent.id, label: agent.label, status: 'connected' };
     }
@@ -123,7 +123,7 @@ test('Claude disconnect removes only its Fuli JSON registration', () => {
   const claude = discoverAgents({ commandExists: () => true })[1];
   const calls = [];
   const result = disconnectAgent(claude, {
-    disconnectClaudeCodeConfig(agent) {
+    disconnectConfig(agent) {
       calls.push(agent);
       return { id: agent.id, label: agent.label, status: 'disconnected' };
     }

@@ -19,8 +19,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { FederatedGraphApplication } from '../../src/graphiti/federated-application.js';
-import { connectClaudeCode } from '../../src/setup/claude-code-config.js';
-import { connectCursor } from '../../src/setup/cursor-config.js';
+import { connectAgent } from '../../src/setup/agents.js';
 import {
   classifyClaudeCaseStatus,
   composeResourcesRemoved,
@@ -250,7 +249,7 @@ async function executeBenchmark() {
     writePrivateJson(runtimeConfigPath, runtimeConfig);
     writePrivateJson(mcpConfigPath, { mcpServers: {} });
     writePrivateJson(claudeSettingsPath, {});
-    connectClaudeCode({
+    connectAgent({
       id: 'claude-code',
       label: 'Claude Code',
       configPath: mcpConfigPath,
@@ -2128,7 +2127,7 @@ async function runMultiAgentNetworkCases({
     runtimeConfigPath
   };
   for (const projectId of [PROJECTS.travel, PROJECTS.related]) {
-    connectCursor({
+    connectAgent({
       id: 'cursor',
       label: 'Cursor',
       configPath: join(emptyWorkspaces, projectId, '.cursor', 'mcp.json')
