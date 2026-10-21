@@ -6,11 +6,13 @@ import { describe, expect, it } from 'vitest'
 // 43 / 3 after action buttons moved to the shared Button; 42 / 3 after the
 // Agent profile tabs moved to shadcn-vue Tabs; 36 / 3 after the knowledge view tabs
 // moved to Tabs and the preferences page's "show more" to Button, and 编排's
-// rows became cards (quick look on the shared Button, status on UiSegmented);
-// 35 / 3 after the task board's drag handle moved to Button (2026-10-21).
+// rows became cards (quick look on the shared Button, status on UiSegmented).
+// 28 / 3 after Bole's views moved to Tabs and its role filter to UiSegmented, and
+// Tonborg's filter moved to UiSegmented and its feedback votes to Button;
+// 27 / 3 after the task board's drag handle moved to Button (2026-10-21).
 // The rest are controls deliberately deferred to their own components (tabs,
 // toggle groups, list rows, cards, pickers).
-const BASELINE = { button: 35, switch: 3 }
+const BASELINE = { button: 27, switch: 3 }
 const templates = import.meta.glob<string>('../**/*.vue', { query: '?raw', import: 'default', eager: true })
 const outsideDesignSystem = Object.entries(templates).filter(([file]) => !file.startsWith('./')).map(([, source]) => source)
 // The classes the shared Button replaced. A template is where a class gets

@@ -16,7 +16,7 @@ import { useOverviewData } from '@/features/overview/useOverviewData'
 import OverviewReadStatus from '@/features/overview/OverviewReadStatus.vue'
 import OverviewExcerpt from '@/features/overview/OverviewExcerpt.vue'
 import { inboxLocation, useAgentAttention } from '@/features/project-agents/attention-store'
-import { taskStatusTone } from '@/features/project-agents/task-labels'
+import { taskStatusLabel, taskStatusTone } from '@/features/project-agents/task-labels'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import { personalProjectsPath } from '@/router/paths'
@@ -116,7 +116,7 @@ function agentName(id?: string | null) {
 }
 function owner(task: ProjectAgentTaskRecord) { const id = overviewOwnerId(task); return id ? agentName(id) : t('overview.missing.owner') }
 function taskTitle(task: ProjectAgentTaskRecord) { return overviewTaskTitle(task) || t('overview.missing.taskTitle') }
-function statusLabel(status: string) { const key = `overview.taskStatus.${status}`, label = t(key); return label === key ? t('overview.missing.status') : label }
+function statusLabel(status: string) { return taskStatusLabel(status, { unrecognized: t('overview.missing.status') }) }
 function formatDate(value?: string | null) { return formatDateTime(value, currentLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }, { missing: t('overview.missing.time'), invalid: t('overview.missing.time') }) }
 function requestFor(task: ProjectAgentTaskRecord) { return overviewOpenRequest(task, data.requestItems.value, activeSpaceId.value) }
 function nextHref(task: ProjectAgentTaskRecord) { const request = requestFor(task); return request ? inboxLocation(request.agentId, request.requestId) : overviewTaskHref(task) }

@@ -493,6 +493,10 @@ describe('employee workbench', () => {
     expect(wrapper.find('.employee-manage-projects').exists()).toBe(false)
     expect(wrapper.vm.$route.query.project).toBeUndefined()
     expect(getJson.mock.calls.some(([url]) => String(url).includes('/workspace?'))).toBe(false)
+    expect(wrapper.get('.employee-workbench-actions .bole-refresh').text()).toBe('刷新')
+    expect(wrapper.find('.employee-workbench-identity .employee-native-link').exists()).toBe(true)
+    expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(['团队成员 0', '工作记录 0'])
+    expect(wrapper.findAll('h2')).toHaveLength(0)
   })
 
   it('opens Astro on the unclaimed conversations it receives, not on the Bole people panel', async () => {
@@ -532,6 +536,12 @@ describe('employee workbench', () => {
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.findComponent(EmployeeRecruitDialog).exists()).toBe(false)
     expect(wrapper.get('.employee-native-link').attributes('href')).toBe('/agents/space-a/employee.tonborg')
+    // 主页 sits beside the role like Jefa's share icon; Tonborg's actions join the same toolbar row.
+    expect(wrapper.find('.employee-workbench-identity .employee-native-link').exists()).toBe(true)
+    expect(wrapper.find('.employee-workbench-toolbar .employee-workbench-actions [data-action="review"]').exists()).toBe(false)
+    expect(wrapper.get('.employee-workbench-actions').text()).toContain('刷新')
+    expect(wrapper.find('[data-judgment-empty] [data-action="review"]').exists()).toBe(true)
+    expect(wrapper.findAll('h2')).toHaveLength(0)
     expect(wrapper.vm.$route.query.project).toBeUndefined()
   })
 

@@ -20,6 +20,7 @@ import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import EmployeeShareDialog from '@/features/employees/EmployeeShareDialog.vue'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { useProjectBoardFilter } from '@/features/employees/project-board-filter'
+import { provideWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
 import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
 import UiIcon from '@/ui/UiIcon.vue'
 import { agentProfilePath } from '@/features/agent-profile/profile-model'
@@ -195,6 +196,9 @@ watch(openTaskRevoked, (revoked) => { if (revoked) void peek.close() }, { immedi
 // A revoked task leaves the dialog at once (ending its read in flight), before the URL catches up.
 const shownTaskRef = computed(() => (openTaskRevoked.value ? null : openTaskRef.value))
 const pageRoot = ref<HTMLElement | null>(null)
+// Bole and Tonborg put their actions in this row instead of a title row of their own.
+const toolbarActions = ref<HTMLElement | null>(null)
+provideWorkbenchToolbarActions(toolbarActions)
 // A shared link scrolls its card into view once, after the board shows it.
 let scrolledTo = ''
 watch([openTaskRef, visibleProjectBoards], async ([task, boards]) => {
@@ -370,13 +374,13 @@ async function projectsSaved() {
         <Button v-if="isJefa && supportsAllProjects" variant="ghost" size="icon" class="employee-share-button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M7 16v-3m4 3v-1"/></svg>
         </Button>
-      </div>
-      <div class="employee-workbench-actions">
         <Button v-if="isNativeWorkbench && template?.agentId && personalSpaceId" as-child variant="ghost" size="icon" class="employee-native-link">
           <RouterLink :to="agentProfilePath(personalSpaceId, template.agentId)" :aria-label="t('agentProfiles.profile')" :title="t('agentProfiles.profile')">
             <UiIcon name="agents" :size="18" />
           </RouterLink>
         </Button>
+      </div>
+      <div ref="toolbarActions" class="employee-workbench-actions">
         <Button v-if="template && !isNativeWorkbench" variant="ghost" class="employee-manage-projects" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
           {{ t('employees.manageProjects') }}
@@ -442,9 +446,9 @@ async function projectsSaved() {
 .employee-workbench-mark img { width: 100%; height: 100%; object-fit: cover; }
 .employee-workbench-role { color: var(--color-muted); font-size: 13px; overflow-wrap: anywhere; }
 .employee-workbench-actions { display: flex; align-items: center; gap: 8px; min-width: 0; margin-left: auto; }
+@media (max-width: 700px) { .employee-workbench-actions { margin-left: 0; } }
 /* On the canvas the board needs no frame of its own. */
 .employee-workbench-view :deep(.employee-all-projects) { padding: 0; background: transparent; }
-.employee-workbench-view :deep(.judgment-workbench) { padding-inline: 0; }
 .employee-workbench-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .employee-workbench-state { display: grid; flex: 1; gap: 14px; place-content: center; justify-items: center; padding: 30px; color: var(--color-muted); font-size: 14px; text-align: center; }
 .employee-workbench-state h2 { font-size: 20px; font-weight: 600; color: var(--color-ink); }
