@@ -1,10 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h, ref } from 'vue'
 
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, postJson }))
 
 import JudgmentWorkbench from './JudgmentWorkbench.vue'
+import { provideWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
 
 function record(overrides: Record<string, unknown> = {}) {
   return {
@@ -54,9 +56,9 @@ describe('JudgmentWorkbench', () => {
 
     expect(getJson).toHaveBeenCalledWith('/api/judgment/records?personalSpaceId=space-a')
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(1)
-    await wrapper.get('[data-filter="all"]').trigger('click')
+    await wrapper.get('.judgment-filter [data-value="all"]').trigger('click')
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(2)
-    await wrapper.get('[data-filter="human"]').trigger('click')
+    await wrapper.get('.judgment-filter [data-value="human"]').trigger('click')
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(1)
     expect(wrapper.text()).toContain('release checklist')
     expect(wrapper.get('[data-decision-card] h3').text()).toBe('release checklist')
@@ -65,7 +67,7 @@ describe('JudgmentWorkbench', () => {
   it('requests a bounded review with a fresh request ID and shows the result', async () => {
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
     await flushPromises()
-    await wrapper.get('[data-filter="all"]').trigger('click')
+    await wrapper.get('.judgment-filter [data-value="all"]').trigger('click')
     await wrapper.get('[data-action="review"]').trigger('click')
     await flushPromises()
 
@@ -83,7 +85,7 @@ describe('JudgmentWorkbench', () => {
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
     await flushPromises()
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(0)
-    await wrapper.get('[data-filter="all"]').trigger('click')
+    await wrapper.get('.judgment-filter [data-value="all"]').trigger('click')
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(1)
   })
 
@@ -104,6 +106,63 @@ describe('JudgmentWorkbench', () => {
     await flushPromises()
     expect(getJson.mock.calls.length).toBeGreaterThan(1)
     expect(wrapper.get('[role="alert"]').text()).toMatch(/changed|更新|重试/i)
+  })
+
+  it('has no title row of its own and puts refresh and review in the workbench toolbar', async () => {
+    const target = document.createElement('div')
+    document.body.append(target)
+    const Host = defineComponent({ setup() {
+      provideWorkbenchToolbarActions(ref(target))
+      return () => h(JudgmentWorkbench, { personalSpaceId: 'space-a' })
+    } })
+    const wrapper = mount(Host)
+    await flushPromises()
+
+    expect(wrapper.find('h2').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('判断工作台')
+    expect(wrapper.find('[data-action="review"]').exists()).toBe(false)
+    const review = target.querySelector<HTMLButtonElement>('[data-action="review"]')!
+    expect(review.textContent).toContain('运行一次判断')
+    review.click()
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/judgment/review', expect.objectContaining({ personalSpaceId: 'space-a' }))
+    wrapper.unmount()
+    target.remove()
+  })
+
+  it('offers 运行一次判断 as the one primary action of an empty workbench', async () => {
+    getJson.mockReset().mockResolvedValue({ records: [] })
+    const pending = deferred<{ records: unknown[]; remaining: number }>()
+    postJson.mockReset().mockReturnValueOnce(pending.promise)
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+
+    const empty = wrapper.get('[data-judgment-empty]')
+    expect(empty.classes()).toContain('ui-empty')
+    expect(empty.text()).toContain('没有需要人工处理的判断')
+    expect(wrapper.findAll('[data-action="review"]')).toHaveLength(1)
+    await empty.get('[data-action="review"]').trigger('click')
+    expect(empty.get('[data-action="review"]').attributes('aria-busy')).toBe('true')
+    expect(empty.text()).toContain('正在分析待处理事项')
+    pending.resolve({ records: [record({ id: 'decision-new' })], remaining: 0 })
+    await flushPromises()
+    expect(wrapper.find('[data-judgment-empty]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-decision-card]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-action="review"]')).toHaveLength(1)
+  })
+
+  it('keeps the filter above a pending read or an error, so only the list is replaced', async () => {
+    const pending = deferred<{ records: unknown[] }>()
+    getJson.mockReset().mockReturnValueOnce(pending.promise)
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    const order = (selector: string) => {
+      const filter = wrapper.get('.judgment-filter').element
+      return Boolean(filter.compareDocumentPosition(wrapper.get(selector).element) & Node.DOCUMENT_POSITION_FOLLOWING)
+    }
+    expect(order('.growth-loading')).toBe(true)
+    pending.reject(new Error('Records are unavailable'))
+    await flushPromises()
+    expect(order('[role="alert"]')).toBe(true)
   })
 
   it('does not load or review without a real personal space', async () => {
