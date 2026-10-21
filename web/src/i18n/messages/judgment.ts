@@ -41,8 +41,7 @@ export const judgmentMessages = {
     },
     workbench: {
       aria: 'Tonborg 决策工作台',
-      title: '判断工作台',
-      subtitle: '查看近期判断并决定下一步。',
+      filter: '显示哪些判断',
       all: '全部',
       human: '需要人工',
       review: '运行一次判断',
@@ -147,8 +146,7 @@ export const judgmentMessages = {
     },
     workbench: {
       aria: 'Tonborg decision workbench',
-      title: 'Judgment workbench',
-      subtitle: 'Review recent decisions and choose what happens next.',
+      filter: 'Which judgments to show',
       all: 'All',
       human: 'Human needed',
       review: 'Run a judgment review',

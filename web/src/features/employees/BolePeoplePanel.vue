@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { getJson } from '@/api/client'
@@ -13,6 +16,8 @@ import { employeeAvatarUrl } from './avatars'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
 import AgentName from '@/features/agent-profile/AgentName.vue'
 import { fuzzyMatch } from '@/features/agent-profile/profile-model'
+import { taskStatusLabel, taskStatusTone } from '@/features/project-agents/task-labels'
+import { useWorkbenchToolbarActions } from './workbench-toolbar'
 
 type UnknownRecord = Record<string, unknown>
 type AgentView = {
@@ -53,6 +58,10 @@ const tasks = ref<TaskView[]>([])
 const recruitments = ref<RecruitmentView[]>([])
 const loading = ref(false)
 const partialError = ref(false)
+// The people view stands on the Agent read, the history view on the recruitment read.
+const agentsReadFailed = ref(false)
+const recruitmentsReadFailed = ref(false)
+const toolbarActions = useWorkbenchToolbarActions()
 const activeView = ref<'people' | 'history'>('people')
 const search = ref('')
 const roleFilter = ref('')
@@ -63,7 +72,6 @@ const workFilterOptions = computed(() => [
   { value: 'idle' as const, label: t('employees.bole.withoutTask') },
 ])
 const selectedProjects = ref<string[] | null>(null)
-const scrollRegion = ref<HTMLElement | null>(null)
 const unassignedKey = '__bole_unassigned__'
 const taskLimit = 200
 const tasksMayBeTruncated = computed(() => tasks.value.length >= taskLimit)
@@ -95,6 +103,11 @@ const agentRows = computed(() => activeAgents.value.map((agent) => ({
     .filter((task) => task.agentIds.includes(agent.id))
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0],
 })))
+const roleFilterOptions = computed(() => [
+  { value: '', label: t('employees.bole.allRoles') },
+  ...distribution.value.map((item) => ({ value: item.type, label: item.label, count: item.count })),
+])
+const viewReadFailed = computed(() => activeView.value === 'people' ? agentsReadFailed.value : recruitmentsReadFailed.value)
 const recruitmentRows = computed(() => [...recruitments.value].sort((left, right) => right.createdAt.localeCompare(left.createdAt)))
 const projectOptions = computed(() => {
   const ids = new Set([...props.projects.map((project) => project.project_id), ...agents.value.flatMap((agent) => agent.projectIds), ...tasks.value.map((task) => task.projectId), ...recruitments.value.map((item) => item.projectId)].filter(Boolean))
@@ -126,10 +139,10 @@ function agentSearchTerms(id: string) {
   const agent = agents.value.find((item) => item.id === id)
   return agent ? [agent.name, agent.responsibility, ...agent.searchTerms] : [id]
 }
+// A count is unknown while its read is pending or after it failed, not zero.
+function shownCount(count: number, readFailed: boolean) { return loading.value || readFailed ? '—' : count }
 function clearFilters() { search.value = ''; roleFilter.value = ''; workFilter.value = 'all'; selectedProjects.value = null }
 function avatar(agentId: string) { return employeeAvatarUrl(agentId.replace(/^employee\./, '')) }
-
-watch([activeView, search, roleFilter, workFilter, selectedProjects], () => { if (scrollRegion.value) scrollRegion.value.scrollTop = 0 })
 
 watch([() => props.personalSpaceId, () => route.query.q], ([space, query], [previousSpace]) => {
   if (space !== previousSpace) {
@@ -146,6 +159,8 @@ async function load() {
   tasks.value = []
   recruitments.value = []
   partialError.value = false
+  agentsReadFailed.value = false
+  recruitmentsReadFailed.value = false
   if (!props.personalSpaceId) { loading.value = false; return }
   loading.value = true
   const query = new URLSearchParams({ personalSpaceId: props.personalSpaceId })
@@ -159,6 +174,8 @@ async function load() {
   if (results[1].status === 'fulfilled') tasks.value = values(results[1].value, 'tasks').map(normalizeTask).filter(isPresent)
   if (results[2].status === 'fulfilled') recruitments.value = values(results[2].value, 'recruitments').map(normalizeRecruitment).filter(isPresent)
   partialError.value = results.some((result) => result.status === 'rejected')
+  agentsReadFailed.value = results[0].status === 'rejected'
+  recruitmentsReadFailed.value = results[2].status === 'rejected'
   loading.value = false
 }
 
@@ -249,11 +266,6 @@ function typeLabel(type: string) {
     ? t(`employees.bole.types.${type}`)
     : t('employees.bole.types.other')
 }
-function statusLabel(status: string) {
-  return ['awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'failed', 'awaiting_review', 'blocked'].includes(status)
-    ? t(`employees.bole.status.${status}`)
-    : status
-}
 function agentName(agentId: string) { return agents.value.find((agent) => agent.id === agentId)?.name ?? agentId }
 function projectName(projectId: string) { return projectNames.value.get(projectId) ?? t('employees.bole.noProject') }
 function formattedDate(value: string) {
@@ -265,78 +277,83 @@ function formattedDate(value: string) {
 
 <template>
   <div class="bole-panel" :aria-busy="loading">
-    <div v-if="partialError" class="bole-alert" role="alert">
+    <Teleport :to="toolbarActions" :disabled="!toolbarActions">
+      <Button size="sm" variant="ghost" class="bole-refresh" :disabled="loading" @click="load">{{ t('common.actions.refresh') }}</Button>
+    </Teleport>
+
+    <div v-if="partialError && !viewReadFailed" class="bole-alert" role="alert">
       <span>{{ t('employees.bole.partialError') }}</span>
       <Button size="sm" variant="ghost" @click="load">{{ t('employees.retry') }}</Button>
     </div>
 
-    <header class="bole-header">
-      <div class="bole-heading">
-        <h2 id="bole-overview-title">{{ t('employees.bole.title') }}</h2>
-        <nav class="bole-views" :aria-label="t('employees.bole.viewLabel')">
-          <button id="bole-work-title" type="button" :aria-pressed="activeView === 'people'" @click="activeView = 'people'">{{ t('employees.bole.currentWork') }} <span data-testid="people-total">{{ loading ? '—' : activeAgents.length }}</span></button>
-          <button id="bole-history-title" type="button" :aria-pressed="activeView === 'history'" @click="activeView = 'history'">{{ t('employees.bole.recruitmentHistory') }} <span>{{ loading ? '—' : recruitments.length }}</span></button>
-        </nav>
-      </div>
-      <dl class="bole-summary" :aria-label="t('employees.bole.overview')">
-        <div data-testid="people-working"><dt>{{ t('employees.bole.workingNow') }}</dt><dd>{{ loading ? '—' : workingAgentIds.size }}</dd></div>
-        <div><dt>{{ t('employees.bole.coveredProjects') }}</dt><dd>{{ loading ? '—' : coveredProjectIds.size }}</dd></div>
-      </dl>
-      <Button size="sm" variant="ghost" class="bole-refresh" :disabled="loading" @click="load">{{ t('common.actions.refresh') }}</Button>
-    </header>
+    <!-- The two views are the workbench's section tabs; the shell's H1 already names Bole. -->
+    <Tabs v-model="activeView" class="bole-tabs">
+      <TabsList :aria-label="t('employees.bole.viewLabel')">
+        <TabsTrigger value="people" data-bole-view="people">{{ t('employees.bole.currentWork') }} <span class="bole-view-count" data-testid="people-total">{{ shownCount(activeAgents.length, agentsReadFailed) }}</span></TabsTrigger>
+        <TabsTrigger value="history" data-bole-view="history">{{ t('employees.bole.recruitmentHistory') }} <span class="bole-view-count">{{ shownCount(recruitments.length, recruitmentsReadFailed) }}</span></TabsTrigger>
+      </TabsList>
 
-    <div class="bole-controls">
-      <div class="bole-filters">
-        <input v-model="search" type="search" class="bole-search" :aria-label="t('employees.bole.search')" :placeholder="t('employees.bole.search')">
-        <ProjectScopePicker v-model="projectSelection" :projects="projectOptions" :label="t('employees.allProjects.projectFilter')" :all-label="t('employees.bole.allProjects')" :empty-label="t('employees.filterEmpty')" compact hint="" />
-        <UiSegmented v-if="activeView === 'people'" v-model="workFilter" :label="t('employees.bole.workFilter')" :options="workFilterOptions" />
-      </div>
-      <div class="bole-role-filters" role="group" :aria-label="t('employees.bole.distribution')">
-        <button type="button" :aria-pressed="!roleFilter" @click="roleFilter = ''">{{ t('employees.bole.allRoles') }}</button>
-        <button v-for="item in distribution" :key="item.type" type="button" :aria-pressed="roleFilter === item.type" @click="roleFilter = roleFilter === item.type ? '' : item.type">{{ item.label }} <span>{{ item.count }}</span></button>
-        <Button size="sm" variant="ghost" class="bole-clear" v-if="filtersActive" @click="clearFilters">{{ t('employees.bole.clearFilters') }}</Button>
-        <span v-if="filtersActive && !loading" class="bole-result-count" role="status">{{ t('employees.bole.resultCount', { count: activeView === 'people' ? filteredAgents.length : filteredRecruitments.length }) }}</span>
-      </div>
-    </div>
-
-    <div ref="scrollRegion" class="bole-content" tabindex="0" role="region" :aria-label="t(activeView === 'people' ? 'employees.bole.currentWork' : 'employees.bole.recruitmentHistory')">
-      <GrowthLoading v-if="loading" variant="compact" :label="t('employees.bole.loading')" />
-      <section v-else-if="activeView === 'people'" aria-labelledby="bole-work-title">
-        <p v-if="tasksMayBeTruncated" class="bole-empty" role="status">{{ t('employees.bole.taskLimit') }}</p>
-        <div v-if="filteredAgents.length" class="ui-card bole-agent-list">
-          <div class="bole-table-heading" aria-hidden="true"><span>{{ t('projectAgents.title') }}</span><span>{{ t('employees.bole.taskColumn') }}</span><span>{{ t('employees.bole.projectsColumn') }}</span></div>
-          <article v-for="agent in filteredAgents" :key="agent.id" class="bole-agent-row">
-            <div class="bole-agent-identity">
-              <span class="bole-agent-mark" aria-hidden="true"><img v-if="avatar(agent.id)" :src="avatar(agent.id)" alt=""><template v-else>{{ agent.emoji }}</template></span>
-              <div><strong><AgentName :space-id="personalSpaceId" :agent-id="agent.id" :name="agent.name" /></strong><AgentHand :agent-id="agent.id" /><small>{{ agent.responsibility || typeLabel(agent.type) }}</small></div>
-            </div>
-            <div class="bole-agent-work">
-              <template v-if="agent.task"><span class="ui-badge bole-status" :data-status="agent.task.status">{{ statusLabel(agent.task.status) }}</span><p>{{ agent.task.title }}</p></template>
-              <p v-else class="is-idle">{{ t('employees.bole.idle') }}</p>
-            </div>
-            <div class="bole-agent-projects">
-              <template v-if="agent.projectIds.length"><span v-for="id in agent.projectIds.slice(0, 2)" :key="id">{{ projectName(id) }}</span><details v-if="agent.projectIds.length > 2"><summary>{{ t('employees.bole.moreProjects', { count: agent.projectIds.length - 2 }) }}</summary><span v-for="id in agent.projectIds.slice(2)" :key="id">{{ projectName(id) }}</span></details></template>
-              <span v-else>{{ agent.task?.projectId ? projectName(agent.task.projectId) : t('employees.bole.noProject') }}</span>
-            </div>
-          </article>
+      <div class="bole-controls">
+        <div class="bole-filters">
+          <Input v-model="search" type="search" class="bole-search" :aria-label="t('employees.bole.search')" :placeholder="t('employees.bole.search')" />
+          <ProjectScopePicker v-model="projectSelection" :projects="projectOptions" :label="t('employees.allProjects.projectFilter')" :all-label="t('employees.bole.allProjects')" :empty-label="t('employees.filterEmpty')" compact hint="" />
+          <UiSegmented v-if="activeView === 'people'" v-model="workFilter" :label="t('employees.bole.workFilter')" :options="workFilterOptions" />
         </div>
-        <p v-else class="ui-empty bole-empty">{{ t(filtersActive ? 'employees.bole.noMatch' : 'employees.bole.noAgents') }}</p>
-      </section>
+        <div class="bole-role-filters">
+          <UiSegmented v-model="roleFilter" class="bole-role-segmented" :label="t('employees.bole.distribution')" :options="roleFilterOptions" />
+          <Button v-if="filtersActive" size="sm" variant="ghost" class="bole-clear" @click="clearFilters">{{ t('employees.bole.clearFilters') }}</Button>
+          <span v-if="filtersActive && !loading" class="bole-result-count" role="status">{{ t('employees.bole.resultCount', { count: activeView === 'people' ? filteredAgents.length : filteredRecruitments.length }) }}</span>
+          <dl class="bole-summary" :aria-label="t('employees.bole.overview')">
+            <div data-testid="people-working"><dt>{{ t('employees.bole.workingNow') }}</dt><dd>{{ shownCount(workingAgentIds.size, agentsReadFailed) }}</dd></div>
+            <div><dt>{{ t('employees.bole.coveredProjects') }}</dt><dd>{{ shownCount(coveredProjectIds.size, agentsReadFailed) }}</dd></div>
+          </dl>
+        </div>
+      </div>
 
-      <section v-else aria-labelledby="bole-history-title">
-        <ol v-if="filteredRecruitments.length" class="ui-card bole-timeline">
-          <li v-for="recruitment in filteredRecruitments" :key="recruitment.id">
+      <TabsContent value="people" class="bole-content">
+        <GrowthLoading v-if="loading" variant="compact" :label="t('employees.bole.loading')" />
+        <div v-else-if="agentsReadFailed" class="ui-empty rounded-lg border bg-card text-destructive" role="alert" data-bole-load-error>
+          <p class="m-0 text-destructive">{{ t('employees.bole.peopleLoadFailed') }}</p>
+          <Button class="mt-3" size="sm" variant="outline" @click="load">{{ t('employees.retry') }}</Button>
+        </div>
+        <template v-else>
+          <p v-if="tasksMayBeTruncated" class="bole-note" role="status">{{ t('employees.bole.taskLimit') }}</p>
+          <ul v-if="filteredAgents.length" class="bole-agent-list m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4">
+            <li v-for="agent in filteredAgents" :key="agent.id" class="bole-card bole-agent-card">
+              <div class="bole-agent-identity">
+                <span class="bole-agent-mark" aria-hidden="true"><img v-if="avatar(agent.id)" :src="avatar(agent.id)" alt=""><template v-else>{{ agent.emoji }}</template></span>
+                <div><strong><AgentName :space-id="personalSpaceId" :agent-id="agent.id" :name="agent.name" /></strong><AgentHand :agent-id="agent.id" /><small>{{ agent.responsibility || typeLabel(agent.type) }}</small></div>
+              </div>
+              <div class="bole-agent-work">
+                <template v-if="agent.task"><Badge class="bole-status" :variant="taskStatusTone(agent.task.status)">{{ taskStatusLabel(agent.task.status) }}</Badge><p>{{ agent.task.title }}</p></template>
+                <p v-else class="is-idle">{{ t('employees.bole.idle') }}</p>
+              </div>
+              <div class="bole-agent-projects">
+                <template v-if="agent.projectIds.length"><span v-for="id in agent.projectIds.slice(0, 2)" :key="id">{{ projectName(id) }}</span><details v-if="agent.projectIds.length > 2"><summary>{{ t('employees.bole.moreProjects', { count: agent.projectIds.length - 2 }) }}</summary><span v-for="id in agent.projectIds.slice(2)" :key="id">{{ projectName(id) }}</span></details></template>
+                <span v-else>{{ agent.task?.projectId ? projectName(agent.task.projectId) : t('employees.bole.noProject') }}</span>
+              </div>
+            </li>
+          </ul>
+          <p v-else class="ui-empty m-0 rounded-lg border border-dashed bg-card" data-bole-empty>{{ t(filtersActive ? 'employees.bole.noMatch' : 'employees.bole.noAgents') }}</p>
+        </template>
+      </TabsContent>
+
+      <TabsContent value="history" class="bole-content">
+        <GrowthLoading v-if="loading" variant="compact" :label="t('employees.bole.loading')" />
+        <div v-else-if="recruitmentsReadFailed" class="ui-empty rounded-lg border bg-card text-destructive" role="alert" data-bole-load-error>
+          <p class="m-0 text-destructive">{{ t('employees.bole.historyLoadFailed') }}</p>
+          <Button class="mt-3" size="sm" variant="outline" @click="load">{{ t('employees.retry') }}</Button>
+        </div>
+        <ol v-else-if="filteredRecruitments.length" class="bole-timeline m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4">
+          <li v-for="recruitment in filteredRecruitments" :key="recruitment.id" class="bole-card bole-recruitment-card">
             <div class="bole-recruitment-identity"><strong><AgentName :space-id="personalSpaceId" :agent-id="recruitment.agentId" :name="agentName(recruitment.agentId)" /></strong><small>{{ typeLabel(recruitment.positionKind) }} · {{ projectName(recruitment.projectId) }}</small></div>
-            <div class="bole-recruitment-reason">
-              <p>{{ recruitment.reason }}</p>
-              <small>{{ recruitment.workKind || recruitment.status }}</small>
-            </div>
-            <time :datetime="recruitment.createdAt">{{ formattedDate(recruitment.createdAt) }}</time>
+            <p class="bole-recruitment-reason">{{ recruitment.reason }}</p>
+            <p class="bole-recruitment-meta"><span>{{ recruitment.workKind || recruitment.status }}</span><time :datetime="recruitment.createdAt">{{ formattedDate(recruitment.createdAt) }}</time></p>
           </li>
         </ol>
-        <p v-else class="ui-empty bole-empty">{{ t(filtersActive ? 'employees.bole.noMatch' : 'employees.bole.noRecruitments') }}</p>
-      </section>
-    </div>
+        <p v-else class="ui-empty m-0 rounded-lg border border-dashed bg-card" data-bole-empty>{{ t(filtersActive ? 'employees.bole.noMatch' : 'employees.bole.noRecruitments') }}</p>
+      </TabsContent>
+    </Tabs>
   </div>
 </template>
 
