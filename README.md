@@ -830,7 +830,9 @@ reuse the same data.
 
 Fuli installs the `capturing-session-knowledge`, `grilling-project`, `operating-fuli`, and `flreview` Skills for
 supported agents. `/flreview` asks FULI for ranked candidates, then the invoking Agent generates a
-fresh interactive review artifact. FULI remains the durable source of truth and write surface; no
+fresh interactive review artifact. Codex rejects custom slash commands before any hook runs, so there the person
+types `fuli review` (or `flreview`) on its own line; the Codex prompt hook passes that exact line to the model with
+the installed Skill named, and in a session where FULI is off it answers the line itself without starting a review. FULI remains the durable source of truth and write surface; no
 permanent review tab or one-question-at-a-time chat flow is required.
 `operating-fuli` makes Agents inspect the structured interface-parity catalog before changing data,
 verify writes through matching read tools, and treat browser automation as visual verification only.

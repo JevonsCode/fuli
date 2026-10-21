@@ -31,15 +31,16 @@ export function policyLabel(policy: ProjectAgentExecutorPolicy | null | undefine
   return policy?.mode ?? 'flexible'
 }
 
-/** A reported enum value through its label table; an unknown value stays as reported. */
-function tableLabel(table: string, value: string) {
+/** A reported enum value through its label table; an unknown value stays as reported unless the caller names it. */
+function tableLabel(table: string, value: string, unrecognized = value) {
   const key = `projectAgents.${table}.${value}`
   const translated = t(key)
-  return translated === key ? value : translated
+  return translated === key ? unrecognized : translated
 }
 
-export function taskStatusLabel(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string) {
-  return tableLabel('taskStatus', status)
+/** The one label table for task and work statuses (Agents, Overview, Bole). */
+export function taskStatusLabel(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string, options: { unrecognized?: string } = {}) {
+  return tableLabel('taskStatus', status, options.unrecognized)
 }
 
 export function recruitmentStatusLabel(status: string) {
@@ -61,7 +62,7 @@ export function memoryScopeLabel(scope: string | null | undefined) {
  */
 export function taskStatusTone(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string) {
   if (status === 'blocked' || status === 'failed') return 'destructive' as const
-  if (['awaiting_review', 'waiting_for_human', 'paused', 'awaiting_recruitment'].includes(status)) return 'warning' as const
+  if (['awaiting_review', 'paused', 'awaiting_recruitment'].includes(status)) return 'warning' as const
   if (status === 'running') return 'default' as const
   if (status === 'completed') return 'success' as const
   return 'secondary' as const

@@ -115,9 +115,8 @@ test('review skill adaptations keep agent-specific triggers in one module', () =
   assert.equal(claude.reviewSkillPath, '/home/test/.claude/skills/flreview');
   assert.equal(cursor.reviewSkillPath, '/home/test/.cursor/skills/flreview');
   assert.deepEqual(reviewSkillTrigger('codex'), {
-    userCommand: '/flreview',
-    nativeInvocation: '$flreview',
-    needsCommandBridge: true
+    userCommand: 'fuli review',
+    nativeInvocation: '$flreview'
   });
   assert.equal(reviewSkillTrigger('claude-code').nativeInvocation, '/flreview');
   assert.equal(reviewSkillTrigger('cursor').nativeInvocation, '/flreview');
