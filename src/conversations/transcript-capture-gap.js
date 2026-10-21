@@ -1,10 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { lstatSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { advanceCaptureSettingsVersion, captureDisabled } from '../graphiti/capture-decision.js';
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
-import { jsonFormat, removeVersionedJsonFileAtomic, updateVersionedJsonFileAtomic, writeVersionedJsonFileAtomic }
+import { jsonFormat, updateVersionedJsonFileAtomic, withJsonFormatDirectory, writeVersionedJsonFileAtomic }
   from '../storage/json-format.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { transcriptDigest } from './transcript-guard.js';
@@ -132,9 +131,15 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
     }
     return { unprovable: false, turns: current.record.held, skipUntil: current.record.skipUntil };
   };
-  const removeFallback = () => {
-    try { removeVersionedJsonFileAtomic(holdPath, TRANSCRIPT_TURN_HOLD_FORMAT); return true; }
-    catch (error) { return MISSING.has(error?.code); }
+  // Removes a file under its directory's lock only if `keep(current)` is
+  // false for what is there now: never a state another process wrote since.
+  const removeUnless = (filePath, format, keep) => {
+    if (!exists(filePath)) return true;
+    return withJsonFormatDirectory(filePath, ({ remove }) => {
+      if (keep()) return false;
+      remove(filePath, format);
+      return true;
+    }, { format });
   };
   return {
     // Why the next stretch must be skipped instead of imported, or null. A
@@ -174,13 +179,13 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
         }
       }
       try {
-        const current = readLedger(path);
-        if (current.state === 'unprovable' || current.record.held.length || current.record.unprovable
-            || current.record.skipUntil !== null || fallbackHeld(holdPath)) {
-          throw new Error('A record that holds turns is kept');
-        }
-        // Removed only under the same lock, after checking its version again.
-        removeVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT);
+        // Read, checked and removed under one hold of the lock: a turn another
+        // process holds meanwhile is never removed with the record.
+        const removed = removeUnless(path, TRANSCRIPT_CAPTURE_FORMAT, () => {
+          const current = readLedger(path);
+          return current.state === 'unprovable' || holdsTurns(current.record) || fallbackHeld(holdPath);
+        });
+        if (!removed) throw new Error('A record that holds turns is kept');
         unkeptDenials.delete(path);
         return 'removed';
       } catch {
@@ -201,6 +206,15 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
     // The session's unresolved turns: unprovable (held, but which turns is not
     // known), or the turns in order and the byte nothing before may be imported.
     heldTurns: held,
+    // What a task entry starting now observes, so that it later ends only
+    // these turns: their ids and the exact bytes of both stores (a digest; null
+    // when absent, undefined when unreadable).
+    entrySnapshot() {
+      const current = readLedger(path);
+      const fallback = fileDigest(holdPath);
+      return { turns: current.record.held.map(turn => turn.turn), ledger: current.digest, fallback,
+        any: current.state === 'unprovable' || holdsTurns(current.record) || fallback !== null };
+    },
     // Holds the turn that begins now (`turn`, a fresh id) from native byte
     // `from`, after any older held turn. While turns are held every sync skips
     // with TURN_UNRESOLVED and the Stop hook does not settle the session's
@@ -242,15 +256,26 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
         return ended;
       } catch { return false; }
     },
-    // A fresh task entry ends what was held before it, including an unprovable
-    // state: nothing before byte `before` may be imported. False when it could
-    // not be saved, which keeps them held.
-    enteredAfter(before) {
+    // A fresh task entry ends what it observed when it started (`snapshot`),
+    // and nothing before byte `before` may be imported. A store unchanged
+    // since then is cleared, an unprovable state included; a changed one loses
+    // only the observed turns, so a turn held while the entry ran stays held.
+    // False when it could not be saved, which keeps them held.
+    enteredAfter(before, snapshot) {
+      if (!snapshot.any) return true;
+      const observed = new Set(snapshot.turns);
       try {
-        update((current) => ({ ...(current.state === 'record' ? current.record : emptyLedger()),
-          held: [], unprovable: false,
-          skipUntil: Math.max(before, current.state === 'record' ? current.record.skipUntil ?? 0 : 0) }));
-        return removeFallback();
+        update((current) => {
+          const skipUntil = Math.max(before, current.record.skipUntil ?? 0);
+          if (snapshot.ledger !== undefined && current.digest === snapshot.ledger) {
+            return { ...current.record, held: [], unprovable: false, skipUntil };
+          }
+          if (current.state !== 'record') return undefined;
+          return { ...current.record, held: current.record.held.filter(turn => !observed.has(turn.turn)), skipUntil };
+        });
+        if (snapshot.fallback === null) return true;
+        return snapshot.fallback !== undefined && removeUnless(holdPath, TRANSCRIPT_TURN_HOLD_FORMAT,
+          () => fileDigest(holdPath) !== snapshot.fallback);
       } catch { return false; }
     },
     // The span before `skipUntil` was skipped.
@@ -287,8 +312,13 @@ function unprovableLedger() {
 function readLedger(path) {
   let text;
   try { text = readFileSync(path, 'utf8'); } catch (error) {
-    return MISSING.has(error?.code) ? { state: 'absent', record: emptyLedger() } : unprovableLedger();
+    return MISSING.has(error?.code) ? { state: 'absent', digest: null, record: emptyLedger() }
+      : { ...unprovableLedger(), digest: undefined };
   }
+  return { ...parseLedger(text), digest: transcriptDigest(text) };
+}
+
+function parseLedger(text) {
   let value;
   try { value = JSON.parse(text); } catch { return unprovableLedger(); }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return unprovableLedger();
@@ -313,6 +343,22 @@ function ledgerDocument(record) {
     ...(typeof record.pending === 'string' ? { pending: record.pending } : {}),
     ...(record.held?.length ? { held: record.held } : {}), ...(record.unprovable ? { unprovable: true } : {}),
     ...(record.skipUntil === null || record.skipUntil === undefined ? {} : { skipUntil: record.skipUntil }) };
+}
+
+function holdsTurns(record) {
+  return Boolean(record.held.length || record.unprovable || record.skipUntil !== null);
+}
+
+// The file's exact bytes as a digest: null when absent, undefined when it cannot be read.
+function fileDigest(path) {
+  try { return transcriptDigest(readFileSync(path)); } catch (error) { return MISSING.has(error?.code) ? null : undefined; }
+}
+
+function exists(path) {
+  try { lstatSync(path); return true; } catch (error) {
+    if (MISSING.has(error?.code)) return false;
+    throw error;
+  }
 }
 
 // A fallback hold that exists in any form, or that cannot be read, holds the session.

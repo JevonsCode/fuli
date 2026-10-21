@@ -87,9 +87,14 @@ function noValidContext(refresh) {
 
 // A refresh turn whose unresolved state could not be kept anywhere does not
 // reach the model: it would otherwise run unprotected.
-const UNPROTECTED_TURN = 'FULI：无法保存本轮“任务归属未确认”的状态，为免把本轮记入或结算到当前任务，已拦下这条消息，请稍后重试。 '
-  + 'FULI: could not keep this turn\'s task ownership as unresolved, so this message was held back rather than risk '
-  + 'recording or settling it under the current task; retry shortly.';
+const UNPROTECTED_TURN = 'FULI 拦下了这条消息，没有交给模型：它像宿主通知，FULI 需要先记下“本轮任务归属未确认”，'
+  + '但 FULI 数据目录里的 transcript-capture/ 和 transcript-turn-holds/ 都写不进去（磁盘已满、没有写权限，或另一个 FULI 进程一直占着锁）。'
+  + '恢复：确认数据目录可写、有空间，并且没有卡住的 FULI 进程，然后需要的话自己重新发送这条消息。FULI 不会自动重发，宿主通知也不会被补发。 '
+  + 'FULI held this message back and did not pass it to the model: it looks like a host notification, and FULI must first record '
+  + 'that the task ownership of this turn is unresolved, but neither transcript-capture/ nor transcript-turn-holds/ in the FULI data '
+  + 'directory could be written (disk full, no write permission, or another FULI process holding the lock). To recover, make the '
+  + 'data directory writable with free space and no stuck FULI process, then resend the message yourself if you still need it. '
+  + 'FULI does not resend it, and a host notification is not redelivered.';
 
 // Bilingual: the person reads these in the transcript as well as the model.
 const UNCONFIRMED_TURN = Object.freeze({
@@ -163,10 +168,11 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
       if (PREFERENCE_RESET_EVENTS.includes(event)) return claudeLifecycleOutput(event, input, call,
         { delivery: app.preferenceDelivery, currentTask });
       const unresolved = event === 'Stop' && await settleHeldTurns(app, ledger, input, currentTask) === 'held';
-      // Turns held before this prompt end once it freshly enters a task; the
-      // entry's sync skips what is left of them, and nothing before the prompt
-      // may be imported later either.
-      const held = event === 'UserPromptSubmit' ? ledger?.heldTurns() : null;
+      // Turns held when this prompt starts end once it freshly enters a task:
+      // only those (a turn held while the entry runs stays held). The entry's
+      // sync skips what is left of them, and nothing before the prompt may be
+      // imported later either.
+      const held = event === 'UserPromptSubmit' ? ledger?.entrySnapshot() : null;
       let entered = false;
       if (input.transcript_path && (await captureDecision(app, transcriptCaptureScope(input, 'claude_code'))).allowed) {
         dependencies.onTranscriptGuard?.();
@@ -180,10 +186,10 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
           if (name === 'begin_task_context') { entered = true; onContext(context); }
           return context;
         }, { delivery: app.preferenceDelivery, entryRefusal }) });
-      if (entered && (held?.unprovable || held?.turns.length)) {
+      if (entered && held?.any) {
         const before = await initialTranscriptBoundary(input.transcript_path, input.session_id, input.prompt,
           CLAUDE_TRANSCRIPT).catch(() => null);
-        if (before !== null) ledger.enteredAfter(before);
+        if (before !== null) ledger.enteredAfter(before, held);
       }
       return lifecycle;
     }), request);

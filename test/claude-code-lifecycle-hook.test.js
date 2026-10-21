@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { after } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { claudeLifecycleOutput, claudeLifecycleUnavailable, runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
 import { claudeLifecycleCommand } from '../src/agents/claude-code/lifecycle-hooks.js';
 import { transcriptCaptureLedger } from '../src/conversations/transcript-capture-gap.js';
@@ -512,4 +513,47 @@ test('Claude unresolved turn ends without an owner when another task became curr
   assert.deepEqual(s.ledger.heldTurns().turns, []);
   assert.deepEqual(s.calls, ['verify_task_checkpoint', 'checkpoint_task_knowledge'], 'the new current task settles normally');
   assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_MOVED_REPLY/);
+});
+
+test('Claude task entry ends only the turns held when it started; a turn held while it waits stays held', async t => {
+  const { execFile } = await import('node:child_process');
+  const { mkdtemp, rm, writeFile, appendFile, access } = await import('node:fs/promises');
+  const { setTimeout: delay } = await import('node:timers/promises');
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-claude-entry-barrier-'));
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
+  const sessionId = 'synthetic-barrier-session';
+  const runtimeConfigPath = join(directory, 'runtime.json');
+  const transcript = join(directory, 'session.jsonl');
+  const line = record => JSON.stringify({ sessionId, ...record }) + '\n';
+  await writeFile(transcript, line({ type: 'user', message: { role: 'user', content: 'Synthetic task A.' } }));
+  const script = fileURLToPath(new URL('../test-support/claude-hook-process.mjs', import.meta.url));
+  const hook = request => new Promise((resolvePromise, reject) => execFile(process.execPath, [script,
+    JSON.stringify({ runtimeConfigPath, transcript, sessionId, ...request })], { timeout: 60_000 },
+  (error, stdout, stderr) => error ? reject(new Error(stderr || error.message)) : resolvePromise(JSON.parse(stdout))));
+  const ledger = transcriptCaptureLedger(runtimeConfigPath, { session_id: sessionId }, 'claude_code');
+  const notification = '<task-notification>\n<task-id>bsynth01x</task-id>\n<status>completed</status>\n</task-notification>';
+  // N1 is held before task B's prompt arrives.
+  await appendFile(transcript, line({ type: 'user', message: { role: 'user', content: notification } }));
+  await hook({ event: 'UserPromptSubmit', prompt: notification });
+  const [n1] = ledger.heldTurns().turns;
+  assert.ok(n1);
+  // B's entry starts, observes N1, and waits on the Provider.
+  const started = join(directory, 'entry-started');
+  const release = join(directory, 'entry-release');
+  await appendFile(transcript, line({ type: 'user', message: { role: 'user', content: 'Synthetic task B.' } }));
+  const entry = hook({ event: 'UserPromptSubmit', prompt: 'Synthetic task B.', waitInEntry: { started, release } });
+  for (let waited = 0; ; waited += 50) {
+    try { await access(started); break; } catch { if (waited > 30_000) throw new Error('entry never started'); }
+    await delay(50);
+  }
+  // Meanwhile N2 is held by another hook process.
+  await appendFile(transcript, line({ type: 'user', message: { role: 'user', content: notification } }));
+  await hook({ event: 'UserPromptSubmit', prompt: notification });
+  const n2 = ledger.heldTurns().turns.at(-1);
+  assert.notEqual(n2.turn, n1.turn);
+  await writeFile(release, 'go');
+  await entry;
+  // B ended N1 only; N2 is still held, so no later Stop can import it into B.
+  assert.deepEqual(ledger.heldTurns().turns.map(turn => turn.turn), [n2.turn]);
+  assert.equal(ledger.heldTurns().unprovable, false);
 });

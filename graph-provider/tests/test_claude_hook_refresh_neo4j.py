@@ -443,7 +443,11 @@ async def test_claude_turns_stay_held_without_valid_context_lost_state_or_proof_
             path.mkdir(parents=True)
         host.user(nowhere, NOTIFICATION)
         blocked = await host.hook(nowhere, 'UserPromptSubmit', prompt=NOTIFICATION)
-        assert blocked.get('decision') == 'block' and 'held back' in blocked.get('reason', ''), blocked
+        reason = blocked.get('reason', '')
+        assert blocked.get('decision') == 'block' and 'held this message back' in reason, blocked
+        # The reason names the cause and the recovery, and nothing is resent for the person.
+        assert 'transcript-turn-holds/' in reason and 'resend the message yourself' in reason and 'does not resend' in reason
+        assert 'FULI 不会自动重发' in reason
         assert (await host.current(nowhere))['token'] == task_n
 
         # 3. N1 without a Stop, then N2 explicitly continued: only N2 is the task's, N1 is a skipped span.
