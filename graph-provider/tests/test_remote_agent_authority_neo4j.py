@@ -13,6 +13,7 @@ import pytest
 
 from test_agent_delegations_neo4j import resolve, setup_delegation
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
+from fuli_graph.runtime import ManagedNeo4jDriver
 
 NODE = 'a' * 64
 OTHER_NODE = 'b' * 64
@@ -190,7 +191,7 @@ async def _origin_after_change(monkeypatch, change):
     from graphiti_core.driver.neo4j_driver import Neo4jDriver
 
     reached, proceed = asyncio.Event(), asyncio.Event()
-    execute = Neo4jDriver.execute_query
+    execute = ManagedNeo4jDriver.execute_query
 
     async def pause_origin(driver, query, **kwargs):
         if 'MERGE (origin:FuliRemoteAgentOrigin' in query:
@@ -204,7 +205,7 @@ async def _origin_after_change(monkeypatch, change):
                                      params={'personal_space_id': scope['personal_space_id']})
         assert authority.status_code == 200, authority.text
         with monkeypatch.context() as patch:
-            patch.setattr(Neo4jDriver, 'execute_query', pause_origin)
+            patch.setattr(ManagedNeo4jDriver, 'execute_query', pause_origin)
             issuing = asyncio.create_task(client.post('/v1/project-agent-context/remote-origins',
                                                       json=origin(request)))
             try:

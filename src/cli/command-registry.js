@@ -39,6 +39,11 @@ Install and Agent connection:
 
 Data formats:
   migrate status [--json] [--data-dir DIR]  (every store's format version, ledger and pending steps; read only, safe while FULI runs)
+  migrate preview [--json] [--data-dir DIR]  (the steps waiting for you: stores, step IDs, counts, sample IDs and a plan digest; read only)
+  migrate apply --digest DIGEST [--data-dir DIR]  (applies exactly that previewed plan after you confirm at this terminal; backs up first)
+  migrate rollback --store LABEL --migration ID [--data-dir DIR]  (undoes one confirmed migration if nothing it changed was changed since)
+  migrate restore --store LABEL [--backup REF] [--data-dir DIR]  (replaces a whole store with a backup, losing later changes; FULI stopped)
+  migrate prune [--keep N] [--max-mb MB] [--dry-run] [--data-dir DIR]  (format backups by retention policy; never one an undo or the current version needs)
 
 Graph data portability:
   graph export --output DIR [--mode container|native] [--data-dir DIR]

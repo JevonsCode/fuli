@@ -8,6 +8,7 @@ import json
 
 import pytest
 
+from fuli_graph.runtime import ManagedNeo4jDriver
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
 from test_system_hr_identity_neo4j import _create_space
 
@@ -101,7 +102,7 @@ async def test_superseded_sender_or_handed_off_lead_cannot_restore_member_contex
 @pytest.mark.asyncio
 async def test_expired_grant_cannot_restore_a_member(monkeypatch):
     from graphiti_core.driver.neo4j_driver import Neo4jDriver
-    execute = Neo4jDriver.execute_query
+    execute = ManagedNeo4jDriver.execute_query
 
     async def expire_fixture(driver, query, **kwargs):
         if 'CREATE (:FuliAgentDelegation' in query:
@@ -111,7 +112,7 @@ async def test_expired_grant_cannot_restore_a_member(monkeypatch):
     async with provider_client(fixture_settings()) as (client, _):
         scope, request = await setup_delegation(client)
         with monkeypatch.context() as patch:
-            patch.setattr(Neo4jDriver, 'execute_query', expire_fixture)
+            patch.setattr(ManagedNeo4jDriver, 'execute_query', expire_fixture)
             token = await issue(client, request)
         assert (await resolve(client, scope, token, 'fresh-session'))['status'] == 'agent_unavailable'
 
@@ -133,7 +134,7 @@ async def test_reporting_label_or_wrong_project_does_not_authorize_delegation():
 async def test_handoff_during_redemption_cannot_use_a_stale_lead(monkeypatch):
     from graphiti_core.driver.neo4j_driver import Neo4jDriver
     reached, proceed = asyncio.Event(), asyncio.Event()
-    execute = Neo4jDriver.execute_query
+    execute = ManagedNeo4jDriver.execute_query
 
     async def pause_claim(driver, query, **kwargs):
         if 'grant.redeemed = true' in query:
@@ -145,7 +146,7 @@ async def test_handoff_during_redemption_cannot_use_a_stale_lead(monkeypatch):
         scope, request = await setup_delegation(client)
         token = await issue(client, request)
         with monkeypatch.context() as patch:
-            patch.setattr(Neo4jDriver, 'execute_query', pause_claim)
+            patch.setattr(ManagedNeo4jDriver, 'execute_query', pause_claim)
             claiming = asyncio.create_task(resolve(client, scope, token, 'fresh-session'))
             try:
                 await asyncio.wait_for(reached.wait(), timeout=5)

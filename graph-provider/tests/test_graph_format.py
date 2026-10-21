@@ -2,6 +2,7 @@
 fingerprint, the record-changing steps' bodies and the driver's format guard.
 Behavior against a real graph lives in test_graph_format_neo4j.py."""
 
+import ast
 import json
 import os
 import re
@@ -24,6 +25,7 @@ from fuli_graph.graph_format_backfills import (
     apply_group_id_separators,
     apply_learning_bucket_ids,
 )
+from fuli_graph.graph_format_journal import CREATED_TAG
 from fuli_graph.graph_format_ledger import LEDGER_LABELS
 from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION, GRAPH_MIGRATIONS
 from fuli_graph.graph_format_schema import schema_fingerprint
@@ -206,12 +208,15 @@ async def test_learning_bucket_step_is_space_scoped_deterministic_and_keeps_evid
 
 
 class RecordingClient:
-    """Stands in for the Neo4j client under ManagedNeo4jDriver."""
+    """Stands in for the Neo4j client under ManagedNeo4jDriver; the writer
+    fence reads graph_version."""
 
-    def __init__(self, error=None):
+    def __init__(self, error=None, graph_version=GRAPH_FORMAT_VERSION):
         self.error = error
+        self.graph_version = graph_version
         self.queries = []
         self.sessions = []
+        self.transaction_queries = []
 
     async def execute_query(self, query, **kwargs):
         self.queries.append((query, kwargs))
@@ -221,10 +226,13 @@ class RecordingClient:
 
     def session(self, **kwargs):
         self.sessions.append(kwargs)
-        return RecordingSession()
+        return RecordingSession(self)
 
 
 class RecordingSession:
+    def __init__(self, client=None):
+        self.client = client
+
     async def __aenter__(self):
         return self
 
@@ -232,7 +240,40 @@ class RecordingSession:
         return False
 
     async def begin_transaction(self):
-        return SimpleNamespace(commit=_done, rollback=_done)
+        return RecordingTransaction(self.client)
+
+    async def execute_write(self, work, *args, **kwargs):
+        return await work(RecordingTransaction(self.client), *args, **kwargs)
+
+
+class RecordingTransaction:
+    def __init__(self, client):
+        self.client = client
+
+    async def run(self, query, *args, **kwargs):
+        self.client.transaction_queries.append(query)
+        rows = [{'version': self.client.graph_version}] if '_fuli_writer' in query else []
+        return RecordingResult(rows)
+
+    async def commit(self):
+        return None
+
+    async def rollback(self):
+        return None
+
+
+class RecordingResult:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def __aiter__(self):
+        async def rows():
+            for row in self.rows:
+                yield row
+        return rows()
+
+    async def to_eager_result(self):
+        return self.rows, None, []
 
 
 async def _done():
@@ -304,7 +345,7 @@ async def test_a_write_neo4j_refuses_in_read_mode_answers_with_the_format_reason
 
 
 @pytest.mark.asyncio
-async def test_current_graph_writes_normally():
+async def test_current_graph_writes_behind_the_writer_fence():
     client = RecordingClient()
     driver = guarded_driver(GraphFormatState('write', 'current', GRAPH_FORMAT_VERSION), client)
 
@@ -312,9 +353,26 @@ async def test_current_graph_writes_normally():
     async with driver.transaction():
         pass
 
-    assert 'routing_' not in client.queries[0][1]
-    # A writable graph uses the dependency's own write transaction.
-    assert client.sessions[0].get('default_access_mode', WRITE_ACCESS) == WRITE_ACCESS
+    # The fence is the write transaction's last statement, before its commit.
+    assert client.queries == []
+    assert client.transaction_queries[0] == 'CREATE (:Synthetic)'
+    assert '_fuli_writer' in client.transaction_queries[1]
+    assert '_fuli_writer' in client.transaction_queries[2]
+    # The dependency's own write transaction, which defaults to write access.
+    assert all(session.get('default_access_mode', WRITE_ACCESS) == WRITE_ACCESS for session in client.sessions)
+
+
+@pytest.mark.asyncio
+async def test_a_provider_whose_graph_was_migrated_meanwhile_writes_nothing():
+    client = RecordingClient(graph_version=GRAPH_FORMAT_VERSION - 1)
+    driver = guarded_driver(GraphFormatState('write', 'current', GRAPH_FORMAT_VERSION), client)
+
+    with pytest.raises(GraphFormatUnavailable) as refused:
+        await driver.execute_query('CREATE (:Synthetic)')
+
+    assert refused.value.code == 'data_format_changed_underneath'
+    # The write ran in the transaction the fence then refuses to commit.
+    assert client.transaction_queries[0] == 'CREATE (:Synthetic)'
 
 
 @pytest.mark.asyncio
@@ -346,3 +404,65 @@ async def test_the_format_report_reads_in_read_access_mode_even_when_the_graph_i
     assert REFUSED.refusal().detail() == {'code': 'data_format_blocked',
                                           'message': 'synthetic newer-format reason',
                                           'store': 'graph', 'steps': []}
+
+
+PROPERTY_FINGERPRINTS = Path(__file__).with_name('graph_property_fingerprints.json')
+# A property name next to a record variable in Cypher text: n.name = …, or a
+# key of a pattern's property map, (n:Label {name: …}).
+CYPHER_PROPERTY = re.compile(r'\b[a-z_][A-Za-z0-9_]*\.([a-z][A-Za-z0-9_]*)\s*=(?!=)')
+MAP_KEY = re.compile(r'[{,]\s*([a-z][A-Za-z0-9_]*)\s*:\s*[$\'"\w\[{(-]')
+
+
+def _cypher_texts(source: str):
+    """Every string literal of a module, f-string parts included."""
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            yield node.value
+
+
+def test_a_new_graph_property_comes_with_the_next_graph_version():
+    """Every property name the provider's Cypher reads or writes, by graph
+    version. Readers coalesce a missing property, but an older guarded FULI
+    ignores one it does not know, so a new stored property is a format change:
+    add a migration with the next graph version, then record the new version
+    and its property set here. A recorded version never changes once a guarded
+    release ships it (rec#17 D-11). Version 10 is the first guarded release's
+    baseline: no guarded build has been published yet (the release gate is
+    blocked), so properties added before it ships (#258's turn receipts, #263's
+    Episodic.fuli_conversation_id) are part of version 10, not a new step."""
+    properties = set()
+    for path in provider_sources():
+        for text in _cypher_texts(path.read_text(encoding='utf-8')):
+            if not re.search(r'\b(MATCH|MERGE|CREATE|SET|RETURN|WHERE)\b', text):
+                continue
+            properties.update(CYPHER_PROPERTY.findall(text))
+            properties.update(MAP_KEY.findall(text))
+    # A confirmed step's tag on what it creates is removed before its
+    # transaction commits (graph_format_journal.py); it is never stored.
+    properties -= {CREATED_TAG}
+    recorded = json.loads(PROPERTY_FINGERPRINTS.read_text(encoding='utf-8'))
+    assert str(GRAPH_FORMAT_VERSION) in recorded, (
+        f'Record the property set of graph version {GRAPH_FORMAT_VERSION} in '
+        f'{PROPERTY_FINGERPRINTS.name}'
+    )
+    expected = set(recorded[str(GRAPH_FORMAT_VERSION)])
+    assert sorted(properties - expected) == [], (
+        'New graph properties need a migration with the next graph version '
+        f'(then record that version in {PROPERTY_FINGERPRINTS.name})'
+    )
+    assert sorted(expected - properties) == [], (
+        f'Properties no longer used: record the next version in {PROPERTY_FINGERPRINTS.name}'
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_auto_commit_write_is_refused_rather_than_run_unfenced():
+    client = RecordingClient()
+    driver = guarded_driver(GraphFormatState('write', 'current', GRAPH_FORMAT_VERSION), client)
+
+    async with driver.session() as session:
+        with pytest.raises(GraphFormatUnavailable) as refused:
+            await session.run('MATCH (n:Entity {group_id: $g}) CALL (n) { DETACH DELETE n } IN TRANSACTIONS', g='x')
+
+    assert refused.value.code == 'data_format_unfenced_write'
+    assert client.queries == [] and client.transaction_queries == []

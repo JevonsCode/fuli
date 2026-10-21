@@ -23,6 +23,8 @@ import { JUDGMENT_FORMAT } from '../judgment/store.js';
 import { ROLE_WORK_FORMAT } from '../model-backends/role-work-store.js';
 import { MODEL_USAGE_FORMAT } from '../model-backends/usage-ledger.js';
 import { inspectJsonStore } from '../storage/json-format.js';
+import { APPLY_RECEIPTS_FORMAT } from './apply-receipts.js';
+import { FORMAT_OPERATIONS_FORMAT } from './operations-log.js';
 import { MODEL_SECRETS_FORMAT } from '../model-backends/secret-store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
@@ -30,8 +32,10 @@ import { TASK_SCHEDULE_FORMAT } from '../task-schedules/store.js';
 
 // Every FULI store kept in one data directory, by the path its owner opens
 // (rec#17 D-09). Labels are relative to the data directory, so a report names
-// no user path. The graph is reported by its provider, which owns it.
-const SQLITE_STORES = [
+// no user path. The graph is reported by its provider, which owns it. Built
+// on use: the receipt reaches this module from modules that declare these
+// formats, so the lists may not be read while those are still loading.
+const sqliteStores = () => [
   ['judgment.sqlite', JUDGMENT_FORMAT],
   ['task-schedules.sqlite', TASK_SCHEDULE_FORMAT],
   ['agent-roundtable.sqlite', ROUNDTABLE_FORMAT],
@@ -42,7 +46,7 @@ const SQLITE_STORES = [
   ['peer/node.sqlite', NODE_FORMAT],
   ['peer/coordinator.sqlite', COORDINATOR_FORMAT]
 ];
-const JSON_STORES = [
+const jsonStores = () => [
   ['runtime-settings.json', RUNTIME_SETTINGS_FORMAT],
   ['adaptive-runtime-settings.json', ADAPTIVE_RUNTIME_SETTINGS_FORMAT],
   ['adaptive-runtime-state.json', ADAPTIVE_RUNTIME_STATE_FORMAT],
@@ -58,10 +62,12 @@ const JSON_STORES = [
   ['external-knowledge/bindings.json', EXTERNAL_KNOWLEDGE_FORMAT],
   ['external-knowledge/conflict-policies.json', CONFLICT_POLICY_FORMAT],
   ['model-secrets.json', MODEL_SECRETS_FORMAT],
-  ['client-connection-observations.json', CLIENT_CONNECTION_HISTORY_FORMAT]
+  ['client-connection-observations.json', CLIENT_CONNECTION_HISTORY_FORMAT],
+  ['format-operations.json', FORMAT_OPERATIONS_FORMAT],
+  ['format-apply-receipts.json', APPLY_RECEIPTS_FORMAT]
 ];
 // One small record per session.
-const JSON_DIRECTORIES = [
+const jsonDirectories = () => [
   ['preference-delivery', PREFERENCE_SESSION_FORMAT],
   ['transcript-capture', TRANSCRIPT_CAPTURE_FORMAT],
   // Session records and the default for new sessions (default.json).
@@ -74,12 +80,21 @@ const JSON_DIRECTORIES = [
 const STATE_ORDER = ['unavailable', 'newer_format', 'half_applied', 'pending_confirmation', 'unsupported',
   'unreadable', 'upgrade_on_open', 'unversioned', 'current', 'empty', 'absent'];
 
+// The single-file stores of one data directory: each kind's engine can
+// preview, apply, undo and restore them (migration-plan.js).
+export function localStoreFiles(dataDir) {
+  return [
+    ...sqliteStores().map(([label, format]) => ({ label, kind: 'sqlite', path: join(dataDir, label), format })),
+    ...jsonStores().map(([label, format]) => ({ label, kind: 'json', path: join(dataDir, label), format }))
+  ];
+}
+
 // What each store would be on open, read without changing a byte.
 export function inspectLocalStores(dataDir) {
   return [
-    ...SQLITE_STORES.map(([label, format]) => ({ label, ...inspectSqliteStore(join(dataDir, label), format) })),
-    ...JSON_STORES.map(([label, format]) => ({ label, ...inspectJsonStore(join(dataDir, label), format) })),
-    ...JSON_DIRECTORIES.map(([label, format]) => ({ label, ...inspectJsonDirectory(join(dataDir, label), format) }))
+    ...sqliteStores().map(([label, format]) => ({ label, ...inspectSqliteStore(join(dataDir, label), format) })),
+    ...jsonStores().map(([label, format]) => ({ label, ...inspectJsonStore(join(dataDir, label), format) })),
+    ...jsonDirectories().map(([label, format]) => ({ label, ...inspectJsonDirectory(join(dataDir, label), format) }))
   ];
 }
 

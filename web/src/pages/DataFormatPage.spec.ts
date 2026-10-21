@@ -1,0 +1,120 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const api = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
+vi.mock('@/api/client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/client')>(), getJson: api.getJson, postJson: api.postJson,
+}))
+
+import { ApiError } from '@/api/client'
+import DataFormatPage from './DataFormatPage.vue'
+
+const DIGEST = 'a'.repeat(64)
+const plan = (digest = DIGEST) => ({
+  digest,
+  stores: [{
+    label: 'task-schedules.sqlite', store: 'task-schedules', kind: 'sqlite', action: 'apply', automatic: [],
+    step: { id: 'task-schedules/3-run-recovery', summary: 'recoverable claims', kind: 'backfill', fromVersion: 2,
+      toVersion: 3, count: 12, sampleIds: ['schedule-alpha-0001#1', 's2#2'], scopeDigest: 'b'.repeat(64) },
+    undo: 'available', digest: 'c'.repeat(64),
+  }, {
+    label: 'graph (personal)', store: 'graph', kind: 'neo4j', action: 'apply', automatic: [],
+    step: { id: 'graph/9-group-id-separators', summary: 'group IDs', kind: 'rewrite', fromVersion: 8, toVersion: 9,
+      count: 1, sampleIds: ['space-1'], scopeDigest: 'd'.repeat(64) },
+    undo: 'available', digest: 'e'.repeat(64),
+  }],
+  blocked: [{ label: 'judgment.sqlite', store: 'judgment', action: 'blocked', steps: [],
+    reason: 'written by a newer FULI (format 9)' }],
+  undoable: [{ label: 'agent-roundtable.sqlite', store: 'roundtable', migrationId: 'roundtable/9-x', fromVersion: 8,
+    toVersion: 9 }],
+})
+
+beforeEach(() => {
+  api.getJson.mockReset()
+  api.postJson.mockReset()
+  api.getJson.mockResolvedValue(plan())
+})
+
+const mountPage = async () => {
+  const wrapper = mount(DataFormatPage, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+  await flushPromises()
+  return wrapper
+}
+
+describe('DataFormatPage', () => {
+  it('says what a deleting step loses before the confirm control', async () => {
+    const restoreOnly = plan()
+    restoreOnly.stores[1] = { ...restoreOnly.stores[1], undo: 'restore_only',
+      warning: 'deletes the older duplicate learning-cache projections; the undo journal cannot restore deleted records (2 records deleted)' } as never
+    api.getJson.mockResolvedValue(restoreOnly)
+    const wrapper = await mountPage()
+
+    expect(wrapper.get('[data-store-warning]').text()).toContain('cannot restore deleted records')
+    const confirm = wrapper.get('.data-format-confirm')
+    const warning = confirm.get('[data-confirm-warnings]')
+    expect(warning.text()).toContain('graph (personal)')
+    expect(warning.text()).toContain('2 records deleted')
+    const order = warning.element.compareDocumentPosition(confirm.get('#data-format-reviewed').element)
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.text()).toContain('不能单独撤销，只能整库恢复')
+  })
+
+
+  it('lists each store with its step, count and sample IDs, and applies only after review', async () => {
+    const wrapper = await mountPage()
+    const cards = wrapper.findAll('[data-store-plan]')
+    expect(cards).toHaveLength(2)
+    expect(cards[0].text()).toContain('task-schedules/3-run-recovery')
+    expect(cards[0].text()).toContain('2 → 3')
+    expect(cards[0].text()).toContain('12 条')
+    expect(cards[0].text()).toContain('另 10 条')
+    expect(cards[0].find('[title="schedule-alpha-0001#1"]').exists()).toBe(true)
+    expect(cards[1].text()).toContain('图谱内记录撤销日志')
+    expect(wrapper.text()).toContain('written by a newer FULI')
+    expect(wrapper.get('[data-plan-digest]').attributes('title')).toBe(DIGEST)
+
+    const apply = wrapper.get('[data-apply]')
+    expect(apply.attributes('disabled')).toBeDefined()
+    await wrapper.get('#data-format-reviewed').trigger('click')
+    expect(apply.attributes('disabled')).toBeUndefined()
+
+    api.postJson.mockResolvedValue({ status: 'applied', skipped: [], results: [
+      { label: 'task-schedules.sqlite', status: 'applied', migrationId: 'task-schedules/3-run-recovery', count: 12 },
+      { label: 'graph (personal)', status: 'already_applied', migrationId: 'graph/9-group-id-separators' }] })
+    api.getJson.mockResolvedValue({ digest: null, stores: [], blocked: [], undoable: [] })
+    await apply.trigger('click')
+    await flushPromises()
+
+    expect(api.postJson).toHaveBeenCalledWith('/api/data-format/apply', { digest: DIGEST })
+    expect(wrapper.text()).toContain('已应用 task-schedules/3-run-recovery')
+    expect(wrapper.text()).toContain('已由另一次确认应用 graph/9-group-id-separators')
+    expect(wrapper.text()).toContain('没有等待确认的数据格式迁移')
+  })
+
+  it('reads a stale plan again and asks for a new confirmation', async () => {
+    const wrapper = await mountPage()
+    await wrapper.get('#data-format-reviewed').trigger('click')
+    api.postJson.mockRejectedValue(new ApiError('stale', 409,
+      JSON.stringify({ code: 'data_format_stale_preview', error: 'changed' })))
+    api.getJson.mockResolvedValue(plan('f'.repeat(64)))
+    await wrapper.get('[data-apply]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('计划在你确认后有了变化，没有做任何修改')
+    expect(wrapper.get('[data-plan-digest]').attributes('title')).toBe('f'.repeat(64))
+    expect(wrapper.get('[data-apply]').attributes('disabled')).toBeDefined()
+  })
+
+  it('undoes one migration only after a second, explicit confirmation', async () => {
+    const wrapper = await mountPage()
+    await wrapper.get('[data-undo]').trigger('click')
+    expect(api.postJson).not.toHaveBeenCalled()
+    api.postJson.mockResolvedValue({ status: 'rolled_back', version: 8 })
+    await wrapper.get('[data-confirm-undo]').trigger('click')
+    await flushPromises()
+
+    expect(api.postJson).toHaveBeenCalledWith('/api/data-format/rollback',
+      { label: 'agent-roundtable.sqlite', migrationId: 'roundtable/9-x' })
+    expect(wrapper.text()).toContain('已撤销 roundtable/9-x，存储回到版本 8')
+  })
+})

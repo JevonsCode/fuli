@@ -1,15 +1,18 @@
 import { readJsonFile } from '../storage/json-file.js';
-import { jsonFormat, refusePendingJsonMigration, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { jsonFormat, refusePendingJsonMigration, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { newerFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 import { acquireFileLock } from '../storage/file-lock.js';
 import { ApplicationError } from '../app/application-error.js';
 
 const CURRENT_VERSION = 2;
+// A change met a v1 registry that a confirmed apply then moved on: once more.
+const MUTATION_ATTEMPTS = 2;
 const EMPTY_REGISTRY = Object.freeze({ version: CURRENT_VERSION, bindings: [] });
 // A version 1 registry still reads, converted in memory; writing it would
 // restructure every binding, which waits for a person (rec#17 D-09).
 const BINDING_TARGETS_MIGRATION = Object.freeze({ id: 'external-knowledge/2-binding-targets', from: 1, to: 2,
-  summary: 'each binding’s single project target becomes a list of targets' });
+  summary: 'each binding’s single project target becomes a list of targets',
+  rewrite: (document) => migrateVersionOne(document), recordIds: (document) => document.bindings.map((binding) => binding.id) });
 export const EXTERNAL_KNOWLEDGE_FORMAT = jsonFormat({ store: 'external-knowledge', versions: [1, CURRENT_VERSION],
   pendingFrom: 1, migration: BINDING_TARGETS_MIGRATION });
 
@@ -46,20 +49,46 @@ export class ExternalKnowledgeRegistry {
   }
 
   put(binding) {
-    const document = this.#writable();
-    const index = document.bindings.findIndex((item) => item.id === binding.id);
-    if (index === -1) document.bindings.push(clone(binding));
-    else document.bindings[index] = clone(binding);
-    writeVersionedJsonFileAtomic(this.filePath, document, EXTERNAL_KNOWLEDGE_FORMAT);
+    this.#mutate((document) => {
+      const index = document.bindings.findIndex((item) => item.id === binding.id);
+      if (index === -1) document.bindings.push(clone(binding));
+      else document.bindings[index] = clone(binding);
+      return document;
+    });
     return clone(binding);
   }
 
   delete(id) {
-    const document = this.#writable();
-    const next = document.bindings.filter((item) => item.id !== id);
-    if (next.length === document.bindings.length) return false;
-    writeVersionedJsonFileAtomic(this.filePath, { ...document, bindings: next }, EXTERNAL_KNOWLEDGE_FORMAT);
-    return true;
+    let removed = false;
+    this.#mutate((document) => {
+      const next = document.bindings.filter((item) => item.id !== id);
+      removed = next.length !== document.bindings.length;
+      return removed ? { ...document, bindings: next } : undefined;
+    });
+    return removed;
+  }
+
+  // The read, the pending check and the write under one hold of the format
+  // lock, so a confirmed migration or undo by another process cannot land
+  // between them. A version 1 registry is refused and recorded in its ledger
+  // (refusePendingJsonMigration checks the file again under the lock); if a
+  // confirmed apply moved it on meanwhile, the change is made on that.
+  #mutate(change) {
+    for (let attempt = 0; attempt < MUTATION_ATTEMPTS; attempt += 1) {
+      let pending = null;
+      updateVersionedJsonFileAtomic(this.filePath, EXTERNAL_KNOWLEDGE_FORMAT, (current) => {
+        const document = validated(current ?? EMPTY_REGISTRY);
+        if (document.version === 1) {
+          pending = `${document.bindings.length} bindings were written by an earlier FULI`;
+          return undefined;
+        }
+        return change(clone(document));
+      });
+      if (!pending) return;
+      refusePendingJsonMigration(this.filePath, { format: EXTERNAL_KNOWLEDGE_FORMAT, detail: pending });
+    }
+    throw new ApplicationError('external_knowledge_busy', 'The registry changed format while this change was made; '
+      + 're-read state before retrying');
   }
 
   #read() {
@@ -67,25 +96,19 @@ export class ExternalKnowledgeRegistry {
     return document.version === 1 ? migrateVersionOne(document) : clone(document);
   }
 
-  #writable() {
-    const document = this.#stored();
-    if (document.version === 1) {
-      refusePendingJsonMigration(this.filePath, { format: EXTERNAL_KNOWLEDGE_FORMAT,
-        detail: `${document.bindings.length} bindings were written by an earlier FULI` });
-    }
-    return clone(document);
-  }
-
   #stored() {
-    const document = readJsonFile(this.filePath, EMPTY_REGISTRY);
-    if (Number.isInteger(document?.version) && document.version > CURRENT_VERSION) {
-      throw newerFormatError(EXTERNAL_KNOWLEDGE_FORMAT.store, document.version, CURRENT_VERSION);
-    }
-    if (!Array.isArray(document?.bindings) || ![1, CURRENT_VERSION].includes(document.version)) {
-      throw new TypeError('Unsupported external knowledge registry format');
-    }
-    return document;
+    return validated(readJsonFile(this.filePath, EMPTY_REGISTRY));
   }
+}
+
+function validated(document) {
+  if (Number.isInteger(document?.version) && document.version > CURRENT_VERSION) {
+    throw newerFormatError(EXTERNAL_KNOWLEDGE_FORMAT.store, document.version, CURRENT_VERSION);
+  }
+  if (!Array.isArray(document?.bindings) || ![1, CURRENT_VERSION].includes(document.version)) {
+    throw new TypeError('Unsupported external knowledge registry format');
+  }
+  return document;
 }
 
 function migrateVersionOne(document) {
