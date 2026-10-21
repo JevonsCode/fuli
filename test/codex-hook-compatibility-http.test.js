@@ -8,6 +8,7 @@ import { mkdtemp, writeFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 for (const [name, status, body, blocked, reads] of [
   ['legacy route absence', 404, { detail: 'Not Found' }, false, 1],
@@ -22,7 +23,7 @@ for (const [name, status, body, blocked, reads] of [
     response.writeHead(status, { 'content-type': 'application/json' });
     response.end(JSON.stringify(body));
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await listenFetchableServer(server, 0);
   t.after(() => new Promise(resolve => server.close(resolve)));
   const directory = await mkdtemp(join(tmpdir(), 'jvs-a-hook-http-'));
   t.after(() => rm(directory, { recursive: true, force: true }));

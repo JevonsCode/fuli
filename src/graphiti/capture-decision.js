@@ -45,8 +45,11 @@ export async function captureDecision(application, scope = {}) {
 // write from this client and directory or project would be told.
 export async function describeCapture(application, scope = {}) {
   const { policy, settings, project, decision } = await decide(application, scope);
+  // The default mode decides without its project, but an Agent asked to stop
+  // recording "this project" needs to know which one it is (C4-2).
+  const shown = project ?? (decision.layer === 'policy' ? null : await shownProject(application, scope));
   return { ...policy, current: { sourceApplication: scope.sourceApplication ?? 'other',
-    personalProjectId: project?.personalProjectId ?? null, captured: decision.allowed,
+    personalProjectId: shown?.personalProjectId ?? null, captured: decision.allowed,
     reason: decision.reason, layer: decision.layer,
     ...(decision.reason === 'project_off' ? { offSince: projectOffSince(settings, project.personalProjectId) } : {}),
     ...(decision.since ? { [decision.reason === 'session_stopped' ? 'stoppedSince' : 'pausedSince']: decision.since } : {}),
@@ -54,6 +57,15 @@ export async function describeCapture(application, scope = {}) {
       recovery: STALE_BINDING_RECOVERY } : {}),
     ...(scope.boundSessionId ? { fuli: taskSessionFuli(application, scope.boundSessionId) } : {}),
     notice: captureNotice(decision.reason, decision.since) } };
+}
+
+async function shownProject(application, scope) {
+  if (!scope.personalProjectId && !scope.projectPath) return null;
+  try {
+    return (await writeProjects(application, scope))[0];
+  } catch {
+    return null;
+  }
 }
 
 // Whether FULI is on for the task's session and for new sessions (rec#5 C3b).

@@ -194,6 +194,13 @@ export const router = createRouter({
       },
     },
     {
+      // An Agent's link to confirm a capture change it asked for (rec#5 C4-2, rec#11 D-16).
+      path: '/capture-change/:previewId',
+      name: 'capture-change',
+      component: () => import('@/features/capture/CaptureChangePage.vue'),
+      meta: { title: 'capture.confirm.title', layout: 'form', detail: true },
+    },
+    {
       path: '/about',
       name: 'about',
       component: () => import('@/pages/AboutPage.vue'),

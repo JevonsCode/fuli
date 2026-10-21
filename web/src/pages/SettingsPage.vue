@@ -7,13 +7,14 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { ApiError, getJson, putJson } from '@/api/client'
+import { apiErrorReason, getJson, putJson } from '@/api/client'
 import UiSelect from '@/ui/UiSelect.vue'
 import UiToggle from '@/ui/UiToggle.vue'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
+import CaptureProjectSettings from '@/features/capture/CaptureProjectSettings.vue'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
 import { fieldErrorMessage } from '@/features/settings/settings-field-error'
 import { matchingSections, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
@@ -230,11 +231,7 @@ async function saveSettings() {
   } catch (error) {
     if (saveController.signal.aborted) return
     saveState.value = 'error'
-    let reason = error instanceof Error ? error.message : t('settings.saveError')
-    if (error instanceof ApiError && error.detail) {
-      try { reason = JSON.parse(error.detail).error || reason } catch { /* Plain-text API error. */ }
-    }
-    store.reportError(new Error(reason))
+    store.reportError(new Error(apiErrorReason(error, t('settings.saveError'))))
   }
 }
 
@@ -435,6 +432,13 @@ async function submitSettings(event: Event) {
                     <UiToggle :model-value="answerFromConfirmed" :label="t('settings.behavior.answerFromConfirmed')" @update:model-value="toggleAnswerFromConfirmed" />
                   </label>
                 </div>
+              </Card>
+              <Card as="section" class="settings-card" aria-labelledby="settings-capture-projects-title" data-capture-projects-card>
+                <CardHeader>
+                  <CardTitle id="settings-capture-projects-title" as="h2">{{ t('capture.settings.title') }}</CardTitle>
+                  <CardDescription>{{ t('capture.settings.description') }}</CardDescription>
+                </CardHeader>
+                <CaptureProjectSettings class="px-5" />
               </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-access-title">
                 <CardHeader><CardTitle id="settings-access-title" as="h2">{{ t('settings.groups.access') }}</CardTitle></CardHeader>

@@ -8,6 +8,7 @@ import test from 'node:test';
 import { connectMcp } from '../test-support/mcp-client.js';
 import { loadProjectAgentContinuity } from '../src/graphiti/project-agent-task-entry.js';
 import { upsertProjectAgent } from '../src/graphiti/project-agent-workflows.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 const SPACE = 'personal-1';
 const AGENT = 'engineer-x';
@@ -204,6 +205,6 @@ async function fakeProvider(handler) {
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end(JSON.stringify(payload));
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await listenFetchableServer(server, 0);
   return { server, url: `http://127.0.0.1:${server.address().port}` };
 }

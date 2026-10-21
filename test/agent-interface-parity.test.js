@@ -144,7 +144,7 @@ test('external knowledge configuration is controllable through explicit Agent to
       updateConflictPolicy: async (input) => calls.push(['update-policy', input]),
     },
     getCapturePolicy: () => ({ enabled: true, updatedAt: null }),
-    updateCapturePolicy: (input) => calls.push(['capture-policy', input]),
+    captureChanges: { propose: (input) => calls.push(['capture-policy', input]) },
     deletePublicProject: async (input) => calls.push(['delete-public-project', input]),
   };
 

@@ -8,8 +8,11 @@ import { deepFreeze, uniqueTextArray } from '../validation/values.js';
 
 const PROJECT_MODES = Object.freeze(['all', 'all_except', 'selected']);
 const UNREGISTERED_DIRECTORY_CHOICES = Object.freeze(['capture', 'skip']);
-export const PROJECT_SETTING_KEYS = Object.freeze(['projectMode', 'excludedProjectIds', 'selectedProjectIds',
+const PROJECT_SETTING_KEYS = Object.freeze(['projectMode', 'excludedProjectIds', 'selectedProjectIds',
   'unregisteredDirectories']);
+// recordProjects is a change, not a stored setting: { [personalProjectId]: true | false }
+// says whether each project is recorded afterwards (rec#5 C4-1, C4-2).
+export const PROJECT_CHANGE_KEYS = Object.freeze([...PROJECT_SETTING_KEYS, 'recordProjects']);
 
 const MAX_LISTED_PROJECTS = 1000;
 const MAX_PROJECT_ID_LENGTH = 256;
@@ -31,7 +34,7 @@ function defaultUnregisteredDirectories(projectMode) {
 export function updatedProjectSettings(current, input, now) {
   const projectMode = input.projectMode === undefined ? current.projectMode
     : choice(input.projectMode, PROJECT_MODES, 'projectMode', TypeError);
-  const next = {
+  const next = withProjectsRecorded({
     projectMode,
     excludedProjectIds: input.excludedProjectIds === undefined ? current.excludedProjectIds
       : projectIds(input.excludedProjectIds, 'excludedProjectIds', TypeError),
@@ -40,8 +43,40 @@ export function updatedProjectSettings(current, input, now) {
     unregisteredDirectories: input.unregisteredDirectories !== undefined
       ? choice(input.unregisteredDirectories, UNREGISTERED_DIRECTORY_CHOICES, 'unregisteredDirectories', TypeError)
       : projectMode === current.projectMode ? current.unregisteredDirectories : defaultUnregisteredDirectories(projectMode)
-  };
+  }, input.recordProjects);
   return { ...next, ...offSince(current, next, now) };
+}
+
+// Project switches applied to the settings they are saved with, so a page or
+// an Agent never resends lists it read before someone else's change. The
+// resulting mode and the state the person sees come first, then the whole
+// delta applies to it: while every project is recorded, turning some off
+// excludes exactly those, and a list left over from an earlier mode stays
+// unused (dot review, PR 262). The handling of unregistered directories stays as it was.
+function withProjectsRecorded(settings, recordProjects) {
+  if (recordProjects === undefined) return settings;
+  const switches = projectSwitches(recordProjects);
+  let { projectMode } = settings;
+  let excluded = new Set(settings.excludedProjectIds);
+  const selected = new Set(settings.selectedProjectIds);
+  if (projectMode === 'all') {
+    if (switches.every(([, recorded]) => recorded)) return settings;
+    projectMode = 'all_except';
+    excluded = new Set();
+  }
+  for (const [id, recorded] of switches) {
+    if (projectMode === 'all_except') recorded ? excluded.delete(id) : excluded.add(id);
+    else recorded ? selected.add(id) : selected.delete(id);
+  }
+  return { ...settings, projectMode, excludedProjectIds: [...excluded].sort(), selectedProjectIds: [...selected].sort() };
+}
+
+function projectSwitches(value) {
+  const invalid = () => new TypeError('Capture policy recordProjects must map project IDs to true or false');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
+  const ids = projectIds(Object.keys(value), 'recordProjects', TypeError);
+  if (!ids.length || ids.some(id => typeof value[id] !== 'boolean')) throw invalid();
+  return ids.map(id => [id, value[id]]);
 }
 
 // Settings saved before project modes have none of these fields and record
@@ -91,7 +126,7 @@ export function projectOffSince(settings, personalProjectId) {
   return settings.projectsOffSince[personalProjectId] ?? settings.unlistedProjectsOffSince;
 }
 
-function projectOff(settings, personalProjectId) {
+export function projectOff(settings, personalProjectId) {
   if (settings.projectMode === 'all_except') return settings.excludedProjectIds.includes(personalProjectId);
   if (settings.projectMode === 'selected') return !settings.selectedProjectIds.includes(personalProjectId);
   return false;
