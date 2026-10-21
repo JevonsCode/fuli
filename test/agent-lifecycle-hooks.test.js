@@ -26,6 +26,9 @@ import {
   runCursorLifecycleHook
 } from '../src/agents/cursor/lifecycle-hook.js';
 import { withCursorLifecycleHooks, withoutCursorLifecycleHooks } from '../src/agents/cursor/lifecycle-hooks.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
+
+const CURSOR_HOOKS = builtInClientPack('cursor').lifecycleHooks;
 
 test('Codex lifecycle config preserves other hooks and deduplicates only Fuli entries', () => {
   const other = { hooks: [{ type: 'command', command: 'echo other' }] };
@@ -318,11 +321,11 @@ test('Cursor config is idempotent, bounded and removes only managed commands', (
   const context = { nodePath: '/synthetic runtime/node', mcpServerPath: '/synthetic/src/mcp-server.js',
     runtimeConfigPath: '/synthetic/config.json', platform: 'darwin' };
   const original = { version: 1, hooks: { stop: [{ command: 'user-script' }] } };
-  const configured = withCursorLifecycleHooks(original, context);
+  const configured = withCursorLifecycleHooks(original, context, CURSOR_HOOKS);
   assert.equal(configured.hooks.stop.length, 2);
   assert.equal(configured.hooks.stop[1].loop_limit, 2);
   assert.match(configured.hooks.beforeSubmitPrompt[0].command, /--fuli-lifecycle/);
-  assert.deepEqual(withCursorLifecycleHooks(configured, context), configured);
+  assert.deepEqual(withCursorLifecycleHooks(configured, context, CURSOR_HOOKS), configured);
   assert.deepEqual(withoutCursorLifecycleHooks(configured), original);
 });
 

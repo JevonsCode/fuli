@@ -8,27 +8,30 @@ const COMMAND_MARKER = '--fuli-lifecycle';
 const TOML_HOOK_GROUP = /^\s*\[\[hooks\.([A-Za-z][A-Za-z0-9_]*)]]\s*(?:#.*)?$/;
 const TOML_TABLE = /^\s*\[{1,2}([^\]]+)\]{1,2}\s*(?:#.*)?$/;
 
-export function withCodexLifecycleHooks(current, { timeout = 30, context = null } = {}) {
+// The MCP-tool form written before command hooks; still produced without a context.
+const MCP_TOOL_HOOKS = Object.freeze([
+  ['UserPromptSubmit', 'begin_task_context', Object.freeze({
+    sessionId: '${session_id}', turnId: '${turn_id}',
+    projectPath: '${cwd}', taskPrompt: '${prompt}'
+  })],
+  ['Stop', 'verify_task_checkpoint', Object.freeze({ sessionId: '${session_id}' })]
+]);
+const MCP_TOOL_TIMEOUT_SEC = 30;
+
+// With a context, `hooks` is the descriptor pack's event list and every handler
+// runs the packaged Codex hook; a pack never supplies a command.
+export function withCodexLifecycleHooks(current, { context = null, hooks = null } = {}) {
   const clean = withoutCodexLifecycleHooks(current);
-  const hooks = { ...(clean.hooks ?? {}) };
-  for (const [event, tool, input] of [
-    ['UserPromptSubmit', 'begin_task_context', {
-      sessionId: '${session_id}', turnId: '${turn_id}',
-      projectPath: '${cwd}', taskPrompt: '${prompt}'
-    }],
-    ['Stop', 'verify_task_checkpoint', { sessionId: '${session_id}' }]
-  ]) {
-    const handler = context
-      ? { type: 'command', command: codexStopCommand(context, event), timeout }
-      : { type: 'mcp_tool', server: 'fuli', tool, input, timeout };
-    hooks[event] = [...(hooks[event] ?? []), { hooks: [handler] }];
+  const registered = { ...(clean.hooks ?? {}) };
+  const handlers = context
+    ? hooks.events.map(({ event }) => [event,
+      { type: 'command', command: codexStopCommand(context, event), timeout: hooks.timeoutSec }])
+    : MCP_TOOL_HOOKS.map(([event, tool, input]) => [event,
+      { type: 'mcp_tool', server: 'fuli', tool, input, timeout: MCP_TOOL_TIMEOUT_SEC }]);
+  for (const [event, handler] of handlers) {
+    registered[event] = [...(registered[event] ?? []), { hooks: [handler] }];
   }
-  if (context) for (const event of ['SessionStart', 'PreCompact']) {
-    hooks[event] = [...(hooks[event] ?? []), {
-      hooks: [{ type: 'command', command: codexStopCommand(context, event), timeout }]
-    }];
-  }
-  return { ...clean, hooks };
+  return { ...clean, hooks: registered };
 }
 
 export function withoutCodexLifecycleHooks(current) {
@@ -55,11 +58,11 @@ export function withoutCodexLifecycleHooks(current) {
 }
 
 export function installCodexLifecycleHooks(agent, {
-  readConfig = readJsonFile, writeConfig = writeJsonFileAtomic, context = null
+  readConfig = readJsonFile, writeConfig = writeJsonFileAtomic, context = null, hooks = null
 } = {}) {
   if (!agent.hooksPath) return { changed: false };
   const current = readConfig(agent.hooksPath, {});
-  const next = withCodexLifecycleHooks(current, { context });
+  const next = withCodexLifecycleHooks(current, { context, hooks });
   const changed = JSON.stringify(current) !== JSON.stringify(next);
   if (changed) writeConfig(agent.hooksPath, next);
   // Installing never edits the host's trust store or bypasses its review.
@@ -77,9 +80,9 @@ export function removeCodexLifecycleHooks(agent, {
   return { changed };
 }
 
-export function hasCurrentCodexLifecycleHooks(current, { context = null } = {}) {
+export function hasCurrentCodexLifecycleHooks(current, { context = null, hooks = null } = {}) {
   try {
-    return JSON.stringify(withCodexLifecycleHooks(current, { context })) === JSON.stringify(current);
+    return JSON.stringify(withCodexLifecycleHooks(current, { context, hooks })) === JSON.stringify(current);
   } catch { return false; }
 }
 
@@ -88,25 +91,14 @@ export function hasCodexTomlHookDefinitions(source) {
     .some((line) => TOML_HOOK_GROUP.test(line));
 }
 
-export function withCodexTomlLifecycleHooks(source, { timeout = 30, context = null } = {}) {
+export function withCodexTomlLifecycleHooks(source, { context = null, hooks = null } = {}) {
   const clean = withoutCodexTomlLifecycleHooks(source);
   const lines = clean.replaceAll('\r\n', '\n').split('\n');
   while (lines.length && !lines.at(-1).trim()) lines.pop();
-  const blocks = [
-    ...(context ? codexTomlCommandHookBlock('UserPromptSubmit', codexStopCommand(context, 'UserPromptSubmit'), timeout) : codexTomlHookBlock('UserPromptSubmit', 'begin_task_context', {
-      sessionId: '${session_id}',
-      turnId: '${turn_id}',
-      projectPath: '${cwd}',
-      taskPrompt: '${prompt}'
-    }, timeout)),
-    ...(context
-      ? codexTomlCommandHookBlock('Stop', codexStopCommand(context), timeout)
-      : codexTomlHookBlock('Stop', 'verify_task_checkpoint', {
-          sessionId: '${session_id}'
-        }, timeout)),
-    ...(context ? ['SessionStart', 'PreCompact'].flatMap(event =>
-      codexTomlCommandHookBlock(event, codexStopCommand(context, event), timeout)) : [])
-  ];
+  const blocks = context
+    ? hooks.events.flatMap(({ event }) =>
+      codexTomlCommandHookBlock(event, codexStopCommand(context, event), hooks.timeoutSec))
+    : MCP_TOOL_HOOKS.flatMap(([event, tool, input]) => codexTomlHookBlock(event, tool, input, MCP_TOOL_TIMEOUT_SEC));
   return `${[...lines, ...(lines.length ? [''] : []), ...blocks].join('\n')}\n`;
 }
 
@@ -143,8 +135,8 @@ export function withoutCodexTomlLifecycleHooks(source) {
   return kept.length ? `${kept.join('\n')}\n` : '';
 }
 
-export function hasCurrentCodexTomlLifecycleHooks(source, { context = null } = {}) {
-  return normalizeText(withCodexTomlLifecycleHooks(source, { context })) === normalizeText(source);
+export function hasCurrentCodexTomlLifecycleHooks(source, { context = null, hooks = null } = {}) {
+  return normalizeText(withCodexTomlLifecycleHooks(source, { context, hooks })) === normalizeText(source);
 }
 
 function codexTomlHookBlock(event, tool, input, timeout) {

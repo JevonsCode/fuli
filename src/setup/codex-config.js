@@ -7,6 +7,7 @@ import {
 } from './codex-bootstrap.js';
 import {
   hasCodexTomlHookDefinitions,
+  hasCurrentCodexLifecycleHooks,
   hasCurrentCodexTomlLifecycleHooks,
   installCodexLifecycleHooks,
   removeCodexLifecycleHooks,
@@ -17,8 +18,12 @@ import {
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { installedToolProfile } from './installed-tool-profile.js';
 import { writeTextFileAtomic } from '../storage/json-file.js';
+import { renderMcpEntry } from './agents/mcp-entry-template.js';
 
-export function connectCodex(agent, context, {
+// The 'codex-toml' config writer: the MCP table in config.toml, lifecycle hooks
+// in hooks.json (or in config.toml when the person keeps hooks there) and the
+// managed global instructions block.
+export function connectCodex(pack, agent, context, {
   readConfig = readText,
   writeConfig = writeTextFileAtomic,
   readHooks = readJsonFile,
@@ -29,18 +34,8 @@ export function connectCodex(agent, context, {
   const current = readConfig(agent.configPath);
   // Codex sends every listed tool schema with each request, so it gets the
   // chat profile; an explicit profile already in the config is kept.
-  let next = replaceFuliTable(current, {
-    command: context.nodePath,
-    args: [
-      context.mcpServerPath,
-      '--runtime-config',
-      context.runtimeConfigPath,
-      '--source-application',
-      'codex',
-      '--tool-profile',
-      installedToolProfile(existingFuliArgs(current))
-    ]
-  });
+  let next = replaceFuliTable(current, fuliTable(pack, context, installedToolProfile(existingFuliArgs(current))));
+  const hooksSpec = pack.lifecycleHooks;
   const tomlHooksPresent = Boolean(
     agent.hooksPath && hasCodexTomlHookDefinitions(current)
   );
@@ -55,14 +50,14 @@ export function connectCodex(agent, context, {
     );
   }
 
-  const bootstrap = installBootstrap(agent, context);
+  const bootstrap = installBootstrap(agent, pack.instructions.global);
   let hooks;
   let hooksJsonWrite = null;
   if (tomlHooksPresent) {
-    const withHooks = withCodexTomlLifecycleHooks(next, { context });
+    const withHooks = withCodexTomlLifecycleHooks(next, { context, hooks: hooksSpec });
     const jsonChanged = JSON.stringify(currentHooks) !== JSON.stringify(remainingHooks);
     const tomlHooksChanged = !hasCurrentCodexTomlLifecycleHooks(current, {
-      context
+      context, hooks: hooksSpec
     });
     hooks = {
       changed: tomlHooksChanged || jsonChanged,
@@ -71,7 +66,7 @@ export function connectCodex(agent, context, {
     next = withHooks;
     if (jsonChanged) hooksJsonWrite = remainingHooks;
   } else {
-    hooks = installHooks(agent, { context });
+    hooks = installHooks(agent, { context, hooks: hooksSpec });
   }
   const registrationChanged = next !== current;
   if (registrationChanged) writeConfig(agent.configPath, next);
@@ -89,6 +84,29 @@ export function connectCodex(agent, context, {
         : 'Check Fuli hooks in the Codex CLI with /hooks; setup does not verify hook trust.']
     } : {})
   };
+}
+
+export function codexStatus(pack, agent, context, readers) {
+  const current = readers.readText(agent.configPath);
+  const present = /^\s*\[mcp_servers\.(?:fuli|"fuli"|'fuli')]/m.test(current);
+  const hooks = pack.lifecycleHooks;
+  let registration;
+  try {
+    const expected = replaceFuliTable(current,
+      fuliTable(pack, context, installedToolProfile(existingFuliArgs(current), context.toolProfile)));
+    const normalized = hasCodexTomlHookDefinitions(current) ? withCodexTomlLifecycleHooks(expected, { context, hooks }) : expected;
+    registration = { present, current: present && normalized.replaceAll('\r\n', '\n').trim() === current.replaceAll('\r\n', '\n').trim() };
+  } catch { registration = { present, current: false }; }
+  return { registration,
+    bootstrap: readers.bootstrapCurrent(agent, pack.instructions.global, readers),
+    ...(agent.hooksPath ? { lifecycleHooks: hasCodexTomlHookDefinitions(current)
+      ? hasCurrentCodexTomlLifecycleHooks(current, { context, hooks })
+      : hasCurrentCodexLifecycleHooks(readers.readJson(agent.hooksPath), { context, hooks }) } : {}) };
+}
+
+function fuliTable(pack, context, profile) {
+  return renderMcpEntry(pack.mcpServer, { nodePath: context.nodePath, mcpServerPath: context.mcpServerPath,
+    runtimeConfigPath: context.runtimeConfigPath, toolProfileArgs: ['--tool-profile', profile] });
 }
 
 function hasHookDefinitions(value) {
@@ -122,20 +140,13 @@ export function disconnectCodex(agent, {
   };
 }
 
-export function replaceFuliTable(source, { command, args }) {
+// `entry` is the rendered MCP entry of the Codex descriptor pack (strings,
+// string arrays, booleans and integers), written in the pack's field order.
+export function replaceFuliTable(source, entry) {
   const withoutFuli = removeFuliTables(source);
   const lines = withoutFuli.replaceAll('\r\n', '\n').split('\n');
   while (lines.length && !lines.at(-1).trim()) lines.pop();
-  const block = [
-    '[mcp_servers.fuli]',
-    `command = ${tomlString(command)}`,
-    `args = [${args.map(tomlString).join(', ')}]`,
-    'enabled = true',
-    'required = true',
-    'startup_timeout_sec = 30',
-    'tool_timeout_sec = 120',
-    'default_tools_approval_mode = "auto"'
-  ];
+  const block = ['[mcp_servers.fuli]', ...Object.entries(entry).map(([key, value]) => `${key} = ${tomlValue(value)}`)];
   return `${[...lines, ...(lines.length ? [''] : []), ...block].join('\n')}\n`;
 }
 
@@ -216,6 +227,11 @@ function tomlHeaderName(line) {
 
 function isFuliTable(header) {
   return /^mcp_servers\.(?:fuli|"fuli"|'fuli')(?:\.|$)/.test(header);
+}
+
+function tomlValue(value) {
+  if (Array.isArray(value)) return `[${value.map(tomlString).join(', ')}]`;
+  return typeof value === 'string' ? tomlString(value) : String(value);
 }
 
 function tomlString(value) {

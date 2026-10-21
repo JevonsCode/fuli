@@ -4,6 +4,9 @@ import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-hook.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
 import { withCodexLifecycleHooks, withCodexTomlLifecycleHooks, withoutCodexLifecycleHooks } from '../src/agents/codex/lifecycle-hooks.js';
 import { connectClaudeCode } from '../src/setup/claude-code-config.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
+
+const CODEX_HOOKS = builtInClientPack('codex').lifecycleHooks;
 
 const session = '019fc6ed-02a5-7832-8821-68e3b03e7cef';
 const input = { session_id: session, transcript_path: '/synthetic/native.jsonl', source: 'compact' };
@@ -61,17 +64,17 @@ test('reset recovery never selects another owner or restores a completed task', 
 test('managed command hook definitions add generation reset events and preserve other hooks without changing trust', () => {
   const unrelated = { hooks: [{ type: 'command', command: 'echo user-hook' }] };
   const initial = { hooks: { SessionStart: [unrelated] } };
-  const next = withCodexLifecycleHooks(initial, { context });
+  const next = withCodexLifecycleHooks(initial, { context, hooks: CODEX_HOOKS });
   assert.deepEqual(next.hooks.SessionStart[0], unrelated);
   assert.match(next.hooks.SessionStart[1].hooks[0].command, /SessionStart/);
   assert.match(next.hooks.PreCompact[0].hooks[0].command, /PreCompact/);
   assert.deepEqual(withoutCodexLifecycleHooks(next), initial);
-  assert.equal(withCodexLifecycleHooks(next, { context }).hooks.SessionStart.length, 2);
-  const toml = withCodexTomlLifecycleHooks('', { context });
+  assert.equal(withCodexLifecycleHooks(next, { context, hooks: CODEX_HOOKS }).hooks.SessionStart.length, 2);
+  const toml = withCodexTomlLifecycleHooks('', { context, hooks: CODEX_HOOKS });
   assert.match(toml, /\[\[hooks\.SessionStart\]\]/);
   assert.match(toml, /\[\[hooks\.PreCompact\]\]/);
   const writes = new Map();
-  connectClaudeCode({ id: 'claude', configPath: 'config', settingsPath: 'settings' }, context,
+  connectClaudeCode(builtInClientPack('claude-code'), { id: 'claude', configPath: 'config', settingsPath: 'settings' }, context,
     { readConfig: path => path === 'settings' ? initial : {}, writeConfig: (path, value) => writes.set(path, value) });
   const claude = writes.get('settings');
   assert.deepEqual(claude.hooks.SessionStart[0], unrelated);

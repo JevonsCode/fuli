@@ -119,3 +119,27 @@ test('capture writes are decided only by the capture port', () => {
     ['src/example.js', 'if (app.getSessionCapturePause(sessionId).paused) return;']
   ]) assert.equal(captureDecisionsOutsidePort(path, bypass).length, 1, `${path}: ${bypass}`);
 });
+
+// rec#18 D-10: one agent adapter port, two implementations. Only the registry
+// knows whether a client is descriptor-backed or code-backed, so no caller can
+// branch on which ids are still legacy.
+const AGENT_REGISTRY = 'src/setup/agents/registry.js';
+const AGENT_IMPLEMENTATION_IMPORT = /from '[^']*(?:descriptor-adapter|descriptor-packs|(?:agents\/|\.\/)[a-z-]+\/index)\.js'/;
+
+function agentImplementationImports(path, source) {
+  if (path === AGENT_REGISTRY || path.endsWith('.test.js')) return [];
+  return source.split(/\r?\n/).flatMap((line, index) =>
+    AGENT_IMPLEMENTATION_IMPORT.test(line) && (path.startsWith('src/setup/') || /setup\/agents\//.test(line))
+      ? [`- ${path}:${index + 1}: ${line.trim()}`] : []);
+}
+
+test('agent adapters are reached only through the registry port', () => {
+  const offenders = sourceFiles('src').filter(path => extname(path) === '.js')
+    .flatMap(path => agentImplementationImports(path.split('\\').join('/'), readFileSync(path, 'utf8')));
+  assert.deepEqual(offenders, [], `Use agentAdapter(id) from ${AGENT_REGISTRY}:\n${offenders.join('\n')}`);
+  for (const [path, bypass] of [
+    ['src/setup/agents.js', "import { adapter } from './agents/gemini/index.js';"],
+    ['src/system/client-connection-status.js', "import { descriptorAdapter } from '../setup/agents/descriptor-adapter.js';"],
+    ['src/setup/setup.js', "import { loadClientDescriptorPacks } from './agents/descriptor-packs.js';"]
+  ]) assert.equal(agentImplementationImports(path, bypass).length, 1, `${path}: ${bypass}`);
+});

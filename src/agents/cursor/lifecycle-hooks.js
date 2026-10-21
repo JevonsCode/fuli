@@ -3,20 +3,21 @@ import { quoteShellArgument } from '../../cli/shell-argument.js';
 
 const MARKER = '--fuli-lifecycle';
 
-export function withCursorLifecycleHooks(current, context) {
+// `hooks` is the descriptor pack's event list; the command always runs the packaged Cursor hook.
+export function withCursorLifecycleHooks(current, context, hooks) {
   const clean = withoutCursorLifecycleHooks(current);
   const script = context.cursorLifecycleHookPath
     ?? join(dirname(context.mcpServerPath), 'agents', 'cursor', 'lifecycle-hook.js');
   const command = [context.nodePath, script, MARKER, '--runtime-config', context.runtimeConfigPath]
     .map(value => quoteShellArgument(value, context.platform)).join(' ');
-  const hooks = { ...(clean.hooks ?? {}) };
-  for (const event of ['sessionStart', 'beforeSubmitPrompt', 'stop']) {
-    hooks[event] = [...(hooks[event] ?? []), {
-      command: `${command} --event ${event}`, timeout: 30,
-      ...(event === 'stop' ? { loop_limit: 2 } : {})
+  const registered = { ...(clean.hooks ?? {}) };
+  for (const { event, loopLimit } of hooks.events) {
+    registered[event] = [...(registered[event] ?? []), {
+      command: `${command} --event ${event}`, timeout: hooks.timeoutSec,
+      ...(loopLimit === undefined ? {} : { loop_limit: loopLimit })
     }];
   }
-  return { ...clean, version: 1, hooks };
+  return { ...clean, version: 1, hooks: registered };
 }
 
 export function withoutCursorLifecycleHooks(current) {
@@ -43,8 +44,8 @@ export function withoutCursorLifecycleHooks(current) {
   return Object.keys(hooks).length ? { ...rest, hooks } : rest;
 }
 
-export function hasCurrentCursorLifecycleHooks(current, context) {
+export function hasCurrentCursorLifecycleHooks(current, context, hooks) {
   try {
-    return JSON.stringify(withCursorLifecycleHooks(current, context)) === JSON.stringify(current);
+    return JSON.stringify(withCursorLifecycleHooks(current, context, hooks)) === JSON.stringify(current);
   } catch { return false; }
 }
