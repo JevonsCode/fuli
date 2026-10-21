@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
-import { isEmployeeBoardItem } from '@/features/employees/task-board-model'
+import { boardItemKey, isEmployeeBoardItem } from '@/features/employees/task-board-model'
 import { useJefaBoardLoad } from '@/features/employees/useJefaBoardLoad'
 import JefaReadStatus from '@/features/employees/JefaReadStatus.vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -273,7 +273,6 @@ function closeTaskDialog() {
   createTaskOpen.value = false
   if (openTaskRef.value) void peek.close()
 }
-function boardItemKey(item: EmployeeBoardItem) { return `${item.projectId}:${item.id}` }
 function replaceBoardItem(projectId: string, itemId: string, replacement: EmployeeBoardItem) {
   projectBoards.value = projectBoards.value.map((board) => board.project.id !== projectId ? board : {
     ...board,
@@ -291,10 +290,10 @@ async function moveTask(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
   const key = boardItemKey(item)
   if (movingItemKeys.value.includes(key)) return
   const context = `${templateId.value}:${personalSpaceId.value}`
-  const optimistic = { ...item, status }
   boardActionError.value = ''
+  // The board shows the move as pending while its key is here. The canonical
+  // item changes only to what the server returns, so a failure has nothing to undo.
   movingItemKeys.value = [...movingItemKeys.value, key]
-  replaceBoardItem(item.projectId, item.id, optimistic)
   try {
     let updated: EmployeeBoardItem | undefined
     if (templateId.value === 'jefa' && status === 'done') {
@@ -325,7 +324,6 @@ async function moveTask(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
     replaceBoardItem(item.projectId, item.id, updated)
   } catch (cause) {
     if (`${templateId.value}:${personalSpaceId.value}` !== context) return
-    replaceBoardItem(item.projectId, item.id, item)
     boardActionError.value = t('employees.allProjects.moveFailed', { error: employeeErrorMessage(cause) })
   } finally {
     movingItemKeys.value = movingItemKeys.value.filter((candidate) => candidate !== key)

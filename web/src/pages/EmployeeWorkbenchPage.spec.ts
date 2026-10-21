@@ -350,6 +350,33 @@ describe('employee workbench', () => {
     expect(postJson).toHaveBeenCalledTimes(1)
     expect(board.props('boards')[0].items[0].status).toBe('done')
   })
+  it('keeps the canonical task until the server answers a move, and unchanged when it refuses', async () => {
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string }) => ({
+      project: { id: body.personalProjectId, name: body.personalProjectId },
+      items: [{
+        id: 'task-project-a', projectId: 'project-a', title: '确认发布', status: 'review',
+        updatedAt: '2026-09-03T00:00:00.000Z',
+      }],
+      total: 1,
+      truncated: false,
+    }))
+    let refuse!: (cause: Error) => void
+    patchJson.mockImplementation(() => new Promise((_resolve, reject) => { refuse = reject }))
+    const wrapper = await setup('/employees/jefa')
+    const board = wrapper.getComponent(EmployeeTaskBoard)
+    const item = board.props('boards')[0].items[0]
+
+    board.vm.$emit('move-task', item, 'done')
+    await flushPromises()
+    expect(board.props('movingItemKeys')).toEqual(['project-a:task-project-a'])
+    expect(board.props('boards')[0].items[0]).toEqual(item)
+
+    refuse(new Error('版本冲突'))
+    await flushPromises()
+    expect(board.props('movingItemKeys')).toEqual([])
+    expect(board.props('boards')[0].items[0]).toEqual(item)
+    expect(board.props('actionError')).toContain('版本冲突')
+  })
   it('does not silently switch an unauthorized deep link to another project', async () => {
     const wrapper = await setup('/employees/jefa?project=project-b')
     expect(wrapper.find('iframe').exists()).toBe(false)
