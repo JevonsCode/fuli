@@ -10,6 +10,7 @@ import { ADAPTIVE_RUNTIME_STATE_FORMAT } from '../adaptive-runtime/state.js';
 import { AGENT_APP_FORMAT } from '../agent-apps/store.js';
 import { EMPLOYEE_MANAGEMENT_FORMAT } from '../employees/management-policy.js';
 import { PREFERENCE_SESSION_FORMAT } from '../conversations/preference-session.js';
+import { TRANSCRIPT_CAPTURE_FORMAT } from '../conversations/transcript-capture-gap.js';
 import { CONFLICT_POLICY_FORMAT } from '../external-knowledge/conflict-policy.js';
 import { EXTERNAL_KNOWLEDGE_FORMAT } from '../external-knowledge/registry.js';
 import { CAPTURE_POLICY_FORMAT } from '../graphiti/capture-policy.js';
@@ -56,6 +57,7 @@ const JSON_STORES = [
 // One small record per session.
 const JSON_DIRECTORIES = [
   ['preference-delivery', PREFERENCE_SESSION_FORMAT],
+  ['transcript-capture', TRANSCRIPT_CAPTURE_FORMAT],
   // Session records and the default for new sessions (default.json).
   ['capture-session-pause', CAPTURE_SESSION_PAUSE_FORMAT],
   // The default each session started under (rec#5 C3b), one record per session.

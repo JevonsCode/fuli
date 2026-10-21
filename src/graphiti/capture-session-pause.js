@@ -146,6 +146,9 @@ export class SessionCapturePauseStore {
       this.memoryPins.set(sessionId, { ...value, enabled });
       return;
     }
+    // A pin is written once, under its own directory's format lock. Two
+    // starts racing may pin a session both ways; #pin reads off first, so the
+    // session is then off (fail closed) until the person starts it.
     try {
       updateVersionedJsonFileAtomic(this.#pinPath(sessionId, enabled), CAPTURE_SESSION_PAUSE_FORMAT,
         (current) => current === null ? value : undefined, { read: this.#readJson.bind(this), write: this.writeJson });

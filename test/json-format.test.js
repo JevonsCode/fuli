@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -154,3 +154,15 @@ for (const [name, change] of [
     assert.equal(record.generation, 3);
   });
 }
+
+test('a session two starts pinned both ways is off until the person starts it', (t) => {
+  const root = directory(t);
+  new SessionCapturePauseStore(root).pinDefault('synthetic-session', 'codex', { fresh: true });
+  mkdirSync(join(root, 'pins', 'off'), { recursive: true });
+  const [pin] = readdirSync(join(root, 'pins', 'on')).filter((name) => name.endsWith('.json'));
+  writeFileSync(join(root, 'pins', 'off', pin), JSON.stringify({ version: 1, sourceApplication: 'codex' }));
+
+  assert.equal(new SessionCapturePauseStore(root).anyStopped('codex'), true);
+  new SessionCapturePauseStore(root).setEnabled('synthetic-session', { enabled: true, sourceApplication: 'codex' });
+  assert.equal(new SessionCapturePauseStore(root).anyStopped('codex'), false);
+});
