@@ -175,8 +175,16 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
     name === 'revise_personal_knowledge'
   );
   assert.deepEqual(reviseKnowledge.inputSchema.properties.action.enum, [
-    'confirm', 'update', 'invalidate', 'restore', 'link_replacement'
+    'confirm', 'update', 'mark_outdated', 'invalidate', 'restore', 'link_replacement'
   ]);
+  // rec#5 C8-4: a captured conclusion names the current items it rests on.
+  for (const name of ['capture_session_knowledge', 'checkpoint_task_knowledge']) {
+    const { properties } = tools.find(tool => tool.name === name).inputSchema;
+    const episode = name === 'checkpoint_task_knowledge' ? properties.capture.properties : properties;
+    for (const collection of ['entities', 'relationships']) {
+      assert.deepEqual(episode[collection].items.properties.derivedFrom.maxItems, 8, `${name} ${collection}`);
+    }
+  }
 
   const search = tools.find(({ name }) => name === 'search_knowledge_graph');
   assert.deepEqual(search.inputSchema.properties.projectIds, {

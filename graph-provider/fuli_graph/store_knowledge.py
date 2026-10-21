@@ -7,6 +7,7 @@ from .collaboration_context import read_collaboration_context
 from .conversation_scope import current_session_conversation_id
 from .graph_models import GraphResult
 from .graph_query import read_graph
+from .knowledge_dependencies import require_current_bases
 from .knowledge_search import search_knowledge
 from .models import (
     CollaborationContextResult,
@@ -18,6 +19,7 @@ from .models import (
 )
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
+from .knowledge_versions import link_reasserted, reasserted_entities
 from .provider_values import now_utc, stable_uuid
 from .workflow_candidates import materialize_workflow_candidates
 
@@ -31,6 +33,7 @@ class StoreKnowledge:
             personal_project_id=request.personal_project_id,
             project_agent_id=request.project_agent_id,
             scope_status=request.scope_status,
+            actor_id=actor['id'],
         )
 
     async def preflight_personal_commits(
@@ -148,6 +151,7 @@ class StoreKnowledge:
         project_agent_id: str | None = None,
         workflow_session_authority: str | None = None,
         scope_status: str | None = None,
+        actor_id: str | None = None,
     ) -> CommitResult:
         group_id = space['group_id']
         lock = self._group_locks.setdefault(group_id, asyncio.Lock())
@@ -167,6 +171,13 @@ class StoreKnowledge:
                     project_agent_id=project_agent_id,
                 )
                 for entity in episode.entities
+            ]
+            # An entity whose latest version went out of date is asserted
+            # again by this capture: it writes a new version (rec#5 C8-3).
+            reasserted = await reasserted_entities(self, space, entity_ids, episode_id)
+            entity_ids = [
+                reasserted[entity_id]['item_id'] if entity_id in reasserted else entity_id
+                for entity_id in entity_ids
             ]
             entity_id_by_key = {
                 entity.key: entity_id
@@ -225,6 +236,11 @@ class StoreKnowledge:
                     relationship_ids=relationship_ids,
                 )
 
+            await require_current_bases(self, space, list(dict.fromkeys(
+                basis
+                for item in [*episode.entities, *episode.relationships]
+                for basis in item.derived_from
+            )))
             entity_vectors = await self.runtime.embedder.create_batch(
                 [entity.name for entity in episode.entities]
             )
@@ -273,6 +289,7 @@ class StoreKnowledge:
                             project_agent_id if entity.profile_aspect else None
                         ),
                         'content_source': entity.content_source,
+                        'derived_from': entity.derived_from or None,
                         'attributes_json': json.dumps(
                             entity.attributes, ensure_ascii=False, sort_keys=True
                         ),
@@ -332,6 +349,7 @@ class StoreKnowledge:
                             project_agent_id if relationship.profile_aspect else None
                         ),
                         'content_source': relationship.content_source,
+                        'derived_from': relationship.derived_from or None,
                         'attributes_json': json.dumps(
                             relationship.attributes, ensure_ascii=False, sort_keys=True
                         ),
@@ -398,6 +416,7 @@ class StoreKnowledge:
                     entity.fuli_preference_agent_id = row.preference_agent_id,
                     entity.fuli_attributes_json = row.attributes_json,
                     entity.fuli_content_source = row.content_source,
+                    entity.fuli_derived_from_item_ids = row.derived_from,
                     entity.fuli_scope_status = $scope_status
                 SET entity.fuli_ai_review_lock_version =
                       coalesce(entity.fuli_ai_review_lock_version, 0) + 1
@@ -557,6 +576,7 @@ class StoreKnowledge:
                     edge.fuli_workflow_session_authority =
                       row.workflow_session_authority,
                     edge.fuli_content_source = row.content_source,
+                    edge.fuli_derived_from_item_ids = row.derived_from,
                     edge.fuli_scope_status = $scope_status,
                     edge.fuli_ai_review_lock_version = 1
                 SET edge.episodes =
@@ -611,6 +631,8 @@ class StoreKnowledge:
                 idempotency_key=episode.idempotency_key,
                 scope_status=scope_status,
             )
+            await link_reasserted(self, space, reasserted, episode_id=episode_id,
+                                  actor_id=actor_id or 'capture', created_at=created_at)
             await materialize_workflow_candidates(
                 self,
                 space,

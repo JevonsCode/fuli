@@ -284,14 +284,16 @@ async def test_real_neo4j_ai_review_write_projection_and_content_cas():
         assert projected_all_space['ai_review_scope'] == 'project'
         assert projected_all_space['ai_review_project_id'] == project_id
 
-        await _revise_summary(
+        # An edit writes a new version (rec#5 C7); the AI review of the old
+        # words does not carry over to it.
+        item_id = (await _revise_summary(
             client,
             space_id,
             project_id,
             item_id,
             'The edited synthetic statement.',
             'Synthetic content changed after the AI review.',
-        )
+        ))['version_item_id']
         invalidated = await _read_graph_node(
             client, space_id, project_id, item_id
         )

@@ -8,6 +8,7 @@ from .model_base import StrictModel
 
 KnowledgeItemKind = Literal['entity', 'relationship']
 KnowledgeOperationActor = Literal['human', 'agent']
+KnowledgeChangeActor = Literal['user', 'agent']
 HumanChangeStatus = Literal['none', 'unseen', 'viewed', 'reviewed']
 KnowledgeAuditAction = Literal[
     'human_change',
@@ -29,6 +30,13 @@ KnowledgeRevisionAction = Literal[
     'invalidate',
     'link_replacement',
     'restore',
+    # rec#5 C7/C8: a new version replaced this one; a person marked it
+    # outdated; knowledge it was concluded from went out of date; and a later
+    # version re-asserted it after it went out of date.
+    'supersede',
+    'mark_outdated',
+    'basis_outdated',
+    'reassert',
     'scope_change',
     'batch_confirm',
     'promote_common',
@@ -71,6 +79,14 @@ class KnowledgeRevisionRecord(StrictModel):
     previous: dict[str, Any] = Field(default_factory=dict)
     current: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    # Who made the change, where the revision recorded it (rec#5 C7): the
+    # person in the console or an Agent. Older revisions did not say.
+    changed_by: KnowledgeChangeActor | None = None
+    # The new version an edit wrote; the edited item is history from now on.
+    version_item_id: str | None = None
+    # Conclusions drawn from knowledge marked outdated that stopped being
+    # current with it (rec#5 C8-4).
+    dependents_outdated: int = Field(default=0, ge=0)
 
 
 class KnowledgeAuditRecord(StrictModel):

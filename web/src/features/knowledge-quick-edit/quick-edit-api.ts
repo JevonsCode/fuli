@@ -1,5 +1,5 @@
 import { getJson, patchJson, postJson } from '@/api/client'
-import type { ItemKind, ItemTag, KnowledgeItemSummary, KnowledgeItemView, TurnReceipt } from './model'
+import type { ItemKind, ItemTag, KnowledgeItemSummary, KnowledgeItemView, RevisionResult, TurnReceipt } from './model'
 import { tagProjectId } from './model'
 
 // The console routes behind a turn receipt's links (rec#20). Content edits and
@@ -21,7 +21,7 @@ export function saveScope(item: KnowledgeItemSummary, body: object) {
 }
 
 export function reviseItem(item: KnowledgeItemSummary, body: object) {
-  return patchJson<unknown>(itemPath(item.item_kind, item.item_id), body)
+  return patchJson<RevisionResult>(itemPath(item.item_kind, item.item_id), body)
 }
 
 export interface TagCandidate { id: string; name: string; namespace: string; status: string; match?: string }

@@ -78,3 +78,24 @@ test('duplicate preference identities and unknown preference dimensions never be
   assert.equal(preferenceSnapshot(value), null);
   assert.equal(preferenceSnapshot(withPreferenceScope(entry(), { ...scope, preference_scope: null })), null);
 });
+
+test('rec#5 C7-2: two clients holding the old version both get the edited one next, and an outdated one is removed', () => {
+  const sessions = ['native-session-a', 'native-session-b'].map((session, index) => {
+    const sessionScope = { ...scope, session_id: session };
+    const cached = withPreferenceScope(entry(`task-${index}`), sessionScope);
+    return { sessionScope, baseline: { ...preferenceSnapshot(cached), callId: `native-call-${index}` } };
+  });
+  for (const { sessionScope, baseline } of sessions) {
+    // The Provider now answers the new version under the same preference key and
+    // leaves the outdated one out (C8-1).
+    const next = withPreferenceScope(entry('task-next'), sessionScope);
+    next.effective_preferences[0] = { ...next.effective_preferences[0], instruction: 'Edited synthetic rule' };
+    next.effective_preferences.splice(1, 1);
+    const delta = projectPreferenceDelta(next, baseline);
+    assert.equal(delta.preference_delivery.status, 'delta');
+    assert.deepEqual(delta.preference_updates.map(item => [item.preference_key, item.instruction]),
+      [['rule-0', 'Edited synthetic rule']]);
+    assert.deepEqual(delta.preference_delivery.removed.map(item => item.preference_key), ['rule-1']);
+    assert.ok(!JSON.stringify(delta).includes('Synthetic instruction 0:'), 'the old words are not sent again');
+  }
+});

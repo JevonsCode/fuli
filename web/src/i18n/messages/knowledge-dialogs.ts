@@ -46,7 +46,7 @@ export const knowledgeDialogMessages = {
         saveFailed: '保存失败',
       },
       notices: {
-        corrected: '知识已纠正，原始证据仍然保留。',
+        corrected: '知识已纠正：修改写成了新版本，旧版本和原始证据都留在历史里。',
         invalidatedWithReplacement: '知识已标记为失效，并已关联替代内容。',
         invalidated: '知识已标记为失效，历史记录已保留。',
         restored: '知识已恢复为有效。',
@@ -217,7 +217,7 @@ export const knowledgeDialogMessages = {
         saveFailed: 'Save failed',
       },
       notices: {
-        corrected: 'Knowledge corrected; original evidence retained.',
+        corrected: 'Knowledge corrected as a new version; the old version and its evidence stay in the history.',
         invalidatedWithReplacement: 'Knowledge marked inactive and linked to its replacement.',
         invalidated: 'Knowledge marked inactive; history retained.',
         restored: 'Knowledge restored as active.',

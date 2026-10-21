@@ -633,6 +633,7 @@ describe('KnowledgeWorkspace', () => {
           type: 'Decision',
           summary: '已被新口径取代的内容。',
           invalid_at: '2026-07-28T08:00:00Z',
+          version_status: 'outdated',
         },
       ],
       edges: [],
@@ -682,7 +683,8 @@ describe('KnowledgeWorkspace', () => {
     expect(wrapper.get('#directory-tab-knowledge').text()).not.toContain('/')
     expect(wrapper.find('[aria-label="内容状态"]').exists()).toBe(false)
     expect(wrapper.get('[data-stat="current"]').text()).toBe('当前有效1')
-    expect(wrapper.get('[data-stat="historical"]').text()).toBe('已失效1')
+    // rec#5 C8-1: what is no longer current is the 历史 group, and each says why.
+    expect(wrapper.get('[data-stat="historical"]').text()).toBe('历史1')
     expect(wrapper.get('[data-stat="all"]').text()).toBe('全部2')
     expect(wrapper.get('[data-stat="current"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.findAll('.knowledge-row')).toHaveLength(1)
@@ -695,6 +697,7 @@ describe('KnowledgeWorkspace', () => {
     expect(wrapper.get('[data-stat="historical"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.findAll('.knowledge-row')).toHaveLength(1)
     expect(wrapper.get('.knowledge-row').text()).toContain('历史知识')
+    expect(wrapper.get('.knowledge-row .knowledge-status').text()).toBe('已过时')
 
     await wrapper.get('[data-stat="all"]').trigger('click')
     await flushPromises()

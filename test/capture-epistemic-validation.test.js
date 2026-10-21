@@ -375,3 +375,17 @@ test('MCP checkpoint schema accepts the scoped contract alongside the unchanged 
   const { captureRouting, ...legacy } = input;
   assert.equal(schema.safeParse({ ...legacy, capture: scopedEpisode() }).success, true);
 });
+
+test('a conclusion names the current items it rests on, and only when it has any (rec#5 C8-4)', () => {
+  const basis = { existenceReason: 'Synthetic.', quadrantReason: 'Synthetic.', proposedBy: { kind: 'agent' } };
+  const item = { key: 'fact', name: 'Template is .docx', type: 'ProjectFact', originQuadrant: 'known_known',
+    confirmationStatus: 'pending', confirmationBasis: basis };
+  const episode = providerEpisode({ idempotencyKey: 'synthetic-derived', sessionId: 's', name: 'n', sourceKind: 'k',
+    sourceDescription: 'd', referenceTime: '2026-10-21T00:00:00Z',
+    entities: [{ ...item, derivedFrom: ['preference-1'] }, { ...item, key: 'plain' }],
+    relationships: [{ key: 'r', source: 'fact', target: 'plain', type: 'USES', fact: 'Uses.', originQuadrant: 'known_known',
+      confirmationStatus: 'pending', confirmationBasis: basis, derivedFrom: ['preference-1', 'fact-2'] }] });
+  assert.deepEqual(episode.entities[0].derived_from, ['preference-1']);
+  assert.equal(Object.hasOwn(episode.entities[1], 'derived_from'), false, 'no basis, no field');
+  assert.deepEqual(episode.relationships[0].derived_from, ['preference-1', 'fact-2']);
+});

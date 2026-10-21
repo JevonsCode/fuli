@@ -41,6 +41,7 @@ export function providerEpisode(input) {
       inheritance_mode: entity.inheritanceMode ?? 'local_only',
       inherited_project_ids: entity.inheritedProjectIds ?? [],
       ...(entity.contentSource ? { content_source: entity.contentSource } : {}),
+      ...(entity.derivedFrom?.length ? { derived_from: entity.derivedFrom } : {}),
       attributes: entity.attributes ?? {}
     })),
     relationships: input.relationships.map((relationship) => ({
@@ -64,6 +65,7 @@ export function providerEpisode(input) {
       inheritance_mode: relationship.inheritanceMode ?? 'local_only',
       inherited_project_ids: relationship.inheritedProjectIds ?? [],
       ...(relationship.contentSource ? { content_source: relationship.contentSource } : {}),
+      ...(relationship.derivedFrom?.length ? { derived_from: relationship.derivedFrom } : {}),
       attributes: relationship.attributes ?? {}
     }))
   };

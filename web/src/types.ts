@@ -842,6 +842,9 @@ export interface KnowledgeAuditRecord {
   created_at: string
 }
 
+// rec#5 C7/C8: the version current answers use, or why one is history.
+export type KnowledgeVersionStatus = 'current' | 'superseded' | 'outdated' | 'basis_outdated' | 'inactive'
+
 export interface KnowledgeNode {
   id: string
   name: string
@@ -883,6 +886,7 @@ export interface KnowledgeNode {
   invalid_at?: string | null
   replaced_by_item_id?: string | null
   replaced_by_item_kind?: 'entity' | 'relationship' | null
+  version_status?: KnowledgeVersionStatus
   created_at?: string
   evidence?: EvidenceRecord[]
   revisions?: Array<Record<string, unknown>>
@@ -937,6 +941,7 @@ export interface KnowledgeEdge {
   invalid_at?: string | null
   replaced_by_item_id?: string | null
   replaced_by_item_kind?: 'entity' | 'relationship' | null
+  version_status?: KnowledgeVersionStatus
   created_at?: string
   evidence?: EvidenceRecord[]
   revisions?: Array<Record<string, unknown>>
@@ -1006,6 +1011,8 @@ export type KnowledgeItem = {
   invalidAt?: string | null
   replacedByItemId: string | null
   replacedByItemKind: 'entity' | 'relationship' | null
+  /** Why a historical item is history (rec#5 C7/C8); absent from older Providers. */
+  versionStatus?: KnowledgeVersionStatus
   createdAt?: string
   evidence: EvidenceRecord[]
   revisions: Array<Record<string, unknown>>

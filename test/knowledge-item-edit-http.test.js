@@ -118,3 +118,32 @@ test('scope changes are a local person\'s decision, never an Agent tool', () => 
     .find(item => item.route === 'POST /api/knowledge/:itemKind/:itemId/scope');
   assert.equal(entry.access, 'local_user_only');
 });
+
+test('rec#5 C7/C8: an edit answers its new version and marking outdated is the person\'s own', async () => {
+  const { app, calls } = application(call => ({ status: 200, body: call.body.action === 'update'
+    ? { id: 'revision', item_id: 'item-1', action: 'update', version_item_id: 'item-2', changed_by: 'user' }
+    : { id: 'revision', item_id: 'item-1', action: 'mark_outdated', dependents_outdated: 1, changed_by: 'user' } }));
+  const edited = await api(app, 'PATCH', '/api/knowledge/entity/item-1', { personalSpaceId: 'personal-space',
+    action: 'update', reason: 'My words now', name: 'New words', summary: 'New words', expectedVersion: 2,
+    operationActor: 'agent' });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.version_item_id, 'item-2');
+  const marked = await api(app, 'PATCH', '/api/knowledge/relationship/item-1', { personalSpaceId: 'personal-space',
+    action: 'mark_outdated', reason: 'Not how I work any more', expectedVersion: 3 });
+  assert.equal(marked.status, 200);
+  assert.equal(marked.body.dependents_outdated, 1);
+  assert.deepEqual(calls.map(call => [call.path, call.body.action, call.body.operation_actor, call.body.expected_version]), [
+    ['/v1/knowledge/items/item-1', 'update', 'human', 2],
+    ['/v1/knowledge/items/item-1', 'mark_outdated', 'human', 3]]);
+  assert.equal(calls[1].body.item_kind, 'relationship');
+});
+
+test('an old link that writes a replaced or outdated item back gets a conflict the page can explain', async () => {
+  for (const code of ['superseded', 'reassert_as_new_version']) {
+    const { app } = application(() => ({ status: 409, body: { detail: { code, message: 'synthetic' } } }));
+    const result = await api(app, 'PATCH', '/api/knowledge/entity/item-1', { personalSpaceId: 'personal-space',
+      action: code === 'superseded' ? 'update' : 'restore', reason: 'Old link', name: 'Old words', expectedVersion: 1 });
+    assert.equal(result.status, 409);
+    assert.equal(result.body.code, code);
+  }
+});

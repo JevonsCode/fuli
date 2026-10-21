@@ -3,7 +3,7 @@
 The same item keeps its ID, source and history: only where it applies from
 now on changes, with a revision of the scope before and after. Narrowing stops
 later use elsewhere; nothing already done is undone. An edit from a stale read
-is refused with the current version. A preference already in use (confirmed by
+is refused with the current edit revision. A preference already in use (confirmed by
 a person or an Agent policy) can be narrowed or moved within its coverage, but
 widening it still goes through the reviewed global-preference decision. An
 item held in a temporary or unknown scope is placed, not widened, wherever the
@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from .knowledge_audit import record_human_change
-from .knowledge_item_version import item_version, require_item_version
+from .knowledge_item_version import lock_version, require_edit_revision
 from .knowledge_item_view import item_scope, scope_snapshot
 from .knowledge_item_view_models import KnowledgeScopeChange
 from .knowledge_management import _implicit_project_id, _read_assignment, _read_item, write_project_assignment
@@ -38,7 +38,7 @@ async def change_knowledge_scope(store, actor: dict, item_id: str, request: Know
         current = await _read_item(scoped, space, item_id, request.item_kind)
         if current is None:
             raise HTTPException(status_code=404, detail='knowledge item not found')
-        require_item_version(current, request.expected_version)
+        await require_edit_revision(scoped, space, request.item_kind, item_id, request.expected_version)
         if current.get('invalid_at'):
             raise HTTPException(status_code=409, detail='historical knowledge keeps the scope it had')
         for project_id in request.project_ids:
@@ -54,7 +54,7 @@ async def change_knowledge_scope(store, actor: dict, item_id: str, request: Know
             if effective_confirmation_status(current) != 'pending' and _widens(before, request):
                 raise HTTPException(status_code=409, detail={'code': 'widening_requires_review',
                                                              'message': _WIDENING})
-            await _write_preference_scope(scoped, space, item_id, request, item_version(current))
+            await _write_preference_scope(scoped, space, item_id, request, lock_version(current))
         else:
             await _write_project_scope(scoped, actor, space, item_id, request, current)
         after = await item_scope(scoped, space, request.item_kind, item_id,
@@ -132,7 +132,7 @@ async def _write_project_scope(store, actor, space, item_id, request, current):
         WITH item WHERE item.fuli_ai_review_lock_version = $expected_version + 1
         SET item.fuli_scope_status = NULL
         RETURN item.uuid AS item_id
-        ''', item_id=item_id, group_id=space['group_id'], expected_version=item_version(current))
+        ''', item_id=item_id, group_id=space['group_id'], expected_version=lock_version(current))
     if not records:
         raise HTTPException(status_code=409, detail={'code': 'stale_version',
                                                      'message': 'knowledge changed while its scope was being saved'})

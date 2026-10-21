@@ -127,12 +127,16 @@ const epistemicFields = {
   inheritedProjectIds: arraySchema(id, { maxItems: 32 })
 };
 
+// rec#5 C8-4: once one of them is marked outdated, the conclusion is no longer current.
+const derivedFrom = { ...arraySchema(id, { maxItems: 8 }), description: 'Current item IDs this concludes from.' };
+
 const entity = objectSchema({
   key: id,
   name: label,
   type: { ...boundedString(64), pattern: '^[A-Za-z][A-Za-z0-9_]*$' },
   summary: boundedString(4096),
   ...epistemicFields,
+  derivedFrom,
   attributes: entityAttributes
 }, [
   'key', 'name', 'type', 'originQuadrant',
@@ -150,6 +154,7 @@ const relationship = objectSchema({
   supersedes: arraySchema(id, { maxItems: 32 }),
   confidence: numberSchema({ minimum: 0, maximum: 1 }),
   ...epistemicFields,
+  derivedFrom,
   attributes
 }, [
   'key', 'source', 'target', 'type', 'fact', 'originQuadrant',
@@ -1151,13 +1156,13 @@ export const GRAPH_TOOL_DEFINITIONS = [
   },
   {
     name: 'revise_personal_knowledge',
-    description: 'Confirm, correct, invalidate, restore, or link a replacement for one personal entity or relationship while preserving revision history and original evidence. A replacement link requires an invalidated item and an exact replacement item ID and kind. This is the same personal-only operation used by the management UI; Agent attribution is always retained.',
+    description: 'Confirm, correct (a new version supersedes the old), mark_outdated (negative feedback that ends validity), invalidate, restore, or link a replacement for one personal entity or relationship; history and evidence are kept. A replacement link needs an invalidated item and an exact replacement ID and kind. Same personal-only operation as the management UI; Agent attribution is kept.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
       itemKind: knowledgeItemKind,
       itemId: id,
-      action: enumSchema(['confirm', 'update', 'invalidate', 'restore', 'link_replacement']),
+      action: enumSchema(['confirm', 'update', 'mark_outdated', 'invalidate', 'restore', 'link_replacement']),
       replacementItemId: nullableStringSchema(),
       replacementItemKind: knowledgeItemKind,
       reason: shortText,

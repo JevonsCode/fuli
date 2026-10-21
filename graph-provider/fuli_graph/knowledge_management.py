@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from .knowledge_audit import record_human_change
-from .knowledge_item_version import item_version, require_item_version
+from .knowledge_item_version import lock_version, require_edit_revision
 from .knowledge_records import assignment_record
 from .personal_project_access import authorize_personal_project
 from .store_transactions import query_store_transaction
@@ -40,7 +40,7 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
     current = await _read_item(store, space, item_id, request.item_kind)
     if current is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
-    require_item_version(current, request.expected_version)
+    await require_edit_revision(store, space, request.item_kind, item_id, request.expected_version)
     previous = _snapshot(current, request.item_kind)
     if (
         request.action == 'update'
@@ -132,13 +132,20 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
         space['id'], 'knowledge-revision', request.item_kind, item_id,
         created_at.isoformat(), actor['id']
     )
+    if request.action in _LIFECYCLE_ACTIONS:
+        lifecycle = await _version_lifecycle(
+            store, actor, space, item_id, request, current, previous, next_value,
+            embedding=embedding, created_at=created_at, revision_id=revision_id,
+        )
+        if lifecycle is not None:
+            return lifecycle
     # The revision was computed from `current`. If anything wrote the item
     # since (a rejection, usage, another edit), the write is refused and
     # nothing below is kept, instead of replaying the stale snapshot over it.
     async with query_store_transaction(store) as scoped:
         await _update_item(
             scoped, space, item_id, request.item_kind, next_value, embedding,
-            expected_lock_version=item_version(current),
+            expected_lock_version=lock_version(current),
         )
         await _record_revision(
             scoped, actor, space, item_id, request, revision_id,
@@ -164,6 +171,81 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
         current=next_value,
         created_at=created_at,
     )
+
+
+# Edits, restores and the outdated mark go through the item's versions
+# (rec#5 C7/C8); confirmations and replacement links stay in place.
+_LIFECYCLE_ACTIONS = frozenset({'update', 'restore', 'mark_outdated'})
+# Validity a restore cannot give back: a newer version replaced the item, or it
+# went out of date. Re-asserting it writes a new version and keeps the gap.
+_ENDINGS_RESTORE_KEEPS = frozenset({'supersede', 'mark_outdated', 'basis_outdated'})
+
+
+async def _version_lifecycle(
+    store, actor, space, item_id, request, current, previous, next_value, *,
+    embedding, created_at, revision_id,
+):
+    """Handle an edit that writes a new version, the outdated mark, and a
+    restore that would erase history; None leaves the in-place revision."""
+    # Deferred: the version and outdated modules build on this one.
+    from .knowledge_outdated import mark_item_outdated
+    from .knowledge_versions import (
+        creates_version, ending_action, item_revisions, version_status, version_value, write_version,
+    )
+
+    revisions = (await item_revisions(store, space, request.item_kind, [item_id])).get(item_id, [])
+    status = version_status(previous.get('invalidAt'), current.get('replaced_by_item_id'), revisions)
+    changed_by = 'user' if request.operation_actor == 'human' else 'agent'
+    if request.action == 'restore':
+        if ending_action(revisions) in _ENDINGS_RESTORE_KEEPS:
+            raise HTTPException(status_code=409, detail={
+                'code': 'reassert_as_new_version',
+                'message': ('this knowledge was replaced or went out of date; re-assert it as a new '
+                            'version, which keeps the time it was not valid'),
+            })
+        return None
+    if request.action == 'mark_outdated':
+        if status != 'current':
+            raise HTTPException(status_code=409, detail='only current knowledge can be marked outdated')
+        async with query_store_transaction(store) as scoped:
+            return await mark_item_outdated(
+                scoped, actor, space, item_id, request, current, previous,
+                created_at=created_at, revision_id=revision_id, changed_by=changed_by,
+            )
+    content_changed = _content_changed(previous, next_value, request.item_kind)
+    names_content = any(value is not None for value in (request.name, request.summary, request.fact))
+    if status == 'superseded' and names_content:
+        raise HTTPException(status_code=409, detail={
+            'code': 'superseded', 'current_item_id': current.get('replaced_by_item_id'),
+            'message': 'a newer version replaced this knowledge; edit the current version',
+        })
+    if not creates_version(current, status, content_changed):
+        return None
+    value = version_value(
+        previous, next_value, explicit_confirmation=request.confirmation_status is not None,
+        changed_by=changed_by, reason=request.reason, created_at=created_at,
+    )
+    async with query_store_transaction(store) as scoped:
+        version_id = await write_version(
+            scoped, actor, space, request.item_kind, item_id, current, value,
+            embedding=embedding, reason=request.reason, changed_by=changed_by,
+            created_at=created_at, revision_id=revision_id, previous_snapshot=previous,
+        )
+        if request.operation_actor == 'human':
+            await record_human_change(
+                scoped, actor, space, version_id, request.item_kind,
+                reason=request.reason, operation='knowledge_update',
+            )
+    return KnowledgeRevisionRecord(
+        id=revision_id, item_id=item_id, item_kind=request.item_kind, action='update',
+        reason=request.reason, previous=previous, current=value, created_at=created_at,
+        changed_by=changed_by, version_item_id=version_id,
+    )
+
+
+def _content_changed(previous: dict, value: dict, item_kind: str) -> bool:
+    fields = ('name', 'summary') if item_kind == 'entity' else ('fact',)
+    return any(previous.get(field) != value.get(field) for field in fields)
 
 
 async def _record_revision(
@@ -468,6 +550,7 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                  AS negative_feedback_block_json,
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind,
+               item.fuli_derived_from_item_ids AS derived_from_item_ids,
                coalesce(item.fuli_ai_review_lock_version, 0)
                  AS ai_review_lock_version
         '''
@@ -519,6 +602,7 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                  AS negative_feedback_block_json,
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind,
+               item.fuli_derived_from_item_ids AS derived_from_item_ids,
                coalesce(item.fuli_ai_review_lock_version, 0)
                  AS ai_review_lock_version
         '''

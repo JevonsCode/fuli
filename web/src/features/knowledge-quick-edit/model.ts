@@ -1,5 +1,6 @@
 import { ApiError } from '@/api/client'
 import { t } from '@/i18n'
+import type { KnowledgeVersionStatus } from '@/types'
 
 // rec#20: one knowledge item exactly as the Provider read it back, opened from
 // a turn receipt's link. Payload types and the labels and requests built from
@@ -9,6 +10,8 @@ export type ItemKind = 'entity' | 'relationship'
 export type ItemCategory = 'taste' | 'judgment' | 'personality' | 'rule' | 'experience' | 'fact' | 'knowledge'
 export type ConfirmationStatus = 'pending' | 'agent_confirmed' | 'confirmed'
 export type ContentSource = 'user_explicit' | 'agent_inferred'
+export type VersionStatus = KnowledgeVersionStatus
+export type ChangedBy = 'user' | 'agent'
 
 export interface ScopeProject { id: string; name?: string | null; temporary?: boolean }
 
@@ -45,6 +48,7 @@ export interface KnowledgeItemSummary {
   content_source?: ContentSource | null
   invalid_at?: string | null
   created_at?: string | null
+  status?: VersionStatus
 }
 
 export interface EvidenceSource {
@@ -57,13 +61,36 @@ export interface EvidenceSource {
   created_at?: string | null
 }
 
-export interface ItemRevision { id: string; action: string; reason: string; created_at: string }
+export interface ItemRevision { id: string; action: string; reason: string; created_at: string; changed_by?: ChangedBy | null }
+
+/** One version of an item: its own words, who wrote it and why, and where it stands. */
+export interface ItemVersion {
+  item_kind: ItemKind
+  item_id: string
+  content: string
+  status: VersionStatus
+  confirmation_status: ConfirmationStatus
+  content_source?: ContentSource | null
+  changed_by?: ChangedBy | null
+  reason?: string | null
+  created_at?: string | null
+  invalid_at?: string | null
+}
+
+/** Knowledge this item was concluded from (C8-4). */
+export interface ItemBasis { item_kind: ItemKind; item_id: string; content: string; status: VersionStatus }
 
 export interface KnowledgeItemView extends KnowledgeItemSummary {
   evidence: EvidenceSource[]
   evidence_count: number
   revisions: ItemRevision[]
+  versions?: ItemVersion[]
+  current_item_id?: string | null
+  bases?: ItemBasis[]
 }
+
+/** What a PATCH answers: an edit names the new version it wrote. */
+export interface RevisionResult { version_item_id?: string | null; dependents_outdated?: number }
 
 export interface TurnReceiptEntry extends KnowledgeItemSummary { change: 'created' | 'updated' }
 export interface TurnReceipt { entries: TurnReceiptEntry[]; unchanged_count: number }
@@ -82,12 +109,45 @@ export function categoryLabel(item: KnowledgeItemSummary) {
   return t(`knowledgeQuickEdit.category.${item.category}`)
 }
 
-export function sourceLabel(item: KnowledgeItemSummary) {
+export function sourceLabel(item: Pick<KnowledgeItemSummary, 'content_source'>) {
   return t(`knowledgeQuickEdit.source.${item.content_source ?? 'unknown'}`)
 }
 
-export function confirmationLabel(item: KnowledgeItemSummary) {
+export function confirmationLabel(item: Pick<KnowledgeItemSummary, 'confirmation_status'>) {
   return t(`knowledgeQuickEdit.confirmation.${item.confirmation_status}`)
+}
+
+export const versionStatus = (item: Pick<KnowledgeItemSummary, 'status' | 'invalid_at'>): VersionStatus =>
+  item.status ?? (item.invalid_at ? 'inactive' : 'current')
+
+export function versionStatusLabel(status: VersionStatus) {
+  return t(`knowledgeQuickEdit.status.${status}`)
+}
+
+/** The badge tone of a version: current in use, out of date a warning, the rest quiet history. */
+export function versionTone(status: VersionStatus): 'success' | 'warning' | 'secondary' | 'outline' {
+  if (status === 'current') return 'success'
+  if (status === 'outdated' || status === 'basis_outdated') return 'warning'
+  return status === 'superseded' ? 'secondary' : 'outline'
+}
+
+export function changedByLabel(changedBy?: ChangedBy | null) {
+  return t(`knowledgeQuickEdit.history.by.${changedBy ?? 'unknown'}`)
+}
+
+// A version that went out of date and has no newer one can be said again;
+// that writes a new version and keeps the time it was not valid (C8-3).
+export function canReassert(item: KnowledgeItemView) {
+  return ['outdated', 'basis_outdated'].includes(versionStatus(item)) && !item.current_item_id
+}
+
+/** The ?item= id of a version's quick look on the item page. */
+export const versionPeekId = (version: Pick<ItemVersion, 'item_kind' | 'item_id'>) => `${version.item_kind}:${version.item_id}`
+
+export function versionFromPeekId(value: string): Pick<ItemVersion, 'item_kind' | 'item_id'> | null {
+  const [kind, ...rest] = value.split(':')
+  const id = rest.join(':')
+  return (kind === 'entity' || kind === 'relationship') && id ? { item_kind: kind, item_id: id } : null
 }
 
 const projectName = (project: ScopeProject) => project.name || project.id
@@ -141,7 +201,8 @@ export function scopeRequest(spaceId: string, item: KnowledgeItemSummary, draft:
   return projectIds.length ? { ...base, projectIds } : null
 }
 
-// The body of PATCH /api/knowledge/:kind/:id for a content edit.
+// The body of PATCH /api/knowledge/:kind/:id for a content edit: it writes a
+// new version that supersedes this one (C7), or re-asserts an outdated one (C8-3).
 export function contentRequest(spaceId: string, item: KnowledgeItemSummary, content: string, reason: string) {
   const text = content.trim()
   if (!text || !reason.trim()) return null
@@ -149,9 +210,11 @@ export function contentRequest(spaceId: string, item: KnowledgeItemSummary, cont
   return { personalSpaceId: spaceId, action: 'update', reason: reason.trim(), expectedVersion: item.version, ...fields }
 }
 
-export function deactivateRequest(spaceId: string, item: KnowledgeItemSummary, reason: string) {
+// Marking outdated is the person's negative feedback and the end of the
+// item's validity; its words and history stay (C8).
+export function markOutdatedRequest(spaceId: string, item: KnowledgeItemSummary, reason: string) {
   return reason.trim()
-    ? { personalSpaceId: spaceId, action: 'invalidate', reason: reason.trim(), expectedVersion: item.version }
+    ? { personalSpaceId: spaceId, action: 'mark_outdated', reason: reason.trim(), expectedVersion: item.version }
     : null
 }
 
@@ -163,7 +226,7 @@ export function tagProjectId(item: KnowledgeItemSummary, tag?: Partial<Pick<Item
   return item.scope.kind === 'global' ? null : item.scope.projects[0]?.id ?? null
 }
 
-export type EditFailure = 'conflict' | 'widening' | 'forbidden' | 'other'
+export type EditFailure = 'conflict' | 'widening' | 'superseded' | 'forbidden' | 'other'
 
 export function editFailure(error: unknown): EditFailure {
   if (!(error instanceof ApiError)) return 'other'
@@ -171,5 +234,6 @@ export function editFailure(error: unknown): EditFailure {
   if (error.status !== 409) return 'other'
   let code = ''
   try { code = JSON.parse(error.detail)?.code ?? '' } catch { code = '' }
-  return code === 'widening_requires_review' ? 'widening' : 'conflict'
+  if (code === 'widening_requires_review') return 'widening'
+  return code === 'superseded' || code === 'reassert_as_new_version' ? 'superseded' : 'conflict'
 }

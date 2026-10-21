@@ -242,14 +242,8 @@ async def test_content_edit_that_raced_a_rejection_cannot_clear_the_block(item_k
     for task_id in ['task-4', 'task-5', 'task-6', 'task-7', 'task-8']:
         assert (await use(store, task_id, OLD_STYLE, 'applied', item_kind)).promoted_count == 0
     assert OLD_STYLE not in await delivered(store)
-
-    # Read again and retry: the edit lands on the rejected item and keeps the block.
-    revision = await revise_knowledge_item(store, ACTOR, OLD_STYLE, edit)
-    assert revision.previous['negativeFeedbackBlock'] == block
-    assert revision.current['negativeFeedbackBlock'] == block
-    assert json.loads(graph.items[OLD_STYLE]['fuli_negative_feedback_block_json']) == block
-    assert await promote(store, OLD_STYLE, item_kind) == 0
-    assert OLD_STYLE not in await delivered(store)
+    # A retry writes a new version (rec#5 C7); what it carries of the block is
+    # covered against Neo4j in test_knowledge_versions_neo4j.py.
 
 
 CONFIRMATION_BASIS = {
@@ -467,7 +461,20 @@ class MemoryGraph:
             return self._lock_versions(query, p)
         if "action: 'batch_confirm'" in query:
             return self._batch_confirm(query, p)
+        if 'RETURN revision ORDER BY revision.created_at' in query:
+            return [{'revision': {
+                'id': revision['revision_id'], 'item_id': revision['item_id'], 'item_kind': revision['item_kind'],
+                'action': revision['action'], 'reason': revision['reason'],
+                'previous_json': revision.get('previous_json'), 'current_json': revision.get('current_json'),
+                'created_at': revision['created_at'],
+            }} for revision in self.revisions if revision.get('item_id') in p['item_ids']]
         item = self.items.get(p.get('item_id'))
+        if 'RETURN properties(item) AS properties' in query:
+            # A new version first takes the old one's write lock (rec#5 C7).
+            if item.get('fuli_ai_review_lock_version', 0) != p['expected']:
+                return []
+            item['fuli_ai_review_lock_version'] = p['expected'] + 1
+            return [{'properties': dict(item)}]
         if 'AS has_open_conflict' in query or 'AS replaced_by_item_kind' in query:
             return [_returned(query, self._view(item))] if item else []
         if 'item.fuli_replaced_by_item_kind = $replaced_by_item_kind' in query:

@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import VirtualDirectoryList from '@/components/VirtualDirectoryList.vue'
 import { t } from '@/i18n'
 import { UiStatRow, type UiStat } from '@/ui'
+import { versionStatusLabel } from '@/features/knowledge-quick-edit/model'
 import type { KnowledgeItem } from '@/types'
 import {
   formatTime,
@@ -38,9 +39,10 @@ const props = defineProps<{
 }>()
 
 // The same stat row as every memory page: each validity count is its filter.
+// Items that are no longer current form the 历史 group; each says why (rec#5 C8-1).
 const statusStats = computed<UiStat[]>(() => [
   { key: 'current', label: t('common.status.current'), value: props.currentItemCount, tone: 'success', pressed: props.contentStatus === 'current' },
-  { key: 'historical', label: t('common.status.invalid'), value: props.historicalItemCount, pressed: props.contentStatus === 'historical' },
+  { key: 'historical', label: t('knowledge.workspace.workspace.view.history'), value: props.historicalItemCount, pressed: props.contentStatus === 'historical' },
   { key: 'all', label: t('common.status.all'), value: props.allItems.length, pressed: props.contentStatus === 'all' },
 ])
 
@@ -188,7 +190,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
             </span>
             <span class="knowledge-status" :class="item.invalidAt ? 'historical' : 'current'">
               {{ item.invalidAt
-                ? t('common.status.invalid')
+                ? versionStatusLabel(item.versionStatus ?? 'inactive')
                 : t('knowledge.workspace.workspace.view.active') }}
             </span>
           </button>

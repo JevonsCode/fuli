@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from fuli_graph.knowledge_item_version import require_item_version
+from fuli_graph.knowledge_item_version import require_edit_revision
 from fuli_graph.knowledge_item_view import item_category
 from fuli_graph.knowledge_item_view_models import KnowledgeScopeChange
 from fuli_graph.models import EntityInput, KnowledgeCommit
@@ -35,11 +35,32 @@ def test_scope_edits_name_exactly_what_they_need():
             KnowledgeScopeChange(**{**base, **invalid})
 
 
-def test_an_old_version_is_a_conflict_with_the_current_one():
-    require_item_version({'ai_review_lock_version': 4}, None)
-    require_item_version({'ai_review_lock_version': 4}, 4)
+class _Revisions:
+    """A store whose item has `count` content, scope or validity revisions."""
+
+    def __init__(self, count):
+        self.count, self.calls = count, 0
+        self.runtime = self
+
+    @property
+    def driver(self):
+        return self
+
+    async def execute_query(self, query, **parameters):
+        self.calls += 1
+        assert 'FuliKnowledgeRevision' in query and parameters['item_id'] == 'item'
+        return [{'revisions': self.count}], None, []
+
+
+@pytest.mark.asyncio
+async def test_an_edit_from_another_revision_is_a_conflict_with_the_current_one():
+    space = {'id': 'space'}
+    unchecked = _Revisions(4)
+    await require_edit_revision(unchecked, space, 'entity', 'item', None)
+    assert unchecked.calls == 0, 'no expected version, no check'
+    await require_edit_revision(_Revisions(4), space, 'entity', 'item', 4)
     with pytest.raises(HTTPException) as refused:
-        require_item_version({'ai_review_lock_version': 5}, 4)
+        await require_edit_revision(_Revisions(5), space, 'entity', 'item', 4)
     assert refused.value.status_code == 409
     assert refused.value.detail['code'] == 'stale_version'
     assert refused.value.detail['current_version'] == 5

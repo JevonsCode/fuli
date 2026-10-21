@@ -41,7 +41,8 @@ def test_graphiti_group_id_uses_only_supported_characters():
 
 @pytest.mark.asyncio
 async def test_structured_supersession_stores_the_exact_replacement_relationship():
-    driver = SequentialDriver([[], []])
+    # The episode is new, no captured entity has later versions, then the write.
+    driver = SequentialDriver([[], [], []])
     store = StoreKnowledge()
     store.runtime = RuntimeStub(driver)
     store._group_locks = {}
@@ -77,7 +78,8 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
         personal_project_id='project-a',
     )
 
-    query, parameters = driver.calls[1]
+    assert 'item.fuli_replaced_by_item_id IS NOT NULL' in driver.calls[1][0]
+    query, parameters = driver.calls[2]
     assert 'old.fuli_replaced_by_item_id = replacement.replacement_id' in query
     assert "old.fuli_replaced_by_item_kind = 'relationship'" in query
     assert 'NOT (old.uuid IN $relationship_ids)' in query

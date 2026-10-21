@@ -39,6 +39,7 @@ from .model_validation import (
     normalize_provider_url,
     reject_credentials,
     require_public_eligible_episode,
+    unique_text_list,
 )
 
 Role = Literal['reader', 'contributor', 'maintainer']
@@ -86,7 +87,13 @@ KnowledgeContentRevisionAction = Literal[
     'invalidate',
     'link_replacement',
     'restore',
+    # A person's negative feedback that also ends the item's validity
+    # (rec#5 C8): it leaves current answers and keeps its history.
+    'mark_outdated',
 ]
+# The knowledge an item was concluded from (rec#5 C8-4): when one of them is
+# marked outdated, the conclusion stops being delivered as a current fact.
+MAX_DERIVED_FROM = 8
 KnowledgeConfirmationGroupKind = Literal['source', 'session']
 EpistemicQuadrant = Literal[
     'known_known',
@@ -491,7 +498,13 @@ class EntityInput(StrictModel):
     inheritance_mode: KnowledgeInheritanceMode = 'local_only'
     inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     content_source: ContentSource | None = None
+    derived_from: list[str] = Field(default_factory=list, max_length=MAX_DERIVED_FROM)
     attributes: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator('derived_from')
+    @classmethod
+    def validate_derived_from(cls, value: list[str]) -> list[str]:
+        return unique_text_list(value, 'derived_from', maximum=256)
 
     @field_validator('attributes')
     @classmethod
@@ -560,7 +573,13 @@ class RelationshipInput(StrictModel):
     inheritance_mode: KnowledgeInheritanceMode = 'local_only'
     inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
     content_source: ContentSource | None = None
+    derived_from: list[str] = Field(default_factory=list, max_length=MAX_DERIVED_FROM)
     attributes: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator('derived_from')
+    @classmethod
+    def validate_derived_from(cls, value: list[str]) -> list[str]:
+        return unique_text_list(value, 'derived_from', maximum=256)
 
     @model_validator(mode='after')
     def validate_interval(self):
@@ -1119,6 +1138,13 @@ class KnowledgeRevisionCreate(StrictModel):
                 self.inherited_project_ids,
             )):
                 raise ValueError('confirmation cannot change knowledge content or taxonomy')
+        if self.action == 'mark_outdated' and any(value is not None for value in (
+            self.name, self.summary, self.fact, self.origin_quadrant, self.current_quadrant,
+            self.epistemic_status, self.confirmation_status, self.confirmation_basis,
+            self.reasoning_summary, self.profile_aspect, self.inheritance_mode,
+            self.inherited_project_ids,
+        )):
+            raise ValueError('marking knowledge outdated keeps its content; re-assert it as a new version')
         if self.action == 'update':
             taxonomy_changed = any(value is not None for value in (
                 self.current_quadrant,

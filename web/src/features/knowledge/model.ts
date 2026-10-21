@@ -333,6 +333,14 @@ export function formatTime(value?: string | null, precision: keyof typeof TIME_P
   return formatDateTime(value, currentLocale(), TIME_PRECISION[precision], { missing: t('knowledge.domain.items.notRecorded') })
 }
 
+/** Where a preference is listed: in the 历史 group once it is no longer current
+ * (replaced, outdated or deactivated, rec#5 C8-1), else by its review state. */
+export type PreferenceListState = KnowledgeReviewState | 'historical'
+
+export function preferenceListState(item: KnowledgeItem): PreferenceListState {
+  return item.invalidAt ? 'historical' : knowledgeReviewState(item)
+}
+
 export function knowledgeReviewState(item: KnowledgeItem): KnowledgeReviewState {
   const basis = item.confirmationBasis
   if (
@@ -566,6 +574,7 @@ function commonItem(item: KnowledgeNode | KnowledgeEdge) {
     invalidAt: item.invalid_at,
     replacedByItemId: item.replaced_by_item_id ?? null,
     replacedByItemKind: item.replaced_by_item_kind ?? null,
+    versionStatus: item.version_status ?? (item.invalid_at ? 'inactive' : 'current'),
     createdAt: item.created_at,
     evidence: item.evidence ?? [],
     revisions: item.revisions ?? [],

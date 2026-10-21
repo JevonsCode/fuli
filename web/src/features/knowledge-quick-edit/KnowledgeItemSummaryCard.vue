@@ -4,13 +4,13 @@ import { Card } from '@/components/ui/card'
 import { t } from '@/i18n'
 import UiWeight from '@/ui/UiWeight.vue'
 import {
-  categoryLabel, confirmationLabel, scopeLabel, sourceLabel, weightBasisLabel,
-  type KnowledgeItemSummary,
+  categoryLabel, confirmationLabel, scopeLabel, sourceLabel, versionStatus, versionStatusLabel, versionTone,
+  weightBasisLabel, type KnowledgeItemSummary,
 } from './model'
 
 // What is stored now: content, category, where it applies, the weight and what
 // it rests on, tags, source and confirmation. Scope pending and content pending
-// are two separate marks.
+// are two separate marks. A version that is history says why (rec#5 C7/C8).
 defineProps<{ item: KnowledgeItemSummary }>()
 </script>
 
@@ -18,6 +18,9 @@ defineProps<{ item: KnowledgeItemSummary }>()
   <Card as="section" class="gap-3 px-5" data-item-summary :aria-label="item.title">
     <p class="m-0 text-base leading-relaxed whitespace-pre-wrap break-words" data-item-content>{{ item.content }}</p>
     <div class="flex flex-wrap gap-1.5">
+      <Badge v-if="versionStatus(item) !== 'current'" :variant="versionTone(versionStatus(item))" data-item-status>
+        {{ versionStatusLabel(versionStatus(item)) }}
+      </Badge>
       <Badge variant="secondary" data-item-category>{{ categoryLabel(item) }}</Badge>
       <Badge :variant="item.content_source === 'user_explicit' ? 'default' : 'outline'" data-item-source>
         {{ sourceLabel(item) }}

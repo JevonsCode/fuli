@@ -222,6 +222,10 @@ def require_public_eligible_episode(episode: Any) -> None:
         raise ValueError(
             'Only knowledge originally captured as known-known can enter public review'
         )
+    if any(getattr(item, 'derived_from', None) for item in items):
+        raise ValueError(
+            'Knowledge concluded from personal items names them; it cannot enter public review'
+        )
 
 
 def unique_text_list(value: list[str], label: str, *, maximum: int = 512) -> list[str]:

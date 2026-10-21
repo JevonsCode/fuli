@@ -9,6 +9,16 @@ export const knowledgeQuickEditMessages = {
     retry: '重试',
     missing: '链接里缺少知识编号。',
     historical: '这条知识已停用；它的来源和修改历史仍然保留。',
+    historyNote: {
+      superseded: '这是旧版本，已被替代；当前回答只用最新版本。',
+      outdated: '这条已过时，不再交付给 Agent；它的来源和历史仍然保留。',
+      basis_outdated: '它依据的知识已过时，所以不再当成现行事实交付。',
+    },
+    viewCurrent: '查看当前版本',
+    status: {
+      current: '当前版本', superseded: '已被替代', outdated: '已过时', basis_outdated: '依据已过时', inactive: '已停用',
+    },
+    bases: { title: '依据', help: '这条是从下面的知识推出来的；其中一条过时，它就不再当成现行事实。' },
     category: {
       taste: '品味', judgment: '判断', personality: '协作性格', rule: '规则类',
       experience: '可复用经验', fact: '事实', knowledge: '知识',
@@ -41,23 +51,34 @@ export const knowledgeQuickEditMessages = {
       similar: '已有相近的标签，先确认是否就是它：{names}',
     },
     content: {
-      title: '改写内容', label: '内容', reason: '为什么改', save: '保存内容', saving: '正在保存内容',
-      saved: '内容已保存，改过的内容回到待确认', unchanged: '内容没有变化',
+      title: '修改', help: '保存后生成新版本，当前回答立刻只用新版本；旧版本留在历史里，标“已被替代”。',
+      label: '内容', reason: '为什么改', save: '保存为新版本', saving: '正在保存新版本',
+      saved: '已保存为新版本', unchanged: '内容没有变化',
     },
-    deactivate: {
-      title: '停用', help: '停用后 Agent 不再使用它，来源和历史都保留，之后可以恢复。',
-      reason: '停用原因', action: '停用这条知识', running: '正在停用这条知识', done: '已停用',
+    outdated: {
+      title: '标记过时', help: '以前是对的，现在不适用了。标记后 Agent 不再使用它，它移到历史里；以后再说一次会生成新版本，不会抹掉中间这段。',
+      reason: '为什么过时', action: '标记过时', running: '正在标记过时', done: '已标记过时',
+      dependents: '{count} 条依据它推出的结论已标为“依据已过时”。',
+    },
+    reassert: {
+      title: '重新确认为新版本', help: '再次确认会生成一个新版本，旧版本保留“{status}”的那段时间。',
+      save: '确认为新版本', saving: '正在生成新版本', done: '已生成新版本',
     },
     history: {
       title: '来源和修改历史', sources: '来源', revisions: '修改记录', noSources: '没有记录来源',
       noRevisions: '还没有修改记录', session: '会话 {id}',
+      versions: '版本', viewing: '正在看', reason: '原因：{reason}',
+      by: { user: '你', agent: 'Agent', unknown: '来源未记录' },
       actions: {
         confirm: '确认', update: '修改内容', invalidate: '停用', restore: '恢复', link_replacement: '关联替代',
         scope_change: '调整范围', batch_confirm: '批量确认', promote_common: '提升为通用',
-        replace_common_duplicate: '合并重复',
+        replace_common_duplicate: '合并重复', supersede: '被新版本替代', mark_outdated: '标记过时',
+        basis_outdated: '依据已过时', reassert: '重新确认为新版本',
       },
     },
+    versionPeek: { loading: '正在读取这个版本', open: '打开完整页面', failed: '读不到这个版本：{error}' },
     conflict: '这条知识刚被别处改过，页面已重新读取。请看过最新内容后再保存。',
+    supersededConflict: '这条已被新版本替代或已过时，页面已重新读取。请在当前版本上修改。',
     forbidden: '你没有权限修改这条知识。',
     reasonRequired: '请写下原因',
     turn: {
@@ -74,6 +95,16 @@ export const knowledgeQuickEditMessages = {
     retry: 'Retry',
     missing: 'The link has no knowledge item ID.',
     historical: 'This item is deactivated; its sources and history are kept.',
+    historyNote: {
+      superseded: 'This is an old version; a newer one replaced it and current answers use only that.',
+      outdated: 'This item is outdated and no longer given to Agents; its sources and history are kept.',
+      basis_outdated: 'Knowledge it was concluded from is outdated, so it is no longer delivered as a current fact.',
+    },
+    viewCurrent: 'View the current version',
+    status: {
+      current: 'Current version', superseded: 'Replaced', outdated: 'Outdated', basis_outdated: 'Basis outdated', inactive: 'Deactivated',
+    },
+    bases: { title: 'Based on', help: 'This was concluded from the knowledge below; once one of them is outdated, it is no longer a current fact.' },
     category: {
       taste: 'Taste', judgment: 'Judgment', personality: 'Collaboration style', rule: 'Rule-like',
       experience: 'Reusable experience', fact: 'Fact', knowledge: 'Knowledge',
@@ -106,23 +137,35 @@ export const knowledgeQuickEditMessages = {
       similar: 'Similar tags exist; check whether one is the same: {names}',
     },
     content: {
-      title: 'Rewrite', label: 'Content', reason: 'Why the change', save: 'Save content', saving: 'Saving the content',
-      saved: 'Content saved; changed content is pending confirmation again', unchanged: 'The content did not change',
+      title: 'Edit', help: 'Saving writes a new version that current answers use at once; the old version stays in the history, marked replaced.',
+      label: 'Content', reason: 'Why the change', save: 'Save as a new version', saving: 'Saving the new version',
+      saved: 'Saved as a new version', unchanged: 'The content did not change',
     },
-    deactivate: {
-      title: 'Deactivate', help: 'Agents stop using it. Its sources and history are kept, and it can be restored.',
-      reason: 'Why deactivate', action: 'Deactivate this item', running: 'Deactivating this item', done: 'Deactivated',
+    outdated: {
+      title: 'Mark outdated', help: 'It was true once and no longer is. Agents stop using it and it moves to history; saying it again later writes a new version without erasing the gap.',
+      reason: 'Why it is outdated', action: 'Mark outdated', running: 'Marking it outdated', done: 'Marked outdated',
+      dependents: '{count} conclusions drawn from it are now marked “basis outdated”.',
+    },
+    reassert: {
+      title: 'Confirm again as a new version', help: 'Confirming it again writes a new version; the old one keeps the time it was “{status}”.',
+      save: 'Confirm as a new version', saving: 'Writing the new version', done: 'New version written',
     },
     history: {
       title: 'Sources and history', sources: 'Sources', revisions: 'Changes', noSources: 'No sources recorded',
       noRevisions: 'No changes yet', session: 'Session {id}',
+      versions: 'Versions', viewing: 'Viewing', reason: 'Why: {reason}',
+      by: { user: 'You', agent: 'Agent', unknown: 'Not recorded' },
       actions: {
         confirm: 'Confirmed', update: 'Content changed', invalidate: 'Deactivated', restore: 'Restored',
         link_replacement: 'Replacement linked', scope_change: 'Scope changed', batch_confirm: 'Batch confirmed',
         promote_common: 'Promoted to common', replace_common_duplicate: 'Duplicate merged',
+        supersede: 'Replaced by a new version', mark_outdated: 'Marked outdated', basis_outdated: 'Basis outdated',
+        reassert: 'Confirmed again as a new version',
       },
     },
+    versionPeek: { loading: 'Reading this version', open: 'Open the full page', failed: 'Could not read this version: {error}' },
     conflict: 'Someone changed this item meanwhile; the page read it again. Check the latest content before saving.',
+    supersededConflict: 'A newer version replaced this item or it is outdated; the page read it again. Edit the current version.',
     forbidden: 'You are not allowed to change this item.',
     reasonRequired: 'Write down why',
     turn: {

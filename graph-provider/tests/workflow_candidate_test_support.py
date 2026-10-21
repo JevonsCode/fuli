@@ -137,6 +137,8 @@ class WorkflowCommitDriver:
                 'candidate_version': self.candidate.get('candidate_version', 1),
                 'evidence_revision': self.candidate.get('evidence_revision', 0),
             }], None, None
+        if 'item.fuli_replaced_by_item_id IS NOT NULL' in query:
+            return [], None, None  # no captured entity has later versions (rec#5 C8-3)
         if 'HAS_WORKFLOW_CANDIDATE' in query:
             if not self.candidates:
                 return [], None, None

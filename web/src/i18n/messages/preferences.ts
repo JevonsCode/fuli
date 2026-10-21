@@ -50,6 +50,8 @@ export const preferenceMessages = {
         confirmed: '已确认',
         agentConfirmed: 'Agent 已确认',
         pending: '待确认',
+        history: '历史',
+        historyAria: '查看 {count} 条已不再生效的偏好（已被替代、已过时或已停用）',
         conflicts: '疑似冲突',
       },
       filters: {
@@ -221,6 +223,8 @@ export const preferenceMessages = {
         confirmed: 'Confirmed',
         agentConfirmed: 'Agent confirmed',
         pending: 'Pending',
+        history: 'History',
+        historyAria: 'View {count} preference that no longer applies (replaced, outdated or deactivated) | View {count} preferences that no longer apply (replaced, outdated or deactivated)',
         conflicts: 'Possible conflicts',
       },
       filters: {

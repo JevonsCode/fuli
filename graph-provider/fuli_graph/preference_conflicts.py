@@ -312,12 +312,14 @@ async def _merge_items(store, actor, space, conflict, left, right, request):
         update['fact'] = request.merged_instruction
     if confirmation:
         update.update(confirmation)
-    await revise_knowledge_item(
+    merged = await revise_knowledge_item(
         store,
         actor,
         request.canonical_item_id,
         KnowledgeRevisionCreate(**update),
     )
+    # The merged words are a new version of the canonical item (rec#5 C7);
+    # the other item now points at that version.
     await revise_knowledge_item(
         store,
         actor,
@@ -327,7 +329,7 @@ async def _merge_items(store, actor, space, conflict, left, right, request):
             item_kind=historical_kind,
             action='invalidate',
             reason=request.reason,
-            replacement_item_id=request.canonical_item_id,
+            replacement_item_id=merged.version_item_id or request.canonical_item_id,
             replacement_item_kind=canonical_kind,
             operation_actor=request.operation_actor,
         ),

@@ -28,11 +28,13 @@ import {
   personalProfileItems,
   profileAspectLabel,
   reviewStateLabel,
-  type KnowledgeReviewState,
+  preferenceListState,
+  type PreferenceListState,
   knowledgeItemKey,
 } from '@/features/knowledge/model'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
+import { versionStatusLabel } from '@/features/knowledge-quick-edit/model'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 
 const store = useConsoleStore()
@@ -69,7 +71,8 @@ watch(activeAspect, aspect => {
   aspectSync = router.replace({ query })
 })
 const activeScope = ref('all')
-const activeReviewState = ref<'all' | KnowledgeReviewState>('all')
+// 'all' lists what is current; history is its own group (rec#5 C8-1).
+const activeReviewState = ref<'all' | PreferenceListState>('all')
 const conflictsOnly = ref(false)
 const confirmingItem = ref<KnowledgeItem | null>(null)
 const editingItem = ref<KnowledgeItem | null>(null)
@@ -111,10 +114,9 @@ const visibleItems = computed(() =>
   items.value.filter(
     (item) =>
       matchesActiveFilters(item)
-      && (
-        activeReviewState.value === 'all'
-        || knowledgeReviewState(item) === activeReviewState.value
-      ),
+      && (activeReviewState.value === 'all'
+        ? preferenceListState(item) !== 'historical'
+        : preferenceListState(item) === activeReviewState.value),
   ),
 )
 // A plain list shows the first page; "show more" adds the next one.
@@ -183,17 +185,11 @@ const scopeOptions = computed(() => {
     })),
   ]
 })
-const confirmedCount = computed(
-  () => items.value.filter((item) => knowledgeReviewState(item) === 'confirmed').length,
-)
-const observedCount = computed(
-  () => items.value.filter((item) => knowledgeReviewState(item) === 'pending').length,
-)
-const agentConfirmedCount = computed(
-  () => items.value.filter(
-    (item) => knowledgeReviewState(item) === 'agent_confirmed',
-  ).length,
-)
+const stateCount = (state: PreferenceListState) => items.value.filter(item => preferenceListState(item) === state).length
+const confirmedCount = computed(() => stateCount('confirmed'))
+const observedCount = computed(() => stateCount('pending'))
+const agentConfirmedCount = computed(() => stateCount('agent_confirmed'))
+const historicalCount = computed(() => stateCount('historical'))
 // The same stat row as every memory page; each count is also its filter.
 const stats = computed<UiStat[]>(() => [
   { key: 'confirmed', label: t('preferences.profile.summary.confirmed'), value: confirmedCount.value, tone: 'success',
@@ -205,6 +201,9 @@ const stats = computed<UiStat[]>(() => [
   { key: 'pending', label: t('preferences.profile.summary.pending'), value: observedCount.value, tone: 'warning',
     pressed: !conflictsOnly.value && activeReviewState.value === 'pending',
     ariaLabel: t('preferences.profile.summary.pendingAria', { count: observedCount.value }) },
+  { key: 'historical', label: t('preferences.profile.summary.history'), value: historicalCount.value,
+    pressed: !conflictsOnly.value && activeReviewState.value === 'historical',
+    ariaLabel: t('preferences.profile.summary.historyAria', { count: historicalCount.value }) },
   { key: 'conflict', label: t('preferences.profile.summary.conflicts'), value: conflicts.value.length,
     tone: conflicts.value.length ? 'danger' : 'neutral', pressed: conflictsOnly.value,
     ariaLabel: conflicts.value.length ? t('preferences.profile.summary.conflictAria', { count: conflicts.value.length })
@@ -215,14 +214,16 @@ const countText = computed(() => {
   if (conflictsOnly.value) return t('preferences.profile.filters.conflictsCount', { visible: visibleConflicts.value.length, total: conflicts.value.length })
   if (activeReviewState.value !== 'all') return t('preferences.profile.filters.reviewCount', { count: visibleItems.value.length,
     status: activeReviewState.value === 'pending' ? t('preferences.profile.summary.pending')
-      : activeReviewState.value === 'agent_confirmed' ? t('preferences.profile.summary.agentConfirmed') : t('preferences.profile.summary.confirmed') })
+      : activeReviewState.value === 'agent_confirmed' ? t('preferences.profile.summary.agentConfirmed')
+        : activeReviewState.value === 'historical' ? t('preferences.profile.summary.history')
+          : t('preferences.profile.summary.confirmed') })
   return visibleItems.value.length === items.value.length
     ? t('preferences.profile.filters.personalUnderstanding', { count: items.value.length })
     : t('preferences.profile.filters.visibleCount', { visible: visibleItems.value.length, total: items.value.length })
 })
 function selectStat(key: string) {
   if (key === 'conflict') toggleConflictWorkbench()
-  else toggleReviewState(key as KnowledgeReviewState)
+  else toggleReviewState(key as PreferenceListState)
 }
 const isSelected = (item: KnowledgeItem) => selectedItem.value?.id === item.id && selectedItem.value?.itemKind === item.itemKind
 // Details open in a quick look over the list (D-03); its row lifts meanwhile.
@@ -364,7 +365,9 @@ async function load(spaceId = store.activePersonalSpace?.id) {
 }
 
 function statusLabel(item: KnowledgeItem) {
-  const label = reviewStateLabel(item)
+  const review = reviewStateLabel(item)
+  // A historical preference says why it is history first (rec#5 C8-1).
+  const label = item.invalidAt ? `${versionStatusLabel(item.versionStatus ?? 'inactive')} · ${review}` : review
   const conflict = conflicts.value.find(
     ({ left, right }) => knowledgeItemKey(left) === knowledgeItemKey(item) || knowledgeItemKey(right) === knowledgeItemKey(item),
   )
@@ -459,7 +462,7 @@ function editConflictItem(item: KnowledgeItem) {
   editingItem.value = item
 }
 
-function toggleReviewState(state: KnowledgeReviewState) {
+function toggleReviewState(state: PreferenceListState) {
   const nextState = !conflictsOnly.value && activeReviewState.value === state
     ? 'all'
     : state

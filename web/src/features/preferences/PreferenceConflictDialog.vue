@@ -224,7 +224,9 @@ async function mergeConflict(conflict: PreferenceConflict) {
     }
   }
 
-  await patchJson(
+  // The merged words are a new version of the target (rec#5 C7); the other
+  // item points at that version.
+  const merged = await patchJson<{ version_item_id?: string | null } | undefined>(
     `/api/knowledge/${target.itemKind}/${encodeURIComponent(target.id)}`,
     update,
   )
@@ -235,7 +237,7 @@ async function mergeConflict(conflict: PreferenceConflict) {
       personalProjectId: null,
       action: 'invalidate',
       reason: submittedReason,
-      replacementItemId: target.id,
+      replacementItemId: merged?.version_item_id || target.id,
       replacementItemKind: target.itemKind,
     },
   )

@@ -143,7 +143,8 @@ async def attach_tag(store, actor: dict, request: KnowledgeTagLinkChange) -> Kno
     space, namespaces, tag = await _link_scope(store, actor, request)
     at = now_utc()
     outcome = await store.knowledge_tag_vocabulary().attach(space['id'], {
-        'id': _link_id(space['id'], tag['id'], request), 'space_id': space['id'], 'tag_id': tag['id'],
+        'id': tag_link_id(space['id'], tag['id'], request.item_kind, request.item_id),
+        'space_id': space['id'], 'tag_id': tag['id'],
         'item_kind': request.item_kind, 'item_id': request.item_id, 'status': 'attached',
         'attached_at': at, 'attached_by_kind': request.operation_actor, 'detached_at': None,
     }, MAX_TAGS_PER_ITEM)
@@ -156,7 +157,8 @@ async def attach_tag(store, actor: dict, request: KnowledgeTagLinkChange) -> Kno
 async def detach_tag(store, actor: dict, request: KnowledgeTagLinkChange) -> KnowledgeTagLinkResult:
     space, namespaces, tag = await _link_scope(store, actor, request)
     outcome = await store.knowledge_tag_vocabulary().detach(
-        space['id'], _link_id(space['id'], tag['id'], request), now_utc(), request.operation_actor)
+        space['id'], tag_link_id(space['id'], tag['id'], request.item_kind, request.item_id), now_utc(),
+        request.operation_actor)
     return await _link_result(store, space['id'], namespaces, request, outcome)
 
 
@@ -325,5 +327,5 @@ def _revision(tag: dict, action: str, request, created_at, *, alias=None, alias_
     }
 
 
-def _link_id(space_id: str, tag_id: str, request: KnowledgeTagLinkChange) -> str:
-    return stable_uuid(space_id, 'knowledge-tag-link', tag_id, request.item_kind, request.item_id)
+def tag_link_id(space_id: str, tag_id: str, item_kind: str, item_id: str) -> str:
+    return stable_uuid(space_id, 'knowledge-tag-link', tag_id, item_kind, item_id)

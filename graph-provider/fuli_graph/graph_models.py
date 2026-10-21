@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from .knowledge_item_view_models import KnowledgeVersionStatus
 from .models import (
     ConfirmationBasis,
     ConfirmationStatus,
@@ -103,6 +104,7 @@ class GraphNode(KnowledgeWeightView):
     invalid_at: datetime | None = None
     replaced_by_item_id: str | None = None
     replaced_by_item_kind: KnowledgeItemKind | None = None
+    version_status: KnowledgeVersionStatus = 'current'
     revisions: list[KnowledgeRevisionRecord] = Field(default_factory=list)
     assignments: list[KnowledgeAssignmentRecord] = Field(default_factory=list)
     project_references: list[KnowledgeProjectReferenceRecord] = Field(default_factory=list)
@@ -164,6 +166,7 @@ class GraphEdge(KnowledgeWeightView):
     invalid_at: datetime | None
     replaced_by_item_id: str | None = None
     replaced_by_item_kind: KnowledgeItemKind | None = None
+    version_status: KnowledgeVersionStatus = 'current'
     created_at: datetime | None = None
     confidence: float | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
