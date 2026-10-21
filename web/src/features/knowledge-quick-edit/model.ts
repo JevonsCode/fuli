@@ -157,7 +157,7 @@ export function deactivateRequest(spaceId: string, item: KnowledgeItemSummary, r
 // The tag routes take the scope a tag change is made from: a project tag's own
 // project (only it can see the tag), otherwise one of the item's projects, or
 // none for global knowledge.
-export function tagProjectId(item: KnowledgeItemSummary, tag?: Pick<ItemTag, 'namespace' | 'project_id'>) {
+export function tagProjectId(item: KnowledgeItemSummary, tag?: Partial<Pick<ItemTag, 'namespace' | 'project_id'>>) {
   if (tag?.namespace === 'project' && tag.project_id) return tag.project_id
   return item.scope.kind === 'global' ? null : item.scope.projects[0]?.id ?? null
 }

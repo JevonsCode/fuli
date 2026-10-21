@@ -134,8 +134,11 @@ export function taskCaptureReceipt(scope, input, result) {
 
 // A capture sent without routing is saved where its input names: the task's
 // project, or no project. Its receipt joins the checkpoint like a routed one.
+// That path never required the Provider's IDs, so without them it keeps no
+// receipt (nothing could be read back) rather than failing the checkpoint.
 export function legacyCaptureReceipts(input, result) {
-  if (!input || !['committed', 'duplicate'].includes(result?.status)) return null;
+  if (!input || !['committed', 'duplicate'].includes(result?.status)
+    || typeof result.episode_id !== 'string' || !Array.isArray(result.entity_ids) || !result.entity_ids.length) return null;
   return [taskCaptureReceipt(input.personalProjectId ? 'current_project' : 'personal_global', input, result)];
 }
 
