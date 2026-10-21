@@ -49,6 +49,10 @@ defineProps<{ item: KnowledgeItemSummary & { basis_review?: BasisReview | null }
         <span v-if="item.weight && versionStatus(item) !== 'current'" class="text-muted-foreground" data-weight-historical>
           {{ t('knowledgeQuickEdit.weight.historical', { percent: item.weight.percent }) }}
         </span>
+        <!-- Waiting for a review after its basis changed: not delivered, so no live weight (D-20.7). -->
+        <span v-else-if="item.weight && item.basis_review === 'changed'" class="text-muted-foreground" data-weight-held>
+          {{ t('knowledgeQuickEdit.weight.held', { percent: item.weight.percent }) }}
+        </span>
         <template v-else-if="item.weight">
           <UiWeight :percent="item.weight.percent" :confirmed-by-person="item.weight.basis.confirmed_by_person"
             :label="t('knowledgeQuickEdit.weight.title')" />

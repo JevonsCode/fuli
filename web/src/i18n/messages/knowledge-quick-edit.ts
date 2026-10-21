@@ -44,6 +44,7 @@ export const knowledgeQuickEditMessages = {
       negative: ' · {count} 次负面反馈',
       person: '你确认过，按 100% 使用。',
       historical: '不再使用 · 失效前权重 {percent}%',
+      held: '暂不交付 · 复核后恢复 {percent}%',
       note: '权重由使用和来源算出，不能手动改。',
     },
     tags: {
@@ -55,7 +56,7 @@ export const knowledgeQuickEditMessages = {
       label: '有 {count} 条结论依据它。这次修改是：',
       changed: '意思变了', wording_only: '只改措辞，意思不变',
       changedHelp: '依据它的结论会先停止交付给 Agent，等你复核。',
-      wording_onlyHelp: '依据它的结论照常交付，只提示“依据已更新，请复核”。',
+      wording_onlyHelp: '依据它的结论照常交付，会提示你复核。',
       dependents: '{count} 条依据它的结论等你复核。',
     },
     basisReview: {
@@ -155,6 +156,7 @@ export const knowledgeQuickEditMessages = {
       negative: ' · {count} negative feedback',
       person: 'You confirmed it, so it is used at 100%.',
       historical: 'No longer used · weight before it ended: {percent}%',
+      held: 'Not in use until reviewed · {percent}% afterwards',
       note: 'The weight comes from use and sources; it cannot be set by hand.',
     },
     tags: {
@@ -166,7 +168,7 @@ export const knowledgeQuickEditMessages = {
       label: '{count} conclusions rest on it. This edit:',
       changed: 'Changes the meaning', wording_only: 'Only changes the wording',
       changedHelp: 'Conclusions drawn from it stop being given to Agents until you review them.',
-      wording_onlyHelp: 'Conclusions drawn from it stay in use and show “basis updated, please review”.',
+      wording_onlyHelp: 'Conclusions drawn from it stay in use and ask you to review them.',
       dependents: '{count} conclusions drawn from it wait for your review.',
     },
     basisReview: {
