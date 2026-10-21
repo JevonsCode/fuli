@@ -334,3 +334,32 @@ async def test_a_current_relationship_on_a_replaced_endpoint_is_still_found_and_
         nodes = {node['id']: node for node in graph['nodes']}
         assert edge['source'] == service and nodes[service]['version_status'] == 'superseded'
         assert nodes[service]['replaced_by_item_id'] in nodes, 'the console can show it on the current version'
+
+
+@pytest.mark.asyncio
+async def test_a_reassignment_and_its_scope_revision_commit_together(monkeypatch):
+    """dot round 3: the assignment and the revision that moves the edit version
+    are one transaction, so a failure after the assignment leaves neither."""
+    from fuli_graph import knowledge_management
+
+    settings = fixture_settings()
+    async with provider_client(settings, raise_app_exceptions=False) as (client, _):
+        space_id = await space_with_projects(client, 'alpha', 'beta')
+        item_id = (await commit(client, space_id, [{'key': 'build', 'name': 'Builds run in CI', 'type': 'ProjectFact',
+                                                    'summary': 'Builds run in CI'}], project='alpha'))['entity_ids'][0]
+        before = await view(client, space_id, item_id)
+        request = {'personal_space_id': space_id, 'item_kind': 'entity', 'target_project_id': 'beta',
+                   'reason': 'Synthetic move.', 'operation_actor': 'human'}
+
+        async def broken_marker(*_args, **_kwargs):
+            raise RuntimeError('synthetic failure after the assignment')
+        monkeypatch.setattr(knowledge_management, 'record_human_change', broken_marker)
+        failed = await client.post(f'/v1/knowledge/items/{item_id}/assignment', json=request)
+        assert failed.status_code == 500
+        assignments = await query(settings, '''MATCH (assignment:FuliKnowledgeAssignment {item_id: $item})
+            RETURN count(assignment) AS assignments''', item=item_id)
+        assert assignments == [{'assignments': 0}], 'the assignment rolled back with the failed step'
+        assert (await view(client, space_id, item_id))['version'] == before['version']
+        monkeypatch.undo()
+        ok(await client.post(f'/v1/knowledge/items/{item_id}/assignment', json=request))
+        assert (await view(client, space_id, item_id))['version'] == before['version'] + 1

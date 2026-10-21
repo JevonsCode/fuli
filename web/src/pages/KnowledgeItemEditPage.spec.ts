@@ -303,7 +303,7 @@ describe('KnowledgeItemEditPage', () => {
   })
 
   it('D-20.7: a conclusion whose basis changed waits for a review; 仍然成立 writes a new version', async () => {
-    const wrapper = await open(view({ basis_review: 'changed', confirmation_status: 'pending',
+    const wrapper = await open(view({ basis_review: 'changed', confirmation_status: 'confirmed',
       bases: [{ item_kind: 'entity', item_id: 'pref-2', content: 'Docs in AsciiDoc', status: 'current' }] }))
     expect(wrapper.get('[data-basis-review]').text()).toBe('依据已变，待复核')
     // Not delivered while it waits: no live weight bar (Fable UI check).
