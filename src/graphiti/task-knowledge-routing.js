@@ -2,7 +2,18 @@ import { ApplicationError } from '../app/application-error.js';
 
 const fail = message => { throw new ApplicationError('validation', message); };
 const aspects = new Set(['taste', 'personality', 'judgment_preference']);
-const scopes = new Set(['personal_global', 'current_project']);
+// session_temporary is FULI's own routing, never a model's: what belongs to no
+// chosen scope is kept in the session's temporary project, marked undecided.
+const scopes = new Set(['personal_global', 'current_project', 'session_temporary']);
+const MAX_ROUTED_SCOPES = 3;
+
+// A task without a registered project has no current project: its project-
+// scoped items wait in the session's temporary project, scope undecided
+// (rec#20), never guessed global and never shared with other projects or FLAs.
+function effectiveScope(task, scope) {
+  return scope === 'current_project' && (!task.personalProjectId || task.projectScope?.type === 'temporary')
+    ? 'session_temporary' : scope;
+}
 
 // Scope is an explicit capture decision, separate from an item's profile aspect.
 // This validates the decision; it does not classify text or verify its meaning.
@@ -11,7 +22,7 @@ export function normalizeTaskCaptures(task, capture, routing) {
     || capture.entities.length > 128 || !Array.isArray(capture.relationships) || capture.relationships.length > 256) {
     fail('captureRouting requires one bounded capture episode');
   }
-  if (!Array.isArray(routing) || !routing.length || routing.length > 2) fail('captureRouting requires one or two bounded scope partitions');
+  if (!Array.isArray(routing) || !routing.length || routing.length > MAX_ROUTED_SCOPES) fail('captureRouting requires one or two bounded scope partitions');
   const itemsByKind = [capture.entities, capture.relationships].map(items => {
     const byKey = new Map();
     for (const item of items) {
@@ -25,13 +36,10 @@ export function normalizeTaskCaptures(task, capture, routing) {
   });
   const seen = new Set();
   const assigned = [new Set(), new Set()];
-  const batches = routing.map(batch => {
-    const { scope, entityKeys, relationshipKeys, sourceExcerpt = capture.sourceExcerpt } = batch ?? {};
-    if (!scopes.has(scope) || seen.has(scope)) fail('Each capture scope must be valid and unique');
+  const batches = mergeSameScope(task, routing).map(batch => {
+    const { scope, entityKeys, relationshipKeys, sourceExcerpt = capture.sourceExcerpt } = batch;
+    if (seen.has(scope)) fail('Each capture scope must be valid and unique');
     seen.add(scope);
-    if (scope === 'current_project' && (!task.personalProjectId || task.projectScope?.type === 'temporary')) {
-      fail('current_project capture requires a registered current project');
-    }
     const selections = [entityKeys, relationshipKeys].map((keys, kind) => {
       if (!Array.isArray(keys) || keys.length > (kind ? 256 : 128) || (!kind && !keys.length)) {
         fail('Each scope requires entityKeys and relationshipKeys, with at least one entity');
@@ -54,7 +62,9 @@ export function normalizeTaskCaptures(task, capture, routing) {
         || basis?.confirmedBy != null || basis?.confirmedAt != null || basis?.agentPolicyVersion != null) {
         fail('Scoped AI capture must remain pending until the existing human confirmation flow confirms it');
       }
-      return { ...item, confirmationStatus: 'pending' };
+      // Only FULI's own remember items carry the user's words; a model's graph
+      // capture is its inference (rec#20), whatever it is about.
+      return { ...item, confirmationStatus: 'pending', contentSource: item.contentSource ?? 'agent_inferred' };
     };
     // Selection order never changes commit identity; preserve the episode's
     // original item order while normalizing scope order below.
@@ -69,6 +79,23 @@ export function normalizeTaskCaptures(task, capture, routing) {
   return batches;
 }
 
+// A project-scoped batch without a registered project joins an explicit
+// undecided one; anything else keeps its own scope and uniqueness check.
+function mergeSameScope(task, routing) {
+  const merged = [];
+  for (const batch of routing) {
+    if (!batch || typeof batch !== 'object' || !scopes.has(batch.scope)) fail('Each capture scope must be valid and unique');
+    const scope = effectiveScope(task, batch.scope);
+    const same = scope === 'session_temporary' ? merged.find(item => item.scope === scope) : null;
+    if (same && Array.isArray(same.entityKeys) && Array.isArray(batch.entityKeys)
+      && Array.isArray(same.relationshipKeys) && Array.isArray(batch.relationshipKeys)) {
+      same.entityKeys = [...same.entityKeys, ...batch.entityKeys];
+      same.relationshipKeys = [...same.relationshipKeys, ...batch.relationshipKeys];
+    } else merged.push({ ...batch, scope });
+  }
+  return merged;
+}
+
 export async function preflightTaskCaptures(provider, inputs, prepareCapture) {
   const commits = inputs.map(input => {
     if (input.targetKind !== 'personal') fail('Knowledge commit preflight only accepts personal captures');
@@ -81,9 +108,12 @@ export async function preflightTaskCaptures(provider, inputs, prepareCapture) {
   return result;
 }
 
-export function taskCaptureInput(spaceId, task, { scope, capture }) {
+// temporaryProjectId: the session's temporary project, for an undecided batch.
+export function taskCaptureInput(spaceId, task, { scope, capture }, temporaryProjectId = null) {
   return { ...capture, targetKind: 'personal', spaceId,
-    personalProjectId: scope === 'personal_global' ? null : task.personalProjectId,
+    personalProjectId: scope === 'personal_global' ? null
+      : scope === 'session_temporary' ? temporaryProjectId : task.personalProjectId,
+    ...(scope === 'session_temporary' ? { scopeStatus: 'undetermined' } : {}),
     projectAgentId: null, sessionId: task.sessionId, sourceApplication: task.sourceApplication,
     sourceTurnId: task.turnId ?? capture.sourceTurnId ?? null,
     idempotencyKey: `${task.token}:knowledge:${scope}` };

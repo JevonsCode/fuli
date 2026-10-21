@@ -29,14 +29,15 @@ test('experiences become one pending current-project capture searchable by their
   assert.equal(again.capture.idempotencyKey, capture.idempotencyKey, 'the same experiences retry idempotently');
 });
 
-test('experiences are bounded and need a registered current project', () => {
+test('experiences are bounded; without a registered project they wait undecided', () => {
   for (const bad of [[], [experience, experience, experience, experience], [{ ...experience, searchKeys: [] }],
     [{ ...experience, solution: ' ' }]]) {
     assert.throws(() => experienceCapture(task, bad), /experiences/);
   }
   const unclaimed = experienceCapture({ ...task, personalProjectId: null }, [experience]);
-  assert.throws(() => normalizeTaskCaptures({ ...task, personalProjectId: null }, unclaimed.capture, unclaimed.captureRouting),
-    /registered current project/);
+  const [held] = normalizeTaskCaptures({ ...task, personalProjectId: null }, unclaimed.capture, unclaimed.captureRouting);
+  assert.equal(held.scope, 'session_temporary');
+  assert.equal(held.capture.entities[0].contentSource, 'agent_inferred');
 });
 
 test('a checkpoint takes experiences instead of, never alongside, a capture', async () => {

@@ -219,9 +219,22 @@ test('scoped captures reject invalid routing and confirmation before preparing o
     assert.equal(fixture.registry.context(fixture.task.token, 'codex').checkpoint, null);
     assert.equal(fixture.writes.length, 0);
   }
+});
+
+test('without a registered project, project-scoped capture waits in the session temporary project (rec#20)', async () => {
   const missing = checkpointFixture({ personalProjectId: null, projectAgentId: null });
-  await assert.rejects(checkpointTaskKnowledge(missing.app, missing.input), /registered project|current project/i);
-  assert.equal(missing.writes.length, 0);
+  const ensured = [];
+  missing.app.personal.ensureTemporaryProject = async input => { ensured.push(input);
+    return { project_id: `temporary-${input.scope_key}`, scope_type: 'temporary' }; };
+  const result = await checkpointTaskKnowledge(missing.app, missing.input);
+  assert.equal(ensured.length, 1);
+  assert.equal(ensured[0].lifetime, 'session');
+  assert.equal(ensured[0].task_context_token, undefined, 'the task itself keeps no project');
+  const held = missing.writes.find(item => item.personalProjectId?.startsWith('temporary-'));
+  assert.equal(held.scopeStatus, 'undetermined', 'scope undecided, never guessed global');
+  assert.deepEqual(held.entities.map(item => item.key), ['synthetic:project-fact']);
+  assert.ok(missing.writes.find(item => item.personalProjectId === null), 'an explicit global preference stays global');
+  assert.deepEqual(result.capture_results.map(item => item.scope).sort(), ['personal_global', 'session_temporary']);
 });
 
 test('routing evidence may override the shared excerpt without changing any other episode provenance', async () => {

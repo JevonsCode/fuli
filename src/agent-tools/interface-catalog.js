@@ -84,6 +84,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('POST /api/knowledge-tags', 'change_knowledge_tags'),
   agent('POST /api/knowledge/:itemKind/:itemId/assignment', 'reassign_personal_knowledge'),
   local('POST /api/knowledge/:itemKind/:itemId/preference-scope', 'Changing personal preference visibility requires local human review.'),
+  local('POST /api/knowledge/:itemKind/:itemId/scope', 'Choosing where one knowledge item applies is the person\'s quick edit from a turn receipt; an Agent proposes, the person decides.'),
   agent('POST /api/knowledge/entity/:itemId/project-action/preview', 'preview_personal_project_action'),
   agent('POST /api/knowledge/entity/:itemId/project-action', 'apply_personal_project_action'),
   local('POST /api/knowledge/batch-confirmation', 'Batch confirmation asserts human confirmation and requires local user presence.'),

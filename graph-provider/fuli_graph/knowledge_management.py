@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from .knowledge_audit import record_human_change
+from .knowledge_item_version import item_version, require_item_version
 from .knowledge_records import assignment_record
 from .personal_project_access import authorize_personal_project
 from .store_transactions import query_store_transaction
@@ -39,6 +40,7 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
     current = await _read_item(store, space, item_id, request.item_kind)
     if current is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
+    require_item_version(current, request.expected_version)
     previous = _snapshot(current, request.item_kind)
     if (
         request.action == 'update'
@@ -136,7 +138,7 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
     async with query_store_transaction(store) as scoped:
         await _update_item(
             scoped, space, item_id, request.item_kind, next_value, embedding,
-            expected_lock_version=int(current.get('ai_review_lock_version') or 0),
+            expected_lock_version=item_version(current),
         )
         await _record_revision(
             scoped, actor, space, item_id, request, revision_id,
@@ -222,13 +224,36 @@ async def reassign_knowledge_item(
         existing.project_id if existing
         else await _implicit_project_id(store, space, item_id, request.item_kind)
     )
+    assignment = await write_project_assignment(
+        store, space, item_id, request.item_kind, request.target_project_id,
+        previous_project_id=previous_project_id, existing=existing,
+        reason=request.reason, changed_by=actor['id'],
+    )
+    if request.operation_actor == 'human':
+        await record_human_change(
+            store,
+            actor,
+            space,
+            item_id,
+            request.item_kind,
+            reason=request.reason,
+            operation='knowledge_assignment',
+        )
+    return assignment
+
+
+async def write_project_assignment(
+    store, space, item_id, item_kind, target_project_id, *,
+    previous_project_id, existing, reason, changed_by,
+) -> KnowledgeAssignmentRecord:
+    """Point one item at a project; the same item and ID, its history kept."""
     changed_at = datetime.now(timezone.utc)
     assignment_id = existing.id if existing else _stable_uuid(
-        space['id'], 'knowledge-assignment', request.item_kind, item_id
+        space['id'], 'knowledge-assignment', item_kind, item_id
     )
     item_match = (
         'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})'
-        if request.item_kind == 'entity'
+        if item_kind == 'entity'
         else (
             'MATCH ()-[item:RELATES_TO '
             '{uuid: $item_id, group_id: $group_id}]->()'
@@ -257,7 +282,7 @@ async def reassign_knowledge_item(
             assignment.reason = $reason,
             assignment.changed_by = $changed_by,
             assignment.updated_at = $changed_at
-        WITH assignment, target
+        WITH space, assignment, target
         OPTIONAL MATCH (assignment)-[old:ASSIGNED_TO]->(:FuliPersonalProject)
         DELETE old
         MERGE (assignment)-[:ASSIGNED_TO]->(target)
@@ -266,25 +291,15 @@ async def reassign_knowledge_item(
         ''',
         space_id=space['id'],
         group_id=space['group_id'],
-        target_project_id=request.target_project_id,
-        item_kind=request.item_kind,
+        target_project_id=target_project_id,
+        item_kind=item_kind,
         item_id=item_id,
         assignment_id=assignment_id,
         previous_project_id=previous_project_id,
-        reason=request.reason,
-        changed_by=actor['id'],
+        reason=reason,
+        changed_by=changed_by,
         changed_at=changed_at,
     )
-    if request.operation_actor == 'human':
-        await record_human_change(
-            store,
-            actor,
-            space,
-            item_id,
-            request.item_kind,
-            reason=request.reason,
-            operation='knowledge_assignment',
-        )
     return assignment_record(dict(records[0]['assignment']))
 
 
@@ -426,6 +441,11 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                     ELSE coalesce(item.fuli_preference_scope, 'global') END
                     AS preference_scope,
                item.fuli_preference_project_id AS preference_project_id,
+               item.fuli_preference_project_ids AS preference_project_ids,
+               item.fuli_preference_agent_id AS preference_agent_id,
+               item.fuli_scope_status AS scope_status,
+               item.fuli_content_source AS content_source,
+               item.created_at AS created_at,
                coalesce(item.fuli_inheritance_mode, 'local_only')
                  AS inheritance_mode,
                coalesce(item.fuli_inherited_project_ids, [])
@@ -472,6 +492,11 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                     ELSE coalesce(item.fuli_preference_scope, 'global') END
                     AS preference_scope,
                item.fuli_preference_project_id AS preference_project_id,
+               item.fuli_preference_project_ids AS preference_project_ids,
+               item.fuli_preference_agent_id AS preference_agent_id,
+               item.fuli_scope_status AS scope_status,
+               item.fuli_content_source AS content_source,
+               item.created_at AS created_at,
                coalesce(item.fuli_inheritance_mode, 'local_only')
                  AS inheritance_mode,
                coalesce(item.fuli_inherited_project_ids, [])

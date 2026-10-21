@@ -29,6 +29,7 @@ class StoreKnowledge:
             request.episode,
             personal_project_id=request.personal_project_id,
             project_agent_id=request.project_agent_id,
+            scope_status=request.scope_status,
         )
 
     async def preflight_personal_commits(
@@ -145,6 +146,7 @@ class StoreKnowledge:
         personal_project_id: str | None = None,
         project_agent_id: str | None = None,
         workflow_session_authority: str | None = None,
+        scope_status: str | None = None,
     ) -> CommitResult:
         group_id = space['group_id']
         lock = self._group_locks.setdefault(group_id, asyncio.Lock())
@@ -269,6 +271,7 @@ class StoreKnowledge:
                         'preference_agent_id': (
                             project_agent_id if entity.profile_aspect else None
                         ),
+                        'content_source': entity.content_source,
                         'attributes_json': json.dumps(
                             entity.attributes, ensure_ascii=False, sort_keys=True
                         ),
@@ -327,6 +330,7 @@ class StoreKnowledge:
                         'preference_agent_id': (
                             project_agent_id if relationship.profile_aspect else None
                         ),
+                        'content_source': relationship.content_source,
                         'attributes_json': json.dumps(
                             relationship.attributes, ensure_ascii=False, sort_keys=True
                         ),
@@ -387,7 +391,9 @@ class StoreKnowledge:
                     entity.fuli_preference_scope = row.preference_scope,
                     entity.fuli_preference_project_id = row.preference_project_id,
                     entity.fuli_preference_agent_id = row.preference_agent_id,
-                    entity.fuli_attributes_json = row.attributes_json
+                    entity.fuli_attributes_json = row.attributes_json,
+                    entity.fuli_content_source = row.content_source,
+                    entity.fuli_scope_status = $scope_status
                 SET entity.fuli_ai_review_lock_version =
                       coalesce(entity.fuli_ai_review_lock_version, 0) + 1
                 WITH count(entity) AS entity_count
@@ -544,6 +550,8 @@ class StoreKnowledge:
                       row.workflow_confirmation_authority,
                     edge.fuli_workflow_session_authority =
                       row.workflow_session_authority,
+                    edge.fuli_content_source = row.content_source,
+                    edge.fuli_scope_status = $scope_status,
                     edge.fuli_ai_review_lock_version = 1
                 SET edge.episodes =
                   CASE WHEN $episode_id IN coalesce(edge.episodes, [])
@@ -594,6 +602,7 @@ class StoreKnowledge:
                 project_agent_id=project_agent_id,
                 workflow_session_authority=workflow_session_authority,
                 idempotency_key=episode.idempotency_key,
+                scope_status=scope_status,
             )
             await materialize_workflow_candidates(
                 self,

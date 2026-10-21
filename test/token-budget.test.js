@@ -10,6 +10,8 @@ import { PASS_TASK_TOKEN } from '../src/agents/lifecycle-message.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
+import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
+import { readTurnReceipt } from '../src/agents/turn-receipt.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -64,7 +66,9 @@ const BASELINE = Object.freeze({
   // recall, team and judgment reads) take an optional bare taskContextToken, so a call from a window
   // whose session is on is served while another window of the client is stopped; without it the
   // call cannot be attributed and is refused: 182,746 -> 183,375 B (+629 B), measured.
-  fullToolSchemaBytes: 183375,
+  // rec#20: remember takes scope unsure, so an item whose scope the user left open waits in the
+  // session's temporary project instead of being guessed global: 183,375 -> 183,425 B (+50 B), measured.
+  fullToolSchemaBytes: 183425,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
@@ -75,7 +79,8 @@ const BASELINE = Object.freeze({
   // the referenced capture shape and wrote nothing to FULI.
   // rec#5 C3b option Y: the same field on get_collaboration_preferences and the two searches:
   // 8,191 -> 8,302 B (+111 B), measured from the real tools/list.
-  chatToolSchemaBytes: 8302,
+  // rec#20: the same remember scope unsure, 8,302 -> 8,311 B (+9 B), measured.
+  chatToolSchemaBytes: 8311,
   instructionsBytes: 2041,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
@@ -91,7 +96,15 @@ const BASELINE = Object.freeze({
   sessionOffEntryChars: 302,
   // rec#5 C3b option Y: the per-turn Claude Code and Codex hook label asks for the token the Agent
   // already has, instead of a sentence in the server instructions (which must stay under 2 KiB).
-  taskTokenHintChars: 42
+  taskTokenHintChars: 42,
+  // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
+  // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that
+  // saved items adds one heading (14 chars) and one line per item (152 chars for a short
+  // preference, its edit link included, about 70 of them the link). A long receipt
+  // stops near 1,800 characters and links the rest.
+  turnReceiptNoChangeChars: 0,
+  turnReceiptHeadingChars: 14,
+  turnReceiptEntryChars: 152
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -153,7 +166,24 @@ async function measure() {
     projectEntryChars: await projectEntryChars(),
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),
-    taskTokenHintChars: PASS_TASK_TOKEN.length };
+    taskTokenHintChars: PASS_TASK_TOKEN.length, ...await turnReceiptChars() };
+}
+
+// A synthetic turn through the real receipt renderer and the identity receipt it follows.
+async function turnReceiptChars() {
+  const entry = { item_kind: 'entity', item_id: '00000000-0000-4000-8000-000000000000', change: 'created',
+    category: 'taste', content: '回复先给结论，再给细节', title: 'Synthetic', type: 'PersonalPreference',
+    scope: { kind: 'global', projects: [], status: 'set' }, tags: [], confirmation_status: 'pending',
+    content_source: 'agent_inferred', weight: { percent: 12, basis: { confirmed_by_person: false,
+      qualified_use_count: 0, source_count: 1 } } };
+  const app = { config: { personal: { spaceId: 'space' } },
+    personal: { readTurnReceipt: async () => ({ entries: [entry] }) } };
+  const owner = { projectId: 'sample', agentId: 'lead-sample', name: 'Synthetic lead' };
+  const plain = taskAgentReceipt(app, owner).markdown;
+  const unchanged = taskAgentReceipt(app, { ...owner, turnReceipt: await readTurnReceipt(app, []) }).markdown;
+  const [heading, line] = (await readTurnReceipt(app, [{ status: 'committed', episode_id: 'episode' }])).lines;
+  return { turnReceiptNoChangeChars: unchanged.length - plain.length,
+    turnReceiptHeadingChars: heading.length, turnReceiptEntryChars: line.length };
 }
 
 test('per-session token cost never grows past the recorded baseline', async () => {

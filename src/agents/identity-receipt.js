@@ -1,7 +1,12 @@
 import { sourceConsoleUrl } from '../graphiti/source-marker.js';
 
+// The console origin every receipt link opens.
+export function receiptConsoleUrl(application) {
+  return application.consoleUrl ?? sourceConsoleUrl(null);
+}
+
 export function agentProfileUrl(application, agentId) {
-  return `${application.consoleUrl ?? sourceConsoleUrl(null)}/agents/${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(agentId)}`;
+  return `${receiptConsoleUrl(application)}/agents/${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(agentId)}`;
 }
 
 export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.';
@@ -20,7 +25,8 @@ function agentLink(application, agentId, name) {
   return `[${receiptText(name?.trim() || agentId)}](<${agentProfileUrl(application, agentId).replace(/[<>\s]/g, encodeURIComponent)}>)`;
 }
 
-function receiptText(value) {
+// One line of literal text in a Markdown receipt.
+export function receiptText(value) {
   return String(value).replace(/[\r\n\t]+/g, ' ')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/[\\`*_{}\[\]()!|]/g, '\\$&');
@@ -31,7 +37,7 @@ export const RECEIPT_GUIDANCE = 'MUST end every final user-visible reply with ag
 
 export function taskAgentReceipt(application, { projectId, agentId, name = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
-  collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [] }) {
+  collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [], turnReceipt = null }) {
   const owner = agentId ? { agent_id: agentId, name,
     profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
   const helpers = owner ? [...new Map(collaborators.filter(item => item.agentId !== agentId)
@@ -62,7 +68,13 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
     }
     receipt = build();
   }
-  return receipt;
+  return withTurnReceipt(receipt, turnReceipt);
+}
+
+// What a turn saved follows the identity line (rec#20); nothing when nothing changed.
+export function withTurnReceipt(receipt, turnReceipt) {
+  return turnReceipt ? { ...receipt, markdown: [receipt.markdown, ...turnReceipt.lines].join('\n'),
+    turn_receipt: turnReceipt.summary } : receipt;
 }
 
 function collaboratorLink(application, item) {

@@ -4,6 +4,8 @@ import hashlib
 import json
 
 from fastapi import HTTPException
+from typing import Literal
+
 from pydantic import Field
 
 from .models import ProjectProfile, SourceApplication, StrictModel
@@ -12,6 +14,14 @@ from .store_transactions import TransactionQueryDriver, query_store_transaction
 
 
 TEMPORARY_SCOPE = {'type': 'temporary', 'lifetime': 'task', 'persisted': True}
+_TASK_PROFILE = ProjectProfile(name='临时任务 / Temporary task', lifecycle='active',
+    purpose='Isolated task scope created by explicit Agent coordination.',
+    boundaries=['Task-local context only; no implicit project inheritance.',
+                'Audit history is retained after the task ends.'])
+_SESSION_PROFILE = ProjectProfile(name='临时会话 / Temporary session', lifecycle='active',
+    purpose='Holds what a session saved before anyone chose where it applies.',
+    boundaries=['Scope pending: nothing here applies to other projects or FLAs.',
+                'Items move only when the person chooses their scope.'])
 
 
 class TemporaryProjectEnsure(StrictModel):
@@ -19,6 +29,8 @@ class TemporaryProjectEnsure(StrictModel):
     scope_key: str = Field(pattern=r'^[a-f0-9]{64}$')
     source_application: SourceApplication
     task_context_token: str | None = Field(default=None, pattern=r'^fuli-task-[a-zA-Z0-9-]{8,128}$')
+    # session: holds a session's knowledge whose scope nobody chose yet (rec#20).
+    lifetime: Literal['task', 'session'] = 'task'
 
 
 async def ensure_temporary_project(store, actor, request):
@@ -38,10 +50,7 @@ async def ensure_temporary_project(store, actor, request):
         await _bind_task_context(store, actor, request, project_id)
     node_id = stable_uuid(store.settings.provider_id, request.personal_space_id,
                           'personal-project', project_id)
-    profile = ProjectProfile(name='临时任务 / Temporary task', lifecycle='active',
-        purpose='Isolated task scope created by explicit Agent coordination.',
-        boundaries=['Task-local context only; no implicit project inheritance.',
-                    'Audit history is retained after the task ends.'])
+    profile = _SESSION_PROFILE if request.lifetime == 'session' else _TASK_PROFILE
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})

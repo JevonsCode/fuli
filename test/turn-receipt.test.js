@@ -1,0 +1,261 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { readTurnReceipt } from '../src/agents/turn-receipt.js';
+import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
+import { beginTaskFromPreferences, checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
+import { providerEpisode } from '../src/graphiti/knowledge-provider-mapping.js';
+import { ProviderTaskContextRegistry } from '../src/mcp/provider-task-context-registry.js';
+import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
+
+// rec#20 part 1: the per-turn receipt. Synthetic Provider only: the fake
+// Provider below plays the authoritative store, so a receipt line can be
+// checked against what was saved rather than what the model said it saved.
+
+const CONSOLE = 'http://127.0.0.1:3999';
+const CONFIG = { personal: { spaceId: 'synthetic-space' } };
+const ITEM_LINK = /\[修改\]\(<http:\/\/127\.0\.0\.1:3999\/knowledge\/item\/synthetic-space\/(entity|relationship)\/[^>]+>\)$/;
+
+function entry(overrides = {}) {
+  return { item_kind: 'entity', item_id: 'item-1', version: 3, title: 'Synthetic title', content: 'Lead with the conclusion',
+    type: 'PersonalPreference', profile_aspect: 'taste', category: 'taste', change: 'created',
+    scope: { kind: 'global', projects: [], agent_id: null, agent_name: null, status: 'set' },
+    weight: { percent: 12, basis: { confirmation_status: 'pending', confirmed_by_person: false,
+      qualified_use_count: 0, distinct_task_count: 0, source_count: 1, negative_evidence_count: 0 } },
+    tags: [], confirmation_status: 'pending', content_source: 'agent_inferred', ...overrides };
+}
+
+function receiptApp(entries) {
+  const reads = [];
+  return { reads, app: { consoleUrl: CONSOLE, config: CONFIG, personal: { readTurnReceipt: async input => {
+    reads.push(input);
+    return { entries: typeof entries === 'function' ? entries(input) : entries, unchanged_count: 0 };
+  } } } };
+}
+
+const saved = (episode = 'episode-1') => [{ scope: 'personal_global', personal_project_id: null, status: 'committed',
+  episode_id: episode, entity_ids: ['item-1'], relationship_ids: [] }];
+
+test('each entry is one line with its real content, scope, weight basis, tags, source, status and own edit link', async () => {
+  const { app, reads } = receiptApp([
+    entry(),
+    entry({ item_id: 'item-2', category: 'experience', content: 'Retry the flaky import once', change: 'updated',
+      scope: { kind: 'projects', projects: [{ id: 'p1', name: 'Alpha' }, { id: 'p2', name: 'Beta' }], status: 'set' },
+      tags: [{ id: 't1', name: 'imports', namespace: 'project', status: 'active' }] }),
+    entry({ item_id: 'item-3', category: 'judgment', content_source: 'user_explicit',
+      scope: { kind: 'agent', projects: [{ id: 'p1', name: 'Alpha' }], agent_id: 'reviewer', agent_name: 'Nova', status: 'set' } }),
+    entry({ item_id: 'item-4', category: 'rule', confirmation_status: 'confirmed',
+      weight: { percent: 100, basis: { confirmation_status: 'confirmed', confirmed_by_person: true,
+        qualified_use_count: 4, distinct_task_count: 2, source_count: 2, negative_evidence_count: 0 } } }),
+    entry({ item_id: 'item-5', category: 'fact', item_kind: 'relationship',
+      scope: { kind: 'temporary', projects: [{ id: 'temporary-x', name: '临时会话', temporary: true }], status: 'undetermined' } })
+  ]);
+  const receipt = await readTurnReceipt(app, saved());
+  assert.deepEqual(reads, [{ personal_space_id: 'synthetic-space', episode_ids: ['episode-1'] }]);
+  const [heading, ...lines] = receipt.lines;
+  assert.equal(heading, 'FULI 本轮沉淀 5 条：');
+  assert.equal(lines.length, 5, 'more than three entries are all listed');
+  assert.equal(receipt.summary.total, 5);
+  assert.equal(receipt.summary.shown, 5);
+  assert.equal(lines[0], '- 新增 品味「Lead with the conclusion」｜个人全局｜权重12%（用0次·1个来源）｜无标签｜Agent推断·待确认'
+    + `｜[修改](<${CONSOLE}/knowledge/item/synthetic-space/entity/item-1>)`);
+  assert.match(lines[1], /^- 更新 经验「Retry the flaky import once」｜项目 Alpha、Beta｜.*｜#imports｜/);
+  assert.match(lines[2], /判断.*｜FLA Nova（Alpha）｜.*｜你明确说的·待确认｜/);
+  assert.match(lines[3], /规则类.*｜权重100%（你已确认）｜.*｜Agent推断·你已确认｜/);
+  assert.match(lines[4], /事实.*｜临时会话项目·范围待确定｜/);
+  const fields = lines[4].split('｜');
+  assert.equal(fields[1], '临时会话项目·范围待确定', 'scope pending is a scope state');
+  assert.equal(fields[4], 'Agent推断·待确认', 'content confirmation is a separate state');
+  for (const line of lines) assert.match(line, ITEM_LINK, 'each link opens that item, not the knowledge home');
+});
+
+test('an inferred entry stays pending however high its weight or many its tags', async () => {
+  const { app } = receiptApp([entry({ weight: { percent: 69, basis: { confirmation_status: 'pending',
+    confirmed_by_person: false, qualified_use_count: 30, distinct_task_count: 6, source_count: 4, negative_evidence_count: 0 } },
+    tags: [{ id: 'a', name: 'a', namespace: 'personal', status: 'active' }, { id: 'b', name: 'b', namespace: 'personal', status: 'active' }] })]);
+  const [, line] = (await readTurnReceipt(app, saved())).lines;
+  assert.match(line, /Agent推断·待确认/);
+  assert.doesNotMatch(line, /你已确认|已确认（/);
+});
+
+test('long contents are cut with an ellipsis and Markdown in saved text cannot break the line', async () => {
+  const { app } = receiptApp([entry({ content: `[x](javascript:alert(1)) ${'长'.repeat(80)}\nnext` })]);
+  const [, line] = (await readTurnReceipt(app, saved())).lines;
+  assert.equal(line.split('\n').length, 1);
+  assert.match(line, /\\\[x\\\]\\\(javascript:alert\\\(1\\\)\\\)/);
+  assert.match(line, /…」/);
+});
+
+test('past the receipt budget the rest is counted and linked to the full list, never silently dropped', async () => {
+  const many = Array.from({ length: 30 }, (_, index) => entry({ item_id: `item-${index}`, content: `Synthetic entry ${index}` }));
+  const { app } = receiptApp(many);
+  const receipt = await readTurnReceipt(app, saved());
+  const last = receipt.lines.at(-1);
+  assert.equal(receipt.summary.total, 30);
+  assert.ok(receipt.summary.shown < 30);
+  assert.equal(last, `另 ${30 - receipt.summary.shown} 条未列出：[查看全部](<${CONSOLE}/knowledge/turn/synthetic-space?episodes=episode-1>)`);
+  assert.equal(receipt.summary.list_url, `${CONSOLE}/knowledge/turn/synthetic-space?episodes=episode-1`);
+});
+
+test('nothing substantive adds nothing: duplicates, disabled capture, re-mentions and no capture', async () => {
+  const { app, reads } = receiptApp([]);
+  assert.equal(await readTurnReceipt(app, [{ ...saved()[0], status: 'duplicate' }]), null);
+  assert.equal(await readTurnReceipt(app, [{ scope: 'current_project', status: 'capture_disabled', episode_id: null,
+    entity_ids: [], relationship_ids: [] }]), null);
+  assert.equal(await readTurnReceipt(app, []), null);
+  assert.equal(reads.length, 0, 'nothing saved is never read back');
+  assert.equal(await readTurnReceipt(app, saved()), null, 'items the turn only mentioned again changed nothing');
+});
+
+test('an Agent note change says it has no weight instead of a made-up percentage', async () => {
+  const { app } = receiptApp([]);
+  const receipt = await readTurnReceipt(app, [], { agentName: 'Alex', memory: { agentId: 'lead', revision: 4,
+    memory: { summary: 'Synthetic working notes' } } });
+  assert.equal(receipt.lines[1], '- 更新 FLA笔记「Synthetic working notes」｜FLA Alex｜暂无权重｜无标签｜Agent笔记·不作为规则'
+    + `｜[查看](<${CONSOLE}/agents/synthetic-space/lead>)`);
+  assert.doesNotMatch(receipt.lines[1], /\d+%/);
+});
+
+test('the receipt follows the FLA identity line and leaves a turn without changes untouched', () => {
+  const owner = { projectId: 'p', agentId: 'lead', name: 'Alex' };
+  const app = { consoleUrl: CONSOLE, config: CONFIG };
+  const plain = taskAgentReceipt(app, owner);
+  const withLines = taskAgentReceipt(app, { ...owner, turnReceipt: { lines: ['FULI 本轮沉淀 1 条：', '- line'],
+    summary: { status: 'saved', total: 1, shown: 1 } } });
+  assert.equal(withLines.markdown, `${plain.markdown}\nFULI 本轮沉淀 1 条：\n- line`);
+  assert.deepEqual(withLines.turn_receipt, { status: 'saved', total: 1, shown: 1 });
+  assert.equal(plain.turn_receipt, undefined);
+  assert.equal(taskAgentReceipt(app, { ...owner, turnReceipt: null }).markdown, plain.markdown);
+});
+
+// The checkpoint workflow with an in-memory task registry and a fake Provider
+// that stores what was committed and reads it back.
+function checkpointFixture({ captureEnabled = true, readable = true } = {}) {
+  const registry = new TaskContextRegistry({ tokenFactory: (() => {
+    let index = 0;
+    return () => `fuli-task-receipt-${++index}`;
+  })() });
+  const stored = new Map();
+  const writes = [];
+  const state = { readable };
+  const app = { consoleUrl: CONSOLE, config: CONFIG, taskContextRegistry: registry,
+    getCapturePolicy: () => ({ enabled: captureEnabled }), listProjectAgents: async () => [],
+    validateCaptureSessionKnowledge: input => { providerEpisode(input); },
+    preflightPersonalKnowledgeCaptures: async () => ({ status: 'validated' }),
+    captureSessionKnowledge: async input => {
+      writes.push(input);
+      const episode = `episode-${input.idempotencyKey}`;
+      const status = stored.has(episode) ? 'duplicate' : 'committed';
+      // The Provider keeps its own copy: the summary it stores, never the model's words afterwards.
+      stored.set(episode, input.entities.map(item => ({ key: item.key, summary: item.summary,
+        aspect: item.profileAspect, source: item.contentSource, project: input.personalProjectId,
+        scopeStatus: input.scopeStatus })));
+      return { route: 'personal', status, episode_id: episode, entity_ids: input.entities.map(item => `id-${item.key}`),
+        relationship_ids: [] };
+    },
+    personal: { conversation: async () => ({ status: 'saved' }),
+      ensureTemporaryProject: async input => ({ project_id: `temporary-${input.scope_key}`, scope_type: 'temporary' }),
+      readTurnReceipt: async ({ episode_ids }) => {
+        if (!state.readable) throw new Error('synthetic read-back failure');
+        return { entries: episode_ids.flatMap(id => (stored.get(id) ?? []).map(item => entry({
+          item_id: `id-${item.key}`, content: `stored: ${item.summary}`, category: item.aspect === 'taste' ? 'taste' : 'fact',
+          content_source: item.source,
+          scope: item.project ? { kind: item.project.startsWith('temporary-') ? 'temporary' : 'projects',
+            projects: [{ id: item.project, name: item.project }], status: item.scopeStatus ?? 'set' }
+            : { kind: 'global', projects: [], status: 'set' } }))), unchanged_count: 0 };
+      } } };
+  const begin = () => registry.begin({ sessionId: 'native-session', turnId: `turn-${registry.tokens.size}`,
+    personalProjectId: 'project-a', projectAgentId: null, sourceApplication: 'codex' });
+  return { app, registry, writes, state, begin };
+}
+
+const remember = [{ kind: 'preference', text: 'Lead with the conclusion', scope: 'global', quote: '以后都先给结论' },
+  { kind: 'project_fact', text: 'Deploys go through the staging gate' },
+  { kind: 'preference', text: 'Prefer short status lines', scope: 'unsure' }];
+const checkpoint = (task, extra = {}) => ({ taskContextToken: task.token, sourceApplication: 'codex',
+  disposition: 'capture_candidates', reason: 'Keep what the user asked for.', remember, ...extra });
+
+test('a saved turn shows every item read back from the Provider after the identity line, once', async () => {
+  const { app, begin, registry } = checkpointFixture();
+  const task = begin();
+  const result = await checkpointTaskKnowledge(app, checkpoint(task));
+  const [identity, heading, ...lines] = result.agent_receipt.markdown.split('\n');
+  assert.match(identity, /^FULI Agent：/);
+  assert.equal(heading, 'FULI 本轮沉淀 3 条：');
+  const byContent = Object.fromEntries(lines.map(line => [line.match(/「(.+?)」/)[1], line]));
+  assert.deepEqual(Object.keys(byContent).sort(), ['stored: Deploys go through the staging gate',
+    'stored: Lead with the conclusion', 'stored: Prefer short status lines']);
+  assert.ok(lines.every(line => line.includes('你明确说的·待确认')), 'the user asked for these; still pending');
+  assert.match(byContent['stored: Lead with the conclusion'], /｜个人全局｜/);
+  assert.match(byContent['stored: Prefer short status lines'], /｜临时会话项目·范围待确定｜/,
+    'an unsure scope waits undecided, never global');
+  assert.deepEqual(begin().unreadTurnReceipts, [], 'the reply carried it; the next entry has nothing to deliver');
+  assert.equal([...registry.receipts.values()][0].state, 'delivered');
+});
+
+test('a retried checkpoint shows the same items again without writing or notifying twice', async () => {
+  const { app, begin, writes } = checkpointFixture();
+  const task = begin();
+  const capture = { idempotencyKey: 'synthetic-capture', name: 'Synthetic', sourceKind: 'task', sourceDescription: 'Synthetic',
+    referenceTime: '2026-10-21T00:00:00Z', entities: [{ key: 'fact-a', name: 'Fact A', type: 'ProjectFact',
+      summary: 'Synthetic project fact', confirmationStatus: 'pending' }], relationships: [] };
+  const input = checkpoint(task, { remember: undefined, capture,
+    captureRouting: [{ scope: 'current_project', entityKeys: ['fact-a'], relationshipKeys: [] }] });
+  delete input.remember;
+  const first = await checkpointTaskKnowledge(app, input);
+  const retry = await checkpointTaskKnowledge(app, input);
+  assert.equal(writes.length, 1, 'the retry replays the stored checkpoint');
+  assert.equal(retry.agent_receipt.markdown, first.agent_receipt.markdown);
+  assert.match(first.agent_receipt.markdown, /\n- 新增 事实「stored: Synthetic project fact」｜项目 project-a｜.*｜Agent推断·待确认｜/);
+  assert.deepEqual(begin().unreadTurnReceipts, []);
+});
+
+test('a receipt that could not be read stays unread and the next entry delivers it exactly once', async () => {
+  const { app, begin, state } = checkpointFixture({ readable: false });
+  const task = begin();
+  const result = await checkpointTaskKnowledge(app, checkpoint(task));
+  assert.match(result.agent_receipt.markdown, /\nFULI 本轮沉淀：已保存，回执暂未读取，下一轮补发$/);
+  assert.doesNotMatch(result.agent_receipt.markdown, /「/, 'no item is claimed before it is read back');
+  state.readable = true;
+  const next = begin();
+  assert.equal(next.unreadTurnReceipts.length, 1);
+  const entryApp = { ...app, taskContextRegistry: { begin: async () => next } };
+  const delivered = await beginTaskFromPreferences(entryApp, { context: { personal_project_id: 'project-a',
+    project_agent_id: null }, effective_preferences: [], agent_receipt: { required: true, markdown: 'FULI Agent：负责人 X' } },
+  { sessionId: 'native-session', sourceApplication: 'codex' });
+  assert.match(delivered.agent_receipt.markdown, /^FULI Agent：负责人 X\nFULI 上轮沉淀（补发） 3 条：\n- 新增/);
+  assert.deepEqual(begin().unreadTurnReceipts, [], 'a later entry never delivers it again');
+});
+
+test('nothing is reported saved while capture is off, for retain_nothing or a duplicate turn', async () => {
+  const off = checkpointFixture({ captureEnabled: false });
+  const offResult = await checkpointTaskKnowledge(off.app, checkpoint(off.begin()));
+  assert.doesNotMatch(offResult.agent_receipt.markdown, /沉淀|已保存/);
+  assert.match(offResult.agent_receipt.markdown, /自动记录已关闭/);
+  assert.equal(off.writes.length, 0);
+  const plain = checkpointFixture();
+  const none = await checkpointTaskKnowledge(plain.app, { taskContextToken: plain.begin().token, sourceApplication: 'codex',
+    disposition: 'retain_nothing', reason: 'Small talk.' });
+  assert.equal(none.agent_receipt.markdown.split('\n').length, 1, 'a turn without changes adds nothing');
+  // The same remembered items in a new turn are duplicates of what is stored: nothing new to report.
+  const again = checkpointFixture();
+  const first = again.begin();
+  await checkpointTaskKnowledge(again.app, checkpoint(first));
+  again.app.captureSessionKnowledge = async input => ({ route: 'personal', status: 'duplicate',
+    episode_id: `episode-${input.idempotencyKey}`, entity_ids: input.entities.map(item => `id-${item.key}`), relationship_ids: [] });
+  const repeated = await checkpointTaskKnowledge(again.app, checkpoint(again.begin()));
+  assert.equal(repeated.agent_receipt.markdown.split('\n').length, 1);
+});
+
+test('the Provider registry maps unread receipts and claims through the Provider contract', async () => {
+  const calls = [];
+  const registry = new ProviderTaskContextRegistry({
+    beginTaskContext: async input => ({ ...input, checkpoint: null,
+      unread_turn_receipts: [{ personal_project_id: 'p', capture_results: saved() }] }),
+    claimTurnReceipt: async (token, input) => { calls.push({ token, input }); return { deliver: true }; }
+  }, 'synthetic-space');
+  const task = await registry.begin({ sessionId: 's', sourceApplication: 'codex', personalProjectId: 'p' });
+  assert.deepEqual(task.unreadTurnReceipts, [{ personal_project_id: 'p', capture_results: saved() }]);
+  assert.equal(await registry.claimTurnReceipt('fuli-task-x', 'codex'), true);
+  assert.deepEqual(calls, [{ token: 'fuli-task-x', input: { personal_space_id: 'synthetic-space', source_application: 'codex' } }]);
+});

@@ -4,7 +4,9 @@ import { recordTriage, validateTriage } from './conversation-triage.js';
 import { REMEMBER_GUIDANCE, compactTaskCapture, rememberRequested } from './task-remember.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { taskTeam } from './task-collaboration-attribution.js';
-import { taskAgentReceipt } from '../agents/identity-receipt.js';
+import { taskAgentReceipt, withTurnReceipt } from '../agents/identity-receipt.js';
+import { checkpointTurnReceipt, unreadTurnReceipt } from './turn-receipt-delivery.js';
+import { ensureSessionTemporaryProject } from './temporary-project-scope.js';
 import { createHash } from 'node:crypto';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 
@@ -112,6 +114,7 @@ export async function beginTaskFromPreferences(application, preferences, {
   const remembering = rememberRequested(taskPrompt);
   const autoClosed = !remembering && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
   const conversation = await beginConversation(application, task);
+  const unread = preferences.agent_receipt ? await unreadTurnReceipt(application, task.unreadTurnReceipts) : null;
   return withPreferenceScope({
     conversation,
     taskContextToken: task.token,
@@ -121,7 +124,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : {}),
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
-    ...preferences,
+    ...preferences, ...(unread ? { agent_receipt: withTurnReceipt(preferences.agent_receipt, unread) } : {}),
     ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, conversation, {
       consoleUrl: application.consoleUrl, spaceId: preferences.context?.personal_space_id, agentId: preferences.context?.project_agent_id }) } : {}),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
@@ -210,7 +213,7 @@ export async function checkpointTaskKnowledge(application, {
       'Task checkpoint already has different input; resume the original review or begin a new task context'
     );
   }
-  const finish = async (result, checkpointTask = task) => {
+  const finish = async (result, checkpointTask = task, memory = null) => {
     const team = await taskTeam(application, checkpointTask, collaborators);
     const effectiveLog = workLog ?? { status: 'reported', summary: reason };
     const conversation = captureCheck.allowed ? await checkpointConversation(application, task, effectiveLog, team)
@@ -222,7 +225,8 @@ export async function checkpointTaskKnowledge(application, {
         agentId: task.projectAgentId ?? null, name: team.name, sourceApplication: task.sourceApplication,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
         persistence: conversation?.status ?? null, collaborators: team.collaborators,
-        notices: receiptNotices(captureCheck) }),
+        notices: receiptNotices(captureCheck),
+        turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
   if (task.checkpoint?.phase === 'complete') {
@@ -245,8 +249,10 @@ export async function checkpointTaskKnowledge(application, {
   // Local validation has no side effects. Reject correctable input before
   // binding an immutable checkpoint or advancing the Agent's memory revision.
   if (captureInput) await application.validateCaptureSessionKnowledge(captureInput, { captureScope });
+  const temporaryProjectId = captureCheck.allowed && scopedCaptures?.some(batch => batch.scope === 'session_temporary')
+    ? await ensureSessionTemporaryProject(application, task) : null;
   const scopedInputs = scopedCaptures?.map(batch => ({ scope: batch.scope,
-    input: taskCaptureInput(application.config.personal.spaceId, task, batch) }));
+    input: taskCaptureInput(application.config.personal.spaceId, task, batch, temporaryProjectId) }));
   for (const batch of scopedInputs ?? []) await application.validateCaptureSessionKnowledge(batch.input, { captureScope });
   // The Provider owns the full commit model and scope authorization. Validate
   // every scoped batch before claiming the checkpoint or advancing memory.
@@ -318,7 +324,7 @@ export async function checkpointTaskKnowledge(application, {
       sourceApplication: memoryResult.sourceApplication,
       sourceSessionId: memoryResult.sourceSessionId, createdAt: memoryResult.createdAt
     } : null
-  }, completedTask);
+  }, completedTask, memoryResult?.status === 'checkpointed' && memoryResult.revision > agentMemory.expectedRevision ? memoryResult : null);
 }
 
 function canonicalCheckpoint(value) {
