@@ -24,17 +24,21 @@ export function readBoardTaskPeekId(value: string): BoardTaskRef | null {
 const DENIED = ['HTTP 401', 'HTTP 403', 'HTTP 404']
 
 /**
- * An open task closes only on an authoritative answer: the catalog was read
- * and no longer lets this space read the board or the task's project, or a
- * read was refused (401/403/404). A read still pending, timed out or failed
- * for another reason proves nothing, so a shared link stays open.
+ * An open task closes only on an authoritative answer from the catalog and
+ * board reads: the catalog was read in full and has no Jefa, or no longer lets
+ * this space read the board or the task's project, or a catalog or board read
+ * was refused (401/403/404). A read still pending, timed out or failed for
+ * another reason proves nothing, so a shared link stays open. (The task's own
+ * get_task failure is shown in its dialog with a retry.)
  */
 export function boardTaskAccessRevoked(task: BoardTaskRef, read: {
   template: { permissions: string[] } | null
+  /** The catalog was read in full for this space (a null template is then an absent Jefa). */
+  catalogRead: boolean
   projects: readonly { id: string }[]
   failures: readonly JefaReadFailure[]
 }) {
   if (read.failures.some(failure => (failure.projectId === task.projectId || failure.projectId === '') && DENIED.includes(failure.category))) return true
-  if (!read.template) return false
+  if (!read.template) return read.catalogRead
   return !read.template.permissions.includes('board.read') || !read.projects.some(project => project.id === task.projectId)
 }

@@ -35,6 +35,8 @@ async function call<T>(tool: string, args: Record<string, unknown>) {
 }
 async function load() {
   const current = ++version
+  // A save still running for the task shown before belongs to that task, not this one.
+  busy.value = false
   if (!props.open) return
   error.value = ''; baseline.value = null; request = { signature: '', id: '' }
   project.value = props.item?.projectId ?? props.defaultProjectId ?? ''
@@ -51,8 +53,11 @@ async function load() {
   } catch (cause) { if (current === version) error.value = employeeErrorMessage(cause) }
   finally { if (current === version) loading.value = false }
 }
+// Each save is bound to the task (load generation) it was made for: a late
+// answer after Back or another task opened neither closes nor writes into it.
 async function save() {
   if (!valid.value || busy.value) return
+  const current = version
   busy.value = true
   const task = { title: title.value.trim(), summary: summary.value.trim() || title.value.trim(), priority: priority.value,
     acceptanceCriteria: criteria.value.split('\n').map(value => value.trim()).filter(Boolean),
@@ -63,9 +68,11 @@ async function save() {
     if (baseline.value) {
       await call('update_tasks', { requestId: request.id, updates: [{ id: baseline.value.id, expectedUpdatedAt: baseline.value.updatedAt, ...task }] })
     } else await call('create_tasks', { messageId: request.id, tasks: [task] })
-    emit('saved'); emit('close')
-  } catch (cause) { error.value = employeeErrorMessage(cause) }
-  finally { busy.value = false }
+    // The board still refreshes for a late save: the change was made.
+    emit('saved')
+    if (current === version) emit('close')
+  } catch (cause) { if (current === version) error.value = employeeErrorMessage(cause) }
+  finally { if (current === version) busy.value = false }
 }
 function close() { if (!busy.value) emit('close') }
 </script>

@@ -21,6 +21,7 @@ import EmployeeShareDialog from '@/features/employees/EmployeeShareDialog.vue'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { useProjectBoardFilter } from '@/features/employees/project-board-filter'
 import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
+import UiIcon from '@/ui/UiIcon.vue'
 import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
@@ -191,6 +192,8 @@ const openTaskRef = computed(() => isJefa.value && peek.item.value && peek.item.
 // Only an authoritative answer closes it; a pending or failed read keeps the link.
 const openTaskRevoked = computed(() => Boolean(openTaskRef.value) && boardTaskAccessRevoked(openTaskRef.value!, jefaRead))
 watch(openTaskRevoked, (revoked) => { if (revoked) void peek.close() }, { immediate: true })
+// A revoked task leaves the dialog at once (ending its read in flight), before the URL catches up.
+const shownTaskRef = computed(() => (openTaskRevoked.value ? null : openTaskRef.value))
 const pageRoot = ref<HTMLElement | null>(null)
 // A shared link scrolls its card into view once, after the board shows it.
 let scrolledTo = ''
@@ -371,9 +374,9 @@ async function projectsSaved() {
         </Button>
       </div>
       <div class="employee-workbench-actions">
-        <Button v-if="isNativeWorkbench && template?.agentId && personalSpaceId" as-child variant="ghost" class="employee-native-link">
-          <RouterLink :to="agentProfilePath(personalSpaceId, template.agentId)" :title="t('agentProfiles.profile')">
-            {{ t('agentProfiles.profile') }}
+        <Button v-if="isNativeWorkbench && template?.agentId && personalSpaceId" as-child variant="ghost" size="icon" class="employee-native-link">
+          <RouterLink :to="agentProfilePath(personalSpaceId, template.agentId)" :aria-label="t('agentProfiles.profile')" :title="t('agentProfiles.profile')">
+            <UiIcon name="agents" :size="18" />
           </RouterLink>
         </Button>
         <Button v-if="template && !isNativeWorkbench" variant="ghost" class="employee-manage-projects" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
@@ -383,7 +386,7 @@ async function projectsSaved() {
       </div>
     </header>
     <EmployeeRecruitDialog v-if="!isNativeWorkbench" :open="manageProjectsOpen" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" :template-id="templateId" @close="manageProjectsOpen = false" @recruited="projectsSaved" />
-    <EmployeeTaskDialog v-if="isJefa" :open="createTaskOpen || Boolean(openTaskRef)" :item="openTaskRef" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="!jefaRead.readOnly && (template?.permissions.includes('board.write') ?? false)" @close="closeTaskDialog" @saved="loadWorkspace" />
+    <EmployeeTaskDialog v-if="isJefa" :open="createTaskOpen || Boolean(shownTaskRef)" :item="shownTaskRef" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="!jefaRead.readOnly && (template?.permissions.includes('board.write') ?? false)" @close="closeTaskDialog" @saved="loadWorkspace" />
     <EmployeeShareDialog v-if="isJefa" :open="shareOpen" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" @close="shareOpen = false" />
     <JefaReadStatus v-if="isJefa && !projectFilter.invalidScope.value"
       :loading="jefaRead.loading" :long-wait="jefaRead.longWait" :stage="jefaRead.stage"
@@ -448,5 +451,4 @@ async function projectsSaved() {
 .employee-workbench-state { display: grid; flex: 1; gap: 14px; place-content: center; justify-items: center; padding: 30px; color: var(--color-muted); font-size: 14px; text-align: center; }
 .employee-workbench-state h2 { font-size: 20px; font-weight: 600; color: var(--color-ink); }
 .employee-workbench-state p { margin: 0; max-width: 48ch; line-height: 1.7; }
-@media (max-width: 640px) { .employee-workbench-actions { width: 100%; justify-content: flex-end; } }
 </style>

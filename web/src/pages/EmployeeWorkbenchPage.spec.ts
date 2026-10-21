@@ -832,4 +832,21 @@ describe('Jefa bounded progressive reads', () => {
     expect(wrapper.getComponent(EmployeeTaskDialog).props('open')).toBe(true)
     expect(wrapper.vm.$route.query.item).toBe('space-a/project-a%3Aa1')
   })
+  it('closes a task quick look when a complete catalog read no longer has Jefa, and drops its late detail', async () => {
+    let detail!: (value: unknown) => void
+    postJson.mockImplementation((_url: string, body: { tool: string; personalProjectId: string }) => body.tool === 'get_task'
+      ? new Promise(resolve => { detail = resolve })
+      : Promise.resolve({ items: [{ id: 'a1', projectId: 'project-a', title: '任务 A', status: 'planned' }], total: 1, truncated: false }))
+    const wrapper = await setup('/employees/jefa?item=space-a%2Fproject-a%253Aa1')
+    expect(wrapper.getComponent(EmployeeTaskDialog).props('open')).toBe(true)
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/employee-templates?') ? { templates: [] } : original(url))
+    await refreshEmployeeCatalog('space-a')
+    await flushPromises()
+    expect(wrapper.getComponent(EmployeeTaskDialog).props('open')).toBe(false)
+    expect(wrapper.vm.$route.query.item).toBeUndefined()
+    detail({ item: { id: 'a1', projectId: 'project-a', title: '任务 A', summary: '移除后晚到的正文', status: 'planned', updatedAt: '2026-10-18T17:00:00Z' } })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('移除后晚到的正文')
+  })
 })
