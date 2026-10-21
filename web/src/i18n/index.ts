@@ -32,6 +32,7 @@ import { judgmentMessages } from './messages/judgment'
 import { taskScheduleMessages } from './messages/task-schedules'
 import { taskRunMessages } from './messages/task-runs'
 import { knowledgeQuickEditMessages } from './messages/knowledge-quick-edit'
+import { knowledgeHardDeleteMessages } from './messages/knowledge-hard-delete'
 import { sessionRecordsMessages } from './messages/session-records'
 import { captureMessages } from './messages/capture'
 
@@ -98,6 +99,7 @@ export const messages = {
     taskSchedules: taskScheduleMessages['zh-CN'],
     taskRuns: taskRunMessages['zh-CN'],
     knowledgeQuickEdit: knowledgeQuickEditMessages['zh-CN'],
+    knowledgeHardDelete: knowledgeHardDeleteMessages['zh-CN'],
     sessionRecords: sessionRecordsMessages['zh-CN'],
     capture: captureMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
@@ -136,6 +138,7 @@ export const messages = {
     taskSchedules: taskScheduleMessages['en-US'],
     taskRuns: taskRunMessages['en-US'],
     knowledgeQuickEdit: knowledgeQuickEditMessages['en-US'],
+    knowledgeHardDelete: knowledgeHardDeleteMessages['en-US'],
     sessionRecords: sessionRecordsMessages['en-US'],
     capture: captureMessages['en-US'],
     employees: employeeMessages['en-US'],

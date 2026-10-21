@@ -19,6 +19,9 @@ import KnowledgeItemSummaryCard from '@/features/knowledge-quick-edit/KnowledgeI
 import KnowledgeScopeEditor from '@/features/knowledge-quick-edit/KnowledgeScopeEditor.vue'
 import KnowledgeTagEditor from '@/features/knowledge-quick-edit/KnowledgeTagEditor.vue'
 import KnowledgeVersionPeek from '@/features/knowledge-quick-edit/KnowledgeVersionPeek.vue'
+import KnowledgeHardDeletedNotice from '@/features/knowledge-hard-delete/KnowledgeHardDeletedNotice.vue'
+import KnowledgeHardDeleteSection from '@/features/knowledge-hard-delete/KnowledgeHardDeleteSection.vue'
+import { hardDeletedFrom, type HardDeletedState } from '@/features/knowledge-hard-delete/model'
 import {
   itemEditPath, versionFromPeekId, versionPeekId, versionStatus, versionStatusLabel, versionTone,
   type EditFailure, type ItemKind, type ItemVersion, type KnowledgeItemView,
@@ -34,6 +37,8 @@ import { useConsoleStore } from '@/stores/console'
 // writes a new version (rec#5 C7), so the page moves to it; an old link shows
 // the old version as history and points at the current one. A version in the
 // history opens in a quick look kept in the URL (?item=<space>/<kind>:<id>).
+// A permanent delete (rec#5 C9) is the last, collapsed section; afterwards,
+// and on any old link to what it removed, the page says 已彻底删除.
 const route = useRoute()
 const router = useRouter()
 const store = useConsoleStore()
@@ -44,11 +49,13 @@ const itemId = computed(() => String(route.params.itemId ?? ''))
 const item = ref<KnowledgeItemView | null>(null)
 const loading = ref(false)
 const error = ref('')
+const deleted = ref<HardDeletedState | null>(null)
 const notice = ref('')
 const root = ref<HTMLElement | null>(null)
 const showLoading = useMinimumLoadingDisplay(computed(() => loading.value && !item.value))
 let requestVersion = 0
-usePageTitle(computed(() => item.value?.title ?? ''))
+usePageTitle(computed(() => !deleted.value ? item.value?.title ?? ''
+  : t(deleted.value.outcome === 'unknown' ? 'knowledgeHardDelete.deleted.unknownTitle' : 'knowledgeHardDelete.deleted.pageTitle')))
 
 const projects = computed(() => (store.state?.personalProjects ?? [])
   .filter(project => project.personal_space_id === spaceId.value))
@@ -79,7 +86,10 @@ async function load() {
     const value = await readKnowledgeItem(spaceId.value, kind.value, itemId.value)
     if (current === requestVersion) item.value = value
   } catch (cause) {
-    if (current === requestVersion) error.value = (cause as Error).message
+    if (current !== requestVersion) return
+    const gone = hardDeletedFrom(cause)
+    if (gone) deleted.value = gone
+    else error.value = (cause as Error).message
   } finally {
     if (current === requestVersion) loading.value = false
   }
@@ -105,6 +115,18 @@ function versioned(versionId: string, waiting = 0) {
   void router.replace(itemEditPath(spaceId.value, { item_kind: kind.value, item_id: versionId }))
 }
 
+function removed(state: HardDeletedState) {
+  item.value = null
+  deleted.value = state
+}
+
+// Checked: the delete did not happen after all; show the item again.
+function stillThere() {
+  deleted.value = null
+  notice.value = t('knowledgeHardDelete.deleted.notDeleted')
+  void load()
+}
+
 function openVersion(version: ItemVersion) {
   lastOpened = versionPeekId(version)
   void peek.open({ spaceId: spaceId.value, id: lastOpened })
@@ -126,6 +148,7 @@ function returnFocus(event: Event) {
 
 watch([spaceId, kind, itemId], () => {
   item.value = null
+  deleted.value = null
   notice.value = carriedNotice
   carriedNotice = ''
   void load()
@@ -137,6 +160,8 @@ watch([spaceId, kind, itemId], () => {
   <div ref="root" class="mx-auto flex w-full max-w-(--form-max) flex-col gap-4" data-knowledge-item-edit>
     <BackLink to="/organize" :from="/^\/(organize|knowledge|preferences)/" class="text-sm">{{ t('knowledgeQuickEdit.back') }}</BackLink>
     <GrowthLoading v-if="showLoading" :label="t('knowledgeQuickEdit.loading')" />
+    <KnowledgeHardDeletedNotice v-else-if="deleted" :state="deleted" :space-id="spaceId" :item-kind="kind" :item-id="itemId"
+      @changed="removed" @present="stillThere" />
     <div v-else-if="error && !item" role="alert" class="grid justify-items-start gap-2">
       <p class="m-0">{{ t('knowledgeQuickEdit.loadFailed', { error }) }}</p>
       <Button variant="outline" size="sm" @click="load">{{ t('knowledgeQuickEdit.retry') }}</Button>
@@ -166,13 +191,14 @@ watch([spaceId, kind, itemId], () => {
           <li v-for="basis in item.bases" :key="basis.item_id" class="flex min-w-0 flex-wrap items-center gap-2">
             <Badge :variant="versionTone(basis.status)">{{ versionStatusLabel(basis.status) }}</Badge>
             <RouterLink :to="itemEditPath(spaceId, basis)" class="min-w-0 underline underline-offset-4 [overflow-wrap:anywhere]">
-              {{ basis.content }}
+              {{ basis.status === 'deleted' ? t('knowledgeHardDelete.deleted.basis') : basis.content }}
             </RouterLink>
           </li>
         </ul>
       </Card>
       <KnowledgeItemDependents :item="item" :space-id="spaceId" @saved="saved" @failed="failed" />
       <KnowledgeItemHistory :item="item" :space-id="spaceId" @open-version="openVersion" />
+      <KnowledgeHardDeleteSection :item="item" :space-id="spaceId" @deleted="removed" />
     </template>
   </div>
   <Dialog :open="Boolean(peekVersion)" @update:open="peekOpenChange">

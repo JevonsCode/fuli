@@ -99,7 +99,7 @@ async def test_receipt_reads_back_only_what_a_turn_created_or_replaced():
         # The same items in a later turn are already stored: nothing new to report.
         again = await commit(client, space_id, [preference('lead', 'Lead with the conclusion')], project='alpha')
         repeated = await receipt(client, space_id, again['episode_id'])
-        assert repeated == {'entries': [], 'unchanged_count': 1}
+        assert repeated == {'entries': [], 'unchanged_count': 1, 'deleted_count': 0, 'deletion_ids': []}
         # A replayed commit of the same batch is a duplicate with the same receipt.
         replay = await commit(client, space_id, [preference('lead', 'x')], project='alpha', key='fixed-key')
         assert (await commit(client, space_id, [preference('lead', 'x')], project='alpha',

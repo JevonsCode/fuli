@@ -17,6 +17,7 @@ export const knowledgeQuickEditMessages = {
     viewCurrent: '查看当前版本',
     status: {
       current: '当前版本', superseded: '已被替代', outdated: '已过时', basis_outdated: '依据已过时', inactive: '已停用',
+      deleted: '已彻底删除',
     },
     bases: { title: '依据', help: '这条是从下面的知识推出来的；其中一条过时，它就不再当成现行事实。' },
     category: {
@@ -130,6 +131,7 @@ export const knowledgeQuickEditMessages = {
     viewCurrent: 'View the current version',
     status: {
       current: 'Current version', superseded: 'Replaced', outdated: 'Outdated', basis_outdated: 'Basis outdated', inactive: 'Deactivated',
+      deleted: 'Permanently deleted',
     },
     bases: { title: 'Based on', help: 'This was concluded from the knowledge below; once one of them is outdated, it is no longer a current fact.' },
     category: {

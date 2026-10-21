@@ -41,9 +41,10 @@ def test_graphiti_group_id_uses_only_supported_characters():
 
 @pytest.mark.asyncio
 async def test_structured_supersession_stores_the_exact_replacement_relationship():
-    # The episode is new and no captured entity has later versions; then, in one
-    # transaction, the space lock, the same check again, and the write.
-    driver = SequentialDriver([[], [], [], [], []])
+    # The episode is new, nothing it names was permanently deleted (rec#5
+    # C9) and no captured entity has later versions; then, in one
+    # transaction, the space lock, the same checks again, and the write.
+    driver = SequentialDriver([[]] * 11)
     store = StoreKnowledge()
     store.runtime = RuntimeStub(driver)
     store._group_locks = {}
@@ -79,10 +80,15 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
         personal_project_id='project-a',
     )
 
-    assert 'item.fuli_replaced_by_item_id IS NOT NULL' in driver.calls[1][0]
-    assert '_knowledge_lock' in driver.calls[2][0]
-    assert 'item.fuli_replaced_by_item_id IS NOT NULL' in driver.calls[3][0]
-    query, parameters = driver.calls[4]
+    assert 'deleted_item_keys' in driver.calls[1][0]
+    assert 'item.fuli_replaced_by_item_id IS NOT NULL' in driver.calls[2][0]
+    assert 'deleted_item_keys' in driver.calls[3][0]
+    assert 'removed_episode_ids' in driver.calls[4][0]
+    assert '_knowledge_lock' in driver.calls[5][0]
+    assert 'removed_episode_ids' in driver.calls[6][0]
+    assert all('deleted_item_keys' in driver.calls[index][0] for index in (7, 8))
+    assert 'item.fuli_replaced_by_item_id IS NOT NULL' in driver.calls[9][0]
+    query, parameters = driver.calls[10]
     assert 'old.fuli_replaced_by_item_id = replacement.replacement_id' in query
     assert "old.fuli_replaced_by_item_kind = 'relationship'" in query
     assert 'NOT (old.uuid IN $relationship_ids)' in query

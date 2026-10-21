@@ -1,0 +1,49 @@
+import { z } from 'zod';
+
+import { isLoopbackAddress } from './request-policy.js';
+import { readJson, sendJson } from './response.js';
+
+// The console's 「彻底删除」 of one knowledge item (rec#5 C9): a preview of
+// exactly what goes, then the person's confirmation bound to that preview.
+// Both are accepted only on loopback and only for the active personal space;
+// the provider also requires the human-review channel the port sends. The
+// status route settles a delete whose answer was lost and finishes its local
+// cleanup; it never sends the delete again. No
+// Agent tool reaches these routes; an Agent can only suggest the person opens
+// the item's page (the interface catalog marks them local_user_only).
+
+const PATH = /^\/api\/knowledge\/(entity|relationship)\/([^/]+)\/hard-delete(?:\/(preview|status))?$/;
+const space = z.string().min(1).max(128);
+const BODIES = {
+  preview: z.object({ personalSpaceId: space }).strict(),
+  status: z.object({ personalSpaceId: space }).strict(),
+  confirm: z.object({ personalSpaceId: space, previewId: z.string().regex(/^[0-9a-f]{64}$/),
+    confirmation: z.string().trim().min(1).max(512) }).strict()
+};
+
+export async function handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete }) {
+  const match = url.pathname.match(PATH);
+  if (!match) return false;
+  response.setHeader('Cache-Control', 'no-store');
+  if (request.method !== 'POST') {
+    sendJson(response, 405, { error: 'Method not allowed' });
+    return true;
+  }
+  if (!isLoopbackAddress(request.socket?.remoteAddress)) {
+    sendJson(response, 403, { error: 'Knowledge is permanently deleted only on this computer', code: 'local_user_only' });
+    return true;
+  }
+  if (!hardDelete) {
+    sendJson(response, 503, { error: 'Permanent deletion needs a local FULI installation' });
+    return true;
+  }
+  const action = match[3] ?? 'confirm';
+  const parsed = BODIES[action].safeParse(await readJson(request));
+  if (!parsed.success) throw new TypeError('Invalid permanent deletion request');
+  if (parsed.data.personalSpaceId !== app.config?.personal?.spaceId) {
+    throw new TypeError('Knowledge is deleted in the active personal space');
+  }
+  const input = { ...parsed.data, itemKind: match[1], itemId: decodeURIComponent(match[2]) };
+  sendJson(response, 200, await hardDelete[action](input));
+  return true;
+}

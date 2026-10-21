@@ -9,6 +9,7 @@ from .graph_models import GraphResult
 from .graph_query import read_graph
 from .knowledge_basis_review import inherited_reasons, record_inherited
 from .knowledge_dependencies import require_current_bases
+from .knowledge_hard_delete_traces import episode_hard_deleted, fresh_identities
 from .knowledge_search import search_knowledge
 from .models import (
     CollaborationContextResult,
@@ -174,6 +175,11 @@ class StoreKnowledge:
                 )
                 for entity in episode.entities
             ]
+            # A key the person permanently deleted is a new item when said
+            # again: it never takes back the deleted ID (rec#5 C9).
+            stated_entity_ids = list(entity_ids)
+            renamed_entities = await fresh_identities(self, space, stated_entity_ids)
+            entity_ids = [renamed_entities.get(entity_id, entity_id) for entity_id in entity_ids]
             # An entity whose latest version went out of date is asserted
             # again by this capture: it writes a new version (rec#5 C8-3).
             captured_ids = list(entity_ids)
@@ -201,6 +207,9 @@ class StoreKnowledge:
                 )
                 for relationship in episode.relationships
             ]
+            stated_relationship_ids = list(relationship_ids)
+            renamed_relationships = await fresh_identities(self, space, stated_relationship_ids)
+            relationship_ids = [renamed_relationships.get(item_id, item_id) for item_id in relationship_ids]
             entity_input_by_key = {
                 entity.key: entity for entity in episode.entities
             }
@@ -238,6 +247,11 @@ class StoreKnowledge:
                     entity_ids=entity_ids,
                     relationship_ids=relationship_ids,
                 )
+            # The person hard-deleted what this capture recorded (rec#5 C9):
+            # its replay is the same episode and must not write it again.
+            if await episode_hard_deleted(self, space, episode_id):
+                return CommitResult(status='duplicate', space_id=space['id'], episode_id=episode_id,
+                                    entity_ids=[], relationship_ids=[])
 
             entity_vectors = await self.runtime.embedder.create_batch(
                 [entity.name for entity in episode.entities]
@@ -252,6 +266,16 @@ class StoreKnowledge:
             # (rec#5 C8-3, C8-4).
             async with query_store_transaction(self) as scoped:
                 await lock_knowledge(scoped, space)
+                if await episode_hard_deleted(scoped, space, episode_id):
+                    raise HTTPException(status_code=409, detail={
+                        'code': 'hard_deleted',
+                        'message': 'the person permanently deleted what this capture recorded'})
+                if (renamed_entities, renamed_relationships) != (
+                        await fresh_identities(scoped, space, stated_entity_ids),
+                        await fresh_identities(scoped, space, stated_relationship_ids)):
+                    raise HTTPException(status_code=409, detail={
+                        'code': 'versions_changed',
+                        'message': 'something this capture names was permanently deleted meanwhile; retry the capture'})
                 if reasserted != await reasserted_entities(scoped, space, captured_ids, episode_id):
                     raise HTTPException(status_code=409, detail={
                         'code': 'versions_changed',

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { EmployeeError } from '../employees/manifest.js';
+import { deletedKnowledgeBeside } from '../knowledge-hard-delete/delete-ledger.js';
+import { forgetDurably, forgetReferences } from '../knowledge-hard-delete/forget-references.js';
 
 export const DEFAULT_PINS = Object.freeze(['employee.bole', 'employee.jefa', 'employee.tonborg']);
 export const DEFAULT_POLICY = Object.freeze({ mode: 'manual', quality: 'quality', client: 'codex' });
@@ -20,7 +22,13 @@ export const JUDGMENT_FORMAT = sqliteFormat({
 export class JudgmentStore {
   constructor(path = ':memory:') {
     this.db = openFormattedDatabase(path, JUDGMENT_FORMAT);
+    // Knowledge a person permanently deleted (rec#5 C9): every write below
+    // reads it inside its own transaction and never stores its words again.
+    this.deleted = deletedKnowledgeBeside(path);
   }
+  // Whether a review candidate key names permanently deleted knowledge.
+  forgets(candidateKey) { return this.deleted().names(candidateKey); }
+  #clean(value) { return forgetReferences(value, this.deleted()).value; }
   transaction(fn) {
     this.db.exec('BEGIN IMMEDIATE');
     try { const result = fn(); this.db.exec('COMMIT'); return result; }
@@ -57,13 +65,15 @@ export class JudgmentStore {
     return this.policy(space, project);
   }
   record(space, data, requestKey) {
-    const prior = this.db.prepare('SELECT id FROM judgment_records WHERE space=? AND request_key=?').get(space, requestKey);
-    if (prior) return this.get(space, prior.id);
-    const id = randomUUID();
-    this.db.prepare('INSERT OR IGNORE INTO judgment_records VALUES(?,?,?,?,?,?)')
-      .run(id, space, data.personalProjectId ?? '', requestKey, new Date().toISOString(), JSON.stringify(data));
-    const saved = this.db.prepare('SELECT id FROM judgment_records WHERE space=? AND request_key=?').get(space, requestKey);
-    return this.get(space, saved.id);
+    return this.transaction(() => {
+      const prior = this.db.prepare('SELECT id FROM judgment_records WHERE space=? AND request_key=?').get(space, requestKey);
+      if (prior) return this.get(space, prior.id);
+      const id = randomUUID();
+      this.db.prepare('INSERT OR IGNORE INTO judgment_records VALUES(?,?,?,?,?,?)')
+        .run(id, space, data.personalProjectId ?? '', requestKey, new Date().toISOString(), JSON.stringify(this.#clean(data)));
+      const saved = this.db.prepare('SELECT id FROM judgment_records WHERE space=? AND request_key=?').get(space, requestKey);
+      return this.get(space, saved.id);
+    });
   }
   get(space, id) {
     const row = this.db.prepare('SELECT * FROM judgment_records WHERE space=? AND id=?').get(space, id);
@@ -103,9 +113,11 @@ export class JudgmentStore {
   }
   feedback(space, id, vote, reason, expectedRevision) {
     return this.transaction(() => {
-      if (this.get(space, id).feedback.revision !== expectedRevision) throw conflict();
+      const decision = this.get(space, id);
+      if (decision.feedback.revision !== expectedRevision) throw conflict();
+      // A reason about a judgment of deleted knowledge is not kept either.
       this.db.prepare('INSERT INTO judgment_feedback(decision,revision,vote,reason,created_at) VALUES(?,?,?,?,?)')
-        .run(id, expectedRevision + 1, vote, reason, new Date().toISOString());
+        .run(id, expectedRevision + 1, vote, decision.hard_deleted ? '' : reason, new Date().toISOString());
       return this.get(space, id);
     });
   }
@@ -119,9 +131,37 @@ export class JudgmentStore {
         throw new EmployeeError('This Tonborg run no longer holds its scope; its result was not recorded.', 409, 'judgment_lease_lost');
       }
       this.db.prepare('INSERT INTO judgment_execution(decision,status,receipt,created_at) VALUES(?,?,?,?)')
-        .run(id, status, JSON.stringify(receipt), new Date().toISOString());
+        .run(id, status, JSON.stringify(this.#clean(receipt)), new Date().toISOString());
       return this.get(space, id);
     });
+  }
+  // A person hard-deleted knowledge (rec#5 C9): every judgment, receipt and
+  // feedback of this space that names it keeps its shape and loses its words.
+  // Returns how many rows changed.
+  forgetKnowledgeItems(space, references) {
+    return forgetDurably(this.db, () => this.transaction(() => {
+      let changed = 0;
+      const forgotten = [];
+      for (const row of this.db.prepare('SELECT id, body FROM judgment_records WHERE space=?').all(space)) {
+        const result = forgetReferences(JSON.parse(row.body), references);
+        if (!result.changed) continue;
+        this.db.prepare('UPDATE judgment_records SET body=? WHERE id=?').run(JSON.stringify(result.value), row.id);
+        forgotten.push(row.id);
+        changed++;
+      }
+      for (const row of this.db.prepare(`SELECT e.id, e.receipt FROM judgment_execution e
+        JOIN judgment_records r ON r.id = e.decision WHERE r.space=?`).all(space)) {
+        const result = forgetReferences(JSON.parse(row.receipt), references);
+        if (!result.changed) continue;
+        this.db.prepare('UPDATE judgment_execution SET receipt=? WHERE id=?').run(JSON.stringify(result.value), row.id);
+        changed++;
+      }
+      for (const decision of forgotten) {
+        changed += Number(this.db.prepare("UPDATE judgment_feedback SET reason='' WHERE decision=? AND reason <> ''")
+          .run(decision).changes);
+      }
+      return changed;
+    }));
   }
   // The records one request created, as request key prefix (its own items).
   requestRecords(space, requestKey) {

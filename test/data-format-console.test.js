@@ -90,6 +90,7 @@ function reachable(entry) {
 
 test('no MCP or Agent tool module reaches the operations that change data formats', () => {
   const changing = ['src/data-format/migration-operations.js', 'src/data-format/graph-format-client.js',
+    'src/graphiti/human-review-channel.js',
     'src/data-format/backup-retention.js', 'packages/roundtable/src/storage/database-migration.js',
     'src/storage/json-format-migration.js'].map((path) => join(ROOT, path));
   for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
@@ -97,10 +98,10 @@ test('no MCP or Agent tool module reaches the operations that change data format
     assert.deepEqual(changing.filter((path) => modules.has(path)), [], entry);
   }
   assert.deepEqual(listAgentTools().map((tool) => tool.name).filter((name) => /migrat|data_format|restore/.test(name)), []);
-  // The provider routes that change records take the human-review token, which only this client sends.
+  // The provider routes that change records take the human-review token, which only this channel sends.
   const senders = [...reachable(join(ROOT, 'src/cli.js'))].filter((file) => file.startsWith(join(ROOT, 'src'))
     && readFileSync(file, 'utf8').includes('x-fuli-human-review-token'));
-  assert.deepEqual(senders, [join(ROOT, 'src/data-format/graph-format-client.js')]);
+  assert.deepEqual(senders, [join(ROOT, 'src/graphiti/human-review-channel.js')]);
 });
 
 test('a migration request holds the graph runtime lease, so an adaptive runtime wakes and stays up', async () => {

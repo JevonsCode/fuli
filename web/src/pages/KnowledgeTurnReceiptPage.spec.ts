@@ -35,6 +35,19 @@ describe('KnowledgeTurnReceiptPage', () => {
     wrapper.unmount()
   })
 
+  it('rec#5 C9: a turn whose knowledge the person permanently deleted says so, without its words', async () => {
+    getJson.mockResolvedValue({ entries: [], unchanged_count: 0, deleted_count: 1 })
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/knowledge/turn/:spaceId', component: KnowledgeTurnReceiptPage }] })
+    await router.push('/knowledge/turn/space?episodes=e2')
+    await router.isReady()
+    const wrapper = mount(KnowledgeTurnReceiptPage, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    expect(wrapper.get('[data-turn-count]').text()).toBe('这一轮没有新增或更新的知识。')
+    expect(wrapper.get('[data-turn-deleted]').text()).toBe('另有 1 条已彻底删除')
+    wrapper.unmount()
+  })
+
   it('receipt links resolve to their own pages, never to a knowledge workspace view', () => {
     expect(appRouter.resolve('/knowledge/item/space/entity/abc').name).toBe('knowledge-item-edit')
     expect(appRouter.resolve('/knowledge/item/space/relationship/abc').meta.layout).toBe('form')

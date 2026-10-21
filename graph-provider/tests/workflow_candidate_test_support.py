@@ -149,6 +149,8 @@ class WorkflowCommitDriver:
             }], None, None
         if '_knowledge_lock' in query:
             return [], None, None  # the space's knowledge lock (rec#5 C7/C8)
+        if "action: 'hard_delete'" in query:
+            return [], None, None  # nothing was permanently deleted (rec#5 C9)
         if 'item.fuli_replaced_by_item_id IS NOT NULL' in query:
             return [], None, None  # no captured entity has later versions (rec#5 C8-3)
         if 'HAS_WORKFLOW_CANDIDATE' in query:

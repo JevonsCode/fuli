@@ -11,6 +11,8 @@ export type ItemCategory = 'taste' | 'judgment' | 'personality' | 'rule' | 'expe
 export type ConfirmationStatus = 'pending' | 'agent_confirmed' | 'confirmed'
 export type ContentSource = 'user_explicit' | 'agent_inferred'
 export type VersionStatus = KnowledgeVersionStatus
+/** A basis can also be gone: a person permanently deleted it (rec#5 C9). */
+export type BasisStatus = VersionStatus | 'deleted'
 export type ChangedBy = 'user' | 'agent'
 
 export interface ScopeProject { id: string; name?: string | null; temporary?: boolean }
@@ -80,7 +82,7 @@ export interface ItemVersion {
 }
 
 /** Knowledge this item was concluded from (C8-4). */
-export interface ItemBasis { item_kind: ItemKind; item_id: string; content: string; status: VersionStatus }
+export interface ItemBasis { item_kind: ItemKind; item_id: string; content: string; status: BasisStatus }
 
 export interface KnowledgeItemView extends KnowledgeItemSummary {
   evidence: EvidenceSource[]
@@ -108,7 +110,8 @@ export interface RevisionResult {
 }
 
 export interface TurnReceiptEntry extends KnowledgeItemSummary { change: 'created' | 'updated' }
-export interface TurnReceipt { entries: TurnReceiptEntry[]; unchanged_count: number }
+/** deleted_count: how many permanent deletes removed something this turn saved (rec#5 C9). */
+export interface TurnReceipt { entries: TurnReceiptEntry[]; unchanged_count: number; deleted_count?: number }
 
 export type ScopeChoice = 'global' | 'projects' | 'agent'
 
@@ -135,14 +138,14 @@ export function confirmationLabel(item: Pick<KnowledgeItemSummary, 'confirmation
 export const versionStatus = (item: Pick<KnowledgeItemSummary, 'status' | 'invalid_at'>): VersionStatus =>
   item.status ?? (item.invalid_at ? 'inactive' : 'current')
 
-export function versionStatusLabel(status: VersionStatus) {
+export function versionStatusLabel(status: BasisStatus) {
   return t(`knowledgeQuickEdit.status.${status}`)
 }
 
 /** The badge tone of a version: current in use, out of date a warning, the rest quiet history. */
-export function versionTone(status: VersionStatus): 'success' | 'warning' | 'secondary' | 'outline' {
+export function versionTone(status: BasisStatus): 'success' | 'warning' | 'secondary' | 'outline' {
   if (status === 'current') return 'success'
-  if (status === 'outdated' || status === 'basis_outdated') return 'warning'
+  if (status === 'outdated' || status === 'basis_outdated' || status === 'deleted') return 'warning'
   return status === 'superseded' ? 'secondary' : 'outline'
 }
 
