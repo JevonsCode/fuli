@@ -1,17 +1,16 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   closeSync,
   lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync
+  unlinkSync
 } from 'node:fs';
 import { join } from 'node:path';
 
 import { detectSensitiveContent } from '../security/sensitive-content.js';
+import { writeTextFileAtomic } from '../storage/json-file.js';
 
 // Generated Markdown views of a durable Agent. The database owns identity and
 // memory; these files are a projection for viewing and handoff and are never
@@ -48,7 +47,7 @@ export function createAgentDirectorySnapshots({ root, providerIdentity, now = ()
       try {
         const manifest = readManifest(join(directory, MANIFEST));
         const files = update(directory, manifest);
-        if (manifest.dirty) writeAtomic(directory, MANIFEST, `${JSON.stringify({ version: 1, files: manifest.files }, null, 2)}\n`);
+        if (manifest.dirty) writeTextFileAtomic(join(directory, MANIFEST), `${JSON.stringify({ version: 1, files: manifest.files }, null, 2)}\n`);
         return { status: overall(files), path, files };
       } finally { release(); }
     } catch (error) {
@@ -114,7 +113,7 @@ function project(directory, manifest, artifact, generatedAt) {
     return fileStatus(artifact, pending === undefined ? 'unchanged' : 'stale');
   }
   const content = artifact.render(generatedAt);
-  writeAtomic(parent, segments.at(-1), content);
+  writeTextFileAtomic(target, content);
   manifest.files[artifact.file] = { order: artifact.order, bodyHash, fileHash: sha(content),
     ...(pending === undefined ? {} : { pending }) };
   manifest.dirty = true;
@@ -271,17 +270,6 @@ function fileHash(path) {
   }
   if (stat.isSymbolicLink() || !stat.isFile()) throw new UnsafePath();
   return sha(readFileSync(path));
-}
-
-function writeAtomic(directory, name, content) {
-  const temporary = join(directory, `.${name}.${randomUUID()}.tmp`);
-  try {
-    writeFileSync(temporary, content, { flag: 'wx', mode: 0o600 });
-    renameSync(temporary, join(directory, name));
-  } catch (error) {
-    try { unlinkSync(temporary); } catch { /* never created */ }
-    throw error;
-  }
 }
 
 // Non-blocking: a concurrent writer means "busy", never a wait.

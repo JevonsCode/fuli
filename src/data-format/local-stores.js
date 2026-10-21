@@ -13,6 +13,7 @@ import { PREFERENCE_SESSION_FORMAT } from '../conversations/preference-session.j
 import { TRANSCRIPT_CAPTURE_FORMAT } from '../conversations/transcript-capture-gap.js';
 import { CONFLICT_POLICY_FORMAT } from '../external-knowledge/conflict-policy.js';
 import { EXTERNAL_KNOWLEDGE_FORMAT } from '../external-knowledge/registry.js';
+import { AGENT_ACCESS_POLICY_FORMAT } from '../graphiti/agent-access-policy.js';
 import { CAPTURE_CHANGE_PREVIEW_FORMAT } from '../graphiti/capture-change-confirmation.js';
 import { CAPTURE_ONBOARDING_FORMAT } from '../graphiti/capture-onboarding.js';
 import { CAPTURE_POLICY_FORMAT } from '../graphiti/capture-policy.js';
@@ -50,6 +51,7 @@ const JSON_STORES = [
   ['runtime-configs/container.json', GRAPH_RUNTIME_CONFIG_FORMAT],
   ['runtime-configs/native.json', GRAPH_RUNTIME_CONFIG_FORMAT],
   ['recall-policy.json', RECALL_POLICY_FORMAT],
+  ['agent-access-policy.json', AGENT_ACCESS_POLICY_FORMAT],
   ['capture-policy.json', CAPTURE_POLICY_FORMAT],
   // An Agent's previewed capture changes waiting for the person's answer (rec#5 C4-2).
   ['capture-change-previews.json', CAPTURE_CHANGE_PREVIEW_FORMAT],

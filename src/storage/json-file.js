@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import {
+  closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -21,7 +24,9 @@ const RENAME_RETRY_FIRST_PAUSE_MS = 5;
 const RENAME_RETRY_MAX_PAUSE_MS = 200;
 const RENAME_RETRY_BUDGET_MS = 2000;
 
-const DEFAULT_IO = Object.freeze({ mkdirSync, renameSync, rmSync, statSync, writeFileSync, pauseSync });
+const DEFAULT_IO = Object.freeze({
+  closeSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, statSync, writeFileSync, pauseSync
+});
 
 export function readJsonFile(filePath, fallback) {
   if (!existsSync(filePath)) return fallback;
@@ -30,13 +35,16 @@ export function readJsonFile(filePath, fallback) {
   return raw.trim() ? JSON.parse(raw) : fallback;
 }
 
-export function writeJsonFileAtomic(filePath, value, io = {}) {
-  writeTextFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`, io);
+export function writeJsonFileAtomic(filePath, value, options = {}) {
+  writeTextFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`, options);
 }
 
 // Replaces a file through a temporary sibling so readers never see a partial
 // write. An existing file keeps its permissions; a new one is private.
-export function writeTextFileAtomic(filePath, text, io = {}) {
+// durable: the temporary file reaches the disk (fsync) before it replaces the
+// target, for state that must survive a crash right after the write.
+// io: replaces file-system calls, for tests.
+export function writeTextFileAtomic(filePath, text, { durable = false, io = {} } = {}) {
   const fileIo = { ...DEFAULT_IO, ...io };
   const directory = dirname(filePath);
   const tempPath = join(directory, `.${basename(filePath)}.${randomUUID()}.tmp`);
@@ -49,11 +57,8 @@ export function writeTextFileAtomic(filePath, text, io = {}) {
 
   fileIo.mkdirSync(directory, { recursive: true, mode: 0o700 });
   try {
-    fileIo.writeFileSync(tempPath, text, {
-      encoding: 'utf8',
-      flag: 'wx',
-      mode
-    });
+    if (durable) writeDurably(tempPath, text, mode, fileIo);
+    else fileIo.writeFileSync(tempPath, text, { encoding: 'utf8', flag: 'wx', mode });
     replaceWithRetry(tempPath, filePath, fileIo);
   } catch (error) {
     try {
@@ -62,6 +67,16 @@ export function writeTextFileAtomic(filePath, text, io = {}) {
       // Preserve the write or rename failure that caused cleanup.
     }
     throw error;
+  }
+}
+
+function writeDurably(tempPath, text, mode, fileIo) {
+  const descriptor = fileIo.openSync(tempPath, 'wx', mode);
+  try {
+    fileIo.writeFileSync(descriptor, text, 'utf8');
+    fileIo.fsyncSync(descriptor);
+  } finally {
+    fileIo.closeSync(descriptor);
   }
 }
 

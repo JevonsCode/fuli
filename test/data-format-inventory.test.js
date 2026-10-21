@@ -144,6 +144,8 @@ test('SQLite is opened and shaped only through a declared store format', () => {
 // (writeVersionedJsonFileAtomic). These write JSON that is not FULI data.
 const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/storage/json-format.js', 'the versioned writer itself'],
+  ['src/agents/directory-snapshots.js', 'generated Markdown views and their manifest, regenerated from the database'],
+  ['src/conversations/transcript-guard.js', 'a hook\'s per-session handoff state that expires within a minute'],
   ['src/agents/codex/lifecycle-hooks.js', 'Codex hook configuration, owned by the client'],
   ['src/setup/agents/json-mcp.js', 'MCP client configuration, owned by each client'],
   ['src/setup/claude-code-config.js', 'Claude Code configuration, owned by the client'],

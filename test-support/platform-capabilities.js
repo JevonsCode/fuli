@@ -43,6 +43,12 @@ export const requiresUnixNativeAssets = Object.freeze({
   skip: process.platform === 'win32' ? 'Unix Neo4j tar.gz assets are managed only on macOS and Linux' : false
 });
 
+// Only Windows refuses to rename over a file another process has open; POSIX
+// replaces it, so a test of waiting for that reader has nothing to wait for.
+export const refusesRenameOverOpenFile = Object.freeze({
+  skip: process.platform === 'win32' ? false : 'only Windows refuses to rename over an open file'
+});
+
 export const requiresPosixFileModes = Object.freeze({
   skip: posixFileModes ? false : 'NTFS stores no POSIX permission bits'
 });
