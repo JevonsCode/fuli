@@ -1,7 +1,9 @@
 import { parseArgs } from 'node:util';
 
 import { backupRetentionPolicy } from '../data-format/backup-retention.js';
-import { graphPruneUnverifiedLines, pruneFormatRetention, retentionLines } from '../data-format/format-retention.js';
+import {
+  auditFailedLines, graphPruneUnverifiedLines, pruneFormatRetention, retentionLines
+} from '../data-format/format-retention.js';
 import { collectFormatStatus } from '../data-format/format-status.js';
 import { personalGraphFormat } from '../data-format/graph-format-client.js';
 import { previewMigrations } from '../data-format/migration-plan.js';
@@ -199,6 +201,7 @@ const ACTIONS = Object.freeze({
         ...journals.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (${entry.migrationId}, `
           + `${entry.bytes} bytes) — ${entry.reason}`));
     }
+    if (journals?.auditError) lines.push(...auditFailedLines(journals.auditError));
     write(lines.join('\n'));
     // An unverified graph prune is not a finished one: the exit code says so.
     return { exitCode: journals?.status === 'unverified' ? FAILED_EXIT_CODE : 0, ...local,
@@ -265,7 +268,8 @@ function formatOperation(result) {
 function prunedLines(pruned) {
   const count = pruned.filter((entry) => entry.kind === 'pruned').length;
   return [...count ? [`Pruned ${count} older format backups and undo journals.`] : [],
-    ...pruned.some((entry) => entry.kind === 'prune_unverified') ? graphPruneUnverifiedLines() : []];
+    ...pruned.some((entry) => entry.kind === 'prune_unverified') ? graphPruneUnverifiedLines() : [],
+    ...pruned.filter((entry) => entry.auditError).flatMap((entry) => auditFailedLines(entry.auditError))];
 }
 
 function formatRestore(impact) {

@@ -47,6 +47,7 @@ export const dataFormatMessages = {
     undone: '已撤销 {id}，存储回到版本 {version}。',
     retention: '保留预算：每个存储保留最近 {keep} 份格式备份，图谱保留最近 {keep} 份撤销日志；备份和日志合计最多约 {megabytes} MB，超出时先清理最旧的。撤销或当前版本还需要的始终保留，即使因此超出预算。',
     pruneUnverified: '图谱撤销日志的清理结果未经确认：删除请求已发出但没有收到答复，Provider 可能已经删除了部分日志。请运行 fuli migrate status，或再运行一次 fuli migrate prune 核对。',
+    auditFailed: '本地操作日志（format-operations.json）没有写成：{message}。上面的结果不受影响，但这次清理没有记入日志。',
     restoreNote: '整库恢复会丢失备份之后的全部写入，不在控制台提供。需要时先停止 FULI，再在终端运行 fuli migrate restore。',
   },
   'en-US': {
@@ -96,6 +97,7 @@ export const dataFormatMessages = {
     undone: 'Undid {id}; the store is back at version {version}.',
     retention: 'Retention budget: each store keeps its newest {keep} format backups and the graph its newest {keep} undo journals; backups and journals together use at most about {megabytes} MB, the oldest going first. What an undo or the current version needs is always kept, even beyond the budget.',
     pruneUnverified: 'Graph undo journal prune result unverified: the delete request was sent but no answer came back, so the provider may already have deleted some journals. Run fuli migrate status, or fuli migrate prune again, to check.',
+    auditFailed: 'The local operations log (format-operations.json) could not be written: {message}. The result above stands, but this prune is not in the log.',
     restoreNote: 'A whole-store restore loses every change made after the backup and is not offered here. Stop FULI, then run fuli migrate restore in a terminal.',
   },
 } as const

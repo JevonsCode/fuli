@@ -23,7 +23,7 @@ import { recordFormatOperations } from './operations-log.js';
 // - 'pruned' with what the provider says it pruned and kept.
 
 export async function pruneFormatRetention({ dataDir, graph = null, policy = backupRetentionPolicy(), dryRun = false,
-  now = () => new Date(), remove, sizeOf }) {
+  now = () => new Date(), remove, sizeOf, record = recordFormatOperations }) {
   let plan = null;
   let graphError = null;
   if (graph) {
@@ -52,18 +52,30 @@ export async function pruneFormatRetention({ dataDir, graph = null, policy = bac
       result = await graph.prune({ keep: policy.keep, applyIds: local.sharedPruned });
     } catch (error) {
       // The delete was sent: the provider may have committed it and only its
-      // answer was lost. What it pruned is unknown, not none.
-      recordFormatOperations(dataDir, [{ kind: 'prune_unverified', store: 'graph', label: GRAPH_LABEL,
-        requested: local.sharedPruned.length, at: now().toISOString() }]);
-      return { local, graph: { status: 'unverified', error: error.message } };
+      // answer was lost. What it pruned is unknown, not none, and stays so
+      // even when the local audit log cannot be written.
+      const unverified = { status: 'unverified', error: error.message };
+      return { local, graph: withAudit(unverified, () => record(dataDir, [{ kind: 'prune_unverified',
+        store: 'graph', label: GRAPH_LABEL, requested: local.sharedPruned.length, at: now().toISOString() }])) };
     }
   }
   const at = now().toISOString();
   const events = (result.pruned ?? []).map((entry) => ({ kind: 'pruned', store: 'graph', label: GRAPH_LABEL,
     backupRef: `undo journal ${entry.applyId}`, migrationId: entry.migrationId, bytes: entry.bytes,
     reason: entry.reason === SIZE ? sizeBudgetReason(policy) : entry.reason, at }));
-  if (!dryRun) recordFormatOperations(dataDir, events);
-  return { local, graph: { status: 'pruned', pruned: events, kept: result.kept ?? 0 } };
+  const pruned = { status: 'pruned', pruned: events, kept: result.kept ?? 0 };
+  return { local, graph: dryRun ? pruned : withAudit(pruned, () => record(dataDir, events)) };
+}
+
+// What the graph did does not depend on the audit log: a write that fails is
+// attached as auditError (code and message only), and the result stays.
+function withAudit(graphResult, write) {
+  try {
+    write();
+    return graphResult;
+  } catch (error) {
+    return { ...graphResult, auditError: { code: error?.code ?? 'error', message: error?.message ?? String(error) } };
+  }
 }
 
 // What FULI says when the graph's delete was sent but its answer never came,
@@ -78,6 +90,19 @@ export const GRAPH_PRUNE_UNVERIFIED_NOTICE = Object.freeze({
 
 export function graphPruneUnverifiedLines() {
   return [GRAPH_PRUNE_UNVERIFIED_NOTICE.zh, GRAPH_PRUNE_UNVERIFIED_NOTICE.en];
+}
+
+// What FULI says next to a graph prune result when its audit entry could not
+// be written; the console's dataFormat.auditFailed carries the same strings.
+export const AUDIT_FAILED_NOTICE = Object.freeze({
+  zh: '本地操作日志（format-operations.json）没有写成：{message}。上面的结果不受影响，但这次清理没有记入日志。',
+  en: 'The local operations log (format-operations.json) could not be written: {message}. The result above stands, '
+    + 'but this prune is not in the log.'
+});
+
+export function auditFailedLines(auditError) {
+  return [AUDIT_FAILED_NOTICE.zh, AUDIT_FAILED_NOTICE.en]
+    .map((wording) => wording.replace('{message}', auditError.message));
 }
 
 // The budget in one wording, said by `fuli migrate prune` and the console's

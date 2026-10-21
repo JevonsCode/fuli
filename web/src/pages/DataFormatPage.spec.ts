@@ -98,6 +98,19 @@ describe('DataFormatPage', () => {
     expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
   })
 
+  it('keeps the unverified prune and says the audit log write failed', async () => {
+    const wrapper = await mountPage()
+    api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [{ label: 'graph (personal)',
+      status: 'applied', migrationId: 'graph/9-group-id-separators' }],
+    pruned: [{ kind: 'prune_unverified', store: 'graph', auditError: { code: 'EISDIR', message: 'disk refused' } }] })
+    await wrapper.get('#data-format-reviewed').trigger('click')
+    await wrapper.get('[data-apply]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-prune-unverified]').exists()).toBe(true)
+    expect(wrapper.get('[data-audit-failed]').text()).toContain('没有写成：disk refused')
+    expect(wrapper.find('[data-result="applied"]').exists()).toBe(true)
+  })
+
   it('leaves the budget out when the server could not read the policy', async () => {
     const wrapper = await mountPage()
     expect(wrapper.find('[data-retention]').exists()).toBe(false)

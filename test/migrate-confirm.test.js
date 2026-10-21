@@ -8,7 +8,9 @@ import test from 'node:test';
 
 import { DataFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
 import { runMigrateCommand } from '../src/cli/migrate-command.js';
-import { GRAPH_PRUNE_UNVERIFIED_NOTICE, graphPruneUnverifiedLines, retentionLines } from '../src/data-format/format-retention.js';
+import {
+  AUDIT_FAILED_NOTICE, GRAPH_PRUNE_UNVERIFIED_NOTICE, graphPruneUnverifiedLines, retentionLines
+} from '../src/data-format/format-retention.js';
 import { personalGraphFormat } from '../src/data-format/graph-format-client.js';
 import { EXTERNAL_WRITERS_NOTICE } from '../src/data-format/external-writers.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
@@ -389,4 +391,63 @@ test('the console says an unverified graph prune in exactly the CLI wording', ()
   const messages = readFileSync(new URL('../web/src/i18n/messages/data-format.ts', import.meta.url), 'utf8');
   assert.ok(messages.includes(`pruneUnverified: '${GRAPH_PRUNE_UNVERIFIED_NOTICE.zh}'`), 'Chinese wording');
   assert.ok(messages.includes(`pruneUnverified: '${GRAPH_PRUNE_UNVERIFIED_NOTICE.en}'`), 'English wording');
+});
+
+// As above, and the disk then refuses the local audit log: the operations
+// log becomes unwritable just as the delete's answer is lost.
+function providerThatLosesTheAnswerAndTheLog(root) {
+  const provider = providerThatLosesTheDeleteAnswer(root);
+  const prune = provider.graph.prune;
+  provider.graph.prune = async (request) => {
+    if (!request.dryRun) {
+      rmSync(join(root, 'format-operations.json'), { force: true });
+      mkdirSync(join(root, 'format-operations.json'));
+    }
+    return prune(request);
+  };
+  return provider;
+}
+
+test('a lost prune answer stays unverified when the audit log cannot be written either', async (t) => {
+  const root = dataDir(t);
+  const { graph, journals } = providerThatLosesTheAnswerAndTheLog(root);
+
+  const result = await migrate(root, ['prune', '--keep', '1'], { graph });
+
+  assert.ok(!journals.has('j5'), 'the provider did delete it');
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.status, 'unverified');
+  assert.equal(result.graph.status, 'unverified');
+  assert.deepEqual(Object.keys(result.graph.auditError).sort(), ['code', 'message']);
+  for (const line of graphPruneUnverifiedLines()) assert.ok(result.output.includes(line), result.output);
+  assert.ok(result.output.includes('could not be written'), result.output);
+});
+
+test('an apply and an undo keep their result and the unverified prune when the audit log cannot be written', async (t) => {
+  const root = dataDir(t);
+  legacyDataDir(root);
+  const { plan } = await migrate(root, ['preview', '--json']);
+  const applied = await migrate(root, ['apply', '--digest', plan.digest],
+    { graph: providerThatLosesTheAnswerAndTheLog(root).graph });
+
+  assert.equal(applied.status, 'applied');
+  assert.equal(applied.exitCode, 0);
+  const unverified = applied.pruned.find((entry) => entry.kind === 'prune_unverified');
+  assert.ok(unverified?.auditError?.code, JSON.stringify(applied.pruned));
+  assert.ok(applied.output.includes(GRAPH_PRUNE_UNVERIFIED_NOTICE.en) && applied.output.includes('could not be written'));
+
+  rmSync(join(root, 'format-operations.json'), { recursive: true, force: true });
+  const undone = await migrate(root, ['rollback', '--store', 'task-schedules.sqlite',
+    '--migration', 'task-schedules/3-run-recovery'], { graph: providerThatLosesTheAnswerAndTheLog(root).graph });
+
+  assert.equal(undone.exitCode, 0);
+  assert.equal(undone.status, 'rolled_back');
+  assert.ok(undone.pruned.find((entry) => entry.kind === 'prune_unverified')?.auditError);
+  assert.ok(undone.output.includes(GRAPH_PRUNE_UNVERIFIED_NOTICE.zh) && undone.output.includes('没有写成'));
+});
+
+test('the console says a failed audit write in exactly the CLI wording', () => {
+  const messages = readFileSync(new URL('../web/src/i18n/messages/data-format.ts', import.meta.url), 'utf8');
+  assert.ok(messages.includes(`auditFailed: '${AUDIT_FAILED_NOTICE.zh}'`), 'Chinese wording');
+  assert.ok(messages.includes(`auditFailed: '${AUDIT_FAILED_NOTICE.en}'`), 'English wording');
 });

@@ -64,7 +64,12 @@ export interface MigrationResult {
 }
 
 // What retention did after the change: a graph prune whose answer never came is 'prune_unverified'.
-export interface PruneEntry { kind: 'pruned' | 'prune_failed' | 'prune_unverified'; store?: string }
+// auditError: the local operations log could not record it; the result stands.
+export interface PruneEntry {
+  kind: 'pruned' | 'prune_failed' | 'prune_unverified' | 'audit_failed'
+  store?: string
+  auditError?: { code: string; message: string }
+}
 
 export interface ApplyOutcome {
   status: 'applied' | 'partial' | 'failed'
@@ -75,6 +80,10 @@ export interface ApplyOutcome {
 
 export function pruneUnverified(pruned: PruneEntry[] | undefined): boolean {
   return (pruned ?? []).some(entry => entry.kind === 'prune_unverified')
+}
+
+export function pruneAuditError(pruned: PruneEntry[] | undefined): string {
+  return (pruned ?? []).find(entry => entry.auditError)?.auditError?.message ?? ''
 }
 
 export const readMigrationPlan = (signal?: AbortSignal) => getJson<MigrationPlan>('/api/data-format', { signal })
