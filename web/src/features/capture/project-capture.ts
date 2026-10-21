@@ -1,5 +1,6 @@
+import { ApiError, apiErrorReason } from '@/api/client'
 import { DATE_ONLY, formatDateTime } from '@/lib/date-time'
-import { currentLocale } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
 import type { CapturePolicy } from '@/types'
 
 // The project layer of the capture settings as a page shows it (rec#5 C2, C4-1):
@@ -31,6 +32,23 @@ export function projectOffSinceDay(policy: CapturePolicy | null | undefined, pro
 // Work outside every registered project is recorded unless the person chose otherwise.
 export function recordsUnregisteredDirectories(policy: CapturePolicy | null | undefined): boolean {
   return (policy?.unregisteredDirectories ?? (projectMode(policy) === 'selected' ? 'skip' : 'capture')) === 'capture'
+}
+
+// What a failed save means for the settings shown (dot review, PR 262). A refusal (4xx)
+// changed nothing. Any other failure may have saved, so the settings are read
+// again before the page shows them; when that read fails too, the state is
+// unknown and the page says so instead of claiming the old state is back.
+export async function failedSaveMessage(error: unknown, reload: () => Promise<void>) {
+  const reason = apiErrorReason(error)
+  if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+    return t('capture.saveFailure.refused', { reason })
+  }
+  try {
+    await reload()
+    return t('capture.saveFailure.reread', { reason })
+  } catch {
+    return t('capture.saveFailure.unknown', { reason })
+  }
 }
 
 // A batch choice as the change to send: only projects whose choice differs from the saved settings.

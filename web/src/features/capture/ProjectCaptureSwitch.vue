@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
-import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import UiToggle from '@/ui/UiToggle.vue'
-import { projectOffSinceDay, projectRecorded } from './project-capture'
+import { failedSaveMessage, projectOffSinceDay, projectRecorded } from './project-capture'
 
 // "记忆这个项目" on a project page (rec#5 C4-1): the switch moves at once, the
 // save shows inline, the settings page reads the same saved settings, and a
-// refused save puts the switch back and says why.
+// failed save says what is known about it. The page renders one instance per
+// project (keyed by its ID), so a request for one project never shows on another.
 const props = defineProps<{ projectId: string; projectName: string }>()
 
 const store = useConsoleStore()
@@ -35,7 +35,7 @@ async function setRecorded(value: boolean) {
   try {
     await store.changeCapturePolicy({ recordProjects: { [props.projectId]: value } })
   } catch (error) {
-    failure.value = t('capture.project.failed', { reason: apiErrorReason(error) })
+    failure.value = await failedSaveMessage(error, () => store.loadCapturePolicy())
   } finally {
     requested.value = null
   }

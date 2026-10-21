@@ -174,17 +174,11 @@ export function finishTask(f, context, sourceApplication = 'codex') {
 
 export const receiptOf = context => context.agent_receipt.markdown;
 
-// A long-term change an Agent makes after the person confirmed its preview in
-// their next message of the same session (rec#5 C4-2).
-export async function confirmedCaptureChange(f, settings, { sourceApplication = 'codex',
-  session = 'synthetic-confirmed-change-session' } = {}) {
-  const turn = async () => (await f.app.taskContextRegistry.begin({ sessionId: session, sourceApplication,
-    personalProjectId: null })).token;
-  const preview = await callAgentTool(f.app, 'update_capture_policy', { ...settings, sourceApplication,
-    taskContextToken: await turn() });
-  if (preview.status !== 'confirmation_required') throw new Error(`Expected a preview, got ${preview.status}`);
-  return callAgentTool(f.app, 'update_capture_policy', { ...settings, sourceApplication, previewToken: preview.previewToken,
-    taskContextToken: await turn() });
+// A long-term change an Agent asked for and the person confirmed in the console (rec#5 C4-2, rec#11 D-16).
+export async function confirmedCaptureChange(f, settings) {
+  const asked = await callAgentTool(f.app, 'update_capture_policy', settings);
+  if (asked.status !== 'confirmation_required') throw new Error(`Expected a preview, got ${asked.status}`);
+  return f.app.captureChanges.confirm(asked.confirmUrl.split('/').at(-1));
 }
 
 export const transcriptRow = text => `${JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant',

@@ -51,7 +51,7 @@ const visibleFrequentProjects = computed(() =>
         </Button>
       </div>
     </header>
-    <ProjectCaptureSwitch class="project-capture-card" :project-id="project.project_id" :project-name="project.profile.name" />
+    <ProjectCaptureSwitch :key="project.project_id" class="project-capture-card" :project-id="project.project_id" :project-name="project.profile.name" />
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
     <section
       class="project-frequent-projects"

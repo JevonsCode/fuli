@@ -56,6 +56,25 @@ describe('console store policies', () => {
     expect(getJson).toHaveBeenCalledWith('/api/capture-policy')
   })
 
+  it('drops a read that started while a save was in flight and answered after it (dot review P2-2, PR 262)', async () => {
+    let answerSave!: (value: unknown) => void
+    patchJson.mockReturnValueOnce(new Promise(resolve => { answerSave = resolve }))
+    let answerRead!: (value: unknown) => void
+    getJson.mockReturnValueOnce(new Promise(resolve => { answerRead = resolve }))
+    const store = useConsoleStore()
+    store.state = { mode: 'personal_only', personalSpaces: [], projects: [], subscriptions: [],
+      capturePolicy: { enabled: true, projectMode: 'all_except', excludedProjectIds: ['a'] } }
+
+    const save = store.changeCapturePolicy({ recordProjects: { a: true } })
+    const read = store.loadCapturePolicy()
+    answerSave({ enabled: true, projectMode: 'all_except', excludedProjectIds: [] })
+    await save
+    // The read left before the save landed; its older answer arrives last.
+    answerRead({ enabled: true, projectMode: 'all_except', excludedProjectIds: ['a'] })
+    await read
+    expect(store.state.capturePolicy?.excludedProjectIds).toEqual([])
+  })
+
   it('keeps only the latest capture save and drops a read that a save overtook (rec#5 C4-4)', async () => {
     let answerFirst!: (value: unknown) => void
     patchJson.mockReturnValueOnce(new Promise(resolve => { answerFirst = resolve }))

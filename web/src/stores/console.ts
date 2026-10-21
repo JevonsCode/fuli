@@ -80,27 +80,39 @@ export const useConsoleStore = defineStore('console', () => {
   }
 
   // The settings as saved now: an Agent may have changed them since the
-  // console state loaded (rec#5 C4-4). A read that a save overtook is dropped.
+  // console state loaded (rec#5 C4-4). A read that overlaps a save in any way
+  // (started during one, or a save started after it) is dropped: the save's
+  // own answer is the settings after it, and a refused save reads again.
   let captureSaves = 0
+  let capturesInFlight = 0
   async function loadCapturePolicy() {
     const saves = captureSaves
+    const overlapped = capturesInFlight > 0
     const policy = await getJson<CapturePolicy>('/api/capture-policy')
-    if (saves === captureSaves) rememberCapturePolicy(policy)
+    if (!overlapped && saves === captureSaves) rememberCapturePolicy(policy)
   }
 
   // Saves at once; the caller shows its own progress and any refusal. Only the
   // latest save's answer is kept, since answers can arrive out of order.
   async function changeCapturePolicy(change: CapturePolicyChange) {
     const save = ++captureSaves
+    capturesInFlight += 1
     try {
       const policy = await patchJson<CapturePolicy>('/api/capture-policy', change)
       if (save === captureSaves) rememberCapturePolicy(policy)
       return policy
     } catch (error) {
       // A refused save changed nothing, but another change may have landed meanwhile.
-      if (save === captureSaves) loadCapturePolicy().catch(() => {})
+      if (save === captureSaves) void refreshAfterRefusal()
       throw error
+    } finally {
+      capturesInFlight -= 1
     }
+  }
+
+  async function refreshAfterRefusal() {
+    await Promise.resolve()
+    await loadCapturePolicy().catch(() => {})
   }
 
   async function updateCapturePolicy(enabled: boolean, disabledSources?: string[]) {
@@ -180,6 +192,7 @@ export const useConsoleStore = defineStore('console', () => {
     updateCapturePolicy,
     loadCapturePolicy,
     changeCapturePolicy,
+    rememberCapturePolicy,
     updateAgentAccessPolicy,
     updateRecallPolicy,
     hasCapability,

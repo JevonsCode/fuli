@@ -7,39 +7,44 @@ import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { projectOff } from './capture-project-mode.js';
 
-// An Agent changes long-term capture settings only after the person confirmed
-// the exact change (rec#5 C4-2). The first call previews: FULI words the change
-// for the person and issues a one-time token; nothing is saved. Only a second
-// call with that token and the same settings saves it, and only:
-// - from a later task context of the same host session, so at least one
-//   message of the person's lies between the preview and the save; FULI never
-//   reads that message, the turn boundary is the evidence;
-// - while the settings are still the ones the preview described, checked
-//   under the lock the save takes, so a console save in between wins.
-// A person who declines ("不用了") is simply not asked again: the token
-// expires and nothing changes. The person's own console saves directly;
-// pausing one session never needs this.
+// An Agent never completes a long-term capture change (rec#5 C4-2, rec#11
+// D-16). Anything an Agent relays (a token, a "yes", a turn) is unverifiable,
+// so the only accepted confirmation is the person's own action in the FULI
+// console. An Agent's request is stored as a preview: the exact sentence FULI
+// wrote, the change asked for, the settings version it was worded against and
+// the client and session that asked. The Agent gets the sentence and a link to
+// the console page that shows it; the console's confirm applies it once, by
+// compare-and-set under the settings' format lock, and only while the settings
+// are still those the sentence described. Cancel, expiry or a stale preview
+// write nothing. The person's own console switches save directly; pausing one
+// session never needs this.
 export const CAPTURE_CHANGE_PREVIEW_FORMAT = jsonFormat({ store: 'capture-change-previews', versions: [1] });
-const PREVIEW_TTL_MS = 10 * 60 * 1000;
+const PREVIEW_TTL_MS = 30 * 60 * 1000;
 const MAX_PENDING_PREVIEWS = 20;
-const TOKEN_BYTES = 18;
+const ID_BYTES = 18;
+const MAX_SNAPSHOT_ATTEMPTS = 5;
 const COMPARED_SETTINGS = Object.freeze(['enabled', 'disabledSources', 'projectMode', 'excludedProjectIds',
   'selectedProjectIds', 'unregisteredDirectories']);
 const CLIENT_LABELS = Object.freeze({ codex: 'Codex', claude: 'Claude', claude_code: 'Claude Code', cursor: 'Cursor',
   kiro: 'Kiro', other: '其他客户端' });
-const CONFIRM_GUIDANCE = 'Nothing changed yet. Show preview to the user word for word and end your turn. Only after their next message confirms it, call update_capture_policy with the same settings, this previewToken and that turn\'s taskContextToken. If they decline or say anything else, do not call it; nothing changes.';
-const PREVIEW_AGAIN = 'Preview the change again and ask the user again.';
+const CONSOLE_GUIDANCE = 'Nothing changed. Show preview and confirmUrl to the user word for word; they confirm or cancel in the FULI console. You cannot complete this change.';
+const NO_CONSOLE_GUIDANCE = 'Nothing changed. Show preview to the user word for word; they can make this change in the FULI console settings. You cannot complete this change.';
+// What the console says for a preview it can no longer apply: unknown, used,
+// expired, or worded against settings that have changed since.
+const RESTART = '设置已变化，请重新发起';
 
-// store: the capture settings (preview, update, version, path). listProjects:
-// async () => the person's projects, so a preview names them as they do.
-// taskContext: async (token, sourceApplication) => the task context a host
-// hook began for one turn of one session.
-export function createCaptureChanges(store, { listProjects, taskContext, now = Date.now }) {
+// store: the capture settings (preview, update, version, read, path).
+// listProjects: async () => the person's projects, so a preview names them as
+// they do. taskContext: async (token, sourceApplication) => the task a host
+// began, to show which session asked. consoleUrl: the local console, or null.
+export function createCaptureChanges(store, { listProjects, taskContext, consoleUrl, now = Date.now }) {
   const previews = new CaptureChangePreviews(store.path ? join(dirname(store.path), 'capture-change-previews.json') : null, now);
-  const ports = { store, previews, taskContext, projectNames: () => projectNames(listProjects) };
+  const ports = { store, previews, taskContext, consoleUrl, projectNames: () => projectNames(listProjects) };
   return Object.freeze({
     propose: (input, caller) => proposeCaptureChange(ports, input, caller),
-    confirm: (input, previewToken, caller) => confirmCaptureChange(ports, input, previewToken, caller)
+    read: previewId => readCaptureChange(ports, previewId),
+    confirm: previewId => confirmCaptureChange(ports, previewId),
+    cancel: previewId => ({ status: previews.take(previewId) ? 'cancelled' : 'gone' })
   });
 }
 
@@ -52,10 +57,10 @@ async function projectNames(listProjects) {
   }
 }
 
-// Pending previews, kept beside the settings so a preview made by one FULI
-// process can be confirmed through another. Only hashes of the preview token
-// and of the task token it was made under are stored. Every change is a
-// read-modify-write under the format lock, so a token is spent once.
+// Pending previews, kept beside the settings so a preview an Agent's process
+// made is found by the console's. Only a hash of each preview's ID is stored.
+// Every change is a read-modify-write under the format lock, so a preview is
+// applied or cancelled once.
 class CaptureChangePreviews {
   constructor(path, now) {
     this.path = path;
@@ -64,25 +69,25 @@ class CaptureChangePreviews {
   }
 
   issue(preview) {
-    const token = randomBytes(TOKEN_BYTES).toString('base64url');
-    const issued = { ...preview, tokenHash: contentHash(token), expiresAt: this.now() + PREVIEW_TTL_MS };
+    const id = randomBytes(ID_BYTES).toString('base64url');
+    const issued = { ...preview, idHash: contentHash(id), expiresAt: this.now() + PREVIEW_TTL_MS };
     this.#change(pending => [...pending, issued].slice(-MAX_PENDING_PREVIEWS));
-    return { token, expiresAt: new Date(issued.expiresAt).toISOString() };
+    return { id, expiresAt: new Date(issued.expiresAt).toISOString() };
   }
 
-  find(token) {
-    const tokenHash = contentHash(token);
+  find(id) {
+    const idHash = contentHash(String(id));
     return this.#pending(this.path ? readPreviews(this.path)?.previews : this.memory)
-      .find(preview => preview.tokenHash === tokenHash) ?? null;
+      .find(preview => preview.idHash === idHash) ?? null;
   }
 
-  // True only for the one call that spends the token.
-  take(token) {
-    const tokenHash = contentHash(token);
-    let taken = false;
+  // The preview, for the one call that removes it; null for every other.
+  take(id) {
+    const idHash = contentHash(String(id));
+    let taken = null;
     this.#change(pending => pending.filter(preview => {
-      if (preview.tokenHash !== tokenHash) return true;
-      taken = true;
+      if (preview.idHash !== idHash) return true;
+      taken = preview;
       return false;
     }));
     return taken;
@@ -111,62 +116,75 @@ function readPreviews(path) {
   }
 }
 
-// The turn a call is made in: the host session's task context its token names.
-async function callerTurn(taskContext, { taskContextToken, sourceApplication }) {
-  if (typeof taskContextToken !== 'string' || !taskContextToken) {
-    throw new ApplicationError('task_context_required', 'Pass the current taskContextToken: a long-term capture change '
-      + 'is confirmed in the person\'s next message of the same session. Without a task, the person changes it in '
-      + 'the console settings.');
+// Which session asked, for the console page only; it authorizes nothing.
+async function askingSession(taskContext, { taskContextToken, sourceApplication }) {
+  if (typeof taskContextToken !== 'string' || !taskContextToken) return null;
+  try {
+    return (await taskContext(taskContextToken, sourceApplication)).sessionId ?? null;
+  } catch {
+    return null;
   }
-  const task = await taskContext(taskContextToken, sourceApplication);
-  return { sessionId: task.sessionId, taskHash: contentHash(task.token), turnId: task.turnId ?? null };
 }
 
-async function proposeCaptureChange({ store, previews, taskContext, projectNames }, input, caller) {
-  const turn = await callerTurn(taskContext, caller);
-  const { current, next } = store.preview(input);
+async function proposeCaptureChange({ store, previews, taskContext, consoleUrl, projectNames }, input, caller) {
+  const { current, next, settingsVersion } = settingsSnapshot(store, input);
   if (sameSettings(current, next)) {
     return { status: 'unchanged', guidance: 'These settings are already in place; tell the user nothing needs to change.' };
   }
-  const { token, expiresAt } = previews.issue({ request: requestOf(input), settingsVersion: store.version(),
-    sourceApplication: caller.sourceApplication, ...turn });
-  return { status: 'confirmation_required', preview: describeCaptureChange(current, next, await projectNames()),
-    previewToken: token, expiresAt, guidance: CONFIRM_GUIDANCE };
+  const preview = describeCaptureChange(current, next, await projectNames());
+  const { id, expiresAt } = previews.issue({ request: input, result: intentOf(next), preview, settingsVersion,
+    sourceApplication: caller.sourceApplication, sessionId: await askingSession(taskContext, caller),
+    createdAt: new Date().toISOString() });
+  return { status: 'confirmation_required', preview, expiresAt,
+    ...(consoleUrl ? { confirmUrl: `${consoleUrl}/capture-change/${id}`, guidance: CONSOLE_GUIDANCE }
+      : { guidance: NO_CONSOLE_GUIDANCE }) };
 }
 
-async function confirmCaptureChange({ store, previews, taskContext }, input, previewToken, caller) {
-  const turn = await callerTurn(taskContext, caller);
-  const preview = previews.find(previewToken);
-  const expired = () => new ApplicationError('preview_expired',
-    `This capture change preview is unknown, used or expired. ${PREVIEW_AGAIN}`);
-  // Another client's or another session's preview is not this caller's to spend.
-  if (!preview || preview.sourceApplication !== caller.sourceApplication || preview.sessionId !== turn.sessionId) {
-    throw expired();
+// The settings, the change's result and their version, all from one moment:
+// a save landing in between would let the sentence describe one state and
+// the version name another (dot review, PR 262), so the reading is taken again.
+function settingsSnapshot(store, input) {
+  for (let attempt = 1; ; attempt += 1) {
+    const settingsVersion = store.version();
+    const { current, next } = store.preview(input);
+    if (store.version() === settingsVersion) return { current, next, settingsVersion };
+    if (attempt >= MAX_SNAPSHOT_ATTEMPTS) throw stale();
   }
-  // Still the turn that showed the preview: the person has not answered yet, so the token stays valid.
-  if (preview.taskHash === turn.taskHash || (preview.turnId !== null && preview.turnId === turn.turnId)) {
-    throw new ApplicationError('preview_unconfirmed', 'The person has not answered the preview yet. End your turn '
-      + 'with the preview; confirm only after their next message, with that turn\'s taskContextToken.');
-  }
-  if (!previews.take(previewToken)) throw expired();
-  if (preview.request !== requestOf(input)) {
-    throw new ApplicationError('preview_mismatch', `These settings differ from the change the user confirmed. ${PREVIEW_AGAIN}`);
-  }
-  // The preview described a change to the settings as they were then.
-  const stale = () => new ApplicationError('preview_stale', `The capture settings changed after the preview. ${PREVIEW_AGAIN}`);
+}
+
+// The console page's view of one preview: its sentence, the change setting by
+// setting, the settings now, and whether it can still be applied.
+function readCaptureChange({ store, previews }, previewId) {
+  const preview = previews.find(previewId);
+  if (!preview) throw gone();
+  const { current, next } = store.preview(preview.request);
+  return { status: preview.settingsVersion === store.version() ? 'pending' : 'stale', preview: preview.preview,
+    sourceApplication: preview.sourceApplication, sessionId: preview.sessionId, createdAt: preview.createdAt,
+    expiresAt: new Date(preview.expiresAt).toISOString(), current: store.read(),
+    changes: COMPARED_SETTINGS.filter(key => canonicalJson(current[key]) !== canonicalJson(next[key]))
+      .map(key => ({ setting: key, before: current[key], after: next[key] })) };
+}
+
+function confirmCaptureChange({ store, previews }, previewId) {
+  const preview = previews.take(previewId);
+  if (!preview) throw gone();
   if (preview.settingsVersion !== store.version()) throw stale();
   try {
-    return store.update(input, { ifVersion: preview.settingsVersion });
+    // The settings are those the sentence was written from, and the change still comes out as it said.
+    return store.update(preview.request, { ifVersion: preview.settingsVersion,
+      accept: next => intentOf(next) === preview.result });
   } catch (error) {
     if (error?.code === 'capture_settings_changed') throw stale();
     throw error;
   }
 }
 
-// The change asked for, in one form whatever the order of its keys and lists.
-function requestOf(input) {
-  return canonicalJson(Object.fromEntries(Object.entries(input).map(([key, value]) =>
-    [key, Array.isArray(value) ? [...value].sort() : value])), { omitUndefined: true });
+function gone() {
+  return new ApplicationError('preview_expired', RESTART, { status: 410 });
+}
+
+function stale() {
+  return new ApplicationError('preview_stale', RESTART, { status: 409 });
 }
 
 function intentOf(settings) {

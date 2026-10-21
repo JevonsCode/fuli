@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -12,7 +12,7 @@ import { useConsoleStore } from '@/stores/console'
 import UiToggle from '@/ui/UiToggle.vue'
 import type { CapturePolicyChange } from '@/types'
 import {
-  changedProjectSwitches, PROJECT_MODES, projectMode, projectOffSinceDay, projectRecorded,
+  changedProjectSwitches, failedSaveMessage, PROJECT_MODES, projectMode, projectOffSinceDay, projectRecorded,
   recordsUnregisteredDirectories, type ProjectMode,
 } from './project-capture'
 
@@ -38,21 +38,21 @@ const mode = computed(() => pending.value?.kind === 'mode' ? pending.value.mode 
 const recordsUnregistered = computed(() => pending.value?.kind === 'unregistered' ? pending.value.record
   : recordsUnregisteredDirectories(policy.value))
 
-// The checked projects, starting from the saved settings; a saved change or a
-// fresh read starts them over unless the person is choosing.
-const chosen = ref<Record<string, boolean>>({})
-const choosing = ref(false)
-const changes = computed(() => changedProjectSwitches(policy.value, chosen.value))
+// Only the projects the person ticked here are theirs to save; every other
+// project shows, and keeps, whatever the saved settings say now, so a switch
+// made elsewhere meanwhile (the project page, an Agent's confirmed request)
+// is never sent back (dot review P2-1, PR 262).
+const touched = ref<Record<string, boolean>>({})
+const chosen = computed(() => Object.fromEntries(projects.value.map(project => [project.id,
+  touched.value[project.id] ?? projectRecorded(policy.value, project.id)])))
+const changes = computed(() => changedProjectSwitches(policy.value, touched.value))
 const changeCount = computed(() => Object.keys(changes.value).length)
 const recordedCount = computed(() => projects.value.filter(project => chosen.value[project.id]).length)
 function resetChoices() {
-  chosen.value = Object.fromEntries(projects.value.map(project => [project.id, projectRecorded(policy.value, project.id)]))
-  choosing.value = false
+  touched.value = {}
 }
-watch([policy, projects], () => { if (!choosing.value) resetChoices() }, { immediate: true })
 function choose(next: Record<string, boolean>) {
-  chosen.value = { ...chosen.value, ...next }
-  choosing.value = true
+  touched.value = { ...touched.value, ...next }
 }
 
 onMounted(async () => {
@@ -73,7 +73,7 @@ async function save(next: Pending, change: CapturePolicyChange, saved = '') {
     if (next.kind === 'projects') resetChoices()
     if (saved) message.value = { tone: 'status', text: saved }
   } catch (error) {
-    message.value = { tone: 'error', text: t('capture.settings.failed', { reason: apiErrorReason(error) }) }
+    message.value = { tone: 'error', text: await failedSaveMessage(error, () => store.loadCapturePolicy()) }
   } finally {
     pending.value = null
   }

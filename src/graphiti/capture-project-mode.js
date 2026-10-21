@@ -48,18 +48,25 @@ export function updatedProjectSettings(current, input, now) {
 }
 
 // Project switches applied to the settings they are saved with, so a page or
-// an Agent never resends lists it read before someone else's change. Turning
-// a project off while every project is recorded starts excluding it; the
-// handling of unregistered directories stays as it was.
+// an Agent never resends lists it read before someone else's change. The
+// resulting mode and the state the person sees come first, then the whole
+// delta applies to it: while every project is recorded, turning some off
+// excludes exactly those, and a list left over from an earlier mode stays
+// unused (dot review, PR 262). The handling of unregistered directories stays as it was.
 function withProjectsRecorded(settings, recordProjects) {
   if (recordProjects === undefined) return settings;
+  const switches = projectSwitches(recordProjects);
   let { projectMode } = settings;
-  const excluded = new Set(settings.excludedProjectIds);
+  let excluded = new Set(settings.excludedProjectIds);
   const selected = new Set(settings.selectedProjectIds);
-  for (const [id, recorded] of projectSwitches(recordProjects)) {
-    if (projectMode === 'all' && !recorded) projectMode = 'all_except';
+  if (projectMode === 'all') {
+    if (switches.every(([, recorded]) => recorded)) return settings;
+    projectMode = 'all_except';
+    excluded = new Set();
+  }
+  for (const [id, recorded] of switches) {
     if (projectMode === 'all_except') recorded ? excluded.delete(id) : excluded.add(id);
-    if (projectMode === 'selected') recorded ? selected.add(id) : selected.delete(id);
+    else recorded ? selected.add(id) : selected.delete(id);
   }
   return { ...settings, projectMode, excludedProjectIds: [...excluded].sort(), selectedProjectIds: [...selected].sort() };
 }

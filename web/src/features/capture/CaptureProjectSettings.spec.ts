@@ -79,6 +79,24 @@ describe('CaptureProjectSettings (rec#5 C4-1)', () => {
     wrapper.unmount()
   })
 
+  it('saves only the projects ticked here; one switched off elsewhere meanwhile stays off (dot review P2-1, PR 262)', async () => {
+    const { wrapper, patches, store } = mountSettings({ enabled: true },
+      async body => Response.json({ enabled: true, projectMode: 'all_except',
+        excludedProjectIds: ['job-hunt', ...Object.keys(body.recordProjects as Record<string, boolean>)] }))
+    await flushPromises()
+    // The person unticks 毕业论文 here…
+    await wrapper.get('[data-capture-project="thesis"] [role="checkbox"]').trigger('click')
+    // …while 求职准备 is switched off on its project page (or by a confirmed Agent request).
+    store.rememberCapturePolicy({ enabled: true, projectMode: 'all_except', excludedProjectIds: ['job-hunt'] })
+    await flushPromises()
+    expect(checked(wrapper)).toEqual([['thesis', 'false'], ['job-hunt', 'false'], ['novel', 'true']])
+    await wrapper.get('[data-capture-projects-save]').trigger('click')
+    await flushPromises()
+    expect(patches).toEqual([{ recordProjects: { thesis: false } }])
+    expect(checked(wrapper)).toEqual([['thesis', 'false'], ['job-hunt', 'false'], ['novel', 'true']])
+    wrapper.unmount()
+  })
+
   it('keeps the saved settings and says why when a change is refused', async () => {
     const { wrapper } = mountSettings({ enabled: true },
       async () => Response.json({ error: 'Capture policy unregisteredDirectories must be one of capture, skip' }, { status: 400 }))

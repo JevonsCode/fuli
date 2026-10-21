@@ -216,13 +216,13 @@ test('C5-1 C5-2 the notice is on every turn and carries none of the turn', async
   assert.deepEqual(f.captureWrites(), []);
 });
 
-test('the Agent can read and change project modes, and is told to confirm first', async (t) => {
+test('the Agent can read and ask to change project modes; the person confirms in the console', async (t) => {
   const f = await fixture(t);
   const update = listAgentTools().find(tool => tool.name === 'update_capture_policy');
-  assert.match(update.description, /preview/i);
-  assert.match(update.description, /confirm/i);
+  assert.match(update.description, /never saved by this tool/);
+  assert.match(update.description, /confirm or cancel in the FULI console/);
   assert.deepEqual(Object.keys(update.inputSchema.properties).sort(), ['disabledSources', 'enabled',
-    'excludedProjectIds', 'previewToken', 'projectMode', 'recordProjects', 'selectedProjectIds', 'sessionPaused',
+    'excludedProjectIds', 'projectMode', 'recordProjects', 'selectedProjectIds', 'sessionPaused',
     'taskContextToken', 'unregisteredDirectories']);
   assert.equal(update.inputSchema.required, undefined, 'a project change does not resend the global switch');
   const read = listAgentTools().find(tool => tool.name === 'get_capture_policy');
