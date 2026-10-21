@@ -18,7 +18,8 @@ export function createClientInstaller({ paths, runtimeConfigPath = paths.graphRu
       const result = await install(agent, {
         defaultToolProfile: 'chat', nodePath: process.execPath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath,
         sessionSkillPath: paths.sessionSkillPath, projectSkillPath: paths.projectSkillPath,
-        reviewSkillPath: paths.reviewSkillPath, operationSkillPath: paths.operationSkillPath
+        reviewSkillPath: paths.reviewSkillPath, operationSkillPath: paths.operationSkillPath,
+        sessionCommandSkillPath: paths.sessionCommandSkillPath
       }, paths);
       // Do not expose config/backup paths or raw filesystem diagnostics over HTTP.
       return { id: agent.id, status: result.status, restartRequired: result.status === 'connected' };

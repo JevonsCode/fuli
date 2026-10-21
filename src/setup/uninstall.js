@@ -23,7 +23,8 @@ export function planLocalUninstall(options, {
     (agent.skillPath && fileExists(agent.skillPath)) ||
     (agent.projectSkillPath && fileExists(agent.projectSkillPath)) ||
     (agent.reviewSkillPath && fileExists(agent.reviewSkillPath)) ||
-    (agent.operationSkillPath && fileExists(agent.operationSkillPath))
+    (agent.operationSkillPath && fileExists(agent.operationSkillPath)) ||
+    (agent.sessionCommandSkillPath && fileExists(agent.sessionCommandSkillPath))
   ));
   return { paths, agents };
 }
@@ -61,12 +62,14 @@ export async function applyLocalUninstall(plan, dependencies = {}) {
       connection = { status: 'failed' };
     }
 
+    // A client without a Skill path (e.g. no session command Skill on Codex) has nothing to remove there.
     for (const [skillPath, sourcePath] of [
       [agent.skillPath, plan.paths.sessionSkillPath],
       [agent.projectSkillPath, plan.paths.projectSkillPath],
       [agent.reviewSkillPath, plan.paths.reviewSkillPath],
-      [agent.operationSkillPath, plan.paths.operationSkillPath]
-    ]) {
+      [agent.operationSkillPath, plan.paths.operationSkillPath],
+      [agent.sessionCommandSkillPath, plan.paths.sessionCommandSkillPath]
+    ].filter(([skillPath]) => skillPath)) {
       try {
         skills.push(removeSkill({ ...agent, skillPath }, { sourcePath }));
       } catch (error) {

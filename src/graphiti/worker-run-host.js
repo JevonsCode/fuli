@@ -9,7 +9,7 @@ const taskToken = value => typeof value === 'string' && /^fuli-task-[a-zA-Z0-9-]
 const knownFailures = new Set(['worker_authentication_required', 'worker_authentication_unknown', 'worker_workspace_untrusted', 'worker_model_unavailable',
   'worker_model_mismatch', 'worker_cancelled', 'worker_timeout', 'worker_connection_closed', 'worker_cleanup_incomplete',
   'worker_identity_mismatch', 'worker_model_strategy_unmapped', 'worker_result_mismatch', 'worker_authority_unavailable',
-  'worker_runtime_offline', 'worker_runtime_recovery', 'worker_capture_link_failed']);
+  'worker_runtime_offline', 'worker_runtime_recovery', 'worker_capture_link_failed', 'worker_session_stopped']);
 
 // A trusted host creates one attempt, never a model-facing tool or a scheduler.
 // Retain the same capability and idempotency key when recovering a lost prepare;
@@ -17,8 +17,11 @@ const knownFailures = new Set(['worker_authentication_required', 'worker_authent
 // linkCaptureSession(child, parent) records that the worker session was started
 // by the coordinator's session, so pausing that session pauses the worker's
 // recording too (rec#5 C3-6). A worker whose link cannot be kept never starts work.
+// sessionFuliOff(sessionId) says whether FULI is off for a session (rec#5 C3b):
+// a worker of a stopped coordinator session starts no process, and one whose
+// coordinator stopped while it was being prepared sends no prompt.
 export function createWorkerRunAttempt({ provider, leases, adapter, request, projectPath, taskPrompt, toolNames,
-  leaseExecutor = false, linkCaptureSession = null, capability = randomBytes(32).toString('hex'),
+  leaseExecutor = false, linkCaptureSession = null, sessionFuliOff = null, capability = randomBytes(32).toString('hex'),
   pollIntervalMs = 1000, pollTimeoutMs = 5000, maxDurationMs = 30 * 60_000 }) {
   for (const value of [pollIntervalMs, pollTimeoutMs, maxDurationMs]) {
     if (!Number.isSafeInteger(value) || value < 1 || value > 60 * 60_000) throw failure('invalid_attempt');
@@ -106,6 +109,7 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
       if (parent?.token !== selection.task_context_token || parent.personal_space_id !== scope.personal_space_id ||
           parent.personal_project_id !== scope.personal_project_id || parent.source_application !== selection.source_application ||
           !bounded(parent.session_id, 256)) throw failure('identity_mismatch');
+      if (sessionFuliOff?.(parent.session_id)) throw failure('session_stopped');
       checkCancelled();
       stage = 'prepare';
       const prepared = checkRun(await provider.prepareProjectAgentWorkerRun({ ...selection,
@@ -155,6 +159,7 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
         runningRecorded = true;
         stage = 'dispatch';
         checkCancelled();
+        if (sessionFuliOff?.(sessionId)) throw failure('session_stopped');
         // Set the uncertainty flag before the call: a lost ACK may have committed.
         promptDispatched = true;
         const dispatched = await provider.dispatchProjectAgentWorkerPrompt(runId, scope, { capability, signal });
@@ -180,7 +185,7 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
         : knownFailures.has(error?.code) ? error.code : `worker_${stage}_failed`;
       outcome = { status: code.endsWith('_cancelled') ? 'cancelled'
         : ['worker_authentication_required', 'worker_authentication_unknown', 'worker_workspace_untrusted', 'worker_model_unavailable',
-          'worker_model_strategy_unmapped'].includes(code) ? 'blocked'
+          'worker_model_strategy_unmapped', 'worker_session_stopped'].includes(code) ? 'blocked'
           : stage === 'checkpoint' && !['worker_identity_mismatch', 'worker_result_mismatch'].includes(code)
             ? 'incomplete' : 'failed', code };
       if (error?.cleanupIncomplete || code === 'worker_cleanup_incomplete') cleanupErrors.push('worker_process_cleanup_incomplete');

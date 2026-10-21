@@ -18,7 +18,8 @@ export async function installAgent(agent, context, paths, {
       [agent, paths.sessionSkillPath],
       [{ ...agent, skillPath: agent.projectSkillPath }, paths.projectSkillPath],
       [{ ...agent, skillPath: agent.reviewSkillPath }, paths.reviewSkillPath],
-      [{ ...agent, skillPath: agent.operationSkillPath }, paths.operationSkillPath]
+      [{ ...agent, skillPath: agent.operationSkillPath }, paths.operationSkillPath],
+      [{ ...agent, skillPath: agent.sessionCommandSkillPath }, paths.sessionCommandSkillPath]
     ].filter(([target]) => target.skillPath)) {
       skills.push(await installSkill(target, {
         sourcePath,

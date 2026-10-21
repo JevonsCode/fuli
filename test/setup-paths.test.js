@@ -92,6 +92,7 @@ test('setup paths honor an explicit data directory and resolve runtime entries',
   assert.equal(paths.projectSkillPath, join(PACKAGE_ROOT, 'skills', 'grilling-project'));
   assert.equal(paths.reviewSkillPath, join(PACKAGE_ROOT, 'skills', 'flreview'));
   assert.equal(paths.operationSkillPath, join(PACKAGE_ROOT, 'skills', 'operating-fuli'));
+  assert.equal(paths.sessionCommandSkillPath, join(PACKAGE_ROOT, 'skills', 'fuli'));
 });
 
 test('a Windows portable bundle exposes its folder as the removal root; other installs do not', async () => {

@@ -157,3 +157,13 @@ test('Windows portable data checks accept backslashes and reject another drive',
   assert.equal(removalTarget({ portableRoot: 'C:\\Portable Fuli', dataDir: 'C:\\Portable Fuli\\..data\\graph' }).dataInside, true);
   assert.equal(removalTarget({ portableRoot: 'C:\\Portable Fuli', dataDir: 'D:\\Portable Fuli\\data' }).dataInside, false);
 });
+
+test('uninstall removes the /fuli session command Skill where it was installed', async () => {
+  const removed = [];
+  await applyLocalUninstall({ paths: { ...PLAN.paths, sessionCommandSkillPath: 'C:/Package/skills/fuli' },
+    agents: [{ ...PLAN.agents[0], id: 'claude-code', sessionCommandSkillPath: 'C:/Claude/skills/fuli' }] }, {
+    stopRuntime: async () => ({ status: 'stopped' }), backupConfig: () => null, disconnect: () => ({ status: 'disconnected' }),
+    removeSkill: (agent, { sourcePath }) => { removed.push([agent.skillPath, sourcePath]); return { status: 'removed' }; }
+  });
+  assert.deepEqual(removed.at(-1), ['C:/Claude/skills/fuli', 'C:/Package/skills/fuli']);
+});
