@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -8,8 +9,13 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { createRemoteMcpHttpServer } from '../src/mcp/remote-http-server.js';
+import { isFetchBlockedPort } from '../src/server/blocked-ports.js';
 
 const TOKEN = 'synthetic-remote-mcp-token-1234567890';
+// A shutdown grace twice the test timeout. Tests that exercise ordering or the
+// drain use it so a loaded scheduler can never reach the forced close first;
+// close() still settles as soon as the connections end.
+const UNREACHED_GRACE_MS = 10_000;
 
 function initializeBody(id = 1) {
   return {
@@ -20,6 +26,43 @@ function initializeBody(id = 1) {
       protocolVersion: '2025-06-18',
       capabilities: {},
       clientInfo: { name: 'fuli-remote-test', version: '1.0.0' }
+    }
+  };
+}
+
+// Resolves once the server has parsed the headers of the matching request and
+// its handler has started, so a test can order work after that point.
+function serverRequest(remote, matches = () => true) {
+  return new Promise((resolve) => {
+    const onRequest = (request, response) => {
+      if (!matches(request)) return;
+      remote.server.off('request', onRequest);
+      resolve({ request, response });
+    };
+    remote.server.on('request', onRequest);
+  });
+}
+
+// Resolves once the server has observed the client abort the matching request.
+async function serverObservedAbort(remote, matches) {
+  const { response } = await serverRequest(remote, matches);
+  if (!response.closed) await once(response, 'close');
+}
+
+// A real MCP server whose first close (idle eviction, shutdown) is observable.
+function closeObservedMcp() {
+  const closed = Promise.withResolvers();
+  return {
+    closed: closed.promise,
+    createMcp: (app, options) => {
+      const mcp = createMcpServer(app, options);
+      return {
+        connect: transport => mcp.connect(transport),
+        close: () => {
+          closed.resolve();
+          return mcp.close();
+        }
+      };
     }
   };
 }
@@ -502,10 +545,12 @@ test('remote MCP re-resolves a session evicted while a POST body is uploading', 
   timeout: 5_000
 }, async (t) => {
   let clock = 1_000;
+  const session = closeObservedMcp();
   const remote = await startRemote({
     sessionIdleTtlMs: 20,
     sessionSweepIntervalMs: 5,
-    now: () => clock
+    now: () => clock,
+    createMcp: session.createMcp
   });
   t.after(() => remote.close());
   const transport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
@@ -520,32 +565,22 @@ test('remote MCP re-resolves a session evicted while a POST body is uploading', 
     jsonrpc: '2.0', id: 77, method: 'tools/list', params: {}
   })}`;
   const splitAt = Math.floor(body.length / 2);
-  const responsePromise = new Promise((resolve, reject) => {
-    const request = httpRequest(`${remote.url}/mcp`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${TOKEN}`,
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
-        'mcp-session-id': sessionId,
-        'mcp-protocol-version': '2025-06-18',
-        'content-length': Buffer.byteLength(body)
-      }
-    }, (response) => {
-      const chunks = [];
-      response.on('data', chunk => chunks.push(chunk));
-      response.on('end', () => resolve({
-        status: response.statusCode,
-        body: JSON.parse(Buffer.concat(chunks).toString('utf8'))
-      }));
-    });
-    request.on('error', reject);
-    request.write(body.slice(0, splitAt));
-    setTimeout(() => {
-      clock += 1_000;
-      setTimeout(() => request.end(body.slice(splitAt)), 20);
-    }, 10);
+  const uploading = serverRequest(remote, request => request.method === 'POST');
+  const { request, response: responsePromise } = jsonRequest(`${remote.url}/mcp`, {
+    authorization: `Bearer ${TOKEN}`,
+    'content-type': 'application/json',
+    accept: 'application/json, text/event-stream',
+    'mcp-session-id': sessionId,
+    'mcp-protocol-version': '2025-06-18',
+    'content-length': Buffer.byteLength(body)
   });
+  request.write(body.slice(0, splitAt));
+  // The handler resolved the live session from the headers and is now reading
+  // the body. Expire it and let the sweeper retire it before the upload ends.
+  await uploading;
+  clock += 1_000;
+  await session.closed;
+  request.end(body.slice(splitAt));
   const response = await responsePromise;
   assert.equal(response.status, 404);
   assert.equal(response.body.error.message, 'Invalid or missing MCP session');
@@ -638,12 +673,39 @@ test('remote MCP absorbs and exposes post-listen server errors', async () => {
   }
 });
 
+test('remote MCP rebinds an ephemeral port that fetch refuses', async (t) => {
+  const refused = [];
+  const remote = await startRemote({
+    isBlockedPort: (port) => {
+      if (refused.length === 0) refused.push(port);
+      return refused.includes(port) || isFetchBlockedPort(port);
+    }
+  });
+  t.after(() => remote.close());
+  assert.equal(refused.length, 1);
+  assert.notEqual(new URL(remote.url).port, String(refused[0]));
+  const response = await fetch(`${remote.url}/mcp`, { method: 'POST' });
+  assert.equal(response.status, 401);
+});
+
+test('remote MCP refuses a configured port that fetch refuses', async () => {
+  await assert.rejects(() => startRemote({ port: 6000 }), /Port 6000 is blocked for local fetch/);
+});
+
+test('remote MCP stops rebinding when every ephemeral port is refused', async () => {
+  await assert.rejects(
+    () => startRemote({ isBlockedPort: () => true }),
+    /No port outside the fetch block list was available after 20 attempts/
+  );
+});
+
 test('remote MCP rejects an initialization that finishes connecting after shutdown starts', {
   timeout: 5_000
 }, async (t) => {
   const connectStarted = Promise.withResolvers();
   const releaseConnect = Promise.withResolvers();
   const remote = await startRemote({
+    shutdownGraceMs: UNREACHED_GRACE_MS,
     createMcp: () => ({
       connect: async () => {
         connectStarted.resolve();
@@ -676,7 +738,7 @@ test('remote MCP lets a dispatched initialization finish within shutdown grace',
   const dispatchStarted = Promise.withResolvers();
   const releaseDispatch = Promise.withResolvers();
   const remote = await startRemote({
-    shutdownGraceMs: 250,
+    shutdownGraceMs: UNREACHED_GRACE_MS,
     createMcp: (app, options) => {
       const mcp = createMcpServer(app, options);
       return {
@@ -733,7 +795,9 @@ test('remote MCP reconciles a response closed before in-flight listeners attach'
   const dispatchStarted = Promise.withResolvers();
   const releaseDispatch = Promise.withResolvers();
   const remote = await startRemote({
-    shutdownGraceMs: 250,
+    // close() can settle only by reconciling the already-closed response; a
+    // held in-flight counter would wait for the grace and time the test out.
+    shutdownGraceMs: UNREACHED_GRACE_MS,
     createMcp: (app, options) => {
       const mcp = createMcpServer(app, options);
       return {
@@ -769,20 +833,21 @@ test('remote MCP reconciles a response closed before in-flight listeners attach'
   });
   t.after(() => request.destroy());
   request.on('error', () => {});
+  const aborted = serverObservedAbort(remote);
   request.end(body);
   await connectStarted.promise;
   request.destroy();
-  await delay(25);
+  await aborted;
   releaseConnect.resolve();
   await dispatchStarted.promise;
-  const startedAt = Date.now();
   const closing = remote.close();
   releaseDispatch.resolve();
   await closing;
-  assert.ok(
-    Date.now() - startedAt < 200,
-    'a previously closed response held the in-flight counter until the shutdown deadline'
-  );
+  assert.deepEqual(remote.stats(), {
+    activeSessions: 0,
+    pendingSessions: 0,
+    closing: true
+  });
 });
 
 test('remote MCP removes an initialized session whose response was not delivered', {
@@ -828,11 +893,12 @@ test('remote MCP removes an initialized session whose response was not delivered
   });
   t.after(() => request.destroy());
   request.on('error', () => {});
+  const aborted = serverObservedAbort(remote);
   request.end(body);
   try {
     await connectStarted.promise;
     request.destroy();
-    await delay(25);
+    await aborted;
     releaseConnect.resolve();
     await dispatchFinished.promise;
     await delay(10);
@@ -854,7 +920,9 @@ test('remote MCP does not refresh idle liveness for an aborted POST', {
   const callStarted = Promise.withResolvers();
   const releaseCall = Promise.withResolvers();
   const callFinished = Promise.withResolvers();
+  const session = closeObservedMcp();
   const remote = await startRemote({
+    createMcp: session.createMcp,
     app: {
       getCollaborationPreferences: async () => {
         callStarted.resolve();
@@ -903,17 +971,22 @@ test('remote MCP does not refresh idle liveness for an aborted POST', {
   t.after(() => request.destroy());
   request.on('error', () => {});
   request.on('response', response => response.resume());
+  const aborted = serverObservedAbort(
+    remote,
+    incoming => incoming.method === 'POST' && incoming.headers['mcp-session-id'] === sessionId
+  );
   request.end(body);
   try {
     await callStarted.promise;
     request.destroy();
-    await delay(25);
+    await aborted;
     clock = 1_500;
     releaseCall.resolve();
     await callFinished.promise;
-    await delay(20);
+    // Past the TTL from the initialization, but not from the aborted call. An
+    // aborted call that refreshed liveness would never be evicted.
     clock = 2_101;
-    await delay(30);
+    await session.closed;
     assert.equal(remote.stats().activeSessions, 0);
   } finally {
     releaseCall.resolve();
@@ -921,7 +994,9 @@ test('remote MCP does not refresh idle liveness for an aborted POST', {
   }
 });
 
-test('remote MCP bounds shutdown even when a client trickles a request body', async (t) => {
+test('remote MCP bounds shutdown even when a client trickles a request body', {
+  timeout: 5_000
+}, async (t) => {
   const remote = await startRemote({ shutdownGraceMs: 20 });
   t.after(() => remote.close());
   const body = JSON.stringify(initializeBody());
@@ -935,11 +1010,13 @@ test('remote MCP bounds shutdown even when a client trickles a request body', as
   });
   t.after(() => request.destroy());
   request.on('error', () => {});
+  const uploading = serverRequest(remote);
   request.write(body.slice(0, 8));
-  await delay(5);
-  const startedAt = Date.now();
+  await uploading;
+  // The client never finishes its body, so close() can settle only through the
+  // shutdown grace; an unbounded shutdown times the test out.
   await remote.close();
-  assert.ok(Date.now() - startedAt < 500, 'shutdown exceeded its connection grace period');
+  assert.equal(remote.server.listening, false);
   request.destroy();
 });
 
@@ -956,7 +1033,7 @@ test('remote MCP lets an in-flight tool response finish within shutdown grace', 
         return { effective_preferences: [], deferred_conflicts: [] };
       }
     },
-    shutdownGraceMs: 250
+    shutdownGraceMs: UNREACHED_GRACE_MS
   });
   t.after(() => {
     release.resolve();
@@ -1010,7 +1087,7 @@ test('remote MCP absorbs synchronous session-close failures', async (t) => {
 });
 
 test('remote MCP bounds shutdown when a session close never settles', {
-  timeout: 2_000
+  timeout: 5_000
 }, async (t) => {
   const remote = await startRemote({
     shutdownGraceMs: 20,
@@ -1029,10 +1106,12 @@ test('remote MCP bounds shutdown when a session close never settles', {
   const client = new Client({ name: 'fuli-hung-close-test', version: '1.0.0' });
   t.after(() => client.close());
   await client.connect(transport);
-  const startedAt = Date.now();
+  // The session close never settles, so close() can settle only through the
+  // 20 ms shutdown grace. The guard only tells that apart from a hang; it does
+  // not measure how fast a loaded scheduler reaches the deadline.
   const outcome = await Promise.race([
     remote.close().then(() => 'closed'),
-    delay(500, 'timed-out')
+    delay(4_000, 'timed-out', { ref: false })
   ]);
   await client.close().catch(() => {});
   if (outcome !== 'closed') {
@@ -1040,42 +1119,38 @@ test('remote MCP bounds shutdown when a session close never settles', {
     remote.server.close();
   }
   assert.equal(outcome, 'closed');
-  assert.ok(Date.now() - startedAt < 500, 'session close exceeded the shutdown deadline');
 });
 
-test('remote MCP rejects an initialization whose body finishes after shutdown starts', async (t) => {
-  const remote = await startRemote();
+test('remote MCP rejects an initialization whose body finishes after shutdown starts', {
+  timeout: 5_000
+}, async (t) => {
+  let sessionsCreated = 0;
+  const remote = await startRemote({
+    shutdownGraceMs: UNREACHED_GRACE_MS,
+    createMcp: (app, options) => {
+      sessionsCreated += 1;
+      return createMcpServer(app, options);
+    }
+  });
   t.after(() => remote.close());
   const body = JSON.stringify(initializeBody());
   const splitAt = Math.floor(body.length / 2);
-  const responsePromise = new Promise((resolve, reject) => {
-    const request = httpRequest(`${remote.url}/mcp`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${TOKEN}`,
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
-        'content-length': Buffer.byteLength(body)
-      }
-    }, (response) => {
-      const chunks = [];
-      response.on('data', chunk => chunks.push(chunk));
-      response.on('end', () => resolve({
-        status: response.statusCode,
-        body: JSON.parse(Buffer.concat(chunks).toString('utf8'))
-      }));
-    });
-    request.on('error', reject);
-    request.write(body.slice(0, splitAt));
-    setTimeout(() => request.end(body.slice(splitAt)), 20);
+  const uploading = serverRequest(remote);
+  const { request, response: responsePromise } = jsonRequest(`${remote.url}/mcp`, {
+    authorization: `Bearer ${TOKEN}`,
+    'content-type': 'application/json',
+    accept: 'application/json, text/event-stream',
+    'content-length': Buffer.byteLength(body)
   });
-
-  await delay(5);
+  request.write(body.slice(0, splitAt));
+  await uploading;
   const closing = remote.close();
+  request.end(body.slice(splitAt));
   const response = await responsePromise;
   await closing;
   assert.equal(response.status, 503);
   assert.equal(response.body.error.code, -32000);
+  assert.equal(sessionsCreated, 0);
   assert.deepEqual(remote.stats(), {
     activeSessions: 0,
     pendingSessions: 0,
@@ -1084,25 +1159,31 @@ test('remote MCP rejects an initialization whose body finishes after shutdown st
 });
 
 function rawJsonRequest(url, body, headers = {}) {
-  return new Promise((resolve, reject) => {
-    const request = httpRequest(url, {
-      method: 'POST',
-      headers: {
-        ...headers,
-        'content-length': Buffer.byteLength(JSON.stringify(body))
-      }
-    }, (response) => {
+  const text = JSON.stringify(body);
+  const { request, response } = jsonRequest(url, {
+    ...headers,
+    'content-length': Buffer.byteLength(text)
+  });
+  request.end(text);
+  return response;
+}
+
+// Opens a POST whose body the caller writes, and parses its JSON response.
+function jsonRequest(url, headers) {
+  let request;
+  const response = new Promise((resolve, reject) => {
+    request = httpRequest(url, { method: 'POST', headers }, (incoming) => {
       const chunks = [];
-      response.on('data', chunk => chunks.push(chunk));
-      response.on('end', () => {
+      incoming.on('data', chunk => chunks.push(chunk));
+      incoming.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
         resolve({
-          status: response.statusCode,
+          status: incoming.statusCode,
           body: text ? JSON.parse(text) : null
         });
       });
     });
     request.on('error', reject);
-    request.end(JSON.stringify(body));
   });
+  return { request, response };
 }
