@@ -7,6 +7,7 @@ import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
 import { isSystemPromptEntry, systemPromptOutput } from '../system-prompt.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
+import { CODEX_REVIEW_OFF_REASON, isCodexReviewCommand, withCodexReviewGuidance } from './review-command.js';
 import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext, sessionFuliSessionBegan }
   from '../../conversations/session-fuli-entry.js';
 
@@ -55,14 +56,17 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
   if (!input?.session_id || typeof input.cwd !== 'string' || typeof input.prompt !== 'string') {
     throw new TypeError('Codex task entry requires session, cwd and prompt');
   }
-  // A session FULI is off for (rec#5 C3b) gets no task entry.
+  const review = isCodexReviewCommand(input.prompt);
+  // A session FULI is off for (rec#5 C3b) gets no task entry, and no review.
   const off = await entryRefusal?.();
+  if (off && review) return { decision: 'block', reason: CODEX_REVIEW_OFF_REASON };
   if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id });
-  return preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'codex',
+  const output = await preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'codex',
     'Fuli task context. Apply effective_preferences. Follow checkpoint_guidance: checkpoint with taskContextToken only when there is something to record; the Stop hook closes the rest. ' + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
+  return review ? withCodexReviewGuidance(output) : output;
 }
 
 export async function runCodexLifecycleHook(args, dependencies = {}) {
