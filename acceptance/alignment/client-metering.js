@@ -20,6 +20,7 @@ const TOKEN_FIELDS = Object.freeze([
   'cacheWriteInputTokens',
   'reasoningTokens'
 ]);
+const PARTIAL_BUDGET_STOP = 'budget_stop';
 const CODEX_SOURCE_COMMIT = '067249a28329feec4a097f55413894acb4a6378a';
 
 // The versions whose output this parser follows. Fields outside these
@@ -85,9 +86,10 @@ export function claudeMetering(events) {
     costUsd = null;
     flags.push('zeroed_crash_result');
   }
-  // A budget stop's usage leaves out the response that crossed the budget;
-  // its total_cost_usd includes it.
-  if (result?.subtype === 'error_max_budget_usd') flags.push('usage_excludes_budget_crossing_response');
+  // A budget stop's usage leaves out the response that crossed the budget
+  // while its total_cost_usd includes it: the cost stands, the tokens are a
+  // known subtotal only.
+  const partialTokens = result?.subtype === 'error_max_budget_usd' ? PARTIAL_BUDGET_STOP : null;
   // Claude's input_tokens excludes cache reads and writes; the three are
   // disjoint, so the whole input is their sum and unknown if any part is.
   const inputParts = [
@@ -109,6 +111,7 @@ export function claudeMetering(events) {
     }),
     costUsd,
     costSource: CLIENT_REPORTED,
+    partialTokens,
     flags
   });
 }
@@ -138,6 +141,7 @@ export function codexMetering(events) {
     }),
     costUsd: null,
     costSource: null,
+    partialTokens: null,
     flags: []
   });
 }
@@ -181,14 +185,18 @@ export function recordAttempts(ledger, callId, outcomes) {
   ledger.totals = meteringTotals(ledger.attempts);
 }
 
-// The known subtotal of each field, how many attempts did not report it, and
-// whether the subtotal is complete. A field no attempt reported has no
-// subtotal (null), never 0.
+// The known subtotal of each field, how many attempts did not report it or
+// reported only part of it, and whether the subtotal is complete. A field no
+// attempt reported has no subtotal (null), never 0.
 function meteringTotals(attempts) {
   const tokens = Object.fromEntries(TOKEN_FIELDS.map((field) => [
     field,
-    knownSubtotal(attempts.map(({ usage }) => usage[field]))
+    knownSubtotal(attempts.map(({ usage, partialTokens }) => ({ value: usage[field], partialTokens })))
   ]));
+  const partialTokenAttempts = {};
+  for (const { partialTokens } of attempts) {
+    if (partialTokens) partialTokenAttempts[partialTokens] = (partialTokenAttempts[partialTokens] ?? 0) + 1;
+  }
   const knownCosts = attempts.filter(({ cost }) => cost.usd !== null);
   const knownUsdBySource = {};
   for (const { cost } of knownCosts) {
@@ -204,6 +212,7 @@ function meteringTotals(attempts) {
   return {
     attempts: attempts.length,
     tokens,
+    partialTokenAttempts,
     cost,
     complete: tokens.inputTokens.complete && tokens.outputTokens.complete && cost.complete
   };
@@ -215,11 +224,14 @@ export function roundMoney(value) {
     : null;
 }
 
-function attemptMetering({ client, reported, usage, costUsd, costSource, flags }) {
+function attemptMetering({ client, reported, usage, costUsd, costSource, partialTokens, flags }) {
   return {
     client,
     reported,
     usage,
+    // A reason code when the reported tokens are known to be only part of the
+    // attempt's consumption.
+    partialTokens,
     cost: { usd: costUsd, source: costUsd === null ? null : costSource },
     notReported: [
       ...Object.keys(reported).filter((field) => reported[field] === null),
@@ -229,14 +241,16 @@ function attemptMetering({ client, reported, usage, costUsd, costSource, flags }
   };
 }
 
-function knownSubtotal(values) {
-  const known = values.filter((value) => value !== null);
+function knownSubtotal(entries) {
+  const known = entries.filter(({ value }) => value !== null);
+  const partialAttempts = known.filter(({ partialTokens }) => partialTokens).length;
   return {
-    knownSubtotal: known.length || !values.length
-      ? known.reduce((sum, value) => sum + value, 0)
+    knownSubtotal: known.length || !entries.length
+      ? known.reduce((sum, { value }) => sum + value, 0)
       : null,
-    unknownAttempts: values.length - known.length,
-    complete: known.length === values.length
+    unknownAttempts: entries.length - known.length,
+    partialAttempts,
+    complete: known.length === entries.length && !partialAttempts
   };
 }
 

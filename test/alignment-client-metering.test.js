@@ -160,7 +160,57 @@ test('a zeroed Claude crash result is unknown, not free', () => {
 
   const budget = claudeMetering([claudeResult({ subtype: 'error_max_budget_usd', is_error: true, total_cost_usd: 0.42 })]);
   assert.equal(budget.cost.usd, 0.42);
-  assert.deepEqual(budget.flags, ['usage_excludes_budget_crossing_response']);
+  assert.deepEqual(budget.flags, []);
+  assert.equal(budget.partialTokens, 'budget_stop');
+});
+
+function budgetStopThroughReport(usage) {
+  const metering = claudeMetering(parseJsonLines(stream(claudeResult({
+    subtype: 'error_max_budget_usd', is_error: true, total_cost_usd: 0.42, usage
+  }))));
+  const ledger = ledgerOf('AGENT-04.fuli', attemptOutcome({ error: 'budget', metering }));
+  const json = JSON.parse(JSON.stringify({ run: { claude: { metering: ledger } } })).run.claude.metering;
+  return {
+    json,
+    attemptMarkdown: attemptMeteringMarkdown('fuli', json.attempts[0]),
+    totalsMarkdown: meteringTotalsMarkdown('Claude Code', json.totals)
+  };
+}
+
+test('a budget stop with all-zero usage keeps its cost and reports tokens as a partial subtotal', () => {
+  const { json, attemptMarkdown, totalsMarkdown } = budgetStopThroughReport({
+    input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0
+  });
+  const [attempt] = json.attempts;
+  assert.equal(attempt.partialTokens, 'budget_stop');
+  assert.equal(attempt.usage.inputTokens, 0);
+  assert.deepEqual(attempt.cost, { usd: 0.42, source: 'client_reported' });
+  assert.deepEqual(json.totals.tokens.inputTokens, {
+    knownSubtotal: 0, unknownAttempts: 0, partialAttempts: 1, complete: false
+  });
+  assert.deepEqual(json.totals.partialTokenAttempts, { budget_stop: 1 });
+  assert.equal(json.totals.cost.complete, true);
+  assert.equal(json.totals.complete, false);
+
+  assert.match(attemptMarkdown, /输入 token \/ input tokens 已知小计 \/ known subtotal 0（部分：预算中止 \/ budget stop）/);
+  assert.match(attemptMarkdown, /费用 \/ cost \$0.42（客户端上报 \/ client-reported）/);
+  assert.match(totalsMarkdown, /1 次尝试 \/ attempts；不完整 \/ incomplete/);
+  assert.match(totalsMarkdown, /输入 token \/ input tokens：已知小计 \/ known subtotal 0（部分：预算中止 \/ budget stop，1 次 \/ partial attempts）/);
+  assert.doesNotMatch(totalsMarkdown, /input tokens：0$/m);
+});
+
+test('a budget stop with non-zero usage does not pass its subtotal off as a complete total', () => {
+  const { json, attemptMarkdown, totalsMarkdown } = budgetStopThroughReport({
+    input_tokens: 3, cache_read_input_tokens: 40, cache_creation_input_tokens: 5, output_tokens: 9
+  });
+  assert.equal(json.attempts[0].usage.inputTokens, 48);
+  assert.deepEqual(json.totals.tokens.outputTokens, {
+    knownSubtotal: 9, unknownAttempts: 0, partialAttempts: 1, complete: false
+  });
+  assert.equal(json.totals.complete, false);
+  assert.match(attemptMarkdown, /输出 token \/ output tokens 已知小计 \/ known subtotal 9（部分：预算中止 \/ budget stop）/);
+  assert.match(totalsMarkdown, /输入 token \/ input tokens：已知小计 \/ known subtotal 48（部分：预算中止 \/ budget stop，1 次 \/ partial attempts）/);
+  assert.match(totalsMarkdown, /费用 \/ cost：已知小计 \/ known subtotal 客户端上报 \/ client-reported \$0.42$/m);
 });
 
 test('output text length is never presented as tokens', () => {
@@ -252,8 +302,8 @@ test('totals show the known subtotal, unknown attempts and completeness', () => 
   const unknown = attemptOutcome({ error: 'failed', metering: claudeMetering([]) });
   const { totals } = ledgerOf('AGENT-04.fuli', known, unknown, known);
   assert.equal(totals.attempts, 3);
-  assert.deepEqual(totals.tokens.inputTokens, { knownSubtotal: 12, unknownAttempts: 1, complete: false });
-  assert.deepEqual(totals.tokens.reasoningTokens, { knownSubtotal: null, unknownAttempts: 3, complete: false });
+  assert.deepEqual(totals.tokens.inputTokens, { knownSubtotal: 12, unknownAttempts: 1, partialAttempts: 0, complete: false });
+  assert.deepEqual(totals.tokens.reasoningTokens, { knownSubtotal: null, unknownAttempts: 3, partialAttempts: 0, complete: false });
   assert.deepEqual(totals.cost, { knownUsdBySource: { client_reported: 0.2 }, unknownAttempts: 1, complete: false });
   assert.equal(totals.complete, false);
 
@@ -262,7 +312,7 @@ test('totals show the known subtotal, unknown attempts and completeness', () => 
   assert.deepEqual(allUnknown.cost.knownUsdBySource, {});
 
   const none = meteringLedger().totals;
-  assert.deepEqual(none.tokens.inputTokens, { knownSubtotal: 0, unknownAttempts: 0, complete: true });
+  assert.deepEqual(none.tokens.inputTokens, { knownSubtotal: 0, unknownAttempts: 0, partialAttempts: 0, complete: true });
   assert.equal(none.attempts, 0);
 });
 
