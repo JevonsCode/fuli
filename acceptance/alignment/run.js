@@ -29,10 +29,13 @@ import {
   summarizeClaudeExecutionError
 } from './benchmark-policy.js';
 import {
+  CLIENT_METERING_CONTRACT,
+  attemptOutcome,
   claudeMetering,
   codexMetering,
-  meteringTotals,
+  meteringLedger,
   parseJsonLines,
+  recordAttempts,
   runMeteredAttempts
 } from './client-metering.js';
 import { attemptMeteringMarkdown, meteringTotalsMarkdown } from './metering-report.js';
@@ -155,11 +158,12 @@ const benchmark = {
       version: null,
       calls: 0,
       totalDurationMs: 0,
-      metering: meteringTotals([])
+      metering: meteringLedger()
     },
     codex: {
-      metering: meteringTotals([])
+      metering: meteringLedger()
     },
+    meteringContract: CLIENT_METERING_CONTRACT,
     timeouts: ALIGNMENT_TIMEOUTS
   },
   summary: null,
@@ -172,9 +176,6 @@ const benchmark = {
     'Only sanitized case evidence is persisted; raw Claude Code streams are discarded.'
   ]
 };
-// Every client attempt of this run, so the totals keep unknowns visible.
-const claudeAttemptMetering = [];
-const codexAttemptMetering = [];
 
 if (RENDER_ONLY) {
   const existingResult = readOptionalJson(RESULT_PATH);
@@ -1327,6 +1328,7 @@ async function runMultiAgentNetworkCases({
   };
   const parentACapture = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-CODEX-01.parent-a',
     cwd: join(fixtureWorkspaces, PROJECTS.parent),
     prompt: parentCapturePrompt({
       projectId: PROJECTS.parent,
@@ -1343,6 +1345,7 @@ async function runMultiAgentNetworkCases({
   });
   const parentBCapture = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-CODEX-01.parent-b',
     cwd: join(fixtureWorkspaces, PROJECTS.secondaryParent),
     prompt: parentCapturePrompt({
       projectId: PROJECTS.secondaryParent,
@@ -1359,6 +1362,7 @@ async function runMultiAgentNetworkCases({
   });
   const dPreferenceCapture = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-CODEX-01.preference-d',
     cwd: join(fixtureWorkspaces, PROJECTS.travel),
     prompt: preferenceCapturePrompt({
       projectId: PROJECTS.travel,
@@ -1371,6 +1375,7 @@ async function runMultiAgentNetworkCases({
   });
   const cPreferenceCapture = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-CODEX-01.preference-c',
     cwd: join(fixtureWorkspaces, PROJECTS.related),
     prompt: preferenceCapturePrompt({
       projectId: PROJECTS.related,
@@ -1383,6 +1388,7 @@ async function runMultiAgentNetworkCases({
   });
   const ePreferenceCapture = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-CODEX-01.preference-e',
     cwd: join(fixtureWorkspaces, PROJECTS.preference),
     prompt: preferenceCapturePrompt({
       projectId: PROJECTS.preference,
@@ -1395,6 +1401,7 @@ async function runMultiAgentNetworkCases({
   });
   const sameSessionSequenceControl = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-WORKFLOW-00.same-session-control',
     cwd: join(fixtureWorkspaces, PROJECTS.travel),
     prompt: sameSessionSequenceControlPrompt()
   });
@@ -1404,6 +1411,7 @@ async function runMultiAgentNetworkCases({
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       capture = await runCodex({
         ...codexContext,
+        callId: `NETWORK-WORKFLOW-01.sequence-${occurrence}.try-${attempt}`,
         cwd: join(fixtureWorkspaces, PROJECTS.travel),
         prompt: sequenceObservationPrompt(occurrence)
       });
@@ -2220,7 +2228,7 @@ async function runMultiAgentNetworkCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(claudeD);
+  recordClaudeMetrics('NETWORK-CLAUDE-01.retrieval', claudeD);
   const claudeMarkers = markers(claudeD.answer, [
     'NETWORK-A-GUIDE-101',
     'NETWORK-B-GUIDE-202',
@@ -2427,7 +2435,7 @@ async function runMultiAgentNetworkCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(claudeAuthorized);
+  recordClaudeMetrics('NETWORK-CLAUDE-02.authorized', claudeAuthorized);
   addCase({
     id: 'NETWORK-CLAUDE-02',
     title: '全新 Claude Code 会话读取长期授权但保留高风险逐次确认',
@@ -2543,7 +2551,7 @@ async function runClaudeCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(captureRun);
+  recordClaudeMetrics('AGENT-01.capture', captureRun);
   const checkpointCalled = captureRun.toolCalls.some(
     ({ name }) => name === 'mcp__fuli__checkpoint_task_knowledge'
   );
@@ -2631,7 +2639,7 @@ async function runClaudeCases({
     safeMode: true,
     builtInTools: []
   });
-  recordClaudeMetrics(baselineRun);
+  recordClaudeMetrics('AGENT-04.baseline', baselineRun);
   const fuliRun = await runClaude({
     prompt: comparisonPrompt,
     cwd: join(emptyWorkspaces, PROJECTS.hotel),
@@ -2646,7 +2654,7 @@ async function runClaudeCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(fuliRun);
+  recordClaudeMetrics('AGENT-04.fuli', fuliRun);
 
   const comparisonMarkers = ALIGNMENT_MARKERS.slice(0, 5);
   const baselineMarkers = markers(baselineRun.answer, comparisonMarkers);
@@ -2752,7 +2760,7 @@ async function runClaudeCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(unrelatedRun);
+  recordClaudeMetrics('AGENT-05.unrelated', unrelatedRun);
   const leakedMarkers = markers(unrelatedRun.answer, [
     'FULI-DEMO-ENVELOPE-v3',
     'HOTEL-CUTOFF-2140',
@@ -2805,7 +2813,7 @@ async function runClaudeCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(convergenceRun);
+  recordClaudeMetrics('AGENT-06.convergence', convergenceRun);
   const convergenceSearch = convergenceRun.toolCalls.find(
     ({ name }) => name === 'mcp__fuli__discover_common_knowledge_candidates'
   );
@@ -3533,6 +3541,7 @@ function addClaudeInfrastructureBlockedCases(error) {
 }
 
 async function runCodex({
+  callId,
   prompt,
   cwd,
   runtimeConfigPath,
@@ -3587,7 +3596,7 @@ async function runCodex({
       };
     }
   });
-  recordCodexMetrics(run.attemptMetering);
+  recordAttempts(benchmark.run.codex.metering, callId, run.attemptOutcomes);
   return run;
 }
 
@@ -3999,16 +4008,10 @@ function readLifecycleAudit(path) {
   }
 }
 
-function recordClaudeMetrics(run) {
+function recordClaudeMetrics(callId, run) {
   benchmark.run.claude.calls += 1;
   benchmark.run.claude.totalDurationMs += Number(run.durationMs || 0);
-  claudeAttemptMetering.push(run.metering);
-  benchmark.run.claude.metering = meteringTotals(claudeAttemptMetering);
-}
-
-function recordCodexMetrics(attempts) {
-  codexAttemptMetering.push(...attempts);
-  benchmark.run.codex.metering = meteringTotals(codexAttemptMetering);
+  recordAttempts(benchmark.run.claude.metering, callId, [attemptOutcome(run)]);
 }
 
 async function bootstrapProvider(providerUrl, bootstrapToken) {
@@ -4399,7 +4402,7 @@ ${rows}
 
 ## Client Metering / 客户端计量
 
-${meteringTotalsMarkdown('Claude Code', result.run.claude?.metering)}
+${meteringTotalsMarkdown('Claude Code', result.run.claude?.metering?.totals)}
 ${coldStart?.metrics
     ? `
 冷启动 A/B（AGENT-04）逐次计量：
@@ -4585,8 +4588,8 @@ ${rows}
 
 ## 客户端计量 / Client Metering
 
-${meteringTotalsMarkdown('Codex', result.run.codex?.metering)}
-${meteringTotalsMarkdown('Claude Code', result.run.claude?.metering)}
+${meteringTotalsMarkdown('Codex', result.run.codex?.metering?.totals)}
+${meteringTotalsMarkdown('Claude Code', result.run.claude?.metering?.totals)}
 
 Cursor 没有冻结的用量契约，本轮不计量 / Cursor has no frozen usage contract and is not metered.
 

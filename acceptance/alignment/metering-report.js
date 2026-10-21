@@ -6,6 +6,7 @@ import { roundMoney } from './client-metering.js';
 const NOT_REPORTED = '未上报 / not reported';
 
 const NOT_RECORDED = '未记录计量 / metering not recorded';
+const NOT_RUN = '未运行 / not run';
 const TOKEN_LABELS = Object.freeze([
   ['inputTokens', '输入 token / input tokens'],
   ['cachedInputTokens', '其中缓存读取 / of which cache reads'],
@@ -19,6 +20,7 @@ const COST_SOURCE_LABELS = Object.freeze({
 
 export function meteringTotalsMarkdown(label, totals) {
   if (!totals) return `- **${label}**：${NOT_RECORDED}`;
+  if (!totals.attempts) return `- **${label}**：${NOT_RUN}`;
   const completeness = totals.complete ? '完整 / complete' : '不完整 / incomplete';
   return [
     `- **${label}**：${totals.attempts} 次尝试 / attempts；${completeness}`,
@@ -45,9 +47,7 @@ function subtotalText({ knownSubtotal, unknownAttempts }) {
 function costSubtotalText({ knownUsdBySource, unknownAttempts }) {
   const known = Object.entries(knownUsdBySource)
     .map(([source, value]) => `${sourceLabel(source)} $${value}`);
-  if (!known.length) {
-    return unknownAttempts ? `${NOT_REPORTED}（${unknownAttempts} 次 / attempts）` : '$0';
-  }
+  if (!known.length) return `${NOT_REPORTED}（${unknownAttempts} 次 / attempts）`;
   const unknown = unknownAttempts ? `；另 ${unknownAttempts} 次${NOT_REPORTED}` : '';
   return `已知小计 / known subtotal ${known.join('，')}${unknown}`;
 }
