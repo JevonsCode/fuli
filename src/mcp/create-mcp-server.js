@@ -30,6 +30,7 @@ import {
   completeToolResult
 } from './tool-result.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
+import { assertToolInputWithinBudget, createToolInputValidator } from './tool-input-budget.js';
 import { nativeSessionFromEnv } from '../agents/native-session-env.js';
 import {
   mcpHostSessionId,
@@ -228,7 +229,7 @@ function createToolMap(
     preferenceOrigin: { sourceApplication, nativeSessionId: nativeThreadId === hostSessionId ? nativeThreadId : null },
     catalogDefinitions: definition.name === 'list_agent_interfaces' ? definitions.filter(item =>
       includeTestTools || !isTestOnlyToolName(item.name)) : null,
-    schema: jsonSchemaToZod(definition.inputSchema),
+    input: createToolInputValidator(definition.inputSchema),
     invoke: (input, requestContext = null) => {
       requestContext?.signal?.throwIfAborted?.();
       const requestNative = requestContext?.[NATIVE_CONTEXT]?.nativeSessionId ?? nativeThreadId;
@@ -275,9 +276,9 @@ function createToolMap(
 }
 
 // Chat clients list a compact form (chat-listing.js); calls are always
-// validated against the full schema in tool.schema.
+// validated against the full schema in tool.input.schema.
 function registerTool(server, tool, chat = false) {
-  const { definition, schema } = tool;
+  const { definition, input: { schema } } = tool;
   const listing = chat ? CHAT_LISTING[definition.name] : null;
   server.registerTool(definition.name, {
     title: definition.title,
@@ -290,6 +291,7 @@ function registerTool(server, tool, chat = false) {
 
 function registerCallHandler(server, tools, onDemandTools, resolveNativeContext = null) {
   server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    assertToolInputWithinBudget(request.params.arguments);
     if (request.params.name === DISPATCH_TOOL && onDemandTools) {
       const { toolName, input } = request.params.arguments ?? {};
       const target = toolName === DISPATCH_TOOL ? null : tools.get(toolName) ?? onDemandTools.get(toolName);
@@ -307,7 +309,7 @@ function registerCallHandler(server, tools, onDemandTools, resolveNativeContext 
         'Unknown Fuli tool'
       ));
     }
-    const parsed = await tool.schema.safeParseAsync(request.params.arguments ?? {});
+    const parsed = await tool.input.parse(request.params.arguments ?? {});
     if (!parsed.success) {
       return protocolErrorResult(
         'Input validation error',

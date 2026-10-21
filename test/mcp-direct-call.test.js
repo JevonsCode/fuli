@@ -63,3 +63,15 @@ test('direct Codex calls verify only the native host thread identity', async () 
   assert.equal(prepared.input.sourceSessionId, threadId);
   assert.equal(prepared.input.sourceSessionVerified, true);
 });
+
+test('direct calls apply the MCP input budget and array lengths before validation', async () => {
+  const call = (input) => prepareDirectAgentToolCall({
+    toolName: 'get_collaboration_preferences', input, hostSessionId: 'fuli-host-direct-test'
+  });
+  await assert.rejects(call({ projectPath: '/synthetic/project', workKind: Array(50_000).fill('x') }),
+    /Invalid tool arguments: more than the maximum of 50000 elements/);
+  await assert.rejects(call({ projectPath: '/synthetic/project', requiredCapabilities: Array(25_000).fill({}) }),
+    /Invalid tool arguments: arguments\.requiredCapabilities has more than the maximum of 16 items/);
+  const prepared = await call({ projectPath: '/synthetic/project' });
+  assert.equal(prepared.input.projectPath, '/synthetic/project');
+});

@@ -404,7 +404,7 @@ sequenceDiagram
    环境变量名，例如先执行 `export PROJECT_KB_TOKEN='...'`，再执行 `fl restart`。
 3. 打开 `http://127.0.0.1:2727/connections`，在“外部知识库”中填写连接名称、连接器、
    绑定项目（可多选）和检索模式。
-4. MCP HTTP 填写服务 URL 和可选的令牌环境变量名；MCP stdio 填写命令与参数；Notion
+4. MCP HTTP 填写最终端点 URL（不跟随跨源重定向）和可选的令牌环境变量名；MCP stdio 填写命令与参数；Notion
    填写令牌环境变量名以及 Page IDs 或 Data Source IDs；飞书 / Lark 填写令牌环境变量名、
    区域和明确的 Space ID、根节点 Token 或 Node Tokens；RAG Retrieval API 填写 Dify 兼容
    端点、知识库 ID 和可选令牌环境变量名；自定义连接器填写受信任本地 ESM 模块与来源 JSON。
