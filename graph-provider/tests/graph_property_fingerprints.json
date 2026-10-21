@@ -190,6 +190,7 @@
     "fuli_confirmation_basis_json",
     "fuli_confirmation_status",
     "fuli_content_source",
+    "fuli_conversation_id",
     "fuli_current_quadrant",
     "fuli_distinct_task_count",
     "fuli_epistemic_status",

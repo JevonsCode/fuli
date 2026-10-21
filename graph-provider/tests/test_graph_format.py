@@ -425,7 +425,11 @@ def test_a_new_graph_property_comes_with_the_next_graph_version():
     version. Readers coalesce a missing property, but an older guarded FULI
     ignores one it does not know, so a new stored property is a format change:
     add a migration with the next graph version, then record the new version
-    and its property set here. A recorded version never changes (rec#17 D-11)."""
+    and its property set here. A recorded version never changes once a guarded
+    release ships it (rec#17 D-11). Version 10 is the first guarded release's
+    baseline: no guarded build has been published yet (the release gate is
+    blocked), so properties added before it ships (#258's turn receipts, #263's
+    Episodic.fuli_conversation_id) are part of version 10, not a new step."""
     properties = set()
     for path in provider_sources():
         for text in _cypher_texts(path.read_text(encoding='utf-8')):

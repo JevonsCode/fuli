@@ -68,8 +68,16 @@ function several(ids) {
   return ids.length > 1 ? `${ids[0]} 等 ${ids.length} 项` : ids[0];
 }
 
-// The receipt notices of an application wired with dataFormatReceiptNotice
-// (federated-application.js); none for one without a local data directory.
+// The receipt notice of a FULI application with a local data directory
+// (federated-application.js): its stores, and its personal graph's state from
+// the provider's health.
+export function applicationFormatNotice(application, dataDir) {
+  return dataFormatReceiptNotice(dataDir,
+    { graphState: async () => (await application.personal.health())?.data_format ?? null });
+}
+
+// The receipt notices of an application wired with applicationFormatNotice;
+// none for one without a local data directory.
 export async function receiptFormatNotices(application) {
   const notice = await application.dataFormatNotice?.();
   return notice ? [notice] : [];
