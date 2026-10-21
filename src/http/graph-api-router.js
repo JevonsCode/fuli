@@ -7,6 +7,7 @@ import { handleOccupationRequest } from './occupation-api-router.js';
 import { handleTopicProposalsRequest } from './topic-proposals-api-router.js';
 import { handleAgentScoreCardRequest } from './agent-score-card-api-router.js';
 import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
+import { handleKnowledgeItemRequest } from './knowledge-item-api-router.js';
 
 export async function handleGraphApiRequest({
   request,
@@ -21,6 +22,7 @@ export async function handleGraphApiRequest({
   if (await handleTopicProposalsRequest({ request, response, url, app })) return true;
   if (await handleAgentScoreCardRequest({ request, response, url, app })) return true;
   if (await handleKnowledgeTagsRequest({ request, response, url, app })) return true;
+  if (await handleKnowledgeItemRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
     sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
     return true;

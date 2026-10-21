@@ -36,6 +36,10 @@
 /* Memory pages on the D-03 canvas: the knowledge quick look and the taste rules. */
 @source "../../features/knowledge/KnowledgePeek.vue";
 @source "../../pages/WritingTastePage.vue";
+/* rec#20: a turn receipt's item quick edit and full list, on the form column. */
+@source "../../pages/KnowledgeItemEditPage.vue";
+@source "../../pages/KnowledgeTurnReceiptPage.vue";
+@source "../../features/knowledge-quick-edit";
 /* 编排 on the same canvas: the collection, its cards and each Agent's page. */
 @source "../../pages/ProjectAgentsPage.vue";
 @source "../../features/project-agents/ProjectAgentCard.vue";

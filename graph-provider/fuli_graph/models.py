@@ -99,6 +99,9 @@ ConfirmationStatus = Literal['confirmed', 'agent_confirmed', 'pending']
 ConfirmationActorKind = Literal['user', 'agent', 'authoritative_source', 'import']
 PersonalProfileAspect = Literal['taste', 'personality', 'judgment_preference']
 ScopedPreferenceScope = Literal['global', 'project', 'agent']
+# Who the content came from: the user's own words, or an Agent's inference
+# (rec#20). It never confirms anything; confirmation stays separate.
+ContentSource = Literal['user_explicit', 'agent_inferred']
 PreferenceConflictQueueStatus = Literal['ai_pending', 'resolved']
 PreferenceConflictResolutionAction = Literal[
     'merge',
@@ -487,6 +490,7 @@ class EntityInput(StrictModel):
     profile_aspect: PersonalProfileAspect | None = None
     inheritance_mode: KnowledgeInheritanceMode = 'local_only'
     inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
+    content_source: ContentSource | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator('attributes')
@@ -555,6 +559,7 @@ class RelationshipInput(StrictModel):
     profile_aspect: PersonalProfileAspect | None = None
     inheritance_mode: KnowledgeInheritanceMode = 'local_only'
     inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
+    content_source: ContentSource | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode='after')
@@ -700,6 +705,9 @@ class KnowledgeCommit(StrictModel):
     space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str | None = Field(default=None, min_length=1, max_length=128)
     project_agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+    # Saved in a temporary session project because nobody chose its scope yet
+    # (rec#20); separate from the content's own confirmation status.
+    scope_status: Literal['undetermined'] | None = None
     episode: StructuredEpisode
 
     @model_validator(mode='after')
@@ -1070,6 +1078,8 @@ class KnowledgeRevisionCreate(StrictModel):
     replacement_item_id: str | None = Field(default=None, min_length=1, max_length=256)
     replacement_item_kind: KnowledgeItemKind | None = None
     operation_actor: KnowledgeOperationActor = 'agent'
+    # The version the editor read; another current version is a conflict.
+    expected_version: int | None = Field(default=None, ge=0)
 
     @model_validator(mode='after')
     def validate_update_fields(self):

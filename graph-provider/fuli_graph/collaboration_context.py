@@ -304,6 +304,7 @@ def _node_query() -> str:
               node.fuli_preference_scope = 'project'
               AND (
                    node.fuli_preference_project_id = $project_id
+                OR $project_id IN coalesce(node.fuli_preference_project_ids, [])
                 OR (
                   node.fuli_preference_project_id IN $inherited_project_ids
                   AND (
@@ -336,6 +337,7 @@ def _node_query() -> str:
                node.fuli_profile_aspect AS profile_aspect,
                coalesce(node.fuli_preference_scope, 'global') AS preference_scope,
                node.fuli_preference_project_id AS preference_project_id,
+               node.fuli_preference_project_ids AS preference_project_ids,
                node.fuli_preference_agent_id AS preference_agent_id,
                node.fuli_attributes_json AS attributes_json,
                node.fuli_confirmation_basis_json AS confirmation_basis_json,
@@ -362,6 +364,7 @@ def _edge_query() -> str:
               edge.fuli_preference_scope = 'project'
               AND (
                    edge.fuli_preference_project_id = $project_id
+                OR $project_id IN coalesce(edge.fuli_preference_project_ids, [])
                 OR (
                   edge.fuli_preference_project_id IN $inherited_project_ids
                   AND (
@@ -398,6 +401,7 @@ def _edge_query() -> str:
                edge.fuli_profile_aspect AS profile_aspect,
                coalesce(edge.fuli_preference_scope, 'global') AS preference_scope,
                edge.fuli_preference_project_id AS preference_project_id,
+               edge.fuli_preference_project_ids AS preference_project_ids,
                edge.fuli_preference_agent_id AS preference_agent_id,
                edge.fuli_attributes_json AS attributes_json,
                edge.fuli_confirmation_basis_json AS confirmation_basis_json,
@@ -469,6 +473,11 @@ def _preference_item(
         'scope_distance': 0,
         'scope_path': [],
     })
+    # A preference a person placed in several projects applies in each of them
+    # directly (rec#20), not through inheritance from its first project.
+    if any(project_scopes.get(listed, {}).get('scope_distance') == 0
+           for listed in record.get('preference_project_ids') or []):
+        scope = {'scope_distance': 0, 'scope_path': []}
     scope_distance = int(scope['scope_distance'])
     inheritance_mode = record.get('inheritance_mode') or 'local_only'
     inherited_project_ids = list(record.get('inherited_project_ids') or [])

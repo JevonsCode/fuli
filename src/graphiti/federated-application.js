@@ -583,7 +583,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       name: input.name ?? null,
       summary: input.summary ?? null,
       fact: input.fact ?? null,
-      operation_actor: input.operationActor ?? 'agent'
+      operation_actor: input.operationActor ?? 'agent',
+      // The version the editor read (rec#20); the Provider refuses a stale one.
+      ...(input.expectedVersion !== undefined ? { expected_version: input.expectedVersion } : {})
     };
     if (input.currentQuadrant !== undefined) {
       body.current_quadrant = input.currentQuadrant;

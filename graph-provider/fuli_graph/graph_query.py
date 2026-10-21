@@ -183,7 +183,8 @@ def _node_query(project_scoped: bool, paginated: bool = False) -> str:
           (
             node.fuli_profile_aspect IS NOT NULL
             AND node.fuli_preference_scope = 'project'
-            AND node.fuli_preference_project_id = $project_id
+            AND (node.fuli_preference_project_id = $project_id
+                 OR $project_id IN coalesce(node.fuli_preference_project_ids, []))
           )
           OR (
             node.fuli_profile_aspect IS NULL
@@ -302,7 +303,8 @@ def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
         WHERE (
           edge.fuli_profile_aspect IS NOT NULL
           AND edge.fuli_preference_scope = 'project'
-          AND edge.fuli_preference_project_id = $project_id
+          AND (edge.fuli_preference_project_id = $project_id
+               OR $project_id IN coalesce(edge.fuli_preference_project_ids, []))
         ) OR (
           edge.fuli_profile_aspect IS NULL
           AND (
@@ -329,7 +331,8 @@ def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
         WHERE (
           edge.fuli_profile_aspect IS NOT NULL
           AND edge.fuli_preference_scope = 'project'
-          AND edge.fuli_preference_project_id = $project_id
+          AND (edge.fuli_preference_project_id = $project_id
+               OR $project_id IN coalesce(edge.fuli_preference_project_ids, []))
         ) OR (
           edge.fuli_profile_aspect IS NULL
           AND (

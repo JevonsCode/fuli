@@ -30,6 +30,7 @@ import { agentPinsMessages } from './messages/agent-pins'
 import { judgmentMessages } from './messages/judgment'
 import { taskScheduleMessages } from './messages/task-schedules'
 import { taskRunMessages } from './messages/task-runs'
+import { knowledgeQuickEditMessages } from './messages/knowledge-quick-edit'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -92,6 +93,7 @@ export const messages = {
     roundtable: roundtableMessages['zh-CN'],
     taskSchedules: taskScheduleMessages['zh-CN'],
     taskRuns: taskRunMessages['zh-CN'],
+    knowledgeQuickEdit: knowledgeQuickEditMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
     common: commonMessages['zh-CN'],
@@ -126,6 +128,7 @@ export const messages = {
     roundtable: roundtableMessages['en-US'],
     taskSchedules: taskScheduleMessages['en-US'],
     taskRuns: taskRunMessages['en-US'],
+    knowledgeQuickEdit: knowledgeQuickEditMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],
     common: commonMessages['en-US'],

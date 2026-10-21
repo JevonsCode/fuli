@@ -141,6 +141,7 @@ from .project_knowledge import (
     review_personal_project_relation,
 )
 from .project_agent_routes import register_project_agent_routes
+from .knowledge_item_routes import register_knowledge_item_routes
 from .knowledge_tag_routes import register_knowledge_tag_routes
 from .preference_conflicts import (
     complete_preference_conflict,
@@ -337,6 +338,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_project_agent_routes(application, store, Actor)
     register_knowledge_tag_routes(application, store, Actor)
+    register_knowledge_item_routes(application, store, Actor)
 
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(

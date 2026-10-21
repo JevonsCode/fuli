@@ -6,7 +6,8 @@ export function providerPersonalCommit(input, episode, activeSpaceId) {
     throw new ApplicationError('validation', 'Personal capture target must be the active personal space');
   }
   return { space_id: input.spaceId, personal_project_id: input.personalProjectId ?? null,
-    project_agent_id: input.projectAgentId ?? null, episode };
+    project_agent_id: input.projectAgentId ?? null,
+    ...(input.scopeStatus ? { scope_status: input.scopeStatus } : {}), episode };
 }
 
 export function providerEpisode(input) {
@@ -39,6 +40,7 @@ export function providerEpisode(input) {
       profile_aspect: entity.profileAspect ?? null,
       inheritance_mode: entity.inheritanceMode ?? 'local_only',
       inherited_project_ids: entity.inheritedProjectIds ?? [],
+      ...(entity.contentSource ? { content_source: entity.contentSource } : {}),
       attributes: entity.attributes ?? {}
     })),
     relationships: input.relationships.map((relationship) => ({
@@ -61,6 +63,7 @@ export function providerEpisode(input) {
       profile_aspect: relationship.profileAspect ?? null,
       inheritance_mode: relationship.inheritanceMode ?? 'local_only',
       inherited_project_ids: relationship.inheritedProjectIds ?? [],
+      ...(relationship.contentSource ? { content_source: relationship.contentSource } : {}),
       attributes: relationship.attributes ?? {}
     }))
   };

@@ -51,3 +51,23 @@ export function scopedTaskIdempotencyKey(projectId, input) {
     input.idempotencyKey
   ])).digest('hex');
 }
+
+// The session's own temporary project (rec#20): what was worth keeping while
+// nobody chose where it applies. A task already in a temporary project keeps
+// using it; otherwise the session gets one, keyed by its client and session.
+// Like every temporary project it inherits nothing and shares nothing.
+export async function ensureSessionTemporaryProject(application, task) {
+  if (isTemporaryProjectId(task.personalProjectId)) return task.personalProjectId;
+  const scopeKey = createHash('sha256').update(JSON.stringify([
+    'fuli-temporary-session-v1', application.config.personal.spaceId,
+    task.sourceApplication ?? 'other', task.sessionId
+  ])).digest('hex');
+  const project = await application.personal.ensureTemporaryProject({
+    personal_space_id: application.config.personal.spaceId, scope_key: scopeKey,
+    source_application: task.sourceApplication ?? 'other', lifetime: 'session'
+  });
+  if (project?.scope_type !== 'temporary' || project.project_id !== `temporary-${scopeKey}`) {
+    throw new TypeError('Provider did not confirm the session temporary project');
+  }
+  return project.project_id;
+}

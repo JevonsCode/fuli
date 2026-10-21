@@ -40,6 +40,12 @@ export const routeMessages = {
     knowledge: {
       title: '知识',
     },
+    knowledgeItem: {
+      title: '修改知识',
+    },
+    knowledgeTurn: {
+      title: '本轮沉淀',
+    },
     about: {
       title: '关于',
     },
@@ -91,6 +97,12 @@ export const routeMessages = {
     },
     knowledge: {
       title: 'Knowledge',
+    },
+    knowledgeItem: {
+      title: 'Edit knowledge',
+    },
+    knowledgeTurn: {
+      title: 'Saved this turn',
     },
     about: {
       title: 'About',
