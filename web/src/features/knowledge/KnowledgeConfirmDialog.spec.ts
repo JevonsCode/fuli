@@ -154,4 +154,18 @@ describe('KnowledgeConfirmDialog', () => {
     expect(wrapper.emitted('saved')).toHaveLength(1)
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
+
+  it('says a confirmation also reviews a conclusion whose basis changed meaning (dot round 4)', () => {
+    const waiting = knowledgeItemFromNode({ id: 'waiting', name: 'Synthetic', type: 'Fact', epistemic_state_explicit: true,
+      waits_for_review: true })
+    const wrapper = mount(KnowledgeConfirmDialog, { props: { item: waiting, personalSpaceId: 'space', personalProjectId: null },
+      global: { plugins: [createPinia()] } })
+    expect(wrapper.get('[data-settles-review]').text()).toBe('这也会把「依据已变，待复核」标记为已复核。')
+    wrapper.unmount()
+    const plain = knowledgeItemFromNode({ id: 'plain', name: 'Synthetic', type: 'Fact', epistemic_state_explicit: true })
+    const other = mount(KnowledgeConfirmDialog, { props: { item: plain, personalSpaceId: 'space', personalProjectId: null },
+      global: { plugins: [createPinia()] } })
+    expect(other.find('[data-settles-review]').exists()).toBe(false)
+    other.unmount()
+  })
 })

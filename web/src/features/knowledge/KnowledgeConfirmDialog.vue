@@ -162,6 +162,8 @@ function fail(message: string) {
     <label class="ui-field">{{ t('knowledge.dialogs.confirm.confirmationCopy') }}
       <textarea v-model="confirmationReason" name="confirmation-reason" maxlength="2000" rows="2" required />
     </label>
+    <!-- A person's confirmation is their review of what this waited for (D-20.7). -->
+    <p v-if="item.waitsForReview" class="ui-meta" data-settles-review>{{ t('knowledgeQuickEdit.basisReview.settles') }}</p>
     <label class="ui-check">
       <input v-model="acknowledged" name="confirmation-acknowledged" type="checkbox" />
       <span>{{ t('knowledge.dialogs.confirm.acknowledgment') }}</span>

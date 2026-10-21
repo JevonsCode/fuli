@@ -907,6 +907,8 @@ export interface KnowledgeNode {
   replaced_by_item_id?: string | null
   replaced_by_item_kind?: 'entity' | 'relationship' | null
   version_status?: KnowledgeVersionStatus
+  /** A basis it rests on changed meaning; a person's review is pending (D-20.7). */
+  waits_for_review?: boolean
   created_at?: string
   evidence?: EvidenceRecord[]
   revisions?: Array<Record<string, unknown>>
@@ -962,6 +964,8 @@ export interface KnowledgeEdge {
   replaced_by_item_id?: string | null
   replaced_by_item_kind?: 'entity' | 'relationship' | null
   version_status?: KnowledgeVersionStatus
+  /** A basis it rests on changed meaning; a person's review is pending (D-20.7). */
+  waits_for_review?: boolean
   created_at?: string
   evidence?: EvidenceRecord[]
   revisions?: Array<Record<string, unknown>>
@@ -1033,6 +1037,7 @@ export type KnowledgeItem = {
   replacedByItemKind: 'entity' | 'relationship' | null
   /** Why a historical item is history (rec#5 C7/C8); absent from older Providers. */
   versionStatus?: KnowledgeVersionStatus
+  waitsForReview?: boolean
   createdAt?: string
   evidence: EvidenceRecord[]
   revisions: Array<Record<string, unknown>>

@@ -7,6 +7,7 @@ from .collaboration_context import read_collaboration_context
 from .conversation_scope import current_session_conversation_id
 from .graph_models import GraphResult
 from .graph_query import read_graph
+from .knowledge_basis_review import inherited_reasons, record_inherited
 from .knowledge_dependencies import require_current_bases
 from .knowledge_search import search_knowledge
 from .models import (
@@ -255,11 +256,20 @@ class StoreKnowledge:
                     raise HTTPException(status_code=409, detail={
                         'code': 'versions_changed',
                         'message': 'a version this capture names changed meanwhile; retry the capture'})
-                await require_current_bases(scoped, space, list(dict.fromkeys(
+                bases = await require_current_bases(scoped, space, list(dict.fromkeys(
                     basis
                     for item in [*episode.entities, *episode.relationships]
                     for basis in item.derived_from
                 )))
+                # A conclusion drawn from a basis that waits for a review waits
+                # with it from birth (rec#5 D-20.7, dot round 4).
+                inherited = await inherited_reasons(scoped, space, bases)
+
+                def waiting(item):
+                    return {basis: inherited[basis] for basis in item.derived_from if basis in inherited}
+
+                def reasons(item):
+                    return list(dict.fromkeys(key for keys in waiting(item).values() for key in keys)) or None
                 entity_rows = []
                 entity_by_key = {}
                 for entity, entity_id, vector in zip(
@@ -303,6 +313,7 @@ class StoreKnowledge:
                             ),
                             'content_source': entity.content_source,
                             'derived_from': entity.derived_from or None,
+                            'unresolved_bases': reasons(entity),
                             'attributes_json': json.dumps(
                                 entity.attributes, ensure_ascii=False, sort_keys=True
                             ),
@@ -363,6 +374,7 @@ class StoreKnowledge:
                             ),
                             'content_source': relationship.content_source,
                             'derived_from': relationship.derived_from or None,
+                            'unresolved_bases': reasons(relationship),
                             'attributes_json': json.dumps(
                                 relationship.attributes, ensure_ascii=False, sort_keys=True
                             ),
@@ -430,6 +442,7 @@ class StoreKnowledge:
                         entity.fuli_attributes_json = row.attributes_json,
                         entity.fuli_content_source = row.content_source,
                         entity.fuli_derived_from_item_ids = row.derived_from,
+                        entity.fuli_unresolved_bases = row.unresolved_bases,
                         entity.fuli_scope_status = $scope_status
                     SET entity.fuli_ai_review_lock_version =
                           coalesce(entity.fuli_ai_review_lock_version, 0) + 1
@@ -590,6 +603,7 @@ class StoreKnowledge:
                           row.workflow_session_authority,
                         edge.fuli_content_source = row.content_source,
                         edge.fuli_derived_from_item_ids = row.derived_from,
+                        edge.fuli_unresolved_bases = row.unresolved_bases,
                         edge.fuli_scope_status = $scope_status,
                         edge.fuli_ai_review_lock_version = 1
                     SET edge.episodes =
@@ -659,6 +673,13 @@ class StoreKnowledge:
                 )
                 await link_reasserted(scoped, space, reasserted, episode_id=episode_id,
                                       actor_id=actor_id or 'capture', created_at=created_at)
+                born = [(kind, item_id, waiting(item)) for kind, items, ids in (
+                    ('entity', episode.entities, entity_ids),
+                    ('relationship', episode.relationships, relationship_ids))
+                        for item, item_id in zip(items, ids, strict=True) if waiting(item)]
+                await record_inherited(scoped, {'id': actor_id or 'capture'}, space, born, bases,
+                                       reason='It was concluded from knowledge that waits for a review.',
+                                       created_at=created_at)
             await materialize_workflow_candidates(
                 self,
                 space,

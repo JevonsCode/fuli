@@ -282,6 +282,7 @@ describe('KnowledgeItemEditPage', () => {
     expect(wrapper.get('[data-basis-meaning]').text()).toContain('有 2 条结论依据它')
     expect(wrapper.get('[data-meaning-choice="changed"] [role="radio"]').attributes('aria-checked')).toBe('true')
     expect(wrapper.get('[data-basis-meaning]').text()).toContain('依据它的结论会先停止交付给 Agent，等你复核。')
+    expect(wrapper.find('[data-settles-review]').exists()).toBe(false)
     patchJson.mockResolvedValue({ version_item_id: 'item-2', dependents_changed: 2 })
     await wrapper.get('#item-content').setValue('Status lines stay short')
     await wrapper.get('#content-reason').setValue('Clearer')
@@ -314,6 +315,9 @@ describe('KnowledgeItemEditPage', () => {
     expect(wrapper.get('[data-item-weight]').text()).toBe('暂不交付 · 复核后恢复 12%')
     expect(wrapper.find('[data-item-weight] [role="meter"], [data-item-weight] progress').exists()).toBe(false)
     expect(wrapper.get('[data-basis-review-card="changed"]').text()).toContain('复核前不交付给 Agent')
+    // Editing it is a review too, and the form says so (dot round 4).
+    expect(wrapper.get('[data-content-editor] [data-settles-review]').text())
+      .toBe('这也会把「依据已变，待复核」标记为已复核。')
     patchJson.mockResolvedValue({ version_item_id: 'item-3' })
     await wrapper.get('#review-reason').setValue('Still true')
     await wrapper.get('[data-basis-review-card] form').trigger('submit')

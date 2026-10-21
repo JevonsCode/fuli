@@ -27,13 +27,23 @@ async def confirm_knowledge_batch(
             detail='knowledge batch confirmation is personal-only',
         )
 
+    # Deferred: review and versions build on knowledge_management, as this does.
+    from .knowledge_basis_review import confirmation_review, settle_review
+    from .knowledge_versions import lock_knowledge
+
     confirmed_at = datetime.now(timezone.utc)
     rows = []
+    reviews = {}
     for item in request.items:
         current = await _read_item(store, space, item.item_id, item.item_kind)
         if current is None:
             raise HTTPException(status_code=404, detail='knowledge item not found')
         previous = _snapshot(current, item.item_kind)
+        if request.operation_actor == 'human':
+            # Confirming in a batch is the same review as confirming one item.
+            review = await confirmation_review(store, space, item.item_kind, item.item_id, current, meaning=None)
+            if review:
+                reviews[(item.item_kind, item.item_id)] = review
         if previous.get('invalidAt'):
             raise HTTPException(
                 status_code=409,
@@ -101,6 +111,8 @@ async def confirm_knowledge_batch(
 
     # The whole batch commits or none of it does.
     async with query_store_transaction(store) as scoped:
+        if reviews:
+            await lock_knowledge(scoped, space)  # the space before its items, like every version decision
         await _refuse_items_changed_since_read(scoped, space, rows)
         records, _, _ = await scoped.runtime.driver.execute_query(
             _BATCH_CONFIRM_QUERY,
@@ -138,6 +150,9 @@ async def confirm_knowledge_batch(
                     reason=request.reason,
                     operation='batch_confirmation',
                 )
+        for (item_kind, item_id), review in reviews.items():
+            await settle_review(scoped, actor, space, item_kind, item_id, **review,
+                                reason=request.reason, created_at=confirmed_at)
     return KnowledgeBatchConfirmationResult(
         group_kind=request.group_kind,
         group_value=request.group_value,

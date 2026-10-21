@@ -19,6 +19,15 @@ dependencies, or several changes stay separate. A person's review of a
 conclusion ("仍然成立") writes a new version without reasons, and clears, in
 what rests on it, only the reasons of the changes it reviewed; a conclusion
 that still holds a reason for a change keeps that change going further down.
+仍然成立, a person's edit into a new version and a person's confirmation
+(one item or a batch; of an Agent's rewrite or of a conclusion that waits) are
+all a person reviewing the item, and all settle through settle_review: its own
+reasons present at review time, the same changes below it, then the meaning
+of the new change (an edit or a confirmed rewrite only).
+
+A conclusion captured from a basis that waits for a review waits too, from
+birth: it takes the basis's changes keyed by that basis's lineage, exactly as
+the walk would have written them, so the basis's review settles them in it.
 
 Every step is a revision of the conclusion; nothing earlier is rewritten. The
 caller holds the space's knowledge lock in its transaction, so a concurrent
@@ -38,8 +47,10 @@ def basis_review(current: dict, revisions) -> str | None:
     hint waits for a look; a new version starts with neither."""
     if current.get('unresolved_bases'):
         return 'changed'
+    # A review that settles and then hints in one step writes both at one
+    # time: the hint is the later step.
     latest = max((revision for revision in revisions if revision.action in _HINT_ACTIONS),
-                 key=lambda revision: revision.created_at, default=None)
+                 key=lambda revision: (revision.created_at, revision.action == 'basis_reworded'), default=None)
     return 'reworded' if latest is not None and latest.action == 'basis_reworded' else None
 
 
@@ -64,6 +75,69 @@ async def apply_meaning(scoped, actor, space, item_kind, item_id, *, meaning, re
                           changed_by, created_at, (item_kind, item_id), keys=[])
             hinted += 1
     return hinted
+
+
+async def settle_review(scoped, actor, space, item_kind, item_id, *, held, meaning, reason,
+                        created_at) -> int:
+    """A person reviewed `item_id` while it held `held`: clear those reasons
+    on it (a new version starts without them), settle the same changes in what
+    rests on it, then apply `meaning` (None: the words did not change). Returns
+    how many conclusions the meaning choice reached, or, without one, how many
+    the settlement released."""
+    current = await _read_item(scoped, space, item_id, item_kind)
+    own = [key for key in held if key in ((current or {}).get('unresolved_bases') or [])]
+    if own:
+        await _remove_reasons(scoped, space, item_kind, item_id, own)
+        await _record(scoped, actor, space, item_kind, item_id, 'basis_review_cleared', reason, 'user',
+                      created_at, (item_kind, item_id), keys=own)
+    released = await clear_reviewed(scoped, actor, space, item_kind, item_id, changes=_changes(held),
+                                    reason=reason, changed_by='user', created_at=created_at)
+    if meaning is None:
+        return released
+    return await apply_meaning(scoped, actor, space, item_kind, item_id, meaning=meaning, reason=reason,
+                               changed_by='user', created_at=created_at)
+
+
+async def confirmation_review(store, space, item_kind, item_id, current, *, meaning) -> dict | None:
+    """What a person's confirmation of this item reviews, as settle_review's
+    options; None when it reviews nothing. Confirming an Agent's rewrite (a
+    version that replaced another) also says what its words mean below it."""
+    held = list(current.get('unresolved_bases') or [])
+    rewrite = len(await lineage_ids(store, space, item_kind, item_id)) > 1
+    if not held and not rewrite:
+        return None
+    return {'held': held, 'meaning': (meaning or 'changed') if rewrite else None}
+
+
+async def inherited_reasons(scoped, space, bases) -> dict[str, list[str]]:
+    """For each named basis that waits for a review, the reasons a conclusion
+    drawn from it holds."""
+    reasons = {}
+    for basis in bases:
+        changes = _changes(basis.get('unresolved_bases') or [])
+        if changes:
+            root = await lineage_root(scoped, space, basis['item_kind'], basis['item_id'])
+            reasons[basis['item_id']] = [f'{root}@{change}' for change in changes]
+    return reasons
+
+
+async def record_inherited(scoped, actor, space, born, bases, *, reason, created_at) -> None:
+    """One `basis_changed` revision per waiting basis on each conclusion this
+    capture created (`born`: item kind, item ID, derived_from)."""
+    kinds = {basis['item_id']: basis['item_kind'] for basis in bases}
+    for item_kind, item_id, derived_from in born:
+        records, _, _ = await scoped.runtime.driver.execute_query(
+            _item_match(item_kind) + ' RETURN item.created_at = $created_at AS born',
+            item_id=item_id, group_id=space['group_id'], created_at=created_at)
+        if not records or not records[0]['born']:
+            continue  # the mention landed on knowledge that already existed
+        for basis_id, keys in derived_from.items():
+            await _record(scoped, actor, space, item_kind, item_id, 'basis_changed', reason, 'agent',
+                          created_at, (kinds[basis_id], basis_id), keys=keys)
+
+
+def _changes(held) -> list[str]:
+    return list(dict.fromkeys(key.rsplit('@', 1)[1] for key in held))
 
 
 async def clear_reviewed(scoped, actor, space, item_kind, item_id, *, changes, reason, changed_by,
@@ -91,11 +165,6 @@ async def clear_reviewed(scoped, actor, space, item_kind, item_id, *, changes, r
         cleared += await clear_reviewed(scoped, actor, space, dependent_kind, dependent_id, changes=settled,
                                         reason=reason, changed_by=changed_by, created_at=created_at)
     return cleared
-
-
-def reviewed_changes(current: dict) -> list[str]:
-    """The changes a review of this conclusion settles: every one it waits for."""
-    return list(dict.fromkeys(key.rsplit('@', 1)[1] for key in current.get('unresolved_bases') or []))
 
 
 async def _mark_changed_downstream(scoped, actor, space, item_kind, item_id, *, change, reason, changed_by,

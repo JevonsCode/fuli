@@ -61,6 +61,7 @@ export const knowledgeQuickEditMessages = {
     },
     basisReview: {
       changed: '依据已变，待复核', reworded: '依据已更新，请复核',
+      settles: '这也会把「依据已变，待复核」标记为已复核。',
       changedNote: '它依据的知识意思变了，复核前不交付给 Agent。',
       rewordedNote: '它依据的知识改了措辞，照常交付；看一眼是否仍然成立。',
       title: '复核这条结论', help: '仍然成立就生成一个依据新版本的新版本；不成立就直接修改它。',
@@ -173,6 +174,7 @@ export const knowledgeQuickEditMessages = {
     },
     basisReview: {
       changed: 'Basis changed, review needed', reworded: 'Basis updated, please review',
+      settles: 'This also marks “Basis changed, review needed” as reviewed.',
       changedNote: 'What it rests on changed its meaning; it is not given to Agents until you review it.',
       rewordedNote: 'What it rests on changed its wording; it stays in use. Check that it still holds.',
       title: 'Review this conclusion', help: 'If it still holds, a new version rests on the new basis; if not, edit it.',

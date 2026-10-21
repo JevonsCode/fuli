@@ -91,6 +91,10 @@ async function submit(kind: 'content' | 'outdated', body: object | null) {
         </RadioGroup>
         <FieldDescription>{{ t(`knowledgeQuickEdit.meaning.${meaning}Help`) }}</FieldDescription>
       </Field>
+      <!-- A person's new version is their review of what this waited for. -->
+      <p v-if="item.basis_review === 'changed'" class="m-0 text-sm text-muted-foreground" data-settles-review>
+        {{ t('knowledgeQuickEdit.basisReview.settles') }}
+      </p>
       <Field>
         <FieldLabel for="content-reason">{{ t('knowledgeQuickEdit.content.reason') }}</FieldLabel>
         <Input id="content-reason" v-model="reason" maxlength="2000" autocomplete="off" :disabled="pending !== null" />

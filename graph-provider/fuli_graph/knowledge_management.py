@@ -142,9 +142,10 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
     # The revision was computed from `current`. If anything wrote the item
     # since (a rejection, usage, another edit), the write is refused and
     # nothing below is kept, instead of replaying the stale snapshot over it.
-    rewrite_confirmed = await _confirms_a_rewrite(store, space, item_id, request)
+    # A person's confirmation is their review of what the item waited for.
+    review = await _confirmation_review(store, space, item_id, request, current)
     async with query_store_transaction(store) as scoped:
-        if rewrite_confirmed:
+        if review:
             await _lock_knowledge(scoped, space)
         await _update_item(
             scoped, space, item_id, request.item_kind, next_value, embedding,
@@ -155,11 +156,9 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
             previous, next_value, created_at,
         )
         changed = 0
-        if rewrite_confirmed:
-            changed = await _apply_meaning(
-                scoped, actor, space, request.item_kind, item_id,
-                meaning=request.basis_meaning or 'changed', reason=request.reason,
-                changed_by='user', created_at=created_at)
+        if review:
+            changed = await _settle_review(scoped, actor, space, request.item_kind, item_id, **review,
+                                           reason=request.reason, created_at=created_at)
         if request.operation_actor == 'human':
             await record_human_change(
                 scoped,
@@ -183,14 +182,13 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
     )
 
 
-async def _confirms_a_rewrite(store, space, item_id, request) -> bool:
-    """A person confirming a version that replaced another one (an Agent's
-    rewrite waits for exactly this)."""
+async def _confirmation_review(store, space, item_id, request, current) -> dict | None:
     if request.action != 'confirm' or request.operation_actor != 'human':
-        return False
-    from .knowledge_versions import lineage_ids  # deferred: versions build on this module
+        return None
+    from .knowledge_basis_review import confirmation_review  # deferred: it builds on this module
 
-    return len(await lineage_ids(store, space, request.item_kind, item_id)) > 1
+    return await confirmation_review(store, space, request.item_kind, item_id, current,
+                                     meaning=request.basis_meaning)
 
 
 async def _lock_knowledge(scoped, space):
@@ -199,10 +197,10 @@ async def _lock_knowledge(scoped, space):
     await lock_knowledge(scoped, space)
 
 
-async def _apply_meaning(scoped, actor, space, item_kind, item_id, **options):
-    from .knowledge_basis_review import apply_meaning  # deferred: it builds on this module
+async def _settle_review(scoped, actor, space, item_kind, item_id, **options):
+    from .knowledge_basis_review import settle_review  # deferred: it builds on this module
 
-    return await apply_meaning(scoped, actor, space, item_kind, item_id, **options)
+    return await settle_review(scoped, actor, space, item_kind, item_id, **options)
 
 
 # Edits, restores and the outdated mark go through the item's versions
@@ -218,7 +216,7 @@ async def _version_lifecycle(
     """Handle an edit that writes a new version, the outdated mark, and a
     restore that would erase history; None leaves the in-place revision."""
     # Deferred: the version and outdated modules build on this one.
-    from .knowledge_basis_review import apply_meaning, basis_review, clear_reviewed, reviewed_changes
+    from .knowledge_basis_review import apply_meaning, basis_review, settle_review
     from .knowledge_outdated import mark_item_outdated, report_outdated_to_person
     from .knowledge_versions import (
         creates_version, current_version_id, item_revisions, lock_knowledge, terminal, version_status,
@@ -267,10 +265,10 @@ async def _version_lifecycle(
                 embedding=None, reason=request.reason, changed_by='user',
                 created_at=created_at, revision_id=revision_id, previous_snapshot=previous,
             )
-            # Only the changes this conclusion waited for are settled below it.
-            cleared = await clear_reviewed(scoped, actor, space, request.item_kind, version_id,
-                                           changes=reviewed_changes(current), reason=request.reason,
-                                           changed_by='user', created_at=created_at)
+            # Only the changes this conclusion waited for are settled, here and below it.
+            cleared = await settle_review(scoped, actor, space, request.item_kind, version_id,
+                                          held=current.get('unresolved_bases') or [], meaning=None,
+                                          reason=request.reason, created_at=created_at)
             await record_human_change(scoped, actor, space, version_id, request.item_kind,
                                       reason=request.reason, operation='knowledge_reaffirm')
         return KnowledgeRevisionRecord(
@@ -321,13 +319,15 @@ async def _version_lifecycle(
                 scoped, actor, space, version_id, request.item_kind,
                 reason=request.reason, operation='knowledge_update',
             )
-            # The person says what the edit means for conclusions drawn from it;
-            # unsaid, the meaning changed (D-20.7). An Agent's rewrite waits for
-            # the person's confirmation, which decides instead.
-            changed = await apply_meaning(
+            # The person's edit is their review of what it waited for, and they
+            # say what the edit means for conclusions drawn from it; unsaid, the
+            # meaning changed (D-20.7). An Agent's rewrite keeps waiting where
+            # the old version did, for the person's confirmation.
+            changed = await settle_review(
                 scoped, actor, space, request.item_kind, version_id,
+                held=current.get('unresolved_bases') or [],
                 meaning=request.basis_meaning or 'changed', reason=request.reason,
-                changed_by='user', created_at=created_at)
+                created_at=created_at)
     return KnowledgeRevisionRecord(
         id=revision_id, item_id=item_id, item_kind=request.item_kind, action='update',
         reason=request.reason, previous=previous, current=value, created_at=created_at,

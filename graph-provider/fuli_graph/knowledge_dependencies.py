@@ -49,16 +49,19 @@ RETURN DISTINCT decision.global_assertion_id AS item_id
 '''
 
 
-async def require_current_bases(store, space: dict, item_ids: list[str]) -> None:
-    """A capture may only conclude from knowledge that is current now."""
+async def require_current_bases(store, space: dict, item_ids: list[str]) -> list[dict]:
+    """A capture may only conclude from knowledge that is current now; return
+    those bases as stored, with what each still waits for."""
     if not item_ids:
-        return
-    found = {basis['item_id']: basis for basis in await _basis_records(store, space, item_ids)}
+        return []
+    bases = await _basis_records(store, space, item_ids)
+    found = {basis['item_id']: basis for basis in bases}
     stale = [item_id for item_id in item_ids if item_id not in found or found[item_id]['invalid_at']]
     if stale:
         raise HTTPException(status_code=422, detail={
             'code': 'derived_from_not_current', 'item_ids': stale,
             'message': 'derived_from names knowledge that is missing or no longer current'})
+    return bases
 
 
 async def end_dependents(scoped, actor, space, item_kind, item_id, *, reason, changed_by,
@@ -145,14 +148,16 @@ async def _basis_records(store, space, item_ids) -> list[dict]:
           UNWIND $item_ids AS id
           MATCH (item:Entity {uuid: id, group_id: $group_id})
           RETURN 'entity' AS item_kind, item.uuid AS item_id, coalesce(item.summary, item.name) AS content,
-                 item.fuli_invalid_at AS invalid_at, item.fuli_replaced_by_item_id AS replaced_by_item_id
+                 item.fuli_invalid_at AS invalid_at, item.fuli_replaced_by_item_id AS replaced_by_item_id,
+                 item.fuli_unresolved_bases AS unresolved_bases
           UNION
           UNWIND $item_ids AS id
           MATCH ()-[item:RELATES_TO {uuid: id, group_id: $group_id}]->()
           RETURN 'relationship' AS item_kind, item.uuid AS item_id, item.fact AS content,
-                 item.invalid_at AS invalid_at, item.fuli_replaced_by_item_id AS replaced_by_item_id
+                 item.invalid_at AS invalid_at, item.fuli_replaced_by_item_id AS replaced_by_item_id,
+                 item.fuli_unresolved_bases AS unresolved_bases
         }
-        RETURN item_kind, item_id, content, invalid_at, replaced_by_item_id
+        RETURN item_kind, item_id, content, invalid_at, replaced_by_item_id, unresolved_bases
         ''', item_ids=list(item_ids), group_id=space['group_id'], routing_='r')
     return [dict(record) for record in records]
 

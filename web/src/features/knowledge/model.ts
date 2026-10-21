@@ -593,6 +593,7 @@ function commonItem(item: KnowledgeNode | KnowledgeEdge) {
     replacedByItemId: item.replaced_by_item_id ?? null,
     replacedByItemKind: item.replaced_by_item_kind ?? null,
     versionStatus: item.version_status ?? (item.invalid_at ? 'inactive' : 'current'),
+    waitsForReview: item.waits_for_review ?? false,
     createdAt: item.created_at,
     evidence: item.evidence ?? [],
     revisions: item.revisions ?? [],
