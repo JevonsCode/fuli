@@ -13,7 +13,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { readTurnReceipt } from '../src/agents/turn-receipt.js';
-import { dataFormatReceiptNotice, receiptFormatNotices } from '../src/data-format/format-notices.js';
+import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -209,7 +209,8 @@ async function migrationReceiptChars() {
   const added = async (notices, operations) => {
     const dataFormatNotice = dataFormatReceiptNotice('/synthetic', { notices: () => notices,
       operations: () => operations, now: () => Date.parse('2026-10-21T00:00:00Z') });
-    const receipt = taskAgentReceipt(app, { ...owner, notices: await receiptFormatNotices({ dataFormatNotice }) });
+    const notice = await dataFormatNotice();
+    const receipt = taskAgentReceipt(app, { ...owner, notices: notice ? [notice] : [] });
     return receipt.markdown.length - plain.length;
   };
   const step = 'task-schedules/3-run-recovery';

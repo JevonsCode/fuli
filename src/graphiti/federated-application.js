@@ -106,7 +106,6 @@ import { createSessionPreferenceDelivery } from '../conversations/preference-ses
 import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import { knowledgeTags } from './knowledge-tags.js';
-import { applicationFormatNotice } from '../data-format/format-notices.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -166,7 +165,6 @@ export function openFederatedGraphApplication({
     // Read per call so a saved settings change applies without a restart.
     app.needsPerson = createNeedsPersonNotifier({ fetchImpl, consoleUrl: app.consoleUrl,
       readUrl: () => readRuntimeSettings(paths.runtimeSettingsPath).notifications.needsPersonUrl });
-    app.dataFormatNotice = applicationFormatNotice(app, dirname(runtimeConfigPath));
     app.explainSettings = () => describeSettings({ settings: readRuntimeSettings(paths.runtimeSettingsPath),
       capturePolicy: app.getCapturePolicy(), consoleUrl: app.consoleUrl });
   }

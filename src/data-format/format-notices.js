@@ -1,3 +1,5 @@
+import { dirname } from 'node:path';
+
 import { inspectLocalStores } from './local-stores.js';
 import { readFormatOperations } from './operations-log.js';
 
@@ -69,16 +71,21 @@ function several(ids) {
 }
 
 // The receipt notice of a FULI application with a local data directory
-// (federated-application.js): its stores, and its personal graph's state from
-// the provider's health.
-export function applicationFormatNotice(application, dataDir) {
-  return dataFormatReceiptNotice(dataDir,
-    { graphState: async () => (await application.personal.health())?.data_format ?? null });
+// (its runtime config's directory): its stores, and its personal graph's
+// state from the provider's health. One per application, built on first use;
+// none for an application without a data directory.
+const APPLICATION_NOTICES = new WeakMap();
+
+function applicationFormatNotice(application) {
+  if (!application.runtimeConfigPath) return null;
+  if (!APPLICATION_NOTICES.has(application)) {
+    APPLICATION_NOTICES.set(application, dataFormatReceiptNotice(dirname(application.runtimeConfigPath),
+      { graphState: async () => (await application.personal.health())?.data_format ?? null }));
+  }
+  return APPLICATION_NOTICES.get(application);
 }
 
-// The receipt notices of an application wired with applicationFormatNotice;
-// none for one without a local data directory.
 export async function receiptFormatNotices(application) {
-  const notice = await application.dataFormatNotice?.();
+  const notice = await applicationFormatNotice(application)?.();
   return notice ? [notice] : [];
 }
