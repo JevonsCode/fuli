@@ -3,8 +3,8 @@ from typing import Annotated
 from fastapi import Query
 
 from .models import SourceApplication
-from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskContextAdoptAgent, TaskContextCoordinationTask, TaskPreferenceRead, TurnReceiptClaim
-from .task_turn_receipts import claim_turn_receipt
+from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskContextAdoptAgent, TaskContextCoordinationTask, TaskPreferenceRead, TurnReceiptClaim, SessionTurnReceiptClaim
+from .task_turn_receipts import claim_session_turn_receipts, claim_turn_receipt
 from .project_memory_usage_routes import register_project_memory_usage_routes
 
 
@@ -52,6 +52,10 @@ def register_task_context_routes(application, store, Actor):
     @application.post('/v1/task-contexts/{token}/turn-receipt/claim')
     async def claim_receipt(token: str, request: TurnReceiptClaim, actor: Actor):
         return await claim_turn_receipt(store, actor, token, request)
+
+    @application.post('/v1/task-contexts/{token}/turn-receipts/claim-unread')
+    async def claim_unread_receipts(token: str, request: SessionTurnReceiptClaim, actor: Actor):
+        return await claim_session_turn_receipts(store, actor, token, request)
 
     @application.post('/v1/task-contexts/{token}/preferences/read')
     async def read_preferences(token: str, request: TaskPreferenceRead, actor: Actor):

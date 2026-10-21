@@ -22,7 +22,7 @@ from .knowledge_usage_models import KnowledgeUsageCreate
 from .task_context_auto_close import close_previous_routine_fallback, routine_context_state
 from .task_worker_attribution import lock_checkpoint_context, checkpoint_collaboration
 from .task_activity_origin import context_activity_origin
-from .task_turn_receipts import claim_session_turn_receipts, mark_turn_receipt_unread
+from .task_turn_receipts import mark_turn_receipt_unread, unread_session_turn_receipts
 
 
 class StoreTaskContexts:
@@ -43,7 +43,7 @@ class StoreTaskContexts:
             await scoped._lock_task_context_session(session_id)
             await scoped._link_task_context_sessions(request.personal_space_id, [session_id])
             saved = await scoped._begin_task_context(actor, request)
-            unread = await claim_session_turn_receipts(scoped, session_id, request.token)
+            unread = await unread_session_turn_receipts(scoped, session_id, request.token)
             return {**saved, **({'unread_turn_receipts': unread} if unread else {})}
 
     async def _lock_task_context_session(self, session_id):

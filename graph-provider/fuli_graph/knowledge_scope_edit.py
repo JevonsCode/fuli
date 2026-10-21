@@ -5,7 +5,9 @@ now on changes, with a revision of the scope before and after. Narrowing stops
 later use elsewhere; nothing already done is undone. An edit from a stale read
 is refused with the current version. A preference already in use (confirmed by
 a person or an Agent policy) can be narrowed or moved within its coverage, but
-widening it still goes through the reviewed global-preference decision.
+widening it still goes through the reviewed global-preference decision. An
+item held in a temporary or unknown scope is placed, not widened, wherever the
+person chooses.
 """
 import json
 from datetime import datetime, timezone
@@ -80,10 +82,12 @@ async def change_knowledge_scope(store, actor: dict, item_id: str, request: Know
 
 
 def _widens(before, request) -> bool:
-    """True when the new scope reaches anywhere the item did not apply before."""
-    if before.kind == 'global':
+    """True when the new scope reaches anywhere the item did not apply before.
+    A temporary or unknown scope is no place the person chose: choosing one is
+    placing the item, not widening it. Its confirmation stays as it was."""
+    if before.kind in ('global', 'temporary', 'unknown'):
         return False
-    if request.scope == 'global' or before.kind in ('temporary', 'unknown'):
+    if request.scope == 'global':
         return True
     covered = {project.id for project in before.projects}
     if before.kind == 'agent':

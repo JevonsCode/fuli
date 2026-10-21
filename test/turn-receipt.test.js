@@ -211,19 +211,26 @@ test('a retried checkpoint shows the same items again without writing or notifyi
 });
 
 test('a receipt that could not be read stays unread and the next entry delivers it exactly once', async () => {
-  const { app, begin, state } = checkpointFixture({ readable: false });
+  const { app, begin, registry, state } = checkpointFixture({ readable: false });
   const task = begin();
   const result = await checkpointTaskKnowledge(app, checkpoint(task));
   assert.match(result.agent_receipt.markdown, /\nFULI 本轮沉淀：已保存，回执暂未读取，下一轮补发$/);
   assert.doesNotMatch(result.agent_receipt.markdown, /「/, 'no item is claimed before it is read back');
+  const entry = async next => beginTaskFromPreferences({ ...app, taskContextRegistry: { begin: async () => next,
+    claimUnreadTurnReceipts: (...input) => registry.claimUnreadTurnReceipts(...input) } },
+  { context: { personal_project_id: 'project-a', project_agent_id: null }, effective_preferences: [],
+    agent_receipt: { required: true, markdown: 'FULI Agent：负责人 X' } }, { sessionId: 'native-session', sourceApplication: 'codex' });
+  // Still unreadable at the next entry: nothing is said, nothing is claimed.
+  const failing = await entry(begin());
+  assert.equal(failing.agent_receipt.markdown, 'FULI Agent：负责人 X');
+  assert.equal([...registry.receipts.values()][0].state, 'unread');
+  // Readable at the one after: shown once.
   state.readable = true;
   const next = begin();
   assert.equal(next.unreadTurnReceipts.length, 1);
-  const entryApp = { ...app, taskContextRegistry: { begin: async () => next } };
-  const delivered = await beginTaskFromPreferences(entryApp, { context: { personal_project_id: 'project-a',
-    project_agent_id: null }, effective_preferences: [], agent_receipt: { required: true, markdown: 'FULI Agent：负责人 X' } },
-  { sessionId: 'native-session', sourceApplication: 'codex' });
+  const delivered = await entry(next);
   assert.match(delivered.agent_receipt.markdown, /^FULI Agent：负责人 X\nFULI 上轮沉淀（补发） 3 条：\n- 新增/);
+  assert.equal((await entry(next)).agent_receipt.markdown, delivered.agent_receipt.markdown, 'a retried entry shows the same');
   assert.deepEqual(begin().unreadTurnReceipts, [], 'a later entry never delivers it again');
 });
 
@@ -251,11 +258,14 @@ test('the Provider registry maps unread receipts and claims through the Provider
   const calls = [];
   const registry = new ProviderTaskContextRegistry({
     beginTaskContext: async input => ({ ...input, checkpoint: null,
-      unread_turn_receipts: [{ personal_project_id: 'p', capture_results: saved() }] }),
-    claimTurnReceipt: async (token, input) => { calls.push({ token, input }); return { deliver: true }; }
+      unread_turn_receipts: [{ receipt_id: 'r1', personal_project_id: 'p', capture_results: saved() }] }),
+    claimTurnReceipt: async (token, input) => { calls.push({ token, input }); return { deliver: true }; },
+    claimUnreadTurnReceipts: async (token, input) => { calls.push({ token, input }); return { claimed: ['r1'] }; }
   }, 'synthetic-space');
   const task = await registry.begin({ sessionId: 's', sourceApplication: 'codex', personalProjectId: 'p' });
-  assert.deepEqual(task.unreadTurnReceipts, [{ personal_project_id: 'p', capture_results: saved() }]);
+  assert.deepEqual(task.unreadTurnReceipts, [{ receipt_id: 'r1', personal_project_id: 'p', capture_results: saved() }]);
   assert.equal(await registry.claimTurnReceipt('fuli-task-x', 'codex'), true);
-  assert.deepEqual(calls, [{ token: 'fuli-task-x', input: { personal_space_id: 'synthetic-space', source_application: 'codex' } }]);
+  assert.deepEqual(await registry.claimUnreadTurnReceipts('fuli-task-y', ['r1'], 'codex'), ['r1']);
+  assert.deepEqual(calls, [{ token: 'fuli-task-x', input: { personal_space_id: 'synthetic-space', source_application: 'codex' } },
+    { token: 'fuli-task-y', input: { personal_space_id: 'synthetic-space', source_application: 'codex', receipt_ids: ['r1'] } }]);
 });

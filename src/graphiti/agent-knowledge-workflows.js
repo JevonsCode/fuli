@@ -114,7 +114,7 @@ export async function beginTaskFromPreferences(application, preferences, {
   const remembering = rememberRequested(taskPrompt);
   const autoClosed = !remembering && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
   const conversation = await beginConversation(application, task);
-  const unread = preferences.agent_receipt ? await unreadTurnReceipt(application, task.unreadTurnReceipts) : null;
+  const unread = preferences.agent_receipt ? await unreadTurnReceipt(application, task) : null;
   return withPreferenceScope({
     conversation,
     taskContextToken: task.token,

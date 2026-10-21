@@ -90,6 +90,15 @@ export class ProviderTaskContextRegistry {
     return result?.deliver === true;
   }
 
+  // The entry that read earlier turns' receipts back claims them; returns the
+  // IDs it may show (another entry may have claimed some meanwhile).
+  async claimUnreadTurnReceipts(token, receiptIds, sourceApplication = 'other') {
+    const result = await this.provider.claimUnreadTurnReceipts(token, {
+      personal_space_id: this.personalSpaceId, source_application: sourceApplication, receipt_ids: receiptIds
+    });
+    return Array.isArray(result?.claimed) ? result.claimed : [];
+  }
+
   verify(sessionId, sourceApplication = 'other') {
     return this.provider.verifyTaskCheckpoint({
       personal_space_id: this.personalSpaceId, session_id: sessionId,

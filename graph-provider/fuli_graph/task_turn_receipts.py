@@ -3,8 +3,10 @@
 A completed checkpoint that saved knowledge leaves its receipt unread. The
 checkpoint's own reply claims it; when that reply never carried it (the call
 failed after saving, or the host could not append it), the next task entry of
-the same session claims it instead. A claim names its claimant, so a retry of
-the same call gets the same receipts again and nobody else ever does.
+the same session is told about it, reads it back and only then claims it, so a
+receipt that could not be read stays unread for a later entry. A claim names
+its claimant, so a retry of the same call gets the same receipts again and
+nobody else ever does.
 """
 import json
 
@@ -41,22 +43,39 @@ async def claim_turn_receipt(store, actor: dict, token: str, request) -> dict:
     return {'deliver': state == 'unread' or claimant == token}
 
 
-async def claim_session_turn_receipts(store, session_node_id: str, token: str) -> list[dict]:
-    """A new entry claims receipts its session's earlier turns never delivered.
-    Call inside the entry's transaction, with the session locked."""
+async def unread_session_turn_receipts(store, session_node_id: str, token: str) -> list[dict]:
+    """Receipts this session's earlier turns never delivered, or that this same
+    entry already claimed (a retry). Reading claims nothing."""
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (:FuliTaskContextSession {id: $session_id})-[:HAS_CONTEXT]->(task:FuliTaskContext)
         WHERE task.token <> $token
           AND (task.turn_receipt_state = 'unread' OR task.turn_receipt_claimant = $token)
-        SET task.turn_receipt_state = 'delivered', task.turn_receipt_claimant = $token
-        RETURN task.record_json AS record_json
+        RETURN task.id AS receipt_id, task.record_json AS record_json
         ORDER BY task.created_at
         ''', session_id=session_node_id, token=token)
     receipts = []
     for record in records:
         value = json.loads(record['record_json'])
         results = (value.get('checkpoint') or {}).get('capture_results') or []
-        receipts.append({'personal_project_id': value.get('personal_project_id'),
+        receipts.append({'receipt_id': record['receipt_id'], 'personal_project_id': value.get('personal_project_id'),
                          'capture_results': results})
     return receipts
+
+
+async def claim_session_turn_receipts(store, actor: dict, token: str, request) -> dict:
+    """The entry that read these receipts back claims them for its reply. Only
+    receipts of its own session that are still unread, or already its own."""
+    store._require_personal()
+    await store.authorize(actor, request.personal_space_id, 'maintainer')
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_TASK_CONTEXT_SESSION]->
+              (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(:FuliTaskContext {token: $token})
+        MATCH (session)-[:HAS_CONTEXT]->(task:FuliTaskContext)
+        WHERE task.token <> $token AND task.id IN $receipt_ids
+          AND (task.turn_receipt_state = 'unread' OR task.turn_receipt_claimant = $token)
+        SET task.turn_receipt_state = 'delivered', task.turn_receipt_claimant = $token
+        RETURN task.id AS receipt_id
+        ''', space_id=request.personal_space_id, token=token, receipt_ids=request.receipt_ids)
+    return {'claimed': [record['receipt_id'] for record in records]}

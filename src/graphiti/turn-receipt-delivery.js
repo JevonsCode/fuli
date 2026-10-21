@@ -4,8 +4,9 @@ import { deferredTurnReceipt, readTurnReceipt, savedEpisodeIds } from '../agents
 // marks a checkpoint that saved knowledge as unread. Its own reply claims it
 // after reading it back; a retry of that checkpoint claims it again and shows
 // the same lines. When the reply could not carry it (reading back or claiming
-// failed, or the call failed after saving) it stays unread, and the session's
-// next task entry claims it and shows it once, marked as a late delivery.
+// failed, or the call failed after saving) it stays unread. The session's next
+// task entry reads it back first and claims it only then, so one that cannot be
+// read yet stays unread for a later entry; it is shown once, marked as late.
 
 // The receipt of a completed checkpoint, or null when it saved nothing new.
 // memory: the Agent working-memory write this checkpoint made, if any.
@@ -22,14 +23,22 @@ export async function checkpointTurnReceipt(application, task, { memory = null, 
   }
 }
 
-// What earlier turns of this session saved but never showed, claimed by this
-// entry (a retry of the same entry gets the same receipts back).
-export async function unreadTurnReceipt(application, unread) {
-  const results = (unread ?? []).flatMap(item => item.capture_results ?? []);
-  if (!savedEpisodeIds(results).length) return null;
+// What earlier turns of this session saved but never showed: read back, then
+// claimed by this entry (a retry of the same entry gets the same receipts back).
+// Nothing is claimed or said when it cannot be read; a later entry tries again.
+export async function unreadTurnReceipt(application, task) {
+  const unread = (task.unreadTurnReceipts ?? []).filter(item => savedEpisodeIds(item.capture_results).length);
+  if (!unread.length) return null;
+  const heading = '上轮沉淀（补发）';
   try {
-    return await readTurnReceipt(application, results, { heading: '上轮沉淀（补发）' });
+    const receipt = await readTurnReceipt(application, unread.flatMap(item => item.capture_results), { heading });
+    const claimed = new Set(await application.taskContextRegistry.claimUnreadTurnReceipts(task.token,
+      unread.map(item => item.receipt_id), task.sourceApplication));
+    if (claimed.size === unread.length) return receipt;
+    // Another entry took some meanwhile: show only what this one claimed.
+    const mine = unread.filter(item => claimed.has(item.receipt_id)).flatMap(item => item.capture_results);
+    return mine.length ? await readTurnReceipt(application, mine, { heading }) : null;
   } catch {
-    return { lines: ['FULI 上轮沉淀（补发）：回执读取失败，可在控制台知识页查看'], summary: { status: 'unreadable' } };
+    return null;
   }
 }

@@ -148,3 +148,7 @@ class TaskContextCheckpoint(StrictModel):
 class TurnReceiptClaim(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     source_application: SourceApplication
+
+
+class SessionTurnReceiptClaim(TurnReceiptClaim):
+    receipt_ids: list[str] = Field(min_length=1, max_length=64)

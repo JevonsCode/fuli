@@ -319,6 +319,11 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  claimUnreadTurnReceipts(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/turn-receipts/claim-unread`, {
+      method: 'POST', body: input
+    });
+  }
   verifyTaskCheckpoint(query) {
     return this.#request(`/v1/task-context-sessions/checkpoint?${new URLSearchParams(query)}`);
   }

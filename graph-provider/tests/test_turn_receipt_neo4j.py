@@ -148,9 +148,19 @@ async def test_undecided_scope_stays_in_the_temporary_session_project_until_the_
         current = await view(client, space_id, item_id)
         assert (await move(client, space_id, item_id, 'projects', version=current['version'],
                            projects=[temporary['project_id']])).status_code == 422
-        # Confirmed and applied in the temporary project: moving it to beta widens it, so review decides.
-        widened = await move(client, space_id, item_id, 'projects', version=current['version'], projects=['beta'])
-        assert widened.status_code == 409 and widened.json()['detail']['code'] == 'widening_requires_review'
+        # Confirmed while held there: the person's choice places it; nothing to widen from.
+        placed = await move(client, space_id, item_id, 'projects', version=current['version'], projects=['beta'])
+        assert placed.status_code == 200, placed.text
+        after = await view(client, space_id, item_id)
+        assert after['item_id'] == item_id and after['confirmation_status'] == 'confirmed'
+        assert (after['scope']['kind'], after['scope']['status']) == ('projects', 'set')
+        assert [project['id'] for project in after['scope']['projects']] == ['beta']
+        [revision] = [item for item in after['revisions'] if item['action'] == 'scope_change']
+        assert revision['previous']['scope'] == {'kind': 'temporary', 'status': 'undetermined', 'agent_id': None,
+            'projects': [{'id': temporary['project_id'], 'name': temporary['profile']['name'], 'temporary': True}]}
+        assert item_id in await applied(client, space_id, 'beta')
+        assert item_id not in await applied(client, space_id, temporary['project_id'])
+        assert item_id not in await applied(client, space_id, 'alpha')
 
 
 @pytest.mark.asyncio
@@ -275,14 +285,28 @@ async def test_a_turn_receipt_is_delivered_once_by_its_reply_or_else_by_the_next
         assert await claim(client, space_id, first) is True, 'a retry of the same reply shows it again'
         entry = await begin(client, space_id, second, 'turn-2')
         assert 'unread_turn_receipts' not in entry, 'already delivered by its own reply'
-        # The reply of turn 2 never claimed its receipt: turn 3's entry delivers it, once.
+        # The reply of turn 2 never claimed its receipt. Turn 3's entry is told about
+        # it but could not read it back, so it claims nothing and it stays unread.
         await complete(client, space_id, second, 'episode-2', 'entity-2')
-        late = await begin(client, space_id, third, 'turn-3')
-        assert [item['capture_results'][0]['episode_id'] for item in late['unread_turn_receipts']] == ['episode-2']
-        retried = await begin(client, space_id, third, 'turn-3')
+        unreadable = await begin(client, space_id, third, 'turn-3')
+        assert [item['capture_results'][0]['episode_id'] for item in unreadable['unread_turn_receipts']] == ['episode-2']
+        # Turn 4's entry reads it back and claims it: shown once.
+        late = await begin(client, space_id, fourth, 'turn-4')
+        ids = [item['receipt_id'] for item in late['unread_turn_receipts']]
+        assert ids == [item['receipt_id'] for item in unreadable['unread_turn_receipts']]
+        assert await claim_unread(client, space_id, fourth, ids) == ids
+        retried = await begin(client, space_id, fourth, 'turn-4')
         assert retried['unread_turn_receipts'] == late['unread_turn_receipts'], 'a retried entry gets the same'
+        assert await claim_unread(client, space_id, fourth, ids) == ids
         assert await claim(client, space_id, second) is False, 'never shown twice'
-        assert 'unread_turn_receipts' not in await begin(client, space_id, fourth, 'turn-4')
+        fifth = f'fuli-task-{uuid4()}'
+        assert 'unread_turn_receipts' not in await begin(client, space_id, fifth, 'turn-5')
+        assert await claim_unread(client, space_id, fifth, ids) == [], 'another entry cannot take it'
+
+
+async def claim_unread(client, space_id, token, ids):
+    return ok(await client.post(f'/v1/task-contexts/{token}/turn-receipts/claim-unread', json={
+        'personal_space_id': space_id, 'source_application': 'codex', 'receipt_ids': ids}))['claimed']
 
 
 @pytest.mark.asyncio
@@ -307,3 +331,36 @@ async def test_a_preference_can_belong_to_one_fla_and_then_applies_only_to_it():
             'personal_space_id': space_id, 'personal_project_id': 'sample-project', 'project_agent_id': 'engineer'}))
         assert item_id in {item['id'] for item in for_agent['effective_preferences']}
         assert item_id not in await applied(client, space_id, 'sample-project')
+
+
+async def held_confirmed(client, space_id, key, text):
+    scope_key = hashlib.sha256(f'synthetic-{key}'.encode()).hexdigest()
+    temporary = ok(await client.post('/v1/temporary-projects/ensure', json={
+        'personal_space_id': space_id, 'scope_key': scope_key, 'source_application': 'codex', 'lifetime': 'session'}))
+    item_id = (await commit(client, space_id, [preference(key, text)], project=temporary['project_id'],
+                            scope_status='undetermined'))['entity_ids'][0]
+    await confirm(client, space_id, item_id)
+    return item_id, (await view(client, space_id, item_id))['version']
+
+
+@pytest.mark.asyncio
+async def test_a_confirmed_held_item_is_placed_global_or_with_one_fla_by_the_person():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        await seed_agent(client, space_id)
+        to_global, version = await held_confirmed(client, space_id, 'held-global', 'Synthetic held preference')
+        assert (await move(client, space_id, to_global, 'global', version=version)).status_code == 200
+        placed = await view(client, space_id, to_global)
+        assert (placed['item_id'], placed['scope']['kind'], placed['scope']['status'], placed['confirmation_status']) == (
+            to_global, 'global', 'set', 'confirmed')
+        assert any(item['action'] == 'scope_change' for item in placed['revisions'])
+        assert to_global in await applied(client, space_id, 'alpha')
+        to_fla, version = await held_confirmed(client, space_id, 'held-fla', 'Synthetic held reviewer habit')
+        assert (await move(client, space_id, to_fla, 'agent', version=version, projects=['sample-project'],
+                           agent='engineer')).status_code == 200
+        placed = await view(client, space_id, to_fla)
+        assert (placed['scope']['kind'], placed['scope']['agent_id']) == ('agent', 'engineer')
+        # Once placed it is in use: widening that place again goes through review.
+        widened = await move(client, space_id, to_fla, 'global', version=placed['version'])
+        assert widened.status_code == 409 and widened.json()['detail']['code'] == 'widening_requires_review'

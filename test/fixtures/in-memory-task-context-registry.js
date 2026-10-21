@@ -49,9 +49,10 @@ export class TaskContextRegistry {
     this.tokens.set(task.token, task);
     const unreadTurnReceipts = [];
     for (const receipt of this.receipts.values()) {
-      if (receipt.sessionKey !== key || receipt.token === task.token || receipt.state !== 'unread') continue;
-      Object.assign(receipt, { state: 'delivered', claimant: task.token });
-      unreadTurnReceipts.push({ personal_project_id: receipt.personalProjectId, capture_results: receipt.captureResults });
+      if (receipt.sessionKey !== key || receipt.token === task.token
+        || !(receipt.state === 'unread' || receipt.claimant === task.token)) continue;
+      unreadTurnReceipts.push({ receipt_id: receipt.token, personal_project_id: receipt.personalProjectId,
+        capture_results: receipt.captureResults });
     }
     return {
       ...snapshot(task), unreadTurnReceipts,
@@ -78,6 +79,17 @@ export class TaskContextRegistry {
         state: 'unread', claimant: null });
     }
     return snapshot(task);
+  }
+
+  claimUnreadTurnReceipts(token, receiptIds) {
+    const claimed = [];
+    for (const id of receiptIds) {
+      const receipt = this.receipts.get(id);
+      if (!receipt || id === token || !(receipt.state === 'unread' || receipt.claimant === token)) continue;
+      Object.assign(receipt, { state: 'delivered', claimant: token });
+      claimed.push(id);
+    }
+    return claimed;
   }
 
   claimTurnReceipt(token) {
