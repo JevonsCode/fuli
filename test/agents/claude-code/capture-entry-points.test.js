@@ -43,7 +43,7 @@ test('Claude Code: "这次别记" pauses at once with no confirmation and the ne
   const paused = await callAgentTool(f.app, 'update_capture_policy', { sessionPaused: true,
     taskContextToken: first.context.taskContextToken, sourceApplication: 'claude_code' });
   assert.equal(paused.status, 'session_paused');
-  assert.equal(paused.previewToken, undefined, 'no preview for a session pause');
+  assert.equal(paused.confirmUrl, undefined, 'a session pause needs no console confirmation');
   const next = await claudeEntry(f, f.dirs.novel, { session: SESSION });
   assert.match(next.output.systemMessage, /Fuli: 本会话已暂停记录/);
   assert.equal(f.store.read().projectMode, 'all', 'nothing long-term changed');

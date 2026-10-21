@@ -39,7 +39,7 @@ test('Cursor: "这次别记" pauses at once with no confirmation and the next re
   const paused = await callAgentTool(f.app, 'update_capture_policy', { sessionPaused: true,
     taskContextToken: first.context.taskContextToken, sourceApplication: 'cursor' });
   assert.equal(paused.status, 'session_paused');
-  assert.equal(paused.previewToken, undefined, 'no preview for a session pause');
+  assert.equal(paused.confirmUrl, undefined, 'a session pause needs no console confirmation');
   const next = await cursorEntry(f, f.dirs.novel, { session: SESSION });
   assert.match(receiptOf(next.context), /本会话已暂停记录/);
   assert.equal(f.store.read().projectMode, 'all', 'nothing long-term changed');
