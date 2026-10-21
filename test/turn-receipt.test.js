@@ -15,6 +15,7 @@ import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.
 
 const CONSOLE = 'http://127.0.0.1:3999';
 const CONFIG = { personal: { spaceId: 'synthetic-space' } };
+const SESSION_LIST = `${CONSOLE}/sessions/synthetic-space/codex/native-session`;
 const ITEM_LINK = /\[修改\]\(<http:\/\/127\.0\.0\.1:3999\/knowledge\/item\/synthetic-space\/(entity|relationship)\/[^>]+>\)$/;
 
 function entry(overrides = {}) {
@@ -184,7 +185,8 @@ test('a saved turn shows every item read back from the Provider after the identi
   const result = await checkpointTaskKnowledge(app, checkpoint(task));
   const [identity, heading, ...lines] = result.agent_receipt.markdown.split('\n');
   assert.match(identity, /^FULI Agent：/);
-  assert.equal(heading, 'FULI 本轮沉淀 3 条：');
+  // rec#5 C6: the heading links everything this session recorded, compactly.
+  assert.equal(heading, `FULI 本轮沉淀 3 条（[本会话已记录](<${SESSION_LIST}>)）：`);
   const byContent = Object.fromEntries(lines.map(line => [line.match(/「(.+?)」/)[1], line]));
   assert.deepEqual(Object.keys(byContent).sort(), ['stored: Deploys go through the staging gate',
     'stored: Lead with the conclusion', 'stored: Prefer short status lines']);
@@ -232,7 +234,8 @@ test('a receipt that could not be read stays unread and the next entry delivers 
   const next = begin();
   assert.equal(next.unreadTurnReceipts.length, 1);
   const delivered = await entry(next);
-  assert.match(delivered.agent_receipt.markdown, /^FULI Agent：负责人 X\nFULI 上轮沉淀（补发） 3 条：\n- 新增/);
+  assert.ok(delivered.agent_receipt.markdown.startsWith(
+    `FULI Agent：负责人 X\nFULI 上轮沉淀（补发） 3 条（[本会话已记录](<${SESSION_LIST}>)）：\n- 新增`));
   assert.equal((await entry(next)).agent_receipt.markdown, delivered.agent_receipt.markdown, 'a retried entry shows the same');
   assert.deepEqual(begin().unreadTurnReceipts, [], 'a later entry never delivers it again');
 });
@@ -282,7 +285,8 @@ test('a capture sent without routing is kept with the checkpoint and gets its re
   const task = begin();
   const result = await checkpointTaskKnowledge(app, { taskContextToken: task.token, sourceApplication: 'codex',
     disposition: 'capture_candidates', reason: 'Keep the fact.', capture: graphCapture() });
-  assert.match(result.agent_receipt.markdown, /\nFULI 本轮沉淀 1 条：\n- 新增 事实「stored: Synthetic project fact」｜项目 project-a｜/);
+  assert.ok(result.agent_receipt.markdown.includes(`\nFULI 本轮沉淀 1 条（[本会话已记录](<${SESSION_LIST}>)）：`
+    + '\n- 新增 事实「stored: Synthetic project fact」｜项目 project-a｜'));
   const [saved] = registry.context(task.token, 'codex').checkpoint.captureResults;
   assert.deepEqual([saved.scope, saved.personal_project_id, saved.status], ['current_project', 'project-a', 'committed']);
 });

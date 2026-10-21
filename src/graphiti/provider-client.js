@@ -629,6 +629,10 @@ export class GraphitiProviderClient {
   readTurnReceipt(input) {
     return this.#request('/v1/knowledge/turn-receipts', { method: 'POST', body: input });
   }
+  // rec#5 C6: everything one host session recorded.
+  readSessionRecords(input) {
+    return this.#request('/v1/session-records', { method: 'POST', body: input });
+  }
   changeKnowledgeScope(itemId, input) {
     return this.#request(`/v1/knowledge/items/${encodeURIComponent(itemId)}/scope`, {
       method: 'POST', body: input

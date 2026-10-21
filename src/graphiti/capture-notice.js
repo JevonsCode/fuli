@@ -1,3 +1,5 @@
+import { localClockTime } from '../text/clock-time.js';
+
 // What a person is told when automatic recording did not run (rec#11 D-01,
 // rec#5 C5). Edits the person submits explicitly are not automatic recording
 // and still save, so every notice says so. A notice names the decision and any
@@ -45,10 +47,8 @@ export function captureNotice(reason, since = null) {
 // A checkpoint retried after its first attempt keeps that attempt's decision
 // without its time, so the notice still says the session is paused or stopped.
 export function sinceNotice(text, since) {
-  const at = since ? new Date(since) : null;
-  if (!at || Number.isNaN(at.getTime())) return text;
-  const pad = value => String(value).padStart(2, '0');
-  return `${text}（自 ${pad(at.getHours())}:${pad(at.getMinutes())} 起）`;
+  const at = localClockTime(since);
+  return at ? `${text}（自 ${at} 起）` : text;
 }
 
 // A receipt's notices for one turn: the decision, then each explicit operation

@@ -85,10 +85,14 @@ class KnowledgeItemSummary(StrictModel):
 
 
 class KnowledgeEvidenceSource(StrictModel):
+    """Where one source of an item came from: the host session, its Agent
+    conversation (absent before rec#5 C6 or without a journal), client, turn,
+    project and time. The console opens the session's record list from it."""
     episode_id: str
     source_kind: str | None = None
     source_application: str | None = None
     session_id: str | None = None
+    conversation_id: str | None = None
     source_turn_id: str | None = None
     excerpt: str | None = None
     personal_project_id: str | None = None

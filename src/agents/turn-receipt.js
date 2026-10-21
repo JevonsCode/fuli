@@ -1,4 +1,4 @@
-import { receiptConsoleUrl, receiptText } from './identity-receipt.js';
+import { receiptConsoleUrl, receiptSummary, receiptText, sessionRecordsUrl } from './identity-receipt.js';
 
 // The per-turn receipt (rec#20): after a turn's checkpoint saved knowledge, the
 // reply tail lists every item that turn actually created or replaced, read back
@@ -7,18 +7,18 @@ import { receiptConsoleUrl, receiptText } from './identity-receipt.js';
 // weight and what it rests on (or none), attached tags, source and confirmation,
 // and a link to that item's quick edit. Nothing saved, a duplicate, a plain
 // conversation archive or a usage-only weight change adds nothing at all.
+// When the session is known, the heading links everything it recorded (rec#5 C6).
 
 // What the receipt may add to one reply. Past it, the rest is counted and linked.
 const MAX_RECEIPT_CHARS = 1800;
-const CONTENT_CHARS = 60;
 // The Provider reads one turn's episodes at a time (one per capture scope).
 const EPISODES_PER_READ = 3;
 // A full-list link names at most this many episodes; late receipts are
 // delivered in batches that fit it.
 export const MAX_LIST_EPISODES = 64;
-const CATEGORY = Object.freeze({ taste: '品味', judgment: '判断', personality: '协作性格', rule: '规则类',
+export const CATEGORY = Object.freeze({ taste: '品味', judgment: '判断', personality: '协作性格', rule: '规则类',
   experience: '经验', fact: '事实', knowledge: '知识' });
-const CONFIRMATION = Object.freeze({ pending: '待确认', agent_confirmed: 'Agent已确认', confirmed: '你已确认' });
+export const CONFIRMATION = Object.freeze({ pending: '待确认', agent_confirmed: 'Agent已确认', confirmed: '你已确认' });
 const SOURCE = Object.freeze({ user_explicit: '你明确说的', agent_inferred: 'Agent推断' });
 
 function knowledgeItemEditUrl(application, itemKind, itemId) {
@@ -33,20 +33,21 @@ function turnReceiptListUrl(application, episodeIds) {
 
 // The receipt of saved capture results: null when nothing substantive changed.
 // memory is the Agent working-memory write this checkpoint made, if any.
+// session: { sourceApplication, sessionId } of the turn, for the session link.
 export async function readTurnReceipt(application, captureResults, { memory = null, agentName = null,
-  heading = '本轮沉淀' } = {}) {
+  heading = '本轮沉淀', session = null } = {}) {
   const episodeIds = savedEpisodeIds(captureResults);
   const { entries } = episodeIds.length ? await readEpisodeReceipts(application, episodeIds) : { entries: [] };
-  return renderTurnReceipt(application, entries, { episodeIds, memory, agentName, heading });
+  return renderTurnReceipt(application, entries, { episodeIds, memory, agentName, heading, session });
 }
 
 // The receipt lines of entries already read back; null when nothing changed.
 export function renderTurnReceipt(application, entries, { episodeIds, memory = null, agentName = null,
-  heading = '本轮沉淀' }) {
+  heading = '本轮沉淀', session = null }) {
   const lines = [...new Map(entries.map(entry => [`${entry.item_kind}:${entry.item_id}`, entry])).values()]
     .map(entry => entryLine(application, entry));
   if (memory) lines.push(memoryLine(application, memory, agentName));
-  return lines.length ? boundedReceipt(application, heading, lines, episodeIds) : null;
+  return lines.length ? boundedReceipt(application, heading, lines, episodeIds, session) : null;
 }
 
 // What the episodes created or replaced, read in the Provider's batches and
@@ -79,7 +80,7 @@ export function savedEpisodeIds(captureResults) {
     .map(result => result.episode_id).filter(Boolean))];
 }
 
-function boundedReceipt(application, heading, lines, episodeIds) {
+function boundedReceipt(application, heading, lines, episodeIds, session) {
   const shown = [];
   let used = 0;
   for (const line of lines) {
@@ -90,14 +91,18 @@ function boundedReceipt(application, heading, lines, episodeIds) {
   const omitted = lines.length - shown.length;
   const listUrl = episodeIds.length ? turnReceiptListUrl(application, episodeIds) : null;
   return {
-    lines: [`FULI ${heading} ${lines.length} 条：`, ...shown,
+    lines: [`FULI ${heading} ${lines.length} 条${sessionLink(application, session)}：`, ...shown,
       ...(omitted ? [`另 ${omitted} 条未列出：${listUrl ? `[查看全部](<${listUrl}>)` : '见控制台知识页'}`] : [])],
     summary: { status: 'saved', total: lines.length, shown: shown.length, ...(listUrl ? { list_url: listUrl } : {}) }
   };
 }
 
+function sessionLink(application, session) {
+  return session?.sessionId ? `（[本会话已记录](<${sessionRecordsUrl(application, session)}>)）` : '';
+}
+
 function entryLine(application, entry) {
-  return `- ${entry.change === 'updated' ? '更新' : '新增'} ${CATEGORY[entry.category] ?? '知识'}「${shortText(entry.content || entry.title)}」`
+  return `- ${entry.change === 'updated' ? '更新' : '新增'} ${CATEGORY[entry.category] ?? '知识'}「${receiptSummary(entry.content || entry.title)}」`
     + `｜${scopeLabel(entry.scope)}｜${weightLabel(entry.weight)}｜${tagLabel(entry.tags)}`
     + `｜${SOURCE[entry.content_source] ?? '来源未记录'}·${CONFIRMATION[entry.confirmation_status] ?? '待确认'}`
     + `｜[修改](<${knowledgeItemEditUrl(application, entry.item_kind, entry.item_id)}>)`;
@@ -106,7 +111,7 @@ function entryLine(application, entry) {
 // FLA working notes carry no per-item weight and are never rules to apply.
 function memoryLine(application, memory, agentName) {
   const url = `${receiptConsoleUrl(application)}/agents/${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(memory.agentId)}`;
-  return `- ${memory.revision > 1 ? '更新' : '新增'} FLA笔记「${shortText(memory.memory.summary)}」`
+  return `- ${memory.revision > 1 ? '更新' : '新增'} FLA笔记「${receiptSummary(memory.memory.summary)}」`
     + `｜FLA ${receiptText(agentName || memory.agentId)}｜暂无权重｜无标签｜Agent笔记·不作为规则｜[查看](<${url}>)`;
 }
 
@@ -131,7 +136,3 @@ function tagLabel(tags) {
   return tags?.length ? tags.map(tag => `#${receiptText(tag.name)}`).join(' ') : '无标签';
 }
 
-function shortText(value) {
-  const characters = [...String(value ?? '').replace(/\s+/g, ' ').trim()];
-  return receiptText(characters.length > CONTENT_CHARS ? `${characters.slice(0, CONTENT_CHARS).join('')}…` : characters.join(''));
-}

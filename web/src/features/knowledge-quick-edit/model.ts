@@ -52,6 +52,7 @@ export interface EvidenceSource {
   source_kind?: string | null
   source_application?: string | null
   session_id?: string | null
+  conversation_id?: string | null
   excerpt?: string | null
   created_at?: string | null
 }

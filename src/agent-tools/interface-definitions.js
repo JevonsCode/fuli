@@ -54,6 +54,12 @@ export const AGENT_INTERFACE_DEFINITIONS = [
       taskContextToken: id }),
   },
   {
+    name: 'read_session_records',
+    title: 'READ · Read what this session recorded',
+    description: 'When the user asks what FULI recorded this session ("这次都记了我什么"): its saved turns, knowledge (待确认/已确认) and preference evidence, numbered as on the console list, and stretches not recorded. Reply with markdown unchanged. Only records this session made in the current project; others stay in the console.',
+    inputSchema: objectSchema({ taskContextToken: id }, ['taskContextToken']),
+  },
+  {
     name: 'explain_settings',
     title: 'READ · Explain FULI settings',
     description: 'When the user asks how to set FULI up or what a setting does: each setting with its current value, effect, restart need and who changes it. Explain the effect before any change. Only capture has an Agent write tool; for other settings give the user the returned settingsUrl.',

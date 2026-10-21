@@ -124,6 +124,13 @@ export const router = createRouter({
       meta: { title: 'routes.knowledgeItem.title', layout: 'form', detail: true },
     },
     {
+      // rec#5 C6: one host session's records; a record opens as ?item=<space>/<key>.
+      path: '/sessions/:spaceId/:client/:sessionId',
+      name: 'session-records',
+      component: () => import('@/pages/SessionRecordsPage.vue'),
+      meta: { title: 'routes.sessionRecords.title', layout: 'canvas', detail: true },
+    },
+    {
       path: '/knowledge/turn/:spaceId',
       name: 'knowledge-turn-receipt',
       component: () => import('@/pages/KnowledgeTurnReceiptPage.vue'),

@@ -31,6 +31,7 @@ import { judgmentMessages } from './messages/judgment'
 import { taskScheduleMessages } from './messages/task-schedules'
 import { taskRunMessages } from './messages/task-runs'
 import { knowledgeQuickEditMessages } from './messages/knowledge-quick-edit'
+import { sessionRecordsMessages } from './messages/session-records'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -94,6 +95,7 @@ export const messages = {
     taskSchedules: taskScheduleMessages['zh-CN'],
     taskRuns: taskRunMessages['zh-CN'],
     knowledgeQuickEdit: knowledgeQuickEditMessages['zh-CN'],
+    sessionRecords: sessionRecordsMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
     common: commonMessages['zh-CN'],
@@ -129,6 +131,7 @@ export const messages = {
     taskSchedules: taskScheduleMessages['en-US'],
     taskRuns: taskRunMessages['en-US'],
     knowledgeQuickEdit: knowledgeQuickEditMessages['en-US'],
+    sessionRecords: sessionRecordsMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],
     common: commonMessages['en-US'],

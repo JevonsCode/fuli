@@ -38,6 +38,8 @@ const HANDLERS = Object.freeze({
   get_capture_policy: async (app, input) => describeCapture(app, await taskBoundScope(app, input, {
     sourceApplication: input?.sourceApplication, personalProjectId: input?.personalProjectId ?? null,
     projectPath: input?.projectPath ?? null, sessionId: input?.sessionId ?? null })),
+  // The caller's own session only, in its own project (rec#5 C6-5).
+  read_session_records: (app, input) => app.readOwnSessionRecords(input ?? {}),
   explain_settings: (app) => settingsGuide(app),
   // sessionPaused pauses or resumes only the caller's session; every other
   // field is a long-term setting. The client is this MCP process's.

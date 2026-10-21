@@ -46,6 +46,9 @@ export const routeMessages = {
     knowledgeTurn: {
       title: '本轮沉淀',
     },
+    sessionRecords: {
+      title: '本会话记了什么',
+    },
     about: {
       title: '关于',
     },
@@ -103,6 +106,9 @@ export const routeMessages = {
     },
     knowledgeTurn: {
       title: 'Saved this turn',
+    },
+    sessionRecords: {
+      title: 'What this session recorded',
     },
     about: {
       title: 'About',

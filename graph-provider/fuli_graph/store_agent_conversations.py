@@ -9,6 +9,7 @@ from .conversation_context import (
     DIGEST_VERSION, add_task_result, fold_messages, message_bytes, pack_context, refold_digest, render_digest,
 )
 from .project_agent_access import authorize_project_agent
+from .conversation_scope import conversation_binding_id, conversation_scope_id, started_conversation_id
 from .provider_values import now_utc, stable_uuid
 from .store_conversation_triage import ASSISTANT_AGENT_ID, StoreConversationTriage
 from .store_transactions import query_store_transaction
@@ -39,9 +40,7 @@ class StoreAgentConversations:
             request.agent_id, require_active=write, require_memory=not journal_only, allow_global=True)
         if request.source_application is not None and request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
             raise HTTPException(403, 'Agent is not allowed in this client')
-        if request.personal_project_id is None:
-            return stable_uuid('global-conversation-scope', space['id'], agent['agent_id'])
-        return stable_uuid('conversation-scope', space['id'], request.personal_project_id, agent['agent_id'])
+        return conversation_scope_id(space['id'], request.personal_project_id, agent['agent_id'])
 
     async def _conversation_task(self, actor, request):
         await self.runtime.driver.execute_query(
@@ -78,7 +77,7 @@ class StoreAgentConversations:
                 'RETURN b.conversation_id AS conversation_id, coalesce(s.cursor,0) AS cursor, '
                 'coalesce(s.initialized, s.cursor > 0, false) AS initialized',
                 stream=stable_uuid(request.personal_space_id, request.source_application, request.session_id or ''),
-                id=stable_uuid(scope, request.source_application, request.session_id or ''))
+                id=conversation_binding_id(scope, request.source_application, request.session_id or ''))
             return dict(rows[0]) if rows else {'conversation_id': None, 'cursor': 0, 'initialized': False}
         if request.mode == 'list':
             # Jefa's triage label travels with each conversation so a list can
@@ -239,12 +238,12 @@ class StoreAgentConversations:
                 'MERGE (s:FuliTranscriptCursor {id: $id}) ON CREATE SET s.cursor=0, s.owner_scope=$scope '
                 'SET s.serial=coalesce(s.serial,0)+1 RETURN s.cursor AS cursor, s.owner_scope AS owner_scope, '
                 'coalesce(s.initialized, s.cursor > 0, false) AS initialized', id=stream, scope=scope)
-            binding = stable_uuid(scope, request.source_application, request.session_id)
+            binding = conversation_binding_id(scope, request.source_application, request.session_id)
             rows, _, _ = await store.runtime.driver.execute_query(
                 'MERGE (b:FuliConversationBinding {id: $id}) '
                 'ON CREATE SET b.conversation_id=$conversation_id, b.cursor=0 '
                 'SET b.serial=coalesce(b.serial,0)+1 RETURN b.conversation_id AS id, b.cursor AS cursor',
-                id=binding, conversation_id=stable_uuid('conversation', binding))
+                id=binding, conversation_id=started_conversation_id(binding))
             conversation_id = rows[0]['id']
             cursor = streams[0]['cursor']
             if request.expected_cursor is not None and not streams[0]['initialized']:
@@ -253,7 +252,8 @@ class StoreAgentConversations:
                 raise HTTPException(409, 'Transcript scope changed without a verified prompt boundary; do not import the old tail')
             if request.expected_cursor is not None and cursor != request.expected_cursor:
                 raise HTTPException(409, 'Transcript cursor changed; reload before retrying')
-            now = now_utc().isoformat()
+            created_at = now_utc()
+            now = created_at.isoformat()
             await store.runtime.driver.execute_query(
                 'MERGE (c:FuliConversation {id: $id}) ON CREATE SET c.scope=$scope, c.revision=0, '
                 "c.last_activity=$now, c.summary='', c.status='reported' "
@@ -275,10 +275,11 @@ class StoreAgentConversations:
                 await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) SET c.revision=c.revision+1, c.last_activity=$now '
                     'CREATE (e:FuliConversationEvent {id: $event_id, digest: $digest, payload: $payload, '
-                    'sequence: c.revision, source_application: $source, task_context_token: $task}) '
+                    'sequence: c.revision, source_application: $source, task_context_token: $task, '
+                    'session_id: $session, created_at: $created_at}) '
                     'CREATE (c)-[:HAS_EVENT]->(e)', id=conversation_id, event_id=event_id,
                     digest=digest, payload=payload, now=now, source=request.source_application,
-                    task=request.task_context_token)
+                    task=request.task_context_token, session=request.session_id, created_at=created_at)
             if unfolded:
                 await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) '
@@ -312,7 +313,8 @@ class StoreAgentConversations:
                 raise HTTPException(404, 'Conversation not found in this Agent and project')
             await store.runtime.driver.execute_query(
                 'MERGE (b:FuliConversationBinding {id: $id}) ON CREATE SET b.cursor=0 '
-                'SET b.conversation_id=$conversation_id', id=stable_uuid(scope, request.source_application, request.session_id),
+                'SET b.conversation_id=$conversation_id',
+                id=conversation_binding_id(scope, request.source_application, request.session_id),
                 conversation_id=request.conversation_id)
             return {'status': 'resumed', 'conversation_id': request.conversation_id}
 

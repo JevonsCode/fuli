@@ -9,6 +9,14 @@ export function agentProfileUrl(application, agentId) {
   return `${receiptConsoleUrl(application)}/agents/${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(agentId)}`;
 }
 
+// One host session's record list (rec#5 C6); with an item key, that record
+// opened in the list's quick look.
+export function sessionRecordsUrl(application, { sourceApplication, sessionId }, itemKey = null) {
+  const space = encodeURIComponent(application.config.personal.spaceId);
+  const page = `${receiptConsoleUrl(application)}/sessions/${space}/${encodeURIComponent(sourceApplication)}/${encodeURIComponent(sessionId)}`;
+  return itemKey ? `${page}?item=${space}/${encodeURIComponent(itemKey)}` : page;
+}
+
 export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.';
 
 export function agentContinuation(projectId, agentId, conversationId = null) {
@@ -30,6 +38,13 @@ export function receiptText(value) {
   return String(value).replace(/[\r\n\t]+/g, ' ')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/[\\`*_{}\[\]()!|]/g, '\\$&');
+}
+
+// Saved text as one short receipt summary: whitespace collapsed, cut with an
+// ellipsis, Markdown escaped.
+export function receiptSummary(value, characters = 60) {
+  const text = [...String(value ?? '').replace(/\s+/g, ' ').trim()];
+  return receiptText(text.length > characters ? `${text.slice(0, characters).join('')}…` : text.join(''));
 }
 
 // The reply's attribution line: who led the task and who actually helped.

@@ -29,13 +29,25 @@ const unkeptDenials = new Map();
 
 // A denial says recording was off; a settings change only says FULI could
 // not confirm the stretch was allowed. Neither names any skipped content.
+const SKIPPED_BECAUSE = Object.freeze({
+  [UNATTRIBUTABLE]: 'capture settings changed, so this stretch could not be confirmed as allowed and was skipped',
+  [STATE_UNSAVED]: 'the capture state could not be saved safely, so this stretch was skipped'
+});
+const RECORDING_OFF = /^automatic recording was off \((\w+)\)$/;
+const MARKER = /^\[Not recorded: (.+); native bytes \d+ to \d+ remain in native history\.\]$/;
+
 export function notRecordedEvent(from, to, reason) {
-  const why = reason === UNATTRIBUTABLE
-    ? 'capture settings changed, so this stretch could not be confirmed as allowed and was skipped'
-    : reason === STATE_UNSAVED ? 'the capture state could not be saved safely, so this stretch was skipped'
-      : `automatic recording was off (${reason})`;
+  const why = SKIPPED_BECAUSE[reason] ?? `automatic recording was off (${reason})`;
   return { event_id: `jsonl-v1:${from}:${to}:not_recorded`, role: 'tool', kind: 'tool_result',
     content: `[Not recorded: ${why}; native bytes ${from} to ${to} remain in native history.]` };
+}
+
+// The reason a marker above was written for, read back by a session's record
+// list (rec#5 C6); null for anything that is not such a marker.
+export function notRecordedReason(content) {
+  const why = MARKER.exec(String(content ?? ''))?.[1];
+  if (!why) return null;
+  return Object.keys(SKIPPED_BECAUSE).find(reason => SKIPPED_BECAUSE[reason] === why) ?? RECORDING_OFF.exec(why)?.[1] ?? null;
 }
 
 // Best effort: when the marker cannot be written the cursor stays, and the

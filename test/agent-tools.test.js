@@ -12,6 +12,7 @@ const NAMES = [
   'list_preference_conflicts',
   'list_agent_interfaces',
   'get_capture_policy',
+  'read_session_records',
   'explain_settings',
   'update_capture_policy',
   'list_external_knowledge_connectors',
@@ -345,6 +346,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     },
     updateCapturePolicy: async (input) => calls.push(['update-capture-policy', input]),
     explainSettings: () => calls.push(['explain-settings']),
+    readOwnSessionRecords: async (input) => calls.push(['session-records', input]),
     externalKnowledge: {
       listConnectorTypes: () => calls.push(['external-connectors']),
       discover: async (input) => calls.push(['external-discover', input]),
@@ -515,7 +517,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   assert.deepEqual(calls.map(([name]) => name), [
     'request-attention', 'list-attention', 'cancel-attention',
     'agent-tasks', 'preference-conflicts',
-    'get-capture-policy', 'explain-settings', 'update-capture-policy',
+    'get-capture-policy', 'session-records', 'explain-settings', 'update-capture-policy',
     'external-connectors', 'external-discover', 'external-bindings',
     'external-create', 'external-check', 'external-sync', 'external-retrieve',
     'external-targets', 'external-delete', 'external-conflict-policy',

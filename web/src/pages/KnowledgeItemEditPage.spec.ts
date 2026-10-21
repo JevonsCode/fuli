@@ -73,6 +73,17 @@ describe('KnowledgeItemEditPage', () => {
     wrapper.unmount()
   })
 
+  it('rec#5 C6-3: a source names the session it came from and opens that session at the turn that wrote it', async () => {
+    const wrapper = await open(view({ evidence: [
+      { episode_id: 'e1', source_application: 'codex', session_id: 'session-123456789', excerpt: '以后状态写短一点' },
+      { episode_id: 'e2', source_application: null, session_id: 'import-batch', excerpt: 'Imported' }] }))
+    const links = wrapper.findAll('[data-source-session]')
+    expect(links).toHaveLength(1)
+    expect(links[0].text()).toBe('来自哪个会话')
+    expect(links[0].attributes('href')).toBe('/sessions/space/codex/session-123456789?item=space/episode%3Ae1')
+    wrapper.unmount()
+  })
+
   it('says when an item has no weight instead of inventing one', async () => {
     const wrapper = await open(view({ weight: null }))
     expect(wrapper.get('[data-item-weight]').text()).toBe('暂无权重')

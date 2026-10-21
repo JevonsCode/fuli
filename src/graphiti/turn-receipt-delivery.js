@@ -15,7 +15,7 @@ export async function checkpointTurnReceipt(application, task, { memory = null, 
   const results = task.checkpoint?.captureResults ?? [];
   if (!savedEpisodeIds(results).length) return memory ? readTurnReceipt(application, [], { memory, agentName }) : null;
   try {
-    const receipt = await readTurnReceipt(application, results, { memory, agentName });
+    const receipt = await readTurnReceipt(application, results, { memory, agentName, session: taskSession(task) });
     if (await application.taskContextRegistry.claimTurnReceipt(task.token, task.sourceApplication)) return receipt;
     // A later entry already showed these items; never repeat them.
     return memory ? readTurnReceipt(application, [], { memory, agentName }) : null;
@@ -44,10 +44,16 @@ export async function unreadTurnReceipt(application, task) {
     const mine = read.filter(({ item }) => claimed.has(item.receipt_id));
     if (!mine.length) return null;
     return renderTurnReceipt(application, mine.flatMap(({ entries }) => entries), { heading: '上轮沉淀（补发）',
-      episodeIds: mine.flatMap(({ item }) => savedEpisodeIds(item.capture_results)) });
+      episodeIds: mine.flatMap(({ item }) => savedEpisodeIds(item.capture_results)), session: taskSession(task) });
   } catch {
     return null;
   }
+}
+
+// The host session a receipt links to: every turn of a late receipt is of
+// the entry's own session.
+function taskSession(task) {
+  return { sourceApplication: task.sourceApplication, sessionId: task.sessionId };
 }
 
 // The oldest receipts whose episodes fit one full-list link.
