@@ -12,6 +12,7 @@ import { loadProjectTeamContext } from './project-agent-team-context.js';
 import { applyAgentAssignment } from './task-agent-assignment.js';
 import { captureDecision, taskCaptureScope } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
+import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { createTaskPreferencePager } from './task-preference-pages.js';
 
@@ -93,8 +94,8 @@ export async function readTaskPreferences(application, {
     ...(judgment ? { judgment_context: judgment } : {}),
     agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
       agentId: task.projectAgentId, name: rawAgent.profile?.name ?? null, sourceApplication: task.sourceApplication,
-      notices: receiptNotices(await captureDecision(application, taskCaptureScope(task)), [],
-        { settingsUrl: captureSettingsUrl(application) }) }),
+      notices: [...receiptNotices(await captureDecision(application, taskCaptureScope(task)), [],
+        { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application)] }),
     preference_delivery: { status: 'complete' }, preferences_complete: true,
     same_task_recovery_available: true, truncated: false
   };

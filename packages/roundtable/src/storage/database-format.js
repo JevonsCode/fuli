@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { DataFormatError, newerFormatError, pendingMigrationError } from './data-format-error.js';
+import { BACKUP_DIRECTORY, formatBackupName } from './format-backup-names.js';
 
 // The data format of a local SQLite store (rec#17 D-09): its version, the
 // migrations that reach it and the ledger of what was applied. A store opens
@@ -26,12 +27,11 @@ const LEDGER = `CREATE TABLE IF NOT EXISTS fuli_format_ledger(
   seq INTEGER PRIMARY KEY AUTOINCREMENT, migration_id TEXT NOT NULL, from_version INTEGER NOT NULL,
   to_version INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, backup_ref TEXT, detail TEXT,
   recorded_at TEXT NOT NULL)`;
-const LEDGER_TABLE = 'fuli_format_ledger';
+export const LEDGER_TABLE = 'fuli_format_ledger';
 const BUSY_TIMEOUT_MS = 5000;
 const BACKUP_TIMEOUT_MS = 120_000;
 // Another process may hold the store while it backs it up and migrates it.
-const MIGRATION_LOCK_TIMEOUT_MS = BACKUP_TIMEOUT_MS + 30_000;
-const BACKUP_DIRECTORY = 'format-backups';
+export const MIGRATION_LOCK_TIMEOUT_MS = BACKUP_TIMEOUT_MS + 30_000;
 const BACKUP_PROCESS = fileURLToPath(new URL('./database-backup-process.js', import.meta.url));
 // The automatic whitelist: columns that are nullable or carry a constant
 // default. A backfill of existing rows runs only when no row needs it; any
@@ -51,8 +51,10 @@ export function sqliteFormat({ store, schema, migrations = [], pragmas = '', rea
     }
     if (migration.to !== index + 2) throw new TypeError(`${migration.id} must move ${store} to version ${index + 2}`);
     if (!KINDS.has(migration.kind)) throw new TypeError(`${migration.id} has an unknown kind`);
-    if (migration.kind === 'backfill' && !(migration.rowsToBackfill && migration.backfill)) {
-      throw new TypeError(`${migration.id} must count and fill the rows it backfills`);
+    // backfillKeys(db) names each row that still needs the backfill by an ID
+    // that carries no record content; a person confirms exactly those rows.
+    if (migration.kind === 'backfill' && !(migration.backfillKeys && migration.backfill)) {
+      throw new TypeError(`${migration.id} must name and fill the rows it backfills`);
     }
     for (const type of Object.values(migration.columns)) {
       if (/\bNOT NULL\b/i.test(type) && !/\bDEFAULT\b/i.test(type)) {
@@ -65,7 +67,7 @@ export function sqliteFormat({ store, schema, migrations = [], pragmas = '', rea
 }
 
 export function openFormattedDatabase(path, format, { backup = backupSqliteDatabase,
-  now = () => new Date().toISOString() } = {}) {
+  now = () => new Date().toISOString(), afterVersionCheck } = {}) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const database = new DatabaseSync(path);
   let access;
@@ -74,7 +76,7 @@ export function openFormattedDatabase(path, format, { backup = backupSqliteDatab
     access = prepareFormat(database, path, format, { backup, now });
     if (access === 'write') {
       if (format.pragmas) database.exec(format.pragmas);
-      return database;
+      return versionGuarded(database, format, { afterVersionCheck });
     }
   } catch (error) {
     database.close();
@@ -84,6 +86,96 @@ export function openFormattedDatabase(path, format, { backup = backupSqliteDatab
   const readOnly = new DatabaseSync(path, { readOnly: true });
   readOnly.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
   return readOnly;
+}
+
+// A writable connection stays at the version it was opened for: an undo or
+// a whole-store restore (database-migration.js) may move the store to
+// another version while a process holds it open. So every statement that is
+// not on the short read-only list re-reads the version inside the store's
+// write lock and runs in that same lock: outside a transaction it is wrapped
+// in BEGIN IMMEDIATE ... COMMIT; inside one, the transaction's own lock or
+// snapshot holds. A moved store stops with a 503 and nothing is written.
+// afterVersionCheck() is a test seam: called between the check and the write.
+const READ_ONLY_STATEMENT = /^\s*(?:SELECT|EXPLAIN)\b/i;
+// Connection settings, not data: a PRAGMA inside a transaction would not take
+// effect, and only the engine sets user_version.
+const CONNECTION_PRAGMA = /^\s*PRAGMA\b/i;
+const TRANSACTION_CONTROL = /^\s*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b/i;
+
+function readsOnly(sql) {
+  return READ_ONLY_STATEMENT.test(sql) || CONNECTION_PRAGMA.test(sql) || TRANSACTION_CONTROL.test(sql);
+}
+
+// The statements of an exec() script, split conservatively: a ';' inside a
+// literal makes extra fragments, which only ever count as writes.
+function scriptStatements(sql) {
+  return String(sql).split(';').map((statement) => statement.trim()).filter(Boolean);
+}
+
+function versionGuarded(database, format, { afterVersionCheck = () => {} } = {}) {
+  if (database.location?.() === null) return database;
+  const check = () => {
+    const found = userVersion(database);
+    if (found !== format.version) {
+      throw new DataFormatError(format.store, 'data_format_changed_underneath', `FULI store "${format.store}" was `
+        + `moved to data format ${found} (an undo or a restore) while this process had it open at ${format.version}. `
+        + 'Nothing was written; restart FULI.');
+    }
+    afterVersionCheck();
+  };
+  const write = (operation) => {
+    if (database.isTransaction) {
+      check();
+      return operation();
+    }
+    database.exec('BEGIN IMMEDIATE');
+    try {
+      check();
+      const result = operation();
+      database.exec('COMMIT');
+      return result;
+    } catch (error) {
+      if (database.isTransaction) database.exec('ROLLBACK');
+      throw error;
+    }
+  };
+  return new Proxy(database, {
+    get(target, key) {
+      if (key === 'exec') {
+        return (sql) => {
+          const statements = scriptStatements(sql);
+          if (statements.length <= 1) return readsOnly(sql) ? target.exec(sql) : write(() => target.exec(sql));
+          if (statements.every((statement) => readsOnly(statement) && !TRANSACTION_CONTROL.test(statement))) {
+            return target.exec(sql);
+          }
+          // A script that writes and runs its own transaction could commit
+          // between the version check and its writes; it is not supported.
+          if (statements.some((statement) => TRANSACTION_CONTROL.test(statement))) {
+            throw new TypeError(`FULI store "${format.store}": a script that writes and controls its own transaction `
+              + 'is not run on a guarded connection; run its statements one by one');
+          }
+          return write(() => target.exec(sql));
+        };
+      }
+      if (key === 'prepare') return (...args) => guardedStatement(target.prepare(...args), write);
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+}
+
+function guardedStatement(statement, write) {
+  if (readsOnly(statement.sourceSQL)) return statement;
+  return new Proxy(statement, {
+    get(target, key) {
+      // A writing statement may return rows (RETURNING), so every way to run it is guarded;
+      // iterate runs to the end inside the lock.
+      if (key === 'run' || key === 'get' || key === 'all') return (...args) => write(() => target[key](...args));
+      if (key === 'iterate') return (...args) => write(() => target.all(...args))[Symbol.iterator]();
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
 }
 
 function prepareFormat(database, path, format, options) {
@@ -147,7 +239,7 @@ function migrate(database, path, format, { backup, now }) {
 // What opening would do, decided inside a savepoint that is always rolled
 // back, so the backup is taken before anything changes. The baseline schema
 // is tried here first: a unique index existing rows violate fails now.
-function planSteps(database, format, version) {
+export function planSteps(database, format, version) {
   database.exec('SAVEPOINT format_plan');
   try {
     const steps = [];
@@ -191,10 +283,11 @@ function classifyMigrations(database, format, version, reached) {
       steps.push({ migration, status: 'baseline_detected', detail: 'every column exists' });
       continue;
     }
-    const rows = AUTOMATIC_KINDS.has(migration.kind) || !userTables(database).includes(migration.table)
-      ? 0 : migration.rowsToBackfill(database);
-    if (rows) {
-      steps.push({ migration, status: 'pending_confirmation', detail: `${rows} existing rows need a backfill` });
+    const keys = AUTOMATIC_KINDS.has(migration.kind) || !userTables(database).includes(migration.table)
+      ? [] : migration.backfillKeys(database);
+    if (keys.length) {
+      steps.push({ migration, status: 'pending_confirmation', detail: `${keys.length} existing rows need a backfill`,
+        keys });
       break;
     }
     steps.push({ migration, status: 'applied', detail: migration.kind === 'backfill'
@@ -217,7 +310,9 @@ export function inspectSqliteStore(path, format) {
     return { ...report, state: 'unavailable', note: `cannot be opened read-only (${error.message})` };
   }
   try {
-    return { ...report, ...inspectOpenStore(database, format) };
+    const inspected = inspectOpenStore(database, format);
+    // Row keys are for a person's confirmation (database-migration.js), not the report.
+    return { ...report, ...inspected, steps: (inspected.steps ?? []).map(({ keys: _keys, ...step }) => step) };
   } catch (error) {
     return { ...report, state: 'unavailable', note: `cannot be read (${error.message})` };
   } finally {
@@ -227,7 +322,7 @@ export function inspectSqliteStore(path, format) {
 
 // A WAL store whose log is gone has no live writer and is read as immutable,
 // so SQLite creates no log or index; a live one is read through its own log.
-function openReadOnly(path) {
+export function openReadOnly(path) {
   let database;
   if (!walMode(path)) database = new DatabaseSync(path, { readOnly: true });
   else if (existsSync(`${path}-wal`)) {
@@ -250,7 +345,8 @@ function walMode(path) {
   return header[18] === 2 && header[19] === 2;
 }
 
-function inspectOpenStore(database, format) {
+// A pending backfill step carries the keys of the rows it would change.
+export function inspectOpenStore(database, format) {
   const version = userVersion(database);
   const ledger = userTables(database).includes(LEDGER_TABLE)
     ? database.prepare(`SELECT migration_id, from_version, to_version, status, backup_ref, detail, recorded_at
@@ -289,7 +385,8 @@ function inspectOpenStore(database, format) {
         : 'every baseline table and index exists' });
   }
   for (const step of classifyMigrations(database, format, version, Math.max(version, 1))) {
-    steps.push({ id: step.migration.id, state: INSPECTED_STATES[step.status], detail: step.detail });
+    steps.push({ id: step.migration.id, state: INSPECTED_STATES[step.status], detail: step.detail,
+      ...(step.keys ? { keys: step.keys } : {}) });
   }
   return { version, ledger, steps,
     state: steps.some((step) => step.state === 'pending_confirmation') ? 'pending_confirmation' : 'upgrade_on_open' };
@@ -384,16 +481,17 @@ function applyMigration(database, migration) {
   if (migration.kind === 'backfill') migration.backfill(database);
 }
 
-function takeBackup(path, format, version, backup, stepIds) {
+// purpose names the change the backup comes before, for its failure message.
+export function takeBackup(path, format, version, backup, stepIds, { purpose = 'a format upgrade' } = {}) {
   if (path === ':memory:') return null;
   const directory = join(dirname(path), BACKUP_DIRECTORY);
-  const name = `${basename(path)}.v${version}-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`;
+  const name = formatBackupName(path, version, new Date(), 'sqlite');
   try {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     backup(path, join(directory, name));
   } catch (error) {
     throw new DataFormatError(format.store, 'data_format_backup_failed',
-      `FULI store "${format.store}" needs a format upgrade, but the backup before it failed `
+      `FULI store "${format.store}" needs ${purpose}, but the backup before it failed `
       + `(${error.message}); nothing was changed.`, stepIds);
   }
   return `${BACKUP_DIRECTORY}/${name}`;
@@ -410,7 +508,7 @@ export function backupSqliteDatabase(source, target) {
   if (result.status !== 0) throw new Error(result.stderr.trim() || `backup exited with ${result.status}`);
 }
 
-function ledgerWriter(database, now) {
+export function ledgerWriter(database, now) {
   let created = false;
   return (row) => {
     if (!created) { database.exec(LEDGER); created = true; }
@@ -436,15 +534,15 @@ function unfinished(database) {
     .map((row) => row.migration_id);
 }
 
-function userVersion(database) {
+export function userVersion(database) {
   return database.prepare('PRAGMA user_version').get().user_version;
 }
 
-function setUserVersion(database, version) {
+export function setUserVersion(database, version) {
   database.exec(`PRAGMA user_version = ${Number(version)}`);
 }
 
-function userTables(database) {
+export function userTables(database) {
   return database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
     .all().map((row) => row.name);
 }

@@ -52,9 +52,9 @@ async def test_real_neo4j_learning_bucket_migration_and_concurrent_identity():
 
         # The format check counts what the step would change before a person
         # confirms it (graph/2-learning-bucket-ids, rec#17 D-09).
-        assert await pending_learning_bucket_ids(driver, settings) > 0
+        assert len(await pending_learning_bucket_ids(driver, settings)) > 0
         await apply_learning_bucket_ids(driver, settings)
-        assert await pending_learning_bucket_ids(driver, settings) == 0
+        assert await pending_learning_bucket_ids(driver, settings) == []
         await driver.execute_query(AGGREGATE_CONSTRAINT)
         await driver.execute_query(RESET_CONSTRAINT)
         # The confirmed step stays safe to repeat once the constraints exist.

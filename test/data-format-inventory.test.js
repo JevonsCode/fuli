@@ -125,7 +125,10 @@ const SOURCE_FILES = SOURCE_ROOTS.flatMap(sources).map((path) => [path, readFile
 const SQLITE_OUTSIDE_FORMATS = new Map([
   ['packages/roundtable/src/storage/database-format.js', 'the format engine'],
   ['packages/roundtable/src/storage/database-backup-process.js', 'the online backup the engine runs before a migration'],
+  ['packages/roundtable/src/storage/database-migration.js',
+    'the confirmed apply, undo and restore of a declared store, and its undo table'],
   ['src/storage/file-lock.js', 'cross-process lock files with no tables'],
+  ['src/data-format/maintenance-lock.js', 'the shared/exclusive maintenance lock file of a data directory, no data'],
   ['packages/roundtable/src/roundtable/chat-store.js', 'the chat tables of the roundtable and peer-coordinator formats'],
   ['packages/roundtable/src/roundtable/attention-inbox-store.js', 'the attention tables of the roundtable format']
 ]);

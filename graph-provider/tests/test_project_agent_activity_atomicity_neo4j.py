@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import pytest
 
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
+from fuli_graph.runtime import ManagedNeo4jDriver
 
 
 @pytest.mark.asyncio
@@ -299,7 +300,7 @@ def interrupt_one_audit_write(monkeypatch, stage, *, task_id=None, before_raise=
         'outcome': 'MERGE (evidence:FuliProjectAgentExecutorOutcomeEvidence',
         'aggregate': 'SET aggregate.aggregate_json',
     }
-    execute = Neo4jDriver.execute_query
+    execute = ManagedNeo4jDriver.execute_query
     transaction = Neo4jDriver.transaction
     fault = {'fired': False}
 
@@ -324,6 +325,6 @@ def interrupt_one_audit_write(monkeypatch, stage, *, task_id=None, before_raise=
                     return await current.run(query, **parameters)
             yield FaultingTransaction()
 
-    monkeypatch.setattr(Neo4jDriver, 'execute_query', execute_with_fault)
+    monkeypatch.setattr(ManagedNeo4jDriver, 'execute_query', execute_with_fault)
     monkeypatch.setattr(Neo4jDriver, 'transaction', transaction_with_fault)
     return fault

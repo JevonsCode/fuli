@@ -193,6 +193,16 @@ export const router = createRouter({
       },
     },
     {
+      path: '/settings/data-format',
+      name: 'data-format',
+      component: () => import('@/pages/DataFormatPage.vue'),
+      meta: {
+        title: 'dataFormat.title',
+        layout: 'form',
+        detail: true,
+      },
+    },
+    {
       // An Agent's link to confirm a capture change it asked for (rec#5 C4-2, rec#11 D-16).
       path: '/capture-change/:previewId',
       name: 'capture-change',

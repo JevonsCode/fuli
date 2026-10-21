@@ -164,8 +164,15 @@ from .workflow_candidates import (
 )
 from .workflow_observations import record_workflow_transition_observation
 from .graph_format import GraphFormatUnavailable, inspect_graph_format
+from .graph_format_routes import register_graph_format_routes
 from .runtime import GraphitiRuntime
 from .store import GraphStore
+
+
+CONFIRMATION_CONFLICTS = frozenset({
+    'data_format_stale_preview', 'data_format_changed_since', 'data_format_undo_blocked',
+    'data_format_nothing_to_undo',
+})
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -189,7 +196,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.exception_handler(GraphFormatUnavailable)
     async def graph_format_unavailable(_request, error: GraphFormatUnavailable):
-        return JSONResponse(status_code=503, content={'detail': error.detail()})
+        # A confirmation that no longer fits the graph is a conflict the person
+        # resolves (preview again, undo a later step); anything else is 503.
+        status = 409 if error.code in CONFIRMATION_CONFLICTS else 503
+        return JSONResponse(status_code=status, content={'detail': error.detail()})
 
     async def current_actor(
         authorization: Annotated[str | None, Header()] = None,
@@ -336,6 +346,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> PersonalProjectRecord:
         return await store.get_personal_project(actor, personal_space_id, project_id)
 
+    register_graph_format_routes(application, runtime, resolved_settings, Actor, HumanReviewer)
     register_project_agent_routes(application, store, Actor)
     register_knowledge_tag_routes(application, store, Actor)
     register_knowledge_item_routes(application, store, Actor)

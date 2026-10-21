@@ -27,6 +27,9 @@ import { createSystemService } from './system/system-service.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
 import { startTaskScheduler } from './task-schedules/scheduler.js';
 import { dataFormatNoticeLine, dataFormatNotices } from './data-format/format-notices.js';
+import { personalGraphFormat } from './data-format/graph-format-client.js';
+import { holdDataDirectory } from './data-format/maintenance-lock.js';
+import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -52,17 +55,34 @@ export async function createServer(options = {}) {
     throw new Error(`Port ${port} is blocked for local fetch`);
   }
   const localOptions = app ? {} : resolveServerGraphOptions(options);
-  const runtime = createServerApplication({
-    app,
-    ...localOptions,
-    closeApplicationOnShutdown
-  });
+  // A whole-store restore (fuli migrate restore) excludes a running console
+  // and the console excludes it; refused here before any store is opened.
+  const releaseDataDirectory = localOptions.runtimeConfigPath
+    ? holdDataDirectory(dirname(localOptions.runtimeConfigPath)) : () => {};
+  let runtime;
+  try {
+    runtime = createServerApplication({
+      app,
+      ...localOptions,
+      closeApplicationOnShutdown
+    });
+  } catch (error) {
+    releaseDataDirectory();
+    throw error;
+  }
   const application = runtime.application;
   // The console, not every hook or MCP process, reports the local stores this
   // FULI cannot use as they are, named with their steps (rec#17).
   const dataFormats = options.dataFormatNotices ?? (localOptions.runtimeConfigPath
     ? dataFormatNotices(dirname(localOptions.runtimeConfigPath)) : null);
   for (const notice of dataFormats?.() ?? []) console.warn(dataFormatNoticeLine(notice));
+  // A person's confirmed migrations, the same operations as `fuli migrate`.
+  const dataFormatMigrations = options.dataFormatMigrations ?? (localOptions.runtimeConfigPath
+    ? createDataFormatMigrations(dirname(localOptions.runtimeConfigPath),
+      { graph: personalGraphFormat(dirname(localOptions.runtimeConfigPath)) }) : null);
+  for (const pruned of dataFormatMigrations?.prune() ?? []) {
+    if (pruned.kind === 'prune_failed') console.warn(`Format backups were not pruned: ${pruned.reason}`);
+  }
   let externalKnowledge;
   let connectedKnowledge;
   let system = null;
@@ -74,7 +94,8 @@ export async function createServer(options = {}) {
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopTaskSchedules(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close()]) {
+      for (const close of [() => stopJudgment(), () => stopTaskSchedules(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close(),
+        () => releaseDataDirectory()]) {
         try {
           const pending = close();
           if (pending?.then) await pending;
@@ -136,6 +157,7 @@ export async function createServer(options = {}) {
       connectedKnowledge,
       peer,
       dataFormats,
+      dataFormatMigrations,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -222,6 +244,7 @@ async function handleRequest({
   connectedKnowledge,
   peer,
   dataFormats,
+  dataFormatMigrations,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -241,7 +264,8 @@ async function handleRequest({
     externalKnowledge,
     connectedKnowledge,
     peer,
-    dataFormats
+    dataFormats,
+    dataFormatMigrations
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }

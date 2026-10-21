@@ -40,6 +40,7 @@ import {
 } from '../system/runtime-settings.js';
 import { nonEmptyText } from '../validation/values.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
+import { parseProviderEnv } from '../setup/provider-env.js';
 
 export const NATIVE_NEO4J_VERSION = '5.26.28';
 export const NATIVE_NEO4J_SHA256 =
@@ -225,7 +226,7 @@ export function createNativeGraphServices({
     const settings = paths.runtimeSettingsPath
       ? readSettings(paths.runtimeSettingsPath)
       : DEFAULT_RUNTIME_SETTINGS;
-    const values = parseEnv(await readText(paths.graphEnvPath));
+    const values = parseProviderEnv(await readText(paths.graphEnvPath));
     const includeWorkspace = personalOnly === null
       ? managedWorkspaceEnabled(paths, readJson)
       : !personalOnly;
@@ -712,17 +713,6 @@ function managedWorkspaceEnabled(paths, readJson) {
     workspace?.managedDevelopment === true);
 }
 
-function parseEnv(body) {
-  const values = {};
-  for (const line of String(body).split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const separator = trimmed.indexOf('=');
-    if (separator <= 0) continue;
-    values[trimmed.slice(0, separator)] = trimmed.slice(separator + 1);
-  }
-  return values;
-}
 
 function requiredEnv(values, name) {
   const value = nonEmptyText(values[name]);

@@ -8,6 +8,7 @@ import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
 import { ATTENTION_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/attention-inbox.js';
 import { captureDecision } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
+import { receiptFormatNotices } from '../data-format/format-notices.js';
 
 export function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
@@ -86,8 +87,8 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
   // this project, so the receipt gives the decision its writes will get.
   const capture = await captureDecision(application, { sourceApplication,
     personalProjectId: projectResolution.personalProjectId ?? null, sessionId: sessionId ?? sourceSessionId });
-  const notices = receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
-    { settingsUrl: captureSettingsUrl(application) });
+  const notices = [...receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
+    { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application)];
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),
