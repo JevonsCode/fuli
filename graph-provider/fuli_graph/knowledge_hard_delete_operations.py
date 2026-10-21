@@ -15,16 +15,26 @@ was lost never has to guess:
   refused;
 - unknown: none of these yet (not arrived, or still running).
 
+Every outcome is final. An operation ID is bound to the request that first
+reached a decision with it (target, kind, preview and a digest of the typed
+confirmation): a later request with that ID gets the recorded outcome without
+running (an exact replay of a commit answers the same deletion) or 409, and a
+different request with it is `operation_mismatch`. Deciding and recording
+happen under the space's knowledge lock, so one operation is decided once.
+
 The records hold no words: the operation ID, the state, the refusal code, the
-time and who asked. They reuse the audit label (action
-`hard_delete_refused` / `hard_delete_aborted`) and carry no item ID.
+request fingerprint (a digest), the time and who asked. They reuse the audit
+label (action `hard_delete_refused` / `hard_delete_aborted`) and carry no
+item ID.
 """
+import json
+
 from fastapi import HTTPException
 
 from .knowledge_hard_delete_models import KnowledgeHardDeleteOperation
 from .knowledge_hard_delete_traces import deletion_record_of
 from .knowledge_versions import lock_knowledge
-from .provider_values import now_utc, stable_uuid
+from .provider_values import now_utc, sha256_text, stable_uuid
 from .store_transactions import query_store_transaction
 
 _RECORDED = {'hard_delete_refused': 'refused', 'hard_delete_aborted': 'aborted'}
@@ -49,20 +59,45 @@ async def operation_outcome(store, space, operation_id) -> KnowledgeHardDeleteOp
     return KnowledgeHardDeleteOperation(operation_id=operation_id, state='unknown')
 
 
-async def require_open_operation(scoped, space, operation_id) -> KnowledgeHardDeleteOperation | None:
-    """Inside a delete's transaction, after the knowledge lock: an aborted
-    operation is refused; a committed one is answered again (a replay)."""
+def operation_fingerprint(item_id, request) -> str:
+    """What an operation ID is bound to; the confirmation only as a digest."""
+    return sha256_text(json.dumps({
+        'item_kind': request.item_kind, 'item_id': item_id, 'preview_id': request.preview_id,
+        'confirmation': sha256_text(request.confirmation.strip()),
+    }, sort_keys=True, separators=(',', ':')))
+
+
+async def settled_operation(scoped, space, operation_id, fingerprint):
+    """Inside a delete's transaction, after the knowledge lock: None when the
+    operation has no outcome yet, the recorded deletion for an exact replay of
+    its commit, otherwise a 409 that names the outcome it keeps."""
+    records, _, _ = await scoped.runtime.driver.execute_query(
+        '''
+        MATCH (record:FuliKnowledgeAudit {space_id: $space_id})
+        WHERE record.operation_id = $operation_id
+          AND record.action IN ['hard_delete', 'hard_delete_refused', 'hard_delete_aborted']
+        RETURN record ORDER BY record.created_at
+        ''', space_id=space['id'], operation_id=operation_id)
+    found = [dict(record['record']) for record in records]
+    if not found:
+        return None
     outcome = await operation_outcome(scoped, space, operation_id)
-    if outcome.state == 'aborted':
+    decided = next((record for record in found if record['action'] == 'hard_delete'), found[0])
+    if outcome.state != 'aborted' and decided.get('operation_fingerprint') != fingerprint:
         raise HTTPException(status_code=409, detail={
-            'code': 'hard_delete_aborted', 'message': 'this delete operation was aborted by its console'})
-    return outcome if outcome.state == 'committed' else None
+            'code': 'operation_mismatch', 'state': outcome.state,
+            'message': 'this operation ID belongs to a different delete request'})
+    if outcome.state == 'committed':
+        return outcome.deletion
+    raise HTTPException(status_code=409, detail={
+        'code': 'hard_delete_aborted' if outcome.state == 'aborted' else 'hard_delete_operation_closed',
+        'state': outcome.state, 'refusal': outcome.code,
+        'message': f'this delete operation was already {outcome.state}; it is not run again'})
 
 
-async def record_refusal(store, actor, space, operation_id, code) -> None:
-    """After the delete's transaction rolled back on a refusal. The first
-    terminal record of an operation stays (an abort that came first)."""
-    await _record(store, actor, space, operation_id, 'hard_delete_refused', code)
+async def record_refusal(scoped, actor, space, operation_id, code, fingerprint) -> None:
+    """Inside the locked transaction that decided the refusal."""
+    await _record(scoped, actor, space, operation_id, 'hard_delete_refused', code, fingerprint)
 
 
 async def abort_operation(store, actor, space, operation_id) -> KnowledgeHardDeleteOperation:
@@ -72,18 +107,20 @@ async def abort_operation(store, actor, space, operation_id) -> KnowledgeHardDel
         outcome = await operation_outcome(scoped, space, operation_id)
         if outcome.state != 'unknown':
             return outcome
-        await _record(scoped, actor, space, operation_id, 'hard_delete_aborted', 'aborted')
+        await _record(scoped, actor, space, operation_id, 'hard_delete_aborted', 'aborted', None)
     return KnowledgeHardDeleteOperation(operation_id=operation_id, state='aborted', code='aborted')
 
 
-async def _record(store, actor, space, operation_id, action, code) -> None:
+async def _record(store, actor, space, operation_id, action, code, fingerprint) -> None:
     await store.runtime.driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
         MERGE (record:FuliKnowledgeAudit {id: $record_id})
         ON CREATE SET record.space_id = $space_id, record.operation_id = $operation_id, record.action = $action,
-                      record.outcome = $code, record.operation_actor = 'human', record.created_by = $created_by,
+                      record.outcome = $code, record.operation_fingerprint = $fingerprint,
+                      record.operation_actor = 'human', record.created_by = $created_by,
                       record.created_at = $created_at
         MERGE (space)-[:HAS_KNOWLEDGE_AUDIT]->(record)
         ''', space_id=space['id'], record_id=stable_uuid(space['id'], 'hard-delete-operation', operation_id),
-        operation_id=operation_id, action=action, code=code, created_by=actor['id'], created_at=now_utc())
+        operation_id=operation_id, action=action, code=code, fingerprint=fingerprint, created_by=actor['id'],
+        created_at=now_utc())

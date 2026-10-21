@@ -429,3 +429,129 @@ async def test_dot_round3_an_abort_that_comes_first_wins_and_a_refusal_is_record
         for path in (f'/v1/knowledge/hard-delete-operations/{early}',
                      f'/v1/knowledge/hard-delete-operations/{early}/abort', '/v1/knowledge/hard-deletions'):
             assert (await client.post(path, json={'personal_space_id': space_id})).status_code == 403
+
+
+async def send_delete(client, space_id, item_id, preview_id, operation_id, confirmation='删除', kind='entity'):
+    return await client.post(f'/v1/knowledge/items/{item_id}/hard-delete', json={
+        'personal_space_id': space_id, 'item_kind': kind, 'preview_id': preview_id,
+        'confirmation': confirmation, 'operation_id': operation_id}, headers=REVIEW)
+
+
+@pytest.mark.asyncio
+async def test_dot_round4_a_refused_operation_stays_refused_whatever_is_sent_with_it_later():
+    settings = reviewed()
+    async with provider_client(settings) as (client, _):
+        item = await seeded(client)
+        space_id = item['space_id']
+        plan = ok(await preview(client, space_id, item['new']))
+        refused_id = str(uuid4())
+        first = await send_delete(client, space_id, item['new'], plan['preview_id'], refused_id, confirmation='ok')
+        assert first.status_code == 422
+        # The same invalid request again: its recorded outcome, nothing runs.
+        again = await send_delete(client, space_id, item['new'], plan['preview_id'], refused_id, confirmation='ok')
+        assert again.status_code == 409
+        detail = again.json()['detail']
+        assert (detail['code'], detail['state'], detail['refusal']) == (
+            'hard_delete_operation_closed', 'refused', 'hard_delete_unconfirmed')
+        # A valid confirmation under the refused ID is a different request: refused too.
+        valid = await send_delete(client, space_id, item['new'], plan['preview_id'], refused_id)
+        assert valid.status_code == 409 and valid.json()['detail']['code'] == 'operation_mismatch'
+        assert (await view(client, space_id, item['new']))['status'] == 'current'
+        assert (await operation(client, space_id, refused_id))['state'] == 'refused'
+        assert (await operation(client, space_id, refused_id, abort=True))['state'] == 'refused'
+
+
+@pytest.mark.asyncio
+async def test_dot_round4_a_committed_id_cannot_delete_another_target_and_an_exact_replay_gets_the_same_answer():
+    settings = reviewed()
+    async with provider_client(settings) as (client, _):
+        item = await seeded(client)
+        space_id = item['space_id']
+        plan = ok(await preview(client, space_id, item['new']))
+        operation_id = str(uuid4())
+        done = ok(await send_delete(client, space_id, item['new'], plan['preview_id'], operation_id))
+        replay = ok(await send_delete(client, space_id, item['new'], plan['preview_id'], operation_id))
+        assert replay['deletion_id'] == done['deletion_id']
+        other = ok(await preview(client, space_id, item['other']))
+        reused = await send_delete(client, space_id, item['other'], other['preview_id'], operation_id)
+        assert reused.status_code == 409
+        assert reused.json()['detail']['code'] == 'operation_mismatch'
+        assert reused.json()['detail']['state'] == 'committed'
+        assert (await view(client, space_id, item['other']))['status'] == 'current'
+        assert (await operation(client, space_id, operation_id))['deletion']['deletion_id'] == done['deletion_id']
+
+
+async def outcomes_while(client, space_id, operation_id, until):
+    """The operation's state, read again and again until `until` is done."""
+    seen = []
+    while not until.done():
+        seen.append((await operation(client, space_id, operation_id))['state'])
+        await asyncio.sleep(0.05)
+    return seen
+
+
+@pytest.mark.asyncio
+async def test_dot_round4_a_valid_and_an_invalid_request_of_one_operation_get_one_outcome(monkeypatch):
+    """Real holds of the space lock. A valid request holds it while it writes
+    and an invalid one with the same ID waits: refused is never visible while
+    the delete commits, and the invalid one is a mismatch afterwards. Then
+    the other order: the refusal holds the lock and the valid one waits,
+    is refused as a mismatch, and nothing is deleted."""
+    settings = reviewed()
+    async with provider_client(settings) as (client, _):
+        item = await seeded(client)
+        space_id = item['space_id']
+        plan = ok(await preview(client, space_id, item['new']))
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = knowledge_hard_delete._write_trace
+
+        async def held(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            return await original(*args, **kwargs)
+
+        monkeypatch.setattr(knowledge_hard_delete, '_write_trace', held)
+        shared = str(uuid4())
+        valid = asyncio.create_task(send_delete(client, space_id, item['new'], plan['preview_id'], shared))
+        await asyncio.wait_for(entered.wait(), 30)
+        invalid = asyncio.create_task(send_delete(client, space_id, item['new'], plan['preview_id'], shared,
+                                                  confirmation='ok'))
+        releaser = asyncio.create_task(asyncio.sleep(1.0))
+        seen = await outcomes_while(client, space_id, shared, releaser)
+        assert not invalid.done(), 'the invalid request waits for the lock'
+        release.set()
+        assert (await valid).status_code == 200
+        late = await invalid
+        assert late.status_code == 409 and late.json()['detail']['code'] == 'operation_mismatch'
+        assert set(seen) == {'unknown'}, 'no refusal is visible while the delete runs'
+        assert (await operation(client, space_id, shared))['state'] == 'committed'
+        monkeypatch.undo()
+
+        # The other order, on another item: the refusal holds the lock.
+        second = await seeded(client)
+        space_two = second['space_id']
+        plan_two = ok(await preview(client, space_two, second['new']))
+        entered, release = asyncio.Event(), asyncio.Event()
+        refusing = knowledge_hard_delete.record_refusal
+
+        async def held_refusal(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            return await refusing(*args, **kwargs)
+
+        monkeypatch.setattr(knowledge_hard_delete, 'record_refusal', held_refusal)
+        other = str(uuid4())
+        invalid = asyncio.create_task(send_delete(client, space_two, second['new'], plan_two['preview_id'], other,
+                                                  confirmation='ok'))
+        await asyncio.wait_for(entered.wait(), 30)
+        valid = asyncio.create_task(send_delete(client, space_two, second['new'], plan_two['preview_id'], other))
+        releaser = asyncio.create_task(asyncio.sleep(1.0))
+        seen = await outcomes_while(client, space_two, other, releaser)
+        assert not valid.done(), 'the valid request waits for the lock'
+        release.set()
+        assert (await invalid).status_code == 422
+        refused = await valid
+        assert refused.status_code == 409 and refused.json()['detail']['code'] == 'operation_mismatch'
+        assert set(seen) == {'unknown'}
+        assert (await operation(client, space_two, other))['state'] == 'refused'
+        assert (await view(client, space_two, second['new']))['status'] == 'current'

@@ -43,7 +43,7 @@ from .knowledge_hard_delete_models import (
     KnowledgeHardDeleteUser,
 )
 from .knowledge_hard_delete_operations import (
-    abort_operation, operation_outcome, record_refusal, require_open_operation,
+    abort_operation, operation_fingerprint, operation_outcome, record_refusal, settled_operation,
 )
 from .knowledge_hard_delete_traces import all_hard_deletions, hard_deletion_record, require_not_hard_deleted
 from .knowledge_management import _read_item
@@ -217,47 +217,62 @@ async def preview_hard_delete(store, actor, item_id, request: KnowledgeHardDelet
 
 
 async def apply_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteConfirm) -> KnowledgeHardDeleteRecord:
+    """One operation is decided once, under the space's knowledge lock: the
+    lock captures, new versions and the outdated mark take, which an abort of
+    the operation takes too. Inside it, an operation that already has an
+    outcome is answered from it (an exact replay of a commit) or refused
+    (409), a refusal is recorded in the same locked transaction that decided
+    it, and a delete commits together with its trace. So no refusal or abort
+    is ever visible while a delete of the same operation runs, and no outcome
+    of an operation ever changes."""
     space = await _person_space(store, actor, request.personal_space_id)
-    try:
-        return await _apply(store, actor, space, item_id, request)
-    except HTTPException as refusal:
-        # The transaction rolled back: the operation's answer is a refusal.
-        if request.operation_id and 400 <= refusal.status_code < 500:
-            code = refusal.detail.get('code') if isinstance(refusal.detail, dict) else None
-            await record_refusal(store, actor, space, request.operation_id, code or f'http_{refusal.status_code}')
-        raise
-
-
-async def _apply(store, actor, space, item_id, request) -> KnowledgeHardDeleteRecord:
+    fingerprint = operation_fingerprint(item_id, request) if request.operation_id else None
     created_at = now_utc()
+    refusal = None
     async with query_store_transaction(store) as scoped:
-        # The lock captures, new versions and the outdated mark take: no
-        # conclusion naming what goes, and no new version of it, can be
-        # written between this plan and the commit. An abort of this
-        # operation takes it too, so it either came first or waits.
         await lock_knowledge(scoped, space)
         if request.operation_id:
-            replay = await require_open_operation(scoped, space, request.operation_id)
+            replay = await settled_operation(scoped, space, request.operation_id, fingerprint)
             if replay is not None:
-                return replay.deletion
-        plan = await _plan(scoped, space, request.item_kind, item_id, lock=True)
-        preview = plan['preview']
-        if preview.preview_id != request.preview_id:
-            raise HTTPException(status_code=409, detail={
-                'code': 'hard_delete_preview_stale',
-                'message': 'what this delete removes changed since the preview; read the preview again'})
-        if request.confirmation.strip() not in CONFIRMATION_WORDS | {preview.title.strip()}:
-            raise HTTPException(status_code=422, detail={
-                'code': 'hard_delete_unconfirmed',
-                'message': 'type 删除 or the item title to confirm the delete'})
-        deletion_id = stable_uuid(space['id'], 'knowledge-hard-delete', request.item_kind, item_id,
-                                  created_at.isoformat())
-        await _hold_dependents(scoped, actor, space, plan, deletion_id, created_at)
-        await _remove(scoped, space, plan)
-        await _write_trace(scoped, actor, space, plan, deletion_id, created_at, request.operation_id)
+                return replay
+        try:
+            plan = await _checked_plan(scoped, space, item_id, request)
+        except HTTPException as refused:
+            # Nothing was written yet: the refusal is this operation's
+            # answer, recorded before the lock is released.
+            if not request.operation_id or not 400 <= refused.status_code < 500:
+                raise
+            refusal = refused
+            code = refused.detail.get('code') if isinstance(refused.detail, dict) else None
+            await record_refusal(scoped, actor, space, request.operation_id, code or f'http_{refused.status_code}',
+                                 fingerprint)
+        if refusal is None:
+            preview = plan['preview']
+            deletion_id = stable_uuid(space['id'], 'knowledge-hard-delete', request.item_kind, item_id,
+                                      created_at.isoformat())
+            await _hold_dependents(scoped, actor, space, plan, deletion_id, created_at)
+            await _remove(scoped, space, plan)
+            await _write_trace(scoped, actor, space, plan, deletion_id, created_at, request.operation_id, fingerprint)
+    if refusal is not None:
+        raise refusal
     return KnowledgeHardDeleteRecord(
         deletion_id=deletion_id, item_kind=request.item_kind, item_id=item_id, deleted_at=created_at,
         counts=preview.counts, deleted_item_ids=[item.item_id for item in preview.items])
+
+
+async def _checked_plan(scoped, space, item_id, request) -> dict:
+    """The plan, if this request may run it; refusals are raised before any write."""
+    plan = await _plan(scoped, space, request.item_kind, item_id, lock=True)
+    preview = plan['preview']
+    if preview.preview_id != request.preview_id:
+        raise HTTPException(status_code=409, detail={
+            'code': 'hard_delete_preview_stale',
+            'message': 'what this delete removes changed since the preview; read the preview again'})
+    if request.confirmation.strip() not in CONFIRMATION_WORDS | {preview.title.strip()}:
+        raise HTTPException(status_code=422, detail={
+            'code': 'hard_delete_unconfirmed',
+            'message': 'type 删除 or the item title to confirm the delete'})
+    return plan
 
 
 async def hard_delete_status(store, actor, item_id, request: KnowledgeHardDeleteRef) -> KnowledgeHardDeleteStatus:
@@ -504,7 +519,7 @@ async def _redact_decision_snapshots(scoped, space, event_ids, item_ids) -> None
             snapshots=json.dumps(redacted, ensure_ascii=False, sort_keys=True))
 
 
-async def _write_trace(scoped, actor, space, plan, deletion_id, created_at, operation_id) -> None:
+async def _write_trace(scoped, actor, space, plan, deletion_id, created_at, operation_id, fingerprint) -> None:
     """The content-free trace: IDs, time, the person, the kind and counts,
     and the console's operation ID, so it is that operation's commit."""
     preview = plan['preview']
@@ -517,7 +532,7 @@ async def _write_trace(scoped, actor, space, plan, deletion_id, created_at, oper
           outcome: 'deleted', created_by: $created_by, created_at: $created_at,
           deleted_item_keys: $deleted_item_keys, evidence_ids: $evidence_ids,
           removed_episode_ids: $removed_episode_ids, deletion_counts_json: $counts,
-          operation_id: $operation_id
+          operation_id: $operation_id, operation_fingerprint: $fingerprint
         })
         MERGE (space)-[:HAS_KNOWLEDGE_AUDIT]->(trace)
         ''', space_id=space['id'], deletion_id=deletion_id, item_id=preview.item_id, item_kind=preview.item_kind,
@@ -525,4 +540,5 @@ async def _write_trace(scoped, actor, space, plan, deletion_id, created_at, oper
         deleted_item_keys=[f'{item.item_kind}:{item.item_id}' for item in preview.items],
         evidence_ids=[episode.episode_id for episode in [*preview.removed_episodes, *preview.kept_episodes]],
         removed_episode_ids=[episode.episode_id for episode in preview.removed_episodes],
-        counts=json.dumps(preview.counts.model_dump(), sort_keys=True), operation_id=operation_id)
+        counts=json.dumps(preview.counts.model_dump(), sort_keys=True), operation_id=operation_id,
+        fingerprint=fingerprint)
