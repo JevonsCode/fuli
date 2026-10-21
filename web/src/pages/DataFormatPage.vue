@@ -183,6 +183,7 @@ onBeforeUnmount(() => reading?.abort())
             <span>{{ t('dataFormat.digest') }}</span>
             <code :title="plan.digest" data-plan-digest>{{ shortDigest(plan.digest) }}…</code>
           </p>
+          <p class="data-format-external" data-external-writers>{{ t('dataFormat.externalWriters') }}</p>
           <div class="data-format-check">
             <Checkbox id="data-format-reviewed" v-model="reviewed" :disabled="applying" />
             <Label for="data-format-reviewed">{{ t('dataFormat.reviewed') }}</Label>
@@ -204,6 +205,7 @@ onBeforeUnmount(() => reading?.abort())
             <CardDescription>{{ t('dataFormat.undoLede') }}</CardDescription>
           </CardHeader>
           <div class="data-format-body">
+          <p class="data-format-external" data-external-writers>{{ t('dataFormat.externalWriters') }}</p>
           <ul class="data-format-undo">
             <li v-for="entry in undoable" :key="`${entry.label}:${entry.migrationId}`">
               <span><strong>{{ entry.label }}</strong> <code>{{ entry.migrationId }}</code>
@@ -247,7 +249,8 @@ onBeforeUnmount(() => reading?.abort())
 
 .data-format-lede,
 .data-format-restore,
-.data-format-presence {
+.data-format-presence,
+.data-format-external {
   margin: 0;
   color: var(--color-muted);
   font-size: 14px;

@@ -29,6 +29,8 @@ export const dataFormatMessages = {
     digestNote: '摘要只绑定这份计划，不是授权；应用时会在存储锁内重新核对。',
     reviewed: '我已看过以上存储、步骤和记录数量',
     presence: '记录为本机控制台操作，无法验证是否本人在场。',
+    // Same wording as src/data-format/external-writers.js (test/data-format-external-writers.test.js).
+    externalWriters: '应用或撤销迁移前，请先停掉 FULI 以外直接写图谱的程序（Neo4j 客户端、cypher-shell 等工具）：FULI 拦不住它们的写入。',
     apply: '应用这些迁移',
     applying: '正在应用数据格式迁移…',
     stale: '计划在你确认后有了变化，没有做任何修改。下面是重新读取的计划，请重新确认。',
@@ -75,6 +77,7 @@ export const dataFormatMessages = {
     digestNote: 'The digest binds this plan; it is not a permission. Applying checks it again under each store\'s lock.',
     reviewed: 'I have reviewed the stores, steps and record counts above',
     presence: 'Recorded as a local console action; FULI cannot verify that a person was present.',
+    externalWriters: 'Before you apply or undo a migration, stop anything outside FULI that writes to the graph directly (a Neo4j client, cypher-shell or other tools): FULI cannot hold their writes back.',
     apply: 'Apply these migrations',
     applying: 'Applying data format migrations…',
     stale: 'The plan changed after you confirmed it; nothing was changed. Below is the plan read again; confirm it again.',

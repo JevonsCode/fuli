@@ -5,6 +5,7 @@ import { collectFormatStatus } from '../data-format/format-status.js';
 import { personalGraphFormat } from '../data-format/graph-format-client.js';
 import { previewMigrations } from '../data-format/migration-plan.js';
 import { findApplyReceipt } from '../data-format/apply-receipts.js';
+import { externalWritersLines } from '../data-format/external-writers.js';
 import {
   applyMigrations, describeRestore, pruneGraphJournals, restoreStore, rollbackMigration
 } from '../data-format/migration-operations.js';
@@ -104,6 +105,7 @@ const ACTIONS = Object.freeze({
       return { exitCode: FAILED_EXIT_CODE, status: 'stale' };
     }
     if (!started) write(formatPlan(plan, paths.dataDir, { confirming: true }));
+    write(externalWritersLines().join('\n'));
     if (!await confirm('Apply exactly these migrations? Recorded as entrypoint cli, presence unverified. [y/N] ',
       { defaultYes: false })) {
       write('Cancelled. Nothing was changed.');
@@ -120,7 +122,8 @@ const ACTIONS = Object.freeze({
     write([`Undo migration ${options.migration} of ${options.store}.`,
       'Only the records that migration changed are put back, and only if none of them changed since;',
       'otherwise nothing is changed. Afterwards this FULI keeps the store unavailable until the migration',
-      'is applied again (use this to return to an earlier FULI). A backup is taken first.'].join('\n'));
+      'is applied again (use this to return to an earlier FULI). A backup is taken first.',
+      ...externalWritersLines()].join('\n'));
     if (!await confirm('Undo it? Recorded as entrypoint cli, presence unverified. [y/N] ', { defaultYes: false })) {
       write('Cancelled. Nothing was changed.');
       return { exitCode: 0, status: 'cancelled' };

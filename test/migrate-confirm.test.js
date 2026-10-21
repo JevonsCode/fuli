@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import { DataFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
 import { runMigrateCommand } from '../src/cli/migrate-command.js';
+import { EXTERNAL_WRITERS_NOTICE } from '../src/data-format/external-writers.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { holdDataDirectory } from '../src/data-format/maintenance-lock.js';
 import { readFormatOperations } from '../src/data-format/operations-log.js';
@@ -300,4 +301,23 @@ test('prune still prunes local backups when the graph cannot be reached', async 
 
   assert.equal(result.exitCode, 0);
   assert.match(result.output, /Graph undo journals were not pruned: its provider is not answering/);
+});
+
+test('apply and undo say who must be stopped before they ask', async (t) => {
+  const root = dataDir(t);
+  legacyDataDir(root);
+  const { plan } = await migrate(root, ['preview', '--json']);
+  const asked = [];
+  const capture = async (args) => {
+    const lines = [];
+    await runMigrateCommand([...args, '--data-dir', root], { env: {}, interactive: true, graph: noGraph,
+      write: (line) => lines.push(line), confirm: async () => { asked.push(lines.join('\n')); return false; } });
+  };
+  await capture(['apply', '--digest', plan.digest]);
+  await capture(['rollback', '--store', 'task-schedules.sqlite', '--migration', 'task-schedules/3-run-recovery']);
+
+  assert.equal(asked.length, 2);
+  for (const shown of asked) {
+    assert.ok(shown.includes(EXTERNAL_WRITERS_NOTICE.zh) && shown.includes(EXTERNAL_WRITERS_NOTICE.en), shown);
+  }
 });

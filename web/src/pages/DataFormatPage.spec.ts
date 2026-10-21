@@ -59,6 +59,18 @@ describe('DataFormatPage', () => {
     expect(wrapper.text()).toContain('不能单独撤销，只能整库恢复')
   })
 
+  it('says who must be stopped before the apply and undo controls', async () => {
+    const wrapper = await mountPage()
+    const notices = wrapper.findAll('[data-external-writers]')
+    expect(notices).toHaveLength(2)
+    expect(notices[0].text()).toContain('Neo4j 客户端、cypher-shell')
+    const confirm = wrapper.get('.data-format-confirm')
+    const order = confirm.get('[data-external-writers]').element.compareDocumentPosition(confirm.get('#data-format-reviewed').element)
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const undo = notices[1].element.compareDocumentPosition(wrapper.get('[data-undo]').element)
+    expect(undo & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
 
   it('lists each store with its step, count and sample IDs, and applies only after review', async () => {
     const wrapper = await mountPage()

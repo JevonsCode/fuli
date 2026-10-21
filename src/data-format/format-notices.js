@@ -1,5 +1,6 @@
 import { dirname } from 'node:path';
 
+import { externalWritersLines } from './external-writers.js';
 import { inspectLocalStores } from './local-stores.js';
 import { readFormatOperations } from './operations-log.js';
 
@@ -88,4 +89,14 @@ function applicationFormatNotice(application) {
 export async function receiptFormatNotices(application) {
   const notice = await applicationFormatNotice(application)?.();
   return notice ? [notice] : [];
+}
+
+// What `fuli setup` says when local stores wait for a person: which ones,
+// where to review them, and the boundary of applying them. null when none.
+export function setupMigrationNotice(dataDir, { notices = dataFormatNotices(dataDir) } = {}) {
+  const waiting = notices().filter((notice) => WAITING_STEP_STATES.has(notice.state));
+  if (!waiting.length) return null;
+  return [`Data format migrations wait for you: ${waiting.map((notice) => notice.label).join(', ')}. `
+    + 'Review them with fuli migrate preview, or in the console under Settings → Data format migrations.',
+  ...externalWritersLines()].join('\n');
 }
