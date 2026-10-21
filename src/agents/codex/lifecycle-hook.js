@@ -1,11 +1,16 @@
 #!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
 import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
-import { isSystemPromptEntry, systemPromptOutput } from '../system-prompt.js';
+import { isSystemPromptEntry } from '../system-prompt.js';
+import { endTurnsObservedAtEntry, refreshCurrentTaskInPlace, settleHeldTurns, START_NEW_WORK, turnStart,
+  unprotectedTurnReason } from '../../conversations/unresolved-turns.js';
+import { transcriptCaptureLedger } from '../../conversations/transcript-capture-gap.js';
+import { transcriptDigest } from '../../conversations/transcript-guard.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
 import { CODEX_REVIEW_OFF_REASON, CODEX_REVIEW_UNVERIFIED_REASON, isCodexReviewCommand, withCodexReviewGuidance } from './review-command.js';
 import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext, sessionFuliSessionBegan }
@@ -48,8 +53,7 @@ export async function codexStopLifecycleOutput(input, invoke) {
   return stopHookOutcome(check, invoke, { sourceApplication: 'codex', sourceSessionId: sessionId });
 }
 
-export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal } = {}) {
-  if (event === 'UserPromptSubmit' && isSystemPromptEntry(input)) return systemPromptOutput(event);
+export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
   if (PREFERENCE_RESET_EVENTS.includes(event)) return preferenceLifecycleOutput(event, input,
     { sourceApplication: 'codex', delivery, currentTask, invoke });
   if (event === 'Stop') return codexStopLifecycleOutput(input, invoke);
@@ -57,10 +61,12 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
     throw new TypeError('Codex task entry requires session, cwd and prompt');
   }
   const review = isCodexReviewCommand(input.prompt);
-  // A session FULI is off for (rec#5 C3b) gets no task entry, and no review.
+  // A session FULI is off for (rec#5 C3b) gets no task entry, no refresh and no review.
   const off = await entryRefusal?.();
   if (off && review) return { decision: 'block', reason: CODEX_REVIEW_OFF_REASON };
   if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
+  if (codexRefreshTurn(event, input)) return refreshCurrentTaskInPlace(event, input, invoke, { sourceApplication: 'codex',
+    delivery, currentTask, onCurrentTask, unconfirmed: UNCONFIRMED_TURN });
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id });
@@ -74,9 +80,6 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
   if (!['Stop', 'UserPromptSubmit', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Missing Codex lifecycle event');
   const input = await (dependencies.readInput ?? readHookInput)();
   const write = dependencies.write ?? ((value) => process.stdout.write(value));
-  if (event === 'UserPromptSubmit' && isSystemPromptEntry(input)) {
-    const output = systemPromptOutput(event); write(`${JSON.stringify(output)}\n`); return output;
-  }
   if (dependencies.invoke) {
     const output = await codexLifecycleOutput(event, input, dependencies.invoke);
     write(`${JSON.stringify(output)}\n`);
@@ -88,6 +91,17 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     args,
     dependencies.env ?? process.env
   );
+  const ledger = runtimeConfigPath && typeof input?.session_id === 'string' && input.session_id.trim()
+    ? transcriptCaptureLedger(runtimeConfigPath, input, 'codex') : null;
+  // A turn whose ownership cannot be proven is held as unresolved before
+  // anything else can fail or return: whatever the read below finds, its
+  // Stop neither settles the session's task nor records the turn under it.
+  const refreshTurn = codexRefreshTurn(event, input) ? randomUUID() : null;
+  if (refreshTurn && !ledger?.holdTurn({ turn: refreshTurn, from: turnStart(input.transcript_path) })) {
+    const output = { decision: 'block', reason: UNPROTECTED_TURN };
+    write(`${JSON.stringify(output)}\n`);
+    return output;
+  }
   let app;
   let leases;
   let closing;
@@ -107,18 +121,32 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
         sourceApplication: 'codex', prompt: input?.prompt, projectPath: input?.cwd ?? null }) : null;
       if (codexSessionBegins(event, input)) sessionFuliSessionBegan(app, { sessionId: input.session_id, sourceApplication: 'codex' });
       if (command) return codexSessionCommandOutput(command);
-      if (PREFERENCE_RESET_EVENTS.includes(event)) return codexLifecycleOutput(event, input,
-        (name, parameters) => invokeTool(app, name, parameters, { signal: dependencies.signal }),
-        { delivery: app.preferenceDelivery, currentTask: app.taskContextRegistry?.current?.bind(app.taskContextRegistry) });
-      return transcriptLifecycle({ application: app, runtimeConfigPath, input, event, sourceApplication: 'codex',
-        captureTimeoutMs: dependencies.captureTimeoutMs, signal: dependencies.signal,
-        adapter: { normalize: normalizeCodexRecord, verify: verifyCodexTranscript },
-        run: onContext => codexLifecycleOutput(event, input, async (name, parameters) => {
-          const context = await invokeTool(app, name, parameters, { signal: dependencies.signal });
-          if (name === 'begin_task_context') onContext(context);
+      const call = (name, parameters) => invokeTool(app, name, parameters, { signal: dependencies.signal });
+      const currentTask = app.taskContextRegistry?.current?.bind(app.taskContextRegistry);
+      const entryRefusal = () => sessionFuliEntryRefusal(app, { sessionId: input.session_id, sourceApplication: 'codex' });
+      // A refresh begins no task and claims no transcript boundary. Its turn
+      // stays held through a session reset, compaction or FULI going off,
+      // until another task, or none, is current at a Stop, or a fresh entry.
+      if (refreshTurn) return codexLifecycleOutput(event, input, call, { delivery: app.preferenceDelivery, currentTask,
+        entryRefusal, onCurrentTask: task => ledger.ownTurn(refreshTurn, transcriptDigest(task.token)) });
+      if (PREFERENCE_RESET_EVENTS.includes(event)) return codexLifecycleOutput(event, input, call,
+        { delivery: app.preferenceDelivery, currentTask });
+      // No continuation evidence is passed: see CODEX_CONTINUATION_UNPROVABLE.
+      const unresolved = event === 'Stop' && await settleHeldTurns(app, ledger, input, currentTask,
+        { sourceApplication: 'codex', adapter: CODEX_TRANSCRIPT }) === 'held';
+      // Turns held when this prompt starts end once it freshly enters a task.
+      const held = event === 'UserPromptSubmit' ? ledger?.entrySnapshot() : null;
+      let entered = false;
+      const lifecycle = await transcriptLifecycle({ application: app, runtimeConfigPath, input, event, sourceApplication: 'codex',
+        captureTimeoutMs: dependencies.captureTimeoutMs, signal: dependencies.signal, adapter: CODEX_TRANSCRIPT,
+        // An unresolved turn's Stop neither verifies nor closes the task; its sync skips the turn.
+        run: onContext => unresolved ? Promise.resolve({}) : codexLifecycleOutput(event, input, async (name, parameters) => {
+          const context = await call(name, parameters);
+          if (name === 'begin_task_context') { entered = true; onContext(context); }
           return context;
-        }, { delivery: app.preferenceDelivery, entryRefusal: () => sessionFuliEntryRefusal(app,
-          { sessionId: input.session_id, sourceApplication: 'codex' }) }) });
+        }, { delivery: app.preferenceDelivery, entryRefusal }) });
+      if (entered) await endTurnsObservedAtEntry(ledger, held, input, CODEX_TRANSCRIPT);
+      return lifecycle;
     }, { signal: dependencies.signal });
     const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
       { sourceApplication: 'codex', version: FULI_VERSION, sessionId: input?.session_id })) : output;
@@ -128,6 +156,42 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     await cleanup();
   }
 }
+
+const CODEX_TRANSCRIPT = Object.freeze({ normalize: normalizeCodexRecord, verify: verifyCodexTranscript });
+
+// rec#28: no field of Codex's hook input proves that the host, not the
+// person, sent a turn. UserPromptSubmit input is exactly session_id, turn_id,
+// agent_id, agent_type, transcript_path, cwd, hook_event_name, model,
+// permission_mode and prompt (openai/codex deede7201da2:
+// codex-rs/hooks/src/schema.rs 566-584, deny_unknown_fields; the generated
+// user-prompt-submit.command.input.schema.json has additionalProperties
+// false): Codex never writes isMeta or is_meta. The hook runs for every
+// user-input turn (codex-rs/core/src/hook_runtime.rs 677-713), including
+// prompts Codex synthesizes itself such as a review
+// (codex-rs/core/src/session/review.rs 142-150), and nothing in the input
+// tells those apart. So a turn marked isMeta or is_meta did not come from
+// Codex's documented input and its source is unprovable: it takes the
+// conservative path of unresolved-turns.js, never a trusted shortcut. Every
+// other prompt enters as before.
+function codexRefreshTurn(event, input) {
+  return event === 'UserPromptSubmit' && isSystemPromptEntry(input);
+}
+
+// CODEX_CONTINUATION_UNPROVABLE: no held Codex turn is ever proven an
+// explicit continuation. The rollout keeps an MCP call's output
+// (response_item function_call_output) without whether it succeeded
+// (openai/codex deede7201da2: codex-rs/protocol/src/models.rs 2341-2347,
+// success is not serialized), and the records that do carry it depend on the
+// thread's history mode (codex-rs/rollout/src/policy.rs). A held Codex turn
+// therefore ends only when another task, or none, is current at a Stop (its
+// span is skipped, never imported) or when a fresh task entry ends it.
+
+// Bilingual: the person reads these in the transcript as well as the model.
+const UNCONFIRMED_TURN = 'FULI：本轮输入带有 isMeta 标记，但 Codex 的 hook 输入不定义这个字段，无法证明它来自宿主；'
+  + '来源和任务归属都未确认，没有创建或切换任务。 FULI: this turn carries an isMeta mark, but Codex hook input does not '
+  + 'define that field, so nothing proves the host sent it; its source and task ownership are not confirmed; no task was created or switched.';
+const UNPROTECTED_TURN = unprotectedTurnReason({ zh: '它带有 Codex 不定义的 isMeta 标记',
+  en: 'it carries an isMeta mark that Codex does not define' });
 
 // Codex sends SessionStart source "startup" only for a new thread
 // (openai/codex 87f3c3284e16: codex-rs/core/src/session/session.rs 1974-1977,
@@ -159,6 +223,9 @@ function codexLifecycleUnavailable(event, input, cause) {
     return { decision: 'block', reason: CODEX_REVIEW_UNVERIFIED_REASON };
   }
   const warning = `Fuli context is unavailable (${cause}). Continue with the user request; saved context and checkpoint were not verified.`;
+  // A refresh turn is never told to begin a task for "the current user request".
+  if (codexRefreshTurn(event, input)) return { systemMessage: warning, hookSpecificOutput: {
+    hookEventName: event, additionalContext: `${warning} ${START_NEW_WORK}` } };
   const sessionId = input?.session_id;
   if (event !== 'UserPromptSubmit' || typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {
     return { systemMessage: warning };

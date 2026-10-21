@@ -171,13 +171,15 @@ test('Codex lifecycle cleanup failures cannot corrupt output or skip application
 
 // The fail-closed side of the same Stop: a ledger that can be neither written
 // nor removed (here a directory stands where the record goes) makes the hook
-// say so, and both cleanups still run.
+// say so, and both cleanups still run. Since rec#28 the Codex Stop also reads
+// the ledger's unresolved turns: a record it cannot read is unprovable, so the
+// Stop settles nothing (no checkpoint verification) instead of the task.
 test('Codex lifecycle reports a ledger it cannot keep and still runs both cleanups', async () => {
   const root = mkdtempSync(join(tmpdir(), 'fuli-lifecycle-unwritable-'));
   const runtimeConfigPath = join(root, 'runtime.json');
   mkdirSync(join(root, 'transcript-capture',
     `${transcriptDigest(`${runtimeConfigPath}\0codex\0codex-session`)}.json`), { recursive: true });
-  const writes = [];
+  const writes = [], calls = [];
   let closed = 0;
   try {
     const output = await runCodexLifecycleHook(['--runtime-config', runtimeConfigPath, '--event', 'Stop'], {
@@ -192,9 +194,10 @@ test('Codex lifecycle reports a ledger it cannot keep and still runs both cleanu
         async withGraphLease(_purpose, callback) { return callback(); },
         async close() { closed += 1; throw new Error('/private/lease/path'); }
       }),
-      callTool: async () => ({ decision: 'block', reason: 'FULI_CHECKPOINT_REQUIRED: checkpoint.' })
+      callTool: async (_app, name) => { calls.push(name); return { decision: 'block', reason: 'FULI_CHECKPOINT_REQUIRED: checkpoint.' }; }
     });
-    assert.match(output.systemMessage, /^FULI_CHECKPOINT_REQUIRED: checkpoint\.\nFuli: 记录状态无法写入本地/);
+    assert.match(output.systemMessage, /^Fuli: 记录状态无法写入本地/);
+    assert.deepEqual(calls, []);
     assert.equal(closed, 2);
     assert.equal(writes.join('').includes('/private/'), false);
   } finally {

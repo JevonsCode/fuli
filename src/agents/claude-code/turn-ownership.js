@@ -1,4 +1,4 @@
-import { closeSync, fstatSync, openSync, readSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 
 // The only FULI operations that state a turn belongs to a task (rec#15). A
 // read, a refresh, a search or any automatic hook call naming the task's token
@@ -8,12 +8,6 @@ const EXPLICIT_TASK_CONTINUATIONS = Object.freeze(['checkpoint_task_knowledge'])
 const CONTINUATION_TOOLS = new Set(EXPLICIT_TASK_CONTINUATIONS.map(name => `mcp__fuli__${name}`));
 // One turn of native history read for evidence; a longer turn stays unresolved.
 const MAX_TURN_BYTES = 16 * 1024 * 1024;
-
-// The native byte an unresolved turn begins after: the transcript's length
-// when its prompt reaches the hook. Unreadable is 0, which only looks wider.
-export function turnStart(transcriptPath) {
-  try { return statSync(transcriptPath).size; } catch { return 0; }
-}
 
 // Whether, after `from` and in this main session, the model called an explicit
 // continuation with exactly this task's token and the host recorded its result

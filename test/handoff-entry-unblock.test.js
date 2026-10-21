@@ -153,17 +153,6 @@ for (const stage of ['before entry', 'after entry']) {
   });
 }
 
-test('Codex command writes the system-delivery continuation without opening runtime', async () => {
-  let output = '';
-  const never = () => assert.fail('system delivery must not open runtime');
-  const result = await runCodexLifecycleCommand(['--event', 'UserPromptSubmit'], {
-    readInput: async () => ({ isMeta: true, session_id: 'native', cwd: '/synthetic', prompt: 'cross-session delivery' }),
-    resolveRuntimeOptions: never, openApplication: never, write: value => { output += value; }
-  });
-  assert.equal(result.timedOut, false);
-  assert.match(JSON.parse(output).hookSpecificOutput.additionalContext, /current task context/);
-});
-
 test('conversation recovery inside real task entry cannot hide the already-created token and preferences', async () => {
   const { beginTaskFromPreferences } = await import('../src/graphiti/agent-knowledge-workflows.js');
   const { ProviderTaskContextRegistry } = await import('../src/mcp/provider-task-context-registry.js');
@@ -249,19 +238,8 @@ for (const [source, run] of adapters) {
     assert.match(result.systemMessage, /transcript|Transcript/);
   });
 
-  // Claude Code re-reads the current task for isMeta turns (rec#15); see claude-code-lifecycle-hook.test.js.
-  if (source === 'codex') test(`${source}: trusted isMeta system deliveries bypass runtime; user text resembling them does not`, async t => {
-    const f = await fixture(t, source);
-    const never = () => { throw new Error('system delivery opened runtime'); };
-    for (const prompt of ['<task-notification>background finished</task-notification>', '<teammate-message>cross-session delivery</teammate-message>']) {
-      const system = await run(['--event', 'UserPromptSubmit'], { readInput: async () => ({ ...f.input, prompt, isMeta: true }),
-        resolveRuntimeOptions: never, openApplication: never, createLeases: never, invoke: never });
-      assert.match(system.hookSpecificOutput?.additionalContext ?? '', /current task context/);
-    }
-    const human = await run(['--event', 'UserPromptSubmit'], { ...f.dependencies,
-      readInput: async () => ({ ...f.input, prompt: '<teammate-message>quoted by the user</teammate-message>' }) });
-    assert.match(human.hookSpecificOutput?.additionalContext ?? '', /fresh-token-1/);
-  });
+  // Both hooks re-read the current task for isMeta turns instead of trusting
+  // them (rec#15, rec#28): claude-code-lifecycle-hook.test.js and codex-lifecycle-hook.test.js.
 
   test(`${source}: task-entry failure is not retried as a transcript failure`, async t => {
     const f = await fixture(t, source); let calls = 0;
