@@ -102,24 +102,42 @@ async function fixture(t, source) {
   return { dir, runtime, input, app, calls, events, dependencies, entries: () => entries };
 }
 
+// The hook deadline and capture windows run on a mocked clock, so real
+// transcript and guard I/O (fsync on a loaded host) cannot spend a capture
+// budget before the hung request under test is reached. Once it is, exactly
+// one capture budget (a quarter of the hook budget) elapses; that must expire
+// the request. If it does not, the hook deadline is let through so the test
+// reports the failure instead of hanging.
+async function commandWithOneExpiredCapture(t, hookBudgetMs, dependencies, reached) {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const running = runCodexLifecycleCommand(['--event', 'UserPromptSubmit', '--timeout-ms', String(hookBudgetMs)], dependencies);
+  const signal = await Promise.race([reached, running.then(() => null)]);
+  if (!signal) return { result: await running, expired: false };
+  t.mock.timers.tick(hookBudgetMs / 4);
+  const expired = signal.aborted;
+  if (!expired) t.mock.timers.tick(hookBudgetMs);
+  return { result: await running, expired };
+}
+
 for (const stage of ['before entry', 'after entry']) {
   test(`capture RPC hung ${stage} must leave time to deliver valid context through the command writer`, async t => {
     const f = await fixture(t, 'codex');
     const conversation = f.app.personal.conversation;
-    let policyReads = 0, output = '', finishLate;
+    let policyReads = 0, output = '', finishLate, hang;
+    const reached = new Promise(resolve => { hang = resolve; });
     f.app.personal.conversation = async (operation, query, options) => {
       if (query.mode === 'policy' && ++policyReads === (stage === 'before entry' ? 1 : 2)) {
+        hang(options.signal);
         return new Promise(resolve => { finishLate = resolve; }); // May ignore cancellation.
       }
       return conversation(operation, query, options);
     };
-    // A quarter of the hook budget goes to each capture. It must outlast the
-    // real transcript and guard I/O on a loaded Windows host, or the capture
-    // times out on its own before reaching the hung RPC under test.
-    const result = await runCodexLifecycleCommand(['--event', 'UserPromptSubmit', '--timeout-ms', '1000'], {
-      ...f.dependencies, write: value => { output += value; }
-    });
+    // A quarter of the hook budget goes to each capture, so one hung capture
+    // leaves the rest of the deadline for task entry.
+    const { result, expired } = await commandWithOneExpiredCapture(t, 1000,
+      { ...f.dependencies, write: value => { output += value; } }, reached);
     assert.equal(typeof finishLate, 'function', `the capture RPC ${stage} was reached and hung`);
+    assert.equal(expired, true, 'one capture budget expires the hung capture');
     assert.equal(result.timedOut, false);
     assert.equal(f.entries(), 1);
     const delivered = JSON.parse(output);
@@ -169,7 +187,8 @@ test('conversation recovery inside real task entry cannot hide the already-creat
 
 test('the actual Provider HTTP client receives and aborts the capture-only request before task entry times out', async t => {
   const f = await fixture(t, 'codex');
-  let aborted = false, output = '';
+  let aborted = false, output = '', hang;
+  const reached = new Promise(resolve => { hang = resolve; });
   f.app.personal = new GraphitiProviderClient({ baseUrl: 'http://synthetic.invalid', accessToken: 'synthetic-access',
     fetchImpl: async (url, request) => {
       if (new URL(url).pathname === '/v1/task-context-sessions/current') return Response.json({
@@ -177,13 +196,15 @@ test('the actual Provider HTTP client receives and aborts the capture-only reque
         project_agent_id: 'engineer', source_application: 'codex', session_id: f.input.session_id, entry_via: 'hook'
       });
       assert.equal(JSON.parse(request.body).mode, 'policy');
-      return new Promise((_, reject) => request.signal.addEventListener('abort', () => {
+      const pending = new Promise((_, reject) => request.signal.addEventListener('abort', () => {
         aborted = true; reject(request.signal.reason);
       }, { once: true }));
+      hang(request.signal);
+      return pending;
     } });
-  const result = await runCodexLifecycleCommand(['--event', 'UserPromptSubmit', '--timeout-ms', '160'], {
-    ...f.dependencies, write: value => { output += value; }
-  });
+  const { result, expired } = await commandWithOneExpiredCapture(t, 160,
+    { ...f.dependencies, write: value => { output += value; } }, reached);
+  assert.equal(expired, true, 'one capture budget aborts the Provider request');
   assert.equal(result.timedOut, false);
   assert.equal(aborted, true);
   assert.equal(f.entries(), 1);
