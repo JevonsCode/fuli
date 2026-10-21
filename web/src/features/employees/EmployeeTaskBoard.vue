@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type ObjectDirective } from 'vue'
+import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch, type ObjectDirective } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { t } from '@/i18n'
 import { UiIcon } from '@/ui'
 import ProjectScopePicker from './ProjectScopePicker.vue'
@@ -52,6 +49,13 @@ type DragState = BoardDragProjection & { sourceStatus: EmployeeBoardStatus; mode
 type PendingMove = PendingBoardMove & { origin: MoveOrigin; saving: boolean }
 
 const DEFAULT_CARD_HEIGHT = 74
+// The menu (reka Menu, Popper) loads off the critical path, and only where
+// tasks can move: a read-only board never renders it. Until it arrives, the
+// same button stands in, disabled, so nothing shifts and nothing opens early.
+const MoveMenuPending = defineComponent(() => () => h(Button, {
+  variant: 'ghost', size: 'icon-sm', disabled: true, 'aria-label': t('employees.allProjects.moveToLabel'),
+}, () => h(UiIcon, { name: 'more', size: 16 })))
+const BoardMoveMenu = defineAsyncComponent({ loader: () => import('./BoardMoveMenu.vue'), loadingComponent: MoveMenuPending, delay: 0 })
 // Identity, not a name: two boards (or two apps) never accept each other's cards.
 const boardId = Symbol('employee-task-board')
 const query = ref('')
@@ -446,34 +450,14 @@ onBeforeUnmount(() => {
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="4" r="1" /><circle cx="11" cy="4" r="1" /><circle cx="5" cy="8" r="1" /><circle cx="11" cy="8" r="1" /><circle cx="5" cy="12" r="1" /><circle cx="11" cy="12" r="1" /></svg>
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger as-child :disabled="isBusy(slot.key)">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      class="employee-all-projects-move-menu"
-                      data-move-control="menu"
-                      :disabled="isBusy(slot.key)"
-                      :aria-label="t('employees.allProjects.moveTo', { task: slot.item.title })"
-                      :title="t('employees.allProjects.moveTo', { task: slot.item.title })"
-                    >
-                      <UiIcon name="more" :size="16" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" @close-auto-focus="onMenuCloseFocus">
-                    <DropdownMenuLabel>{{ t('employees.allProjects.moveToLabel') }}</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      v-for="status in EMPLOYEE_BOARD_STATUSES"
-                      :key="status.value"
-                      :disabled="!isBoardMove(slot.item, status.value)"
-                      :data-move-target="status.value"
-                      @select="moveFromMenu(slot.item, status.value)"
-                    >
-                      {{ status.value === slot.item.status ? t('employees.allProjects.currentStatus', { status: t(status.labelKey) }) : t(status.labelKey) }}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <span class="employee-all-projects-move-menu">
+                  <BoardMoveMenu
+                    :item="slot.item"
+                    :disabled="isBusy(slot.key)"
+                    @move="moveFromMenu(slot.item, $event)"
+                    @close-auto-focus="onMenuCloseFocus"
+                  />
+                </span>
               </template>
               <GrowthLoading v-if="isBusy(slot.key) && !slot.dragSource" class="employee-all-projects-saving" variant="inline" :label="savingLabel(slot.key)" />
             </article>
@@ -519,16 +503,19 @@ onBeforeUnmount(() => {
 .employee-all-projects-task-open:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .employee-all-projects-task-open:disabled { cursor: wait; }
 .employee-all-projects-task-open:disabled:not(.is-saving *) { cursor: default; }
-.employee-all-projects-drag-handle, .employee-all-projects-move-menu { position: absolute; right: 6px; width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: var(--radius-control); color: var(--color-muted); }
-.employee-all-projects-drag-handle { top: 6px; cursor: grab; touch-action: none; }
-.employee-all-projects-move-menu { top: 36px; }
+/* 32px touch targets, stacked in the card's top-right corner (the card is at least 72px tall). */
+.employee-all-projects-drag-handle, .employee-all-projects-move-menu :deep(button) { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: var(--radius-control); color: var(--color-muted); }
+.employee-all-projects-drag-handle { position: absolute; top: 4px; right: 4px; cursor: grab; touch-action: none; }
+.employee-all-projects-move-menu { position: absolute; top: 38px; right: 4px; display: flex; }
 .employee-all-projects-drag-handle:active { cursor: grabbing; }
-.employee-all-projects-drag-handle:disabled, .employee-all-projects-move-menu:disabled { cursor: wait; }
+.employee-all-projects-drag-handle:disabled, .employee-all-projects-move-menu :deep(button:disabled) { cursor: wait; }
 /* While dragging, the source stays in place (the drag continues from it) and the target shows a slot. */
 .employee-all-projects-task.is-drag-source { opacity: .42; box-shadow: none; }
 .employee-all-projects-slot { flex: 0 0 auto; border: 1px dashed var(--color-accent-line); border-radius: 12px; background: var(--color-surface); opacity: .75; }
 .employee-all-projects-task.is-saving { opacity: .68; }
-.employee-all-projects-saving { position: absolute; right: 10px; bottom: 8px; color: var(--color-muted); font-size: 12px; }
+/* The pending label is the card's last row, in full: the card grows while it saves. */
+.employee-all-projects-saving { position: static; width: 100%; margin-top: -4px; padding: 0 12px 10px; box-sizing: border-box; color: var(--color-muted); font-size: 12px; text-align: left; }
+.employee-all-projects-saving :deep(.growth-loading__label) { font-size: 12px; white-space: normal; }
 /* The drop animation is FULI's: a moved card fades into its column; reduced motion settles it at once. */
 .employee-task-shift-move { transition: transform 220ms cubic-bezier(.2, 0, 0, 1); }
 .employee-task-shift-enter-active, .employee-task-shift-leave-active { transition: opacity 140ms ease, transform 180ms cubic-bezier(.2, 0, 0, 1); }

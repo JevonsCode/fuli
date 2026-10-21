@@ -1,5 +1,5 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 
 import { fireDrag, installDragEnvironment, nextDragFrame } from '@/test-support/drag-events'
@@ -78,6 +78,11 @@ const announcer = () => document.querySelector('[data-board-announcer]')?.textCo
 const column = (status: EmployeeBoardStatus, root: ParentNode = document) => root.querySelector<HTMLElement>(`[data-board-column="${status}"]`)!
 function cardIn(status: EmployeeBoardStatus, title: string, root: ParentNode = document) {
   return [...column(status, root).querySelectorAll<HTMLElement>('[data-board-key]')].find((card) => card.textContent?.includes(title)) ?? null
+}
+/** The card's "Move to…" trigger, once the menu has loaded (until then a disabled stand-in holds its place). */
+async function menuTriggerOf(card: HTMLElement) {
+  await vi.waitFor(() => expect(card.querySelector('[data-move-control="menu"]')).not.toBeNull())
+  return card.querySelector<HTMLButtonElement>('[data-move-control="menu"]')!
 }
 function handleOf(card: HTMLElement) {
   return card.querySelector<HTMLButtonElement>('[data-move-control="handle"]')!
@@ -210,7 +215,8 @@ describe('employee task board', () => {
 
   it('moves through the "Move to…" menu with the same rules, submit path and focus', async () => {
     const { requests, wrapper } = track(mountWithPage())
-    const trigger = cardIn('planned', '整理发布清单')!.querySelector<HTMLButtonElement>('[data-move-control="menu"]')!
+    const trigger = await menuTriggerOf(cardIn('planned', '整理发布清单')!)
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
     expect(trigger.getAttribute('aria-label')).toBe('把“整理发布清单”移动到…')
     trigger.focus()
     trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -364,7 +370,7 @@ describe('employee task board', () => {
     // Keyboard and menu: the controls are disabled, and a stray key does not lift.
     expect(handleOf(pending).disabled).toBe(true)
     handleOf(pending).dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
-    expect(pending.querySelector<HTMLButtonElement>('[data-move-control="menu"]')!.disabled).toBe(true)
+    expect((await menuTriggerOf(pending)).disabled).toBe(true)
     await flushPromises()
 
     expect(requests).toHaveLength(1)
