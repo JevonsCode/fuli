@@ -35,3 +35,14 @@ export function forgetReferences(value, references) {
   const result = visit(value);
   return { value: changed ? result : value, changed };
 }
+
+// Runs a store's forgetting in its own SQLite connection so the words do not
+// linger on disk: secure_delete overwrites the pages and cells the update
+// frees, and a TRUNCATE checkpoint moves a write-ahead log back into the file
+// and empties it. Both are connection settings, not data (rec#5 C9).
+export function forgetDurably(database, work) {
+  database.exec('PRAGMA secure_delete = ON');
+  const changed = work();
+  database.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  return changed;
+}

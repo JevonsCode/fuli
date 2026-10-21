@@ -54,7 +54,8 @@ const notice = ref('')
 const root = ref<HTMLElement | null>(null)
 const showLoading = useMinimumLoadingDisplay(computed(() => loading.value && !item.value))
 let requestVersion = 0
-usePageTitle(computed(() => deleted.value ? t('knowledgeHardDelete.deleted.pageTitle') : item.value?.title ?? ''))
+usePageTitle(computed(() => !deleted.value ? item.value?.title ?? ''
+  : t(deleted.value.outcome === 'unknown' ? 'knowledgeHardDelete.deleted.unknownTitle' : 'knowledgeHardDelete.deleted.pageTitle')))
 
 const projects = computed(() => (store.state?.personalProjects ?? [])
   .filter(project => project.personal_space_id === spaceId.value))
@@ -119,6 +120,13 @@ function removed(state: HardDeletedState) {
   deleted.value = state
 }
 
+// Checked: the delete did not happen after all; show the item again.
+function stillThere() {
+  deleted.value = null
+  notice.value = t('knowledgeHardDelete.deleted.notDeleted')
+  void load()
+}
+
 function openVersion(version: ItemVersion) {
   lastOpened = versionPeekId(version)
   void peek.open({ spaceId: spaceId.value, id: lastOpened })
@@ -152,7 +160,8 @@ watch([spaceId, kind, itemId], () => {
   <div ref="root" class="mx-auto flex w-full max-w-(--form-max) flex-col gap-4" data-knowledge-item-edit>
     <BackLink to="/organize" :from="/^\/(organize|knowledge|preferences)/" class="text-sm">{{ t('knowledgeQuickEdit.back') }}</BackLink>
     <GrowthLoading v-if="showLoading" :label="t('knowledgeQuickEdit.loading')" />
-    <KnowledgeHardDeletedNotice v-else-if="deleted" :state="deleted" />
+    <KnowledgeHardDeletedNotice v-else-if="deleted" :state="deleted" :space-id="spaceId" :item-kind="kind" :item-id="itemId"
+      @changed="removed" @present="stillThere" />
     <div v-else-if="error && !item" role="alert" class="grid justify-items-start gap-2">
       <p class="m-0">{{ t('knowledgeQuickEdit.loadFailed', { error }) }}</p>
       <Button variant="outline" size="sm" @click="load">{{ t('knowledgeQuickEdit.retry') }}</Button>

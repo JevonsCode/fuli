@@ -6,14 +6,17 @@ import { readJson, sendJson } from './response.js';
 // The console's 「彻底删除」 of one knowledge item (rec#5 C9): a preview of
 // exactly what goes, then the person's confirmation bound to that preview.
 // Both are accepted only on loopback and only for the active personal space;
-// the provider also requires the human-review channel the port sends. No
+// the provider also requires the human-review channel the port sends. The
+// status route settles a delete whose answer was lost and finishes its local
+// cleanup; it never sends the delete again. No
 // Agent tool reaches these routes; an Agent can only suggest the person opens
 // the item's page (the interface catalog marks them local_user_only).
 
-const PATH = /^\/api\/knowledge\/(entity|relationship)\/([^/]+)\/hard-delete(\/preview)?$/;
+const PATH = /^\/api\/knowledge\/(entity|relationship)\/([^/]+)\/hard-delete(?:\/(preview|status))?$/;
 const space = z.string().min(1).max(128);
 const BODIES = {
   preview: z.object({ personalSpaceId: space }).strict(),
+  status: z.object({ personalSpaceId: space }).strict(),
   confirm: z.object({ personalSpaceId: space, previewId: z.string().regex(/^[0-9a-f]{64}$/),
     confirmation: z.string().trim().min(1).max(512) }).strict()
 };
@@ -34,7 +37,7 @@ export async function handleKnowledgeHardDeleteRequest({ request, response, url,
     sendJson(response, 503, { error: 'Permanent deletion needs a local FULI installation' });
     return true;
   }
-  const action = match[3] ? 'preview' : 'confirm';
+  const action = match[3] ?? 'confirm';
   const parsed = BODIES[action].safeParse(await readJson(request));
   if (!parsed.success) throw new TypeError('Invalid permanent deletion request');
   if (parsed.data.personalSpaceId !== app.config?.personal?.spaceId) {

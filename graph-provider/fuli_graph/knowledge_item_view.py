@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 from .knowledge_basis_review import basis_review
 from .knowledge_dependencies import dependents_of, item_bases
-from .knowledge_hard_delete_traces import hard_deleted_in_episodes, require_not_hard_deleted
+from .knowledge_hard_delete_traces import hard_deletions_in_episodes, require_not_hard_deleted
 from .knowledge_item_view_models import (
     KnowledgeEvidenceSource,
     KnowledgeItemRef,
@@ -42,9 +42,11 @@ _RULE_TYPE = re.compile(r'rule|policy|convention|constraint|guideline|standard',
 
 async def read_knowledge_item_view(store, actor: dict, request: KnowledgeItemRef) -> KnowledgeItemView:
     space = await personal_reader_space(store, actor, request.personal_space_id)
+    # The deletion trace is authoritative: a deleted ID answers 410 whatever
+    # else is stored now (rec#5 C9).
+    await require_not_hard_deleted(store, space, request.item_id)
     current = await _read_item(store, space, request.item_id, request.item_kind)
     if current is None:
-        await require_not_hard_deleted(store, space, request.item_id)
         raise HTTPException(status_code=404, detail='knowledge item not found')
     evidence, source_ids = await item_evidence(store, space, request.item_kind, request.item_id)
     revisions = (await item_revisions(store, space, request.item_kind, [request.item_id])).get(request.item_id, [])
@@ -74,8 +76,9 @@ async def read_turn_receipt(store, actor: dict, request: KnowledgeTurnReceiptRea
         _, source_ids = await item_evidence(store, space, item_kind, item_id, limit=0)
         summary = await item_summary(store, space, item_kind, item_id, current, source_ids=source_ids)
         entries.append(KnowledgeReceiptEntry(**summary.model_dump(), change=change))
-    return KnowledgeTurnReceipt(entries=entries, unchanged_count=unchanged,
-                                deleted_count=await hard_deleted_in_episodes(store, space, request.episode_ids))
+    deletions = await hard_deletions_in_episodes(store, space, request.episode_ids)
+    return KnowledgeTurnReceipt(entries=entries, unchanged_count=unchanged, deleted_count=len(deletions),
+                                deletion_ids=deletions)
 
 
 async def item_summary(store, space, item_kind, item_id, current, *, source_ids,

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
-import { forgetReferences } from '../knowledge-hard-delete/forget-references.js';
+import { deletedKnowledgeBeside } from '../knowledge-hard-delete/delete-ledger.js';
+import { forgetDurably, forgetReferences } from '../knowledge-hard-delete/forget-references.js';
 
 // D-04 §2 role work packages, shared by every console and MCP process on one
 // data directory, so a pending package survives restarts. A package is never
@@ -51,6 +52,14 @@ export const ROLE_WORK_FORMAT = sqliteFormat({
 export class RoleWorkStore {
   constructor(path = ':memory:') {
     this.path = path;
+    // Knowledge a person permanently deleted (rec#5 C9): every JSON value
+    // written below is cleaned inside its transaction, so a late answer or
+    // result of work that started before the delete keeps no deleted words.
+    this.deleted = deletedKnowledgeBeside(path);
+  }
+
+  #json(value) {
+    return JSON.stringify(forgetReferences(value, this.deleted()).value);
   }
 
   // Opened on first use, so a process that never hands off work creates no file.
@@ -74,8 +83,8 @@ export class RoleWorkStore {
       this.db.prepare(`INSERT INTO role_work(${COLUMNS}) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, 0, ?, ?, ?)`).run(
         packageId, request.role, request.operation, request.requestId, request.scope.personalSpaceId,
         request.scope.personalProjectId, request.scope.sessionRef, request.versions.evidence, request.versions.policy,
-        reason, at.toISOString(), new Date(at.getTime() + ttlMs).toISOString(), JSON.stringify(request),
-        resume ? JSON.stringify(resume) : null, fallbackReceipt ? JSON.stringify(fallbackReceipt) : null);
+        reason, at.toISOString(), new Date(at.getTime() + ttlMs).toISOString(), this.#json(request),
+        resume ? this.#json(resume) : null, fallbackReceipt ? this.#json(fallbackReceipt) : null);
       this.#event(packageId, 'created', { reason }, at);
     });
     return this.get(packageId);
@@ -146,7 +155,7 @@ export class RoleWorkStore {
       this.db.prepare(`UPDATE role_work SET status = ?, invalid_submissions = ?, submission = ?, result = ?, consumed_at = ?
         WHERE package_id = ?`)
         .run(status ?? current.status, invalidSubmissions ?? current.invalidSubmissions,
-          JSON.stringify(submission ?? current.submission), JSON.stringify(result ?? current.result),
+          this.#json(submission ?? current.submission), this.#json(result ?? current.result),
           consumedAt?.toISOString() ?? current.consumedAt, packageId);
       this.#event(packageId, event.name, event.detail ?? {}, at);
       return this.get(packageId);
@@ -164,7 +173,7 @@ export class RoleWorkStore {
       const abandoned = current.status === 'applying' && Date.parse(current.applyingUntil) <= at.getTime();
       if (submission ? current.status !== 'claimed' : current.status !== 'submitted' && !abandoned) return null;
       this.db.prepare(`UPDATE role_work SET status = 'applying', submission = ?, applying_until = ?, execution_token = ?
-        WHERE package_id = ?`).run(JSON.stringify(submission ?? current.submission), until.toISOString(), randomUUID(), packageId);
+        WHERE package_id = ?`).run(this.#json(submission ?? current.submission), until.toISOString(), randomUUID(), packageId);
       this.#event(packageId, submission ? 'submitted' : abandoned ? 'applying_taken_over' : 'applying', {}, at);
       return this.get(packageId);
     });
@@ -212,7 +221,7 @@ export class RoleWorkStore {
   // names it (in its request, answer, result or history) keeps its shape and
   // loses those words. Returns how many rows changed.
   forgetKnowledgeItems(space, references) {
-    return this.#transaction(() => {
+    return forgetDurably(this.db, () => this.#transaction(() => {
       let changed = 0;
       for (const row of this.db.prepare(`SELECT package_id, ${FORGETTABLE.join(', ')} FROM role_work WHERE space = ?`).all(space)) {
         const updates = FORGETTABLE.map((column) => [column, row[column] === null ? null : forgetReferences(JSON.parse(row[column]), references)])
@@ -230,7 +239,7 @@ export class RoleWorkStore {
         changed++;
       }
       return changed;
-    });
+    }));
   }
 
   counts() {
@@ -240,7 +249,7 @@ export class RoleWorkStore {
 
   #event(packageId, name, detail, at) {
     this.db.prepare('INSERT INTO role_work_events(package_id, event, detail, at) VALUES(?, ?, ?, ?)')
-      .run(packageId, name, JSON.stringify(detail), at.toISOString());
+      .run(packageId, name, this.#json(detail), at.toISOString());
   }
 
   // Nested calls join the open transaction.

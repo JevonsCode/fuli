@@ -16,6 +16,9 @@ export interface HardDeleteItem {
   status: VersionStatus
 }
 
+/** Another item that still uses a shared source; the person can open and delete it too. */
+export interface HardDeleteUser { item_kind: ItemKind; item_id: string; title: string }
+
 export interface HardDeleteEpisode {
   episode_id: string
   source_kind?: string | null
@@ -24,6 +27,7 @@ export interface HardDeleteEpisode {
   excerpt?: string | null
   created_at?: string | null
   other_items: number
+  used_by?: HardDeleteUser[]
 }
 
 export interface HardDeleteDependent { item_kind: ItemKind; item_id: string; title: string; content: string; direct: boolean }
@@ -49,18 +53,28 @@ export interface HardDeletePreview {
 
 export interface LocalStoreResult { store: string; status: 'forgotten' | 'failed'; changed?: number; reason?: string }
 
+/** Where a delete stands: done, deleted with local cleanup left, not known
+ * yet (the console asks the graph, never deletes again), or proven not done. */
+export type HardDeleteOutcome = 'complete' | 'local_pending' | 'unknown' | 'not_deleted' | 'missing'
+
 export interface HardDeleteResult {
-  deletion_id: string
+  outcome: HardDeleteOutcome
+  deletion_id?: string
   item_kind: ItemKind
   item_id: string
-  deleted_at: string
-  counts: HardDeleteCounts
-  deleted_item_ids: string[]
+  deleted_at?: string | null
+  counts?: HardDeleteCounts
+  deleted_item_ids?: string[]
   local_stores?: LocalStoreResult[]
 }
 
-/** What the page shows once the item is gone: when, and what the delete reported. */
-export interface HardDeletedState { deletedAt: string | null; result?: HardDeleteResult }
+/** What the page shows once a delete was sent or an old link answered 410. */
+export interface HardDeletedState { outcome: HardDeleteOutcome | 'gone'; deletedAt: string | null; result?: HardDeleteResult }
+
+/** A state the page shows from what the console answered. */
+export function deletedState(result: HardDeleteResult): HardDeletedState {
+  return { outcome: result.outcome, deletedAt: result.deleted_at ?? null, result }
+}
 
 const CONFIRMATION_WORDS = new Set(['删除', 'delete'])
 
@@ -88,7 +102,13 @@ function apiCode(error: unknown): { code?: string; deletedAt?: string } | null {
 export function hardDeletedFrom(error: unknown): HardDeletedState | null {
   if (!(error instanceof ApiError) || error.status !== 410) return null
   const body = apiCode(error)
-  return body?.code === 'hard_deleted' ? { deletedAt: body.deletedAt ?? null } : null
+  return body?.code === 'hard_deleted' ? { outcome: 'gone', deletedAt: body.deletedAt ?? null } : null
+}
+
+/** The graph itself refused the delete (a 4xx with its code): only this proves nothing was deleted.
+ * A lost answer, a console that went away or a 5xx proves nothing. */
+export function refusedByGraph(error: unknown) {
+  return error instanceof ApiError && error.status >= 400 && error.status < 500 && Boolean(apiCode(error)?.code)
 }
 
 /** The delete was refused because what it removes changed since the preview (409). */

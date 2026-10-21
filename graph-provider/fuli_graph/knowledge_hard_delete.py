@@ -37,8 +37,10 @@ from .knowledge_hard_delete_models import (
     KnowledgeHardDeletePreview,
     KnowledgeHardDeleteRecord,
     KnowledgeHardDeleteRef,
+    KnowledgeHardDeleteStatus,
+    KnowledgeHardDeleteUser,
 )
-from .knowledge_hard_delete_traces import require_not_hard_deleted
+from .knowledge_hard_delete_traces import hard_deletion_record, require_not_hard_deleted
 from .knowledge_management import _read_item
 from .knowledge_versions import item_revisions, lock_knowledge, version_chain, version_status
 from .provider_values import native_datetime, now_utc, sha256_text, stable_uuid
@@ -104,14 +106,16 @@ CALL {
 WITH DISTINCT episode
 OPTIONAL MATCH (episode)-[:MENTIONS]->(other:Entity)
 WHERE NOT other.uuid IN $entity_ids
-WITH episode, collect(DISTINCT other.uuid) AS mentioned
+WITH episode, collect(DISTINCT CASE WHEN other IS NULL THEN NULL ELSE
+  {item_kind: 'entity', item_id: other.uuid, title: coalesce(other.summary, other.name, other.uuid)} END) AS mentioned
 OPTIONAL MATCH ()-[edge:RELATES_TO {group_id: $group_id}]->()
 WHERE NOT edge.uuid IN $relationship_ids
   AND (episode.uuid IN coalesce(edge.episodes, []) OR edge.uuid IN coalesce(episode.entity_edges, []))
-WITH episode, mentioned, collect(DISTINCT edge.uuid) AS related
+WITH episode, mentioned, collect(DISTINCT CASE WHEN edge IS NULL THEN NULL ELSE
+  {item_kind: 'relationship', item_id: edge.uuid, title: coalesce(edge.fact, edge.name, edge.uuid)} END) AS related
 RETURN episode {.uuid, .created_at, .fuli_source_kind, .fuli_source_application, .fuli_session_id,
                 .fuli_source_excerpt} AS episode,
-       size(mentioned) + size(related) AS other_items
+       mentioned + related AS others
 ORDER BY episode.created_at, episode.uuid
 '''
 _MENTIONS = '''
@@ -235,6 +239,18 @@ async def apply_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteC
         counts=preview.counts, deleted_item_ids=[item.item_id for item in preview.items])
 
 
+async def hard_delete_status(store, actor, item_id, request: KnowledgeHardDeleteRef) -> KnowledgeHardDeleteStatus:
+    """For a console whose delete answer was lost: the trace if the item was
+    deleted, otherwise whether it is still there. It only reads, so a console
+    asks this instead of sending an irreversible delete again."""
+    space = await _person_space(store, actor, request.personal_space_id)
+    deletion = await hard_deletion_record(store, space, item_id)
+    if deletion is not None:
+        return KnowledgeHardDeleteStatus(state='deleted', deletion=deletion)
+    present = await _read_item(store, space, item_id, request.item_kind) is not None
+    return KnowledgeHardDeleteStatus(state='present' if present else 'missing')
+
+
 async def _person_space(store, actor, space_id):
     store._require_personal()
     space = await store.authorize(actor, space_id, 'maintainer')
@@ -244,8 +260,8 @@ async def _person_space(store, actor, space_id):
 
 
 async def _plan(store, space, item_kind, item_id, *, lock=False) -> dict:
+    await require_not_hard_deleted(store, space, item_id)
     if await _read_item(store, space, item_id, item_kind) is None:
-        await require_not_hard_deleted(store, space, item_id)
         raise HTTPException(status_code=404, detail='knowledge item not found')
     versions = [version['item_id'] for version in await version_chain(store, space, item_kind, item_id)]
     targets = {'entity': [], 'relationship': []}
@@ -263,7 +279,7 @@ async def _plan(store, space, item_kind, item_id, *, lock=False) -> dict:
     evidence, _, _ = await store.runtime.driver.execute_query(
         _EVIDENCE, group_id=space['group_id'], entity_ids=targets['entity'],
         relationship_ids=targets['relationship'], routing_='r')
-    episodes = [_episode(record['episode'], record['other_items']) for record in evidence]
+    episodes = [_episode(record['episode'], record['others']) for record in evidence]
     removed = [episode for episode in episodes if not episode.other_items]
     kept = [episode for episode in episodes if episode.other_items]
     mentions, _, _ = await store.runtime.driver.execute_query(
@@ -310,12 +326,15 @@ async def _item_rows(store, space, item_kind, item_id, targets):
     return sorted(items, key=lambda item: order[item.role]), locks
 
 
-def _episode(row, other_items) -> KnowledgeHardDeleteEpisode:
+def _episode(row, others) -> KnowledgeHardDeleteEpisode:
+    users = sorted((dict(other) for other in others), key=lambda other: (other['item_kind'], other['item_id']))
     return KnowledgeHardDeleteEpisode(
         episode_id=row['uuid'], source_kind=row.get('fuli_source_kind'),
         source_application=row.get('fuli_source_application'), session_id=row.get('fuli_session_id'),
         excerpt=(row.get('fuli_source_excerpt') or '')[:EXCERPT_LIMIT] or None,
-        created_at=native_datetime(row.get('created_at')), other_items=int(other_items))
+        created_at=native_datetime(row.get('created_at')), other_items=len(users),
+        used_by=[KnowledgeHardDeleteUser(item_kind=user['item_kind'], item_id=user['item_id'],
+                                         title=(user['title'] or '')[:EXCERPT_LIMIT]) for user in users])
 
 
 async def _record_ids(store, space, items) -> dict[str, list[str]]:

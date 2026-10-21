@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -8,13 +9,13 @@ import { Button } from '@/components/ui/button'
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { evidenceApplicationLabel, evidenceKindLabel, versionStatusLabel, versionTone,
+import { evidenceApplicationLabel, evidenceKindLabel, itemEditPath, versionStatusLabel, versionTone,
   type KnowledgeItemSummary } from '@/features/knowledge-quick-edit/model'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { confirmHardDelete, previewHardDelete } from './hard-delete-api'
-import { confirmationMatches, hardDeletedFrom, recordCounts, stalePreview,
-  type HardDeletePreview, type HardDeleteResult, type HardDeletedState } from './model'
+import { confirmationMatches, deletedState, hardDeletedFrom, recordCounts, refusedByGraph, stalePreview,
+  type HardDeletePreview, type HardDeletedState } from './model'
 
 // rec#5 C9: the second step of a permanent delete. It lists exactly what goes,
 // what stays and what rests on it, then asks the person to type 删除. The
@@ -60,8 +61,7 @@ async function submit() {
   error.value = ''
   notice.value = ''
   try {
-    const result: HardDeleteResult = await confirmHardDelete(props.spaceId, preview.value, typed.value)
-    emit('deleted', { deletedAt: result.deleted_at, result })
+    emit('deleted', deletedState(await confirmHardDelete(props.spaceId, preview.value, typed.value)))
   } catch (cause) {
     const deleted = hardDeletedFrom(cause)
     if (deleted) { emit('deleted', deleted); return }
@@ -71,7 +71,10 @@ async function submit() {
       await load(true)
       return
     }
-    error.value = t('knowledgeHardDelete.dialog.failed', { error: apiErrorReason(cause) })
+    // Only the graph's own refusal proves nothing was deleted; anything else
+    // is a result to check, never "nothing was deleted".
+    if (refusedByGraph(cause)) error.value = t('knowledgeHardDelete.dialog.failed', { error: apiErrorReason(cause) })
+    else emit('deleted', { outcome: 'unknown', deletedAt: null })
   } finally {
     deleting.value = false
   }
@@ -88,7 +91,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
 <template>
   <DialogHeader>
     <DialogTitle>{{ t('knowledgeHardDelete.dialog.title') }}</DialogTitle>
-    <DialogDescription>{{ t('knowledgeHardDelete.danger.help') }}</DialogDescription>
+    <DialogDescription>{{ t('knowledgeHardDelete.dialog.description') }}</DialogDescription>
   </DialogHeader>
   <GrowthLoading v-if="loading" variant="compact" :label="t('knowledgeHardDelete.dialog.loading')" />
   <p v-else-if="error && !preview" role="alert" class="m-0 text-sm text-destructive" data-hard-delete-error>{{ error }}</p>
@@ -125,9 +128,17 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
         <li v-for="episode in preview.kept_episodes" :key="episode.episode_id"
           class="grid min-w-0 gap-1 rounded-lg border p-3" data-hard-delete-episode="kept">
           <span class="text-muted-foreground">{{ evidenceKindLabel(episode) }} · {{ evidenceApplicationLabel(episode) }} · {{ when(episode.created_at) }}</span>
+          <span class="[overflow-wrap:anywhere]">{{ episode.excerpt || t('knowledgeHardDelete.dialog.noExcerpt') }}</span>
           <span>{{ t('knowledgeHardDelete.dialog.keptSourceItems', { count: episode.other_items }) }}</span>
+          <ul class="m-0 grid list-none gap-1 p-0">
+            <li v-for="user in episode.used_by ?? []" :key="`${user.item_kind}:${user.item_id}`" class="min-w-0">
+              <RouterLink :to="itemEditPath(spaceId, user)" class="underline underline-offset-4 [overflow-wrap:anywhere]"
+                data-hard-delete-kept-user>{{ user.title }}</RouterLink>
+            </li>
+          </ul>
         </li>
       </ul>
+      <p v-if="preview.kept_episodes.length" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.keptSourceHelp') }}</p>
     </section>
 
     <section class="grid gap-2" data-hard-delete-records>
@@ -146,7 +157,8 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
         <li v-for="row in preview.dependents" :key="`${row.item_kind}:${row.item_id}`"
           class="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border p-3" data-hard-delete-dependent>
           <Badge v-if="!row.direct" variant="outline">{{ t('knowledgeHardDelete.dialog.below') }}</Badge>
-          <span class="min-w-0 [overflow-wrap:anywhere]">{{ row.content || row.title }}</span>
+          <RouterLink :to="itemEditPath(spaceId, row)" class="min-w-0 underline underline-offset-4 [overflow-wrap:anywhere]"
+            data-hard-delete-dependent-link>{{ row.content || row.title }}</RouterLink>
         </li>
       </ul>
     </section>
@@ -154,8 +166,11 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
     <section class="grid gap-1 text-muted-foreground" data-hard-delete-kept>
       <h3 class="m-0 text-base font-semibold text-foreground">{{ t('knowledgeHardDelete.dialog.notRemoved') }}</h3>
       <p class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedShared') }}</p>
+      <p v-if="preview.item_kind === 'relationship' || preview.counts.relationships" class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedEndpoints') }}</p>
+      <p class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedWorkflow') }}</p>
       <p class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedPublic') }}</p>
       <p class="m-0">{{ t('knowledgeHardDelete.dialog.trace') }}</p>
+      <p class="m-0 text-foreground" data-hard-delete-disclosure>{{ t('knowledgeHardDelete.dialog.disclosure') }}</p>
     </section>
 
     <form class="grid gap-3" @submit.prevent="submit">

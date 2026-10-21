@@ -41,10 +41,17 @@ function preview(id = 'a'.repeat(64), overrides = {}) {
       { item_kind: 'relationship', item_id: 'fact-1', role: 'relationship', title: 'DEPLOYS_TO', content: 'Deploy → deploys to → Staging', status: 'current' }],
     removed_episodes: [{ episode_id: 'e2', source_kind: 'task_remember', source_application: 'codex', excerpt: 'pasted turn', other_items: 0,
       created_at: '2026-10-21T00:00:00Z' }, { episode_id: 'e3', source_kind: 'human_knowledge_edit', other_items: 0 }],
-    kept_episodes: [{ episode_id: 'e1', source_kind: 'task_remember', source_application: 'codex', other_items: 1 }],
+    kept_episodes: [{ episode_id: 'e1', source_kind: 'task_remember', source_application: 'codex', other_items: 1,
+      excerpt: '预发环境在 staging 集群', used_by: [{ item_kind: 'entity', item_id: 'other', title: 'Synthetic staging target' }] }],
     dependents: [{ item_kind: 'entity', item_id: 'c1', title: 'Smoke checks', content: 'Run the smoke checks after every deploy', direct: true },
       { item_kind: 'entity', item_id: 'c2', title: 'Report', content: 'Post the smoke check summary', direct: false }],
     counts, ...overrides }
+}
+
+function deletedResult(overrides = {}) {
+  return { outcome: 'complete', deletion_id: 'd1', item_kind: 'entity', item_id: 'item-2', deleted_at: '2026-10-22T01:02:03Z', counts,
+    deleted_item_ids: ['item-2', 'item-1', 'fact-1'], local_stores: [{ store: 'judgment.sqlite', status: 'forgotten', changed: 1 }],
+    ...overrides }
 }
 
 async function open(read: () => unknown = () => view()) {
@@ -132,15 +139,21 @@ describe('permanent delete on the item page', () => {
     expect(postJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-2/hard-delete', {
       personalSpaceId: 'space', previewId: 'a'.repeat(64), confirmation: '删除' })
     expect(dialog()!.querySelector('[data-hard-delete-submit]')!.textContent).toContain('正在彻底删除这条知识')
-    finish({ deletion_id: 'd1', item_kind: 'entity', item_id: 'item-2', deleted_at: '2026-10-22T01:02:03Z', counts,
-      deleted_item_ids: ['item-2', 'item-1', 'fact-1'], local_stores: [{ store: 'judgment.sqlite', status: 'forgotten', changed: 1 }] })
+    finish(deletedResult())
     await flushPromises()
     expect(dialog()).toBeNull()
-    expect(wrapper.get('[data-hard-deleted]').text()).toContain('这条知识已被你彻底删除')
-    expect(wrapper.get('[data-hard-deleted-count]').text()).toBe('已彻底删除 3 项。')
+    const notice = wrapper.get('[data-hard-deleted]')
+    expect(notice.attributes('data-hard-deleted-state')).toBe('complete')
+    expect(notice.text()).toContain('这条知识已被你彻底删除')
+    expect(wrapper.get('[data-hard-deleted-count]').text()).toBe('已彻底删除 3 条知识、2 段原文。')
+    expect(wrapper.get('[data-hard-deleted-exceptions]').text()).toContain('工作流候选里记下的步骤名称')
+    expect(wrapper.get('[data-hard-deleted-disclosure]').text()).toContain('你之前做的格式备份里仍然有它，需要你自己删除')
+    expect(wrapper.get('a[data-hard-deleted-backups]').attributes('href')).toBe('/settings/data-format')
     expect(wrapper.find('[data-hard-deleted-local-failed]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain(PASTED)
     expect(wrapper.find('[data-hard-delete-section]').exists()).toBe(false)
+    // A complete delete needs no second look.
+    expect(postJson.mock.calls.some(([url]) => String(url).endsWith('/status'))).toBe(false)
     wrapper.unmount()
   })
 
@@ -149,8 +162,10 @@ describe('permanent delete on the item page', () => {
     postJson.mockResolvedValueOnce(preview())
       .mockRejectedValueOnce(new ApiError('stale', 409, JSON.stringify({ code: 'hard_delete_preview_stale', error: 'changed' })))
       .mockResolvedValueOnce(preview(fresh, { counts: { ...counts, usage: 2 } }))
-      .mockResolvedValueOnce({ deletion_id: 'd1', item_kind: 'entity', item_id: 'item-2', deleted_at: '2026-10-22T01:02:03Z',
-        counts, deleted_item_ids: ['item-2'], local_stores: [{ store: 'judgment.sqlite', status: 'failed', reason: 'synthetic newer format' }] })
+      .mockResolvedValueOnce(deletedResult({ outcome: 'local_pending',
+        local_stores: [{ store: 'judgment.sqlite', status: 'failed', reason: 'synthetic newer format' }] }))
+      .mockResolvedValueOnce(deletedResult({ outcome: 'local_pending',
+        local_stores: [{ store: 'judgment.sqlite', status: 'failed', reason: 'synthetic newer format' }] }))
     const wrapper = await open()
     await openDialog(wrapper)
     await type('删除')
@@ -161,20 +176,100 @@ describe('permanent delete on the item page', () => {
     expect(dialog()!.querySelector<HTMLButtonElement>('[data-hard-delete-submit]')!.disabled).toBe(true)
     await type('删除')
     await submit()
-    expect(postJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-2/hard-delete', {
+    expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/item-2/hard-delete', {
       personalSpaceId: 'space', previewId: fresh, confirmation: '删除' })
+    // Deleted from the graph, local cleanup left: said so, with its retry.
+    expect(wrapper.get('[data-hard-deleted]').attributes('data-hard-deleted-state')).toBe('local_pending')
+    expect(wrapper.get('[data-hard-deleted-local-pending]').text()).toContain('图谱里已经删除，本机记录还没清理完')
     expect(wrapper.get('[data-hard-deleted-local-failed]').text()).toContain('judgment.sqlite')
+    expect(wrapper.find('[data-hard-deleted-retry]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('an old link to a deleted item shows 已彻底删除 and when, not a load error', async () => {
+  it('a lost answer is never "nothing was deleted": the page checks, then shows what the graph says', async () => {
+    postJson.mockImplementation(async (url: string) => {
+      if (url.endsWith('/preview')) return preview()
+      if (url.endsWith('/hard-delete')) throw new TypeError('Failed to fetch')
+      return { outcome: 'unknown', item_kind: 'entity', item_id: 'item-2' }
+    })
+    const wrapper = await open()
+    await openDialog(wrapper)
+    await type('删除')
+    await submit()
+    expect(dialog()).toBeNull()
+    expect(wrapper.text()).not.toContain('没有删除')
+    expect(wrapper.get('[data-hard-deleted]').attributes('data-hard-deleted-state')).toBe('unknown')
+    expect(wrapper.get('[data-hard-deleted-unknown]').text()).toContain('FULI 不会再发一次删除，只会去核对')
+    expect(postJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-2/hard-delete/status', { personalSpaceId: 'space' })
+    // The graph answers on the second look: it was deleted.
+    postJson.mockImplementation(async () => deletedResult())
+    await wrapper.get('[data-hard-deleted-recheck]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-hard-deleted]').attributes('data-hard-deleted-state')).toBe('complete')
+    expect(wrapper.get('[data-hard-deleted-count]').text()).toBe('已彻底删除 3 条知识、2 段原文。')
+    wrapper.unmount()
+  })
+
+  it('only the graph\'s own refusal says nothing was deleted; a check that finds it there shows it again', async () => {
+    postJson.mockImplementation(async (url: string) => {
+      if (url.endsWith('/preview')) return preview()
+      throw new ApiError('refused', 422, JSON.stringify({ error: 'type 删除 or the item title', code: 'hard_delete_unconfirmed' }))
+    })
+    const wrapper = await open()
+    await openDialog(wrapper)
+    await type('删除')
+    await submit()
+    expect(dialog()!.querySelector('[data-hard-delete-error]')!.textContent).toContain('没有删除')
+    wrapper.unmount()
+    // Unknown first, then proven still there: the item comes back with a note.
+    document.body.innerHTML = ''
+    postJson.mockReset()
+    postJson.mockImplementation(async (url: string) => {
+      if (url.endsWith('/preview')) return preview()
+      if (url.endsWith('/hard-delete')) throw new TypeError('Failed to fetch')
+      return { outcome: 'not_deleted', item_kind: 'entity', item_id: 'item-2' }
+    })
+    const again = await open()
+    await openDialog(again)
+    await type('删除')
+    await submit()
+    await flushPromises()
+    expect(again.find('[data-hard-deleted]').exists()).toBe(false)
+    expect(again.get('[data-edit-notice]').text()).toBe('核对过了：这条知识没有被删除。')
+    again.unmount()
+  })
+
+  it('an old link to a deleted item shows 已彻底删除 and when, and finishes any cleanup left', async () => {
+    postJson.mockResolvedValue(deletedResult())
     const wrapper = await open(() => {
       throw new ApiError('gone', 410, JSON.stringify({ error: 'deleted', code: 'hard_deleted', deletedAt: '2026-10-22T01:02:03Z' }))
     })
+    await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/item-2/hard-delete/status', { personalSpaceId: 'space' })
     expect(wrapper.get('[data-hard-deleted]').text()).toContain('只保留了删除时间和数量')
     expect(wrapper.get('[data-hard-deleted-when]').text()).toContain('删除时间')
-    expect(wrapper.find('[data-hard-deleted-count]').exists()).toBe(false)
+    expect(wrapper.get('[data-hard-deleted-disclosure]').text()).toContain('数据库内部文件和事务日志里可能还残留字节')
+    wrapper.unmount()
+  })
+
+  it('the preview shows a kept source\'s words and links to what still uses it, and links the conclusions', async () => {
+    postJson.mockResolvedValue(preview())
+    const wrapper = await open()
+    await openDialog(wrapper)
+    const kept = dialog()!.querySelector('[data-hard-delete-episode="kept"]')!
+    expect(kept.textContent).toContain('预发环境在 staging 集群')
+    const users = [...kept.querySelectorAll<HTMLAnchorElement>('[data-hard-delete-kept-user]')]
+    expect(users.map((link) => [link.textContent?.trim(), link.getAttribute('href')])).toEqual([
+      ['Synthetic staging target', '/knowledge/item/space/entity/other']])
+    expect(dialog()!.textContent).toContain('打开下面的知识，把它们也删除')
+    const conclusions = [...dialog()!.querySelectorAll<HTMLAnchorElement>('[data-hard-delete-dependent-link]')]
+    expect(conclusions.map((link) => link.getAttribute('href'))).toEqual([
+      '/knowledge/item/space/entity/c1', '/knowledge/item/space/entity/c2'])
+    const disclosure = dialog()!.querySelector('[data-hard-delete-disclosure]')!.textContent!
+    expect(disclosure).toContain('除了上面这几处')
+    expect(dialog()!.querySelector('[data-hard-delete-kept]')!.textContent).toContain('它两端条目自己的摘要不会改')
+    expect(dialog()!.textContent).toContain('下面列出会删除和保留的内容；确认后不能撤销。')
     wrapper.unmount()
   })
 

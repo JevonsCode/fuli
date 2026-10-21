@@ -131,6 +131,10 @@ async def test_c9_the_preview_lists_exactly_what_goes_what_stays_and_what_rests_
         # The shared turn stays: it also recorded the staging target.
         [kept] = plan['kept_episodes']
         assert kept['episode_id'] == item['shared_episode'] and kept['other_items'] == 1
+        # It names what still uses it, so the person can open (and delete) that too.
+        assert kept['used_by'] == [{'item_kind': 'entity', 'item_id': item['other'],
+                                    'title': 'Synthetic staging target'}]
+        assert all(row['used_by'] == [] for row in plan['removed_episodes'])
         assert [(row['item_id'], row['direct']) for row in plan['dependents']] == [
             (item['conclusion'], True), (item['follow'], False)]
         counts = plan['counts']
@@ -225,9 +229,9 @@ async def test_c9_a_delete_removes_every_copy_keeps_the_shared_turn_and_holds_wh
         assert (await view(client, space_id, item['follow']))['basis_review'] == 'changed'
         # Receipts of either turn say something was deleted.
         own = await receipt(client, space_id, item['own_episode'])
-        assert own == {'entries': [], 'unchanged_count': 0, 'deleted_count': 1}
+        assert own == {'entries': [], 'unchanged_count': 0, 'deleted_count': 1, 'deletion_ids': [done['deletion_id']]}
         shared_receipt = await receipt(client, space_id, item['shared_episode'])
-        assert shared_receipt['deleted_count'] == 1
+        assert shared_receipt['deletion_ids'] == [done['deletion_id']]
         assert [entry['item_id'] for entry in shared_receipt['entries']] == [item['other']]
         # A replay of the removed turn's capture does not write it again.
         replay = await commit(client, space_id, [preference('deploy-config', f'Deploy with {PASTED}')],
@@ -288,3 +292,61 @@ async def test_c9_a_failure_before_the_commit_rolls_everything_back(monkeypatch)
         monkeypatch.undo()
         ok(await delete(client, space_id, item['new'], plan['preview_id']))
         assert PASTED not in await space_properties(settings, space_id)
+
+
+async def status(client, space_id, item_id, kind='entity', headers=REVIEW):
+    return await client.post(f'/v1/knowledge/items/{item_id}/hard-delete/status',
+                             json={'personal_space_id': space_id, 'item_kind': kind}, headers=headers)
+
+
+@pytest.mark.asyncio
+async def test_dot_p1_1_saying_a_deleted_key_again_is_a_new_item_and_the_deleted_id_stays_deleted():
+    settings = reviewed()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        first = (await commit(client, space_id, [preference('deploy-config', f'Deploy with {PASTED}')]))['entity_ids'][0]
+        await confirm(client, space_id, first)
+        conclusion = (await commit(client, space_id, [preference(
+            'deploy-checks', 'Run the smoke checks after every deploy', derived_from=[first])]))['entity_ids'][0]
+        await confirm(client, space_id, conclusion)
+        done = ok(await delete(client, space_id, first, ok(await preview(client, space_id, first))['preview_id']))
+        # A new statement of the same key, from a new turn, after the delete.
+        again = await commit(client, space_id, [preference('deploy-config', 'Deploy through the staging gate')])
+        [second] = again['entity_ids']
+        assert again['status'] == 'committed' and second != first
+        # The old link stays 已彻底删除 and the old basis stays deleted.
+        old = await client.post('/v1/knowledge/item-views', json={
+            'personal_space_id': space_id, 'item_kind': 'entity', 'item_id': first})
+        assert old.status_code == 410 and old.json()['detail']['code'] == 'hard_deleted'
+        assert (await view(client, space_id, conclusion))['bases'] == [
+            {'item_kind': 'entity', 'item_id': first, 'content': '', 'status': 'deleted'}]
+        assert (await query(settings, 'MATCH (n:Entity {uuid: $id}) RETURN n.uuid AS id', id=first)) == []
+        # The new item is its own, fully usable: read, confirmed, delivered, derived from.
+        current = await view(client, space_id, second)
+        assert (current['status'], current['content']) == ('current', 'Deploy through the staging gate')
+        await confirm(client, space_id, second)
+        assert second in await applied(client, space_id, 'alpha')
+        derived = await commit(client, space_id, [preference('deploy-notes', 'Note the gate result', derived_from=[second])])
+        assert derived['status'] == 'committed'
+        # A conclusion cannot name the deleted ID as a basis, even now that the key lives again.
+        refused = await client.post('/v1/knowledge/commits', json={
+            'space_id': space_id, 'episode': {
+                'idempotency_key': f'late-{uuid4()}', 'session_id': 'synthetic-session', 'name': 'Synthetic',
+                'source_kind': 'task_remember', 'source_description': 'Synthetic.', 'source_application': 'codex',
+                'reference_time': '2026-10-21T00:00:00Z',
+                'entities': [preference('late', 'Late conclusion', derived_from=[first])]}})
+        assert refused.status_code == 422 and refused.json()['detail']['code'] == 'derived_from_not_current'
+        # Deleting the new item and saying the key a third time gives a third identity.
+        ok(await delete(client, space_id, second, ok(await preview(client, space_id, second))['preview_id']))
+        [third] = (await commit(client, space_id, [preference('deploy-config', 'Deploy on Fridays')]))['entity_ids']
+        assert third not in (first, second)
+        for gone in (first, second):
+            assert (await client.post('/v1/knowledge/item-views', json={
+                'personal_space_id': space_id, 'item_kind': 'entity', 'item_id': gone})).status_code == 410
+        # The status a console asks when its answer was lost: from the trace, never a second delete.
+        settled = ok(await status(client, space_id, first))
+        assert settled['state'] == 'deleted' and settled['deletion']['deletion_id'] == done['deletion_id']
+        assert settled['deletion']['deleted_item_ids'] == [first]
+        assert ok(await status(client, space_id, third))['state'] == 'present'
+        assert ok(await status(client, space_id, 'synthetic-missing'))['state'] == 'missing'
+        assert (await status(client, space_id, first, headers={})).status_code == 403

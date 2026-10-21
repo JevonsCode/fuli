@@ -163,8 +163,10 @@ class KnowledgeTurnReceipt(StrictModel):
     Items the episodes only mentioned again changed nothing and are counted."""
     entries: list[KnowledgeReceiptEntry] = Field(default_factory=list)
     unchanged_count: int = 0
-    # How many hard deletes removed something these episodes recorded (C9).
+    # The hard deletes that removed something these episodes recorded (C9):
+    # their opaque IDs, so a reader of several batches counts each once.
     deleted_count: int = 0
+    deletion_ids: list[str] = Field(default_factory=list)
 
 
 class KnowledgeScopeChange(StrictModel):

@@ -21,6 +21,7 @@ import { CAPTURE_SESSION_PAUSE_FORMAT } from '../graphiti/capture-session-pause.
 import { RECALL_POLICY_FORMAT } from '../graphiti/recall-policy.js';
 import { GRAPH_RUNTIME_CONFIG_FORMAT } from '../graphiti/runtime-config.js';
 import { JUDGMENT_FORMAT } from '../judgment/store.js';
+import { HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT } from '../knowledge-hard-delete/delete-ledger.js';
 import { ROLE_WORK_FORMAT } from '../model-backends/role-work-store.js';
 import { MODEL_USAGE_FORMAT } from '../model-backends/usage-ledger.js';
 import { inspectJsonStore } from '../storage/json-format.js';
@@ -66,7 +67,9 @@ const jsonStores = () => [
   ['model-secrets.json', MODEL_SECRETS_FORMAT],
   ['client-connection-observations.json', CLIENT_CONNECTION_HISTORY_FORMAT],
   ['format-operations.json', FORMAT_OPERATIONS_FORMAT],
-  ['format-apply-receipts.json', APPLY_RECEIPTS_FORMAT]
+  ['format-apply-receipts.json', APPLY_RECEIPTS_FORMAT],
+  // A person's permanent deletes, content-free: their state and the fence local stores check (rec#5 C9).
+  [HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT]
 ];
 // One small record per session.
 const jsonDirectories = () => [

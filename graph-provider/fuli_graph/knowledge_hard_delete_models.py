@@ -35,9 +35,17 @@ class KnowledgeHardDeleteItem(StrictModel):
     status: KnowledgeVersionStatus
 
 
+class KnowledgeHardDeleteUser(StrictModel):
+    """Another item that still uses a shared source, so the person can open
+    it (and delete it too) when the source's words should not stay."""
+    item_kind: KnowledgeItemKind
+    item_id: str
+    title: str
+
+
 class KnowledgeHardDeleteEpisode(StrictModel):
-    """A source episode. `other_items` is how many other items still use it;
-    an episode is removed only when that is 0."""
+    """A source episode. `used_by` lists the other items that still use it
+    (`other_items` of them); an episode is removed only when there are none."""
     episode_id: str
     source_kind: str | None = None
     source_application: str | None = None
@@ -45,6 +53,7 @@ class KnowledgeHardDeleteEpisode(StrictModel):
     excerpt: str | None = None
     created_at: datetime | None = None
     other_items: int = 0
+    used_by: list[KnowledgeHardDeleteUser] = Field(default_factory=list)
 
 
 class KnowledgeHardDeleteDependent(StrictModel):
@@ -102,3 +111,10 @@ class KnowledgeHardDeletion(StrictModel):
 class KnowledgeHardDeleteRecord(KnowledgeHardDeletion):
     item_id: str
     deleted_item_ids: list[str]
+
+
+class KnowledgeHardDeleteStatus(StrictModel):
+    """Where one item stands for a console that does not know whether its
+    delete committed: deleted (with the trace), present, or missing."""
+    state: Literal['deleted', 'present', 'missing']
+    deletion: KnowledgeHardDeleteRecord | None = None
