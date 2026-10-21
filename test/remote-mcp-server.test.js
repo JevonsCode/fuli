@@ -405,12 +405,16 @@ test('remote MCP closes rejected initializations and caps active sessions', asyn
   assert.equal(remote.stats().activeSessions, 1);
 });
 
-test('remote MCP evicts abandoned sessions after the idle TTL', async (t) => {
+test('remote MCP evicts abandoned sessions after the idle TTL', {
+  timeout: 5_000
+}, async (t) => {
   let clock = 0;
+  const session = closeObservedMcp();
   const remote = await startRemote({
     sessionIdleTtlMs: 20,
     sessionSweepIntervalMs: 5,
-    now: () => clock
+    now: () => clock,
+    createMcp: session.createMcp
   });
   t.after(() => remote.close());
   const transport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
@@ -422,16 +426,21 @@ test('remote MCP evicts abandoned sessions after the idle TTL', async (t) => {
   assert.equal(remote.stats().activeSessions, 1);
   await client.close();
   clock = 21;
-  await delay(80);
+  // The sweeper retires the expired session; wait for that close, not for time.
+  await session.closed;
   assert.equal(remote.stats().activeSessions, 0);
 });
 
 test('remote MCP idle-evicts a silent session even with an open SSE stream', {
   timeout: 5_000
 }, async (t) => {
+  let clock = 1_000;
+  const session = closeObservedMcp();
   const remote = await startRemote({
     sessionIdleTtlMs: 100,
-    sessionSweepIntervalMs: 10
+    sessionSweepIntervalMs: 10,
+    now: () => clock,
+    createMcp: session.createMcp
   });
   t.after(() => remote.close());
   const initialized = await fetch(`${remote.url}/mcp`, {
@@ -445,21 +454,23 @@ test('remote MCP idle-evicts a silent session even with an open SSE stream', {
   });
   const sessionId = initialized.headers.get('mcp-session-id');
   assert.ok(sessionId);
-  await initialized.body?.cancel();
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await delay(40);
-    const probe = await fetch(`${remote.url}/mcp`, {
-      method: 'GET',
-      headers: {
-        authorization: `Bearer ${TOKEN}`,
-        accept: 'text/event-stream',
-        'mcp-session-id': sessionId,
-        'mcp-protocol-version': '2025-06-18'
-      }
-    });
-    await probe.body?.cancel();
-  }
+  await initialized.text();
+  const stream = await fetch(`${remote.url}/mcp`, {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${TOKEN}`,
+      accept: 'text/event-stream',
+      'mcp-session-id': sessionId,
+      'mcp-protocol-version': '2025-06-18'
+    }
+  });
+  assert.equal(stream.status, 200);
+  // The standalone stream stays open while the session expires; it is not
+  // application activity, so the sweeper still retires the session and ends it.
+  clock += 101;
+  await session.closed;
   assert.equal(remote.stats().activeSessions, 0);
+  await stream.text().catch(() => {});
 });
 
 test('remote MCP accepts a session TTL shorter than the normal sweep interval', async (t) => {
@@ -474,6 +485,7 @@ test('remote MCP does not idle-evict a long-running tool response', {
   let clock = 1_000;
   const started = Promise.withResolvers();
   const release = Promise.withResolvers();
+  const sessions = closeObservedMcp();
   const remote = await startRemote({
     app: {
       getCollaborationPreferences: async () => {
@@ -484,7 +496,8 @@ test('remote MCP does not idle-evict a long-running tool response', {
     },
     sessionIdleTtlMs: 20,
     sessionSweepIntervalMs: 5,
-    now: () => clock
+    now: () => clock,
+    createMcp: sessions.createMcp
   });
   t.after(() => {
     release.resolve();
@@ -496,6 +509,16 @@ test('remote MCP does not idle-evict a long-running tool response', {
   const client = new Client({ name: 'fuli-long-call-test', version: '1.0.0' });
   t.after(() => client.close());
   await client.connect(transport);
+  // A second, idle session expires with the busy one. Its eviction proves a
+  // sweep ran after the clock moved; one sweep visits every session.
+  const idleTransport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
+    requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
+  });
+  const idleClient = new Client({ name: 'fuli-long-call-idle', version: '1.0.0' });
+  t.after(() => idleClient.close());
+  await idleClient.connect(idleTransport);
+  await idleClient.close();
+  assert.equal(remote.stats().activeSessions, 2);
   const call = client.callTool({
     name: 'get_collaboration_preferences',
     arguments: { sessionId: 'remote', projectPath: '.' }
@@ -504,7 +527,7 @@ test('remote MCP does not idle-evict a long-running tool response', {
   // Advance the idle clock only after dispatch; scheduler load must not expire
   // the session while this test is still arranging the in-flight request.
   clock += 60;
-  await delay(20);
+  await sessions.closed;
   assert.equal(remote.stats().activeSessions, 1);
   release.resolve();
   const result = await call;
