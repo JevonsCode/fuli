@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { useWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
+import UiSegmented from '@/ui/UiSegmented.vue'
 
 import { judgmentText } from './judgment-copy'
 import { loadJudgmentRecords, requestJudgmentReview, submitJudgmentFeedback } from './judgment-api'
@@ -29,6 +31,13 @@ const visibleRecords = computed(() => {
   return [...source].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 })
 const busy = computed(() => loading.value || reviewing.value)
+// With nothing to show, the empty block carries the one primary action instead of the toolbar.
+const showEmpty = computed(() => !loading.value && !error.value && !visibleRecords.value.length)
+const filterOptions = computed(() => [
+  { value: 'human' as const, label: judgmentText('workbench.human') },
+  { value: 'all' as const, label: judgmentText('workbench.all') },
+])
+const toolbarActions = useWorkbenchToolbarActions()
 
 watch(() => props.personalSpaceId, (scope) => {
   scopeGeneration += 1
@@ -237,19 +246,15 @@ function hasDetails(record: JudgmentDecisionRecord) {
 
 <template>
   <section class="judgment-workbench" :aria-label="judgmentText('workbench.aria')">
-    <header class="judgment-workbench-heading">
-      <div>
-        <h2>{{ judgmentText('workbench.title') }}</h2>
-        <p>{{ judgmentText('workbench.subtitle') }}</p>
-      </div>
+    <!-- The shell's H1 names Tonborg; its actions join the workbench toolbar. -->
+    <Teleport :to="toolbarActions" :disabled="!toolbarActions">
       <div class="judgment-workbench-actions">
-        <GrowthLoading v-if="reviewing" variant="inline" :label="judgmentText('workbench.reviewing')" />
         <Button size="sm" variant="ghost" :disabled="busy" @click="load">{{ judgmentText('workbench.refresh') }}</Button>
-        <Button data-action="review" :disabled="busy || !props.personalSpaceId" @click="review">
+        <Button v-if="!showEmpty" data-action="review" :disabled="busy || !props.personalSpaceId" :loading="reviewing" :loading-label="judgmentText('workbench.reviewing')" @click="review">
           {{ judgmentText('workbench.review') }}
         </Button>
       </div>
-    </header>
+    </Teleport>
 
     <GrowthLoading v-if="loading && !records.length" variant="compact" :label="judgmentText('workbench.loading')" />
     <GrowthLoading v-else-if="loading" variant="inline" :label="judgmentText('workbench.loading')" />
@@ -259,15 +264,15 @@ function hasDetails(record: JudgmentDecisionRecord) {
     </div>
     <div v-if="reviewError" class="judgment-workbench-error" role="alert">{{ reviewError }}</div>
 
-    <div class="judgment-filter" role="group" :aria-label="judgmentText('workbench.title')">
-      <button type="button" data-filter="human" :aria-pressed="filter === 'human'" @click="filter = 'human'">{{ judgmentText('workbench.human') }}</button>
-      <button type="button" data-filter="all" :aria-pressed="filter === 'all'" @click="filter = 'all'">{{ judgmentText('workbench.all') }}</button>
-    </div>
+    <UiSegmented v-model="filter" class="judgment-filter" :label="judgmentText('workbench.filter')" :options="filterOptions" />
 
-    <div v-if="!loading && !error && !visibleRecords.length" class="judgment-workbench-empty">
-      {{ judgmentText(filter === 'human' ? 'workbench.emptyHuman' : 'workbench.empty') }}
+    <div v-if="showEmpty" class="ui-empty rounded-lg border bg-card" data-judgment-empty>
+      <p class="m-0">{{ judgmentText(filter === 'human' ? 'workbench.emptyHuman' : 'workbench.empty') }}</p>
+      <Button class="mt-3" size="sm" data-action="review" :disabled="busy || !props.personalSpaceId" :loading="reviewing" :loading-label="judgmentText('workbench.reviewing')" @click="review">
+        {{ judgmentText('workbench.review') }}
+      </Button>
     </div>
-    <div v-else class="judgment-record-list">
+    <div v-else class="judgment-record-list grid grid-cols-1 gap-3 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4">
       <article v-for="record in visibleRecords" :key="record.id" data-decision-card class="judgment-record-card" :class="{ 'is-human-needed': isHumanNeeded(record) }">
         <header class="judgment-record-heading">
           <div>
@@ -313,14 +318,14 @@ function hasDetails(record: JudgmentDecisionRecord) {
           <details class="judgment-feedback-editor" data-feedback-editor>
             <summary data-feedback-toggle>{{ feedbackReasons[record.id] ? judgmentText('workbench.feedbackReasonSaved') : judgmentText('workbench.feedbackReasonAdd') }}</summary>
             <div class="judgment-feedback-editor-row">
-              <label class="visually-hidden" :for="`judgment-feedback-${record.id}`">{{ judgmentText('workbench.feedbackReason') }}</label>
+              <label class="ui-sr-only" :for="`judgment-feedback-${record.id}`">{{ judgmentText('workbench.feedbackReason') }}</label>
               <textarea :id="`judgment-feedback-${record.id}`" v-model="feedbackReasons[record.id]" data-feedback-reason rows="2" maxlength="1000" :disabled="feedbackSavingId === record.id" @input="markReasonEdited(record.id)" @keydown.enter.exact.prevent="saveReason(record)" />
               <Button variant="outline" size="icon-sm" class="judgment-save-reason" data-save-reason :aria-label="judgmentText('workbench.saveReason')" :title="judgmentText('workbench.saveReason')" :disabled="feedbackSavingId === record.id" @click="saveReason(record)"><span aria-hidden="true">✓</span></Button>
             </div>
           </details>
           <div class="judgment-feedback-actions">
-            <button type="button" data-feedback="up" :aria-label="judgmentText('workbench.feedbackUp')" :aria-pressed="record.feedback.vote === 'up'" :title="judgmentText('workbench.feedbackUp')" :disabled="feedbackSavingId === record.id" @click="feedback(record, 'up')"><span aria-hidden="true">👍</span><span class="visually-hidden">{{ judgmentText('workbench.feedbackUp') }}</span></button>
-            <button type="button" data-feedback="down" :aria-label="judgmentText('workbench.feedbackDown')" :aria-pressed="record.feedback.vote === 'down'" :title="judgmentText('workbench.feedbackDown')" :disabled="feedbackSavingId === record.id" @click="feedback(record, 'down')"><span aria-hidden="true">👎</span><span class="visually-hidden">{{ judgmentText('workbench.feedbackDown') }}</span></button>
+            <Button variant="outline" size="icon-sm" data-feedback="up" :aria-label="judgmentText('workbench.feedbackUp')" :aria-pressed="record.feedback.vote === 'up'" :title="judgmentText('workbench.feedbackUp')" :disabled="feedbackSavingId === record.id" @click="feedback(record, 'up')"><span aria-hidden="true">👍</span></Button>
+            <Button variant="outline" size="icon-sm" data-feedback="down" :aria-label="judgmentText('workbench.feedbackDown')" :aria-pressed="record.feedback.vote === 'down'" :title="judgmentText('workbench.feedbackDown')" :disabled="feedbackSavingId === record.id" @click="feedback(record, 'down')"><span aria-hidden="true">👎</span></Button>
             <GrowthLoading v-if="feedbackSavingId === record.id" data-feedback-saving variant="inline" :label="judgmentText('workbench.feedbackSaving')" />
           </div>
         </section>
@@ -330,15 +335,9 @@ function hasDetails(record: JudgmentDecisionRecord) {
 </template>
 
 <style scoped>
-.judgment-workbench { display: grid; gap: 18px; min-width: 0; min-height: 0; padding: 2px 24px 24px; overflow: auto; }
-.judgment-workbench-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.judgment-workbench-heading h2 { margin: 0; color: var(--color-ink); font-size: 20px; }
-.judgment-workbench-heading p { margin: 6px 0 0; color: var(--color-muted); font-size: 13px; }
+.judgment-workbench { container-type: inline-size; display: grid; gap: 12px; min-width: 0; }
 .judgment-workbench-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.judgment-filter { display: inline-flex; width: fit-content; gap: 4px; padding: 3px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface-subtle); }
-.judgment-filter button { min-height: 32px; padding: 5px 12px; border: 0; border-radius: 999px; color: var(--color-muted); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
-.judgment-filter button[aria-pressed=true] { color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-subtle); }
-.judgment-record-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+.judgment-filter { width: fit-content; }
 .judgment-record-card { display: grid; align-content: start; gap: 13px; padding: 18px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .judgment-record-card.is-human-needed { border-color: color-mix(in srgb, var(--color-warning) 48%, var(--color-border)); }
 .judgment-record-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -373,10 +372,6 @@ function hasDetails(record: JudgmentDecisionRecord) {
 .judgment-feedback-editor-row { display: flex; align-items: flex-start; gap: 6px; }
 .judgment-record-feedback textarea { width: 100%; resize: vertical; }
 .judgment-feedback-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.judgment-feedback-actions button { min-height: 30px; padding: 5px 8px; border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-muted); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
-.judgment-feedback-actions button[aria-pressed=true] { border-color: var(--color-accent); color: var(--color-accent); background: var(--color-accent-soft); }
-.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.judgment-feedback-actions [aria-pressed=true] { border-color: var(--color-accent); color: var(--color-accent); background: var(--color-accent-soft); }
 .judgment-workbench-error { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
-.judgment-workbench-empty { padding: 40px 20px; color: var(--color-muted); text-align: center; }
-@media (max-width: 760px) { .judgment-workbench { padding-inline: 16px; }.judgment-workbench-heading { display: grid; }.judgment-workbench-actions { justify-content: flex-start; } }
 </style>
