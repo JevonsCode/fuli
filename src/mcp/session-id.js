@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WORKFLOW_OBSERVATION_TOOL = 'record_workflow_transition_observation';
+const FULI_PROCESS_SESSION = 'fuli-host-';
 const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'search_knowledge_graph',
   // The caller's client decides whether its own turns are recorded.
@@ -72,7 +73,13 @@ export function mcpHostSessionId(
   env = process.env,
   idFactory = randomUUID
 ) {
-  return nativeCodexThreadId(env) ?? `fuli-host-${idFactory()}`;
+  return nativeCodexThreadId(env) ?? `${FULI_PROCESS_SESSION}${idFactory()}`;
+}
+
+// An identity FULI gave an MCP or CLI process whose client names no session of
+// its own (Cursor, remote clients, a terminal): no session the person started.
+export function isFuliProcessSession(id) {
+  return typeof id === 'string' && id.startsWith(FULI_PROCESS_SESSION);
 }
 
 export function normalizeAgentSessionInput(

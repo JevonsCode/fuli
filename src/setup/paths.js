@@ -72,7 +72,8 @@ export function resolveSetupPaths({
     sessionSkillPath: join(root, 'skills', 'capturing-session-knowledge'),
     projectSkillPath: join(root, 'skills', 'grilling-project'),
     reviewSkillPath: join(root, 'skills', 'flreview'),
-    operationSkillPath: join(root, 'skills', 'operating-fuli')
+    operationSkillPath: join(root, 'skills', 'operating-fuli'),
+    sessionCommandSkillPath: join(root, 'skills', 'fuli')
   };
 }
 

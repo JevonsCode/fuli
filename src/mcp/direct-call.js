@@ -4,7 +4,7 @@ import {
   normalizeAgentSessionInput,
   normalizeMcpSourceApplication
 } from './session-id.js';
-import { jsonSchemaToZod } from './tool-schema.js';
+import { assertToolInputWithinBudget, createToolInputValidator } from './tool-input-budget.js';
 import { nativeSessionFromEnv } from '../agents/native-session-env.js';
 import { agentHostRequestContext } from '../app/agent-request-context.js';
 
@@ -18,14 +18,15 @@ export async function prepareDirectAgentToolCall({
 }) {
   const definition = listAgentTools().find((item) => item.name === toolName);
   if (!definition) throw new TypeError('Unknown tool');
-  const parsed = await jsonSchemaToZod(definition.inputSchema).safeParseAsync(input ?? {});
+  assertToolInputWithinBudget(input);
+  const parsed = await createToolInputValidator(definition.inputSchema).parse(input ?? {});
   if (!parsed.success) throw new TypeError('Input validation error');
   const source = normalizeMcpSourceApplication(sourceApplication);
   const nativeThreadId = nativeSessionFromEnv(source, env);
   const authoritativeHostSessionId = hostSessionId ?? nativeThreadId ?? mcpHostSessionId({});
   return {
     definition,
-    requestContext: agentHostRequestContext(null, authoritativeHostSessionId),
+    requestContext: agentHostRequestContext(null, authoritativeHostSessionId, source),
     input: normalizeAgentSessionInput(
       toolName,
       parsed.data,

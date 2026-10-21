@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
+import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
@@ -7,6 +7,8 @@ import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
 import { isSystemPromptEntry, systemPromptOutput } from '../system-prompt.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
+import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext, sessionFuliSessionBegan }
+  from '../../conversations/session-fuli-entry.js';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
@@ -45,7 +47,7 @@ export async function codexStopLifecycleOutput(input, invoke) {
   return stopHookOutcome(check, invoke, { sourceApplication: 'codex', sourceSessionId: sessionId });
 }
 
-export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask } = {}) {
+export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal } = {}) {
   if (event === 'UserPromptSubmit' && isSystemPromptEntry(input)) return systemPromptOutput(event);
   if (PREFERENCE_RESET_EVENTS.includes(event)) return preferenceLifecycleOutput(event, input,
     { sourceApplication: 'codex', delivery, currentTask, invoke });
@@ -53,11 +55,14 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
   if (!input?.session_id || typeof input.cwd !== 'string' || typeof input.prompt !== 'string') {
     throw new TypeError('Codex task entry requires session, cwd and prompt');
   }
+  // A session FULI is off for (rec#5 C3b) gets no task entry.
+  const off = await entryRefusal?.();
+  if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id });
   return preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'codex',
-    'Fuli task context. Apply effective_preferences. Follow checkpoint_guidance: checkpoint with taskContextToken only when there is something to record; the Stop hook closes the rest. ' + TASK_RULES_ON_DEMAND);
+    'Fuli task context. Apply effective_preferences. Follow checkpoint_guidance: checkpoint with taskContextToken only when there is something to record; the Stop hook closes the rest. ' + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
 }
 
 export async function runCodexLifecycleHook(args, dependencies = {}) {
@@ -93,6 +98,11 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     });
     const invokeTool = dependencies.callTool ?? callAgentTool;
     const output = await leases.withGraphLease('codex-lifecycle', async () => {
+      // The person's fuli line is answered here and never reaches the model.
+      const command = event === 'UserPromptSubmit' ? await sessionFuliCommandResult(app, { sessionId: input?.session_id,
+        sourceApplication: 'codex', prompt: input?.prompt, projectPath: input?.cwd ?? null }) : null;
+      if (codexSessionBegins(event, input)) sessionFuliSessionBegan(app, { sessionId: input.session_id, sourceApplication: 'codex' });
+      if (command) return codexSessionCommandOutput(command);
       if (PREFERENCE_RESET_EVENTS.includes(event)) return codexLifecycleOutput(event, input,
         (name, parameters) => invokeTool(app, name, parameters, { signal: dependencies.signal }),
         { delivery: app.preferenceDelivery, currentTask: app.taskContextRegistry?.current?.bind(app.taskContextRegistry) });
@@ -103,7 +113,8 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
           const context = await invokeTool(app, name, parameters, { signal: dependencies.signal });
           if (name === 'begin_task_context') onContext(context);
           return context;
-        }, { delivery: app.preferenceDelivery }) });
+        }, { delivery: app.preferenceDelivery, entryRefusal: () => sessionFuliEntryRefusal(app,
+          { sessionId: input.session_id, sourceApplication: 'codex' }) }) });
     }, { signal: dependencies.signal });
     const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
       { sourceApplication: 'codex', version: FULI_VERSION, sessionId: input?.session_id })) : output;
@@ -112,6 +123,19 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
   } finally {
     await cleanup();
   }
+}
+
+// Codex sends SessionStart source "startup" only for a new thread
+// (openai/codex 87f3c3284e16: codex-rs/core/src/session/session.rs 1974-1977,
+// InitialHistory::New); resume, clear, compact and fork are not taken as proof.
+function codexSessionBegins(event, input) {
+  return event === 'SessionStart' && input?.source === 'startup' && typeof input.session_id === 'string';
+}
+
+// Codex shows a blocked prompt's reason as "Blocked by hook" and keeps the
+// prompt out of the conversation.
+function codexSessionCommandOutput(result) {
+  return { decision: 'block', reason: `FULI: ${result.message}` };
 }
 
 async function closeQuietly(resource) {

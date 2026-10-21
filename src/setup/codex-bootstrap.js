@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 
-import { codexReviewCommandBridge } from './review-skill-adapters.js';
+import { codexReviewCommandBridge } from './command-skill-adapters.js';
 import { writeTextFileAtomic } from '../storage/json-file.js';
 
 const BLOCK_START = '<!-- BEGIN FULI MANAGED INSTRUCTIONS -->';

@@ -1,5 +1,5 @@
 import { connectClaudeCode, disconnectClaudeCode } from '../../claude-code-config.js';
-import { adaptAgentForReviewSkill } from '../../review-skill-adapters.js';
+import { adaptAgentForCommandSkills } from '../../command-skill-adapters.js';
 import { hasCurrentClaudeCodeHooks } from '../../claude-code-config.js';
 import { jsonRegistration } from '../registration.js';
 
@@ -10,7 +10,7 @@ export const adapter = {
     const projectSkillName = 'grilling-project';
     const operationSkillName = 'operating-fuli';
     const claudeHome = pathApi.join(homeDir, '.claude');
-    return adaptAgentForReviewSkill({
+    return adaptAgentForCommandSkills({
       id: 'claude-code',
       label: 'Claude Code',
       command: 'claude',

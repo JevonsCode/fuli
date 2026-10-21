@@ -5,6 +5,8 @@ import { listAgentTools } from '../src/agent-tools.js';
 import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
+import { sessionFuliOffContext } from '../src/conversations/session-fuli-entry.js';
+import { PASS_TASK_TOKEN } from '../src/agents/lifecycle-message.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
@@ -58,7 +60,11 @@ const BASELINE = Object.freeze({
   // one session without a new tool (+319 B). Chat, instructions and entry are unchanged.
   // rec#5 C3 review: usage, feedback and get_capture_policy take the task token, the only
   // identity besides the host session that can allow a write (+280 B): 182,147 -> 182,746 B, measured.
-  fullToolSchemaBytes: 182746,
+  // rec#5 C3b option Y (#251 review): 17 tools an Agent calls without a task of their own (entry,
+  // recall, team and judgment reads) take an optional bare taskContextToken, so a call from a window
+  // whose session is on is served while another window of the client is stopped; without it the
+  // call cannot be attributed and is refused: 182,746 -> 183,375 B (+629 B), measured.
+  fullToolSchemaBytes: 183375,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
@@ -67,7 +73,9 @@ const BASELINE = Object.freeze({
   // F-P0-08: the same `remember` items are listed in chat (+469 B, about 120
   // tokens per request). Without them a native haiku run failed five times on
   // the referenced capture shape and wrote nothing to FULI.
-  chatToolSchemaBytes: 8191,
+  // rec#5 C3b option Y: the same field on get_collaboration_preferences and the two searches:
+  // 8,191 -> 8,302 B (+111 B), measured from the real tools/list.
+  chatToolSchemaBytes: 8302,
   instructionsBytes: 2041,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
@@ -76,7 +84,14 @@ const BASELINE = Object.freeze({
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.
-  projectEntryChars: 1775
+  projectEntryChars: 1775,
+  // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
+  // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
+  // other number above is unchanged; the switch adds no tool, schema or instruction text.
+  sessionOffEntryChars: 302,
+  // rec#5 C3b option Y: the per-turn Claude Code and Codex hook label asks for the token the Agent
+  // already has, instead of a sentence in the server instructions (which must stay under 2 KiB).
+  taskTokenHintChars: 42
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -135,7 +150,10 @@ async function measure() {
     chatToolSchemaBytes: await listedChatBytes(),
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
-    projectEntryChars: await projectEntryChars() };
+    projectEntryChars: await projectEntryChars(),
+    sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
+      .map(reason => sessionFuliOffContext({ reason }).length)),
+    taskTokenHintChars: PASS_TASK_TOKEN.length };
 }
 
 test('per-session token cost never grows past the recorded baseline', async () => {

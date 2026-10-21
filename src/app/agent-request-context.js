@@ -5,6 +5,7 @@ const requestContext = new AsyncLocalStorage();
 // Module-private: tool payloads, JSON and HTTP bodies cannot carry this key.
 const SEALED_WORKER = Symbol('fuli.sealedWorkerRequest');
 const HOST_SESSION = Symbol('fuli.agentHostSession');
+const HOST_CLIENT = Symbol('fuli.agentHostClient');
 
 export function runWithAgentRequestContext(value, operation) {
   if (typeof operation !== 'function') {
@@ -14,7 +15,8 @@ export function runWithAgentRequestContext(value, operation) {
   signal?.throwIfAborted();
   return requestContext.run({ signal, testToolsEnabled: value?.testToolsEnabled ?? testToolsEnabled(),
     sealedWorker: value?.[SEALED_WORKER] === true,
-    hostSession: value && Object.hasOwn(value, HOST_SESSION) ? value[HOST_SESSION] : undefined }, operation);
+    hostSession: value && Object.hasOwn(value, HOST_SESSION) ? value[HOST_SESSION] : undefined,
+    hostClient: value?.[HOST_CLIENT] ?? null }, operation);
 }
 
 // Only the worker MCP composition calls this, after the Provider admitted the
@@ -28,14 +30,23 @@ export function sealedWorkerRequestContext(value) {
 // session (its environment or per-request native context), else the session
 // FULI's composition gave that process. Never a tool argument.
 // Every capture decision of the call also applies to that session (rec#5 C3).
-export function agentHostRequestContext(value, hostSessionId) {
-  return { ...(value ?? {}), [HOST_SESSION]: hostSessionId ?? null };
+// sourceApplication is the client the process was started for, so every
+// session decision of the call names it whatever the payload says (C3b).
+export function agentHostRequestContext(value, hostSessionId, sourceApplication = null) {
+  return { ...(value ?? {}), [HOST_SESSION]: hostSessionId ?? null,
+    ...(sourceApplication ? { [HOST_CLIENT]: sourceApplication } : {}) };
 }
 
 // The host session of the Agent call being served: a session ID, null when the
 // client named none, undefined outside an Agent's own call (hooks, console).
 export function activeAgentHostSession() {
   return requestContext.getStore()?.hostSession;
+}
+
+// The client of the Agent call being served, or null outside one or when its
+// composition named none.
+export function activeAgentHostClient() {
+  return requestContext.getStore()?.hostClient ?? null;
 }
 
 export function activeSealedWorkerRequest() {

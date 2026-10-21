@@ -1,5 +1,5 @@
 import { connectCursor, disconnectCursor } from '../../cursor-config.js';
-import { adaptAgentForReviewSkill } from '../../review-skill-adapters.js';
+import { adaptAgentForCommandSkills } from '../../command-skill-adapters.js';
 import { hasCurrentCursorLifecycleHooks } from '../../../agents/cursor/lifecycle-hooks.js';
 import { jsonRegistration } from '../registration.js';
 
@@ -10,7 +10,7 @@ export const adapter = {
     const projectSkillName = 'grilling-project';
     const operationSkillName = 'operating-fuli';
     const cursorHome = pathApi.join(homeDir, '.cursor');
-    return adaptAgentForReviewSkill({
+    return adaptAgentForCommandSkills({
       id: 'cursor',
       label: 'Cursor',
       command: 'cursor',

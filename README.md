@@ -387,6 +387,23 @@ only that session at once, without a confirmation: the Agent calls `update_captu
 starts are paused with it, "继续记" (`sessionPaused: false`) resumes from then on, and nothing written
 while paused is recorded later. The pause lives in the local runtime directory and ends with the session.
 
+To turn FULI off for one session altogether, the person types `/fuli stop` (Claude Code and Cursor, where
+setup installs the `fuli` command Skill) or `fuli stop` (any client; Codex accepts no custom slash command).
+The prompt hook answers the line itself, so the model never sees it: from then on that session gets no
+injected memory, preferences or recall, its Agent's own FULI reads (searches, Agent memory, conversations)
+are refused, it records nothing and starts no collaboration (workers, loans, other Agents, role work), while other sessions, the local service and existing memories stay as they are.
+`fuli start` turns it back on within the existing settings (a pause or a stricter global, client or project
+setting still applies), `fuli restart` also gives the next turn the full context again, and `fuli status`
+shows the session and the default; nothing said while FULI was off is recorded later. Context already sent
+to the model cannot be taken back, so isolation needs a new session. Only a task token shows which session a
+tool call is for (Claude Code keeps its tool connection across /clear; Codex and Cursor connections name no
+session), so while any session of a client is off FULI refuses that client's tool calls without a task token,
+rather than serve memory to a session that may be the stopped one. Agents pass the `taskContextToken` they
+already have (entry, searches and team reads take it), so other windows keep working. The same switch runs from a shell the
+client started (`!fuli session stop`), so an Agent with shell access can run it too (the same trust as
+access to your files); the console and `fuli mcp --call` still read for you, and `fuli session default off` makes new sessions start with FULI
+off until started; sessions already open keep theirs.
+
 Run these local contract tests to check that the README and project-path behavior still match the
 implementation:
 
@@ -476,7 +493,8 @@ are isolated per target. Use Bind projects on an existing connection to add or r
    `export PROJECT_KB_TOKEN='...'` and then `fl restart`.
 3. Open `http://127.0.0.1:2727/connections`. Under External knowledge, enter a connection name,
    connector, one or more bound projects, and retrieval mode.
-4. For MCP HTTP, enter the server URL and optional token environment-variable name. For MCP stdio,
+4. For MCP HTTP, enter the final endpoint URL (redirects to another origin are not followed) and an
+   optional token environment-variable name. For MCP stdio,
    enter its command and arguments. For Notion, enter the token environment-variable name and Page
    IDs or Data Source IDs. For Feishu/Lark, enter the token environment-variable name, region, and
    an explicit Space ID, root-node token, or node tokens. For RAG Retrieval API, enter a
