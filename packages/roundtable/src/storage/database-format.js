@@ -101,10 +101,15 @@ const READ_ONLY_STATEMENT = /^\s*(?:SELECT|EXPLAIN)\b/i;
 // effect, and only the engine sets user_version.
 const CONNECTION_PRAGMA = /^\s*PRAGMA\b/i;
 const TRANSACTION_CONTROL = /^\s*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b/i;
-const CONTAINS_TRANSACTION_CONTROL = /\b(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b/i;
 
 function readsOnly(sql) {
   return READ_ONLY_STATEMENT.test(sql) || CONNECTION_PRAGMA.test(sql) || TRANSACTION_CONTROL.test(sql);
+}
+
+// The statements of an exec() script, split conservatively: a ';' inside a
+// literal makes extra fragments, which only ever count as writes.
+function scriptStatements(sql) {
+  return String(sql).split(';').map((statement) => statement.trim()).filter(Boolean);
 }
 
 function versionGuarded(database, format, { afterVersionCheck = () => {} } = {}) {
@@ -138,9 +143,17 @@ function versionGuarded(database, format, { afterVersionCheck = () => {} } = {})
     get(target, key) {
       if (key === 'exec') {
         return (sql) => {
-          if (readsOnly(sql)) return target.exec(sql);
-          // A script that runs its own transaction cannot be wrapped in another.
-          if (CONTAINS_TRANSACTION_CONTROL.test(sql)) { check(); return target.exec(sql); }
+          const statements = scriptStatements(sql);
+          if (statements.length <= 1) return readsOnly(sql) ? target.exec(sql) : write(() => target.exec(sql));
+          if (statements.every((statement) => readsOnly(statement) && !TRANSACTION_CONTROL.test(statement))) {
+            return target.exec(sql);
+          }
+          // A script that writes and runs its own transaction could commit
+          // between the version check and its writes; it is not supported.
+          if (statements.some((statement) => TRANSACTION_CONTROL.test(statement))) {
+            throw new TypeError(`FULI store "${format.store}": a script that writes and controls its own transaction `
+              + 'is not run on a guarded connection; run its statements one by one');
+          }
           return write(() => target.exec(sql));
         };
       }

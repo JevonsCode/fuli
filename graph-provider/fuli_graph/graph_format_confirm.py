@@ -13,6 +13,13 @@
 
 The provider exposes apply and rollback only to the human-review channel;
 no Agent tool reaches them.
+
+Every provider's business writes and the lead-occupation CLI pass the graph
+writer fence (graph_format.writer_fence), so none of them commits while an
+apply or undo runs. Writers outside FULI (a raw Neo4j client, cypher-shell,
+another tool on the same database) do not: keep them stopped while a
+migration is applied or undone. The scope re-check before the step only
+catches what they added before it, not writes during it.
 """
 
 import asyncio

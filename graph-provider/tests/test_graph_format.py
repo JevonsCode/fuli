@@ -453,3 +453,16 @@ def test_a_new_graph_property_comes_with_the_next_graph_version():
     assert sorted(expected - properties) == [], (
         f'Properties no longer used: record the next version in {PROPERTY_FINGERPRINTS.name}'
     )
+
+
+@pytest.mark.asyncio
+async def test_an_auto_commit_write_is_refused_rather_than_run_unfenced():
+    client = RecordingClient()
+    driver = guarded_driver(GraphFormatState('write', 'current', GRAPH_FORMAT_VERSION), client)
+
+    async with driver.session() as session:
+        with pytest.raises(GraphFormatUnavailable) as refused:
+            await session.run('MATCH (n:Entity {group_id: $g}) CALL (n) { DETACH DELETE n } IN TRANSACTIONS', g='x')
+
+    assert refused.value.code == 'data_format_unfenced_write'
+    assert client.queries == [] and client.transaction_queries == []

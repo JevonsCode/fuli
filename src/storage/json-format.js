@@ -48,6 +48,7 @@ export function requireJsonFormatVersion(document, format) {
     + `${format.versions.join(' or ')}`);
 }
 
+// Returns the version on disk (undefined when there is none to protect).
 export function assertJsonFormatWritable(filePath, format) {
   let stored;
   try {
@@ -55,11 +56,12 @@ export function assertJsonFormatWritable(filePath, format) {
   } catch {
     // A missing file has nothing to protect; an unreadable one is the
     // reader's error to report, as before.
-    return;
+    return undefined;
   }
   if (Number.isInteger(stored) && stored > format.supported) {
     throw newerFormatError(format.store, stored, format.supported);
   }
+  return stored;
 }
 
 export function writeVersionedJsonFileAtomic(filePath, value, format, { io } = {}) {
@@ -79,15 +81,27 @@ export function updateVersionedJsonFileAtomic(filePath, format, mutate, {
 } = {}) {
   if (!format?.versions) throw new TypeError('A versioned JSON write needs its store format');
   return withJsonFormatLock(filePath, () => {
-    assertJsonFormatWritable(filePath, format);
     resolveInterruptedChange(filePath, format);
+    const onDisk = assertJsonFormatWritable(filePath, format);
     const current = read(filePath);
     const next = mutate(current);
     if (next === undefined) return current;
     requireJsonFormatVersion(next, format);
+    refuseCrossingPendingStep(format, onDisk, next.version);
     write(filePath, next);
     return next;
   });
+}
+
+// A file at the version a confirmed step starts from (written by an earlier
+// FULI, or put back by undoing that step) changes version only through that
+// step. An ordinary write computed from an older read (say, before another
+// process undid the step) is refused here, inside the lock, instead of
+// silently redoing the migration nobody confirmed.
+function refuseCrossingPendingStep(format, onDisk, written) {
+  if (format.pendingFrom === null || onDisk !== format.pendingFrom || written === onDisk) return;
+  throw pendingMigrationError(format.store, format.migration, `the file is at version ${onDisk} and an ordinary `
+    + `write would make it ${written}`);
 }
 
 // Removes a file under the same lock, after checking again that no newer
@@ -138,15 +152,16 @@ function withJsonFormatLock(filePath, operation) {
 // gets write(path, value, format) and remove(path, format), each checking the
 // file on disk again; paths outside the directory are refused. With format,
 // an interrupted change of filePath is resolved first (resolution is passed
-// on); settleConflict(intent, write) lets a whole-file restore settle one
-// that cannot be resolved.
-export function withJsonFormatDirectory(filePath, operation, { format = null, settleConflict = null } = {}) {
+// on). allowConflict lets a whole-file restore run over one that cannot be
+// resolved: the conflicting intent stays in place, guarding the file, until
+// the restore's own intent replaces it (resolution 'conflict', intent).
+export function withJsonFormatDirectory(filePath, operation, { format = null, allowConflict = false } = {}) {
   const directory = dirname(filePath);
   const inside = (path) => {
     if (dirname(path) !== directory) throw new TypeError('A locked JSON change stays in its directory');
   };
   return withJsonFormatLock(filePath, () => {
-    const resolution = format ? resolveInterruptedChange(filePath, format, settleConflict) : null;
+    const resolution = format ? resolveInterruptedChange(filePath, format, { allowConflict }) : null;
     return operation({
       write(path, value, fileFormat) {
         inside(path);
@@ -157,7 +172,8 @@ export function withJsonFormatDirectory(filePath, operation, { format = null, se
         assertJsonFormatWritable(path, fileFormat);
         rmSync(path, { force: true });
       },
-      resolution
+      resolution,
+      intent: resolution === 'conflict' ? readJsonIntent(filePath) : null
     });
   });
 }
@@ -175,7 +191,10 @@ function lockedWrite(path, value, format) {
 // resolvable intent into one that matches neither side:
 // - the file is as the change left it: the ledger event is committed (once);
 // - the file is as it was: the intent is dropped;
-// - anything else is refused until a whole-file restore settles it.
+// - anything else is refused until a whole-file restore settles it. The
+//   restore's intent carries the conflicting one (settles): if the restore
+//   is interrupted before it wrote the file, the conflicting intent is put
+//   back rather than dropped, so the file stays guarded.
 const INTENT_VERSION = 1;
 export const JSON_INTENT_FORMAT = jsonFormat({ store: 'json-format-intent', versions: [INTENT_VERSION] });
 
@@ -202,7 +221,7 @@ export function jsonIntentResolution(filePath) {
   return digest === intent.beforeDigest ? 'dropped' : 'conflict';
 }
 
-function resolveInterruptedChange(filePath, format, settleConflict = null) {
+function resolveInterruptedChange(filePath, format, { allowConflict = false } = {}) {
   const intent = readJsonIntent(filePath);
   if (!intent) return null;
   assertJsonFormatWritable(jsonIntentPath(filePath), JSON_INTENT_FORMAT);
@@ -211,17 +230,19 @@ function resolveInterruptedChange(filePath, format, settleConflict = null) {
     const committed = jsonLedgerEvents(filePath).some((event) => event.status === intent.event.status
       && event.migrationId === intent.event.migrationId && event.recordedAt === intent.event.recordedAt);
     if (!committed) appendJsonLedgerEvent(lockedWrite, filePath, intent.event);
+  } else if (resolution === 'dropped' && intent.settles) {
+    // A restore that never wrote the file: the conflict it was settling is back.
+    lockedWrite(jsonIntentPath(filePath), intent.settles, JSON_INTENT_FORMAT);
+    return resolveInterruptedChange(filePath, format, { allowConflict });
   } else if (resolution === 'conflict') {
-    if (!settleConflict) {
-      throw new DataFormatError(format.store, 'data_format_interrupted', `FULI store "${format.store}" has an `
-        + `interrupted ${intent.operation} (${intent.event?.migrationId}) and the file is neither as it was nor as `
-        + 'that change left it. Nothing was written; restore the whole file (fuli migrate restore) from '
-        + `${intent.backupRef ?? 'a backup'} or another backup.`, intent.event?.migrationId ? [intent.event.migrationId] : []);
-    }
-    settleConflict(intent, lockedWrite);
+    if (allowConflict) return 'conflict';
+    throw new DataFormatError(format.store, 'data_format_interrupted', `FULI store "${format.store}" has an `
+      + `interrupted ${intent.operation} (${intent.event?.migrationId}) and the file is neither as it was nor as `
+      + 'that change left it. Nothing was written; restore the whole file (fuli migrate restore) from '
+      + `${intent.backupRef ?? 'a backup'} or another backup.`, intent.event?.migrationId ? [intent.event.migrationId] : []);
   }
   rmSync(jsonIntentPath(filePath), { force: true });
-  return resolution === 'conflict' ? 'settled' : resolution;
+  return resolution;
 }
 
 const LEDGER_FORMAT = jsonFormat({ store: 'json-format-ledger', versions: [LEDGER_FORMAT_VERSION] });

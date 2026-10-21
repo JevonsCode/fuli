@@ -159,19 +159,12 @@ export function describeJsonRestore(filePath, format, backupRef) {
 // changed since is not overwritten.
 export function restoreJsonFile(filePath, format, { backupRef, expected, actor, now = () => new Date(),
   copy = copyFileSync, stage = NO_STAGE }) {
-  // An interrupted change no writer could resolve is what a restore is for:
-  // the file as it is is kept as a backup and the intent closed in the ledger
-  // before the restore runs its own protocol.
-  const settleConflict = (intent, write) => {
-    const kept = backupFile(filePath, format, readDocument(filePath)?.version ?? 0, copy, now,
-      'settling an interrupted change');
-    appendJsonLedgerEvent(write, filePath, { migrationId: intent.event?.migrationId ?? `${format.store}/unknown`,
-      fromVersion: intent.event?.fromVersion ?? null, toVersion: intent.event?.toVersion ?? null,
-      status: 'abandoned', backupRef: kept, detail: `an interrupted ${intent.operation} left the file neither as it was `
-        + `nor as it would have left it; kept as ${kept} and settled by a whole-file restore`,
-      recordedAt: now().toISOString() });
-  };
-  return withRecoveredFile(filePath, format, { now, stage, settleConflict }, (commit) => {
+  // An interrupted change no writer could resolve is what a restore is for.
+  // Everything is checked first, while the conflicting intent still guards
+  // the file; the file as it is becomes the safety backup, and the restore's
+  // own intent replaces the conflicting one (and carries it, so an
+  // interruption before the file is written puts the guard back).
+  return withRecoveredFile(filePath, format, { now, stage, allowConflict: true }, (commit, _resolution, conflict) => {
     const restored = JSON.parse(readFileSync(backupPath(filePath, format, backupRef), 'utf8'));
     if (Number.isInteger(restored?.version) && restored.version > format.supported) throw newerFile(format, restored.version);
     const current = readDocument(filePath);
@@ -181,11 +174,14 @@ export function restoreJsonFile(filePath, format, { backupRef, expected, actor, 
     }
     const safetyRef = current ? backupFile(filePath, format, current.version ?? 0, copy, now, 'a whole-file restore')
       : null;
-    commit({ operation: 'restore', before: current, after: restored, backupRef: safetyRef, event: {
+    stage('safety-backup');
+    const settled = conflict ? `; settled an interrupted ${conflict.operation} (${conflict.event?.migrationId}) that left `
+      + `the file neither as it was nor as it would have left it, kept as ${safetyRef}` : '';
+    commit({ operation: 'restore', before: current, after: restored, backupRef: safetyRef, settles: conflict, event: {
       migrationId: `${format.store}/restore`, fromVersion: current?.version ?? null, toVersion: restored.version ?? null,
       status: 'restored', backupRef: safetyRef, afterDigest: contentHash(restored),
       detail: `whole file restored locally (${actor.entrypoint}, presence unverified) from ${backupRef}; changes `
-        + `after ${backupTime(backupRef) ?? 'that backup'} were discarded`, recordedAt: now().toISOString() } });
+        + `after ${backupTime(backupRef) ?? 'that backup'} were discarded${settled}`, recordedAt: now().toISOString() } });
     return { status: 'restored', store: format.store, backupRef, safetyBackupRef: safetyRef,
       version: restored.version ?? null };
   });
@@ -197,23 +193,24 @@ export function jsonBackupFiles(filePath) {
 
 // The lock, the sidecar check and the recovery of an earlier interrupted
 // change, then operation(commit); commit runs steps 3–6 of the protocol.
-function withRecoveredFile(filePath, format, { now, stage, settleConflict = null }, operation) {
+function withRecoveredFile(filePath, format, { now, stage, allowConflict = false }, operation) {
   assertJsonLedgerWritable(filePath);
   assertJsonFormatWritable(jsonIntentPath(filePath), JSON_INTENT_FORMAT);
-  return withJsonFormatDirectory(filePath, ({ write, remove, resolution }) => {
+  return withJsonFormatDirectory(filePath, ({ write, remove, resolution, intent }) => {
     assertJsonLedgerWritable(filePath);
-    return operation(({ operation: kind, before, after, backupRef, event }) => {
+    return operation(({ operation: kind, before, after, backupRef, event, settles = null }) => {
+      // Replaces any intent in place, so the file is never unguarded in between.
       write(jsonIntentPath(filePath), { version: JSON_INTENT_FORMAT.supported, operation: kind, store: format.store, backupRef,
         beforeDigest: before ? contentHash(before) : null, afterDigest: contentHash(after), event,
-        preparedAt: now().toISOString() }, JSON_INTENT_FORMAT);
+        ...(settles ? { settles } : {}), preparedAt: now().toISOString() }, JSON_INTENT_FORMAT);
       stage('intent');
       write(filePath, after, format);
       stage('file');
       appendJsonLedgerEvent(write, filePath, event);
       stage('ledger');
       remove(jsonIntentPath(filePath), JSON_INTENT_FORMAT);
-    }, resolution);
-  }, { format, settleConflict });
+    }, resolution, intent);
+  }, { format, allowConflict });
 }
 
 function newerFile(format, version) {

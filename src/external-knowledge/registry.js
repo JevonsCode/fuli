@@ -1,5 +1,5 @@
 import { readJsonFile } from '../storage/json-file.js';
-import { jsonFormat, refusePendingJsonMigration, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { jsonFormat, refusePendingJsonMigration, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { newerFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 import { acquireFileLock } from '../storage/file-lock.js';
 import { ApplicationError } from '../app/application-error.js';
@@ -47,20 +47,40 @@ export class ExternalKnowledgeRegistry {
   }
 
   put(binding) {
-    const document = this.#writable();
-    const index = document.bindings.findIndex((item) => item.id === binding.id);
-    if (index === -1) document.bindings.push(clone(binding));
-    else document.bindings[index] = clone(binding);
-    writeVersionedJsonFileAtomic(this.filePath, document, EXTERNAL_KNOWLEDGE_FORMAT);
+    this.#mutate((document) => {
+      const index = document.bindings.findIndex((item) => item.id === binding.id);
+      if (index === -1) document.bindings.push(clone(binding));
+      else document.bindings[index] = clone(binding);
+      return document;
+    });
     return clone(binding);
   }
 
   delete(id) {
-    const document = this.#writable();
-    const next = document.bindings.filter((item) => item.id !== id);
-    if (next.length === document.bindings.length) return false;
-    writeVersionedJsonFileAtomic(this.filePath, { ...document, bindings: next }, EXTERNAL_KNOWLEDGE_FORMAT);
-    return true;
+    let removed = false;
+    this.#mutate((document) => {
+      const next = document.bindings.filter((item) => item.id !== id);
+      removed = next.length !== document.bindings.length;
+      return removed ? { ...document, bindings: next } : undefined;
+    });
+    return removed;
+  }
+
+  // The read, the pending check and the write under one hold of the format
+  // lock, so a confirmed migration or undo by another process cannot land
+  // between them. A version 1 registry is refused, recorded once in its
+  // ledger after the lock is released.
+  #mutate(change) {
+    let pending = null;
+    updateVersionedJsonFileAtomic(this.filePath, EXTERNAL_KNOWLEDGE_FORMAT, (current) => {
+      const document = validated(current ?? EMPTY_REGISTRY);
+      if (document.version === 1) {
+        pending = `${document.bindings.length} bindings were written by an earlier FULI`;
+        return undefined;
+      }
+      return change(clone(document));
+    });
+    if (pending) refusePendingJsonMigration(this.filePath, { format: EXTERNAL_KNOWLEDGE_FORMAT, detail: pending });
   }
 
   #read() {
@@ -68,25 +88,19 @@ export class ExternalKnowledgeRegistry {
     return document.version === 1 ? migrateVersionOne(document) : clone(document);
   }
 
-  #writable() {
-    const document = this.#stored();
-    if (document.version === 1) {
-      refusePendingJsonMigration(this.filePath, { format: EXTERNAL_KNOWLEDGE_FORMAT,
-        detail: `${document.bindings.length} bindings were written by an earlier FULI` });
-    }
-    return clone(document);
-  }
-
   #stored() {
-    const document = readJsonFile(this.filePath, EMPTY_REGISTRY);
-    if (Number.isInteger(document?.version) && document.version > CURRENT_VERSION) {
-      throw newerFormatError(EXTERNAL_KNOWLEDGE_FORMAT.store, document.version, CURRENT_VERSION);
-    }
-    if (!Array.isArray(document?.bindings) || ![1, CURRENT_VERSION].includes(document.version)) {
-      throw new TypeError('Unsupported external knowledge registry format');
-    }
-    return document;
+    return validated(readJsonFile(this.filePath, EMPTY_REGISTRY));
   }
+}
+
+function validated(document) {
+  if (Number.isInteger(document?.version) && document.version > CURRENT_VERSION) {
+    throw newerFormatError(EXTERNAL_KNOWLEDGE_FORMAT.store, document.version, CURRENT_VERSION);
+  }
+  if (!Array.isArray(document?.bindings) || ![1, CURRENT_VERSION].includes(document.version)) {
+    throw new TypeError('Unsupported external knowledge registry format');
+  }
+  return document;
 }
 
 function migrateVersionOne(document) {

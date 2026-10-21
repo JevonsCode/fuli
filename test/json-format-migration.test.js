@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { EXTERNAL_KNOWLEDGE_FORMAT, ExternalKnowledgeRegistry } from '../src/external-knowledge/registry.js';
+import { writeVersionedJsonFileAtomic } from '../src/storage/json-format.js';
 import {
   applyConfirmedJsonMigration, describeJsonRestore, jsonBackupFiles, previewJsonMigration, recoverJsonFile,
   restoreJsonFile, rollbackJsonMigration, undoableJsonMigrations
@@ -271,9 +272,118 @@ test('a conflict the error sends to restore can be restored: describe, confirm, 
 
   assert.equal(readFileSync(path, 'utf8').trim(), JSON.stringify(JSON.parse(original), null, 2));
   assert.equal(existsSync(intentPath(path)), false);
-  const events = JSON.parse(readFileSync(ledgerPath(path), 'utf8')).events.map((event) => event.status);
-  assert.deepEqual(events, ['abandoned', 'restored']);
-  const kept = JSON.parse(readFileSync(ledgerPath(path), 'utf8')).events[0].backupRef;
-  assert.equal(readFileSync(join(directory, kept), 'utf8'), conflicted, 'the conflicting file is kept');
-  assert.ok(existsSync(join(directory, restored.safetyBackupRef)));
+  const events = JSON.parse(readFileSync(ledgerPath(path), 'utf8')).events;
+  assert.deepEqual(events.map((event) => event.status), ['restored']);
+  assert.match(events[0].detail, /settled an interrupted apply \(external-knowledge\/2-binding-targets\)/);
+  assert.equal(readFileSync(join(directory, restored.safetyBackupRef), 'utf8'), conflicted, 'the conflicting file is kept');
+});
+
+// The window between "conflict seen" and "restored": a failure at any point
+// leaves the file as it was and still refuses ordinary writes.
+function conflictedRegistry(t) {
+  const fixture = legacyRegistry(t);
+  const plan = previewJsonMigration(fixture.path, EXTERNAL_KNOWLEDGE_FORMAT);
+  assert.throws(() => applyConfirmedJsonMigration(fixture.path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI,
+    stage: (name) => { if (name === 'intent') throw new Error('power cut'); } }), /power cut/);
+  writeFileSync(fixture.path, JSON.stringify({ version: 2, bindings: [{ id: 'edited-elsewhere', targets: [] }] }));
+  const [backup] = jsonBackupFiles(fixture.path);
+  return { ...fixture, backup, impact: describeJsonRestore(fixture.path, EXTERNAL_KNOWLEDGE_FORMAT, backup.ref) };
+}
+
+function stillGuarded(path, before) {
+  assert.deepEqual(readFileSync(path), before, 'the file is untouched');
+  assert.throws(() => new ExternalKnowledgeRegistry(path).put({ id: 'b-9', targets: [] }), { code: 'data_format_interrupted' });
+  assert.equal(previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT).action, 'blocked');
+}
+
+const RESTORE_FAILURES = {
+  'a stale confirmation': ({ impact }) => ({ expected: { ...impact, currentDigest: 'f'.repeat(64) } }),
+  'a backup that is gone': ({ impact }) => ({ backupRef: 'format-backups/bindings.json.v1-2020-01-01T00-00-00-000Z.json',
+    expected: impact }),
+  'a safety backup that fails': ({ impact }) => ({ expected: impact, copy: () => { throw new Error('disk full'); } }),
+  'an interruption after the safety backup': ({ impact }) => ({ expected: impact,
+    stage: (name) => { if (name === 'safety-backup') throw new Error('power cut'); } }),
+  'an interruption after the restore intent': ({ impact }) => ({ expected: impact,
+    stage: (name) => { if (name === 'intent') throw new Error('power cut'); } })
+};
+
+for (const [failure, options] of Object.entries(RESTORE_FAILURES)) {
+  test(`settling a conflict survives ${failure}: the file stays guarded and a later restore works`, (t) => {
+    const fixture = conflictedRegistry(t);
+    const before = readFileSync(fixture.path);
+
+    assert.throws(() => restoreJsonFile(fixture.path, EXTERNAL_KNOWLEDGE_FORMAT, { backupRef: fixture.backup.ref, actor: CLI,
+      ...options(fixture) }));
+
+    stillGuarded(fixture.path, before);
+    const restored = restoreJsonFile(fixture.path, EXTERNAL_KNOWLEDGE_FORMAT, { backupRef: fixture.backup.ref,
+      expected: describeJsonRestore(fixture.path, EXTERNAL_KNOWLEDGE_FORMAT, fixture.backup.ref), actor: CLI });
+    assert.equal(restored.status, 'restored');
+    assert.equal(JSON.parse(readFileSync(fixture.path, 'utf8')).version, 1);
+    assert.equal(existsSync(intentPath(fixture.path)), false);
+  });
+}
+
+// Another process undoes the migration while this one writes the registry.
+function undoInAnotherProcess(path, { holdAfterWriteMs = 0 } = {}) {
+  const registry = new URL('../src/external-knowledge/registry.js', import.meta.url).href;
+  const engine = new URL('../src/storage/json-format-migration.js', import.meta.url).href;
+  // The signal is written synchronously: the child then blocks, holding the lock.
+  const script = `import { writeSync } from 'node:fs';
+    import { EXTERNAL_KNOWLEDGE_FORMAT } from ${JSON.stringify(registry)};
+    import { rollbackJsonMigration } from ${JSON.stringify(engine)};
+    const hold = Number(process.argv[2]);
+    rollbackJsonMigration(process.argv[1], EXTERNAL_KNOWLEDGE_FORMAT, { migrationId: 'external-knowledge/2-binding-targets',
+      actor: { entrypoint: 'cli' }, stage: (name) => {
+        if (name === 'file' && hold) {
+          writeSync(1, 'undone ');
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, hold);
+        }
+      } });`;
+  return spawn(process.execPath, ['--input-type=module', '-e', script, path, String(holdAfterWriteMs)]);
+}
+
+const exited = (child) => new Promise((resolve) => child.on('exit', resolve));
+
+test('a registry write computed before another process undid the migration cannot redo it', async (t) => {
+  const { path } = legacyRegistry(t);
+  const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+  applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI });
+  // A writer reads v2 and computes its change (paused here, before any lock)...
+  const stale = JSON.parse(readFileSync(path, 'utf8'));
+  stale.bindings = stale.bindings.filter((binding) => binding.id !== 'b-2');
+  // ...another process undoes the migration meanwhile...
+  assert.equal(await exited(undoInAnotherProcess(path)), 0);
+  const undone = readFileSync(path, 'utf8');
+  assert.equal(JSON.parse(undone).version, 1);
+
+  // ...and the writer resumes with its v2 snapshot.
+  assert.throws(() => writeVersionedJsonFileAtomic(path, stale, EXTERNAL_KNOWLEDGE_FORMAT),
+    { code: 'data_format_pending', message: /at version 1 and an ordinary write would make it 2/ });
+  assert.throws(() => new ExternalKnowledgeRegistry(path).delete('b-2'), { code: 'data_format_pending' });
+  assert.equal(readFileSync(path, 'utf8'), undone, 'the undone v1 file survives');
+});
+
+test('a registry write waits for an undo holding the format lock, then sees v1 and refuses', async (t) => {
+  const { path } = legacyRegistry(t);
+  const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+  applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI });
+  const child = undoInAnotherProcess(path, { holdAfterWriteMs: 1500 });
+  let output = '';
+  child.stdout.on('data', (chunk) => { output += chunk; });
+  // Barrier: the other process has written v1 and still holds the lock.
+  const deadline = Date.now() + 20_000;
+  while (!output.includes('undone')) {
+    assert.ok(Date.now() < deadline, `the undo did not start: ${output}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const started = Date.now();
+
+  assert.throws(() => new ExternalKnowledgeRegistry(path).put({ id: 'b-9', targets: [] }), { code: 'data_format_pending' });
+
+  assert.ok(Date.now() - started >= 1000, 'the write read the file only once the undo released the lock');
+  assert.equal(await exited(child), 0);
+  const document = JSON.parse(readFileSync(path, 'utf8'));
+  assert.equal(document.version, 1);
+  assert.deepEqual(document.bindings.map((binding) => binding.id), ['b-1', 'b-2']);
 });

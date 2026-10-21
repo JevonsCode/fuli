@@ -21,7 +21,7 @@ from neo4j.exceptions import ClientError
 from pydantic import BaseModel
 
 from .config import Settings
-from .graph_format import UNCHECKED, prepare_graph_format, writer_fence
+from .graph_format import UNCHECKED, GraphFormatUnavailable, prepare_graph_format, writer_fence
 
 _ACCESS_MODE_ERROR = 'Neo.ClientError.Statement.AccessMode'
 
@@ -246,10 +246,14 @@ class _FencedSession:
         return _FencedTransaction(await self._session.begin_transaction(*args, **kwargs))
 
     async def run(self, query, *args, **kwargs):
-        # An auto-commit query (CALL … IN TRANSACTIONS) cannot share a
-        # transaction with the fence; it passes the fence just before.
-        await self._session.execute_write(writer_fence)
-        return await self._session.run(query, *args, **kwargs)
+        # An auto-commit write (CALL … IN TRANSACTIONS, as Graphiti's delete by
+        # group uses) cannot share a transaction with the fence, so it is not
+        # run at all: a write must use execute_write or a transaction. No FULI
+        # path writes this way.
+        raise GraphFormatUnavailable(
+            'data_format_unfenced_write',
+            'An auto-commit write cannot pass the graph writer fence; use a write transaction.',
+        )
 
     def __getattr__(self, name):
         return getattr(self._session, name)

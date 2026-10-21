@@ -349,3 +349,20 @@ test('the version check and the write share one write lock, so no undo fits betw
   assert.match(competitor, /database is locked/);
   assert.deepEqual(state(path).rows.map((row) => row.id), ['n1', 'n2', 'n3']);
 });
+
+test('a script mixing reads, writes and transaction control cannot slip past the version check', (t) => {
+  const { path } = oldStore(t);
+  const plan = previewSqliteMigration(path, notesFormat());
+  applyConfirmedSqliteMigration(path, notesFormat(), { digest: plan.digest, actor: CLI });
+  const open = openFormattedDatabase(path, notesFormat());
+  try {
+    rollbackSqliteMigration(path, notesFormat(), { migrationId: 'notes/3-checked', actor: CLI });
+    assert.throws(() => open.exec("BEGIN IMMEDIATE; UPDATE notes SET body = 'late'; COMMIT"),
+      /controls its own transaction is not run on a guarded connection/);
+    assert.throws(() => open.exec("SELECT 1; UPDATE notes SET body = 'late'"), { code: 'data_format_changed_underneath' });
+    assert.equal(open.isTransaction, false, 'nothing was left open');
+    // Pure reads still run as one script.
+    assert.doesNotThrow(() => open.exec('SELECT 1; SELECT count(*) FROM notes'));
+  } finally { open.close(); }
+  assert.deepEqual(state(path).rows.map((row) => row.body), ['secret body one', 'secret body two']);
+});

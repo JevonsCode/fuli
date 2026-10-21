@@ -68,10 +68,15 @@ def build_plan(space_id, project_ids, rows):
 
 
 def _require_current_format(transaction):
-    """This tool writes outside the provider, so it checks the graph's data
-    format itself: only a graph the provider has brought to this version."""
+    """This tool writes outside the provider, so it passes the providers'
+    writer fence itself (graph_format.writer_fence): it takes the graph
+    identity's lock first and holds it to its commit, so a confirmed graph
+    migration or undo never runs in between, and it only writes a graph the
+    provider has brought to this version."""
     records = list(transaction.run(
-        "MATCH (format:FuliDataFormat {store: 'graph'}) RETURN format.version AS version"
+        "MATCH (format:FuliDataFormat {store: 'graph'}) "
+        "SET format._fuli_writer = true REMOVE format._fuli_writer "
+        "RETURN format.version AS version"
     ))
     version = records[0]['version'] if records else None
     if version != GRAPH_FORMAT_VERSION:
