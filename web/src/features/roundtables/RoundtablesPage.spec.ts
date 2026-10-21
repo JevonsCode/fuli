@@ -203,6 +203,25 @@ describe('RoundtablesPage on a phone and with paging', () => {
     wrapper.unmount()
   })
 
+  it('says once that both lists failed, with one retry that reads both again', async () => {
+    let down = true
+    getJson.mockImplementation(async (url: string) => {
+      if (down) throw new Error('offline')
+      return url === '/api/roundtable/threads' ? { threads: [thread] } : { chats: [], hasMore: false }
+    })
+    const wrapper = await mountAt('/roundtables')
+    const failed = wrapper.get('[data-roundtable-lists-failed]')
+    expect(failed.attributes('role')).toBe('alert')
+    expect(failed.findAll('button')).toHaveLength(1)
+    expect(wrapper.find('nav').exists()).toBe(false)
+    down = false
+    await failed.get('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-roundtable-lists-failed]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="roundtable-thread"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('pages local chat rooms with their own cursor and appends later messages in order', async () => {
     const members = [{ address: 'local:lead', agentId: 'lead', name: 'Lead', joinedSeq: 0 }]
     const roomA = { chatId: 'a', kind: 'group', title: 'A', members, transport: 'local', createdAt: '2026-10-10T09:00:00Z', updatedAt: '2026-10-10T09:05:00Z' }

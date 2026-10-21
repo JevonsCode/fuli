@@ -334,6 +334,9 @@ const listPath = computed(() => router.resolve({ path: '/roundtables', query: ro
 
 const listLoading = computed(() => threadsState.value === 'loading' && chatsState.value === 'loading')
 const empty = computed(() => threadsState.value === 'ready' && chatsState.value === 'ready' && !threads.value.length && !chats.value.length)
+// Both lists failed with nothing to show: one state with one retry, not two bare notices.
+const listsFailed = computed(() => threadsState.value === 'failed' && chatsState.value === 'failed' && !threads.value.length && !chats.value.length && !accessNotice.value)
+function retryLists() { void loadThreads(); void loadChats() }
 const hasMoreChats = computed(() => Boolean(localNext.value || remoteNext.value))
 // A wide screen shows a thread's participants open; a phone keeps them folded.
 // It follows the breakpoint when the window is resized.
@@ -431,6 +434,11 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
       <Button size="sm" variant="ghost" :loading="reconnecting" :loading-label="t('roundtable.reloading')" @click="reconnected">{{ t('roundtable.reload') }}</Button>
     </p>
     <GrowthLoading v-if="listLoading && !hasSelection" :label="t('roundtable.loading')" />
+    <div v-else-if="listsFailed && !hasSelection" class="roundtable-empty" role="alert" data-roundtable-lists-failed>
+      <strong>{{ t('roundtable.loadFailed') }}</strong>
+      <p>{{ t('roundtable.loadFailedHint') }}</p>
+      <Button class="roundtable-empty-action" @click="retryLists">{{ t('roundtable.retry') }}</Button>
+    </div>
     <div v-else-if="empty && !hasSelection" class="roundtable-empty">
       <strong>{{ t('roundtable.empty') }}</strong>
       <p>{{ t('roundtable.emptyHint') }}</p>
@@ -562,10 +570,11 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
 .roundtable-canvas { flex: 1 0 auto; }
 .has-selection .roundtable-canvas { flex: 1 1 0; min-height: 0; }
 /* An open conversation is one reading column, not a card stretched across a wide screen. */
-.has-selection .roundtable-layout { width: 100%; max-width: 1200px; }
+.has-selection .roundtable-layout { width: 100%; max-width: 1200px; margin-inline: auto; }
 .roundtable-empty { max-width: 520px; margin: 12vh auto 0; text-align: center; }
 .roundtable-empty strong { font-size: 16px; font-weight: 600; }
 .roundtable-empty p { margin-top: 8px; color: var(--color-muted); }
+.roundtable-empty-action { margin-top: 16px; }
 .roundtable-notice { margin: 0 0 8px; font-size: 13px; }
 .roundtable-section + .roundtable-section { margin-top: 24px; }
 .roundtable-waiting { color: var(--color-warning); font-weight: 600; }

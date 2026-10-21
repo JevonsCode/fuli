@@ -172,7 +172,7 @@ watch(peekKey, async (key) => {
               :class="{ 'is-archived': entry.status === 'archived', 'is-selected border-border-strong shadow-md': peekKey === entry.key }"
               :data-occupation-row="entry.key" :data-return-focus="entry.key">
               <h2 class="m-0 text-base leading-snug font-semibold">
-                <Button variant="link" class="occupation-name h-auto min-h-0 justify-start p-0 text-left text-base font-semibold whitespace-normal text-foreground hover:text-primary"
+                <Button variant="link" class="occupation-name h-auto min-h-0 justify-start p-0 text-left text-base font-semibold whitespace-normal text-foreground underline-offset-4 hover:text-primary hover:underline"
                   aria-haspopup="dialog" data-occupation-open @click="openPeek(entry)">
                   <span class="line-clamp-2 [overflow-wrap:anywhere]">{{ occupationName(entry) }}</span>
                 </Button>
