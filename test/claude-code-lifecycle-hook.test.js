@@ -515,20 +515,22 @@ test('Claude unresolved turn ends without an owner when another task became curr
   assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_MOVED_REPLY/);
 });
 
-test('Claude task entry ends only the turns held when it started; a turn held while it waits stays held', async t => {
+test('Claude task entry ends only the turns held when it started; a turn held while it waits is never imported into it', async t => {
   const { execFile } = await import('node:child_process');
-  const { mkdtemp, rm, writeFile, appendFile, access } = await import('node:fs/promises');
+  const { mkdtemp, rm, writeFile, appendFile, access, readFile } = await import('node:fs/promises');
   const { setTimeout: delay } = await import('node:timers/promises');
   const directory = await mkdtemp(join(tmpdir(), 'fuli-claude-entry-barrier-'));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
   const sessionId = 'synthetic-barrier-session';
   const runtimeConfigPath = join(directory, 'runtime.json');
   const transcript = join(directory, 'session.jsonl');
+  // The synthetic Provider double's state, shared by the hook processes (not the real Provider).
+  const providerState = join(directory, 'synthetic-provider.json');
   const line = record => JSON.stringify({ sessionId, ...record }) + '\n';
   await writeFile(transcript, line({ type: 'user', message: { role: 'user', content: 'Synthetic task A.' } }));
   const script = fileURLToPath(new URL('../test-support/claude-hook-process.mjs', import.meta.url));
   const hook = request => new Promise((resolvePromise, reject) => execFile(process.execPath, [script,
-    JSON.stringify({ runtimeConfigPath, transcript, sessionId, ...request })], { timeout: 60_000 },
+    JSON.stringify({ runtimeConfigPath, transcript, sessionId, providerState, ...request })], { timeout: 60_000 },
   (error, stdout, stderr) => error ? reject(new Error(stderr || error.message)) : resolvePromise(JSON.parse(stdout))));
   const ledger = transcriptCaptureLedger(runtimeConfigPath, { session_id: sessionId }, 'claude_code');
   const notification = '<task-notification>\n<task-id>bsynth01x</task-id>\n<status>completed</status>\n</task-notification>';
@@ -553,7 +555,23 @@ test('Claude task entry ends only the turns held when it started; a turn held wh
   assert.notEqual(n2.turn, n1.turn);
   await writeFile(release, 'go');
   await entry;
-  // B ended N1 only; N2 is still held, so no later Stop can import it into B.
+  // B ended N1 only; N2 is still held.
   assert.deepEqual(ledger.heldTurns().turns.map(turn => turn.turn), [n2.turn]);
   assert.equal(ledger.heldTurns().unprovable, false);
+  // N2's Stop, in its own process: B became current during N2, so N2 ends without an owner.
+  await appendFile(transcript, line({ type: 'assistant', message: { role: 'assistant',
+    content: [{ type: 'text', text: 'SYNTHETIC_N2_REPLY' }] } }));
+  await hook({ event: 'Stop' });
+  const provider = JSON.parse(await readFile(providerState, 'utf8'));
+  assert.deepEqual(ledger.heldTurns().turns, []);
+  // Nothing of N2 is imported into B or any task; its span is only a content-free skip.
+  assert.ok(provider.events.every(event => !/SYNTHETIC_N2_REPLY|task-notification/.test(event.content)),
+    JSON.stringify(provider.events));
+  assert.ok(provider.events.some(event => event.token === 'fuli-task-synthetic-b'
+    && /task ownership was not confirmed/.test(event.content)), JSON.stringify(provider.events));
+  // B, entered normally, is settled by that Stop; A is never settled on N2's behalf.
+  assert.equal(provider.current, 'fuli-task-synthetic-b');
+  assert.deepEqual(provider.checkpointed, ['fuli-task-synthetic-b']);
+  assert.deepEqual(provider.calls.filter(([name]) => name !== 'read_task_preferences'), [
+    ['begin_task_context', null], ['verify_task_checkpoint', null], ['checkpoint_task_knowledge', 'fuli-task-synthetic-b']]);
 });
