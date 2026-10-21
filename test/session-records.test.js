@@ -10,7 +10,7 @@ import { readOwnSessionRecords, readSessionRecords } from '../src/graphiti/sessi
 
 const CONSOLE = 'http://127.0.0.1:3999';
 const SESSION = 'synthetic-session-1';
-const LIST = `${CONSOLE}/sessions/space/codex/${SESSION}`;
+const LIST = `${CONSOLE}/s/${SESSION}`;
 // Local wall-clock moments, so HH:mm reads the same in any time zone.
 const at = (hour, minute) => new Date(2026, 9, 20, hour, minute).toISOString();
 const project = (id, name) => ({ id, name, temporary: false });
@@ -117,7 +117,7 @@ test('C6-2: the Agent lists the same numbered items, types, summaries and links 
   assert.deepEqual(Object.keys(answer).sort(), ['markdown', 'total', 'truncated', 'url'],
     'the Agent gets the numbered list, not every saved word');
   assert.equal(lines[0], `FULI 本会话已记录 9 项（[查看清单](<${LIST}>)）：`);
-  assert.match(answer.markdown, /\n7\. 新增 事实·待确认｜10:02｜项目 毕业论文｜「Synthetic fact-a」｜\[查看\]\(<http:\/\/127\.0\.0\.1:3999\/sessions\/space\/codex\/synthetic-session-1\?item=space\/entity%3Afact-a>\)/);
+  assert.ok(answer.markdown.includes(`\n7. 新增 事实·待确认｜10:02｜项目 毕业论文｜「Synthetic fact-a」｜[查看](<${LIST}?item=space/entity%3Afact-a>)`));
   assert.match(answer.markdown, /\n9\. 偏好证据·待确认｜10:04｜项目 毕业论文｜「以后引用都按 GB\/T 7714」｜/);
 });
 
@@ -177,4 +177,36 @@ test('the page reads only the active personal space', async () => {
   await assert.rejects(readSessionRecords(application, { personalSpaceId: 'other', sourceApplication: 'codex', sessionId: SESSION }),
     /active personal space/);
   assert.equal(reads.length, 0);
+});
+
+test('C6-5: a pause only project A\'s turns hold stays out of B\'s answer; one B\'s turns hold still shows', async () => {
+  const read = sessionRead();
+  read.projects.push(project('ledger', '家庭账本'));
+  const off = (index, hour, minute, projectId) => turn(index, hour, minute, { personal_project_id: projectId,
+    capture_off: paused, messages: [], not_recorded: [{ content: notRecordedEvent(index, index + 1, 'session_paused').content,
+      created_at: at(hour, minute + 1), after: at(hour, minute) }] });
+  // A's own pause 09:00～09:30 before any B turn; B's pause 14:36～15:10 stays as before.
+  read.turns = [off(90, 9, 0, 'ledger'), turn(91, 9, 30, { personal_project_id: 'ledger' }), ...read.turns];
+  const { markdown } = await callAgentTool(app(read).app, 'read_session_records', { taskContextToken: 'fuli-task-b',
+    sourceApplication: 'codex' });
+  assert.doesNotMatch(markdown, /09:00|09:3\d|家庭账本|ledger/);
+  assert.match(markdown, /— 14:36～15:10 暂停记录，这段没有任何记录/);
+  const page = await readSessionRecords(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  assert.equal(page.stretches.length, 2, 'the person sees both pauses');
+});
+
+test('C6-5: records of turns with no project are their own scope, not visible from a named project', async () => {
+  const read = sessionRead();
+  read.turns.push(turn(20, 16, 0, { personal_project_id: null,
+    messages: [{ role: 'user', text: '无项目时说的私事', created_at: at(16, 0) }] }));
+  read.items.push(item('loose', { origin_project_id: null, task_id: 'task-20', content: '无项目的记录' }));
+  const fromThesis = await callAgentTool(app(read).app, 'read_session_records', { taskContextToken: 'fuli-task-b',
+    sourceApplication: 'codex' });
+  assert.doesNotMatch(fromThesis.markdown, /无项目/);
+  assert.equal(fromThesis.total, 9);
+  const fromNowhere = await callAgentTool(app(read, { token: 'fuli-task-b', sessionId: SESSION, sourceApplication: 'codex',
+    personalProjectId: null }).app, 'read_session_records', { taskContextToken: 'fuli-task-b', sourceApplication: 'codex' });
+  assert.equal(fromNowhere.total, 2);
+  assert.match(fromNowhere.markdown, /无项目时说的私事/);
+  assert.doesNotMatch(fromNowhere.markdown, /毕业论文|引用格式/);
 });

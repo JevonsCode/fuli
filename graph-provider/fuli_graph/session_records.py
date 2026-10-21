@@ -10,6 +10,7 @@ checkpoints or its session and client.
 """
 import json
 import re
+from typing import get_args
 
 from .conversation_scope import session_conversation_ids
 from .knowledge_item_view import (
@@ -21,6 +22,7 @@ from .knowledge_item_view import (
     scope_projects,
 )
 from .knowledge_management import _read_item
+from .models import SourceApplication
 from .provider_values import native_datetime
 from .session_records_models import (
     SessionCaptureOff,
@@ -52,6 +54,11 @@ NOT_RECORDED_EVENT = re.compile(r':not_recorded$')
 
 async def read_session_records(store, actor: dict, request: SessionRecordsRead) -> SessionRecords:
     space = await personal_reader_space(store, actor, request.personal_space_id)
+    if request.source_application is None:
+        clients = await _session_clients(store, space, request.session_id)
+        if len(clients) != 1:
+            return SessionRecords(session_id=request.session_id, clients=clients)
+        request = request.model_copy(update={'source_application': clients[0]})
     tasks, more_turns = await _session_tasks(store, space, request)
     turns = await _turns(store, space, request, tasks)
     episodes, more_episodes = await _session_episodes(store, space, request, tasks)
@@ -62,6 +69,22 @@ async def read_session_records(store, actor: dict, request: SessionRecordsRead) 
         turns=turns, items=items,
         projects=await scope_projects(store, space, sorted(project for project in project_ids if project)),
         truncated=more_turns or more_episodes or more_items)
+
+
+async def _session_clients(store, space, session_id):
+    """The clients that have a session with this ID, for a link that names
+    only the session (the receipt's short link). Host session IDs are the
+    hosts' own UUIDs, so two clients sharing one is not expected; if it
+    happens the reader chooses, and nothing is guessed."""
+    nodes = {store._task_session_id(space['id'], client, session_id): client for client in get_args(SourceApplication)}
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_TASK_CONTEXT_SESSION]->
+              (session:FuliTaskContextSession)
+        WHERE session.id IN $nodes
+        RETURN session.id AS id
+        ''', space_id=space['id'], nodes=list(nodes), routing_='r')
+    return sorted(nodes[record['id']] for record in records)
 
 
 async def _session_tasks(store, space, request):

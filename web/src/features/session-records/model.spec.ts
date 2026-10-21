@@ -41,9 +41,11 @@ describe('session records model', () => {
   })
 
   it('links name the session and the record, and a source without a session links nowhere', () => {
-    expect(sessionRecordsPath('space/1', 'codex', 's 1', 'turn:t1')).toBe('/sessions/space%2F1/codex/s%201?item=space%2F1/turn%3At1')
+    expect(sessionRecordsPath('s 1')).toBe('/s/s%201')
+    expect(sessionRecordsPath('s 1', { client: 'codex' })).toBe('/s/s%201?client=codex')
+    expect(sessionRecordsPath('s-1', { spaceId: 'space/1', key: 'turn:t1' })).toBe('/s/s-1?item=space%2F1/turn%3At1')
     expect(sourceSessionPath('space', { session_id: 's-1', source_application: 'codex', episode_id: 'e-1' }))
-      .toBe('/sessions/space/codex/s-1?item=space/episode%3Ae-1')
+      .toBe('/s/s-1?client=codex&item=space/episode%3Ae-1')
     expect(sourceSessionPath('space', { session_id: null, source_application: 'codex', episode_id: 'e-1' })).toBe('')
   })
 

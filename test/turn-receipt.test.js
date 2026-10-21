@@ -15,7 +15,7 @@ import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.
 
 const CONSOLE = 'http://127.0.0.1:3999';
 const CONFIG = { personal: { spaceId: 'synthetic-space' } };
-const SESSION_LIST = `${CONSOLE}/sessions/synthetic-space/codex/native-session`;
+const SESSION_LIST = `${CONSOLE}/s/native-session`;
 const ITEM_LINK = /\[修改\]\(<http:\/\/127\.0\.0\.1:3999\/knowledge\/item\/synthetic-space\/(entity|relationship)\/[^>]+>\)$/;
 
 function entry(overrides = {}) {

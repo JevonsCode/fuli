@@ -21,7 +21,8 @@ SessionRecordChange = Literal['created', 'updated', 'evidence']
 
 class SessionRecordsRead(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
-    source_application: SourceApplication
+    # None: the link named only the session; its one client is found.
+    source_application: SourceApplication | None = None
     session_id: str = Field(min_length=1, max_length=256)
 
 
@@ -74,7 +75,10 @@ class SessionRecordItem(KnowledgeItemSummary):
 
 class SessionRecords(StrictModel):
     session_id: str
-    source_application: str
+    # None when the read named no client and not exactly one has this session;
+    # clients then lists those that do (two or more: the reader chooses).
+    source_application: str | None = None
+    clients: list[str] = Field(default_factory=list)
     turns: list[SessionTurn] = Field(default_factory=list)
     items: list[SessionRecordItem] = Field(default_factory=list)
     projects: list[KnowledgeScopeProject] = Field(default_factory=list)

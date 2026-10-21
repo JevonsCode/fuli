@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
@@ -11,20 +11,25 @@ import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay
 import { useRoutePeek } from '@/composables/useRoutePeek'
 import SessionRecordPeek from '@/features/session-records/SessionRecordPeek.vue'
 import {
-  SESSION_GROUPS, clockTime, entryTypeLabel, groupEntries, peekEntry, projectLabel, stretchLabel, transcriptRows,
+  SESSION_GROUPS, clockTime, entryTypeLabel, groupEntries, peekEntry, projectLabel, sessionRecordsPath, stretchLabel,
+  transcriptRows,
   type SessionEntry, type SessionRecordsView,
 } from '@/features/session-records/model'
 import { readSessionRecords } from '@/features/session-records/session-records-api'
 import { t } from '@/i18n'
+import { useConsoleStore } from '@/stores/console'
 
 // 本会话记了什么 (rec#5 C6): everything one host session recorded, in the
 // three groups the host numbered, on one canvas. A record opens in a quick
 // look kept in the URL (?item=<space>/<key>), so the receipt's link, an
 // Agent's answer and a knowledge source's "来自哪个会话" open the same record.
 const route = useRoute()
-const spaceId = computed(() => String(route.params.spaceId ?? ''))
-const client = computed(() => String(route.params.client ?? ''))
+const store = useConsoleStore()
+// The receipt's link names only the session: it is read in the active space.
+const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
+const requestedClient = computed(() => String(route.query.client ?? ''))
 const sessionId = computed(() => String(route.params.sessionId ?? ''))
+const client = computed(() => view.value?.session.sourceApplication ?? requestedClient.value)
 
 const view = ref<SessionRecordsView | null>(null)
 const loading = ref(false)
@@ -49,7 +54,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const value = await readSessionRecords(spaceId.value, client.value, sessionId.value)
+    const value = await readSessionRecords(spaceId.value, sessionId.value, requestedClient.value)
     if (current === requestVersion) view.value = value
   } catch (cause) {
     if (current === requestVersion) error.value = (cause as Error).message
@@ -84,7 +89,10 @@ watch([opened, view], async ([entry]) => {
   root.value?.querySelector(`[data-return-focus="${entry.key.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'nearest' })
 })
 
-watch([spaceId, client, sessionId], () => { view.value = null; void load() }, { immediate: true })
+watch([spaceId, requestedClient, sessionId], () => {
+  view.value = null
+  if (spaceId.value) void load()
+}, { immediate: true })
 </script>
 
 <template>
@@ -104,12 +112,20 @@ watch([spaceId, client, sessionId], () => { view.value = null; void load() }, { 
           <GrowthLoading v-if="loading" variant="inline" :label="t('sessionRecords.loading')" />
         </div>
         <p v-if="error" role="alert" class="m-0 text-sm text-destructive">{{ t('sessionRecords.loadFailed', { error }) }}</p>
+        <div v-if="view.clients?.length" class="ui-empty grid justify-items-start gap-2 rounded-lg border bg-card" data-session-clients>
+          <p class="m-0 text-sm">{{ t('sessionRecords.chooseClient') }}</p>
+          <div class="flex flex-wrap gap-2">
+            <Button v-for="name in view.clients" :key="name" variant="outline" size="sm" as-child>
+              <RouterLink :to="sessionRecordsPath(sessionId, { client: name })">{{ name }}</RouterLink>
+            </Button>
+          </div>
+        </div>
         <p v-if="view.truncated" class="m-0 text-sm text-muted-foreground" data-session-truncated>{{ t('sessionRecords.truncated') }}</p>
-        <p v-if="!view.total && !view.stretches.length" class="ui-empty m-0 rounded-lg border border-dashed bg-card" data-session-empty>
+        <p v-if="!view.total && !view.stretches.length && !view.clients?.length" class="ui-empty m-0 rounded-lg border border-dashed bg-card" data-session-empty>
           {{ t('sessionRecords.empty') }}
         </p>
 
-        <section v-for="group in SESSION_GROUPS" :key="group" class="grid gap-3" :data-session-group="group"
+        <section v-for="group in view.clients?.length ? [] : SESSION_GROUPS" :key="group" class="grid gap-3" :data-session-group="group"
           :aria-labelledby="`session-group-${group}`">
           <h2 :id="`session-group-${group}`" class="m-0 flex items-baseline gap-2 text-base font-semibold">
             {{ t(`sessionRecords.groups.${group}`) }}

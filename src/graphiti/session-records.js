@@ -22,13 +22,16 @@ const GROUPS = Object.freeze(['transcript', 'knowledge', 'preference_evidence'])
 const MAX_SESSION_ID = 256;
 const MAX_CLIENT = 32;
 
-export async function readSessionRecords(application, { personalSpaceId, sourceApplication, sessionId }) {
+// sourceApplication may be left out: a receipt's short link names only the
+// session, and the Provider finds its client (or says two clients share it).
+export async function readSessionRecords(application, { personalSpaceId, sourceApplication = null, sessionId }) {
   if (personalSpaceId !== application.config.personal.spaceId) {
     invalid('Session records are read in the active personal space');
   }
-  const session = { sourceApplication: client(sourceApplication),
-    sessionId: requiredString(sessionId, 'sessionId', MAX_SESSION_ID) };
-  return sessionRecordsView(application, session, await providerRead(application, session));
+  const sessionIdValue = requiredString(sessionId, 'sessionId', MAX_SESSION_ID);
+  const read = await providerRead(application, { sessionId: sessionIdValue,
+    sourceApplication: sourceApplication ? client(sourceApplication) : null });
+  return sessionRecordsView(application, { sourceApplication: read.source_application ?? null, sessionId: sessionIdValue }, read);
 }
 
 // The caller's own session, as the Agent tool reads it: entries of the turns
@@ -54,10 +57,11 @@ async function providerRead(application, session) {
   return read;
 }
 
-// Only what turns in this project (or no project at all) wrote. A stretch
-// that recorded nothing names no content and stays.
+// Only what turns in this same project wrote; no project is a scope of its
+// own, not one every project sees. A stretch that only another project's
+// turns hold is left out too: even its times are that project's.
 function withinProject(read, projectId) {
-  const visible = id => (id ?? null) === projectId || (id ?? null) === null;
+  const visible = id => (id ?? null) === projectId;
   const turns = read.turns.map(turn => visible(turn.personal_project_id) ? turn
     : { ...turn, hidden: true, messages: [] });
   return { ...read, turns, items: read.items.filter(item => visible(item.origin_project_id)),
@@ -89,7 +93,9 @@ function sessionRecordsView(application, session, read) {
     .sort((left, right) => time(left.at) - time(right.at))
     .map(entry => ({ number: ++number, ...entry, link: link(entry.key) })));
   return { session: { ...session, url: link(null) }, total: entries.length, entries,
-    stretches: notRecordedStretches(read.turns), truncated: Boolean(read.truncated) };
+    stretches: notRecordedStretches(read.turns), truncated: Boolean(read.truncated),
+    // Two or more clients have a session with this ID: the reader picks one.
+    ...(read.clients?.length > 1 ? { clients: read.clients } : {}) };
 }
 
 const itemKey = item => `${item.item_kind}:${item.item_id}`;
@@ -110,6 +116,7 @@ function oneLine(value) {
 function notRecordedStretches(turns) {
   const segments = [];
   turns.forEach((turn, index) => {
+    if (turn.hidden) return;
     const next = turns[index + 1]?.created_at ?? null;
     if (turn.capture_off) {
       const last = [turn.created_at, ...turn.not_recorded.map(marker => marker.created_at)].filter(Boolean).sort().at(-1);

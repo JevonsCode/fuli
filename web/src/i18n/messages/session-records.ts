@@ -29,6 +29,7 @@ export const sessionRecordsMessages = {
       missing: '这个会话里找不到这一项。',
     },
     fromSession: '来自哪个会话',
+    chooseClient: '有多个客户端用过这个会话编号，请选择要看的那一个：',
   },
   'en-US': {
     lede: 'What the {client} session {session} recorded: words it saved, knowledge it added or updated, and what became preference evidence.',
@@ -61,5 +62,6 @@ export const sessionRecordsMessages = {
       missing: 'This session has no such record.',
     },
     fromSession: 'Which session it came from',
+    chooseClient: 'More than one client used this session ID. Choose the one to read:',
   },
 } as const

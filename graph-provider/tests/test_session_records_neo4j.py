@@ -178,3 +178,25 @@ async def test_records_name_the_project_of_the_turn_that_wrote_them_and_follow_t
         stranger = ok(await client.post('/v1/principals', json={'name': 'Synthetic stranger'}))
         async with provider_client(fixture_settings(), stranger['access_token']) as (other, _):
             assert (await session.records(other)).status_code in {403, 404}
+
+
+@pytest.mark.asyncio
+async def test_a_link_naming_only_the_session_finds_its_one_client_and_never_guesses_between_two():
+    async with provider_client(fixture_settings()) as (client, _):
+        space_id = await new_space(client)
+        session = Session(client, space_id, f'native-{uuid4()}')
+        await session.begin()
+        await session.say('Synthetic words')
+        await session.checkpoint()
+        found = ok(await client.post('/v1/session-records', json={
+            'personal_space_id': space_id, 'session_id': session.session_id}))
+        assert (found['source_application'], found['clients'], len(found['turns'])) == ('codex', [], 1)
+        ok(await client.put('/v1/task-contexts', json={
+            'personal_space_id': space_id, 'personal_project_id': 'thesis', 'session_id': session.session_id,
+            'source_application': 'claude_code', 'token': f'fuli-task-{uuid4()}', 'turn_id': 'other-client-turn'}))
+        shared = ok(await client.post('/v1/session-records', json={
+            'personal_space_id': space_id, 'session_id': session.session_id}))
+        assert (shared['source_application'], shared['clients'], shared['turns']) == (None, ['claude_code', 'codex'], [])
+        unknown = ok(await client.post('/v1/session-records', json={
+            'personal_space_id': space_id, 'session_id': 'no-such-session'}))
+        assert (unknown['source_application'], unknown['clients'], unknown['turns']) == (None, [], [])

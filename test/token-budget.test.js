@@ -106,11 +106,13 @@ const BASELINE = Object.freeze({
   // saved items adds one heading (14 chars) and one line per item (152 chars for a short
   // preference, its edit link included, about 70 of them the link). A long receipt
   // stops near 1,800 characters and links the rest.
-  // rec#5 C6: the heading of a turn that saved items links the session's record list
-  // (`（[本会话已记录](<…/sessions/<space>/<client>/<session>>)）`), measured with a UUID session
-  // on the default console: 14 -> 113 chars (+99, about 30 tokens per saving turn). A turn that saved nothing still adds nothing.
+  // rec#5 C6: the heading of a turn that saved items links the session's record list in its
+  // short form, `（[本会话已记录](<…/s/<session>>)）`: the console reads it in its active space
+  // and the Provider finds the session's client. Measured with a UUID session on the default
+  // console: 14 -> 88 chars (+74, about 25 tokens, only on a turn that saved items; the first
+  // form with space and client in the path was +130 with a real UUID space).
   turnReceiptNoChangeChars: 0,
-  turnReceiptHeadingChars: 113,
+  turnReceiptHeadingChars: 88,
   turnReceiptEntryChars: 152,
   // rec#22: only a Codex turn the person starts with an exact `fuli review` line gets this
   // one line (with its separator) after the task entry; the always-loaded Codex bootstrap

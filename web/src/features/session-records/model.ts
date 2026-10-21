@@ -39,7 +39,10 @@ export interface SessionEntry {
 export interface NotRecordedStretch { from: string; to: string; paused: boolean; reasons: string[] }
 
 export interface SessionRecordsView {
-  session: { sourceApplication: string; sessionId: string; url: string }
+  /** sourceApplication is null when the link named no client and not exactly one has the session. */
+  session: { sourceApplication: string | null; sessionId: string; url: string }
+  /** Two or more clients have a session with this ID: the reader picks one. */
+  clients?: string[]
   total: number
   entries: SessionEntry[]
   stretches: NotRecordedStretch[]
@@ -47,16 +50,18 @@ export interface SessionRecordsView {
 }
 
 /** The console path of one session's list; with a key, that record's quick look. */
-export function sessionRecordsPath(spaceId: string, sourceApplication: string, sessionId: string, key = '') {
-  const path = `/sessions/${encodeURIComponent(spaceId)}/${encodeURIComponent(sourceApplication)}/${encodeURIComponent(sessionId)}`
-  return key ? `${path}?item=${encodeURIComponent(spaceId)}/${encodeURIComponent(key)}` : path
+export function sessionRecordsPath(sessionId: string, { client = '', spaceId = '', key = '' } = {}) {
+  const query = [client && `client=${encodeURIComponent(client)}`,
+    key && spaceId && `item=${encodeURIComponent(spaceId)}/${encodeURIComponent(key)}`].filter(Boolean).join('&')
+  return `/s/${encodeURIComponent(sessionId)}${query ? `?${query}` : ''}`
 }
 
 /** A knowledge source's way back to the turn that wrote it (G1-4 / C6-3). */
 export function sourceSessionPath(spaceId: string, source: { session_id?: string | null;
   source_application?: string | null; episode_id: string }) {
   if (!source.session_id || !source.source_application) return ''
-  return sessionRecordsPath(spaceId, source.source_application, source.session_id, `episode:${source.episode_id}`)
+  return sessionRecordsPath(source.session_id, { client: source.source_application, spaceId,
+    key: `episode:${source.episode_id}` })
 }
 
 /**

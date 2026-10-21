@@ -80,7 +80,7 @@ describe('KnowledgeItemEditPage', () => {
     const links = wrapper.findAll('[data-source-session]')
     expect(links).toHaveLength(1)
     expect(links[0].text()).toBe('来自哪个会话')
-    expect(links[0].attributes('href')).toBe('/sessions/space/codex/session-123456789?item=space/episode%3Ae1')
+    expect(links[0].attributes('href')).toBe('/s/session-123456789?client=codex&item=space/episode%3Ae1')
     wrapper.unmount()
   })
 

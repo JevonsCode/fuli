@@ -48,7 +48,15 @@ test('the receipt link opens the session list: one Provider read of exactly that
     body: { personal_space_id: 'personal-space', source_application: 'claude_code', session_id: 's-1' } }]);
   assert.equal(result.body.total, 1);
   assert.deepEqual(result.body.entries[0].project, { id: 'alpha', name: 'Alpha', temporary: false });
-  assert.match(result.body.entries[0].link, /\/sessions\/personal-space\/claude_code\/s-1\?item=personal-space\/turn%3Atask-1$/);
+  assert.match(result.body.entries[0].link, /\/s\/s-1\?item=personal-space\/turn%3Atask-1$/);
+});
+
+test('the receipt\'s short link names only the session: the Provider finds its client', async () => {
+  const { app, calls } = application();
+  const result = await get(app, '/api/session-records?personalSpaceId=personal-space&sessionId=s-1');
+  assert.equal(result.status, 200);
+  assert.deepEqual(calls[0].body, { personal_space_id: 'personal-space', source_application: null, session_id: 's-1' });
+  assert.equal(result.body.session.sourceApplication, 'claude_code', 'the client the Provider found');
 });
 
 test('the link grants nothing: another space or no session is refused before the Provider', async () => {
