@@ -1,5 +1,6 @@
 import { compactTaskContext } from './task-context-view.js';
 import { hookAdditionalContextToolResult } from '../mcp/tool-result.js';
+import { SESSION_FULI_OFF } from '../agent-tools/session-fuli-gate.js';
 
 export const PREFERENCE_RESET_EVENTS = Object.freeze(['SessionStart', 'PreCompact']);
 
@@ -18,6 +19,8 @@ export async function preferenceLifecycleOutput(event, input, { sourceApplicatio
   const recovered = await invoke('read_task_preferences', {
     taskContextToken: task.token, sourceApplication, sourceSessionId: input.session_id, sourceSessionVerified: true
   });
+  // FULI was stopped for the session since its task began (rec#5 C3b): nothing to restore.
+  if (recovered?.status === SESSION_FULI_OFF) return {};
   return preferenceHookOutput(compactTaskContext(recovered), event, input, delivery, sourceApplication,
     'Fuli restored current mandatory preferences for the same owned task. Apply this full result; no replacement task or Agent was selected.', true);
 }

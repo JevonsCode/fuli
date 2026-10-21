@@ -23,7 +23,7 @@ export async function setSessionCapturePause(application, { taskContextToken, se
   const task = await application.taskContextRegistry.context(requiredString(taskContextToken, 'taskContextToken'),
     sourceApplication);
   const sessionId = requiredString(task.sessionId, 'Task host session');
-  const state = await keptInTranscriptLedger(application, task, sessionId)
+  const state = await keptInSessionLedger(application, task.sourceApplication, sessionId, 'session_paused')
     ? savedPause(application, sessionId, { paused: sessionPaused, sourceApplication: task.sourceApplication }) : null;
   // A resumed session may still be off by another layer; the receipt says so.
   const decision = await captureDecision(application, taskCaptureScope(task));
@@ -37,15 +37,16 @@ export async function setSessionCapturePause(application, { taskContextToken, se
 }
 
 // The session's transcript ledger is written before the pause record, on a
-// pause and on a resume alike: it says that the session's native transcript
-// since its last sync is not to be imported. So the stretch is skipped even
+// pause and on a resume alike, and before a start or stop of FULI for the
+// session (rec#5 C3b): it says that the session's native transcript since its
+// last sync is not to be imported. So the stretch is skipped even
 // when the pause record is later lost before any hook ran (C3-5), and the
 // stretch up to a resume is never backfilled (C3-2). Content-free, like every
 // denial the ledger keeps. Only a kept entry lets the pause change.
-async function keptInTranscriptLedger(application, task, sessionId) {
-  const ledger = application.sessionTranscriptLedger?.(task.sourceApplication, sessionId) ?? null;
+export async function keptInSessionLedger(application, sourceApplication, sessionId, reason) {
+  const ledger = application.sessionTranscriptLedger?.(sourceApplication, sessionId) ?? null;
   if (!ledger) return true;
-  return await ledger.deny(captureSettingsVersion(application, sessionId), 'session_paused') === 'kept';
+  return await ledger.deny(captureSettingsVersion(application, sessionId), reason) === 'kept';
 }
 
 function savedPause(application, sessionId, change) {

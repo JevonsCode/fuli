@@ -311,6 +311,15 @@ Code、Codex 和 Cursor 生命周期适配器。已加载、获信任的入口 H
 （`reason: session_paused`）。之前的记录保留，该会话派出的 worker 一并暂停；说「继续记」（`sessionPaused: false`）
 从此恢复，暂停期间的内容不会补记。暂停状态存在本地运行目录，会话结束即失效。
 
+要让某个会话整体停用 FULI，由用户自己输入 `/fuli stop`（Claude Code 和 Cursor，setup 会安装 `fuli` 命令 Skill）
+或 `fuli stop`（所有客户端；Codex 不支持自定义斜杠命令）。这一行由提示词 Hook 直接答复，模型看不到：此后该会话不再注入
+记忆、偏好和召回，其 Agent 自己发起的 FULI 读取（搜索、Agent 记忆、对话）也被拒绝，不再自动记录，也不再自动发起协作（worker、借调、其他 Agent、角色任务）；其他会话、本地服务和已有记忆不变。
+`fuli start` 在现有设置内重新启用（暂停或更严格的全局、客户端、项目设置照样生效），`fuli restart` 还会让下一轮重新拿到完整
+上下文，`fuli status` 显示本会话和默认设置；停用期间的对话不会补录。已发给模型的上下文无法撤回，需要完全隔离请新开会话。
+只有任务令牌能说明一次工具调用属于哪个会话（Claude Code 的工具连接跨 /clear 保留，Codex、Cursor 的连接不带会话），所以某个客户端有任一会话停用期间，它不带任务令牌的工具调用一律拒绝，不把记忆提供给可能正是已停用的那个会话。Agent 传入手上已有的 `taskContextToken`（入口、搜索和团队类读取都接受），其他窗口照常工作。
+在客户端启动的 shell 里也可以运行同一开关（`!fuli session stop`），因此能运行 shell 的 Agent 也能改它（与能读写本地文件同等信任）；控制台和 `fuli mcp --call` 仍可为你读取；`fuli session default off` 让新会话默认不启用、
+需显式启用，已打开的会话保持原状。
+
 本地可先运行下面两个契约测试，验证 README 说明和项目路径解析仍与实现一致：
 
 ```bash
@@ -395,7 +404,7 @@ sequenceDiagram
    环境变量名，例如先执行 `export PROJECT_KB_TOKEN='...'`，再执行 `fl restart`。
 3. 打开 `http://127.0.0.1:2727/connections`，在“外部知识库”中填写连接名称、连接器、
    绑定项目（可多选）和检索模式。
-4. MCP HTTP 填写服务 URL 和可选的令牌环境变量名；MCP stdio 填写命令与参数；Notion
+4. MCP HTTP 填写最终端点 URL（不跟随跨源重定向）和可选的令牌环境变量名；MCP stdio 填写命令与参数；Notion
    填写令牌环境变量名以及 Page IDs 或 Data Source IDs；飞书 / Lark 填写令牌环境变量名、
    区域和明确的 Space ID、根节点 Token 或 Node Tokens；RAG Retrieval API 填写 Dify 兼容
    端点、知识库 ID 和可选令牌环境变量名；自定义连接器填写受信任本地 ESM 模块与来源 JSON。

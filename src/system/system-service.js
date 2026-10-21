@@ -38,7 +38,8 @@ export function createSystemService({
       sessionSkillPath: paths.sessionSkillPath,
       projectSkillPath: paths.projectSkillPath,
       reviewSkillPath: paths.reviewSkillPath,
-      operationSkillPath: paths.operationSkillPath
+      operationSkillPath: paths.operationSkillPath,
+      sessionCommandSkillPath: paths.sessionCommandSkillPath
     },
     historyPath: join(paths.dataDir, 'client-connection-observations.json')
   }),

@@ -18,7 +18,8 @@ export function inspectAgentInstallations(agents, context, {
       [context.sessionSkillPath, agent.skillPath],
       [context.projectSkillPath, agent.projectSkillPath],
       [context.reviewSkillPath, agent.reviewSkillPath],
-      [context.operationSkillPath, agent.operationSkillPath]
+      [context.operationSkillPath, agent.operationSkillPath],
+      [context.sessionCommandSkillPath, agent.sessionCommandSkillPath]
     ].filter(([, targetPath]) => targetPath);
     const skillsPresent = skillPairs.some(([, targetPath]) => fileExists(targetPath));
     const skillsCurrent = skillPairs.every(
