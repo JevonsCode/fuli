@@ -249,7 +249,7 @@ for (const [source, run] of adapters) {
     assert.match(result.systemMessage, /transcript|Transcript/);
   });
 
-  // Claude Code enters every prompt (rec#15); its isMeta cases are in claude-code-lifecycle-hook.test.js.
+  // Claude Code re-reads the current task for isMeta turns (rec#15); see claude-code-lifecycle-hook.test.js.
   if (source === 'codex') test(`${source}: trusted isMeta system deliveries bypass runtime; user text resembling them does not`, async t => {
     const f = await fixture(t, source);
     const never = () => { throw new Error('system delivery opened runtime'); };
