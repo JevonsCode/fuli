@@ -174,6 +174,13 @@ export function finishTask(f, context, sourceApplication = 'codex') {
 
 export const receiptOf = context => context.agent_receipt.markdown;
 
+// A long-term change an Agent asked for and the person confirmed in the console (rec#5 C4-2, rec#11 D-16).
+export async function confirmedCaptureChange(f, settings) {
+  const asked = await callAgentTool(f.app, 'update_capture_policy', settings);
+  if (asked.status !== 'confirmation_required') throw new Error(`Expected a preview, got ${asked.status}`);
+  return f.app.captureChanges.confirm(asked.confirmUrl.split('/').at(-1));
+}
+
 export const transcriptRow = text => `${JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant',
   content: [{ type: 'output_text', text }] } })}
 `;

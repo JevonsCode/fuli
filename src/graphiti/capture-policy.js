@@ -2,8 +2,8 @@ import { readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
-import { DEFAULT_PROJECT_SETTINGS, PROJECT_SETTING_KEYS, storedProjectSettings, updatedProjectSettings,
+import { jsonFormat, updateVersionedJsonFileAtomic, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { DEFAULT_PROJECT_SETTINGS, PROJECT_CHANGE_KEYS, storedProjectSettings, updatedProjectSettings,
   usesProjectModes } from './capture-project-mode.js';
 
 // Capturing a client's sessions is separate from that client using FULI tools:
@@ -20,9 +20,11 @@ const DEFAULT_POLICY = Object.freeze({
   ...DEFAULT_PROJECT_SETTINGS,
   updatedAt: null
 });
-const SETTING_KEYS = Object.freeze(['enabled', 'disabledSources', ...PROJECT_SETTING_KEYS]);
+const SETTING_KEYS = Object.freeze(['enabled', 'disabledSources', ...PROJECT_CHANGE_KEYS]);
 
 const ABSENT = 'absent';
+// Saves that keep landing while one change is merged; the change then fails instead of waiting longer.
+const MAX_MERGE_ATTEMPTS = 5;
 const UNREADABLE = Object.freeze({ generation: 0 });
 
 export class CapturePolicyConfigurationError extends TypeError {}
@@ -132,8 +134,50 @@ export class CapturePolicyStore {
   }
 
   // A partial update: settings it does not name keep their current value, so
-  // changing projects never turns recording back on, and the reverse.
-  update(input) {
+  // changing projects never turns recording back on, and the reverse. The
+  // change is merged into the settings saved at the moment of writing: when
+  // another process saved in between (its write is checked under the format
+  // lock every save takes), the change is merged again into what it saved.
+  // ifVersion: save only while the settings are still at that version();
+  // accept(next): save only a result it accepts. Otherwise fail with code
+  // capture_settings_changed.
+  update(input, { ifVersion = null, accept = () => true } = {}) {
+    const changed = () => Object.assign(new Error('The capture settings changed'), { code: 'capture_settings_changed' });
+    if (!this.path) {
+      if (ifVersion !== null && this.version() !== ifVersion) throw changed();
+      const { next } = this.preview(input);
+      if (!accept(next)) throw changed();
+      this.memory = next;
+      return { ...next };
+    }
+    for (let attempt = 1; ; attempt += 1) {
+      const base = this.#fileKey();
+      const { next } = this.preview(input);
+      // A repair from defaults must not replace settings a newer FULI saved (rec#17).
+      const saved = updateVersionedJsonFileAtomic(this.path, CAPTURE_POLICY_FORMAT, () => {
+        if (ifVersion !== null && this.#settledVersion() !== ifVersion) throw changed();
+        if (!accept(next)) throw changed();
+        return this.#fileKey() === base ? { version: usesProjectModes(next) ? 2 : 1, ...next } : undefined;
+      }, { read: () => null });
+      if (saved) {
+        this.#nextGeneration(this.#readGeneration(), this.#fileKey());
+        return { ...next };
+      }
+      if (attempt >= MAX_MERGE_ATTEMPTS) throw changed();
+    }
+  }
+
+  // version() without moving the generation, for a check under the format
+  // lock; null when the file changed since the generation last observed it.
+  #settledVersion() {
+    const observed = this.#fileKey();
+    const stored = this.#readGeneration();
+    if (stored === null && observed === ABSENT) return ABSENT;
+    return stored?.observed === observed ? `${stored.generation}:${stored.nonce}` : null;
+  }
+
+  // The settings now and what update(input) would save, without saving it.
+  preview(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       throw new TypeError('Capture policy update must be an object');
     }
@@ -147,21 +191,13 @@ export class CapturePolicyStore {
     }
     const current = this.#currentForUpdate(input);
     const now = this.now();
-    const next = {
+    return { current, next: {
       enabled: input.enabled ?? current.enabled,
       disabledSources: input.disabledSources === undefined
         ? current.disabledSources : validSources(input.disabledSources, TypeError),
       ...updatedProjectSettings(current, input, now),
       updatedAt: now
-    };
-    if (!this.path) {
-      this.memory = next;
-      return { ...next };
-    }
-    // A repair from defaults must not replace settings a newer FULI saved (rec#17).
-    writeVersionedJsonFileAtomic(this.path, { version: usesProjectModes(next) ? 2 : 1, ...next }, CAPTURE_POLICY_FORMAT);
-    this.#nextGeneration(this.#readGeneration(), this.#fileKey());
-    return { ...next };
+    } };
   }
 
   // Settings FULI cannot read record nothing until the person sets the global

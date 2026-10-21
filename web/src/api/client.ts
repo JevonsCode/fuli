@@ -24,6 +24,18 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+// Why a request failed, in words: the API's own { "error": "…" } text for a
+// request it refused, otherwise the error's message.
+export function apiErrorReason(error: unknown, fallback = t('common.errors.operationFailed')): string {
+  if (error instanceof ApiError && error.status < 500 && error.detail) {
+    try {
+      const reason = (JSON.parse(error.detail) as { error?: unknown })?.error
+      if (typeof reason === 'string' && reason) return reason
+    } catch { /* A plain-text answer is already the message. */ }
+  }
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
 export function getJson<T>(
   url: string,
   init?: Pick<RequestInit, 'signal'>,
