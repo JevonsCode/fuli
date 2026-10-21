@@ -169,7 +169,7 @@ flowchart LR
 
 | 类型 | 读取能力 | 凭据 | 当前边界 |
 | --- | --- | --- | --- |
-| MCP | Resources `list/read`；可配置 `search` / `fetch` 只读工具 | Bearer/Header 环境变量或 stdio 环境映射 | HTTPS 或回环 HTTP；stdio 命令必须受信任；远程交互式 OAuth TODO |
+| MCP | Resources `list/read`；可配置 `search` / `fetch` 只读工具 | Bearer/Header 环境变量或 stdio 环境映射 | HTTPS 或回环 HTTP，填写最终端点（不跟随跨源重定向）；stdio 命令必须受信任；远程交互式 OAuth TODO |
 | Notion | 页面 Markdown、Data Source 查询、工作区搜索 | Integration token 环境变量 | API 版本 `2026-03-11`；绑定必须明确 page IDs 或 data source IDs |
 | 飞书 / Lark | Wiki 节点、子节点、搜索和 Docx 纯文本 | access token，或 app ID/secret 环境变量 | 当前只提取 Docx 正文；Wiki 搜索通常需要 user access token |
 | RAG Retrieval API | Dify 兼容 `POST` 检索 | 可选 Bearer token 环境变量 | 仅 `live`；HTTPS 或回环 HTTP；稳定文档元数据可提升来源质量 |

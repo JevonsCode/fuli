@@ -8,24 +8,26 @@ const SESSION_COMMAND_SKILL_NAME = 'fuli';
 // sessionCommand: whether the client turns an installed Skill into a /name
 // command the person can type. Codex accepts no user-defined slash command
 // (its TUI rejects an unknown one before any hook runs), so there the person
-// types `fuli stop` without the slash and no Skill is installed.
+// types `fuli stop` without the slash and no Skill is installed. For the same
+// reason the review is typed `fuli review` there (rec#22): the Codex prompt
+// hook names the installed `flreview` Skill for that exact line.
 const ADAPTERS = Object.freeze({
   codex: Object.freeze({
     root: ['.agents', 'skills'],
+    userCommand: 'fuli review',
     nativeInvocation: '$flreview',
-    needsCommandBridge: true,
     sessionCommand: false
   }),
   'claude-code': Object.freeze({
     root: ['.claude', 'skills'],
+    userCommand: '/flreview',
     nativeInvocation: '/flreview',
-    needsCommandBridge: false,
     sessionCommand: true
   }),
   cursor: Object.freeze({
     root: ['.cursor', 'skills'],
+    userCommand: '/flreview',
     nativeInvocation: '/flreview',
-    needsCommandBridge: false,
     sessionCommand: true
   })
 });
@@ -44,14 +46,9 @@ export function adaptAgentForCommandSkills(agent, { homeDir, pathApi }) {
 export function reviewSkillTrigger(agentId) {
   const adapter = adapterFor(agentId);
   return {
-    userCommand: '/flreview',
-    nativeInvocation: adapter.nativeInvocation,
-    needsCommandBridge: adapter.needsCommandBridge
+    userCommand: adapter.userCommand,
+    nativeInvocation: adapter.nativeInvocation
   };
-}
-
-export function codexReviewCommandBridge() {
-  return 'Exact `/flreview`: load installed `flreview` Skill.';
 }
 
 function adapterFor(agentId) {
