@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { EXTERNAL_KNOWLEDGE_FORMAT, ExternalKnowledgeRegistry } from '../src/external-knowledge/registry.js';
-import { writeVersionedJsonFileAtomic } from '../src/storage/json-format.js';
+import { inspectJsonStore, refusePendingJsonMigration, writeVersionedJsonFileAtomic } from '../src/storage/json-format.js';
 import {
   applyConfirmedJsonMigration, describeJsonRestore, jsonBackupFiles, previewJsonMigration, recoverJsonFile,
   restoreJsonFile, rollbackJsonMigration, undoableJsonMigrations
@@ -386,4 +386,88 @@ test('a registry write waits for an undo holding the format lock, then sees v1 a
   const document = JSON.parse(readFileSync(path, 'utf8'));
   assert.equal(document.version, 1);
   assert.deepEqual(document.bindings.map((binding) => binding.id), ['b-1', 'b-2']);
+});
+
+// Another process applies the confirmed migration, holding the format lock
+// for holdMs after it committed the ledger.
+function applyInAnotherProcess(path, digest, { holdMs = 0 } = {}) {
+  const registry = new URL('../src/external-knowledge/registry.js', import.meta.url).href;
+  const engine = new URL('../src/storage/json-format-migration.js', import.meta.url).href;
+  const script = `import { writeSync } from 'node:fs';
+    import { EXTERNAL_KNOWLEDGE_FORMAT } from ${JSON.stringify(registry)};
+    import { applyConfirmedJsonMigration } from ${JSON.stringify(engine)};
+    const hold = Number(process.argv[3]);
+    applyConfirmedJsonMigration(process.argv[1], EXTERNAL_KNOWLEDGE_FORMAT, { digest: process.argv[2],
+      actor: { entrypoint: 'cli' }, stage: (name) => {
+        if (name === 'ledger' && hold) {
+          writeSync(1, 'applied ');
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, hold);
+        }
+      } });`;
+  return spawn(process.execPath, ['--input-type=module', '-e', script, path, digest, String(holdMs)]);
+}
+
+function appliedEvent(path) {
+  return JSON.parse(readFileSync(ledgerPath(path), 'utf8')).events.find((event) => event.status === 'applied');
+}
+
+test('pending bookkeeping that saw v1 before another process applied records nothing and keeps the applied event', async (t) => {
+  const { path } = legacyRegistry(t);
+  const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+  // This process saw v1 (and would record "pending")...
+  assert.equal(JSON.parse(readFileSync(path, 'utf8')).version, 1);
+  // ...another process confirms the apply meanwhile...
+  assert.equal(await exited(applyInAnotherProcess(path, plan.digest)), 0);
+  const applied = appliedEvent(path);
+  assert.ok(applied.applyId && applied.backupRef && applied.afterDigest && applied.planDigest);
+
+  // ...and the bookkeeping resumes.
+  assert.equal(refusePendingJsonMigration(path, { format: EXTERNAL_KNOWLEDGE_FORMAT, detail: '2 bindings' }), false);
+
+  const events = JSON.parse(readFileSync(ledgerPath(path), 'utf8')).events;
+  assert.deepEqual(events.find((event) => event.status === 'applied'), applied, 'every field of the apply survives');
+  assert.equal(events.some((event) => event.status === 'pending_confirmation'), false, 'nothing recorded against v2');
+  assert.equal(new ExternalKnowledgeRegistry(path).delete('b-2'), true, 'the change is made on v2');
+});
+
+test('pending bookkeeping waits for an apply holding the lock and reads the ledger only after it', async (t) => {
+  const { path } = legacyRegistry(t);
+  const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+  // An earlier refusal already put a pending event in the ledger.
+  assert.throws(() => new ExternalKnowledgeRegistry(path).delete('b-2'), { code: 'data_format_pending' });
+  const child = applyInAnotherProcess(path, plan.digest, { holdMs: 1500 });
+  let output = '';
+  child.stdout.on('data', (chunk) => { output += chunk; });
+  const deadline = Date.now() + 20_000;
+  while (!output.includes('applied')) {
+    assert.ok(Date.now() < deadline, `the apply did not start: ${output}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const started = Date.now();
+
+  assert.equal(refusePendingJsonMigration(path, { format: EXTERNAL_KNOWLEDGE_FORMAT, detail: 'another detail' }), false);
+
+  assert.ok(Date.now() - started >= 1000, 'it read the file and the ledger only once the apply released the lock');
+  assert.equal(await exited(child), 0);
+  const statuses = JSON.parse(readFileSync(ledgerPath(path), 'utf8')).events.map((event) => event.status);
+  assert.deepEqual(statuses, ['pending_confirmation', 'applied']);
+  assert.ok(appliedEvent(path).applyId);
+});
+
+test('preview and status show a conflict a settling restore left, before any writer runs', (t) => {
+  const fixture = conflictedRegistry(t);
+  assert.throws(() => restoreJsonFile(fixture.path, EXTERNAL_KNOWLEDGE_FORMAT, { backupRef: fixture.backup.ref,
+    expected: fixture.impact, actor: CLI, stage: (name) => { if (name === 'intent') throw new Error('power cut'); } }),
+  /power cut/);
+  const before = readFileSync(fixture.path);
+  const intent = readFileSync(intentPath(fixture.path));
+
+  // Read only, straight after the failure: the restore's own intent says
+  // "dropped", the conflict it settles is what stands.
+  assert.equal(previewJsonMigration(fixture.path, EXTERNAL_KNOWLEDGE_FORMAT).action, 'blocked');
+  const status = inspectJsonStore(fixture.path, EXTERNAL_KNOWLEDGE_FORMAT);
+  assert.equal(status.state, 'half_applied');
+  assert.deepEqual(status.steps.map((step) => step.id), ['external-knowledge/2-binding-targets']);
+  assert.deepEqual(readFileSync(fixture.path), before);
+  assert.deepEqual(readFileSync(intentPath(fixture.path)), intent, 'reading changed no intent');
 });

@@ -211,12 +211,20 @@ export function readJsonIntent(filePath) {
   }
 }
 
-// null, 'completed', 'dropped' or 'conflict': what resolving would do, read only.
+// null, 'completed', 'dropped' or 'conflict': what resolving would leave,
+// read only. A restore's intent that never wrote the file puts back the
+// conflict it was settling, so that nested intent decides.
 export function jsonIntentResolution(filePath) {
   const intent = readJsonIntent(filePath);
   if (!intent) return null;
   const current = readCurrentJson(filePath);
   const digest = current ? contentHash(current) : null;
+  let effective = intent;
+  while (effective.settles && topResolution(effective, digest) === 'dropped') effective = effective.settles;
+  return topResolution(effective, digest);
+}
+
+function topResolution(intent, digest) {
   if (digest === intent.afterDigest) return 'completed';
   return digest === intent.beforeDigest ? 'dropped' : 'conflict';
 }
@@ -225,7 +233,8 @@ function resolveInterruptedChange(filePath, format, { allowConflict = false } = 
   const intent = readJsonIntent(filePath);
   if (!intent) return null;
   assertJsonFormatWritable(jsonIntentPath(filePath), JSON_INTENT_FORMAT);
-  const resolution = jsonIntentResolution(filePath);
+  const current = readCurrentJson(filePath);
+  const resolution = topResolution(intent, current ? contentHash(current) : null);
   if (resolution === 'completed') {
     const committed = jsonLedgerEvents(filePath).some((event) => event.status === intent.event.status
       && event.migrationId === intent.event.migrationId && event.recordedAt === intent.event.recordedAt);
@@ -249,17 +258,25 @@ const LEDGER_FORMAT = jsonFormat({ store: 'json-format-ledger', versions: [LEDGE
 
 // A migration this file needs but no automatic step may run: it is recorded
 // once in the file's ledger beside it, and the write that needed it refused.
+// Everything under the directory lock: the file is read again (a confirmed
+// apply may have moved it on since the caller looked: then nothing is
+// recorded and false is returned, so the caller reads again), and the ledger
+// is read and appended to in the same hold, never written back from a
+// snapshot read outside it.
 export function refusePendingJsonMigration(filePath, { format, detail, now = () => new Date() }) {
   const { migration } = format;
-  const ledgerPath = jsonLedgerPath(filePath);
-  const ledger = readJsonFile(ledgerPath, { version: LEDGER_FORMAT_VERSION, events: [] });
-  const latest = ledger.events.findLast((event) => event.migrationId === migration.id);
-  if (latest?.status !== 'pending_confirmation' || latest.detail !== detail) {
-    writeVersionedJsonFileAtomic(ledgerPath, { version: LEDGER_FORMAT_VERSION, events: [...ledger.events, {
-      migrationId: migration.id, fromVersion: migration.from, toVersion: migration.to,
-      status: 'pending_confirmation', backupRef: null, detail, recordedAt: now().toISOString()
-    }] }, LEDGER_FORMAT);
-  }
+  const stillPending = withJsonFormatLock(filePath, () => {
+    resolveInterruptedChange(filePath, format);
+    if (readCurrentJson(filePath)?.version !== format.pendingFrom) return false;
+    const latest = jsonLedgerEvents(filePath).findLast((event) => event.migrationId === migration.id);
+    if (latest?.status !== 'pending_confirmation' || latest.detail !== detail) {
+      appendJsonLedgerEvent(lockedWrite, filePath, { migrationId: migration.id, fromVersion: migration.from,
+        toVersion: migration.to, status: 'pending_confirmation', backupRef: null, detail,
+        recordedAt: now().toISOString() });
+    }
+    return true;
+  });
+  if (!stillPending) return false;
   throw pendingMigrationError(format.store, migration, detail);
 }
 
@@ -276,6 +293,17 @@ export function inspectJsonStore(filePath, format) {
     return { ...report, state: 'unavailable', note: `cannot be read (${error.code ?? error.message})` };
   }
   const version = document?.version;
+  const interrupted = jsonIntentResolution(filePath);
+  if (interrupted === 'conflict') {
+    const intent = readJsonIntent(filePath);
+    const conflicting = intent.settles && topResolution(intent, contentHash(document)) === 'dropped' ? intent.settles : intent;
+    return { ...report, version: version ?? null, state: 'half_applied',
+      steps: [{ id: conflicting.event?.migrationId ?? `${format.store}/unknown`, state: 'half_applied',
+        detail: 'an interrupted change left the file neither as it was nor as it would have left it' }] };
+  }
+  if (interrupted) {
+    report.note = `an interrupted change is ${interrupted === 'completed' ? 'committed' : 'dropped'} by the next write`;
+  }
   if (!Number.isInteger(version)) return { ...report, state: 'unversioned', note: 'written before versioning' };
   if (version > format.supported) return { ...report, version, state: 'newer_format' };
   if (version === format.pendingFrom) {

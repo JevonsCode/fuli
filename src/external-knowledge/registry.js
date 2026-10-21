@@ -5,6 +5,8 @@ import { acquireFileLock } from '../storage/file-lock.js';
 import { ApplicationError } from '../app/application-error.js';
 
 const CURRENT_VERSION = 2;
+// A change met a v1 registry that a confirmed apply then moved on: once more.
+const MUTATION_ATTEMPTS = 2;
 const EMPTY_REGISTRY = Object.freeze({ version: CURRENT_VERSION, bindings: [] });
 // A version 1 registry still reads, converted in memory; writing it would
 // restructure every binding, which waits for a person (rec#17 D-09).
@@ -68,19 +70,25 @@ export class ExternalKnowledgeRegistry {
 
   // The read, the pending check and the write under one hold of the format
   // lock, so a confirmed migration or undo by another process cannot land
-  // between them. A version 1 registry is refused, recorded once in its
-  // ledger after the lock is released.
+  // between them. A version 1 registry is refused and recorded in its ledger
+  // (refusePendingJsonMigration checks the file again under the lock); if a
+  // confirmed apply moved it on meanwhile, the change is made on that.
   #mutate(change) {
-    let pending = null;
-    updateVersionedJsonFileAtomic(this.filePath, EXTERNAL_KNOWLEDGE_FORMAT, (current) => {
-      const document = validated(current ?? EMPTY_REGISTRY);
-      if (document.version === 1) {
-        pending = `${document.bindings.length} bindings were written by an earlier FULI`;
-        return undefined;
-      }
-      return change(clone(document));
-    });
-    if (pending) refusePendingJsonMigration(this.filePath, { format: EXTERNAL_KNOWLEDGE_FORMAT, detail: pending });
+    for (let attempt = 0; attempt < MUTATION_ATTEMPTS; attempt += 1) {
+      let pending = null;
+      updateVersionedJsonFileAtomic(this.filePath, EXTERNAL_KNOWLEDGE_FORMAT, (current) => {
+        const document = validated(current ?? EMPTY_REGISTRY);
+        if (document.version === 1) {
+          pending = `${document.bindings.length} bindings were written by an earlier FULI`;
+          return undefined;
+        }
+        return change(clone(document));
+      });
+      if (!pending) return;
+      refusePendingJsonMigration(this.filePath, { format: EXTERNAL_KNOWLEDGE_FORMAT, detail: pending });
+    }
+    throw new ApplicationError('external_knowledge_busy', 'The registry changed format while this change was made; '
+      + 're-read state before retrying');
   }
 
   #read() {
