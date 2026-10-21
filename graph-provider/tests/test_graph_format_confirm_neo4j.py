@@ -611,3 +611,88 @@ async def test_another_provider_cannot_write_during_an_undo_and_learns_the_graph
     assert write['waited'] and refused.value.code == 'data_format_changed_underneath'
     rows = await _rows(driver, "MATCH (e:Entity {uuid: 'entity-b'}) RETURN e.name AS name, e.group_id AS g")
     assert rows == [{'name': 'Synthetic other entity', 'g': 'legacy:personal:legacy-space'}]
+
+
+async def _seed_journals(driver):
+    """Five synthetic undo journals, newest first: applied, applied, undone, applied, undone,
+    in a graph whose ledger is at the current version."""
+    await driver.execute_query(
+        "MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = $version", version=GRAPH_FORMAT_VERSION,
+    )
+    await driver.execute_query(
+        """
+        UNWIND $journals AS journal
+        CREATE (:FuliDataFormatUndo {apply_id: journal.id, kind: 'apply', migration_id: 'graph/5-x',
+                                     state: journal.state, reversible: true, plan_digest: journal.id,
+                                     from_version: 4, to_version: 5,
+                                     recorded_at: datetime(journal.at)})
+        WITH journal
+        UNWIND range(1, 2) AS entry
+        CREATE (:FuliDataFormatUndo {apply_id: journal.id, kind: 'record', touch: 0, target: 'node',
+                                     ref: journal.id + ':' + entry, after_hash: 'h'})
+        """,
+        journals=[
+            {'id': 'j1', 'state': 'applied', 'at': '2026-10-05T00:00:00Z'},
+            {'id': 'j2', 'state': 'applied', 'at': '2026-10-04T00:00:00Z'},
+            {'id': 'j3', 'state': 'rolled_back', 'at': '2026-10-03T00:00:00Z'},
+            {'id': 'j4', 'state': 'applied', 'at': '2026-10-02T00:00:00Z'},
+            {'id': 'j5', 'state': 'rolled_back', 'at': '2026-10-01T00:00:00Z'},
+        ],
+    )
+
+
+async def _journal_ids(driver):
+    rows = await _rows(driver, "MATCH (u:FuliDataFormatUndo {kind: 'apply'}) RETURN u.apply_id AS id ORDER BY id")
+    return [row['id'] for row in rows]
+
+
+@pytest.mark.asyncio
+async def test_undo_journals_are_pruned_to_the_soft_target_undone_ones_first(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _seed_journals(driver)
+    managed, maintenance = _maintenance(settings)
+    try:
+        dry = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=2,
+                                                              max_bytes=10**9, dry_run=True)
+        assert await _journal_ids(driver) == ['j1', 'j2', 'j3', 'j4', 'j5']
+        result = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=2, max_bytes=10**9)
+    finally:
+        await managed.close()
+
+    assert [entry['applyId'] for entry in result['pruned']] == [entry['applyId'] for entry in dry['pruned']]
+    assert sorted(entry['applyId'] for entry in result['pruned']) == ['j3', 'j5'], 'undone journals go first'
+    assert await _journal_ids(driver) == ['j1', 'j2', 'j4']
+    assert await _rows(driver, "MATCH (u:FuliDataFormatUndo {apply_id: 'j3'}) RETURN count(u) AS n") == [{'n': 0}]
+    assert all(set(entry) == {'store', 'applyId', 'migrationId', 'state', 'bytes', 'reason'} for entry in result['pruned'])
+
+
+@pytest.mark.asyncio
+async def test_the_journal_an_undo_needs_is_never_pruned(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _seed_journals(driver)
+    managed, maintenance = _maintenance(settings)
+    try:
+        result = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=0, max_bytes=1)
+    finally:
+        await managed.close()
+
+    assert result['protected'] == 'j1'
+    assert await _journal_ids(driver) == ['j1']
+    assert await _rows(driver, "MATCH (u:FuliDataFormatUndo {apply_id: 'j1'}) RETURN count(u) AS n") == [{'n': 3}]
+
+
+@pytest.mark.asyncio
+async def test_pruning_journals_takes_the_review_channel(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    await _seed_journals(driver)
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        body = {'keep': 0, 'max_bytes': 1}
+        refused = await client.post('/v1/data-format/prune', json=body)
+        pruned = await client.post('/v1/data-format/prune', headers=REVIEW, json=body)
+
+    assert refused.status_code == 403
+    assert pruned.status_code == 200, pruned.text
+    assert await _journal_ids(driver) == ['j1']

@@ -200,6 +200,38 @@ async def applied_journals(queries) -> list[JournalHeader]:
     return [_header(record) for record in await _rows(queries, _HEADERS)]
 
 
+async def journal_inventory(queries) -> list[dict]:
+    """Every journal in the graph, newest first: its apply, state, entries
+    and an estimate of its size (the JSON size of its nodes' properties)."""
+    records = await _rows(
+        queries,
+        f"""
+        MATCH (u:{UNDO_LABEL})
+        RETURN u.apply_id AS apply_id, u.kind AS kind, u.state AS state,
+               u.migration_id AS migration_id, toString(u.recorded_at) AS recorded_at,
+               properties(u) AS properties
+        """,
+    )
+    journals = {}
+    for record in records:
+        journal = journals.setdefault(record['apply_id'], {
+            'applyId': record['apply_id'], 'migrationId': None, 'state': None, 'recordedAt': None,
+            'entries': 0, 'bytes': 0,
+        })
+        journal['entries'] += 1
+        journal['bytes'] += len(json.dumps(dict(record['properties']), default=str, ensure_ascii=False))
+        if record['kind'] == 'apply':
+            journal.update(migrationId=record['migration_id'], state=record['state'],
+                           recordedAt=record['recorded_at'])
+    return sorted(journals.values(), key=lambda journal: journal['recordedAt'] or '', reverse=True)
+
+
+async def delete_journal(queries, apply_id) -> None:
+    await queries.execute_query(
+        f'MATCH (u:{UNDO_LABEL} {{apply_id: $apply_id}}) DETACH DELETE u', apply_id=apply_id,
+    )
+
+
 async def lock_journaled(queries, header, migration) -> None:
     """Takes the write lock of every record the undo may change, before it
     checks them, and keeps it to the commit: a business write meanwhile

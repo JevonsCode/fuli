@@ -1,5 +1,5 @@
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
-import { pruneFormatBackups } from './backup-retention.js';
+import { backupRetentionPolicy, pruneFormatBackups } from './backup-retention.js';
 import { GRAPH_LABEL, localStore, localStoresWithEngines, previewMigrations } from './migration-plan.js';
 import { findApplyReceipt, recordApplyReceipt } from './apply-receipts.js';
 import { recordFormatOperations } from './operations-log.js';
@@ -56,9 +56,10 @@ export async function applyMigrations({ dataDir, digest, actor, graph, now = () 
     fromVersion: result.fromVersion, toVersion: result.toVersion, count: result.count,
     backupRef: result.backupRef ?? null, entrypoint: actor.entrypoint, at })));
   const failed = results.some((result) => result.status === 'failed');
+  const graphChanged = results.some((result) => result.label === GRAPH_LABEL && result.status === 'applied');
   return { status: failed ? (results.length > 1 ? 'partial' : 'failed') : 'applied', results,
     skipped: stores.slice(results.length).map(({ label, migrationId }) => ({ label, migrationId })),
-    pruned: pruneQuietly(prune, dataDir) };
+    pruned: [...pruneQuietly(prune, dataDir), ...graphChanged ? await graphPruneQuietly(dataDir, graph, now) : []] };
 }
 
 async function applyStore(dataDir, store, actor, graph) {
@@ -84,7 +85,8 @@ export async function rollbackMigration({ dataDir, label, migrationId, actor, gr
   recordFormatOperations(dataDir, [{ kind: 'rolled_back', store: result.store, label, migrationId,
     toVersion: result.version, backupRef: result.backupRef ?? null, entrypoint: actor.entrypoint,
     at: now().toISOString() }]);
-  return { ...result, label, pruned: pruneQuietly(prune, dataDir) };
+  return { ...result, label, pruned: [...pruneQuietly(prune, dataDir),
+    ...label === GRAPH_LABEL ? await graphPruneQuietly(dataDir, graph, now) : []] };
 }
 
 // What restoring label from backupRef would discard, and the backups to choose from.
@@ -133,6 +135,28 @@ function requiredStore(dataDir, label) {
   const local = localStore(dataDir, label);
   if (!local) throw new TypeError(`No FULI store is labelled ${label}`);
   return local;
+}
+
+// The graph's undo journals, kept to the same soft target as the file
+// backups by the provider (it never prunes the journal an undo needs). What
+// was pruned is logged like a pruned backup: step, size and reason only.
+export async function pruneGraphJournals({ dataDir, graph, policy = backupRetentionPolicy(), dryRun = false,
+  now = () => new Date() }) {
+  const result = await graph.prune({ keep: policy.keep, maxBytes: policy.maxBytes, dryRun });
+  const at = now().toISOString();
+  const events = (result.pruned ?? []).map((entry) => ({ kind: 'pruned', store: 'graph', label: GRAPH_LABEL,
+    backupRef: `undo journal ${entry.applyId}`, migrationId: entry.migrationId, bytes: entry.bytes,
+    reason: entry.reason, at }));
+  if (!dryRun) recordFormatOperations(dataDir, events);
+  return { pruned: events, kept: result.kept ?? 0 };
+}
+
+async function graphPruneQuietly(dataDir, graph, now) {
+  try {
+    return (await pruneGraphJournals({ dataDir, graph, now })).pruned;
+  } catch (error) {
+    return [{ kind: 'prune_failed', store: 'graph', reason: error.message }];
+  }
 }
 
 // A retention problem never undoes or hides the operation that preceded it.

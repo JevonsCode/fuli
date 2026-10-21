@@ -38,6 +38,8 @@ from .graph_format_journal import (
     applied_journals,
     changed_since,
     close_journal,
+    delete_journal,
+    journal_inventory,
     lock_journaled,
     open_journal,
     undo_journal,
@@ -203,6 +205,44 @@ async def apply_graph_migration(
                 'applyId': apply_id, 'count': plan['step']['count'],
                 'fromVersion': migration.from_version, 'toVersion': migration.to_version,
                 'backupRef': f'undo journal {apply_id}' if migration.journal.reversible else None}
+
+    return await _locked(driver, settings, now, lock_wait_seconds, sleep, operation)
+
+
+async def prune_graph_journals(
+    driver, settings, *, keep: int, max_bytes: int, dry_run: bool = False, now=now_utc,
+    lock_wait_seconds=LOCK_WAIT_SECONDS, sleep=asyncio.sleep,
+) -> dict:
+    """Keeps undo journals within the same soft target as the file backups:
+    the newest `keep` and at most `max_bytes` in all. The journal of the
+    confirmed step that can be undone now is never pruned, whatever the
+    target; journals of undone steps go first. Under the migration lock, so
+    no apply or undo runs meanwhile; a journal still being written belongs
+    to an uncommitted apply and is not seen. Returns what was (or would be)
+    pruned: apply ID, step, size and reason only."""
+
+    async def operation(_run, queries):
+        journals = await journal_inventory(queries)
+        undoable = next((j['applyId'] for j in journals if j['state'] == 'applied'), None)
+        others = [j for j in journals if j['applyId'] != undoable]
+        # Undone or unfinished journals first, then the oldest applied ones.
+        others.sort(key=lambda j: (j['state'] == 'applied', j['recordedAt'] or ''), reverse=True)
+        over = others[keep:]
+        pruned = [{**j, 'reason': f'more than {keep} undo journals'} for j in over]
+        kept = [j for j in journals if j not in over]
+        total = sum(j['bytes'] for j in kept)
+        for journal in sorted((j for j in kept if j['applyId'] != undoable),
+                              key=lambda j: (j['state'] == 'applied', j['recordedAt'] or '')):
+            if total <= max_bytes:
+                break
+            pruned.append({**journal, 'reason': f'undo journals use more than {max_bytes} bytes'})
+            total -= journal['bytes']
+        if not dry_run:
+            for journal in pruned:
+                await delete_journal(queries, journal['applyId'])
+        return {'pruned': [{'store': 'graph', 'applyId': j['applyId'], 'migrationId': j['migrationId'],
+                            'state': j['state'], 'bytes': j['bytes'], 'reason': j['reason']} for j in pruned],
+                'kept': len(journals) - len(pruned), 'protected': undoable}
 
     return await _locked(driver, settings, now, lock_wait_seconds, sleep, operation)
 

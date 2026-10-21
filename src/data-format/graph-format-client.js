@@ -57,6 +57,9 @@ export function personalGraphFormat(dataDir, { fetchImpl = fetch, readText = (pa
     apply: (digest, entrypoint) => request('/v1/data-format/apply', { digest, entrypoint },
       { review: true, timeoutMs: CHANGE_TIMEOUT_MS }),
     rollback: (migrationId, entrypoint) => request('/v1/data-format/rollback',
-      { migration_id: migrationId, entrypoint }, { review: true, timeoutMs: CHANGE_TIMEOUT_MS })
+      { migration_id: migrationId, entrypoint }, { review: true, timeoutMs: CHANGE_TIMEOUT_MS }),
+    // Deleting undo journals removes undo, so it takes the review channel too.
+    prune: ({ keep, maxBytes, dryRun = false }) => request('/v1/data-format/prune',
+      { keep, max_bytes: maxBytes, dry_run: dryRun }, { review: true, timeoutMs: CHANGE_TIMEOUT_MS })
   };
 }

@@ -6,7 +6,7 @@ import { personalGraphFormat } from '../data-format/graph-format-client.js';
 import { previewMigrations } from '../data-format/migration-plan.js';
 import { findApplyReceipt } from '../data-format/apply-receipts.js';
 import {
-  applyMigrations, describeRestore, restoreStore, rollbackMigration
+  applyMigrations, describeRestore, pruneGraphJournals, restoreStore, rollbackMigration
 } from '../data-format/migration-operations.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { acquireMaintenance, holdDataDirectory } from '../data-format/maintenance-lock.js';
@@ -171,18 +171,31 @@ const ACTIONS = Object.freeze({
     });
   },
 
-  async prune({ options, paths, env, write, maintenance }) {
+  async prune({ options, paths, env, write, maintenance, graph }) {
     const policy = backupRetentionPolicy(env, {
       keep: options.keep === undefined ? undefined : wholeNumber(options.keep, '--keep'),
       maxMegabytes: options['max-mb'] === undefined ? undefined : wholeNumber(options['max-mb'], '--max-mb')
     });
+    const dryRun = options['dry-run'] === true;
     const result = await held(maintenance.hold(paths.dataDir), () => pruneFormatBackups(paths.dataDir,
-      { policy, dryRun: options['dry-run'] === true }));
-    write([`${options['dry-run'] ? 'Would prune' : 'Pruned'} ${result.pruned.length} format backups; `
+      { policy, dryRun }));
+    write([`${dryRun ? 'Would prune' : 'Pruned'} ${result.pruned.length} format backups; `
       + `${result.kept} kept. Backups an undo or the current version needs are never pruned.`,
     ...result.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (version ${entry.version}, `
       + `${entry.bytes} bytes) — ${entry.reason}`)].join('\n'));
-    return { exitCode: 0, ...result };
+    let journals;
+    try {
+      journals = await held(maintenance.hold(paths.dataDir), () => pruneGraphJournals({ dataDir: paths.dataDir,
+        graph, policy, dryRun }));
+    } catch (error) {
+      write(`Graph undo journals were not pruned: ${error.message}`);
+      return { exitCode: 0, ...result, graph: { pruned: [], error: error.message } };
+    }
+    write([`${dryRun ? 'Would prune' : 'Pruned'} ${journals.pruned.length} graph undo journals; ${journals.kept} kept. `
+      + 'The journal the latest confirmed graph step needs for its undo is never pruned.',
+    ...journals.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (${entry.migrationId}, `
+      + `${entry.bytes} bytes) — ${entry.reason}`)].join('\n'));
+    return { exitCode: 0, ...result, graph: journals };
   }
 });
 

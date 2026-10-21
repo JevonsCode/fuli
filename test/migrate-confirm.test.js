@@ -269,3 +269,35 @@ test('a retry still finds its receipt after the same apply pruned hundreds of ba
   assert.equal(retried.exitCode, 0);
   assert.deepEqual(retried.results.map((result) => result.status), ['already_applied', 'already_applied']);
 });
+
+test('prune keeps graph undo journals to the same target and logs what went, content-free', async (t) => {
+  const root = dataDir(t);
+  const requests = [];
+  const graph = { ...noGraph, prune: async (request) => {
+    requests.push(request);
+    return { kept: 3, protected: 'j1', pruned: [{ store: 'graph', applyId: 'j5', migrationId: 'graph/5-x',
+      state: 'rolled_back', bytes: 812, reason: 'more than 3 undo journals' }] };
+  } };
+
+  const dry = await migrate(root, ['prune', '--keep', '3', '--max-mb', '64', '--dry-run'], { graph });
+  assert.equal(readFormatOperations(root).length, 0, 'a dry run logs nothing');
+  const pruned = await migrate(root, ['prune', '--keep', '3', '--max-mb', '64'], { graph });
+
+  assert.deepEqual(requests, [{ keep: 3, maxBytes: 64 * 1024 * 1024, dryRun: true },
+    { keep: 3, maxBytes: 64 * 1024 * 1024, dryRun: false }]);
+  assert.match(dry.output, /Would prune 1 graph undo journals; 3 kept/);
+  assert.match(pruned.output, /graph \(personal\): undo journal j5 \(graph\/5-x, 812 bytes\) — more than 3 undo journals/);
+  assert.match(pruned.output, /never pruned/);
+  assert.deepEqual(readFormatOperations(root).map((event) => [event.kind, event.store, event.backupRef]),
+    [['pruned', 'graph', 'undo journal j5']]);
+});
+
+test('prune still prunes local backups when the graph cannot be reached', async (t) => {
+  const root = dataDir(t);
+  const graph = { ...noGraph, prune: async () => { throw new Error('its provider is not answering'); } };
+
+  const result = await migrate(root, ['prune'], { graph });
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.output, /Graph undo journals were not pruned: its provider is not answering/);
+});
