@@ -50,7 +50,7 @@ export async function runSetupCommand(args, dependencies = {}) {
   if (captureScope) write(captureScope);
   // Stubbed setups in tests name no real data directory either.
   const migrationNotice = dependencies.migrationNotice ?? (applySetup === applyLocalSetup ? setupMigrationNotice : null);
-  const waiting = migrationNotice && plan.paths?.dataDir ? migrationNotice(plan.paths.dataDir) : null;
+  const waiting = migrationNotice && plan.paths?.dataDir ? await migrationNotice(plan.paths.dataDir) : null;
   if (waiting) write(waiting);
   return { ...result, exitCode: result.status === 'partial' ? 1 : 0 };
 }

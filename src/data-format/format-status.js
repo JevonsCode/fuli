@@ -9,6 +9,8 @@ import { inspectLocalStores } from './local-stores.js';
 // access mode. A store that cannot be read that way is 'unavailable', never
 // opened another way.
 
+// How every report and plan names the personal graph.
+export const PERSONAL_GRAPH_LABEL = 'graph (personal)';
 const GRAPH_REPORT_TIMEOUT_MS = 10_000;
 
 export async function collectFormatStatus({ dataDir, fetchImpl = fetch }) {
@@ -20,10 +22,10 @@ async function inspectGraphs(dataDir, fetchImpl) {
   try {
     config = JSON.parse(readFileSync(join(dataDir, 'graph-runtime.json'), 'utf8'));
   } catch (error) {
-    if (error?.code === 'ENOENT') return [graphReport('graph (personal)', { state: 'absent', note: 'FULI is not set up here' })];
-    return [graphReport('graph (personal)', { state: 'unavailable', note: 'its connection settings cannot be read' })];
+    if (error?.code === 'ENOENT') return [graphReport(PERSONAL_GRAPH_LABEL, { state: 'absent', note: 'FULI is not set up here' })];
+    return [graphReport(PERSONAL_GRAPH_LABEL, { state: 'unavailable', note: 'its connection settings cannot be read' })];
   }
-  const providers = [['graph (personal)', config?.personal?.providerUrl],
+  const providers = [[PERSONAL_GRAPH_LABEL, config?.personal?.providerUrl],
     ...(Array.isArray(config?.workspaces) ? config.workspaces : [])
       .map((workspace, index) => [`graph (workspace ${index + 1})`, workspace?.providerUrl])];
   return Promise.all(providers.map(([label, url]) => inspectGraph(label, url, fetchImpl)));
@@ -50,4 +52,24 @@ async function inspectGraph(label, providerUrl, fetchImpl) {
 
 function graphReport(label, fields) {
   return { label, store: 'graph', kind: 'neo4j', version: null, target: null, ledger: [], steps: [], ...fields };
+}
+
+// How long `fuli setup` waits for the personal provider's health before it
+// leaves the graph out of what it says.
+const GRAPH_STATE_TIMEOUT_MS = 2_500;
+
+// The personal graph's format state ({ state, pending }) from its provider's
+// health, or null when FULI is not set up here or the provider does not
+// answer in time. One unauthenticated read; nothing in the graph is opened.
+export async function personalGraphFormatState(dataDir, { fetchImpl = fetch,
+  timeoutMs = GRAPH_STATE_TIMEOUT_MS } = {}) {
+  try {
+    const providerUrl = JSON.parse(readFileSync(join(dataDir, 'graph-runtime.json'), 'utf8'))?.personal?.providerUrl;
+    if (typeof providerUrl !== 'string' || !providerUrl) return null;
+    const response = await fetchImpl(`${providerUrl.replace(/\/$/, '')}/health`,
+      { signal: AbortSignal.timeout(timeoutMs) });
+    return response.ok ? (await response.json())?.data_format ?? null : null;
+  } catch {
+    return null;
+  }
 }
