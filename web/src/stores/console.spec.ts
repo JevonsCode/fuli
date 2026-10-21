@@ -37,8 +37,9 @@ describe('console store policies', () => {
     expect(store.feedback?.message).toContain('已有知识仍可读取')
   })
 
-  it('leaves the persisted policy unchanged when saving fails', async () => {
+  it('leaves the persisted policy unchanged when saving fails, and reads it again', async () => {
     patchJson.mockRejectedValue(new Error('save failed'))
+    getJson.mockResolvedValue({ enabled: true, updatedAt: null })
     const store = useConsoleStore()
     store.state = {
       mode: 'personal_only',
@@ -52,6 +53,25 @@ describe('console store policies', () => {
 
     expect(store.state.capturePolicy?.enabled).toBe(true)
     expect(store.feedback).toEqual({ message: 'save failed', tone: 'error' })
+    expect(getJson).toHaveBeenCalledWith('/api/capture-policy')
+  })
+
+  it('keeps only the latest capture save and drops a read that a save overtook (rec#5 C4-4)', async () => {
+    let answerFirst!: (value: unknown) => void
+    patchJson.mockReturnValueOnce(new Promise(resolve => { answerFirst = resolve }))
+      .mockResolvedValueOnce({ enabled: true, projectMode: 'all_except', excludedProjectIds: ['a', 'b'] })
+    let answerRead!: (value: unknown) => void
+    getJson.mockReturnValueOnce(new Promise(resolve => { answerRead = resolve }))
+    const store = useConsoleStore()
+    store.state = { mode: 'personal_only', personalSpaces: [], projects: [], subscriptions: [], capturePolicy: { enabled: true } }
+
+    const read = store.loadCapturePolicy()
+    const first = store.changeCapturePolicy({ recordProjects: { a: false } })
+    await store.changeCapturePolicy({ recordProjects: { b: false } })
+    answerFirst({ enabled: true, projectMode: 'all_except', excludedProjectIds: ['a'] })
+    answerRead({ enabled: true })
+    await Promise.all([first, read])
+    expect(store.state.capturePolicy?.excludedProjectIds).toEqual(['a', 'b'])
   })
 
   it('ignores a superseded scope failure and aborts its transport', async () => {

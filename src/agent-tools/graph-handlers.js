@@ -39,10 +39,15 @@ const HANDLERS = Object.freeze({
     sourceApplication: input?.sourceApplication, personalProjectId: input?.personalProjectId ?? null,
     projectPath: input?.projectPath ?? null, sessionId: input?.sessionId ?? null })),
   explain_settings: (app) => settingsGuide(app),
-  // sessionPaused pauses or resumes only the caller's session; every other
-  // field is a long-term setting. The client is this MCP process's.
-  update_capture_policy: (app, { sourceApplication, ...input } = {}) => input.sessionPaused === undefined
-    ? app.updateCapturePolicy(input) : app.pauseSessionCapture({ ...input, sourceApplication }),
+  // sessionPaused pauses or resumes only the caller's session, at once. Every
+  // other field is a long-term setting: previewed for the person first, saved
+  // only with that preview's token (rec#5 C4-2). The client is this MCP process's.
+  update_capture_policy: async (app, { sourceApplication = 'other', ...input } = {}) => {
+    if (input.sessionPaused !== undefined) return app.pauseSessionCapture({ ...input, sourceApplication });
+    const { previewToken, ...settings } = input;
+    return previewToken === undefined ? app.captureChanges.propose(settings, sourceApplication)
+      : app.captureChanges.confirm(settings, previewToken, sourceApplication);
+  },
   list_external_knowledge_connectors: (app) => externalKnowledge(app).listConnectorTypes(),
   discover_external_knowledge_sources: (app, input) => externalKnowledge(app).discover(input),
   list_external_knowledge_bindings: (app) => externalKnowledge(app).listBindings(),

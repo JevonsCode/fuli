@@ -35,6 +35,7 @@ import {
   capturePolicyPathForRuntime
 } from './capture-policy.js';
 import { captureDecision, captureDisabled } from './capture-decision.js';
+import { createCaptureChanges } from './capture-change-confirmation.js';
 import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';
 import { setSessionCapturePause } from './session-capture-pause-request.js';
 import {
@@ -200,6 +201,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.graphiti = true;
     this.config = config;
     this.capturePolicyStore = capturePolicyStore;
+    // An Agent's long-term capture change waits for the person's confirmed preview (rec#5 C4-2).
+    this.captureChanges = createCaptureChanges(capturePolicyStore, { listProjects: () => this.listPersonalProjects() });
     this.sessionCapturePauseStore = sessionCapturePauseStore;
     this.runtimeConfigPath = runtimeConfigPath;
     this.agentAccessPolicyStore = agentAccessPolicyStore;
@@ -1073,6 +1076,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.capturePolicyStore.advanceVersion();
   }
 
+  // The person's own change (console): saved at once.
   updateCapturePolicy(input) {
     return this.capturePolicyStore.update(input);
   }

@@ -62,8 +62,11 @@ export const AGENT_INTERFACE_DEFINITIONS = [
   {
     name: 'update_capture_policy',
     title: 'WRITE · Update capture policy or pause this session',
-    description: 'Only on an explicit user request. These are long-term settings: first restate the change and its effect, e.g. "将把『求职准备』加入不记录列表，之后在这个项目里的会话都不会被记录，已有记录保留。确认吗？", and call only after the user confirms; if they decline, change nothing. Send only settings to change; a list replaces the whole list. Never deletes existing knowledge, changes Agent access or bypasses project scope. Exception: "这次别记"/"继续记" → call at once, unconfirmed, with only sessionPaused true/false and taskContextToken; it pauses or resumes this session from now and returns the receipt to use.',
+    description: 'Only on an explicit user request. Long-term settings take two calls: the first saves nothing and returns preview; show it word for word, and only after the user confirms call again with the same settings plus previewToken. If they decline, do not call again; nothing changes. Send only settings to change; a list replaces the whole list. Never deletes existing knowledge, changes Agent access or bypasses project scope. Exception: "这次别记"/"继续记" → call at once, unconfirmed, with only sessionPaused true/false and taskContextToken; it pauses or resumes this session from now and returns the receipt to use.',
     inputSchema: objectSchema({ enabled: { type: 'boolean' }, sessionPaused: { type: 'boolean' }, taskContextToken: id,
+      previewToken: id,
+      recordProjects: { type: 'object', additionalProperties: { type: 'boolean' },
+        description: '{personalProjectId: false} stops recording that project ("这个项目以后别记了"), true records it.' },
       disabledSources: { type: 'array', uniqueItems: true, maxItems: 6,
         items: { enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'] },
         description: 'Clients whose sessions are not captured; they still use FULI tools.' },

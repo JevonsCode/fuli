@@ -16,7 +16,7 @@ import {
   readScheduleTableQuery, SCHEDULE_COLUMNS, SCHEDULE_SORTS, SCHEDULE_STATE_FILTERS, scheduleColumnVisible, scheduleTableLocationQuery,
   visibleSchedules, type ScheduleColumn, type ScheduleTableQuery,
 } from '@/features/task-schedules/schedule-table'
-import { ApiError, getJson } from '@/api/client'
+import { ApiError, apiErrorReason, getJson } from '@/api/client'
 import { formatDate } from '@/features/project-agents/task-labels'
 import { normalizeTask } from '@/features/project-agents/task-evidence'
 import {
@@ -143,9 +143,6 @@ function validate(): string {
   }
   return ''
 }
-function apiMessage(error: ApiError) {
-  try { return (JSON.parse(error.detail) as { error?: string }).error || error.message } catch { return error.detail || error.message }
-}
 // A create that gets no answer within this time is treated as unconfirmed.
 const CREATE_LIMIT_MS = 30_000
 let createTimer: ReturnType<typeof setTimeout> | undefined
@@ -177,7 +174,7 @@ async function save() {
     if (cause instanceof ApiError && cause.status === 409) { await conflict(); return }
     const unknown = !(cause instanceof ApiError) || cause.status >= 500
     if (unknown && !editing.value) createUnknown.value = true
-    formError.value = unknown ? t('taskSchedules.form.unknown') : apiMessage(cause)
+    formError.value = unknown ? t('taskSchedules.form.unknown') : apiErrorReason(cause)
   } finally {
     clearTimeout(createTimer)
     saving.value = false

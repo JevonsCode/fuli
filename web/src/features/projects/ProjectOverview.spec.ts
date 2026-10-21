@@ -9,6 +9,14 @@ vi.mock('./ProjectTeamSummary.vue', () => ({
   },
 }))
 
+vi.mock('@/features/capture/ProjectCaptureSwitch.vue', () => ({
+  default: {
+    name: 'ProjectCaptureSwitch',
+    props: ['projectId', 'projectName'],
+    template: '<div data-project-capture-stub />',
+  },
+}))
+
 import { setLocale } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import type { FrequentProjectSummary } from '@/features/knowledge/project-relation-weights'

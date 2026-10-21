@@ -174,6 +174,14 @@ export function finishTask(f, context, sourceApplication = 'codex') {
 
 export const receiptOf = context => context.agent_receipt.markdown;
 
+// A long-term change an Agent makes after the person confirmed its preview (rec#5 C4-2).
+export async function confirmedCaptureChange(f, settings, sourceApplication = undefined) {
+  const client = sourceApplication ? { sourceApplication } : {};
+  const preview = await callAgentTool(f.app, 'update_capture_policy', { ...settings, ...client });
+  if (preview.status !== 'confirmation_required') throw new Error(`Expected a preview, got ${preview.status}`);
+  return callAgentTool(f.app, 'update_capture_policy', { ...settings, ...client, previewToken: preview.previewToken });
+}
+
 export const transcriptRow = text => `${JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant',
   content: [{ type: 'output_text', text }] } })}
 `;

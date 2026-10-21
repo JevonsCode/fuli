@@ -69,7 +69,11 @@ const BASELINE = Object.freeze({
   // call cannot be attributed and is refused: 182,746 -> 183,375 B (+629 B), measured.
   // rec#20: remember takes scope unsure, so an item whose scope the user left open waits in the
   // session's temporary project instead of being guessed global: 183,375 -> 183,425 B (+50 B), measured.
-  fullToolSchemaBytes: 183425,
+  // rec#5 C4: update_capture_policy takes recordProjects (one project's switch, "这个项目以后别记了")
+  // and the previewToken of the change the person confirmed; its description drops the example
+  // sentence FULI now words itself: 183,425 -> 183,642 B (+217 B), measured. Chat, instructions and
+  // entry are unchanged.
+  fullToolSchemaBytes: 183642,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

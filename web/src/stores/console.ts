@@ -7,6 +7,7 @@ import type {
   AgentAccessPolicy,
   CapabilityName,
   CapturePolicy,
+  CapturePolicyChange,
   ConsoleState,
   PersonalProject,
   RecallPolicy,
@@ -72,11 +73,39 @@ export const useConsoleStore = defineStore('console', () => {
     }
   }
 
+  // Every page that shows capture settings reads this one copy, so a change
+  // saved anywhere in the console shows everywhere at once (rec#5 C4-1).
+  function rememberCapturePolicy(policy: CapturePolicy) {
+    if (state.value) state.value = { ...state.value, capturePolicy: policy }
+  }
+
+  // The settings as saved now: an Agent may have changed them since the
+  // console state loaded (rec#5 C4-4). A read that a save overtook is dropped.
+  let captureSaves = 0
+  async function loadCapturePolicy() {
+    const saves = captureSaves
+    const policy = await getJson<CapturePolicy>('/api/capture-policy')
+    if (saves === captureSaves) rememberCapturePolicy(policy)
+  }
+
+  // Saves at once; the caller shows its own progress and any refusal. Only the
+  // latest save's answer is kept, since answers can arrive out of order.
+  async function changeCapturePolicy(change: CapturePolicyChange) {
+    const save = ++captureSaves
+    try {
+      const policy = await patchJson<CapturePolicy>('/api/capture-policy', change)
+      if (save === captureSaves) rememberCapturePolicy(policy)
+      return policy
+    } catch (error) {
+      // A refused save changed nothing, but another change may have landed meanwhile.
+      if (save === captureSaves) loadCapturePolicy().catch(() => {})
+      throw error
+    }
+  }
+
   async function updateCapturePolicy(enabled: boolean, disabledSources?: string[]) {
     try {
-      const policy = await patchJson<CapturePolicy>('/api/capture-policy',
-        disabledSources ? { enabled, disabledSources } : { enabled })
-      if (state.value) state.value = { ...state.value, capturePolicy: policy }
+      await changeCapturePolicy(disabledSources ? { enabled, disabledSources } : { enabled })
       notify(
         enabled
           ? t('console.captureNotices.enabled')
@@ -149,6 +178,8 @@ export const useConsoleStore = defineStore('console', () => {
     publicRuntimeStatus,
     refresh,
     updateCapturePolicy,
+    loadCapturePolicy,
+    changeCapturePolicy,
     updateAgentAccessPolicy,
     updateRecallPolicy,
     hasCapability,

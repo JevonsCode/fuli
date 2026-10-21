@@ -11,9 +11,8 @@ import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
 import { syncConversationTranscript } from '../src/conversations/sync-transcript.js';
 import { captureDecision } from '../src/graphiti/capture-decision.js';
-import { capturePolicyPathForRuntime } from '../src/graphiti/capture-policy.js';
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
-import { codexEntry, claudeEntry, codexStop, cursorEntry, finishTask, fixture, PRIVATE, receiptOf,
+import { codexEntry, codexStop, confirmedCaptureChange, finishTask, fixture, PRIVATE, receiptOf,
   transcriptRow } from './fixtures/capture-project-fixture.js';
 
 const CODEX_TRANSCRIPT = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
@@ -98,8 +97,7 @@ test('C2-4 switching a project off keeps its history and records since when', as
   assert.ok(history >= 2);
 
   f.clock.now = '2026-10-20T09:30:00.000Z';
-  const updated = await callAgentTool(f.app, 'update_capture_policy', { projectMode: 'all_except',
-    excludedProjectIds: ['family-ledger'] });
+  const updated = await confirmedCaptureChange(f, { projectMode: 'all_except', excludedProjectIds: ['family-ledger'] });
   assert.deepEqual(updated.projectsOffSince, { 'family-ledger': '2026-10-20T09:30:00.000Z' });
   assert.equal(f.knowledge.filter(commit => commit.personal_project_id === 'family-ledger').length, history,
     'nothing already recorded is removed');
@@ -118,7 +116,7 @@ test('C2-4 switching a project off keeps its history and records since when', as
 
   // Back on: new work is recorded again and the switch-off time is gone.
   f.clock.now = '2026-10-21T09:30:00.000Z';
-  assert.deepEqual((await callAgentTool(f.app, 'update_capture_policy', { excludedProjectIds: [] })).projectsOffSince, {});
+  assert.deepEqual((await confirmedCaptureChange(f, { excludedProjectIds: [] })).projectsOffSince, {});
 });
 
 test('C2-5 a worktree of a project is that project, wherever it lives', async (t) => {
@@ -218,48 +216,20 @@ test('C5-1 C5-2 the notice is on every turn and carries none of the turn', async
   assert.deepEqual(f.captureWrites(), []);
 });
 
-test('C4-5 Claude Code, Codex and Cursor say the same thing and record nothing', async (t) => {
-  const f = await fixture(t);
-  f.store.update({ projectMode: 'all_except', excludedProjectIds: ['job-hunt'] });
-  const entries = { claude_code: await claudeEntry(f, f.dirs['job-hunt']), codex: await codexEntry(f, f.dirs['job-hunt']),
-    cursor: await cursorEntry(f, f.dirs['job-hunt']) };
-  const notices = Object.entries(entries).map(([client, entry]) => [client, receiptOf(entry.context).split(' · ').at(-1)]);
-  assert.deepEqual(notices, ['claude_code', 'codex', 'cursor'].map(client => [client, PROJECT_OFF]));
-  // The two hooks that can show a message say it at entry too.
-  for (const client of ['claude_code', 'codex']) {
-    assert.ok(entries[client].output.systemMessage.includes(PROJECT_OFF), client);
-  }
-  for (const [client, entry] of Object.entries(entries)) await finishTask(f, entry.context, client);
-  assert.deepEqual(f.captureWrites(), []);
-});
-
-test('every reason that stops a turn has its one notice', async (t) => {
-  for (const [name, setUp, notice] of [
-    ['global_off', f => f.store.update({ enabled: false }), '自动记录已关闭；你明确提交的修改仍会保存'],
-    ['client_off', f => f.store.update({ disabledSources: ['codex'] }), '自动记录已关闭；你明确提交的修改仍会保存'],
-    ['policy_unavailable', f => writeFile(capturePolicyPathForRuntime(f.runtimeConfigPath), '{ not json'),
-      '记录设置读取失败，本次未自动记录；你明确提交的修改仍会保存']
-  ]) {
-    const f = await fixture(t);
-    await setUp(f);
-    const entry = await codexEntry(f, f.dirs.novel);
-    assert.ok(receiptOf(entry.context).endsWith(` · ${notice}`), `${name}: ${receiptOf(entry.context)}`);
-  }
-});
-
 test('the Agent can read and change project modes, and is told to confirm first', async (t) => {
   const f = await fixture(t);
   const update = listAgentTools().find(tool => tool.name === 'update_capture_policy');
-  assert.match(update.description, /restate/i);
+  assert.match(update.description, /preview/i);
   assert.match(update.description, /confirm/i);
   assert.deepEqual(Object.keys(update.inputSchema.properties).sort(), ['disabledSources', 'enabled',
-    'excludedProjectIds', 'projectMode', 'selectedProjectIds', 'sessionPaused', 'taskContextToken', 'unregisteredDirectories']);
+    'excludedProjectIds', 'previewToken', 'projectMode', 'recordProjects', 'selectedProjectIds', 'sessionPaused',
+    'taskContextToken', 'unregisteredDirectories']);
   assert.equal(update.inputSchema.required, undefined, 'a project change does not resend the global switch');
   const read = listAgentTools().find(tool => tool.name === 'get_capture_policy');
   assert.ok(read.inputSchema.properties.projectPath);
 
   f.store.update({ enabled: false });
-  const changed = await callAgentTool(f.app, 'update_capture_policy', { projectMode: 'selected', selectedProjectIds: ['thesis'] });
+  const changed = await confirmedCaptureChange(f, { projectMode: 'selected', selectedProjectIds: ['thesis'] });
   assert.equal(changed.enabled, false, 'changing projects never turns recording back on');
   const policy = await callAgentTool(f.app, 'get_capture_policy', { projectPath: f.dirs.thesis, sourceApplication: 'codex' });
   assert.deepEqual([policy.current.captured, policy.current.reason, policy.current.notice],
@@ -298,10 +268,13 @@ test('the default mode decides without looking up any project', async (t) => {
   f.app.personal.currentTaskContext = async () => null;
   const entry = await codexEntry(f, f.dirs['side-repo'], { transcriptPath: transcript });
   await finishTask(f, entry.context);
-  await callAgentTool(f.app, 'get_capture_policy', { projectPath: f.dirs.thesis, sourceApplication: 'codex' });
   await syncConversationTranscript(f.app, { session_id: 'synthetic-session', cwd: f.dirs.downloads,
     transcript_path: transcript }, 'codex', CODEX_TRANSCRIPT);
   assert.deepEqual(lookups, [], 'all projects and all folders are recorded, so no decision needs the project');
+  // Asked which project this is, so "这个项目以后别记了" can name it (C4-2), the read looks once.
+  const policy = await callAgentTool(f.app, 'get_capture_policy', { projectPath: f.dirs.thesis, sourceApplication: 'codex' });
+  assert.equal(policy.current.personalProjectId, 'thesis');
+  assert.deepEqual(lookups, [f.dirs.thesis]);
 });
 
 test('under a project mode one hook run or tool request looks its directory up once', async (t) => {

@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_PROJECT_SETTINGS, PROJECT_SETTING_KEYS, storedProjectSettings, updatedProjectSettings,
+import { DEFAULT_PROJECT_SETTINGS, PROJECT_CHANGE_KEYS, storedProjectSettings, updatedProjectSettings,
   usesProjectModes } from './capture-project-mode.js';
 
 // Capturing a client's sessions is separate from that client using FULI tools:
@@ -22,7 +22,7 @@ const DEFAULT_POLICY = Object.freeze({
   ...DEFAULT_PROJECT_SETTINGS,
   updatedAt: null
 });
-const SETTING_KEYS = Object.freeze(['enabled', 'disabledSources', ...PROJECT_SETTING_KEYS]);
+const SETTING_KEYS = Object.freeze(['enabled', 'disabledSources', ...PROJECT_CHANGE_KEYS]);
 
 const ABSENT = 'absent';
 const UNREADABLE = Object.freeze({ generation: 0 });
@@ -136,6 +136,18 @@ export class CapturePolicyStore {
   // A partial update: settings it does not name keep their current value, so
   // changing projects never turns recording back on, and the reverse.
   update(input) {
+    const { next } = this.preview(input);
+    if (!this.path) {
+      this.memory = next;
+      return { ...next };
+    }
+    writeAtomically(this.path, { version: usesProjectModes(next) ? 2 : 1, ...next });
+    this.#nextGeneration(this.#readGeneration(), this.#fileKey());
+    return { ...next };
+  }
+
+  // The settings now and what update(input) would save, without saving it.
+  preview(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       throw new TypeError('Capture policy update must be an object');
     }
@@ -149,20 +161,13 @@ export class CapturePolicyStore {
     }
     const current = this.#currentForUpdate(input);
     const now = this.now();
-    const next = {
+    return { current, next: {
       enabled: input.enabled ?? current.enabled,
       disabledSources: input.disabledSources === undefined
         ? current.disabledSources : validSources(input.disabledSources, TypeError),
       ...updatedProjectSettings(current, input, now),
       updatedAt: now
-    };
-    if (!this.path) {
-      this.memory = next;
-      return { ...next };
-    }
-    writeAtomically(this.path, { version: usesProjectModes(next) ? 2 : 1, ...next });
-    this.#nextGeneration(this.#readGeneration(), this.#fileKey());
-    return { ...next };
+    } };
   }
 
   // Settings FULI cannot read record nothing until the person sets the global
