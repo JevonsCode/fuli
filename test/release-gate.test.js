@@ -8,16 +8,16 @@ import test from 'node:test';
 
 const GATE = fileURLToPath(new URL('../scripts/release-gate.js', import.meta.url));
 
-test('publishing is blocked until data format migration part 2 opens the gate (rec#17 D-11)', (t) => {
-  const blocked = spawnSync(process.execPath, [GATE], { encoding: 'utf8' });
-  assert.notEqual(blocked.status, 0);
-  assert.match(blocked.stderr, /Release blocked: formatReleaseGate is "blocked-until-part-2"/);
+test('data format migration part 2 opened the gate, and a blocking marker still stops a release (rec#17 D-11)', (t) => {
+  assert.equal(spawnSync(process.execPath, [GATE]).status, 0);
 
   const directory = mkdtempSync(join(tmpdir(), 'fuli-release-gate-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const open = join(directory, 'release-gate.json');
-  writeFileSync(open, JSON.stringify({ formatReleaseGate: 'open' }));
-  assert.equal(spawnSync(process.execPath, [GATE, open]).status, 0);
+  const blockedMarker = join(directory, 'release-gate.json');
+  writeFileSync(blockedMarker, JSON.stringify({ formatReleaseGate: 'blocked-until-part-2', reason: 'not yet' }));
+  const blocked = spawnSync(process.execPath, [GATE, blockedMarker], { encoding: 'utf8' });
+  assert.notEqual(blocked.status, 0);
+  assert.match(blocked.stderr, /Release blocked: formatReleaseGate is "blocked-until-part-2"\. not yet/);
 });
 
 test('every publish path runs the gate first', () => {
