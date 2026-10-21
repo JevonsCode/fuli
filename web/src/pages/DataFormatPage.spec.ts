@@ -59,6 +59,62 @@ describe('DataFormatPage', () => {
     expect(wrapper.text()).toContain('不能单独撤销，只能整库恢复')
   })
 
+  it('says who must be stopped before the apply and undo controls', async () => {
+    const wrapper = await mountPage()
+    const notices = wrapper.findAll('[data-external-writers]')
+    expect(notices).toHaveLength(2)
+    expect(notices[0].text()).toContain('Neo4j 客户端、cypher-shell')
+    const confirm = wrapper.get('.data-format-confirm')
+    const order = confirm.get('[data-external-writers]').element.compareDocumentPosition(confirm.get('#data-format-reviewed').element)
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const undo = notices[1].element.compareDocumentPosition(wrapper.get('[data-undo]').element)
+    expect(undo & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('says the one retention budget backups and graph undo journals share, with the policy in force', async () => {
+    api.getJson.mockResolvedValue({ ...plan(), retention: { keep: 5, maxBytes: 64 * 1024 * 1024 } })
+    const wrapper = await mountPage()
+    const text = wrapper.get('[data-retention]').text()
+    expect(text).toContain('每个存储保留最近 5 份格式备份，图谱保留最近 5 份撤销日志；备份和日志合计最多约 64 MB')
+    expect(text).toContain('即使因此超出预算')
+  })
+
+  it('says a graph prune whose answer never came is unverified, after an apply and after an undo', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
+    api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [{ label: 'graph (personal)',
+      status: 'applied', migrationId: 'graph/9-group-id-separators' }],
+    pruned: [{ kind: 'pruned', store: 'task-schedules' }, { kind: 'prune_unverified', store: 'graph' }] })
+    await wrapper.get('#data-format-reviewed').trigger('click')
+    await wrapper.get('[data-apply]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-prune-unverified]').text()).toContain('图谱撤销日志的清理结果未经确认')
+
+    api.postJson.mockResolvedValueOnce({ status: 'rolled_back', version: 8, pruned: [{ kind: 'pruned' }] })
+    await wrapper.get('[data-undo]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-confirm-undo]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
+  })
+
+  it('keeps the unverified prune and says the audit log write failed', async () => {
+    const wrapper = await mountPage()
+    api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [{ label: 'graph (personal)',
+      status: 'applied', migrationId: 'graph/9-group-id-separators' }],
+    pruned: [{ kind: 'prune_unverified', store: 'graph', auditError: { code: 'EISDIR', message: 'disk refused' } }] })
+    await wrapper.get('#data-format-reviewed').trigger('click')
+    await wrapper.get('[data-apply]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-prune-unverified]').exists()).toBe(true)
+    expect(wrapper.get('[data-audit-failed]').text()).toContain('没有写成：disk refused')
+    expect(wrapper.find('[data-result="applied"]').exists()).toBe(true)
+  })
+
+  it('leaves the budget out when the server could not read the policy', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.find('[data-retention]').exists()).toBe(false)
+  })
 
   it('lists each store with its step, count and sample IDs, and applies only after review', async () => {
     const wrapper = await mountPage()

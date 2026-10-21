@@ -68,6 +68,19 @@ test('partial setup returns a failure exit code for automated updates', async ()
   assert.equal(result.exitCode, 1);
 });
 
+test('setup ends with the data format migrations that wait, when there are any', async () => {
+  const output = [];
+  const dataDirs = [];
+  await runSetupCommand(['--yes'], {
+    planSetup: () => samplePlan(),
+    applySetup: async () => ({ status: 'complete', runtime: {}, agents: [] }),
+    migrationNotice: (dataDir) => { dataDirs.push(dataDir); return 'Data format migrations wait for you: synthetic'; },
+    write: (line) => output.push(line)
+  });
+  assert.deepEqual(dataDirs, ['C:/Fuli']);
+  assert.equal(output.at(-1), 'Data format migrations wait for you: synthetic');
+});
+
 test('personal-only preview explains that public controls stay disconnected', () => {
   const output = [];
   return runSetupCommand(['--personal-only'], {

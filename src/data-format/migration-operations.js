@@ -1,5 +1,6 @@
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
-import { pruneFormatBackups } from './backup-retention.js';
+import { backupRetentionPolicy, pruneFormatBackups } from './backup-retention.js';
+import { pruneFormatRetention } from './format-retention.js';
 import { GRAPH_LABEL, localStore, localStoresWithEngines, previewMigrations } from './migration-plan.js';
 import { findApplyReceipt, recordApplyReceipt } from './apply-receipts.js';
 import { recordFormatOperations } from './operations-log.js';
@@ -21,9 +22,13 @@ import { recordFormatOperations } from './operations-log.js';
 //   retry returns the result instead of a stale preview.
 // - rollback undoes one migration; restore replaces a whole store and is
 //   never part of apply or rollback.
-// Backups are pruned by the retention policy after each change.
+// After each apply or undo, format backups and graph undo journals are
+// pruned to their one shared budget (format-retention.js); after a restore and
+// when the console starts, local backups only, since the graph provider may
+// not be running.
 
-export async function applyMigrations({ dataDir, digest, actor, graph, now = () => new Date(), prune = pruneFormatBackups }) {
+export async function applyMigrations({ dataDir, digest, actor, graph, now = () => new Date(),
+  retain = pruneFormatRetention }) {
   recoverInterrupted(dataDir, now);
   const plan = await previewMigrations({ dataDir, graph });
   let stores = plan.stores.map(({ label, store, digest: storeDigest, step }) => ({ label, store,
@@ -58,7 +63,7 @@ export async function applyMigrations({ dataDir, digest, actor, graph, now = () 
   const failed = results.some((result) => result.status === 'failed');
   return { status: failed ? (results.length > 1 ? 'partial' : 'failed') : 'applied', results,
     skipped: stores.slice(results.length).map(({ label, migrationId }) => ({ label, migrationId })),
-    pruned: pruneQuietly(prune, dataDir) };
+    pruned: await retainQuietly(retain, dataDir, graph, now) };
 }
 
 async function applyStore(dataDir, store, actor, graph) {
@@ -71,7 +76,7 @@ async function applyStore(dataDir, store, actor, graph) {
 }
 
 export async function rollbackMigration({ dataDir, label, migrationId, actor, graph, now = () => new Date(),
-  prune = pruneFormatBackups }) {
+  retain = pruneFormatRetention }) {
   recoverInterrupted(dataDir, now);
   let result;
   if (label === GRAPH_LABEL) {
@@ -84,7 +89,7 @@ export async function rollbackMigration({ dataDir, label, migrationId, actor, gr
   recordFormatOperations(dataDir, [{ kind: 'rolled_back', store: result.store, label, migrationId,
     toVersion: result.version, backupRef: result.backupRef ?? null, entrypoint: actor.entrypoint,
     at: now().toISOString() }]);
-  return { ...result, label, pruned: pruneQuietly(prune, dataDir) };
+  return { ...result, label, pruned: await retainQuietly(retain, dataDir, graph, now) };
 }
 
 // What restoring label from backupRef would discard, and the backups to choose from.
@@ -136,6 +141,24 @@ function requiredStore(dataDir, label) {
 }
 
 // A retention problem never undoes or hides the operation that preceded it.
+async function retainQuietly(retain, dataDir, graph, now) {
+  try {
+    const { local, graph: journals } = await retain({ dataDir, graph, now });
+    const audit = journals?.auditError ? { auditError: journals.auditError } : {};
+    if (journals?.status === 'unverified') {
+      return [...local.pruned, { kind: 'prune_unverified', store: 'graph', reason: journals.error, ...audit }];
+    }
+    if (journals?.status === 'unreached') {
+      return [...local.pruned, { kind: 'prune_failed', store: 'graph', reason: journals.error }];
+    }
+    return [...local.pruned, ...journals?.pruned ?? [],
+      ...journals?.auditError ? [{ kind: 'audit_failed', store: 'graph', ...audit }] : []];
+  } catch (error) {
+    return [{ kind: 'prune_failed', reason: error.message }];
+  }
+}
+
+// A retention problem never undoes or hides the operation that preceded it.
 function pruneQuietly(prune, dataDir) {
   try {
     return prune(dataDir).pruned;
@@ -148,9 +171,10 @@ function pruneQuietly(prune, dataDir) {
 // one data directory and its personal graph.
 export function dataFormatMigrations(dataDir, { graph, prune = pruneFormatBackups, now = () => new Date() } = {}) {
   return {
-    preview: () => previewMigrations({ dataDir, graph }),
-    apply: ({ digest, actor }) => applyMigrations({ dataDir, digest, actor, graph, prune }),
-    rollback: ({ label, migrationId, actor }) => rollbackMigration({ dataDir, label, migrationId, actor, graph, prune }),
+    // With the retention budget, so the console says the one `fuli migrate prune` uses.
+    preview: async () => ({ ...await previewMigrations({ dataDir, graph }), retention: retentionPolicyOrNull() }),
+    apply: ({ digest, actor }) => applyMigrations({ dataDir, digest, actor, graph }),
+    rollback: ({ label, migrationId, actor }) => rollbackMigration({ dataDir, label, migrationId, actor, graph }),
     // When the console starts: resolve interrupted changes, keep backups within the policy.
     prune: () => {
       try {
@@ -161,4 +185,12 @@ export function dataFormatMigrations(dataDir, { graph, prune = pruneFormatBackup
       return pruneQuietly(prune, dataDir);
     }
   };
+}
+
+function retentionPolicyOrNull() {
+  try {
+    return backupRetentionPolicy();
+  } catch {
+    return null;
+  }
 }

@@ -29,6 +29,8 @@ export const dataFormatMessages = {
     digestNote: '摘要只绑定这份计划，不是授权；应用时会在存储锁内重新核对。',
     reviewed: '我已看过以上存储、步骤和记录数量',
     presence: '记录为本机控制台操作，无法验证是否本人在场。',
+    // Same wording as src/data-format/external-writers.js (test/data-format-external-writers.test.js).
+    externalWriters: '应用或撤销迁移前，请先停掉 FULI 以外直接写图谱的程序（Neo4j 客户端、cypher-shell 等工具）：FULI 拦不住它们的写入。',
     apply: '应用这些迁移',
     applying: '正在应用数据格式迁移…',
     stale: '计划在你确认后有了变化，没有做任何修改。下面是重新读取的计划，请重新确认。',
@@ -43,6 +45,9 @@ export const dataFormatMessages = {
     undoCancel: '取消',
     undoing: '正在撤销 {id}…',
     undone: '已撤销 {id}，存储回到版本 {version}。',
+    retention: '保留预算：每个存储保留最近 {keep} 份格式备份，图谱保留最近 {keep} 份撤销日志；备份和日志合计最多约 {megabytes} MB，超出时先清理最旧的。撤销或当前版本还需要的始终保留，即使因此超出预算。',
+    pruneUnverified: '图谱撤销日志的清理结果未经确认：删除请求已发出但没有收到答复，Provider 可能已经删除了部分日志。请运行 fuli migrate status，或再运行一次 fuli migrate prune 核对。',
+    auditFailed: '本地操作日志（format-operations.json）没有写成：{message}。上面的结果不受影响，但这次清理没有记入日志。',
     restoreNote: '整库恢复会丢失备份之后的全部写入，不在控制台提供。需要时先停止 FULI，再在终端运行 fuli migrate restore。',
   },
   'en-US': {
@@ -75,6 +80,7 @@ export const dataFormatMessages = {
     digestNote: 'The digest binds this plan; it is not a permission. Applying checks it again under each store\'s lock.',
     reviewed: 'I have reviewed the stores, steps and record counts above',
     presence: 'Recorded as a local console action; FULI cannot verify that a person was present.',
+    externalWriters: 'Before you apply or undo a migration, stop anything outside FULI that writes to the graph directly (a Neo4j client, cypher-shell or other tools): FULI cannot hold their writes back.',
     apply: 'Apply these migrations',
     applying: 'Applying data format migrations…',
     stale: 'The plan changed after you confirmed it; nothing was changed. Below is the plan read again; confirm it again.',
@@ -89,6 +95,9 @@ export const dataFormatMessages = {
     undoCancel: 'Cancel',
     undoing: 'Undoing {id}…',
     undone: 'Undid {id}; the store is back at version {version}.',
+    retention: 'Retention budget: each store keeps its newest {keep} format backups and the graph its newest {keep} undo journals; backups and journals together use at most about {megabytes} MB, the oldest going first. What an undo or the current version needs is always kept, even beyond the budget.',
+    pruneUnverified: 'Graph undo journal prune result unverified: the delete request was sent but no answer came back, so the provider may already have deleted some journals. Run fuli migrate status, or fuli migrate prune again, to check.',
+    auditFailed: 'The local operations log (format-operations.json) could not be written: {message}. The result above stands, but this prune is not in the log.',
     restoreNote: 'A whole-store restore loses every change made after the backup and is not offered here. Stop FULI, then run fuli migrate restore in a terminal.',
   },
 } as const

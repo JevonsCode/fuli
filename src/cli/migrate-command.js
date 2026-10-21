@@ -1,10 +1,14 @@
 import { parseArgs } from 'node:util';
 
-import { pruneFormatBackups, backupRetentionPolicy } from '../data-format/backup-retention.js';
+import { backupRetentionPolicy } from '../data-format/backup-retention.js';
+import {
+  auditFailedLines, graphPruneUnverifiedLines, pruneFormatRetention, retentionLines
+} from '../data-format/format-retention.js';
 import { collectFormatStatus } from '../data-format/format-status.js';
 import { personalGraphFormat } from '../data-format/graph-format-client.js';
 import { previewMigrations } from '../data-format/migration-plan.js';
 import { findApplyReceipt } from '../data-format/apply-receipts.js';
+import { externalWritersLines } from '../data-format/external-writers.js';
 import {
   applyMigrations, describeRestore, restoreStore, rollbackMigration
 } from '../data-format/migration-operations.js';
@@ -19,7 +23,8 @@ import { confirmInTerminal, writeLine } from './terminal-io.js';
 //   and ask at an interactive terminal; there is no --yes, and no MCP or Agent
 //   tool reaches them. A terminal does not prove a person decided, so FULI
 //   records entrypoint cli with presence unverified.
-// - prune: removes only backups the retention policy allows.
+// - prune: removes only the format backups and graph undo journals the one
+//   shared retention budget allows (format-retention.js).
 
 const USAGE = [
   'Usage: fuli migrate status [--json] [--data-dir DIR]',
@@ -104,6 +109,7 @@ const ACTIONS = Object.freeze({
       return { exitCode: FAILED_EXIT_CODE, status: 'stale' };
     }
     if (!started) write(formatPlan(plan, paths.dataDir, { confirming: true }));
+    write(externalWritersLines().join('\n'));
     if (!await confirm('Apply exactly these migrations? Recorded as entrypoint cli, presence unverified. [y/N] ',
       { defaultYes: false })) {
       write('Cancelled. Nothing was changed.');
@@ -120,14 +126,16 @@ const ACTIONS = Object.freeze({
     write([`Undo migration ${options.migration} of ${options.store}.`,
       'Only the records that migration changed are put back, and only if none of them changed since;',
       'otherwise nothing is changed. Afterwards this FULI keeps the store unavailable until the migration',
-      'is applied again (use this to return to an earlier FULI). A backup is taken first.'].join('\n'));
+      'is applied again (use this to return to an earlier FULI). A backup is taken first.',
+      ...externalWritersLines()].join('\n'));
     if (!await confirm('Undo it? Recorded as entrypoint cli, presence unverified. [y/N] ', { defaultYes: false })) {
       write('Cancelled. Nothing was changed.');
       return { exitCode: 0, status: 'cancelled' };
     }
     const result = await held(maintenance.hold(paths.dataDir), () => rollbackMigration({ dataDir: paths.dataDir,
       label: options.store, migrationId: options.migration, actor: CLI_ACTOR, graph }));
-    write(`Undone: ${result.migrationId} of ${result.label}; the store is at version ${result.version}.`);
+    write([`Undone: ${result.migrationId} of ${result.label}; the store is at version ${result.version}.`,
+      ...prunedLines(result.pruned ?? [])].join('\n'));
     return { exitCode: 0, ...result };
   },
 
@@ -171,18 +179,33 @@ const ACTIONS = Object.freeze({
     });
   },
 
-  async prune({ options, paths, env, write, maintenance }) {
+  async prune({ options, paths, env, write, maintenance, graph }) {
     const policy = backupRetentionPolicy(env, {
       keep: options.keep === undefined ? undefined : wholeNumber(options.keep, '--keep'),
       maxMegabytes: options['max-mb'] === undefined ? undefined : wholeNumber(options['max-mb'], '--max-mb')
     });
-    const result = await held(maintenance.hold(paths.dataDir), () => pruneFormatBackups(paths.dataDir,
-      { policy, dryRun: options['dry-run'] === true }));
-    write([`${options['dry-run'] ? 'Would prune' : 'Pruned'} ${result.pruned.length} format backups; `
-      + `${result.kept} kept. Backups an undo or the current version needs are never pruned.`,
-    ...result.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (version ${entry.version}, `
-      + `${entry.bytes} bytes) — ${entry.reason}`)].join('\n'));
-    return { exitCode: 0, ...result };
+    const dryRun = options['dry-run'] === true;
+    const { local, graph: journals } = await held(maintenance.hold(paths.dataDir),
+      () => pruneFormatRetention({ dataDir: paths.dataDir, graph, policy, dryRun }));
+    const verb = dryRun ? 'Would prune' : 'Pruned';
+    const lines = [...retentionLines(policy), `${verb} ${local.pruned.length} format backups; ${local.kept} kept.`,
+      ...local.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (version ${entry.version}, `
+        + `${entry.bytes} bytes) — ${entry.reason}`)];
+    if (journals?.status === 'unreached') {
+      lines.push(`Graph undo journals were not pruned: ${journals.error}. No delete was sent to the graph; local `
+        + 'backups alone were held to the budget.');
+    } else if (journals?.status === 'unverified') {
+      lines.push(...graphPruneUnverifiedLines(), `  (${journals.error}; the local backups above were pruned.)`);
+    } else if (journals) {
+      lines.push(`${verb} ${journals.pruned.length} graph undo journals; ${journals.kept} kept.`,
+        ...journals.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (${entry.migrationId}, `
+          + `${entry.bytes} bytes) — ${entry.reason}`));
+    }
+    if (journals?.auditError) lines.push(...auditFailedLines(journals.auditError));
+    write(lines.join('\n'));
+    // An unverified graph prune is not a finished one: the exit code says so.
+    return { exitCode: journals?.status === 'unverified' ? FAILED_EXIT_CODE : 0, ...local,
+      status: journals?.status ?? 'pruned', graph: journals ?? { status: 'none' } };
   }
 });
 
@@ -236,8 +259,17 @@ function formatOperation(result) {
     ? `${entry.label}: not applied (${entry.code}) — ${entry.message}`
     : `${entry.label}: ${entry.status} ${entry.migrationId}${entry.count === undefined ? '' : `, ${entry.count} records`}`);
   for (const skipped of result.skipped) lines.push(`${skipped.label}: not attempted (${skipped.migrationId})`);
-  if (result.pruned.length) lines.push(`Pruned ${result.pruned.length} older format backups.`);
+  lines.push(...prunedLines(result.pruned));
   return lines.join('\n');
+}
+
+// After an apply or undo: what retention pruned, and a graph prune whose
+// answer never came, which the migration's own result does not change.
+function prunedLines(pruned) {
+  const count = pruned.filter((entry) => entry.kind === 'pruned').length;
+  return [...count ? [`Pruned ${count} older format backups and undo journals.`] : [],
+    ...pruned.some((entry) => entry.kind === 'prune_unverified') ? graphPruneUnverifiedLines() : [],
+    ...pruned.filter((entry) => entry.auditError).flatMap((entry) => auditFailedLines(entry.auditError))];
 }
 
 function formatRestore(impact) {

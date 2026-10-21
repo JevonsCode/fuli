@@ -13,6 +13,7 @@ import pytest
 from fuli_graph import graph_format_confirm
 from fuli_graph.graph_format import GraphFormatState, GraphFormatUnavailable
 from fuli_graph.runtime import ManagedNeo4jDriver
+from fuli_graph.graph_format_journal import journal_inventory
 from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION
 from test_graph_format_neo4j import (  # noqa: F401 - graph is a fixture
     ACCESS_TOKEN,
@@ -611,3 +612,259 @@ async def test_another_provider_cannot_write_during_an_undo_and_learns_the_graph
     assert write['waited'] and refused.value.code == 'data_format_changed_underneath'
     rows = await _rows(driver, "MATCH (e:Entity {uuid: 'entity-b'}) RETURN e.name AS name, e.group_id AS g")
     assert rows == [{'name': 'Synthetic other entity', 'g': 'legacy:personal:legacy-space'}]
+
+
+async def _seed_journals(driver):
+    """Five synthetic undo journals, newest first: applied, applied, undone, applied, undone,
+    in a graph whose ledger is at the current version."""
+    await driver.execute_query(
+        "MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = $version", version=GRAPH_FORMAT_VERSION,
+    )
+    await driver.execute_query(
+        """
+        UNWIND $journals AS journal
+        CREATE (:FuliDataFormatUndo {apply_id: journal.id, kind: 'apply', migration_id: 'graph/5-x',
+                                     state: journal.state, reversible: true, plan_digest: journal.id,
+                                     from_version: 4, to_version: 5,
+                                     recorded_at: datetime(journal.at)})
+        WITH journal
+        UNWIND range(1, 2) AS entry
+        CREATE (:FuliDataFormatUndo {apply_id: journal.id, kind: 'record', touch: 0, target: 'node',
+                                     ref: journal.id + ':' + entry, after_hash: 'h'})
+        """,
+        journals=[
+            {'id': 'j1', 'state': 'applied', 'at': '2026-10-05T00:00:00Z'},
+            {'id': 'j2', 'state': 'applied', 'at': '2026-10-04T00:00:00Z'},
+            {'id': 'j3', 'state': 'rolled_back', 'at': '2026-10-03T00:00:00Z'},
+            {'id': 'j4', 'state': 'applied', 'at': '2026-10-02T00:00:00Z'},
+            {'id': 'j5', 'state': 'rolled_back', 'at': '2026-10-01T00:00:00Z'},
+        ],
+    )
+
+
+async def _journal_ids(driver):
+    rows = await _rows(driver, "MATCH (u:FuliDataFormatUndo {kind: 'apply'}) RETURN u.apply_id AS id ORDER BY id")
+    return [row['id'] for row in rows]
+
+
+@pytest.mark.asyncio
+async def test_undo_journals_are_pruned_to_the_soft_target_undone_ones_first(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _seed_journals(driver)
+    managed, maintenance = _maintenance(settings)
+    try:
+        dry = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=2, dry_run=True)
+        assert await _journal_ids(driver) == ['j1', 'j2', 'j3', 'j4', 'j5']
+        result = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=2)
+    finally:
+        await managed.close()
+
+    assert [entry['applyId'] for entry in result['pruned']] == [entry['applyId'] for entry in dry['pruned']]
+    assert sorted(entry['applyId'] for entry in result['pruned']) == ['j3', 'j5'], 'undone journals go first'
+    assert await _journal_ids(driver) == ['j1', 'j2', 'j4']
+    assert await _rows(driver, "MATCH (u:FuliDataFormatUndo {apply_id: 'j3'}) RETURN count(u) AS n") == [{'n': 0}]
+    assert all(set(entry) == {'store', 'applyId', 'migrationId', 'state', 'bytes', 'reason'} for entry in result['pruned'])
+
+
+@pytest.mark.asyncio
+async def test_the_journal_an_undo_needs_is_never_pruned(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _seed_journals(driver)
+    managed, maintenance = _maintenance(settings)
+    try:
+        result = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=0,
+                                                                  apply_ids=['j1', 'j2', 'j3', 'j4', 'j5'])
+    finally:
+        await managed.close()
+
+    assert result['protected'] == 'j1'
+    assert await _journal_ids(driver) == ['j1']
+    assert await _rows(driver, "MATCH (u:FuliDataFormatUndo {apply_id: 'j1'}) RETURN count(u) AS n") == [{'n': 3}]
+
+
+@pytest.mark.asyncio
+async def test_the_shared_size_budget_prunes_the_journals_it_chose_and_a_dry_run_lists_what_stays(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _seed_journals(driver)
+    managed, maintenance = _maintenance(settings)
+    try:
+        plan = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=3, dry_run=True)
+        result = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=3,
+                                                                  apply_ids=['j2', 'j-gone'])
+    finally:
+        await managed.close()
+
+    # keep=3: the protected j1 and three others stay, j5 (the older undone one) goes.
+    assert [entry['applyId'] for entry in plan['pruned']] == ['j5']
+    assert [(j['applyId'], j['protected']) for j in plan['journals']] == [
+        ('j1', True), ('j2', False), ('j3', False), ('j4', False)]
+    assert all(j['bytes'] > 0 and j['recordedAt'] for j in plan['journals'])
+    assert {entry['applyId']: entry['reason'] for entry in result['pruned']} == {
+        'j5': 'more than 3 undo journals', 'j2': 'over the shared size budget'}
+    assert await _journal_ids(driver) == ['j1', 'j3', 'j4']
+
+
+@pytest.mark.asyncio
+async def test_pruning_journals_takes_the_review_channel(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    await _seed_journals(driver)
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        body = {'keep': 0}
+        refused = await client.post('/v1/data-format/prune', json=body)
+        pruned = await client.post('/v1/data-format/prune', headers=REVIEW, json=body)
+
+    assert refused.status_code == 403
+    assert pruned.status_code == 200, pruned.text
+    assert await _journal_ids(driver) == ['j1']
+
+
+async def _seed_older_applied_journal(driver, apply_id='b-older'):
+    """B: an applied journal older than the one a real apply just wrote (A)."""
+    await driver.execute_query(
+        """
+        CREATE (:FuliDataFormatUndo {apply_id: $id, kind: 'apply', migration_id: 'graph/5-x',
+                                     state: 'applied', reversible: true, plan_digest: $id,
+                                     from_version: 4, to_version: 5,
+                                     recorded_at: datetime('2026-10-01T00:00:00Z')})
+        CREATE (:FuliDataFormatUndo {apply_id: $id, kind: 'record', touch: 0, target: 'node',
+                                     ref: $id + ':1', after_hash: 'h'})
+        """,
+        id=apply_id,
+    )
+
+
+async def _apply_group_step(settings):
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        applied = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                    json={'digest': plan['digest'], 'entrypoint': 'cli'})
+    assert applied.status_code == 200, applied.text
+    return applied.json()['applyId']
+
+
+def _an_hour_ago():
+    # A lease taken with this clock has already expired when it is taken.
+    from datetime import datetime, timedelta, timezone
+    return datetime.now(timezone.utc) - timedelta(hours=1)
+
+
+async def _journal_states(driver):
+    rows = await _rows(driver, """
+        MATCH (u:FuliDataFormatUndo) WITH u.apply_id AS id, count(u) AS entries,
+              max(CASE WHEN u.kind = 'apply' THEN u.state END) AS state
+        RETURN id, state, entries ORDER BY id""")
+    return [dict(row) for row in rows]
+
+
+@pytest.mark.asyncio
+async def test_a_prune_whose_lease_expired_while_another_process_undid_a_step_deletes_nothing(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    newest = await _apply_group_step(settings)
+    await _seed_older_applied_journal(driver)
+    managed, maintenance = _maintenance(settings)
+    other, other_maintenance = _maintenance(settings)
+
+    async def the_lease_expires_and_another_process_undoes_a(stage):
+        if stage != 'lease_held':
+            return
+        # The old prune's lease has run out; another process takes it over and
+        # undoes A, so B is now the journal the next undo needs.
+        await graph_format_confirm.rollback_graph_migration(
+            other_maintenance, settings, migration_id=GROUP_STEP, actor={'entrypoint': 'cli'})
+
+    try:
+        with pytest.raises(GraphFormatUnavailable) as refused:
+            await graph_format_confirm.prune_graph_journals(
+                maintenance, settings, keep=0, now=_an_hour_ago,
+                barrier=the_lease_expires_and_another_process_undoes_a)
+    finally:
+        await managed.close()
+        await other.close()
+
+    assert refused.value.code == 'data_format_locked'
+    states = {row['id']: row['state'] for row in await _journal_states(driver)}
+    assert states == {newest: 'rolled_back', 'b-older': 'applied'}, 'B survives for the next undo'
+
+
+@pytest.mark.asyncio
+async def test_an_undo_that_arrives_while_a_prune_holds_the_ledger_waits_for_its_commit(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    newest = await _apply_group_step(settings)
+    await _seed_older_applied_journal(driver)
+    managed, maintenance = _maintenance(settings)
+    other, other_maintenance = _maintenance(settings)
+    undo = {}
+
+    async def an_undo_arrives_after_the_journals_were_read(stage):
+        if stage != 'journals_read':
+            return
+        # Even though the prune's lease has expired, the undo cannot take it over.
+        undo['task'] = asyncio.create_task(graph_format_confirm.rollback_graph_migration(
+            other_maintenance, settings, migration_id=GROUP_STEP, actor={'entrypoint': 'cli'}))
+        await asyncio.sleep(1.5)
+        undo['waited'] = not undo['task'].done()
+
+    try:
+        result = await graph_format_confirm.prune_graph_journals(
+            maintenance, settings, keep=0, now=_an_hour_ago,
+            barrier=an_undo_arrives_after_the_journals_were_read)
+        undone = await undo['task']
+    finally:
+        await managed.close()
+        await other.close()
+
+    # The two ran one after the other: the prune saw A as the journal an undo
+    # needed and kept it, then the undo used it.
+    assert undo['waited'], 'the undo waited for the prune to commit'
+    assert result['protected'] == newest and [entry['applyId'] for entry in result['pruned']] == ['b-older']
+    assert undone['applyId'] == newest
+    assert [(row['id'], row['state']) for row in await _journal_states(driver)] == [(newest, 'rolled_back')]
+
+
+@pytest.mark.asyncio
+async def test_a_graph_a_newer_fuli_wrote_keeps_every_undo_journal(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _seed_journals(driver)
+    await driver.execute_query(
+        "MATCH (f:FuliDataFormat {store: 'graph'}) SET f.version = $version",
+        version=GRAPH_FORMAT_VERSION + 1,
+    )
+    before = await _journal_states(driver)
+    managed, maintenance = _maintenance(settings)
+    try:
+        for dry_run in (True, False):
+            with pytest.raises(GraphFormatUnavailable) as refused:
+                await graph_format_confirm.prune_graph_journals(
+                    maintenance, settings, keep=0, dry_run=dry_run)
+            assert refused.value.code == 'data_format_blocked'
+    finally:
+        await managed.close()
+
+    assert len(before) == 5 and await _journal_states(driver) == before
+    assert await _version(driver) == GRAPH_FORMAT_VERSION + 1
+
+
+@pytest.mark.asyncio
+async def test_journal_sizes_count_utf8_bytes_not_characters(graph):
+    settings, driver = graph
+    # Two journals alike but for one record's text: two Latin letters, or two
+    # Chinese characters of three UTF-8 bytes each.
+    for apply_id, ref in (('ja', 'ab'), ('jb', '记录')):
+        await driver.execute_query(
+            """
+            CREATE (:FuliDataFormatUndo {apply_id: $id, kind: 'apply', migration_id: 'graph/5-x',
+                                         state: 'rolled_back', recorded_at: datetime('2026-10-01T00:00:00Z')})
+            CREATE (:FuliDataFormatUndo {apply_id: $id, kind: 'record', ref: $ref})
+            """,
+            id=apply_id, ref=ref,
+        )
+    sizes = {j['applyId']: j['bytes'] for j in await journal_inventory(driver)}
+
+    assert sizes['jb'] - sizes['ja'] == 4

@@ -7,6 +7,7 @@ import {
   applyConfirmedJsonMigration, describeJsonRestore, jsonBackupFiles, previewJsonMigration, recoverJsonFile,
   restoreJsonFile, rollbackJsonMigration, undoableJsonMigrations
 } from '../storage/json-format-migration.js';
+import { PERSONAL_GRAPH_LABEL } from './format-status.js';
 import { localStoreFiles } from './local-stores.js';
 
 // What a person is asked to confirm for one data directory (rec#17 D-09 part
@@ -16,7 +17,7 @@ import { localStoreFiles } from './local-stores.js';
 // plan's digest binds those. It is not an authorization: applying checks it
 // again, store by store, under each store's lock.
 
-export const GRAPH_LABEL = 'graph (personal)';
+export const GRAPH_LABEL = PERSONAL_GRAPH_LABEL;
 
 const ENGINES = Object.freeze({
   sqlite: Object.freeze({ preview: previewSqliteMigration, apply: applyConfirmedSqliteMigration,

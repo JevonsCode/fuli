@@ -1,5 +1,7 @@
 import { dirname } from 'node:path';
 
+import { externalWritersLines } from './external-writers.js';
+import { PERSONAL_GRAPH_LABEL, personalGraphFormatState } from './format-status.js';
 import { inspectLocalStores } from './local-stores.js';
 import { readFormatOperations } from './operations-log.js';
 
@@ -88,4 +90,20 @@ function applicationFormatNotice(application) {
 export async function receiptFormatNotices(application) {
   const notice = await applicationFormatNotice(application)?.();
   return notice ? [notice] : [];
+}
+
+// What `fuli setup` says when stores wait for a person: which ones (the local
+// stores, and the personal graph when its provider's health says a step waits
+// for a confirmation), where to review them, and the boundary of applying
+// them. null when none. A provider that does not answer is left out.
+export async function setupMigrationNotice(dataDir, { notices = dataFormatNotices(dataDir),
+  graphState = () => personalGraphFormatState(dataDir) } = {}) {
+  const waiting = notices().filter((notice) => WAITING_STEP_STATES.has(notice.state)).map((notice) => notice.label);
+  let graph = null;
+  try { graph = await graphState(); } catch { graph = null; }
+  if (graph?.state === 'pending_confirmation') waiting.push(PERSONAL_GRAPH_LABEL);
+  if (!waiting.length) return null;
+  return [`Data format migrations wait for you: ${waiting.join(', ')}. `
+    + 'Review them with fuli migrate preview, or in the console under Settings → Data format migrations.',
+  ...externalWritersLines()].join('\n');
 }

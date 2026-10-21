@@ -1,0 +1,126 @@
+import { backupRetentionPolicy, pruneFormatBackups, sizeBudgetReason } from './backup-retention.js';
+import { GRAPH_LABEL } from './migration-plan.js';
+import { recordFormatOperations } from './operations-log.js';
+
+// One soft budget for what FULI keeps to undo or restore a data format change
+// (rec#17 D-09 part 2, D-11 §5): each local store keeps its newest `keep`
+// format backups, the graph its newest `keep` undo journals, and the backups
+// and journals together use at most `maxBytes` (1 GiB by default). Past it,
+// the oldest items no undo or current version needs go first, across both;
+// journals of undone graph steps go before anything else. What an undo or the
+// current version needs is kept even beyond the budget.
+//
+// The graph provider lists its journals first (a dry run), this module
+// chooses within the shared budget, local backups are pruned, and then the
+// provider prunes the journals chosen, checking again under its lock that
+// none is the one an undo needs now. The two steps are not one atomic
+// operation across stores: the bytes kept are what the plan left, not a
+// measured total, and the graph may change in between. The graph's part is
+// - 'unreached' when its plan could not be read: no delete was sent, so local
+//   backups alone were held to the budget and the graph is as it was;
+// - 'unverified' when the delete was sent and no answer came: the provider
+//   may have committed it, so nothing is said about what it pruned or kept;
+// - 'pruned' with what the provider says it pruned and kept.
+
+export async function pruneFormatRetention({ dataDir, graph = null, policy = backupRetentionPolicy(), dryRun = false,
+  now = () => new Date(), remove, sizeOf, record = recordFormatOperations }) {
+  let plan = null;
+  let graphError = null;
+  if (graph) {
+    try {
+      plan = await graph.prune({ keep: policy.keep, dryRun: true });
+    } catch (error) {
+      // No graph connection set up in this data directory: nothing to weigh.
+      if (error?.code === 'ENOENT') graph = null;
+      else graphError = error.message;
+    }
+  }
+  const shared = (plan?.journals ?? []).map((journal) => ({ key: journal.applyId, bytes: journal.bytes,
+    at: journal.recordedAt ?? '', needed: journal.protected === true, first: journal.state !== 'applied' }));
+  const local = pruneFormatBackups(dataDir, { policy, dryRun, now, shared,
+    ...remove ? { remove } : {}, ...sizeOf ? { sizeOf } : {} });
+  if (!graph) return { local, graph: null };
+  // The plan could not be read: no delete was sent, so the graph is as it was.
+  if (!plan) return { local, graph: { status: 'unreached', error: graphError } };
+  let result;
+  if (dryRun) {
+    const chosen = new Set(local.sharedPruned);
+    result = { pruned: [...plan.pruned, ...plan.journals.filter((journal) => chosen.has(journal.applyId))
+      .map((journal) => ({ ...journal, reason: SIZE }))], kept: plan.journals.length - chosen.size };
+  } else {
+    try {
+      result = await graph.prune({ keep: policy.keep, applyIds: local.sharedPruned });
+    } catch (error) {
+      // The delete was sent: the provider may have committed it and only its
+      // answer was lost. What it pruned is unknown, not none, and stays so
+      // even when the local audit log cannot be written.
+      const unverified = { status: 'unverified', error: error.message };
+      return { local, graph: withAudit(unverified, () => record(dataDir, [{ kind: 'prune_unverified',
+        store: 'graph', label: GRAPH_LABEL, requested: local.sharedPruned.length, at: now().toISOString() }])) };
+    }
+  }
+  const at = now().toISOString();
+  const events = (result.pruned ?? []).map((entry) => ({ kind: 'pruned', store: 'graph', label: GRAPH_LABEL,
+    backupRef: `undo journal ${entry.applyId}`, migrationId: entry.migrationId, bytes: entry.bytes,
+    reason: entry.reason === SIZE ? sizeBudgetReason(policy) : entry.reason, at }));
+  const pruned = { status: 'pruned', pruned: events, kept: result.kept ?? 0 };
+  return { local, graph: dryRun ? pruned : withAudit(pruned, () => record(dataDir, events)) };
+}
+
+// What the graph did does not depend on the audit log: a write that fails is
+// attached as auditError (code and message only), and the result stays.
+function withAudit(graphResult, write) {
+  try {
+    write();
+    return graphResult;
+  } catch (error) {
+    return { ...graphResult, auditError: { code: error?.code ?? 'error', message: error?.message ?? String(error) } };
+  }
+}
+
+// What FULI says when the graph's delete was sent but its answer never came,
+// in `fuli migrate prune`, after an apply or undo, and in the console
+// (web/src/i18n/messages/data-format.ts carries the same two strings).
+export const GRAPH_PRUNE_UNVERIFIED_NOTICE = Object.freeze({
+  zh: '图谱撤销日志的清理结果未经确认：删除请求已发出但没有收到答复，Provider 可能已经删除了部分日志。'
+    + '请运行 fuli migrate status，或再运行一次 fuli migrate prune 核对。',
+  en: 'Graph undo journal prune result unverified: the delete request was sent but no answer came back, so the '
+    + 'provider may already have deleted some journals. Run fuli migrate status, or fuli migrate prune again, to check.'
+});
+
+export function graphPruneUnverifiedLines() {
+  return [GRAPH_PRUNE_UNVERIFIED_NOTICE.zh, GRAPH_PRUNE_UNVERIFIED_NOTICE.en];
+}
+
+// What FULI says next to a graph prune result when its audit entry could not
+// be written; the console's dataFormat.auditFailed carries the same strings.
+export const AUDIT_FAILED_NOTICE = Object.freeze({
+  zh: '本地操作日志（format-operations.json）没有写成：{message}。上面的结果不受影响，但这次清理没有记入日志。',
+  en: 'The local operations log (format-operations.json) could not be written: {message}. The result above stands, '
+    + 'but this prune is not in the log.'
+});
+
+export function auditFailedLines(auditError) {
+  return [AUDIT_FAILED_NOTICE.zh, AUDIT_FAILED_NOTICE.en]
+    .map((wording) => wording.replace('{message}', auditError.message));
+}
+
+// The budget in one wording, said by `fuli migrate prune` and the console's
+// data format page (web/src/i18n/messages/data-format.ts carries the same two
+// strings; a test keeps them equal) and described in the release notes.
+export const RETENTION_BUDGET_NOTICE = Object.freeze({
+  zh: '保留预算：每个存储保留最近 {keep} 份格式备份，图谱保留最近 {keep} 份撤销日志；备份和日志合计最多约 {megabytes} MB，'
+    + '超出时先清理最旧的。撤销或当前版本还需要的始终保留，即使因此超出预算。',
+  en: 'Retention budget: each store keeps its newest {keep} format backups and the graph its newest {keep} undo '
+    + 'journals; backups and journals together use at most about {megabytes} MB, the oldest going first. What an '
+    + 'undo or the current version needs is always kept, even beyond the budget.'
+});
+
+export function retentionLines(policy) {
+  const megabytes = String(Math.round(policy.maxBytes / (1024 * 1024)));
+  return [RETENTION_BUDGET_NOTICE.zh, RETENTION_BUDGET_NOTICE.en].map((wording) => wording
+    .replaceAll('{keep}', String(policy.keep)).replaceAll('{megabytes}', megabytes));
+}
+
+// The provider's reason for a journal the shared size budget chose.
+const SIZE = 'over the shared size budget';

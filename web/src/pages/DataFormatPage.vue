@@ -8,7 +8,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import {
-  applyMigrationPlan, moreRecords, readMigrationPlan, refusalCode, refusalMessage, sampleChips, shortDigest,
+  applyMigrationPlan, moreRecords, pruneAuditError, pruneUnverified, readMigrationPlan, refusalCode, refusalMessage, sampleChips, shortDigest,
   undoMigration, type ApplyOutcome, type MigrationPlan, type MigrationResult, type UndoableMigration,
 } from '@/features/data-format/model'
 import { t } from '@/i18n'
@@ -31,6 +31,10 @@ const undoTarget = ref<UndoableMigration | null>(null)
 const undoing = ref<UndoableMigration | null>(null)
 const undoMessage = ref('')
 const undoError = ref('')
+// The graph's delete was sent after the change, and its answer never came.
+const pruneUnknown = ref(false)
+// The local operations log could not record that prune; its result stands.
+const auditFailure = ref('')
 let reading: AbortController | null = null
 const openedFromSettings = /^\/settings(?:[?#]|$)/
 
@@ -38,6 +42,10 @@ const stores = computed(() => plan.value?.stores ?? [])
 const blocked = computed(() => plan.value?.blocked ?? [])
 const undoable = computed(() => plan.value?.undoable ?? [])
 const warnings = computed(() => stores.value.filter(store => store.warning))
+const retention = computed(() => {
+  const policy = plan.value?.retention
+  return policy ? { keep: policy.keep, megabytes: Math.round(policy.maxBytes / (1024 * 1024)) } : null
+})
 
 async function load() {
   reading?.abort()
@@ -61,8 +69,12 @@ async function apply() {
   applyError.value = ''
   stale.value = false
   outcome.value = null
+  pruneUnknown.value = false
+  auditFailure.value = ''
   try {
     outcome.value = await applyMigrationPlan(digest)
+    pruneUnknown.value = pruneUnverified(outcome.value.pruned)
+    auditFailure.value = pruneAuditError(outcome.value.pruned)
     await load()
   } catch (cause) {
     if (refusalCode(cause) === 'data_format_stale_preview') {
@@ -86,8 +98,12 @@ async function confirmUndo(entry: UndoableMigration) {
   undoing.value = entry
   undoError.value = ''
   undoMessage.value = ''
+  pruneUnknown.value = false
+  auditFailure.value = ''
   try {
     const result = await undoMigration(entry.label, entry.migrationId)
+    pruneUnknown.value = pruneUnverified(result.pruned)
+    auditFailure.value = pruneAuditError(result.pruned)
     undoMessage.value = t('dataFormat.undone', { id: entry.migrationId, version: result.version })
     undoTarget.value = null
     await load()
@@ -126,6 +142,13 @@ onBeforeUnmount(() => reading?.abort())
             <strong>{{ skipped.label }}</strong> {{ t('dataFormat.resultSkipped', { id: skipped.migrationId }) }}
           </p>
         </section>
+
+        <p v-if="pruneUnknown" class="data-format-error" role="alert" data-prune-unverified>
+          {{ t('dataFormat.pruneUnverified') }}
+        </p>
+        <p v-if="auditFailure" class="data-format-error" role="alert" data-audit-failed>
+          {{ t('dataFormat.auditFailed', { message: auditFailure }) }}
+        </p>
 
         <UiEmpty v-if="!stores.length && !blocked.length" icon="check" :text="t('dataFormat.nothingPending')" />
 
@@ -183,6 +206,7 @@ onBeforeUnmount(() => reading?.abort())
             <span>{{ t('dataFormat.digest') }}</span>
             <code :title="plan.digest" data-plan-digest>{{ shortDigest(plan.digest) }}…</code>
           </p>
+          <p class="data-format-external" data-external-writers>{{ t('dataFormat.externalWriters') }}</p>
           <div class="data-format-check">
             <Checkbox id="data-format-reviewed" v-model="reviewed" :disabled="applying" />
             <Label for="data-format-reviewed">{{ t('dataFormat.reviewed') }}</Label>
@@ -204,6 +228,7 @@ onBeforeUnmount(() => reading?.abort())
             <CardDescription>{{ t('dataFormat.undoLede') }}</CardDescription>
           </CardHeader>
           <div class="data-format-body">
+          <p class="data-format-external" data-external-writers>{{ t('dataFormat.externalWriters') }}</p>
           <ul class="data-format-undo">
             <li v-for="entry in undoable" :key="`${entry.label}:${entry.migrationId}`">
               <span><strong>{{ entry.label }}</strong> <code>{{ entry.migrationId }}</code>
@@ -224,6 +249,9 @@ onBeforeUnmount(() => reading?.abort())
           </div>
         </Card>
 
+        <p v-if="retention" class="data-format-restore" data-retention>
+          {{ t('dataFormat.retention', retention) }}
+        </p>
         <p class="data-format-restore">{{ t('dataFormat.restoreNote') }}</p>
       </template>
     </div>
@@ -247,7 +275,8 @@ onBeforeUnmount(() => reading?.abort())
 
 .data-format-lede,
 .data-format-restore,
-.data-format-presence {
+.data-format-presence,
+.data-format-external {
   margin: 0;
   color: var(--color-muted);
   font-size: 14px;

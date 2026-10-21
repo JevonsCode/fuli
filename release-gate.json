@@ -1,4 +1,4 @@
 {
-  "formatReleaseGate": "blocked-until-part-2",
-  "reason": "rec#17 D-09/D-11: no release until data format migration part 2 (confirm, apply and recovery) ships and its review blockers are closed; opening the gate is the last commit of part 2, after dot's approval."
+  "formatReleaseGate": "open",
+  "reason": "rec#17 D-09/D-11: data format migration part 2 (confirm, apply, recovery, undo journal retention and the external-writer boundary) has shipped with its tests. An open gate only stops blocking a release run; publishing a beta is still a separate human decision."
 }

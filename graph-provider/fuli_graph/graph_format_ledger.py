@@ -130,6 +130,26 @@ async def acquire_graph_migration_lock(driver, owner: str, *, until) -> bool:
     return bool(records and records[0]['acquired'])
 
 
+async def hold_graph_migration_lock(driver, owner: str, *, until) -> int | None:
+    """Inside a confirmed operation's transaction: takes the identity node's
+    write lock and keeps it to the commit, so no other process takes the
+    migration lease meanwhile, even once it has expired. Refuses unless this
+    run still holds the lease (another process may have taken it over while
+    this one waited), renews it, and returns the version read under the lock."""
+    records, _, _ = await driver.execute_query(
+        _LOCKED_IDENTITY + '''
+        WITH format WHERE format.lock_owner = $owner
+        SET format.lock_until = $until
+        RETURN format.version AS version
+        ''',
+        store=GRAPH_STORE, owner=owner, until=until,
+    )
+    if not records:
+        raise GraphFormatLockLost('lost the graph migration lock to another process')
+    version = records[0]['version']
+    return int(version) if version is not None else None
+
+
 async def release_graph_migration_lock(driver, owner: str) -> None:
     await driver.execute_query(
         _LOCKED_IDENTITY + '''

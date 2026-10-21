@@ -50,6 +50,8 @@ export interface MigrationPlan {
   stores: StorePlan[]
   blocked: BlockedStore[]
   undoable: UndoableMigration[]
+  // The one budget format backups and graph undo journals share.
+  retention?: { keep: number; maxBytes: number } | null
 }
 
 export interface MigrationResult {
@@ -61,16 +63,33 @@ export interface MigrationResult {
   message?: string
 }
 
+// What retention did after the change: a graph prune whose answer never came is 'prune_unverified'.
+// auditError: the local operations log could not record it; the result stands.
+export interface PruneEntry {
+  kind: 'pruned' | 'prune_failed' | 'prune_unverified' | 'audit_failed'
+  store?: string
+  auditError?: { code: string; message: string }
+}
+
 export interface ApplyOutcome {
   status: 'applied' | 'partial' | 'failed'
   results: MigrationResult[]
   skipped: { label: string; migrationId: string }[]
+  pruned?: PruneEntry[]
+}
+
+export function pruneUnverified(pruned: PruneEntry[] | undefined): boolean {
+  return (pruned ?? []).some(entry => entry.kind === 'prune_unverified')
+}
+
+export function pruneAuditError(pruned: PruneEntry[] | undefined): string {
+  return (pruned ?? []).find(entry => entry.auditError)?.auditError?.message ?? ''
 }
 
 export const readMigrationPlan = (signal?: AbortSignal) => getJson<MigrationPlan>('/api/data-format', { signal })
 export const applyMigrationPlan = (digest: string) => postJson<ApplyOutcome>('/api/data-format/apply', { digest })
 export const undoMigration = (label: string, migrationId: string) =>
-  postJson<{ status: string; version: number }>('/api/data-format/rollback', { label, migrationId })
+  postJson<{ status: string; version: number; pruned?: PruneEntry[] }>('/api/data-format/rollback', { label, migrationId })
 
 export interface SampleChip { id: string; text: string; cut: boolean }
 
