@@ -256,6 +256,8 @@ function hasDetails(record: JudgmentDecisionRecord) {
       </div>
     </Teleport>
 
+    <UiSegmented v-model="filter" class="judgment-filter" :label="judgmentText('workbench.filter')" :options="filterOptions" />
+
     <GrowthLoading v-if="loading && !records.length" variant="compact" :label="judgmentText('workbench.loading')" />
     <GrowthLoading v-else-if="loading" variant="inline" :label="judgmentText('workbench.loading')" />
     <div v-if="error" class="judgment-workbench-error" role="alert">
@@ -263,8 +265,6 @@ function hasDetails(record: JudgmentDecisionRecord) {
       <Button size="sm" variant="ghost" :disabled="busy" @click="load">{{ judgmentText('workbench.retry') }}</Button>
     </div>
     <div v-if="reviewError" class="judgment-workbench-error" role="alert">{{ reviewError }}</div>
-
-    <UiSegmented v-model="filter" class="judgment-filter" :label="judgmentText('workbench.filter')" :options="filterOptions" />
 
     <div v-if="showEmpty" class="ui-empty rounded-lg border bg-card" data-judgment-empty>
       <p class="m-0">{{ judgmentText(filter === 'human' ? 'workbench.emptyHuman' : 'workbench.empty') }}</p>

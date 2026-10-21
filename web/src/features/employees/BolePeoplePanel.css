@@ -10,7 +10,8 @@
 .bole-search { flex: 1 1 220px; width: auto; }
 .bole-filters .project-scope-picker { flex: 0 1 260px; min-width: 0; }
 .bole-role-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.bole-role-segmented { flex-wrap: wrap; max-width: 100%; }
+.bole-role-segmented { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.bole-role-segmented > :deep(button) { flex: 0 0 auto; white-space: nowrap; }
 .bole-result-count { color: var(--color-muted); font-size: 12px; }
 .bole-summary { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 0 auto; }
 .bole-summary div { display: flex; align-items: baseline; gap: 8px; }

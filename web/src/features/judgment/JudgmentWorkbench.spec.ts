@@ -151,6 +151,20 @@ describe('JudgmentWorkbench', () => {
     expect(wrapper.findAll('[data-action="review"]')).toHaveLength(1)
   })
 
+  it('keeps the filter above a pending read or an error, so only the list is replaced', async () => {
+    const pending = deferred<{ records: unknown[] }>()
+    getJson.mockReset().mockReturnValueOnce(pending.promise)
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    const order = (selector: string) => {
+      const filter = wrapper.get('.judgment-filter').element
+      return Boolean(filter.compareDocumentPosition(wrapper.get(selector).element) & Node.DOCUMENT_POSITION_FOLLOWING)
+    }
+    expect(order('.growth-loading')).toBe(true)
+    pending.reject(new Error('Records are unavailable'))
+    await flushPromises()
+    expect(order('[role="alert"]')).toBe(true)
+  })
+
   it('does not load or review without a real personal space', async () => {
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: '' } })
     await flushPromises()

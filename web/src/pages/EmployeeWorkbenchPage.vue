@@ -448,6 +448,7 @@ async function projectsSaved() {
 .employee-workbench-mark img { width: 100%; height: 100%; object-fit: cover; }
 .employee-workbench-role { color: var(--color-muted); font-size: 13px; overflow-wrap: anywhere; }
 .employee-workbench-actions { display: flex; align-items: center; gap: 8px; min-width: 0; margin-left: auto; }
+@media (max-width: 700px) { .employee-workbench-actions { margin-left: 0; } }
 /* On the canvas the board needs no frame of its own. */
 .employee-workbench-view :deep(.employee-all-projects) { padding: 0; background: transparent; }
 .employee-workbench-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }

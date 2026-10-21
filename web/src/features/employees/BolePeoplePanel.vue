@@ -16,7 +16,7 @@ import { employeeAvatarUrl } from './avatars'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
 import AgentName from '@/features/agent-profile/AgentName.vue'
 import { fuzzyMatch } from '@/features/agent-profile/profile-model'
-import { taskStatusTone } from '@/features/project-agents/task-labels'
+import { taskStatusLabel, taskStatusTone } from '@/features/project-agents/task-labels'
 import { useWorkbenchToolbarActions } from './workbench-toolbar'
 
 type UnknownRecord = Record<string, unknown>
@@ -266,11 +266,6 @@ function typeLabel(type: string) {
     ? t(`employees.bole.types.${type}`)
     : t('employees.bole.types.other')
 }
-function statusLabel(status: string) {
-  return ['awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'failed', 'awaiting_review', 'blocked'].includes(status)
-    ? t(`employees.bole.status.${status}`)
-    : status
-}
 function agentName(agentId: string) { return agents.value.find((agent) => agent.id === agentId)?.name ?? agentId }
 function projectName(projectId: string) { return projectNames.value.get(projectId) ?? t('employees.bole.noProject') }
 function formattedDate(value: string) {
@@ -330,7 +325,7 @@ function formattedDate(value: string) {
                 <div><strong><AgentName :space-id="personalSpaceId" :agent-id="agent.id" :name="agent.name" /></strong><AgentHand :agent-id="agent.id" /><small>{{ agent.responsibility || typeLabel(agent.type) }}</small></div>
               </div>
               <div class="bole-agent-work">
-                <template v-if="agent.task"><Badge class="bole-status" :variant="taskStatusTone(agent.task.status)" :title="statusLabel(agent.task.status)">{{ statusLabel(agent.task.status) }}</Badge><p>{{ agent.task.title }}</p></template>
+                <template v-if="agent.task"><Badge class="bole-status" :variant="taskStatusTone(agent.task.status)">{{ taskStatusLabel(agent.task.status) }}</Badge><p>{{ agent.task.title }}</p></template>
                 <p v-else class="is-idle">{{ t('employees.bole.idle') }}</p>
               </div>
               <div class="bole-agent-projects">
