@@ -590,7 +590,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       reason: input.reason,
       name: input.name ?? null,
       summary: input.summary ?? null,
-      fact: input.fact ?? null,
+      fact: input.fact ?? null, basis_meaning: input.basisMeaning ?? null, // D-20.7, a person's choice only
       operation_actor: input.operationActor ?? 'agent',
       // The version the editor read (rec#20); the Provider refuses a stale one.
       ...(input.expectedVersion !== undefined ? { expected_version: input.expectedVersion } : {})
@@ -627,11 +627,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     }
     if (input.replacementItemKind !== undefined) {
       body.replacement_item_kind = input.replacementItemKind;
-    }
-    // What a person's edit means for conclusions drawn from it (D-20.7); the
-    // Provider refuses a wording-only claim that does not come from a person.
-    if (input.basisMeaning !== undefined) {
-      body.basis_meaning = input.basisMeaning;
     }
     return this.personal.reviseKnowledgeItem(input.itemId, body);
   }

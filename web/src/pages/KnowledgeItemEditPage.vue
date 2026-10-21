@@ -13,6 +13,7 @@ import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay
 import { useRoutePeek } from '@/composables/useRoutePeek'
 import KnowledgeBasisReview from '@/features/knowledge-quick-edit/KnowledgeBasisReview.vue'
 import KnowledgeContentEditor from '@/features/knowledge-quick-edit/KnowledgeContentEditor.vue'
+import KnowledgeItemDependents from '@/features/knowledge-quick-edit/KnowledgeItemDependents.vue'
 import KnowledgeItemHistory from '@/features/knowledge-quick-edit/KnowledgeItemHistory.vue'
 import KnowledgeItemSummaryCard from '@/features/knowledge-quick-edit/KnowledgeItemSummaryCard.vue'
 import KnowledgeScopeEditor from '@/features/knowledge-quick-edit/KnowledgeScopeEditor.vue'
@@ -150,11 +151,11 @@ watch([spaceId, kind, itemId], () => {
           <RouterLink :to="currentVersionPath">{{ t('knowledgeQuickEdit.viewCurrent') }}</RouterLink>
         </Button>
       </div>
+      <KnowledgeBasisReview :item="item" :space-id="spaceId" @versioned="versioned" @failed="failed" />
       <template v-if="active">
         <KnowledgeScopeEditor :item="item" :space-id="spaceId" :projects="projects" @saved="saved" @failed="failed" />
         <KnowledgeTagEditor :item="item" :space-id="spaceId" @changed="saved" @failed="failed" />
       </template>
-      <KnowledgeBasisReview :item="item" :space-id="spaceId" @saved="saved" @versioned="versioned" @failed="failed" />
       <KnowledgeContentEditor :item="item" :space-id="spaceId" @saved="saved" @versioned="versioned" @failed="failed" />
       <Card v-if="item.bases?.length" as="section" data-item-bases>
         <CardHeader>
@@ -170,6 +171,7 @@ watch([spaceId, kind, itemId], () => {
           </li>
         </ul>
       </Card>
+      <KnowledgeItemDependents :item="item" :space-id="spaceId" @saved="saved" @failed="failed" />
       <KnowledgeItemHistory :item="item" :space-id="spaceId" @open-version="openVersion" />
     </template>
   </div>

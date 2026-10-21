@@ -946,6 +946,7 @@ test('personal knowledge correction stays on the personal Provider and keeps pro
       name: 'Fuli 知识目录',
       summary: '默认以目录方式展示结构化知识。',
       fact: null,
+      basis_meaning: null,
       inheritance_mode: 'descendants',
       inherited_project_ids: [],
       operation_actor: 'agent'
