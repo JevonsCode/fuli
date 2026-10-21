@@ -12,6 +12,8 @@ vi.mock('@/api/client', async (original) => ({
 }))
 
 import { ApiError } from '@/api/client'
+import { currentLocale } from '@/i18n'
+import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { useConsoleStore } from '@/stores/console'
 import KnowledgeItemEditPage from './KnowledgeItemEditPage.vue'
 
@@ -193,7 +195,9 @@ describe('KnowledgeItemEditPage', () => {
     const rows = wrapper.findAll('[data-item-versions] li')
     expect(rows).toHaveLength(2)
     expect(rows[0].text()).toContain('当前版本')
-    expect(rows[0].get('[data-version-who]').text()).toBe('2026/10/21 10:00 · 你')
+    // The same formatter in the runner's time zone, so the spec holds in any zone.
+    const shown = formatDateTime('2026-10-21T02:00:00Z', currentLocale(), DATE_TIME_MINUTE, { missing: '—' })
+    expect(rows[0].get('[data-version-who]').text()).toBe(`${shown} · 你`)
     expect(rows[0].get('[data-version-evidence]').text()).toBe('你明确说的 · 你已确认')
     expect(rows[0].text()).toContain('原因：My words')
     expect(rows[0].find('[aria-current="true"]').exists()).toBe(true)
