@@ -45,7 +45,9 @@ from .graph_format_journal import (
     undo_journal,
 )
 from .graph_format_ledger import (
+    GraphFormatLockLost,
     hold_graph_identity,
+    hold_graph_migration_lock,
     lower_graph_version,
     read_graph_ledger,
     record_graph_event,
@@ -211,18 +213,46 @@ async def apply_graph_migration(
 
 async def prune_graph_journals(
     driver, settings, *, keep: int, max_bytes: int, dry_run: bool = False, now=now_utc,
-    lock_wait_seconds=LOCK_WAIT_SECONDS, sleep=asyncio.sleep,
+    lock_wait_seconds=LOCK_WAIT_SECONDS, sleep=asyncio.sleep, barrier=None,
 ) -> dict:
     """Keeps undo journals within the same soft target as the file backups:
     the newest `keep` and at most `max_bytes` in all. The journal of the
     confirmed step that can be undone now is never pruned, whatever the
-    target; journals of undone steps go first. Under the migration lock, so
-    no apply or undo runs meanwhile; a journal still being written belongs
-    to an uncommitted apply and is not seen. Returns what was (or would be)
-    pruned: apply ID, step, size and reason only."""
+    target; journals of undone steps go first. Returns what was (or would be)
+    pruned: apply ID, step, size and reason only.
 
-    async def operation(_run, queries):
+    The transaction first takes the ledger's identity lock and checks that
+    this run still holds the migration lease, and keeps the lock to the
+    commit; only then does it read the version and the journals. So no apply
+    or undo commits between what it reads and what it deletes, and a lease
+    that expired while this run waited (another process may have undone a
+    step meanwhile) stops it before it reads anything. A graph written by a
+    newer FULI is refused: its journals follow rules this FULI does not
+    know. A journal still being written belongs to an uncommitted apply and
+    is not seen. barrier (a test seam): awaited with 'lease_held' once the
+    lease is held, before the transaction locks the ledger, and with
+    'journals_read' once the journals are read under the lock."""
+
+    async def operation(run, queries):
+        if barrier:
+            await barrier('lease_held')
+        try:
+            version = await hold_graph_migration_lock(queries, run.owner, until=run.until())
+        except GraphFormatLockLost as error:
+            raise _unavailable(
+                'data_format_locked', f"Another FULI process took over this graph's migration lock "
+                f'({error}). Nothing was pruned; try again once it has finished.',
+            ) from error
+        if version is not None and version > GRAPH_FORMAT_VERSION:
+            raise _unavailable(
+                'data_format_blocked',
+                f'The graph uses data format {version}, newer than this FULI supports '
+                f'({GRAPH_FORMAT_VERSION}); its undo journals are kept for the FULI that wrote it. '
+                'Nothing was pruned.',
+            )
         journals = await journal_inventory(queries)
+        if barrier:
+            await barrier('journals_read')
         undoable = next((j['applyId'] for j in journals if j['state'] == 'applied'), None)
         others = [j for j in journals if j['applyId'] != undoable]
         # Undone or unfinished journals first, then the oldest applied ones.

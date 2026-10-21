@@ -696,3 +696,132 @@ async def test_pruning_journals_takes_the_review_channel(graph):
     assert refused.status_code == 403
     assert pruned.status_code == 200, pruned.text
     assert await _journal_ids(driver) == ['j1']
+
+
+async def _seed_older_applied_journal(driver, apply_id='b-older'):
+    """B: an applied journal older than the one a real apply just wrote (A)."""
+    await driver.execute_query(
+        """
+        CREATE (:FuliDataFormatUndo {apply_id: $id, kind: 'apply', migration_id: 'graph/5-x',
+                                     state: 'applied', reversible: true, plan_digest: $id,
+                                     from_version: 4, to_version: 5,
+                                     recorded_at: datetime('2026-10-01T00:00:00Z')})
+        CREATE (:FuliDataFormatUndo {apply_id: $id, kind: 'record', touch: 0, target: 'node',
+                                     ref: $id + ':1', after_hash: 'h'})
+        """,
+        id=apply_id,
+    )
+
+
+async def _apply_group_step(settings):
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        applied = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                    json={'digest': plan['digest'], 'entrypoint': 'cli'})
+    assert applied.status_code == 200, applied.text
+    return applied.json()['applyId']
+
+
+def _an_hour_ago():
+    # A lease taken with this clock has already expired when it is taken.
+    from datetime import datetime, timedelta, timezone
+    return datetime.now(timezone.utc) - timedelta(hours=1)
+
+
+async def _journal_states(driver):
+    rows = await _rows(driver, """
+        MATCH (u:FuliDataFormatUndo) WITH u.apply_id AS id, count(u) AS entries,
+              max(CASE WHEN u.kind = 'apply' THEN u.state END) AS state
+        RETURN id, state, entries ORDER BY id""")
+    return [dict(row) for row in rows]
+
+
+@pytest.mark.asyncio
+async def test_a_prune_whose_lease_expired_while_another_process_undid_a_step_deletes_nothing(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    newest = await _apply_group_step(settings)
+    await _seed_older_applied_journal(driver)
+    managed, maintenance = _maintenance(settings)
+    other, other_maintenance = _maintenance(settings)
+
+    async def the_lease_expires_and_another_process_undoes_a(stage):
+        if stage != 'lease_held':
+            return
+        # The old prune's lease has run out; another process takes it over and
+        # undoes A, so B is now the journal the next undo needs.
+        await graph_format_confirm.rollback_graph_migration(
+            other_maintenance, settings, migration_id=GROUP_STEP, actor={'entrypoint': 'cli'})
+
+    try:
+        with pytest.raises(GraphFormatUnavailable) as refused:
+            await graph_format_confirm.prune_graph_journals(
+                maintenance, settings, keep=0, max_bytes=1, now=_an_hour_ago,
+                barrier=the_lease_expires_and_another_process_undoes_a)
+    finally:
+        await managed.close()
+        await other.close()
+
+    assert refused.value.code == 'data_format_locked'
+    states = {row['id']: row['state'] for row in await _journal_states(driver)}
+    assert states == {newest: 'rolled_back', 'b-older': 'applied'}, 'B survives for the next undo'
+
+
+@pytest.mark.asyncio
+async def test_an_undo_that_arrives_while_a_prune_holds_the_ledger_waits_for_its_commit(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    newest = await _apply_group_step(settings)
+    await _seed_older_applied_journal(driver)
+    managed, maintenance = _maintenance(settings)
+    other, other_maintenance = _maintenance(settings)
+    undo = {}
+
+    async def an_undo_arrives_after_the_journals_were_read(stage):
+        if stage != 'journals_read':
+            return
+        # Even though the prune's lease has expired, the undo cannot take it over.
+        undo['task'] = asyncio.create_task(graph_format_confirm.rollback_graph_migration(
+            other_maintenance, settings, migration_id=GROUP_STEP, actor={'entrypoint': 'cli'}))
+        await asyncio.sleep(1.5)
+        undo['waited'] = not undo['task'].done()
+
+    try:
+        result = await graph_format_confirm.prune_graph_journals(
+            maintenance, settings, keep=0, max_bytes=1, now=_an_hour_ago,
+            barrier=an_undo_arrives_after_the_journals_were_read)
+        undone = await undo['task']
+    finally:
+        await managed.close()
+        await other.close()
+
+    # The two ran one after the other: the prune saw A as the journal an undo
+    # needed and kept it, then the undo used it.
+    assert undo['waited'], 'the undo waited for the prune to commit'
+    assert result['protected'] == newest and [entry['applyId'] for entry in result['pruned']] == ['b-older']
+    assert undone['applyId'] == newest
+    assert [(row['id'], row['state']) for row in await _journal_states(driver)] == [(newest, 'rolled_back')]
+
+
+@pytest.mark.asyncio
+async def test_a_graph_a_newer_fuli_wrote_keeps_every_undo_journal(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _seed_journals(driver)
+    await driver.execute_query(
+        "MATCH (f:FuliDataFormat {store: 'graph'}) SET f.version = $version",
+        version=GRAPH_FORMAT_VERSION + 1,
+    )
+    before = await _journal_states(driver)
+    managed, maintenance = _maintenance(settings)
+    try:
+        for dry_run in (True, False):
+            with pytest.raises(GraphFormatUnavailable) as refused:
+                await graph_format_confirm.prune_graph_journals(
+                    maintenance, settings, keep=0, max_bytes=1, dry_run=dry_run)
+            assert refused.value.code == 'data_format_blocked'
+    finally:
+        await managed.close()
+
+    assert len(before) == 5 and await _journal_states(driver) == before
+    assert await _version(driver) == GRAPH_FORMAT_VERSION + 1
