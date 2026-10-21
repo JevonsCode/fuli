@@ -93,16 +93,27 @@ async def ensure_graph_ledger_identity(driver) -> None:
     await driver.execute_query('MERGE (:FuliDataFormat {store: $store})', store=GRAPH_STORE)
 
 
+# Every ledger write first takes the identity node's write lock with a
+# property write, and only then reads the owner, lease or version it decides
+# on. A read before the lock could see a value another transaction is about
+# to change (Neo4j lost updates), so no decision is made from it.
+_LOCKED_IDENTITY = '''
+MATCH (format:FuliDataFormat {store: $store})
+SET format._format_lock = true
+REMOVE format._format_lock
+WITH format
+'''
+
+
 async def acquire_graph_migration_lock(driver, owner: str, *, until) -> bool:
-    """Take the lease when it is free, expired or already ours. One query on
-    the identity node, whose write lock makes the check and the take atomic."""
+    """Take the lease when it is free, expired or already ours."""
     records, _, _ = await driver.execute_query(
-        '''
-        MATCH (format:FuliDataFormat {store: $store})
-        WHERE format.lock_owner IS NULL OR format.lock_owner = $owner
-           OR format.lock_until < datetime()
-        SET format.lock_owner = $owner, format.lock_until = $until
-        RETURN count(format) AS acquired
+        _LOCKED_IDENTITY + '''
+        WITH format, format.lock_owner IS NULL OR format.lock_owner = $owner
+                     OR format.lock_until < datetime() AS free
+        FOREACH (_ IN CASE WHEN free THEN [1] ELSE [] END |
+          SET format.lock_owner = $owner, format.lock_until = $until)
+        RETURN free AS acquired
         ''',
         store=GRAPH_STORE, owner=owner, until=until,
     )
@@ -111,8 +122,8 @@ async def acquire_graph_migration_lock(driver, owner: str, *, until) -> bool:
 
 async def release_graph_migration_lock(driver, owner: str) -> None:
     await driver.execute_query(
-        '''
-        MATCH (format:FuliDataFormat {store: $store, lock_owner: $owner})
+        _LOCKED_IDENTITY + '''
+        WITH format WHERE format.lock_owner = $owner
         REMOVE format.lock_owner, format.lock_until
         ''',
         store=GRAPH_STORE, owner=owner,
@@ -127,8 +138,8 @@ async def record_graph_event(
     if status not in STATUSES:
         raise ValueError(f'unknown ledger status {status}')
     records, _, _ = await driver.execute_query(
-        '''
-        MATCH (format:FuliDataFormat {store: $store, lock_owner: $owner})
+        _LOCKED_IDENTITY + '''
+        WITH format WHERE format.lock_owner = $owner
         SET format.event_count = coalesce(format.event_count, 0) + 1
         CREATE (format)-[:HAS_FORMAT_EVENT]->(:FuliDataFormatEvent {
           store: $store,
@@ -163,9 +174,8 @@ async def stamp_graph_version(driver, version: int, *, owner: str, now, until) -
     """Move the version forward, never back, and only while holding the lock;
     each stamp renews the lease."""
     records, _, _ = await driver.execute_query(
-        '''
-        MATCH (format:FuliDataFormat {store: $store, lock_owner: $owner})
-        WHERE coalesce(format.version, 0) <= $version
+        _LOCKED_IDENTITY + '''
+        WITH format WHERE format.lock_owner = $owner AND coalesce(format.version, 0) <= $version
         SET format.version = $version, format.updated_at = $updated_at, format.lock_until = $until
         RETURN count(format) AS stamped
         ''',

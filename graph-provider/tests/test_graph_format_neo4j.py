@@ -482,3 +482,91 @@ async def test_a_start_waits_for_the_lock_and_reads_the_ledger_again_under_it(gr
     assert await _events(driver) == []
     rows = await _rows(driver, "MATCH (f:FuliDataFormat) RETURN f.lock_owner AS owner")
     assert rows == [{'owner': None}]
+
+
+class _InTransaction:
+    """Runs ledger queries inside one open transaction, to hold its locks."""
+
+    def __init__(self, transaction):
+        self.transaction = transaction
+
+    async def execute_query(self, query, **parameters):
+        parameters.pop('routing_', None)
+        result = await self.transaction.run(query, **parameters)
+        return [record async for record in result], None, None
+
+
+@pytest.mark.asyncio
+async def test_two_starts_racing_for_a_free_lock_only_one_takes_it(graph):
+    import asyncio
+
+    from fuli_graph.graph_format_ledger import (
+        acquire_graph_migration_lock,
+        ensure_graph_ledger_identity,
+    )
+    from fuli_graph.provider_values import now_utc
+
+    settings, driver = graph
+    await ensure_graph_ledger_identity(driver)
+    until = now_utc() + timedelta(seconds=60)
+    async with driver.session() as first_session, driver.session() as second_session:
+        first = await first_session.begin_transaction()
+        second = await second_session.begin_transaction()
+        try:
+            took_first = await acquire_graph_migration_lock(_InTransaction(first), 'start-a', until=until)
+            racing = asyncio.create_task(
+                acquire_graph_migration_lock(_InTransaction(second), 'start-b', until=until)
+            )
+            # Barrier: the second start waits on the identity node's write lock
+            # before it reads who holds the lease.
+            await asyncio.sleep(0.5)
+            assert not racing.done()
+            await first.commit()
+            took_second = await racing
+            await second.commit()
+        finally:
+            for transaction in (first, second):
+                if not transaction.closed():
+                    await transaction.rollback()
+
+    assert (took_first, took_second) == (True, False)
+    rows = await _rows(driver, "MATCH (f:FuliDataFormat {store: 'graph'}) RETURN f.lock_owner AS owner")
+    assert rows == [{'owner': 'start-a'}]
+
+
+@pytest.mark.asyncio
+async def test_racing_stamps_never_move_the_version_back(graph):
+    import asyncio
+
+    from fuli_graph.graph_format_ledger import (
+        GraphFormatLockLost,
+        acquire_graph_migration_lock,
+        ensure_graph_ledger_identity,
+        stamp_graph_version,
+    )
+    from fuli_graph.provider_values import now_utc
+
+    settings, driver = graph
+    await ensure_graph_ledger_identity(driver)
+    until = now_utc() + timedelta(seconds=60)
+    assert await acquire_graph_migration_lock(driver, 'start-a', until=until)
+    await stamp_graph_version(driver, 5, owner='start-a', now=now_utc, until=until)
+    async with driver.session() as first_session, driver.session() as second_session:
+        first = await first_session.begin_transaction()
+        second = await second_session.begin_transaction()
+        try:
+            await stamp_graph_version(_InTransaction(first), 7, owner='start-a', now=now_utc, until=until)
+            racing = asyncio.create_task(stamp_graph_version(
+                _InTransaction(second), 6, owner='start-a', now=now_utc, until=until
+            ))
+            await asyncio.sleep(0.5)
+            assert not racing.done()
+            await first.commit()
+            with pytest.raises(GraphFormatLockLost):
+                await racing
+        finally:
+            for transaction in (first, second):
+                if not transaction.closed():
+                    await transaction.rollback()
+
+    assert await _version(driver) == 7
