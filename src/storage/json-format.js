@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { newerFormatError, pendingMigrationError } from '../../packages/roundtable/src/storage/data-format-error.js';
@@ -78,6 +78,16 @@ export function updateVersionedJsonFileAtomic(filePath, format, mutate, {
     requireJsonFormatVersion(next, format);
     write(filePath, next);
     return next;
+  });
+}
+
+// Removes a file under the same lock, after checking again that no newer
+// FULI wrote it; a newer file is refused like a write would be.
+export function removeVersionedJsonFileAtomic(filePath, format) {
+  if (!format?.versions) throw new TypeError('A versioned JSON removal needs its store format');
+  withJsonFormatLock(filePath, () => {
+    assertJsonFormatWritable(filePath, format);
+    rmSync(filePath, { force: true });
   });
 }
 

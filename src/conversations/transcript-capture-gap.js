@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { readFile, rm } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { advanceCaptureSettingsVersion, captureDisabled } from '../graphiti/capture-decision.js';
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
-import { jsonFormat, updateVersionedJsonFileAtomic, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { jsonFormat, removeVersionedJsonFileAtomic, updateVersionedJsonFileAtomic, writeVersionedJsonFileAtomic }
+  from '../storage/json-format.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { transcriptDigest } from './transcript-guard.js';
 import { verifiedTranscriptEnd } from './transcript-reader.js';
@@ -104,14 +105,16 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
         unkeptDenials.delete(path);
         return 'kept';
       } catch (error) {
-        // A record a newer FULI wrote is neither replaced nor removed.
-        if (error instanceof DataFormatError) {
+        // A record a newer FULI wrote, or one another process holds the lock
+        // on, is neither replaced nor removed: the stretch is not imported.
+        if (error instanceof DataFormatError || error?.code === 'file_lock_busy') {
           unkeptDenials.set(path, version);
           return 'unkept';
         }
       }
       try {
-        await rm(path, { force: true });
+        // Removed only under the same lock, after checking its version again.
+        removeVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT);
         unkeptDenials.delete(path);
         return 'removed';
       } catch {

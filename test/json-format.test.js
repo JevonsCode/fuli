@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 
 import { reconcileImportedGraphIdentity } from '../src/backup/identity-reconciliation.js';
+import { transcriptCaptureLedger } from '../src/conversations/transcript-capture-gap.js';
 import { SessionCapturePauseStore } from '../src/graphiti/capture-session-pause.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../src/storage/json-format.js';
 import { DEFAULT_RUNTIME_SETTINGS, writeRuntimeSettings } from '../src/system/runtime-settings.js';
@@ -165,4 +166,34 @@ test('a session two starts pinned both ways is off until the person starts it', 
   assert.equal(new SessionCapturePauseStore(root).anyStopped('codex'), true);
   new SessionCapturePauseStore(root).setEnabled('synthetic-session', { enabled: true, sourceApplication: 'codex' });
   assert.equal(new SessionCapturePauseStore(root).anyStopped('codex'), false);
+});
+
+// dot #250 P2: a denial that cannot take the ledger's lock in time neither
+// replaces nor deletes the record another FULI holds and saves; it is
+// reported unkept and the session's stretch stays unimported.
+test('a denial that times out on the ledger lock leaves a newer record in place and fails closed', async (t) => {
+  const root = directory(t);
+  const runtimeConfigPath = join(root, 'graph-runtime.json');
+  const input = { session_id: 'synthetic-session' };
+  const ledger = transcriptCaptureLedger(runtimeConfigPath, input, 'codex');
+  ledger.record('generation-1');
+  const [name] = readdirSync(join(root, 'transcript-capture')).filter((entry) => entry.endsWith('.json'));
+  const file = join(root, 'transcript-capture', name);
+  const lock = new URL('../src/storage/file-lock.js', import.meta.url).href;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { writeFileSync } from 'node:fs';
+    import { acquireFileLock } from ${JSON.stringify(lock)};
+    const release = acquireFileLock(process.argv[1]);
+    writeFileSync(process.argv[2], JSON.stringify({ version: 2, settings: 'newer' }));
+    process.stdout.write('holding\\n');
+    setTimeout(release, 6500);
+  `, join(root, 'transcript-capture', '.fuli-format.lock'), file], { stdio: ['ignore', 'pipe', 'inherit'] });
+  await new Promise((resolve) => child.stdout.once('data', resolve));
+
+  assert.equal(await ledger.deny('generation-2', 'session_paused'), 'unkept');
+  assert.equal(readFileSync(file, 'utf8'), JSON.stringify({ version: 2, settings: 'newer' }));
+  assert.notEqual(await ledger.skipReason('generation-2'), null, 'the stretch is skipped, never imported');
+  await new Promise((resolve) => child.once('exit', resolve));
+  assert.equal(await ledger.deny('generation-2', 'session_paused'), 'unkept', 'a newer record is never removed');
+  assert.ok(existsSync(file));
 });
