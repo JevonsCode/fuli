@@ -1,7 +1,8 @@
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 import { pruneFormatBackups } from './backup-retention.js';
 import { GRAPH_LABEL, localStore, localStoresWithEngines, previewMigrations } from './migration-plan.js';
-import { readFormatOperations, recordFormatOperations } from './operations-log.js';
+import { findApplyReceipt, recordApplyReceipt } from './apply-receipts.js';
+import { recordFormatOperations } from './operations-log.js';
 
 // A person's confirmed data format operations on one data directory (rec#17
 // D-09 part 2). Callers are `fuli migrate` at an interactive terminal and the
@@ -10,7 +11,8 @@ import { readFormatOperations, recordFormatOperations } from './operations-log.j
 // - Every operation first resolves a JSON change an interruption left behind
 //   (json-format-migration.js), so nothing stays half-committed.
 // - apply: the plan is computed again and must have the confirmed digest;
-//   the stores' own digests are logged before anything runs, then each store
+//   the stores' own digests are kept as a receipt (apply-receipts.js) before
+//   anything runs, then each store
 //   applies its part under its own lock, checking its digest again. There is
 //   no transaction across stores: a store that fails stops the rest and keeps
 //   its previous state, and what already applied is reported and stays.
@@ -27,8 +29,7 @@ export async function applyMigrations({ dataDir, digest, actor, graph, now = () 
   let stores = plan.stores.map(({ label, store, digest: storeDigest, step }) => ({ label, store,
     digest: storeDigest, migrationId: step.id }));
   if (!plan.digest || plan.digest !== digest) {
-    const started = readFormatOperations(dataDir).findLast((event) => event.kind === 'apply_started'
-      && event.planDigest === digest);
+    const started = findApplyReceipt(dataDir, digest);
     if (!started) {
       throw new DataFormatError('data-format', 'data_format_stale_preview', plan.digest
         ? 'The stores no longer match the preview that was confirmed. Nothing was changed; run the preview again '
@@ -37,8 +38,7 @@ export async function applyMigrations({ dataDir, digest, actor, graph, now = () 
     }
     stores = started.stores;
   } else {
-    recordFormatOperations(dataDir, [{ kind: 'apply_started', planDigest: digest, stores,
-      entrypoint: actor.entrypoint, at: now().toISOString() }]);
+    recordApplyReceipt(dataDir, { planDigest: digest, stores, entrypoint: actor.entrypoint, at: now().toISOString() });
   }
   const results = [];
   for (const store of stores) {

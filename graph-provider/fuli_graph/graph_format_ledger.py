@@ -95,6 +95,14 @@ async def ensure_graph_ledger_identity(driver) -> None:
     await driver.execute_query('MERGE (:FuliDataFormat {store: $store})', store=GRAPH_STORE)
 
 
+async def hold_graph_identity(driver) -> None:
+    """Inside a confirmed apply or undo: takes the identity node's write lock
+    and keeps it to the commit. Every provider's business write takes the same
+    lock as its last statement (graph_format.writer_fence), so none commits
+    while this transaction runs, and each then sees the version it left."""
+    await driver.execute_query(_LOCKED_IDENTITY + 'RETURN format.version AS version', store=GRAPH_STORE)
+
+
 # Every ledger write first takes the identity node's write lock with a
 # property write, and only then reads the owner, lease or version it decides
 # on. A read before the lock could see a value another transaction is about

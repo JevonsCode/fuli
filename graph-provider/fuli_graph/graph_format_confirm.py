@@ -36,6 +36,7 @@ from .graph_format_journal import (
     undo_journal,
 )
 from .graph_format_ledger import (
+    hold_graph_identity,
     lower_graph_version,
     read_graph_ledger,
     record_graph_event,
@@ -46,6 +47,10 @@ from .provider_values import now_utc, sha256_text
 
 SAMPLE_SIZE = 5
 _MIGRATIONS = {migration.id: migration for migration in GRAPH_MIGRATIONS}
+
+
+def _scope_digest(keys) -> str:
+    return sha256_text(json.dumps(list(keys), ensure_ascii=False, separators=(',', ':')))
 
 
 def _digest(plan: dict) -> str:
@@ -84,7 +89,7 @@ async def preview_graph_migration(driver, settings) -> dict | None:
             'id': migration.id, 'summary': migration.summary, 'kind': migration.kind,
             'fromVersion': migration.from_version, 'toVersion': migration.to_version,
             'count': len(keys), 'sampleIds': keys[:SAMPLE_SIZE],
-            'scopeDigest': sha256_text(json.dumps(keys, ensure_ascii=False, separators=(',', ':'))),
+            'scopeDigest': _scope_digest(keys),
         }, 'undo': 'available' if migration.journal.reversible else 'restore_only'}
         if not migration.journal.reversible:
             deleted = sum(1 for key in keys if key.startswith('delete:'))
@@ -134,10 +139,12 @@ async def apply_graph_migration(
     barrier=None,
 ) -> dict:
     """driver is the unguarded maintenance handle. barrier: awaited after the
-    step ran, before the journal is closed (a test seam for other writers)."""
+    snapshot, before the step runs (a test seam for other writers)."""
     apply_id = apply_id or str(uuid4())
 
     async def operation(run, queries):
+        # No provider's business write commits from here to this commit.
+        await hold_graph_identity(queries)
         plan = await preview_graph_migration(queries, settings)
         if not plan or plan.get('action') != 'apply' or plan['digest'] != digest:
             journals = await applied_journals(queries)
@@ -159,9 +166,20 @@ async def apply_graph_migration(
         migration = _MIGRATIONS[plan['step']['id']]
         await open_journal(queries, migration, apply_id=apply_id, plan_digest=digest,
                            recorded_at=now())
-        await migration.apply(queries, settings, apply_id=apply_id)
         if barrier:
             await barrier()
+        # The step runs on exactly the records the person confirmed and the
+        # journal holds: anything new since the snapshot (a writer outside
+        # FULI's fence) makes the whole transaction roll back.
+        if _scope_digest(await migration.pending(queries, settings)) != plan['step']['scopeDigest']:
+            raise _unavailable(
+                'data_format_stale_preview',
+                'The graph changed while the migration was starting. Nothing was changed; run the '
+                'preview again and confirm what it shows.', [migration.id],
+            )
+        await migration.apply(queries, settings, apply_id=apply_id)
+        if await migration.pending(queries, settings):
+            raise RuntimeError(f'{migration.id} left records it should have changed')
         journaled = await close_journal(queries, migration, apply_id=apply_id)
         undo = (f'undo journal {apply_id}' if migration.journal.reversible
                 else 'not reversible: restore a graph export (fuli graph import)')
@@ -233,6 +251,9 @@ async def rollback_graph_migration(
                 'first. Nothing was changed.', [migration_id],
             )
         await lock_journaled(queries, header, migration)
+        # Records first, then the identity: a writer holds its records before
+        # it reaches the fence, so the two never wait on each other in turn.
+        await hold_graph_identity(queries)
         if barrier:
             await barrier()
         changed = await changed_since(queries, header, migration)

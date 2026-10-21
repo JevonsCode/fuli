@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -311,4 +311,41 @@ test('a connection opened before an undo stops writing instead of writing the ol
     assert.equal(open.prepare('SELECT count(*) AS n FROM notes').get().n, 2, 'reads still work');
   } finally { open.close(); }
   assert.deepEqual(state(path).rows.map((row) => row.id), ['n1', 'n2']);
+});
+
+test('a write hidden in a WITH statement is checked like any other write', (t) => {
+  const { path } = oldStore(t);
+  const plan = previewSqliteMigration(path, notesFormat());
+  applyConfirmedSqliteMigration(path, notesFormat(), { digest: plan.digest, actor: CLI });
+  const open = openFormattedDatabase(path, notesFormat());
+  try {
+    rollbackSqliteMigration(path, notesFormat(), { migrationId: 'notes/3-checked', actor: CLI });
+    assert.throws(() => open.prepare(`WITH late(id) AS (SELECT 'n9')
+      INSERT INTO notes(id, body) SELECT id, 'a write CTE' FROM late`).run(), { code: 'data_format_changed_underneath' });
+    assert.throws(() => open.exec("WITH x AS (SELECT 1) DELETE FROM notes"), { code: 'data_format_changed_underneath' });
+  } finally { open.close(); }
+  assert.equal(state(path).rows.length, 2);
+});
+
+test('the version check and the write share one write lock, so no undo fits between them', (t) => {
+  const { path } = oldStore(t);
+  const plan = previewSqliteMigration(path, notesFormat());
+  applyConfirmedSqliteMigration(path, notesFormat(), { digest: plan.digest, actor: CLI });
+  let competitor = null;
+  const open = openFormattedDatabase(path, notesFormat(), { afterVersionCheck: () => {
+    // Another process tries to take the write lock an undo needs, exactly
+    // between the check and the write.
+    const child = spawnSync(process.execPath, ['-e', `const { DatabaseSync } = require('node:sqlite');
+      const db = new DatabaseSync(process.argv[1]); db.exec('PRAGMA busy_timeout = 50');
+      try { db.exec('BEGIN IMMEDIATE'); db.exec('ROLLBACK'); process.stdout.write('got the lock'); }
+      catch (error) { process.stdout.write(error.message); } finally { db.close(); }`, path], { encoding: 'utf8' });
+    competitor = child.stdout;
+  } });
+  try {
+    // An autocommit write, like TaskScheduleStore.insert.
+    open.prepare("INSERT INTO notes(id, body, checked) VALUES('n3', 'autocommit write', 'yes')").run();
+  } finally { open.close(); }
+
+  assert.match(competitor, /database is locked/);
+  assert.deepEqual(state(path).rows.map((row) => row.id), ['n1', 'n2', 'n3']);
 });

@@ -1,7 +1,10 @@
 import { lstatSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { newerFormatError, pendingMigrationError } from '../../packages/roundtable/src/storage/data-format-error.js';
+import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
+import {
+  DataFormatError, newerFormatError, pendingMigrationError
+} from '../../packages/roundtable/src/storage/data-format-error.js';
 import { acquireFileLock } from './file-lock.js';
 import { readJsonFile, writeJsonFileAtomic } from './json-file.js';
 
@@ -77,6 +80,7 @@ export function updateVersionedJsonFileAtomic(filePath, format, mutate, {
   if (!format?.versions) throw new TypeError('A versioned JSON write needs its store format');
   return withJsonFormatLock(filePath, () => {
     assertJsonFormatWritable(filePath, format);
+    resolveInterruptedChange(filePath, format);
     const current = read(filePath);
     const next = mutate(current);
     if (next === undefined) return current;
@@ -97,6 +101,7 @@ export function removeVersionedJsonFileAtomic(filePath, format) {
   if (!fileExists(filePath)) return;
   withJsonFormatLock(filePath, () => {
     assertJsonFormatWritable(filePath, format);
+    resolveInterruptedChange(filePath, format);
     rmSync(filePath, { force: true });
   });
 }
@@ -131,25 +136,92 @@ function withJsonFormatLock(filePath, operation) {
 // Several versioned files of one directory changed under one hold of its
 // lock (a confirmed migration writes the file and its ledger). operation
 // gets write(path, value, format) and remove(path, format), each checking the
-// file on disk again; paths outside the directory are refused.
-export function withJsonFormatDirectory(filePath, operation) {
+// file on disk again; paths outside the directory are refused. With format,
+// an interrupted change of filePath is resolved first (resolution is passed
+// on); settleConflict(intent, write) lets a whole-file restore settle one
+// that cannot be resolved.
+export function withJsonFormatDirectory(filePath, operation, { format = null, settleConflict = null } = {}) {
   const directory = dirname(filePath);
   const inside = (path) => {
     if (dirname(path) !== directory) throw new TypeError('A locked JSON change stays in its directory');
   };
-  return withJsonFormatLock(filePath, () => operation({
-    write(path, value, format) {
-      inside(path);
-      assertJsonFormatWritable(path, format);
-      requireJsonFormatVersion(value, format);
-      writeJsonFileAtomic(path, value);
-    },
-    remove(path, format) {
-      inside(path);
-      assertJsonFormatWritable(path, format);
-      rmSync(path, { force: true });
+  return withJsonFormatLock(filePath, () => {
+    const resolution = format ? resolveInterruptedChange(filePath, format, settleConflict) : null;
+    return operation({
+      write(path, value, fileFormat) {
+        inside(path);
+        lockedWrite(path, value, fileFormat);
+      },
+      remove(path, fileFormat) {
+        inside(path);
+        assertJsonFormatWritable(path, fileFormat);
+        rmSync(path, { force: true });
+      },
+      resolution
+    });
+  });
+}
+
+function lockedWrite(path, value, format) {
+  assertJsonFormatWritable(path, format);
+  requireJsonFormatVersion(value, format);
+  writeJsonFileAtomic(path, value);
+}
+
+// An interrupted confirmed change (json-format-migration.js) is an intent
+// record beside the file: the backup, the file's digest before and after,
+// and the ledger event that commits it. Every writer of the file resolves it
+// first, inside the directory lock, so no ordinary write can turn a
+// resolvable intent into one that matches neither side:
+// - the file is as the change left it: the ledger event is committed (once);
+// - the file is as it was: the intent is dropped;
+// - anything else is refused until a whole-file restore settles it.
+const INTENT_VERSION = 1;
+export const JSON_INTENT_FORMAT = jsonFormat({ store: 'json-format-intent', versions: [INTENT_VERSION] });
+
+export function jsonIntentPath(filePath) {
+  return `${filePath}.format-intent.json`;
+}
+
+export function readJsonIntent(filePath) {
+  try {
+    return JSON.parse(readFileSync(jsonIntentPath(filePath), 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+// null, 'completed', 'dropped' or 'conflict': what resolving would do, read only.
+export function jsonIntentResolution(filePath) {
+  const intent = readJsonIntent(filePath);
+  if (!intent) return null;
+  const current = readCurrentJson(filePath);
+  const digest = current ? contentHash(current) : null;
+  if (digest === intent.afterDigest) return 'completed';
+  return digest === intent.beforeDigest ? 'dropped' : 'conflict';
+}
+
+function resolveInterruptedChange(filePath, format, settleConflict = null) {
+  const intent = readJsonIntent(filePath);
+  if (!intent) return null;
+  assertJsonFormatWritable(jsonIntentPath(filePath), JSON_INTENT_FORMAT);
+  const resolution = jsonIntentResolution(filePath);
+  if (resolution === 'completed') {
+    const committed = jsonLedgerEvents(filePath).some((event) => event.status === intent.event.status
+      && event.migrationId === intent.event.migrationId && event.recordedAt === intent.event.recordedAt);
+    if (!committed) appendJsonLedgerEvent(lockedWrite, filePath, intent.event);
+  } else if (resolution === 'conflict') {
+    if (!settleConflict) {
+      throw new DataFormatError(format.store, 'data_format_interrupted', `FULI store "${format.store}" has an `
+        + `interrupted ${intent.operation} (${intent.event?.migrationId}) and the file is neither as it was nor as `
+        + 'that change left it. Nothing was written; restore the whole file (fuli migrate restore) from '
+        + `${intent.backupRef ?? 'a backup'} or another backup.`, intent.event?.migrationId ? [intent.event.migrationId] : []);
     }
-  }));
+    settleConflict(intent, lockedWrite);
+  }
+  rmSync(jsonIntentPath(filePath), { force: true });
+  return resolution === 'conflict' ? 'settled' : resolution;
 }
 
 const LEDGER_FORMAT = jsonFormat({ store: 'json-format-ledger', versions: [LEDGER_FORMAT_VERSION] });

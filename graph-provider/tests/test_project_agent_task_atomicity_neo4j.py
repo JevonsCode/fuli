@@ -7,6 +7,7 @@ import pytest
 
 from test_project_agent_memory_neo4j import dismiss_agent, fixture_settings, provider_client, seed_agent
 from test_project_agent_activity_atomicity_neo4j import seed_executor
+from fuli_graph.runtime import ManagedNeo4jDriver
 
 
 @pytest.mark.asyncio
@@ -97,7 +98,7 @@ async def test_participant_link_winning_blocks_concurrent_archive(monkeypatch):
 
     settings = fixture_settings()
     transaction = Neo4jDriver.transaction
-    execute_query = Neo4jDriver.execute_query
+    execute_query = ManagedNeo4jDriver.execute_query
     participant_link_written = asyncio.Event()
     allow_task_commit = asyncio.Event()
     archive_query_started = asyncio.Event()
@@ -164,7 +165,7 @@ async def test_participant_link_winning_blocks_concurrent_archive(monkeypatch):
                 pause_after_participant_link,
             )
             concurrent.setattr(
-                Neo4jDriver,
+                ManagedNeo4jDriver,
                 'execute_query',
                 observe_archive_query,
             )
@@ -392,7 +393,7 @@ async def test_legacy_link_repair_uses_status_committed_after_its_initial_read(m
 def fail_one_participant_write(monkeypatch, failure_mode, failing_agent):
     """Inject only at the external graph driver port; all other I/O stays real."""
     from graphiti_core.driver.neo4j_driver import Neo4jDriver
-    execute = Neo4jDriver.execute_query
+    execute = ManagedNeo4jDriver.execute_query
     transaction = Neo4jDriver.transaction
     fault = {'fired': False}
 
@@ -416,6 +417,6 @@ def fail_one_participant_write(monkeypatch, failure_mode, failing_agent):
                     return await current.run(query, **inspect(query, kwargs))
             yield FaultingTransaction()
 
-    monkeypatch.setattr(Neo4jDriver, 'execute_query', execute_with_fault)
+    monkeypatch.setattr(ManagedNeo4jDriver, 'execute_query', execute_with_fault)
     monkeypatch.setattr(Neo4jDriver, 'transaction', transaction_with_fault)
     return fault

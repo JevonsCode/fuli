@@ -11,7 +11,7 @@ from dataclasses import replace
 import pytest
 
 from fuli_graph import graph_format_confirm
-from fuli_graph.graph_format import GraphFormatUnavailable
+from fuli_graph.graph_format import GraphFormatState, GraphFormatUnavailable
 from fuli_graph.runtime import ManagedNeo4jDriver
 from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION
 from test_graph_format_neo4j import (  # noqa: F401 - graph is a fixture
@@ -503,3 +503,111 @@ async def test_each_record_step_applies_and_undoes_on_a_synthetic_graph(graph, s
 
     assert await _rows(driver, read) == before
     assert await _version(driver) == version
+
+
+def _provider_b(settings):
+    """Another running provider that decided "writable" before the migration."""
+    driver = ManagedNeo4jDriver(uri=settings.neo4j_uri, user=settings.neo4j_user,
+                                password=settings.neo4j_password, database=settings.neo4j_database)
+    driver.format = GraphFormatState('write', 'current', GRAPH_FORMAT_VERSION)
+    return driver
+
+
+@pytest.mark.asyncio
+async def test_another_provider_cannot_write_between_the_snapshot_and_the_step(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+    provider_b = _provider_b(settings)
+    managed, maintenance = _maintenance(settings)
+    write = {}
+
+    async def provider_b_writes_after_the_snapshot():
+        write['task'] = asyncio.create_task(provider_b.execute_query(
+            "MATCH (e:Entity {uuid: 'entity-a'}) SET e.fuli_confidence_score = 0.9"
+        ))
+        await asyncio.sleep(1.5)
+        write['waited'] = not write['task'].done()
+
+    try:
+        await graph_format_confirm.apply_graph_migration(
+            maintenance, settings, digest=plan['digest'], actor={'entrypoint': 'cli'},
+            barrier=provider_b_writes_after_the_snapshot,
+        )
+        with pytest.raises(GraphFormatUnavailable) as refused:
+            await write['task']
+    finally:
+        await provider_b.close()
+        await managed.close()
+
+    assert write['waited'], 'the write waited for the migration to commit'
+    assert refused.value.code == 'data_format_changed_underneath'
+    rows = await _rows(driver, "MATCH (e:Entity {uuid: 'entity-a'}) RETURN e.fuli_confidence_score AS score")
+    assert rows == [{'score': 0.5}], 'nothing provider B meant to write was written'
+
+
+@pytest.mark.asyncio
+async def test_a_record_added_between_the_snapshot_and_the_step_rolls_the_apply_back(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+    before = await _groups(driver)
+    managed, maintenance = _maintenance(settings)
+
+    async def a_writer_outside_fuli_files_one_more():
+        # Not through any provider, so no writer fence stops it.
+        await driver.execute_query(
+            "CREATE (:Entity {uuid: 'entity-late', group_id: 'legacy:personal:legacy-space'})"
+        )
+
+    try:
+        with pytest.raises(GraphFormatUnavailable) as refused:
+            await graph_format_confirm.apply_graph_migration(
+                maintenance, settings, digest=plan['digest'], actor={'entrypoint': 'cli'},
+                barrier=a_writer_outside_fuli_files_one_more,
+            )
+    finally:
+        await managed.close()
+
+    assert refused.value.code == 'data_format_stale_preview'
+    groups = await _groups(driver)
+    assert {key: groups[key] for key in before} == before
+    assert groups['node:entity-late'] == 'legacy:personal:legacy-space'
+    assert await _rows(driver, 'MATCH (u:FuliDataFormatUndo) RETURN count(u) AS n') == [{'n': 0}]
+
+
+@pytest.mark.asyncio
+async def test_another_provider_cannot_write_during_an_undo_and_learns_the_graph_moved(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        await client.post('/v1/data-format/apply', headers=REVIEW,
+                          json={'digest': plan['digest'], 'entrypoint': 'cli'})
+    provider_b = _provider_b(settings)
+    managed, maintenance = _maintenance(settings)
+    write = {}
+
+    async def provider_b_writes_during_the_undo():
+        write['task'] = asyncio.create_task(provider_b.execute_query(
+            "MATCH (e:Entity {uuid: 'entity-b'}) SET e.name = 'written by provider B'"
+        ))
+        await asyncio.sleep(1.5)
+        write['waited'] = not write['task'].done()
+
+    try:
+        await graph_format_confirm.rollback_graph_migration(
+            maintenance, settings, migration_id=GROUP_STEP, actor={'entrypoint': 'cli'},
+            barrier=provider_b_writes_during_the_undo,
+        )
+        with pytest.raises(GraphFormatUnavailable) as refused:
+            await write['task']
+    finally:
+        await provider_b.close()
+        await managed.close()
+
+    assert write['waited'] and refused.value.code == 'data_format_changed_underneath'
+    rows = await _rows(driver, "MATCH (e:Entity {uuid: 'entity-b'}) RETURN e.name AS name, e.group_id AS g")
+    assert rows == [{'name': 'Synthetic other entity', 'g': 'legacy:personal:legacy-space'}]

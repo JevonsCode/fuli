@@ -8,8 +8,8 @@ import {
   BACKUP_DIRECTORY, formatBackupName, formatBackupPath, formatBackupsOf, parseFormatBackupRef
 } from '../../packages/roundtable/src/storage/format-backup-names.js';
 import {
-  appendJsonLedgerEvent, assertJsonFormatWritable, assertJsonLedgerWritable, jsonFormat, jsonLedgerEvents,
-  withJsonFormatDirectory
+  JSON_INTENT_FORMAT, appendJsonLedgerEvent, assertJsonFormatWritable, assertJsonLedgerWritable, jsonIntentPath,
+  jsonIntentResolution, jsonLedgerEvents, readJsonIntent, withJsonFormatDirectory
 } from './json-format.js';
 
 // What a person confirms for one FULI JSON data file (rec#17 D-09 part 2),
@@ -33,8 +33,6 @@ import {
 // is a separate operation.
 
 const SAMPLE_SIZE = 5;
-const INTENT_VERSION = 1;
-const INTENT_FORMAT = jsonFormat({ store: 'json-format-intent', versions: [INTENT_VERSION] });
 const NO_STAGE = () => {};
 
 export function previewJsonMigration(filePath, format) {
@@ -68,17 +66,17 @@ function filePlan(document, format) {
 function sidecarProblem(filePath) {
   try {
     assertJsonLedgerWritable(filePath);
-    assertJsonFormatWritable(intentPath(filePath), INTENT_FORMAT);
+    assertJsonFormatWritable(jsonIntentPath(filePath), JSON_INTENT_FORMAT);
   } catch (error) {
     return `its format ledger or intent record cannot be written by this FULI (${error.message})`;
   }
-  return intentResolution(filePath) === 'conflict' ? 'an interrupted change left the file neither as it was nor '
+  return jsonIntentResolution(filePath) === 'conflict' ? 'an interrupted change left the file neither as it was nor '
     + 'as the change left it; restore it from the backup the change names' : null;
 }
 
 // Resolves an interrupted change left behind (fuli migrate and console start).
 export function recoverJsonFile(filePath, format, { now = () => new Date() } = {}) {
-  if (!readIntent(filePath)) return null;
+  if (!readJsonIntent(filePath)) return null;
   return withRecoveredFile(filePath, format, { now, stage: NO_STAGE }, (_commit, resolution) => resolution);
 }
 
@@ -161,7 +159,19 @@ export function describeJsonRestore(filePath, format, backupRef) {
 // changed since is not overwritten.
 export function restoreJsonFile(filePath, format, { backupRef, expected, actor, now = () => new Date(),
   copy = copyFileSync, stage = NO_STAGE }) {
-  return withRecoveredFile(filePath, format, { now, stage }, (commit) => {
+  // An interrupted change no writer could resolve is what a restore is for:
+  // the file as it is is kept as a backup and the intent closed in the ledger
+  // before the restore runs its own protocol.
+  const settleConflict = (intent, write) => {
+    const kept = backupFile(filePath, format, readDocument(filePath)?.version ?? 0, copy, now,
+      'settling an interrupted change');
+    appendJsonLedgerEvent(write, filePath, { migrationId: intent.event?.migrationId ?? `${format.store}/unknown`,
+      fromVersion: intent.event?.fromVersion ?? null, toVersion: intent.event?.toVersion ?? null,
+      status: 'abandoned', backupRef: kept, detail: `an interrupted ${intent.operation} left the file neither as it was `
+        + `nor as it would have left it; kept as ${kept} and settled by a whole-file restore`,
+      recordedAt: now().toISOString() });
+  };
+  return withRecoveredFile(filePath, format, { now, stage, settleConflict }, (commit) => {
     const restored = JSON.parse(readFileSync(backupPath(filePath, format, backupRef), 'utf8'));
     if (Number.isInteger(restored?.version) && restored.version > format.supported) throw newerFile(format, restored.version);
     const current = readDocument(filePath);
@@ -187,68 +197,23 @@ export function jsonBackupFiles(filePath) {
 
 // The lock, the sidecar check and the recovery of an earlier interrupted
 // change, then operation(commit); commit runs steps 3–6 of the protocol.
-function withRecoveredFile(filePath, format, { now, stage }, operation) {
-  return withJsonFormatDirectory(filePath, ({ write, remove }) => {
+function withRecoveredFile(filePath, format, { now, stage, settleConflict = null }, operation) {
+  assertJsonLedgerWritable(filePath);
+  assertJsonFormatWritable(jsonIntentPath(filePath), JSON_INTENT_FORMAT);
+  return withJsonFormatDirectory(filePath, ({ write, remove, resolution }) => {
     assertJsonLedgerWritable(filePath);
-    assertJsonFormatWritable(intentPath(filePath), INTENT_FORMAT);
-    const resolution = resolveIntent(filePath, format, { write, remove });
     return operation(({ operation: kind, before, after, backupRef, event }) => {
-      write(intentPath(filePath), { version: INTENT_VERSION, operation: kind, store: format.store, backupRef,
+      write(jsonIntentPath(filePath), { version: JSON_INTENT_FORMAT.supported, operation: kind, store: format.store, backupRef,
         beforeDigest: before ? contentHash(before) : null, afterDigest: contentHash(after), event,
-        preparedAt: now().toISOString() }, INTENT_FORMAT);
+        preparedAt: now().toISOString() }, JSON_INTENT_FORMAT);
       stage('intent');
       write(filePath, after, format);
       stage('file');
       appendJsonLedgerEvent(write, filePath, event);
       stage('ledger');
-      remove(intentPath(filePath), INTENT_FORMAT);
+      remove(jsonIntentPath(filePath), JSON_INTENT_FORMAT);
     }, resolution);
-  });
-}
-
-// What resolving the intent would do, read only: null, 'completed',
-// 'dropped' or 'conflict'.
-function intentResolution(filePath) {
-  const intent = readIntent(filePath);
-  if (!intent) return null;
-  const current = readDocument(filePath);
-  const digest = current ? contentHash(current) : null;
-  if (digest === intent.afterDigest) return 'completed';
-  return digest === intent.beforeDigest ? 'dropped' : 'conflict';
-}
-
-function resolveIntent(filePath, format, { write, remove }) {
-  const resolution = intentResolution(filePath);
-  if (!resolution) return null;
-  const intent = readIntent(filePath);
-  if (resolution === 'completed') {
-    const committed = jsonLedgerEvents(filePath).some((event) => event.status === intent.event.status
-      && event.migrationId === intent.event.migrationId && event.recordedAt === intent.event.recordedAt);
-    if (!committed) appendJsonLedgerEvent(write, filePath, intent.event);
-    remove(intentPath(filePath), INTENT_FORMAT);
-    return 'completed';
-  }
-  if (resolution === 'dropped') {
-    remove(intentPath(filePath), INTENT_FORMAT);
-    return 'dropped';
-  }
-  throw new DataFormatError(format.store, 'data_format_interrupted', `FULI store "${format.store}" has an `
-    + `interrupted ${intent.operation} (${intent.event?.migrationId}) and the file is neither as it was nor as that `
-    + `change left it. Nothing was changed; restore it from ${intent.backupRef ?? 'a backup'} (fuli migrate restore).`,
-  intent.event?.migrationId ? [intent.event.migrationId] : []);
-}
-
-function intentPath(filePath) {
-  return `${filePath}.format-intent.json`;
-}
-
-function readIntent(filePath) {
-  try {
-    return JSON.parse(readFileSync(intentPath(filePath), 'utf8'));
-  } catch (error) {
-    if (error?.code === 'ENOENT') return null;
-    throw error;
-  }
+  }, { format, settleConflict });
 }
 
 function newerFile(format, version) {

@@ -4,7 +4,7 @@ import { pruneFormatBackups, backupRetentionPolicy } from '../data-format/backup
 import { collectFormatStatus } from '../data-format/format-status.js';
 import { personalGraphFormat } from '../data-format/graph-format-client.js';
 import { previewMigrations } from '../data-format/migration-plan.js';
-import { readFormatOperations } from '../data-format/operations-log.js';
+import { findApplyReceipt } from '../data-format/apply-receipts.js';
 import {
   applyMigrations, describeRestore, restoreStore, rollbackMigration
 } from '../data-format/migration-operations.js';
@@ -187,8 +187,7 @@ const ACTIONS = Object.freeze({
 });
 
 function startedApply(dataDir, digest) {
-  return readFormatOperations(dataDir).findLast((event) => event.kind === 'apply_started'
-    && event.planDigest === digest) ?? null;
+  return findApplyReceipt(dataDir, digest);
 }
 
 async function held(release, operation) {

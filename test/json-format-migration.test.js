@@ -205,7 +205,7 @@ test('an interrupted change whose file changed otherwise is refused, not guessed
 
   assert.equal(previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT).action, 'blocked');
   assert.throws(() => recoverJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT), { code: 'data_format_interrupted',
-    message: /neither as it was nor as that change left it.*restore it from format-backups\// });
+    message: /neither as it was nor as that change left it.*fuli migrate restore/ });
   assert.deepEqual(readFileSync(path), before);
   assert.ok(existsSync(intentPath(path)));
 });
@@ -221,4 +221,59 @@ test('a restore re-checks the file the person saw and stops if it changed', (t) 
   assert.throws(() => restoreJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT, { backupRef: applied.backupRef, expected: impact,
     actor: CLI }), { code: 'data_format_stale_preview' });
   assert.deepEqual(readFileSync(path), before);
+});
+
+test('an ordinary write after a half-committed apply commits it first, then writes', (t) => {
+  const { path } = legacyRegistry(t);
+  const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+  // The file is written, then the ledger append fails (a full disk).
+  assert.throws(() => applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI,
+    stage: (name) => { if (name === 'file') throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }); } }), /ENOSPC/);
+  assert.ok(existsSync(intentPath(path)));
+
+  // A real registry mutation, before any fuli migrate operation runs.
+  assert.equal(new ExternalKnowledgeRegistry(path).delete('b-2'), true);
+
+  assert.equal(existsSync(intentPath(path)), false, 'the writer resolved the intent before writing');
+  const applied = JSON.parse(readFileSync(ledgerPath(path), 'utf8')).events.filter((event) => event.status === 'applied');
+  assert.equal(applied.length, 1);
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')).bindings.map((binding) => binding.id), ['b-1']);
+  assert.equal(recoverJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT), null);
+  // The registry's own change came after the migration, so undo refuses rather than losing it.
+  assert.throws(() => rollbackJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT,
+    { migrationId: 'external-knowledge/2-binding-targets', actor: CLI }), { code: 'data_format_changed_since' });
+});
+
+test('an ordinary write refuses a file an interrupted change left in conflict', (t) => {
+  const { path } = legacyRegistry(t);
+  const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+  assert.throws(() => applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI,
+    stage: (name) => { if (name === 'intent') throw new Error('power cut'); } }), /power cut/);
+  writeFileSync(path, JSON.stringify({ version: 2, bindings: [] }));
+  const before = readFileSync(path);
+
+  assert.throws(() => new ExternalKnowledgeRegistry(path).put({ id: 'b-9', targets: [] }), { code: 'data_format_interrupted' });
+  assert.deepEqual(readFileSync(path), before);
+});
+
+test('a conflict the error sends to restore can be restored: describe, confirm, restore', (t) => {
+  const { directory, path } = legacyRegistry(t);
+  const original = readFileSync(path, 'utf8');
+  const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+  assert.throws(() => applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI,
+    stage: (name) => { if (name === 'intent') throw new Error('power cut'); } }), /power cut/);
+  writeFileSync(path, JSON.stringify({ version: 2, bindings: [{ id: 'edited-elsewhere', targets: [] }] }));
+  const conflicted = readFileSync(path, 'utf8');
+  const [backup] = jsonBackupFiles(path);
+
+  const impact = describeJsonRestore(path, EXTERNAL_KNOWLEDGE_FORMAT, backup.ref);
+  const restored = restoreJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT, { backupRef: backup.ref, expected: impact, actor: CLI });
+
+  assert.equal(readFileSync(path, 'utf8').trim(), JSON.stringify(JSON.parse(original), null, 2));
+  assert.equal(existsSync(intentPath(path)), false);
+  const events = JSON.parse(readFileSync(ledgerPath(path), 'utf8')).events.map((event) => event.status);
+  assert.deepEqual(events, ['abandoned', 'restored']);
+  const kept = JSON.parse(readFileSync(ledgerPath(path), 'utf8')).events[0].backupRef;
+  assert.equal(readFileSync(join(directory, kept), 'utf8'), conflicted, 'the conflicting file is kept');
+  assert.ok(existsSync(join(directory, restored.safetyBackupRef)));
 });

@@ -27,6 +27,7 @@ from uuid import uuid4
 from neo4j.exceptions import ClientError
 
 from .graph_format_ledger import (
+    GRAPH_STORE,
     GraphFormatLockLost,
     LedgerStep,
     acquire_graph_migration_lock,
@@ -103,6 +104,33 @@ class GraphFormatState:
 UNCHECKED = GraphFormatState(
     'none', 'unchecked', None, 'The graph data format has not been checked yet.'
 )
+
+# The last statement of every business write transaction of every provider,
+# just before it commits: takes the graph identity node's write lock (a
+# confirmed apply or undo holds it to its own commit, so this waits) and
+# reads the graph's version in the same transaction. A provider that decided
+# "writable" before another process applied or undid a step finds out here
+# and its transaction rolls back, instead of committing in a format the graph
+# no longer has. Writers hold the lock only from this statement to their
+# commit, so ordinary writes do not wait for each other's work.
+_WRITER_FENCE = '''
+MATCH (format:FuliDataFormat {store: $store})
+SET format._fuli_writer = true
+REMOVE format._fuli_writer
+RETURN format.version AS version
+'''
+
+
+async def writer_fence(transaction) -> None:
+    result = await transaction.run(_WRITER_FENCE, store=GRAPH_STORE)
+    records = [record async for record in result]
+    version = records[0]['version'] if records else None
+    if version != GRAPH_FORMAT_VERSION:
+        raise GraphFormatUnavailable(
+            'data_format_changed_underneath',
+            f'The graph is at data format {version} (a person applied or undid a migration) while '
+            f'this provider was writing it as {GRAPH_FORMAT_VERSION}. Nothing was written; restart FULI.',
+        )
 
 
 def ledger_step(migration: GraphMigration) -> LedgerStep:
@@ -334,6 +362,7 @@ async def _empty(driver) -> bool:
         '''
         CALL {
           MATCH (n) WHERE NOT n:FuliDataFormat AND NOT n:FuliDataFormatEvent
+            AND NOT n:FuliDataFormatUndo
           RETURN n LIMIT 1
         }
         RETURN count(n) AS used

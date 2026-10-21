@@ -12,6 +12,7 @@ from test_executor_evidence_neo4j import (
     learning_snapshot,
 )
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
+from fuli_graph.runtime import ManagedNeo4jDriver
 
 
 OUTCOMES_PATH = '/v1/project-agent-routing-outcomes'
@@ -87,7 +88,7 @@ def pause_after_aggregate_read(monkeypatch, personal_space_id):
 
         return intercepted
 
-    monkeypatch.setattr(Neo4jDriver, 'execute_query', wrapper(Neo4jDriver.execute_query))
+    monkeypatch.setattr(ManagedNeo4jDriver, 'execute_query', wrapper(ManagedNeo4jDriver.execute_query))
     monkeypatch.setattr(
         TransactionQueryDriver,
         'execute_query',

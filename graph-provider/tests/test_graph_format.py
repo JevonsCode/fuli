@@ -208,12 +208,15 @@ async def test_learning_bucket_step_is_space_scoped_deterministic_and_keeps_evid
 
 
 class RecordingClient:
-    """Stands in for the Neo4j client under ManagedNeo4jDriver."""
+    """Stands in for the Neo4j client under ManagedNeo4jDriver; the writer
+    fence reads graph_version."""
 
-    def __init__(self, error=None):
+    def __init__(self, error=None, graph_version=GRAPH_FORMAT_VERSION):
         self.error = error
+        self.graph_version = graph_version
         self.queries = []
         self.sessions = []
+        self.transaction_queries = []
 
     async def execute_query(self, query, **kwargs):
         self.queries.append((query, kwargs))
@@ -223,10 +226,13 @@ class RecordingClient:
 
     def session(self, **kwargs):
         self.sessions.append(kwargs)
-        return RecordingSession()
+        return RecordingSession(self)
 
 
 class RecordingSession:
+    def __init__(self, client=None):
+        self.client = client
+
     async def __aenter__(self):
         return self
 
@@ -234,7 +240,40 @@ class RecordingSession:
         return False
 
     async def begin_transaction(self):
-        return SimpleNamespace(commit=_done, rollback=_done)
+        return RecordingTransaction(self.client)
+
+    async def execute_write(self, work, *args, **kwargs):
+        return await work(RecordingTransaction(self.client), *args, **kwargs)
+
+
+class RecordingTransaction:
+    def __init__(self, client):
+        self.client = client
+
+    async def run(self, query, *args, **kwargs):
+        self.client.transaction_queries.append(query)
+        rows = [{'version': self.client.graph_version}] if '_fuli_writer' in query else []
+        return RecordingResult(rows)
+
+    async def commit(self):
+        return None
+
+    async def rollback(self):
+        return None
+
+
+class RecordingResult:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def __aiter__(self):
+        async def rows():
+            for row in self.rows:
+                yield row
+        return rows()
+
+    async def to_eager_result(self):
+        return self.rows, None, []
 
 
 async def _done():
@@ -306,7 +345,7 @@ async def test_a_write_neo4j_refuses_in_read_mode_answers_with_the_format_reason
 
 
 @pytest.mark.asyncio
-async def test_current_graph_writes_normally():
+async def test_current_graph_writes_behind_the_writer_fence():
     client = RecordingClient()
     driver = guarded_driver(GraphFormatState('write', 'current', GRAPH_FORMAT_VERSION), client)
 
@@ -314,9 +353,26 @@ async def test_current_graph_writes_normally():
     async with driver.transaction():
         pass
 
-    assert 'routing_' not in client.queries[0][1]
-    # A writable graph uses the dependency's own write transaction.
-    assert client.sessions[0].get('default_access_mode', WRITE_ACCESS) == WRITE_ACCESS
+    # The fence is the write transaction's last statement, before its commit.
+    assert client.queries == []
+    assert client.transaction_queries[0] == 'CREATE (:Synthetic)'
+    assert '_fuli_writer' in client.transaction_queries[1]
+    assert '_fuli_writer' in client.transaction_queries[2]
+    # The dependency's own write transaction, which defaults to write access.
+    assert all(session.get('default_access_mode', WRITE_ACCESS) == WRITE_ACCESS for session in client.sessions)
+
+
+@pytest.mark.asyncio
+async def test_a_provider_whose_graph_was_migrated_meanwhile_writes_nothing():
+    client = RecordingClient(graph_version=GRAPH_FORMAT_VERSION - 1)
+    driver = guarded_driver(GraphFormatState('write', 'current', GRAPH_FORMAT_VERSION), client)
+
+    with pytest.raises(GraphFormatUnavailable) as refused:
+        await driver.execute_query('CREATE (:Synthetic)')
+
+    assert refused.value.code == 'data_format_changed_underneath'
+    # The write ran in the transaction the fence then refuses to commit.
+    assert client.transaction_queries[0] == 'CREATE (:Synthetic)'
 
 
 @pytest.mark.asyncio

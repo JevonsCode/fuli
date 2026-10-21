@@ -22,6 +22,7 @@ import { JUDGMENT_FORMAT } from '../judgment/store.js';
 import { ROLE_WORK_FORMAT } from '../model-backends/role-work-store.js';
 import { MODEL_USAGE_FORMAT } from '../model-backends/usage-ledger.js';
 import { inspectJsonStore } from '../storage/json-format.js';
+import { APPLY_RECEIPTS_FORMAT } from './apply-receipts.js';
 import { FORMAT_OPERATIONS_FORMAT } from './operations-log.js';
 import { MODEL_SECRETS_FORMAT } from '../model-backends/secret-store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
@@ -59,7 +60,8 @@ const jsonStores = () => [
   ['external-knowledge/conflict-policies.json', CONFLICT_POLICY_FORMAT],
   ['model-secrets.json', MODEL_SECRETS_FORMAT],
   ['client-connection-observations.json', CLIENT_CONNECTION_HISTORY_FORMAT],
-  ['format-operations.json', FORMAT_OPERATIONS_FORMAT]
+  ['format-operations.json', FORMAT_OPERATIONS_FORMAT],
+  ['format-apply-receipts.json', APPLY_RECEIPTS_FORMAT]
 ];
 // One small record per session.
 const jsonDirectories = () => [

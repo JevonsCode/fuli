@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -247,4 +247,25 @@ test('the terminal says what a deleting graph step loses before it asks', async 
 
   assert.match(shownBeforeQuestion, /undo: only a whole restore/);
   assert.match(shownBeforeQuestion, /WARNING: deletes the older duplicate learning-cache projections; the undo journal cannot restore/);
+});
+
+test('a retry still finds its receipt after the same apply pruned hundreds of backups', async (t) => {
+  const root = dataDir(t);
+  legacyDataDir(root);
+  const { plan } = await migrate(root, ['preview', '--json']);
+  const applied = await migrate(root, ['apply', '--digest', plan.digest]);
+  // An earlier FULI left 210 backups of earlier versions; pruning logs one event each.
+  const source = join(root, applied.results[0].backupRef);
+  for (let index = 0; index < 210; index += 1) {
+    const stamp = `2025-01-01T00-00-${String(Math.floor(index / 10)).padStart(2, '0')}-${String(index % 10).padStart(3, '0')}Z`;
+    copyFileSync(source, join(root, 'format-backups', `task-schedules.sqlite.v1-${stamp}.sqlite`));
+  }
+  const pruned = await migrate(root, ['prune', '--keep', '1']);
+  assert.ok(pruned.pruned.length >= 200);
+  assert.ok(!readFormatOperations(root).some((event) => event.kind === 'applied'), 'display events rolled over');
+
+  const retried = await migrate(root, ['apply', '--digest', plan.digest]);
+
+  assert.equal(retried.exitCode, 0);
+  assert.deepEqual(retried.results.map((result) => result.status), ['already_applied', 'already_applied']);
 });

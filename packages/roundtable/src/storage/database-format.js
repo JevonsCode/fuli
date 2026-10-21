@@ -67,7 +67,7 @@ export function sqliteFormat({ store, schema, migrations = [], pragmas = '', rea
 }
 
 export function openFormattedDatabase(path, format, { backup = backupSqliteDatabase,
-  now = () => new Date().toISOString() } = {}) {
+  now = () => new Date().toISOString(), afterVersionCheck } = {}) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const database = new DatabaseSync(path);
   let access;
@@ -76,7 +76,7 @@ export function openFormattedDatabase(path, format, { backup = backupSqliteDatab
     access = prepareFormat(database, path, format, { backup, now });
     if (access === 'write') {
       if (format.pragmas) database.exec(format.pragmas);
-      return versionGuarded(database, format);
+      return versionGuarded(database, format, { afterVersionCheck });
     }
   } catch (error) {
     database.close();
@@ -90,14 +90,24 @@ export function openFormattedDatabase(path, format, { backup = backupSqliteDatab
 
 // A writable connection stays at the version it was opened for: an undo or
 // a whole-store restore (database-migration.js) may move the store to
-// another version while a process holds it open, so every write first reads
-// the version again and stops with a 503 instead of writing a format it no
-// longer matches. Reads are not checked.
-const WRITING_SQL = /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i;
-const READING_STATEMENT = /^\s*(?:SELECT|WITH|PRAGMA|EXPLAIN|VALUES)\b/i;
-const RUNS = new Set(['run', 'get', 'all', 'iterate']);
+// another version while a process holds it open. So every statement that is
+// not on the short read-only list re-reads the version inside the store's
+// write lock and runs in that same lock: outside a transaction it is wrapped
+// in BEGIN IMMEDIATE ... COMMIT; inside one, the transaction's own lock or
+// snapshot holds. A moved store stops with a 503 and nothing is written.
+// afterVersionCheck() is a test seam: called between the check and the write.
+const READ_ONLY_STATEMENT = /^\s*(?:SELECT|EXPLAIN)\b/i;
+// Connection settings, not data: a PRAGMA inside a transaction would not take
+// effect, and only the engine sets user_version.
+const CONNECTION_PRAGMA = /^\s*PRAGMA\b/i;
+const TRANSACTION_CONTROL = /^\s*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b/i;
+const CONTAINS_TRANSACTION_CONTROL = /\b(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b/i;
 
-function versionGuarded(database, format) {
+function readsOnly(sql) {
+  return READ_ONLY_STATEMENT.test(sql) || CONNECTION_PRAGMA.test(sql) || TRANSACTION_CONTROL.test(sql);
+}
+
+function versionGuarded(database, format, { afterVersionCheck = () => {} } = {}) {
   if (database.location?.() === null) return database;
   const check = () => {
     const found = userVersion(database);
@@ -106,23 +116,49 @@ function versionGuarded(database, format) {
         + `moved to data format ${found} (an undo or a restore) while this process had it open at ${format.version}. `
         + 'Nothing was written; restart FULI.');
     }
+    afterVersionCheck();
+  };
+  const write = (operation) => {
+    if (database.isTransaction) {
+      check();
+      return operation();
+    }
+    database.exec('BEGIN IMMEDIATE');
+    try {
+      check();
+      const result = operation();
+      database.exec('COMMIT');
+      return result;
+    } catch (error) {
+      if (database.isTransaction) database.exec('ROLLBACK');
+      throw error;
+    }
   };
   return new Proxy(database, {
     get(target, key) {
-      if (key === 'exec') return (sql) => { if (WRITING_SQL.test(sql)) check(); return target.exec(sql); };
-      if (key === 'prepare') return (...args) => guardedStatement(target.prepare(...args), check);
+      if (key === 'exec') {
+        return (sql) => {
+          if (readsOnly(sql)) return target.exec(sql);
+          // A script that runs its own transaction cannot be wrapped in another.
+          if (CONTAINS_TRANSACTION_CONTROL.test(sql)) { check(); return target.exec(sql); }
+          return write(() => target.exec(sql));
+        };
+      }
+      if (key === 'prepare') return (...args) => guardedStatement(target.prepare(...args), write);
       const value = Reflect.get(target, key, target);
       return typeof value === 'function' ? value.bind(target) : value;
     }
   });
 }
 
-function guardedStatement(statement, check) {
-  if (READING_STATEMENT.test(statement.sourceSQL)) return statement;
+function guardedStatement(statement, write) {
+  if (readsOnly(statement.sourceSQL)) return statement;
   return new Proxy(statement, {
     get(target, key) {
-      // A writing statement may return rows (RETURNING), so every way to run it checks.
-      if (RUNS.has(key)) return (...args) => { check(); return target[key](...args); };
+      // A writing statement may return rows (RETURNING), so every way to run it is guarded;
+      // iterate runs to the end inside the lock.
+      if (key === 'run' || key === 'get' || key === 'all') return (...args) => write(() => target[key](...args));
+      if (key === 'iterate') return (...args) => write(() => target.all(...args))[Symbol.iterator]();
       const value = Reflect.get(target, key, target);
       return typeof value === 'function' ? value.bind(target) : value;
     }
