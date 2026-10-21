@@ -160,6 +160,8 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/native-runtime/runtime.js', 'Neo4j process state of the running console'],
   ['src/setup/graph-runtime.js', 'console process state; the graph runtime config it writes is versioned'],
   ['src/system/settings-apply.js', 'the settings operation journal, and the graph runtime config restored exactly as it was read'],
+  ['src/graphiti/capture-policy.js',
+    'its plain writes of the settings and their generation run only inside updateVersionedJsonFileAtomic, under the format lock and guard'],
   ['src/graphiti/capture-session-pause.js',
     'its plain write runs only inside updateVersionedJsonFileAtomic, under the format lock and guard']
 ]);

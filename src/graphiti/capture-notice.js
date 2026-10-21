@@ -51,9 +51,16 @@ export function sinceNotice(text, since) {
   return at ? `${text}（自 ${at} 起）` : text;
 }
 
-// A receipt's notices for one turn: the decision, then each explicit operation
-// the person asked for that ran while automatic recording was off.
-export function receiptNotices(decision, explicitOperations = []) {
+// Recording switched off, globally or for this client, is turned on again
+// only by the person, so the receipt shows where (rec#5 C10-3).
+const SWITCHED_OFF = new Set(['global_off', 'client_off']);
+
+// A receipt's notices for one turn: the decision, the settings page that turns
+// recording on again, then each explicit operation the person asked for that
+// ran while automatic recording was off. settingsUrl: the console's settings.
+export function receiptNotices(decision, explicitOperations = [], { settingsUrl = null } = {}) {
   const notice = captureNotice(decision.reason, decision.since);
-  return notice ? [notice, ...explicitOperations.map(operation => EXPLICIT_OPERATION_RESULTS[operation])] : [];
+  if (!notice) return [];
+  const entry = settingsUrl && SWITCHED_OFF.has(decision.reason) ? [`[在 FULI 设置里打开](<${settingsUrl}>)`] : [];
+  return [notice, ...entry, ...explicitOperations.map(operation => EXPLICIT_OPERATION_RESULTS[operation])];
 }

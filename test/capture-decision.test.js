@@ -33,6 +33,8 @@ const CODEX_TRANSCRIPT = { normalize: normalizeCodexRecord, verify: verifyCodexT
 const PRIVATE = 'synthetic-private-words';
 // rec#11 D-01 receipts: automatic recording stops, explicit edits still save.
 const RECORDING_OFF = '自动记录已关闭；你明确提交的修改仍会保存';
+// A receipt also names the page that turns the switch on again (rec#5 C10-3).
+const TURN_ON = '[在 FULI 设置里打开](<http://127.0.0.1:2727/settings>)';
 const SETTINGS_UNREADABLE = '记录设置读取失败，本次未自动记录；你明确提交的修改仍会保存';
 
 async function fixture(t, writePolicy) {
@@ -263,9 +265,11 @@ test('a checkpoint prepared while capturing and retried after capture is turned 
 // stop (usage, Agent-reported feedback, views, resume bindings, cross-project
 // usage); explicit user edits from the console and an explicit new project
 // still save. A corrupt policy stops the automatic writes just as strictly.
-for (const { name, policy, reason, notice } of [
-  { name: 'the global switch off', policy: policyFile({ enabled: false }), reason: 'global_off', notice: RECORDING_OFF },
-  { name: 'the client switch off', policy: policyFile({ enabled: true, disabledSources: ['codex'] }), reason: 'client_off', notice: RECORDING_OFF },
+for (const { name, policy, reason, notice, receiptTail = notice } of [
+  { name: 'the global switch off', policy: policyFile({ enabled: false }), reason: 'global_off', notice: RECORDING_OFF,
+    receiptTail: `${RECORDING_OFF} · ${TURN_ON}` },
+  { name: 'the client switch off', policy: policyFile({ enabled: true, disabledSources: ['codex'] }), reason: 'client_off',
+    notice: RECORDING_OFF, receiptTail: `${RECORDING_OFF} · ${TURN_ON}` },
   { name: 'an unreadable policy', policy: path => writeFile(path, '{ not json'), reason: 'policy_unavailable', notice: SETTINGS_UNREADABLE }
 ]) {
   test(`with ${name}, session-derived writes stop and explicit edits still save`, async (t) => {
@@ -296,7 +300,7 @@ for (const { name, policy, reason, notice } of [
     assert.equal(f.registry.context(f.task.token, 'codex').checkpoint.knowledgeUsage, undefined,
       'usage feeds preference promotion, so the checkpoint keeps none');
     assert.equal(checkpoint.knowledge_usage, undefined);
-    assert.ok(checkpoint.agent_receipt.markdown.endsWith(` · ${notice}`));
+    assert.ok(checkpoint.agent_receipt.markdown.endsWith(` · ${receiptTail}`), checkpoint.agent_receipt.markdown);
     assert.equal(graph.nodes.length, 1, 'reading the graph still works');
     assert.equal(resumed.conversation_id, 'synthetic-conversation', 'resuming still reads the conversation');
     assert.equal(resumed.capture.reason, reason);
@@ -315,7 +319,7 @@ for (const { name, policy, reason, notice } of [
       taskPrompt: '新项目：合成项目', sessionId: 'synthetic-entry', sourceApplication: 'codex' });
     assert.deepEqual(f.writes().slice(before).map(call => [call.method, call.path]), [['PUT', '/v1/personal-projects']],
       'the requested project is created and nothing else is recorded');
-    assert.ok(entry.agent_receipt.markdown.endsWith(` · ${notice} · 已创建项目，会话未记录`), entry.agent_receipt.markdown);
+    assert.ok(entry.agent_receipt.markdown.endsWith(` · ${receiptTail} · 已创建项目，会话未记录`), entry.agent_receipt.markdown);
   });
 }
 

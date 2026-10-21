@@ -9,7 +9,9 @@ import {
   DEFAULT_RUNTIME_SETTINGS,
   runtimeSettingsWithOverrides
 } from '../system/runtime-settings.js';
-import { confirmInTerminal, writeLine } from './terminal-io.js';
+import { confirmInTerminal, interactiveTerminal, writeLine } from './terminal-io.js';
+import { askCaptureScope, captureScopeSummary } from './capture-scope-prompt.js';
+import { captureOnboardingFor } from '../setup/first-run-capture.js';
 
 export async function runSetupCommand(args, dependencies = {}) {
   const options = parseSetupOptions(args);
@@ -40,7 +42,22 @@ export async function runSetupCommand(args, dependencies = {}) {
     onProgress: write
   });
   write(formatSetupResult(result, plan));
+  // Stubbed setups in tests never read the data directory they name.
+  const onboardingFor = dependencies.captureOnboarding ?? (applySetup === applyLocalSetup ? captureOnboardingFor : null);
+  const captureScope = onboardingFor && plan.paths
+    ? await firstRunCaptureScope(onboardingFor(plan.paths), options, result, dependencies) : null;
+  if (captureScope) write(captureScope);
   return { ...result, exitCode: result.status === 'partial' ? 1 : 0 };
+}
+
+// A new installation asks where FULI records (rec#5 C10): here when a person
+// is at the terminal, otherwise in the console, with recording off meanwhile.
+async function firstRunCaptureScope(onboarding, options, result, dependencies) {
+  if (!onboarding.state().ask) return null;
+  const interactive = !options.yes && (dependencies.interactive ?? interactiveTerminal)();
+  const choice = interactive ? await (dependencies.askCaptureScope ?? askCaptureScope)() : null;
+  const outcome = choice ? onboarding.answer({ choice }, { surface: 'terminal' }) : null;
+  return captureScopeSummary(outcome, result.runtime?.url ?? null);
 }
 
 export function formatSetupPreview(plan, options) {

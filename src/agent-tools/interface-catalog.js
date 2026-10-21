@@ -28,6 +28,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('PATCH /api/capture-policy', 'update_capture_policy'),
   local('POST /api/capture-changes/:previewId/confirm', 'An Agent only asks for a long-term capture change; the person confirms it on the console page its link opens (rec#11 D-16).'),
   local('POST /api/capture-changes/:previewId/cancel', 'Cancelling a capture change an Agent asked for is a console action of the person.'),
+  local('POST /api/capture-onboarding', 'Where a new installation records is the person\'s own answer on a FULI surface; an Agent never answers it (rec#5 C10, rec#11 D-16).'),
   local('PATCH /api/recall-policy', 'Whether Agents may answer from confirmed knowledge without re-checking files is decided by the local person.'),
   local('PATCH /api/agent-access-policy', 'The Agent access kill switch requires local user presence and cannot be changed by an Agent.'),
   local('PUT /api/system/settings', 'Device-level runtime settings remain a local user operation.'),

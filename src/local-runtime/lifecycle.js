@@ -6,6 +6,7 @@ import {
   ensureGraphRuntime,
   stopGraphProviders
 } from '../setup/graph-runtime.js';
+import { beginFirstRunCapture } from '../setup/first-run-capture.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { readAdaptiveRuntimeState } from '../adaptive-runtime/state.js';
@@ -29,6 +30,8 @@ export async function startLocalRuntime(input, dependencies = {}) {
   );
   const buildProviders = input.rebuild === true || !config ||
     !deps.fileExists(input.paths.graphEnvPath);
+  // A first start without setup (the Windows tray) asks the same question (rec#5 C10).
+  deps.beginFirstRun(input.paths);
   const runtime = await deps.ensureRuntime({
     paths: input.paths,
     personalSpaceName: input.personalSpaceName,
@@ -201,6 +204,8 @@ function lifecycleDependencies(overrides) {
     readState: safeReadState,
     fileExists: existsSync,
     ensureRuntime: ensureGraphRuntime,
+    // Stubbed runtimes in tests never touch the data directory they name.
+    beginFirstRun: overrides.ensureRuntime ? () => {} : beginFirstRunCapture,
     stopProviders: stopGraphProviders,
     consoleHealth: checkLocalConsoleHealth,
     providerHealth,
