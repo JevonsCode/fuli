@@ -10,6 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { callAgentTool } from '../src/agent-tools.js';
 import { openFederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 const enabled = process.env.FULI_TEST_NEO4J_EPHEMERAL === '1' && process.env.FULI_TEST_NEO4J_URI;
 
@@ -247,7 +248,7 @@ function claudeRow(sessionId, type, content) {
 }
 async function freePort() {
   const server = createServer();
-  await new Promise(resolveListen => server.listen(0, '127.0.0.1', resolveListen));
+  await listenFetchableServer(server, 0);
   const port = server.address().port;
   await new Promise(resolveClose => server.close(resolveClose));
   return port;

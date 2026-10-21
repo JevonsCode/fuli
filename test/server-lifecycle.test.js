@@ -8,6 +8,8 @@ import {
 
 test('server knows ports that fetch refuses before making a request', () => {
   assert.equal(isFetchBlockedPort(6000), true);
+  // An ephemeral port where the OS dynamic range starts at 1024 (Windows with Hyper-V).
+  assert.equal(isFetchBlockedPort(6679), true);
   assert.equal(isFetchBlockedPort(2727), false);
 });
 
@@ -28,7 +30,7 @@ test('blocked-port exhaustion follows borrowed and owned application lifecycles'
   const borrowed = trackedApplication();
   await assert.rejects(
     () => expectPortExhaustion({ app: borrowed.app, port: 0, isBlockedPort: () => true }),
-    /Could not find a fetchable local port/
+    /No port outside the fetch block list was available after 20 attempts/
   );
   assert.equal(borrowed.closeCalls(), 0);
   borrowed.app.close();
@@ -41,7 +43,7 @@ test('blocked-port exhaustion follows borrowed and owned application lifecycles'
       isBlockedPort: () => true,
       closeApplicationOnShutdown: true
     }),
-    /Could not find a fetchable local port/
+    /No port outside the fetch block list was available after 20 attempts/
   );
   assert.equal(owned.closeCalls(), 1);
 });

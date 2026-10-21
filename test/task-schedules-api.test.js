@@ -4,6 +4,7 @@ import test from 'node:test';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { handleTaskSchedulesRequest } from '../src/http/task-schedules-api-router.js';
 import { createTaskScheduleService } from '../src/task-schedules/service.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 const SPACE = 'space-1';
 
@@ -22,7 +23,7 @@ async function withServer(fn) {
       response.writeHead(mapped.status, { 'content-type': 'application/json' }).end(JSON.stringify(mapped.body));
     }
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await listenFetchableServer(server, 0);
   const base = `http://127.0.0.1:${server.address().port}`;
   const call = async (method, path, body) => {
     const response = await fetch(base + path, { method, headers: { 'content-type': 'application/json' },

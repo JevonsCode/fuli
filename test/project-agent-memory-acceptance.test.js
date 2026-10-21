@@ -10,6 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { connectMcp } from '../test-support/mcp-client.js';
 import { realTaskContextProvider } from '../test-support/real-task-context-provider.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 const enabled = process.env.FULI_TEST_NEO4J_EPHEMERAL === '1' && process.env.FULI_TEST_NEO4J_URI;
 
@@ -203,7 +204,7 @@ function invalidCapture() {
 
 async function freePort() {
   const socket = createServer();
-  await new Promise(resolveListen => socket.listen(0, '127.0.0.1', resolveListen));
+  await listenFetchableServer(socket, 0);
   const port = socket.address().port;
   await new Promise(resolveClose => socket.close(resolveClose));
   return port;

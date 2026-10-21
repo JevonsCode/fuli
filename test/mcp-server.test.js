@@ -14,6 +14,7 @@ import { annotationsFor } from '../src/mcp/tool-annotations.js';
 import { jsonSchemaToZod } from '../src/mcp/tool-schema.js';
 import { errorToolResult } from '../src/mcp/tool-result.js';
 import { createCloseOnce } from '../src/mcp/runtime.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 test('--tools lists the Graphiti registry without requiring a runtime config', () => {
   const output = execFileSync(process.execPath, ['src/mcp-server.js', '--tools'], {
@@ -80,7 +81,7 @@ test('real CLI worker initializes offline from a package path with spaces and ig
   const runtimeConfigPath = join(runtimeDirectory, 'graph-runtime.json');
   let providerCalls = 0;
   const provider = createServer((_request, response) => { providerCalls++; response.writeHead(503).end(); });
-  await new Promise(ready => provider.listen(0, '127.0.0.1', ready));
+  await listenFetchableServer(provider, 0);
   await writeFile(runtimeConfigPath, JSON.stringify({ version: 1, workspaces: [], personal: {
     providerUrl: `http://127.0.0.1:${provider.address().port}`, accessToken: 'synthetic-cli-provider-token',
     principalId: 'synthetic-cli-host', spaceId: 'synthetic-cli-space'

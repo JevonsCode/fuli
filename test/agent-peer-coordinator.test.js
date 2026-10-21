@@ -13,6 +13,7 @@ import { createCoordinatorStore } from '../packages/roundtable/src/peer/coordina
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
 import { createPeerClient } from '../packages/roundtable/src/peer/peer-transport.js';
 import { PEER_LIMITS, validateAssertion } from '../packages/roundtable/src/peer/protocol.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 const TEST_AUTHORITY = { keyId: '0'.repeat(32), publicKey: Buffer.alloc(32).toString('base64url') };
 const identity = async () => deviceIdentity(await createDeviceCertificate());
@@ -37,7 +38,7 @@ async function coordinatorWithTarget({ clock } = {}) {
 async function rawServer(identities, onRequest) {
   const server = createServer({ ...identities.server.tlsOptions, ca: [identities.client.certPem],
     requestCert: true, rejectUnauthorized: true, minVersion: 'TLSv1.3' }, onRequest);
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await listenFetchableServer(server, 0);
   const client = createPeerClient({ identity: identities.client, coordinator: {
     url: `https://127.0.0.1:${server.address().port}`, certPem: identities.server.certPem, fingerprint: identities.server.fingerprint } });
   return { client, close: async () => { client.close(); server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); } };

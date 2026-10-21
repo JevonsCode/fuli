@@ -21,7 +21,7 @@ import {
 } from './server/lan-access.js';
 import { createServerApplication } from './server/application-lifecycle.js';
 import { createWorkerPlanRuntime } from './server/worker-plan-runtime.js';
-import { listenServer } from './server/listen.js';
+import { listenFetchableServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
@@ -124,90 +124,81 @@ export async function createServer(options = {}) {
     // construction or configuration validation fails, even without a listener.
     await failStartup(error);
   }
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    let authority = null;
-    let allowedLanAuthorities = [];
-    const server = createHttpServer((request, response) => {
-      handleRequest({
-        request,
-        response,
-        app: application,
-        system,
-        externalKnowledge,
-        connectedKnowledge,
-        peer,
-        dataFormats,
-        authority,
-        lanAuthorities: allowedLanAuthorities,
-        lanAccessToken: lanToken
-      }).catch((error) => {
-        if (response.headersSent || response.destroyed) {
-          // A post-response lease/storage failure cannot be converted into a second response.
-          if (!response.writableEnded) response.destroy();
-          console.error('Request failed after its response was committed or disconnected');
-          return;
-        }
-        const mapped = mapHttpError(error);
-        sendJson(response, mapped.status, mapped.body);
-      });
-    });
-
-    try {
-      await listenServer(server, port, lanEnabled ? '0.0.0.0' : '127.0.0.1');
-    } catch (error) {
-      await failStartup(error);
-    }
-    const address = server.address();
-    if (isBlockedPort(address.port)) {
-      await new Promise((resolveClose) => server.close(resolveClose));
-      if (Number(port) === 0) continue;
-      await failStartup(new Error(`Port ${address.port} is blocked for local fetch`));
-    }
-    authority = localServerAuthority(address);
-    allowedLanAuthorities = lanEnabled
-      ? lanServerAuthorities(lanAddresses, address.port)
-      : [];
-    if (!authority) {
-      await new Promise((resolveClose) => server.close(resolveClose));
-      await failStartup(new Error('Server did not bind to a valid local authority'));
-    }
-    stopJudgment = startJudgmentScheduler({ app: application,
-      ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
-    stopTaskSchedules = startTaskScheduler({ app: application,
-      ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
-    // Resumes only what the owner already turned on; console LAN access never enables it.
-    if (application.peer && options.peer !== false) {
-      peer = createPeerRuntime({ host: application.roundtableHost, roundtable: application.roundtable, port: application.peer,
-        onError: (error) => console.error(`LAN roundtable: ${error.code ?? error.message}`) });
-      peer.resume().catch((error) => console.error(`LAN roundtable could not resume: ${error.code ?? error.message}`));
-    }
-
-    let closing = null;
-    const close = () => {
-      closing ??= new Promise((resolve, reject) => {
-        closeTaskEventStreams(server);
-        server.close((error) => error && error.code !== 'ERR_SERVER_NOT_RUNNING'
-          ? reject(error) : resolve());
-      }).then(closeResources);
-      return closing;
-    };
-    server.once('close', () => {
-      // Legacy callers may close the raw HTTP server; still consume/report asynchronous failures.
-      void closeResources().catch((error) => {
-        if (!closing) console.error(`Server shutdown failed: ${error.message}`);
-      });
-    });
-    return {
-      server,
-      close,
-      url: `http://${authority}`,
-      lanUrls: lanEnabled ? lanConsoleUrls(lanAddresses, address.port) : [],
+  let authority = null;
+  let allowedLanAuthorities = [];
+  const server = createHttpServer((request, response) => {
+    handleRequest({
+      request,
+      response,
       app: application,
-      ...(workerRuntime ? { workerPlanHost: workerRuntime.host } : {})
-    };
+      system,
+      externalKnowledge,
+      connectedKnowledge,
+      peer,
+      dataFormats,
+      authority,
+      lanAuthorities: allowedLanAuthorities,
+      lanAccessToken: lanToken
+    }).catch((error) => {
+      if (response.headersSent || response.destroyed) {
+        // A post-response lease/storage failure cannot be converted into a second response.
+        if (!response.writableEnded) response.destroy();
+        console.error('Request failed after its response was committed or disconnected');
+        return;
+      }
+      const mapped = mapHttpError(error);
+      sendJson(response, mapped.status, mapped.body);
+    });
+  });
+
+  try {
+    await listenFetchableServer(server, port, lanEnabled ? '0.0.0.0' : '127.0.0.1', { isBlockedPort });
+  } catch (error) {
+    await failStartup(error);
+  }
+  const address = server.address();
+  authority = localServerAuthority(address);
+  allowedLanAuthorities = lanEnabled
+    ? lanServerAuthorities(lanAddresses, address.port)
+    : [];
+  if (!authority) {
+    await new Promise((resolveClose) => server.close(resolveClose));
+    await failStartup(new Error('Server did not bind to a valid local authority'));
+  }
+  stopJudgment = startJudgmentScheduler({ app: application,
+    ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+  stopTaskSchedules = startTaskScheduler({ app: application,
+    ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+  // Resumes only what the owner already turned on; console LAN access never enables it.
+  if (application.peer && options.peer !== false) {
+    peer = createPeerRuntime({ host: application.roundtableHost, roundtable: application.roundtable, port: application.peer,
+      onError: (error) => console.error(`LAN roundtable: ${error.code ?? error.message}`) });
+    peer.resume().catch((error) => console.error(`LAN roundtable could not resume: ${error.code ?? error.message}`));
   }
 
-  await failStartup(new Error('Could not find a fetchable local port'));
+  let closing = null;
+  const close = () => {
+    closing ??= new Promise((resolve, reject) => {
+      closeTaskEventStreams(server);
+      server.close((error) => error && error.code !== 'ERR_SERVER_NOT_RUNNING'
+        ? reject(error) : resolve());
+    }).then(closeResources);
+    return closing;
+  };
+  server.once('close', () => {
+    // Legacy callers may close the raw HTTP server; still consume/report asynchronous failures.
+    void closeResources().catch((error) => {
+      if (!closing) console.error(`Server shutdown failed: ${error.message}`);
+    });
+  });
+  return {
+    server,
+    close,
+    url: `http://${authority}`,
+    lanUrls: lanEnabled ? lanConsoleUrls(lanAddresses, address.port) : [],
+    app: application,
+    ...(workerRuntime ? { workerPlanHost: workerRuntime.host } : {})
+  };
 }
 
 function resolveServerGraphOptions(options) {

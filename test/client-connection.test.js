@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 const cli = resolve('src/cli.js');
 
@@ -60,7 +61,7 @@ test('exported connection completes MCP initialization and an authenticated read
   });
   const client = new Client({ name: 'unlisted-mcp-client', version: '1.0.0' });
   try {
-    await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
+    await listenFetchableServer(provider, 0);
     writeFileSync(join(directory, 'graph-runtime.json'), JSON.stringify({
       version: 1,
       personal: { providerUrl: `http://127.0.0.1:${provider.address().port}`,
