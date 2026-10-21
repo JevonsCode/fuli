@@ -32,5 +32,6 @@ The following controls are deliberately local-user-only unless the current inter
 - preference-scope confirmation
 - batch knowledge confirmation
 - Jefa work-item completion that records explicit human acceptance
+- permanently deleting knowledge (「彻底删除」): suggest the person opens the item page's 危险操作 section; there is no Agent tool, not even a preview
 
 Explain the precise UI action when one of these boundaries blocks the request. Never work around it through direct HTTP, storage, browser scripting, or a shell command.

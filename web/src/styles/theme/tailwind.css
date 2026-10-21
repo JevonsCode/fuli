@@ -40,6 +40,7 @@
 @source "../../pages/KnowledgeItemEditPage.vue";
 @source "../../pages/KnowledgeTurnReceiptPage.vue";
 @source "../../features/knowledge-quick-edit";
+@source "../../features/knowledge-hard-delete";
 /* 编排 on the same canvas: the collection, its cards and each Agent's page. */
 @source "../../pages/ProjectAgentsPage.vue";
 @source "../../features/project-agents/ProjectAgentCard.vue";

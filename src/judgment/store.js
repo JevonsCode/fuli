@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { EmployeeError } from '../employees/manifest.js';
+import { forgetReferences } from '../knowledge-hard-delete/forget-references.js';
 
 export const DEFAULT_PINS = Object.freeze(['employee.bole', 'employee.jefa', 'employee.tonborg']);
 export const DEFAULT_POLICY = Object.freeze({ mode: 'manual', quality: 'quality', client: 'codex' });
@@ -121,6 +122,34 @@ export class JudgmentStore {
       this.db.prepare('INSERT INTO judgment_execution(decision,status,receipt,created_at) VALUES(?,?,?,?)')
         .run(id, status, JSON.stringify(receipt), new Date().toISOString());
       return this.get(space, id);
+    });
+  }
+  // A person hard-deleted knowledge (rec#5 C9): every judgment, receipt and
+  // feedback of this space that names it keeps its shape and loses its words.
+  // Returns how many rows changed.
+  forgetKnowledgeItems(space, references) {
+    return this.transaction(() => {
+      let changed = 0;
+      const forgotten = [];
+      for (const row of this.db.prepare('SELECT id, body FROM judgment_records WHERE space=?').all(space)) {
+        const result = forgetReferences(JSON.parse(row.body), references);
+        if (!result.changed) continue;
+        this.db.prepare('UPDATE judgment_records SET body=? WHERE id=?').run(JSON.stringify(result.value), row.id);
+        forgotten.push(row.id);
+        changed++;
+      }
+      for (const row of this.db.prepare(`SELECT e.id, e.receipt FROM judgment_execution e
+        JOIN judgment_records r ON r.id = e.decision WHERE r.space=?`).all(space)) {
+        const result = forgetReferences(JSON.parse(row.receipt), references);
+        if (!result.changed) continue;
+        this.db.prepare('UPDATE judgment_execution SET receipt=? WHERE id=?').run(JSON.stringify(result.value), row.id);
+        changed++;
+      }
+      for (const decision of forgotten) {
+        changed += Number(this.db.prepare("UPDATE judgment_feedback SET reason='' WHERE decision=? AND reason <> ''")
+          .run(decision).changes);
+      }
+      return changed;
     });
   }
   // The records one request created, as request key prefix (its own items).

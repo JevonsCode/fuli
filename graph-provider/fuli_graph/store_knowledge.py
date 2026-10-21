@@ -9,6 +9,7 @@ from .graph_models import GraphResult
 from .graph_query import read_graph
 from .knowledge_basis_review import inherited_reasons, record_inherited
 from .knowledge_dependencies import require_current_bases
+from .knowledge_hard_delete_traces import episode_hard_deleted
 from .knowledge_search import search_knowledge
 from .models import (
     CollaborationContextResult,
@@ -238,6 +239,11 @@ class StoreKnowledge:
                     entity_ids=entity_ids,
                     relationship_ids=relationship_ids,
                 )
+            # The person hard-deleted what this capture recorded (rec#5 C9):
+            # its replay is the same episode and must not write it again.
+            if await episode_hard_deleted(self, space, episode_id):
+                return CommitResult(status='duplicate', space_id=space['id'], episode_id=episode_id,
+                                    entity_ids=[], relationship_ids=[])
 
             entity_vectors = await self.runtime.embedder.create_batch(
                 [entity.name for entity in episode.entities]
@@ -252,6 +258,10 @@ class StoreKnowledge:
             # (rec#5 C8-3, C8-4).
             async with query_store_transaction(self) as scoped:
                 await lock_knowledge(scoped, space)
+                if await episode_hard_deleted(scoped, space, episode_id):
+                    raise HTTPException(status_code=409, detail={
+                        'code': 'hard_deleted',
+                        'message': 'the person permanently deleted what this capture recorded'})
                 if reasserted != await reasserted_entities(scoped, space, captured_ids, episode_id):
                     raise HTTPException(status_code=409, detail={
                         'code': 'versions_changed',

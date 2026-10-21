@@ -23,6 +23,8 @@ KnowledgeItemChange = Literal['created', 'updated']
 # it is history: a newer version replaced it, a person marked it outdated,
 # knowledge it was concluded from went out of date, or it was deactivated.
 KnowledgeVersionStatus = Literal['current', 'superseded', 'outdated', 'basis_outdated', 'inactive']
+# A basis may also be gone: a person hard-deleted it (rec#5 C9).
+KnowledgeBasisStatus = KnowledgeVersionStatus | Literal['deleted']
 MAX_SCOPE_PROJECTS = 16
 MAX_RECEIPT_EPISODES = 3
 
@@ -112,7 +114,7 @@ class KnowledgeBasis(StrictModel):
     item_kind: KnowledgeItemKind
     item_id: str
     content: str
-    status: KnowledgeVersionStatus
+    status: KnowledgeBasisStatus
 
 
 class KnowledgeEvidenceSource(StrictModel):
@@ -161,6 +163,8 @@ class KnowledgeTurnReceipt(StrictModel):
     Items the episodes only mentioned again changed nothing and are counted."""
     entries: list[KnowledgeReceiptEntry] = Field(default_factory=list)
     unchanged_count: int = 0
+    # How many hard deletes removed something these episodes recorded (C9).
+    deleted_count: int = 0
 
 
 class KnowledgeScopeChange(StrictModel):

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { forgetReferences } from '../knowledge-hard-delete/forget-references.js';
 
 // D-04 §2 role work packages, shared by every console and MCP process on one
 // data directory, so a pending package survives restarts. A package is never
@@ -23,6 +24,8 @@ import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/s
 // still be answered: a new one supersedes the others (C16).
 
 const OPEN = Object.freeze(['pending', 'claimed']);
+// The JSON columns that can carry knowledge words.
+const FORGETTABLE = Object.freeze(['request', 'resume', 'fallback_receipt', 'submission', 'result']);
 const SAME_WORK = `role = :role AND operation = :operation AND space = :space AND project IS :project
   AND evidence_version = :evidence AND policy_version = :policy`;
 const COLUMNS = 'package_id, role, operation, request_id, space, project, session_ref, evidence_version, policy_version, '
@@ -202,6 +205,31 @@ export class RoleWorkStore {
         this.db.prepare(`UPDATE role_work SET status = 'expired' WHERE package_id = ?`).run(packageId);
         this.#event(packageId, 'expired', {}, at);
       }
+    });
+  }
+
+  // A person hard-deleted knowledge (rec#5 C9): a package of this space that
+  // names it (in its request, answer, result or history) keeps its shape and
+  // loses those words. Returns how many rows changed.
+  forgetKnowledgeItems(space, references) {
+    return this.#transaction(() => {
+      let changed = 0;
+      for (const row of this.db.prepare(`SELECT package_id, ${FORGETTABLE.join(', ')} FROM role_work WHERE space = ?`).all(space)) {
+        const updates = FORGETTABLE.map((column) => [column, row[column] === null ? null : forgetReferences(JSON.parse(row[column]), references)])
+          .filter(([, result]) => result?.changed);
+        if (!updates.length) continue;
+        this.db.prepare(`UPDATE role_work SET ${updates.map(([column]) => `${column} = ?`).join(', ')} WHERE package_id = ?`)
+          .run(...updates.map(([, result]) => JSON.stringify(result.value)), row.package_id);
+        changed++;
+      }
+      for (const row of this.db.prepare(`SELECT e.id, e.detail FROM role_work_events e JOIN role_work w ON w.package_id = e.package_id
+        WHERE w.space = ?`).all(space)) {
+        const result = forgetReferences(JSON.parse(row.detail), references);
+        if (!result.changed) continue;
+        this.db.prepare('UPDATE role_work_events SET detail = ? WHERE id = ?').run(JSON.stringify(result.value), row.id);
+        changed++;
+      }
+      return changed;
     });
   }
 

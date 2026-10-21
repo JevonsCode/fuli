@@ -35,7 +35,9 @@ export function mapHttpError(error) {
   }
 
   if (isControlledError(error) && error.status >= 400 && error.status <= 499) {
-    return { status: error.status, body: { error: error.message, code: error.code } };
+    // An old link to hard-deleted knowledge says when it was deleted (rec#5 C9).
+    const deletedAt = error.details?.deletedAt;
+    return { status: error.status, body: { error: error.message, code: error.code, ...(deletedAt ? { deletedAt } : {}) } };
   }
 
   if (isControlledError(error) && BAD_REQUEST_CODES.has(error.code)) {

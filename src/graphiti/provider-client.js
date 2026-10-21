@@ -1055,6 +1055,7 @@ function invalidResponse(message) {
 // The graph's data format refusal (rec#17) keeps its code and reason: the
 // person has to upgrade, restore or confirm, which a bare 503 would hide.
 const DATA_FORMAT_CODE = /^data_format_[a-z_]{1,40}$/;
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 function providerErrorDiagnostic(status, payload) {
   const formatRefusal = DATA_FORMAT_CODE.test(payload?.detail?.code ?? '');
@@ -1069,12 +1070,15 @@ function providerErrorDiagnostic(status, payload) {
     };
   }
   const validationErrors = providerValidationErrors(payload);
+  const deletedAt = payload?.detail?.deleted_at;
   return {
     category: typeof payload?.detail?.code === 'string' && /^[a-z][a-z0-9_]{1,79}$/.test(payload.detail.code)
       ? payload.detail.code : category,
     status,
     detail: sanitizeProviderDetail(providerErrorMessage(payload, validationErrors)),
-    validationErrors
+    validationErrors,
+    // When hard-deleted knowledge was deleted (rec#5 C9): a timestamp, no content.
+    ...(typeof deletedAt === 'string' && ISO_TIME.test(deletedAt) ? { deletedAt } : {})
   };
 }
 

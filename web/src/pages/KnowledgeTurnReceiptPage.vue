@@ -49,6 +49,9 @@ watch([spaceId, episodes], () => { receipt.value = null; void load() }, { immedi
       <p class="m-0 text-sm text-muted-foreground" data-turn-count>
         {{ receipt.entries.length ? t('knowledgeQuickEdit.turn.count', { count: receipt.entries.length }) : t('knowledgeQuickEdit.turn.empty') }}
       </p>
+      <p v-if="receipt.deleted_count" class="m-0 text-sm text-muted-foreground" data-turn-deleted>
+        {{ t('knowledgeHardDelete.receipt.deleted', { count: receipt.deleted_count }) }}
+      </p>
       <ol class="m-0 grid list-none gap-3 p-0">
         <li v-for="entry in receipt.entries" :key="`${entry.item_kind}:${entry.item_id}`" class="grid gap-2"
           :data-turn-entry="entry.item_id">

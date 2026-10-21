@@ -18,6 +18,7 @@ from datetime import datetime
 from fastapi import HTTPException
 
 from .knowledge_audit import _item_match
+from .knowledge_hard_delete_traces import hard_deleted_kinds
 from .knowledge_management import _read_item, _snapshot
 from .knowledge_versions import (
     current_version_id, invalid_property, item_revisions, lineage_ids, record_version_revision, version_status,
@@ -113,11 +114,15 @@ async def item_bases(store, space, item_kind, item_id, current) -> list[dict]:
         ids = [basis_id for basis_id, basis in bases.items() if basis['item_kind'] == kind]
         if ids:
             revisions.update(await item_revisions(store, space, kind, ids))
+    # A basis a person hard-deleted is named as deleted, never with its words.
+    deleted = await hard_deleted_kinds(store, space, [basis_id for basis_id in basis_ids if basis_id not in bases])
     return [{'item_kind': bases[basis_id]['item_kind'], 'item_id': basis_id,
              'content': bases[basis_id]['content'] or basis_id,
              'status': version_status(bases[basis_id]['invalid_at'], bases[basis_id]['replaced_by_item_id'],
                                       revisions.get(basis_id, []))}
-            for basis_id in basis_ids if basis_id in bases]
+            if basis_id in bases else
+            {'item_kind': deleted[basis_id], 'item_id': basis_id, 'content': '', 'status': 'deleted'}
+            for basis_id in basis_ids if basis_id in bases or basis_id in deleted]
 
 
 async def _decision_sources(store, space, item_kind, item_id) -> list[str]:

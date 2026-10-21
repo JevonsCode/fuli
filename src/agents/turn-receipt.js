@@ -55,14 +55,18 @@ export function renderTurnReceipt(application, entries, { episodeIds, memory = n
 export async function readEpisodeReceipts(application, episodeIds) {
   const entries = new Map();
   let unchanged = 0;
+  let deleted = 0;
   for (let start = 0; start < episodeIds.length; start += EPISODES_PER_READ) {
     const read = await application.personal.readTurnReceipt({ personal_space_id: application.config.personal.spaceId,
       episode_ids: episodeIds.slice(start, start + EPISODES_PER_READ) });
     if (!Array.isArray(read?.entries)) throw new TypeError('Provider did not return the turn receipt');
     for (const entry of read.entries) entries.set(`${entry.item_kind}:${entry.item_id}`, entry);
     unchanged += read.unchanged_count ?? 0;
+    // What a person hard-deleted since (rec#5 C9); a delete whose sources span
+    // two reads is counted in each.
+    deleted += read.deleted_count ?? 0;
   }
-  return { entries: [...entries.values()], unchanged_count: unchanged };
+  return { entries: [...entries.values()], unchanged_count: unchanged, deleted_count: deleted };
 }
 
 // Said instead when the knowledge was saved but its receipt could not be read
