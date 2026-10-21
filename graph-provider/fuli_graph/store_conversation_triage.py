@@ -1,6 +1,7 @@
 """Triage labels on unclaimed conversations and topic accumulation; no LLM."""
 from fastapi import HTTPException
-from .provider_values import now_utc, stable_uuid
+from .conversation_scope import conversation_scope_id
+from .provider_values import now_utc
 from .system_agents import SYSTEM_ASSISTANT_AGENT_ID as ASSISTANT_AGENT_ID
 
 
@@ -36,7 +37,7 @@ class StoreConversationTriage:
             'FOREACH (_ IN CASE WHEN kept IS NULL THEN [1] ELSE [] END | SET t += $label) '
             'RETURN t, kept',
             id=request.conversation_id, space_id=space['id'], label=label, source=request.source,
-            scope=stable_uuid('global-conversation-scope', space['id'], ASSISTANT_AGENT_ID))
+            scope=conversation_scope_id(space['id'], None, ASSISTANT_AGENT_ID))
         if not rows:
             raise HTTPException(404, 'Unclaimed conversation not found')
         record, kept = dict(rows[0]['t']), rows[0]['kept']

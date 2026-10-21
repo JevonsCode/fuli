@@ -74,7 +74,10 @@ const BASELINE = Object.freeze({
   // the person confirms in the console (rec#11 D-16), so the tool takes no confirmation field and
   // its description drops the example sentence: 183,425 -> 183,502 B (+77 B), measured (the
   // two-call previewToken design before D-16 was 183,719 B). Chat, instructions and entry unchanged.
-  fullToolSchemaBytes: 183502,
+  // rec#5 C6: full-profile read_session_records answers "这次都记了我什么" with the session's
+  // numbered records (chat reaches it through list_agent_interfaces/fuli_call): 183,502 -> 184,107 B
+  // (+605 B), measured after merging C4. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 184107,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
@@ -108,8 +111,13 @@ const BASELINE = Object.freeze({
   // saved items adds one heading (14 chars) and one line per item (152 chars for a short
   // preference, its edit link included, about 70 of them the link). A long receipt
   // stops near 1,800 characters and links the rest.
+  // rec#5 C6: the heading of a turn that saved items links the session's record list in its
+  // short form, `（[本会话已记录](<…/s/<session>>)）`: the console reads it in its active space
+  // and the Provider finds the session's client. Measured with a UUID session on the default
+  // console: 14 -> 88 chars (+74, about 25 tokens, only on a turn that saved items; the first
+  // form with space and client in the path was +130 with a real UUID space).
   turnReceiptNoChangeChars: 0,
-  turnReceiptHeadingChars: 14,
+  turnReceiptHeadingChars: 88,
   turnReceiptEntryChars: 152,
   // rec#22: only a Codex turn the person starts with an exact `fuli review` line gets this
   // one line (with its separator) after the task entry; the always-loaded Codex bootstrap
@@ -198,7 +206,8 @@ async function turnReceiptChars() {
   const owner = { projectId: 'sample', agentId: 'lead-sample', name: 'Synthetic lead' };
   const plain = taskAgentReceipt(app, owner).markdown;
   const unchanged = taskAgentReceipt(app, { ...owner, turnReceipt: await readTurnReceipt(app, []) }).markdown;
-  const [heading, line] = (await readTurnReceipt(app, [{ status: 'committed', episode_id: 'episode' }])).lines;
+  const [heading, line] = (await readTurnReceipt(app, [{ status: 'committed', episode_id: 'episode' }],
+    { session: { sourceApplication: 'claude_code', sessionId: '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84' } })).lines;
   return { turnReceiptNoChangeChars: unchanged.length - plain.length,
     turnReceiptHeadingChars: heading.length, turnReceiptEntryChars: line.length };
 }

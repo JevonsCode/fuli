@@ -86,7 +86,7 @@ watch([spaceId, kind, itemId], () => { item.value = null; void load() }, { immed
         <KnowledgeTagEditor :item="item" :space-id="spaceId" @changed="saved" @failed="failed" />
         <KnowledgeContentEditor :item="item" :space-id="spaceId" @saved="saved" @failed="failed" />
       </template>
-      <KnowledgeItemHistory :item="item" />
+      <KnowledgeItemHistory :item="item" :space-id="spaceId" />
     </template>
   </div>
   </section>

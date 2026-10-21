@@ -38,6 +38,7 @@ import { captureDecision, captureDisabled } from './capture-decision.js';
 import { createCaptureChanges } from './capture-change-confirmation.js';
 import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';
 import { setSessionCapturePause } from './session-capture-pause-request.js';
+import { readOwnSessionRecords } from './session-records.js';
 import {
   AgentAccessPolicyStore,
   agentAccessPolicyPathForRuntime
@@ -1129,6 +1130,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   // An Agent's "这次别记" / "继续记" for the session of its current task.
   pauseSessionCapture(input) {
     return setSessionCapturePause(this, input);
+  }
+
+  // An Agent's "这次都记了我什么" for the session of its current task (rec#5 C6).
+  readOwnSessionRecords(input) {
+    return readOwnSessionRecords(this, input);
   }
 
   getRecallPolicy() {
