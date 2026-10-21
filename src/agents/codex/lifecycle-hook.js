@@ -7,7 +7,7 @@ import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
 import { isSystemPromptEntry, systemPromptOutput } from '../system-prompt.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
-import { CODEX_REVIEW_OFF_REASON, isCodexReviewCommand, withCodexReviewGuidance } from './review-command.js';
+import { CODEX_REVIEW_OFF_REASON, CODEX_REVIEW_UNVERIFIED_REASON, isCodexReviewCommand, withCodexReviewGuidance } from './review-command.js';
 import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext, sessionFuliSessionBegan }
   from '../../conversations/session-fuli-entry.js';
 
@@ -154,6 +154,10 @@ async function closeQuietly(resource) {
 // The cause says whether the hook ran out of time or failed, so a report can
 // tell a slow first start from a broken install without exposing details.
 function codexLifecycleUnavailable(event, input, cause) {
+  // The person's review line never reaches the model unverified (rec#22).
+  if (event === 'UserPromptSubmit' && isCodexReviewCommand(input?.prompt)) {
+    return { decision: 'block', reason: CODEX_REVIEW_UNVERIFIED_REASON };
+  }
   const warning = `Fuli context is unavailable (${cause}). Continue with the user request; saved context and checkpoint were not verified.`;
   const sessionId = input?.session_id;
   if (event !== 'UserPromptSubmit' || typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {

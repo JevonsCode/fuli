@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { callAgentTool } from '../src/agent-tools.js';
-import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
+import { runCodexLifecycleCommand, runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { isCodexReviewCommand } from '../src/agents/codex/review-command.js';
 import { requestSessionFuliDefault } from '../src/graphiti/session-fuli-switch.js';
 import { reviewSkillTrigger } from '../src/setup/command-skill-adapters.js';
@@ -19,11 +19,13 @@ const REVIEW = /run the installed `flreview` Skill as an exact \/flreview invoca
 const leases = () => ({ withGraphLease: async (_owner, operation) => operation(), close: async () => {} });
 
 // The UserPromptSubmit payload of codex-rs/hooks/src/schema.rs 568-584 (openai/codex 87f3c3284e16).
+const payload = (prompt, cwd = '/synthetic') => ({ session_id: SESSION, turn_id: 'synthetic-turn', transcript_path: null,
+  cwd, hook_event_name: 'UserPromptSubmit', model: 'synthetic-model', permission_mode: 'default', prompt });
+
 async function codexPrompt(f, prompt) {
   let context;
   const output = await runCodexLifecycleHook(['--event', 'UserPromptSubmit'], {
-    readInput: async () => ({ session_id: SESSION, turn_id: 'synthetic-turn', transcript_path: null, cwd: f.dirs.novel,
-      hook_event_name: 'UserPromptSubmit', model: 'synthetic-model', permission_mode: 'default', prompt }),
+    readInput: async () => payload(prompt, f.dirs.novel),
     write: () => {}, resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }),
     openApplication: () => f.app, createLeases: leases, captureTimeoutMs: 30_000,
     callTool: async (app, name, input, request) => {
@@ -38,7 +40,7 @@ test('only an exact review line is the Codex review command', () => {
   for (const line of ['fuli review', '  FULI  Review ', 'flreview', 'FLReview\n', '/flreview', '$fuli review']) {
     assert.equal(isCodexReviewCommand(line), true, line);
   }
-  for (const line of ['fuli review this file', 'please run fuli review', 'fuli reviews', 'fuli stop', 'flreview now', null]) {
+  for (const line of ['fuli review this file', 'please run fuli review', 'fuli reviews', 'fuli stop', 'flreview now', 'fuli\nreview', 'fuli\r\nreview', null]) {
     assert.equal(isCodexReviewCommand(line), false, String(line));
   }
 });
@@ -79,4 +81,39 @@ test('the Codex bootstrap no longer pays every session for a `/flreview` line Co
   const managed = replaceFuliGlobalInstructions('');
   assert.doesNotMatch(managed, /flreview/);
   assert.equal(reviewSkillTrigger('codex').userCommand, 'fuli review');
+});
+
+// Dot review of #255: when the hook cannot confirm the session's state, the review line is held
+// back instead of reaching the model with the "continue without FULI" fallback.
+async function unverified(prompt, { timeoutMs, ...dependencies }) {
+  let written = '';
+  const result = await runCodexLifecycleCommand(['--event', 'UserPromptSubmit', ...(timeoutMs ? ['--timeout-ms', String(timeoutMs)] : [])], {
+    readInput: async () => payload(prompt), resolveRuntimeOptions: () => ({ runtimeConfigPath: '/synthetic/runtime.json' }),
+    write: value => { written += value; }, ...dependencies });
+  return { result, output: JSON.parse(written) };
+}
+
+test('Codex: a review line is blocked when the hook fails before it can confirm the session', async () => {
+  const failing = { openApplication: () => { throw new Error('synthetic runtime failure'); } };
+  const { result, output } = await unverified('fuli review', failing);
+  assert.equal(result.timedOut, false);
+  assert.deepEqual(Object.keys(output), ['decision', 'reason']);
+  assert.equal(output.decision, 'block');
+  assert.match(output.reason, /^FULI: FULI 无法确认本会话的启停状态，未开始知识复核。请稍后重新输入 fuli review/);
+  assert.match(output.reason, /fuli session status/);
+  const ordinary = await unverified('Plan the chapter.', failing);
+  assert.equal(ordinary.output.decision, undefined, 'an ordinary prompt keeps the fail-open fallback');
+  assert.match(ordinary.output.hookSpecificOutput.additionalContext, /First call get_collaboration_preferences/);
+});
+
+test('Codex: a review line is blocked when the hook times out before it can confirm the session', async () => {
+  const hanging = { openApplication: () => ({ close: async () => {} }),
+    createLeases: () => ({ withGraphLease: (_owner, _operation, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('aborted')));
+    }), close: async () => {} }) };
+  const { result, output } = await unverified('flreview', { ...hanging, timeoutMs: 40 });
+  assert.equal(result.timedOut, true);
+  assert.equal(output.decision, 'block');
+  assert.match(output.reason, /无法确认本会话的启停状态，未开始知识复核/);
+  assert.equal(output.hookSpecificOutput, undefined, 'nothing tells the model to continue');
 });
