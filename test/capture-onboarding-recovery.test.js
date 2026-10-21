@@ -6,6 +6,7 @@
 // service or client configuration.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -164,4 +165,43 @@ test('settings saved before the answer failed read back as saved, not as still o
   await assert.rejects(answer(f, 'all'), /synthetic failure/);
   const read = await consoleRequest(f, 'GET');
   assert.deepEqual([read.body.ask, read.body.capturePolicy.enabled], [false, true]);
+});
+
+// dot review of PR 266 (rec#10 6317789066): another process's ordinary
+// settings save between the opening's settings commit and its generation
+// publish must never become the version the open question is bound to.
+const POLICY_MODULE = new URL('../src/graphiti/capture-policy.js', import.meta.url).href;
+const pause = milliseconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+
+test('a settings save by another process right after the opening commit is never bound to the question', async (t) => {
+  const f = await fixture(t);
+  const path = policyFile(f);
+  const started = join(dirname(path), 'synthetic-writer-started');
+  const script = `import { writeFileSync } from 'node:fs';
+    import { CapturePolicyStore } from ${JSON.stringify(POLICY_MODULE)};
+    const [path, started] = JSON.parse(process.argv.at(-1));
+    writeFileSync(started, '');
+    new CapturePolicyStore(path).update({ enabled: true });`;
+  let writer = null;
+  // The barrier: the first look at the settings file once the opening's save
+  // (recording off) is on disk, which is where its generation is computed.
+  const statFile = file => {
+    if (!writer && existsSync(path) && JSON.parse(readFileSync(path, 'utf8')).enabled === false) {
+      writer = runProcess(script, [path, started]);
+      for (let waited = 0; !existsSync(started) && waited < 20_000; waited += 20) pause(20);
+      pause(1000);
+    }
+    return statSync(file, { bigint: true });
+  };
+  createCaptureOnboarding(new CapturePolicyStore(path, { statFile })).begin(() => true);
+  assert.ok(writer, 'the other process saved at the barrier');
+  await writer;
+
+  const record = await recordOf(f);
+  assert.equal(record.status, 'pending');
+  assert.notEqual(new CapturePolicyStore(path).version(), record.settingsVersion, 'the question names the opening save only');
+  assert.equal(f.app.getCapturePolicy().enabled, true, 'the other process saved after the opening');
+  assert.deepEqual(f.app.captureOnboarding.state(), { ask: false }, 'its change closed the question');
+  assert.equal((await answer(f, 'off')).body.status, 'gone');
+  assert.equal(f.app.getCapturePolicy().enabled, true, 'and is never overwritten');
 });

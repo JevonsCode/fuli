@@ -2,7 +2,9 @@ import { readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import { jsonFormat, updateVersionedJsonFileAtomic, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { writeJsonFileAtomic } from '../storage/json-file.js';
+import { assertJsonFormatWritable, jsonFormat, updateVersionedJsonFileAtomic, writeVersionedJsonFileAtomic }
+  from '../storage/json-format.js';
 import { DEFAULT_PROJECT_SETTINGS, PROJECT_CHANGE_KEYS, storedProjectSettings, updatedProjectSettings,
   usesProjectModes } from './capture-project-mode.js';
 
@@ -131,11 +133,13 @@ export class CapturePolicyStore {
   }
 
   // The nonce keeps two processes that move the same generation at once from
-  // producing a value an earlier session already recorded.
-  #nextGeneration(stored, observed) {
+  // producing a value an earlier session already recorded. write(value) saves
+  // it; by default under the directory's format lock.
+  #nextGeneration(stored, observed,
+    write = value => writeVersionedJsonFileAtomic(this.generationPath, value, CAPTURE_GENERATION_FORMAT)) {
     const next = { version: 1, generation: (stored?.generation ?? 0) + 1, nonce: randomUUID(), observed };
     try {
-      writeVersionedJsonFileAtomic(this.generationPath, next, CAPTURE_GENERATION_FORMAT);
+      write(next);
     } catch {
       throw new CapturePolicyConfigurationError('Capture settings generation could not be saved');
     }
@@ -170,18 +174,30 @@ export class CapturePolicyStore {
       const base = this.#fileKey();
       const { next } = this.preview(input);
       // A repair from defaults must not replace settings a newer FULI saved (rec#17).
+      // The save's generation is published under the same format lock as the
+      // save itself, so the version returned names this file and no later
+      // writer's (dot review, PR 266): every policy and generation write takes
+      // that lock, so no other save can land between the two.
+      let generation = null;
       const saved = updateVersionedJsonFileAtomic(this.path, CAPTURE_POLICY_FORMAT, () => {
         if (ifVersion !== null && this.#settledVersion() !== ifVersion) throw changed();
         if (!accept(next)) throw changed();
         return this.#fileKey() === base ? { version: usesProjectModes(next) ? 2 : 1, ...next } : undefined;
-      }, { read: () => null });
-      if (saved) {
-        const generation = this.#nextGeneration(this.#readGeneration(), this.#fileKey());
-        return { settings: { ...next }, version: `${generation.generation}:${generation.nonce}` };
-      }
+      }, { read: () => null, write: (path, value) => {
+        writeJsonFileAtomic(path, value);
+        generation = this.#nextGeneration(this.#readGeneration(), this.#fileKey(), this.#writeGenerationLocked);
+      } });
+      if (saved) return { settings: { ...next }, version: `${generation.generation}:${generation.nonce}` };
       if (attempt >= MAX_MERGE_ATTEMPTS) throw changed();
     }
   }
+
+  // The generation write for a caller that already holds the format lock,
+  // with the same newer-FULI guard the locked writer applies.
+  #writeGenerationLocked = value => {
+    assertJsonFormatWritable(this.generationPath, CAPTURE_GENERATION_FORMAT);
+    writeJsonFileAtomic(this.generationPath, value);
+  };
 
   // version() without moving the generation, for a check under the format
   // lock; null when the file changed since the generation last observed it.
