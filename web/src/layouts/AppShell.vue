@@ -4,6 +4,7 @@ import { RouterView, useRoute } from 'vue-router'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
+import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
 import DesignLabPanel from '@/features/design-lab/DesignLabPanel.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
@@ -107,6 +108,7 @@ watchEffect(() => {
       </div>
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
+      <CaptureOnboardingDialog />
     </main>
     <DesignLabPanel v-if="showsDesignLab" />
   </div>

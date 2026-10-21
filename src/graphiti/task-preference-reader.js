@@ -1,5 +1,5 @@
 import { ApplicationError } from '../app/application-error.js';
-import { taskAgentReceipt } from '../agents/identity-receipt.js';
+import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { projectAgentCollaborationPreferences } from './collaboration-preference-workflow.js';
 import { taskKnowledgeGuidance } from './agent-knowledge-workflows.js';
@@ -93,7 +93,8 @@ export async function readTaskPreferences(application, {
     ...(judgment ? { judgment_context: judgment } : {}),
     agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
       agentId: task.projectAgentId, name: rawAgent.profile?.name ?? null, sourceApplication: task.sourceApplication,
-      notices: receiptNotices(await captureDecision(application, taskCaptureScope(task))) }),
+      notices: receiptNotices(await captureDecision(application, taskCaptureScope(task)), [],
+        { settingsUrl: captureSettingsUrl(application) }) }),
     preference_delivery: { status: 'complete' }, preferences_complete: true,
     same_task_recovery_available: true, truncated: false
   };

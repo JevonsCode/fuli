@@ -66,10 +66,16 @@ const CAPTURE_SETTINGS_CALL_SITES = new Map([
     "import { CAPTURE_POLICY_FORMAT } from '../graphiti/capture-policy.js';",
     "import { CAPTURE_SESSION_PAUSE_FORMAT } from '../graphiti/capture-session-pause.js';"]],
   ['src/http/graph-api-router.js', ['sendJson(response, 200, app.getCapturePolicy());']],
+  // rec#5 C10: the first-run question with the settings as saved now, for a console that lost its answer.
+  ['src/http/capture-onboarding-api-router.js', ['sendJson(response, 200, { ...app.captureOnboarding.state(), capturePolicy: app.getCapturePolicy() });']],
   ['src/conversations/capture-window.js', ['getCapturePolicy: application.getCapturePolicy?.bind(application),',
     'getCapturePolicyVersion: application.getCapturePolicyVersion?.bind(application),',
     'getSessionCapturePause: application.getSessionCapturePause?.bind(application),',
     'hasSessionWithoutCapture: application.hasSessionWithoutCapture?.bind(application), personal: {']],
+  // rec#5 C10: setup wires a new installation's question to the settings it saves into.
+  ['src/setup/first-run-capture.js', ["import { CapturePolicyStore, capturePolicyPathForRuntime } from '../graphiti/capture-policy.js';",
+    'return createCaptureOnboarding(capturePolicyStoreFor(paths));', 'const store = capturePolicyStoreFor(paths);',
+    'function capturePolicyStoreFor(paths) {', 'return new CapturePolicyStore(capturePolicyPathForRuntime(paths.graphRuntimeConfigPath));']],
   // The worker host only links a worker's session to the session that started it.
   ['src/server/worker-plan-runtime.js', [
     "import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from '../graphiti/capture-session-pause.js';",
@@ -79,7 +85,8 @@ const CAPTURE_SETTINGS_CALL_SITES = new Map([
     'const policyStore = capturePolicyStore ?? new CapturePolicyStore(', 'capturePolicyStore: policyStore,',
     'capturePolicy: app.getCapturePolicy(), consoleUrl: app.consoleUrl });', 'capturePolicyStore = new CapturePolicyStore(),',
     'this.capturePolicyStore = capturePolicyStore;',
-    'this.captureChanges = createCaptureChanges(capturePolicyStore, captureChangeReads);', 'getCapturePolicy() {', 'return this.capturePolicyStore.read();',
+    'this.captureChanges = createCaptureChanges(capturePolicyStore, captureChangeReads);',
+    'this.captureOnboarding = createCaptureOnboarding(capturePolicyStore);', 'getCapturePolicy() {', 'return this.capturePolicyStore.read();',
     'getCapturePolicyVersion() {', 'return this.capturePolicyStore.version();',
     'advanceCapturePolicyVersion() {', 'return this.capturePolicyStore.advanceVersion();',
     'return this.capturePolicyStore.update(input);', 'capturePolicy: this.getCapturePolicy(),',

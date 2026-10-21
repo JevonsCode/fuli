@@ -9,7 +9,8 @@ import { writeFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { callAgentTool } from '../src/agent-tools.js';
-import { captureNotice } from '../src/graphiti/capture-notice.js';
+import { receiptConsoleUrl } from '../src/agents/identity-receipt.js';
+import { captureNotice, receiptNotices } from '../src/graphiti/capture-notice.js';
 import { capturePolicyPathForRuntime } from '../src/graphiti/capture-policy.js';
 import { loadClientDescriptorPacks } from '../src/setup/agents/descriptor-packs.js';
 import { finishTask, fixture, PRIVATE, receiptOf } from './fixtures/capture-project-fixture.js';
@@ -59,10 +60,13 @@ test('C4-5 G5-4 every client says the same words for every reason and records no
       const f = await fixture(t);
       const since = await setUp(f, client);
       const expected = captureNotice(reason, since ?? null);
+      // A switch that is off also names the page that turns it on again (C10-3).
+      const tail = receiptNotices({ reason, since: since ?? null }, [],
+        { settingsUrl: `${receiptConsoleUrl(f.app)}/settings` }).join(' · ');
       const before = f.captureWrites().length;
       const entry = await client.entry(f, f.dirs[folder]);
-      const notice = receiptOf(entry.context).split(' · ').at(-1);
-      if (notice !== expected) differences.push(`${client.id} ${reason}: receipt says "${notice}", expected "${expected}"`);
+      const receipt = receiptOf(entry.context);
+      if (!receipt.endsWith(` · ${tail}`)) differences.push(`${client.id} ${reason}: receipt says "${receipt}", expected it to end with "${tail}"`);
       if (client.entryMessage && !entry.output.systemMessage?.includes(`Fuli: ${expected}`)) {
         differences.push(`${client.id} ${reason}: entry message "${entry.output.systemMessage ?? ''}" lacks the notice`);
       }
