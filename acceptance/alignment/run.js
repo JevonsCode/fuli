@@ -28,6 +28,17 @@ import {
   summarizeMcpToolResultError,
   summarizeClaudeExecutionError
 } from './benchmark-policy.js';
+import {
+  CLIENT_METERING_CONTRACT,
+  attemptOutcome,
+  claudeMetering,
+  codexMetering,
+  meteringLedger,
+  parseJsonLines,
+  recordAttempts,
+  runMeteredAttempts
+} from './client-metering.js';
+import { attemptMeteringMarkdown, meteringTotalsMarkdown } from './metering-report.js';
 
 const ALIGNMENT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = resolve(ALIGNMENT_DIR, '../..');
@@ -125,7 +136,8 @@ const state = {
   cleanupPromise: null
 };
 const benchmark = {
-  schemaVersion: 1,
+  // 2: client metering keeps unknown cost and tokens as null (rec#27).
+  schemaVersion: 2,
   run: {
     benchmarkVersion: FIXTURE_VERSION,
     startedAt: new Date().toISOString(),
@@ -146,8 +158,12 @@ const benchmark = {
       version: null,
       calls: 0,
       totalDurationMs: 0,
-      totalCostUsd: 0
+      metering: meteringLedger()
     },
+    codex: {
+      metering: meteringLedger()
+    },
+    meteringContract: CLIENT_METERING_CONTRACT,
     timeouts: ALIGNMENT_TIMEOUTS
   },
   summary: null,
@@ -1312,6 +1328,7 @@ async function runMultiAgentNetworkCases({
   };
   const parentACapture = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-CODEX-01.parent-a',
     cwd: join(fixtureWorkspaces, PROJECTS.parent),
     prompt: parentCapturePrompt({
       projectId: PROJECTS.parent,
@@ -1328,6 +1345,7 @@ async function runMultiAgentNetworkCases({
   });
   const parentBCapture = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-CODEX-01.parent-b',
     cwd: join(fixtureWorkspaces, PROJECTS.secondaryParent),
     prompt: parentCapturePrompt({
       projectId: PROJECTS.secondaryParent,
@@ -1344,6 +1362,7 @@ async function runMultiAgentNetworkCases({
   });
   const dPreferenceCapture = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-CODEX-01.preference-d',
     cwd: join(fixtureWorkspaces, PROJECTS.travel),
     prompt: preferenceCapturePrompt({
       projectId: PROJECTS.travel,
@@ -1356,6 +1375,7 @@ async function runMultiAgentNetworkCases({
   });
   const cPreferenceCapture = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-CODEX-01.preference-c',
     cwd: join(fixtureWorkspaces, PROJECTS.related),
     prompt: preferenceCapturePrompt({
       projectId: PROJECTS.related,
@@ -1368,6 +1388,7 @@ async function runMultiAgentNetworkCases({
   });
   const ePreferenceCapture = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-CODEX-01.preference-e',
     cwd: join(fixtureWorkspaces, PROJECTS.preference),
     prompt: preferenceCapturePrompt({
       projectId: PROJECTS.preference,
@@ -1380,6 +1401,7 @@ async function runMultiAgentNetworkCases({
   });
   const sameSessionSequenceControl = await runCodex({
     ...codexContext,
+    callId: 'NETWORK-WORKFLOW-00.same-session-control',
     cwd: join(fixtureWorkspaces, PROJECTS.travel),
     prompt: sameSessionSequenceControlPrompt()
   });
@@ -1389,6 +1411,7 @@ async function runMultiAgentNetworkCases({
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       capture = await runCodex({
         ...codexContext,
+        callId: `NETWORK-WORKFLOW-01.sequence-${occurrence}.try-${attempt}`,
         cwd: join(fixtureWorkspaces, PROJECTS.travel),
         prompt: sequenceObservationPrompt(occurrence)
       });
@@ -2205,7 +2228,7 @@ async function runMultiAgentNetworkCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(claudeD);
+  recordClaudeMetrics('NETWORK-CLAUDE-01.retrieval', claudeD);
   const claudeMarkers = markers(claudeD.answer, [
     'NETWORK-A-GUIDE-101',
     'NETWORK-B-GUIDE-202',
@@ -2412,7 +2435,7 @@ async function runMultiAgentNetworkCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(claudeAuthorized);
+  recordClaudeMetrics('NETWORK-CLAUDE-02.authorized', claudeAuthorized);
   addCase({
     id: 'NETWORK-CLAUDE-02',
     title: '全新 Claude Code 会话读取长期授权但保留高风险逐次确认',
@@ -2528,7 +2551,7 @@ async function runClaudeCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(captureRun);
+  recordClaudeMetrics('AGENT-01.capture', captureRun);
   const checkpointCalled = captureRun.toolCalls.some(
     ({ name }) => name === 'mcp__fuli__checkpoint_task_knowledge'
   );
@@ -2616,7 +2639,7 @@ async function runClaudeCases({
     safeMode: true,
     builtInTools: []
   });
-  recordClaudeMetrics(baselineRun);
+  recordClaudeMetrics('AGENT-04.baseline', baselineRun);
   const fuliRun = await runClaude({
     prompt: comparisonPrompt,
     cwd: join(emptyWorkspaces, PROJECTS.hotel),
@@ -2631,7 +2654,7 @@ async function runClaudeCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(fuliRun);
+  recordClaudeMetrics('AGENT-04.fuli', fuliRun);
 
   const comparisonMarkers = ALIGNMENT_MARKERS.slice(0, 5);
   const baselineMarkers = markers(baselineRun.answer, comparisonMarkers);
@@ -2694,7 +2717,7 @@ async function runClaudeCases({
       baseline: {
         exactMarkerRecall: baselineMarkers.length / comparisonMarkers.length,
         durationMs: baselineRun.durationMs,
-        costUsd: roundMoney(baselineRun.totalCostUsd),
+        metering: baselineRun.metering,
         toolCallCount: baselineRun.toolCalls.length,
         answerHash: baselineRun.answerHash
       },
@@ -2706,7 +2729,7 @@ async function runClaudeCases({
         includePending: fuliSearchEvidence.includePending,
         toolErrorCount: fuliSearchEvidence.toolErrorCount,
         durationMs: fuliRun.durationMs,
-        costUsd: roundMoney(fuliRun.totalCostUsd),
+        metering: fuliRun.metering,
         toolCallCount: fuliRun.toolCalls.length,
         answerHash: fuliRun.answerHash
       },
@@ -2737,7 +2760,7 @@ async function runClaudeCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(unrelatedRun);
+  recordClaudeMetrics('AGENT-05.unrelated', unrelatedRun);
   const leakedMarkers = markers(unrelatedRun.answer, [
     'FULI-DEMO-ENVELOPE-v3',
     'HOTEL-CUTOFF-2140',
@@ -2790,7 +2813,7 @@ async function runClaudeCases({
       'mcp__fuli__checkpoint_task_knowledge'
     ]
   });
-  recordClaudeMetrics(convergenceRun);
+  recordClaudeMetrics('AGENT-06.convergence', convergenceRun);
   const convergenceSearch = convergenceRun.toolCalls.find(
     ({ name }) => name === 'mcp__fuli__discover_common_knowledge_candidates'
   );
@@ -3518,6 +3541,7 @@ function addClaudeInfrastructureBlockedCases(error) {
 }
 
 async function runCodex({
+  callId,
   prompt,
   cwd,
   runtimeConfigPath,
@@ -3551,30 +3575,29 @@ async function runCodex({
     '-c', 'mcp_servers.fuli.default_tools_approval_mode="auto"',
     prompt
   );
-  let last = null;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    const result = await tryRunProcess('codex', args, {
-      cwd,
-      env: isolatedAgentProcessEnv(),
-      timeoutMs: 5 * 60_000,
-      maxOutputBytes: 8 * 1024 * 1024
-    });
-    if (!result.ok) {
-      last = {
+  const run = await runMeteredAttempts({
+    maxAttempts: 2,
+    shouldRetry: ({ error }) => Boolean(error) && isTransientAgentStreamError(error),
+    runAttempt: async () => {
+      const result = await tryRunProcess('codex', args, {
+        cwd,
+        env: isolatedAgentProcessEnv(),
+        timeoutMs: 5 * 60_000,
+        maxOutputBytes: 8 * 1024 * 1024
+      });
+      if (result.ok) return parseCodexStream(result.stdout, result.durationMs);
+      return {
         answer: '',
         toolCalls: [],
         toolResults: [],
         durationMs: result.durationMs,
-        error: result.error
+        error: result.error,
+        metering: codexMetering(parseJsonLines(result.partialStdout))
       };
-    } else {
-      last = parseCodexStream(result.stdout, result.durationMs);
     }
-    if (!last.error || !isTransientAgentStreamError(last.error) || attempt === 2) {
-      return { ...last, attempts: attempt };
-    }
-  }
-  return last;
+  });
+  recordAttempts(benchmark.run.codex.metering, callId, run.attemptOutcomes);
+  return run;
 }
 
 function hasWorkflowObservationCall(result) {
@@ -3636,7 +3659,8 @@ function parseCodexStream(stdout, measuredDurationMs) {
     toolCalls: uniqueToolCalls(toolCalls),
     toolResults,
     durationMs: measuredDurationMs,
-    error
+    error,
+    metering: codexMetering(events)
   };
 }
 
@@ -3736,19 +3760,6 @@ function parseCursorStream(stdout, measuredDurationMs) {
     durationMs: measuredDurationMs,
     error
   };
-}
-
-function parseJsonLines(stdout) {
-  const events = [];
-  for (const line of String(stdout ?? '').split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    try {
-      events.push(JSON.parse(line));
-    } catch {
-      // Raw model output is intentionally discarded; only structured events are retained.
-    }
-  }
-  return events;
 }
 
 function collectCursorToolCalls(value, calls) {
@@ -3857,7 +3868,7 @@ async function runClaude({
       toolResults: [],
       hookSignals: hookSignals([], lifecycleAuditEvents),
       durationMs: result.durationMs,
-      totalCostUsd: 0,
+      metering: claudeMetering(parseJsonLines(result.partialStdout)),
       error: summarizeClaudeExecutionError(result.error),
       diagnostics: result.diagnostic ? [result.diagnostic] : [],
       toolErrors: []
@@ -3875,15 +3886,7 @@ function claudeRunErrors(run) {
 }
 
 function parseClaudeStream(stdout, measuredDurationMs, lifecycleAuditEvents = []) {
-  const events = [];
-  for (const line of stdout.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    try {
-      events.push(JSON.parse(line));
-    } catch {
-      // Claude may emit a non-JSON diagnostic line; raw output is intentionally discarded.
-    }
-  }
+  const events = parseJsonLines(stdout);
   const toolCalls = [];
   const toolUseNames = new Map();
   const toolResults = [];
@@ -3943,7 +3946,7 @@ function parseClaudeStream(stdout, measuredDurationMs, lifecycleAuditEvents = []
     toolResults,
     hookSignals: hookSignals(events, lifecycleAuditEvents),
     durationMs: Number(resultEvent?.duration_ms ?? measuredDurationMs ?? 0),
-    totalCostUsd: Number(resultEvent?.total_cost_usd ?? 0),
+    metering: claudeMetering(events),
     error: resultError ?? noResultError ?? toolErrors[0] ?? null,
     diagnostics: [
       ...(resultError ? [{ category: 'claude_result_error', detail: resultError }] : []),
@@ -4005,12 +4008,10 @@ function readLifecycleAudit(path) {
   }
 }
 
-function recordClaudeMetrics(run) {
+function recordClaudeMetrics(callId, run) {
   benchmark.run.claude.calls += 1;
   benchmark.run.claude.totalDurationMs += Number(run.durationMs || 0);
-  benchmark.run.claude.totalCostUsd = roundMoney(
-    benchmark.run.claude.totalCostUsd + Number(run.totalCostUsd || 0)
-  );
+  recordAttempts(benchmark.run.claude.metering, callId, [attemptOutcome(run)]);
 }
 
 async function bootstrapProvider(providerUrl, bootstrapToken) {
@@ -4398,6 +4399,18 @@ ${(counts.ERROR ?? 0) > 0 && (counts.FAIL ?? 0) === 0
 | Case | Result | Observation |
 |---|---|---|
 ${rows}
+
+## Client Metering / 客户端计量
+
+${meteringTotalsMarkdown('Claude Code', result.run.claude?.metering?.totals)}
+${coldStart?.metrics
+    ? `
+冷启动 A/B（AGENT-04）逐次计量：
+
+${attemptMeteringMarkdown('baseline', coldStart.metrics.baseline?.metering)}
+${attemptMeteringMarkdown('fuli', coldStart.metrics.fuli?.metering)}
+`
+    : ''}
 ${hookSmokeSection}
 
 ## Product Alignment Issues
@@ -4573,6 +4586,13 @@ Cursor 用例只有在本机先完成 \`cursor-agent login\` 或提供 \`CURSOR_
 |---|---|---|
 ${rows}
 
+## 客户端计量 / Client Metering
+
+${meteringTotalsMarkdown('Codex', result.run.codex?.metering?.totals)}
+${meteringTotalsMarkdown('Claude Code', result.run.claude?.metering?.totals)}
+
+Cursor 没有冻结的用量契约，本轮不计量 / Cursor has no frozen usage contract and is not metered.
+
 ## 复现
 
 \`\`\`sh
@@ -4680,6 +4700,7 @@ async function runProcess(command, args, {
       error.signal = signal;
       error.timeoutMs = timeoutMs;
       error.failureDetail = detail;
+      error.partialStdout = stdout;
       rejectPromise(error);
     });
   });
@@ -4695,6 +4716,9 @@ async function tryRunProcess(command, args, options) {
       ok: false,
       stdout: '',
       stderr: '',
+      // Parsed only for the metering a failed client reported before it
+      // stopped; never persisted.
+      partialStdout: error?.partialStdout ?? '',
       durationMs: Date.now() - startedAt,
       error: processFailureMessage(command, error, options?.timeoutMs),
       diagnostic: processFailureDiagnostic(command, error, options?.timeoutMs)
@@ -4860,10 +4884,6 @@ function isolatedAgentProcessEnv() {
   const env = { ...process.env };
   delete env.CODEX_THREAD_ID;
   return env;
-}
-
-function roundMoney(value) {
-  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function sanitizeError(error) {
