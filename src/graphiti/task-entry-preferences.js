@@ -1,4 +1,4 @@
-import { taskAgentReceipt } from '../agents/identity-receipt.js';
+import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { getCollaborationPreferences as getCollaborationPreferencesWorkflow } from './collaboration-preference-workflow.js';
 import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
@@ -86,7 +86,8 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
   // this project, so the receipt gives the decision its writes will get.
   const capture = await captureDecision(application, { sourceApplication,
     personalProjectId: projectResolution.personalProjectId ?? null, sessionId: sessionId ?? sourceSessionId });
-  const notices = receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : []);
+  const notices = receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
+    { settingsUrl: captureSettingsUrl(application) });
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),

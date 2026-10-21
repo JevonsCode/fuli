@@ -6,6 +6,7 @@ import { connectAgent, discoverAgents } from './agents.js';
 import { resolveSetupPaths } from './paths.js';
 import { ensureGraphRuntime } from './graph-runtime.js';
 import { installSessionSkill } from './session-skill.js';
+import { beginFirstRunCapture } from './first-run-capture.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
   readRuntimeSettings,
@@ -91,10 +92,13 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
       ? inspectAgentInstallations
       : null
   );
+  // Stubbed runtimes in tests never touch the data directory they name.
+  const beginFirstRun = dependencies.beginFirstRun ?? (ensureRuntime === ensureGraphRuntime ? beginFirstRunCapture : () => {});
   const runtimeSettings = plan.runtimeSettings ?? runtimeSettingsWithOverrides(
     DEFAULT_RUNTIME_SETTINGS,
     { consolePort: options.port }
   );
+  beginFirstRun(plan.paths);
   const runtime = await ensureRuntime({
     paths: plan.paths,
     personalSpaceName: options.personalSpaceName,

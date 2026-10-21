@@ -88,6 +88,15 @@ export class CapturePolicyStore {
     return `${current.generation}:${current.nonce}`;
   }
 
+  // No settings file and no generation: these settings were never saved
+  // here, by any FULI version, so nothing has ever been recorded under them
+  // (first-run detection, rec#5 C10). Unlike version() it writes nothing.
+  neverSaved() {
+    // Settings kept only in memory belong to no installation, so they never count as new.
+    if (!this.path) return false;
+    return this.#fileKey() === ABSENT && this.#readGeneration() === null;
+  }
+
   #fileKey() {
     try {
       const stat = this.statFile(this.path);

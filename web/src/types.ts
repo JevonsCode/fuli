@@ -28,6 +28,19 @@ export interface CapturePolicyChange {
   recordProjects?: Record<string, boolean>
 }
 
+// rec#5 C10: a new installation's one question, where FULI records.
+export type CaptureScopeChoice = 'all' | 'selected' | 'off'
+
+export interface CaptureScopeAnswer {
+  choice: CaptureScopeChoice
+  selectedProjectIds?: string[]
+}
+
+// gone: answered elsewhere, or the settings changed since the question opened.
+export type CaptureScopeOutcome =
+  | { status: 'answered'; choice: CaptureScopeChoice; capturePolicy: CapturePolicy }
+  | { status: 'gone' }
+
 export interface AgentAccessPolicy {
   enabled: boolean
   updatedAt?: string | null
@@ -675,6 +688,7 @@ export interface ConsoleState {
   projects: PublicProject[]
   subscriptions: Subscription[]
   capturePolicy?: CapturePolicy
+  captureOnboarding?: { ask: boolean }
   agentAccessPolicy?: AgentAccessPolicy
   recallPolicy?: RecallPolicy
   capabilities?: Partial<Record<CapabilityName, boolean>>

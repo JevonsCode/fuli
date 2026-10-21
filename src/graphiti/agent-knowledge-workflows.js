@@ -4,7 +4,7 @@ import { recordTriage, validateTriage } from './conversation-triage.js';
 import { REMEMBER_GUIDANCE, compactTaskCapture, rememberRequested } from './task-remember.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { taskTeam } from './task-collaboration-attribution.js';
-import { taskAgentReceipt, withTurnReceipt } from '../agents/identity-receipt.js';
+import { captureSettingsUrl, taskAgentReceipt, withTurnReceipt } from '../agents/identity-receipt.js';
 import { checkpointTurnReceipt, unreadTurnReceipt } from './turn-receipt-delivery.js';
 import { ensureSessionTemporaryProject } from './temporary-project-scope.js';
 import { createHash } from 'node:crypto';
@@ -225,7 +225,7 @@ export async function checkpointTaskKnowledge(application, {
         agentId: task.projectAgentId ?? null, name: team.name, sourceApplication: task.sourceApplication,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
         persistence: conversation?.status ?? null, collaborators: team.collaborators,
-        notices: receiptNotices(captureCheck),
+        notices: receiptNotices(captureCheck, [], { settingsUrl: captureSettingsUrl(application) }),
         turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };

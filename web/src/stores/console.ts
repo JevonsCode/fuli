@@ -1,13 +1,15 @@
 import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 
-import { getJson, patchJson } from '@/api/client'
+import { getJson, patchJson, postJson } from '@/api/client'
 import { t } from '@/i18n'
 import type {
   AgentAccessPolicy,
   CapabilityName,
   CapturePolicy,
   CapturePolicyChange,
+  CaptureScopeAnswer,
+  CaptureScopeOutcome,
   ConsoleState,
   PersonalProject,
   RecallPolicy,
@@ -116,15 +118,32 @@ export const useConsoleStore = defineStore('console', () => {
   // requests a later one could commit first and the earlier answer, though
   // newer on the server, would look stale here.
   let captureWrites: Promise<unknown> = Promise.resolve()
-  async function changeCapturePolicy(change: CapturePolicyChange) {
+  function changeCapturePolicy(change: CapturePolicyChange) {
+    return queueCaptureSave(() => patchJson<CapturePolicy>('/api/capture-policy', change), policy => policy)
+  }
+
+  // The person's answer to a new installation's question, where FULI records
+  // (rec#5 C10). It saves the capture settings, so it queues with every other
+  // capture save. Either way the question is closed here: answered now, or
+  // already answered elsewhere and the settings are read again.
+  async function answerCaptureScope(answer: CaptureScopeAnswer) {
+    const outcome = await queueCaptureSave(() => postJson<CaptureScopeOutcome>('/api/capture-onboarding', answer),
+      sent => sent.status === 'answered' ? sent.capturePolicy : null)
+    if (state.value) state.value = { ...state.value, captureOnboarding: { ask: false } }
+    if (outcome.status === 'gone') void refreshAfterRefusal()
+    return outcome
+  }
+
+  async function queueCaptureSave<T>(send: () => Promise<T>, savedPolicy: (answer: T) => CapturePolicy | null) {
     ++captureSaves
     capturesInFlight += 1
-    const write = captureWrites.then(() => patchJson<CapturePolicy>('/api/capture-policy', change))
+    const write = captureWrites.then(send)
     captureWrites = write.catch(() => {})
     try {
-      const policy = await write
-      rememberCapturePolicy(policy)
-      return policy
+      const answer = await write
+      const policy = savedPolicy(answer)
+      if (policy) rememberCapturePolicy(policy)
+      return answer
     } catch (error) {
       // A refused save changed nothing, a lost answer may have saved: read the
       // settings again once no later save will answer for them.
@@ -218,6 +237,7 @@ export const useConsoleStore = defineStore('console', () => {
     loadCapturePolicy,
     settledCapturePolicy,
     changeCapturePolicy,
+    answerCaptureScope,
     rememberCapturePolicy,
     updateAgentAccessPolicy,
     updateRecallPolicy,
