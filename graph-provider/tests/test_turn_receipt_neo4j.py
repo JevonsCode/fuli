@@ -199,20 +199,27 @@ async def test_quick_edit_keeps_the_same_item_and_history_and_refuses_a_stale_ve
         assert (await view(client, space_id, item_id))['title'] == 'Lead with the conclusion'
         widen = await move(client, space_id, item_id, 'global', version=after['version'])
         assert widen.status_code == 409 and widen.json()['detail']['code'] == 'widening_requires_review'
-        # Content edit and deactivation keep the item and its history.
+        # A content edit writes a new version that keeps where it applies
+        # (rec#5 C7); the old one keeps its words and history.
         current = await view(client, space_id, item_id)
-        ok(await client.patch(f'/v1/knowledge/items/{item_id}', json={
+        edited = ok(await client.patch(f'/v1/knowledge/items/{item_id}', json={
             'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'update', 'reason': 'Clearer wording.',
             'name': 'Lead with the answer', 'summary': 'Lead with the answer', 'operation_actor': 'human',
             'expected_version': current['version']}))
-        current = await view(client, space_id, item_id)
+        version_id = edited['version_item_id']
+        old = await view(client, space_id, item_id)
+        assert (old['title'], old['status'], old['current_item_id']) == (
+            'Lead with the conclusion', 'superseded', version_id)
+        current = await view(client, space_id, version_id)
         assert current['title'] == 'Lead with the answer'
-        ok(await client.patch(f'/v1/knowledge/items/{item_id}', json={
+        assert [project['id'] for project in current['scope']['projects']] == ['alpha', 'beta']
+        ok(await client.patch(f'/v1/knowledge/items/{version_id}', json={
             'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'invalidate',
             'reason': 'No longer wanted.', 'operation_actor': 'human', 'expected_version': current['version']}))
-        final = await view(client, space_id, item_id)
-        assert final['invalid_at'] is not None
-        assert {revision['action'] for revision in final['revisions']} >= {'scope_change', 'update', 'invalidate'}
+        final = await view(client, space_id, version_id)
+        assert final['invalid_at'] is not None and final['status'] == 'inactive'
+        assert {revision['action'] for revision in old['revisions']} >= {'scope_change', 'supersede'}
+        assert {revision['action'] for revision in final['revisions']} >= {'invalidate'}
         assert item_id not in await applied(client, space_id, 'alpha')
 
 

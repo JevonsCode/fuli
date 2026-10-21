@@ -78,7 +78,11 @@ const BASELINE = Object.freeze({
   // rec#5 C6: full-profile read_session_records answers "这次都记了我什么" with the session's
   // numbered records (chat reaches it through list_agent_interfaces/fuli_call): 183,502 -> 184,107 B
   // (+605 B), measured after merging C4. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 184107,
+  // rec#5 C7/C8: revise_personal_knowledge names mark_outdated and says a correction is a new
+  // version (+44 B); entities and relationships of the two full capture tools take derivedFrom, the
+  // current items a conclusion rests on, so it stops being current with them (C8-4, +616 B):
+  // 184,107 -> 184,767 B (+660 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 184767,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

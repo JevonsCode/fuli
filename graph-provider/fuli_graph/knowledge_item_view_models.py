@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .knowledge_audit_models import KnowledgeItemKind, KnowledgeRevisionRecord
+from .knowledge_audit_models import KnowledgeChangeActor, KnowledgeItemKind, KnowledgeRevisionRecord
 from .knowledge_tag_models import KnowledgeTagReference
 from .model_base import StrictModel
 from .models import ConfirmationStatus, ContentSource
@@ -19,6 +19,10 @@ from .models import ConfirmationStatus, ContentSource
 KnowledgeItemCategory = Literal['taste', 'judgment', 'personality', 'rule', 'experience', 'fact', 'knowledge']
 KnowledgeScopeKind = Literal['global', 'projects', 'agent', 'temporary', 'unknown']
 KnowledgeItemChange = Literal['created', 'updated']
+# Where one version stands (rec#5 C7/C8): the one current answers use, or why
+# it is history: a newer version replaced it, a person marked it outdated,
+# knowledge it was concluded from went out of date, or it was deactivated.
+KnowledgeVersionStatus = Literal['current', 'superseded', 'outdated', 'basis_outdated', 'inactive']
 MAX_SCOPE_PROJECTS = 16
 MAX_RECEIPT_EPISODES = 3
 
@@ -82,6 +86,33 @@ class KnowledgeItemSummary(StrictModel):
     content_source: ContentSource | None = None
     invalid_at: datetime | None = None
     created_at: datetime | None = None
+    status: KnowledgeVersionStatus = 'current'
+
+
+class KnowledgeVersion(StrictModel):
+    """One version of an item: its own words, source label and confirmation,
+    who wrote it and why, and since when it is no longer valid."""
+    item_kind: KnowledgeItemKind
+    item_id: str
+    content: str
+    status: KnowledgeVersionStatus
+    confirmation_status: ConfirmationStatus
+    content_source: ContentSource | None = None
+    changed_by: KnowledgeChangeActor | None = None
+    reason: str | None = None
+    created_at: datetime | None = None
+    invalid_at: datetime | None = None
+    # Bases that were out of date when this version re-asserted its words and
+    # that it no longer rests on (依据已过时，重新确认时解除).
+    released_bases: list[str] = Field(default_factory=list)
+
+
+class KnowledgeBasis(StrictModel):
+    """Knowledge this item was concluded from, and where it stands now."""
+    item_kind: KnowledgeItemKind
+    item_id: str
+    content: str
+    status: KnowledgeVersionStatus
 
 
 class KnowledgeEvidenceSource(StrictModel):
@@ -103,6 +134,17 @@ class KnowledgeItemView(KnowledgeItemSummary):
     evidence: list[KnowledgeEvidenceSource] = Field(default_factory=list)
     evidence_count: int = 0
     revisions: list[KnowledgeRevisionRecord] = Field(default_factory=list)
+    # Every version, newest first, and the one current answers use now (None
+    # once the whole item is history).
+    versions: list[KnowledgeVersion] = Field(default_factory=list)
+    current_item_id: str | None = None
+    bases: list[KnowledgeBasis] = Field(default_factory=list)
+    # D-20.7: 'changed' while a basis changed its meaning and the conclusion
+    # waits for a person (not delivered); 'reworded' when only the wording
+    # moved (a hint, still delivered). And how many current conclusions rest
+    # on this item's chain, so an edit form can ask what the edit means.
+    basis_review: Literal['changed', 'reworded'] | None = None
+    dependent_count: int = 0
 
 
 class KnowledgeTurnReceiptRead(StrictModel):

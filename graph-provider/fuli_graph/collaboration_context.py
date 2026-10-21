@@ -297,6 +297,7 @@ def _node_query() -> str:
         MATCH (node:Entity {group_id: $group_id})
         WHERE node.fuli_profile_aspect IS NOT NULL
           AND node.fuli_invalid_at IS NULL
+          AND size(coalesce(node.fuli_unresolved_bases, [])) = 0
           AND node.fuli_confirmation_status IN ['confirmed', 'agent_confirmed']
           AND (
                coalesce(node.fuli_preference_scope, 'global') = 'global'
@@ -357,6 +358,7 @@ def _edge_query() -> str:
               (target:Entity)
         WHERE edge.fuli_profile_aspect IS NOT NULL
           AND edge.invalid_at IS NULL
+          AND size(coalesce(edge.fuli_unresolved_bases, [])) = 0
           AND edge.fuli_confirmation_status IN ['confirmed', 'agent_confirmed']
           AND (
                coalesce(edge.fuli_preference_scope, 'global') = 'global'

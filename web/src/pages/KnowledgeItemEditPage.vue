@@ -1,17 +1,28 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import BackLink from '@/components/BackLink.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { focusReturnTarget } from '@/composables/useFocusReturn'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
+import { useRoutePeek } from '@/composables/useRoutePeek'
+import KnowledgeBasisReview from '@/features/knowledge-quick-edit/KnowledgeBasisReview.vue'
 import KnowledgeContentEditor from '@/features/knowledge-quick-edit/KnowledgeContentEditor.vue'
+import KnowledgeItemDependents from '@/features/knowledge-quick-edit/KnowledgeItemDependents.vue'
 import KnowledgeItemHistory from '@/features/knowledge-quick-edit/KnowledgeItemHistory.vue'
 import KnowledgeItemSummaryCard from '@/features/knowledge-quick-edit/KnowledgeItemSummaryCard.vue'
 import KnowledgeScopeEditor from '@/features/knowledge-quick-edit/KnowledgeScopeEditor.vue'
 import KnowledgeTagEditor from '@/features/knowledge-quick-edit/KnowledgeTagEditor.vue'
-import type { EditFailure, ItemKind, KnowledgeItemView } from '@/features/knowledge-quick-edit/model'
+import KnowledgeVersionPeek from '@/features/knowledge-quick-edit/KnowledgeVersionPeek.vue'
+import {
+  itemEditPath, versionFromPeekId, versionPeekId, versionStatus, versionStatusLabel, versionTone,
+  type EditFailure, type ItemKind, type ItemVersion, type KnowledgeItemView,
+} from '@/features/knowledge-quick-edit/model'
 import { readKnowledgeItem } from '@/features/knowledge-quick-edit/quick-edit-api'
 import { t } from '@/i18n'
 import { usePageTitle } from '@/layouts/page-title'
@@ -19,8 +30,12 @@ import { useConsoleStore } from '@/stores/console'
 
 // A turn receipt's link (rec#20): this one item, read back from the Provider,
 // with its quick edits on one page. The link grants nothing; every read and
-// save is authorized again, and a save names the version shown here.
+// save is authorized again, and a save names the version shown here. An edit
+// writes a new version (rec#5 C7), so the page moves to it; an old link shows
+// the old version as history and points at the current one. A version in the
+// history opens in a quick look kept in the URL (?item=<space>/<kind>:<id>).
 const route = useRoute()
+const router = useRouter()
 const store = useConsoleStore()
 const spaceId = computed(() => String(route.params.spaceId ?? ''))
 const kind = computed(() => String(route.params.itemKind ?? '') as ItemKind)
@@ -30,13 +45,30 @@ const item = ref<KnowledgeItemView | null>(null)
 const loading = ref(false)
 const error = ref('')
 const notice = ref('')
+const root = ref<HTMLElement | null>(null)
 const showLoading = useMinimumLoadingDisplay(computed(() => loading.value && !item.value))
 let requestVersion = 0
 usePageTitle(computed(() => item.value?.title ?? ''))
 
 const projects = computed(() => (store.state?.personalProjects ?? [])
   .filter(project => project.personal_space_id === spaceId.value))
-const active = computed(() => Boolean(item.value && !item.value.invalid_at))
+const status = computed(() => item.value ? versionStatus(item.value) : 'current')
+const active = computed(() => status.value === 'current')
+const historyNotice = computed(() => status.value === 'inactive' ? t('knowledgeQuickEdit.historical')
+  : t(`knowledgeQuickEdit.historyNote.${status.value}`))
+const currentVersionPath = computed(() => item.value?.current_item_id && item.value.current_item_id !== item.value.item_id
+  ? itemEditPath(spaceId.value, { item_kind: item.value.item_kind, item_id: item.value.current_item_id }) : null)
+
+const peek = useRoutePeek()
+const peekVersion = computed(() => {
+  const requested = peek.item.value
+  return requested && requested.spaceId === spaceId.value ? versionFromPeekId(requested.id) : null
+})
+const peekKnown = computed(() => item.value?.versions?.find(version =>
+  version.item_id === peekVersion.value?.item_id && version.item_kind === peekVersion.value?.item_kind) ?? null)
+let lastOpened = ''
+// What the page says once it moved to the version an edit wrote.
+let carriedNotice = ''
 
 async function load() {
   const current = ++requestVersion
@@ -55,8 +87,9 @@ async function load() {
 
 // A stale save means the page shows an old version: read it again, keep the person's place.
 function failed(reason: EditFailure) {
-  notice.value = reason === 'conflict' ? t('knowledgeQuickEdit.conflict') : ''
-  if (reason === 'conflict') void load()
+  notice.value = reason === 'conflict' ? t('knowledgeQuickEdit.conflict')
+    : reason === 'superseded' ? t('knowledgeQuickEdit.supersededConflict') : ''
+  if (reason === 'conflict' || reason === 'superseded') void load()
 }
 
 function saved() {
@@ -64,12 +97,44 @@ function saved() {
   void load()
 }
 
-watch([spaceId, kind, itemId], () => { item.value = null; void load() }, { immediate: true })
+// The edit wrote a new version: this page is about that one now. Replace, so
+// Back still returns to the collection the page was opened from.
+function versioned(versionId: string, waiting = 0) {
+  carriedNotice = [t('knowledgeQuickEdit.content.saved'),
+    waiting ? t('knowledgeQuickEdit.meaning.dependents', { count: waiting }) : ''].filter(Boolean).join(' ')
+  void router.replace(itemEditPath(spaceId.value, { item_kind: kind.value, item_id: versionId }))
+}
+
+function openVersion(version: ItemVersion) {
+  lastOpened = versionPeekId(version)
+  void peek.open({ spaceId: spaceId.value, id: lastOpened })
+}
+
+function peekOpenChange(value: boolean) {
+  if (!value) void peek.close()
+}
+
+function focusDialog(event: Event) {
+  event.preventDefault()
+  ;(event.target as HTMLElement | null)?.focus({ preventScroll: true })
+}
+
+function returnFocus(event: Event) {
+  event.preventDefault()
+  focusReturnTarget(root.value, lastOpened)
+}
+
+watch([spaceId, kind, itemId], () => {
+  item.value = null
+  notice.value = carriedNotice
+  carriedNotice = ''
+  void load()
+}, { immediate: true })
 </script>
 
 <template>
   <section class="view [scrollbar-gutter:stable]">
-  <div class="mx-auto flex w-full max-w-(--form-max) flex-col gap-4" data-knowledge-item-edit>
+  <div ref="root" class="mx-auto flex w-full max-w-(--form-max) flex-col gap-4" data-knowledge-item-edit>
     <BackLink to="/organize" :from="/^\/(organize|knowledge|preferences)/" class="text-sm">{{ t('knowledgeQuickEdit.back') }}</BackLink>
     <GrowthLoading v-if="showLoading" :label="t('knowledgeQuickEdit.loading')" />
     <div v-else-if="error && !item" role="alert" class="grid justify-items-start gap-2">
@@ -77,17 +142,43 @@ watch([spaceId, kind, itemId], () => { item.value = null; void load() }, { immed
       <Button variant="outline" size="sm" @click="load">{{ t('knowledgeQuickEdit.retry') }}</Button>
     </div>
     <template v-else-if="item">
-      <KnowledgeItemSummaryCard :item="item" />
+      <KnowledgeItemSummaryCard :item="item" :heading="item.title" />
       <GrowthLoading v-if="loading" variant="inline" :label="t('knowledgeQuickEdit.loading')" />
       <p v-if="notice" role="status" class="m-0 text-sm" data-edit-notice>{{ notice }}</p>
-      <p v-if="!active" class="m-0 text-sm text-muted-foreground" data-item-historical>{{ t('knowledgeQuickEdit.historical') }}</p>
+      <div v-if="!active" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground" data-item-historical>
+        <span>{{ historyNotice }}</span>
+        <Button v-if="currentVersionPath" variant="link" size="sm" class="h-auto p-0" as-child data-current-version>
+          <RouterLink :to="currentVersionPath">{{ t('knowledgeQuickEdit.viewCurrent') }}</RouterLink>
+        </Button>
+      </div>
+      <KnowledgeBasisReview :item="item" :space-id="spaceId" @versioned="versioned" @failed="failed" />
       <template v-if="active">
         <KnowledgeScopeEditor :item="item" :space-id="spaceId" :projects="projects" @saved="saved" @failed="failed" />
         <KnowledgeTagEditor :item="item" :space-id="spaceId" @changed="saved" @failed="failed" />
-        <KnowledgeContentEditor :item="item" :space-id="spaceId" @saved="saved" @failed="failed" />
       </template>
-      <KnowledgeItemHistory :item="item" :space-id="spaceId" />
+      <KnowledgeContentEditor :item="item" :space-id="spaceId" @saved="saved" @versioned="versioned" @failed="failed" />
+      <Card v-if="item.bases?.length" as="section" data-item-bases>
+        <CardHeader>
+          <CardTitle as="h2">{{ t('knowledgeQuickEdit.bases.title') }}</CardTitle>
+          <CardDescription>{{ t('knowledgeQuickEdit.bases.help') }}</CardDescription>
+        </CardHeader>
+        <ul class="m-0 grid list-none gap-2 px-5 text-sm">
+          <li v-for="basis in item.bases" :key="basis.item_id" class="flex min-w-0 flex-wrap items-center gap-2">
+            <Badge :variant="versionTone(basis.status)">{{ versionStatusLabel(basis.status) }}</Badge>
+            <RouterLink :to="itemEditPath(spaceId, basis)" class="min-w-0 underline underline-offset-4 [overflow-wrap:anywhere]">
+              {{ basis.content }}
+            </RouterLink>
+          </li>
+        </ul>
+      </Card>
+      <KnowledgeItemDependents :item="item" :space-id="spaceId" @saved="saved" @failed="failed" />
+      <KnowledgeItemHistory :item="item" :space-id="spaceId" @open-version="openVersion" />
     </template>
   </div>
+  <Dialog :open="Boolean(peekVersion)" @update:open="peekOpenChange">
+    <DialogContent v-if="peekVersion" size="lg" data-version-peek @open-auto-focus="focusDialog" @close-auto-focus="returnFocus">
+      <KnowledgeVersionPeek :space-id="spaceId" :version="peekVersion" :known="peekKnown" />
+    </DialogContent>
+  </Dialog>
   </section>
 </template>

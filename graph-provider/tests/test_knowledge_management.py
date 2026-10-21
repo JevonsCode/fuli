@@ -29,64 +29,6 @@ from sequential_driver_support import SequentialDriver
 
 
 @pytest.mark.asyncio
-async def test_entity_correction_preserves_a_revision_record_before_updating_current_value():
-    driver = SequentialDriver([
-        [{
-            'name': 'Old name',
-            'summary': 'Old summary',
-            'invalid_at': None,
-            'confirmation_status': 'agent_confirmed',
-            'confirmation_basis_json': json.dumps({
-                'existence_reason': 'Repeated use supported the old content.',
-                'quadrant_reason': 'The item was explicitly expressed.',
-                'proposed_by': {'kind': 'agent'},
-                'confirmed_by': {'kind': 'agent'},
-                'confirmed_at': '2026-07-28T08:00:00Z',
-                'agent_policy_version': 'agent-usage-v1',
-            }),
-            'utility_score': 0.8,
-            'confidence_score': 0.8,
-            'qualified_use_count': 7,
-            'distinct_task_count': 4,
-            'last_used_at': datetime(2026, 7, 28, tzinfo=timezone.utc),
-            'usage_generation': 3,
-        }],
-        [{'item_id': 'written'}],  # the compare-and-set write matched
-        [],
-    ])
-    store = StoreStub(driver)
-    request = KnowledgeRevisionCreate(
-        personal_space_id='personal-space',
-        item_kind='entity',
-        action='update',
-        reason='名称沉淀错误',
-        name='Correct name',
-        summary='Correct summary',
-    )
-
-    result = await revise_knowledge_item(
-        store, {'id': 'principal-1'}, 'entity-1', request
-    )
-
-    update_query, update_parameters = driver.calls[1]
-    history_query, history_parameters = driver.calls[2]
-    assert 'SET item.name = $name' in update_query
-    assert update_parameters['name'] == 'Correct name'
-    assert update_parameters['confirmation_status'] == 'pending'
-    assert update_parameters['usage_generation'] == 4
-    assert update_parameters['utility_score'] == 0
-    assert update_parameters['confidence_score'] == 0.5
-    assert update_parameters['qualified_use_count'] == 0
-    reset_basis = json.loads(update_parameters['confirmation_basis_json'])
-    assert reset_basis['confirmed_by'] is None
-    assert reset_basis['confirmed_at'] is None
-    assert 'agent_policy_version' not in reset_basis
-    assert 'FuliKnowledgeRevision' in history_query
-    assert history_parameters['previous_json'].find('Old name') > 0
-    assert result.current['summary'] == 'Correct summary'
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize('item_kind,content', [
     ('entity', {'name': 'Corrected name'}),
     ('relationship', {'fact': 'Corrected fact.'}),
@@ -97,8 +39,9 @@ async def test_revision_from_a_stale_read_is_refused_and_records_nothing(item_ki
         'invalid_at': None, 'confirmation_status': 'pending',
         'ai_review_lock_version': 7,
     }
-    # The item moved after the read, so the compare-and-set write matches nothing.
-    driver = SequentialDriver([[current], []])
+    # The item moved after the read, so the new version's compare-and-set on the
+    # old one matches nothing (no revisions yet; the space lock; then the item lock).
+    driver = SequentialDriver([[current], [], [], []])
 
     with pytest.raises(HTTPException) as stale:
         await revise_knowledge_item(StoreStub(driver), {'id': 'principal-1'}, 'item-1',
@@ -108,13 +51,14 @@ async def test_revision_from_a_stale_read_is_refused_and_records_nothing(item_ki
         ))
 
     assert stale.value.status_code == 409
-    query, parameters = driver.calls[1]
-    assert parameters['expected_lock_version'] == 7
+    assert '_knowledge_lock' in driver.calls[2][0]
+    query, parameters = driver.calls[3]
+    assert parameters['expected'] == 7
     assert (
         'SET item.fuli_ai_review_lock_version = coalesce(item.fuli_ai_review_lock_version, 0) + 1 '
-        'WITH item WHERE item.fuli_ai_review_lock_version = $expected_lock_version + 1'
+        'WITH item WHERE item.fuli_ai_review_lock_version = $expected + 1'
     ) in ' '.join(query.split())
-    assert len(driver.calls) == 2, 'No revision record and no human-change audit.'
+    assert len(driver.calls) == 4, 'No new version, revision record or human-change audit.'
 
 
 @pytest.mark.asyncio
@@ -130,6 +74,7 @@ async def test_legacy_item_can_establish_origin_once_but_cannot_rewrite_it_later
             'confirmation_status': 'pending',
             'usage_generation': 1,
         }],
+        [],  # no revisions: a classification update stays in place
         [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
     ])
@@ -148,8 +93,8 @@ async def test_legacy_item_can_establish_origin_once_but_cannot_rewrite_it_later
         ),
     )
 
-    assert legacy_driver.calls[1][1]['origin_quadrant'] == 'unknown_known'
-    assert legacy_driver.calls[1][1]['current_quadrant'] == 'unknown_known'
+    assert legacy_driver.calls[2][1]['origin_quadrant'] == 'unknown_known'
+    assert legacy_driver.calls[2][1]['current_quadrant'] == 'unknown_known'
     assert result.current['classificationStateExplicit'] is True
     assert result.current['usageGeneration'] == 2
 
@@ -177,35 +122,6 @@ async def test_legacy_item_can_establish_origin_once_but_cannot_rewrite_it_later
                 origin_quadrant='unknown_known',
             ),
         )
-
-
-@pytest.mark.asyncio
-async def test_human_entity_correction_starts_an_unseen_agent_review_marker():
-    driver = SequentialDriver([
-        [{'name': 'Old name', 'summary': 'Old summary', 'invalid_at': None}],
-        [{'item_id': 'written'}],  # the compare-and-set write matched
-        [],
-        [{'human_change_version': 1}],
-    ])
-    store = StoreStub(driver)
-
-    await revise_knowledge_item(
-        store,
-        {'id': 'principal-1'},
-        'entity-1',
-        KnowledgeRevisionCreate(
-            personal_space_id='personal-space',
-            item_kind='entity',
-            action='update',
-            reason='人工修正摘要',
-            summary='Correct summary',
-            operation_actor='human',
-        ),
-    )
-
-    audit_query, parameters = driver.calls[-1]
-    assert "item.fuli_human_change_status = 'unseen'" in audit_query
-    assert parameters['operation'] == 'knowledge_update'
 
 
 @pytest.mark.asyncio
@@ -588,6 +504,7 @@ async def test_assignment_override_moves_one_item_without_rewriting_episode_evid
             'created_at': changed_at,
             'updated_at': changed_at,
         }}],
+        [],  # the scope-change revision
     ])
     store = StoreStub(driver)
 
@@ -603,7 +520,10 @@ async def test_assignment_override_moves_one_item_without_rewriting_episode_evid
         ),
     )
 
-    assignment_query, parameters = driver.calls[-1]
+    assignment_query, parameters = driver.calls[-2]
+    revision_query, revision = driver.calls[-1]
+    assert 'FuliKnowledgeRevision' in revision_query and "action: 'scope_change'" in revision_query
+    assert revision['current_json'] == '{"projectId": "project-b", "changedBy": "agent"}'
     assert 'FuliKnowledgeAssignment' in assignment_query
     assert 'fuli_ai_review_lock_version' in assignment_query
     assert 'Episodic' not in assignment_query

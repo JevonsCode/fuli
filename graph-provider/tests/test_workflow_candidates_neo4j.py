@@ -1,5 +1,6 @@
 import asyncio
 import os
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from urllib.parse import urlparse
 
@@ -279,6 +280,28 @@ async def test_real_neo4j_persists_evidence_and_serializes_opposite_reviews():
         await driver.close()
 
 
+class TransactionalDriver:
+    """The test's own Neo4j driver with the transaction port a capture uses
+    (it writes in one transaction under the space's knowledge lock)."""
+
+    def __init__(self, driver):
+        self._driver = driver
+
+    async def execute_query(self, query, **kwargs):
+        return await self._driver.execute_query(query, **kwargs)
+
+    @asynccontextmanager
+    async def transaction(self):
+        async with self._driver.session() as session:
+            transaction = await session.begin_transaction()
+            try:
+                yield transaction
+                await transaction.commit()
+            except BaseException:
+                await transaction.rollback()
+                raise
+
+
 def workflow_application(driver, uri, password):
     application = create_app(Settings(
         bootstrap_token='test-bootstrap-token-1234',
@@ -288,7 +311,7 @@ def workflow_application(driver, uri, password):
         neo4j_password=password,
     ))
     store = application.state.store
-    store.runtime = SimpleNamespace(driver=driver, embedder=ZeroEmbedder())
+    store.runtime = SimpleNamespace(driver=TransactionalDriver(driver), embedder=ZeroEmbedder())
     store.authenticate = async_result({'id': 'principal-1'})
     store.authorize = async_result({
         'id': 'personal-space',

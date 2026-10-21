@@ -10,7 +10,8 @@ import re
 
 from fastapi import HTTPException
 
-from .knowledge_item_version import item_version
+from .knowledge_basis_review import basis_review
+from .knowledge_dependencies import dependents_of, item_bases
 from .knowledge_item_view_models import (
     KnowledgeEvidenceSource,
     KnowledgeItemRef,
@@ -26,8 +27,8 @@ from .knowledge_item_view_models import (
     KnowledgeWeightBasis,
 )
 from .knowledge_management import _read_assignment, _read_item, _source_project_ids
-from .knowledge_records import revision_record
 from .knowledge_tags import PERSONAL_NAMESPACE, project_namespace
+from .knowledge_versions import item_revisions, version_chain, version_status
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
 from .provider_values import json_object, native_datetime
 
@@ -44,10 +45,18 @@ async def read_knowledge_item_view(store, actor: dict, request: KnowledgeItemRef
     if current is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
     evidence, source_ids = await item_evidence(store, space, request.item_kind, request.item_id)
+    revisions = (await item_revisions(store, space, request.item_kind, [request.item_id])).get(request.item_id, [])
     summary = await item_summary(store, space, request.item_kind, request.item_id, current,
-                                 source_ids=source_ids)
-    return KnowledgeItemView(**summary.model_dump(), evidence=evidence, evidence_count=len(source_ids),
-                             revisions=await _revisions(store, space, request.item_kind, request.item_id))
+                                 source_ids=source_ids, revisions=revisions)
+    versions = await version_chain(store, space, request.item_kind, request.item_id)
+    head = next((version['item_id'] for version in versions if version['status'] == 'current'), None)
+    return KnowledgeItemView(
+        basis_review=basis_review(current, revisions),
+        dependent_count=len(await dependents_of(store, space, request.item_kind, head or request.item_id)),
+        **summary.model_dump(), evidence=evidence, evidence_count=len(source_ids),
+        revisions=revisions[:REVISION_LIMIT], versions=versions,
+        current_item_id=head,
+        bases=await item_bases(store, space, request.item_kind, request.item_id, current))
 
 
 async def read_turn_receipt(store, actor: dict, request: KnowledgeTurnReceiptRead) -> KnowledgeTurnReceipt:
@@ -66,7 +75,12 @@ async def read_turn_receipt(store, actor: dict, request: KnowledgeTurnReceiptRea
     return KnowledgeTurnReceipt(entries=entries, unchanged_count=unchanged)
 
 
-async def item_summary(store, space, item_kind, item_id, current, *, source_ids) -> KnowledgeItemSummary:
+async def item_summary(store, space, item_kind, item_id, current, *, source_ids,
+                       revisions=None) -> KnowledgeItemSummary:
+    """`version` is the edit revision a save names (knowledge_item_version);
+    `status` says whether this is the version current answers use."""
+    if revisions is None:
+        revisions = (await item_revisions(store, space, item_kind, [item_id])).get(item_id, [])
     scope = await item_scope(store, space, item_kind, item_id, current)
     namespaces = [PERSONAL_NAMESPACE, *(project_namespace(project.id) for project in scope.projects)]
     tags = await store.knowledge_tag_vocabulary().item_tags(space['id'], item_kind, item_id, namespaces)
@@ -75,7 +89,7 @@ async def item_summary(store, space, item_kind, item_id, current, *, source_ids)
     title = current.get('name') if item_kind == 'entity' else current.get('type')
     content = (current.get('summary') or current.get('name')) if item_kind == 'entity' else current.get('fact')
     return KnowledgeItemSummary(
-        item_kind=item_kind, item_id=item_id, version=item_version(current),
+        item_kind=item_kind, item_id=item_id, version=len(revisions),
         title=title or item_id, content=content or title or '', type=current.get('type') or 'Entity',
         profile_aspect=current.get('profile_aspect'),
         category=item_category(current.get('profile_aspect'), current.get('type') or ''),
@@ -91,7 +105,8 @@ async def item_summary(store, space, item_kind, item_id, current, *, source_ids)
               for tag in tags],
         confirmation_status=status, content_source=current.get('content_source'),
         invalid_at=native_datetime(current.get('invalid_at')),
-        created_at=native_datetime(current.get('created_at')))
+        created_at=native_datetime(current.get('created_at')),
+        status=version_status(current.get('invalid_at'), current.get('replaced_by_item_id'), revisions))
 
 
 def item_category(profile_aspect: str | None, item_type: str) -> str:
@@ -229,17 +244,6 @@ async def item_evidence(store, space, item_kind, item_id, *, limit=EVIDENCE_LIMI
         personal_project_id=episode.get('fuli_personal_project_id'),
         created_at=native_datetime(episode.get('created_at')),
     ) for episode in records[0]['episodes']], list(records[0]['ids'])
-
-
-async def _revisions(store, space, item_kind, item_id):
-    records, _, _ = await store.runtime.driver.execute_query(
-        '''
-        MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_KNOWLEDGE_REVISION]->
-              (revision:FuliKnowledgeRevision {item_id: $item_id, item_kind: $item_kind})
-        RETURN revision ORDER BY revision.created_at DESC LIMIT $limit
-        ''', space_id=space['id'], item_id=item_id, item_kind=item_kind, limit=REVISION_LIMIT,
-        routing_='r')
-    return [revision_record(dict(record['revision'])) for record in records]
 
 
 def scope_snapshot(scope: KnowledgeItemScope) -> dict:

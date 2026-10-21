@@ -4,6 +4,7 @@ from .graph_projection import (
     management_projection,
     personal_project_projection,
 )
+from .knowledge_versions import version_status
 from .agent_confirmation_progress import agent_confirmation_progress
 from .ai_review import effective_ai_review
 from .graph_models import GraphEdge, GraphNode, GraphResult
@@ -280,7 +281,8 @@ def _node_query(project_scoped: bool, paginated: bool = False) -> str:
                node.created_at AS created_at,
                node.fuli_invalid_at AS invalid_at,
                node.fuli_replaced_by_item_id AS replaced_by_item_id,
-               node.fuli_replaced_by_item_kind AS replaced_by_item_kind
+               node.fuli_replaced_by_item_kind AS replaced_by_item_kind,
+               size(coalesce(node.fuli_unresolved_bases, [])) > 0 AS waits_for_review
         ORDER BY created_at DESC, id DESC
     ''' + pagination
 
@@ -406,6 +408,7 @@ def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
                edge.valid_at AS valid_at, edge.invalid_at AS invalid_at,
                edge.fuli_replaced_by_item_id AS replaced_by_item_id,
                edge.fuli_replaced_by_item_kind AS replaced_by_item_kind,
+               size(coalesce(edge.fuli_unresolved_bases, [])) > 0 AS waits_for_review,
                edge.created_at AS created_at,
                edge.fuli_confidence AS confidence,
                coalesce(edge.fuli_attributes_json, '{}') AS attributes_json,
@@ -628,6 +631,9 @@ def _graph_node(
         invalid_at=_native_datetime(record.get('invalid_at')),
         replaced_by_item_id=record.get('replaced_by_item_id'),
         replaced_by_item_kind=record.get('replaced_by_item_kind'),
+        waits_for_review=bool(record.get('waits_for_review')),
+        version_status=version_status(record.get('invalid_at'), record.get('replaced_by_item_id'),
+                                      revisions.get(record['id'], [])),
         revisions=revisions.get(record['id'], []),
         assignments=assignments.get(record['id'], []),
         project_references=references.get(record['id'], []),
@@ -743,6 +749,9 @@ def _graph_edge(
         invalid_at=_native_datetime(record.get('invalid_at')),
         replaced_by_item_id=record.get('replaced_by_item_id'),
         replaced_by_item_kind=record.get('replaced_by_item_kind'),
+        waits_for_review=bool(record.get('waits_for_review')),
+        version_status=version_status(record.get('invalid_at'), record.get('replaced_by_item_id'),
+                                      revisions.get(record['id'], [])),
         created_at=_native_datetime(record.get('created_at')),
         confidence=record.get('confidence'),
         attributes=attributes,

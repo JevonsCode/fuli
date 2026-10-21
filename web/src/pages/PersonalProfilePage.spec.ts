@@ -165,14 +165,20 @@ describe('PersonalProfilePage', () => {
 
   it('opens a visible replacement beyond the first 100 rows after changing filters', async () => {
     const graph = profileGraph()
-    graph.nodes = Array.from({ length: 101 }, (_, index) => preferenceNode(`replacement-${index}`, `Synthetic replacement ${index}`, 'taste'))
-    Object.assign(graph.nodes[0]!, { invalid_at: '2026-10-18T10:00:00Z', replaced_by_item_kind: 'entity', replaced_by_item_id: 'replacement-100' })
+    graph.nodes = Array.from({ length: 102 }, (_, index) => preferenceNode(`replacement-${index}`, `Synthetic replacement ${index}`, 'taste'))
+    Object.assign(graph.nodes[0]!, { invalid_at: '2026-10-18T10:00:00Z', replaced_by_item_kind: 'entity', replaced_by_item_id: 'replacement-101',
+      version_status: 'superseded' })
     getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? graph : []))
     const { wrapper } = await fixture()
-    await wrapper.get('.personal-profile-open').trigger('click')
+    // rec#5 C8-1: what no longer applies waits in the 历史 group, not among current preferences.
+    expect(wrapper.findAll('.personal-profile-row')).toHaveLength(100)
+    expect(wrapper.text()).not.toContain('Synthetic replacement 0')
+    await wrapper.get('[data-stat="historical"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.personal-profile-row').text()).toContain('已被替代')
     await body().get('.preference-risk button').trigger('click')
     await flushPromises()
-    expect(wrapper.get('.personal-profile-row.selected').text()).toContain('Synthetic replacement 100')
+    expect(wrapper.get('.personal-profile-row.selected').text()).toContain('Synthetic replacement 101')
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(101)
     wrapper.unmount()
   })
@@ -539,7 +545,7 @@ describe('PersonalProfilePage', () => {
     await finishProfileLoading()
 
     const summaryActions = wrapper.findAll('[data-stat]')
-    expect(summaryActions).toHaveLength(4)
+    expect(summaryActions).toHaveLength(5)
     expect(summaryActions.some(
       (button) => button.attributes('aria-label') === '查看 0 条 Agent 已确认偏好',
     )).toBe(true)
@@ -793,8 +799,9 @@ describe('PersonalProfilePage quick look in the URL (D-03 §2)', () => {
     Object.assign(graph.nodes[0]!, { invalid_at: '2026-10-18T10:00:00Z', replaced_by_item_kind: 'entity', replaced_by_item_id: 'replacement-100' })
     getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? graph : []))
     const { router, wrapper } = await routed('/preferences')
-    await opener(wrapper, 'entity:replacement-0').trigger('click')
+    await wrapper.get('[data-stat="historical"]').trigger('click')
     await flushPromises()
+    expect(peek().get('h2').text()).toBe('Synthetic replacement 0')
     await body().get('.preference-risk button').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ aspect: 'taste', item: 'personal-space/entity%3Areplacement-100' })

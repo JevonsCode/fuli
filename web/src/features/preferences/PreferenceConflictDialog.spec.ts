@@ -23,7 +23,9 @@ describe('PreferenceConflictDialog', () => {
     setActivePinia(createPinia())
   })
 
-  it('merges complementary content into the newer item and links the older history', async () => {
+  it('merges complementary content into a new version of the newer item and links the older history to it', async () => {
+    // rec#5 C7: the merge is an edit, so it answers the new version it wrote.
+    patchJson.mockResolvedValueOnce({ version_item_id: 'newer-merged' })
     const conflict = currentConflict()
     const wrapper = mount(PreferenceConflictDialog, {
       props: {
@@ -55,7 +57,7 @@ describe('PreferenceConflictDialog', () => {
       '/api/knowledge/entity/older',
       expect.objectContaining({
         action: 'invalidate',
-        replacementItemId: 'newer',
+        replacementItemId: 'newer-merged',
         replacementItemKind: 'entity',
       }),
     )

@@ -218,6 +218,8 @@ function fail(message: string) {
               <small>{{ quadrantLabel(item.originQuadrant) }} · {{ item.type }}</small>
               <em>{{ basisFor(item)?.existenceReason }}</em>
               <em>{{ basisFor(item)?.quadrantReason }}</em>
+              <!-- Confirming it is a person's review of what it waited for (D-20.7). -->
+              <small v-if="item.waitsForReview" data-settles-review>{{ t('knowledgeQuickEdit.basisReview.settles') }}</small>
             </span>
           </label>
         </div>

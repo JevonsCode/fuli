@@ -198,10 +198,7 @@ async def _record_one_knowledge_feedback(store, actor, space, request, item):
     if state is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
     if state.get('invalid_at') is not None:
-        raise HTTPException(
-            status_code=409,
-            detail='historical knowledge cannot receive new feedback evidence',
-        )
+        raise await _historical(store, space, item, 'historical knowledge cannot receive new feedback evidence')
     generation = int(state.get('usage_generation') or 1)
     previous_status = state.get('confirmation_status') or 'pending'
     trusted_reporter = item.reported_by_kind in TRUSTED_FEEDBACK_REPORTERS
@@ -308,10 +305,7 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
     if state is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
     if state.get('invalid_at') is not None:
-        raise HTTPException(
-            status_code=409,
-            detail='historical knowledge cannot receive usage evidence',
-        )
+        raise await _historical(store, space, item, 'historical knowledge cannot receive usage evidence')
 
     generation = int(state.get('usage_generation') or 1)
     used_at = datetime.now(timezone.utc)
@@ -421,6 +415,8 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
         previous_status == 'pending'
         and not state.get('has_open_conflict')
         and suspension is None
+        # A conclusion waiting for a person's review is not promoted by use.
+        and not state.get('unresolved_bases')
         and qualified_use_count >= AGENT_CONFIRMATION_MIN_USES
         and distinct_task_count >= AGENT_CONFIRMATION_MIN_TASKS
     )
@@ -666,6 +662,16 @@ def _audit_record(value: dict) -> KnowledgeAuditRecord:
     )
 
 
+async def _historical(store, space, item, message) -> HTTPException:
+    """A historical item names the version current answers use, if any."""
+    # Deferred: knowledge versions build on this module.
+    from .knowledge_versions import current_version_id
+
+    return HTTPException(status_code=409, detail={
+        'code': 'historical', 'message': message,
+        'current_item_id': await current_version_id(store, space, item.item_kind, item.item_id)})
+
+
 def _item_match(item_kind: str) -> str:
     if item_kind == 'entity':
         return 'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})'
@@ -785,6 +791,7 @@ async def _read_usage_state(store, space, item_id, item_kind):
                  AS negative_evidence_count,
                item.fuli_negative_feedback_block_json
                  AS negative_feedback_block_json,
+               size(coalesce(item.fuli_unresolved_bases, [])) AS unresolved_bases,
                coalesce(item.fuli_qualified_use_count, 0) AS qualified_use_count,
                coalesce(item.fuli_distinct_task_count, 0) AS distinct_task_count,
                {

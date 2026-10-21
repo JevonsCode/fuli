@@ -125,6 +125,7 @@ Use `capture_session_knowledge` with a small, coherent batch:
 3. Create stable entity keys, typed entities, and explicit uppercase relationships. When relevant, model `GitCommit`, `CodeSymbol`, `PRDSection`, `Runbook`, and `Incident` entities and connect them with relationships such as `IMPLEMENTED_IN`, `DEFINED_BY`, `MOTIVATED_BY`, `APPLIES_TO`, and `INVESTIGATED_WITH`.
 4. Include source kind, source application, a non-sensitive source description, reference time, session ID, and a retry-safe idempotency key. When an online source was actually read, also include its exact stable `sourceUri`. When available, include a stable source turn ID and only the smallest relevant excerpt needed to understand the evidence; never include a full transcript.
 5. Use `supersedes` when replacing a known relationship and set confidence below `1` only when the source itself expresses uncertainty.
+   When an item is concluded from current knowledge (a project fact drawn from a preference), list those item IDs in `derivedFrom`; once one of them is marked outdated the conclusion is no longer delivered as a current fact.
 6. Flush silently at the boundary. Continue the user's task without narrating routine capture.
 
 If `capture_session_knowledge`, a checkpoint, knowledge usage, feedback, a correction or automatic

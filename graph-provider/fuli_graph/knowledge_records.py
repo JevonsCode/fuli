@@ -10,6 +10,7 @@ from .provider_values import json_object, native_datetime
 
 
 def revision_record(value: dict) -> KnowledgeRevisionRecord:
+    current = json_object(value.get('current_json'))
     return KnowledgeRevisionRecord(
         id=value['id'],
         item_id=value['item_id'],
@@ -17,8 +18,9 @@ def revision_record(value: dict) -> KnowledgeRevisionRecord:
         action=value['action'],
         reason=value['reason'],
         previous=json_object(value.get('previous_json')),
-        current=json_object(value.get('current_json')),
+        current=current,
         created_at=native_datetime(value['created_at']),
+        changed_by=current.get('changedBy') if current.get('changedBy') in ('user', 'agent') else None,
     )
 
 

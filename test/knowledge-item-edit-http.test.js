@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Readable } from 'node:stream';
 
+import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
@@ -117,4 +118,51 @@ test('scope changes are a local person\'s decision, never an Agent tool', () => 
   const entry = agentInterfaceCatalog().uiMutationParity
     .find(item => item.route === 'POST /api/knowledge/:itemKind/:itemId/scope');
   assert.equal(entry.access, 'local_user_only');
+});
+
+test('rec#5 C7/C8: an edit answers its new version and marking outdated is the person\'s own', async () => {
+  const { app, calls } = application(call => ({ status: 200, body: call.body.action === 'update'
+    ? { id: 'revision', item_id: 'item-1', action: 'update', version_item_id: 'item-2', changed_by: 'user' }
+    : { id: 'revision', item_id: 'item-1', action: 'mark_outdated', dependents_outdated: 1, changed_by: 'user' } }));
+  const edited = await api(app, 'PATCH', '/api/knowledge/entity/item-1', { personalSpaceId: 'personal-space',
+    action: 'update', reason: 'My words now', name: 'New words', summary: 'New words', expectedVersion: 2,
+    operationActor: 'agent' });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.version_item_id, 'item-2');
+  const marked = await api(app, 'PATCH', '/api/knowledge/relationship/item-1', { personalSpaceId: 'personal-space',
+    action: 'mark_outdated', reason: 'Not how I work any more', expectedVersion: 3 });
+  assert.equal(marked.status, 200);
+  assert.equal(marked.body.dependents_outdated, 1);
+  assert.deepEqual(calls.map(call => [call.path, call.body.action, call.body.operation_actor, call.body.expected_version]), [
+    ['/v1/knowledge/items/item-1', 'update', 'human', 2],
+    ['/v1/knowledge/items/item-1', 'mark_outdated', 'human', 3]]);
+  assert.equal(calls[1].body.item_kind, 'relationship');
+});
+
+test('an old link that writes a replaced or outdated item back gets a conflict the page can explain', async () => {
+  for (const code of ['superseded', 'reassert_as_new_version']) {
+    const { app } = application(() => ({ status: 409, body: { detail: { code, message: 'synthetic' } } }));
+    const result = await api(app, 'PATCH', '/api/knowledge/entity/item-1', { personalSpaceId: 'personal-space',
+      action: code === 'superseded' ? 'update' : 'restore', reason: 'Old link', name: 'Old words', expectedVersion: 1 });
+    assert.equal(result.status, 409);
+    assert.equal(result.body.code, code);
+  }
+});
+
+test('D-20.7 trusted entry: only the console route speaks as the person; an Agent tool never does', async () => {
+  const { app, calls } = application(() => ({ status: 200, body: { id: 'revision' } }));
+  await api(app, 'PATCH', '/api/knowledge/entity/item-1', { personalSpaceId: 'personal-space', action: 'update',
+    reason: 'Same meaning', name: 'New words', summary: 'New words', basisMeaning: 'wording_only', expectedVersion: 1,
+    operationActor: 'agent' });
+  assert.deepEqual([calls[0].body.operation_actor, calls[0].body.basis_meaning], ['human', 'wording_only']);
+  const forwarded = await callAgentTool({ getAgentAccessPolicy: () => ({ enabled: true }),
+    getCapturePolicy: () => ({ enabled: true }), reviseKnowledgeItem: input => input }, 'revise_personal_knowledge', {
+    personalSpaceId: 'personal-space', itemKind: 'entity', itemId: 'item-1', action: 'update', reason: 'Agent',
+    name: 'New words', operationActor: 'human', basisMeaning: 'wording_only' });
+  assert.equal(forwarded.operationActor, 'agent', 'a model-supplied actor is replaced');
+  const schema = listAgentTools().find(tool => tool.name === 'revise_personal_knowledge').inputSchema;
+  assert.equal(Object.hasOwn(schema.properties, 'basisMeaning'), false, 'an Agent tool offers no wording-only choice');
+  await app.reviseKnowledgeItem({ ...forwarded, personalSpaceId: 'personal-space' });
+  assert.deepEqual([calls[1].body.operation_actor, calls[1].body.basis_meaning], ['agent', 'wording_only'],
+    'the Provider sees an Agent claiming wording-only and refuses it (Neo4j suite)');
 });
