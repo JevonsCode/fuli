@@ -19,11 +19,16 @@ const LOCK_FILE = '.fuli-format.lock';
 const LOCK_WAIT_MS = 5000;
 
 // versions: what this FULI reads and writes. pendingFrom: an older version it
-// still reads whose rewrite waits for a person; migration names that step.
+// still reads whose rewrite waits for a person; migration names that step,
+// rewrite(document) is the step a person confirms and recordIds(document)
+// names, without content, the records it changes.
 export function jsonFormat({ store, versions, pendingFrom = null, migration = null }) {
   if (!/^[a-z][a-z0-9-]*$/.test(store)) throw new TypeError(`Invalid store id ${store}`);
   if (!versions.length || !versions.every(Number.isInteger)) throw new TypeError(`${store} needs its format versions`);
   if ((pendingFrom === null) !== (migration === null)) throw new TypeError(`${store} pending step needs its migration`);
+  if (migration && !(typeof migration.rewrite === 'function' && typeof migration.recordIds === 'function')) {
+    throw new TypeError(`${migration.id} must rewrite the document and name the records it changes`);
+  }
   return Object.freeze({ store, versions: Object.freeze([...versions]), supported: Math.max(...versions),
     pendingFrom, migration });
 }
@@ -123,13 +128,32 @@ function withJsonFormatLock(filePath, operation) {
   try { return operation(); } finally { release(); }
 }
 
+// Several versioned files of one directory changed under one hold of its
+// lock (a confirmed migration writes the file and its ledger). operation
+// gets write(path, value, format), which checks the file on disk again;
+// paths outside the directory are refused.
+export function withJsonFormatDirectory(filePath, operation) {
+  const directory = dirname(filePath);
+  const inside = (path) => {
+    if (dirname(path) !== directory) throw new TypeError('A locked JSON change stays in its directory');
+  };
+  return withJsonFormatLock(filePath, () => operation({
+    write(path, value, format) {
+      inside(path);
+      assertJsonFormatWritable(path, format);
+      requireJsonFormatVersion(value, format);
+      writeJsonFileAtomic(path, value);
+    }
+  }));
+}
+
 const LEDGER_FORMAT = jsonFormat({ store: 'json-format-ledger', versions: [LEDGER_FORMAT_VERSION] });
 
 // A migration this file needs but no automatic step may run: it is recorded
 // once in the file's ledger beside it, and the write that needed it refused.
 export function refusePendingJsonMigration(filePath, { format, detail, now = () => new Date() }) {
   const { migration } = format;
-  const ledgerPath = `${filePath}.format-ledger.json`;
+  const ledgerPath = jsonLedgerPath(filePath);
   const ledger = readJsonFile(ledgerPath, { version: LEDGER_FORMAT_VERSION, events: [] });
   const latest = ledger.events.findLast((event) => event.migrationId === migration.id);
   if (latest?.status !== 'pending_confirmation' || latest.detail !== detail) {
@@ -144,7 +168,7 @@ export function refusePendingJsonMigration(filePath, { format, detail, now = () 
 // A JSON data file as `fuli migrate status` reports it, read only.
 export function inspectJsonStore(filePath, format) {
   const report = { store: format.store, kind: 'json', target: format.supported, version: null,
-    ledger: ledgerEvents(filePath), steps: [] };
+    ledger: jsonLedgerEvents(filePath), steps: [] };
   let document;
   try {
     document = JSON.parse(readFileSync(filePath, 'utf8'));
@@ -163,9 +187,21 @@ export function inspectJsonStore(filePath, format) {
   return { ...report, version, state: format.versions.includes(version) ? 'current' : 'unsupported' };
 }
 
-function ledgerEvents(filePath) {
+function jsonLedgerPath(filePath) {
+  return `${filePath}.format-ledger.json`;
+}
+
+// Appends one event to a file's format ledger, with the writer of
+// withJsonFormatDirectory, so it lands under the same hold of the lock.
+export function appendJsonLedgerEvent(write, filePath, event) {
+  const ledgerPath = jsonLedgerPath(filePath);
+  const ledger = readJsonFile(ledgerPath, { version: LEDGER_FORMAT_VERSION, events: [] });
+  write(ledgerPath, { version: LEDGER_FORMAT_VERSION, events: [...ledger.events, event] }, LEDGER_FORMAT);
+}
+
+export function jsonLedgerEvents(filePath) {
   try {
-    return readJsonFile(`${filePath}.format-ledger.json`, { events: [] }).events ?? [];
+    return readJsonFile(jsonLedgerPath(filePath), { events: [] }).events ?? [];
   } catch {
     return [{ status: 'unreadable', detail: 'the format ledger beside this file is not valid JSON' }];
   }

@@ -9,7 +9,8 @@ const EMPTY_REGISTRY = Object.freeze({ version: CURRENT_VERSION, bindings: [] })
 // A version 1 registry still reads, converted in memory; writing it would
 // restructure every binding, which waits for a person (rec#17 D-09).
 const BINDING_TARGETS_MIGRATION = Object.freeze({ id: 'external-knowledge/2-binding-targets', from: 1, to: 2,
-  summary: 'each binding’s single project target becomes a list of targets' });
+  summary: 'each binding’s single project target becomes a list of targets',
+  rewrite: (document) => migrateVersionOne(document), recordIds: (document) => document.bindings.map((binding) => binding.id) });
 export const EXTERNAL_KNOWLEDGE_FORMAT = jsonFormat({ store: 'external-knowledge', versions: [1, CURRENT_VERSION],
   pendingFrom: 1, migration: BINDING_TARGETS_MIGRATION });
 

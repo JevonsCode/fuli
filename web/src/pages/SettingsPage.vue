@@ -625,6 +625,17 @@ async function submitSettings(event: Event) {
                   </div>
                 </div>
               </Card>
+              <Card as="section" class="settings-card" aria-labelledby="settings-data-format-title">
+                <CardHeader>
+                  <CardTitle id="settings-data-format-title" as="h2">{{ t('dataFormat.title') }}</CardTitle>
+                  <CardDescription>{{ t('dataFormat.settingsEntry') }}</CardDescription>
+                  <CardAction>
+                    <Button as-child size="sm" variant="outline">
+                      <RouterLink to="/settings/data-format" data-open-data-format>{{ t('dataFormat.open') }}</RouterLink>
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+              </Card>
               <Card as="section" class="settings-card resource-card" aria-labelledby="settings-resources-title">
                 <CardHeader>
                   <CardTitle id="settings-resources-title" as="h2">{{ t('settings.resources.title') }}</CardTitle>

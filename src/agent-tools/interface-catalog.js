@@ -92,6 +92,8 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('POST /api/employee-templates/:templateId/call', 'call_employee_tool'),
   local('PATCH /employee-workspaces/:templateId/:projectId/api/work-items/:itemId/status', 'Completing a Jefa work item records explicit human acceptance in the native workbench.'),
   local('PATCH /employee-workspaces/:templateId/:projectId/api/projects/:projectId/sharing', 'Changing public project visibility requires explicit local human approval; the read-only report never grants access to private tasks.'),
+  local('POST /api/data-format/apply', 'Applying a data format migration rewrites real local data; a person confirms the previewed plan in the local console or at a terminal (fuli migrate apply). Agents may run fuli migrate status or preview, which only read.'),
+  local('POST /api/data-format/rollback', 'Undoing a data format migration changes real local data and is confirmed by a person in the local console or with fuli migrate rollback.'),
   local('POST /api/agent-apps/:appId/approve', 'Approving Agent-written code for its exact digest, permissions, data scope and resident service has no Agent tool; it comes through the CLI or local console and records presence as unverified.'),
   local('POST /api/agent-apps/:appId/disable', 'Stopping an Agent app is a local user decision.'),
   local('POST /api/agent-apps/:appId/rollback', 'Activating an earlier approved app version is a local user decision checked against the app data and current authorization.'),

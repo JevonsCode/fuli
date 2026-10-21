@@ -4,6 +4,7 @@ import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-rout
 import { handleGraphApiRequest } from './graph-api-router.js';
 import { handleEmployeeApiRequest } from './employee-api-router.js';
 import { handleAgentAppApiRequest } from './agent-app-api-router.js';
+import { handleDataFormatApiRequest } from './data-format-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
@@ -18,12 +19,14 @@ export async function handleApiRequest({
   externalKnowledge = null,
   connectedKnowledge = null,
   peer = null,
-  dataFormats = null
+  dataFormats = null,
+  dataFormatMigrations = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
+  if (await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations })) return true;
   if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork })) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {

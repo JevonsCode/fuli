@@ -1,4 +1,4 @@
 {
-  "formatReleaseGate": "blocked-until-part-2",
-  "reason": "rec#17 D-09/D-11: no release until data format migration part 2 (confirm, apply and recovery) ships; part 2 sets this to \"open\"."
+  "formatReleaseGate": "open",
+  "reason": "rec#17 D-09 part 2 landed with its tests: fuli migrate preview/apply/rollback/restore/prune, the console confirmation, backup retention and the receipt notice. An open gate only lets a release run; publishing a beta is still a separate human decision."
 }

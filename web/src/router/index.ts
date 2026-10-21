@@ -184,6 +184,16 @@ export const router = createRouter({
       },
     },
     {
+      path: '/settings/data-format',
+      name: 'data-format',
+      component: () => import('@/pages/DataFormatPage.vue'),
+      meta: {
+        title: 'dataFormat.title',
+        layout: 'form',
+        detail: true,
+      },
+    },
+    {
       path: '/about',
       name: 'about',
       component: () => import('@/pages/AboutPage.vue'),

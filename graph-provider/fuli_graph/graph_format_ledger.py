@@ -9,14 +9,16 @@ never rewritten: a migration's state is its latest event.
 from dataclasses import dataclass
 
 GRAPH_STORE = 'graph'
-# Owned by the ledger itself, outside any migration's declared labels.
-LEDGER_LABELS = frozenset({'FuliDataFormat', 'FuliDataFormatEvent'})
+# Owned by the ledger itself, outside any migration's declared labels; the
+# undo journal of a confirmed migration is part of it (graph_format_journal.py).
+LEDGER_LABELS = frozenset({'FuliDataFormat', 'FuliDataFormatEvent', 'FuliDataFormatUndo'})
 STATUSES = frozenset({
     'created',  # a fresh graph was built at the current version
     'baseline_detected',  # an unversioned graph already had this step in effect
     'started',  # an automatic step began; without a later status it was interrupted
     'applied',
     'pending_confirmation',  # needed, but changes records or failed a preflight
+    'rolled_back',  # a confirmed step a person undid
 })
 
 
@@ -188,4 +190,22 @@ async def stamp_graph_version(driver, version: int, *, owner: str, now, until) -
     if not records or not records[0]['stamped']:
         raise GraphFormatLockLost(
             f'refused to stamp graph version {version}: the lock was lost or the version is higher'
+        )
+
+
+async def lower_graph_version(driver, version: int, *, owner: str, now, current: int) -> None:
+    """Undoing a confirmed step moves the version back from exactly current to
+    version, only while holding the lock; nothing else ever lowers it."""
+    records, _, _ = await driver.execute_query(
+        _LOCKED_IDENTITY + '''
+        WITH format WHERE format.lock_owner = $owner AND format.version = $current
+        SET format.version = $version, format.updated_at = $updated_at
+        RETURN count(format) AS lowered
+        ''',
+        store=GRAPH_STORE, owner=owner, version=version, current=current, updated_at=now(),
+    )
+    if not records or not records[0]['lowered']:
+        raise GraphFormatLockLost(
+            f'refused to move graph version {current} back to {version}: the lock was lost or the '
+            'version changed'
         )

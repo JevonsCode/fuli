@@ -2,6 +2,7 @@
 fingerprint, the record-changing steps' bodies and the driver's format guard.
 Behavior against a real graph lives in test_graph_format_neo4j.py."""
 
+import ast
 import json
 import os
 import re
@@ -346,3 +347,45 @@ async def test_the_format_report_reads_in_read_access_mode_even_when_the_graph_i
     assert REFUSED.refusal().detail() == {'code': 'data_format_blocked',
                                           'message': 'synthetic newer-format reason',
                                           'store': 'graph', 'steps': []}
+
+
+PROPERTY_FINGERPRINTS = Path(__file__).with_name('graph_property_fingerprints.json')
+# A property name next to a record variable in Cypher text: n.name = …, or a
+# key of a pattern's property map, (n:Label {name: …}).
+CYPHER_PROPERTY = re.compile(r'\b[a-z_][A-Za-z0-9_]*\.([a-z][A-Za-z0-9_]*)\s*=(?!=)')
+MAP_KEY = re.compile(r'[{,]\s*([a-z][A-Za-z0-9_]*)\s*:\s*[$\'"\w\[{(-]')
+
+
+def _cypher_texts(source: str):
+    """Every string literal of a module, f-string parts included."""
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            yield node.value
+
+
+def test_a_new_graph_property_comes_with_the_next_graph_version():
+    """Every property name the provider's Cypher reads or writes, by graph
+    version. Readers coalesce a missing property, but an older guarded FULI
+    ignores one it does not know, so a new stored property is a format change:
+    add a migration with the next graph version, then record the new version
+    and its property set here. A recorded version never changes (rec#17 D-11)."""
+    properties = set()
+    for path in provider_sources():
+        for text in _cypher_texts(path.read_text(encoding='utf-8')):
+            if not re.search(r'\b(MATCH|MERGE|CREATE|SET|RETURN|WHERE)\b', text):
+                continue
+            properties.update(CYPHER_PROPERTY.findall(text))
+            properties.update(MAP_KEY.findall(text))
+    recorded = json.loads(PROPERTY_FINGERPRINTS.read_text(encoding='utf-8'))
+    assert str(GRAPH_FORMAT_VERSION) in recorded, (
+        f'Record the property set of graph version {GRAPH_FORMAT_VERSION} in '
+        f'{PROPERTY_FINGERPRINTS.name}'
+    )
+    expected = set(recorded[str(GRAPH_FORMAT_VERSION)])
+    assert sorted(properties - expected) == [], (
+        'New graph properties need a migration with the next graph version '
+        f'(then record that version in {PROPERTY_FINGERPRINTS.name})'
+    )
+    assert sorted(expected - properties) == [], (
+        f'Properties no longer used: record the next version in {PROPERTY_FINGERPRINTS.name}'
+    )

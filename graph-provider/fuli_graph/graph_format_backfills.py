@@ -1,12 +1,14 @@
 """Graph migrations that change existing records (rec#17 D-09).
 
 These ran on every provider start before the format registry. They are never
-automatic now: each one counts the records it would still change, a store
-where that count is zero has them in effect already (baseline detection), and
-any other count leaves the graph read-only until a person confirms the
-migration. The apply functions are the confirmed step's bodies.
+automatic now: each one names, by ID only, the records it would still change;
+a graph where none is left has them in effect already (baseline detection),
+and any other graph stays read-only until a person confirms the migration
+(graph_format_confirm.py). The apply functions are the confirmed step's
+bodies; the journals say what each one may change, so it can be undone.
 """
 
+from .graph_format_journal import RecordJournal, RecordTouch
 from .store_project_agent_executor_learning import (
     project_agent_executor_outcome_bucket_id,
 )
@@ -26,9 +28,10 @@ _BUCKET_LABELS = (
 )
 
 
-async def _count(driver, query: str) -> int:
+async def _keys(driver, query: str) -> list[str]:
+    """The IDs of the records a step would still change, sorted; never content."""
     records, _, _ = await driver.execute_query(query, routing_='r')
-    return int(records[0]['pending']) if records else 0
+    return sorted({str(record['key']) for record in records})
 
 
 async def _learning_buckets(driver, label: str):
@@ -59,15 +62,15 @@ def _bucket_id(settings, bucket: dict, bucket_kind: str) -> str:
     )
 
 
-async def pending_learning_bucket_ids(driver, settings) -> int:
-    pending = 0
+async def pending_learning_bucket_ids(driver, settings) -> list[str]:
+    pending = []
     for label, bucket_kind, _, _ in _BUCKET_LABELS:
         for record in await _learning_buckets(driver, label):
             bucket = {name: str(record[name]) for name in _BUCKET_PROPERTIES}
             expected = _bucket_id(settings, bucket, bucket_kind)
             if record['nodes'] != 1 or record['ids'] != [expected]:
-                pending += 1
-    return pending
+                pending.append(f'{bucket_kind}:{expected}')
+    return sorted(pending)
 
 
 async def apply_learning_bucket_ids(driver, settings) -> None:
@@ -115,8 +118,8 @@ MATCH (space:FuliSpace {kind: 'personal'})-[:CONTAINS_PROJECT]->
 '''
 
 
-async def pending_legacy_agent_assignments(driver, _settings) -> int:
-    return await _count(
+async def pending_legacy_agent_assignments(driver, _settings) -> list[str]:
+    return await _keys(
         driver,
         _LEGACY_AGENTS + '''
         WHERE agent.agent_id IS NULL OR agent.agent_type IS NULL
@@ -127,7 +130,7 @@ async def pending_legacy_agent_assignments(driver, _settings) -> int:
                    (assignment:FuliProjectAgentAssignment)-[:ASSIGNED_AGENT]->(agent)
              WHERE assignment.id = agent.id + ':legacy-assignment:' + project.id
            }
-        RETURN count(*) AS pending
+        RETURN coalesce(agent.agent_id, agent.id, elementId(agent)) AS key
         ''',
     )
 
@@ -204,15 +207,18 @@ SET item.fuli_utility_score =
 '''
 
 
-async def pending_knowledge_lifecycle_defaults(driver, _settings) -> int:
-    nodes = await _count(
-        driver, 'MATCH (item:Entity)' + _LIFECYCLE_MISSING + 'RETURN count(item) AS pending'
-    )
-    relationships = await _count(
+async def pending_knowledge_lifecycle_defaults(driver, _settings) -> list[str]:
+    nodes = await _keys(
         driver,
-        'MATCH ()-[item:RELATES_TO]->()' + _LIFECYCLE_MISSING + 'RETURN count(item) AS pending',
+        'MATCH (item:Entity)' + _LIFECYCLE_MISSING
+        + "RETURN 'entity:' + coalesce(item.uuid, elementId(item)) AS key",
     )
-    return nodes + relationships
+    relationships = await _keys(
+        driver,
+        'MATCH ()-[item:RELATES_TO]->()' + _LIFECYCLE_MISSING
+        + "RETURN 'relationship:' + coalesce(item.uuid, elementId(item)) AS key",
+    )
+    return sorted(nodes + relationships)
 
 
 async def apply_knowledge_lifecycle_defaults(driver, _settings) -> None:
@@ -226,10 +232,10 @@ async def apply_knowledge_lifecycle_defaults(driver, _settings) -> None:
     )
 
 
-async def pending_project_relation_review_defaults(driver, _settings) -> int:
+async def pending_project_relation_review_defaults(driver, _settings) -> list[str]:
     # Only relations the defaults would change: a pending relation already
     # has no confirmation authority by design.
-    return await _count(
+    return await _keys(
         driver,
         '''
         MATCH ()-[relation:PERSONAL_PROJECT_RELATION]->()
@@ -237,7 +243,7 @@ async def pending_project_relation_review_defaults(driver, _settings) -> int:
            OR relation.decision_revision IS NULL
            OR (relation.confirmation_authority IS NULL
                AND NOT relation.status IN ['active', 'rejected', 'pending'])
-        RETURN count(relation) AS pending
+        RETURN coalesce(relation.id, elementId(relation)) AS key
         ''',
     )
 
@@ -280,12 +286,12 @@ WHERE owner_id IS NOT NULL
 '''
 
 
-async def pending_space_visibility_and_owners(driver, _settings) -> int:
-    hidden = await _count(
-        driver, 'MATCH (s:FuliSpace) WHERE s.visibility IS NULL RETURN count(s) AS pending'
+async def pending_space_visibility_and_owners(driver, _settings) -> list[str]:
+    hidden = await _keys(
+        driver, "MATCH (s:FuliSpace) WHERE s.visibility IS NULL RETURN 'visibility:' + s.id AS key"
     )
-    unowned = await _count(driver, _UNOWNED_PROJECT_SPACES + 'RETURN count(space) AS pending')
-    return hidden + unowned
+    unowned = await _keys(driver, _UNOWNED_PROJECT_SPACES + "RETURN 'owner:' + space.id AS key")
+    return sorted(hidden + unowned)
 
 
 async def apply_space_visibility_and_owners(driver, _settings) -> None:
@@ -316,8 +322,8 @@ WHERE space.release_version IS NULL
 '''
 
 
-async def pending_project_release_records(driver, _settings) -> int:
-    return await _count(driver, _UNRELEASED_PUBLIC_PROJECTS + 'RETURN count(space) AS pending')
+async def pending_project_release_records(driver, _settings) -> list[str]:
+    return await _keys(driver, _UNRELEASED_PUBLIC_PROJECTS + 'RETURN space.id AS key')
 
 
 async def apply_project_release_records(driver, _settings) -> None:
@@ -343,9 +349,9 @@ async def apply_project_release_records(driver, _settings) -> None:
     )
 
 
-async def pending_group_id_separators(driver, _settings) -> int:
-    return await _count(
-        driver, "MATCH (s:FuliSpace) WHERE s.group_id CONTAINS ':' RETURN count(s) AS pending"
+async def pending_group_id_separators(driver, _settings) -> list[str]:
+    return await _keys(
+        driver, "MATCH (s:FuliSpace) WHERE s.group_id CONTAINS ':' RETURN s.id AS key"
     )
 
 
@@ -375,3 +381,76 @@ async def apply_group_id_separators(driver, _settings) -> None:
                 previous=previous,
                 current=current,
             )
+
+
+# What each step may change, so a confirmed step can be undone
+# (graph_format_journal.py): the records it sets properties on, with those
+# properties, and the labels and relationship types it may create.
+LEARNING_BUCKET_JOURNAL = RecordJournal(
+    touches=(
+        RecordTouch(
+            'node', 'MATCH (item:FuliProjectAgentExecutorOutcomeAggregate)', ('id', 'aggregate_id'),
+        ),
+        RecordTouch('node', 'MATCH (item:FuliProjectAgentExecutorOutcomeReset)', ('id', 'reset_id')),
+    ),
+    # Older duplicate projections are deleted; they are replaceable caches
+    # and are not kept, so only a whole-graph restore brings them back.
+    reversible=False,
+)
+LEGACY_AGENT_JOURNAL = RecordJournal(
+    touches=(RecordTouch(
+        'node', _LEGACY_AGENTS + 'WITH DISTINCT agent AS item',
+        ('agent_id', 'agent_type', 'memory_scope', 'status'),
+    ),),
+    creates=(
+        ('relationship', 'HAS_PROJECT_AGENT_IDENTITY'),
+        ('node', 'FuliProjectAgentAssignment'),
+        ('relationship', 'HAS_PROJECT_AGENT_ASSIGNMENT'),
+        ('relationship', 'ASSIGNED_AGENT'),
+    ),
+)
+_LIFECYCLE_PROPERTIES = (
+    'fuli_ai_review_lock_version', 'fuli_utility_score', 'fuli_confidence_score',
+    'fuli_qualified_use_count', 'fuli_distinct_task_count', 'fuli_usage_generation',
+    'fuli_inheritance_mode', 'fuli_inherited_project_ids',
+)
+KNOWLEDGE_LIFECYCLE_JOURNAL = RecordJournal(touches=(
+    RecordTouch('node', 'MATCH (item:Entity)' + _LIFECYCLE_MISSING, _LIFECYCLE_PROPERTIES),
+    RecordTouch(
+        'relationship', 'MATCH ()-[item:RELATES_TO]->()' + _LIFECYCLE_MISSING, _LIFECYCLE_PROPERTIES,
+    ),
+))
+RELATION_REVIEW_JOURNAL = RecordJournal(touches=(RecordTouch(
+    'relationship',
+    '''
+    MATCH ()-[item:PERSONAL_PROJECT_RELATION]->()
+    WHERE item.status IS NULL OR item.decision_revision IS NULL
+       OR item.confirmation_authority IS NULL
+    ''',
+    ('status', 'decision_revision', 'confirmation_authority'),
+),))
+SPACE_VISIBILITY_JOURNAL = RecordJournal(
+    touches=(RecordTouch(
+        'node', 'MATCH (item:FuliSpace) WHERE item.visibility IS NULL', ('visibility',),
+    ),),
+    creates=(('relationship', 'OWNS'),),
+)
+RELEASE_RECORD_JOURNAL = RecordJournal(
+    touches=(RecordTouch(
+        'node', _UNRELEASED_PUBLIC_PROJECTS + 'WITH DISTINCT space AS item',
+        ('release_version', 'release_id', 'release_summary', 'release_publisher_id',
+         'release_publisher_name', 'released_at', 'updated_at'),
+    ),),
+    creates=(('node', 'FuliProjectRelease'), ('relationship', 'HAS_RELEASE')),
+)
+_RENAMED_GROUPS = (
+    "MATCH (space:FuliSpace) WHERE space.group_id CONTAINS ':' "
+    'WITH DISTINCT space.group_id AS previous '
+)
+GROUP_ID_JOURNAL = RecordJournal(touches=(
+    RecordTouch(
+        'node', _RENAMED_GROUPS + 'MATCH (item) WHERE item.group_id = previous', ('group_id',),
+    ),
+    RecordTouch('relationship', _RENAMED_GROUPS + 'MATCH ()-[item]->() WHERE item.group_id = previous',
+                ('group_id',)),
+))

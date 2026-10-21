@@ -246,6 +246,11 @@ class GraphitiRuntime:
 
     async def initialize(self) -> None:
         """Check the graph's data format before any schema change or write."""
+        await self.refresh_data_format()
+
+    async def refresh_data_format(self) -> None:
+        """Decide again what the provider may do: at start, and after a person
+        applied or undid a migration (graph_format_routes.py)."""
         self.driver.format = await prepare_graph_format(self.driver.maintenance(), self.settings)
         if self.driver.format.access == 'write':
             await self._ensure_personal_space_defaults()

@@ -13,6 +13,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { readTurnReceipt } from '../src/agents/turn-receipt.js';
+import { dataFormatReceiptNotice, receiptFormatNotices } from '../src/data-format/format-notices.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -109,7 +110,13 @@ const BASELINE = Object.freeze({
   // rec#22: only a Codex turn the person starts with an exact `fuli review` line gets this
   // one line (with its separator) after the task entry; the always-loaded Codex bootstrap
   // dropped its dead `/flreview` bridge for it (962 -> 910 B).
-  codexReviewGuidanceBytes: 101
+  codexReviewGuidanceBytes: 101,
+  // rec#17 part 2: the receipt's data format notice, with its separator. Nothing waits and nothing
+  // was applied in the last day: no bytes at all. One step waiting for a person, or one migration
+  // applied: one short line naming the step (and the read-only preview command).
+  migrationReceiptNoneChars: 0,
+  migrationReceiptPendingChars: 62,
+  migrationReceiptAppliedChars: 40
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -172,13 +179,31 @@ async function measure() {
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
-    codexReviewGuidanceBytes: codexReviewGuidanceBytes(), ...await turnReceiptChars() };
+    codexReviewGuidanceBytes: codexReviewGuidanceBytes(), ...await turnReceiptChars(), ...await migrationReceiptChars() };
 }
 
 function codexReviewGuidanceBytes() {
   const entry = { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'entry' } };
   return Buffer.byteLength(withCodexReviewGuidance(entry).hookSpecificOutput.additionalContext, 'utf8')
     - Buffer.byteLength(entry.hookSpecificOutput.additionalContext, 'utf8');
+}
+
+// The receipt's data format notice from synthetic notices and operations, through the identity receipt.
+async function migrationReceiptChars() {
+  const app = { config: { personal: { spaceId: 'space' } } };
+  const owner = { projectId: 'sample', agentId: 'lead-sample', name: 'Synthetic lead' };
+  const plain = taskAgentReceipt(app, owner).markdown;
+  const added = async (notices, operations) => {
+    const dataFormatNotice = dataFormatReceiptNotice('/synthetic', { notices: () => notices,
+      operations: () => operations, now: () => Date.parse('2026-10-21T00:00:00Z') });
+    const receipt = taskAgentReceipt(app, { ...owner, notices: await receiptFormatNotices({ dataFormatNotice }) });
+    return receipt.markdown.length - plain.length;
+  };
+  const step = 'task-schedules/3-run-recovery';
+  return { migrationReceiptNoneChars: await added([], []),
+    migrationReceiptPendingChars: await added([{ store: 'task-schedules', label: 'task-schedules.sqlite',
+      state: 'pending_confirmation', steps: [step] }], []),
+    migrationReceiptAppliedChars: await added([], [{ kind: 'applied', migrationId: step, at: '2026-10-20T12:00:00Z' }]) };
 }
 
 // A synthetic turn through the real receipt renderer and the identity receipt it follows.

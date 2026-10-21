@@ -103,6 +103,7 @@ import { createSessionPreferenceDelivery } from '../conversations/preference-ses
 import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import { knowledgeTags } from './knowledge-tags.js';
+import { dataFormatReceiptNotice } from '../data-format/format-notices.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -162,6 +163,9 @@ export function openFederatedGraphApplication({
     // Read per call so a saved settings change applies without a restart.
     app.needsPerson = createNeedsPersonNotifier({ fetchImpl, consoleUrl: app.consoleUrl,
       readUrl: () => readRuntimeSettings(paths.runtimeSettingsPath).notifications.needsPersonUrl });
+    // rec#17 part 2: a step waiting for a person or a migration just applied, on the receipt.
+    app.dataFormatNotice = dataFormatReceiptNotice(dirname(runtimeConfigPath),
+      { graphState: async () => (await app.personal.health())?.data_format ?? null });
     app.explainSettings = () => describeSettings({ settings: readRuntimeSettings(paths.runtimeSettingsPath),
       capturePolicy: app.getCapturePolicy(), consoleUrl: app.consoleUrl });
   }
