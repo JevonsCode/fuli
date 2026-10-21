@@ -30,6 +30,7 @@ from .knowledge_basis_review import apply_meaning
 from .knowledge_dependencies import dependents_of
 from .knowledge_hard_delete_models import (
     KnowledgeHardDeleteConfirm,
+    KnowledgeHardDeleteOperation,
     KnowledgeHardDeleteCounts,
     KnowledgeHardDeleteDependent,
     KnowledgeHardDeleteEpisode,
@@ -37,10 +38,14 @@ from .knowledge_hard_delete_models import (
     KnowledgeHardDeletePreview,
     KnowledgeHardDeleteRecord,
     KnowledgeHardDeleteRef,
+    KnowledgeHardDeleteSpace,
     KnowledgeHardDeleteStatus,
     KnowledgeHardDeleteUser,
 )
-from .knowledge_hard_delete_traces import hard_deletion_record, require_not_hard_deleted
+from .knowledge_hard_delete_operations import (
+    abort_operation, operation_outcome, record_refusal, require_open_operation,
+)
+from .knowledge_hard_delete_traces import all_hard_deletions, hard_deletion_record, require_not_hard_deleted
 from .knowledge_management import _read_item
 from .knowledge_versions import item_revisions, lock_knowledge, version_chain, version_status
 from .provider_values import native_datetime, now_utc, sha256_text, stable_uuid
@@ -213,12 +218,28 @@ async def preview_hard_delete(store, actor, item_id, request: KnowledgeHardDelet
 
 async def apply_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteConfirm) -> KnowledgeHardDeleteRecord:
     space = await _person_space(store, actor, request.personal_space_id)
+    try:
+        return await _apply(store, actor, space, item_id, request)
+    except HTTPException as refusal:
+        # The transaction rolled back: the operation's answer is a refusal.
+        if request.operation_id and 400 <= refusal.status_code < 500:
+            code = refusal.detail.get('code') if isinstance(refusal.detail, dict) else None
+            await record_refusal(store, actor, space, request.operation_id, code or f'http_{refusal.status_code}')
+        raise
+
+
+async def _apply(store, actor, space, item_id, request) -> KnowledgeHardDeleteRecord:
     created_at = now_utc()
     async with query_store_transaction(store) as scoped:
         # The lock captures, new versions and the outdated mark take: no
         # conclusion naming what goes, and no new version of it, can be
-        # written between this plan and the commit.
+        # written between this plan and the commit. An abort of this
+        # operation takes it too, so it either came first or waits.
         await lock_knowledge(scoped, space)
+        if request.operation_id:
+            replay = await require_open_operation(scoped, space, request.operation_id)
+            if replay is not None:
+                return replay.deletion
         plan = await _plan(scoped, space, request.item_kind, item_id, lock=True)
         preview = plan['preview']
         if preview.preview_id != request.preview_id:
@@ -233,7 +254,7 @@ async def apply_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteC
                                   created_at.isoformat())
         await _hold_dependents(scoped, actor, space, plan, deletion_id, created_at)
         await _remove(scoped, space, plan)
-        await _write_trace(scoped, actor, space, plan, deletion_id, created_at)
+        await _write_trace(scoped, actor, space, plan, deletion_id, created_at, request.operation_id)
     return KnowledgeHardDeleteRecord(
         deletion_id=deletion_id, item_kind=request.item_kind, item_id=item_id, deleted_at=created_at,
         counts=preview.counts, deleted_item_ids=[item.item_id for item in preview.items])
@@ -249,6 +270,26 @@ async def hard_delete_status(store, actor, item_id, request: KnowledgeHardDelete
         return KnowledgeHardDeleteStatus(state='deleted', deletion=deletion)
     present = await _read_item(store, space, item_id, request.item_kind) is not None
     return KnowledgeHardDeleteStatus(state='present' if present else 'missing')
+
+
+async def read_hard_delete_operation(store, actor, operation_id,
+                                     request: KnowledgeHardDeleteSpace) -> KnowledgeHardDeleteOperation:
+    """What the graph knows about one console operation; it only reads."""
+    space = await _person_space(store, actor, request.personal_space_id)
+    return await operation_outcome(store, space, operation_id)
+
+
+async def abort_hard_delete(store, actor, operation_id,
+                            request: KnowledgeHardDeleteSpace) -> KnowledgeHardDeleteOperation:
+    """Ends an operation whose outcome its console cannot learn: committed if
+    its delete committed (waiting for one that runs), else aborted for good."""
+    space = await _person_space(store, actor, request.personal_space_id)
+    return await abort_operation(store, actor, space, operation_id)
+
+
+async def hard_deletions(store, actor, request: KnowledgeHardDeleteSpace) -> list[KnowledgeHardDeleteRecord]:
+    space = await _person_space(store, actor, request.personal_space_id)
+    return await all_hard_deletions(store, space)
 
 
 async def _person_space(store, actor, space_id):
@@ -463,8 +504,9 @@ async def _redact_decision_snapshots(scoped, space, event_ids, item_ids) -> None
             snapshots=json.dumps(redacted, ensure_ascii=False, sort_keys=True))
 
 
-async def _write_trace(scoped, actor, space, plan, deletion_id, created_at) -> None:
-    """The content-free trace: IDs, time, the person, the kind and counts."""
+async def _write_trace(scoped, actor, space, plan, deletion_id, created_at, operation_id) -> None:
+    """The content-free trace: IDs, time, the person, the kind and counts,
+    and the console's operation ID, so it is that operation's commit."""
     preview = plan['preview']
     await scoped.runtime.driver.execute_query(
         '''
@@ -474,7 +516,8 @@ async def _write_trace(scoped, actor, space, plan, deletion_id, created_at) -> N
           action: 'hard_delete', operation: 'knowledge_hard_delete', operation_actor: 'human',
           outcome: 'deleted', created_by: $created_by, created_at: $created_at,
           deleted_item_keys: $deleted_item_keys, evidence_ids: $evidence_ids,
-          removed_episode_ids: $removed_episode_ids, deletion_counts_json: $counts
+          removed_episode_ids: $removed_episode_ids, deletion_counts_json: $counts,
+          operation_id: $operation_id
         })
         MERGE (space)-[:HAS_KNOWLEDGE_AUDIT]->(trace)
         ''', space_id=space['id'], deletion_id=deletion_id, item_id=preview.item_id, item_kind=preview.item_kind,
@@ -482,4 +525,4 @@ async def _write_trace(scoped, actor, space, plan, deletion_id, created_at) -> N
         deleted_item_keys=[f'{item.item_kind}:{item.item_id}' for item in preview.items],
         evidence_ids=[episode.episode_id for episode in [*preview.removed_episodes, *preview.kept_episodes]],
         removed_episode_ids=[episode.episode_id for episode in preview.removed_episodes],
-        counts=json.dumps(preview.counts.model_dump(), sort_keys=True))
+        counts=json.dumps(preview.counts.model_dump(), sort_keys=True), operation_id=operation_id)

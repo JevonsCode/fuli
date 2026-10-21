@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 import { jsonFormat, requireJsonFormatVersion, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { knowledgeReferences } from './forget-references.js';
 
@@ -24,16 +25,19 @@ import { knowledgeReferences } from './forget-references.js';
 
 export const HARD_DELETE_LEDGER_FORMAT = jsonFormat({ store: 'knowledge-hard-deletes', versions: [1] });
 export const HARD_DELETE_LEDGER_FILE = 'knowledge-hard-deletes.json';
+const STATES = new Set(['pending', 'graph_deleted', 'complete', 'not_deleted']);
 const OPEN_STATES = new Set(['pending', 'graph_deleted']);
 const FENCED_STATES = new Set(['pending', 'graph_deleted', 'complete']);
 
 export function hardDeleteLedger(dataDir, { now = () => new Date() } = {}) {
   const path = join(dataDir, HARD_DELETE_LEDGER_FILE);
+  // The file is read and checked inside the format lock: a damaged one is
+  // never rewritten from what could be read of it.
   const change = (mutate) => updateVersionedJsonFileAtomic(path, HARD_DELETE_LEDGER_FORMAT, (current) => {
-    const operations = [...(current?.operations ?? [])];
+    const operations = current === null ? [] : [...operationsOf(current)];
     mutate(operations);
     return { version: 1, operations };
-  });
+  }, { read: (file) => parseLedger(file) });
   return {
     // A new pending operation, before anything irreversible is sent.
     begin({ spaceId, itemKind, itemId, previewId, itemIds }) {
@@ -55,6 +59,7 @@ export function hardDeleteLedger(dataDir, { now = () => new Date() } = {}) {
     },
     // Operations whose outcome or cleanup is not finished.
     open: () => readLedger(path).filter((operation) => OPEN_STATES.has(operation.state)),
+    all: () => readLedger(path),
     // The latest operation that targets or removed this item.
     find: (spaceId, itemId) => readLedger(path).filter((operation) => operation.spaceId === spaceId
       && (operation.itemId === itemId || operation.itemIds.includes(itemId))).at(-1) ?? null
@@ -88,14 +93,70 @@ export function deletedKnowledgeBeside(storePath) {
   };
 }
 
+// Only a missing file is a first use. Any file that exists must be whole:
+// a damaged one would read as "nothing deleted" and drop the fence, so it
+// stops every write that depends on it until a person repairs it.
 function readLedger(path) {
+  const document = parseLedger(path);
+  return document === null ? [] : operationsOf(document);
+}
+
+function parseLedger(path) {
+  let text;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw damaged(`it cannot be read (${error?.code ?? error?.message})`);
+  }
   let document;
   try {
-    document = JSON.parse(readFileSync(path, 'utf8'));
-  } catch (error) {
-    if (error?.code === 'ENOENT') return [];
-    throw error;
+    document = JSON.parse(text);
+  } catch {
+    throw damaged('it is not valid JSON');
   }
-  requireJsonFormatVersion(document, HARD_DELETE_LEDGER_FORMAT);
-  return Array.isArray(document?.operations) ? document.operations : [];
+  if (document === null || typeof document !== 'object' || Array.isArray(document)) {
+    throw damaged('it is not a JSON object');
+  }
+  try {
+    requireJsonFormatVersion(document, HARD_DELETE_LEDGER_FORMAT);
+  } catch (error) {
+    if (error instanceof DataFormatError) throw error;
+    throw damaged('its format version is missing or unknown');
+  }
+  return document;
+}
+
+const TEXT = (value) => typeof value === 'string' && value.length > 0;
+const TEXT_OR_NULL = (value) => value === null || TEXT(value);
+
+function operationsOf(document) {
+  if (!Array.isArray(document.operations)) throw damaged('its operations are not a list');
+  document.operations.forEach((operation, index) => {
+    const problem = operationProblem(operation);
+    if (problem) throw damaged(`operation ${index + 1} ${problem}`);
+  });
+  return document.operations;
+}
+
+function operationProblem(operation) {
+  if (operation === null || typeof operation !== 'object' || Array.isArray(operation)) return 'is not an object';
+  for (const field of ['id', 'spaceId', 'itemId', 'createdAt', 'updatedAt']) {
+    if (!TEXT(operation[field])) return `has no ${field}`;
+  }
+  if (!['entity', 'relationship'].includes(operation.itemKind)) return 'has no item kind';
+  if (!STATES.has(operation.state)) return `has the unknown state ${JSON.stringify(operation.state)}`;
+  if (!Array.isArray(operation.itemIds) || !operation.itemIds.every(TEXT)) return 'has no list of item IDs';
+  for (const field of ['previewId', 'deletionId', 'deletedAt']) {
+    if (!TEXT_OR_NULL(operation[field] ?? null)) return `has an invalid ${field}`;
+  }
+  return null;
+}
+
+function damaged(reason) {
+  return new DataFormatError(HARD_DELETE_LEDGER_FORMAT.store, 'data_format_damaged',
+    `FULI's record of permanent deletes (${HARD_DELETE_LEDGER_FILE}) is damaged: ${reason}. Until it is repaired, `
+    + 'FULI stores no knowledge words in its local judgment and work records and starts no permanent delete. '
+    + 'Repair it by restoring it from a format backup, or by moving it out of the data directory and restarting '
+    + 'FULI: the console then rebuilds it from the graph\'s deletion records and cleans the local stores again.');
 }

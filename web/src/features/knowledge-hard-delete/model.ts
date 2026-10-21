@@ -89,10 +89,16 @@ export function recordCounts(counts: HardDeleteCounts): { key: RecordCount; coun
   return RECORD_COUNTS.filter((key) => counts[key] > 0).map((key) => ({ key, count: counts[key] }))
 }
 
-function apiCode(error: unknown): { code?: string; deletedAt?: string } | null {
+/** The console's record of permanent deletes is damaged: its own words say how to repair it. */
+export function ledgerDamage(error: unknown): string | null {
+  const body = apiCode(error)
+  return body?.code === 'data_format_damaged' && typeof body.error === 'string' ? body.error : null
+}
+
+function apiCode(error: unknown): { code?: string; deletedAt?: string; error?: string } | null {
   if (!(error instanceof ApiError) || !error.detail) return null
   try {
-    return JSON.parse(error.detail) as { code?: string; deletedAt?: string }
+    return JSON.parse(error.detail) as { code?: string; deletedAt?: string; error?: string }
   } catch {
     return null
   }

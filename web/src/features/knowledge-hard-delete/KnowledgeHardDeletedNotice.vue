@@ -9,7 +9,7 @@ import type { ItemKind } from '@/features/knowledge-quick-edit/model'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { hardDeleteStatus } from './hard-delete-api'
-import { deletedState, type HardDeletedState } from './model'
+import { deletedState, ledgerDamage, type HardDeletedState } from './model'
 
 // rec#5 C9: what an item page shows once a permanent delete was sent or an
 // old link answered 410. Three states the console tells apart: the result
@@ -21,6 +21,7 @@ const props = defineProps<{ state: HardDeletedState; spaceId: string; itemKind: 
 const emit = defineEmits<{ changed: [state: HardDeletedState]; present: [] }>()
 
 const checking = ref(false)
+const damage = ref<string | null>(null)
 const when = computed(() => props.state.deletedAt
   ? formatDateTime(props.state.deletedAt, currentLocale(), DATE_TIME_MINUTE, { missing: '—' }) : null)
 const failedStores = computed(() => (props.state.result?.local_stores ?? []).filter((store) => store.status === 'failed'))
@@ -32,8 +33,10 @@ async function check() {
     const result = await hardDeleteStatus(props.spaceId, { item_kind: props.itemKind, item_id: props.itemId })
     if (result.outcome === 'not_deleted' || result.outcome === 'missing') emit('present')
     else emit('changed', deletedState(result))
-  } catch {
-    // Still unknown or still to clean: the state stays as it is, with its retry.
+  } catch (cause) {
+    // Still unknown or still to clean: the state stays as it is, with its
+    // retry; a damaged record says how to repair it.
+    damage.value = ledgerDamage(cause)
   } finally {
     checking.value = false
   }
@@ -47,6 +50,7 @@ onMounted(() => {
 <template>
   <Card as="section" class="grid gap-2 px-5 py-5 text-sm" role="status" data-hard-deleted :data-hard-deleted-state="state.outcome">
     <GrowthLoading v-if="checking" variant="inline" :label="t('knowledgeHardDelete.deleted.checking')" />
+    <p v-if="damage" role="alert" class="m-0 text-destructive" data-hard-deleted-damage>{{ damage }}</p>
     <template v-if="state.outcome === 'unknown'">
       <p class="m-0" data-hard-deleted-unknown>{{ t('knowledgeHardDelete.deleted.unknown') }}</p>
       <div><Button variant="outline" size="sm" :disabled="checking" data-hard-deleted-recheck @click="check">

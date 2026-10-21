@@ -86,11 +86,15 @@ export async function createServer(options = {}) {
   }
   // A person's 「彻底删除」 of one knowledge item (rec#5 C9), console only.
   const knowledgeHardDelete = options.knowledgeHardDelete ?? (localOptions.runtimeConfigPath
-    ? createKnowledgeHardDelete(dirname(localOptions.runtimeConfigPath)) : null);
+    ? createKnowledgeHardDelete(dirname(localOptions.runtimeConfigPath),
+      { personalSpaceId: () => application.config?.personal?.spaceId ?? null }) : null);
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
-  // is settled from its recorded operation; one the graph cannot answer yet
-  // stays open for the page's retry.
-  knowledgeHardDelete?.reconcile().catch(() => {});
+  // is settled from its recorded operation, and graph deletions the record
+  // lost are taken in again; what the graph cannot answer yet stays open for
+  // the page's retry. A damaged record is reported here and on every use.
+  knowledgeHardDelete?.reconcile().catch((error) => {
+    console.warn(`Permanent deletes were not reconciled: ${error?.message ?? error}`);
+  });
   let externalKnowledge;
   let connectedKnowledge;
   let system = null;

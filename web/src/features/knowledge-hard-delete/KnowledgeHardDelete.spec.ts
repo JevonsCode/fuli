@@ -273,6 +273,21 @@ describe('permanent delete on the item page', () => {
     wrapper.unmount()
   })
 
+  it('a damaged record of permanent deletes stops the delete and says how to repair it', async () => {
+    const repair = 'The record of permanent deletes (knowledge-hard-deletes.json) is damaged: its operations are not a list. Repair it by restoring it from a format backup.'
+    postJson.mockImplementation(async (url: string) => {
+      if (url.endsWith('/preview')) return preview()
+      throw new ApiError('unavailable', 503, JSON.stringify({ error: repair, code: 'data_format_damaged' }))
+    })
+    const wrapper = await open()
+    await openDialog(wrapper)
+    await type('删除')
+    await submit()
+    expect(dialog()!.querySelector('[data-hard-delete-error]')!.textContent).toContain('restoring it from a format backup')
+    expect(wrapper.find('[data-hard-deleted]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('a conclusion names a deleted basis as deleted, without its words', async () => {
     const wrapper = await open(() => view({ item_id: 'c1', basis_review: 'changed',
       bases: [{ item_kind: 'entity', item_id: 'item-2', content: '', status: 'deleted' }] }))

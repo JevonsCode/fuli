@@ -139,7 +139,9 @@ test('the console sends the preview it showed and the person\'s words through th
     ['/v1/knowledge/items/fact%2F1/hard-delete/preview', { personal_space_id: SPACE, item_kind: 'relationship' }, true],
     ['/v1/knowledge/items/item-2/hard-delete/preview', { personal_space_id: SPACE, item_kind: 'entity' }, true],
     ['/v1/knowledge/items/item-2/hard-delete', { personal_space_id: SPACE, item_kind: 'entity',
-      preview_id: PREVIEW_ID, confirmation: '删除' }, true]]);
+      preview_id: PREVIEW_ID, confirmation: '删除', operation_id: calls[2].payload.operation_id }, true]]);
+  // The delete is named by the console's recorded operation, so its outcome can be asked for.
+  assert.match(calls[2].payload.operation_id, /^[0-9a-f-]{36}$/);
 });
 
 test('a stale preview is a 409 the page can read again, and a deleted item a 410 with its time', async (t) => {

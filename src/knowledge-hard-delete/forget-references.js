@@ -39,10 +39,18 @@ export function forgetReferences(value, references) {
 // Runs a store's forgetting in its own SQLite connection so the words do not
 // linger on disk: secure_delete overwrites the pages and cells the update
 // frees, and a TRUNCATE checkpoint moves a write-ahead log back into the file
-// and empties it. Both are connection settings, not data (rec#5 C9).
+// and empties it. Both are connection settings, not data (rec#5 C9). A
+// reader that still holds an older snapshot keeps the log's old pages: the
+// checkpoint answers busy, and the forgetting is not done until a later run
+// (a retry, the next console start) checkpoints fully. The update itself is
+// idempotent, so running it again only repeats the checkpoint.
 export function forgetDurably(database, work) {
   database.exec('PRAGMA secure_delete = ON');
   const changed = work();
-  database.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  const [checkpoint] = database.prepare('PRAGMA wal_checkpoint(TRUNCATE)').all();
+  if (checkpoint?.busy) {
+    throw new Error('another connection still reads an older snapshot of this store, so its old pages stay in the '
+      + 'write-ahead log; the cleanup runs again once it closes');
+  }
   return changed;
 }

@@ -332,6 +332,7 @@
     "occurrence_count",
     "operation",
     "operation_actor",
+    "operation_id",
     "origin",
     "origin_attempt_id",
     "origin_message_id",

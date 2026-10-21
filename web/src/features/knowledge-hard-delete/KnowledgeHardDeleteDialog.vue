@@ -14,7 +14,7 @@ import { evidenceApplicationLabel, evidenceKindLabel, itemEditPath, versionStatu
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { confirmHardDelete, previewHardDelete } from './hard-delete-api'
-import { confirmationMatches, deletedState, hardDeletedFrom, recordCounts, refusedByGraph, stalePreview,
+import { confirmationMatches, deletedState, hardDeletedFrom, ledgerDamage, recordCounts, refusedByGraph, stalePreview,
   type HardDeletePreview, type HardDeletedState } from './model'
 
 // rec#5 C9: the second step of a permanent delete. It lists exactly what goes,
@@ -49,7 +49,7 @@ async function load(again = false) {
     if (current !== request) return
     const deleted = hardDeletedFrom(cause)
     if (deleted) emit('deleted', deleted)
-    else error.value = t('knowledgeHardDelete.dialog.loadFailed', { error: apiErrorReason(cause) })
+    else error.value = ledgerDamage(cause) ?? t('knowledgeHardDelete.dialog.loadFailed', { error: apiErrorReason(cause) })
   } finally {
     if (current === request) { loading.value = false; reloading.value = false }
   }
@@ -72,8 +72,11 @@ async function submit() {
       return
     }
     // Only the graph's own refusal proves nothing was deleted; anything else
-    // is a result to check, never "nothing was deleted".
-    if (refusedByGraph(cause)) error.value = t('knowledgeHardDelete.dialog.failed', { error: apiErrorReason(cause) })
+    // is a result to check, never "nothing was deleted". A damaged record
+    // stops the delete before anything is sent, and says how to repair it.
+    const damage = ledgerDamage(cause)
+    if (damage) error.value = damage
+    else if (refusedByGraph(cause)) error.value = t('knowledgeHardDelete.dialog.failed', { error: apiErrorReason(cause) })
     else emit('deleted', { outcome: 'unknown', deletedAt: null })
   } finally {
     deleting.value = false

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { ApiError } from '@/api/client'
-import { confirmationMatches, hardDeletedFrom, recordCounts, refusedByGraph, stalePreview, type HardDeleteCounts } from './model'
+import { confirmationMatches, hardDeletedFrom, ledgerDamage, recordCounts, refusedByGraph, stalePreview, type HardDeleteCounts } from './model'
 
 const zero = { items: 0, versions: 0, relationships: 0, episodes: 0, kept_episodes: 0, dependents: 0, mentions: 0,
   revisions: 0, feedback: 0, usage: 0, change_audits: 0, tags: 0, assignments: 0, references: 0, review_decisions: 0,
@@ -34,5 +34,7 @@ describe('hard delete model (rec#5 C9)', () => {
     expect(refusedByGraph(new ApiError('down', 503, JSON.stringify({ code: 'provider_http_5xx' })))).toBe(false)
     expect(refusedByGraph(new ApiError('odd', 400, 'plain text'))).toBe(false)
     expect(refusedByGraph(new TypeError('Failed to fetch'))).toBe(false)
+    expect(ledgerDamage(new ApiError('unavailable', 503, JSON.stringify({ code: 'data_format_damaged', error: 'repair it' })))).toBe('repair it')
+    expect(ledgerDamage(new ApiError('unavailable', 503, JSON.stringify({ code: 'provider_http_5xx', error: 'x' })))).toBeNull()
   })
 })

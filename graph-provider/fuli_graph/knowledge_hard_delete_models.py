@@ -9,6 +9,7 @@ from .knowledge_item_view_models import KnowledgeVersionStatus
 from .model_base import StrictModel
 
 PREVIEW_ID_PATTERN = r'^[0-9a-f]{64}$'
+OPERATION_ID_PATTERN = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
 
 class KnowledgeHardDeleteRef(StrictModel):
@@ -20,6 +21,9 @@ class KnowledgeHardDeleteRef(StrictModel):
 class KnowledgeHardDeleteConfirm(KnowledgeHardDeleteRef):
     # The preview the person read; a delete of anything else is refused.
     preview_id: str = Field(pattern=PREVIEW_ID_PATTERN)
+    # The console's own operation ID; the graph keeps this delete's outcome
+    # under it (knowledge_hard_delete_operations.py).
+    operation_id: str | None = Field(default=None, pattern=OPERATION_ID_PATTERN)
     # What the person typed: 「删除」, "delete" or the item's title.
     confirmation: str = Field(min_length=1, max_length=512)
 
@@ -111,6 +115,20 @@ class KnowledgeHardDeletion(StrictModel):
 class KnowledgeHardDeleteRecord(KnowledgeHardDeletion):
     item_id: str
     deleted_item_ids: list[str]
+
+
+class KnowledgeHardDeleteSpace(StrictModel):
+    personal_space_id: str = Field(min_length=1, max_length=128)
+
+
+class KnowledgeHardDeleteOperation(StrictModel):
+    """A console's delete operation as the graph knows it: committed (with its
+    deletion), refused or aborted (with the code), or unknown (not arrived,
+    or still running)."""
+    operation_id: str
+    state: Literal['committed', 'refused', 'aborted', 'unknown']
+    code: str | None = None
+    deletion: KnowledgeHardDeleteRecord | None = None
 
 
 class KnowledgeHardDeleteStatus(StrictModel):

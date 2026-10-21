@@ -23,9 +23,21 @@ async def hard_deletion_record(store, space, item_id) -> KnowledgeHardDeleteReco
         WHERE any(key IN coalesce(trace.deleted_item_keys, []) WHERE key ENDS WITH (':' + $item_id))
         RETURN trace ORDER BY trace.created_at DESC LIMIT 1
         ''', space_id=space['id'], item_id=item_id, routing_='r')
-    if not records:
-        return None
-    trace = dict(records[0]['trace'])
+    return deletion_record_of(dict(records[0]['trace'])) if records else None
+
+
+async def all_hard_deletions(store, space) -> list[KnowledgeHardDeleteRecord]:
+    """Every deletion trace of the space, oldest first: what a console that
+    lost or restored its own record reconciles against."""
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (trace:FuliKnowledgeAudit {space_id: $space_id, action: 'hard_delete'})
+        RETURN trace ORDER BY trace.created_at
+        ''', space_id=space['id'], routing_='r')
+    return [deletion_record_of(dict(record['trace'])) for record in records]
+
+
+def deletion_record_of(trace) -> KnowledgeHardDeleteRecord:
     return KnowledgeHardDeleteRecord(
         deletion_id=trace['id'], item_kind=trace['item_kind'], item_id=trace['item_id'],
         deleted_at=native_datetime(trace['created_at']),

@@ -2,6 +2,7 @@
 people, preferences and projects only; public HTTP routes drive every write.
 The value standing in for a pasted key is synthetic and not a credential."""
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -350,3 +351,81 @@ async def test_dot_p1_1_saying_a_deleted_key_again_is_a_new_item_and_the_deleted
         assert ok(await status(client, space_id, third))['state'] == 'present'
         assert ok(await status(client, space_id, 'synthetic-missing'))['state'] == 'missing'
         assert (await status(client, space_id, first, headers={})).status_code == 403
+
+
+async def operation(client, space_id, operation_id, *, abort=False):
+    return ok(await client.post(f'/v1/knowledge/hard-delete-operations/{operation_id}{"/abort" if abort else ""}',
+                                json={'personal_space_id': space_id}, headers=REVIEW))
+
+
+@pytest.mark.asyncio
+async def test_dot_round3_a_held_delete_is_unknown_until_it_commits_and_an_abort_waits_for_it(monkeypatch):
+    """A real hold: the delete's transaction (with the space lock) is held for
+    a second past the moment its console gave up. Its outcome stays unknown,
+    and an abort sent meanwhile waits for the lock and answers committed."""
+    settings = reviewed()
+    async with provider_client(settings) as (client, _):
+        item = await seeded(client)
+        space_id = item['space_id']
+        plan = ok(await preview(client, space_id, item['new']))
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = knowledge_hard_delete._write_trace
+
+        async def held(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            return await original(*args, **kwargs)
+
+        monkeypatch.setattr(knowledge_hard_delete, '_write_trace', held)
+        operation_id = str(uuid4())
+        deleting = asyncio.create_task(client.post(f'/v1/knowledge/items/{item["new"]}/hard-delete', json={
+            'personal_space_id': space_id, 'item_kind': 'entity', 'preview_id': plan['preview_id'],
+            'confirmation': '删除', 'operation_id': operation_id}, headers=REVIEW))
+        await asyncio.wait_for(entered.wait(), 30)
+        assert (await operation(client, space_id, operation_id))['state'] == 'unknown'
+        aborting = asyncio.create_task(operation(client, space_id, operation_id, abort=True))
+        await asyncio.sleep(1.0)
+        assert not aborting.done(), 'the abort waits for the delete that holds the lock'
+        assert (await operation(client, space_id, operation_id))['state'] == 'unknown'
+        release.set()
+        done = ok(await deleting)
+        aborted = await asyncio.wait_for(aborting, 30)
+        assert aborted['state'] == 'committed' and aborted['deletion']['deletion_id'] == done['deletion_id']
+        settled = await operation(client, space_id, operation_id)
+        assert settled['state'] == 'committed' and settled['deletion']['deleted_item_ids'] == done['deleted_item_ids']
+        listed = ok(await client.post('/v1/knowledge/hard-deletions', json={'personal_space_id': space_id},
+                                      headers=REVIEW))
+        assert [row['deletion_id'] for row in listed] == [done['deletion_id']]
+
+
+@pytest.mark.asyncio
+async def test_dot_round3_an_abort_that_comes_first_wins_and_a_refusal_is_recorded():
+    settings = reviewed()
+    async with provider_client(settings) as (client, _):
+        item = await seeded(client)
+        space_id = item['space_id']
+        plan = ok(await preview(client, space_id, item['new']))
+        # Aborted before its delete arrived: the late delete is refused under the same lock.
+        early = str(uuid4())
+        assert (await operation(client, space_id, early, abort=True))['state'] == 'aborted'
+        late = await client.post(f'/v1/knowledge/items/{item["new"]}/hard-delete', json={
+            'personal_space_id': space_id, 'item_kind': 'entity', 'preview_id': plan['preview_id'],
+            'confirmation': '删除', 'operation_id': early}, headers=REVIEW)
+        assert late.status_code == 409 and late.json()['detail']['code'] == 'hard_delete_aborted'
+        assert (await view(client, space_id, item['new']))['status'] == 'current'
+        assert (await operation(client, space_id, early))['state'] == 'aborted'
+        # A refusal is that operation's durable answer.
+        wrong = str(uuid4())
+        refused = await client.post(f'/v1/knowledge/items/{item["new"]}/hard-delete', json={
+            'personal_space_id': space_id, 'item_kind': 'entity', 'preview_id': plan['preview_id'],
+            'confirmation': 'ok', 'operation_id': wrong}, headers=REVIEW)
+        assert refused.status_code == 422
+        assert (await operation(client, space_id, wrong)) == {
+            'operation_id': wrong, 'state': 'refused', 'code': 'hard_delete_unconfirmed', 'deletion': None}
+        # An abort after a refusal keeps the refusal; one never asked about is unknown.
+        assert (await operation(client, space_id, wrong, abort=True))['state'] == 'refused'
+        assert (await operation(client, space_id, str(uuid4())))['state'] == 'unknown'
+        # Agents cannot ask about or abort an operation, or list deletions.
+        for path in (f'/v1/knowledge/hard-delete-operations/{early}',
+                     f'/v1/knowledge/hard-delete-operations/{early}/abort', '/v1/knowledge/hard-deletions'):
+            assert (await client.post(path, json={'personal_space_id': space_id})).status_code == 403
