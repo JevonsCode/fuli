@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 
 import { backupRetentionPolicy } from '../data-format/backup-retention.js';
-import { pruneFormatRetention, retentionLines } from '../data-format/format-retention.js';
+import { graphPruneUnverifiedLines, pruneFormatRetention, retentionLines } from '../data-format/format-retention.js';
 import { collectFormatStatus } from '../data-format/format-status.js';
 import { personalGraphFormat } from '../data-format/graph-format-client.js';
 import { previewMigrations } from '../data-format/migration-plan.js';
@@ -132,7 +132,8 @@ const ACTIONS = Object.freeze({
     }
     const result = await held(maintenance.hold(paths.dataDir), () => rollbackMigration({ dataDir: paths.dataDir,
       label: options.store, migrationId: options.migration, actor: CLI_ACTOR, graph }));
-    write(`Undone: ${result.migrationId} of ${result.label}; the store is at version ${result.version}.`);
+    write([`Undone: ${result.migrationId} of ${result.label}; the store is at version ${result.version}.`,
+      ...prunedLines(result.pruned ?? [])].join('\n'));
     return { exitCode: 0, ...result };
   },
 
@@ -188,16 +189,20 @@ const ACTIONS = Object.freeze({
     const lines = [...retentionLines(policy), `${verb} ${local.pruned.length} format backups; ${local.kept} kept.`,
       ...local.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (version ${entry.version}, `
         + `${entry.bytes} bytes) — ${entry.reason}`)];
-    if (journals?.error) {
-      lines.push(`Graph undo journals were not pruned: ${journals.error}. Local backups alone were held to `
-        + 'the budget.');
+    if (journals?.status === 'unreached') {
+      lines.push(`Graph undo journals were not pruned: ${journals.error}. No delete was sent to the graph; local `
+        + 'backups alone were held to the budget.');
+    } else if (journals?.status === 'unverified') {
+      lines.push(...graphPruneUnverifiedLines(), `  (${journals.error}; the local backups above were pruned.)`);
     } else if (journals) {
       lines.push(`${verb} ${journals.pruned.length} graph undo journals; ${journals.kept} kept.`,
         ...journals.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (${entry.migrationId}, `
           + `${entry.bytes} bytes) — ${entry.reason}`));
     }
     write(lines.join('\n'));
-    return { exitCode: 0, ...local, graph: journals ?? { pruned: [] } };
+    // An unverified graph prune is not a finished one: the exit code says so.
+    return { exitCode: journals?.status === 'unverified' ? FAILED_EXIT_CODE : 0, ...local,
+      status: journals?.status ?? 'pruned', graph: journals ?? { status: 'none' } };
   }
 });
 
@@ -251,8 +256,16 @@ function formatOperation(result) {
     ? `${entry.label}: not applied (${entry.code}) — ${entry.message}`
     : `${entry.label}: ${entry.status} ${entry.migrationId}${entry.count === undefined ? '' : `, ${entry.count} records`}`);
   for (const skipped of result.skipped) lines.push(`${skipped.label}: not attempted (${skipped.migrationId})`);
-  if (result.pruned.length) lines.push(`Pruned ${result.pruned.length} older format backups.`);
+  lines.push(...prunedLines(result.pruned));
   return lines.join('\n');
+}
+
+// After an apply or undo: what retention pruned, and a graph prune whose
+// answer never came, which the migration's own result does not change.
+function prunedLines(pruned) {
+  const count = pruned.filter((entry) => entry.kind === 'pruned').length;
+  return [...count ? [`Pruned ${count} older format backups and undo journals.`] : [],
+    ...pruned.some((entry) => entry.kind === 'prune_unverified') ? graphPruneUnverifiedLines() : []];
 }
 
 function formatRestore(impact) {

@@ -130,7 +130,7 @@ test('local backups and graph undo journals share one size budget, oldest unprot
   assert.deepEqual(sized.map((entry) => entry.backupRef),
     ['format-backups/task-schedules.sqlite.v2-2026-03-01T00-00-00-000Z.sqlite']);
   assert.deepEqual(dry.local.pruned.map((entry) => entry.backupRef), result.local.pruned.map((entry) => entry.backupRef));
-  assert.ok(result.local.bytesKept <= GIB && result.local.bytesKept >= 0.8 * GIB);
+  assert.ok(result.local.plannedBytesKept <= GIB && result.local.plannedBytesKept >= 0.8 * GIB);
   assert.equal(result.graph.pruned[0].reason, 'format backups and graph undo journals use more than 1024 MB');
   assert.ok(existsSync(join(backups, 'task-schedules.sqlite.v2-2026-04-01T00-00-00-000Z.sqlite')));
 });

@@ -53,6 +53,9 @@ export function sizeBudgetReason(policy) {
 // dryRun lists what would go without removing it. shared: other items under
 // the same size budget, as { key, bytes, at, needed, first } (first: pruned
 // before anything else); the keys the budget prunes come back as sharedPruned.
+// plannedBytesKept is what this plan leaves of local backups and shared items
+// together, not a measured total: the shared items are pruned afterwards, by
+// their own store, and either side may change meanwhile.
 export function pruneFormatBackups(dataDir, { policy = backupRetentionPolicy(), dryRun = false, shared = [],
   now = () => new Date(), remove = (path) => rmSync(path, { force: true }),
   sizeOf = (path) => statSync(path).size } = {}) {
@@ -89,7 +92,7 @@ export function pruneFormatBackups(dataDir, { policy = backupRetentionPolicy(), 
     for (const backup of pruned) remove(backup.file);
     recordFormatOperations(dataDir, events);
   }
-  return { pruned: events, kept: candidates.length - pruned.length, bytesKept: total, sharedPruned, policy };
+  return { pruned: events, kept: candidates.length - pruned.length, plannedBytesKept: total, sharedPruned, policy };
 }
 
 function neededBackups(store, backups) {

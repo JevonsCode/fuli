@@ -13,9 +13,14 @@ import { recordFormatOperations } from './operations-log.js';
 // The graph provider lists its journals first (a dry run), this module
 // chooses within the shared budget, local backups are pruned, and then the
 // provider prunes the journals chosen, checking again under its lock that
-// none is the one an undo needs now. When the provider cannot be reached,
-// local backups alone are held to the budget and the graph is reported as
-// not pruned.
+// none is the one an undo needs now. The two steps are not one atomic
+// operation across stores: the bytes kept are what the plan left, not a
+// measured total, and the graph may change in between. The graph's part is
+// - 'unreached' when its plan could not be read: no delete was sent, so local
+//   backups alone were held to the budget and the graph is as it was;
+// - 'unverified' when the delete was sent and no answer came: the provider
+//   may have committed it, so nothing is said about what it pruned or kept;
+// - 'pruned' with what the provider says it pruned and kept.
 
 export async function pruneFormatRetention({ dataDir, graph = null, policy = backupRetentionPolicy(), dryRun = false,
   now = () => new Date(), remove, sizeOf }) {
@@ -35,7 +40,8 @@ export async function pruneFormatRetention({ dataDir, graph = null, policy = bac
   const local = pruneFormatBackups(dataDir, { policy, dryRun, now, shared,
     ...remove ? { remove } : {}, ...sizeOf ? { sizeOf } : {} });
   if (!graph) return { local, graph: null };
-  if (!plan) return { local, graph: { pruned: [], kept: 0, error: graphError } };
+  // The plan could not be read: no delete was sent, so the graph is as it was.
+  if (!plan) return { local, graph: { status: 'unreached', error: graphError } };
   let result;
   if (dryRun) {
     const chosen = new Set(local.sharedPruned);
@@ -45,7 +51,11 @@ export async function pruneFormatRetention({ dataDir, graph = null, policy = bac
     try {
       result = await graph.prune({ keep: policy.keep, applyIds: local.sharedPruned });
     } catch (error) {
-      return { local, graph: { pruned: [], kept: 0, error: error.message } };
+      // The delete was sent: the provider may have committed it and only its
+      // answer was lost. What it pruned is unknown, not none.
+      recordFormatOperations(dataDir, [{ kind: 'prune_unverified', store: 'graph', label: GRAPH_LABEL,
+        requested: local.sharedPruned.length, at: now().toISOString() }]);
+      return { local, graph: { status: 'unverified', error: error.message } };
     }
   }
   const at = now().toISOString();
@@ -53,7 +63,21 @@ export async function pruneFormatRetention({ dataDir, graph = null, policy = bac
     backupRef: `undo journal ${entry.applyId}`, migrationId: entry.migrationId, bytes: entry.bytes,
     reason: entry.reason === SIZE ? sizeBudgetReason(policy) : entry.reason, at }));
   if (!dryRun) recordFormatOperations(dataDir, events);
-  return { local, graph: { pruned: events, kept: result.kept ?? 0 } };
+  return { local, graph: { status: 'pruned', pruned: events, kept: result.kept ?? 0 } };
+}
+
+// What FULI says when the graph's delete was sent but its answer never came,
+// in `fuli migrate prune`, after an apply or undo, and in the console
+// (web/src/i18n/messages/data-format.ts carries the same two strings).
+export const GRAPH_PRUNE_UNVERIFIED_NOTICE = Object.freeze({
+  zh: '图谱撤销日志的清理结果未经确认：删除请求已发出但没有收到答复，Provider 可能已经删除了部分日志。'
+    + '请运行 fuli migrate status，或再运行一次 fuli migrate prune 核对。',
+  en: 'Graph undo journal prune result unverified: the delete request was sent but no answer came back, so the '
+    + 'provider may already have deleted some journals. Run fuli migrate status, or fuli migrate prune again, to check.'
+});
+
+export function graphPruneUnverifiedLines() {
+  return [GRAPH_PRUNE_UNVERIFIED_NOTICE.zh, GRAPH_PRUNE_UNVERIFIED_NOTICE.en];
 }
 
 // The budget in one wording, said by `fuli migrate prune` and the console's

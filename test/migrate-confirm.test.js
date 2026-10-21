@@ -8,7 +8,8 @@ import test from 'node:test';
 
 import { DataFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
 import { runMigrateCommand } from '../src/cli/migrate-command.js';
-import { retentionLines } from '../src/data-format/format-retention.js';
+import { GRAPH_PRUNE_UNVERIFIED_NOTICE, graphPruneUnverifiedLines, retentionLines } from '../src/data-format/format-retention.js';
+import { personalGraphFormat } from '../src/data-format/graph-format-client.js';
 import { EXTERNAL_WRITERS_NOTICE } from '../src/data-format/external-writers.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { holdDataDirectory } from '../src/data-format/maintenance-lock.js';
@@ -309,7 +310,8 @@ test('prune still prunes local backups when the graph cannot be reached', async 
   const result = await migrate(root, ['prune'], { graph });
 
   assert.equal(result.exitCode, 0);
-  assert.match(result.output, /Graph undo journals were not pruned: its provider is not answering\. Local backups alone were held to the budget\./);
+  assert.match(result.output, /Graph undo journals were not pruned: its provider is not answering\. No delete was sent to the graph; local backups alone were held to the budget\./);
+  assert.equal(result.status, 'unreached');
 });
 
 test('apply and undo say who must be stopped before they ask', async (t) => {
@@ -329,4 +331,62 @@ test('apply and undo say who must be stopped before they ask', async (t) => {
   for (const shown of asked) {
     assert.ok(shown.includes(EXTERNAL_WRITERS_NOTICE.zh) && shown.includes(EXTERNAL_WRITERS_NOTICE.en), shown);
   }
+});
+
+// A provider through the real graph client: it answers the dry run, then
+// commits the delete and its answer is lost (a timeout on the way back).
+function providerThatLosesTheDeleteAnswer(root) {
+  writeFileSync(join(root, 'graph-runtime.json'), JSON.stringify({ personal: {
+    providerUrl: 'http://127.0.0.1:9', accessToken: 'synthetic-access-token' } }));
+  writeFileSync(join(root, 'graph-provider.env'), 'FULI_PERSONAL_HUMAN_REVIEW_TOKEN=synthetic-review-token\n');
+  const journals = new Map([['j1', { applyId: 'j1', migrationId: 'graph/9-x', state: 'applied',
+    recordedAt: '2026-10-05T00:00:00Z', bytes: 10, protected: true }],
+  ['j5', { applyId: 'j5', migrationId: 'graph/5-x', state: 'rolled_back', recordedAt: '2026-10-01T00:00:00Z',
+    bytes: 20, protected: false }]]);
+  const fetchImpl = async (url, { body }) => {
+    const request = JSON.parse(body);
+    assert.ok(url.endsWith('/v1/data-format/prune'));
+    if (request.dry_run) {
+      return { ok: true, json: async () => ({ pruned: [{ ...journals.get('j5'), reason: 'more than 1 undo journals' }],
+        kept: 1, protected: 'j1', journals: [journals.get('j1')] }) };
+    }
+    journals.delete('j5');
+    throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  };
+  return { graph: { ...noGraph, prune: personalGraphFormat(root, { fetchImpl }).prune }, journals };
+}
+
+test('a graph prune whose answer is lost after the provider committed is reported unverified, not as nothing pruned', async (t) => {
+  const root = dataDir(t);
+  const { graph, journals } = providerThatLosesTheDeleteAnswer(root);
+
+  const result = await migrate(root, ['prune', '--keep', '1'], { graph });
+
+  assert.ok(!journals.has('j5'), 'the provider did delete it');
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.status, 'unverified');
+  for (const line of graphPruneUnverifiedLines()) assert.ok(result.output.includes(line), result.output);
+  assert.doesNotMatch(result.output, /Graph undo journals were not pruned|graph undo journals; \d+ kept/);
+  assert.equal(result.graph.pruned, undefined, 'no count is claimed');
+  assert.deepEqual(readFormatOperations(root).filter((event) => event.store === 'graph').map((event) => event.kind),
+    ['prune_unverified']);
+});
+
+test('an apply whose graph prune answer is lost says the prune is unverified and keeps its own result', async (t) => {
+  const root = dataDir(t);
+  legacyDataDir(root);
+  const { graph } = providerThatLosesTheDeleteAnswer(root);
+  const { plan } = await migrate(root, ['preview', '--json']);
+
+  const applied = await migrate(root, ['apply', '--digest', plan.digest], { graph });
+
+  assert.equal(applied.status, 'applied');
+  assert.ok(applied.pruned.some((entry) => entry.kind === 'prune_unverified'));
+  assert.ok(applied.output.includes(GRAPH_PRUNE_UNVERIFIED_NOTICE.en), applied.output);
+});
+
+test('the console says an unverified graph prune in exactly the CLI wording', () => {
+  const messages = readFileSync(new URL('../web/src/i18n/messages/data-format.ts', import.meta.url), 'utf8');
+  assert.ok(messages.includes(`pruneUnverified: '${GRAPH_PRUNE_UNVERIFIED_NOTICE.zh}'`), 'Chinese wording');
+  assert.ok(messages.includes(`pruneUnverified: '${GRAPH_PRUNE_UNVERIFIED_NOTICE.en}'`), 'English wording');
 });

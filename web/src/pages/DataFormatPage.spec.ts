@@ -79,6 +79,25 @@ describe('DataFormatPage', () => {
     expect(text).toContain('即使因此超出预算')
   })
 
+  it('says a graph prune whose answer never came is unverified, after an apply and after an undo', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
+    api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [{ label: 'graph (personal)',
+      status: 'applied', migrationId: 'graph/9-group-id-separators' }],
+    pruned: [{ kind: 'pruned', store: 'task-schedules' }, { kind: 'prune_unverified', store: 'graph' }] })
+    await wrapper.get('#data-format-reviewed').trigger('click')
+    await wrapper.get('[data-apply]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-prune-unverified]').text()).toContain('图谱撤销日志的清理结果未经确认')
+
+    api.postJson.mockResolvedValueOnce({ status: 'rolled_back', version: 8, pruned: [{ kind: 'pruned' }] })
+    await wrapper.get('[data-undo]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-confirm-undo]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
+  })
+
   it('leaves the budget out when the server could not read the policy', async () => {
     const wrapper = await mountPage()
     expect(wrapper.find('[data-retention]').exists()).toBe(false)

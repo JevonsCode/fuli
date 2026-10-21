@@ -63,16 +63,24 @@ export interface MigrationResult {
   message?: string
 }
 
+// What retention did after the change: a graph prune whose answer never came is 'prune_unverified'.
+export interface PruneEntry { kind: 'pruned' | 'prune_failed' | 'prune_unverified'; store?: string }
+
 export interface ApplyOutcome {
   status: 'applied' | 'partial' | 'failed'
   results: MigrationResult[]
   skipped: { label: string; migrationId: string }[]
+  pruned?: PruneEntry[]
+}
+
+export function pruneUnverified(pruned: PruneEntry[] | undefined): boolean {
+  return (pruned ?? []).some(entry => entry.kind === 'prune_unverified')
 }
 
 export const readMigrationPlan = (signal?: AbortSignal) => getJson<MigrationPlan>('/api/data-format', { signal })
 export const applyMigrationPlan = (digest: string) => postJson<ApplyOutcome>('/api/data-format/apply', { digest })
 export const undoMigration = (label: string, migrationId: string) =>
-  postJson<{ status: string; version: number }>('/api/data-format/rollback', { label, migrationId })
+  postJson<{ status: string; version: number; pruned?: PruneEntry[] }>('/api/data-format/rollback', { label, migrationId })
 
 export interface SampleChip { id: string; text: string; cut: boolean }
 

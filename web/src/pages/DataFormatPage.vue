@@ -8,7 +8,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import {
-  applyMigrationPlan, moreRecords, readMigrationPlan, refusalCode, refusalMessage, sampleChips, shortDigest,
+  applyMigrationPlan, moreRecords, pruneUnverified, readMigrationPlan, refusalCode, refusalMessage, sampleChips, shortDigest,
   undoMigration, type ApplyOutcome, type MigrationPlan, type MigrationResult, type UndoableMigration,
 } from '@/features/data-format/model'
 import { t } from '@/i18n'
@@ -31,6 +31,8 @@ const undoTarget = ref<UndoableMigration | null>(null)
 const undoing = ref<UndoableMigration | null>(null)
 const undoMessage = ref('')
 const undoError = ref('')
+// The graph's delete was sent after the change, and its answer never came.
+const pruneUnknown = ref(false)
 let reading: AbortController | null = null
 const openedFromSettings = /^\/settings(?:[?#]|$)/
 
@@ -65,8 +67,10 @@ async function apply() {
   applyError.value = ''
   stale.value = false
   outcome.value = null
+  pruneUnknown.value = false
   try {
     outcome.value = await applyMigrationPlan(digest)
+    pruneUnknown.value = pruneUnverified(outcome.value.pruned)
     await load()
   } catch (cause) {
     if (refusalCode(cause) === 'data_format_stale_preview') {
@@ -90,8 +94,10 @@ async function confirmUndo(entry: UndoableMigration) {
   undoing.value = entry
   undoError.value = ''
   undoMessage.value = ''
+  pruneUnknown.value = false
   try {
     const result = await undoMigration(entry.label, entry.migrationId)
+    pruneUnknown.value = pruneUnverified(result.pruned)
     undoMessage.value = t('dataFormat.undone', { id: entry.migrationId, version: result.version })
     undoTarget.value = null
     await load()
@@ -130,6 +136,10 @@ onBeforeUnmount(() => reading?.abort())
             <strong>{{ skipped.label }}</strong> {{ t('dataFormat.resultSkipped', { id: skipped.migrationId }) }}
           </p>
         </section>
+
+        <p v-if="pruneUnknown" class="data-format-error" role="alert" data-prune-unverified>
+          {{ t('dataFormat.pruneUnverified') }}
+        </p>
 
         <UiEmpty v-if="!stores.length && !blocked.length" icon="check" :text="t('dataFormat.nothingPending')" />
 

@@ -144,8 +144,13 @@ function requiredStore(dataDir, label) {
 async function retainQuietly(retain, dataDir, graph, now) {
   try {
     const { local, graph: journals } = await retain({ dataDir, graph, now });
-    return [...local.pruned, ...journals?.error ? [{ kind: 'prune_failed', store: 'graph', reason: journals.error }]
-      : journals?.pruned ?? []];
+    if (journals?.status === 'unverified') {
+      return [...local.pruned, { kind: 'prune_unverified', store: 'graph', reason: journals.error }];
+    }
+    if (journals?.status === 'unreached') {
+      return [...local.pruned, { kind: 'prune_failed', store: 'graph', reason: journals.error }];
+    }
+    return [...local.pruned, ...journals?.pruned ?? []];
   } catch (error) {
     return [{ kind: 'prune_failed', reason: error.message }];
   }
