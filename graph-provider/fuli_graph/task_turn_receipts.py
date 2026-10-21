@@ -11,6 +11,11 @@ reads after the lock, so a reply and an entry claiming at once cannot both win.
 """
 import json
 
+# A next entry takes at most this many late receipts; the rest stay unread for
+# the entry after. At most 3 episodes each, so one batch fits a 64-episode
+# full-list link and the claim's 64-ID bound.
+LATE_RECEIPTS_PER_ENTRY = 20
+
 
 async def mark_turn_receipt_unread(store, space_id: str, token: str, capture_results) -> None:
     """Call inside the checkpoint's transaction, after it completed. A duplicate
@@ -55,8 +60,9 @@ async def unread_session_turn_receipts(store, session_node_id: str, token: str) 
         WHERE task.token <> $token
           AND (task.turn_receipt_state = 'unread' OR task.turn_receipt_claimant = $token)
         RETURN task.id AS receipt_id, task.record_json AS record_json
-        ORDER BY task.created_at
-        ''', session_id=session_node_id, token=token)
+        ORDER BY coalesce(task.turn_receipt_claimant = $token, false) DESC, task.created_at
+        LIMIT $limit
+        ''', session_id=session_node_id, token=token, limit=LATE_RECEIPTS_PER_ENTRY)
     receipts = []
     for record in records:
         value = json.loads(record['record_json'])

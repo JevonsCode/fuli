@@ -13,6 +13,9 @@ const MAX_RECEIPT_CHARS = 1800;
 const CONTENT_CHARS = 60;
 // The Provider reads one turn's episodes at a time (one per capture scope).
 const EPISODES_PER_READ = 3;
+// A full-list link names at most this many episodes; late receipts are
+// delivered in batches that fit it.
+export const MAX_LIST_EPISODES = 64;
 const CATEGORY = Object.freeze({ taste: '品味', judgment: '判断', personality: '协作性格', rule: '规则类',
   experience: '经验', fact: '事实', knowledge: '知识' });
 const CONFIRMATION = Object.freeze({ pending: '待确认', agent_confirmed: 'Agent已确认', confirmed: '你已确认' });
@@ -34,7 +37,14 @@ export async function readTurnReceipt(application, captureResults, { memory = nu
   heading = '本轮沉淀' } = {}) {
   const episodeIds = savedEpisodeIds(captureResults);
   const { entries } = episodeIds.length ? await readEpisodeReceipts(application, episodeIds) : { entries: [] };
-  const lines = entries.map(entry => entryLine(application, entry));
+  return renderTurnReceipt(application, entries, { episodeIds, memory, agentName, heading });
+}
+
+// The receipt lines of entries already read back; null when nothing changed.
+export function renderTurnReceipt(application, entries, { episodeIds, memory = null, agentName = null,
+  heading = '本轮沉淀' }) {
+  const lines = [...new Map(entries.map(entry => [`${entry.item_kind}:${entry.item_id}`, entry])).values()]
+    .map(entry => entryLine(application, entry));
   if (memory) lines.push(memoryLine(application, memory, agentName));
   return lines.length ? boundedReceipt(application, heading, lines, episodeIds) : null;
 }

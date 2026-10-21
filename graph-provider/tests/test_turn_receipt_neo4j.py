@@ -440,3 +440,23 @@ async def test_a_project_tag_of_the_second_project_is_named_with_its_project_and
         assert refused.status_code == 404, 'alpha cannot see beta\'s tag'
         ok(await client.post('/v1/knowledge-tags/detach', json={**link, 'personal_project_id': tag['project_id']}))
         assert (await view(client, space_id, item_id))['tags'] == []
+
+
+@pytest.mark.asyncio
+async def test_a_backlog_of_65_unread_receipts_drains_in_bounded_batches():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        for index in range(65):
+            token = f'fuli-task-{uuid4()}'
+            await begin(client, space_id, token, f'backlog-{index}')
+            await complete(client, space_id, token, f'episode-backlog-{index}', f'entity-backlog-{index}')
+        drained = []
+        for batch in range(5):
+            entry = await begin(client, space_id, f'fuli-task-{uuid4()}', f'backlog-entry-{batch}')
+            ids = [item['receipt_id'] for item in entry.get('unread_turn_receipts', [])]
+            assert len(ids) <= 20
+            if ids:
+                assert sorted(await claim_unread(client, space_id, entry['token'], ids)) == sorted(ids)
+            drained.append(len(ids))
+        assert drained == [20, 20, 20, 5, 0], 'each entry takes a bounded batch; the rest wait, none is lost'

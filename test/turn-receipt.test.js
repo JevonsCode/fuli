@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { readTurnReceipt } from '../src/agents/turn-receipt.js';
+import { MAX_LIST_EPISODES, readTurnReceipt } from '../src/agents/turn-receipt.js';
+import { unreadTurnReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { beginTaskFromPreferences, checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
 import { providerEpisode } from '../src/graphiti/knowledge-provider-mapping.js';
@@ -305,4 +306,46 @@ test('a turn whose capture saved but whose checkpoint failed still shows its ite
   assert.match(retry.agent_receipt.markdown, /\n- 新增 事实「stored: Synthetic project fact」/,
     'this turn saved it on its first attempt: still its receipt');
   assert.deepEqual(begin().unreadTurnReceipts, [], 'shown once, by the retry');
+});
+
+// A late entry with a stubbed Provider: reads are counted and may fail after the claim.
+function lateEntry(unread, claimedIds, { failAfterClaim = true } = {}) {
+  const state = { claimed: false, reads: [] };
+  const app = { consoleUrl: CONSOLE, config: CONFIG,
+    personal: { readTurnReceipt: async ({ episode_ids }) => {
+      if (state.claimed && failAfterClaim) throw new Error('synthetic read after the claim');
+      state.reads.push(episode_ids);
+      return { entries: episode_ids.map(id => entry({ item_id: `item-${id}`, content: `stored ${id}` })), unchanged_count: 0 };
+    } },
+    taskContextRegistry: { claimUnreadTurnReceipts: async (token, ids) => {
+      state.claimed = true;
+      state.claimRequest = ids;
+      return ids.filter(id => claimedIds.includes(id));
+    } } };
+  return { app, state, task: { token: 'fuli-task-entry', sourceApplication: 'codex', unreadTurnReceipts: unread } };
+}
+const lateReceipt = (id, episodes) => ({ receipt_id: id, personal_project_id: 'p',
+  capture_results: [{ scope: 'current_project', personal_project_id: 'p', status: 'committed',
+    episode_id: episodes[0], entity_ids: ['x'], relationship_ids: [] },
+  ...episodes.slice(1).map(episode => ({ scope: 'personal_global', personal_project_id: null, status: 'committed',
+    episode_id: episode, entity_ids: ['x'], relationship_ids: [] }))] });
+
+test('a partly claimed late batch shows what this entry won from what it already read', async () => {
+  // A was already shown by its own checkpoint reply; this entry wins only B.
+  const { app, state, task } = lateEntry([lateReceipt('A', ['ea']), lateReceipt('B', ['eb'])], ['B']);
+  const receipt = await unreadTurnReceipt(app, task);
+  assert.deepEqual(state.reads, [['ea'], ['eb']], 'every read happened before the claim');
+  assert.equal(receipt.summary.total, 1);
+  assert.match(receipt.lines[1], /「stored eb」/);
+  assert.doesNotMatch(receipt.lines.join('\n'), /stored ea/);
+});
+
+test('a long late backlog goes in batches that fit one working full-list link', async () => {
+  const backlog = Array.from({ length: 22 }, (_, index) => lateReceipt(`R${index}`, [`e${index}a`, `e${index}b`, `e${index}c`]));
+  const { app, state, task } = lateEntry(backlog, backlog.map(item => item.receipt_id), { failAfterClaim: true });
+  const receipt = await unreadTurnReceipt(app, task);
+  assert.equal(state.claimRequest.length, 21, '21 receipts × 3 episodes = 63, the most one link can name');
+  const link = receipt.lines.at(-1).match(/episodes=([^>]+)>/)[1].split(',');
+  assert.equal(link.length, 63);
+  assert.ok(link.length <= MAX_LIST_EPISODES);
 });
