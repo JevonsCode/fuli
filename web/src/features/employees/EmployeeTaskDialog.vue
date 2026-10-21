@@ -8,9 +8,10 @@ import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import { employeeErrorMessage } from './catalog'
 import type { EmployeeBoardItem } from './EmployeeTaskBoard.vue'
+import { boardTaskPeekId, type BoardTaskRef } from './board-task-peek'
 
 type Task = EmployeeBoardItem & { acceptanceCriteria?: string[] }
-const props = defineProps<{ open: boolean; item: EmployeeBoardItem | null; projects: { id: string; name: string }[]; defaultProjectId?: string; personalSpaceId: string; canWrite: boolean }>()
+const props = defineProps<{ open: boolean; item: BoardTaskRef | null; projects: { id: string; name: string }[]; defaultProjectId?: string; personalSpaceId: string; canWrite: boolean }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 const busy = ref(false)
 const loading = ref(false)
@@ -27,12 +28,15 @@ let request = { signature: '', id: '' }
 const valid = computed(() => props.canWrite && !loading.value && !error.value && Boolean(project.value) && title.value.trim().length >= 2)
 const projectOptions = computed(() => props.projects.map(option => ({ value: option.id, label: option.name })))
 const priorityOptions = computed(() => ['critical', 'high', 'medium', 'low'].map(value => ({ value, label: t(`employees.task.priorities.${value}`) })))
-watch([() => props.open, () => props.item, () => props.personalSpaceId], () => { void load() }, { immediate: true })
+// The task is named by identity, so a new object for the same task does not reload over the person's edits.
+watch([() => props.open, () => props.item && boardTaskPeekId(props.item), () => props.personalSpaceId], () => { void load() }, { immediate: true })
 async function call<T>(tool: string, args: Record<string, unknown>) {
   return postJson<T>('/api/employee-templates/jefa/call', { personalSpaceId: props.personalSpaceId, personalProjectId: project.value, tool, arguments: args })
 }
 async function load() {
   const current = ++version
+  // A save still running for the task shown before belongs to that task, not this one.
+  busy.value = false
   if (!props.open) return
   error.value = ''; baseline.value = null; request = { signature: '', id: '' }
   project.value = props.item?.projectId ?? props.defaultProjectId ?? ''
@@ -49,8 +53,11 @@ async function load() {
   } catch (cause) { if (current === version) error.value = employeeErrorMessage(cause) }
   finally { if (current === version) loading.value = false }
 }
+// Each save is bound to the task (load generation) it was made for: a late
+// answer after Back or another task opened neither closes nor writes into it.
 async function save() {
   if (!valid.value || busy.value) return
+  const current = version
   busy.value = true
   const task = { title: title.value.trim(), summary: summary.value.trim() || title.value.trim(), priority: priority.value,
     acceptanceCriteria: criteria.value.split('\n').map(value => value.trim()).filter(Boolean),
@@ -61,9 +68,11 @@ async function save() {
     if (baseline.value) {
       await call('update_tasks', { requestId: request.id, updates: [{ id: baseline.value.id, expectedUpdatedAt: baseline.value.updatedAt, ...task }] })
     } else await call('create_tasks', { messageId: request.id, tasks: [task] })
-    emit('saved'); emit('close')
-  } catch (cause) { error.value = employeeErrorMessage(cause) }
-  finally { busy.value = false }
+    // The board still refreshes for a late save: the change was made.
+    emit('saved')
+    if (current === version) emit('close')
+  } catch (cause) { if (current === version) error.value = employeeErrorMessage(cause) }
+  finally { if (current === version) busy.value = false }
 }
 function close() { if (!busy.value) emit('close') }
 </script>

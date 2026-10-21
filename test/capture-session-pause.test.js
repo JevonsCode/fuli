@@ -190,10 +190,13 @@ test('C3-5 a pause record that cannot be read records nothing and says why', asy
   assert.equal(imported(f).includes(PRIVATE), false);
   assert.deepEqual(await captureDecision(f.app, { sourceApplication: 'codex', sessionId: s.input.session_id }),
     { allowed: false, reason: 'policy_unavailable', layer: 'session' });
-  const entry = await codexEntry(f, f.dirs.novel, { session: s.input.session_id });
-  assert.ok(lastNotice(receiptOf(entry.context)).startsWith(UNREADABLE), receiptOf(entry.context));
+  // The record may as well say FULI is stopped (rec#5 C3b), so the entry supplies nothing
+  // and starts no task to record into.
   const before = f.knowledge.length;
-  assert.equal((await finishTask(f, entry.context)).capture_status, 'capture_disabled');
+  const entry = await codexEntry(f, f.dirs.novel, { session: s.input.session_id });
+  assert.equal(entry.context, undefined);
+  assert.match(entry.output.hookSpecificOutput.additionalContext, /could not confirm it is on/);
+  assert.ok(entry.output.systemMessage.includes(UNREADABLE), entry.output.systemMessage);
   assert.equal(f.knowledge.length, before);
 });
 
@@ -319,7 +322,7 @@ test('a pause whose ledger entry cannot be kept does not pause and does not say 
   assert.match(result.guidance, /did not change/);
   const written = await readdir(sessionCapturePausePathForRuntime(f.runtimeConfigPath))
     .catch(error => error.code === 'ENOENT' ? [] : Promise.reject(error));
-  assert.deepEqual(written, [], 'the pause record was never written');
+  assert.deepEqual(written.filter(name => name !== 'pins'), [], 'the pause record was never written');
   assert.equal((await captureDecision(f.app, { sourceApplication: 'codex', sessionId: SESSION })).allowed, true);
 });
 

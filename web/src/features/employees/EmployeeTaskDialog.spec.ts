@@ -34,4 +34,28 @@ describe('native task dialog', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('revision conflict')
     expect(wrapper.emitted('saved')).toBeUndefined()
   })
+  for (const outcome of ['resolve', 'reject'] as const) {
+    it(`keeps a late save of one task (${outcome}) from closing or writing into the next task opened`, async () => {
+      let finishSave!: { resolve: (value: unknown) => void; reject: (cause: unknown) => void }
+      postJson.mockImplementation((_url: string, body: { tool: string; arguments: { workItemId?: string } }) => {
+        if (body.tool === 'update_tasks') return new Promise((resolve, reject) => { finishSave = { resolve, reject } })
+        const id = body.arguments.workItemId
+        return Promise.resolve({ item: { ...item, id, title: `Task ${id}`, summary: `Body ${id}`, updatedAt: '2026-09-02T00:00:00.000Z' } })
+      })
+      const wrapper = await setup()
+      await wrapper.get('form').trigger('submit'); await flushPromises()
+      // Browser Back closes the quick look while the save runs; then another task opens.
+      await wrapper.setProps({ open: false, item: null }); await flushPromises()
+      await wrapper.setProps({ open: true, item: { id: 'task-b', projectId: 'project-a' } }); await flushPromises()
+      expect((wrapper.get('input[minlength="2"]').element as HTMLInputElement).value).toBe('Task task-b')
+      if (outcome === 'resolve') finishSave.resolve({}); else finishSave.reject(new Error('A failed late'))
+      await flushPromises()
+      expect(wrapper.emitted('close')).toBeUndefined()
+      // A late success still refreshes the board: the change was made.
+      if (outcome === 'resolve') expect(wrapper.emitted('saved')).toHaveLength(1)
+      else expect(wrapper.emitted('saved')).toBeUndefined()
+      expect(wrapper.text()).not.toContain('A failed late')
+      expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
+    })
+  }
 })

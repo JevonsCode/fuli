@@ -18,8 +18,8 @@ export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/reports/jefa', name: 'shared-jefa-report', component: () => import('@/pages/SharedJefaReportPage.vue'), meta: { publicReport: true, title: 'employees.share.title' } },
-    { path: '/roundtables/chat/:chatId', name: 'roundtable-chat', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title' } },
-    { path: '/roundtables/:threadId?', name: 'roundtables', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title' } },
+    { path: '/roundtables/chat/:chatId', name: 'roundtable-chat', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title', layout: 'canvas' } },
+    { path: '/roundtables/:threadId?', name: 'roundtables', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title', layout: 'canvas' } },
     {
       path: '/',
       name: 'overview',
@@ -89,7 +89,7 @@ export const router = createRouter({
       meta: { title: 'routes.projectAgents.title', layout: 'canvas' },
     },
     { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { title: 'agentProfiles.profile', layout: 'canvas', detail: true } },
-    { path: '/project-agents/occupations', name: 'occupations', component: () => import('@/pages/OccupationsPage.vue'), meta: { title: 'occupations.title' } },
+    { path: '/project-agents/occupations', name: 'occupations', component: () => import('@/pages/OccupationsPage.vue'), meta: { title: 'occupations.title', layout: 'canvas' } },
     { path: '/project-agents/schedules', name: 'task-schedules', component: () => import('@/pages/TaskSchedulesPage.vue'), meta: { title: 'taskSchedules.title', layout: 'canvas' } },
     { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { title: 'shell.sections.orchestrate', layout: 'canvas' } },
     { path: '/project-agents/manage/:spaceId/:agentId', name: 'agent-management-detail', component: () => import('@/pages/ProjectAgentDetailPage.vue'), meta: { title: 'projectAgents.pageTitle', layout: 'canvas', detail: true } },
@@ -97,7 +97,7 @@ export const router = createRouter({
       path: '/employees/:templateId',
       name: 'employee-workbench',
       component: () => import('@/pages/EmployeeWorkbenchPage.vue'),
-      meta: { title: 'routes.employeeWorkbench.title', dedicatedWorkspace: true },
+      meta: { title: 'routes.employeeWorkbench.title', layout: 'canvas', detail: true },
     },
     {
       path: '/public-projects',

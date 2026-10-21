@@ -64,7 +64,8 @@ export function planLocalSetup(options, {
       sessionSkillPath: paths.sessionSkillPath,
       projectSkillPath: paths.projectSkillPath,
       reviewSkillPath: paths.reviewSkillPath,
-      operationSkillPath: paths.operationSkillPath
+      operationSkillPath: paths.operationSkillPath,
+      sessionCommandSkillPath: paths.sessionCommandSkillPath
     })
   };
 }
@@ -117,7 +118,8 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     sessionSkillPath: plan.paths.sessionSkillPath,
     projectSkillPath: plan.paths.projectSkillPath,
     reviewSkillPath: plan.paths.reviewSkillPath,
-    operationSkillPath: plan.paths.operationSkillPath
+    operationSkillPath: plan.paths.operationSkillPath,
+    sessionCommandSkillPath: plan.paths.sessionCommandSkillPath
   };
   const agents = [];
 

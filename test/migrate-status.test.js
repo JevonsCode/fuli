@@ -86,6 +86,8 @@ function legacyDataDir(root) {
   json(join(root, 'capture-policy.json'), { version: 2, enabled: true });
   json(join(root, 'capture-session-pause', 'a.json'), { version: 1 });
   json(join(root, 'capture-session-pause', 'b.json'), { version: 3 });
+  json(join(root, 'capture-session-pause', 'pins', 'on', 'c.json'), { version: 1, sourceApplication: 'codex' });
+  json(join(root, 'capture-session-pause', 'pins', 'off', 'd.json'), { version: 2, sourceApplication: 'codex' });
 }
 
 test('status reports legacy, pending, newer and half-applied stores without changing a byte', async (t) => {
@@ -114,6 +116,8 @@ test('status reports legacy, pending, newer and half-applied stores without chan
   assert.equal(stores['runtime-settings.json'].state, 'newer_format');
   assert.equal(stores['capture-policy.json'].state, 'current');
   assert.equal(stores['capture-session-pause'].state, 'newer_format');
+  assert.equal(stores['capture-session-pause/pins/on'].state, 'current');
+  assert.equal(stores['capture-session-pause/pins/off'].state, 'newer_format');
   assert.equal(stores['role-work.sqlite'].state, 'absent');
   assert.equal(stores['graph (personal)'].state, 'pending_confirmation');
   assert.match(text.output, /step task-schedules\/3-run-recovery: pending_confirmation/);

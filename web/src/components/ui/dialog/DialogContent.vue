@@ -39,7 +39,7 @@ const widths = { sm: "max-w-[440px]", md: "max-w-[560px]", lg: "max-w-[720px]" }
   <DialogPortal>
     <DialogOverlay
       data-slot="dialog-overlay"
-      class="fixed inset-0 z-(--z-dialog) bg-overlay data-[state=open]:animate-overlay-in"
+      class="fixed inset-0 z-(--z-dialog) bg-overlay backdrop-blur-(--overlay-blur) data-[state=open]:animate-overlay-in"
     />
     <DialogContent
       data-slot="dialog-content"

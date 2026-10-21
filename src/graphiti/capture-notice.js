@@ -10,7 +10,14 @@ const REASON_NOTICES = Object.freeze({
   project_unregistered: '当前目录不是 FULI 项目，未自动记录',
   // Not this session's pause: the client's FULI connection still names the
   // session before /clear (capture-decision.js).
-  session_binding_stale: 'FULI 绑定的是 /clear 之前的会话，本会话的自动记录暂不可用；重启客户端或新开会话即可恢复'
+  session_binding_stale: 'FULI 绑定的是 /clear 之前的会话，本会话的自动记录暂不可用；重启客户端或新开会话即可恢复',
+  // rec#5 C3b: new sessions start with FULI off until the person starts it.
+  session_not_started: '本会话未启用 FULI（按本会话开始时的默认设置），输入 /fuli start 可启用',
+  // The default this session started under could not be saved, so it stays off.
+  session_start_unsaved: 'FULI 未能保存本会话开始时的设置，本会话保持停用，输入 /fuli start 可启用',
+  // The call carries no task token and its client cannot say which session it
+  // is, while one of that client's sessions has FULI off (session-layer-decision.js).
+  session_unattributed: 'FULI 无法确认这次调用来自哪个会话，而本客户端有会话已停用 FULI，所以没有提供'
 });
 // The global and client switches, and any reason without wording of its own.
 const RECORDING_OFF = '自动记录已关闭';
@@ -27,20 +34,21 @@ const TRANSCRIPT_NOTICES = Object.freeze({
 });
 
 // reason is a capture decision's denial or one of the transcript states above;
-// since is when a session pause began (rec#5 C5), shown in local time.
+// since is when a session pause (rec#5 C5) or stop (C3b) began, in local time.
 export function captureNotice(reason, since = null) {
   if (!reason) return null;
-  if (reason === 'session_paused') return `${sessionPausedNotice(since)}；${EXPLICIT_EDITS_SAVED}`;
+  if (reason === 'session_paused') return `${sinceNotice('本会话已暂停记录', since)}；${EXPLICIT_EDITS_SAVED}`;
+  if (reason === 'session_stopped') return `${sinceNotice('本会话已停用 FULI', since)}，输入 /fuli start 可重新启用；${EXPLICIT_EDITS_SAVED}`;
   return TRANSCRIPT_NOTICES[reason] ?? `${REASON_NOTICES[reason] ?? RECORDING_OFF}；${EXPLICIT_EDITS_SAVED}`;
 }
 
 // A checkpoint retried after its first attempt keeps that attempt's decision
-// without its time, so the notice still says the session is paused.
-function sessionPausedNotice(since) {
+// without its time, so the notice still says the session is paused or stopped.
+export function sinceNotice(text, since) {
   const at = since ? new Date(since) : null;
-  if (!at || Number.isNaN(at.getTime())) return '本会话已暂停记录';
+  if (!at || Number.isNaN(at.getTime())) return text;
   const pad = value => String(value).padStart(2, '0');
-  return `本会话已暂停记录（自 ${pad(at.getHours())}:${pad(at.getMinutes())} 起）`;
+  return `${text}（自 ${pad(at.getHours())}:${pad(at.getMinutes())} 起）`;
 }
 
 // A receipt's notices for one turn: the decision, then each explicit operation

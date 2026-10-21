@@ -5,9 +5,10 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import {
-  adaptAgentForReviewSkill,
+  adaptAgentForCommandSkills,
   reviewSkillTrigger
-} from '../src/setup/review-skill-adapters.js';
+} from '../src/setup/command-skill-adapters.js';
+import { installAgent } from '../src/setup/install-agent.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SKILL_PATH = join(PROJECT_ROOT, 'skills', 'flreview', 'SKILL.md');
@@ -97,15 +98,15 @@ test('review skill adaptations keep agent-specific triggers in one module', () =
   const pathApi = {
     join: (...parts) => parts.join('/')
   };
-  const codex = adaptAgentForReviewSkill({ id: 'codex' }, {
+  const codex = adaptAgentForCommandSkills({ id: 'codex' }, {
     homeDir: '/home/test',
     pathApi
   });
-  const claude = adaptAgentForReviewSkill({ id: 'claude-code' }, {
+  const claude = adaptAgentForCommandSkills({ id: 'claude-code' }, {
     homeDir: '/home/test',
     pathApi
   });
-  const cursor = adaptAgentForReviewSkill({ id: 'cursor' }, {
+  const cursor = adaptAgentForCommandSkills({ id: 'cursor' }, {
     homeDir: '/home/test',
     pathApi
   });
@@ -120,4 +121,38 @@ test('review skill adaptations keep agent-specific triggers in one module', () =
   });
   assert.equal(reviewSkillTrigger('claude-code').nativeInvocation, '/flreview');
   assert.equal(reviewSkillTrigger('cursor').nativeInvocation, '/flreview');
+});
+
+// rec#5 C3b: /fuli start|stop|restart|status is a native command where the client turns
+// a Skill into one; the prompt hook answers the line, so the Skill never runs on its own.
+test('the FULI session command Skill is installed only where a client takes it as /fuli', () => {
+  const pathApi = { join: (...parts) => parts.join('/') };
+  const adapt = id => adaptAgentForCommandSkills({ id }, { homeDir: '/home/test', pathApi });
+  assert.equal(adapt('claude-code').sessionCommandSkillPath, '/home/test/.claude/skills/fuli');
+  assert.equal(adapt('cursor').sessionCommandSkillPath, '/home/test/.cursor/skills/fuli');
+  assert.equal(Object.hasOwn(adapt('codex'), 'sessionCommandSkillPath'), false,
+    'Codex rejects user-defined slash commands; the person types `fuli stop` there');
+
+  const skill = readFileSync(join(PROJECT_ROOT, 'skills', 'fuli', 'SKILL.md'), 'utf8');
+  assert.match(skill, /^---\nname: fuli\ndescription: .+\ndisable-model-invocation: true\nargument-hint: start\|stop\|restart\|status\n---\n/);
+  assert.match(skill, /do not say FULI was started or stopped/);
+  assert.doesNotMatch(skill, /Codex|Claude|Cursor/, 'no client branching in the shared Skill');
+});
+
+test('connecting a client installs its /fuli Skill next to the others', async () => {
+  const installed = [];
+  const paths = { backupDir: '/backups', sessionSkillPath: '/pkg/skills/capturing-session-knowledge',
+    projectSkillPath: '/pkg/skills/grilling-project', reviewSkillPath: '/pkg/skills/flreview',
+    operationSkillPath: '/pkg/skills/operating-fuli', sessionCommandSkillPath: '/pkg/skills/fuli' };
+  const pathApi = { join: (...parts) => parts.join('/') };
+  for (const id of ['claude-code', 'codex']) {
+    installed.length = 0;
+    const agent = adaptAgentForCommandSkills({ id, label: id, skillPath: `/home/${id}/skills/capturing-session-knowledge` },
+      { homeDir: `/home/${id}`, pathApi });
+    await installAgent(agent, {}, paths, { backupConfig: () => null, connect: () => ({ status: 'connected' }),
+      installSkill: (target, { sourcePath }) => { installed.push([target.skillPath, sourcePath]); return { status: 'installed' }; },
+      inspectInstallations: null });
+    const fuli = installed.filter(([, source]) => source === '/pkg/skills/fuli');
+    assert.deepEqual(fuli, id === 'codex' ? [] : [[`/home/${id}/.claude/skills/fuli`, '/pkg/skills/fuli']], id);
+  }
 });

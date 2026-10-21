@@ -96,7 +96,7 @@ export function createClientConnectionObserver({
 }
 
 // Skill folders a discovered client declares; MCP-only clients declare none.
-const SKILL_PATHS = ['skillPath', 'projectSkillPath', 'reviewSkillPath', 'operationSkillPath'];
+const SKILL_PATHS = ['skillPath', 'projectSkillPath', 'reviewSkillPath', 'operationSkillPath', 'sessionCommandSkillPath'];
 
 function statusOf(agent, previouslyConnected) {
   const { mcp, skills } = agent.integrationDetails;

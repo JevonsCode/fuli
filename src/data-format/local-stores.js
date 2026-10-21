@@ -56,7 +56,11 @@ const JSON_STORES = [
 // One small record per session.
 const JSON_DIRECTORIES = [
   ['preference-delivery', PREFERENCE_SESSION_FORMAT],
-  ['capture-session-pause', CAPTURE_SESSION_PAUSE_FORMAT]
+  // Session records and the default for new sessions (default.json).
+  ['capture-session-pause', CAPTURE_SESSION_PAUSE_FORMAT],
+  // The default each session started under (rec#5 C3b), one record per session.
+  ['capture-session-pause/pins/on', CAPTURE_SESSION_PAUSE_FORMAT],
+  ['capture-session-pause/pins/off', CAPTURE_SESSION_PAUSE_FORMAT]
 ];
 // The worst state of a directory's records names the directory's state.
 const STATE_ORDER = ['unavailable', 'newer_format', 'half_applied', 'pending_confirmation', 'unsupported',
