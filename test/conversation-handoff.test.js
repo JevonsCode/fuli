@@ -11,7 +11,8 @@ import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTa
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
-import { assertFileMode } from '../test-support/platform-capabilities.js';
+import { writeWhileReaderHoldsOpen } from '../test-support/open-file-reader.js';
+import { assertFileMode, refusesRenameOverOpenFile } from '../test-support/platform-capabilities.js';
 
 const adapter = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
 const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' } }) + '\n';
@@ -67,6 +68,20 @@ async function fixture(t, tail) {
   return { dir, input, app, run, hook, entries, appended, calls, runtime,
     switchTask: value => { task = value; }, failClaim: value => { failClaim = value; }, disable: () => { enabled = false; }, disablePolicy: () => { policyEnabled = false; } };
 }
+
+test('a guard is saved while another process is reading it', refusesRenameOverOpenFile, async t => {
+  const f = await fixture(t, '');
+  const key = transcriptDigest(`${f.runtime}\0codex\0${f.input.session_id}`);
+  const path = join(dirname(f.runtime), 'transcript-guards', `${key}.json`);
+  const state = scanCursor => ({ version: 1, phase: 'scan', owner: transcriptDigest('old'),
+    prompt: transcriptDigest('incoming'), scanCursor });
+  await f.run(guard => guard.write(state(header.length)));
+
+  await f.run(guard => writeWhileReaderHoldsOpen(path, () => guard.write(state(header.length + 1))));
+
+  assert.equal(await f.run(guard => guard.value.scanCursor), header.length + 1);
+  assert.deepEqual((await readdir(dirname(path))).filter(name => name !== `${key}.json`), [], 'no temporary file is left');
+});
 
 test('mismatching user text at EOF is not appended to the old owner or treated as a boundary', async t => {
   const f = await fixture(t, row('user', 'incoming with host-added text'));

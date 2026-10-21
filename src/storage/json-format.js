@@ -77,7 +77,7 @@ export function writeVersionedJsonFileAtomic(filePath, value, format, { io } = {
 // undefined to leave the file as it is. read(filePath) may replace the
 // default strict parse; write(filePath, value) the plain atomic write.
 export function updateVersionedJsonFileAtomic(filePath, format, mutate, {
-  io, read = readCurrentJson, write = (path, value) => writeJsonFileAtomic(path, value, io)
+  io, read = readCurrentJson, write = (path, value) => writeJsonFileAtomic(path, value, { io })
 } = {}) {
   if (!format?.versions) throw new TypeError('A versioned JSON write needs its store format');
   return withJsonFormatLock(filePath, () => {

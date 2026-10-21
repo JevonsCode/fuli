@@ -1,7 +1,9 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { renameSync, rmSync } from 'node:fs';
-import { mkdir, open, readFile, rm, lstat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { rmSync } from 'node:fs';
+import { mkdir, readFile, lstat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+
+import { writeTextFileAtomic } from '../storage/json-file.js';
 import { acquireTranscriptGuardLock, isTranscriptGuardBusy } from './transcript-guard-lock.js';
 
 export const transcriptDigest = value => createHash('sha256').update(value).digest('hex');
@@ -49,18 +51,12 @@ export async function withTranscriptGuard(runtimeConfigPath, input, source, enab
       async write(next) {
         if (!active) throw new Error('Transcript guard is no longer owned');
         next = { ...next, createdAt: next.createdAt ?? value?.createdAt ?? Date.now(), updatedAt: Date.now() };
-        const temporary = `${path}.${randomUUID()}`;
-        try {
-          const file = await open(temporary, 'wx', 0o600);
-          try { await file.writeFile(JSON.stringify(next)); await file.sync(); }
-          finally { await file.close(); }
-          if (!active) throw new Error('Transcript guard is no longer owned');
-          // Do not yield between the ownership check and this canonical-path
-          // mutation: capture expiry can release the lock while async rename
-          // is still in flight and overwrite the next holder's guard.
-          renameSync(temporary, path);
-          value = next;
-        } finally { await rm(temporary, { force: true }); }
+        // Do not yield between the ownership check and this canonical-path
+        // mutation: capture expiry can release the lock while an async write
+        // is still in flight and overwrite the next holder's guard. The
+        // synchronous write and its flush complete before control returns.
+        writeTextFileAtomic(path, JSON.stringify(next), { durable: true });
+        value = next;
       },
       async clear() {
         if (!active) throw new Error('Transcript guard is no longer owned');

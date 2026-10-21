@@ -1,12 +1,9 @@
-import {
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync
-} from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+
+import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+
+export const AGENT_ACCESS_POLICY_FORMAT = jsonFormat({ store: 'agent-access-policy', versions: [1] });
 
 const DEFAULT_POLICY = Object.freeze({
   enabled: true,
@@ -48,7 +45,7 @@ export class AgentAccessPolicyStore {
       this.memory = next;
       return { ...next };
     }
-    writeAtomically(this.path, { version: 1, ...next });
+    writeVersionedJsonFileAtomic(this.path, { version: 1, ...next }, AGENT_ACCESS_POLICY_FORMAT);
     return { ...next };
   }
 }
@@ -71,18 +68,4 @@ function validateStoredPolicy(value) {
     enabled: value.enabled,
     updatedAt: value.updatedAt ?? null
   };
-}
-
-function writeAtomically(path, value) {
-  mkdirSync(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
-      encoding: 'utf8',
-      mode: 0o600
-    });
-    renameSync(temporaryPath, path);
-  } finally {
-    rmSync(temporaryPath, { force: true });
-  }
 }
