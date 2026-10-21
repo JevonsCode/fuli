@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { claudeLifecycleCommand, isClaudeLifecycleCommand } from '../agents/claude-code/lifecycle-hooks.js';
 import { installedToolProfile } from './installed-tool-profile.js';
+import { renderMcpEntry } from './agents/mcp-entry-template.js';
+import { jsonRegistration } from './agents/registration.js';
 
 import {
   readJsonFile,
@@ -14,14 +16,18 @@ const MANAGED_HOOK_TOOLS = new Set([
   'begin_task_context',
   'verify_task_checkpoint'
 ]);
-const MANAGED_PERMISSION_RULES = Object.freeze([
-  // These allow model-initiated fallback restore/final checkpoint calls. Claude
-  // Code executes MCP lifecycle hooks separately from model tool permissions.
+// The only permission rules a Claude Code descriptor pack may grant. They allow
+// model-initiated fallback restore/final checkpoint calls; Claude Code executes
+// MCP lifecycle hooks separately from model tool permissions. Disconnect removes
+// every rule listed here, whichever pack granted it.
+export const CLAUDE_CODE_FULI_PERMISSIONS = Object.freeze([
   'mcp__fuli__get_collaboration_preferences',
   'mcp__fuli__checkpoint_task_knowledge'
 ]);
 
-export function connectClaudeCode(agent, context, {
+// The 'claude-code-settings' config writer: the MCP entry in ~/.claude.json,
+// lifecycle hooks and FULI permissions in settings.json.
+export function connectClaudeCode(pack, agent, context, {
   readConfig = readJsonFile,
   writeConfig = writeJsonFileAtomic
 } = {}) {
@@ -32,30 +38,16 @@ export function connectClaudeCode(agent, context, {
   assertJsonObject(current.mcpServers ?? {}, 'Claude Code mcpServers');
   assertHookSettings(settings.hooks ?? {});
   assertPermissionSettings(settings.permissions ?? {});
-  const profile = installedToolProfile(current.mcpServers?.fuli?.args, context.toolProfile);
-
   const next = {
     ...current,
     mcpServers: {
       ...(current.mcpServers ?? {}),
       // No alwaysLoad: Claude Code then loads FULI's schemas on demand instead of
       // carrying them in every request; hooks supply the task context (T-P00).
-      [FULI_SERVER]: {
-        type: 'stdio',
-        command: context.nodePath,
-        args: [
-          context.mcpServerPath,
-          '--runtime-config',
-          context.runtimeConfigPath,
-          '--source-application',
-          'claude_code',
-          '--tool-profile',
-          profile
-        ]
-      }
+      [FULI_SERVER]: fuliServer(pack, context, current.mcpServers?.fuli?.args)
     }
   };
-  const nextSettings = withManagedHooks(settings, context);
+  const nextSettings = withManagedHooks(pack, settings, context);
   const registrationChanged = !sameJson(current, next);
   const hooksChanged = !sameJson(settings, nextSettings);
   if (registrationChanged) writeConfig(agent.configPath, next);
@@ -109,13 +101,19 @@ export function disconnectClaudeCode(agent, {
   };
 }
 
-export function hasCurrentClaudeCodeHooks(settings, context = {}) {
+export function claudeCodeStatus(pack, agent, context, readers) {
+  return { registration: jsonRegistration(agent, readers, (server) => fuliServer(pack, context, server?.args)),
+    lifecycleHooks: hasCurrentClaudeCodeHooks(pack, readers.readJson(agent.settingsPath),
+      { ...context, hookTimeoutSec: context.hookTimeoutSec ?? pack.lifecycleHooks.timeoutSec }) };
+}
+
+export function hasCurrentClaudeCodeHooks(pack, settings, context = {}) {
   try {
     assertJsonObject(settings, 'Claude Code settings');
     assertHookSettings(settings.hooks ?? {});
     assertPermissionSettings(settings.permissions ?? {});
     return sameJson(
-      withManagedHooks(settings, context),
+      withManagedHooks(pack, settings, context),
       settings
     );
   } catch {
@@ -123,36 +121,29 @@ export function hasCurrentClaudeCodeHooks(settings, context = {}) {
   }
 }
 
-function withManagedHooks(settings, context) {
-  const { hookTimeoutSec = 30 } = context;
+function fuliServer(pack, context, installedArgs) {
+  return renderMcpEntry(pack.mcpServer, { nodePath: context.nodePath, mcpServerPath: context.mcpServerPath,
+    runtimeConfigPath: context.runtimeConfigPath,
+    toolProfileArgs: ['--tool-profile', installedToolProfile(installedArgs, context.toolProfile)] });
+}
+
+function withManagedHooks(pack, settings, context) {
+  const { hookTimeoutSec = pack.lifecycleHooks.timeoutSec } = context;
   const normalizedHookTimeoutSec = positiveHookTimeout(hookTimeoutSec);
   const clean = withoutManagedSettings(settings);
   const hooks = { ...(clean.hooks ?? {}) };
-  hooks.UserPromptSubmit = [
-    ...(hooks.UserPromptSubmit ?? []),
-    managedHookGroup(context, 'UserPromptSubmit', 'Loading Fuli task context', normalizedHookTimeoutSec)
-  ];
-  hooks.Stop = [
-    ...(hooks.Stop ?? []),
-    managedHookGroup(
-      context,
-      'Stop',
-      'Checking Fuli task checkpoint',
-      normalizedHookTimeoutSec
-    )
-  ];
-  for (const event of ['SessionStart', 'PreCompact']) {
+  for (const { event, statusMessage } of pack.lifecycleHooks.events) {
     hooks[event] = [...(hooks[event] ?? []),
-      managedHookGroup(context, event, 'Refreshing Fuli context generation', normalizedHookTimeoutSec)];
+      managedHookGroup(context, event, statusMessage, normalizedHookTimeoutSec)];
   }
-  return withManagedPermissions({ ...clean, hooks });
+  return withManagedPermissions({ ...clean, hooks }, pack.permissions.allow);
 }
 
-function withManagedPermissions(settings) {
+function withManagedPermissions(settings, rules) {
   const permissions = { ...(settings.permissions ?? {}) };
   permissions.allow = [
     ...(permissions.allow ?? []),
-    ...MANAGED_PERMISSION_RULES
+    ...rules
   ];
   return { ...settings, permissions };
 }
@@ -165,7 +156,7 @@ function withoutManagedPermissions(settings) {
   if (!settings.permissions) return settings;
   const permissions = { ...settings.permissions };
   const remainingAllow = (permissions.allow ?? [])
-    .filter(rule => !MANAGED_PERMISSION_RULES.includes(rule));
+    .filter(rule => !CLAUDE_CODE_FULI_PERMISSIONS.includes(rule));
   if (remainingAllow.length) permissions.allow = remainingAllow;
   else delete permissions.allow;
   if (Object.keys(permissions).length) return { ...settings, permissions };

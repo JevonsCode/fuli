@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "id": "claude-code",
+  "version": "1.0.0",
+  "digest": "sha256:e7d60501be4a26c7698fff4cb94d4ce981e0570732fd2eda7b88f37170275aab",
+  "label": "Claude Code",
+  "command": "claude",
+  "detection": {
+    "clientHome": {
+      "from": "homeDir",
+      "path": [
+        ".claude"
+      ]
+    },
+    "files": {
+      "configPath": {
+        "from": "homeDir",
+        "path": [
+          ".claude.json"
+        ]
+      },
+      "settingsPath": {
+        "from": "clientHome",
+        "path": [
+          "settings.json"
+        ]
+      }
+    },
+    "skillsRoot": {
+      "from": "clientHome",
+      "path": [
+        "skills"
+      ]
+    },
+    "availableWhen": [
+      {
+        "probe": "commandOnPath"
+      },
+      {
+        "probe": "pathExists",
+        "target": "configPath"
+      },
+      {
+        "probe": "pathExists",
+        "target": "clientHome"
+      }
+    ]
+  },
+  "commandSkills": {
+    "review": {
+      "userCommand": "/flreview",
+      "nativeInvocation": "/flreview"
+    },
+    "sessionCommand": true
+  },
+  "configWriter": "claude-code-settings",
+  "mcpServer": {
+    "type": "stdio",
+    "command": "{nodePath}",
+    "args": [
+      "{mcpServerPath}",
+      "--runtime-config",
+      "{runtimeConfigPath}",
+      "--source-application",
+      "claude_code",
+      "{toolProfileArgs}"
+    ]
+  },
+  "lifecycleHooks": {
+    "timeoutSec": 30,
+    "events": [
+      {
+        "event": "UserPromptSubmit",
+        "statusMessage": "Loading Fuli task context"
+      },
+      {
+        "event": "Stop",
+        "statusMessage": "Checking Fuli task checkpoint"
+      },
+      {
+        "event": "SessionStart",
+        "statusMessage": "Refreshing Fuli context generation"
+      },
+      {
+        "event": "PreCompact",
+        "statusMessage": "Refreshing Fuli context generation"
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "mcp__fuli__get_collaboration_preferences",
+      "mcp__fuli__checkpoint_task_knowledge"
+    ]
+  }
+}

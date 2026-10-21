@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { connectCursor, disconnectCursor } from '../src/setup/cursor-config.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
+
+const PACK = builtInClientPack('cursor');
 
 const AGENT = Object.freeze({
   id: 'cursor',
@@ -17,7 +20,7 @@ const CONTEXT = Object.freeze({
 
 test('Cursor config preserves existing servers and registers Fuli', () => {
   let write = null;
-  const result = connectCursor(AGENT, CONTEXT, {
+  const result = connectCursor(PACK, AGENT, CONTEXT, {
     readConfig: () => ({
       version: 1,
       mcpServers: { existing: { command: 'existing-server' } }
@@ -48,7 +51,7 @@ test('Cursor config preserves existing servers and registers Fuli', () => {
 test('Cursor config rejects malformed top-level and mcpServers values without writing', () => {
   for (const current of [[], { mcpServers: [] }]) {
     let written = false;
-    assert.throws(() => connectCursor(AGENT, CONTEXT, {
+    assert.throws(() => connectCursor(PACK, AGENT, CONTEXT, {
       readConfig: () => current,
       writeConfig: () => { written = true; }
     }), /must be a JSON object/);
@@ -89,9 +92,9 @@ test('Cursor connector installs lifecycle hooks and preserves user hooks on disc
     readConfig: path => files.get(path),
     writeConfig: (path, value) => files.set(path, value)
   };
-  assert.equal(connectCursor(agent, CONTEXT, options).newTaskRequired, true);
+  assert.equal(connectCursor(PACK, agent, CONTEXT, options).newTaskRequired, true);
   assert.equal(files.get(agent.hooksPath).hooks.stop.length, 2);
-  assert.equal(connectCursor(agent, CONTEXT, options).newTaskRequired, false);
+  assert.equal(connectCursor(PACK, agent, CONTEXT, options).newTaskRequired, false);
   files.delete(agent.configPath);
   assert.equal(disconnectCursor(agent, options).status, 'disconnected');
   assert.deepEqual(files.get(agent.hooksPath), originalHooks);
@@ -113,14 +116,14 @@ test('Cursor reload status includes registration changes and avoids idempotent r
     }
   };
 
-  connectCursor(agent, CONTEXT, options);
+  connectCursor(PACK, agent, CONTEXT, options);
   files.get(agent.configPath).mcpServers.fuli.command = 'old-runtime';
   writes.length = 0;
 
-  assert.equal(connectCursor(agent, CONTEXT, options).newTaskRequired, true);
+  assert.equal(connectCursor(PACK, agent, CONTEXT, options).newTaskRequired, true);
   assert.deepEqual(writes, [agent.configPath]);
   writes.length = 0;
-  assert.equal(connectCursor(agent, CONTEXT, options).newTaskRequired, false);
+  assert.equal(connectCursor(PACK, agent, CONTEXT, options).newTaskRequired, false);
   assert.deepEqual(writes, []);
 });
 
@@ -128,7 +131,7 @@ test('invalid Cursor lifecycle config cannot cause a partial MCP config write', 
   const agent = { ...AGENT, hooksPath: 'C:/Users/Test/.cursor/hooks.json' };
   for (const invalid of [null, false, '', [], { version: 2 }]) {
     let writes = 0;
-    assert.throws(() => connectCursor(agent, CONTEXT, {
+    assert.throws(() => connectCursor(PACK, agent, CONTEXT, {
       readConfig: path => path === agent.hooksPath ? invalid : {},
       writeConfig: () => { writes += 1; }
     }), /hooks config/);

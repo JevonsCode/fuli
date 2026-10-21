@@ -4,10 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import {
-  adaptAgentForCommandSkills,
-  reviewSkillTrigger
-} from '../src/setup/command-skill-adapters.js';
+import { discoverAgents } from '../src/setup/agents.js';
 import { installAgent } from '../src/setup/install-agent.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -94,39 +91,32 @@ test('flreview keeps mutations behind explicit visualization actions', () => {
   assert.match(skill, /finish_knowledge_review.*paused.*completed/is);
 });
 
-test('review skill adaptations keep agent-specific triggers in one module', () => {
-  const pathApi = {
-    join: (...parts) => parts.join('/')
-  };
-  const codex = adaptAgentForCommandSkills({ id: 'codex' }, {
-    homeDir: '/home/test',
-    pathApi
-  });
-  const claude = adaptAgentForCommandSkills({ id: 'claude-code' }, {
-    homeDir: '/home/test',
-    pathApi
-  });
-  const cursor = adaptAgentForCommandSkills({ id: 'cursor' }, {
-    homeDir: '/home/test',
-    pathApi
-  });
+// The lifecycle clients' Skill folders and review triggers come from their descriptor packs.
+function lifecycleClient(id, homeDir = '/home/test') {
+  return discoverAgents({ platform: 'linux', homeDir, env: {}, fileExists: () => false, commandExists: () => false })
+    .find((agent) => agent.id === id);
+}
+
+test('review skill adaptations keep agent-specific triggers in the client descriptor packs', () => {
+  const codex = lifecycleClient('codex');
+  const claude = lifecycleClient('claude-code');
+  const cursor = lifecycleClient('cursor');
 
   assert.equal(codex.reviewSkillPath, '/home/test/.agents/skills/flreview');
   assert.equal(claude.reviewSkillPath, '/home/test/.claude/skills/flreview');
   assert.equal(cursor.reviewSkillPath, '/home/test/.cursor/skills/flreview');
-  assert.deepEqual(reviewSkillTrigger('codex'), {
+  assert.deepEqual(codex.reviewSkillTrigger, {
     userCommand: 'fuli review',
     nativeInvocation: '$flreview'
   });
-  assert.equal(reviewSkillTrigger('claude-code').nativeInvocation, '/flreview');
-  assert.equal(reviewSkillTrigger('cursor').nativeInvocation, '/flreview');
+  assert.equal(claude.reviewSkillTrigger.nativeInvocation, '/flreview');
+  assert.equal(cursor.reviewSkillTrigger.nativeInvocation, '/flreview');
 });
 
 // rec#5 C3b: /fuli start|stop|restart|status is a native command where the client turns
 // a Skill into one; the prompt hook answers the line, so the Skill never runs on its own.
 test('the FULI session command Skill is installed only where a client takes it as /fuli', () => {
-  const pathApi = { join: (...parts) => parts.join('/') };
-  const adapt = id => adaptAgentForCommandSkills({ id }, { homeDir: '/home/test', pathApi });
+  const adapt = id => lifecycleClient(id);
   assert.equal(adapt('claude-code').sessionCommandSkillPath, '/home/test/.claude/skills/fuli');
   assert.equal(adapt('cursor').sessionCommandSkillPath, '/home/test/.cursor/skills/fuli');
   assert.equal(Object.hasOwn(adapt('codex'), 'sessionCommandSkillPath'), false,
@@ -143,11 +133,9 @@ test('connecting a client installs its /fuli Skill next to the others', async ()
   const paths = { backupDir: '/backups', sessionSkillPath: '/pkg/skills/capturing-session-knowledge',
     projectSkillPath: '/pkg/skills/grilling-project', reviewSkillPath: '/pkg/skills/flreview',
     operationSkillPath: '/pkg/skills/operating-fuli', sessionCommandSkillPath: '/pkg/skills/fuli' };
-  const pathApi = { join: (...parts) => parts.join('/') };
   for (const id of ['claude-code', 'codex']) {
     installed.length = 0;
-    const agent = adaptAgentForCommandSkills({ id, label: id, skillPath: `/home/${id}/skills/capturing-session-knowledge` },
-      { homeDir: `/home/${id}`, pathApi });
+    const agent = lifecycleClient(id, `/home/${id}`);
     await installAgent(agent, {}, paths, { backupConfig: () => null, connect: () => ({ status: 'connected' }),
       installSkill: (target, { sourcePath }) => { installed.push([target.skillPath, sourcePath]); return { status: 'installed' }; },
       inspectInstallations: null });

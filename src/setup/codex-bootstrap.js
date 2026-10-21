@@ -5,24 +5,15 @@ import { writeTextFileAtomic } from '../storage/json-file.js';
 const BLOCK_START = '<!-- BEGIN FULI MANAGED INSTRUCTIONS -->';
 const BLOCK_END = '<!-- END FULI MANAGED INSTRUCTIONS -->';
 
-// Only tools the default chat profile lists are named here; naming others sent
-// Codex to tool discovery before every task (T-P00). The full profile's own
-// server instructions cover team and worker tools.
-const GLOBAL_INSTRUCTIONS = `${BLOCK_START}
-At start of every user task, use the FULI hook context if supplied;
-do not repeat the fallback. Otherwise before any other tool or answer, call exactly
-\`get_collaboration_preferences\` with \`projectPath\`=current working directory,
-\`taskPrompt\`=current user request. Never substitute a project action.
-Fuli never stores or returns them. Apply all returned \`effective_preferences\`.
-Before reasking a stable project fact or method, inspect \`task_knowledge_recall\`.
-On miss: \`search_current_project_knowledge\`; focused action/artifact/target/identifier;
-never use the full request as the only query.
-Write tools: preferences in actual payload; mentioning later is not compliance.
-Other FULI work (teams, workers, saved decisions, a relevant \`deferred_conflict\`)
-only when the task needs it: find the tool with \`list_agent_interfaces\`.
-${BLOCK_END}`;
+// The managed block's lines come from the Codex descriptor pack
+// (`instructions.global`). Only tools the default chat profile lists are named
+// there; naming others sent Codex to tool discovery before every task (T-P00).
+// The full profile's own server instructions cover team and worker tools.
+function managedBlock(lines) {
+  return [BLOCK_START, ...lines, BLOCK_END].join('\n');
+}
 
-export function installCodexBootstrap(agent, _context, {
+export function installCodexBootstrap(agent, instructions, {
   fileExists = existsSync,
   readText = defaultReadText,
   writeText = writeTextFileAtomic
@@ -33,7 +24,7 @@ export function installCodexBootstrap(agent, _context, {
     readText
   });
   const current = readText(instructionsPath);
-  const next = replaceFuliGlobalInstructions(current);
+  const next = replaceFuliGlobalInstructions(current, instructions);
   if (next === current) return { changed: false };
   writeText(instructionsPath, next);
   return { changed: true };
@@ -59,7 +50,7 @@ export function removeCodexBootstrap(agent, {
   return { changed };
 }
 
-export function isCodexBootstrapCurrent(agent, _context, {
+export function isCodexBootstrapCurrent(agent, instructions, {
   fileExists = existsSync,
   readText = defaultReadText
 } = {}) {
@@ -70,15 +61,15 @@ export function isCodexBootstrapCurrent(agent, _context, {
       readText
     });
     const current = readText(instructionsPath);
-    return replaceFuliGlobalInstructions(current) === current;
+    return replaceFuliGlobalInstructions(current, instructions) === current;
   } catch {
     return false;
   }
 }
 
-export function replaceFuliGlobalInstructions(source) {
+export function replaceFuliGlobalInstructions(source, instructions) {
   const withoutBlock = removeFuliGlobalInstructions(source).trimEnd();
-  return `${withoutBlock ? `${withoutBlock}\n\n` : ''}${GLOBAL_INSTRUCTIONS}\n`;
+  return `${withoutBlock ? `${withoutBlock}\n\n` : ''}${managedBlock(instructions)}\n`;
 }
 
 export function removeFuliGlobalInstructions(source) {
