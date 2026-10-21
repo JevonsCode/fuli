@@ -487,10 +487,15 @@ test('with the default off, a client without a native session is served only wit
     createLeases: leases });
   assert.equal((await entry('synthetic-cursor-started')).reason, 'session_unattributed');
   assert.deepEqual(await cursorLine('Plan.'), { continue: true });
-  const served = await callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: task.taskContextToken,
+  // The token its last entry returned (here the hook's) attributes the next entry (option Y).
+  const attributed = await callAgentTool(f.app, 'get_collaboration_preferences', { projectPath: f.dirs.novel, taskPrompt: 'Plan.',
+    sessionId: 'synthetic-cursor-started', sourceSessionId: 'synthetic-cursor-started', sourceApplication: 'cursor',
+    taskContextToken: task.taskContextToken }, process);
+  assert.ok(attributed.taskContextToken, 'served with its token');
+  const served = await callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: attributed.taskContextToken,
     sourceApplication: 'cursor', disposition: 'retain_nothing', reason: 'Nothing to keep.',
     workLog: { status: 'completed', summary: 'Planned.' } }, process);
-  assert.notEqual(served.status, 'fuli_off', 'its hook task token is served');
+  assert.notEqual(served.status, 'fuli_off', 'and so is its checkpoint with the fresh token');
 });
 
 // Dot's review of #251, P1a: Claude Code keeps its MCP process, and so its native session, across
@@ -587,4 +592,56 @@ test('a restart whose context reset fails says so instead of promising a full co
   assert.equal(await delivery.reset({ sourceApplication: 'codex', nativeSessionId: SESSION_A }), false);
   assert.equal(await createSessionPreferenceDelivery({ directory: join(f.root, 'delivery'), env: {} })
     .reset({ sourceApplication: 'codex', nativeSessionId: SESSION_A }), true);
+});
+
+// Option Y (#251): tools an Agent calls without a task of their own take the task token it already
+// has, so a window whose session is on is served while another window of the client is stopped.
+test('the task token a call carries decides it: the stopped window stays refused, a sibling window is served', async (t) => {
+  const f = await fixture(t);
+  const seen = [];
+  const search = f.app.searchKnowledge;
+  f.app.searchKnowledge = async input => { seen.push(input); return search(input); };
+  const a = await codexEntry(f, f.dirs.novel, { session: SESSION_A });
+  const b = await codexEntry(f, f.dirs.novel, { session: SESSION_B });
+  await codexLine(f, SESSION_A, 'fuli stop');
+  const process = { env: {}, sourceApplication: 'codex' };
+  const searchWith = token => mcpCall(f, process, 'search_knowledge_graph', { personalSpaceId: 'synthetic-space', query: 'chapter',
+    ...(token === undefined ? {} : { taskContextToken: token }) });
+  const entryWith = token => mcpCall(f, process, 'get_collaboration_preferences', { projectPath: f.dirs.novel, taskPrompt: 'Next.',
+    ...(token === undefined ? {} : { taskContextToken: token }) });
+
+  // A sibling window with its own token searches and enters; the tool never sees the token.
+  assert.ok(Array.isArray((await searchWith(b.context.taskContextToken)).facts));
+  assert.equal(Object.hasOwn(seen.at(-1), 'taskContextToken'), false);
+  const next = await mcpCall(f, process, 'get_collaboration_preferences', { projectPath: f.dirs.novel, taskPrompt: 'Next.',
+    sessionId: SESSION_B, taskContextToken: b.context.taskContextToken });
+  assert.ok(next.taskContextToken, 'served, with a fresh token for its next calls');
+  assert.ok(Array.isArray((await searchWith(next.taskContextToken)).facts));
+  // The stopped window is refused even with its own token.
+  for (const call of [searchWith, entryWith]) {
+    assert.deepEqual([(await call(a.context.taskContextToken)).reason], ['session_stopped']);
+  }
+  // Without a token, or with one that proves nothing, the strict rule stays.
+  const claudeTask = f.app.taskContextRegistry.begin({ sessionId: SESSION_C, personalProjectId: 'novel', projectAgentId: 'lead-novel',
+    sourceApplication: 'claude_code' });
+  for (const [label, token] of [['none', undefined], ['forged', 'fuli-task-synthetic-forged'],
+    ['superseded', b.context.taskContextToken], ['another client', claudeTask.token], ['oversized', `fuli-task-${'x'.repeat(300)}`]]) {
+    for (const call of [searchWith, entryWith]) {
+      const refused = await call(token);
+      assert.deepEqual([refused.status, refused.reason], ['fuli_off', 'session_unattributed'], `${label} ${call === searchWith ? 'search' : 'entry'}`);
+    }
+  }
+});
+
+test('the attribution token is an optional field of the tools Agents call without a task, and only of them', () => {
+  const byName = new Map(listAgentTools().map(tool => [tool.name, tool.inputSchema]));
+  for (const name of ['get_collaboration_preferences', 'get_user_taste_skill', 'search_current_project_knowledge', 'search_knowledge_graph',
+    'search_connected_knowledge', 'list_project_agents', 'get_project_agent_context', 'get_project_agent_memory',
+    'list_preference_conflicts', 'resolve_deferred_preference_conflict', 'request_agent_attention', 'assess_agent_action',
+    'review_with_tonborg', 'get_agent_quality_gate', 'get_project_team', 'recommend_next_workflow_steps', 'find_agents']) {
+    assert.deepEqual(byName.get(name).properties.taskContextToken, { type: 'string' }, name);
+    assert.equal((byName.get(name).required ?? []).includes('taskContextToken'), false, name);
+  }
+  assert.equal(Object.hasOwn(byName.get('get_capture_policy').properties, 'taskContextToken'), true, 'tools that had one keep theirs');
+  assert.equal(Object.hasOwn(byName.get('list_agent_interfaces').properties ?? {}, 'taskContextToken'), false);
 });

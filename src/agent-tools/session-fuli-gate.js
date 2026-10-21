@@ -19,6 +19,32 @@ const OPEN_TOOLS = new Set([
   'acquire_runtime_lease', 'refresh_runtime_lease', 'release_runtime_lease'
 ]);
 export const SESSION_FULI_OFF = 'fuli_off';
+// Tools an Agent calls without a task of their own (entry, recall, team and
+// judgment reads). They take the current taskContextToken only to say which
+// session they are for: without it, a call is refused while any session of
+// its client is off, since no host session shows the current one (option Y,
+// #251). The token is used here and never reaches the tool.
+const ATTRIBUTED_TOOLS = new Set([
+  'get_collaboration_preferences', 'get_user_taste_skill', 'search_current_project_knowledge', 'search_knowledge_graph',
+  'search_connected_knowledge', 'list_project_agents', 'get_project_agent_context', 'get_project_agent_memory',
+  'list_preference_conflicts', 'resolve_deferred_preference_conflict', 'request_agent_attention', 'assess_agent_action',
+  'review_with_tonborg', 'get_agent_quality_gate', 'get_project_team', 'recommend_next_workflow_steps', 'find_agents'
+]);
+// Bare: a value the registry does not know only leaves the call unattributed.
+const TOKEN_FIELD = Object.freeze({ type: 'string' });
+
+// A tool definition as Agents see it: an attributed tool lists the token.
+export function withSessionAttribution(definition) {
+  return ATTRIBUTED_TOOLS.has(definition.name) ? { ...definition, inputSchema: { ...definition.inputSchema,
+    properties: { ...definition.inputSchema.properties, taskContextToken: TOKEN_FIELD } } } : definition;
+}
+
+// The input a tool itself receives.
+export function withoutSessionAttribution(name, input) {
+  if (!ATTRIBUTED_TOOLS.has(name) || !input || typeof input !== 'object' || !Object.hasOwn(input, 'taskContextToken')) return input;
+  const { taskContextToken: _attribution, ...rest } = input;
+  return rest;
+}
 const GUIDANCE = 'FULI is off for this session, so nothing was read, injected, recorded or started. Do not call FULI tools for this session or add an agent_receipt; only the person can turn it on (/fuli start).';
 const UNATTRIBUTED_GUIDANCE = 'FULI could not tell which session this call comes from while a session of this client has FULI off, so nothing was read or started. Calls that carry the current taskContextToken of this session are served; do not describe this as the person stopping FULI here.';
 
@@ -45,9 +71,10 @@ export async function sessionFuliRefusal(app, input = {}) {
 // A token that does not resolve leaves the decision to the other identities;
 // the tool itself then refuses the token.
 async function boundSession(app, input, sourceApplication) {
-  if (typeof input?.taskContextToken !== 'string' || !app.taskContextRegistry) return null;
+  const token = input?.taskContextToken;
+  if (typeof token !== 'string' || !token || token.length > 256 || !app.taskContextRegistry) return null;
   try {
-    return (await app.taskContextRegistry.context(input.taskContextToken, sourceApplication)).sessionId ?? null;
+    return (await app.taskContextRegistry.context(token, sourceApplication)).sessionId ?? null;
   } catch {
     return null;
   }

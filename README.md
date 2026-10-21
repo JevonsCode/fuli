@@ -398,7 +398,8 @@ shows the session and the default; nothing said while FULI was off is recorded l
 to the model cannot be taken back, so isolation needs a new session. Only a task token shows which session a
 tool call is for (Claude Code keeps its tool connection across /clear; Codex and Cursor connections name no
 session), so while any session of a client is off FULI refuses that client's tool calls without a task token,
-rather than serve memory to a session that may be the stopped one. The same switch runs from a shell the
+rather than serve memory to a session that may be the stopped one. Agents pass the `taskContextToken` they
+already have (entry, searches and team reads take it), so other windows keep working. The same switch runs from a shell the
 client started (`!fuli session stop`), so an Agent with shell access can run it too (the same trust as
 access to your files); the console and `fuli mcp --call` still read for you, and `fuli session default off` makes new sessions start with FULI
 off until started; sessions already open keep theirs.

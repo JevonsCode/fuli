@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
+import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
 import { transcriptCaptureScope } from '../../conversations/sync-transcript.js';
 import { captureDecision, withCaptureLookups } from '../../graphiti/capture-decision.js';
@@ -40,7 +40,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
       sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source
     });
     return preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'claude_code',
-      'Fuli task context. Read full context; apply effective_preferences. Follow checkpoint_guidance: checkpoint_task_knowledge only when there is something to record; the Stop hook closes the rest. ' + TASK_RULES_ON_DEMAND);
+      'Fuli task context. Read full context; apply effective_preferences. Follow checkpoint_guidance: checkpoint_task_knowledge only when there is something to record; the Stop hook closes the rest. ' + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
   return stopHookOutcome(check, invoke, source);
