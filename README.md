@@ -476,7 +476,8 @@ are isolated per target. Use Bind projects on an existing connection to add or r
    `export PROJECT_KB_TOKEN='...'` and then `fl restart`.
 3. Open `http://127.0.0.1:2727/connections`. Under External knowledge, enter a connection name,
    connector, one or more bound projects, and retrieval mode.
-4. For MCP HTTP, enter the server URL and optional token environment-variable name. For MCP stdio,
+4. For MCP HTTP, enter the final endpoint URL (redirects to another origin are not followed) and an
+   optional token environment-variable name. For MCP stdio,
    enter its command and arguments. For Notion, enter the token environment-variable name and Page
    IDs or Data Source IDs. For Feishu/Lark, enter the token environment-variable name, region, and
    an explicit Space ID, root-node token, or node tokens. For RAG Retrieval API, enter a

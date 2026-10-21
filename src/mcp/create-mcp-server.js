@@ -30,6 +30,7 @@ import {
   completeToolResult
 } from './tool-result.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
+import { assertToolInputWithinBudget } from './tool-input-budget.js';
 import { nativeSessionFromEnv } from '../agents/native-session-env.js';
 import {
   mcpHostSessionId,
@@ -289,6 +290,7 @@ function registerTool(server, tool, chat = false) {
 
 function registerCallHandler(server, tools, onDemandTools, resolveNativeContext = null) {
   server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    assertToolInputWithinBudget(request.params.arguments);
     if (request.params.name === DISPATCH_TOOL && onDemandTools) {
       const { toolName, input } = request.params.arguments ?? {};
       const target = toolName === DISPATCH_TOOL ? null : tools.get(toolName) ?? onDemandTools.get(toolName);
