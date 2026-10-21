@@ -608,6 +608,19 @@ class StoreKnowledge:
                           old.expired_at = $created_at,
                           old.fuli_replaced_by_item_id = replacement.replacement_id,
                           old.fuli_replaced_by_item_kind = 'relationship'
+                      WITH old, replacement
+                      OPTIONAL MATCH (revision_space:FuliSpace {id: $space_id, kind: 'personal'})
+                      FOREACH (_ IN CASE WHEN revision_space IS NULL THEN [] ELSE [1] END |
+                        CREATE (revision:FuliKnowledgeRevision {
+                          id: $episode_id + ':supersede:' + old.uuid, space_id: $space_id,
+                          item_id: old.uuid, item_kind: 'relationship', action: 'supersede',
+                          reason: 'A capture replaced this relationship.', previous_json: '{}',
+                          current_json: '{"changedBy": "agent", "replacedByItemId": "'
+                            + replacement.replacement_id + '", "replacedByItemKind": "relationship"}',
+                          created_by: 'capture', created_at: $created_at
+                        })
+                        MERGE (revision_space)-[:HAS_KNOWLEDGE_REVISION]->(revision)
+                      )
                       RETURN count(*) AS _superseded_relationship_count
                     }
                     RETURN edge_count

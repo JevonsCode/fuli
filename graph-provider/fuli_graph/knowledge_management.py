@@ -218,7 +218,7 @@ async def _version_lifecycle(
     """Handle an edit that writes a new version, the outdated mark, and a
     restore that would erase history; None leaves the in-place revision."""
     # Deferred: the version and outdated modules build on this one.
-    from .knowledge_basis_review import apply_meaning, basis_review, clear_downstream_of
+    from .knowledge_basis_review import apply_meaning, basis_review, clear_reviewed, reviewed_changes
     from .knowledge_outdated import mark_item_outdated, report_outdated_to_person
     from .knowledge_versions import (
         creates_version, current_version_id, item_revisions, lock_knowledge, terminal, version_status,
@@ -231,13 +231,13 @@ async def _version_lifecycle(
     # Once replaced or out of date, a version stays history: a deactivation
     # cannot overwrite that end and a restore cannot undo it (P1-c).
     if request.action == 'invalidate':
-        if terminal(revisions):
+        if terminal(current, revisions):
             raise HTTPException(status_code=409, detail={
                 'code': 'lifecycle_final',
                 'message': 'this version was replaced or went out of date; its end stays as it was'})
         return None
     if request.action == 'restore':
-        if terminal(revisions):
+        if terminal(current, revisions):
             raise HTTPException(status_code=409, detail={
                 'code': 'reassert_as_new_version',
                 'message': ('this knowledge was replaced or went out of date; re-assert it as a new '
@@ -256,7 +256,7 @@ async def _version_lifecycle(
             reason=request.reason, previous=previous, current=previous, created_at=created_at,
             changed_by='user', dependents_changed=changed)
     if request.action == 'reaffirm':
-        if status != 'current' or basis_review(revisions) is None:
+        if status != 'current' or basis_review(current, revisions) is None:
             raise HTTPException(status_code=409, detail={
                 'code': 'nothing_to_review', 'message': 'no changed basis waits for a review here'})
         value = version_value(previous, next_value, explicit_confirmation=False, changed_by='user',
@@ -267,8 +267,10 @@ async def _version_lifecycle(
                 embedding=None, reason=request.reason, changed_by='user',
                 created_at=created_at, revision_id=revision_id, previous_snapshot=previous,
             )
-            cleared = await clear_downstream_of(scoped, actor, space, request.item_kind, version_id,
-                                                reason=request.reason, changed_by='user', created_at=created_at)
+            # Only the changes this conclusion waited for are settled below it.
+            cleared = await clear_reviewed(scoped, actor, space, request.item_kind, version_id,
+                                           changes=reviewed_changes(current), reason=request.reason,
+                                           changed_by='user', created_at=created_at)
             await record_human_change(scoped, actor, space, version_id, request.item_kind,
                                       reason=request.reason, operation='knowledge_reaffirm')
         return KnowledgeRevisionRecord(
@@ -402,6 +404,12 @@ async def reassign_knowledge_item(
         existing.project_id if existing
         else await _implicit_project_id(store, space, item_id, request.item_kind)
     )
+    async with query_store_transaction(store) as scoped:
+        return await _reassign(scoped, actor, space, item_id, request, existing, previous_project_id)
+
+
+async def _reassign(store, actor, space, item_id, request, existing, previous_project_id):
+    """The assignment and its scope revision, in the caller's transaction."""
     assignment = await write_project_assignment(
         store, space, item_id, request.item_kind, request.target_project_id,
         previous_project_id=previous_project_id, existing=existing,
@@ -666,6 +674,7 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind,
                item.fuli_derived_from_item_ids AS derived_from_item_ids,
+               item.fuli_unresolved_bases AS unresolved_bases,
                coalesce(item.fuli_ai_review_lock_version, 0)
                  AS ai_review_lock_version
         '''
@@ -718,6 +727,7 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                item.fuli_replaced_by_item_id AS replaced_by_item_id,
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind,
                item.fuli_derived_from_item_ids AS derived_from_item_ids,
+               item.fuli_unresolved_bases AS unresolved_bases,
                coalesce(item.fuli_ai_review_lock_version, 0)
                  AS ai_review_lock_version
         '''

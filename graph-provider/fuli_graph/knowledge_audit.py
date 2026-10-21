@@ -415,6 +415,8 @@ async def _record_one_knowledge_use(store, actor, space, request, item):
         previous_status == 'pending'
         and not state.get('has_open_conflict')
         and suspension is None
+        # A conclusion waiting for a person's review is not promoted by use.
+        and not state.get('unresolved_bases')
         and qualified_use_count >= AGENT_CONFIRMATION_MIN_USES
         and distinct_task_count >= AGENT_CONFIRMATION_MIN_TASKS
     )
@@ -789,6 +791,7 @@ async def _read_usage_state(store, space, item_id, item_kind):
                  AS negative_evidence_count,
                item.fuli_negative_feedback_block_json
                  AS negative_feedback_block_json,
+               size(coalesce(item.fuli_unresolved_bases, [])) AS unresolved_bases,
                coalesce(item.fuli_qualified_use_count, 0) AS qualified_use_count,
                coalesce(item.fuli_distinct_task_count, 0) AS distinct_task_count,
                {

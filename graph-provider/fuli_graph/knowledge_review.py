@@ -729,6 +729,7 @@ def _float_or_default(value, default: float) -> float:
 _ENTITY_CANDIDATE_QUERY = '''
 MATCH (item:Entity {group_id: $group_id})
 WHERE item.fuli_invalid_at IS NULL
+  AND size(coalesce(item.fuli_unresolved_bases, [])) = 0
 OPTIONAL MATCH (episode:Episodic {group_id: $group_id})-[:MENTIONS]->(item)
 OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
   space_id: $space_id, item_kind: 'entity', item_id: item.uuid
@@ -780,6 +781,7 @@ RETURN item.uuid AS item_id,
 _RELATIONSHIP_CANDIDATE_QUERY = '''
 MATCH ()-[item:RELATES_TO {group_id: $group_id}]->()
 WHERE item.invalid_at IS NULL
+  AND size(coalesce(item.fuli_unresolved_bases, [])) = 0
 OPTIONAL MATCH (episode:Episodic {group_id: $group_id})
 WHERE episode.uuid IN coalesce(item.episodes, [])
 OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
@@ -1016,7 +1018,7 @@ _AI_REVIEW_ENTITY_WRITE_QUERY = '''
 MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
       [:HAS_KNOWLEDGE_REVIEW]->(run:FuliKnowledgeReviewRun {id: $review_id})
 MATCH (item:Entity {uuid: $item_id, group_id: $group_id})
-WHERE run.status IN ['active', 'paused']
+WHERE run.status IN ['active', 'paused'] AND size(coalesce(item.fuli_unresolved_bases, [])) = 0
 MERGE (decision:FuliKnowledgeReviewDecision {id: $decision_id})
 ON CREATE SET decision.created_at = $updated_at
 SET item.fuli_ai_review_evidence_token = $ai_review_evidence_token,
@@ -1045,7 +1047,7 @@ _AI_REVIEW_RELATIONSHIP_WRITE_QUERY = '''
 MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
       [:HAS_KNOWLEDGE_REVIEW]->(run:FuliKnowledgeReviewRun {id: $review_id})
 MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()
-WHERE run.status IN ['active', 'paused']
+WHERE run.status IN ['active', 'paused'] AND size(coalesce(item.fuli_unresolved_bases, [])) = 0
 MERGE (decision:FuliKnowledgeReviewDecision {id: $decision_id})
 ON CREATE SET decision.created_at = $updated_at
 SET item.fuli_ai_review_evidence_token = $ai_review_evidence_token,

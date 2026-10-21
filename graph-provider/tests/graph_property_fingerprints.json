@@ -234,6 +234,7 @@
     "fuli_source_uri",
     "fuli_summary",
     "fuli_type",
+    "fuli_unresolved_bases",
     "fuli_usage_generation",
     "fuli_utility_score",
     "fuli_workflow_condition_json",

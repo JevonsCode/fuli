@@ -42,8 +42,9 @@ async def test_an_edit_of_a_basis_changes_its_meaning_by_default_and_the_conclus
         assert edited['dependents_changed'] == 2, 'the change runs down the chain'
         for item_id in (conclusion, follow):
             waiting = await view(client, space_id, item_id)
+            # The gate is its own state: the person's confirmation is kept, and still nothing delivers it.
             assert (waiting['basis_review'], waiting['confirmation_status'], waiting['status']) == (
-                'changed', 'pending', 'current')
+                'changed', 'confirmed', 'current')
             assert item_id not in await applied(client, space_id, 'alpha'), 'not delivered until reviewed'
         assert 'basis_changed' in {revision['action'] for revision in (await view(client, space_id, conclusion))[
             'revisions']}

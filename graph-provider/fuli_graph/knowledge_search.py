@@ -178,6 +178,7 @@ async def personal_edge_scopes(
         '''
         MATCH ()-[edge:RELATES_TO {group_id: $group_id}]->()
         WHERE edge.uuid IN $edge_ids
+          AND size(coalesce(edge.fuli_unresolved_bases, [])) = 0
         OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
           space_id: $space_id,
           item_kind: 'relationship',
@@ -355,6 +356,7 @@ async def _personal_entities(
               })
         WITH node, episodes, assignment, collect(DISTINCT reference) AS references
         WHERE ($include_historical OR node.fuli_invalid_at IS NULL)
+          AND size(coalesce(node.fuli_unresolved_bases, [])) = 0
           AND (
             $include_pending
             OR coalesce(node.fuli_confirmation_status, 'pending')

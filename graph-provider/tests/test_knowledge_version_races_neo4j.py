@@ -123,8 +123,8 @@ async def test_p1a_a_basis_marked_outdated_while_a_capture_holds_the_lock_also_e
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('across_processes', [False, True])
-async def test_p1b_a_capture_and_a_console_reassertion_of_one_version_leave_exactly_one_head(across_processes):
+@pytest.mark.parametrize('two_instances', [False, True])
+async def test_p1b_a_capture_and_a_console_reassertion_of_one_version_leave_exactly_one_head(two_instances):
     settings = fixture_settings()
     async with provider_client(settings) as (client, token):
         space_id = await space_with_projects(client, 'alpha')
@@ -133,9 +133,10 @@ async def test_p1b_a_capture_and_a_console_reassertion_of_one_version_leave_exac
         await confirm(client, space_id, old_id)
         ok(await mark_outdated(client, space_id, old_id, version=(await view(client, space_id, old_id))['version']))
         version = (await view(client, space_id, old_id))['version']
-        # A second Provider instance on the same graph stands for another process.
+        # A second Provider instance on the same graph, in this one OS process: it
+        # shares no in-memory lock with the first, only the graph's write lock.
         async with provider_client(settings, token) as (other, _):
-            console = other if across_processes else client
+            console = other if two_instances else client
             with paused_at_lock() as (taken, release):
                 capture = asyncio.create_task(commit(client, space_id, [words], key=f'again-{uuid4()}'))
                 await asyncio.wait_for(taken.wait(), 5)

@@ -73,11 +73,14 @@ def version_status(invalid_at, replaced_by_item_id, revisions) -> VersionStatus:
 
 # Once a version was replaced or went out of date it stays history: neither
 # a later deactivation nor a restore can give it back its validity.
-TERMINAL_ACTIONS = frozenset({'supersede', 'mark_outdated', 'basis_outdated'})
+TERMINAL_ACTIONS = frozenset({'supersede', 'mark_outdated', 'basis_outdated', 'reassert'})
 
 
-def terminal(revisions) -> bool:
-    return any(revision.action in TERMINAL_ACTIONS for revision in revisions)
+def terminal(current: dict, revisions) -> bool:
+    """From durable facts, not the latest action: a successor link (a newer
+    version, a capture's supersedes, a re-assertion) or any recorded end."""
+    return bool(current.get('replaced_by_item_id')) or any(
+        revision.action in TERMINAL_ACTIONS for revision in revisions)
 
 
 def ending_action(revisions) -> str | None:
@@ -426,6 +429,10 @@ def _first_author(content_source):
 
 def _carried_properties(stored, item_kind, new_id, value, changed_by, created_at) -> dict:
     properties = {key: item for key, item in stored.items() if key not in _NOT_CARRIED}
+    if changed_by == 'user':
+        # A person's own version is their review: it waits for no basis. An
+        # Agent's rewrite keeps waiting where the old one did.
+        properties.pop('fuli_unresolved_bases', None)
     properties.update({
         'uuid': new_id, 'created_at': created_at, 'fuli_ai_review_lock_version': 0,
         'fuli_content_source': 'user_explicit' if changed_by == 'user' else 'agent_inferred',

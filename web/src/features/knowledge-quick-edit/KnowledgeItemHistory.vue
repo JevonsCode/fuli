@@ -40,13 +40,11 @@ const action = (value: string) => t(`knowledgeQuickEdit.history.actions.${value}
               <span class="flex flex-wrap items-center gap-1.5">
                 <Badge :variant="versionTone(version.status)">{{ versionStatusLabel(version.status) }}</Badge>
                 <Badge v-if="version.item_id === item.item_id" variant="outline" data-version-viewing>{{ t('knowledgeQuickEdit.history.viewing') }}</Badge>
-                <!-- Who and when, then source and confirmation: two segments that wrap whole on a phone. -->
-                <span class="text-xs whitespace-nowrap text-muted-foreground" data-version-who>
-                  {{ when(version.created_at) }} · {{ changedByLabel(version.changed_by) }}
-                </span>
-                <span class="text-xs whitespace-nowrap text-muted-foreground" data-version-evidence>
-                  {{ sourceLabel(version) }} · {{ confirmationLabel(version) }}
-                </span>
+              </span>
+              <!-- Who and when, then source and confirmation: two segments on their own line, each wrapping whole. -->
+              <span class="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                <span class="whitespace-nowrap" data-version-who>{{ when(version.created_at) }} · {{ changedByLabel(version.changed_by) }}</span>
+                <span class="whitespace-nowrap" data-version-evidence>{{ sourceLabel(version) }} · {{ confirmationLabel(version) }}</span>
               </span>
               <span class="line-clamp-2 [overflow-wrap:anywhere]">{{ version.content }}</span>
               <span v-if="version.reason" class="text-xs text-muted-foreground [overflow-wrap:anywhere]">

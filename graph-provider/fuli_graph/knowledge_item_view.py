@@ -51,7 +51,7 @@ async def read_knowledge_item_view(store, actor: dict, request: KnowledgeItemRef
     versions = await version_chain(store, space, request.item_kind, request.item_id)
     head = next((version['item_id'] for version in versions if version['status'] == 'current'), None)
     return KnowledgeItemView(
-        basis_review=basis_review(revisions),
+        basis_review=basis_review(current, revisions),
         dependent_count=len(await dependents_of(store, space, request.item_kind, head or request.item_id)),
         **summary.model_dump(), evidence=evidence, evidence_count=len(source_ids),
         revisions=revisions[:REVISION_LIMIT], versions=versions,
