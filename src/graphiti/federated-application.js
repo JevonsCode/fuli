@@ -36,6 +36,7 @@ import {
 } from './capture-policy.js';
 import { captureDecision, captureDisabled } from './capture-decision.js';
 import { createCaptureChanges } from './capture-change-confirmation.js';
+import { createCaptureOnboarding } from './capture-onboarding.js';
 import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';
 import { setSessionCapturePause } from './session-capture-pause-request.js';
 import { readOwnSessionRecords } from './session-records.js';
@@ -206,6 +207,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     const captureChangeReads = { listProjects: () => this.listPersonalProjects(), consoleUrl,
       taskContext: (token, client) => this.taskContextRegistry.context(token, client) };
     this.captureChanges = createCaptureChanges(capturePolicyStore, captureChangeReads);
+    this.captureOnboarding = createCaptureOnboarding(capturePolicyStore);
     this.sessionCapturePauseStore = sessionCapturePauseStore;
     this.runtimeConfigPath = runtimeConfigPath;
     this.agentAccessPolicyStore = agentAccessPolicyStore;
@@ -1171,6 +1173,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       ...spaces,
       providers,
       capturePolicy: this.getCapturePolicy(),
+      captureOnboarding: this.captureOnboarding.state(),
       agentAccessPolicy: this.getAgentAccessPolicy(),
       recallPolicy: this.getRecallPolicy(),
       publicProvider: { configured, status: publicStatus },

@@ -10,6 +10,7 @@ import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
 import { handleKnowledgeItemRequest } from './knowledge-item-api-router.js';
 import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
+import { handleCaptureOnboardingRequest } from './capture-onboarding-api-router.js';
 
 export async function handleGraphApiRequest({
   request,
@@ -27,6 +28,7 @@ export async function handleGraphApiRequest({
   if (await handleKnowledgeItemRequest({ request, response, url, app })) return true;
   if (await handleSessionRecordsRequest({ request, response, url, app })) return true;
   if (await handleCaptureChangeRequest({ request, response, url, app })) return true;
+  if (await handleCaptureOnboardingRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
     sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
     return true;

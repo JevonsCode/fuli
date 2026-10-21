@@ -5,6 +5,11 @@ export function receiptConsoleUrl(application) {
   return application.consoleUrl ?? sourceConsoleUrl(null);
 }
 
+// The settings page where the person turns recording back on (rec#5 C10-3).
+export function captureSettingsUrl(application) {
+  return `${receiptConsoleUrl(application)}/settings`;
+}
+
 export function agentProfileUrl(application, agentId) {
   return `${receiptConsoleUrl(application)}/agents/${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(agentId)}`;
 }

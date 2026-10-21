@@ -43,12 +43,23 @@ export async function readHiddenLine({ prompt, input = process.stdin, output = p
 
 // Asks one yes/no question. An empty answer takes `defaultYes`.
 export async function confirmInTerminal(question, { defaultYes }) {
+  const answer = (await questionInTerminal(question)).trim().toLowerCase();
+  if (answer === '') return defaultYes;
+  return answer === 'y' || answer === 'yes';
+}
+
+// Asks one question and returns the line typed.
+export async function questionInTerminal(question) {
   const input = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = (await input.question(question)).trim().toLowerCase();
-    if (answer === '') return defaultYes;
-    return answer === 'y' || answer === 'yes';
+    return await input.question(question);
   } finally {
     input.close();
   }
+}
+
+// Whether this is an interactive terminal (both ends a TTY). A pipe, a script
+// or an Agent's shell is not; a TTY does not prove a person is there.
+export function interactiveTerminal() {
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
