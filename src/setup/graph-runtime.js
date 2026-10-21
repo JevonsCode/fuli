@@ -27,6 +27,8 @@ import {
 } from '../server/lan-access.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { GRAPH_RUNTIME_CONFIG_FORMAT } from '../graphiti/runtime-config.js';
+import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
   managedProviderUrls,
@@ -539,7 +541,7 @@ function graphDependencies(overrides) {
     secureFile: (path) => chmodSync(path, 0o600),
     ensureDirectory: (path) => mkdirSync(path, { recursive: true }),
     readConfig: (path) => readJsonFile(path, null),
-    writeConfig: writeJsonFileAtomic,
+    writeConfig: (path, value) => writeVersionedJsonFileAtomic(path, value, GRAPH_RUNTIME_CONFIG_FORMAT),
     writeRuntimeSettings,
     readAdaptiveSettings: readAdaptiveRuntimeSettings,
     writeAdaptiveSettings: writeAdaptiveRuntimeSettings,

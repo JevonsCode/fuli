@@ -7,7 +7,10 @@ from urllib.parse import urlparse
 import pytest
 from neo4j import AsyncGraphDatabase
 
-from fuli_graph.runtime import GraphitiRuntime
+from fuli_graph.graph_format_backfills import (
+    apply_learning_bucket_ids,
+    pending_learning_bucket_ids,
+)
 from fuli_graph.store_project_agent_executor_learning import (
     project_agent_executor_outcome_bucket_id,
 )
@@ -45,16 +48,17 @@ async def test_real_neo4j_learning_bucket_migration_and_concurrent_identity():
         await driver.verify_connectivity()
         await _clear_learning_fixture(driver)
         await _seed_legacy_learning_buckets(driver, strategy_key)
-        runtime = GraphitiRuntime.__new__(GraphitiRuntime)
-        runtime.graphiti = SimpleNamespace(driver=driver)
-        runtime.settings = SimpleNamespace(provider_id='integration-provider')
+        settings = SimpleNamespace(provider_id='integration-provider')
 
-        await runtime._migrate_project_agent_executor_learning_buckets()
+        # The format check counts what the step would change before a person
+        # confirms it (graph/2-learning-bucket-ids, rec#17 D-09).
+        assert await pending_learning_bucket_ids(driver, settings) > 0
+        await apply_learning_bucket_ids(driver, settings)
+        assert await pending_learning_bucket_ids(driver, settings) == 0
         await driver.execute_query(AGGREGATE_CONSTRAINT)
         await driver.execute_query(RESET_CONSTRAINT)
-        # Startup migration is deliberately safe to repeat after constraints
-        # already exist, as happens on every subsequent provider restart.
-        await runtime._migrate_project_agent_executor_learning_buckets()
+        # The confirmed step stays safe to repeat once the constraints exist.
+        await apply_learning_bucket_ids(driver, settings)
 
         aggregates, _, _ = await driver.execute_query(
             '''

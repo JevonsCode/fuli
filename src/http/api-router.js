@@ -17,7 +17,8 @@ export async function handleApiRequest({
   system = null,
   externalKnowledge = null,
   connectedKnowledge = null,
-  peer = null
+  peer = null,
+  dataFormats = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
@@ -30,7 +31,9 @@ export async function handleApiRequest({
       status: 'ready',
       service: 'fuli-local-console',
       pid: process.pid,
-      version: FULI_VERSION
+      version: FULI_VERSION,
+      // Local stores this FULI cannot use as they are (rec#17), by store and step.
+      ...(dataFormats ? { dataFormats: dataFormats() } : {})
     });
     return true;
   }

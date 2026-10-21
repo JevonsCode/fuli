@@ -3,7 +3,7 @@ import { chmod, lstat, mkdir } from 'node:fs/promises';
 import { openWithoutFollowing } from '../system/open-without-following.js';
 import { join } from 'node:path';
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
-import { writeJsonFileAtomic } from '../storage/json-file.js';
+import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';
 import { applyPreferenceDeltaSnapshot, copyPreferenceScope, preferenceSnapshot, projectPreferenceDelta } from './preference-snapshot.js';
@@ -12,6 +12,7 @@ import { locatePreferenceTranscript } from '../agents/preference-evidence.js';
 
 const SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_PENDING = 16;
+export const PREFERENCE_SESSION_FORMAT = jsonFormat({ store: 'preference-session', versions: [1] });
 
 // This private cache contains only hashes/cursors. It never stores instruction
 // bodies or grants authority. Native evidence is re-read on every use.
@@ -26,7 +27,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
       const path = join(directory, `${key}.json`);
       const state = await readState(path);
       return await operation(state, next => {
-        writeJsonFileAtomic(path, { version: 1, ...next });
+        writeVersionedJsonFileAtomic(path, { version: 1, ...next }, PREFERENCE_SESSION_FORMAT);
         return chmod(path, 0o600);
       });
     } finally { await release(); }

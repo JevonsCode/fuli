@@ -1,7 +1,6 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 // D-04 §2 role work packages, shared by every console and MCP process on one
 // data directory, so a pending package survives restarts. A package is never
@@ -29,17 +28,9 @@ const SAME_WORK = `role = :role AND operation = :operation AND space = :space AN
 const COLUMNS = 'package_id, role, operation, request_id, space, project, session_ref, evidence_version, policy_version, '
   + 'status, reason, created_at, expires_at, invalid_submissions, request, resume, fallback_receipt';
 
-export class RoleWorkStore {
-  constructor(path = ':memory:') {
-    this.path = path;
-  }
-
-  // Opened on first use, so a process that never hands off work creates no file.
-  get db() {
-    if (this.database) return this.database;
-    if (this.path !== ':memory:') mkdirSync(dirname(this.path), { recursive: true });
-    const db = new DatabaseSync(this.path);
-    db.exec(`PRAGMA busy_timeout = 5000;
+export const ROLE_WORK_FORMAT = sqliteFormat({
+  store: 'role-work',
+  schema: `
       CREATE TABLE IF NOT EXISTS role_work(
         package_id TEXT PRIMARY KEY, role TEXT NOT NULL, operation TEXT NOT NULL, request_id TEXT NOT NULL,
         space TEXT NOT NULL, project TEXT, session_ref TEXT, evidence_version TEXT NOT NULL, policy_version TEXT NOT NULL,
@@ -51,9 +42,18 @@ export class RoleWorkStore {
       CREATE INDEX IF NOT EXISTS role_work_request ON role_work(role, request_id);
       CREATE INDEX IF NOT EXISTS role_work_open ON role_work(space, status, created_at);
       CREATE TABLE IF NOT EXISTS role_work_events(id INTEGER PRIMARY KEY, package_id TEXT NOT NULL, event TEXT NOT NULL,
-        detail TEXT NOT NULL, at TEXT NOT NULL);`);
-    this.database = db;
-    return db;
+        detail TEXT NOT NULL, at TEXT NOT NULL);`
+});
+
+export class RoleWorkStore {
+  constructor(path = ':memory:') {
+    this.path = path;
+  }
+
+  // Opened on first use, so a process that never hands off work creates no file.
+  get db() {
+    this.database ??= openFormattedDatabase(this.path, ROLE_WORK_FORMAT);
+    return this.database;
   }
 
   // A new package supersedes every other package of the same work that could

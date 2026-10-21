@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { transcriptDigest } from '../conversations/transcript-guard.js';
 import { writeJsonFileAtomic } from '../storage/json-file.js';
+import { jsonFormat, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // The session layer of the capture settings (rec#5 C3, "这次别记"): which
 // host sessions are paused, kept in the local runtime directory and never in
@@ -32,6 +33,7 @@ import { writeJsonFileAtomic } from '../storage/json-file.js';
 // write after it (conversations/capture-window.js).
 
 const RECORD_VERSION = 1;
+export const CAPTURE_SESSION_PAUSE_FORMAT = jsonFormat({ store: 'capture-session-pause', versions: [RECORD_VERSION] });
 const RECORD_FILE = /^[0-9a-f]{64}\.json$/;
 const DEFAULT_FILE = 'default.json';
 const PINS = 'pins';
@@ -44,6 +46,7 @@ const PAUSED_BY = Object.freeze(['agent']);
 
 export class SessionCapturePauseStore {
   constructor(directory = null, { now = () => new Date().toISOString(),
+    // writeJson: the plain atomic write, run inside the format lock (rec#17).
     readText = file => readFileSync(file, 'utf8'), writeJson = writeJsonFileAtomic } = {}) {
     this.directory = directory ? resolve(directory) : null;
     this.now = now;
@@ -86,40 +89,43 @@ export class SessionCapturePauseStore {
   set(sessionId, { paused, by = 'agent', sourceApplication }) {
     if (typeof paused !== 'boolean') throw new TypeError('sessionPaused must be a boolean');
     if (!PAUSED_BY.includes(by)) throw new TypeError('Session pause must name who paused it');
-    const current = this.#read(validSessionId(sessionId));
-    const keepSince = paused && current?.paused;
-    return this.#write(sessionId, current, { paused, since: keepSince ? current.since : paused ? this.now() : null,
-      by: paused ? (keepSince ? current.by : by) : null, sourceApplication: requiredClient(sourceApplication) });
+    validSessionId(sessionId);
+    requiredClient(sourceApplication);
+    return this.#update(sessionId, (current) => {
+      const keepSince = paused && current?.paused;
+      return { paused, since: keepSince ? current.since : paused ? this.now() : null,
+        by: paused ? (keepSince ? current.by : by) : null, sourceApplication };
+    });
   }
 
   // Turns FULI on or off for one session from now on (rec#5 C3b).
   setEnabled(sessionId, { enabled, sourceApplication }) {
     if (typeof enabled !== 'boolean') throw new TypeError('The FULI session switch must be on or off');
-    const current = this.#read(validSessionId(sessionId));
-    this.#write(sessionId, current, { enabled, sourceApplication: requiredClient(sourceApplication), enabledBy: 'person',
-      enabledSince: current?.enabled === enabled && current.enabledBy === 'person' ? current.enabledSince : this.now() });
+    validSessionId(sessionId);
+    requiredClient(sourceApplication);
+    this.#update(sessionId, (current) => ({ enabled, sourceApplication, enabledBy: 'person',
+      enabledSince: current?.enabled === enabled && current.enabledBy === 'person' ? current.enabledSince : this.now() }));
   }
 
   // Whether new sessions start with FULI on. None saved means on; a setting
   // that cannot be read throws, so no session is taken for "on" by mistake.
   defaultSetting() {
-    const value = this.directory ? this.#readJson(join(this.directory, DEFAULT_FILE)) : this.memoryDefault;
-    if (value === null) return { enabled: true, since: null };
-    if (value?.version !== RECORD_VERSION || typeof value.enabled !== 'boolean' || typeof value.since !== 'string') {
-      throw new Error('FULI session default is invalid');
-    }
-    return { enabled: value.enabled, since: value.since };
+    return validDefault(this.directory ? this.#readJson(join(this.directory, DEFAULT_FILE)) : this.memoryDefault);
   }
 
   // since is when the default last changed; saving the same value changes nothing.
   setDefault(enabled) {
     if (typeof enabled !== 'boolean') throw new TypeError('The FULI session default must be on or off');
-    const current = this.defaultSetting();
-    if (current.enabled === enabled) return current;
-    const value = { version: RECORD_VERSION, enabled, since: this.now() };
-    if (this.directory) this.writeJson(join(this.directory, DEFAULT_FILE), value);
-    else this.memoryDefault = value;
-    return { enabled, since: value.since };
+    if (!this.directory) {
+      const current = this.defaultSetting();
+      if (current.enabled === enabled) return current;
+      this.memoryDefault = { version: RECORD_VERSION, enabled, since: this.now() };
+      return { enabled, since: this.memoryDefault.since };
+    }
+    const saved = updateVersionedJsonFileAtomic(join(this.directory, DEFAULT_FILE), CAPTURE_SESSION_PAUSE_FORMAT,
+      (current) => validDefault(current).enabled === enabled ? undefined
+        : { version: RECORD_VERSION, enabled, since: this.now() }, { read: this.#readJson.bind(this), write: this.writeJson });
+    return validDefault(saved);
   }
 
   // Keeps, once, the default a session started under. fresh: the host's own
@@ -140,12 +146,15 @@ export class SessionCapturePauseStore {
       this.memoryPins.set(sessionId, { ...value, enabled });
       return;
     }
+    // A pin is written once, under its own directory's format lock. Two
+    // starts racing may pin a session both ways; #pin reads off first, so the
+    // session is then off (fail closed) until the person starts it.
     try {
-      this.writeJson(this.#pinPath(sessionId, enabled), value);
+      updateVersionedJsonFileAtomic(this.#pinPath(sessionId, enabled), CAPTURE_SESSION_PAUSE_FORMAT,
+        (current) => current === null ? value : undefined, { read: this.#readJson.bind(this), write: this.writeJson });
     } catch {
-      const current = this.#read(sessionId);
-      if ((current?.enabled ?? null) !== null) return;
-      this.#write(sessionId, current, { enabled: false, enabledBy: 'fuli', enabledSince: this.now(), sourceApplication });
+      this.#update(sessionId, (current) => (current?.enabled ?? null) !== null ? undefined
+        : { enabled: false, enabledBy: 'fuli', enabledSince: this.now(), sourceApplication });
     }
   }
 
@@ -203,19 +212,35 @@ export class SessionCapturePauseStore {
   link(childSessionId, parentSessionId) {
     validSessionId(parentSessionId);
     if (childSessionId === parentSessionId) throw new TypeError('A session cannot start itself');
-    this.#write(childSessionId, this.#read(validSessionId(childSessionId)), { parentSessionId });
+    validSessionId(childSessionId);
+    this.#update(childSessionId, () => ({ parentSessionId }));
   }
 
   // A change names only the fields it changes; the others keep their value.
-  #write(sessionId, current, fields) {
-    const next = { version: RECORD_VERSION, generation: (current?.generation ?? 0) + 1, nonce: randomUUID(),
-      paused: current?.paused ?? false, since: current?.since ?? null, by: current?.by ?? null,
-      sourceApplication: current?.sourceApplication ?? null, parentSessionId: current?.parentSessionId ?? null,
-      enabled: current?.enabled ?? null, enabledSince: current?.enabledSince ?? null,
-      enabledBy: current?.enabledBy ?? null, ...fields };
-    if (this.directory) this.writeJson(this.#path(sessionId), next);
-    else this.memory.set(sessionId, next);
-    return { paused: next.paused, since: next.since, by: next.by };
+  // change(current) sees the latest record, read under the directory's
+  // format lock with the write (rec#17): a stop or pause another process
+  // saved meanwhile is never overwritten from an older snapshot. undefined
+  // leaves the record as it is.
+  #update(sessionId, change) {
+    const merge = (current) => {
+      const fields = change(current);
+      if (fields === undefined) return undefined;
+      return { version: RECORD_VERSION, generation: (current?.generation ?? 0) + 1, nonce: randomUUID(),
+        paused: current?.paused ?? false, since: current?.since ?? null, by: current?.by ?? null,
+        sourceApplication: current?.sourceApplication ?? null, parentSessionId: current?.parentSessionId ?? null,
+        enabled: current?.enabled ?? null, enabledSince: current?.enabledSince ?? null,
+        enabledBy: current?.enabledBy ?? null, ...fields };
+    };
+    let next;
+    if (this.directory) {
+      next = updateVersionedJsonFileAtomic(this.#path(sessionId), CAPTURE_SESSION_PAUSE_FORMAT, merge,
+        { read: this.#readFile.bind(this), write: this.writeJson });
+    } else {
+      const current = this.memory.get(sessionId) ?? null;
+      next = merge(current) ?? current;
+      if (next) this.memory.set(sessionId, next);
+    }
+    return { paused: next?.paused ?? false, since: next?.since ?? null, by: next?.by ?? null };
   }
 
   // The default of the outermost session of the chain FULI saw start, else
@@ -284,6 +309,16 @@ function validSessionId(value) {
 function requiredClient(value) {
   if (typeof value !== 'string' || !value) throw new TypeError('Session capture pause must name its client');
   return value;
+}
+
+// None saved means new sessions start with FULI on; an unreadable setting
+// throws, so no session is taken for "on" by mistake.
+function validDefault(value) {
+  if (value === null) return { enabled: true, since: null };
+  if (value?.version !== RECORD_VERSION || typeof value.enabled !== 'boolean' || typeof value.since !== 'string') {
+    throw new Error('FULI session default is invalid');
+  }
+  return { enabled: value.enabled, since: value.since };
 }
 
 function validPin(value) {

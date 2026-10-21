@@ -6,6 +6,21 @@ import test from 'node:test';
 
 import { ExternalKnowledgeRegistry } from '../src/external-knowledge/index.js';
 
+test('a registry written by a newer FULI is neither read nor overwritten', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-external-newer-'));
+  const file = join(directory, 'bindings.json');
+  const newer = JSON.stringify({ version: 3, bindings: [] });
+  writeFileSync(file, newer);
+  try {
+    const registry = new ExternalKnowledgeRegistry(file);
+    assert.throws(() => registry.list(), { code: 'data_format_blocked', message: /Upgrade FULI/ });
+    assert.throws(() => registry.put({ id: 'binding-1', targets: [] }), { code: 'data_format_blocked' });
+    assert.equal(readFileSync(file, 'utf8'), newer);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('registry mutation reservation excludes another instance and releases on failure', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-external-lock-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -20,7 +35,7 @@ test('registry mutation reservation excludes another instance and releases on fa
   assert.equal(await second.withMutation(() => 'released'), 'released');
 });
 
-test('registry migrates a v1 single-project binding to v2 target state without data loss', () => {
+test('a v1 registry reads as v2 targets without data loss, and its rewrite waits for a person', () => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-external-registry-'));
   const file = join(directory, 'bindings.json');
   writeFileSync(file, JSON.stringify({
@@ -69,8 +84,17 @@ test('registry migrates a v1 single-project binding to v2 target state without d
     assert.equal(binding.target, undefined);
     assert.equal(binding.connectorConfig.tokenEnv, 'LLM_WIKI_TOKEN');
 
-    registry.put(binding);
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 2);
+    // rec#17 D-09: restructuring stored bindings is a confirmed migration.
+    const before = readFileSync(file, 'utf8');
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      assert.throws(() => registry.put(binding), { code: 'data_format_pending', store: 'external-knowledge',
+        message: /external-knowledge\/2-binding-targets/ });
+    }
+    assert.throws(() => registry.delete('binding-1'), { code: 'data_format_pending' });
+    assert.equal(readFileSync(file, 'utf8'), before);
+    const ledger = JSON.parse(readFileSync(`${file}.format-ledger.json`, 'utf8'));
+    assert.deepEqual(ledger.events.map(({ migrationId, status, fromVersion, toVersion }) =>
+      [migrationId, status, fromVersion, toVersion]), [['external-knowledge/2-binding-targets', 'pending_confirmation', 1, 2]]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

@@ -3,9 +3,14 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { claudeLifecycleOutput, runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
 import { claudeLifecycleCommand } from '../src/agents/claude-code/lifecycle-hooks.js';
+
+// A private runtime directory, so no hook reaches a shared absolute path.
+const RUNTIME_ROOT = mkdtempSync(join(tmpdir(), 'fuli-claude-hook-'));
+const RUNTIME_CONFIG = join(RUNTIME_ROOT, 'runtime.json');
+after(() => rmSync(RUNTIME_ROOT, { recursive: true, force: true }));
 
 const input = { session_id: 'synthetic-claude-session', cwd: '/synthetic/project',
   prompt: 'Synthetic hook verification.', transcript_path: 'DO_NOT_READ', user_email: 'DO_NOT_COPY' };
@@ -142,7 +147,7 @@ test('Claude adapter releases runtime resources after failure and preserves requ
   await assert.rejects(runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
     signal: controller.signal,
     readInput: async () => input,
-    resolveRuntimeOptions: () => ({ runtimeConfigPath: '/synthetic/runtime.json' }),
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: RUNTIME_CONFIG }),
     openApplication: () => ({ close: async () => { closed.push('app'); } }),
     createLeases: () => ({
       withGraphLease: async (_owner, operation, request) => {
@@ -159,7 +164,7 @@ test('Claude adapter releases runtime resources after failure and preserves requ
 
 test('installed command contract fails open on malformed input without leaking diagnostics', () => {
   const result = spawnSync(process.execPath, ['src/agents/claude-code/lifecycle-hook.js',
-    '--event', 'UserPromptSubmit', '--runtime-config', '/synthetic/missing.json'], {
+    '--event', 'UserPromptSubmit', '--runtime-config', join(RUNTIME_ROOT, 'missing.json')], {
     input: '{private-invalid-input', encoding: 'utf8', timeout: 5000
   });
   assert.equal(result.status, 0);
@@ -185,7 +190,7 @@ test('Claude hook deadline returns an explicit degraded context even when stdin 
 
 test('Claude runtime failure preserves a known native session for fallback without private diagnostics', () => {
   const result = spawnSync(process.execPath, ['src/agents/claude-code/lifecycle-hook.js',
-    '--event', 'UserPromptSubmit', '--runtime-config', '/synthetic/private-missing.json'], {
+    '--event', 'UserPromptSubmit', '--runtime-config', join(RUNTIME_ROOT, 'private-missing.json')], {
     input: JSON.stringify(input), encoding: 'utf8', timeout: 5000
   });
   assert.equal(result.status, 0);

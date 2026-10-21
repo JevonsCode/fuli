@@ -395,6 +395,22 @@ test('provider client keeps malformed non-2xx responses on the HTTP error path',
   );
 });
 
+test('provider client keeps the graph data format refusal and its reason (rec#17)', async () => {
+  const client = new GraphitiProviderClient({
+    baseUrl: 'http://127.0.0.1:8787',
+    accessToken: 'test-token',
+    fetchImpl: async () => new Response(JSON.stringify({ detail: { code: 'data_format_read_only',
+      message: 'The graph needs migration graph/9-group-id-separators; FULI keeps the graph read-only.' } }), {
+      status: 503,
+      headers: { 'content-type': 'application/json' }
+    })
+  });
+
+  await assert.rejects(client.listSpaces(), (error) => error instanceof ProviderRequestError
+    && error.code === 'data_format_read_only' && error.status === 503
+    && /graph\/9-group-id-separators.*read-only/.test(error.message));
+});
+
 test('provider client aborts a request after the configured timeout', async () => {
   let requestSignal;
   const client = new GraphitiProviderClient({

@@ -54,6 +54,8 @@ jobs:
       FULI_TEST_NEO4J_URI: bolt://127.0.0.1:7687
       FULI_TEST_NEO4J_EPHEMERAL: "1"
       FULI_TEST_NEO4J_PASSWORD: fixture-pass
+      # The graph format tests empty this disposable graph between their cases.
+      FULI_TEST_NEO4J_RESETTABLE: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6

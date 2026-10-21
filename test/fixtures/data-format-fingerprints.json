@@ -1,0 +1,44 @@
+{
+  "sqlite": {
+    "agent-apps": {
+      "version": 1,
+      "fingerprint": "a664b90df106360febe4332b4e67c96108e2cde881cf8df1adcc90e5a1c3c93b"
+    },
+    "employee-management": {
+      "version": 1,
+      "fingerprint": "ac51af848f3e7277f38e13ba68567a10d187ee6558249c3230eec4493c53bf9b"
+    },
+    "judgment": {
+      "version": 1,
+      "fingerprint": "e621120361096b31c77958988cc3fc7cd0f19345732268b0fb28c6508da24b8e"
+    },
+    "model-usage": {
+      "version": 1,
+      "fingerprint": "3f8209318b44d242121cf35ad6a586756e317311d2edfe02be11e6d3c5accc17"
+    },
+    "peer-coordinator": {
+      "version": 2,
+      "fingerprint": "dd3e2d2edaec0dfdc77cabac08179aca58e8b179f618771089c245dfbd331f9a"
+    },
+    "peer-node": {
+      "version": 2,
+      "fingerprint": "84e992141a5146a52f2a2f838defca2a4478a987f0b2f4bdb572e0d1f2ee2420"
+    },
+    "role-work": {
+      "version": 1,
+      "fingerprint": "49aaea129bdbd051a4046e7bfa38a7652da87ad54a893ce25e1deb0d9688dbe3"
+    },
+    "roundtable": {
+      "version": 2,
+      "fingerprint": "b265944c4a5980d697aff60ed13541aa47a8227a2d4e2328f6c596b74d9caaaa"
+    },
+    "standalone": {
+      "version": 1,
+      "fingerprint": "d2c2d2c979da20f5546582c0240911615bd1b64d39c5f022c4be1dd7f767d62c"
+    },
+    "task-schedules": {
+      "version": 3,
+      "fingerprint": "86e188c99ddadb1e96caa77f033d5875f22b5c6cbbf31a55c247997677f99ff9"
+    }
+  }
+}
