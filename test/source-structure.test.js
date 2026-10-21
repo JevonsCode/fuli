@@ -61,6 +61,10 @@ const CAPTURE_SETTINGS_OWNERS = new Set([CAPTURE_PORT, 'src/graphiti/capture-pol
   'src/graphiti/session-layer-decision.js']);
 const CAPTURE_SETTINGS_ACCESS = /getCapturePolicy|capturePolicyStore|CapturePolicyStore|\bpolicyStore\b|capture-policy\.js|getSessionCapturePause|hasSessionWithoutCapture|hasStoppedSession|sessionFuliDefault\(|SessionCapturePauseStore|sessionCapturePauseStore|capture-session-pause\.js/;
 const CAPTURE_SETTINGS_CALL_SITES = new Map([
+  // rec#17: the data format inventory reads only the file's format version, never a setting.
+  ['src/data-format/local-stores.js', ["['capture-policy.json', CAPTURE_POLICY_FORMAT],",
+    "import { CAPTURE_POLICY_FORMAT } from '../graphiti/capture-policy.js';",
+    "import { CAPTURE_SESSION_PAUSE_FORMAT } from '../graphiti/capture-session-pause.js';"]],
   ['src/http/graph-api-router.js', ['sendJson(response, 200, app.getCapturePolicy());']],
   ['src/conversations/capture-window.js', ['getCapturePolicy: application.getCapturePolicy?.bind(application),',
     'getCapturePolicyVersion: application.getCapturePolicyVersion?.bind(application),',

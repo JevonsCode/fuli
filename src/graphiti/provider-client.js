@@ -1052,8 +1052,13 @@ function invalidResponse(message) {
   return new ProviderRequestError(message, { code: 'provider_invalid_response' });
 }
 
+// The graph's data format refusal (rec#17) keeps its code and reason: the
+// person has to upgrade, restore or confirm, which a bare 503 would hide.
+const DATA_FORMAT_CODE = /^data_format_[a-z_]{1,40}$/;
+
 function providerErrorDiagnostic(status, payload) {
-  const category = status >= 500 && status <= 599
+  const formatRefusal = DATA_FORMAT_CODE.test(payload?.detail?.code ?? '');
+  const category = status >= 500 && status <= 599 && !formatRefusal
     ? 'provider_http_5xx'
     : 'provider_error';
   if (category === 'provider_http_5xx') {

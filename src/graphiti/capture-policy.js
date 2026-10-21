@@ -1,19 +1,17 @@
-import {
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync
-} from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+
+import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { DEFAULT_PROJECT_SETTINGS, PROJECT_SETTING_KEYS, storedProjectSettings, updatedProjectSettings,
   usesProjectModes } from './capture-project-mode.js';
 
 // Capturing a client's sessions is separate from that client using FULI tools:
 // a disabled source still queries existing memory, it just adds nothing new.
 // This module stores the settings; capture-decision.js decides each write.
+// Version 2 only when per-project modes are in use (rec#5 C2).
+export const CAPTURE_POLICY_FORMAT = jsonFormat({ store: 'capture-policy', versions: [1, 2] });
+const CAPTURE_GENERATION_FORMAT = jsonFormat({ store: 'capture-policy-generation', versions: [1] });
 export const CAPTURE_SOURCES = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other']);
 
 const DEFAULT_POLICY = Object.freeze({
@@ -126,7 +124,7 @@ export class CapturePolicyStore {
   #nextGeneration(stored, observed) {
     const next = { version: 1, generation: (stored?.generation ?? 0) + 1, nonce: randomUUID(), observed };
     try {
-      writeAtomically(this.generationPath, next);
+      writeVersionedJsonFileAtomic(this.generationPath, next, CAPTURE_GENERATION_FORMAT);
     } catch {
       throw new CapturePolicyConfigurationError('Capture settings generation could not be saved');
     }
@@ -160,7 +158,8 @@ export class CapturePolicyStore {
       this.memory = next;
       return { ...next };
     }
-    writeAtomically(this.path, { version: usesProjectModes(next) ? 2 : 1, ...next });
+    // A repair from defaults must not replace settings a newer FULI saved (rec#17).
+    writeVersionedJsonFileAtomic(this.path, { version: usesProjectModes(next) ? 2 : 1, ...next }, CAPTURE_POLICY_FORMAT);
     this.#nextGeneration(this.#readGeneration(), this.#fileKey());
     return { ...next };
   }
@@ -205,18 +204,4 @@ function validSources(value, ErrorType) {
     throw new ErrorType('Capture policy disabledSources must list distinct supported clients');
   }
   return [...value].sort();
-}
-
-function writeAtomically(path, value) {
-  mkdirSync(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
-      encoding: 'utf8',
-      mode: 0o600
-    });
-    renameSync(temporaryPath, path);
-  } finally {
-    rmSync(temporaryPath, { force: true });
-  }
 }

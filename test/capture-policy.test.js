@@ -169,8 +169,8 @@ test('a stored project setting FULI cannot read records nothing', async (t) => {
   const path = join(directory, 'capture-policy.json');
   const store = new CapturePolicyStore(path);
   const app = { getCapturePolicy: () => store.read() };
-  for (const broken of [{ projectMode: 'everything' }, { selectedProjectIds: 'thesis' }, { projectsOffSince: [] },
-    { unregisteredDirectories: 'sometimes' }, { version: 3 }]) {
+  for (const broken of [{ version: 3 }, { projectMode: 'everything' }, { selectedProjectIds: 'thesis' },
+    { projectsOffSince: [] }, { unregisteredDirectories: 'sometimes' }]) {
     writeFileSync(path, JSON.stringify({ version: 2, enabled: true, disabledSources: [], updatedAt: null, ...broken }));
     assert.throws(() => store.read(), /Capture policy/, JSON.stringify(broken));
     assert.equal((await captureDecision(app, { sourceApplication: 'codex' })).reason, 'policy_unavailable');
@@ -180,6 +180,11 @@ test('a stored project setting FULI cannot read records nothing', async (t) => {
   assert.throws(() => store.update({ projectMode: 'selected' }), /Capture policy/);
   assert.deepEqual(store.update({ enabled: false }), { enabled: false, disabledSources: [], ...ALL_PROJECTS,
     updatedAt: store.read().updatedAt });
+  // Settings a newer FULI saved are not repaired over (rec#17 D-09).
+  const newer = JSON.stringify({ version: 3, enabled: true, disabledSources: [], updatedAt: null });
+  writeFileSync(path, newer);
+  assert.throws(() => store.update({ enabled: false }), { code: 'data_format_blocked', message: /Upgrade FULI/ });
+  assert.equal(readFileSync(path, 'utf8'), newer);
 });
 
 test('the policy file is parsed again only when it changes, and a corrupt file is never served from cache', async (t) => {

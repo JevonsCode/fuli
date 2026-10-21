@@ -1,6 +1,4 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 import { roundCost } from './budget.js';
 
@@ -27,17 +25,9 @@ const SUBSET_FIELDS = new Set(['cachedInput', 'cacheWriteInput', 'reasoning']);
 const UNKNOWN_USAGE = Object.freeze({ inputTokens: null, outputTokens: null, totalTokens: null, cachedInputTokens: null,
   cacheWriteInputTokens: null, reasoningTokens: null, definition: null });
 
-export class ModelUsageLedger {
-  constructor(path = ':memory:') {
-    this.path = path;
-  }
-
-  // Opened on first use, so a process that never reads usage creates no file.
-  get db() {
-    if (this.database) return this.database;
-    if (this.path !== ':memory:') mkdirSync(dirname(this.path), { recursive: true });
-    const db = new DatabaseSync(this.path);
-    db.exec(`PRAGMA busy_timeout = 5000;
+export const MODEL_USAGE_FORMAT = sqliteFormat({
+  store: 'model-usage',
+  schema: `
       CREATE TABLE IF NOT EXISTS model_attempts(
         request_id TEXT NOT NULL, attempt_id TEXT NOT NULL, attempt_number INTEGER NOT NULL,
         purpose TEXT NOT NULL CHECK(purpose IN ('initial', 'retry', 'repair', 'format_fallback')),
@@ -60,9 +50,19 @@ export class ModelUsageLedger {
       CREATE TRIGGER IF NOT EXISTS model_attempts_no_update BEFORE UPDATE ON model_attempts
         BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;
       CREATE TRIGGER IF NOT EXISTS model_attempts_no_delete BEFORE DELETE ON model_attempts
-        BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;`);
-    this.database = db;
-    return db;
+        BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;`
+});
+
+export class ModelUsageLedger {
+  constructor(path = ':memory:') {
+    this.path = path;
+  }
+
+  // Opened on first use, so a process that never reads usage creates no file.
+  get db() {
+    if (this.database) return this.database;
+    this.database = openFormattedDatabase(this.path, MODEL_USAGE_FORMAT);
+    return this.database;
   }
 
   // True when stored, false when this (requestId, attemptId) already exists.

@@ -1,15 +1,17 @@
-// A person's answer to an Agent's attention request, waiting in that Agent's
-// inbox. Shares the roundtable file so the console records it and every
-// client's MCP process sees it; the chat signal wakes a waiting session.
-export function createAttentionInboxStore(db, chat) {
-  db.exec(`
+// Part of the roundtable store format.
+export const ATTENTION_INBOX_SCHEMA = `
     CREATE TABLE IF NOT EXISTS attention_replies (
       space_id TEXT NOT NULL, request_id TEXT NOT NULL, revision INTEGER NOT NULL,
       project_id TEXT NOT NULL, agent_id TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
       question TEXT NOT NULL, choice TEXT, note TEXT, replied_at TEXT NOT NULL,
       delivered_at TEXT, delivered_via TEXT, PRIMARY KEY(space_id, request_id, revision));
     CREATE INDEX IF NOT EXISTS attention_replies_inbox ON attention_replies(space_id, agent_id, project_id, delivered_at);
-  `);
+`;
+
+// A person's answer to an Agent's attention request, waiting in that Agent's
+// inbox. Shares the roundtable file so the console records it and every
+// client's MCP process sees it; the chat signal wakes a waiting session.
+export function createAttentionInboxStore(db, chat) {
   const row = (spaceId, requestId, revision) => db.prepare(
     'SELECT * FROM attention_replies WHERE space_id=? AND request_id=? AND revision=?').get(spaceId, requestId, revision) ?? null;
   return {

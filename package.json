@@ -63,7 +63,7 @@
     "pretest": "npm run build:web",
     "test": "run-s typecheck:web test:node test:web",
     "prepack": "npm run build",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "node scripts/release-gate.js && npm test"
   },
   "engines": {
     "node": ">=24.12"

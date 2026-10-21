@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createTaskScheduleService } from '../src/task-schedules/service.js';
 import { startTaskScheduler } from '../src/task-schedules/scheduler.js';
+import { newerFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
 
 const SPACE = 'space-1';
 function fixture() {
@@ -159,6 +160,21 @@ test('the scheduler sleeps until the next due schedule and runs under the lease'
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(runs, 1);
   assert.deepEqual(leases, ['task-schedules:run']);
+  assert.equal(timers.length, 2);
+  await stop();
+});
+
+test('a schedule store this version cannot use leaves the scheduler waiting, not crashed (rec#17)', async () => {
+  const timers = [];
+  let runs = 0;
+  const app = { taskSchedules: { nextDueAt: () => { throw newerFormatError('task-schedules', 9, 3); },
+    runDue: async () => { runs += 1; throw newerFormatError('task-schedules', 9, 3); } } };
+  const stop = startTaskScheduler({ app, setTimer: (fn, ms) => { timers.push({ fn, ms }); return { unref() {} }; },
+    clearTimer: () => {} });
+  assert.equal(timers[0].ms, 15 * 60_000);
+  await timers[0].fn();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(runs, 1);
   assert.equal(timers.length, 2);
   await stop();
 });

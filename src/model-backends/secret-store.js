@@ -1,6 +1,7 @@
 import { rmSync, statSync } from 'node:fs';
 
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { createDpapiProtector } from './windows-dpapi.js';
 
 // Model API keys, stored under the FULI data directory and named by a
@@ -10,6 +11,7 @@ import { createDpapiProtector } from './windows-dpapi.js';
 // carries the key. The file is not part of config export, sync or backup.
 
 const STORE_VERSION = 1;
+export const MODEL_SECRETS_FORMAT = jsonFormat({ store: 'model-secrets', versions: [STORE_VERSION] });
 const REFERENCE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 const MAX_SECRET_LENGTH = 4096;
 const OTHER_USERS_MASK = 0o077;
@@ -69,8 +71,9 @@ export function createModelSecretStore({
       } catch {
         throw new ModelSecretError('secret_protection_failed', `The key for ${ref} could not be protected. Nothing was saved.`);
       }
-      writeJsonFileAtomic(path, { version: STORE_VERSION,
-        secrets: { ...records(), [ref]: { scheme: protector.scheme, data, updatedAt: new Date().toISOString() } } });
+      writeVersionedJsonFileAtomic(path, { version: STORE_VERSION,
+        secrets: { ...records(), [ref]: { scheme: protector.scheme, data, updatedAt: new Date().toISOString() } } },
+        MODEL_SECRETS_FORMAT);
       try {
         assertPrivate();
       } catch (error) {

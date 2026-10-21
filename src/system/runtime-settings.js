@@ -1,11 +1,13 @@
 import { chmodSync } from 'node:fs';
 
 import { isFetchBlockedPort } from '../server/blocked-ports.js';
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { deepFreeze } from '../validation/values.js';
 import { normalizeNeedsPersonUrl } from '../notifications/needs-person.js';
 
 export const RUNTIME_SETTINGS_VERSION = 1;
+export const RUNTIME_SETTINGS_FORMAT = jsonFormat({ store: 'runtime-settings', versions: [RUNTIME_SETTINGS_VERSION] });
 export const RESOURCE_REFRESH_OPTIONS = Object.freeze([5, 10, 30, 60]);
 export const GRAPH_RUNTIME_MODES = Object.freeze(['container', 'native']);
 export const CONVERSATION_LAUNCHER_APPLICATIONS = Object.freeze([
@@ -100,7 +102,7 @@ export function readRuntimeSettings(path, {
 }
 
 export function writeRuntimeSettings(path, input, {
-  write = writeJsonFileAtomic,
+  write = (filePath, value) => writeVersionedJsonFileAtomic(filePath, value, RUNTIME_SETTINGS_FORMAT),
   secure = (filePath) => chmodSync(filePath, 0o600)
 } = {}) {
   const settings = normalizeRuntimeSettings(input, { strict: true });

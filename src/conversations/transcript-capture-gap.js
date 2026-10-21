@@ -1,8 +1,11 @@
-import { readFile, rm } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { advanceCaptureSettingsVersion, captureDisabled } from '../graphiti/capture-decision.js';
-import { writeJsonFileAtomic } from '../storage/json-file.js';
+import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
+import { jsonFormat, removeVersionedJsonFileAtomic, updateVersionedJsonFileAtomic, writeVersionedJsonFileAtomic }
+  from '../storage/json-format.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { transcriptDigest } from './transcript-guard.js';
 import { verifiedTranscriptEnd } from './transcript-reader.js';
@@ -79,6 +82,8 @@ export async function skipTranscriptWhileOff(application, input, sourceApplicati
 // were ever saved. The generation is global for now (any client's switch moves
 // it); see the capture settings store's version() for the planned per-layer
 // generations.
+export const TRANSCRIPT_CAPTURE_FORMAT = jsonFormat({ store: 'transcript-capture-ledger', versions: [1] });
+
 export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplication) {
   const path = join(dirname(runtimeConfigPath), 'transcript-capture',
     `${transcriptDigest(`${runtimeConfigPath}\0${sourceApplication}\0${input.session_id}`)}.json`);
@@ -103,16 +108,25 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
     // and a session with no record is skipped, never imported: 'removed'. If
     // the old record cannot be removed either it stays readable, so it must
     // not be trusted again in this process: 'unkept' (see keepDenial()).
+    // The first pending reason is read and kept under the format lock with
+    // the write (rec#17), so a denial saved meanwhile is never lost.
     async deny(version, reason) {
-      const pending = (await stored())?.pending;
       try {
-        writeJsonFileAtomic(path, { version: 1, settings: version,
-          pending: typeof pending === 'string' ? pending : reason });
+        updateVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT, (current) => ({ version: 1, settings: version,
+          pending: typeof current?.pending === 'string' ? current.pending : reason }), { read: readLedgerRecord });
         unkeptDenials.delete(path);
         return 'kept';
-      } catch { /* try removing the old record */ }
+      } catch (error) {
+        // A record a newer FULI wrote, or one another process holds the lock
+        // on, is neither replaced nor removed: the stretch is not imported.
+        if (error instanceof DataFormatError || error?.code === 'file_lock_busy') {
+          unkeptDenials.set(path, version);
+          return 'unkept';
+        }
+      }
       try {
-        await rm(path, { force: true });
+        // Removed only under the same lock, after checking its version again.
+        removeVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT);
         unkeptDenials.delete(path);
         return 'removed';
       } catch {
@@ -125,7 +139,7 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
     record(version) {
       if (version === null) return;
       try {
-        writeJsonFileAtomic(path, { version: 1, settings: version });
+        writeVersionedJsonFileAtomic(path, { version: 1, settings: version }, TRANSCRIPT_CAPTURE_FORMAT);
         unkeptDenials.delete(path);
       } catch { /* the next sync stays unattributable, which only skips more */ }
     }
@@ -141,4 +155,13 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
 export async function keepDenial(application, ledger, version, reason) {
   if (!ledger || await ledger.deny(version, reason) !== 'unkept') return null;
   return advanceCaptureSettingsVersion(application) ? STATE_UNSAVED : STATE_UNWRITABLE;
+}
+
+// An unreadable record is replaced, as before the format lock.
+function readLedgerRecord(path) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
 }

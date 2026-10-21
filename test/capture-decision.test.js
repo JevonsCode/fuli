@@ -114,7 +114,7 @@ async function everyWritePath(f) {
 }
 
 async function assertLedgerHoldsNoContent(f) {
-  for (const name of await readdir(join(f.directory, 'transcript-capture'))) {
+  for (const name of (await readdir(join(f.directory, 'transcript-capture'))).filter((entry) => entry.endsWith('.json'))) {
     const ledger = JSON.parse(await readFile(join(f.directory, 'transcript-capture', name), 'utf8'));
     // A pending denial is kept as its reason code only.
     assert.deepEqual(Object.keys(ledger).filter(key => key !== 'pending'), ['version', 'settings']);
@@ -153,7 +153,7 @@ for (const { name, policy, reason, layer } of [
     assert.equal(entry.systemMessage, `Fuli: ${RECORDING_OFF}`, 'every entry says recording is off');
     assert.deepEqual(await hook(f, 'Stop'), {});
     assert.deepEqual(f.writes(), []);
-    assert.deepEqual((await readdir(f.directory)).sort(), ['capture-policy.json', 'capture-settings-generation.json', 'transcript-capture'],
+    assert.deepEqual((await readdir(f.directory)).filter((name) => name !== '.fuli-format.lock').sort(), ['capture-policy.json', 'capture-settings-generation.json', 'transcript-capture'],
       'no transcript guard is kept; only the content-free settings generation this session was handled under');
     await assertLedgerHoldsNoContent(f);
   });
@@ -177,7 +177,7 @@ test('an unreadable capture policy records nothing and still serves reads', asyn
   assert.equal(entry.systemMessage, `Fuli: ${SETTINGS_UNREADABLE}`);
   assert.equal(entry.systemMessage.includes(PRIVATE), false);
   assert.deepEqual(f.writes(), []);
-  assert.deepEqual((await readdir(f.directory)).sort(), ['capture-policy.json', 'capture-settings-generation.json', 'transcript-capture']);
+  assert.deepEqual((await readdir(f.directory)).filter((name) => name !== '.fuli-format.lock').sort(), ['capture-policy.json', 'capture-settings-generation.json', 'transcript-capture']);
   await assertLedgerHoldsNoContent(f);
 
   const search = await callAgentTool(f.app, 'search_knowledge_graph', { personalSpaceId: 'synthetic-space', query: 'synthetic' });

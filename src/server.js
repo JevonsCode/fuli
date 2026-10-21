@@ -26,6 +26,7 @@ import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
 import { startTaskScheduler } from './task-schedules/scheduler.js';
+import { dataFormatNoticeLine, dataFormatNotices } from './data-format/format-notices.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -57,6 +58,11 @@ export async function createServer(options = {}) {
     closeApplicationOnShutdown
   });
   const application = runtime.application;
+  // The console, not every hook or MCP process, reports the local stores this
+  // FULI cannot use as they are, named with their steps (rec#17).
+  const dataFormats = options.dataFormatNotices ?? (localOptions.runtimeConfigPath
+    ? dataFormatNotices(dirname(localOptions.runtimeConfigPath)) : null);
+  for (const notice of dataFormats?.() ?? []) console.warn(dataFormatNoticeLine(notice));
   let externalKnowledge;
   let connectedKnowledge;
   let system = null;
@@ -130,6 +136,7 @@ export async function createServer(options = {}) {
         externalKnowledge,
         connectedKnowledge,
         peer,
+        dataFormats,
         authority,
         lanAuthorities: allowedLanAuthorities,
         lanAccessToken: lanToken
@@ -223,6 +230,7 @@ async function handleRequest({
   externalKnowledge,
   connectedKnowledge,
   peer,
+  dataFormats,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -241,7 +249,8 @@ async function handleRequest({
     system,
     externalKnowledge,
     connectedKnowledge,
-    peer
+    peer,
+    dataFormats
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }

@@ -1,8 +1,10 @@
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { requiredString } from '../validation/values.js';
 
 const MODES = new Set(['ask_human', 'agent_decide']);
 const EMPTY_POLICIES = Object.freeze({ version: 1, projects: {} });
+export const CONFLICT_POLICY_FORMAT = jsonFormat({ store: 'external-knowledge-conflicts', versions: [1] });
 
 export class KnowledgeConflictPolicyStore {
   constructor(filePath, { now = () => new Date() } = {}) {
@@ -35,7 +37,7 @@ export class KnowledgeConflictPolicyStore {
       updatedAt: this.now().toISOString()
     };
     document.projects[policyKey(id)] = policy;
-    writeJsonFileAtomic(this.filePath, document);
+    writeVersionedJsonFileAtomic(this.filePath, document, CONFLICT_POLICY_FORMAT);
     return structuredClone(policy);
   }
 

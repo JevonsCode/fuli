@@ -40,14 +40,19 @@ class Result(list):
 
 
 class Transaction:
-    def __init__(self, rows):
+    def __init__(self, rows, format_version=None):
+        from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION
+
         self.rows = rows
+        self.format_version = GRAPH_FORMAT_VERSION if format_version is None else format_version
         self.calls = []
 
     def run(self, query, **parameters):
         self.calls.append((query, parameters))
         if query == migration().SNAPSHOT:
             return Result(self.rows)
+        if 'FuliDataFormat' in query:
+            return Result([{'version': self.format_version}])
         return Result()
 
 
@@ -75,3 +80,13 @@ def test_migration_requires_all_assignments_of_a_shared_lead_to_be_explicit():
     with pytest.raises(ValueError, match='outside'):
         migration().build_plan('space', ['a'], [dict(project_id='a', agent_id='lead',
             role='engineering', tags=[], active_project_ids=['a', 'b'])])
+
+
+def test_apply_refuses_a_graph_not_at_this_data_format():
+    module = migration()
+    rows = [dict(project_id='a', agent_id='lead', role='engineering', tags=[])]
+    plan = module.migrate(Transaction(rows), 'space', ['a'])
+    newer = Transaction(rows, format_version=999)
+    with pytest.raises(ValueError, match='data format is 999'):
+        module.migrate(newer, 'space', ['a'], expected_digest=plan['digest'])
+    assert not any('CHANGED_OCCUPATION' in query for query, _ in newer.calls)

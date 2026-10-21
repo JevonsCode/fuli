@@ -1,18 +1,10 @@
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { createChatStore } from './chat-store.js';
-import { createAttentionInboxStore } from './attention-inbox-store.js';
+import { openFormattedDatabase, sqliteFormat } from '../storage/database-format.js';
+import { CHAT_SCHEMA, createChatStore } from './chat-store.js';
+import { ATTENTION_INBOX_SCHEMA, createAttentionInboxStore } from './attention-inbox-store.js';
 
-// Every Agent-to-Agent exchange is kept as a thread of messages so people can
-// see who talked to whom, through which client, and what was said. The file
-// is shared by the console and every client's MCP process.
-export function createRoundtableStore(path = ':memory:') {
-  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-  const database = new DatabaseSync(path);
-  database.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
+export const ROUNDTABLE_FORMAT = sqliteFormat({
+  store: 'roundtable',
+  schema: `
     CREATE TABLE IF NOT EXISTS threads (
       id TEXT PRIMARY KEY, space_id TEXT NOT NULL, project_id TEXT, subject TEXT NOT NULL,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -27,20 +19,28 @@ export function createRoundtableStore(path = ':memory:') {
     );
     CREATE INDEX IF NOT EXISTS messages_inbox ON messages(to_agent, status);
     CREATE INDEX IF NOT EXISTS threads_recent ON threads(space_id, updated_at);
-  `);
-  // A woken process whose exit could not be confirmed may still be running.
-  const columns = new Set(database.prepare('PRAGMA table_info(messages)').all().map((column) => column.name));
-  // Evidence and release audit are append-only; an execution claim outlives the
-  // ask's status, because a reply or cancel says nothing about a process exiting.
-  for (const column of ['cleanup_status', 'cleanup_code', 'cleanup_recorded_at', 'cleanup_evidence_version',
-    'cleanup_machine_hash', 'cleanup_anchor_pid', 'cleanup_anchor_critical', 'cleanup_released_at',
-    'cleanup_release_proof', 'cleanup_release_observation', 'execution_claim', 'execution_claimed_at',
-    'target_project_id', 'source_context_hash', 'memory_usage_recorded', 'memory_result_count']) {
-    if (columns.has(column)) continue;
-    // Another client's MCP process may add the same column first.
-    try { database.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`); }
-    catch (error) { if (!/duplicate column/i.test(error.message)) throw error; }
-  }
+    ${CHAT_SCHEMA}
+    ${ATTENTION_INBOX_SCHEMA}`,
+  migrations: [{
+    // A woken process whose exit could not be confirmed may still be running.
+    // Evidence and release audit are append-only; an execution claim outlives the
+    // ask's status, because a reply or cancel says nothing about a process exiting.
+    id: 'roundtable/2-message-execution-evidence', to: 2, kind: 'add-columns', table: 'messages',
+    summary: 'cleanup evidence, execution claims and memory usage of each message',
+    columns: Object.fromEntries(['cleanup_status', 'cleanup_code', 'cleanup_recorded_at', 'cleanup_evidence_version',
+      'cleanup_machine_hash', 'cleanup_anchor_pid', 'cleanup_anchor_critical', 'cleanup_released_at',
+      'cleanup_release_proof', 'cleanup_release_observation', 'execution_claim', 'execution_claimed_at',
+      'target_project_id', 'source_context_hash', 'memory_usage_recorded', 'memory_result_count']
+      .map((name) => [name, 'TEXT']))
+  }],
+  pragmas: 'PRAGMA journal_mode = WAL;'
+});
+
+// Every Agent-to-Agent exchange is kept as a thread of messages so people can
+// see who talked to whom, through which client, and what was said. The file
+// is shared by the console and every client's MCP process.
+export function createRoundtableStore(path = ':memory:') {
+  const database = openFormattedDatabase(path, ROUNDTABLE_FORMAT);
   const now = () => new Date().toISOString();
   const chat = createChatStore(database, path);
   const attention = createAttentionInboxStore(database, chat);
