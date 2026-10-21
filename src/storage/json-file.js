@@ -10,7 +10,18 @@ import {
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
-const DEFAULT_IO = Object.freeze({ mkdirSync, renameSync, rmSync, statSync, writeFileSync });
+// Windows refuses to rename over a file another process has open, even for a
+// moment: a console request reading it while setup replaces it fails with
+// EPERM, EACCES or EBUSY. Readers close the file promptly, so the rename is
+// retried with a growing pause for about two seconds before the error is
+// surfaced. Other systems replace an open file, so there these codes are
+// persistent and only reach the caller after the same bounded wait.
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const RENAME_RETRY_FIRST_PAUSE_MS = 5;
+const RENAME_RETRY_MAX_PAUSE_MS = 200;
+const RENAME_RETRY_BUDGET_MS = 2000;
+
+const DEFAULT_IO = Object.freeze({ mkdirSync, renameSync, rmSync, statSync, writeFileSync, pauseSync });
 
 export function readJsonFile(filePath, fallback) {
   if (!existsSync(filePath)) return fallback;
@@ -43,7 +54,7 @@ export function writeTextFileAtomic(filePath, text, io = {}) {
       flag: 'wx',
       mode
     });
-    fileIo.renameSync(tempPath, filePath);
+    replaceWithRetry(tempPath, filePath, fileIo);
   } catch (error) {
     try {
       fileIo.rmSync(tempPath, { force: true });
@@ -52,4 +63,24 @@ export function writeTextFileAtomic(filePath, text, io = {}) {
     }
     throw error;
   }
+}
+
+// The temporary file stays complete and the target untouched until one rename
+// succeeds, so retrying keeps the write atomic, inside the caller's lock.
+function replaceWithRetry(tempPath, filePath, fileIo) {
+  let waited = 0;
+  for (let pause = RENAME_RETRY_FIRST_PAUSE_MS; ; pause = Math.min(pause * 2, RENAME_RETRY_MAX_PAUSE_MS)) {
+    try {
+      fileIo.renameSync(tempPath, filePath);
+      return;
+    } catch (error) {
+      if (!RENAME_RETRY_CODES.has(error?.code) || waited >= RENAME_RETRY_BUDGET_MS) throw error;
+    }
+    fileIo.pauseSync(pause);
+    waited += pause;
+  }
+}
+
+function pauseSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
