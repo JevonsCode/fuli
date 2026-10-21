@@ -92,6 +92,23 @@ export const useConsoleStore = defineStore('console', () => {
     if (!overlapped && saves === captureSaves) rememberCapturePolicy(policy)
   }
 
+  // The settings as saved once every save this console sent has answered: the
+  // policy this read returned and the store now holds. A read that a save
+  // overlapped is taken again, so the answer is never an older cache
+  // (dot review, PR 262). Pages that show "what is saved now" use this;
+  // loadCapturePolicy only refreshes and proves nothing.
+  async function settledCapturePolicy(): Promise<CapturePolicy> {
+    for (;;) {
+      const saves = captureSaves
+      await captureWrites
+      const policy = await getJson<CapturePolicy>('/api/capture-policy')
+      if (saves === captureSaves && capturesInFlight === 0) {
+        rememberCapturePolicy(policy)
+        return policy
+      }
+    }
+  }
+
   // Saves at once; the caller shows its own progress and any refusal. Saves
   // from every page of this console go out one after another, so the server
   // commits them in the order they were made and the last answer is the
@@ -199,6 +216,7 @@ export const useConsoleStore = defineStore('console', () => {
     refresh,
     updateCapturePolicy,
     loadCapturePolicy,
+    settledCapturePolicy,
     changeCapturePolicy,
     rememberCapturePolicy,
     updateAgentAccessPolicy,

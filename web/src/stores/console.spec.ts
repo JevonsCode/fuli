@@ -132,6 +132,26 @@ describe('console store policies', () => {
     await vi.waitFor(() => expect(store.state?.capturePolicy?.excludedProjectIds).toEqual([]))
   })
 
+  it('a settled read waits for every save out and returns the settings it read (dot review, PR 262)', async () => {
+    let answerSave!: (value: unknown) => void
+    patchJson.mockReturnValueOnce(new Promise(resolve => { answerSave = resolve }))
+    getJson.mockResolvedValue({ enabled: true, projectMode: 'all_except', excludedProjectIds: [] })
+    const store = useConsoleStore()
+    store.state = { mode: 'personal_only', personalSpaces: [], projects: [], subscriptions: [],
+      capturePolicy: { enabled: true, projectMode: 'all_except', excludedProjectIds: ['a'] } }
+    const save = store.changeCapturePolicy({ recordProjects: { a: true } })
+    let settled: unknown = null
+    const read = store.settledCapturePolicy().then(policy => { settled = policy })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(getJson).not.toHaveBeenCalled()
+    expect(settled).toBeNull()
+    answerSave({ enabled: true, projectMode: 'all_except', excludedProjectIds: [] })
+    await save
+    await read
+    expect(settled).toEqual({ enabled: true, projectMode: 'all_except', excludedProjectIds: [] })
+    expect(store.state.capturePolicy?.excludedProjectIds).toEqual([])
+  })
+
   it('ignores a superseded scope failure and aborts its transport', async () => {
     let fail!: (cause: unknown) => void
     const pending = new Promise((_resolve, reject) => { fail = reject })

@@ -124,6 +124,48 @@ describe('CaptureChangePage (rec#5 C4-2, rec#11 D-16)', () => {
     expect(reopened.find('[data-capture-change-open-settings]').exists()).toBe(true)
   })
 
+  it('a used link opened while a settings save is still out waits for it and shows what is saved (dot review, PR 262)', async () => {
+    // The person turned 求职准备 back on in Settings; the server committed it, but its answer is late.
+    let serverExcluded = ['job-hunt']
+    let answerSave!: () => void
+    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/capture-policy' && init?.method === 'PATCH') {
+        serverExcluded = []
+        return new Promise<Response>(resolve => { answerSave = () => resolve(Response.json(policyWith(serverExcluded))) })
+      }
+      if (url === '/api/capture-policy') return Response.json(policyWith(serverExcluded))
+      return Response.json({ error: '设置已变化，请重新发起' }, { status: 410 })
+    }))
+    const policyWith = (excluded: string[]): CapturePolicy => ({ ...PREVIEW.current, projectMode: 'all_except',
+      excludedProjectIds: excluded })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.state = { mode: 'personal_only', personalSpaces: [{ id: 'space', name: '我' }], projects: [], subscriptions: [],
+      personalProjects: [{ project_id: 'job-hunt', personal_space_id: 'space', profile: { name: '求职准备' } }],
+      capturePolicy: policyWith(['job-hunt']) }
+    const save = store.changeCapturePolicy({ recordProjects: { 'job-hunt': true } })
+    await flushPromises()
+    // Back on the used confirmation link while that answer is still out.
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/capture-change/:previewId', component: CaptureChangePage }, { path: '/settings', component: { template: '<div />' } }] })
+    void router.push('/capture-change/synthetic-preview')
+    await router.isReady()
+    const wrapper = mount(CaptureChangePage, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(wrapper.find('[data-capture-change-outcome="gone"]').exists()).toBe(true)
+    expect(wrapper.find('[data-capture-change-reading]').exists()).toBe(true)
+    // The old cache is not shown as the checked settings.
+    expect(wrapper.find('[data-capture-change-current]').exists()).toBe(false)
+    answerSave()
+    await save
+    await flushPromises()
+    expect(wrapper.find('[data-capture-change-reading]').exists()).toBe(false)
+    expect(wrapper.get('[data-capture-change-current]').text()).not.toContain('求职准备')
+    expect(wrapper.get('[data-capture-change-current]').text()).toContain('全部项目，除了没勾选的')
+  })
+
   it('cancel writes nothing and says so', async () => {
     const page = mountPage(() => Response.json(PREVIEW), () => Response.json({ status: 'cancelled' }))
     const wrapper = await page.mount()

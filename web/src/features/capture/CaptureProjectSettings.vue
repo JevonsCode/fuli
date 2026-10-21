@@ -73,7 +73,7 @@ async function save(next: Pending, change: CapturePolicyChange, saved = '') {
     if (next.kind === 'projects') resetChoices()
     if (saved) message.value = { tone: 'status', text: saved }
   } catch (error) {
-    message.value = { tone: 'error', text: await failedSaveMessage(error, () => store.loadCapturePolicy()) }
+    message.value = { tone: 'error', text: await failedSaveMessage(error, () => store.settledCapturePolicy()) }
   } finally {
     pending.value = null
   }

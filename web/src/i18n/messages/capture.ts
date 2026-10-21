@@ -74,6 +74,7 @@ export const captureMessages = {
       unknownHint: '连接中断了，修改可能已经保存。“当前设置”是重新读取到的实际设置；请先核对，不要重复确认。',
       rereadFailed: '也读不到当前设置，请打开设置页核对。',
       viewSettings: '查看当前设置',
+      reading: '正在读取当前实际保存的设置',
       failed: '没能保存：{reason}',
       settings: {
         enabled: '自动记录',
@@ -160,6 +161,7 @@ export const captureMessages = {
       unknownHint: 'The connection failed; the change may have been saved. Current settings below are read again from what is saved; check them before confirming again.',
       rereadFailed: 'The current settings could not be read either; open Settings to check.',
       viewSettings: 'View current settings',
+      reading: 'Reading the settings as saved now',
       failed: 'Not saved: {reason}',
       settings: {
         enabled: 'Automatic recording',

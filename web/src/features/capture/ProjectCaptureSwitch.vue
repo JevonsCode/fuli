@@ -35,7 +35,7 @@ async function setRecorded(value: boolean) {
   try {
     await store.changeCapturePolicy({ recordProjects: { [props.projectId]: value } })
   } catch (error) {
-    failure.value = await failedSaveMessage(error, () => store.loadCapturePolicy())
+    failure.value = await failedSaveMessage(error, () => store.settledCapturePolicy())
   } finally {
     requested.value = null
   }

@@ -32,8 +32,11 @@ const loadError = ref('')
 const pending = ref<'confirm' | 'cancel' | null>(null)
 const outcome = ref<Outcome | null>(null)
 const failure = ref('')
-// The settings as saved now, read again after a used link or a lost answer; null when that read failed.
-const savedNow = ref<CapturePolicy | null>(null)
+// After a used link or a lost answer the page shows the settings as saved,
+// once every save this console sent has answered; until then it says it is
+// still reading, and the rows follow the store after that.
+const reconciling = ref(false)
+const reconciled = ref(false)
 const rereadFailed = ref(false)
 
 const projectNames = computed(() => new Map((store.state?.personalProjects ?? [])
@@ -45,7 +48,8 @@ const projectList = (policy: CapturePolicy) => policy.projectMode === 'selected'
   ? { setting: 'selectedProjectIds' as const, ids: policy.selectedProjectIds ?? [] }
   : policy.projectMode === 'all_except' ? { setting: 'excludedProjectIds' as const, ids: policy.excludedProjectIds ?? [] } : null
 const stale = computed(() => outcome.value === 'stale' || (!outcome.value && change.value?.status === 'stale'))
-const shownSettings = computed(() => savedNow.value ?? change.value?.current ?? null)
+const shownSettings = computed(() => reconciled.value ? store.state?.capturePolicy ?? null
+  : outcome.value === 'gone' || outcome.value === 'unknown' ? null : change.value?.current ?? null)
 // The settings shown under 当前设置, one row per setting, with the project list the mode uses.
 const currentRows = computed(() => {
   const policy = shownSettings.value
@@ -56,12 +60,14 @@ const currentRows = computed(() => {
 })
 
 async function readSavedSettings() {
+  reconciling.value = true
   try {
-    await store.loadCapturePolicy()
-    savedNow.value = store.state?.capturePolicy ?? null
-    rereadFailed.value = !savedNow.value
+    await store.settledCapturePolicy()
+    reconciled.value = true
   } catch {
     rereadFailed.value = true
+  } finally {
+    reconciling.value = false
   }
 }
 const time = (iso: string) => formatDateTime(iso, currentLocale(), DATE_TIME_MINUTE, { missing: '' })
@@ -74,7 +80,8 @@ async function load() {
   } catch (error) {
     if (error instanceof ApiError && (error.status === 404 || error.status === 410)) {
       outcome.value = 'gone'
-      await readSavedSettings()
+      // Shown at once; the settings rows follow once every pending save has answered.
+      void readSavedSettings()
     } else {
       loadError.value = apiErrorReason(error)
     }
@@ -141,11 +148,12 @@ onMounted(load)
         :data-capture-change-outcome="outcome">
         <strong>{{ t(outcome === 'gone' ? 'capture.confirm.gone' : 'capture.confirm.unknown') }}</strong>
         <span>{{ t(outcome === 'gone' ? 'capture.confirm.goneHint' : 'capture.confirm.unknownHint') }}</span>
+        <GrowthLoading v-if="reconciling" variant="inline" :label="t('capture.confirm.reading')" data-capture-change-reading />
         <span v-if="rereadFailed">{{ t('capture.confirm.rereadFailed') }}</span>
         <RouterLink to="/settings" data-capture-change-open-settings>{{ t('capture.confirm.viewSettings') }}</RouterLink>
       </div>
 
-      <Card v-if="!change && savedNow" as="section" aria-labelledby="capture-change-saved-now">
+      <Card v-if="!change && reconciled" as="section" aria-labelledby="capture-change-saved-now">
         <CardHeader><CardTitle id="capture-change-saved-now" as="h2">{{ t('capture.confirm.current') }}</CardTitle></CardHeader>
         <dl class="capture-change-list capture-change-body" data-capture-change-current>
           <div v-for="row in currentRows" :key="row.label">
@@ -183,7 +191,7 @@ onMounted(load)
               </div>
             </dl>
           </section>
-          <section aria-labelledby="capture-change-current">
+          <section v-if="currentRows.length" aria-labelledby="capture-change-current">
             <h3 id="capture-change-current" class="capture-change-heading">{{ t('capture.confirm.current') }}</h3>
             <dl class="capture-change-list" data-capture-change-current>
               <div v-for="row in currentRows" :key="row.label">

@@ -38,7 +38,7 @@ export function recordsUnregisteredDirectories(policy: CapturePolicy | null | un
 // changed nothing. Any other failure may have saved, so the settings are read
 // again before the page shows them; when that read fails too, the state is
 // unknown and the page says so instead of claiming the old state is back.
-export async function failedSaveMessage(error: unknown, reload: () => Promise<void>) {
+export async function failedSaveMessage(error: unknown, reload: () => Promise<unknown>) {
   const reason = apiErrorReason(error)
   if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
     return t('capture.saveFailure.refused', { reason })
