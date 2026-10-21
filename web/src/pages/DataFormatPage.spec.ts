@@ -71,6 +71,18 @@ describe('DataFormatPage', () => {
     expect(undo & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('says the one retention budget backups and graph undo journals share, with the policy in force', async () => {
+    api.getJson.mockResolvedValue({ ...plan(), retention: { keep: 5, maxBytes: 64 * 1024 * 1024 } })
+    const wrapper = await mountPage()
+    const text = wrapper.get('[data-retention]').text()
+    expect(text).toContain('每个存储保留最近 5 份格式备份，图谱保留最近 5 份撤销日志；备份和日志合计最多约 64 MB')
+    expect(text).toContain('即使因此超出预算')
+  })
+
+  it('leaves the budget out when the server could not read the policy', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.find('[data-retention]').exists()).toBe(false)
+  })
 
   it('lists each store with its step, count and sample IDs, and applies only after review', async () => {
     const wrapper = await mountPage()

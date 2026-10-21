@@ -34,7 +34,8 @@ class GraphMigrationRollback(StrictModel):
 
 class GraphJournalPrune(StrictModel):
     keep: int = Field(ge=0, le=1000)
-    max_bytes: int = Field(ge=1)
+    # Chosen by the shared size budget (src/data-format/format-retention.js).
+    apply_ids: list[str] = Field(default_factory=list, max_length=1000)
     dry_run: bool = False
 
 
@@ -59,7 +60,7 @@ def register_graph_format_routes(application, runtime, settings, Actor, HumanRev
     async def prune(request: GraphJournalPrune, _reviewer: HumanReviewer) -> dict:
         return await prune_graph_journals(
             runtime.driver.maintenance(), settings, keep=request.keep,
-            max_bytes=request.max_bytes, dry_run=request.dry_run,
+            apply_ids=request.apply_ids, dry_run=request.dry_run,
         )
 
     @application.post('/v1/data-format/rollback')

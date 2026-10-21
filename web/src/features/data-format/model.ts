@@ -50,6 +50,8 @@ export interface MigrationPlan {
   stores: StorePlan[]
   blocked: BlockedStore[]
   undoable: UndoableMigration[]
+  // The one budget format backups and graph undo journals share.
+  retention?: { keep: number; maxBytes: number } | null
 }
 
 export interface MigrationResult {

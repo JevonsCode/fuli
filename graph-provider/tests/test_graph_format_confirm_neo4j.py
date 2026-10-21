@@ -654,10 +654,9 @@ async def test_undo_journals_are_pruned_to_the_soft_target_undone_ones_first(gra
     await _seed_journals(driver)
     managed, maintenance = _maintenance(settings)
     try:
-        dry = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=2,
-                                                              max_bytes=10**9, dry_run=True)
+        dry = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=2, dry_run=True)
         assert await _journal_ids(driver) == ['j1', 'j2', 'j3', 'j4', 'j5']
-        result = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=2, max_bytes=10**9)
+        result = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=2)
     finally:
         await managed.close()
 
@@ -675,7 +674,8 @@ async def test_the_journal_an_undo_needs_is_never_pruned(graph):
     await _seed_journals(driver)
     managed, maintenance = _maintenance(settings)
     try:
-        result = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=0, max_bytes=1)
+        result = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=0,
+                                                                  apply_ids=['j1', 'j2', 'j3', 'j4', 'j5'])
     finally:
         await managed.close()
 
@@ -685,12 +685,35 @@ async def test_the_journal_an_undo_needs_is_never_pruned(graph):
 
 
 @pytest.mark.asyncio
+async def test_the_shared_size_budget_prunes_the_journals_it_chose_and_a_dry_run_lists_what_stays(graph):
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _seed_journals(driver)
+    managed, maintenance = _maintenance(settings)
+    try:
+        plan = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=3, dry_run=True)
+        result = await graph_format_confirm.prune_graph_journals(maintenance, settings, keep=3,
+                                                                  apply_ids=['j2', 'j-gone'])
+    finally:
+        await managed.close()
+
+    # keep=3: the protected j1 and three others stay, j5 (the older undone one) goes.
+    assert [entry['applyId'] for entry in plan['pruned']] == ['j5']
+    assert [(j['applyId'], j['protected']) for j in plan['journals']] == [
+        ('j1', True), ('j2', False), ('j3', False), ('j4', False)]
+    assert all(j['bytes'] > 0 and j['recordedAt'] for j in plan['journals'])
+    assert {entry['applyId']: entry['reason'] for entry in result['pruned']} == {
+        'j5': 'more than 3 undo journals', 'j2': 'over the shared size budget'}
+    assert await _journal_ids(driver) == ['j1', 'j3', 'j4']
+
+
+@pytest.mark.asyncio
 async def test_pruning_journals_takes_the_review_channel(graph):
     settings, driver = graph
     await _seed_colon_groups(driver)
     await _seed_journals(driver)
     async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
-        body = {'keep': 0, 'max_bytes': 1}
+        body = {'keep': 0}
         refused = await client.post('/v1/data-format/prune', json=body)
         pruned = await client.post('/v1/data-format/prune', headers=REVIEW, json=body)
 
@@ -757,7 +780,7 @@ async def test_a_prune_whose_lease_expired_while_another_process_undid_a_step_de
     try:
         with pytest.raises(GraphFormatUnavailable) as refused:
             await graph_format_confirm.prune_graph_journals(
-                maintenance, settings, keep=0, max_bytes=1, now=_an_hour_ago,
+                maintenance, settings, keep=0, now=_an_hour_ago,
                 barrier=the_lease_expires_and_another_process_undoes_a)
     finally:
         await managed.close()
@@ -789,7 +812,7 @@ async def test_an_undo_that_arrives_while_a_prune_holds_the_ledger_waits_for_its
 
     try:
         result = await graph_format_confirm.prune_graph_journals(
-            maintenance, settings, keep=0, max_bytes=1, now=_an_hour_ago,
+            maintenance, settings, keep=0, now=_an_hour_ago,
             barrier=an_undo_arrives_after_the_journals_were_read)
         undone = await undo['task']
     finally:
@@ -819,7 +842,7 @@ async def test_a_graph_a_newer_fuli_wrote_keeps_every_undo_journal(graph):
         for dry_run in (True, False):
             with pytest.raises(GraphFormatUnavailable) as refused:
                 await graph_format_confirm.prune_graph_journals(
-                    maintenance, settings, keep=0, max_bytes=1, dry_run=dry_run)
+                    maintenance, settings, keep=0, dry_run=dry_run)
             assert refused.value.code == 'data_format_blocked'
     finally:
         await managed.close()

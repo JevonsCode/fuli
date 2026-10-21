@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import { DataFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
 import { runMigrateCommand } from '../src/cli/migrate-command.js';
+import { retentionLines } from '../src/data-format/format-retention.js';
 import { EXTERNAL_WRITERS_NOTICE } from '../src/data-format/external-writers.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { holdDataDirectory } from '../src/data-format/maintenance-lock.js';
@@ -56,8 +57,11 @@ function snapshot(root) {
   return files;
 }
 
+// A data directory without a graph connection: the client finds no graph-runtime.json.
+const noGraphSetUp = () => Object.assign(new Error('no graph here'), { code: 'ENOENT' });
 const noGraph = { preview: async () => ({ plan: null, undoable: [] }),
-  apply: async () => { throw new Error('no graph here'); }, rollback: async () => { throw new Error('no graph here'); } };
+  apply: async () => { throw new Error('no graph here'); }, rollback: async () => { throw new Error('no graph here'); },
+  prune: async () => { throw noGraphSetUp(); } };
 
 async function migrate(root, args, { confirm = async () => true, graph = noGraph, interactive = true,
   consoleRunning = async () => false } = {}) {
@@ -274,21 +278,26 @@ test('a retry still finds its receipt after the same apply pruned hundreds of ba
 test('prune keeps graph undo journals to the same target and logs what went, content-free', async (t) => {
   const root = dataDir(t);
   const requests = [];
+  const j5 = { store: 'graph', applyId: 'j5', migrationId: 'graph/5-x', state: 'rolled_back', bytes: 812,
+    reason: 'more than 3 undo journals' };
+  const journals = ['j1', 'j2', 'j3', 'j4'].map((applyId, index) => ({ applyId, migrationId: 'graph/5-x',
+    state: 'applied', recordedAt: `2026-10-0${5 - index}T00:00:00Z`, bytes: 100, protected: applyId === 'j1' }));
   const graph = { ...noGraph, prune: async (request) => {
     requests.push(request);
-    return { kept: 3, protected: 'j1', pruned: [{ store: 'graph', applyId: 'j5', migrationId: 'graph/5-x',
-      state: 'rolled_back', bytes: 812, reason: 'more than 3 undo journals' }] };
+    return { kept: 4, protected: 'j1', pruned: [j5], journals };
   } };
 
   const dry = await migrate(root, ['prune', '--keep', '3', '--max-mb', '64', '--dry-run'], { graph });
   assert.equal(readFormatOperations(root).length, 0, 'a dry run logs nothing');
   const pruned = await migrate(root, ['prune', '--keep', '3', '--max-mb', '64'], { graph });
 
-  assert.deepEqual(requests, [{ keep: 3, maxBytes: 64 * 1024 * 1024, dryRun: true },
-    { keep: 3, maxBytes: 64 * 1024 * 1024, dryRun: false }]);
-  assert.match(dry.output, /Would prune 1 graph undo journals; 3 kept/);
+  // A dry run plans; a prune plans, then names the journals the shared size budget chose (none here).
+  assert.deepEqual(requests, [{ keep: 3, dryRun: true }, { keep: 3, dryRun: true }, { keep: 3, applyIds: [] }]);
+  assert.match(dry.output, /Would prune 1 graph undo journals; 4 kept/);
+  for (const line of retentionLines({ keep: 3, maxBytes: 64 * 1024 * 1024 })) assert.ok(pruned.output.includes(line));
+  assert.match(pruned.output, /at most about 64 MB/);
   assert.match(pruned.output, /graph \(personal\): undo journal j5 \(graph\/5-x, 812 bytes\) — more than 3 undo journals/);
-  assert.match(pruned.output, /never pruned/);
+  assert.match(pruned.output, /always kept, even beyond the budget/);
   assert.deepEqual(readFormatOperations(root).map((event) => [event.kind, event.store, event.backupRef]),
     [['pruned', 'graph', 'undo journal j5']]);
 });
@@ -300,7 +309,7 @@ test('prune still prunes local backups when the graph cannot be reached', async 
   const result = await migrate(root, ['prune'], { graph });
 
   assert.equal(result.exitCode, 0);
-  assert.match(result.output, /Graph undo journals were not pruned: its provider is not answering/);
+  assert.match(result.output, /Graph undo journals were not pruned: its provider is not answering\. Local backups alone were held to the budget\./);
 });
 
 test('apply and undo say who must be stopped before they ask', async (t) => {

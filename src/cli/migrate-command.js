@@ -1,13 +1,14 @@
 import { parseArgs } from 'node:util';
 
-import { pruneFormatBackups, backupRetentionPolicy } from '../data-format/backup-retention.js';
+import { backupRetentionPolicy } from '../data-format/backup-retention.js';
+import { pruneFormatRetention, retentionLines } from '../data-format/format-retention.js';
 import { collectFormatStatus } from '../data-format/format-status.js';
 import { personalGraphFormat } from '../data-format/graph-format-client.js';
 import { previewMigrations } from '../data-format/migration-plan.js';
 import { findApplyReceipt } from '../data-format/apply-receipts.js';
 import { externalWritersLines } from '../data-format/external-writers.js';
 import {
-  applyMigrations, describeRestore, pruneGraphJournals, restoreStore, rollbackMigration
+  applyMigrations, describeRestore, restoreStore, rollbackMigration
 } from '../data-format/migration-operations.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { acquireMaintenance, holdDataDirectory } from '../data-format/maintenance-lock.js';
@@ -20,7 +21,8 @@ import { confirmInTerminal, writeLine } from './terminal-io.js';
 //   and ask at an interactive terminal; there is no --yes, and no MCP or Agent
 //   tool reaches them. A terminal does not prove a person decided, so FULI
 //   records entrypoint cli with presence unverified.
-// - prune: removes only backups the retention policy allows.
+// - prune: removes only the format backups and graph undo journals the one
+//   shared retention budget allows (format-retention.js).
 
 const USAGE = [
   'Usage: fuli migrate status [--json] [--data-dir DIR]',
@@ -180,25 +182,22 @@ const ACTIONS = Object.freeze({
       maxMegabytes: options['max-mb'] === undefined ? undefined : wholeNumber(options['max-mb'], '--max-mb')
     });
     const dryRun = options['dry-run'] === true;
-    const result = await held(maintenance.hold(paths.dataDir), () => pruneFormatBackups(paths.dataDir,
-      { policy, dryRun }));
-    write([`${dryRun ? 'Would prune' : 'Pruned'} ${result.pruned.length} format backups; `
-      + `${result.kept} kept. Backups an undo or the current version needs are never pruned.`,
-    ...result.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (version ${entry.version}, `
-      + `${entry.bytes} bytes) — ${entry.reason}`)].join('\n'));
-    let journals;
-    try {
-      journals = await held(maintenance.hold(paths.dataDir), () => pruneGraphJournals({ dataDir: paths.dataDir,
-        graph, policy, dryRun }));
-    } catch (error) {
-      write(`Graph undo journals were not pruned: ${error.message}`);
-      return { exitCode: 0, ...result, graph: { pruned: [], error: error.message } };
+    const { local, graph: journals } = await held(maintenance.hold(paths.dataDir),
+      () => pruneFormatRetention({ dataDir: paths.dataDir, graph, policy, dryRun }));
+    const verb = dryRun ? 'Would prune' : 'Pruned';
+    const lines = [...retentionLines(policy), `${verb} ${local.pruned.length} format backups; ${local.kept} kept.`,
+      ...local.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (version ${entry.version}, `
+        + `${entry.bytes} bytes) — ${entry.reason}`)];
+    if (journals?.error) {
+      lines.push(`Graph undo journals were not pruned: ${journals.error}. Local backups alone were held to `
+        + 'the budget.');
+    } else if (journals) {
+      lines.push(`${verb} ${journals.pruned.length} graph undo journals; ${journals.kept} kept.`,
+        ...journals.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (${entry.migrationId}, `
+          + `${entry.bytes} bytes) — ${entry.reason}`));
     }
-    write([`${dryRun ? 'Would prune' : 'Pruned'} ${journals.pruned.length} graph undo journals; ${journals.kept} kept. `
-      + 'The journal the latest confirmed graph step needs for its undo is never pruned.',
-    ...journals.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (${entry.migrationId}, `
-      + `${entry.bytes} bytes) — ${entry.reason}`)].join('\n'));
-    return { exitCode: 0, ...result, graph: journals };
+    write(lines.join('\n'));
+    return { exitCode: 0, ...local, graph: journals ?? { pruned: [] } };
   }
 });
 

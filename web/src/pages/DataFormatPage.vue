@@ -38,6 +38,10 @@ const stores = computed(() => plan.value?.stores ?? [])
 const blocked = computed(() => plan.value?.blocked ?? [])
 const undoable = computed(() => plan.value?.undoable ?? [])
 const warnings = computed(() => stores.value.filter(store => store.warning))
+const retention = computed(() => {
+  const policy = plan.value?.retention
+  return policy ? { keep: policy.keep, megabytes: Math.round(policy.maxBytes / (1024 * 1024)) } : null
+})
 
 async function load() {
   reading?.abort()
@@ -226,6 +230,9 @@ onBeforeUnmount(() => reading?.abort())
           </div>
         </Card>
 
+        <p v-if="retention" class="data-format-restore" data-retention>
+          {{ t('dataFormat.retention', retention) }}
+        </p>
         <p class="data-format-restore">{{ t('dataFormat.restoreNote') }}</p>
       </template>
     </div>

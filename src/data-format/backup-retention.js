@@ -10,17 +10,20 @@ import { localStoreFiles } from './local-stores.js';
 import { recordFormatOperations } from './operations-log.js';
 
 // How many format backups a data directory keeps (rec#17 D-09 part 2, D-11
-// §5). Each store keeps its newest `keep` backups and the whole directory at
-// most `maxBytes`, but a backup is never pruned while it is
+// §5). Each store keeps its newest `keep` backups, and the format backups and
+// the graph's undo journals together use at most `maxBytes`: one soft budget
+// (format-retention.js weighs the journals in through `shared`). Past it the
+// oldest items not needed go first, across both, journals of undone graph
+// steps before anything else. A backup is never pruned while it is
 // - the one an undoable migration restores from,
 // - the backup the store's latest ledger entry refers to (the version last
 //   applied), or
 // - the newest backup of the version the store is at now.
 // What was pruned is logged by store, backup name, version and size only.
 // The count and size are a target, not a hard bound: backups that must be
-// kept stay even beyond them, and graph undo journals live in the graph and
-// are not pruned here. A store whose ledger cannot be read keeps every
-// backup. The console prunes while it holds the data directory and
+// kept stay even beyond them. Graph undo journals live in the graph; this
+// module only chooses which of the `shared` ones the size budget prunes. A
+// store whose ledger cannot be read keeps every backup. The console prunes while it holds the data directory and
 // `fuli migrate prune` holds it too, so pruning never runs during a
 // whole-store restore (maintenance-lock.js).
 
@@ -43,14 +46,21 @@ function positive(value, name) {
   return number;
 }
 
-// dryRun lists what would go without removing it.
-export function pruneFormatBackups(dataDir, { policy = backupRetentionPolicy(), dryRun = false,
-  now = () => new Date(), remove = (path) => rmSync(path, { force: true }) } = {}) {
+export function sizeBudgetReason(policy) {
+  return `format backups and graph undo journals use more than ${Math.round(policy.maxBytes / MEGABYTE)} MB`;
+}
+
+// dryRun lists what would go without removing it. shared: other items under
+// the same size budget, as { key, bytes, at, needed, first } (first: pruned
+// before anything else); the keys the budget prunes come back as sharedPruned.
+export function pruneFormatBackups(dataDir, { policy = backupRetentionPolicy(), dryRun = false, shared = [],
+  now = () => new Date(), remove = (path) => rmSync(path, { force: true }),
+  sizeOf = (path) => statSync(path).size } = {}) {
   const candidates = [];
   for (const store of localStoreFiles(dataDir)) {
     const backups = formatBackupsOf(store.path).map((backup) => ({ ...backup, store: store.format.store,
       label: store.label, file: join(dirname(store.path), 'format-backups', backup.name),
-      bytes: statSync(join(dirname(store.path), 'format-backups', backup.name)).size }));
+      bytes: sizeOf(join(dirname(store.path), 'format-backups', backup.name)) }));
     const needed = neededBackups(store, backups);
     const newestFirst = backups.filter((backup) => !needed.has(backup.ref)).reverse();
     newestFirst.forEach((backup, index) => {
@@ -60,12 +70,17 @@ export function pruneFormatBackups(dataDir, { policy = backupRetentionPolicy(), 
     for (const backup of backups.filter((entry) => needed.has(entry.ref))) candidates.push({ ...backup, needed: true });
   }
   const pruned = candidates.filter((backup) => backup.reason);
-  let total = candidates.filter((backup) => !backup.reason).reduce((sum, backup) => sum + backup.bytes, 0);
-  for (const backup of candidates.filter((entry) => !entry.reason && !entry.needed)
-    .sort((a, b) => a.takenAt.localeCompare(b.takenAt))) {
+  const pool = [...candidates.filter((backup) => !backup.reason).map((backup) => ({ bytes: backup.bytes,
+    at: Date.parse(backup.takenAt), needed: Boolean(backup.needed), first: false, backup })),
+  ...shared.map((item) => ({ ...item, at: Date.parse(item.at) || 0 }))];
+  let total = pool.reduce((sum, item) => sum + item.bytes, 0);
+  const sharedPruned = [];
+  for (const item of pool.filter((entry) => !entry.needed)
+    .sort((a, b) => Number(b.first) - Number(a.first) || a.at - b.at)) {
     if (total <= policy.maxBytes) break;
-    pruned.push({ ...backup, reason: `backups use more than ${Math.round(policy.maxBytes / MEGABYTE)} MB` });
-    total -= backup.bytes;
+    if (item.backup) pruned.push({ ...item.backup, reason: sizeBudgetReason(policy) });
+    else sharedPruned.push(item.key);
+    total -= item.bytes;
   }
   const at = now().toISOString();
   const events = pruned.map((backup) => ({ kind: 'pruned', store: backup.store, label: backup.label,
@@ -74,7 +89,7 @@ export function pruneFormatBackups(dataDir, { policy = backupRetentionPolicy(), 
     for (const backup of pruned) remove(backup.file);
     recordFormatOperations(dataDir, events);
   }
-  return { pruned: events, kept: candidates.length - pruned.length, bytesKept: total, policy };
+  return { pruned: events, kept: candidates.length - pruned.length, bytesKept: total, sharedPruned, policy };
 }
 
 function neededBackups(store, backups) {

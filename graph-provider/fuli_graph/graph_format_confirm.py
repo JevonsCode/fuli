@@ -212,14 +212,17 @@ async def apply_graph_migration(
 
 
 async def prune_graph_journals(
-    driver, settings, *, keep: int, max_bytes: int, dry_run: bool = False, now=now_utc,
+    driver, settings, *, keep: int, apply_ids=(), dry_run: bool = False, now=now_utc,
     lock_wait_seconds=LOCK_WAIT_SECONDS, sleep=asyncio.sleep, barrier=None,
 ) -> dict:
-    """Keeps undo journals within the same soft target as the file backups:
-    the newest `keep` and at most `max_bytes` in all. The journal of the
-    confirmed step that can be undone now is never pruned, whatever the
-    target; journals of undone steps go first. Returns what was (or would be)
-    pruned: apply ID, step, size and reason only.
+    """Keeps the newest `keep` undo journals, journals of undone steps going
+    first, and prunes the journals in apply_ids as well: the ones FULI's
+    shared size budget for format backups and undo journals chose
+    (src/data-format/format-retention.js), which only the caller can weigh
+    against the local backups. The journal of the confirmed step that can be
+    undone now is never pruned, even when apply_ids names it. Returns what
+    was (or would be) pruned, by apply ID, step, size and reason only, and
+    the journals that stay, so a dry run can plan the shared budget.
 
     The transaction first takes the ledger's identity lock and checks that
     this run still holds the migration lease, and keeps the lock to the
@@ -259,20 +262,20 @@ async def prune_graph_journals(
         others.sort(key=lambda j: (j['state'] == 'applied', j['recordedAt'] or ''), reverse=True)
         over = others[keep:]
         pruned = [{**j, 'reason': f'more than {keep} undo journals'} for j in over]
-        kept = [j for j in journals if j not in over]
-        total = sum(j['bytes'] for j in kept)
-        for journal in sorted((j for j in kept if j['applyId'] != undoable),
-                              key=lambda j: (j['state'] == 'applied', j['recordedAt'] or '')):
-            if total <= max_bytes:
-                break
-            pruned.append({**journal, 'reason': f'undo journals use more than {max_bytes} bytes'})
-            total -= journal['bytes']
+        sized = set(apply_ids)
+        pruned += [{**j, 'reason': 'over the shared size budget'} for j in others
+                   if j not in over and j['applyId'] in sized]
+        gone = {j['applyId'] for j in pruned}
         if not dry_run:
-            for journal in pruned:
-                await delete_journal(queries, journal['applyId'])
+            for applied in gone:
+                await delete_journal(queries, applied)
         return {'pruned': [{'store': 'graph', 'applyId': j['applyId'], 'migrationId': j['migrationId'],
                             'state': j['state'], 'bytes': j['bytes'], 'reason': j['reason']} for j in pruned],
-                'kept': len(journals) - len(pruned), 'protected': undoable}
+                'kept': len(journals) - len(pruned), 'protected': undoable,
+                'journals': [{'applyId': j['applyId'], 'migrationId': j['migrationId'], 'state': j['state'],
+                              'recordedAt': j['recordedAt'], 'bytes': j['bytes'],
+                              'protected': j['applyId'] == undoable}
+                             for j in journals if j['applyId'] not in gone]}
 
     return await _locked(driver, settings, now, lock_wait_seconds, sleep, operation)
 
