@@ -37,8 +37,8 @@ test('a store waiting for a person is named with its step, read only and cached 
 
 test('console health lists the stores this FULI cannot use as they are', async () => {
   const notice = { store: 'judgment', label: 'judgment.sqlite', state: 'newer_format', steps: [] };
-  const runtime = await createServer({ port: 0, app: { graphiti: true, dataFormatNotices: () => [notice],
-    async state() { throw new Error('not queried'); }, close() {} } });
+  const runtime = await createServer({ port: 0, dataFormatNotices: () => [notice],
+    app: { graphiti: true, async state() { throw new Error('not queried'); }, close() {} } });
   try {
     const health = await (await fetch(`${runtime.url}/api/health`)).json();
     assert.deepEqual(health.dataFormats, [notice]);
