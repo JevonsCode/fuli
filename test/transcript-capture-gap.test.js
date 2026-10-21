@@ -10,6 +10,7 @@ import test from 'node:test';
 
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { CapturePolicyStore, capturePolicyPathForRuntime } from '../src/graphiti/capture-policy.js';
+import { notRecordedEvent, notRecordedReason, transcriptCaptureLedger, TURN_UNRESOLVED } from '../src/conversations/transcript-capture-gap.js';
 
 const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' } }) + '\n';
 const row = (role, text) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role,
@@ -327,4 +328,48 @@ test('an off-period Stop whose capture expired never lets that turn be imported 
   await s.turn('on after', 'answer after');
   assertOnlyOnPeriodTurns(s);
   assert.ok(s.markers().length > 0, 'the off stretch is marked once capture is back');
+});
+
+test('an unresolved turn skips every sync until its own id ends or releases it, and outlives the syncs that cover it', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-unresolved-turn-'));
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
+  const runtimeConfigPath = join(directory, 'runtime.json');
+  const ledger = transcriptCaptureLedger(runtimeConfigPath, { session_id: 'synthetic-session' }, 'claude_code');
+  ledger.record('v1');
+  assert.equal(await ledger.skipReason('v1'), null);
+  const first = { turn: 'turn-1', owner: 'a'.repeat(64), from: 120 };
+  assert.equal(ledger.holdTurn(first), true);
+  assert.deepEqual(await ledger.unresolvedTurn(), first);
+  assert.equal(await ledger.skipReason('v1'), TURN_UNRESOLVED);
+  // A covering sync and a denial keep it: only its own resolution ends it.
+  ledger.record('v1');
+  assert.equal(await ledger.deny('v1', 'session_paused'), 'kept');
+  assert.deepEqual(await ledger.unresolvedTurn(), first);
+  assert.equal(await ledger.skipReason('v1'), 'session_paused');
+  ledger.record('v1');
+  assert.equal(await ledger.skipReason('v1'), TURN_UNRESOLVED);
+  // Only the named turn ends: an older turn's id leaves a newer turn held.
+  const second = { turn: 'turn-2', owner: 'a'.repeat(64), from: 180 };
+  ledger.holdTurn(second);
+  assert.equal(ledger.endTurn('turn-1'), true);
+  assert.deepEqual(await ledger.unresolvedTurn(), second);
+  assert.equal(ledger.releaseTurn('turn-1'), true);
+  assert.deepEqual(await ledger.unresolvedTurn(), second);
+  assert.equal(await ledger.skipReason('v1'), TURN_UNRESOLVED);
+  // Ended with an owner: the next sync imports normally.
+  assert.equal(ledger.endTurn('turn-2'), true);
+  assert.equal(await ledger.unresolvedTurn(), null);
+  assert.equal(await ledger.skipReason('v1'), null);
+  // Released: what is left of the turn is skipped once, then imports resume.
+  ledger.holdTurn({ turn: 'turn-3', owner: 'b'.repeat(64), from: 240 });
+  assert.equal(ledger.releaseTurn('turn-3'), true);
+  assert.equal(await ledger.unresolvedTurn(), null);
+  assert.equal(await ledger.skipReason('v1'), TURN_UNRESOLVED);
+  ledger.record('v1');
+  assert.equal(await ledger.skipReason('v1'), null);
+  assert.equal(ledger.releaseTurn('turn-3'), true, 'nothing to release is not a failure');
+  // The skipped stretch names the reason and no content.
+  const marker = notRecordedEvent(240, 300, TURN_UNRESOLVED);
+  assert.match(marker.content, /task ownership was not confirmed, so it was not recorded under any task; native bytes 240 to 300/);
+  assert.equal(notRecordedReason(marker.content), TURN_UNRESOLVED);
 });

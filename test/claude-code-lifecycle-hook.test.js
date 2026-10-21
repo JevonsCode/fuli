@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import test, { after } from 'node:test';
 import { claudeLifecycleOutput, claudeLifecycleUnavailable, runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
 import { claudeLifecycleCommand } from '../src/agents/claude-code/lifecycle-hooks.js';
+import { transcriptCaptureLedger } from '../src/conversations/transcript-capture-gap.js';
 
 // A private runtime directory, so no hook reaches a shared absolute path.
 const RUNTIME_ROOT = mkdtempSync(join(tmpdir(), 'fuli-claude-hook-'));
@@ -346,4 +347,169 @@ test('Claude same-session hook skips the held transcript guard while delivering 
   });
   assert.deepEqual(f.calls, ['begin_task_context']);
   assert.deepEqual(f.lookups, []);
+});
+
+// A synthetic host session through the installed hook: a fake Provider keeps
+// the transcript cursor and what each append attributed to which task.
+async function unresolvedTurnSession(t) {
+  const { mkdtemp, rm, appendFile, writeFile } = await import('node:fs/promises');
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-claude-unresolved-'));
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
+  const runtimeConfigPath = join(directory, 'runtime.json');
+  const transcript = join(directory, 'session.jsonl');
+  const line = record => JSON.stringify({ sessionId: input.session_id, ...record }) + '\n';
+  await writeFile(transcript, line({ type: 'user', message: { role: 'user', content: 'Synthetic task A.' } }));
+  const task = { token: 'fuli-task-synthetic-a', project_agent_id: 'engineer', personal_project_id: 'synthetic-project',
+    session_id: input.session_id, source_application: 'claude_code', personal_space_id: 'synthetic-space', entry_via: 'hook' };
+  const state = { current: task, checkpointed: false, cursor: 0, appended: [] };
+  const calls = [];
+  const app = { config: { personal: { spaceId: 'synthetic-space' } }, getCapturePolicy: () => ({ enabled: true }),
+    getCapturePolicyVersion: () => 'absent',
+    taskContextRegistry: { current: async () => state.current && { token: state.current.token, sessionId: input.session_id,
+      sourceApplication: 'claude_code', checkpoint: state.checkpointed ? { phase: 'complete' } : null } },
+    personal: {
+      currentTaskContext: async () => state.current,
+      conversation: async (operation, query) => {
+        if (query.mode === 'policy') return { enabled: true };
+        if (query.mode === 'session') return { initialized: true, cursor: state.cursor };
+        if (operation === 'append') {
+          assert.equal(query.expected_cursor, state.cursor);
+          state.appended.push(...query.events.map(event => ({ token: query.task_context_token, ...event })));
+          state.cursor = query.cursor;
+          return { status: 'saved' };
+        }
+        return { status: 'saved', cursor: state.cursor };
+      }
+    } };
+  const { prompt: _prompt, ...native } = { ...input, transcript_path: transcript };
+  const hook = (event, extra = {}) => runClaudeLifecycleHook(['--event', event], {
+    readInput: async () => ({ ...native, ...extra }),
+    resolveRuntimeOptions: () => ({ runtimeConfigPath }), openApplication: () => app,
+    createLeases: () => ({ withGraphLease: async (_owner, run) => run() }), captureTimeoutMs: 30_000,
+    callTool: async (_app, name, parameters) => {
+      calls.push(name);
+      if (name === 'read_task_preferences') return { taskContextToken: parameters.taskContextToken,
+        effective_preferences: [{ instruction: 'Synthetic preference.' }] };
+      if (name === 'begin_task_context') {
+        state.current = { ...task, token: 'fuli-task-synthetic-b' };
+        state.checkpointed = false;
+        return { taskContextToken: state.current.token, effective_preferences: [] };
+      }
+      if (name === 'verify_task_checkpoint') return state.checkpointed ? { status: 'checkpointed' }
+        : { decision: 'block', entry_via: 'hook', task_context_token: state.current.token, reason: 'FULI_CHECKPOINT_REQUIRED: synthetic' };
+      if (name === 'checkpoint_task_knowledge') state.checkpointed = true;
+      return { status: 'saved' };
+    } });
+  const ledger = transcriptCaptureLedger(runtimeConfigPath, input, 'claude_code');
+  const host = record => appendFile(transcript, line(record));
+  const notification = '<task-notification>\n<task-id>bsynth01x</task-id>\n<status>completed</status>\n</task-notification>';
+  return { state, calls, hook, ledger, task, host,
+    // A notification-shaped turn; the same envelope pasted by a person reaches the hook identically.
+    async refreshTurn(reply = 'SYNTHETIC_UNKNOWN_TURN_REPLY') {
+      await host({ type: 'user', message: { role: 'user', content: notification } });
+      await hook('UserPromptSubmit', { prompt: notification });
+      await host({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: reply }] } });
+      return ledger.unresolvedTurn();
+    },
+    // A Stop that settles nothing: no verify, no automatic checkpoint.
+    async quietStop(label) {
+      calls.length = 0;
+      const output = await hook('Stop');
+      assert.match(output.systemMessage ?? '', /^(Fuli: 这段内容的任务归属未确认，未记入任何任务；原文仍在本地会话记录中)?$/, label);
+      assert.deepEqual(calls, [], `${label}: the held task is neither verified nor settled`);
+    },
+    said: () => state.appended.filter(event => !/^\[Not recorded/.test(event.content)) };
+}
+
+const checkpointCall = (id, token) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id,
+  name: 'mcp__fuli__checkpoint_task_knowledge', input: { taskContextToken: token, disposition: 'retain_nothing' } }] } });
+const toolResult = (id, extra = {}) => ({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id,
+  content: '{"status":"checkpointed"}', ...extra }] } });
+
+test('Claude Stop of an unresolved turn neither settles nor records under the task until an explicit continuation', async t => {
+  const s = await unresolvedTurnSession(t);
+  for (const label of ['notification-shaped turn', 'pasted envelope']) {
+    assert.ok(await s.refreshTurn(), label);
+    await s.quietStop(label);
+    await s.quietStop(`${label}, repeated Stop`);
+  }
+  assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_UNKNOWN_TURN_REPLY|task-notification/);
+  assert.ok(s.state.appended.some(event => /task ownership was not confirmed/.test(event.content)), 'skipped with a reason');
+  // Calls that name A's token but do not state this turn is A's.
+  const nonResolving = [
+    ['a read-only call', [{ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_read',
+      name: 'mcp__fuli__read_task_preferences', input: { taskContextToken: s.task.token } }] } }, toolResult('toolu_read')]],
+    ['a search naming the token', [{ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_search',
+      name: 'mcp__fuli__search_knowledge_graph', input: { query: 'x', taskContextToken: s.task.token } }] } }, toolResult('toolu_search')]],
+    ['a failed checkpoint', [checkpointCall('toolu_failed', s.task.token), toolResult('toolu_failed', { is_error: true })]],
+    ['a checkpoint without its result', [checkpointCall('toolu_pending', s.task.token)]],
+    ['another tool naming the token', [{ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use',
+      id: 'toolu_bash', name: 'Bash', input: { command: `echo ${s.task.token}` } }] } }, toolResult('toolu_bash')]]
+  ];
+  for (const [label, records] of nonResolving) {
+    await s.refreshTurn();
+    for (const record of records) await s.host(record);
+    await s.quietStop(label);
+  }
+  // A checkpoint call of an earlier turn whose result arrives in a newer turn does not end the newer turn.
+  await s.refreshTurn();
+  await s.host(checkpointCall('toolu_old', s.task.token));
+  const older = await s.ledger.unresolvedTurn();
+  const newer = await s.refreshTurn();
+  assert.notEqual(newer.turn, older.turn);
+  await s.host(toolResult('toolu_old'));
+  s.state.checkpointed = true;
+  await s.quietStop('a delayed receipt from an earlier turn');
+  assert.equal(s.ledger.endTurn(older.turn), true);
+  assert.deepEqual(await s.ledger.unresolvedTurn(), newer, 'an older turn id never ends a newer turn');
+  s.state.checkpointed = false;
+  // An explicit, successful continuation in the turn, confirmed by the Provider: recording resumes for A.
+  await s.refreshTurn('SYNTHETIC_CONTINUED_REPLY');
+  await s.host(checkpointCall('toolu_ok', s.task.token));
+  await s.host(toolResult('toolu_ok'));
+  s.state.checkpointed = true;
+  s.calls.length = 0;
+  await s.hook('Stop');
+  assert.deepEqual(s.calls, ['verify_task_checkpoint']);
+  assert.equal(await s.ledger.unresolvedTurn(), null);
+  assert.ok(s.said().some(event => event.token === s.task.token && /SYNTHETIC_CONTINUED_REPLY/.test(event.content)));
+  assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_UNKNOWN_TURN_REPLY/);
+});
+
+test('Claude unresolved turns stay held through resets until a fresh entry, and never settle the held task', async t => {
+  const s = await unresolvedTurnSession(t);
+  await s.refreshTurn();
+  for (const [label, reset] of [['SessionStart resume', () => s.hook('SessionStart', { source: 'resume' })],
+    ['SessionStart clear', () => s.hook('SessionStart', { source: 'clear' })],
+    ['SessionStart startup', () => s.hook('SessionStart', { source: 'startup' })],
+    ['compaction', () => s.hook('PreCompact', { trigger: 'auto' })]]) {
+    await reset();
+    assert.ok(await s.ledger.unresolvedTurn(), label);
+    await s.host({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'SYNTHETIC_AFTER_RESET' }] } });
+    await s.quietStop(label);
+    await s.quietStop(`${label}, repeated Stop`);
+  }
+  assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_UNKNOWN_TURN_REPLY|SYNTHETIC_AFTER_RESET/);
+  // A fresh entry is evidence from its own turn: B starts normally and its Stop settles B.
+  await s.host({ type: 'user', message: { role: 'user', content: 'Synthetic task B.' } });
+  await s.hook('UserPromptSubmit', { prompt: 'Synthetic task B.' });
+  assert.equal(await s.ledger.unresolvedTurn(), null);
+  assert.equal(s.state.current.token, 'fuli-task-synthetic-b');
+  await s.host({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'SYNTHETIC_TASK_B_REPLY' }] } });
+  s.calls.length = 0;
+  await s.hook('Stop');
+  assert.deepEqual(s.calls, ['verify_task_checkpoint', 'checkpoint_task_knowledge']);
+  assert.ok(s.said().some(event => event.token === 'fuli-task-synthetic-b' && /SYNTHETIC_TASK_B_REPLY/.test(event.content)));
+  assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_UNKNOWN_TURN_REPLY|SYNTHETIC_AFTER_RESET/);
+});
+
+test('Claude unresolved turn ends without an owner when another task became current during it', async t => {
+  const s = await unresolvedTurnSession(t);
+  await s.refreshTurn('SYNTHETIC_MOVED_REPLY');
+  s.state.current = { ...s.task, token: 'fuli-task-synthetic-c' };
+  s.calls.length = 0;
+  await s.hook('Stop');
+  assert.equal(await s.ledger.unresolvedTurn(), null);
+  assert.deepEqual(s.calls, ['verify_task_checkpoint', 'checkpoint_task_knowledge'], 'the new current task settles normally');
+  assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_MOVED_REPLY/);
 });

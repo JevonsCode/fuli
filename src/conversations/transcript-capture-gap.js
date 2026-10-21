@@ -4,8 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { advanceCaptureSettingsVersion, captureDisabled } from '../graphiti/capture-decision.js';
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
-import { jsonFormat, removeVersionedJsonFileAtomic, updateVersionedJsonFileAtomic, writeVersionedJsonFileAtomic }
-  from '../storage/json-format.js';
+import { jsonFormat, removeVersionedJsonFileAtomic, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { transcriptDigest } from './transcript-guard.js';
 import { verifiedTranscriptEnd } from './transcript-reader.js';
@@ -23,6 +22,9 @@ export const UNATTRIBUTABLE = 'capture_changed';
 // generation moved instead; or nothing local could be written at all.
 const STATE_UNSAVED = 'capture_state_unsaved';
 const STATE_UNWRITABLE = 'capture_state_unwritable';
+// A turn whose task ownership was never confirmed (rec#15): neither the task
+// that was current nor any other, so it is not imported under either.
+export const TURN_UNRESOLVED = 'turn_ownership_unresolved';
 
 // Sessions whose denial this process could not keep, with the settings
 // version it was made under. While that version holds, every sync of the
@@ -34,7 +36,8 @@ const unkeptDenials = new Map();
 // not confirm the stretch was allowed. Neither names any skipped content.
 const SKIPPED_BECAUSE = Object.freeze({
   [UNATTRIBUTABLE]: 'capture settings changed, so this stretch could not be confirmed as allowed and was skipped',
-  [STATE_UNSAVED]: 'the capture state could not be saved safely, so this stretch was skipped'
+  [STATE_UNSAVED]: 'the capture state could not be saved safely, so this stretch was skipped',
+  [TURN_UNRESOLVED]: 'this turn\'s task ownership was not confirmed, so it was not recorded under any task'
 });
 const RECORDING_OFF = /^automatic recording was off \((\w+)\)$/;
 const MARKER = /^\[Not recorded: (.+); native bytes \d+ to \d+ remain in native history\.\]$/;
@@ -77,8 +80,11 @@ export async function skipTranscriptWhileOff(application, input, sourceApplicati
 }
 
 // What this host session's transcript was last handled under, kept locally:
-// the settings generation of its last sync, and a denial no recorded sync has
-// skipped yet. A session without a record is unattributable unless no settings
+// the settings generation of its last sync, a denial no recorded sync has
+// skipped yet, and a turn whose task ownership is unresolved (`unresolved`:
+// its id, the digest of the task that was current and the native byte the turn
+// began after). The unresolved turn is an optional field of version 1: an older FULI
+// that rewrites the record drops it, which only brings back its own behaviour. A session without a record is unattributable unless no settings
 // were ever saved. The generation is global for now (any client's switch moves
 // it); see the capture settings store's version() for the planned per-layer
 // generations.
@@ -91,6 +97,18 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
     try { return JSON.parse(await readFile(path, 'utf8')); }
     catch { return null; }
   };
+  // Ends the named turn only: a newer turn held since is never ended by an
+  // older turn's evidence. True when that turn is no longer held.
+  const forgetTurn = (turnId, next) => {
+    try {
+      updateVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT, (current) => {
+        if (unresolvedTurnOf(current)?.turn !== turnId) return undefined;
+        const { unresolved: _turn, ...rest } = next(current);
+        return rest;
+      }, { read: readLedgerRecord });
+      return true;
+    } catch { return false; }
+  };
   return {
     // Why the next stretch must be skipped instead of imported, or null. A
     // pending denial comes first: the Provider may have been unable to take
@@ -100,6 +118,7 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
       if (unkeptDenials.get(path) === version) return STATE_UNSAVED;
       const record = await stored();
       if (typeof record?.pending === 'string') return record.pending;
+      if (unresolvedTurnOf(record)) return TURN_UNRESOLVED;
       const settings = record?.settings ?? null;
       return (settings === null ? version !== 'absent' : settings !== version) ? UNATTRIBUTABLE : null;
     },
@@ -113,7 +132,8 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
     async deny(version, reason) {
       try {
         updateVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT, (current) => ({ version: 1, settings: version,
-          pending: typeof current?.pending === 'string' ? current.pending : reason }), { read: readLedgerRecord });
+          pending: typeof current?.pending === 'string' ? current.pending : reason, ...keptTurn(current) }),
+        { read: readLedgerRecord });
         unkeptDenials.delete(path);
         return 'kept';
       } catch (error) {
@@ -135,13 +155,47 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
       }
     },
     // After a sync that covered the stretch, by importing it or by a marker
-    // the Provider saved. This clears a pending denial.
+    // the Provider saved. This clears a pending denial, never an unresolved
+    // turn: only its own resolution ends that.
     record(version) {
       if (version === null) return;
       try {
-        writeVersionedJsonFileAtomic(path, { version: 1, settings: version }, TRANSCRIPT_CAPTURE_FORMAT);
+        updateVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT,
+          (current) => ({ version: 1, settings: version, ...keptTurn(current) }), { read: readLedgerRecord });
         unkeptDenials.delete(path);
       } catch { /* the next sync stays unattributable, which only skips more */ }
+    },
+    // The unresolved turn of this session, or null.
+    async unresolvedTurn() {
+      return unresolvedTurnOf(await stored());
+    },
+    // Marks the turn that begins now (`turn`, a fresh id) as unresolved for
+    // the task that is current (`owner`, its token digest), from native byte
+    // `from`. It replaces an older held turn. While a turn is held every sync
+    // skips with TURN_UNRESOLVED and the Stop hook does not settle that task;
+    // a session reset, compaction or FULI going off leaves it held. False when
+    // it could not be kept.
+    holdTurn({ turn, owner, from }) {
+      try {
+        updateVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT, (current) => ({ version: 1,
+          ...(current && Object.hasOwn(current, 'settings') ? { settings: current.settings } : {}),
+          ...(typeof current?.pending === 'string' ? { pending: current.pending } : {}),
+          unresolved: { turn, owner, from } }), { read: readLedgerRecord });
+        return true;
+      } catch { return false; }
+    },
+    // The turn has an owner now (an explicit resolution in it, or a fresh task
+    // entry after it): later syncs import normally. Nothing already skipped
+    // comes back.
+    endTurn(turnId) {
+      return forgetTurn(turnId, current => current);
+    },
+    // Another task, or none, became current during the turn: the turn ends
+    // without an owner and what is still unimported of it is skipped by the
+    // next sync, as a pending reason the covering sync clears.
+    releaseTurn(turnId) {
+      return forgetTurn(turnId, current => ({ ...current,
+        pending: typeof current.pending === 'string' ? current.pending : TURN_UNRESOLVED }));
     }
   };
 }
@@ -155,6 +209,17 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
 export async function keepDenial(application, ledger, version, reason) {
   if (!ledger || await ledger.deny(version, reason) !== 'unkept') return null;
   return advanceCaptureSettingsVersion(application) ? STATE_UNSAVED : STATE_UNWRITABLE;
+}
+
+function unresolvedTurnOf(record) {
+  const turn = record?.unresolved;
+  return turn && typeof turn.turn === 'string' && typeof turn.owner === 'string'
+    && Number.isSafeInteger(turn.from) && turn.from >= 0 ? turn : null;
+}
+
+function keptTurn(current) {
+  const turn = unresolvedTurnOf(current);
+  return turn ? { unresolved: turn } : {};
 }
 
 // An unreadable record is replaced, as before the format lock.
