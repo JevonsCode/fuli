@@ -11,6 +11,9 @@ class WorkflowCommitDriver:
             return [{'project': {'project_id': 'travel-d'}}], None, None
         if 'MATCH (e:Episodic {uuid: $uuid})' in query:
             return [], None, None
+        # rec#5 C6: no host task session here, so no conversation to name.
+        if 'FuliTaskContextSession' in query and 'current_token' in query:
+            return [], None, None
         if 'CREATE (episode:Episodic' in query:
             relationship = parameters['relationships'][0]
             edge = self.edges.setdefault(relationship['uuid'], {

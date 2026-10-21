@@ -233,7 +233,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.deepEqual(listed.tools.map(({ name }) => name), [
     'request_agent_attention', 'list_agent_attention', 'cancel_agent_attention',
     'list_project_agent_tasks', 'list_preference_conflicts',
-    'list_agent_interfaces', 'get_capture_policy', 'explain_settings', 'update_capture_policy',
+    'list_agent_interfaces', 'get_capture_policy', 'read_session_records', 'explain_settings', 'update_capture_policy',
     'list_external_knowledge_connectors', 'discover_external_knowledge_sources',
     'list_external_knowledge_bindings', 'create_external_knowledge_binding',
     'check_external_knowledge_binding', 'sync_external_knowledge_binding',

@@ -124,6 +124,15 @@ export const router = createRouter({
       meta: { title: 'routes.knowledgeItem.title', layout: 'form', detail: true },
     },
     {
+      // rec#5 C6: one host session's records in the active space, short
+      // because every saving turn's receipt links it. ?client= names the
+      // client when two share a session ID; a record opens as ?item=<space>/<key>.
+      path: '/s/:sessionId',
+      name: 'session-records',
+      component: () => import('@/pages/SessionRecordsPage.vue'),
+      meta: { title: 'routes.sessionRecords.title', layout: 'canvas', detail: true },
+    },
+    {
       path: '/knowledge/turn/:spaceId',
       name: 'knowledge-turn-receipt',
       component: () => import('@/pages/KnowledgeTurnReceiptPage.vue'),

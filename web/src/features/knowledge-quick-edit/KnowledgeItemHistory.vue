@@ -1,12 +1,17 @@
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
+
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
+import { sourceSessionPath } from '@/features/session-records/model'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import type { KnowledgeItemView } from './model'
 
 // Where the item came from and every change since: kept even after it is
-// moved, edited or deactivated (temporal history is never rewritten).
-defineProps<{ item: KnowledgeItemView }>()
+// moved, edited or deactivated (temporal history is never rewritten). A
+// source from a host session links back to that session's records, opened at
+// the turn that wrote it (rec#5 C6-3).
+defineProps<{ item: KnowledgeItemView; spaceId: string }>()
 
 const when = (value?: string | null) => formatDateTime(value, currentLocale(), DATE_TIME_MINUTE, { missing: '—' })
 const action = (value: string) => t(`knowledgeQuickEdit.history.actions.${value}`)
@@ -25,6 +30,10 @@ const action = (value: string) => t(`knowledgeQuickEdit.history.actions.${value}
               <template v-if="source.session_id"> · {{ t('knowledgeQuickEdit.history.session', { id: source.session_id.slice(0, 8) }) }}</template>
             </span>
             <span v-if="source.excerpt" class="break-words">{{ source.excerpt }}</span>
+            <RouterLink v-if="sourceSessionPath(spaceId, source)" :to="sourceSessionPath(spaceId, source)"
+              class="justify-self-start text-xs underline underline-offset-4" data-source-session>
+              {{ t('sessionRecords.fromSession') }}
+            </RouterLink>
           </li>
         </ol>
         <p v-else class="m-0 text-muted-foreground">{{ t('knowledgeQuickEdit.history.noSources') }}</p>

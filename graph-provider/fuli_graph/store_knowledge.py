@@ -4,6 +4,7 @@ import json
 from fastapi import HTTPException
 
 from .collaboration_context import read_collaboration_context
+from .conversation_scope import current_session_conversation_id
 from .graph_models import GraphResult
 from .graph_query import read_graph
 from .knowledge_search import search_knowledge
@@ -347,6 +348,10 @@ class StoreKnowledge:
                 )
 
             created_at = now_utc()
+            # The source reference names the conversation the session's task
+            # writes to, beside its session, client, project and time (rec#5 C6).
+            conversation_id = await current_session_conversation_id(
+                self, space['id'], episode.source_application, episode.session_id)
             await self.runtime.driver.execute_query(
                 '''
                 UNWIND $entities AS row
@@ -408,6 +413,7 @@ class StoreKnowledge:
                   created_at: $created_at,
                   entity_edges: $relationship_ids,
                   fuli_session_id: $session_id,
+                  fuli_conversation_id: $conversation_id,
                   fuli_source_kind: $source_kind,
                   fuli_source_uri: $source_uri,
                   fuli_source_application: $source_application,
@@ -591,6 +597,7 @@ class StoreKnowledge:
                 created_at=created_at,
                 relationship_ids=relationship_ids,
                 session_id=episode.session_id,
+                conversation_id=conversation_id,
                 source_kind=episode.source_kind,
                 source_uri=episode.source_uri,
                 source_application=episode.source_application,
