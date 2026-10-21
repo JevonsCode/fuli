@@ -1,4 +1,3 @@
-import { stat } from 'node:fs/promises';
 import { switchSessionFuli } from '../graphiti/session-fuli-switch.js';
 import { sessionUseDecision } from '../graphiti/session-layer-decision.js';
 
@@ -25,17 +24,16 @@ function sessionFuliCommand(prompt) {
 }
 
 // The answer to the person's command line, or null when the prompt is not one.
-export async function sessionFuliCommandResult(application, { sessionId, sourceApplication, prompt, projectPath = null,
-  transcriptPath = null }) {
+export async function sessionFuliCommandResult(application, { sessionId, sourceApplication, prompt, projectPath = null }) {
   const action = sessionFuliCommand(prompt);
   if (!action) return null;
-  await keepStartingDefault(application, { sessionId, sourceApplication, transcriptPath });
+  keepStartingDefault(application, { sessionId, sourceApplication });
   return switchSessionFuli(application, { sessionId, sourceApplication, action, projectPath });
 }
 
 // The refusal of a task entry for a session FULI does not serve, or null.
-export async function sessionFuliEntryRefusal(application, { sessionId, sourceApplication, transcriptPath = null }) {
-  const kept = await keepStartingDefault(application, { sessionId, sourceApplication, transcriptPath });
+export function sessionFuliEntryRefusal(application, { sessionId, sourceApplication }) {
+  const kept = keepStartingDefault(application, { sessionId, sourceApplication });
   const decision = sessionUseDecision(application, { sessionId, sourceApplication });
   if (!decision.allowed) return decision;
   return kept ? null : { allowed: false, reason: 'session_start_unsaved', layer: 'session' };
@@ -46,27 +44,21 @@ export function sessionFuliOffContext(refusal) {
   return (OFF_CONTEXT[refusal.reason] ?? UNKNOWN_CONTEXT) + OFF_GUIDANCE;
 }
 
+// The host's own event that a session begins now (each client's adapter
+// decides which event and source prove it): the session keeps the default of
+// this moment. Best effort; without it the first entry pins conservatively.
+export function sessionFuliSessionBegan(application, { sessionId, sourceApplication }) {
+  keepStartingDefault(application, { sessionId, sourceApplication, fresh: true });
+}
+
 // A session's first entry keeps the default it started under, so a later
 // change of the default leaves this window alone. False when neither that nor
 // keeping the session off could be saved: its entry is refused this time.
-async function keepStartingDefault(application, { sessionId, sourceApplication, transcriptPath }) {
+function keepStartingDefault(application, { sessionId, sourceApplication, fresh = false }) {
   try {
-    application.pinSessionFuliDefault?.(sessionId, sourceApplication, await sessionStart(transcriptPath));
+    application.pinSessionFuliDefault?.(sessionId, sourceApplication, { fresh });
     return true;
   } catch {
     return false;
-  }
-}
-
-// When the host session began, from the transcript the host keeps for it: a
-// session whose transcript does not exist yet is new. Unknown (no path, no
-// birth time) is null, which a later default cannot turn on.
-async function sessionStart(transcriptPath) {
-  if (typeof transcriptPath !== 'string' || !transcriptPath) return null;
-  try {
-    const { birthtimeMs } = await stat(transcriptPath);
-    return birthtimeMs > 0 ? { at: birthtimeMs } : null;
-  } catch (error) {
-    return error?.code === 'ENOENT' ? { isNew: true } : null;
   }
 }

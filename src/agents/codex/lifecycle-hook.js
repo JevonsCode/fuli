@@ -7,7 +7,8 @@ import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
 import { isSystemPromptEntry, systemPromptOutput } from '../system-prompt.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
-import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext } from '../../conversations/session-fuli-entry.js';
+import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext, sessionFuliSessionBegan }
+  from '../../conversations/session-fuli-entry.js';
 
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
@@ -99,8 +100,8 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     const output = await leases.withGraphLease('codex-lifecycle', async () => {
       // The person's fuli line is answered here and never reaches the model.
       const command = event === 'UserPromptSubmit' ? await sessionFuliCommandResult(app, { sessionId: input?.session_id,
-        sourceApplication: 'codex', prompt: input?.prompt, projectPath: input?.cwd ?? null,
-        transcriptPath: input?.transcript_path ?? null }) : null;
+        sourceApplication: 'codex', prompt: input?.prompt, projectPath: input?.cwd ?? null }) : null;
+      if (codexSessionBegins(event, input)) sessionFuliSessionBegan(app, { sessionId: input.session_id, sourceApplication: 'codex' });
       if (command) return codexSessionCommandOutput(command);
       if (PREFERENCE_RESET_EVENTS.includes(event)) return codexLifecycleOutput(event, input,
         (name, parameters) => invokeTool(app, name, parameters, { signal: dependencies.signal }),
@@ -113,7 +114,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
           if (name === 'begin_task_context') onContext(context);
           return context;
         }, { delivery: app.preferenceDelivery, entryRefusal: () => sessionFuliEntryRefusal(app,
-          { sessionId: input.session_id, sourceApplication: 'codex', transcriptPath: input.transcript_path ?? null }) }) });
+          { sessionId: input.session_id, sourceApplication: 'codex' }) }) });
     }, { signal: dependencies.signal });
     const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
       { sourceApplication: 'codex', version: FULI_VERSION, sessionId: input?.session_id })) : output;
@@ -122,6 +123,13 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
   } finally {
     await cleanup();
   }
+}
+
+// Codex sends SessionStart source "startup" only for a new thread
+// (openai/codex 87f3c3284e16: codex-rs/core/src/session/session.rs 1974-1977,
+// InitialHistory::New); resume, clear, compact and fork are not taken as proof.
+function codexSessionBegins(event, input) {
+  return event === 'SessionStart' && input?.source === 'startup' && typeof input.session_id === 'string';
 }
 
 // Codex shows a blocked prompt's reason as "Blocked by hook" and keeps the

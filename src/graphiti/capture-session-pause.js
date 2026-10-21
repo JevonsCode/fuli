@@ -122,20 +122,19 @@ export class SessionCapturePauseStore {
     return { enabled, since: value.since };
   }
 
-  // Keeps, once, the default a session started under: called at its task entry.
-  // started says when the host session began: { isNew } when its transcript
-  // does not exist yet, { at } from its transcript, or null when unknown. A
-  // session the default turned on after cannot have started under on unless it
-  // shows it started later, so it is pinned off: a session first seen while the
-  // default was off, whose pin could not be saved then, never turns on with the
-  // default (Dot's review of #251). A pin that cannot be saved is replaced by
-  // keeping the session off in its own record; throws when neither is saved.
-  pinDefault(sessionId, sourceApplication, started = null) {
+  // Keeps, once, the default a session started under. fresh: the host's own
+  // session-start event says the session begins now; otherwise it is the
+  // session's first task entry. Once the default has been turned on, only a
+  // fresh session can be shown to have started under on: any other may have
+  // begun while the default was off and FULI could not save that, so it is
+  // pinned off until the person starts it (Dot's review of #251). A pin that
+  // cannot be saved is replaced by keeping the session off in its own record;
+  // throws when neither is saved.
+  pinDefault(sessionId, sourceApplication, { fresh = false } = {}) {
     validSessionId(sessionId);
     if (this.#pin(sessionId) !== null) return;
     const setting = this.defaultSetting();
-    const enabled = setting.enabled && (setting.since === null || started?.isNew === true
-      || (Number.isFinite(started?.at) && started.at >= Date.parse(setting.since)));
+    const enabled = setting.enabled && (setting.since === null || fresh === true);
     const value = { version: RECORD_VERSION, sourceApplication: requiredClient(sourceApplication) };
     if (!this.directory) {
       this.memoryPins.set(sessionId, { ...value, enabled });

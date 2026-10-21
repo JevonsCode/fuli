@@ -10,6 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
+import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { runCursorLifecycleHook } from '../src/agents/cursor/lifecycle-hook.js';
 import { agentHostRequestContext } from '../src/app/agent-request-context.js';
@@ -86,9 +87,9 @@ test('C3b-1 sessions start with FULI on; with the default off a new session stay
   // A session that started while the default was off stays off when the default turns on.
   assert.equal((await codexEntry(f, f.dirs.novel, { session: SESSION_D })).context, undefined);
   assert.equal(requestSessionFuliDefault(f.app, { newSessions: 'on' }).newSessions, 'on');
-  // A session that shows it is new (its transcript does not exist yet) starts under the new default.
-  assert.ok((await codexEntry(f, f.dirs.novel, { session: SESSION_C, transcriptPath: join(f.root, 'synthetic-new.jsonl') }))
-    .context.taskContextToken);
+  // A session Codex says begins now (SessionStart, source startup) starts under the new default.
+  await codexSessionStart(f, SESSION_C, 'startup');
+  assert.ok((await codexEntry(f, f.dirs.novel, { session: SESSION_C })).context.taskContextToken);
   assert.equal((await codexEntry(f, f.dirs.novel, { session: SESSION_D })).context, undefined);
   assert.equal((await mcpCall(f, host(SESSION_D), 'get_collaboration_preferences', { projectPath: f.dirs.novel,
     taskPrompt: 'Next task.' })).reason, 'session_not_started');
@@ -243,6 +244,23 @@ test('C3b-3 every memory read a model starts is refused for a stopped session, a
     assert.ok(Array.isArray((await callAgentTool(f.app, 'search_knowledge_graph', input, context)).facts));
   }
 });
+
+// Codex's SessionStart hook through its real lifecycle (codex-rs/hooks/src/schema.rs input shape).
+function codexSessionStart(f, session, source) {
+  return runCodexLifecycleHook(['--event', 'SessionStart'], {
+    readInput: async () => ({ session_id: session, cwd: f.dirs.novel, hook_event_name: 'SessionStart', model: 'synthetic-model',
+      permission_mode: 'default', source, transcript_path: null }), write: () => {},
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
+    createLeases: leases });
+}
+
+function claudeSessionStart(f, session, source) {
+  return runClaudeLifecycleHook(['--event', 'SessionStart'], {
+    readInput: async () => ({ session_id: session, cwd: f.dirs.novel, hook_event_name: 'SessionStart', source,
+      transcript_path: join(f.root, `${session}.jsonl`) }),
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
+    createLeases: leases });
+}
 
 // A Codex session whose native transcript the Stop hook imports, as the real hook does.
 async function transcriptSession(f, session = SESSION_A) {
@@ -674,8 +692,9 @@ test('after a double write failure the session stays off, in the same turn and a
   const later = await codexEntry(f, f.dirs.novel, { session: SESSION_A, transcriptPath });
   assert.equal(later.context, undefined, 'it began before the default turned on, so it does not turn on with it');
   assert.equal(record(f)(SESSION_A).stopped, true);
-  const fresh = await codexEntry(f, f.dirs.novel, { session: SESSION_B, transcriptPath: join(f.root, 'synthetic-brand-new.jsonl') });
-  assert.ok(fresh.context.taskContextToken, 'a new session starts under the new default');
+  await codexSessionStart(f, SESSION_B, 'startup');
+  const fresh = await codexEntry(f, f.dirs.novel, { session: SESSION_B });
+  assert.ok(fresh.context.taskContextToken, 'a session Codex says begins now starts under the new default');
   await codexLine(f, SESSION_A, 'fuli start');
   assert.ok((await codexEntry(f, f.dirs.novel, { session: SESSION_A, transcriptPath })).context.taskContextToken,
     'only the person\'s start turns it on');
@@ -697,4 +716,46 @@ test('while new sessions start off, calls FULI cannot attribute are refused even
     projectAgentId: 'lead-novel', sourceApplication: 'codex' });
   assert.equal((await callAgentTool(f.app, 'search_knowledge_graph', { query: 'chapter', taskContextToken: unrecorded.token },
     process)).reason, 'session_not_started');
+});
+
+// Dot's review of #251 at e45d879: a transcript that does not exist proves nothing (an old session's
+// may simply not be there), so only the host's own session-start event counts as a new session.
+test('only a host session-start event shows a session is new; a missing transcript does not', async (t) => {
+  const f = await fixture(t);
+  requestSessionFuliDefault(f.app, { newSessions: 'off' });
+  const directory = sessionCapturePausePathForRuntime(f.runtimeConfigPath);
+  f.app.sessionCapturePauseStore = new SessionCapturePauseStore(directory, { now: () => f.clock.now,
+    writeJson: () => { throw Object.assign(new Error('read-only'), { code: 'EROFS' }); } });
+  const missing = join(f.root, 'synthetic-not-yet-visible.jsonl');
+  assert.equal((await codexEntry(f, f.dirs.novel, { session: SESSION_A, transcriptPath: missing })).context, undefined);
+  f.app.sessionCapturePauseStore = f.sessionPauses = new SessionCapturePauseStore(directory, { now: () => f.clock.now });
+  f.clock.now = '2099-01-01T00:00:00.000Z';
+  requestSessionFuliDefault(f.app, { newSessions: 'on' });
+  assert.equal((await codexEntry(f, f.dirs.novel, { session: SESSION_A, transcriptPath: missing })).context, undefined,
+    'still no transcript, still off');
+  assert.equal(record(f)(SESSION_A).stopped, true);
+  // Resumed, cleared, compacted or forked sessions are not proof either.
+  for (const [session, source] of [[SESSION_B, 'resume'], [SESSION_C, 'clear']]) {
+    await codexSessionStart(f, session, source);
+    assert.equal((await codexEntry(f, f.dirs.novel, { session })).context, undefined, source);
+  }
+  await claudeSessionStart(f, SESSION_D, 'compact');
+  assert.equal((await claudeEntry(f, f.dirs.novel, { session: SESSION_D })).context, undefined, 'compact');
+  // Genuine new-session evidence from each client starts on.
+  const NEW_CLAUDE = '8e9f0a1b-2c3d-4e4f-9a5b-6c7d8e9f0a1b';
+  const NEW_CODEX = '9f0a1b2c-3d4e-4f5a-8b6c-7d8e9f0a1b2c';
+  await claudeSessionStart(f, NEW_CLAUDE, 'startup');
+  assert.ok((await claudeEntry(f, f.dirs.novel, { session: NEW_CLAUDE })).context.taskContextToken, 'claude startup');
+  await codexSessionStart(f, NEW_CODEX, 'startup');
+  assert.ok((await codexEntry(f, f.dirs.novel, { session: NEW_CODEX })).context.taskContextToken, 'codex startup');
+  const cursorHook = (event, prompt) => runCursorLifecycleHook(['--event', event], {
+    readInput: async () => ({ conversation_id: 'synthetic-cursor-new', workspace_roots: [f.dirs.novel], prompt }), write: () => {},
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app, createLeases: leases });
+  await cursorHook('sessionStart');
+  await cursorHook('beforeSubmitPrompt', 'Plan.');
+  assert.equal(record(f)('synthetic-cursor-new').stopped, false, 'cursor sessionStart');
+  // A session that was never seen at all and only shows up at a prompt stays off until started.
+  assert.equal((await codexEntry(f, f.dirs.novel, { session: 'synthetic-unseen' })).context, undefined);
+  await codexLine(f, SESSION_A, 'fuli start');
+  assert.ok((await codexEntry(f, f.dirs.novel, { session: SESSION_A })).context.taskContextToken);
 });

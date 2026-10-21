@@ -1107,8 +1107,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   // A session seen at task entry keeps the default it started under.
-  pinSessionFuliDefault(sessionId, sourceApplication, started) {
-    return this.sessionCapturePauseStore.pinDefault(sessionId, sourceApplication, started);
+  pinSessionFuliDefault(sessionId, sourceApplication, start) {
+    return this.sessionCapturePauseStore.pinDefault(sessionId, sourceApplication, start);
   }
 
   // The local record of how this session's native transcript was last

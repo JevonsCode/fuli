@@ -6,7 +6,7 @@ import { openFederatedGraphApplication } from '../../graphiti/federated-applicat
 import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
-import { sessionFuliCommandResult, sessionFuliEntryRefusal } from '../../conversations/session-fuli-entry.js';
+import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliSessionBegan } from '../../conversations/session-fuli-entry.js';
 
 const EVENTS = new Set(['sessionStart', 'beforeSubmitPrompt', 'stop']);
 
@@ -24,11 +24,14 @@ export async function cursorLifecycleOutput(event, input, invoke, session = null
     // another model turn, so pending checkpoints remain available through MCP.
     return {};
   }
+  // Cursor calls sessionStart "when a new composer conversation is created"
+  // (cursor.com/docs/agent/hooks): the conversation begins now.
+  if (event === 'sessionStart') session?.began({ sessionId, sourceApplication: 'cursor' });
   const roots = input.workspace_roots;
   if (event === 'beforeSubmitPrompt') {
     // Blocked: Cursor shows user_message to the person instead of sending the prompt.
     const command = await session?.command({ sessionId, sourceApplication: 'cursor', prompt: input.prompt,
-      projectPath: Array.isArray(roots) && roots.length === 1 ? roots[0] : null, transcriptPath: input.transcript_path ?? null });
+      projectPath: Array.isArray(roots) && roots.length === 1 ? roots[0] : null });
     if (command) return { continue: false, user_message: `FULI: ${command.message}` };
   }
   if (!Array.isArray(roots) || roots.length !== 1 || typeof roots[0] !== 'string') {
@@ -39,9 +42,7 @@ export async function cursorLifecycleOutput(event, input, invoke, session = null
   const projectPath = roots[0];
   if (event === 'beforeSubmitPrompt') {
     // No task entry; the Agent's own entry call is refused the same way.
-    if (await session?.entryRefusal({ sessionId, sourceApplication: 'cursor', transcriptPath: input.transcript_path ?? null })) {
-      return { continue: true };
-    }
+    if (session?.entryRefusal({ sessionId, sourceApplication: 'cursor' })) return { continue: true };
     // Cursor's documented prompt output has no additional_context field.
     // Its session-start guidance + MCP fallback supply per-turn context.
     await invoke('begin_task_context', {
@@ -98,7 +99,8 @@ export async function runCursorLifecycleHook(args, dependencies = {}) {
         input,
         (name, parameters) => invokeTool(app, name, parameters),
         { command: request => sessionFuliCommandResult(app, request),
-          entryRefusal: request => sessionFuliEntryRefusal(app, request) }
+          entryRefusal: request => sessionFuliEntryRefusal(app, request),
+          began: request => sessionFuliSessionBegan(app, request) }
       )
     );
     write(`${JSON.stringify(result)}\n`);

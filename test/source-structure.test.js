@@ -87,7 +87,7 @@ const CAPTURE_SETTINGS_CALL_SITES = new Map([
     'return this.sessionCapturePauseStore.set(sessionId, change);',
     'return this.sessionCapturePauseStore.setEnabled(sessionId, change);', 'sessionFuliDefault() {',
     'return this.sessionCapturePauseStore.defaultSetting();', 'return this.sessionCapturePauseStore.setDefault(enabled);',
-    'return this.sessionCapturePauseStore.pinDefault(sessionId, sourceApplication, started);'
+    'return this.sessionCapturePauseStore.pinDefault(sessionId, sourceApplication, start);'
   ]]
 ]);
 
