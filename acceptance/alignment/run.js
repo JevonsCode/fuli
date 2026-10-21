@@ -28,6 +28,14 @@ import {
   summarizeMcpToolResultError,
   summarizeClaudeExecutionError
 } from './benchmark-policy.js';
+import {
+  claudeMetering,
+  codexMetering,
+  meteringTotals,
+  parseJsonLines,
+  runMeteredAttempts
+} from './client-metering.js';
+import { attemptMeteringMarkdown, meteringTotalsMarkdown } from './metering-report.js';
 
 const ALIGNMENT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = resolve(ALIGNMENT_DIR, '../..');
@@ -125,7 +133,8 @@ const state = {
   cleanupPromise: null
 };
 const benchmark = {
-  schemaVersion: 1,
+  // 2: client metering keeps unknown cost and tokens as null (rec#27).
+  schemaVersion: 2,
   run: {
     benchmarkVersion: FIXTURE_VERSION,
     startedAt: new Date().toISOString(),
@@ -146,7 +155,10 @@ const benchmark = {
       version: null,
       calls: 0,
       totalDurationMs: 0,
-      totalCostUsd: 0
+      metering: meteringTotals([])
+    },
+    codex: {
+      metering: meteringTotals([])
     },
     timeouts: ALIGNMENT_TIMEOUTS
   },
@@ -160,6 +172,9 @@ const benchmark = {
     'Only sanitized case evidence is persisted; raw Claude Code streams are discarded.'
   ]
 };
+// Every client attempt of this run, so the totals keep unknowns visible.
+const claudeAttemptMetering = [];
+const codexAttemptMetering = [];
 
 if (RENDER_ONLY) {
   const existingResult = readOptionalJson(RESULT_PATH);
@@ -2694,7 +2709,7 @@ async function runClaudeCases({
       baseline: {
         exactMarkerRecall: baselineMarkers.length / comparisonMarkers.length,
         durationMs: baselineRun.durationMs,
-        costUsd: roundMoney(baselineRun.totalCostUsd),
+        metering: baselineRun.metering,
         toolCallCount: baselineRun.toolCalls.length,
         answerHash: baselineRun.answerHash
       },
@@ -2706,7 +2721,7 @@ async function runClaudeCases({
         includePending: fuliSearchEvidence.includePending,
         toolErrorCount: fuliSearchEvidence.toolErrorCount,
         durationMs: fuliRun.durationMs,
-        costUsd: roundMoney(fuliRun.totalCostUsd),
+        metering: fuliRun.metering,
         toolCallCount: fuliRun.toolCalls.length,
         answerHash: fuliRun.answerHash
       },
@@ -3551,30 +3566,29 @@ async function runCodex({
     '-c', 'mcp_servers.fuli.default_tools_approval_mode="auto"',
     prompt
   );
-  let last = null;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    const result = await tryRunProcess('codex', args, {
-      cwd,
-      env: isolatedAgentProcessEnv(),
-      timeoutMs: 5 * 60_000,
-      maxOutputBytes: 8 * 1024 * 1024
-    });
-    if (!result.ok) {
-      last = {
+  const run = await runMeteredAttempts({
+    maxAttempts: 2,
+    shouldRetry: ({ error }) => Boolean(error) && isTransientAgentStreamError(error),
+    runAttempt: async () => {
+      const result = await tryRunProcess('codex', args, {
+        cwd,
+        env: isolatedAgentProcessEnv(),
+        timeoutMs: 5 * 60_000,
+        maxOutputBytes: 8 * 1024 * 1024
+      });
+      if (result.ok) return parseCodexStream(result.stdout, result.durationMs);
+      return {
         answer: '',
         toolCalls: [],
         toolResults: [],
         durationMs: result.durationMs,
-        error: result.error
+        error: result.error,
+        metering: codexMetering(parseJsonLines(result.partialStdout))
       };
-    } else {
-      last = parseCodexStream(result.stdout, result.durationMs);
     }
-    if (!last.error || !isTransientAgentStreamError(last.error) || attempt === 2) {
-      return { ...last, attempts: attempt };
-    }
-  }
-  return last;
+  });
+  recordCodexMetrics(run.attemptMetering);
+  return run;
 }
 
 function hasWorkflowObservationCall(result) {
@@ -3636,7 +3650,8 @@ function parseCodexStream(stdout, measuredDurationMs) {
     toolCalls: uniqueToolCalls(toolCalls),
     toolResults,
     durationMs: measuredDurationMs,
-    error
+    error,
+    metering: codexMetering(events)
   };
 }
 
@@ -3736,19 +3751,6 @@ function parseCursorStream(stdout, measuredDurationMs) {
     durationMs: measuredDurationMs,
     error
   };
-}
-
-function parseJsonLines(stdout) {
-  const events = [];
-  for (const line of String(stdout ?? '').split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    try {
-      events.push(JSON.parse(line));
-    } catch {
-      // Raw model output is intentionally discarded; only structured events are retained.
-    }
-  }
-  return events;
 }
 
 function collectCursorToolCalls(value, calls) {
@@ -3857,7 +3859,7 @@ async function runClaude({
       toolResults: [],
       hookSignals: hookSignals([], lifecycleAuditEvents),
       durationMs: result.durationMs,
-      totalCostUsd: 0,
+      metering: claudeMetering(parseJsonLines(result.partialStdout)),
       error: summarizeClaudeExecutionError(result.error),
       diagnostics: result.diagnostic ? [result.diagnostic] : [],
       toolErrors: []
@@ -3875,15 +3877,7 @@ function claudeRunErrors(run) {
 }
 
 function parseClaudeStream(stdout, measuredDurationMs, lifecycleAuditEvents = []) {
-  const events = [];
-  for (const line of stdout.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    try {
-      events.push(JSON.parse(line));
-    } catch {
-      // Claude may emit a non-JSON diagnostic line; raw output is intentionally discarded.
-    }
-  }
+  const events = parseJsonLines(stdout);
   const toolCalls = [];
   const toolUseNames = new Map();
   const toolResults = [];
@@ -3943,7 +3937,7 @@ function parseClaudeStream(stdout, measuredDurationMs, lifecycleAuditEvents = []
     toolResults,
     hookSignals: hookSignals(events, lifecycleAuditEvents),
     durationMs: Number(resultEvent?.duration_ms ?? measuredDurationMs ?? 0),
-    totalCostUsd: Number(resultEvent?.total_cost_usd ?? 0),
+    metering: claudeMetering(events),
     error: resultError ?? noResultError ?? toolErrors[0] ?? null,
     diagnostics: [
       ...(resultError ? [{ category: 'claude_result_error', detail: resultError }] : []),
@@ -4008,9 +4002,13 @@ function readLifecycleAudit(path) {
 function recordClaudeMetrics(run) {
   benchmark.run.claude.calls += 1;
   benchmark.run.claude.totalDurationMs += Number(run.durationMs || 0);
-  benchmark.run.claude.totalCostUsd = roundMoney(
-    benchmark.run.claude.totalCostUsd + Number(run.totalCostUsd || 0)
-  );
+  claudeAttemptMetering.push(run.metering);
+  benchmark.run.claude.metering = meteringTotals(claudeAttemptMetering);
+}
+
+function recordCodexMetrics(attempts) {
+  codexAttemptMetering.push(...attempts);
+  benchmark.run.codex.metering = meteringTotals(codexAttemptMetering);
 }
 
 async function bootstrapProvider(providerUrl, bootstrapToken) {
@@ -4398,6 +4396,18 @@ ${(counts.ERROR ?? 0) > 0 && (counts.FAIL ?? 0) === 0
 | Case | Result | Observation |
 |---|---|---|
 ${rows}
+
+## Client Metering / 客户端计量
+
+${meteringTotalsMarkdown('Claude Code', result.run.claude?.metering)}
+${coldStart?.metrics
+    ? `
+冷启动 A/B（AGENT-04）逐次计量：
+
+${attemptMeteringMarkdown('baseline', coldStart.metrics.baseline?.metering)}
+${attemptMeteringMarkdown('fuli', coldStart.metrics.fuli?.metering)}
+`
+    : ''}
 ${hookSmokeSection}
 
 ## Product Alignment Issues
@@ -4573,6 +4583,13 @@ Cursor 用例只有在本机先完成 \`cursor-agent login\` 或提供 \`CURSOR_
 |---|---|---|
 ${rows}
 
+## 客户端计量 / Client Metering
+
+${meteringTotalsMarkdown('Codex', result.run.codex?.metering)}
+${meteringTotalsMarkdown('Claude Code', result.run.claude?.metering)}
+
+Cursor 没有冻结的用量契约，本轮不计量 / Cursor has no frozen usage contract and is not metered.
+
 ## 复现
 
 \`\`\`sh
@@ -4680,6 +4697,7 @@ async function runProcess(command, args, {
       error.signal = signal;
       error.timeoutMs = timeoutMs;
       error.failureDetail = detail;
+      error.partialStdout = stdout;
       rejectPromise(error);
     });
   });
@@ -4695,6 +4713,9 @@ async function tryRunProcess(command, args, options) {
       ok: false,
       stdout: '',
       stderr: '',
+      // Parsed only for the metering a failed client reported before it
+      // stopped; never persisted.
+      partialStdout: error?.partialStdout ?? '',
       durationMs: Date.now() - startedAt,
       error: processFailureMessage(command, error, options?.timeoutMs),
       diagnostic: processFailureDiagnostic(command, error, options?.timeoutMs)
@@ -4860,10 +4881,6 @@ function isolatedAgentProcessEnv() {
   const env = { ...process.env };
   delete env.CODEX_THREAD_ID;
   return env;
-}
-
-function roundMoney(value) {
-  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function sanitizeError(error) {
