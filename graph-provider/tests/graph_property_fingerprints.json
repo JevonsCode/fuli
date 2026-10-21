@@ -192,6 +192,7 @@
     "fuli_content_source",
     "fuli_conversation_id",
     "fuli_current_quadrant",
+    "fuli_derived_from_item_ids",
     "fuli_distinct_task_count",
     "fuli_epistemic_status",
     "fuli_human_change_status",
