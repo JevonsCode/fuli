@@ -172,7 +172,8 @@ function dropDrag(origin: MoveOrigin) {
  */
 async function submitMove(key: string, status: EmployeeBoardStatus, index: number, origin: MoveOrigin) {
   const item = itemsByKey.value.get(key)
-  if (!item || !canMove() || isBusy(key) || !isBoardMove(item, status)) {
+  // A drop clears its lift before submitting; a lift still active here belongs to another interaction.
+  if (!item || !canMove() || drag.value || isBusy(key) || !isBoardMove(item, status)) {
     announcement.value = t('employees.allProjects.dragCancelled')
     return
   }
@@ -208,17 +209,22 @@ watch(() => props.movingItemKeys ?? [], (keys) => {
   }
 })
 /**
- * Focus follows the card when it was lost (its old element was replaced) or
- * is still in the board; focus the person moved elsewhere stays there.
+ * Focus still belongs to this card's move when it was lost (the projection
+ * replaced the focused element) or sits on the card or its own menu. Focus on
+ * another card, another menu or outside the board is the person's later
+ * choice and is never taken back.
  */
+function focusBelongsTo(key: string, board: HTMLElement) {
+  const active = document.activeElement
+  if (!active || active === document.body || active === board || !active.isConnected) return true
+  const owner = active.closest<HTMLElement>('[data-board-key], [data-move-menu-for]')
+  return (owner?.dataset.boardKey ?? owner?.dataset.moveMenuFor) === key
+}
 async function restoreFocus(key: string, origin: MoveOrigin) {
   await nextTick()
   const board = boardElement.value
-  const active = document.activeElement
-  // A card's own "Move to…" menu renders in a portal; focus there still belongs to the board.
-  const elsewhere = active && active !== document.body && active.isConnected
-    && !board?.contains(active) && !active.closest('[data-slot="dropdown-menu-content"]')
-  if (!board || elsewhere) return
+  // A lift in progress (of another card: a busy card cannot lift) keeps its focus.
+  if (!board || drag.value || !focusBelongsTo(key, board)) return
   // Look in the column the card now belongs to: its old element may still be leaving the other one.
   const status = pendingMove(key)?.status ?? itemsByKey.value.get(key)?.status
   const column = board.querySelector(`[data-board-column="${status}"]`)
@@ -227,6 +233,10 @@ async function restoreFocus(key: string, origin: MoveOrigin) {
   ;(control && !control.disabled ? control : card ?? board).focus()
 }
 
+/** A keyboard lift lives on its handle: moving focus away (Tab, a click, the card's menu) cancels it. */
+function onHandleBlur(key: string) {
+  if (drag.value?.mode === 'keyboard' && drag.value.key === key) cancelDrag()
+}
 function onHandleKeydown(event: KeyboardEvent, key: string) {
   const current = drag.value
   if (!current) {
@@ -262,6 +272,8 @@ function onHandleKeydown(event: KeyboardEvent, key: string) {
 let menuMoveKey: string | null = null
 function moveFromMenu(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
   const key = boardItemKey(item)
+  // One interaction at a time: choosing from the menu ends any lift first.
+  if (drag.value) cancelDrag()
   menuMoveKey = key
   void submitMove(key, status, boardDropIndex(columnSlots(status), key, null, null), 'menu')
 }
@@ -447,6 +459,7 @@ onBeforeUnmount(() => {
                   :title="t('employees.allProjects.dragTask', { task: slot.item.title })"
                   aria-describedby="employee-drag-instructions"
                   @keydown="onHandleKeydown($event, slot.key)"
+                  @blur="onHandleBlur(slot.key)"
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="4" r="1" /><circle cx="11" cy="4" r="1" /><circle cx="5" cy="8" r="1" /><circle cx="11" cy="8" r="1" /><circle cx="5" cy="12" r="1" /><circle cx="11" cy="12" r="1" /></svg>
                 </Button>
