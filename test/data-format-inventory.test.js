@@ -123,8 +123,8 @@ const SOURCE_FILES = SOURCE_ROOTS.flatMap(sources).map((path) => [path, readFile
 // Opening SQLite outside the format engine, or changing a schema anywhere but
 // a store's declaration, would bypass the version check.
 const SQLITE_OUTSIDE_FORMATS = new Map([
-  ['packages/roundtable/src/storage/sqlite-format.js', 'the format engine'],
-  ['packages/roundtable/src/storage/sqlite-backup-process.js', 'the online backup the engine runs before a migration'],
+  ['packages/roundtable/src/storage/database-format.js', 'the format engine'],
+  ['packages/roundtable/src/storage/database-backup-process.js', 'the online backup the engine runs before a migration'],
   ['src/storage/file-lock.js', 'cross-process lock files with no tables'],
   ['packages/roundtable/src/roundtable/chat-store.js', 'the chat tables of the roundtable and peer-coordinator formats'],
   ['packages/roundtable/src/roundtable/attention-inbox-store.js', 'the attention tables of the roundtable format']

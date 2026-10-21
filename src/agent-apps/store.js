@@ -1,4 +1,4 @@
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/sqlite-format.js';
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 import { DECISION_ENTRYPOINTS, PRESENCE_LEVELS } from './decision-source.js';
 import { appNotFound } from './errors.js';

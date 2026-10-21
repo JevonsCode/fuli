@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/sqlite-format.js';
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 // D-04 §2 role work packages, shared by every console and MCP process on one
 // data directory, so a pending package survives restarts. A package is never

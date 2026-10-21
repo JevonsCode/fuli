@@ -32,7 +32,7 @@ const BACKUP_TIMEOUT_MS = 120_000;
 // Another process may hold the store while it backs it up and migrates it.
 const MIGRATION_LOCK_TIMEOUT_MS = BACKUP_TIMEOUT_MS + 30_000;
 const BACKUP_DIRECTORY = 'format-backups';
-const BACKUP_PROCESS = fileURLToPath(new URL('./sqlite-backup-process.js', import.meta.url));
+const BACKUP_PROCESS = fileURLToPath(new URL('./database-backup-process.js', import.meta.url));
 // The automatic whitelist: columns that are nullable or carry a constant
 // default. A backfill of existing rows runs only when no row needs it; any
 // other kind always waits for a person.

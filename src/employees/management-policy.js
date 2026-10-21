@@ -1,4 +1,4 @@
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/sqlite-format.js';
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { z } from 'zod';
 import { EmployeeError, FIXED_EMPLOYEE_AGENT_TYPES } from './manifest.js';
 

@@ -1,7 +1,7 @@
 import { backup, DatabaseSync } from 'node:sqlite';
 
-// Runs SQLite's online backup API for sqlite-format.js, which needs the copy
-// finished before it continues: node sqlite-backup-process.js <source> <target>
+// Runs SQLite's online backup API for database-format.js, which needs the copy
+// finished before it continues: node database-backup-process.js <source> <target>
 const [source, target] = process.argv.slice(2);
 const database = new DatabaseSync(source, { readOnly: true });
 try {

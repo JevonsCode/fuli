@@ -1,4 +1,4 @@
-import { openFormattedDatabase, sqliteFormat } from '../storage/sqlite-format.js';
+import { openFormattedDatabase, sqliteFormat } from '../storage/database-format.js';
 import { CHAT_SCHEMA, createChatStore } from './chat-store.js';
 import { ATTENTION_INBOX_SCHEMA, createAttentionInboxStore } from './attention-inbox-store.js';
 

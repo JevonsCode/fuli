@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
-import { openFormattedDatabase, sqliteFormat } from '../storage/sqlite-format.js';
+import { openFormattedDatabase, sqliteFormat } from '../storage/database-format.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const STANDALONE_FORMAT = sqliteFormat({

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
-import { inspectSqliteStore, openFormattedDatabase, sqliteFormat } from '../src/storage/sqlite-format.js';
+import { inspectSqliteStore, openFormattedDatabase, sqliteFormat } from '../src/storage/database-format.js';
 
 // Synthetic stores only: a version 1 table, an automatic column (v2) and a
 // backfill of earlier rows (v3), the shapes FULI's stores declare.
@@ -24,7 +24,7 @@ function notesFormat({ backfill = (db) => db.exec("UPDATE notes SET checked = 'y
 }
 
 function fixture(t) {
-  const directory = mkdtempSync(join(tmpdir(), 'fuli-sqlite-format-'));
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-database-format-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   return { directory, path: join(directory, 'notes.sqlite') };
 }
@@ -202,7 +202,7 @@ test('a declaration that could break earlier rows is rejected when the store loa
 test('two processes opening one old store migrate it once', async (t) => {
   const { directory, path } = fixture(t);
   oldStore(path, `${NOTES_V1}; INSERT INTO notes VALUES('n1', 'shared')`);
-  const engine = new URL('../src/storage/sqlite-format.js', import.meta.url).href;
+  const engine = new URL('../src/storage/database-format.js', import.meta.url).href;
   const script = `import { openFormattedDatabase, sqliteFormat } from ${JSON.stringify(engine)};
     const format = sqliteFormat({ store: 'notes', schema: ${JSON.stringify(NOTES_V1)}, migrations: [{ id: 'notes/2-tags',
       summary: 'note tags', to: 2, kind: 'add-columns', table: 'notes', columns: { tags: 'TEXT' } }] });

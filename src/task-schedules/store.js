@@ -1,4 +1,4 @@
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/sqlite-format.js';
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 // Run columns added after the first release, when a claim became recoverable.
 const RUN_RECOVERY_COLUMNS = Object.freeze({ dispatch_key: 'TEXT', claimed_by: 'TEXT', lease_expires_at: 'TEXT',

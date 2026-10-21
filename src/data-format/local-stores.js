@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { COORDINATOR_FORMAT } from '../../packages/roundtable/src/peer/coordinator-store.js';
 import { NODE_FORMAT } from '../../packages/roundtable/src/peer/node-store.js';
 import { ROUNDTABLE_FORMAT } from '../../packages/roundtable/src/roundtable/store.js';
-import { inspectSqliteStore } from '../../packages/roundtable/src/storage/sqlite-format.js';
+import { inspectSqliteStore } from '../../packages/roundtable/src/storage/database-format.js';
 import { ADAPTIVE_RUNTIME_SETTINGS_FORMAT } from '../adaptive-runtime/settings.js';
 import { ADAPTIVE_RUNTIME_STATE_FORMAT } from '../adaptive-runtime/state.js';
 import { AGENT_APP_FORMAT } from '../agent-apps/store.js';

@@ -1,5 +1,5 @@
 import { CHAT_SCHEMA, createChatStore } from '../roundtable/chat-store.js';
-import { openFormattedDatabase, sqliteFormat } from '../storage/sqlite-format.js';
+import { openFormattedDatabase, sqliteFormat } from '../storage/database-format.js';
 
 export const COORDINATOR_FORMAT = sqliteFormat({
   store: 'peer-coordinator',

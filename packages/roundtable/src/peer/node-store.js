@@ -1,4 +1,4 @@
-import { openFormattedDatabase, sqliteFormat } from '../storage/sqlite-format.js';
+import { openFormattedDatabase, sqliteFormat } from '../storage/database-format.js';
 
 export const NODE_FORMAT = sqliteFormat({
   store: 'peer-node',
