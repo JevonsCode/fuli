@@ -6,6 +6,9 @@ import { dirname, join, resolve } from 'node:path';
 import test, { after } from 'node:test';
 import { claudeLifecycleOutput, runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
 import { claudeLifecycleCommand } from '../src/agents/claude-code/lifecycle-hooks.js';
+import { callAgentTool } from '../src/agent-tools.js';
+import { beginTaskContext } from '../src/graphiti/agent-knowledge-workflows.js';
+import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
 
 // A private runtime directory, so no hook reaches a shared absolute path.
 const RUNTIME_ROOT = mkdtempSync(join(tmpdir(), 'fuli-claude-hook-'));
@@ -52,204 +55,108 @@ test('Claude adapter rejects missing session and malformed entry before invoking
   assert.equal(calls, 0);
 });
 
-// Synthetic records in the shape Claude Code writes before UserPromptSubmit runs:
-// the turn is `enqueue {content}` then a content-less `dequeue`; its own user record follows the hook.
-function claudeNotificationTranscript(t, sessionId = input.session_id) {
+// Synthetic records in the shapes the former host-notification checks accepted
+// as proof that the host started a turn. None is proof: a person's queued
+// command is enqueued the same way, and only a later attachment tells them apart.
+function claudeNotificationTranscript(t) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-claude-notification-'));
   assert.equal(dirname(resolve(directory)), resolve(tmpdir()));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const path = join(directory, 'session.jsonl');
-  const main = { sessionId };
+  const main = { sessionId: input.session_id };
   return {
     path,
-    write: records => writeFileSync(path, records.map(record => typeof record === 'string' ? record : JSON.stringify(record)).join('\n')),
-    queue: (operation, content, extra = {}) => ({ type: 'queue-operation', operation, ...main,
-      ...(content === undefined ? {} : { content }), ...extra }),
-    dequeue: (extra = {}) => ({ type: 'queue-operation', operation: 'dequeue', ...main, ...extra }),
-    toolResult: (text, extra = {}) => ({ type: 'user', ...main,
-      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_synthetic', content: text }] }, ...extra }),
-    turn: (content, origin, extra = {}) => ({ type: 'user', ...main, origin, message: { role: 'user', content }, ...extra }),
-    attachment: (prompt, commandMode, extra = {}) => ({ type: 'attachment', ...main,
-      attachment: { type: 'queued_command', prompt, commandMode }, ...extra }),
-    assistant: () => ({ type: 'assistant', ...main, message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } })
+    write: lines => writeFileSync(path, lines.map(line => typeof line === 'string' ? line : JSON.stringify(line)).join('\n') + '\n'),
+    queue: (operation, content) => ({ type: 'queue-operation', operation, ...main, ...(content === undefined ? {} : { content }) }),
+    toolResult: text => ({ type: 'user', ...main,
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_synthetic', content: text }] } }),
+    turn: (content, origin) => ({ type: 'user', ...main, origin, message: { role: 'user', content } })
   };
 }
 
-const SHELL_TASK = 'bsynth01x';
-const MONITOR_TASK = 'br4synth9';
-const taskNotification = (taskId = SHELL_TASK) => `<task-notification>\n<task-id>${taskId}</task-id>\n<tool-use-id>toolu_synthetic</tool-use-id>\n<status>completed</status>\n<summary>Background command completed</summary>\n</task-notification>`;
-const monitorEvent = (line, taskId = MONITOR_TASK) => `<task-notification>\n<task-id>${taskId}</task-id>\n<summary>Monitor event: "synthetic watch"</summary>\n<event>${line}</event>\n</task-notification>`;
+const shellNotification = '<task-notification>\n<task-id>bsynth01x</task-id>\n<status>completed</status>\n</task-notification>';
+const monitorEvent = line => `<task-notification>\n<task-id>br4synth9</task-id>\n<summary>Monitor event</summary>\n<event>${line}</event>\n</task-notification>`;
 const ciMonitorEvent = '<ci-monitor-event>"Auto-fix" is watching PR #1: the synthetic check failed.</ci-monitor-event>';
 
-test('Claude host notifications from session-owned background tasks preserve the original task before runtime work', async t => {
+test('Claude prompts shaped like host notifications enter like any prompt, whatever the transcript shows', async t => {
   const fixture = claudeNotificationTranscript(t);
-  const { queue, dequeue, toolResult, turn, attachment, write } = fixture;
-  const prompt = taskNotification();
-  const native = { ...input, prompt, transcript_path: fixture.path };
-  const started = toolResult(`Command running in background with ID: ${SHELL_TASK}. Output is being written to: synthetic.output`);
-  const monitorStarted = toolResult(`Monitor started (task ${MONITOR_TASK}, expires in 30m).`);
-  const invocations = [];
-  const invoke = async name => { invocations.push(name); return { taskContextToken: 'fuli-task-synthetic' }; };
-  const positives = [
-    ['pending enqueue', [started, queue('enqueue', prompt)]],
-    ['dequeued for this turn', [started, queue('enqueue', prompt), dequeue()]],
-    ['another notification queued meanwhile', [started, queue('enqueue', prompt), dequeue(), queue('enqueue', taskNotification('bother001'))]],
-    ['sidechain removal is not this session', [started, queue('enqueue', prompt), queue('remove', prompt, { isSidechain: true })]],
-    ['Monitor event', [monitorStarted, queue('enqueue', monitorEvent('build ok')), dequeue()], monitorEvent('build ok')],
-    ['Monitor started before the readable tail', [turn(monitorEvent('first line'), { kind: 'task-notification' }),
-      queue('enqueue', monitorEvent('second line')), dequeue()], monitorEvent('second line')]
+  const { queue, toolResult, turn, write } = fixture;
+  const filler = turn('x'.repeat(600 * 1024), { kind: 'human' });
+  const cases = [
+    // Accepted before this change: a pending exact enqueue. A person's queued command looks the same.
+    ['pending enqueue of the exact text', shellNotification, [queue('enqueue', shellNotification)]],
+    ['enqueue then dequeue', shellNotification, [queue('enqueue', shellNotification), queue('dequeue')]],
+    // dot, #272 P2 1: a task id that only appears in tool output proves nothing about the sender.
+    ['task id named by tool output', shellNotification, [toolResult('Read result: ... bsynth01x ...'),
+      queue('enqueue', shellNotification), queue('dequeue')]],
+    // dot, #272 P2 2: the earlier delivery left the readable tail; a same-id event is still inside it.
+    ['paste after the earlier delivery left the tail', monitorEvent('build ok'), [
+      queue('enqueue', monitorEvent('build ok')), queue('dequeue'), turn(monitorEvent('build ok'), { kind: 'task-notification' }),
+      filler, turn(monitorEvent('second line'), { kind: 'task-notification' }),
+      queue('enqueue', monitorEvent('build ok')), queue('dequeue')]],
+    ['Monitor event', monitorEvent('build ok'), [queue('enqueue', monitorEvent('build ok')), queue('dequeue')]],
+    ['CI monitor event', ciMonitorEvent, [queue('enqueue', ciMonitorEvent), queue('dequeue')]],
+    ['no transcript record', shellNotification, []]
   ];
-  for (const [label, records, submitted = prompt] of positives) {
-    write(records);
-    const output = await claudeLifecycleOutput('UserPromptSubmit', { ...native, prompt: submitted }, invoke);
-    assert.match(output.hookSpecificOutput.additionalContext, /Keep the current task context/, label);
-    assert.doesNotMatch(JSON.stringify(output), /fuli-task-synthetic|effective_preferences|begin_task_context/, label);
+  for (const [label, prompt, lines] of cases) {
+    write(lines);
+    for (const native of [{ ...input, prompt, transcript_path: fixture.path }, { ...input, prompt, transcript_path: fixture.path, isMeta: true }]) {
+      const invocations = [];
+      const output = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], { readInput: async () => native,
+        invoke: async name => { invocations.push(name); return { taskContextToken: 'fuli-task-full-entry' }; } });
+      assert.deepEqual(invocations, ['begin_task_context'], label);
+      assert.match(output.hookSpecificOutput.additionalContext, /fuli-task-full-entry/, label);
+      assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /not a new user task/, label);
+    }
   }
-  assert.deepEqual(invocations, []);
-  write([started, queue('enqueue', prompt), dequeue()]);
-  const calls = [];
-  const never = name => () => { calls.push(name); throw new Error('Unexpected notification runtime work: ' + name); };
-  const output = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
-    readInput: async () => native,
-    invoke: never('invoke'), resolveRuntimeOptions: never('resolve'), openApplication: never('Provider'),
-    createLeases: never('lease'), onTranscriptGuard: never('transcript'), callTool: never('tool')
-  });
-  assert.match(output.hookSpecificOutput.additionalContext, /not a new user task/);
-  // The installed hook path must bypass runtime setup as well as its injectable invoke path.
-  const direct = await runClaudeLifecycleHook(['--event', 'UserPromptSubmit'], {
-    readInput: async () => native, resolveRuntimeOptions: never('resolve'), openApplication: never('Provider'),
-    createLeases: never('lease'), onTranscriptGuard: never('transcript'), callTool: never('tool')
-  });
-  assert.match(direct.hookSpecificOutput.additionalContext, /not a new user task/);
-  assert.deepEqual(calls, []);
-  const command = spawnSync(process.execPath, ['src/agents/claude-code/lifecycle-hook.js',
-    '--event', 'UserPromptSubmit', '--runtime-config', join(dirname(fixture.path), 'must-not-open.json')], {
-    input: JSON.stringify(native), encoding: 'utf8', timeout: 5000
-  });
-  assert.equal(command.status, 0);
-  assert.equal(command.stderr, '');
-  assert.deepEqual(JSON.parse(command.stdout), direct);
-  await claudeLifecycleOutput('Stop', native, async name => {
-    assert.equal(name, 'verify_task_checkpoint'); return { decision: 'block', reason: 'FULI_CHECKPOINT_REQUIRED: original task' };
-  }).then(stop => assert.equal(stop.systemMessage, 'FULI_CHECKPOINT_REQUIRED: original task'));
-
-  const delivered = [started, queue('enqueue', prompt), dequeue(), turn(prompt, { kind: 'task-notification' }), fixture.assistant()];
-  const negatives = [
-    ['no queue source', [started, turn(prompt, { kind: 'human' })]],
-    ['removed queue', [started, queue('enqueue', prompt), queue('remove', prompt)]],
-    ['removal without payload', [started, queue('enqueue', prompt), queue('remove')]],
-    ['different session', [started, queue('enqueue', prompt, { sessionId: 'another-session' })]],
-    ['different prompt', [started, queue('enqueue', prompt + '\nUser followup')]],
-    ['sidechain source', [started, queue('enqueue', prompt, { isSidechain: true })]],
-    ['queued by a person', [started, queue('enqueue', prompt), attachment(prompt, 'prompt')]],
-    ['absorbed into a turn', [started, queue('enqueue', prompt), attachment(prompt, 'task-notification')]],
-    ['person queued the same text earlier', [started, queue('enqueue', prompt), attachment(prompt, 'prompt'),
-      queue('remove', prompt), queue('enqueue', prompt), dequeue()]],
-    ['paste of a delivered notification', [...delivered, queue('enqueue', prompt), dequeue()]],
-    ['paste of a delivered notification without the queue', delivered],
-    ['paste of an absorbed notification', [started, queue('enqueue', prompt), attachment(prompt, 'task-notification'),
-      queue('remove', prompt, { reason: 'absorbed_mid_turn' }), queue('enqueue', prompt), dequeue()]],
-    ['task this session never started', [queue('enqueue', prompt), dequeue()]],
-    ['task named only after the enqueue', [queue('enqueue', prompt), started, dequeue()]],
-    ['task id inside a longer token', [toolResult(`ID: x${SHELL_TASK}2`), queue('enqueue', prompt), dequeue()]],
-    ['task named by a person', [turn(`please watch ${SHELL_TASK}`, { kind: 'human' }), queue('enqueue', prompt), dequeue()]],
-    ['earlier notification the host did not record', [turn(taskNotification(), { kind: 'human' }),
-      queue('enqueue', prompt), dequeue()], taskNotification()],
-    ['task started in a sidechain', [toolResult(`ID: ${SHELL_TASK}`, { isSidechain: true }), queue('enqueue', prompt), dequeue()]],
-    ['invalid JSON', ['{invalid', started, queue('enqueue', prompt)]],
-    ['partial trailing record', [started, queue('enqueue', prompt), '{"type":"queue-operation","operation":"remove"']],
-    ['forged prefix only', [started, queue('enqueue', '<task-notification><task-id>')], '<task-notification><task-id>'],
-    ['empty task identifier', [started, queue('enqueue', '<task-notification><task-id> </task-id></task-notification>')],
-      '<task-notification><task-id> </task-id></task-notification>'],
-    ['multiple envelopes', [started, queue('enqueue', prompt + prompt)], prompt + prompt],
-    ['pasted surrounding text', [started, queue('enqueue', 'Please inspect ' + prompt)], 'Please inspect ' + prompt],
-    ['user continuation', [started, queue('enqueue', prompt + '\nNow do another task')], prompt + '\nNow do another task'],
-    // The desktop app queues CI monitor events as ordinary prompts that name no session-owned id.
-    ['CI monitor event', [started, queue('enqueue', ciMonitorEvent), dequeue()], ciMonitorEvent]
-  ];
-  for (const [label, records, submitted = prompt] of negatives) {
-    write(records); invocations.length = 0;
-    await claudeLifecycleOutput('UserPromptSubmit', { ...native, prompt: submitted }, invoke);
-    assert.deepEqual(invocations, ['begin_task_context'], label);
-  }
-  invocations.length = 0;
-  await claudeLifecycleOutput('UserPromptSubmit', { ...native, transcript_path: join(dirname(fixture.path), 'missing.jsonl') }, invoke);
-  assert.deepEqual(invocations, ['begin_task_context'], 'unreadable transcript must preserve normal entry');
-
-  const encoded = [started, queue('enqueue', prompt)].map(record => JSON.stringify(record)).join('\n');
-  // The bounded tail can begin at valid-looking JSON inside a cut, invalid line.
-  writeFileSync(fixture.path, 'cut-prefix' + encoded + ' '.repeat(512 * 1024 - Buffer.byteLength(encoded) - 1) + '\n');
-  invocations.length = 0;
-  await claudeLifecycleOutput('UserPromptSubmit', native, invoke);
-  assert.deepEqual(invocations, ['begin_task_context'], 'a truncated first line is not host evidence');
-  // Cutting inside UTF-8 must not hide complete records on the next lines.
-  writeFileSync(fixture.path, '记'.repeat(200_000) + '\n' + encoded + '\n');
-  invocations.length = 0;
-  await claudeLifecycleOutput('UserPromptSubmit', native, invoke);
-  assert.deepEqual(invocations, [], 'complete records after a discarded partial line remain usable');
 });
 
-test('Claude Monitor notification turns inject at least 80% fewer bytes and the next user task gets every change', async t => {
-  const fixture = claudeNotificationTranscript(t);
-  const { queue, dequeue, toolResult, turn, write } = fixture;
-  // A synthetic entry of the size seen on real Monitor turns (~3 KB).
+test('Claude notification-shaped turns deliver every mid-run change in full', async () => {
+  // dot, #272 P2 3: preference, conflict and checkpoint changes during a long monitor reach the very next turn.
   let revision = 1;
-  const retrievals = [];
-  const delivered = [];
-  const taskContext = () => ({
-    taskContextToken: `fuli-task-revision-${revision}`,
-    checkpoint_required: revision > 1,
+  const invoke = async () => ({ taskContextToken: `fuli-task-revision-${revision}`, checkpoint_required: revision > 1,
     effective_preferences: [{ instruction: `Synthetic preference, revision ${revision}.` }],
-    preference_conflicts: revision > 1 ? [{ summary: 'Synthetic conflict between two saved preferences.' }] : [],
-    task_knowledge_recall: { status: 'matched', items: Array.from({ length: 8 }, (_, index) => ({
-      id: `synthetic-knowledge-${index}`, summary: `Synthetic project fact ${index}: ${'detail '.repeat(30)}` })) },
-    project_agent_snapshot: `Synthetic directory snapshot: ${'src/module.js '.repeat(40)}`
-  });
-  const invoke = async (name, parameters) => { retrievals.push([name, parameters.taskPrompt]); return taskContext(); };
-  const delivery = { deliver: async (value, _origin, format) => { delivered.push(value.taskContextToken); return format(value); } };
-  const bytes = output => Buffer.byteLength(JSON.stringify(output));
-  const submit = prompt => claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt, transcript_path: fixture.path },
-    invoke, { delivery });
-
-  const first = await submit('Synthetic user task: watch the build.');
-  assert.match(first.hookSpecificOutput.additionalContext, /revision 1/);
-  const events = Array.from({ length: 10 }, (_, index) => monitorEvent(`synthetic build line ${index}`));
-  const history = [turn('Synthetic user task: watch the build.', { kind: 'human' }),
-    toolResult(`Monitor started (task ${MONITOR_TASK}, expires in 30m).`)];
-  // Before: the same ten turns without the session-owned task evidence take the full entry, as every
-  // dequeued notification did when a content-less dequeue was read as a removal.
-  let before = 0;
-  for (const event of events) {
-    write([turn('Synthetic user task: watch the build.', { kind: 'human' }), queue('enqueue', event), dequeue()]);
-    before += bytes(await submit(event));
+    active_conflicts: revision > 1 ? [{ id: 'synthetic-conflict' }] : [] });
+  for (let index = 0; index < 10; index += 1) {
+    if (index === 4) revision = 2;
+    const output = await claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt: monitorEvent(`line ${index}`) }, invoke);
+    const context = output.hookSpecificOutput.additionalContext;
+    assert.match(context, new RegExp(`revision ${revision}`));
+    if (revision > 1) {
+      assert.match(context, /synthetic-conflict/);
+      assert.match(context, /"checkpoint_required":true/);
+    }
   }
-  assert.equal(retrievals.length, 11);
-  retrievals.length = 0; delivered.length = 0;
-  // Preferences, a conflict and a checkpoint requirement change while notification turns run.
-  revision = 2;
-  let after = 0;
-  for (const event of events) {
-    write([...history, queue('enqueue', event), dequeue()]);
-    const output = await submit(event);
-    assert.match(output.hookSpecificOutput.additionalContext, /not a new user task/);
-    after += bytes(output);
-    history.push(queue('enqueue', event), dequeue(), turn(event, { kind: 'task-notification' }), fixture.assistant());
-  }
-  t.diagnostic(`10 Monitor notification turns: before ${before} bytes, after ${after} bytes (${Math.round(100 - after * 100 / before)}% less)`);
-  assert.ok(after <= before * 0.2, `expected at least 80% fewer bytes: before ${before}, after ${after}`);
-  // A skipped turn neither retrieves nor records a delivery, so nothing is acknowledged early.
-  assert.deepEqual(retrievals, []);
-  assert.deepEqual(delivered, []);
+});
 
-  write([...history, queue('enqueue', 'Synthetic user task: fix the failing test.'), dequeue()]);
-  const next = await submit('Synthetic user task: fix the failing test.');
-  assert.deepEqual(retrievals, [['begin_task_context', 'Synthetic user task: fix the failing test.']]);
-  assert.deepEqual(delivered, ['fuli-task-revision-2']);
-  const context = next.hookSpecificOutput.additionalContext;
-  assert.match(context, /revision 2/);
-  assert.match(context, /Synthetic conflict between two saved preferences/);
-  assert.match(context, /"checkpoint_required":true/);
-  assert.match(context, /fuli-task-revision-2/);
+test('Claude notification-shaped turns of unknown source begin a task exactly as a user prompt does', async () => {
+  // The real entry path with a synthetic Provider: begin_task_context through the Agent tool dispatcher.
+  let index = 0;
+  const registry = new TaskContextRegistry({ tokenFactory: () => `fuli-task-synthetic-${index += 1}` });
+  const app = { config: { personal: { spaceId: 'synthetic-space' } }, taskContextRegistry: registry,
+    getCapturePolicy: () => ({ enabled: true }), personal: { conversation: async () => ({ status: 'saved' }) },
+    getCollaborationPreferences: async () => ({
+      context: { personal_space_id: 'synthetic-space', personal_project_id: 'synthetic-project', project_agent_id: null },
+      effective_preferences: [{ instruction: 'Synthetic preference.' }], preferences_complete: true }) };
+  app.beginTaskContext = parameters => beginTaskContext(app, parameters);
+  const enter = prompt => claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt },
+    (name, parameters) => callAgentTool(app, name, parameters));
+  const entries = [];
+  for (const prompt of ['Synthetic user task: run the build in the background.', monitorEvent('build ok'),
+    'Synthetic user follow-up.']) {
+    const context = (await enter(prompt)).hookSpecificOutput.additionalContext;
+    entries.push({ token: /"taskContextToken":"([^"]+)"/.exec(context)[1],
+      previousMissing: /"previous_checkpoint_missing":true/.test(context) });
+  }
+  // Each entry, the notification-shaped one included, creates a task and makes it the session's current
+  // one. The open task it replaces can no longer be checkpointed and the next entry reports it missing.
+  // Right for a person's prompt; for a real host notification this moves the task. Keeping the task on a
+  // notification needs a provable host source, which neither the hook input nor the transcript has.
+  assert.deepEqual(entries, [{ token: 'fuli-task-synthetic-1', previousMissing: false },
+    { token: 'fuli-task-synthetic-2', previousMissing: true }, { token: 'fuli-task-synthetic-3', previousMissing: true }]);
+  assert.throws(() => registry.checkpoint('fuli-task-synthetic-1', { disposition: 'retain_nothing' }, 'claude_code'),
+    /unknown or superseded/);
+  assert.equal(registry.verify(input.session_id, 'claude_code').task_context_token, 'fuli-task-synthetic-3');
 });
 
 test('Claude adapter releases runtime resources after failure and preserves request cancellation', async () => {

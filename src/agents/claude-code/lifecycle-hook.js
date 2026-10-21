@@ -6,7 +6,6 @@ import { captureDecision, withCaptureLookups } from '../../graphiti/capture-deci
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { PREFERENCE_RESET_EVENTS, preferenceHookOutput, preferenceLifecycleOutput } from '../../conversations/preference-lifecycle.js';
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
-import { hostNotificationOutput, isHostNotificationEntry } from './host-notification.js';
 import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext, sessionFuliSessionBegan }
   from '../../conversations/session-fuli-entry.js';
 
@@ -33,7 +32,8 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     if (typeof input.cwd !== 'string' || !input.cwd.trim() || typeof input.prompt !== 'string') {
       throw new TypeError('Claude task entry requires cwd and prompt');
     }
-    if (isHostNotificationEntry(input)) return hostNotificationOutput(event);
+    // Every prompt enters, including ones shaped like host notifications: neither the hook
+    // input nor the transcript written so far proves that the host started this turn (rec#15).
     // A session FULI is off for (rec#5 C3b) gets no task entry.
     const off = await entryRefusal?.();
     if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
@@ -62,7 +62,6 @@ export function claudeLifecycleUnavailable(event, input = null, reason = null) {
 export async function runClaudeLifecycleHook(args, dependencies = {}) {
   const event = args[args.indexOf('--event') + 1];
   const input = await (dependencies.readInput ?? readHookInput)();
-  if (event === 'UserPromptSubmit' && isHostNotificationEntry(input)) return hostNotificationOutput(event);
   if (dependencies.invoke) return claudeLifecycleOutput(event, input, dependencies.invoke);
   const { runtimeConfigPath } = (dependencies.resolveRuntimeOptions ?? resolveGraphRuntimeOptions)(
     args, dependencies.env ?? process.env
