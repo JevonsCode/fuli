@@ -7,6 +7,7 @@ import type {
   AgentAccessPolicy,
   CapabilityName,
   CapturePolicy,
+  CapturePolicyChange,
   ConsoleState,
   PersonalProject,
   RecallPolicy,
@@ -72,11 +73,76 @@ export const useConsoleStore = defineStore('console', () => {
     }
   }
 
+  // Every page that shows capture settings reads this one copy, so a change
+  // saved anywhere in the console shows everywhere at once (rec#5 C4-1).
+  function rememberCapturePolicy(policy: CapturePolicy) {
+    if (state.value) state.value = { ...state.value, capturePolicy: policy }
+  }
+
+  // The settings as saved now: an Agent may have changed them since the
+  // console state loaded (rec#5 C4-4). A read that overlaps a save in any way
+  // (started during one, or a save started after it) is dropped: the save's
+  // own answer is the settings after it, and a refused save reads again.
+  let captureSaves = 0
+  let capturesInFlight = 0
+  async function loadCapturePolicy() {
+    const saves = captureSaves
+    const overlapped = capturesInFlight > 0
+    const policy = await getJson<CapturePolicy>('/api/capture-policy')
+    if (!overlapped && saves === captureSaves) rememberCapturePolicy(policy)
+  }
+
+  // The settings as saved once every save this console sent has answered: the
+  // policy this read returned and the store now holds. A read that a save
+  // overlapped is taken again, so the answer is never an older cache
+  // (dot review, PR 262). Pages that show "what is saved now" use this;
+  // loadCapturePolicy only refreshes and proves nothing.
+  async function settledCapturePolicy(): Promise<CapturePolicy> {
+    for (;;) {
+      const saves = captureSaves
+      await captureWrites
+      const policy = await getJson<CapturePolicy>('/api/capture-policy')
+      if (saves === captureSaves && capturesInFlight === 0) {
+        rememberCapturePolicy(policy)
+        return policy
+      }
+    }
+  }
+
+  // Saves at once; the caller shows its own progress and any refusal. Saves
+  // from every page of this console go out one after another, so the server
+  // commits them in the order they were made and the last answer is the
+  // settings after all of them (dot review P2, PR 262): with overlapping
+  // requests a later one could commit first and the earlier answer, though
+  // newer on the server, would look stale here.
+  let captureWrites: Promise<unknown> = Promise.resolve()
+  async function changeCapturePolicy(change: CapturePolicyChange) {
+    ++captureSaves
+    capturesInFlight += 1
+    const write = captureWrites.then(() => patchJson<CapturePolicy>('/api/capture-policy', change))
+    captureWrites = write.catch(() => {})
+    try {
+      const policy = await write
+      rememberCapturePolicy(policy)
+      return policy
+    } catch (error) {
+      // A refused save changed nothing, a lost answer may have saved: read the
+      // settings again once no later save will answer for them.
+      void refreshAfterRefusal()
+      throw error
+    } finally {
+      capturesInFlight -= 1
+    }
+  }
+
+  async function refreshAfterRefusal() {
+    await Promise.resolve()
+    await loadCapturePolicy().catch(() => {})
+  }
+
   async function updateCapturePolicy(enabled: boolean, disabledSources?: string[]) {
     try {
-      const policy = await patchJson<CapturePolicy>('/api/capture-policy',
-        disabledSources ? { enabled, disabledSources } : { enabled })
-      if (state.value) state.value = { ...state.value, capturePolicy: policy }
+      await changeCapturePolicy(disabledSources ? { enabled, disabledSources } : { enabled })
       notify(
         enabled
           ? t('console.captureNotices.enabled')
@@ -149,6 +215,10 @@ export const useConsoleStore = defineStore('console', () => {
     publicRuntimeStatus,
     refresh,
     updateCapturePolicy,
+    loadCapturePolicy,
+    settledCapturePolicy,
+    changeCapturePolicy,
+    rememberCapturePolicy,
     updateAgentAccessPolicy,
     updateRecallPolicy,
     hasCapability,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -1057,6 +1057,80 @@ test('remote MCP lets an in-flight tool response finish within shutdown grace', 
   assert.equal(result.isError, undefined, JSON.stringify(result));
   await closing;
   await client.close().catch(() => {});
+});
+
+// Real I/O still runs between mocked ticks; only setTimeout and Date are frozen.
+async function settleIo(turns = 20) {
+  for (let turn = 0; turn < turns; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+}
+
+test('remote MCP honours the configured shutdown grace as one deadline across drain and session close', {
+  timeout: 5_000
+}, async (t) => {
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const remote = await startRemote({
+    app: {
+      getCollaborationPreferences: async () => {
+        started.resolve();
+        await release.promise;
+        return { effective_preferences: [], deferred_conflicts: [] };
+      }
+    },
+    // Five times the 2 s default, so a fallback to the default settles early.
+    shutdownGraceMs: 10_000,
+    createMcp: (app, options) => {
+      const mcp = createMcpServer(app, options);
+      return { connect: transport => mcp.connect(transport), close: () => new Promise(() => {}) };
+    }
+  });
+  t.after(async () => {
+    release.resolve();
+    // Fire any mocked shutdown timer a regression left pending so close() settles.
+    if (mockedClock) mock.timers.tick(60_000);
+    mock.timers.reset();
+    remote.server.closeAllConnections?.();
+    await remote.close();
+  });
+  let mockedClock = false;
+  const transport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
+    requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
+  });
+  const client = new Client({ name: 'fuli-shutdown-clock-test', version: '1.0.0' });
+  t.after(() => client.close().catch(() => {}));
+  await client.connect(transport);
+  // Enabled before the call so the client's request timer is mocked and cleared with it.
+  mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+  mockedClock = true;
+  const call = client.callTool({
+    name: 'get_collaboration_preferences',
+    arguments: { sessionId: 'remote', projectPath: '.' }
+  });
+  await started.promise;
+  let closed = false;
+  const closing = remote.close().then(() => { closed = true; });
+  await settleIo();
+
+  mock.timers.tick(2_000);
+  await settleIo();
+  assert.equal(closed, false, 'shutdown must not fall back to the 2 s default grace');
+
+  // The in-flight call drains at 4 s; the hung session close gets only what is left.
+  mock.timers.tick(2_000);
+  release.resolve();
+  const result = await call;
+  assert.equal(result.isError, undefined, JSON.stringify(result));
+  await settleIo();
+
+  mock.timers.tick(5_999);
+  await settleIo();
+  assert.equal(closed, false, 'shutdown must wait for the whole configured grace');
+
+  mock.timers.tick(1);
+  await settleIo();
+  assert.equal(closed, true, 'drain and session close share one deadline');
+  await closing;
+  assert.equal(remote.server.listening, false);
 });
 
 test('remote MCP absorbs synchronous session-close failures', async (t) => {

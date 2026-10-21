@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { FULI_VERSION } from '../src/package-metadata.js';
 import { connectMcp } from '../test-support/mcp-client.js';
 import { taskContextProviderFixture } from '../test-support/task-context-provider-fixture.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知识', async (t) => {
   const received = [];
@@ -1157,7 +1158,7 @@ async function provider(handler) {
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end(JSON.stringify(payload));
   });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await listenFetchableServer(server, 0);
   const { port } = server.address();
   return { server, url: `http://127.0.0.1:${port}` };
 }

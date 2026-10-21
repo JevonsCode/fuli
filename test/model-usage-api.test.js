@@ -8,6 +8,7 @@ import { handleModelBackendApiRequest } from '../src/model-backends/http.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 const NOW = new Date('2026-10-20T12:00:00.000Z');
 
@@ -55,7 +56,7 @@ test('the console reads the same usage over HTTP', async () => {
       response.writeHead(mapped.status, { 'content-type': 'application/json' }).end(JSON.stringify(mapped.body));
     }
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await listenFetchableServer(server, 0);
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
     const ok = await fetch(`${base}/api/model-backends/usage?role=bole&from=2026-10-20T00:00:00.000Z`);

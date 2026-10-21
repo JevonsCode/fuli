@@ -9,6 +9,7 @@ import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { connectMcp } from '../test-support/mcp-client.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 const enabled = process.env.FULI_TEST_NEO4J_EPHEMERAL === '1' && process.env.FULI_TEST_NEO4J_URI;
 const REASON = 'Reported finished work without running the test suite, twice in one week.';
@@ -142,7 +143,7 @@ async function disposableProvider(cleanups) {
 
 async function freePort() {
   const server = createServer();
-  await new Promise(done => server.listen(0, '127.0.0.1', done));
+  await listenFetchableServer(server, 0);
   const { port } = server.address();
   await new Promise(done => server.close(done));
   return port;

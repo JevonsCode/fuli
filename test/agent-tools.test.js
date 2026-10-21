@@ -344,7 +344,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['get-capture-policy']);
       return { enabled: true, updatedAt: null };
     },
-    updateCapturePolicy: async (input) => calls.push(['update-capture-policy', input]),
+    captureChanges: { propose: async (input) => calls.push(['update-capture-policy', input]) },
     explainSettings: () => calls.push(['explain-settings']),
     readOwnSessionRecords: async (input) => calls.push(['session-records', input]),
     externalKnowledge: {

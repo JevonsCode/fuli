@@ -41,10 +41,15 @@ const HANDLERS = Object.freeze({
   // The caller's own session only, in its own project (rec#5 C6-5).
   read_session_records: (app, input) => app.readOwnSessionRecords(input ?? {}),
   explain_settings: (app) => settingsGuide(app),
-  // sessionPaused pauses or resumes only the caller's session; every other
-  // field is a long-term setting. The client is this MCP process's.
-  update_capture_policy: (app, { sourceApplication, ...input } = {}) => input.sessionPaused === undefined
-    ? app.updateCapturePolicy(input) : app.pauseSessionCapture({ ...input, sourceApplication }),
+  // sessionPaused pauses or resumes only the caller's session, at once. Every
+  // other field is a long-term setting an Agent can only ask for: the person
+  // confirms it in the console (rec#5 C4-2, rec#11 D-16). The client is this
+  // MCP process's.
+  update_capture_policy: async (app, { sourceApplication = 'other', ...input } = {}) => {
+    if (input.sessionPaused !== undefined) return app.pauseSessionCapture({ ...input, sourceApplication });
+    const { taskContextToken, ...settings } = input;
+    return app.captureChanges.propose(settings, { sourceApplication, taskContextToken });
+  },
   list_external_knowledge_connectors: (app) => externalKnowledge(app).listConnectorTypes(),
   discover_external_knowledge_sources: (app, input) => externalKnowledge(app).discover(input),
   list_external_knowledge_bindings: (app) => externalKnowledge(app).listBindings(),

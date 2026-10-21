@@ -18,6 +18,16 @@ export interface CapturePolicy {
   updatedAt?: string | null
 }
 
+// A partial change the console saves at once (rec#5 C4-1). recordProjects
+// switches single projects against the settings the server holds.
+export interface CapturePolicyChange {
+  enabled?: boolean
+  disabledSources?: string[]
+  projectMode?: NonNullable<CapturePolicy['projectMode']>
+  unregisteredDirectories?: NonNullable<CapturePolicy['unregisteredDirectories']>
+  recordProjects?: Record<string, boolean>
+}
+
 export interface AgentAccessPolicy {
   enabled: boolean
   updatedAt?: string | null

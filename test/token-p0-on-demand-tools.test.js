@@ -70,7 +70,7 @@ test('an explicit allow-list identical to chat still cannot expand to every tool
 });
 
 test('discovered writes retain the original name, annotations and domain permission rejection', async () => {
-  await connected({ updateCapturePolicy: () => { throw new ApplicationError('agent_access_disabled', 'Disabled'); } }, async client => {
+  await connected({ captureChanges: { propose: () => { throw new ApplicationError('agent_access_disabled', 'Disabled'); } } }, async client => {
     await client.callTool({ name: 'list_agent_interfaces', arguments: { toolName: 'update_capture_policy' } });
     const exposed = (await client.listTools()).tools.find(t => t.name === 'update_capture_policy');
     assert.equal(exposed.annotations.readOnlyHint, false);
