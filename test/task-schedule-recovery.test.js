@@ -352,7 +352,9 @@ test('pausing while a due slot refreshes its previous task creates no task for t
   } finally { h.cleanup(); }
 });
 
-test('a claim left by an earlier version is reconciled after the upgrade and existing rows still read', async () => {
+// rec#17 D-09: filling earlier rows is a migration a person confirms, never a
+// side effect of opening the store, so a store with earlier runs waits.
+test('runs left by an earlier version are not backfilled when the store opens', async () => {
   const h = harness();
   try {
     const old = new DatabaseSync(h.path);
@@ -365,20 +367,25 @@ test('a claim left by an earlier version is reconciled after the upgrade and exi
       leadAgentId: null, every: { unit: 'hours', count: 1 }, startMode: 'queue', failureThreshold: 3 };
     old.prepare('INSERT INTO task_schedules VALUES(?,?,?,?,?,?,?,?,?,?,?)').run('s-1', SPACE, 'project-a', 3, 1,
       JSON.stringify(body), '2026-10-18T02:00:00.000Z', null, 'x', 'x', null);
-    const insertRun = old.prepare('INSERT INTO task_schedule_runs VALUES(?,?,?,?,?)');
-    insertRun.run('s-1', '2026-10-17T23:00:00.000Z', 'task-old', 'completed', '2026-10-17T23:00:01.000Z');
-    insertRun.run('s-1', '2026-10-18T00:00:00.000Z', null, 'claimed', '2026-10-18T00:00:01.000Z');
+    old.prepare('INSERT INTO task_schedule_runs VALUES(?,?,?,?,?)')
+      .run('s-1', '2026-10-18T00:00:00.000Z', null, 'claimed', '2026-10-18T00:00:01.000Z');
     old.close();
-    h.provider.tasks.set('schedule:s-1:2026-10-18T00:00:00.000Z', { taskId: 'task-lost-ack', status: 'running' });
 
     const service = h.start();
     h.advance(PAST_CLAIM_LEASE);
-    const [recovered] = await service.runDue();
-    assert.deepEqual([recovered.outcome, recovered.taskId], ['adopted', 'task-lost-ack']);
-    const runs = h.runs(service, 's-1');
-    assert.deepEqual(runs.map(run => [run.taskId, run.status]),
-      [['task-lost-ack', 'running'], ['task-old', 'completed']]);
-    assert.equal(runs[1].dispatchKey, 'schedule:s-1:2026-10-17T23:00:00.000Z');
+    await assert.rejects(service.runDue(), { code: 'data_format_pending', store: 'task-schedules',
+      message: /task-schedules\/3-run-recovery.*1 existing rows need a backfill/ });
+    service.close();
+
+    const after = new DatabaseSync(h.path, { readOnly: true });
+    try {
+      const columns = after.prepare('PRAGMA table_info(task_schedule_runs)').all().map(column => column.name);
+      assert.deepEqual(columns, ['schedule', 'slot', 'task_id', 'status', 'created_at']);
+      assert.equal(after.prepare('PRAGMA user_version').get().user_version, 2);
+      assert.deepEqual(after.prepare('SELECT migration_id, status FROM fuli_format_ledger ORDER BY seq').all()
+        .map(row => [row.migration_id, row.status]), [['task-schedules/1-baseline', 'baseline_detected'],
+        ['task-schedules/2-breaker-reset', 'baseline_detected'], ['task-schedules/3-run-recovery', 'pending_confirmation']]);
+    } finally { after.close(); }
     assert.equal(h.provider.calls.submit, 0);
   } finally { h.cleanup(); }
 });

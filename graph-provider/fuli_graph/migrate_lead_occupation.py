@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from neo4j import GraphDatabase
 
+from .graph_format_migrations import GRAPH_FORMAT_VERSION
 from .provider_values import sha256_text
 
 
@@ -66,7 +67,23 @@ def build_plan(space_id, project_ids, rows):
     return plan
 
 
+def _require_current_format(transaction):
+    """This tool writes outside the provider, so it checks the graph's data
+    format itself: only a graph the provider has brought to this version."""
+    records = list(transaction.run(
+        "MATCH (format:FuliDataFormat {store: 'graph'}) RETURN format.version AS version"
+    ))
+    version = records[0]['version'] if records else None
+    if version != GRAPH_FORMAT_VERSION:
+        raise ValueError(
+            f'the graph data format is {version}, not {GRAPH_FORMAT_VERSION}; start the '
+            'matching FULI provider first, and upgrade FULI if the graph is newer'
+        )
+
+
 def migrate(transaction, space_id, project_ids, *, expected_digest=None, rollback_id=None):
+    if expected_digest or rollback_id:
+        _require_current_format(transaction)
     if rollback_id:
         records = list(transaction.run('''
             MATCH (audit:FuliLeadOccupationMigration {migration_id: $migration_id, space_id: $space_id})

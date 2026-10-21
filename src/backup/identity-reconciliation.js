@@ -1,7 +1,9 @@
 import { chmodSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile } from '../storage/json-file.js';
+import { GRAPH_RUNTIME_CONFIG_FORMAT } from '../graphiti/runtime-config.js';
+import { assertJsonFormatWritable, requireJsonFormatVersion, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import {
   managedProviderUrls,
   readRuntimeSettings
@@ -28,7 +30,7 @@ export async function reconcileImportedGraphIdentity({
   fetchImpl = globalThis.fetch,
   wait = delay,
   readConfig = (path) => readJsonFile(path, null),
-  writeConfig = writeJsonFileAtomic,
+  writeConfig = (path, value) => writeVersionedJsonFileAtomic(path, value, GRAPH_RUNTIME_CONFIG_FORMAT),
   secureConfig = (path) => chmodSync(path, 0o600),
   readSettings = readRuntimeSettings,
   readEnvironment = readEnvironmentFile
@@ -37,6 +39,10 @@ export async function reconcileImportedGraphIdentity({
   if (!current?.personal) {
     throw new Error('The target graph mode is not configured. Run setup before importing.');
   }
+  // Every format is known before a Provider is bootstrapped (rec#17): a config
+  // a newer FULI wrote is neither copied nor rewritten by this one.
+  assertJsonFormatWritable(paths.graphRuntimeConfigPath, GRAPH_RUNTIME_CONFIG_FORMAT);
+  requireJsonFormatVersion(current, GRAPH_RUNTIME_CONFIG_FORMAT);
   const settings = readSettings(paths.runtimeSettingsPath);
   const urls = managedProviderUrls(settings);
   const values = await readEnvironment(paths.graphEnvPath);
@@ -44,6 +50,7 @@ export async function reconcileImportedGraphIdentity({
   const source = sourceMode === targetMode || !sourceConfigPath
     ? null
     : readConfig(sourceConfigPath);
+  if (source) requireJsonFormatVersion(source, GRAPH_RUNTIME_CONFIG_FORMAT);
   const next = structuredClone(current);
   next.workspaces = mergedExternalWorkspaces(current, source);
 

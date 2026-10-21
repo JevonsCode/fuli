@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { resolveSetupPaths } from '../setup/paths.js';
+import { jsonFormat } from '../storage/json-format.js';
 import { nonEmptyText } from '../validation/values.js';
+
+export const GRAPH_RUNTIME_CONFIG_FORMAT = jsonFormat({ store: 'graph-runtime-config', versions: [1] });
 
 export class GraphRuntimeConfigurationError extends TypeError {}
 

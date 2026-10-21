@@ -1,5 +1,16 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test, { after } from 'node:test';
+
+import { transcriptDigest } from '../src/conversations/transcript-guard.js';
+
+// A private runtime directory: hooks that deny capture write their transcript
+// ledger beside the runtime config, and must never reach a shared path.
+const RUNTIME_ROOT = mkdtempSync(join(tmpdir(), 'fuli-lifecycle-hooks-'));
+const RUNTIME_CONFIG = join(RUNTIME_ROOT, 'runtime.json');
+after(() => rmSync(RUNTIME_ROOT, { recursive: true, force: true }));
 
 import {
   withCodexLifecycleHooks,
@@ -120,14 +131,14 @@ test('Codex lifecycle cleanup failures cannot corrupt output or skip application
   const writes = [];
   let closed = 0;
   const output = await runCodexLifecycleHook([
-    '--runtime-config', '/synthetic/runtime.json', '--event', 'Stop'
+    '--runtime-config', RUNTIME_CONFIG, '--event', 'Stop'
   ], {
     readInput: async () => ({
       session_id: 'codex-session',
       stop_hook_active: false
     }),
     write: (value) => writes.push(value),
-    resolveRuntimeOptions: () => ({ runtimeConfigPath: '/synthetic/runtime.json' }),
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: RUNTIME_CONFIG }),
     openApplication: () => ({
       getCapturePolicy: () => ({ enabled: false }),
       async close() {
@@ -158,13 +169,46 @@ test('Codex lifecycle cleanup failures cannot corrupt output or skip application
   assert.equal(writes.join('').includes('/private/'), false);
 });
 
+// The fail-closed side of the same Stop: a ledger that can be neither written
+// nor removed (here a directory stands where the record goes) makes the hook
+// say so, and both cleanups still run.
+test('Codex lifecycle reports a ledger it cannot keep and still runs both cleanups', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-lifecycle-unwritable-'));
+  const runtimeConfigPath = join(root, 'runtime.json');
+  mkdirSync(join(root, 'transcript-capture',
+    `${transcriptDigest(`${runtimeConfigPath}\0codex\0codex-session`)}.json`), { recursive: true });
+  const writes = [];
+  let closed = 0;
+  try {
+    const output = await runCodexLifecycleHook(['--runtime-config', runtimeConfigPath, '--event', 'Stop'], {
+      readInput: async () => ({ session_id: 'codex-session', stop_hook_active: false }),
+      write: (value) => writes.push(value),
+      resolveRuntimeOptions: () => ({ runtimeConfigPath }),
+      openApplication: () => ({
+        getCapturePolicy: () => ({ enabled: false }),
+        async close() { closed += 1; throw new Error('/private/application/path'); }
+      }),
+      createLeases: () => ({
+        async withGraphLease(_purpose, callback) { return callback(); },
+        async close() { closed += 1; throw new Error('/private/lease/path'); }
+      }),
+      callTool: async () => ({ decision: 'block', reason: 'FULI_CHECKPOINT_REQUIRED: checkpoint.' })
+    });
+    assert.match(output.systemMessage, /^FULI_CHECKPOINT_REQUIRED: checkpoint\.\nFuli: 记录状态无法写入本地/);
+    assert.equal(closed, 2);
+    assert.equal(writes.join('').includes('/private/'), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('Codex lifecycle closes an opened application when lease creation fails', async () => {
   let appClosed = false;
   await assert.rejects(() => runCodexLifecycleHook([
-    '--runtime-config', '/synthetic/runtime.json', '--event', 'Stop'
+    '--runtime-config', RUNTIME_CONFIG, '--event', 'Stop'
   ], {
     readInput: async () => ({ session_id: 'codex-session' }),
-    resolveRuntimeOptions: () => ({ runtimeConfigPath: '/synthetic/runtime.json' }),
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: RUNTIME_CONFIG }),
     openApplication: () => ({
       async close() { appClosed = true; }
     }),
@@ -233,14 +277,14 @@ test('Cursor lifecycle cleanup failures do not escape or disclose local details'
   const writes = [];
   let closed = 0;
   const output = await runCursorLifecycleHook([
-    '--runtime-config', '/synthetic/runtime.json', '--event', 'stop'
+    '--runtime-config', RUNTIME_CONFIG, '--event', 'stop'
   ], {
     readInput: async () => ({
       conversation_id: 'cursor-conversation',
       status: 'aborted'
     }),
     write: (value) => writes.push(value),
-    resolveRuntimeOptions: () => ({ runtimeConfigPath: '/synthetic/runtime.json' }),
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: RUNTIME_CONFIG }),
     openApplication: () => ({
       async close() {
         closed += 1;

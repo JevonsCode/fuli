@@ -3,6 +3,7 @@ from typing import Annotated
 from importlib.metadata import version
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from .auth import (
     matches_bootstrap_token,
@@ -162,6 +163,7 @@ from .workflow_candidates import (
     search_workflow_candidates,
 )
 from .workflow_observations import record_workflow_transition_observation
+from .graph_format import GraphFormatUnavailable, inspect_graph_format
 from .runtime import GraphitiRuntime
 from .store import GraphStore
 
@@ -184,6 +186,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.store = store
     application.state.settings = resolved_settings
+
+    @application.exception_handler(GraphFormatUnavailable)
+    async def graph_format_unavailable(_request, error: GraphFormatUnavailable):
+        return JSONResponse(status_code=503, content={'detail': error.detail()})
 
     async def current_actor(
         authorization: Annotated[str | None, Header()] = None,
@@ -245,7 +251,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get('/health')
     async def health() -> dict:
         return {**await store.health(), 'provider_version': version('fuli-graph-provider'),
-                'transcript_contract': 1}
+                'transcript_contract': 1, 'data_format': runtime.data_format.health()}
+
+    # `fuli migrate status`: the graph's format, ledger and the steps a start
+    # would take, from reads in Neo4j's read access mode only. Content-free:
+    # step IDs, versions, statuses and record counts.
+    @application.get('/health/data-format')
+    async def data_format_report() -> dict:
+        return await inspect_graph_format(runtime.driver.read_only(), resolved_settings)
 
     @application.post('/v1/bootstrap', response_model=BootstrapResult)
     async def bootstrap(

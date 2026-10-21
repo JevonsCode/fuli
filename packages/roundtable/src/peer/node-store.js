@@ -1,16 +1,8 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openFormattedDatabase, sqliteFormat } from '../storage/database-format.js';
 
-// This device's side of the LAN roundtable: owner settings and shares, every
-// receiving attempt (written before any process starts), the result outbox,
-// and where messages this device sent were routed.
-export function createNodeStore(path = ':memory:') {
-  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const database = new DatabaseSync(path);
-  database.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
+export const NODE_FORMAT = sqliteFormat({
+  store: 'peer-node',
+  schema: `
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS shares (
       binding_id TEXT PRIMARY KEY, space_id TEXT NOT NULL, project_id TEXT NOT NULL, agent_id TEXT NOT NULL,
@@ -30,13 +22,20 @@ export function createNodeStore(path = ':memory:') {
     );
     CREATE TABLE IF NOT EXISTS sent (
       message_id TEXT PRIMARY KEY, target_node TEXT NOT NULL, binding_id TEXT NOT NULL, created_at TEXT NOT NULL
-    );
-  `);
-  const shareColumns = new Set(database.prepare('PRAGMA table_info(shares)').all().map(c => c.name));
-  if (!shareColumns.has('chat_only')) {
-    try { database.exec('ALTER TABLE shares ADD COLUMN chat_only INTEGER NOT NULL DEFAULT 0'); }
-    catch (error) { if (!/duplicate column/i.test(error.message)) throw error; }
-  }
+    );`,
+  migrations: [{
+    // A share from before this column was a full share, which 0 still means.
+    id: 'peer-node/2-chat-only-shares', to: 2, kind: 'add-columns', table: 'shares',
+    summary: 'shares limited to chat', columns: { chat_only: 'INTEGER NOT NULL DEFAULT 0' }
+  }],
+  pragmas: 'PRAGMA journal_mode = WAL;'
+});
+
+// This device's side of the LAN roundtable: owner settings and shares, every
+// receiving attempt (written before any process starts), the result outbox,
+// and where messages this device sent were routed.
+export function createNodeStore(path = ':memory:') {
+  const database = openFormattedDatabase(path, NODE_FORMAT);
   const now = () => new Date().toISOString();
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');

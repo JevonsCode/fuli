@@ -240,7 +240,8 @@ async function withRefusedFiles(t, files, step) {
 
 const ledgerFile = async s => {
   const directory = join(dirname(s.policyPath), 'transcript-capture');
-  return join(directory, (await readdir(directory))[0]);
+  // The format lock beside the ledger holds no data (rec#17).
+  return join(directory, (await readdir(directory)).find((name) => name.endsWith('.json')));
 };
 const STATE_UNSAVED_NOTICE = 'Fuli: 记录状态未能安全保存，本会话后续内容暂不导入';
 

@@ -13,7 +13,9 @@ ROLE_RANK = {'reader': 1, 'contributor': 2, 'maintainer': 3}
 
 class StoreIdentity:
     async def health(self) -> dict:
-        records, _, _ = await self.runtime.driver.execute_query(
+        # A connectivity probe that reads no data, so it answers whatever the
+        # graph's data format allows.
+        records, _, _ = await self.runtime.driver.maintenance().execute_query(
             'RETURN 1 AS ready', routing_='r'
         )
         return {

@@ -4,10 +4,11 @@ import { parseMcpJson } from '../setup/agents/json-mcp.js';
 import { parse as parseToml } from 'smol-toml';
 
 import { inspectAgentInstallations } from '../setup/agent-installation-status.js';
-import { writeJsonFileAtomic } from '../storage/json-file.js';
+import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // Kept per client so a long-lived console cannot grow this file without bound.
 const MAX_CHANGES = 5;
+export const CLIENT_CONNECTION_HISTORY_FORMAT = jsonFormat({ store: 'client-connection-history', versions: [1] });
 // Statuses that prove a FULI entry was present in the client's configuration.
 const PRESENT = new Set(['connected', 'changed']);
 // Statuses an observation can persist; "unknown" is never stored as fact.
@@ -84,7 +85,10 @@ export function createClientConnectionObserver({
     });
     let historySaved = true;
     if (dirty) {
-      try { writeJsonFileAtomic(historyPath, history); retained = null; } catch { retained = history; historySaved = false; }
+      try {
+        writeVersionedJsonFileAtomic(historyPath, history, CLIENT_CONNECTION_HISTORY_FORMAT);
+        retained = null;
+      } catch { retained = history; historySaved = false; }
     }
     return { scope: 'configuration', observedAt, historySaved, clients };
   }

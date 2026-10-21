@@ -1,25 +1,25 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { EmployeeError } from '../employees/manifest.js';
 
 export const DEFAULT_PINS = Object.freeze(['employee.bole', 'employee.jefa', 'employee.tonborg']);
 export const DEFAULT_POLICY = Object.freeze({ mode: 'manual', quality: 'quality', client: 'codex' });
 const conflict = () => new EmployeeError('This record changed. Reload and try again.', 409, 'judgment_conflict');
+export const JUDGMENT_FORMAT = sqliteFormat({
+  store: 'judgment',
+  schema: `
+    CREATE TABLE IF NOT EXISTS judgment_settings(space TEXT, key TEXT, revision INTEGER NOT NULL, value TEXT, PRIMARY KEY(space,key));
+    CREATE TABLE IF NOT EXISTS judgment_records(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL, request_key TEXT NOT NULL, created_at TEXT NOT NULL, body TEXT NOT NULL, UNIQUE(space,request_key));
+    CREATE TABLE IF NOT EXISTS judgment_feedback(id INTEGER PRIMARY KEY, decision TEXT NOT NULL, revision INTEGER NOT NULL, vote TEXT, reason TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(decision,revision));
+    CREATE TABLE IF NOT EXISTS judgment_execution(id INTEGER PRIMARY KEY, decision TEXT NOT NULL, status TEXT NOT NULL, receipt TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS judgment_leases(space TEXT, project TEXT, token TEXT, expires INTEGER, PRIMARY KEY(space,project));`
+});
 
 // Local, shared by independent MCP/console processes. Judgments are immutable;
 // execution receipts and feedback are separate append-only histories.
 export class JudgmentStore {
   constructor(path = ':memory:') {
-    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-    this.db = new DatabaseSync(path);
-    this.db.exec(`PRAGMA busy_timeout = 5000;
-      CREATE TABLE IF NOT EXISTS judgment_settings(space TEXT, key TEXT, revision INTEGER NOT NULL, value TEXT, PRIMARY KEY(space,key));
-      CREATE TABLE IF NOT EXISTS judgment_records(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL, request_key TEXT NOT NULL, created_at TEXT NOT NULL, body TEXT NOT NULL, UNIQUE(space,request_key));
-      CREATE TABLE IF NOT EXISTS judgment_feedback(id INTEGER PRIMARY KEY, decision TEXT NOT NULL, revision INTEGER NOT NULL, vote TEXT, reason TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(decision,revision));
-      CREATE TABLE IF NOT EXISTS judgment_execution(id INTEGER PRIMARY KEY, decision TEXT NOT NULL, status TEXT NOT NULL, receipt TEXT NOT NULL, created_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS judgment_leases(space TEXT, project TEXT, token TEXT, expires INTEGER, PRIMARY KEY(space,project));`);
+    this.db = openFormattedDatabase(path, JUDGMENT_FORMAT);
   }
   transaction(fn) {
     this.db.exec('BEGIN IMMEDIATE');

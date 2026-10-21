@@ -9,7 +9,9 @@ export function startTaskScheduler({ app, withLease = (_owner, run) => run(), no
   if (!app.taskSchedules) return async () => {};
   let timer = null, active = null, stopped = false;
   const delay = () => {
-    const next = app.taskSchedules.nextDueAt();
+    let next;
+    // A schedule store this version cannot use yet (rec#17) is retried later.
+    try { next = app.taskSchedules.nextDueAt(); } catch { return MAX_DELAY_MS; }
     const wait = next ? new Date(next).getTime() - now() : MAX_DELAY_MS;
     return Math.min(MAX_DELAY_MS, Math.max(MIN_DELAY_MS, wait));
   };

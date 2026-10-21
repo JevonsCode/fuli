@@ -7,10 +7,12 @@ export function startJudgmentScheduler({ app, withLease = (_owner, run) => run()
   let running = false, active = null, stopped = false, backoffUntil = 0;
   const tick = async () => {
     if (stopped || running || Date.now() < backoffUntil
-      || app.getAgentAccessPolicy?.().enabled === false
-      || !app.judgment.store().hasAutomaticPolicy(app.config.personal.spaceId)) return;
+      || app.getAgentAccessPolicy?.().enabled === false) return;
     running = true;
     try {
+      // Opening the store checks its data format (rec#17); a store this
+      // version cannot use backs off like a failed review.
+      if (!app.judgment.store().hasAutomaticPolicy(app.config.personal.spaceId)) return;
       const result = await withLease('tonborg:review', () => app.judgment.reviewAutomatic({
         personalSpaceId: app.config.personal.spaceId, requestId: randomUUID(), limit: 10 }));
       if (result.records.some(record => record.outcome === 'failed')) backoffUntil = Date.now() + 900_000;

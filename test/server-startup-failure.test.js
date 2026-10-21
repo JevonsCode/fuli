@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import { createServer } from '../src/server.js';
 
-test('invalid system configuration closes the real database opened by the owned application', async (t) => {
+test('invalid system configuration leaves no database of the owned application open', async (t) => {
   // Only native SQLite I/O is observed; application/system construction is real.
   // No Provider request or model process is needed to construct the application.
   const directory = mkdtempSync(join(tmpdir(), 'fuli-startup-cleanup-'));
@@ -32,8 +32,9 @@ test('invalid system configuration closes the real database opened by the owned 
   try {
     await assert.rejects(createServer({ runtimeConfigPath, port: 0 }),
       /Unsupported runtime settings version/);
-    assert.equal(opened.size, 1, 'the test must exercise an actually opened database');
-    assert.ok(existsSync(join(directory, 'employees/data/management.sqlite')));
+    // Local stores open on first use, after their data format check (rec#17),
+    // so a startup that fails first leaves no database behind, open or not.
+    assert.equal(existsSync(join(directory, 'employees/data/management.sqlite')), false);
     assert.deepEqual(closed, opened, 'startup rejection must await owned database closure');
   } finally {
     // Keep the failing (RED) version safe too; only this test's databases are retained.
