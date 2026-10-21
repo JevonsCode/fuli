@@ -55,12 +55,39 @@ export function assertJsonFormatWritable(filePath, format) {
 }
 
 export function writeVersionedJsonFileAtomic(filePath, value, format, { io } = {}) {
+  requireJsonFormatVersion(value, format ?? {});
+  // Nothing of the current file is used, so an unreadable one is replaced as before.
+  updateVersionedJsonFileAtomic(filePath, format, () => value, { io, read: () => null });
+}
+
+// A read-modify-write of one file under the directory lock, taken once: the
+// latest file is read inside the lock, so a change another process saved
+// meanwhile is never overwritten from an older snapshot. mutate(current)
+// gets the parsed file (null when missing) and returns the new value, or
+// undefined to leave the file as it is. read(filePath) may replace the
+// default strict parse; write(filePath, value) the plain atomic write.
+export function updateVersionedJsonFileAtomic(filePath, format, mutate, {
+  io, read = readCurrentJson, write = (path, value) => writeJsonFileAtomic(path, value, io)
+} = {}) {
   if (!format?.versions) throw new TypeError('A versioned JSON write needs its store format');
-  requireJsonFormatVersion(value, format);
-  withJsonFormatLock(filePath, () => {
+  return withJsonFormatLock(filePath, () => {
     assertJsonFormatWritable(filePath, format);
-    writeJsonFileAtomic(filePath, value, io);
+    const current = read(filePath);
+    const next = mutate(current);
+    if (next === undefined) return current;
+    requireJsonFormatVersion(next, format);
+    write(filePath, next);
+    return next;
   });
+}
+
+function readCurrentJson(filePath) {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
 }
 
 // One lock per directory, shared by every versioned file in it.

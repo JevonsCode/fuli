@@ -60,8 +60,8 @@ test('a session pause record a newer FULI wrote is never replaced', (t) => {
   const newer = JSON.stringify({ version: 2, generation: 1, nonce: 'synthetic', paused: true });
   writeFileSync(join(root, file), newer);
 
-  assert.throws(() => store.set('synthetic-session', { paused: false, sourceApplication: 'codex' }), /pause is invalid/);
-  assert.throws(() => store.link('synthetic-session', 'synthetic-parent'), /pause is invalid/);
+  assert.throws(() => store.set('synthetic-session', { paused: false, sourceApplication: 'codex' }), { code: 'data_format_blocked' });
+  assert.throws(() => store.link('synthetic-session', 'synthetic-parent'), { code: 'data_format_blocked' });
   assert.equal(readFileSync(join(root, file), 'utf8'), newer);
 });
 
@@ -117,3 +117,40 @@ test('a write waits for another process holding the lock and then respects what 
   await new Promise((resolve) => child.once('exit', resolve));
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { version: 2, newer: true });
 });
+
+// dot #250 P1: a session stop is never lost to a write merged from an older
+// snapshot. Another process stops the session and is still inside the lock
+// when this process links or resumes it; this process reads the record only
+// once it holds the lock, so the stop survives.
+for (const [name, change] of [
+  ['link', (store) => store.link('synthetic-session', 'synthetic-parent')],
+  ['resume', (store) => store.set('synthetic-session', { paused: false, sourceApplication: 'codex' })]
+]) {
+  test(`a ${name} racing a stop in another process keeps the session stopped`, async (t) => {
+    const root = directory(t);
+    new SessionCapturePauseStore(root).set('synthetic-session', { paused: true, sourceApplication: 'codex' });
+    const store = new URL('../src/graphiti/capture-session-pause.js', import.meta.url).href;
+    const files = new URL('../src/storage/json-file.js', import.meta.url).href;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', `
+      import { SessionCapturePauseStore } from ${JSON.stringify(store)};
+      import { writeJsonFileAtomic } from ${JSON.stringify(files)};
+      const pause = new Int32Array(new SharedArrayBuffer(4));
+      const stopper = new SessionCapturePauseStore(process.argv[1], { writeJson: (path, value) => {
+        process.stdout.write('holding\\n');
+        Atomics.wait(pause, 0, 0, 600);
+        writeJsonFileAtomic(path, value);
+      } });
+      stopper.setEnabled('synthetic-session', { enabled: false, sourceApplication: 'codex' });
+    `, root], { stdio: ['ignore', 'pipe', 'inherit'] });
+    await new Promise((resolve) => child.stdout.once('data', resolve));
+
+    change(new SessionCapturePauseStore(root));
+    assert.equal(await new Promise((resolve) => child.once('exit', resolve)), 0);
+
+    const [file] = readdirSync(root).filter((entry) => /^[0-9a-f]{64}\.json$/.test(entry));
+    const record = JSON.parse(readFileSync(join(root, file), 'utf8'));
+    assert.equal(record.enabled, false, 'the stop survived');
+    assert.equal(new SessionCapturePauseStore(root).anyStopped('codex'), true);
+    assert.equal(record.generation, 3);
+  });
+}
