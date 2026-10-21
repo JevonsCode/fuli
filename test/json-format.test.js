@@ -197,3 +197,18 @@ test('a denial that times out on the ledger lock leaves a newer record in place 
   assert.equal(await ledger.deny('generation-2', 'session_paused'), 'unkept', 'a newer record is never removed');
   assert.ok(existsSync(file));
 });
+
+// CI (Linux) on #250: a ledger whose directory cannot be created, like an
+// unwritable /synthetic, has no record to keep or protect; a denial there is
+// 'removed' as before the format lock, never reported as an unsaved state.
+// A regular file in the path makes mkdir fail the same way on every OS.
+test('a denial where the ledger directory cannot be created has nothing to remove', async (t) => {
+  const root = directory(t);
+  const blocker = join(root, 'not-a-directory');
+  writeFileSync(blocker, 'synthetic');
+  const ledger = transcriptCaptureLedger(join(blocker, 'runtime.json'), { session_id: 'synthetic-session' }, 'codex');
+
+  assert.equal(await ledger.deny('generation-1', 'session_paused'), 'removed');
+  assert.notEqual(await ledger.skipReason('generation-1'), null, 'a session without a record is still skipped');
+  assert.equal(readFileSync(blocker, 'utf8'), 'synthetic');
+});

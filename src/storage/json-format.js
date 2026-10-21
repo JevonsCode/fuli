@@ -1,4 +1,4 @@
-import { readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { newerFormatError, pendingMigrationError } from '../../packages/roundtable/src/storage/data-format-error.js';
@@ -85,6 +85,9 @@ export function updateVersionedJsonFileAtomic(filePath, format, mutate, {
 // FULI wrote it; a newer file is refused like a write would be.
 export function removeVersionedJsonFileAtomic(filePath, format) {
   if (!format?.versions) throw new TypeError('A versioned JSON removal needs its store format');
+  // No file, nothing to protect or remove: no lock is needed, and its
+  // directory may not even exist or be creatable.
+  if (!existsSync(filePath)) return;
   withJsonFormatLock(filePath, () => {
     assertJsonFormatWritable(filePath, format);
     rmSync(filePath, { force: true });
