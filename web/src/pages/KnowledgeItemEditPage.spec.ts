@@ -137,6 +137,18 @@ describe('KnowledgeItemEditPage', () => {
     historical.unmount()
   })
 
+  it('removes a project tag of the second project of an item from that project, not the first', async () => {
+    const wrapper = await open(view({ scope: { kind: 'projects', projects: [{ id: 'alpha', name: 'Alpha' },
+      { id: 'beta', name: 'Beta' }], status: 'set' },
+    tags: [{ id: 'tb', name: 'beta-only', namespace: 'project', status: 'active', project_id: 'beta' }] }))
+    postJson.mockResolvedValue({ outcome: 'detached' })
+    await wrapper.get('[data-attached-tags] button').trigger('click')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/knowledge-tags', { action: 'detach', personalSpaceId: 'space',
+      personalProjectId: 'beta', tagId: 'tb', itemKind: 'entity', itemId: 'item-1' })
+    wrapper.unmount()
+  })
+
   it('detaches an attached tag and attaches an existing one from the visible vocabulary', async () => {
     const wrapper = await open()
     postJson.mockResolvedValue({ outcome: 'detached' })

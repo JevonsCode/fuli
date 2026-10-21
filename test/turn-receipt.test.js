@@ -97,14 +97,16 @@ test('past the receipt budget the rest is counted and linked to the full list, n
   assert.equal(receipt.summary.list_url, `${CONSOLE}/knowledge/turn/synthetic-space?episodes=episode-1`);
 });
 
-test('nothing substantive adds nothing: duplicates, disabled capture, re-mentions and no capture', async () => {
+test('nothing substantive adds nothing: disabled capture, re-mentions and no capture', async () => {
   const { app, reads } = receiptApp([]);
-  assert.equal(await readTurnReceipt(app, [{ ...saved()[0], status: 'duplicate' }]), null);
   assert.equal(await readTurnReceipt(app, [{ scope: 'current_project', status: 'capture_disabled', episode_id: null,
     entity_ids: [], relationship_ids: [] }]), null);
   assert.equal(await readTurnReceipt(app, []), null);
   assert.equal(reads.length, 0, 'nothing saved is never read back');
   assert.equal(await readTurnReceipt(app, saved()), null, 'items the turn only mentioned again changed nothing');
+  // A duplicate is this turn's own earlier attempt: read back, and here it changed nothing.
+  assert.equal(await readTurnReceipt(app, [{ ...saved()[0], status: 'duplicate' }]), null);
+  assert.equal(reads.length, 2);
 });
 
 test('an Agent note change says it has no weight instead of a made-up percentage', async () => {
@@ -244,12 +246,12 @@ test('nothing is reported saved while capture is off, for retain_nothing or a du
   const none = await checkpointTaskKnowledge(plain.app, { taskContextToken: plain.begin().token, sourceApplication: 'codex',
     disposition: 'retain_nothing', reason: 'Small talk.' });
   assert.equal(none.agent_receipt.markdown.split('\n').length, 1, 'a turn without changes adds nothing');
-  // The same remembered items in a new turn are duplicates of what is stored: nothing new to report.
+  // The same remembered items in a new turn commit a new episode whose read-back finds
+  // every item already stored: nothing new to report.
   const again = checkpointFixture();
   const first = again.begin();
   await checkpointTaskKnowledge(again.app, checkpoint(first));
-  again.app.captureSessionKnowledge = async input => ({ route: 'personal', status: 'duplicate',
-    episode_id: `episode-${input.idempotencyKey}`, entity_ids: input.entities.map(item => `id-${item.key}`), relationship_ids: [] });
+  again.app.personal.readTurnReceipt = async () => ({ entries: [], unchanged_count: 3 });
   const repeated = await checkpointTaskKnowledge(again.app, checkpoint(again.begin()));
   assert.equal(repeated.agent_receipt.markdown.split('\n').length, 1);
 });
@@ -268,4 +270,39 @@ test('the Provider registry maps unread receipts and claims through the Provider
   assert.deepEqual(await registry.claimUnreadTurnReceipts('fuli-task-y', ['r1'], 'codex'), ['r1']);
   assert.deepEqual(calls, [{ token: 'fuli-task-x', input: { personal_space_id: 'synthetic-space', source_application: 'codex' } },
     { token: 'fuli-task-y', input: { personal_space_id: 'synthetic-space', source_application: 'codex', receipt_ids: ['r1'] } }]);
+});
+
+const graphCapture = () => ({ idempotencyKey: 'synthetic-capture', name: 'Synthetic', sourceKind: 'task',
+  sourceDescription: 'Synthetic', referenceTime: '2026-10-21T00:00:00Z', entities: [{ key: 'fact-a', name: 'Fact A',
+    type: 'ProjectFact', summary: 'Synthetic project fact', confirmationStatus: 'pending' }], relationships: [] });
+
+test('a capture sent without routing is kept with the checkpoint and gets its receipt too', async () => {
+  const { app, begin, registry } = checkpointFixture();
+  const task = begin();
+  const result = await checkpointTaskKnowledge(app, { taskContextToken: task.token, sourceApplication: 'codex',
+    disposition: 'capture_candidates', reason: 'Keep the fact.', capture: graphCapture() });
+  assert.match(result.agent_receipt.markdown, /\nFULI 本轮沉淀 1 条：\n- 新增 事实「stored: Synthetic project fact」｜项目 project-a｜/);
+  const [saved] = registry.context(task.token, 'codex').checkpoint.captureResults;
+  assert.deepEqual([saved.scope, saved.personal_project_id, saved.status], ['current_project', 'project-a', 'committed']);
+});
+
+test('a turn whose capture saved but whose checkpoint failed still shows its items on retry', async () => {
+  const { app, begin, registry, writes } = checkpointFixture();
+  const task = begin();
+  const complete = registry.checkpoint.bind(registry);
+  let failed = false;
+  registry.checkpoint = (...input) => {
+    if (!failed) { failed = true; throw new Error('synthetic checkpoint write failure'); }
+    return complete(...input);
+  };
+  const input = checkpoint(task, { capture: graphCapture(),
+    captureRouting: [{ scope: 'current_project', entityKeys: ['fact-a'], relationshipKeys: [] }] });
+  delete input.remember;
+  await assert.rejects(checkpointTaskKnowledge(app, input), /synthetic checkpoint write failure/);
+  const retry = await checkpointTaskKnowledge(app, input);
+  assert.equal(writes.length, 2, 'the retry reaches the same episode again');
+  assert.equal(retry.capture_results[0].status, 'duplicate');
+  assert.match(retry.agent_receipt.markdown, /\n- 新增 事实「stored: Synthetic project fact」/,
+    'this turn saved it on its first attempt: still its receipt');
+  assert.deepEqual(begin().unreadTurnReceipts, [], 'shown once, by the retry');
 });

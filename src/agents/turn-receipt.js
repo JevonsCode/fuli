@@ -33,17 +33,25 @@ function turnReceiptListUrl(application, episodeIds) {
 export async function readTurnReceipt(application, captureResults, { memory = null, agentName = null,
   heading = '本轮沉淀' } = {}) {
   const episodeIds = savedEpisodeIds(captureResults);
-  const entries = [];
+  const { entries } = episodeIds.length ? await readEpisodeReceipts(application, episodeIds) : { entries: [] };
+  const lines = entries.map(entry => entryLine(application, entry));
+  if (memory) lines.push(memoryLine(application, memory, agentName));
+  return lines.length ? boundedReceipt(application, heading, lines, episodeIds) : null;
+}
+
+// What the episodes created or replaced, read in the Provider's batches and
+// merged, so a late receipt of several turns and its full list read the same.
+export async function readEpisodeReceipts(application, episodeIds) {
+  const entries = new Map();
+  let unchanged = 0;
   for (let start = 0; start < episodeIds.length; start += EPISODES_PER_READ) {
     const read = await application.personal.readTurnReceipt({ personal_space_id: application.config.personal.spaceId,
       episode_ids: episodeIds.slice(start, start + EPISODES_PER_READ) });
     if (!Array.isArray(read?.entries)) throw new TypeError('Provider did not return the turn receipt');
-    entries.push(...read.entries);
+    for (const entry of read.entries) entries.set(`${entry.item_kind}:${entry.item_id}`, entry);
+    unchanged += read.unchanged_count ?? 0;
   }
-  const lines = [...new Map(entries.map(entry => [`${entry.item_kind}:${entry.item_id}`, entry])).values()]
-    .map(entry => entryLine(application, entry));
-  if (memory) lines.push(memoryLine(application, memory, agentName));
-  return lines.length ? boundedReceipt(application, heading, lines, episodeIds) : null;
+  return { entries: [...entries.values()], unchanged_count: unchanged };
 }
 
 // Said instead when the knowledge was saved but its receipt could not be read
@@ -52,8 +60,12 @@ export function deferredTurnReceipt() {
   return { lines: ['FULI 本轮沉淀：已保存，回执暂未读取，下一轮补发'], summary: { status: 'deferred' } };
 }
 
+// Every task capture's idempotency key carries its task token, so a duplicate
+// is this same turn's earlier attempt (it saved, then the checkpoint failed):
+// still this turn's receipt. A later turn saving the same words commits a new
+// episode, whose read-back reports the items unchanged and lists nothing.
 export function savedEpisodeIds(captureResults) {
-  return [...new Set((captureResults ?? []).filter(result => result.status === 'committed')
+  return [...new Set((captureResults ?? []).filter(result => ['committed', 'duplicate'].includes(result.status))
     .map(result => result.episode_id).filter(Boolean))];
 }
 

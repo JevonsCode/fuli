@@ -1,5 +1,6 @@
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { requiredString, uniqueTextArray } from '../validation/values.js';
+import { readEpisodeReceipts } from '../agents/turn-receipt.js';
 
 // One knowledge item as the console's quick edit reads and moves it (rec#20).
 // This host only checks and maps the request: the Provider reads the item back,
@@ -9,7 +10,8 @@ import { requiredString, uniqueTextArray } from '../validation/values.js';
 const ITEM_KINDS = new Set(['entity', 'relationship']);
 const SCOPES = new Set(['global', 'projects', 'agent']);
 const MAX_SCOPE_PROJECTS = 16;
-const MAX_TURN_EPISODES = 3;
+// A late receipt may gather several turns' episodes; its full list reads them all.
+const MAX_TURN_EPISODES = 64;
 
 export function readKnowledgeItem(application, input) {
   return application.personal.readKnowledgeItemView(itemRef(application, input));
@@ -19,8 +21,9 @@ export function readKnowledgeItem(application, input) {
 // long receipt links to.
 export function readTurnReceiptItems(application, { personalSpaceId, episodeIds }) {
   activeSpace(application, personalSpaceId);
-  return application.personal.readTurnReceipt({ personal_space_id: personalSpaceId,
-    episode_ids: uniqueTextArray(episodeIds, 'episodeIds', MAX_TURN_EPISODES) });
+  const episodes = uniqueTextArray(episodeIds, 'episodeIds', MAX_TURN_EPISODES);
+  if (!episodes.length) invalid('episodes names at least one saved episode');
+  return readEpisodeReceipts(application, episodes);
 }
 
 export function changeKnowledgeScope(application, input) {

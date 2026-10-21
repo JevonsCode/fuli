@@ -132,6 +132,13 @@ export function taskCaptureReceipt(scope, input, result) {
     entity_ids: saved ? result.entity_ids : [], relationship_ids: saved ? result.relationship_ids : [] };
 }
 
+// A capture sent without routing is saved where its input names: the task's
+// project, or no project. Its receipt joins the checkpoint like a routed one.
+export function legacyCaptureReceipts(input, result) {
+  if (!input || !['committed', 'duplicate'].includes(result?.status)) return null;
+  return [taskCaptureReceipt(input.personalProjectId ? 'current_project' : 'personal_global', input, result)];
+}
+
 // A Provider-admitted sealed worker keeps its checkpoint, work log and memory,
 // but its capture payload is never written.
 export function internalCaptureSkip(origin) {

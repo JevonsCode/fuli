@@ -60,6 +60,12 @@ class KnowledgeItemWeight(StrictModel):
     basis: KnowledgeWeightBasis
 
 
+class KnowledgeItemTag(KnowledgeTagReference):
+    # The project whose vocabulary holds a project tag: a change to that tag is
+    # made from that project, the only scope that can see it.
+    project_id: str | None = None
+
+
 class KnowledgeItemSummary(StrictModel):
     item_kind: KnowledgeItemKind
     item_id: str
@@ -71,7 +77,7 @@ class KnowledgeItemSummary(StrictModel):
     category: KnowledgeItemCategory
     scope: KnowledgeItemScope
     weight: KnowledgeItemWeight | None = None
-    tags: list[KnowledgeTagReference] = Field(default_factory=list)
+    tags: list[KnowledgeItemTag] = Field(default_factory=list)
     confirmation_status: ConfirmationStatus
     content_source: ContentSource | None = None
     invalid_at: datetime | None = None

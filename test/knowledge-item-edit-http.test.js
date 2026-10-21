@@ -101,13 +101,16 @@ test('content edits and deactivation send the version the page read', async () =
   assert.equal(calls[0].body.operation_actor, 'human');
 });
 
-test('a long receipt\'s full list reads the turn\'s episodes', async () => {
-  const { app, calls } = application(() => ({ status: 200, body: { entries: [], unchanged_count: 0 } }));
-  const result = await api(app, 'GET', '/api/knowledge/turn-receipt?personalSpaceId=personal-space&episodes=e1,e2');
+test('a long receipt\'s full list reads every episode it links, in the Provider\'s batches', async () => {
+  const { app, calls } = application(call => ({ status: 200, body: { unchanged_count: 1,
+    entries: call.body.episode_ids.map(id => ({ item_kind: 'entity', item_id: `item-${id}` })) } }));
+  const result = await api(app, 'GET', '/api/knowledge/turn-receipt?personalSpaceId=personal-space&episodes=e1,e2,e3,e4,e5');
   assert.equal(result.status, 200);
-  assert.deepEqual(calls[0].body, { personal_space_id: 'personal-space', episode_ids: ['e1', 'e2'] });
-  const empty = await api(app, 'GET', '/api/knowledge/turn-receipt?personalSpaceId=personal-space&episodes=e1,e2,e3,e4');
-  assert.equal(empty.status, 400);
+  assert.deepEqual(calls.map(call => call.body.episode_ids), [['e1', 'e2', 'e3'], ['e4', 'e5']]);
+  assert.deepEqual(result.body.entries.map(entry => entry.item_id), ['item-e1', 'item-e2', 'item-e3', 'item-e4', 'item-e5']);
+  assert.equal(result.body.unchanged_count, 2);
+  const none = await api(app, 'GET', '/api/knowledge/turn-receipt?personalSpaceId=personal-space&episodes=');
+  assert.equal(none.status, 400);
 });
 
 test('scope changes are a local person\'s decision, never an Agent tool', () => {

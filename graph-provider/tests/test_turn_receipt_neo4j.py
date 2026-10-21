@@ -3,6 +3,7 @@ read-back, the undecided scope of a temporary session project, the scope quick
 edit with its version check, and one-time receipt delivery. Synthetic data only;
 public HTTP routes drive every write."""
 
+import asyncio
 import hashlib
 from uuid import uuid4
 
@@ -364,3 +365,78 @@ async def test_a_confirmed_held_item_is_placed_global_or_with_one_fla_by_the_per
         # Once placed it is in use: widening that place again goes through review.
         widened = await move(client, space_id, to_fla, 'global', version=placed['version'])
         assert widened.status_code == 409 and widened.json()['detail']['code'] == 'widening_requires_review'
+
+
+@pytest.mark.asyncio
+async def test_a_retried_entry_with_a_new_token_reads_and_claims_as_the_turns_saved_token():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        first, second = (f'fuli-task-{uuid4()}' for _ in range(2))
+        await begin(client, space_id, first, 'turn-a')
+        await complete(client, space_id, first, 'episode-a', 'entity-a')
+        entry = await begin(client, space_id, second, 'turn-b')
+        ids = [item['receipt_id'] for item in entry['unread_turn_receipts']]
+        assert await claim_unread(client, space_id, entry['token'], ids) == ids
+        # The host retries the same turn with a fresh random token: the Provider
+        # returns the turn's saved token and the receipts that token claimed.
+        retried = await begin(client, space_id, f'fuli-task-{uuid4()}', 'turn-b')
+        assert retried['token'] == second
+        assert [item['receipt_id'] for item in retried['unread_turn_receipts']] == ids
+        assert await claim_unread(client, space_id, retried['token'], ids) == ids
+
+
+@pytest.mark.asyncio
+async def test_a_reply_and_an_entry_claiming_at_once_never_both_show_the_receipt():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        for round_number in range(4):
+            reply, entry = f'fuli-task-{uuid4()}', f'fuli-task-{uuid4()}'
+            await begin(client, space_id, reply, f'race-{round_number}')
+            await complete(client, space_id, reply, f'episode-race-{round_number}', f'entity-race-{round_number}')
+            unread = (await begin(client, space_id, entry, f'race-next-{round_number}'))['unread_turn_receipts']
+            ids = [item['receipt_id'] for item in unread]
+            own, other = await asyncio.gather(claim(client, space_id, reply), claim_unread(client, space_id, entry, ids))
+            assert [own, bool(other)].count(True) == 1, (own, other)
+
+
+@pytest.mark.asyncio
+async def test_a_saved_turn_retried_as_a_duplicate_still_leaves_its_receipt_unread():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        token, nxt = f'fuli-task-{uuid4()}', f'fuli-task-{uuid4()}'
+        await begin(client, space_id, token, 'turn-dup')
+        ok(await client.put(f'/v1/task-contexts/{token}/checkpoint', json={
+            'personal_space_id': space_id, 'source_application': 'codex', 'phase': 'complete',
+            'disposition': 'capture_candidates', 'reason': 'Synthetic retry.', 'fingerprint': 'b' * 64,
+            'capture_status': 'duplicate', 'capture_results': [{'scope': 'current_project',
+                'personal_project_id': 'alpha', 'status': 'duplicate', 'episode_id': 'episode-dup',
+                'entity_ids': ['entity-dup'], 'relationship_ids': []}]}))
+        unread = (await begin(client, space_id, nxt, 'turn-dup-next'))['unread_turn_receipts']
+        assert [item['capture_results'][0]['episode_id'] for item in unread] == ['episode-dup']
+
+
+@pytest.mark.asyncio
+async def test_a_project_tag_of_the_second_project_is_named_with_its_project_and_removable_there():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha', 'beta')
+        item_id = (await commit(client, space_id, [preference('two', 'Synthetic two-project preference')],
+                                project='alpha'))['entity_ids'][0]
+        version = (await view(client, space_id, item_id))['version']
+        assert (await move(client, space_id, item_id, 'projects', version=version,
+                           projects=['alpha', 'beta'])).status_code == 200
+        created = ok(await client.post('/v1/knowledge-tags/create', json={
+            'personal_space_id': space_id, 'personal_project_id': 'beta', 'name': 'beta-only', 'namespace': 'project',
+            'reason': 'Synthetic tag.', 'operation_actor': 'human'}))
+        link = {'personal_space_id': space_id, 'tag_id': created['tag']['id'], 'item_kind': 'entity',
+                'item_id': item_id, 'operation_actor': 'human'}
+        ok(await client.post('/v1/knowledge-tags/attach', json={**link, 'personal_project_id': 'beta'}))
+        [tag] = (await view(client, space_id, item_id))['tags']
+        assert (tag['namespace'], tag['project_id']) == ('project', 'beta')
+        refused = await client.post('/v1/knowledge-tags/detach', json={**link, 'personal_project_id': 'alpha'})
+        assert refused.status_code == 404, 'alpha cannot see beta\'s tag'
+        ok(await client.post('/v1/knowledge-tags/detach', json={**link, 'personal_project_id': tag['project_id']}))
+        assert (await view(client, space_id, item_id))['tags'] == []

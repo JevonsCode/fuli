@@ -43,7 +43,9 @@ class StoreTaskContexts:
             await scoped._lock_task_context_session(session_id)
             await scoped._link_task_context_sessions(request.personal_space_id, [session_id])
             saved = await scoped._begin_task_context(actor, request)
-            unread = await unread_session_turn_receipts(scoped, session_id, request.token)
+            # A retried entry of the same turn gets the turn's saved token back,
+            # not the one it sent: receipts belong to that canonical identity.
+            unread = await unread_session_turn_receipts(scoped, session_id, saved['token'])
             return {**saved, **({'unread_turn_receipts': unread} if unread else {})}
 
     async def _lock_task_context_session(self, session_id):

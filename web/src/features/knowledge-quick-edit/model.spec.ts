@@ -72,6 +72,12 @@ describe('knowledge quick edit model', () => {
     expect(tagProjectId(item({ scope: { kind: 'projects', projects: [{ id: 'a' }], status: 'set' } }))).toBe('a')
   })
 
+  it('changes a project tag from its own project, even on a second project of the item', () => {
+    const twoProjects = item({ scope: { kind: 'projects', projects: [{ id: 'a' }, { id: 'b' }], status: 'set' } })
+    expect(tagProjectId(twoProjects, { namespace: 'project', project_id: 'b' })).toBe('b')
+    expect(tagProjectId(twoProjects, { namespace: 'personal', project_id: null })).toBe('a')
+  })
+
   it('tells a stale page, a widening and a refusal apart', () => {
     expect(editFailure(new ApiError('x', 409, JSON.stringify({ error: 'x', code: 'stale_version' })))).toBe('conflict')
     expect(editFailure(new ApiError('x', 409, JSON.stringify({ error: 'x', code: 'widening_requires_review' })))).toBe('widening')

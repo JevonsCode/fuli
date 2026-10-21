@@ -26,7 +26,8 @@ export interface ItemWeight {
     distinct_task_count: number; source_count: number; negative_evidence_count: number }
 }
 
-export interface ItemTag { id: string; name: string; namespace: string; status: string }
+/** project_id: the project whose vocabulary holds a project tag. */
+export interface ItemTag { id: string; name: string; namespace: string; status: string; project_id?: string | null }
 
 export interface KnowledgeItemSummary {
   item_kind: ItemKind
@@ -153,8 +154,11 @@ export function deactivateRequest(spaceId: string, item: KnowledgeItemSummary, r
     : null
 }
 
-// The tag routes take a project the item belongs to, or none for global knowledge.
-export function tagProjectId(item: KnowledgeItemSummary) {
+// The tag routes take the scope a tag change is made from: a project tag's own
+// project (only it can see the tag), otherwise one of the item's projects, or
+// none for global knowledge.
+export function tagProjectId(item: KnowledgeItemSummary, tag?: Pick<ItemTag, 'namespace' | 'project_id'>) {
+  if (tag?.namespace === 'project' && tag.project_id) return tag.project_id
   return item.scope.kind === 'global' ? null : item.scope.projects[0]?.id ?? null
 }
 

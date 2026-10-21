@@ -16,6 +16,7 @@ from .knowledge_item_view_models import (
     KnowledgeItemRef,
     KnowledgeItemScope,
     KnowledgeItemSummary,
+    KnowledgeItemTag,
     KnowledgeItemView,
     KnowledgeItemWeight,
     KnowledgeReceiptEntry,
@@ -26,7 +27,6 @@ from .knowledge_item_view_models import (
 )
 from .knowledge_management import _read_assignment, _read_item, _source_project_ids
 from .knowledge_records import revision_record
-from .knowledge_tag_models import KnowledgeTagReference
 from .knowledge_tags import PERSONAL_NAMESPACE, project_namespace
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
 from .provider_values import json_object, native_datetime
@@ -86,8 +86,9 @@ async def item_summary(store, space, item_kind, item_id, current, *, source_ids)
             distinct_task_count=int(current.get('distinct_task_count') or 0),
             source_count=len(set(source_ids)),
             negative_evidence_count=int(current.get('negative_evidence_count') or 0))),
-        tags=[KnowledgeTagReference(id=tag['id'], name=tag['name'], namespace=tag['namespace_kind'],
-                                    status=tag['status']) for tag in tags],
+        tags=[KnowledgeItemTag(id=tag['id'], name=tag['name'], namespace=tag['namespace_kind'],
+                               status=tag['status'], project_id=tag.get('namespace_project_id'))
+              for tag in tags],
         confirmation_status=status, content_source=current.get('content_source'),
         invalid_at=native_datetime(current.get('invalid_at')),
         created_at=native_datetime(current.get('created_at')))

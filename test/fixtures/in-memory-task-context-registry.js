@@ -73,7 +73,7 @@ export class TaskContextRegistry {
       );
     }
     task.checkpoint = Object.freeze({ ...checkpoint, phase: 'complete' });
-    if ((checkpoint.captureResults ?? []).some(result => result.status === 'committed')) {
+    if ((checkpoint.captureResults ?? []).some(result => ['committed', 'duplicate'].includes(result.status))) {
       this.receipts.set(token, { token, sessionKey: sessionKey(task.sourceApplication, task.sessionId),
         personalProjectId: task.personalProjectId, captureResults: structuredClone(checkpoint.captureResults),
         state: 'unread', claimant: null });

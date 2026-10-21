@@ -6,14 +6,16 @@ failed after saving, or the host could not append it), the next task entry of
 the same session is told about it, reads it back and only then claims it, so a
 receipt that could not be read stays unread for a later entry. A claim names
 its claimant, so a retry of the same call gets the same receipts again and
-nobody else ever does.
+nobody else ever does. Each claim locks the task first and decides on what it
+reads after the lock, so a reply and an entry claiming at once cannot both win.
 """
 import json
 
 
 async def mark_turn_receipt_unread(store, space_id: str, token: str, capture_results) -> None:
-    """Call inside the checkpoint's transaction, after it completed."""
-    if not any(result.status == 'committed' for result in capture_results or []):
+    """Call inside the checkpoint's transaction, after it completed. A duplicate
+    is this same turn's earlier attempt: task capture keys carry the task token."""
+    if not any(result.status in ('committed', 'duplicate') for result in capture_results or []):
         return
     await store.runtime.driver.execute_query(
         '''
@@ -32,6 +34,7 @@ async def claim_turn_receipt(store, actor: dict, token: str, request) -> dict:
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_TASK_CONTEXT_SESSION]->
               (:FuliTaskContextSession)-[:HAS_CONTEXT]->(task:FuliTaskContext {token: $token})
+        SET task.turn_receipt_lock = coalesce(task.turn_receipt_lock, 0) + 1
         WITH task, task.turn_receipt_state AS state, task.turn_receipt_claimant AS claimant
         SET task.turn_receipt_state = CASE WHEN state = 'unread' THEN 'delivered' ELSE state END,
             task.turn_receipt_claimant = CASE WHEN state = 'unread' THEN $token ELSE claimant END
@@ -74,7 +77,9 @@ async def claim_session_turn_receipts(store, actor: dict, token: str, request) -
               (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(:FuliTaskContext {token: $token})
         MATCH (session)-[:HAS_CONTEXT]->(task:FuliTaskContext)
         WHERE task.token <> $token AND task.id IN $receipt_ids
-          AND (task.turn_receipt_state = 'unread' OR task.turn_receipt_claimant = $token)
+        SET task.turn_receipt_lock = coalesce(task.turn_receipt_lock, 0) + 1
+        WITH task
+        WHERE task.turn_receipt_state = 'unread' OR task.turn_receipt_claimant = $token
         SET task.turn_receipt_state = 'delivered', task.turn_receipt_claimant = $token
         RETURN task.id AS receipt_id
         ''', space_id=request.personal_space_id, token=token, receipt_ids=request.receipt_ids)

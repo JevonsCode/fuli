@@ -12,7 +12,7 @@ import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { agentMemoryRecord, prepareProjectAgentMemory } from './project-agent-memory.js';
-import { internalCaptureSkip, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
+import { internalCaptureSkip, legacyCaptureReceipts, normalizeTaskCaptures, taskCaptureInput, taskCaptureReceipt, taskCaptureReviewPaths, taskCaptureStatus } from './task-knowledge-routing.js';
 import { captureDisabled, taskCaptureScope } from './capture-decision.js';
 import { checkpointCaptureDecision, storedCheckpoint } from './checkpoint-capture.js';
 import { receiptNotices } from './capture-notice.js';
@@ -305,8 +305,10 @@ export async function checkpointTaskKnowledge(application, {
   const captureStatus = captureResults
     ? taskCaptureStatus(captureResults)
     : captureResult?.status ?? checkpoint.captureStatus;
+  // Both capture paths keep what they saved, so the turn's receipt can read it back.
+  const savedResults = captureResults ?? legacyCaptureReceipts(captureInput, captureResult);
   const completedTask = await application.taskContextRegistry.checkpoint(taskContextToken, {
-    ...checkpoint, captureStatus, ...(captureResults ? { captureResults } : {})
+    ...checkpoint, captureStatus, ...(savedResults ? { captureResults: savedResults } : {})
   }, sourceApplication);
   return finish({
     status: 'checkpointed',

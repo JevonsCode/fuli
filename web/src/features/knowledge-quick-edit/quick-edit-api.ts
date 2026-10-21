@@ -32,9 +32,10 @@ export function findTags(spaceId: string, item: KnowledgeItemSummary, query: str
     personalSpaceId: spaceId, q: query, limit: '8', ...(project ? { personalProjectId: project } : {}) })}`)
 }
 
-export function changeTag(spaceId: string, item: KnowledgeItemSummary, action: 'attach' | 'detach', tag: Pick<ItemTag, 'id'>) {
+export function changeTag(spaceId: string, item: KnowledgeItemSummary, action: 'attach' | 'detach',
+  tag: Pick<ItemTag, 'id'> & Partial<Pick<ItemTag, 'namespace' | 'project_id'>>) {
   return postJson<unknown>('/api/knowledge-tags', { action, personalSpaceId: spaceId,
-    personalProjectId: tagProjectId(item), tagId: tag.id, itemKind: item.item_kind, itemId: item.item_id })
+    personalProjectId: tagProjectId(item, tag), tagId: tag.id, itemKind: item.item_kind, itemId: item.item_id })
 }
 
 export interface TagCreated { outcome: 'created' | 'existing' | 'needs_decision'; tag?: TagCandidate | null;
