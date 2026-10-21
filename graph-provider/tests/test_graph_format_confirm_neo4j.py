@@ -13,6 +13,7 @@ import pytest
 from fuli_graph import graph_format_confirm
 from fuli_graph.graph_format import GraphFormatState, GraphFormatUnavailable
 from fuli_graph.runtime import ManagedNeo4jDriver
+from fuli_graph.graph_format_journal import journal_inventory
 from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION
 from test_graph_format_neo4j import (  # noqa: F401 - graph is a fixture
     ACCESS_TOKEN,
@@ -825,3 +826,22 @@ async def test_a_graph_a_newer_fuli_wrote_keeps_every_undo_journal(graph):
 
     assert len(before) == 5 and await _journal_states(driver) == before
     assert await _version(driver) == GRAPH_FORMAT_VERSION + 1
+
+
+@pytest.mark.asyncio
+async def test_journal_sizes_count_utf8_bytes_not_characters(graph):
+    settings, driver = graph
+    # Two journals alike but for one record's text: two Latin letters, or two
+    # Chinese characters of three UTF-8 bytes each.
+    for apply_id, ref in (('ja', 'ab'), ('jb', '记录')):
+        await driver.execute_query(
+            """
+            CREATE (:FuliDataFormatUndo {apply_id: $id, kind: 'apply', migration_id: 'graph/5-x',
+                                         state: 'rolled_back', recorded_at: datetime('2026-10-01T00:00:00Z')})
+            CREATE (:FuliDataFormatUndo {apply_id: $id, kind: 'record', ref: $ref})
+            """,
+            id=apply_id, ref=ref,
+        )
+    sizes = {j['applyId']: j['bytes'] for j in await journal_inventory(driver)}
+
+    assert sizes['jb'] - sizes['ja'] == 4

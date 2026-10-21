@@ -202,7 +202,8 @@ async def applied_journals(queries) -> list[JournalHeader]:
 
 async def journal_inventory(queries) -> list[dict]:
     """Every journal in the graph, newest first: its apply, state, entries
-    and an estimate of its size (the JSON size of its nodes' properties)."""
+    and an estimate of its size (the UTF-8 bytes of its nodes' properties
+    as JSON)."""
     records = await _rows(
         queries,
         f"""
@@ -219,7 +220,8 @@ async def journal_inventory(queries) -> list[dict]:
             'entries': 0, 'bytes': 0,
         })
         journal['entries'] += 1
-        journal['bytes'] += len(json.dumps(dict(record['properties']), default=str, ensure_ascii=False))
+        journal['bytes'] += len(
+            json.dumps(dict(record['properties']), default=str, ensure_ascii=False).encode('utf-8'))
         if record['kind'] == 'apply':
             journal.update(migrationId=record['migration_id'], state=record['state'],
                            recordedAt=record['recorded_at'])
