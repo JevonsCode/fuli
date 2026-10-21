@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -211,4 +213,38 @@ test('a denial where the ledger directory cannot be created has nothing to remov
   assert.equal(await ledger.deny('generation-1', 'session_paused'), 'removed');
   assert.notEqual(await ledger.skipReason('generation-1'), null, 'a session without a record is still skipped');
   assert.equal(readFileSync(blocker, 'utf8'), 'synthetic');
+});
+
+// dot #250 (rec#10 6310637253): a ledger that exists but cannot be checked
+// for a moment is never taken for absent. The denial is unkept, the session
+// keeps skipping, and once access recovers the old record is still there.
+test('a ledger that is briefly inaccessible is unkept, not removed, and keeps skipping', async (t) => {
+  const root = directory(t);
+  const runtimeConfigPath = join(root, 'graph-runtime.json');
+  const ledger = transcriptCaptureLedger(runtimeConfigPath, { session_id: 'synthetic-session' }, 'codex');
+  ledger.record('generation-1');
+  const directoryPath = join(root, 'transcript-capture');
+  const denied = (path) => String(path).startsWith(directoryPath);
+  const eaccess = () => Object.assign(new Error('synthetic EACCES'), { code: 'EACCES' });
+  const originals = { lstatSync: fs.lstatSync, mkdirSync: fs.mkdirSync, statSync: fs.statSync };
+  t.mock.method(fs, 'lstatSync', (path, ...rest) => {
+    if (denied(path)) throw eaccess();
+    return originals.lstatSync(path, ...rest);
+  });
+  t.mock.method(fs, 'mkdirSync', (path, ...rest) => {
+    if (denied(path)) throw eaccess();
+    return originals.mkdirSync(path, ...rest);
+  });
+  syncBuiltinESMExports();
+  let result;
+  try {
+    result = await ledger.deny('generation-1', 'policy_unavailable');
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
+
+  assert.equal(result, 'unkept');
+  assert.notEqual(await ledger.skipReason('generation-1'), null, 'the stretch is still skipped');
+  assert.equal(readdirSync(directoryPath).filter((name) => name.endsWith('.json')).length, 1);
 });

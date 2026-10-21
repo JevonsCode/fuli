@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { lstatSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { newerFormatError, pendingMigrationError } from '../../packages/roundtable/src/storage/data-format-error.js';
@@ -86,12 +86,26 @@ export function updateVersionedJsonFileAtomic(filePath, format, mutate, {
 export function removeVersionedJsonFileAtomic(filePath, format) {
   if (!format?.versions) throw new TypeError('A versioned JSON removal needs its store format');
   // No file, nothing to protect or remove: no lock is needed, and its
-  // directory may not even exist or be creatable.
-  if (!existsSync(filePath)) return;
+  // directory may not even exist or be creatable. Only "does not exist"
+  // means absent; a file that cannot be checked (EACCES, EIO…) may exist and
+  // must not be taken for gone, so that error is the caller's.
+  if (!fileExists(filePath)) return;
   withJsonFormatLock(filePath, () => {
     assertJsonFormatWritable(filePath, format);
     rmSync(filePath, { force: true });
   });
+}
+
+const ABSENT = new Set(['ENOENT', 'ENOTDIR']);
+
+function fileExists(filePath) {
+  try {
+    lstatSync(filePath);
+    return true;
+  } catch (error) {
+    if (ABSENT.has(error?.code)) return false;
+    throw error;
+  }
 }
 
 function readCurrentJson(filePath) {
