@@ -111,8 +111,11 @@ export class SessionCapturePauseStore {
     return { enabled: value.enabled, since: value.since };
   }
 
+  // since is when the default last changed; saving the same value changes nothing.
   setDefault(enabled) {
     if (typeof enabled !== 'boolean') throw new TypeError('The FULI session default must be on or off');
+    const current = this.defaultSetting();
+    if (current.enabled === enabled) return current;
     const value = { version: RECORD_VERSION, enabled, since: this.now() };
     if (this.directory) this.writeJson(join(this.directory, DEFAULT_FILE), value);
     else this.memoryDefault = value;
@@ -120,13 +123,19 @@ export class SessionCapturePauseStore {
   }
 
   // Keeps, once, the default a session started under: called at its task entry.
-  // A pin that cannot be saved could let a later default turn the session on,
-  // so the session is kept off in its own record instead, until the person
-  // starts it (Dot's review of #251). Throws when neither can be saved.
-  pinDefault(sessionId, sourceApplication) {
+  // started says when the host session began: { isNew } when its transcript
+  // does not exist yet, { at } from its transcript, or null when unknown. A
+  // session the default turned on after cannot have started under on unless it
+  // shows it started later, so it is pinned off: a session first seen while the
+  // default was off, whose pin could not be saved then, never turns on with the
+  // default (Dot's review of #251). A pin that cannot be saved is replaced by
+  // keeping the session off in its own record; throws when neither is saved.
+  pinDefault(sessionId, sourceApplication, started = null) {
     validSessionId(sessionId);
     if (this.#pin(sessionId) !== null) return;
-    const enabled = this.defaultSetting().enabled;
+    const setting = this.defaultSetting();
+    const enabled = setting.enabled && (setting.since === null || started?.isNew === true
+      || (Number.isFinite(started?.at) && started.at >= Date.parse(setting.since)));
     const value = { version: RECORD_VERSION, sourceApplication: requiredClient(sourceApplication) };
     if (!this.directory) {
       this.memoryPins.set(sessionId, { ...value, enabled });

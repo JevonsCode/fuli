@@ -68,11 +68,11 @@ test('C3b-1 sessions start with FULI on; with the default off a new session stay
   assert.ok((await codexEntry(f, f.dirs.novel, { session: SESSION_A })).context.taskContextToken);
   const fresh = await codexEntry(f, f.dirs.novel, { session: SESSION_B });
   assert.equal(fresh.context, undefined, 'no memory, preferences or task token');
-  assert.match(fresh.output.hookSpecificOutput.additionalContext, /not on for this session/);
-  assert.ok(fresh.output.systemMessage.includes('本会话未启用 FULI（新会话默认不启用）'), fresh.output.systemMessage);
+  assert.match(fresh.output.hookSpecificOutput.additionalContext, /not on for this session, by the default it started under/);
+  assert.ok(fresh.output.systemMessage.includes('本会话未启用 FULI（按本会话开始时的默认设置）'), fresh.output.systemMessage);
   const policy = await mcpCall(f, host(SESSION_B), 'get_capture_policy', { projectPath: f.dirs.novel });
   assert.deepEqual([policy.current.captured, policy.current.reason], [false, 'session_not_started']);
-  assert.match(await codexLine(f, SESSION_B, 'fuli status'), /本会话未启用（新会话默认不启用）；新会话默认不启用/);
+  assert.match(await codexLine(f, SESSION_B, 'fuli status'), /本会话未启用（按本会话开始时的默认设置）；新会话默认不启用/);
 
   assert.match(await codexLine(f, SESSION_B, 'fuli start'), /FULI 已在本会话启用/);
   const started = await codexEntry(f, f.dirs.novel, { session: SESSION_B });
@@ -86,7 +86,9 @@ test('C3b-1 sessions start with FULI on; with the default off a new session stay
   // A session that started while the default was off stays off when the default turns on.
   assert.equal((await codexEntry(f, f.dirs.novel, { session: SESSION_D })).context, undefined);
   assert.equal(requestSessionFuliDefault(f.app, { newSessions: 'on' }).newSessions, 'on');
-  assert.ok((await codexEntry(f, f.dirs.novel, { session: SESSION_C })).context.taskContextToken);
+  // A session that shows it is new (its transcript does not exist yet) starts under the new default.
+  assert.ok((await codexEntry(f, f.dirs.novel, { session: SESSION_C, transcriptPath: join(f.root, 'synthetic-new.jsonl') }))
+    .context.taskContextToken);
   assert.equal((await codexEntry(f, f.dirs.novel, { session: SESSION_D })).context, undefined);
   assert.equal((await mcpCall(f, host(SESSION_D), 'get_collaboration_preferences', { projectPath: f.dirs.novel,
     taskPrompt: 'Next task.' })).reason, 'session_not_started');
@@ -479,7 +481,8 @@ test('with the default off, a client without a native session is served only wit
   assert.equal((await entry('synthetic-cursor-started')).reason, 'session_not_started');
   assert.equal((await cursorLine('/fuli start')).continue, false);
   assert.deepEqual(await cursorLine('Plan.'), { continue: true });
-  assert.ok((await entry('synthetic-cursor-started')).taskContextToken, 'no Cursor conversation is off now');
+  // While new sessions start off, a call without a token may come from one FULI could not record.
+  assert.equal((await entry('synthetic-cursor-started')).reason, 'session_unattributed');
   // Another conversation starts under the default (off): now a call without a token could be from it.
   await runCursorLifecycleHook(['--event', 'beforeSubmitPrompt'], {
     readInput: async () => ({ conversation_id: 'synthetic-cursor-other', workspace_roots: [f.dirs.novel], prompt: 'Plan.' }),
@@ -644,4 +647,54 @@ test('the attribution token is an optional field of the tools Agents call withou
   }
   assert.equal(Object.hasOwn(byName.get('get_capture_policy').properties, 'taskContextToken'), true, 'tools that had one keep theirs');
   assert.equal(Object.hasOwn(byName.get('list_agent_interfaces').properties ?? {}, 'taskContextToken'), false);
+});
+
+// Dot's review of #251 at dd2dbe1: when neither the pin nor the session's own record can be saved,
+// nothing on disk says the session is off. While the default is off a call FULI cannot attribute
+// is refused anyway, and a session that began before the default turned on cannot pin on later:
+// only a session that shows it is new (no transcript yet) or began after the switch starts on.
+test('after a double write failure the session stays off, in the same turn and after the default turns on', async (t) => {
+  const f = await fixture(t);
+  requestSessionFuliDefault(f.app, { newSessions: 'off' });
+  const transcriptPath = join(f.root, 'synthetic-old-session.jsonl');
+  await writeFile(transcriptPath, `${JSON.stringify({ type: 'session_meta', payload: { id: SESSION_A } })}\n`);
+  const directory = sessionCapturePausePathForRuntime(f.runtimeConfigPath);
+  f.app.sessionCapturePauseStore = new SessionCapturePauseStore(directory, { now: () => f.clock.now,
+    writeJson: () => { throw Object.assign(new Error('read-only'), { code: 'EROFS' }); } });
+  const entry = await codexEntry(f, f.dirs.novel, { session: SESSION_A, transcriptPath });
+  assert.equal(entry.context, undefined, 'no task and no token');
+  const sameTurn = await mcpCall(f, { env: {}, sourceApplication: 'codex' }, 'search_knowledge_graph',
+    { personalSpaceId: 'synthetic-space', query: 'chapter' });
+  assert.deepEqual([sameTurn.status, sameTurn.reason], ['fuli_off', 'session_unattributed']);
+
+  // Writes recover and the person turns the default on later.
+  f.app.sessionCapturePauseStore = f.sessionPauses = new SessionCapturePauseStore(directory, { now: () => f.clock.now });
+  f.clock.now = '2099-01-01T00:00:00.000Z';
+  assert.equal(requestSessionFuliDefault(f.app, { newSessions: 'on' }).newSessions, 'on');
+  const later = await codexEntry(f, f.dirs.novel, { session: SESSION_A, transcriptPath });
+  assert.equal(later.context, undefined, 'it began before the default turned on, so it does not turn on with it');
+  assert.equal(record(f)(SESSION_A).stopped, true);
+  const fresh = await codexEntry(f, f.dirs.novel, { session: SESSION_B, transcriptPath: join(f.root, 'synthetic-brand-new.jsonl') });
+  assert.ok(fresh.context.taskContextToken, 'a new session starts under the new default');
+  await codexLine(f, SESSION_A, 'fuli start');
+  assert.ok((await codexEntry(f, f.dirs.novel, { session: SESSION_A, transcriptPath })).context.taskContextToken,
+    'only the person\'s start turns it on');
+});
+
+test('while new sessions start off, calls FULI cannot attribute are refused even with no session stopped', async (t) => {
+  const f = await fixture(t);
+  await codexEntry(f, f.dirs.novel, { session: SESSION_A });
+  requestSessionFuliDefault(f.app, { newSessions: 'off' });
+  assert.equal(f.app.hasStoppedSession('codex'), false, 'no session FULI saw is off');
+  const process = agentHostRequestContext(null, 'fuli-host-synthetic-codex-process', 'codex');
+  const tokenless = await callAgentTool(f.app, 'search_knowledge_graph', { query: 'chapter' }, process);
+  assert.deepEqual([tokenless.status, tokenless.reason], ['fuli_off', 'session_unattributed']);
+  // A token proves the session: A started under on and stays on; one without a durable record does not.
+  const a = await codexEntry(f, f.dirs.novel, { session: SESSION_A });
+  assert.ok(Array.isArray((await callAgentTool(f.app, 'search_knowledge_graph', { query: 'chapter',
+    taskContextToken: a.context.taskContextToken }, process)).facts));
+  const unrecorded = f.app.taskContextRegistry.begin({ sessionId: SESSION_C, personalProjectId: 'novel',
+    projectAgentId: 'lead-novel', sourceApplication: 'codex' });
+  assert.equal((await callAgentTool(f.app, 'search_knowledge_graph', { query: 'chapter', taskContextToken: unrecorded.token },
+    process)).reason, 'session_not_started');
 });

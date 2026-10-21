@@ -75,7 +75,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
     const output = await leases.withGraphLease('claude-code-lifecycle', () => withCaptureLookups(async () => {
       // The person's /fuli line is answered here and never reaches the model.
       const command = event === 'UserPromptSubmit' ? await sessionFuliCommandResult(app, { sessionId: input.session_id,
-        sourceApplication: 'claude_code', prompt: input.prompt, projectPath: input.cwd }) : null;
+        sourceApplication: 'claude_code', prompt: input.prompt, projectPath: input.cwd, transcriptPath: input.transcript_path }) : null;
       if (command) return claudeSessionCommandOutput(command);
       if (PREFERENCE_RESET_EVENTS.includes(event)) return claudeLifecycleOutput(event, input,
         (name, parameters) => (dependencies.callTool ?? callAgentTool)(app, name, parameters, request),
@@ -91,7 +91,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
           if (name === 'begin_task_context') onContext(context);
           return context;
         }, { delivery: app.preferenceDelivery, entryRefusal: () => sessionFuliEntryRefusal(app,
-          { sessionId: input.session_id, sourceApplication: 'claude_code' }) }) });
+          { sessionId: input.session_id, sourceApplication: 'claude_code', transcriptPath: input.transcript_path }) }) });
     }), request);
     return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
       { sourceApplication: 'claude_code', version: FULI_VERSION, sessionId: input.session_id })) : output;

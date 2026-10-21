@@ -28,7 +28,7 @@ export async function cursorLifecycleOutput(event, input, invoke, session = null
   if (event === 'beforeSubmitPrompt') {
     // Blocked: Cursor shows user_message to the person instead of sending the prompt.
     const command = await session?.command({ sessionId, sourceApplication: 'cursor', prompt: input.prompt,
-      projectPath: Array.isArray(roots) && roots.length === 1 ? roots[0] : null });
+      projectPath: Array.isArray(roots) && roots.length === 1 ? roots[0] : null, transcriptPath: input.transcript_path ?? null });
     if (command) return { continue: false, user_message: `FULI: ${command.message}` };
   }
   if (!Array.isArray(roots) || roots.length !== 1 || typeof roots[0] !== 'string') {
@@ -39,7 +39,9 @@ export async function cursorLifecycleOutput(event, input, invoke, session = null
   const projectPath = roots[0];
   if (event === 'beforeSubmitPrompt') {
     // No task entry; the Agent's own entry call is refused the same way.
-    if (session?.entryRefusal({ sessionId, sourceApplication: 'cursor' })) return { continue: true };
+    if (await session?.entryRefusal({ sessionId, sourceApplication: 'cursor', transcriptPath: input.transcript_path ?? null })) {
+      return { continue: true };
+    }
     // Cursor's documented prompt output has no additional_context field.
     // Its session-start guidance + MCP fallback supply per-turn context.
     await invoke('begin_task_context', {

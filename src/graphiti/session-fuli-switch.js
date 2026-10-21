@@ -118,7 +118,7 @@ const NOTED = new Set(['stopped', 'already_stopped', 'started', 'already_started
 const MESSAGES = Object.freeze({
   stopped: fuli => `${sinceNotice('FULI 已在本会话停用', fuli.since)}：${STOP_EFFECT}`,
   already_stopped: fuli => fuli.basis === 'default'
-    ? 'FULI 在本会话本来就未启用（新会话默认不启用），未重复执行。输入 /fuli start 可启用。'
+    ? 'FULI 在本会话本来就未启用（按本会话开始时的默认设置），未重复执行。输入 /fuli start 可启用。'
     : fuli.basis === 'start_unsaved' ? 'FULI 在本会话保持停用（未能保存本会话开始时的设置），未重复执行。输入 /fuli start 可启用。'
     : `${sinceNotice('FULI 在本会话已是停用状态', fuli.since)}，未重复执行。`,
   started: () => 'FULI 已在本会话启用：之后按现有权限和设置注入记忆、自动记录和协作；停用期间的对话不会补录。',
@@ -129,7 +129,7 @@ const MESSAGES = Object.freeze({
   parent_stopped: () => '本会话由已停用 FULI 的会话发起，需要先在发起它的会话中启用；状态未改变。',
   unsaved: fuli => `FULI 未能保存本会话的启停状态，状态未改变${fuli ? `（当前${fuli.enabled ? '启用' : '停用'}）` : ''}。`,
   unavailable: () => 'FULI 无法读取本会话的启停状态，本会话不会自动记录；请稍后重试或检查本地数据目录。',
-  status: fuli => `FULI 在本会话${fuli.enabled ? '已启用' : fuli.basis === 'default' ? '未启用（新会话默认不启用）'
+  status: fuli => `FULI 在本会话${fuli.enabled ? '已启用' : fuli.basis === 'default' ? '未启用（按本会话开始时的默认设置）'
     : fuli.basis === 'start_unsaved' ? '保持停用（未能保存本会话开始时的设置）'
     : sinceNotice('已停用', fuli.since)}；新会话默认${fuli.newSessions === 'on' ? '启用' : '不启用'}。`
 });

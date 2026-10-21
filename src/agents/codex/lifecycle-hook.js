@@ -99,7 +99,8 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     const output = await leases.withGraphLease('codex-lifecycle', async () => {
       // The person's fuli line is answered here and never reaches the model.
       const command = event === 'UserPromptSubmit' ? await sessionFuliCommandResult(app, { sessionId: input?.session_id,
-        sourceApplication: 'codex', prompt: input?.prompt, projectPath: input?.cwd ?? null }) : null;
+        sourceApplication: 'codex', prompt: input?.prompt, projectPath: input?.cwd ?? null,
+        transcriptPath: input?.transcript_path ?? null }) : null;
       if (command) return codexSessionCommandOutput(command);
       if (PREFERENCE_RESET_EVENTS.includes(event)) return codexLifecycleOutput(event, input,
         (name, parameters) => invokeTool(app, name, parameters, { signal: dependencies.signal }),
@@ -112,7 +113,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
           if (name === 'begin_task_context') onContext(context);
           return context;
         }, { delivery: app.preferenceDelivery, entryRefusal: () => sessionFuliEntryRefusal(app,
-          { sessionId: input.session_id, sourceApplication: 'codex' }) }) });
+          { sessionId: input.session_id, sourceApplication: 'codex', transcriptPath: input.transcript_path ?? null }) }) });
     }, { signal: dependencies.signal });
     const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
       { sourceApplication: 'codex', version: FULI_VERSION, sessionId: input?.session_id })) : output;

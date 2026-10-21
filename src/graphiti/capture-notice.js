@@ -12,7 +12,7 @@ const REASON_NOTICES = Object.freeze({
   // session before /clear (capture-decision.js).
   session_binding_stale: 'FULI 绑定的是 /clear 之前的会话，本会话的自动记录暂不可用；重启客户端或新开会话即可恢复',
   // rec#5 C3b: new sessions start with FULI off until the person starts it.
-  session_not_started: '本会话未启用 FULI（新会话默认不启用），输入 /fuli start 可启用',
+  session_not_started: '本会话未启用 FULI（按本会话开始时的默认设置），输入 /fuli start 可启用',
   // The default this session started under could not be saved, so it stays off.
   session_start_unsaved: 'FULI 未能保存本会话开始时的设置，本会话保持停用，输入 /fuli start 可启用',
   // The call carries no task token and its client cannot say which session it

@@ -43,13 +43,15 @@ export function sessionCaptureDecision(application, scope) {
 // session at all, like Cursor and remote clients). So a call without a task
 // token is refused while any session of its client is stopped or started off
 // and not started since, rather than served to a session that may be that one
-// (Dot's review of #251). Calls with a task token keep one window's stop out
-// of another (C3b-5).
+// (Dot's review of #251). While new sessions start off, any session may be one
+// FULI could not record, so a call without a task token is refused then too.
+// Calls with a task token keep one window's stop out of another (C3b-5); a
+// token's session with no durable record follows the default, so it is off.
 export function sessionUseDecision(application, scope) {
   if (!sessionsMayBeOff(application)) return ALLOWED;
   return decideSessions(application, scope, { refusal: offRefusal,
     unattributed: sourceApplication => application.hasStoppedSession(sourceApplication)
-      ? denied('session_unattributed') : null });
+      || !application.sessionFuliDefault().enabled ? denied('session_unattributed') : null });
 }
 
 // False when FULI is on for every session, the usual case, so a caller can
