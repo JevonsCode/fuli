@@ -2,7 +2,7 @@
 // file and a Provider double with the cursor and owner rules of the real one.
 import assert from 'node:assert/strict';
 import { chmodSync } from 'node:fs';
-import { appendFile, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -330,46 +330,81 @@ test('an off-period Stop whose capture expired never lets that turn be imported 
   assert.ok(s.markers().length > 0, 'the off stretch is marked once capture is back');
 });
 
-test('an unresolved turn skips every sync until its own id ends or releases it, and outlives the syncs that cover it', async (t) => {
+test('unresolved turns are held in order, skip every sync and end only as a whole after the last of them', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-unresolved-turn-'));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
   const runtimeConfigPath = join(directory, 'runtime.json');
   const ledger = transcriptCaptureLedger(runtimeConfigPath, { session_id: 'synthetic-session' }, 'claude_code');
   ledger.record('v1');
   assert.equal(await ledger.skipReason('v1'), null);
-  const first = { turn: 'turn-1', owner: 'a'.repeat(64), from: 120 };
-  assert.equal(ledger.holdTurn(first), true);
-  assert.deepEqual(await ledger.unresolvedTurn(), first);
+  assert.equal(ledger.holdTurn({ turn: 'turn-1', from: 120 }), 'ledger');
+  ledger.ownTurn('turn-1', 'a'.repeat(64));
+  assert.equal(ledger.holdTurn({ turn: 'turn-2', from: 180 }), 'ledger');
+  assert.deepEqual(ledger.heldTurns(), { unprovable: false, skipUntil: null,
+    turns: [{ turn: 'turn-1', from: 120, owner: 'a'.repeat(64) }, { turn: 'turn-2', from: 180, owner: null }] });
   assert.equal(await ledger.skipReason('v1'), TURN_UNRESOLVED);
-  // A covering sync and a denial keep it: only its own resolution ends it.
+  // A covering sync and a denial keep them: only their own end does.
   ledger.record('v1');
   assert.equal(await ledger.deny('v1', 'session_paused'), 'kept');
-  assert.deepEqual(await ledger.unresolvedTurn(), first);
-  assert.equal(await ledger.skipReason('v1'), 'session_paused');
+  assert.equal(ledger.heldTurns().turns.length, 2);
   ledger.record('v1');
   assert.equal(await ledger.skipReason('v1'), TURN_UNRESOLVED);
-  // Only the named turn ends: an older turn's id leaves a newer turn held.
-  const second = { turn: 'turn-2', owner: 'a'.repeat(64), from: 180 };
-  ledger.holdTurn(second);
-  assert.equal(ledger.endTurn('turn-1'), true);
-  assert.deepEqual(await ledger.unresolvedTurn(), second);
-  assert.equal(ledger.releaseTurn('turn-1'), true);
-  assert.deepEqual(await ledger.unresolvedTurn(), second);
-  assert.equal(await ledger.skipReason('v1'), TURN_UNRESOLVED);
-  // Ended with an owner: the next sync imports normally.
-  assert.equal(ledger.endTurn('turn-2'), true);
-  assert.equal(await ledger.unresolvedTurn(), null);
+  // Only the last held turn ends them, so an older turn's evidence never ends a newer turn.
+  assert.equal(ledger.endTurns('turn-1'), false);
+  assert.equal(ledger.heldTurns().turns.length, 2);
+  assert.equal(ledger.endTurns('turn-2'), true);
+  assert.deepEqual(ledger.heldTurns(), { unprovable: false, turns: [], skipUntil: null });
   assert.equal(await ledger.skipReason('v1'), null);
-  // Released: what is left of the turn is skipped once, then imports resume.
-  ledger.holdTurn({ turn: 'turn-3', owner: 'b'.repeat(64), from: 240 });
-  assert.equal(ledger.releaseTurn('turn-3'), true);
-  assert.equal(await ledger.unresolvedTurn(), null);
+  // A fresh entry ends what was held and leaves a byte nothing before may be imported.
+  ledger.holdTurn({ turn: 'turn-3', from: 240 });
+  assert.equal(ledger.enteredAfter(300), true);
+  assert.deepEqual(ledger.heldTurns(), { unprovable: false, turns: [], skipUntil: 300 });
   assert.equal(await ledger.skipReason('v1'), TURN_UNRESOLVED);
-  ledger.record('v1');
+  ledger.skipped(300);
   assert.equal(await ledger.skipReason('v1'), null);
-  assert.equal(ledger.releaseTurn('turn-3'), true, 'nothing to release is not a failure');
+  // Every write is version 2.
+  const [name] = (await readdir(join(directory, 'transcript-capture'))).filter((entry) => entry.endsWith('.json'));
+  assert.equal(JSON.parse(await readFile(join(directory, 'transcript-capture', name), 'utf8')).version, 2);
   // The skipped stretch names the reason and no content.
   const marker = notRecordedEvent(240, 300, TURN_UNRESOLVED);
   assert.match(marker.content, /task ownership was not confirmed, so it was not recorded under any task; native bytes 240 to 300/);
   assert.equal(notRecordedReason(marker.content), TURN_UNRESOLVED);
+});
+
+test('a ledger that cannot be proven holds the session, and an unwritable one falls back to its own hold', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-unprovable-ledger-'));
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
+  const runtimeConfigPath = join(directory, 'runtime.json');
+  const ledger = transcriptCaptureLedger(runtimeConfigPath, { session_id: 'synthetic-session' }, 'claude_code');
+  ledger.record('v1');
+  const [name] = (await readdir(join(directory, 'transcript-capture'))).filter((entry) => entry.endsWith('.json'));
+  const file = join(directory, 'transcript-capture', name);
+  for (const [label, content] of [['corrupt', '{not json'], ['newer version', JSON.stringify({ version: 3, settings: 'v1' })],
+    ['invalid held state', JSON.stringify({ version: 2, settings: 'v1', held: [{ turn: '' }] })]]) {
+    await writeFile(file, content);
+    assert.equal(ledger.heldTurns().unprovable, true, label);
+    assert.equal(await ledger.skipReason('v1'), TURN_UNRESOLVED, label);
+  }
+  // A newer version is never rewritten; a corrupt one is replaced only by a record that stays held.
+  await writeFile(file, JSON.stringify({ version: 3, settings: 'v1' }));
+  ledger.record('v1');
+  assert.equal(await readFile(file, 'utf8'), JSON.stringify({ version: 3, settings: 'v1' }));
+  await writeFile(file, '{not json');
+  ledger.record('v1');
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { version: 2, settings: 'v1', unprovable: true });
+  assert.equal(ledger.heldTurns().unprovable, true);
+  // A fresh entry proves the state again.
+  assert.equal(ledger.enteredAfter(10), true);
+  assert.equal(ledger.heldTurns().unprovable, false);
+  // The record cannot be written: the turn is kept in its own hold, which holds the session as unprovable.
+  await rm(file);
+  await mkdir(file);
+  assert.equal(ledger.heldTurns().unprovable, true, 'an unreadable record is not absent');
+  await rm(file, { recursive: true });
+  await writeFile(file, JSON.stringify({ version: 3 }));
+  assert.equal(ledger.holdTurn({ turn: 'turn-f', from: 5 }), 'fallback');
+  await rm(file);
+  assert.equal(ledger.heldTurns().unprovable, true, 'the fallback hold alone holds the session');
+  assert.equal(ledger.enteredAfter(20), true);
+  assert.equal(ledger.heldTurns().unprovable, false);
 });

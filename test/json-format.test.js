@@ -186,14 +186,14 @@ test('a denial that times out on the ledger lock leaves a newer record in place 
     import { writeFileSync } from 'node:fs';
     import { acquireFileLock } from ${JSON.stringify(lock)};
     const release = acquireFileLock(process.argv[1]);
-    writeFileSync(process.argv[2], JSON.stringify({ version: 2, settings: 'newer' }));
+    writeFileSync(process.argv[2], JSON.stringify({ version: 3, settings: 'newer' }));
     process.stdout.write('holding\\n');
     setTimeout(release, 6500);
   `, join(root, 'transcript-capture', '.fuli-format.lock'), file], { stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((resolve) => child.stdout.once('data', resolve));
 
   assert.equal(await ledger.deny('generation-2', 'session_paused'), 'unkept');
-  assert.equal(readFileSync(file, 'utf8'), JSON.stringify({ version: 2, settings: 'newer' }));
+  assert.equal(readFileSync(file, 'utf8'), JSON.stringify({ version: 3, settings: 'newer' }));
   assert.notEqual(await ledger.skipReason('generation-2'), null, 'the stretch is skipped, never imported');
   await new Promise((resolve) => child.once('exit', resolve));
   assert.equal(await ledger.deny('generation-2', 'session_paused'), 'unkept', 'a newer record is never removed');

@@ -409,7 +409,7 @@ async function unresolvedTurnSession(t) {
       await host({ type: 'user', message: { role: 'user', content: notification } });
       await hook('UserPromptSubmit', { prompt: notification });
       await host({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: reply }] } });
-      return ledger.unresolvedTurn();
+      return ledger.heldTurns().turns.at(-1);
     },
     // A Stop that settles nothing: no verify, no automatic checkpoint.
     async quietStop(label) {
@@ -454,14 +454,14 @@ test('Claude Stop of an unresolved turn neither settles nor records under the ta
   // A checkpoint call of an earlier turn whose result arrives in a newer turn does not end the newer turn.
   await s.refreshTurn();
   await s.host(checkpointCall('toolu_old', s.task.token));
-  const older = await s.ledger.unresolvedTurn();
+  const older = s.ledger.heldTurns().turns.at(-1);
   const newer = await s.refreshTurn();
   assert.notEqual(newer.turn, older.turn);
   await s.host(toolResult('toolu_old'));
   s.state.checkpointed = true;
   await s.quietStop('a delayed receipt from an earlier turn');
-  assert.equal(s.ledger.endTurn(older.turn), true);
-  assert.deepEqual(await s.ledger.unresolvedTurn(), newer, 'an older turn id never ends a newer turn');
+  assert.equal(s.ledger.endTurns(older.turn), false, 'an older turn id never ends a newer turn');
+  assert.deepEqual(s.ledger.heldTurns().turns.at(-1), newer);
   s.state.checkpointed = false;
   // An explicit, successful continuation in the turn, confirmed by the Provider: recording resumes for A.
   await s.refreshTurn('SYNTHETIC_CONTINUED_REPLY');
@@ -471,7 +471,7 @@ test('Claude Stop of an unresolved turn neither settles nor records under the ta
   s.calls.length = 0;
   await s.hook('Stop');
   assert.deepEqual(s.calls, ['verify_task_checkpoint']);
-  assert.equal(await s.ledger.unresolvedTurn(), null);
+  assert.deepEqual(s.ledger.heldTurns().turns, []);
   assert.ok(s.said().some(event => event.token === s.task.token && /SYNTHETIC_CONTINUED_REPLY/.test(event.content)));
   assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_UNKNOWN_TURN_REPLY/);
 });
@@ -484,7 +484,7 @@ test('Claude unresolved turns stay held through resets until a fresh entry, and 
     ['SessionStart startup', () => s.hook('SessionStart', { source: 'startup' })],
     ['compaction', () => s.hook('PreCompact', { trigger: 'auto' })]]) {
     await reset();
-    assert.ok(await s.ledger.unresolvedTurn(), label);
+    assert.ok(s.ledger.heldTurns().turns.length, label);
     await s.host({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'SYNTHETIC_AFTER_RESET' }] } });
     await s.quietStop(label);
     await s.quietStop(`${label}, repeated Stop`);
@@ -493,7 +493,7 @@ test('Claude unresolved turns stay held through resets until a fresh entry, and 
   // A fresh entry is evidence from its own turn: B starts normally and its Stop settles B.
   await s.host({ type: 'user', message: { role: 'user', content: 'Synthetic task B.' } });
   await s.hook('UserPromptSubmit', { prompt: 'Synthetic task B.' });
-  assert.equal(await s.ledger.unresolvedTurn(), null);
+  assert.deepEqual(s.ledger.heldTurns().turns, []);
   assert.equal(s.state.current.token, 'fuli-task-synthetic-b');
   await s.host({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'SYNTHETIC_TASK_B_REPLY' }] } });
   s.calls.length = 0;
@@ -509,7 +509,7 @@ test('Claude unresolved turn ends without an owner when another task became curr
   s.state.current = { ...s.task, token: 'fuli-task-synthetic-c' };
   s.calls.length = 0;
   await s.hook('Stop');
-  assert.equal(await s.ledger.unresolvedTurn(), null);
+  assert.deepEqual(s.ledger.heldTurns().turns, []);
   assert.deepEqual(s.calls, ['verify_task_checkpoint', 'checkpoint_task_knowledge'], 'the new current task settles normally');
   assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_MOVED_REPLY/);
 });

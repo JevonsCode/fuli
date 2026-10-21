@@ -9,7 +9,8 @@ import { PREFERENCE_RESET_EVENTS, currentTaskPreferences, preferenceHookOutput, 
   from '../../conversations/preference-lifecycle.js';
 import { inPlaceRefreshBasis } from './host-notification.js';
 import { explicitlyContinuedInTurn, turnStart } from './turn-ownership.js';
-import { transcriptCaptureLedger } from '../../conversations/transcript-capture-gap.js';
+import { skipTranscriptSpan, transcriptCaptureLedger, TURN_UNRESOLVED } from '../../conversations/transcript-capture-gap.js';
+import { initialTranscriptBoundary, verifiedTranscriptEnd } from '../../conversations/transcript-reader.js';
 import { transcriptDigest } from '../../conversations/transcript-guard.js';
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
 import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext, sessionFuliSessionBegan }
@@ -25,7 +26,7 @@ import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 
-export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, holdTurn } = {}) {
+export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
   const sessionId = input?.session_id;
   if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {
@@ -42,7 +43,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     const off = await entryRefusal?.();
     if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
     const basis = inPlaceRefreshBasis(input);
-    if (basis) return claudeRefreshOutput(event, input, invoke, { delivery, currentTask, holdTurn }, basis);
+    if (basis) return claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis);
     const context = await invoke('begin_task_context', {
       sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source
     });
@@ -58,25 +59,24 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
 // conflict or checkpoint change since. It never begins or switches a task, so
 // an unfinished task keeps its checkpoint, and it never claims that this turn
 // belongs to that task. Without a readable owned task it establishes none.
-// Before the open task is read, the turn is held as unresolved for it
-// (holdTurn), so its Stop neither closes that task nor records the turn under it.
-async function claudeRefreshOutput(event, input, invoke, { delivery, currentTask, holdTurn }, basis) {
+// The installed hook holds the turn as unresolved before any of this
+// (runClaudeLifecycleHook); onCurrentTask names the task it was current for.
+async function claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis) {
   let refresh;
-  let held = true;
-  const read = async (name, parameters) => {
-    held = await holdTurn?.(parameters.taskContextToken) ?? true;
-    return invoke(name, parameters);
+  const lookup = async (...parameters) => {
+    const task = await currentTask?.(...parameters);
+    if (task) await onCurrentTask?.(task);
+    return task;
   };
   try {
-    refresh = await currentTaskPreferences(input, { sourceApplication: 'claude_code', currentTask, invoke: read });
+    refresh = await currentTaskPreferences(input, { sourceApplication: 'claude_code', currentTask: lookup, invoke });
   } catch (error) {
     // Only the reader's own refusal text is shown; other failures stay private.
     refresh = { status: 'unreadable', reason: error?.code === 'preference_recovery_blocked' ? error.message : null };
   }
-  const output = refresh.status === 'refreshed' ? await preferenceHookOutput(refresh.context, event, input, delivery, 'claude_code',
+  return refresh.status === 'refreshed' ? preferenceHookOutput(refresh.context, event, input, delivery, 'claude_code',
     `${UNCONFIRMED_TURN[basis]} ${REFERENCE_ONLY} ${START_NEW_WORK} ${TASK_RULES_ON_DEMAND}`, true)
     : { hookSpecificOutput: { hookEventName: event, additionalContext: noValidContext(refresh) } };
-  return held ? output : { ...output, systemMessage: [output.systemMessage, TURN_NOT_HELD].filter(Boolean).join('\n') };
 }
 
 function noValidContext(refresh) {
@@ -85,8 +85,11 @@ function noValidContext(refresh) {
     + `(${en}${refresh.reason ? `: ${refresh.reason}` : ''}); no task was created or switched. ${START_NEW_WORK}`;
 }
 
-const TURN_NOT_HELD = 'FULI：未能记录本轮任务归属未定，本轮结束时可能按当前任务关闭或记录。 '
-  + 'FULI: could not keep this turn\'s ownership as unresolved; its Stop may close or record it under the current task.';
+// A refresh turn whose unresolved state could not be kept anywhere does not
+// reach the model: it would otherwise run unprotected.
+const UNPROTECTED_TURN = 'FULI：无法保存本轮“任务归属未确认”的状态，为免把本轮记入或结算到当前任务，已拦下这条消息，请稍后重试。 '
+  + 'FULI: could not keep this turn\'s task ownership as unresolved, so this message was held back rather than risk '
+  + 'recording or settling it under the current task; retry shortly.';
 
 // Bilingual: the person reads these in the transcript as well as the model.
 const UNCONFIRMED_TURN = Object.freeze({
@@ -96,8 +99,8 @@ const UNCONFIRMED_TURN = Object.freeze({
     + 'FULI: this turn is a host system delivery, but its task ownership is not confirmed; no task was created or switched.'
 });
 const REFERENCE_ONLY = 'The current task context of this session follows for reference, refreshed now. Its taskContextToken '
-  + 'is not this turn\'s confirmed task: do not record this turn\'s work or a checkpoint under it unless you know this turn '
-  + 'continues that task\'s own work, and then say so in your reply.';
+  + 'is not this turn\'s confirmed task. This turn becomes that task\'s only by a successful checkpoint_task_knowledge with '
+  + 'that token in this turn, which you should make only if you know this turn continues that task\'s own work.';
 const START_NEW_WORK = 'If this turn is new work, start a task explicitly with get_collaboration_preferences '
   + '(projectPath = current working directory, taskPrompt = the request) and use the taskContextToken it returns.';
 const NO_VALID_CONTEXT = Object.freeze({
@@ -128,6 +131,15 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
   const { runtimeConfigPath } = (dependencies.resolveRuntimeOptions ?? resolveGraphRuntimeOptions)(
     args, dependencies.env ?? process.env
   );
+  const ledger = runtimeConfigPath && typeof input?.session_id === 'string' && input.session_id.trim()
+    ? transcriptCaptureLedger(runtimeConfigPath, input, 'claude_code') : null;
+  // A turn whose ownership cannot be proven is held as unresolved before
+  // anything else can fail or return: whatever the read below finds, its
+  // Stop neither settles the session's task nor records the turn under it.
+  const refreshTurn = event === 'UserPromptSubmit' && inPlaceRefreshBasis(input) ? randomUUID() : null;
+  if (refreshTurn && !ledger?.holdTurn({ turn: refreshTurn, from: turnStart(input.transcript_path) })) {
+    return { decision: 'block', reason: UNPROTECTED_TURN };
+  }
   let app;
   let leases;
   try {
@@ -143,34 +155,36 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
       const call = (name, parameters) => (dependencies.callTool ?? callAgentTool)(app, name, parameters, request);
       const currentTask = app.taskContextRegistry?.current?.bind(app.taskContextRegistry);
       const entryRefusal = () => sessionFuliEntryRefusal(app, { sessionId: input.session_id, sourceApplication: 'claude_code' });
-      const ledger = runtimeConfigPath && input?.session_id ? transcriptCaptureLedger(runtimeConfigPath, input, 'claude_code') : null;
-      // A refresh begins no task and claims no transcript boundary. Its turn is
-      // held as unresolved: no sync records it under any task and no Stop settles
-      // the task, through a session reset, compaction or FULI going off, until an
-      // explicit resolution in a turn or a fresh task entry.
-      if (event === 'UserPromptSubmit' && inPlaceRefreshBasis(input)) return claudeLifecycleOutput(event, input, call,
-        { delivery: app.preferenceDelivery, currentTask, entryRefusal, holdTurn: async token => ledger?.holdTurn({
-          turn: randomUUID(), owner: transcriptDigest(token), from: turnStart(input.transcript_path) }) ?? false });
+      // A refresh begins no task and claims no transcript boundary. Its turn
+      // stays held through a session reset, compaction or FULI going off, until
+      // an explicit resolution in a later Stop's turn or a fresh task entry.
+      if (refreshTurn) return claudeLifecycleOutput(event, input, call, { delivery: app.preferenceDelivery, currentTask,
+        entryRefusal, onCurrentTask: task => ledger.ownTurn(refreshTurn, transcriptDigest(task.token)) });
       if (PREFERENCE_RESET_EVENTS.includes(event)) return claudeLifecycleOutput(event, input, call,
         { delivery: app.preferenceDelivery, currentTask });
-      const unresolved = event === 'Stop' && await unresolvedAtStop(ledger, input, currentTask);
-      // A held turn before this prompt ends once this prompt freshly enters a task;
-      // the entry's sync has skipped what was left of it.
-      const held = event === 'UserPromptSubmit' ? await ledger?.unresolvedTurn() : null;
+      const unresolved = event === 'Stop' && await settleHeldTurns(app, ledger, input, currentTask) === 'held';
+      // Turns held before this prompt end once it freshly enters a task; the
+      // entry's sync skips what is left of them, and nothing before the prompt
+      // may be imported later either.
+      const held = event === 'UserPromptSubmit' ? ledger?.heldTurns() : null;
       let entered = false;
       if (input.transcript_path && (await captureDecision(app, transcriptCaptureScope(input, 'claude_code'))).allowed) {
         dependencies.onTranscriptGuard?.();
       }
       const lifecycle = await transcriptLifecycle({ application: app, runtimeConfigPath, input, event, sourceApplication: 'claude_code',
         captureTimeoutMs: dependencies.captureTimeoutMs, signal: dependencies.signal,
-        adapter: { normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript },
+        adapter: CLAUDE_TRANSCRIPT,
         // An unresolved turn's Stop neither verifies nor closes the task; its sync skips the turn.
         run: onContext => unresolved ? Promise.resolve({}) : claudeLifecycleOutput(event, input, async (name, parameters) => {
           const context = await call(name, parameters);
           if (name === 'begin_task_context') { entered = true; onContext(context); }
           return context;
         }, { delivery: app.preferenceDelivery, entryRefusal }) });
-      if (held && entered) ledger.endTurn(held.turn);
+      if (entered && (held?.unprovable || held?.turns.length)) {
+        const before = await initialTranscriptBoundary(input.transcript_path, input.session_id, input.prompt,
+          CLAUDE_TRANSCRIPT).catch(() => null);
+        if (before !== null) ledger.enteredAfter(before);
+      }
       return lifecycle;
     }), request);
     return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
@@ -180,22 +194,38 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
   }
 }
 
-// Whether this Stop ends a turn still unresolved for the task it was held
-// for. The turn becomes that task's only through an explicit continuation in
-// it that the Provider confirms (the task is checkpointed). It ends without an
-// owner when another task, or none, is current. A failed lookup keeps it held.
-async function unresolvedAtStop(ledger, input, currentTask) {
-  const turn = await ledger?.unresolvedTurn();
-  if (!turn) return false;
-  let task;
-  try { task = await currentTask?.(input.session_id, 'claude_code'); } catch { return true; }
-  if (task === undefined) return true;
-  if (!task || transcriptDigest(task.token) !== turn.owner) return !ledger.releaseTurn(turn.turn);
-  if (task.checkpoint?.phase === 'complete'
-      && explicitlyContinuedInTurn(input.transcript_path, input.session_id, task.token, turn.from)) {
-    return !ledger.endTurn(turn.turn);
+const CLAUDE_TRANSCRIPT = Object.freeze({ normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript });
+
+// What this Stop may do about the session's held turns: 'held' settles and
+// records nothing, 'normal' lets it run. Held turns end only by evidence from
+// the last of them: a successful explicit continuation of the task it was
+// current for, which the Provider confirms (that turn is then imported under
+// the task, everything before it only as a skipped span), or another task,
+// or none, being current (all of it is skipped). A state that cannot be
+// proven, an unknown owner or a failed lookup or skip keeps them held.
+async function settleHeldTurns(application, ledger, input, currentTask) {
+  const held = ledger?.heldTurns();
+  if (!held) return 'normal';
+  if (held.unprovable) return 'held';
+  const skipUntil = end => skipTranscriptSpan(application, input, 'claude_code', TURN_UNRESOLVED, end);
+  if (!held.turns.length) {
+    if (held.skipUntil === null) return 'normal';
+    if ((await skipUntil(async () => held.skipUntil)).status === 'failed') return 'held';
+    ledger.skipped(held.skipUntil);
+    return 'normal';
   }
-  return true;
+  const latest = held.turns.at(-1);
+  let task;
+  try { task = await currentTask?.(input.session_id, 'claude_code'); } catch { return 'held'; }
+  if (task === undefined) return 'held';
+  const moved = !task || (latest.owner !== null && transcriptDigest(task.token) !== latest.owner);
+  const proven = !moved && latest.owner !== null && task.checkpoint?.phase === 'complete'
+    && explicitlyContinuedInTurn(input.transcript_path, input.session_id, task.token, latest.from);
+  if (!moved && !proven) return 'held';
+  const end = moved ? () => verifiedTranscriptEnd(input.transcript_path, input.session_id, CLAUDE_TRANSCRIPT)
+    : async () => latest.from;
+  if ((await skipUntil(end)).status === 'failed') return 'held';
+  return ledger.endTurns(latest.turn) ? 'normal' : 'held';
 }
 
 // Only SessionStart with source "startup" is documented as a new session
