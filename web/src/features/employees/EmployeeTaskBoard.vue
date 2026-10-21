@@ -512,7 +512,8 @@ onBeforeUnmount(() => {
 /* While dragging, the source stays in place (the drag continues from it) and the target shows a slot. */
 .employee-all-projects-task.is-drag-source { opacity: .42; box-shadow: none; }
 .employee-all-projects-slot { flex: 0 0 auto; border: 1px dashed var(--color-accent-line); border-radius: 12px; background: var(--color-surface); opacity: .75; }
-.employee-all-projects-task.is-saving { opacity: .68; }
+/* Saving dims the card's content, not its loading label. */
+.employee-all-projects-task.is-saving > :not(.employee-all-projects-saving) { opacity: .6; }
 /* The pending label is the card's last row, in full: the card grows while it saves. */
 .employee-all-projects-saving { position: static; width: 100%; margin-top: -4px; padding: 0 12px 10px; box-sizing: border-box; color: var(--color-muted); font-size: 12px; text-align: left; }
 .employee-all-projects-saving :deep(.growth-loading__label) { font-size: 12px; white-space: normal; }
