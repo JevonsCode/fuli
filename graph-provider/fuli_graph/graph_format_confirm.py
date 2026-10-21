@@ -31,6 +31,7 @@ from .graph_format_journal import (
     applied_journals,
     changed_since,
     close_journal,
+    lock_journaled,
     open_journal,
     undo_journal,
 )
@@ -85,6 +86,9 @@ async def preview_graph_migration(driver, settings) -> dict | None:
             'count': len(keys), 'sampleIds': keys[:SAMPLE_SIZE],
             'scopeDigest': sha256_text(json.dumps(keys, ensure_ascii=False, separators=(',', ':'))),
         }, 'undo': 'available' if migration.journal.reversible else 'restore_only'}
+        if not migration.journal.reversible:
+            deleted = sum(1 for key in keys if key.startswith('delete:'))
+            plan['warning'] = f'{migration.journal.irreversible} ({deleted} records deleted)'
         return {**plan, 'digest': _digest(plan)}
     return None
 
@@ -127,8 +131,10 @@ async def _locked(driver, settings, now, lock_wait_seconds, sleep, operation):
 async def apply_graph_migration(
     driver, settings, *, digest: str, actor: dict, now=now_utc,
     lock_wait_seconds=LOCK_WAIT_SECONDS, sleep=asyncio.sleep, apply_id: str | None = None,
+    barrier=None,
 ) -> dict:
-    """driver is the unguarded maintenance handle."""
+    """driver is the unguarded maintenance handle. barrier: awaited after the
+    step ran, before the journal is closed (a test seam for other writers)."""
     apply_id = apply_id or str(uuid4())
 
     async def operation(run, queries):
@@ -151,11 +157,12 @@ async def apply_graph_migration(
                 'then preview again. Nothing was changed.', plan['automatic'],
             )
         migration = _MIGRATIONS[plan['step']['id']]
-        existing = await open_journal(queries, migration, apply_id=apply_id, plan_digest=digest,
-                                      recorded_at=now())
-        await migration.apply(queries, settings)
-        journaled = await close_journal(queries, migration, apply_id=apply_id,
-                                        existing_before=existing)
+        await open_journal(queries, migration, apply_id=apply_id, plan_digest=digest,
+                           recorded_at=now())
+        await migration.apply(queries, settings, apply_id=apply_id)
+        if barrier:
+            await barrier()
+        journaled = await close_journal(queries, migration, apply_id=apply_id)
         undo = (f'undo journal {apply_id}' if migration.journal.reversible
                 else 'not reversible: restore a graph export (fuli graph import)')
         await record_graph_event(
@@ -184,8 +191,10 @@ async def undoable_graph_migrations(driver) -> list[dict]:
 
 async def rollback_graph_migration(
     driver, settings, *, migration_id: str, actor: dict, now=now_utc,
-    lock_wait_seconds=LOCK_WAIT_SECONDS, sleep=asyncio.sleep,
+    lock_wait_seconds=LOCK_WAIT_SECONDS, sleep=asyncio.sleep, barrier=None,
 ) -> dict:
+    """barrier: awaited once the records are locked, before they are checked
+    (a test seam for concurrent business writes)."""
     async def operation(run, queries):
         journals = await applied_journals(queries)
         header = journals[0] if journals else None
@@ -205,6 +214,13 @@ async def rollback_graph_migration(
             )
         ledger = await read_graph_ledger(queries)
         version = ledger.version or 0
+        if version > GRAPH_FORMAT_VERSION:
+            # A newer FULI moved the graph on; moving it back is not this FULI's call.
+            raise _unavailable(
+                'data_format_blocked',
+                f'The graph uses data format {version}, newer than this FULI supports '
+                f'({GRAPH_FORMAT_VERSION}). Nothing was changed.', [migration_id],
+            )
         # Later schema steps and record steps found already in effect changed
         # no record; a later confirmed step did, and is undone first.
         later = [m for m in GRAPH_MIGRATIONS if header.to_version < m.to_version <= version]
@@ -216,6 +232,9 @@ async def rollback_graph_migration(
                 f'A later graph migration changed records after {migration_id}; undo that one '
                 'first. Nothing was changed.', [migration_id],
             )
+        await lock_journaled(queries, header, migration)
+        if barrier:
+            await barrier()
         changed = await changed_since(queries, header, migration)
         if changed:
             raise _unavailable(

@@ -7,8 +7,8 @@ import test from 'node:test';
 
 import { EXTERNAL_KNOWLEDGE_FORMAT, ExternalKnowledgeRegistry } from '../src/external-knowledge/registry.js';
 import {
-  applyConfirmedJsonMigration, describeJsonRestore, jsonBackupFiles, previewJsonMigration, restoreJsonFile,
-  rollbackJsonMigration, undoableJsonMigrations
+  applyConfirmedJsonMigration, describeJsonRestore, jsonBackupFiles, previewJsonMigration, recoverJsonFile,
+  restoreJsonFile, rollbackJsonMigration, undoableJsonMigrations
 } from '../src/storage/json-format-migration.js';
 
 // rec#17 D-09 part 2 for a FULI JSON data file: the external-knowledge
@@ -133,10 +133,92 @@ test('a whole-file restore reports what it discards and keeps the replaced file'
   assert.deepEqual([impact.currentVersion, impact.backupVersion], [2, 1]);
   assert.match(impact.warning, /is lost/);
 
-  const restored = restoreJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT, { backupRef: applied.backupRef, actor: CLI });
+  const restored = restoreJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT, { backupRef: applied.backupRef, expected: impact,
+    actor: CLI });
 
   assert.equal(JSON.parse(readFileSync(path, 'utf8')).bindings.length, 2);
   assert.equal(JSON.parse(readFileSync(join(directory, restored.safetyBackupRef), 'utf8')).bindings.length, 1);
   assert.throws(() => restoreJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT, { backupRef: 'format-backups/../bindings.json',
-    actor: CLI }), { code: 'data_format_backup_missing' });
+    expected: impact, actor: CLI }), { code: 'data_format_backup_missing' });
+});
+
+const ledgerPath = (path) => `${path}.format-ledger.json`;
+const intentPath = (path) => `${path}.format-intent.json`;
+
+test('a newer ledger or intent refuses the migration before the file is touched', (t) => {
+  for (const sidecar of [ledgerPath, intentPath]) {
+    const { directory, path } = legacyRegistry(t);
+    const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+    writeFileSync(sidecar(path), JSON.stringify({ version: 2, events: [] }));
+    const before = readFileSync(path);
+
+    assert.equal(previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT).action, 'blocked');
+    assert.throws(() => applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI }),
+      { code: 'data_format_blocked' });
+    assert.deepEqual(readFileSync(path), before);
+    assert.deepEqual(backups(directory), []);
+  }
+});
+
+// A crash or a full disk at each stage of the commit protocol, then the next operation.
+for (const [stage, expected] of [['intent', 'dropped'], ['file', 'completed'], ['ledger', 'completed']]) {
+  test(`an apply interrupted after its ${stage} step is ${expected} by the next operation`, (t) => {
+    const { path } = legacyRegistry(t);
+    const original = readFileSync(path, 'utf8');
+    const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+    const fault = Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+
+    assert.throws(() => applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI,
+      stage: (name) => { if (name === stage) throw fault; } }), /no space left/);
+    assert.ok(existsSync(intentPath(path)), 'the intent survives the interruption');
+    // Preview reads, never resolves: it plans on what resolution will leave.
+    const preview = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+    assert.equal(preview?.digest ?? null, expected === 'dropped' ? plan.digest : null);
+    assert.ok(existsSync(intentPath(path)));
+
+    assert.equal(recoverJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT), expected);
+    assert.equal(existsSync(intentPath(path)), false);
+    const events = (existsSync(ledgerPath(path)) ? JSON.parse(readFileSync(ledgerPath(path), 'utf8')).events : [])
+      .filter((event) => event.status === 'applied');
+    if (expected === 'dropped') {
+      assert.equal(readFileSync(path, 'utf8'), original);
+      assert.deepEqual(events, []);
+      assert.equal(applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI }).status,
+        'applied');
+    } else {
+      assert.equal(JSON.parse(readFileSync(path, 'utf8')).version, 2);
+      assert.equal(events.length, 1, 'committed exactly once');
+      assert.equal(applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI }).status,
+        'already_applied');
+      assert.equal(undoableJsonMigrations(path, EXTERNAL_KNOWLEDGE_FORMAT).length, 1, 'the undo metadata is there');
+    }
+  });
+}
+
+test('an interrupted change whose file changed otherwise is refused, not guessed', (t) => {
+  const { path } = legacyRegistry(t);
+  const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+  assert.throws(() => applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI,
+    stage: (name) => { if (name === 'intent') throw new Error('power cut'); } }), /power cut/);
+  writeFileSync(path, JSON.stringify({ version: 1, bindings: [] }));
+  const before = readFileSync(path);
+
+  assert.equal(previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT).action, 'blocked');
+  assert.throws(() => recoverJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT), { code: 'data_format_interrupted',
+    message: /neither as it was nor as that change left it.*restore it from format-backups\// });
+  assert.deepEqual(readFileSync(path), before);
+  assert.ok(existsSync(intentPath(path)));
+});
+
+test('a restore re-checks the file the person saw and stops if it changed', (t) => {
+  const { path } = legacyRegistry(t);
+  const plan = previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT);
+  const applied = applyConfirmedJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT, { digest: plan.digest, actor: CLI });
+  const impact = describeJsonRestore(path, EXTERNAL_KNOWLEDGE_FORMAT, applied.backupRef);
+  new ExternalKnowledgeRegistry(path).delete('b-2');
+  const before = readFileSync(path);
+
+  assert.throws(() => restoreJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT, { backupRef: applied.backupRef, expected: impact,
+    actor: CLI }), { code: 'data_format_stale_preview' });
+  assert.deepEqual(readFileSync(path), before);
 });

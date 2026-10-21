@@ -102,3 +102,17 @@ test('no MCP or Agent tool module reaches the operations that change data format
     && readFileSync(file, 'utf8').includes('x-fuli-human-review-token'));
   assert.deepEqual(senders, [join(ROOT, 'src/data-format/graph-format-client.js')]);
 });
+
+test('a migration request holds the graph runtime lease, so an adaptive runtime wakes and stays up', async () => {
+  const { handleApiRequest } = await import('../src/http/api-router.js');
+  const owners = [];
+  const system = { withGraphRuntimeLease: async (owner, run) => { owners.push(owner); return run(); } };
+  const sent = [];
+  const response = { setHeader() {}, writeHead(status) { sent.push(status); return this; }, end() {} };
+  const handled = await handleApiRequest({ request: { method: 'GET', url: '/api/data-format', headers: {},
+    socket: { remoteAddress: '127.0.0.1' } }, response, app: {}, system, dataFormatMigrations: migrations([]) });
+
+  assert.equal(handled, true);
+  assert.deepEqual(owners, ['http:GET:/api/data-format']);
+  assert.deepEqual(sent, [200]);
+});

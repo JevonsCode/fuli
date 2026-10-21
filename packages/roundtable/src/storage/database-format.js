@@ -76,7 +76,7 @@ export function openFormattedDatabase(path, format, { backup = backupSqliteDatab
     access = prepareFormat(database, path, format, { backup, now });
     if (access === 'write') {
       if (format.pragmas) database.exec(format.pragmas);
-      return database;
+      return versionGuarded(database, format);
     }
   } catch (error) {
     database.close();
@@ -86,6 +86,47 @@ export function openFormattedDatabase(path, format, { backup = backupSqliteDatab
   const readOnly = new DatabaseSync(path, { readOnly: true });
   readOnly.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
   return readOnly;
+}
+
+// A writable connection stays at the version it was opened for: an undo or
+// a whole-store restore (database-migration.js) may move the store to
+// another version while a process holds it open, so every write first reads
+// the version again and stops with a 503 instead of writing a format it no
+// longer matches. Reads are not checked.
+const WRITING_SQL = /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i;
+const READING_STATEMENT = /^\s*(?:SELECT|WITH|PRAGMA|EXPLAIN|VALUES)\b/i;
+const RUNS = new Set(['run', 'get', 'all', 'iterate']);
+
+function versionGuarded(database, format) {
+  if (database.location?.() === null) return database;
+  const check = () => {
+    const found = userVersion(database);
+    if (found !== format.version) {
+      throw new DataFormatError(format.store, 'data_format_changed_underneath', `FULI store "${format.store}" was `
+        + `moved to data format ${found} (an undo or a restore) while this process had it open at ${format.version}. `
+        + 'Nothing was written; restart FULI.');
+    }
+  };
+  return new Proxy(database, {
+    get(target, key) {
+      if (key === 'exec') return (sql) => { if (WRITING_SQL.test(sql)) check(); return target.exec(sql); };
+      if (key === 'prepare') return (...args) => guardedStatement(target.prepare(...args), check);
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+}
+
+function guardedStatement(statement, check) {
+  if (READING_STATEMENT.test(statement.sourceSQL)) return statement;
+  return new Proxy(statement, {
+    get(target, key) {
+      // A writing statement may return rows (RETURNING), so every way to run it checks.
+      if (RUNS.has(key)) return (...args) => { check(); return target[key](...args); };
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
 }
 
 function prepareFormat(database, path, format, options) {

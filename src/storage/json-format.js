@@ -130,8 +130,8 @@ function withJsonFormatLock(filePath, operation) {
 
 // Several versioned files of one directory changed under one hold of its
 // lock (a confirmed migration writes the file and its ledger). operation
-// gets write(path, value, format), which checks the file on disk again;
-// paths outside the directory are refused.
+// gets write(path, value, format) and remove(path, format), each checking the
+// file on disk again; paths outside the directory are refused.
 export function withJsonFormatDirectory(filePath, operation) {
   const directory = dirname(filePath);
   const inside = (path) => {
@@ -143,6 +143,11 @@ export function withJsonFormatDirectory(filePath, operation) {
       assertJsonFormatWritable(path, format);
       requireJsonFormatVersion(value, format);
       writeJsonFileAtomic(path, value);
+    },
+    remove(path, format) {
+      inside(path);
+      assertJsonFormatWritable(path, format);
+      rmSync(path, { force: true });
     }
   }));
 }
@@ -189,6 +194,13 @@ export function inspectJsonStore(filePath, format) {
 
 function jsonLedgerPath(filePath) {
   return `${filePath}.format-ledger.json`;
+}
+
+// Refuses a ledger this FULI cannot extend (a newer version, or not JSON)
+// before anything that would need to append to it.
+export function assertJsonLedgerWritable(filePath) {
+  assertJsonFormatWritable(jsonLedgerPath(filePath), LEDGER_FORMAT);
+  readJsonFile(jsonLedgerPath(filePath), { events: [] });
 }
 
 // Appends one event to a file's format ledger, with the writer of

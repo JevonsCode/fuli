@@ -1,4 +1,4 @@
-import { rmSync, statSync } from 'node:fs';
+import { existsSync, rmSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { inspectSqliteStore } from '../../packages/roundtable/src/storage/database-format.js';
@@ -17,6 +17,12 @@ import { recordFormatOperations } from './operations-log.js';
 //   applied), or
 // - the newest backup of the version the store is at now.
 // What was pruned is logged by store, backup name, version and size only.
+// The count and size are a target, not a hard bound: backups that must be
+// kept stay even beyond them, and graph undo journals live in the graph and
+// are not pruned here. A store whose ledger cannot be read keeps every
+// backup. The console prunes while it holds the data directory and
+// `fuli migrate prune` holds it too, so pruning never runs during a
+// whole-store restore (maintenance-lock.js).
 
 const DEFAULT_KEEP = 3;
 const DEFAULT_MAX_MEGABYTES = 1024;
@@ -72,12 +78,29 @@ export function pruneFormatBackups(dataDir, { policy = backupRetentionPolicy(), 
 }
 
 function neededBackups(store, backups) {
+  const everything = new Set(backups.map((backup) => backup.ref));
   const needed = new Set();
-  const undoable = store.kind === 'sqlite' ? undoableSqliteMigrations(store.path, store.format)
-    : undoableJsonMigrations(store.path, store.format);
+  let report;
+  try {
+    report = store.kind === 'sqlite' ? inspectSqliteStore(store.path, store.format)
+      : inspectJsonStore(store.path, store.format);
+  } catch {
+    return everything;
+  }
+  // A store or ledger that cannot be read cannot say which backup it needs,
+  // and an interrupted change still names its own.
+  if (['unavailable', 'unreadable'].includes(report.state) || report.ledger.some((entry) => entry.status === 'unreadable')
+    || existsSync(`${store.path}.format-intent.json`)) {
+    return everything;
+  }
+  let undoable;
+  try {
+    undoable = store.kind === 'sqlite' ? undoableSqliteMigrations(store.path, store.format)
+      : undoableJsonMigrations(store.path, store.format);
+  } catch {
+    return everything;
+  }
   for (const migration of undoable) needed.add(migration.backupRef);
-  const report = store.kind === 'sqlite' ? inspectSqliteStore(store.path, store.format)
-    : inspectJsonStore(store.path, store.format);
   const latest = report.ledger.findLast((entry) => entry.backupRef);
   if (latest) needed.add(latest.backupRef);
   const current = backups.filter((backup) => backup.version === report.version).at(-1);

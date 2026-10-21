@@ -37,6 +37,7 @@ const openedFromSettings = /^\/settings(?:[?#]|$)/
 const stores = computed(() => plan.value?.stores ?? [])
 const blocked = computed(() => plan.value?.blocked ?? [])
 const undoable = computed(() => plan.value?.undoable ?? [])
+const warnings = computed(() => stores.value.filter(store => store.warning))
 
 async function load() {
   reading?.abort()
@@ -154,6 +155,7 @@ onBeforeUnmount(() => reading?.abort())
             <div><dt>{{ t('dataFormat.undo') }}</dt><dd>{{ store.undo === 'available' ? t('dataFormat.undoAvailable') : t('dataFormat.undoRestoreOnly') }}</dd></div>
             <div><dt>{{ t('dataFormat.backup') }}</dt><dd>{{ store.kind === 'neo4j' ? t('dataFormat.backupJournal') : t('dataFormat.backupFile') }}</dd></div>
           </dl>
+          <p v-if="store.warning" class="data-format-warning data-format-body" data-store-warning>{{ store.warning }}</p>
         </Card>
 
         <Card v-if="blocked.length" as="section" class="data-format-card" aria-labelledby="data-format-blocked">
@@ -173,6 +175,10 @@ onBeforeUnmount(() => reading?.abort())
             <CardDescription>{{ t('dataFormat.digestNote') }}</CardDescription>
           </CardHeader>
           <div class="data-format-body">
+          <!-- Said before the confirm control: what no undo can bring back. -->
+          <ul v-if="warnings.length" class="data-format-warnings" data-confirm-warnings>
+            <li v-for="store in warnings" :key="store.label"><strong>{{ store.label }}</strong> {{ store.warning }}</li>
+          </ul>
           <p class="data-format-digest">
             <span>{{ t('dataFormat.digest') }}</span>
             <code :title="plan.digest" data-plan-digest>{{ shortDigest(plan.digest) }}…</code>
@@ -358,4 +364,19 @@ code {
 
 .data-format-results p { margin: 0; }
 .data-format-error { margin: 0; color: var(--color-danger); font-size: 14px; }
+
+.data-format-warning,
+.data-format-warnings {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.data-format-warnings {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
 </style>

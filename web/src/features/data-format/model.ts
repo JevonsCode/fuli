@@ -23,6 +23,8 @@ export interface StorePlan {
   automatic: string[]
   step: MigrationStep
   undo: 'available' | 'restore_only'
+  // What no undo brings back (a step that deletes), said before confirming.
+  warning?: string
   digest: string
 }
 

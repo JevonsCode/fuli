@@ -42,6 +42,24 @@ const mountPage = async () => {
 }
 
 describe('DataFormatPage', () => {
+  it('says what a deleting step loses before the confirm control', async () => {
+    const restoreOnly = plan()
+    restoreOnly.stores[1] = { ...restoreOnly.stores[1], undo: 'restore_only',
+      warning: 'deletes the older duplicate learning-cache projections; the undo journal cannot restore deleted records (2 records deleted)' } as never
+    api.getJson.mockResolvedValue(restoreOnly)
+    const wrapper = await mountPage()
+
+    expect(wrapper.get('[data-store-warning]').text()).toContain('cannot restore deleted records')
+    const confirm = wrapper.get('.data-format-confirm')
+    const warning = confirm.get('[data-confirm-warnings]')
+    expect(warning.text()).toContain('graph (personal)')
+    expect(warning.text()).toContain('2 records deleted')
+    const order = warning.element.compareDocumentPosition(confirm.get('#data-format-reviewed').element)
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.text()).toContain('不能单独撤销，只能整库恢复')
+  })
+
+
   it('lists each store with its step, count and sample IDs, and applies only after review', async () => {
     const wrapper = await mountPage()
     const cards = wrapper.findAll('[data-store-plan]')

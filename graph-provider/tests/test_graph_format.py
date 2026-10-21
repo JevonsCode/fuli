@@ -25,6 +25,7 @@ from fuli_graph.graph_format_backfills import (
     apply_group_id_separators,
     apply_learning_bucket_ids,
 )
+from fuli_graph.graph_format_journal import CREATED_TAG
 from fuli_graph.graph_format_ledger import LEDGER_LABELS
 from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION, GRAPH_MIGRATIONS
 from fuli_graph.graph_format_schema import schema_fingerprint
@@ -376,6 +377,9 @@ def test_a_new_graph_property_comes_with_the_next_graph_version():
                 continue
             properties.update(CYPHER_PROPERTY.findall(text))
             properties.update(MAP_KEY.findall(text))
+    # A confirmed step's tag on what it creates is removed before its
+    # transaction commits (graph_format_journal.py); it is never stored.
+    properties -= {CREATED_TAG}
     recorded = json.loads(PROPERTY_FINGERPRINTS.read_text(encoding='utf-8'))
     assert str(GRAPH_FORMAT_VERSION) in recorded, (
         f'Record the property set of graph version {GRAPH_FORMAT_VERSION} in '

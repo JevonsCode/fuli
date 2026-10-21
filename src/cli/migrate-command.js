@@ -4,10 +4,12 @@ import { pruneFormatBackups, backupRetentionPolicy } from '../data-format/backup
 import { collectFormatStatus } from '../data-format/format-status.js';
 import { personalGraphFormat } from '../data-format/graph-format-client.js';
 import { previewMigrations } from '../data-format/migration-plan.js';
+import { readFormatOperations } from '../data-format/operations-log.js';
 import {
   applyMigrations, describeRestore, restoreStore, rollbackMigration
 } from '../data-format/migration-operations.js';
 import { resolveSetupPaths } from '../setup/paths.js';
+import { acquireMaintenance, holdDataDirectory } from '../data-format/maintenance-lock.js';
 import { localRuntimeControl } from './local-runtime-control.js';
 import { confirmInTerminal, writeLine } from './terminal-io.js';
 
@@ -53,7 +55,8 @@ export async function runMigrateCommand(args, dependencies = {}) {
   const context = { options, paths, env, write: dependencies.write ?? writeLine,
     confirm: dependencies.confirm ?? confirmInTerminal, fetchImpl: dependencies.fetchImpl ?? fetch,
     graph: dependencies.graph ?? personalGraphFormat(paths.dataDir, { fetchImpl: dependencies.fetchImpl ?? fetch }),
-    consoleRunning: dependencies.consoleRunning ?? (() => localRuntimeControl(paths, env, () => {}).consoleRunning()) };
+    consoleRunning: dependencies.consoleRunning ?? (() => localRuntimeControl(paths, env, () => {}).consoleRunning()),
+    maintenance: dependencies.maintenance ?? { hold: holdDataDirectory, acquire: acquireMaintenance } };
   return ACTIONS[action](context);
 }
 
@@ -86,27 +89,33 @@ const ACTIONS = Object.freeze({
     return { exitCode: 0, plan };
   },
 
-  async apply({ options, paths, write, confirm, graph }) {
+  async apply({ options, paths, write, confirm, graph, maintenance }) {
     if (!options.digest) throw new TypeError(`${USAGE}\nRun fuli migrate preview first; apply needs its digest.`);
     const plan = await previewMigrations({ dataDir: paths.dataDir, graph });
-    if (plan.digest !== options.digest) {
+    const started = plan.digest !== options.digest && startedApply(paths.dataDir, options.digest);
+    if (started) {
+      // Confirmed before; its answer may never have arrived. Each store says whether it applied.
+      write(`This plan was confirmed at ${started.at}. Checking each store again: `
+        + `${started.stores.map((store) => `${store.label} ${store.migrationId}`).join(', ')}`);
+    } else if (plan.digest !== options.digest) {
       write(plan.digest ? 'The stores changed since that preview. Nothing was changed; this is the current plan:'
         : 'Nothing waits for a confirmation now. Nothing was changed.');
       if (plan.digest) write(formatPlan(plan, paths.dataDir));
       return { exitCode: FAILED_EXIT_CODE, status: 'stale' };
     }
-    write(formatPlan(plan, paths.dataDir, { confirming: true }));
+    if (!started) write(formatPlan(plan, paths.dataDir, { confirming: true }));
     if (!await confirm('Apply exactly these migrations? Recorded as entrypoint cli, presence unverified. [y/N] ',
       { defaultYes: false })) {
       write('Cancelled. Nothing was changed.');
       return { exitCode: 0, status: 'cancelled' };
     }
-    const result = await applyMigrations({ dataDir: paths.dataDir, digest: options.digest, actor: CLI_ACTOR, graph });
+    const result = await held(maintenance.hold(paths.dataDir), () => applyMigrations({ dataDir: paths.dataDir,
+      digest: options.digest, actor: CLI_ACTOR, graph }));
     write(formatOperation(result));
     return { exitCode: result.status === 'applied' ? 0 : FAILED_EXIT_CODE, ...result };
   },
 
-  async rollback({ options, paths, write, confirm, graph }) {
+  async rollback({ options, paths, write, confirm, graph, maintenance }) {
     if (!options.store || !options.migration) throw new TypeError(USAGE);
     write([`Undo migration ${options.migration} of ${options.store}.`,
       'Only the records that migration changed are put back, and only if none of them changed since;',
@@ -116,13 +125,13 @@ const ACTIONS = Object.freeze({
       write('Cancelled. Nothing was changed.');
       return { exitCode: 0, status: 'cancelled' };
     }
-    const result = await rollbackMigration({ dataDir: paths.dataDir, label: options.store,
-      migrationId: options.migration, actor: CLI_ACTOR, graph });
+    const result = await held(maintenance.hold(paths.dataDir), () => rollbackMigration({ dataDir: paths.dataDir,
+      label: options.store, migrationId: options.migration, actor: CLI_ACTOR, graph }));
     write(`Undone: ${result.migrationId} of ${result.label}; the store is at version ${result.version}.`);
     return { exitCode: 0, ...result };
   },
 
-  async restore({ options, paths, write, confirm, consoleRunning }) {
+  async restore({ options, paths, write, confirm, consoleRunning, maintenance }) {
     if (!options.store) throw new TypeError(USAGE);
     const { backups, impact } = describeRestore({ dataDir: paths.dataDir, label: options.store,
       backupRef: options.backup ?? null });
@@ -133,27 +142,42 @@ const ACTIONS = Object.freeze({
       'Restore one with --backup REF. Undoing one migration is fuli migrate rollback instead.'].join('\n'));
       return { exitCode: 0, backups };
     }
-    if (await consoleRunning()) {
+    // Held from before the question to the end, so no console starts meanwhile.
+    let release;
+    try {
+      release = maintenance.acquire(paths.dataDir);
+    } catch (error) {
+      if (error?.code !== 'data_format_maintenance') throw error;
       write('Stop FULI first (fuli stop): a whole-store restore needs the store unused. Nothing was changed.');
       return { exitCode: FAILED_EXIT_CODE, status: 'console_running' };
     }
-    write(formatRestore(impact));
-    if (!await confirm('Replace the whole store with this backup and lose those changes? [y/N] ', { defaultYes: false })) {
-      write('Cancelled. Nothing was changed.');
-      return { exitCode: 0, status: 'cancelled' };
-    }
-    const result = restoreStore({ dataDir: paths.dataDir, label: options.store, backupRef: options.backup,
-      actor: CLI_ACTOR });
-    write(`Restored ${result.label} from ${result.backupRef}. The replaced store is kept as ${result.safetyBackupRef}.`);
-    return { exitCode: 0, ...result };
+    return held(release, async () => {
+      if (await consoleRunning()) {
+        write('Stop FULI first (fuli stop): a whole-store restore needs the store unused. Nothing was changed.');
+        return { exitCode: FAILED_EXIT_CODE, status: 'console_running' };
+      }
+      write(formatRestore(impact));
+      if (!await confirm('Replace the whole store with this backup and lose those changes? [y/N] ',
+        { defaultYes: false })) {
+        write('Cancelled. Nothing was changed.');
+        return { exitCode: 0, status: 'cancelled' };
+      }
+      // The store must still be what the person was shown; checked again inside its lock.
+      const result = restoreStore({ dataDir: paths.dataDir, label: options.store, backupRef: options.backup,
+        expected: impact, actor: CLI_ACTOR });
+      write(`Restored ${result.label} from ${result.backupRef}. The replaced store is kept as `
+        + `${result.safetyBackupRef}.`);
+      return { exitCode: 0, ...result };
+    });
   },
 
-  async prune({ options, paths, env, write }) {
+  async prune({ options, paths, env, write, maintenance }) {
     const policy = backupRetentionPolicy(env, {
       keep: options.keep === undefined ? undefined : wholeNumber(options.keep, '--keep'),
       maxMegabytes: options['max-mb'] === undefined ? undefined : wholeNumber(options['max-mb'], '--max-mb')
     });
-    const result = pruneFormatBackups(paths.dataDir, { policy, dryRun: options['dry-run'] === true });
+    const result = await held(maintenance.hold(paths.dataDir), () => pruneFormatBackups(paths.dataDir,
+      { policy, dryRun: options['dry-run'] === true }));
     write([`${options['dry-run'] ? 'Would prune' : 'Pruned'} ${result.pruned.length} format backups; `
       + `${result.kept} kept. Backups an undo or the current version needs are never pruned.`,
     ...result.pruned.map((entry) => `  ${entry.label}: ${entry.backupRef} (version ${entry.version}, `
@@ -161,6 +185,15 @@ const ACTIONS = Object.freeze({
     return { exitCode: 0, ...result };
   }
 });
+
+function startedApply(dataDir, digest) {
+  return readFormatOperations(dataDir).findLast((event) => event.kind === 'apply_started'
+    && event.planDigest === digest) ?? null;
+}
+
+async function held(release, operation) {
+  try { return await operation(); } finally { release(); }
+}
 
 function wholeNumber(value, name) {
   const number = Number(value);
@@ -180,6 +213,7 @@ function formatPlan(plan, dataDir, { confirming = false } = {}) {
       `    ${store.undo === 'available' ? 'undo: fuli migrate rollback; ' : 'undo: only a whole restore; '}`
       + `${store.kind === 'neo4j' ? 'kept in an undo journal in the graph' : 'backed up first'}`);
     if (store.automatic?.length) lines.push(`    runs first: ${store.automatic.join(', ')}`);
+    if (store.warning) lines.push(`    WARNING: ${store.warning}`);
   }
   if (plan.blocked.length) {
     lines.push('', 'Not applied here:');

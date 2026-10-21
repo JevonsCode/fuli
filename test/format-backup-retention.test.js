@@ -76,3 +76,15 @@ test('the policy is configurable and rejects nonsense', () => {
   assert.deepEqual(backupRetentionPolicy({ FULI_FORMAT_BACKUP_KEEP: '5' }, { keep: 1 }).keep, 1);
   assert.throws(() => backupRetentionPolicy({ FULI_FORMAT_BACKUP_KEEP: '-1' }), /positive whole number/);
 });
+
+test('a store whose ledger cannot be read keeps every backup', (t) => {
+  const { root, backups } = migratedStore(t);
+  const database = new DatabaseSync(join(root, 'task-schedules.sqlite'));
+  database.exec('DROP TABLE fuli_format_ledger; CREATE TABLE fuli_format_ledger(garbage TEXT)');
+  database.close();
+
+  const result = pruneFormatBackups(root, { policy: { keep: 0, maxBytes: 1 } });
+
+  assert.deepEqual(result.pruned, []);
+  assert.equal(readdirSync(backups).length, 6);
+});

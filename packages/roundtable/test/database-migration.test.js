@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
@@ -222,7 +222,7 @@ test('a whole-store restore says what it discards, keeps a safety backup and is 
   assert.deepEqual(impact.laterMigrations, [{ migrationId: 'notes/3-checked', status: 'applied' }]);
   assert.match(impact.warning, /made after .* is lost/);
 
-  const restored = restoreSqliteStore(path, notesFormat(), { backupRef: applied.backupRef, actor: CLI });
+  const restored = restoreSqliteStore(path, notesFormat(), { backupRef: applied.backupRef, expected: impact, actor: CLI });
 
   assert.equal(restored.version, 2);
   const after = state(path);
@@ -231,6 +231,84 @@ test('a whole-store restore says what it discards, keeps a safety backup and is 
   assert.ok(existsSync(join(directory, restored.safetyBackupRef)));
   assert.equal(state(join(directory, restored.safetyBackupRef)).rows.length, 3, 'the discarded state is kept');
   assert.deepEqual(sqliteBackupFiles(path).map((entry) => entry.version), [2, 3]);
-  assert.throws(() => restoreSqliteStore(path, notesFormat(), { backupRef: '../notes.sqlite', actor: CLI }),
+  assert.throws(() => restoreSqliteStore(path, notesFormat(), { backupRef: '../notes.sqlite', expected: impact, actor: CLI }),
     { code: 'data_format_backup_missing' });
+});
+
+test('undo is refused when a newer FULI moved the store on, even with the migrated rows unchanged', (t) => {
+  const { path } = oldStore(t);
+  const plan = previewSqliteMigration(path, notesFormat());
+  applyConfirmedSqliteMigration(path, notesFormat(), { digest: plan.digest, actor: CLI });
+  // A future FULI stamps v4 without touching the checked column.
+  const database = new DatabaseSync(path);
+  database.exec('ALTER TABLE notes ADD COLUMN future TEXT; PRAGMA user_version = 4');
+  database.close();
+  const before = readFileSync(path);
+
+  assert.throws(() => rollbackSqliteMigration(path, notesFormat(), { migrationId: 'notes/3-checked', actor: CLI }),
+    { code: 'data_format_blocked', message: /uses data format 4, newer than this FULI supports \(3\)/ });
+  assert.deepEqual(readFileSync(path), before);
+  assert.equal(state(path).version, 4);
+});
+
+test('a restore re-checks the store the person saw inside its lock and stops if it changed', (t) => {
+  const { directory, path } = oldStore(t);
+  const plan = previewSqliteMigration(path, notesFormat());
+  const applied = applyConfirmedSqliteMigration(path, notesFormat(), { digest: plan.digest, actor: CLI });
+  const impact = describeSqliteRestore(path, notesFormat(), applied.backupRef);
+  // Written after the person read the warning (say, by a console started meanwhile).
+  const writer = openFormattedDatabase(path, notesFormat());
+  writer.exec("INSERT INTO notes(id, body, checked) VALUES('n3', 'written while the prompt was open', 'yes')");
+  writer.close();
+  const before = readFileSync(path);
+
+  assert.throws(() => restoreSqliteStore(path, notesFormat(), { backupRef: applied.backupRef, expected: impact, actor: CLI }),
+    { code: 'data_format_stale_preview', message: /changed after you saw what the restore discards/ });
+  assert.deepEqual(readFileSync(path), before);
+  assert.equal(backups(directory).length, 1, 'no safety backup either: nothing started');
+});
+
+test('no other writer gets in between the safety backup and the overwrite', (t) => {
+  const { path } = oldStore(t);
+  const plan = previewSqliteMigration(path, notesFormat());
+  const applied = applyConfirmedSqliteMigration(path, notesFormat(), { digest: plan.digest, actor: CLI });
+  const impact = describeSqliteRestore(path, notesFormat(), applied.backupRef);
+  let refused = null;
+
+  const restored = restoreSqliteStore(path, notesFormat(), { backupRef: applied.backupRef, expected: impact, actor: CLI,
+    stage: (name) => {
+      if (name !== 'safety-backup') return;
+      const writer = new DatabaseSync(path);
+      try {
+        writer.exec('PRAGMA busy_timeout = 50');
+        writer.exec("INSERT INTO notes(id, body) VALUES('late', 'a write in the restore window')");
+      } catch (error) {
+        refused = error;
+      } finally { writer.close(); }
+    } });
+
+  assert.match(String(refused?.message), /database is locked/);
+  assert.equal(restored.version, 2);
+  assert.deepEqual(state(path).rows.map((row) => row.id), ['n1', 'n2']);
+  // The safety backup holds exactly what was replaced.
+  assert.equal(state(join(dirname(path), restored.safetyBackupRef)).version, 3);
+});
+
+test('a connection opened before an undo stops writing instead of writing the old format', (t) => {
+  const { path } = oldStore(t);
+  const plan = previewSqliteMigration(path, notesFormat());
+  applyConfirmedSqliteMigration(path, notesFormat(), { digest: plan.digest, actor: CLI });
+  const open = openFormattedDatabase(path, notesFormat());
+  try {
+    open.prepare("INSERT INTO notes(id, body, checked) VALUES('n3', 'before the undo', 'yes')").run();
+    open.prepare("DELETE FROM notes WHERE id = 'n3'").run();
+
+    rollbackSqliteMigration(path, notesFormat(), { migrationId: 'notes/3-checked', actor: CLI });
+
+    assert.throws(() => open.prepare("INSERT INTO notes(id, body) VALUES('n4', 'after the undo')").run(),
+      { code: 'data_format_changed_underneath', message: /moved to data format 2 .* Nothing was written; restart FULI/ });
+    assert.throws(() => open.exec("UPDATE notes SET body = 'x'"), { code: 'data_format_changed_underneath' });
+    assert.equal(open.prepare('SELECT count(*) AS n FROM notes').get().n, 2, 'reads still work');
+  } finally { open.close(); }
+  assert.deepEqual(state(path).rows.map((row) => row.id), ['n1', 'n2']);
 });

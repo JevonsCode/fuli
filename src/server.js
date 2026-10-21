@@ -28,6 +28,7 @@ import { startJudgmentScheduler } from './judgment/scheduler.js';
 import { startTaskScheduler } from './task-schedules/scheduler.js';
 import { dataFormatNoticeLine, dataFormatNotices } from './data-format/format-notices.js';
 import { personalGraphFormat } from './data-format/graph-format-client.js';
+import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -54,11 +55,21 @@ export async function createServer(options = {}) {
     throw new Error(`Port ${port} is blocked for local fetch`);
   }
   const localOptions = app ? {} : resolveServerGraphOptions(options);
-  const runtime = createServerApplication({
-    app,
-    ...localOptions,
-    closeApplicationOnShutdown
-  });
+  // A whole-store restore (fuli migrate restore) excludes a running console
+  // and the console excludes it; refused here before any store is opened.
+  const releaseDataDirectory = localOptions.runtimeConfigPath
+    ? holdDataDirectory(dirname(localOptions.runtimeConfigPath)) : () => {};
+  let runtime;
+  try {
+    runtime = createServerApplication({
+      app,
+      ...localOptions,
+      closeApplicationOnShutdown
+    });
+  } catch (error) {
+    releaseDataDirectory();
+    throw error;
+  }
   const application = runtime.application;
   // The console, not every hook or MCP process, reports the local stores this
   // FULI cannot use as they are, named with their steps (rec#17).
@@ -83,7 +94,8 @@ export async function createServer(options = {}) {
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopTaskSchedules(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close()]) {
+      for (const close of [() => stopJudgment(), () => stopTaskSchedules(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close(),
+        () => releaseDataDirectory()]) {
         try {
           const pending = close();
           if (pending?.then) await pending;

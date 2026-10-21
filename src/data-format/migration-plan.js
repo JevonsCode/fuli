@@ -4,8 +4,8 @@ import {
   rollbackSqliteMigration, sqliteBackupFiles, undoableSqliteMigrations
 } from '../../packages/roundtable/src/storage/database-migration.js';
 import {
-  applyConfirmedJsonMigration, describeJsonRestore, jsonBackupFiles, previewJsonMigration, restoreJsonFile,
-  rollbackJsonMigration, undoableJsonMigrations
+  applyConfirmedJsonMigration, describeJsonRestore, jsonBackupFiles, previewJsonMigration, recoverJsonFile,
+  restoreJsonFile, rollbackJsonMigration, undoableJsonMigrations
 } from '../storage/json-format-migration.js';
 import { localStoreFiles } from './local-stores.js';
 
@@ -21,11 +21,18 @@ export const GRAPH_LABEL = 'graph (personal)';
 const ENGINES = Object.freeze({
   sqlite: Object.freeze({ preview: previewSqliteMigration, apply: applyConfirmedSqliteMigration,
     undoable: undoableSqliteMigrations, rollback: rollbackSqliteMigration, describeRestore: describeSqliteRestore,
-    restore: restoreSqliteStore, backups: sqliteBackupFiles }),
+    restore: restoreSqliteStore, backups: sqliteBackupFiles,
+    // A SQLite change commits in one transaction: nothing is left to resolve.
+    recover: () => null }),
   json: Object.freeze({ preview: previewJsonMigration, apply: applyConfirmedJsonMigration,
     undoable: undoableJsonMigrations, rollback: rollbackJsonMigration, describeRestore: describeJsonRestore,
-    restore: restoreJsonFile, backups: jsonBackupFiles })
+    restore: restoreJsonFile, backups: jsonBackupFiles, recover: recoverJsonFile })
 });
+
+// The local stores with their engines.
+export function localStoresWithEngines(dataDir) {
+  return localStoreFiles(dataDir).map((store) => ({ ...store, engine: ENGINES[store.kind] }));
+}
 
 // The engine and file of a local store by its label, or null.
 export function localStore(dataDir, label) {

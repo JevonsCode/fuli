@@ -9,7 +9,9 @@ import test from 'node:test';
 import { DataFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
 import { runMigrateCommand } from '../src/cli/migrate-command.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
+import { holdDataDirectory } from '../src/data-format/maintenance-lock.js';
 import { readFormatOperations } from '../src/data-format/operations-log.js';
+import { createServer } from '../src/server.js';
 import { TaskScheduleStore } from '../src/task-schedules/store.js';
 
 // rec#17 D-09 part 2: `fuli migrate preview|apply|rollback|restore` on a data
@@ -121,7 +123,7 @@ test('apply migrates both stores after a backup, logs it, and the receipt names 
   assert.equal(JSON.parse(readFileSync(join(root, 'external-knowledge', 'bindings.json'), 'utf8')).version, 2);
   assert.ok(readdirSync(join(root, 'format-backups')).some((name) => name.startsWith('task-schedules.sqlite.v0-')));
   assert.ok(readdirSync(join(root, 'external-knowledge', 'format-backups')).length === 1);
-  const operations = readFormatOperations(root);
+  const operations = readFormatOperations(root).filter((event) => event.kind === 'applied');
   assert.deepEqual(operations.map((event) => [event.kind, event.migrationId, event.entrypoint]), [
     ['applied', 'task-schedules/3-run-recovery', 'cli'], ['applied', 'external-knowledge/2-binding-targets', 'cli']]);
   assert.doesNotMatch(JSON.stringify(operations), /sentinel|Sentinel/);
@@ -181,4 +183,68 @@ test('apply checks the plan again and stops at a store that fails, keeping what 
   assert.deepEqual(calls, [['e'.repeat(64), 'cli']]);
   assert.deepEqual(result.results.map((entry) => entry.status), ['applied', 'applied', 'failed']);
   assert.match(result.output, /graph \(personal\): not applied \(data_format_stale_preview\)/);
+});
+
+test('retrying a completed apply whose answer was lost returns its result, not a stale preview', async (t) => {
+  const root = dataDir(t);
+  legacyDataDir(root);
+  const { plan } = await migrate(root, ['preview', '--json']);
+  await migrate(root, ['apply', '--digest', plan.digest]);
+  const before = snapshot(root);
+
+  const retried = await migrate(root, ['apply', '--digest', plan.digest]);
+
+  assert.equal(retried.exitCode, 0);
+  assert.deepEqual(retried.results.map((result) => [result.label, result.status]), [
+    ['task-schedules.sqlite', 'already_applied'], ['external-knowledge/bindings.json', 'already_applied']]);
+  const changed = Object.keys(snapshot(root)).filter((name) => snapshot(root)[name] !== before[name]
+    && name !== 'format-operations.json');
+  assert.deepEqual(changed, []);
+});
+
+test('a console started while the restore question is open is refused, and so is a restore while it runs', async (t) => {
+  const root = dataDir(t);
+  legacyDataDir(root);
+  const { plan } = await migrate(root, ['preview', '--json']);
+  const applied = await migrate(root, ['apply', '--digest', plan.digest]);
+  const backupRef = applied.results[0].backupRef;
+  writeFileSync(join(root, 'graph-runtime.json'), JSON.stringify({ version: 1, personal: {
+    providerUrl: 'http://127.0.0.1:1', accessToken: 'synthetic-token', principalId: 'p', spaceId: 's' }, workspaces: [] }));
+  let consoleStart = null;
+
+  const restored = await migrate(root, ['restore', '--store', 'task-schedules.sqlite', '--backup', backupRef], {
+    confirm: async () => {
+      // The person reads the warning; meanwhile FULI is started.
+      consoleStart = await createServer({ port: 0, runtimeConfigPath: join(root, 'graph-runtime.json') })
+        .then((server) => { server.server.close(); return 'started'; }, (error) => error.code);
+      return true;
+    } });
+
+  assert.equal(consoleStart, 'data_format_maintenance');
+  assert.equal(restored.status, 'restored');
+  const release = holdDataDirectory(root);
+  try {
+    const refused = await migrate(root, ['restore', '--store', 'task-schedules.sqlite', '--backup', backupRef]);
+    assert.deepEqual([refused.exitCode, refused.status], [1, 'console_running']);
+    assert.equal(refused.questions.length, 0);
+  } finally { release(); }
+});
+
+test('the terminal says what a deleting graph step loses before it asks', async (t) => {
+  const root = dataDir(t);
+  const warning = 'deletes the older duplicate learning-cache projections; the undo journal cannot restore deleted '
+    + 'records (1 records deleted)';
+  const graph = { ...noGraph, preview: async () => ({ undoable: [], plan: { store: 'graph', kind: 'neo4j', version: 1,
+    target: 10, action: 'apply', automatic: [], undo: 'restore_only', warning, digest: 'e'.repeat(64),
+    step: { id: 'graph/2-learning-bucket-ids', summary: 'stable IDs', kind: 'rewrite', fromVersion: 1, toVersion: 2,
+      count: 2, sampleIds: ['keep:4:1', 'delete:4:2'], scopeDigest: 'd'.repeat(64) } } }) };
+  const { plan } = await migrate(root, ['preview', '--json'], { graph });
+  let shownBeforeQuestion = null;
+  const lines = [];
+  await runMigrateCommand(['apply', '--digest', plan.digest, '--data-dir', root], { env: {}, interactive: true, graph,
+    write: (line) => lines.push(line),
+    confirm: async () => { shownBeforeQuestion = lines.join('\n'); return false; } });
+
+  assert.match(shownBeforeQuestion, /undo: only a whole restore/);
+  assert.match(shownBeforeQuestion, /WARNING: deletes the older duplicate learning-cache projections; the undo journal cannot restore/);
 });

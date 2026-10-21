@@ -32,9 +32,18 @@ class RecordTouch:
 @dataclass(frozen=True)
 class RecordJournal:
     touches: tuple[RecordTouch, ...] = ()
-    # ('node', label) or ('relationship', type) the step may create.
+    # ('node', label) or ('relationship', type) the step may create; the step
+    # tags what it creates with CREATED_TAG = its apply ID.
     creates: tuple[tuple[str, str], ...] = ()
     reversible: bool = True
+    # Why it cannot be undone, said to the person before they confirm.
+    irreversible: str | None = None
+
+
+# Set by a confirmed step on each record it creates, read back and removed
+# in the same transaction: the journal lists exactly what this apply created,
+# never what another process created meanwhile.
+CREATED_TAG = 'fuli_format_apply_id'
 
 
 @dataclass(frozen=True)
@@ -82,7 +91,7 @@ async def open_journal(queries, migration, *, apply_id, plan_digest, recorded_at
         reversible=journal.reversible, recorded_at=recorded_at,
     )
     if not journal.reversible:
-        return {}
+        return
     for index, touch in enumerate(journal.touches):
         snapshot = ', '.join(f'u.b_{name} = item.{name}' for name in _names(touch.properties))
         await queries.execute_query(
@@ -95,18 +104,23 @@ async def open_journal(queries, migration, *, apply_id, plan_digest, recorded_at
             ''',
             apply_id=apply_id, touch=index, target=touch.target,
         )
-    return {created: await _existing(queries, created) for created in journal.creates}
 
 
-async def _existing(queries, created) -> set[str]:
+async def _created_by(queries, created, apply_id) -> list[str]:
+    """What this apply created of one label or type, untagged on the way."""
     target, name = created
     _names((name,))
     pattern = f'(item:{name})' if target == 'node' else f'()-[item:{name}]->()'
-    records = await _rows(queries, f'MATCH {pattern} RETURN elementId(item) AS ref')
-    return {record['ref'] for record in records}
+    records = await _rows(
+        queries,
+        f'MATCH {pattern} WHERE item.{CREATED_TAG} = $apply_id '
+        f'REMOVE item.{CREATED_TAG} RETURN elementId(item) AS ref',
+        apply_id=apply_id,
+    )
+    return sorted(record['ref'] for record in records)
 
 
-async def close_journal(queries, migration, *, apply_id, existing_before) -> dict:
+async def close_journal(queries, migration, *, apply_id) -> dict:
     """After the step: what it left on each record, and what it created."""
     journal = migration.journal
     if not journal.reversible:
@@ -121,9 +135,9 @@ async def close_journal(queries, migration, *, apply_id, existing_before) -> dic
             rows=[{'undo': row['undo'], 'hash': _hash(row['values'])} for row in current],
         )
     created = 0
-    for entry, before in existing_before.items():
+    for entry in journal.creates:
         target = entry[0]
-        new = sorted(await _existing(queries, entry) - before)
+        new = await _created_by(queries, entry, apply_id)
         for row in await _created_state(queries, target, new):
             await queries.execute_query(
                 f'''
@@ -184,6 +198,33 @@ ORDER BY u.recorded_at DESC
 async def applied_journals(queries) -> list[JournalHeader]:
     """Confirmed graph migrations not undone, newest first."""
     return [_header(record) for record in await _rows(queries, _HEADERS)]
+
+
+async def lock_journaled(queries, header, migration) -> None:
+    """Takes the write lock of every record the undo may change, before it
+    checks them, and keeps it to the commit: a business write meanwhile
+    waits and lands after the undo instead of being overwritten or deleted.
+    A relationship to a locked node waits too, so a node's degree holds."""
+    for index, touch in enumerate(migration.journal.touches):
+        await queries.execute_query(
+            f'''
+            MATCH (u:{UNDO_LABEL} {{apply_id: $apply_id, kind: 'record', touch: $touch}})
+            MATCH {_item(touch.target)} WHERE elementId(item) = u.ref
+            SET item._fuli_format_lock = true
+            REMOVE item._fuli_format_lock
+            ''',
+            apply_id=header.apply_id, touch=index,
+        )
+    for target in ('node', 'relationship'):
+        await queries.execute_query(
+            f'''
+            MATCH (u:{UNDO_LABEL} {{apply_id: $apply_id, kind: 'created', target: $target}})
+            MATCH {_item(target)} WHERE elementId(item) = u.ref
+            SET item._fuli_format_lock = true
+            REMOVE item._fuli_format_lock
+            ''',
+            apply_id=header.apply_id, target=target,
+        )
 
 
 async def changed_since(queries, header, migration) -> int:

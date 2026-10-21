@@ -4,7 +4,7 @@ import { basename } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { contentHash } from '../canonical-json.js';
-import { DataFormatError } from './data-format-error.js';
+import { DataFormatError, newerFormatError } from './data-format-error.js';
 import {
   LEDGER_TABLE, MIGRATION_LOCK_TIMEOUT_MS, backupSqliteDatabase, inspectOpenStore,
   ledgerWriter, openReadOnly, planSteps, setUserVersion, takeBackup, userTables, userVersion
@@ -135,6 +135,10 @@ export function undoableSqliteMigrations(path, format) {
 export function rollbackSqliteMigration(path, format, { migrationId, actor, backup = backupSqliteDatabase,
   now = () => new Date().toISOString() }) {
   return withWriteLock(path, (database) => {
+    // A newer FULI may have moved the store on without touching these rows;
+    // this FULI cannot know what moving the version back would mean for it.
+    const current = userVersion(database);
+    if (current > format.version) throw newerFormatError(format.store, current, format.version);
     const undo = userTables(database).includes(UNDO_TABLE) ? database.prepare(`SELECT * FROM ${UNDO_TABLE}
       WHERE state = 'applied' ORDER BY recorded_at DESC, rowid DESC LIMIT 1`).get() : null;
     if (!undo || undo.migration_id !== migrationId) {
@@ -178,10 +182,14 @@ export function rollbackSqliteMigration(path, format, { migrationId, actor, back
 }
 
 // What a whole-store restore from backupRef would discard, by counts only.
+// restoreSqliteStore takes it back as `expected` and checks it again.
 export function describeSqliteRestore(path, format, backupRef) {
   const backupPath = backupFile(path, format, backupRef);
-  const current = existsSync(path) ? storeShape(path) : { version: null, tables: {}, ledger: [] };
-  const restored = storeShape(backupPath);
+  return restoreImpact(format, backupRef, existsSync(path) ? withReadOnly(path, storeShape) : EMPTY_SHAPE,
+    withReadOnly(backupPath, storeShape));
+}
+
+function restoreImpact(format, backupRef, current, restored) {
   const takenAt = backupTime(backupRef);
   return { store: format.store, kind: 'sqlite', backupRef, takenAt, currentVersion: current.version,
     backupVersion: restored.version,
@@ -189,33 +197,83 @@ export function describeSqliteRestore(path, format, backupRef) {
       .map((table) => ({ table, current: current.tables[table] ?? 0, backup: restored.tables[table] ?? 0 })),
     laterMigrations: current.ledger.filter((entry) => !takenAt || entry.recorded_at > takenAt)
       .map((entry) => ({ migrationId: entry.migration_id, status: entry.status })),
+    currentDigest: current.digest,
     warning: `Every change to "${format.store}" made after ${takenAt ?? 'that backup'} is lost.` };
 }
 
-// Replaces the whole store with backupRef after backing up the store as it
-// is. Run only while no FULI process uses the store, and only on a person's
-// explicit request: it is never part of apply or rollback.
-export function restoreSqliteStore(path, format, { backupRef, actor, backup = backupSqliteDatabase,
-  now = () => new Date().toISOString() }) {
+// Replaces the whole store with backupRef, on a person's explicit request
+// only; it is never part of apply or rollback. It runs under the store's
+// write lock, held from the check to the commit, so no writer of any process
+// gets in between: the store must still be what the person saw (`expected`,
+// from describeSqliteRestore), the store as it is is backed up, and its
+// tables, indexes, triggers, version and ledger are replaced by the backup's
+// in one transaction. A writer that tried meanwhile waits, then writes to
+// the restored store, so nothing it wrote is lost to the restore.
+export function restoreSqliteStore(path, format, { backupRef, expected, actor, backup = backupSqliteDatabase,
+  now = () => new Date().toISOString(), stage = () => {} }) {
   const backupPath = backupFile(path, format, backupRef);
-  const restored = storeShape(backupPath);
-  if (restored.version > format.version && !format.readableVersions.includes(restored.version)) {
+  const restoredVersion = withReadOnly(backupPath, userVersion);
+  if (restoredVersion > format.version && !format.readableVersions.includes(restoredVersion)) {
     throw new DataFormatError(format.store, 'data_format_blocked', `Backup ${backupRef} of "${format.store}" uses `
-      + `data format ${restored.version}, newer than this FULI supports (${format.version}). Nothing was changed.`);
+      + `data format ${restoredVersion}, newer than this FULI supports (${format.version}). Nothing was changed.`);
   }
-  const current = existsSync(path) ? storeShape(path).version : 0;
-  const safetyRef = existsSync(path) ? takeBackup(path, format, current, backup, [`${format.store}/restore`],
-    { purpose: 'a whole-store restore' }) : null;
-  backup(backupPath, path);
   const database = new DatabaseSync(path);
   try {
-    ledgerWriter(database, now)({ migration_id: `${format.store}/restore`, from_version: current,
-      to_version: restored.version, kind: 'restore', status: 'restored', backup_ref: safetyRef,
-      detail: `whole store restored locally (${actor.entrypoint}, presence unverified) from ${backupRef}; changes `
-        + `after ${backupTime(backupRef) ?? 'that backup'} were discarded` });
-  } finally { database.close(); }
-  return { status: 'restored', store: format.store, backupRef, safetyBackupRef: safetyRef,
-    version: restored.version };
+    database.exec(`PRAGMA busy_timeout = ${MIGRATION_LOCK_TIMEOUT_MS}`);
+    database.prepare('ATTACH DATABASE ? AS restored').run(backupPath);
+    try {
+      database.exec('BEGIN IMMEDIATE');
+      try {
+        const result = swapStore(database, path, format, { backupRef, expected, actor, backup, now, stage });
+        database.exec('COMMIT');
+        return result;
+      } catch (error) {
+        if (database.isTransaction) database.exec('ROLLBACK');
+        throw error;
+      }
+    } finally {
+      database.exec('DETACH DATABASE restored');
+    }
+  } finally {
+    database.close();
+  }
+}
+
+const OBJECT_ORDER = Object.freeze({ view: 0, trigger: 1, index: 2, table: 3 });
+
+function swapStore(database, path, format, { backupRef, expected, actor, backup, now, stage }) {
+  const current = storeShape(database, 'main');
+  const impact = restoreImpact(format, backupRef, current, storeShape(database, 'restored'));
+  if (!expected || impact.currentDigest !== expected.currentDigest || impact.currentVersion !== expected.currentVersion) {
+    throw new DataFormatError(format.store, 'data_format_stale_preview', `FULI store "${format.store}" changed after `
+      + 'you saw what the restore discards. Nothing was changed; look at it again before restoring.');
+  }
+  const safetyRef = takeBackup(path, format, current.version, backup, [`${format.store}/restore`],
+    { purpose: 'a whole-store restore' });
+  stage('safety-backup');
+  const objects = (schema) => database.prepare(`SELECT type, name, sql FROM ${schema}.sqlite_master
+    WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL`).all();
+  // Dropping a table drops its indexes and triggers; views go first.
+  for (const object of objects('main').sort((a, b) => OBJECT_ORDER[a.type] - OBJECT_ORDER[b.type])) {
+    if (object.type !== 'index') database.exec(`DROP ${object.type.toUpperCase()} IF EXISTS main."${object.name}"`);
+  }
+  const restored = objects('restored').sort((a, b) => OBJECT_ORDER[b.type] - OBJECT_ORDER[a.type]);
+  for (const object of restored.filter(({ type }) => type === 'table')) {
+    database.exec(object.sql);
+    database.exec(`INSERT INTO main."${object.name}" SELECT * FROM restored."${object.name}"`);
+  }
+  for (const object of restored.filter(({ type }) => type !== 'table')) database.exec(object.sql);
+  const sequences = (schema) => database.prepare(`SELECT 1 FROM ${schema}.sqlite_master
+    WHERE name = 'sqlite_sequence'`).get();
+  if (sequences('restored') && sequences('main')) {
+    database.exec('DELETE FROM main.sqlite_sequence; INSERT INTO main.sqlite_sequence SELECT * FROM restored.sqlite_sequence');
+  }
+  setUserVersion(database, impact.backupVersion);
+  ledgerWriter(database, now)({ migration_id: `${format.store}/restore`, from_version: current.version,
+    to_version: impact.backupVersion, kind: 'restore', status: 'restored', backup_ref: safetyRef,
+    detail: `whole store restored locally (${actor.entrypoint}, presence unverified) from ${backupRef}; changes `
+      + `after ${impact.takenAt ?? 'that backup'} were discarded` });
+  return { status: 'restored', store: format.store, backupRef, safetyBackupRef: safetyRef, version: impact.backupVersion };
 }
 
 // The backups of one store file, oldest first, with the version each was taken from.
@@ -286,15 +344,30 @@ function backupFile(path, format, backupRef) {
   return file;
 }
 
-function storeShape(path) {
+// Row counts, version, ledger and a digest of every row of one schema of an
+// open connection: what a restore would discard, and whether it changed.
+function storeShape(database, schema = 'main') {
+  const tables = database.prepare(`SELECT name FROM ${schema}.sqlite_master WHERE type = 'table'
+    AND name NOT LIKE 'sqlite_%' ORDER BY name`).all().map((row) => row.name);
+  const counts = {};
+  const rows = {};
+  for (const name of tables) {
+    const all = database.prepare(`SELECT * FROM ${schema}."${name}"`).all();
+    rows[name] = all.map((row) => Object.values(row).map(plainValue)).map((row) => JSON.stringify(row)).sort();
+    if (!name.startsWith('fuli_format_')) counts[name] = all.length;
+  }
+  const ledger = tables.includes(LEDGER_TABLE) ? database.prepare(`SELECT migration_id, status, recorded_at
+    FROM ${schema}.${LEDGER_TABLE} ORDER BY seq`).all() : [];
+  const version = database.prepare(`PRAGMA ${schema}.user_version`).get().user_version;
+  return { version, tables: counts, ledger, digest: contentHash({ version, rows }) };
+}
+
+// A store that does not exist reads as the empty file restoring creates.
+const EMPTY_SHAPE = Object.freeze({ version: 0, tables: {}, ledger: [], digest: contentHash({ version: 0, rows: {} }) });
+
+function withReadOnly(path, read) {
   const database = openReadOnly(path);
-  try {
-    const tables = Object.fromEntries(userTables(database).filter((name) => !name.startsWith('fuli_format_'))
-      .map((name) => [name, database.prepare(`SELECT count(*) AS rows FROM "${name}"`).get().rows]));
-    const ledger = userTables(database).includes(LEDGER_TABLE)
-      ? database.prepare(`SELECT migration_id, status, recorded_at FROM ${LEDGER_TABLE} ORDER BY seq`).all() : [];
-    return { version: userVersion(database), tables, ledger };
-  } finally { database.close(); }
+  try { return read(database); } finally { database.close(); }
 }
 
 function backupTime(backupRef) {

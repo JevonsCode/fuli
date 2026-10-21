@@ -11,6 +11,8 @@ from dataclasses import replace
 import pytest
 
 from fuli_graph import graph_format_confirm
+from fuli_graph.graph_format import GraphFormatUnavailable
+from fuli_graph.runtime import ManagedNeo4jDriver
 from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION
 from test_graph_format_neo4j import (  # noqa: F401 - graph is a fixture
     ACCESS_TOKEN,
@@ -80,7 +82,7 @@ async def test_preview_apply_and_undo_a_record_step_through_the_human_review_cha
         plan = preview['plan']
         assert plan['action'] == 'apply' and plan['undo'] == 'available'
         assert plan['step']['id'] == GROUP_STEP
-        assert plan['step']['count'] == 1 and plan['step']['sampleIds'] == ['legacy-space']
+        assert plan['step']['count'] == 4 and len(plan['step']['sampleIds']) == 4
         assert 'secret' not in str(preview)
         assert await _groups(driver) == before
 
@@ -232,3 +234,272 @@ async def test_undo_removes_the_records_a_step_created(graph):
     space = await _rows(driver, "MATCH (s:FuliSpace {id: 'public-project'}) RETURN properties(s) AS p")
     assert 'release_version' not in space[0]['p'] and 'updated_at' not in space[0]['p']
     assert await _version(driver) == 7
+
+
+def _maintenance(settings):
+    """The provider's own unguarded handle, outside any app."""
+    driver = ManagedNeo4jDriver(uri=settings.neo4j_uri, user=settings.neo4j_user,
+                                password=settings.neo4j_password, database=settings.neo4j_database)
+    return driver, driver.maintenance()
+
+
+@pytest.mark.asyncio
+async def test_the_plan_binds_every_renamed_record_so_a_later_one_makes_it_stale(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        # The space, two entities and their relationship: what the step rewrites.
+        assert plan['step']['count'] == 4
+        assert all(key.startswith('rename:') and key.endswith('->legacy-personal-legacy-space')
+                   for key in plan['step']['sampleIds'])
+        # Filed under the old group after the preview, in the same space.
+        await driver.execute_query(
+            "CREATE (:Entity {uuid: 'entity-late', group_id: 'legacy:personal:legacy-space'})"
+        )
+        stale = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                  json={'digest': plan['digest'], 'entrypoint': 'cli'})
+        again = (await client.post('/v1/data-format/preview')).json()['plan']
+
+    assert stale.status_code == 409 and stale.json()['detail']['code'] == 'data_format_stale_preview'
+    assert again['step']['count'] == 5
+    assert set((await _groups(driver)).values()) == {'legacy:personal:legacy-space'}
+
+
+async def _seed_duplicate_buckets(driver, copies):
+    await _seed_legacy_principal(driver)
+    await driver.execute_query(
+        """
+        UNWIND range(1, $copies) AS copy
+        CREATE (:FuliProjectAgentExecutorOutcomeAggregate {
+          id: 'legacy-aggregate-' + copy, aggregate_id: 'legacy-aggregate-' + copy,
+          personal_space_id: 'legacy-space', personal_project_id: 'project', work_kind: 'implementation',
+          agent_id: 'agent', executor_id: 'executor', model_strategy_key: 'strategy',
+          as_of: datetime('2026-01-01T00:00:00Z') + duration({days: copy})})
+        WITH count(*) AS created
+        MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = 1
+        """,
+        copies=copies,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_step_that_deletes_says_so_first_binds_each_deletion_and_cannot_be_undone(graph):
+    settings, driver = graph
+    await _seed_duplicate_buckets(driver, 2)
+
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        assert plan['step']['id'] == 'graph/2-learning-bucket-ids' and plan['undo'] == 'restore_only'
+        assert plan['step']['count'] == 2
+        assert sorted(key.split(':')[0] for key in plan['step']['sampleIds']) == ['delete', 'keep']
+        assert 'cannot restore deleted records' in plan['warning']
+        assert '(1 records deleted)' in plan['warning'] and 'fuli graph import' in plan['warning']
+        # One more duplicate of the same bucket: one more deletion, a different plan.
+        await driver.execute_query(
+            """
+            CREATE (:FuliProjectAgentExecutorOutcomeAggregate {
+              id: 'legacy-aggregate-3', aggregate_id: 'legacy-aggregate-3',
+              personal_space_id: 'legacy-space', personal_project_id: 'project',
+              work_kind: 'implementation', agent_id: 'agent', executor_id: 'executor',
+              model_strategy_key: 'strategy', as_of: datetime('2025-12-01T00:00:00Z')})
+            """
+        )
+        stale = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                  json={'digest': plan['digest'], 'entrypoint': 'cli'})
+        assert stale.status_code == 409
+        fresh = (await client.post('/v1/data-format/preview')).json()['plan']
+        assert fresh['step']['count'] == 3
+        applied = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                    json={'digest': fresh['digest'], 'entrypoint': 'cli'})
+        assert applied.status_code == 200, applied.text
+        undo = await client.post('/v1/data-format/rollback', headers=REVIEW,
+                                 json={'migration_id': 'graph/2-learning-bucket-ids', 'entrypoint': 'cli'})
+
+    assert undo.status_code == 409 and undo.json()['detail']['code'] == 'data_format_undo_blocked'
+    aggregates = await _rows(driver, 'MATCH (a:FuliProjectAgentExecutorOutcomeAggregate) RETURN count(a) AS n')
+    assert aggregates == [{'n': 1}]
+
+
+async def _seed_unreleased_public_project(driver):
+    await _seed_legacy_principal(driver)
+    await driver.execute_query(
+        """
+        MATCH (p:FuliPrincipal {id: 'legacy-principal'})
+        CREATE (p)-[:OWNS]->(:FuliSpace {id: 'public-project', kind: 'project', visibility: 'public',
+                                        name: 'Synthetic public project', group_id: 'public-project',
+                                        created_at: datetime('2026-01-02T00:00:00Z')})
+        MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = 7
+        """
+    )
+
+
+@pytest.mark.asyncio
+async def test_only_what_the_apply_created_is_journaled_and_undone(graph):
+    settings, driver = graph
+    await _seed_unreleased_public_project(driver)
+    managed, maintenance = _maintenance(settings)
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+
+    async def another_process_creates_a_release():
+        await driver.execute_query(
+            "CREATE (:FuliProjectRelease {id: 'release-from-another-provider', version: '1.0'})"
+        )
+
+    try:
+        result = await graph_format_confirm.apply_graph_migration(
+            maintenance, settings, digest=plan['digest'], actor={'entrypoint': 'cli'},
+            barrier=another_process_creates_a_release,
+        )
+        created = await _rows(driver, """
+            MATCH (u:FuliDataFormatUndo {apply_id: $apply_id, kind: 'created'}) RETURN u.target AS target
+        """, apply_id=result['applyId'])
+        assert sorted(row['target'] for row in created) == ['node', 'relationship']
+        tagged = await _rows(driver, 'MATCH (n) WHERE n.fuli_format_apply_id IS NOT NULL RETURN count(n) AS n')
+        assert tagged == [{'n': 0}]
+
+        await graph_format_confirm.rollback_graph_migration(
+            maintenance, settings, migration_id=RELEASE_STEP, actor={'entrypoint': 'cli'})
+    finally:
+        await managed.close()
+
+    assert await _rows(driver, 'MATCH (r:FuliProjectRelease) RETURN r.id AS id') == [
+        {'id': 'release-from-another-provider'}]
+
+
+@pytest.mark.asyncio
+async def test_a_business_write_during_an_undo_waits_and_lands_after_it(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        await client.post('/v1/data-format/apply', headers=REVIEW,
+                          json={'digest': plan['digest'], 'entrypoint': 'cli'})
+    business = {}
+
+    async def a_business_write_arrives():
+        business['task'] = asyncio.create_task(driver.execute_query(
+            "MATCH (e:Entity {uuid: 'entity-b'}) SET e.name = 'renamed by a person meanwhile'"
+        ))
+        await asyncio.sleep(1.5)
+        business['blocked'] = not business['task'].done()
+
+    managed, maintenance = _maintenance(settings)
+    try:
+        await graph_format_confirm.rollback_graph_migration(
+            maintenance, settings, migration_id=GROUP_STEP, actor={'entrypoint': 'cli'},
+            barrier=a_business_write_arrives,
+        )
+    finally:
+        await managed.close()
+    await business['task']
+
+    assert business['blocked'], 'the write waited for the undo to commit'
+    rows = await _rows(driver, "MATCH (e:Entity {uuid: 'entity-b'}) RETURN e.name AS name, e.group_id AS g")
+    assert rows == [{'name': 'renamed by a person meanwhile', 'g': 'legacy:personal:legacy-space'}]
+
+
+@pytest.mark.asyncio
+async def test_an_undo_is_refused_once_a_newer_fuli_moved_the_graph_on(graph):
+    settings, driver = graph
+    await _seed_colon_groups(driver)
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        await client.post('/v1/data-format/apply', headers=REVIEW,
+                          json={'digest': plan['digest'], 'entrypoint': 'cli'})
+    await driver.execute_query(
+        "MATCH (f:FuliDataFormat {store: 'graph'}) SET f.version = $version",
+        version=GRAPH_FORMAT_VERSION + 1,
+    )
+    before = await _groups(driver)
+    managed, maintenance = _maintenance(settings)
+    try:
+        with pytest.raises(GraphFormatUnavailable) as refused:
+            await graph_format_confirm.rollback_graph_migration(
+                maintenance, settings, migration_id=GROUP_STEP, actor={'entrypoint': 'cli'})
+    finally:
+        await managed.close()
+
+    assert refused.value.code == 'data_format_blocked'
+    assert await _groups(driver) == before
+    assert await _version(driver) == GRAPH_FORMAT_VERSION + 1
+
+
+# graph/4–7 once each: a synthetic graph an earlier FULI left one step short,
+# apply it through the review channel, then undo it. Each case: the version
+# before the step, what to seed, and a read that differs after the step.
+RECORD_STEPS = {
+    'graph/4-legacy-agent-assignments': (3, """
+        MATCH (space:FuliSpace {id: 'legacy-space'})
+        CREATE (space)-[:CONTAINS_PROJECT]->(p:FuliPersonalProject {id: 'legacy-project',
+                 project_id: 'legacy-project'})-[:HAS_PROJECT_AGENT]->(:FuliProjectAgent {
+                 id: 'legacy-agent', name: 'Synthetic legacy agent',
+                 created_at: datetime('2026-01-03T00:00:00Z')})
+    """, """
+        MATCH (a:FuliProjectAgent {id: 'legacy-agent'})
+        OPTIONAL MATCH (a)<-[:ASSIGNED_AGENT]-(assignment:FuliProjectAgentAssignment)
+        OPTIONAL MATCH (a)<-[identity:HAS_PROJECT_AGENT_IDENTITY]-(:FuliSpace)
+        RETURN a.agent_id AS agent_id, a.status AS status, count(DISTINCT assignment) AS assignments,
+               count(DISTINCT identity) AS identities
+    """),
+    'graph/5-knowledge-lifecycle-defaults': (4, """
+        CREATE (a:Entity {uuid: 'legacy-entity-a', name: 'Synthetic entity', group_id: 'legacy-group'})
+        CREATE (b:Entity {uuid: 'legacy-entity-b', name: 'Synthetic other', group_id: 'legacy-group'})
+        CREATE (a)-[:RELATES_TO {uuid: 'legacy-fact', fact: 'Synthetic fact', group_id: 'legacy-group'}]->(b)
+    """, """
+        MATCH (e:Entity {uuid: 'legacy-entity-a'})-[r:RELATES_TO]->()
+        RETURN e.fuli_utility_score AS entity_score, e.fuli_inheritance_mode AS mode,
+               r.fuli_confidence_score AS fact_confidence, e.fuli_ai_review_lock_version AS lock
+    """),
+    'graph/6-project-relation-review-defaults': (5, """
+        MATCH (space:FuliSpace {id: 'legacy-space'})
+        CREATE (space)-[:CONTAINS_PROJECT]->(a:FuliPersonalProject {id: 'project-a', project_id: 'project-a'})
+        CREATE (space)-[:CONTAINS_PROJECT]->(b:FuliPersonalProject {id: 'project-b', project_id: 'project-b'})
+        CREATE (a)-[:PERSONAL_PROJECT_RELATION {id: 'legacy-relation'}]->(b)
+    """, """
+        MATCH ()-[r:PERSONAL_PROJECT_RELATION {id: 'legacy-relation'}]->()
+        RETURN r.status AS status, r.decision_revision AS revision
+    """),
+    'graph/7-space-visibility-owners': (6, """
+        MATCH (p:FuliPrincipal {id: 'legacy-principal'})
+        CREATE (p)-[:MEMBER_OF {role: 'maintainer', created_at: datetime('2026-01-04T00:00:00Z')}]->
+               (:FuliSpace {id: 'legacy-project-space', kind: 'project', name: 'Synthetic project space',
+                            group_id: 'legacy-project-space'})
+    """, """
+        MATCH (s:FuliSpace {id: 'legacy-project-space'})
+        OPTIONAL MATCH (owner:FuliPrincipal)-[:OWNS]->(s)
+        RETURN s.visibility AS visibility, count(owner) AS owners
+    """),
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('step_id', sorted(RECORD_STEPS))
+async def test_each_record_step_applies_and_undoes_on_a_synthetic_graph(graph, step_id):
+    settings, driver = graph
+    version, seed, read = RECORD_STEPS[step_id]
+    await _seed_legacy_principal(driver)
+    await driver.execute_query(seed)
+    await driver.execute_query(
+        "MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = $version", version=version
+    )
+    before = await _rows(driver, read)
+
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        health = (await client.get('/health')).json()['data_format']
+        assert health['pending'] == [step_id], health
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        assert plan['step']['id'] == step_id and plan['step']['count'] >= 1 and plan['undo'] == 'available'
+        applied = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                    json={'digest': plan['digest'], 'entrypoint': 'cli'})
+        assert applied.status_code == 200, applied.text
+        after = await _rows(driver, read)
+        assert after != before, 'the step changed the seeded records'
+        undone = await client.post('/v1/data-format/rollback', headers=REVIEW,
+                                   json={'migration_id': step_id, 'entrypoint': 'cli'})
+        assert undone.status_code == 200, undone.text
+
+    assert await _rows(driver, read) == before
+    assert await _version(driver) == version

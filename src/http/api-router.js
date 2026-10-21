@@ -26,7 +26,6 @@ export async function handleApiRequest({
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
-  if (await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations })) return true;
   if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork })) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {
@@ -156,7 +155,11 @@ export async function handleApiRequest({
     : await externalRequest();
   if (handledExternal) return true;
 
+  // Data format routes run under the graph runtime lease like any graph
+  // request: an adaptive runtime wakes the provider for a preview and keeps
+  // it up through a long apply or undo.
   const graphRequest = async () =>
+    await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations }) ||
     await handleJudgmentApiRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
     await handleGraphApiRequest({ request, response, url, app });
