@@ -6,7 +6,7 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 
 import { listAgentTools } from '../src/agent-tools.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
-import { assertToolInputWithinBudget } from '../src/mcp/tool-input-budget.js';
+import { assertToolInputWithinBudget, createToolInputValidator } from '../src/mcp/tool-input-budget.js';
 
 const ELEMENT_CAP = 50_000;
 const DEPTH_CAP = 32;
@@ -21,7 +21,7 @@ async function connectedServer(toolProfile = 'full') {
   }, {
     env: {},
     registerResources: false,
-    ...(toolProfile === 'chat' ? { toolProfile } : { toolNames: ['get_collaboration_preferences'] })
+    ...(toolProfile === 'chat' ? { toolProfile } : { toolNames: ['get_collaboration_preferences', 'checkpoint_task_knowledge'] })
   });
   const client = new Client({ name: 'tool-input-budget-test', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -111,36 +111,25 @@ test('the budget walk stops at the first element or level past a cap', () => {
   assert.throws(() => assertToolInputWithinBudget({ cycle }), /deeper than the maximum/);
   assert.ok(visits <= DEPTH_CAP, `visited ${visits} levels`);
 });
-
 // Builds the largest input each schema allows: every optional property set,
-// every array at maxItems, and a few members in each open object.
+// every array at maxItems, and a few members in each open object. Every
+// primitive is `leaf`.
 const OPEN_OBJECT_MEMBERS = 8;
-function largestInput(schema) {
-  if (!schema || typeof schema !== 'object') return 'x';
-  const alternatives = schema.anyOf ?? schema.oneOf;
-  if (alternatives) {
-    return alternatives.map(largestInput)
-      .reduce((largest, value) => (elementCount(value) > elementCount(largest) ? value : largest));
-  }
+function largestInput(schema, leaf = 'x') {
   const types = [schema.type].flat();
-  if (types.includes('array') || schema.items) {
-    return Array.from({ length: schema.maxItems ?? 1 }, () => largestInput(schema.items));
+  if (types.includes('array')) {
+    return Array.from({ length: schema.maxItems ?? 1 }, () => largestInput(schema.items, leaf));
   }
-  if (types.includes('object') || schema.properties) {
-    const value = Object.fromEntries(Object.entries(schema.properties ?? {})
-      .map(([key, property]) => [key, largestInput(property)]));
-    if (schema.additionalProperties !== false) {
-      for (let index = 0; index < OPEN_OBJECT_MEMBERS; index += 1) value[`extra${index}`] = 'x';
-    }
-    return value;
+  if (!types.includes('object')) return leaf;
+  const value = Object.fromEntries(Object.entries(schema.properties ?? {})
+    .map(([key, property]) => [key, largestInput(property, leaf)]));
+  if (schema.additionalProperties !== false) {
+    for (let index = 0; index < OPEN_OBJECT_MEMBERS; index += 1) value[`extra${index}`] = leaf;
   }
-  return 'x';
+  return value;
 }
 
-function elementCount(value) {
-  if (value === null || typeof value !== 'object') return 0;
-  return Object.values(value).reduce((total, child) => total + 1 + elementCount(child), 0);
-}
+const toolSchema = (name) => listAgentTools().find((definition) => definition.name === name).inputSchema;
 
 test('the largest input every Fuli tool schema allows stays within the budget', () => {
   for (const definition of listAgentTools()) {
@@ -151,4 +140,40 @@ test('the largest input every Fuli tool schema allows stays within the budget', 
       `fuli_call ${definition.name}`
     );
   }
+});
+
+const checkpointBase = { taskContextToken: 'synthetic-token', disposition: 'capture_candidates', reason: 'r' };
+
+test('over-long arrays inside the budget are rejected before validation can exhaust the stack', async () => {
+  const mcp = await connectedServer();
+  try {
+    // 25,000 invalid entities overflowed zod's issue collection; 49,994 is at the element cap.
+    for (const count of [25_000, ELEMENT_CAP - 6]) {
+      await assertInvalidParams(mcp.client.callTool({
+        name: 'checkpoint_task_knowledge',
+        arguments: { ...checkpointBase, capture: { entities: Array(count).fill({}) } }
+      }), /arguments\.capture\.entities has more than the maximum of 128 items/);
+      assert.equal((await mcp.client.callTool(normalCall)).isError, undefined);
+    }
+  } finally { await mcp.close(); }
+});
+
+test('the most invalid input the schema lengths allow returns a bounded validation error', async () => {
+  const mcp = await connectedServer();
+  try {
+    const result = await mcp.client.callTool({
+      name: 'checkpoint_task_knowledge',
+      arguments: largestInput(toolSchema('checkpoint_task_knowledge'), true)
+    });
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.error.code, 'validation');
+    assert.ok(result.structuredContent.error.validationErrors.length <= 5);
+    assert.equal((await mcp.client.callTool(normalCall)).isError, undefined);
+  } finally { await mcp.close(); }
+});
+
+test('a stack overflow during validation becomes an invalid-params error', async () => {
+  const validator = createToolInputValidator(toolSchema('get_collaboration_preferences'));
+  const input = { get projectPath() { throw new RangeError('Maximum call stack size exceeded'); } };
+  await assertInvalidParams(validator.parse(input), /too large to validate/);
 });
