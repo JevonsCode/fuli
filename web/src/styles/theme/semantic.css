@@ -40,6 +40,8 @@
   --color-chart-cyan: #23707f;
   --color-chart-slate: #66706a;
   --color-overlay: rgb(24 28 26 / 32%);
+  /* Every modal scrim (native <dialog> and shadcn-vue Dialog) blurs the page the same. */
+  --overlay-blur: 2px;
   /* The one ink every shadow in base.css is built from. */
   --shadow-rgb: 27 31 29;
   --glow-accent: 0 0 0 3px var(--color-accent-soft);

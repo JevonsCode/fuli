@@ -18,6 +18,9 @@ export function useJefaBoardLoad(input: {
   projectNames: Ref<Map<string, string>>
 }) {
   const template = ref<EmployeeTemplate | null>(null)
+  // True once a catalog read finished for this space, so a null template means
+  // "read in full and Jefa is absent" rather than "not read yet".
+  const catalogRead = ref(false)
   const loading = ref(false)
   const longWait = ref(false)
   const stage = ref<JefaReadStage>('console')
@@ -77,7 +80,7 @@ export function useJefaBoardLoad(input: {
     cancel()
     failure.value = ''; failures.value = []; timedOut.value = false; longWait.value = false
     loadedIds.value = []; pendingIds.value = []
-    if (!preserve) { input.boards.value = []; template.value = null; projects.value = []; updatedAt.value = '' }
+    if (!preserve) { input.boards.value = []; template.value = null; projects.value = []; updatedAt.value = ''; catalogRead.value = false }
     staleIds.value = input.boards.value.map(b => b.project.id)
     controller = new AbortController()
     loading.value = true
@@ -135,6 +138,7 @@ export function useJefaBoardLoad(input: {
   }
   function applyCatalog(value: EmployeeTemplate | null) {
     template.value = value
+    catalogRead.value = true
     projects.value = value?.managedProjects ?? (value?.assignments ?? [])
       .filter(a => a.status === 'active').map(a => ({ id: a.personalProjectId, name: input.projectNames.value.get(a.personalProjectId) ?? a.personalProjectId }))
     const allowed = new Set(value?.permissions.includes('board.read') && value.runtimeStatus === 'ready' ? projects.value.map(p => p.id) : [])
@@ -186,5 +190,5 @@ export function useJefaBoardLoad(input: {
   }, { immediate: true })
   watch(input.consoleError, error => { if (input.enabled.value && error && loading.value && stage.value === 'console') fail(new Error(error)) }, { immediate: true })
   onBeforeUnmount(cancel)
-  return { template, loading, longWait, stage, failure, failures, projects, pendingIds, loadedIds, stale, readOnly, updatedAt, timedOut, hasContent, reload, scopeChanged }
+  return { template, catalogRead, loading, longWait, stage, failure, failures, projects, pendingIds, loadedIds, stale, readOnly, updatedAt, timedOut, hasContent, reload, scopeChanged }
 }

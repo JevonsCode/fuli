@@ -4,7 +4,8 @@
 // Local changes:
 // - `cn` comes from @/lib/class-names; FULI icons (UiIcon) replace lucide.
 // - Classes use FULI component tokens only: the overlay is the semantic
-//   overlay colour (no raw black), the panel is a card with the dialog radius
+//   overlay colour (no raw black) blurred by --overlay-blur, the same scrim as
+//   the native <dialog> backdrop; the panel is a card with the dialog radius
 //   and shadow, and stacking uses --z-dialog instead of z-50.
 // - tw-animate-css is not used: open motion is FULI's own fade/scale
 //   (animate-overlay-in, animate-dialog-in), zeroed by reduced motion.

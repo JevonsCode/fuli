@@ -3,11 +3,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { ApiError } from '@/api/client'
+import BackLink from '@/components/BackLink.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { Button } from '@/components/ui/button'
-import UiIconButton from '@/ui/UiIconButton.vue'
 import { subscribeChatUpdates } from '@/features/project-agents/task-updates'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import {
@@ -312,7 +312,7 @@ function reloadAll() {
   void loadDetail()
 }
 
-// Phone navigation: remember the first visible card and its offset, and return
+// Back to the list: remember the first visible card and its offset, and return
 // the person there. Memory lives only in this page, never in storage.
 const listElement = ref<HTMLElement | null>(null)
 let place: ListPlace | null = null
@@ -327,16 +327,16 @@ async function restoreList() {
   await nextTick()
   await restorePlace(listElement.value, saved, () => document.querySelector<HTMLElement>('[data-roundtable-list-head]'))
 }
-// Back returns to the list this page came from; a deep link replaces itself
-// with the list instead of leaving the site.
-function back() {
-  const previous = window.history.state?.back
-  if (typeof previous === 'string' && /^\/roundtables\/?(\?.*)?$/.test(previous)) router.back()
-  else void router.replace({ path: '/roundtables', query: route.query })
-}
+// "← 全部对话" goes Back when the list opened this conversation, so the list
+// returns where it was; a deep link opens the list instead.
+const openedFromList = /^\/roundtables\/?(\?.*)?$/
+const listPath = computed(() => router.resolve({ path: '/roundtables', query: route.query }).fullPath)
 
 const listLoading = computed(() => threadsState.value === 'loading' && chatsState.value === 'loading')
 const empty = computed(() => threadsState.value === 'ready' && chatsState.value === 'ready' && !threads.value.length && !chats.value.length)
+// Both lists failed with nothing to show: one state with one retry, not two bare notices.
+const listsFailed = computed(() => threadsState.value === 'failed' && chatsState.value === 'failed' && !threads.value.length && !chats.value.length && !accessNotice.value)
+function retryLists() { void loadThreads(); void loadChats() }
 const hasMoreChats = computed(() => Boolean(localNext.value || remoteNext.value))
 // A wide screen shows a thread's participants open; a phone keeps them folded.
 // It follows the breakpoint when the window is resized.
@@ -423,7 +423,9 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
 </script>
 
 <template>
-  <section class="view roundtable-view">
+  <section class="view roundtable-view" :class="{ 'has-selection': hasSelection }">
+   <!-- One canvas: the list of conversations, or the open one with a way back; never both side by side. -->
+   <div class="roundtable-canvas mx-auto flex w-full max-w-(--canvas-max) flex-col">
     <p v-if="accessNotice" role="alert" class="roundtable-notice">
       {{ t('roundtable.accessLost') }} <Button size="sm" variant="ghost" @click="reloadAll">{{ t('roundtable.retry') }}</Button>
     </p>
@@ -432,13 +434,19 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
       <Button size="sm" variant="ghost" :loading="reconnecting" :loading-label="t('roundtable.reloading')" @click="reconnected">{{ t('roundtable.reload') }}</Button>
     </p>
     <GrowthLoading v-if="listLoading && !hasSelection" :label="t('roundtable.loading')" />
+    <div v-else-if="listsFailed && !hasSelection" class="roundtable-empty" role="alert" data-roundtable-lists-failed>
+      <strong>{{ t('roundtable.loadFailed') }}</strong>
+      <p>{{ t('roundtable.loadFailedHint') }}</p>
+      <Button class="roundtable-empty-action" @click="retryLists">{{ t('roundtable.retry') }}</Button>
+    </div>
     <div v-else-if="empty && !hasSelection" class="roundtable-empty">
       <strong>{{ t('roundtable.empty') }}</strong>
       <p>{{ t('roundtable.emptyHint') }}</p>
     </div>
-    <div v-else class="ui-split roundtable-layout" :class="{ 'has-selection': hasSelection }">
-      <nav ref="listElement" class="ui-split-list roundtable-list" :aria-label="t('roundtable.threads')">
-        <div class="ui-split-head">
+    <div v-else class="ui-conversation roundtable-layout">
+      <BackLink v-if="hasSelection" class="roundtable-back" :to="listPath" :from="openedFromList" data-roundtable-back>{{ t('roundtable.back') }}</BackLink>
+      <nav v-else ref="listElement" class="ui-conversation-list roundtable-list" :aria-label="t('roundtable.threads')">
+        <div class="ui-conversation-head">
           <span role="status" tabindex="-1" data-roundtable-list-head>{{ t('roundtable.count', { count: threads.length + chats.length }) }}</span>
           <span v-if="threads.length" class="ui-meta">{{ t('roundtable.latest50') }}</span>
         </div>
@@ -453,26 +461,24 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
           {{ t('roundtable.threadsFailed') }} <Button size="sm" variant="ghost" @click="loadThreads()">{{ t('roundtable.retry') }}</Button>
         </p>
         <p v-else-if="threadsStale" class="ui-meta roundtable-remote-note" role="status">{{ t('roundtable.stale') }}</p>
-        <div class="ui-split-items">
-          <RouterLink v-for="item in chats" :key="`chat:${item.chatId}`" class="ui-split-item" :class="{ 'is-selected': item.chatId === selectedChatId }"
-            :aria-current="item.chatId === selectedChatId ? 'page' : undefined" :to="`/roundtables/chat/${encodeURIComponent(item.chatId)}`"
+        <div class="ui-conversation-items">
+          <RouterLink v-for="item in chats" :key="`chat:${item.chatId}`" class="ui-conversation-item" :to="`/roundtables/chat/${encodeURIComponent(item.chatId)}`"
             :data-roundtable-key="`chat:${item.chatId}`" data-testid="roundtable-chat-room" @click="remember(`chat:${item.chatId}`)">
-            <span class="ui-split-item-meta">
+            <span class="ui-conversation-item-meta">
               <span>{{ t(`roundtable.chat.kinds.${item.kind}`) }} · {{ item.members.length }}</span>
               <time :datetime="item.updatedAt">{{ time(item.updatedAt) }}</time>
             </span>
-            <strong class="ui-split-item-title">{{ chatRoomName(item) }}</strong>
+            <strong class="ui-conversation-item-title">{{ chatRoomName(item) }}</strong>
           </RouterLink>
-          <RouterLink v-for="item in threads" :key="`thread:${item.id}`" class="ui-split-item" :class="{ 'is-selected': item.id === selectedId }"
-            :aria-current="item.id === selectedId ? 'page' : undefined" :to="`/roundtables/${encodeURIComponent(item.id)}`"
+          <RouterLink v-for="item in threads" :key="`thread:${item.id}`" class="ui-conversation-item" :to="`/roundtables/${encodeURIComponent(item.id)}`"
             :data-roundtable-key="`thread:${item.id}`" data-testid="roundtable-thread" @click="remember(`thread:${item.id}`)">
-            <span class="ui-split-item-meta">
+            <span class="ui-conversation-item-meta">
               <span>{{ item.participants.map((person) => person.name).join(' · ') }}</span>
               <span v-if="item.waiting" class="roundtable-waiting" data-roundtable-waiting>{{ waitingLabel(item) }}</span>
               <time v-else :datetime="item.updatedAt">{{ time(item.updatedAt) }}</time>
             </span>
-            <strong class="ui-split-item-title">{{ item.subject }}</strong>
-            <span v-if="item.last" class="ui-split-item-sub">{{ item.last.from }}：{{ item.last.body }}</span>
+            <strong class="ui-conversation-item-title">{{ item.subject }}</strong>
+            <span v-if="item.last" class="ui-conversation-item-sub">{{ item.last.from }}：{{ item.last.body }}</span>
           </RouterLink>
         </div>
         <p v-if="localMoreFailed" role="alert" class="roundtable-remote-note">{{ t('roundtable.localMoreFailed') }}</p>
@@ -480,9 +486,8 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
           :loading-label="t('roundtable.loadingMoreChats')" data-roundtable-more-chats @click="loadMoreChats">{{ t('roundtable.loadMoreChats') }}</Button>
       </nav>
 
-      <article v-if="thread" class="ui-split-detail" data-testid="roundtable-timeline">
-        <header class="ui-split-detail-head">
-          <UiIconButton class="roundtable-back" icon="chevron-left" :label="t('roundtable.back')" data-roundtable-back @click="back" />
+      <article v-if="thread" class="ui-conversation-detail" data-testid="roundtable-timeline">
+        <header class="ui-conversation-detail-head">
           <h2 tabindex="-1" class="roundtable-subject" :class="{ 'is-open': subjectOpen }" data-roundtable-detail-title>{{ thread.subject }}</h2>
           <Button v-if="thread.subject.length > 60" variant="link" size="xs" class="roundtable-subject-toggle" :aria-expanded="subjectOpen" @click="subjectOpen = !subjectOpen">
             {{ subjectOpen ? t('roundtable.subjectLess') : t('roundtable.subjectFull') }}
@@ -498,7 +503,7 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
             <pre tabindex="0">{{ threadRecord }}</pre>
           </details>
         </header>
-        <div class="ui-split-detail-body">
+        <div class="ui-conversation-detail-body">
           <p v-if="!thread.messages.length" class="ui-meta">{{ t('roundtable.emptyConversation') }}</p>
           <section class="roundtable-section" :aria-label="t('roundtable.exchanges')" data-roundtable-exchanges>
             <h3>{{ t('roundtable.exchanges') }}</h3>
@@ -542,13 +547,8 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
         </div>
       </article>
       <RoundtableRoom v-else-if="room" :room="room" :time="time" :loading-later="loadingLater" :later-failed="laterFailed" :later-stuck="laterStuck"
-        :new-messages="newMessages" :wide="wide" @later="loadLater">
-        <template #back>
-          <UiIconButton class="roundtable-back" icon="chevron-left" :label="t('roundtable.back')" data-roundtable-back @click="back" />
-        </template>
-      </RoundtableRoom>
-      <div v-else-if="hasSelection" class="ui-split-detail roundtable-detail-state">
-        <UiIconButton class="roundtable-back" icon="chevron-left" :label="t('roundtable.back')" data-roundtable-back @click="back" />
+        :new-messages="newMessages" :wide="wide" @later="loadLater" />
+      <div v-else-if="hasSelection" class="ui-conversation-detail roundtable-detail-state">
         <template v-if="detailState === 'loading'">
           <GrowthLoading variant="compact" :label="t('roundtable.detailLoading')" />
           <p v-if="detailSlow" role="status" class="ui-meta">{{ t('roundtable.detailSlow') }}</p>
@@ -558,22 +558,30 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
           {{ t('roundtable.loadFailed') }} <Button size="sm" variant="ghost" @click="loadDetail">{{ t('roundtable.retry') }}</Button>
         </p>
       </div>
-      <p v-else class="ui-split-placeholder">{{ t('roundtable.select') }}</p>
     </div>
+   </div>
   </section>
 </template>
 
 <style scoped>
 .roundtable-view { display: flex; flex-direction: column; }
+/* The open conversation fills the canvas and scrolls inside; the list scrolls with the page. */
+.roundtable-view.has-selection { overflow: hidden; padding-bottom: 16px; }
+.roundtable-canvas { flex: 1 0 auto; }
+.has-selection .roundtable-canvas { flex: 1 1 0; min-height: 0; }
+/* An open conversation is one reading column, not a card stretched across a wide screen. */
+.has-selection .roundtable-layout { width: 100%; max-width: 1200px; margin-inline: auto; }
 .roundtable-empty { max-width: 520px; margin: 12vh auto 0; text-align: center; }
 .roundtable-empty strong { font-size: 16px; font-weight: 600; }
 .roundtable-empty p { margin-top: 8px; color: var(--color-muted); }
+.roundtable-empty-action { margin-top: 16px; }
 .roundtable-notice { margin: 0 0 8px; font-size: 13px; }
 .roundtable-section + .roundtable-section { margin-top: 24px; }
 .roundtable-waiting { color: var(--color-warning); font-weight: 600; }
-.roundtable-remote-note { margin: 8px 16px 0; }
-.roundtable-more { margin: 8px 16px 16px; }
-.roundtable-back { display: none; }
+.roundtable-remote-note { margin: 0; }
+.roundtable-more { justify-self: start; }
+.roundtable-back { align-self: flex-start; color: var(--color-muted); font-size: 13px; text-decoration: none; }
+.roundtable-back:hover { color: var(--color-ink); }
 .roundtable-detail-state { display: grid; align-content: start; gap: 12px; padding: 16px; }
 .roundtable-cleanup { margin-top: 6px; color: var(--color-warning); font-size: 12px; font-weight: 600; }
 .roundtable-subject { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -597,20 +605,14 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
 .roundtable-body { padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 4px 12px 12px 12px; background: var(--color-bg); color: var(--color-ink); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .roundtable-message.is-reply .roundtable-body { background: var(--color-surface); }
 .roundtable-delivery { margin-top: 6px; color: var(--color-faint); font-size: 12px; }
-.ui-split-detail-head h2:focus { outline: none; }
-.ui-split-detail-head h2:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-/* Phone: the list and the detail take turns; the hidden one leaves the layout,
-   the tab order and the accessibility tree. The list uses the full height. */
+.ui-conversation-detail-head h2:focus { outline: none; }
+.ui-conversation-detail-head h2:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 @media (max-width: 860px) {
-  .roundtable-layout.has-selection .roundtable-list { display: none; }
-  .roundtable-layout:not(.has-selection) .ui-split-placeholder { display: none; }
-  .roundtable-layout:not(.has-selection) .roundtable-list { max-height: none; flex: 1 1 auto; border-bottom: 0; }
-  .roundtable-back { display: inline-flex; width: 44px; height: 44px; margin: 0 0 4px -8px; }
   .roundtable-message.is-reply { margin-left: 16px; }
   /* A long title, participant list or record scrolls away with the messages
      instead of pushing them out of the fixed card. */
-  .roundtable-layout.has-selection .ui-split-detail { overflow-y: auto; overscroll-behavior: contain; }
-  .roundtable-layout.has-selection :deep(.ui-split-detail-body) { flex: 0 0 auto; min-height: auto; overflow: visible; }
+  .roundtable-layout .ui-conversation-detail { overflow-y: auto; overscroll-behavior: contain; }
+  .roundtable-layout :deep(.ui-conversation-detail-body) { flex: 0 0 auto; min-height: auto; overflow: visible; }
 }
 @media (max-width: 480px) {
   .roundtable-message { gap: 8px; }

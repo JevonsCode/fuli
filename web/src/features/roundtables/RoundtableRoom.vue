@@ -75,9 +75,8 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
 </script>
 
 <template>
-  <article class="ui-split-detail" data-testid="roundtable-chat">
-    <header class="ui-split-detail-head">
-      <slot name="back" />
+  <article class="ui-conversation-detail" data-testid="roundtable-chat">
+    <header class="ui-conversation-detail-head">
       <h2 tabindex="-1" class="roundtable-chat-title" data-roundtable-detail-title>{{ chatRoomName(room) }}</h2>
       <p class="ui-list-meta">
         <span>{{ t(`roundtable.chat.kinds.${room.kind}`) }}</span>
@@ -93,7 +92,7 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
         <pre tabindex="0">{{ roomRecord }}</pre>
       </details>
     </header>
-    <div ref="body" class="ui-split-detail-body">
+    <div ref="body" class="ui-conversation-detail-body">
       <ol v-if="room.messages.length" class="roundtable-chat-messages">
         <li v-for="message in room.messages" :key="message.messageId" class="roundtable-chat-message" tabindex="-1"
           :data-message-id="message.messageId" data-roundtable-chat-message>
