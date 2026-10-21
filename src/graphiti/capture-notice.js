@@ -32,7 +32,9 @@ const EXPLICIT_OPERATION_RESULTS = Object.freeze({ project_created: '已创建�
 const TRANSCRIPT_NOTICES = Object.freeze({
   capture_changed: '记录设置有变动，无法确认这段是否允许记录，已跳过',
   capture_state_unsaved: '记录状态未能安全保存，本会话后续内容暂不导入',
-  capture_state_unwritable: '记录状态无法写入本地，本会话后续内容暂不导入；修复本地写入前，新的进程可能无法识别这段未记录的内容，请手动检查'
+  capture_state_unwritable: '记录状态无法写入本地，本会话后续内容暂不导入；修复本地写入前，新的进程可能无法识别这段未记录的内容，请手动检查',
+  // rec#15: a turn shaped like a host notification whose task was never confirmed.
+  turn_ownership_unresolved: '这段内容的任务归属未确认，未记入任何任务；原文仍在本地会话记录中'
 });
 
 // reason is a capture decision's denial or one of the transcript states above;

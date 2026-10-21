@@ -1,10 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { lstatSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { advanceCaptureSettingsVersion, captureDisabled } from '../graphiti/capture-decision.js';
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
-import { jsonFormat, removeVersionedJsonFileAtomic, updateVersionedJsonFileAtomic, writeVersionedJsonFileAtomic }
+import { jsonFormat, updateVersionedJsonFileAtomic, withJsonFormatDirectory, writeVersionedJsonFileAtomic }
   from '../storage/json-format.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { transcriptDigest } from './transcript-guard.js';
@@ -23,6 +22,9 @@ export const UNATTRIBUTABLE = 'capture_changed';
 // generation moved instead; or nothing local could be written at all.
 const STATE_UNSAVED = 'capture_state_unsaved';
 const STATE_UNWRITABLE = 'capture_state_unwritable';
+// A turn whose task ownership was never confirmed (rec#15): neither the task
+// that was current nor any other, so it is not imported under either.
+export const TURN_UNRESOLVED = 'turn_ownership_unresolved';
 
 // Sessions whose denial this process could not keep, with the settings
 // version it was made under. While that version holds, every sync of the
@@ -34,7 +36,8 @@ const unkeptDenials = new Map();
 // not confirm the stretch was allowed. Neither names any skipped content.
 const SKIPPED_BECAUSE = Object.freeze({
   [UNATTRIBUTABLE]: 'capture settings changed, so this stretch could not be confirmed as allowed and was skipped',
-  [STATE_UNSAVED]: 'the capture state could not be saved safely, so this stretch was skipped'
+  [STATE_UNSAVED]: 'the capture state could not be saved safely, so this stretch was skipped',
+  [TURN_UNRESOLVED]: 'this turn\'s task ownership was not confirmed, so it was not recorded under any task'
 });
 const RECORDING_OFF = /^automatic recording was off \((\w+)\)$/;
 const MARKER = /^\[Not recorded: (.+); native bytes \d+ to \d+ remain in native history\.\]$/;
@@ -58,62 +61,113 @@ export function notRecordedReason(content) {
 export async function skipTranscriptWhileOff(application, input, sourceApplication, adapter, decision) {
   const disabled = captureDisabled(decision);
   if (!input?.transcript_path) return disabled;
+  const result = await skipTranscriptSpan(application, input, sourceApplication, decision.reason,
+    () => verifiedTranscriptEnd(input.transcript_path, input.session_id, adapter));
+  return result.status === 'skipped' ? { ...disabled, skipped: { from: result.from, to: result.to } } : disabled;
+}
+
+// Moves the session cursor up to native byte end() with only the marker
+// above: 'skipped', 'none' when nothing before it is still unimported or the
+// session imports nothing (no task Agent, no verified start), or 'failed'.
+export async function skipTranscriptSpan(application, input, sourceApplication, reason, end) {
   try {
     const { task, failure } = await lookupTranscriptTask(application, input, sourceApplication);
-    if (failure || !task?.project_agent_id) return disabled;
+    if (failure) return { status: 'failed' };
+    if (!task?.project_agent_id) return { status: 'none' };
     const scope = { personal_space_id: application.config.personal.spaceId, personal_project_id: task.personal_project_id,
       agent_id: task.project_agent_id, source_application: sourceApplication, session_id: input.session_id };
     const session = await application.personal.conversation('query', { ...scope, mode: 'session' });
     const from = session.cursor ?? 0;
-    if (!session.initialized) return disabled;
-    const to = await verifiedTranscriptEnd(input.transcript_path, input.session_id, adapter);
-    if (to <= from) return disabled;
+    if (!session.initialized) return { status: 'none' };
+    const to = await end();
+    if (to <= from) return { status: 'none' };
     const saved = await application.personal.conversation('append', { ...scope, task_context_token: task.token,
-      events: [notRecordedEvent(from, to, decision.reason)], expected_cursor: from, cursor: to });
-    return saved.status === 'saved' ? { ...disabled, skipped: { from, to } } : disabled;
+      events: [notRecordedEvent(from, to, reason)], expected_cursor: from, cursor: to });
+    return saved.status === 'saved' ? { status: 'skipped', from, to } : { status: 'failed' };
   } catch {
-    return disabled;
+    return { status: 'failed' };
   }
 }
 
 // What this host session's transcript was last handled under, kept locally:
-// the settings generation of its last sync, and a denial no recorded sync has
-// skipped yet. A session without a record is unattributable unless no settings
-// were ever saved. The generation is global for now (any client's switch moves
-// it); see the capture settings store's version() for the planned per-layer
-// generations.
-export const TRANSCRIPT_CAPTURE_FORMAT = jsonFormat({ store: 'transcript-capture-ledger', versions: [1] });
+// the settings generation of its last sync, a denial no recorded sync has
+// skipped yet, and the turns whose task ownership is unresolved (rec#15).
+// A session without a record is unattributable unless no settings were ever
+// saved. The generation is global for now (any client's switch moves it); see
+// the capture settings store's version() for the planned per-layer generations.
+//
+// Version 2 adds the unresolved turns. They decide whether a sync may import
+// and whether a Stop may settle the session's task, so they are not droppable
+// metadata: a FULI that guards this store refuses to rewrite a version 2
+// record, and this version reads a newer or unreadable record as held. Version
+// 1 records hold no turns and are read as they are; every write is version 2.
+//   held: [{ turn, from, owner }] each unresolved turn in order, with its id,
+//     the native byte it began after and its task's token digest (null until known)
+//   unprovable: true when held turns were lost (an unreadable record was
+//     replaced, or too many turns); held until a fresh task entry
+//   skipUntil: native byte before which nothing may be imported; set by a
+//     fresh task entry for what was left of the turns it ended
+export const TRANSCRIPT_CAPTURE_FORMAT = jsonFormat({ store: 'transcript-capture-ledger', versions: [1, 2] });
+const LEDGER_VERSION = 2;
+// When the session's record cannot be written, an unresolved turn is kept
+// here instead, in its own directory and lock: the session is then held until
+// a fresh task entry.
+export const TRANSCRIPT_TURN_HOLD_FORMAT = jsonFormat({ store: 'transcript-turn-hold', versions: [1] });
+const MAX_HELD_TURNS = 64;
+// A path that cannot exist: the file, or a directory on its way, is not there.
+const MISSING = new Set(['ENOENT', 'ENOTDIR']);
+const NOT_HELD = Object.freeze({ unprovable: false, turns: Object.freeze([]), skipUntil: null });
 
 export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplication) {
-  const path = join(dirname(runtimeConfigPath), 'transcript-capture',
-    `${transcriptDigest(`${runtimeConfigPath}\0${sourceApplication}\0${input.session_id}`)}.json`);
-  const stored = async () => {
-    try { return JSON.parse(await readFile(path, 'utf8')); }
-    catch { return null; }
+  const key = transcriptDigest(`${runtimeConfigPath}\0${sourceApplication}\0${input.session_id}`);
+  const path = join(dirname(runtimeConfigPath), 'transcript-capture', `${key}.json`);
+  const holdPath = join(dirname(runtimeConfigPath), 'transcript-turn-holds', `${key}.json`);
+  const update = (mutate) => updateVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT,
+    (current) => { const next = mutate(current); return next && ledgerDocument(next); }, { read: readLedger });
+  const held = () => {
+    const current = readLedger(path);
+    if (current.state === 'unprovable' || current.record.unprovable || fallbackHeld(holdPath)) {
+      return { ...NOT_HELD, unprovable: true };
+    }
+    return { unprovable: false, turns: current.record.held, skipUntil: current.record.skipUntil };
+  };
+  // Removes a file under its directory's lock only if `keep(current)` is
+  // false for what is there now: never a state another process wrote since.
+  const removeUnless = (filePath, format, keep) => {
+    if (!exists(filePath)) return true;
+    return withJsonFormatDirectory(filePath, ({ remove }) => {
+      if (keep()) return false;
+      remove(filePath, format);
+      return true;
+    }, { format });
   };
   return {
     // Why the next stretch must be skipped instead of imported, or null. A
     // pending denial comes first: the Provider may have been unable to take
-    // its marker while the settings never changed (dot's #228 review).
+    // its marker while the settings never changed (dot's #228 review). Any
+    // unresolved turn, or a state that cannot be proven, skips.
     async skipReason(version) {
       if (version === null) return UNATTRIBUTABLE;
       if (unkeptDenials.get(path) === version) return STATE_UNSAVED;
-      const record = await stored();
-      if (typeof record?.pending === 'string') return record.pending;
-      const settings = record?.settings ?? null;
-      return (settings === null ? version !== 'absent' : settings !== version) ? UNATTRIBUTABLE : null;
+      const current = readLedger(path);
+      if (current.state === 'unprovable') return TURN_UNRESOLVED;
+      const record = current.record;
+      if (typeof record.pending === 'string') return record.pending;
+      if (record.unprovable || record.held.length || record.skipUntil !== null || fallbackHeld(holdPath)) return TURN_UNRESOLVED;
+      return (record.settings === null ? version !== 'absent' : record.settings !== version) ? UNATTRIBUTABLE : null;
     },
     // Kept before anything else when a decision denies: 'kept'. If it cannot
     // be kept the record is removed, since a denial means settings were saved
     // and a session with no record is skipped, never imported: 'removed'. If
     // the old record cannot be removed either it stays readable, so it must
-    // not be trusted again in this process: 'unkept' (see keepDenial()).
+    // not be trusted again in this process: 'unkept' (see keepDenial()). A
+    // record that holds turns is never removed.
     // The first pending reason is read and kept under the format lock with
     // the write (rec#17), so a denial saved meanwhile is never lost.
     async deny(version, reason) {
       try {
-        updateVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT, (current) => ({ version: 1, settings: version,
-          pending: typeof current?.pending === 'string' ? current.pending : reason }), { read: readLedgerRecord });
+        update((current) => ({ ...current.record, settings: version,
+          pending: typeof current.record.pending === 'string' ? current.record.pending : reason }));
         unkeptDenials.delete(path);
         return 'kept';
       } catch (error) {
@@ -125,8 +179,13 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
         }
       }
       try {
-        // Removed only under the same lock, after checking its version again.
-        removeVersionedJsonFileAtomic(path, TRANSCRIPT_CAPTURE_FORMAT);
+        // Read, checked and removed under one hold of the lock: a turn another
+        // process holds meanwhile is never removed with the record.
+        const removed = removeUnless(path, TRANSCRIPT_CAPTURE_FORMAT, () => {
+          const current = readLedger(path);
+          return current.state === 'unprovable' || holdsTurns(current.record) || fallbackHeld(holdPath);
+        });
+        if (!removed) throw new Error('A record that holds turns is kept');
         unkeptDenials.delete(path);
         return 'removed';
       } catch {
@@ -135,13 +194,95 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
       }
     },
     // After a sync that covered the stretch, by importing it or by a marker
-    // the Provider saved. This clears a pending denial.
+    // the Provider saved. This clears a pending denial, never an unresolved
+    // turn: only its own resolution ends that.
     record(version) {
       if (version === null) return;
       try {
-        writeVersionedJsonFileAtomic(path, { version: 1, settings: version }, TRANSCRIPT_CAPTURE_FORMAT);
+        update((current) => ({ ...current.record, settings: version, pending: null }));
         unkeptDenials.delete(path);
       } catch { /* the next sync stays unattributable, which only skips more */ }
+    },
+    // The session's unresolved turns: unprovable (held, but which turns is not
+    // known), or the turns in order and the byte nothing before may be imported.
+    heldTurns: held,
+    // What a task entry starting now observes, so that it later ends only
+    // these turns: their ids and the exact bytes of both stores (a digest; null
+    // when absent, undefined when unreadable).
+    entrySnapshot() {
+      const current = readLedger(path);
+      const fallback = fileDigest(holdPath);
+      return { turns: current.record.held.map(turn => turn.turn), ledger: current.digest, fallback,
+        any: current.state === 'unprovable' || holdsTurns(current.record) || fallback !== null };
+    },
+    // Holds the turn that begins now (`turn`, a fresh id) from native byte
+    // `from`, after any older held turn. While turns are held every sync skips
+    // with TURN_UNRESOLVED and the Stop hook does not settle the session's
+    // task; a session reset, compaction or FULI going off leaves them held.
+    // 'ledger' or 'fallback' says where it was kept; false when nowhere.
+    holdTurn({ turn, from }) {
+      try {
+        update((current) => {
+          const turns = [...current.record.held, { turn, from, owner: null }];
+          return turns.length > MAX_HELD_TURNS ? { ...current.record, held: [], unprovable: true }
+            : { ...current.record, held: turns };
+        });
+        return 'ledger';
+      } catch {
+        try {
+          writeVersionedJsonFileAtomic(holdPath, { version: 1, turn, from }, TRANSCRIPT_TURN_HOLD_FORMAT);
+          return 'fallback';
+        } catch { return false; }
+      }
+    },
+    // The task that was current when the held turn began, once it is known.
+    ownTurn(turnId, owner) {
+      try {
+        update((current) => current.record.held.some(turn => turn.turn === turnId) ? { ...current.record,
+          held: current.record.held.map(turn => turn.turn === turnId ? { ...turn, owner } : turn) } : undefined);
+      } catch { /* an unknown owner keeps the turn held */ }
+    },
+    // Ends every held turn once their spans are skipped, or the last of them
+    // was proven: only while `latest` is still the last turn held. True when
+    // nothing remains held for those turns.
+    endTurns(latest) {
+      let ended = false;
+      try {
+        update((current) => {
+          if (current.record.held.at(-1)?.turn !== latest) return undefined;
+          ended = true;
+          return { ...current.record, held: [], skipUntil: null };
+        });
+        return ended;
+      } catch { return false; }
+    },
+    // A fresh task entry ends what it observed when it started (`snapshot`),
+    // and nothing before byte `before` may be imported. A store unchanged
+    // since then is cleared, an unprovable state included; a changed one loses
+    // only the observed turns, so a turn held while the entry ran stays held.
+    // False when it could not be saved, which keeps them held.
+    enteredAfter(before, snapshot) {
+      if (!snapshot.any) return true;
+      const observed = new Set(snapshot.turns);
+      try {
+        update((current) => {
+          const skipUntil = Math.max(before, current.record.skipUntil ?? 0);
+          if (snapshot.ledger !== undefined && current.digest === snapshot.ledger) {
+            return { ...current.record, held: [], unprovable: false, skipUntil };
+          }
+          if (current.state !== 'record') return undefined;
+          return { ...current.record, held: current.record.held.filter(turn => !observed.has(turn.turn)), skipUntil };
+        });
+        if (snapshot.fallback === null) return true;
+        return snapshot.fallback !== undefined && removeUnless(holdPath, TRANSCRIPT_TURN_HOLD_FORMAT,
+          () => fileDigest(holdPath) !== snapshot.fallback);
+      } catch { return false; }
+    },
+    // The span before `skipUntil` was skipped.
+    skipped(skipUntil) {
+      try {
+        update((current) => current.record.skipUntil === skipUntil ? { ...current.record, skipUntil: null } : undefined);
+      } catch { /* skipping it again only skips nothing more */ }
     }
   };
 }
@@ -157,11 +298,70 @@ export async function keepDenial(application, ledger, version, reason) {
   return advanceCaptureSettingsVersion(application) ? STATE_UNSAVED : STATE_UNWRITABLE;
 }
 
-// An unreadable record is replaced, as before the format lock.
-function readLedgerRecord(path) {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'));
-  } catch {
-    return null;
+function emptyLedger() {
+  return { settings: null, pending: null, held: [], unprovable: false, skipUntil: null };
+}
+
+function unprovableLedger() {
+  return { state: 'unprovable', record: { ...emptyLedger(), unprovable: true } };
+}
+
+// The record as 'absent', 'record' or 'unprovable': unreadable, not JSON, a
+// version this FULI does not know, or a held state it cannot read. A writer
+// that replaces an unprovable record keeps it unprovable (held).
+function readLedger(path) {
+  let text;
+  try { text = readFileSync(path, 'utf8'); } catch (error) {
+    return MISSING.has(error?.code) ? { state: 'absent', digest: null, record: emptyLedger() }
+      : { ...unprovableLedger(), digest: undefined };
   }
+  return { ...parseLedger(text), digest: transcriptDigest(text) };
+}
+
+function parseLedger(text) {
+  let value;
+  try { value = JSON.parse(text); } catch { return unprovableLedger(); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return unprovableLedger();
+  const pending = typeof value.pending === 'string' ? value.pending : null;
+  if (value.version === 1) return { state: 'record', record: { ...emptyLedger(), settings: value.settings ?? null, pending } };
+  if (value.version !== LEDGER_VERSION) return unprovableLedger();
+  const held = value.held ?? [];
+  if (!Array.isArray(held) || !held.every(heldTurn)
+      || (value.skipUntil !== undefined && !(Number.isSafeInteger(value.skipUntil) && value.skipUntil >= 0))
+      || (value.unprovable !== undefined && value.unprovable !== true)) return unprovableLedger();
+  return { state: 'record', record: { settings: value.settings ?? null, pending, held,
+    unprovable: value.unprovable === true, skipUntil: value.skipUntil ?? null } };
+}
+
+function heldTurn(turn) {
+  return Boolean(turn && typeof turn.turn === 'string' && turn.turn && Number.isSafeInteger(turn.from) && turn.from >= 0
+    && (turn.owner === null || typeof turn.owner === 'string'));
+}
+
+function ledgerDocument(record) {
+  return { version: LEDGER_VERSION, ...(record.settings === null || record.settings === undefined ? {} : { settings: record.settings }),
+    ...(typeof record.pending === 'string' ? { pending: record.pending } : {}),
+    ...(record.held?.length ? { held: record.held } : {}), ...(record.unprovable ? { unprovable: true } : {}),
+    ...(record.skipUntil === null || record.skipUntil === undefined ? {} : { skipUntil: record.skipUntil }) };
+}
+
+function holdsTurns(record) {
+  return Boolean(record.held.length || record.unprovable || record.skipUntil !== null);
+}
+
+// The file's exact bytes as a digest: null when absent, undefined when it cannot be read.
+function fileDigest(path) {
+  try { return transcriptDigest(readFileSync(path)); } catch (error) { return MISSING.has(error?.code) ? null : undefined; }
+}
+
+function exists(path) {
+  try { lstatSync(path); return true; } catch (error) {
+    if (MISSING.has(error?.code)) return false;
+    throw error;
+  }
+}
+
+// A fallback hold that exists in any form, or that cannot be read, holds the session.
+function fallbackHeld(path) {
+  try { readFileSync(path); return true; } catch (error) { return !MISSING.has(error?.code); }
 }
