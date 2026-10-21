@@ -313,6 +313,17 @@ export class GraphitiProviderClient {
       method: 'PUT', body: input
     });
   }
+  // rec#20: the checkpoint's reply claims its own turn receipt exactly once.
+  claimTurnReceipt(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/turn-receipt/claim`, {
+      method: 'POST', body: input
+    });
+  }
+  claimUnreadTurnReceipts(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/turn-receipts/claim-unread`, {
+      method: 'POST', body: input
+    });
+  }
   verifyTaskCheckpoint(query) {
     return this.#request(`/v1/task-context-sessions/checkpoint?${new URLSearchParams(query)}`);
   }
@@ -608,6 +619,18 @@ export class GraphitiProviderClient {
   }
   resetProjectAgentRoutingLearning(input) {
     return this.#request('/v1/project-agent-routing-learning/reset', {
+      method: 'POST', body: input
+    });
+  }
+  // rec#20: authoritative item views, a turn's receipt and the scope quick edit.
+  readKnowledgeItemView(input) {
+    return this.#request('/v1/knowledge/item-views', { method: 'POST', body: input });
+  }
+  readTurnReceipt(input) {
+    return this.#request('/v1/knowledge/turn-receipts', { method: 'POST', body: input });
+  }
+  changeKnowledgeScope(itemId, input) {
+    return this.#request(`/v1/knowledge/items/${encodeURIComponent(itemId)}/scope`, {
       method: 'POST', body: input
     });
   }

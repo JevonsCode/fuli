@@ -115,6 +115,20 @@ export const router = createRouter({
       component: () => import('@/pages/KnowledgePage.vue'),
       meta: { title: 'routes.knowledge.title', layout: 'canvas' },
     },
+    // rec#20: a turn receipt's links. Static segments outrank the knowledge
+    // workspace's parameters, so these never open a workspace view.
+    {
+      path: '/knowledge/item/:spaceId/:itemKind(entity|relationship)/:itemId',
+      name: 'knowledge-item-edit',
+      component: () => import('@/pages/KnowledgeItemEditPage.vue'),
+      meta: { title: 'routes.knowledgeItem.title', layout: 'form', detail: true },
+    },
+    {
+      path: '/knowledge/turn/:spaceId',
+      name: 'knowledge-turn-receipt',
+      component: () => import('@/pages/KnowledgeTurnReceiptPage.vue'),
+      meta: { title: 'routes.knowledgeTurn.title', layout: 'form', detail: true },
+    },
     {
       path: '/knowledge/:scope/:spaceId/:projectId/:mode/:itemKind/:itemId',
       name: 'project-knowledge-item',

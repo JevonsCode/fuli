@@ -8,6 +8,8 @@ import { experienceCapture } from './task-experiences.js';
 // Preferences go to the personal profile unless limited to this project; the
 // user's own words are the evidence global scope requires. Project facts stay
 // in the current project. Everything is pending until a person confirms it.
+// A preference whose scope the user left open (scope unsure) waits in the
+// session's temporary project, scope undecided (rec#20), never guessed global.
 const MAX_ITEMS = 8;
 // Hosts such as Claude Code keep their own memory files; a request to keep
 // something must still reach FULI. Detected only on the prompt, so ordinary
@@ -42,14 +44,14 @@ export function rememberCapture(task, remember, { sourceApplication = 'other', n
     const aspect = item.aspect ?? 'judgment_preference';
     if (!ASPECTS.has(aspect)) throw invalid('remember[].aspect must be taste, personality or judgment_preference');
     const scope = item.scope ?? 'global';
-    if (scope !== 'global' && scope !== 'project') throw invalid('remember[].scope must be global or project');
+    if (!['global', 'project', 'unsure'].includes(scope)) throw invalid('remember[].scope must be global, project or unsure');
     if (scope === 'global') quotes.push(text(item.quote, 600, 'remember[].quote (the user\'s own words, required for a global preference)'));
-    return { scope: scope === 'global' ? 'personal_global' : 'current_project',
+    return { scope: { global: 'personal_global', project: 'current_project', unsure: 'session_temporary' }[scope],
       entity: entity(task, key, statement, 'PersonalPreference', aspect, 'The user stated this preference during the task.') };
   }).filter(Boolean);
   const entities = items.map(item => item.entity);
   const digest = createHash('sha256').update(JSON.stringify(remember)).digest('hex').slice(0, 16);
-  const captureRouting = ['personal_global', 'current_project']
+  const captureRouting = ['personal_global', 'current_project', 'session_temporary']
     .map(scope => ({ scope, entityKeys: items.filter(item => item.scope === scope).map(item => item.entity.key),
       relationshipKeys: [], ...(scope === 'personal_global' ? { sourceExcerpt: quotes.join(' / ').slice(0, 2000) } : {}) }))
     .filter(batch => batch.entityKeys.length);
@@ -84,6 +86,8 @@ function entity(task, key, statement, type, profileAspect, existenceReason) {
     key, name: statement.slice(0, 120), type, summary: statement,
     ...(profileAspect ? { profileAspect } : {}),
     originQuadrant: 'known_known', epistemicStatus: 'observed', confirmationStatus: 'pending',
+    // The user asked to keep it in their own words; still pending until confirmed.
+    contentSource: 'user_explicit',
     confirmationBasis: { existenceReason,
       quadrantReason: 'Stated directly; it stays pending until a person confirms it.',
       proposedBy: { kind: 'agent', label: task.projectAgentId ?? null } }

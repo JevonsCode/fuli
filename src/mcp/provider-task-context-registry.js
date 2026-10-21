@@ -81,6 +81,24 @@ export class ProviderTaskContextRegistry {
     return this.#write(token, checkpoint, 'complete', sourceApplication);
   }
 
+  // True when this checkpoint's reply should carry its turn receipt: it was
+  // unread, or this same task already claimed it (a retry).
+  async claimTurnReceipt(token, sourceApplication = 'other') {
+    const result = await this.provider.claimTurnReceipt(token, {
+      personal_space_id: this.personalSpaceId, source_application: sourceApplication
+    });
+    return result?.deliver === true;
+  }
+
+  // The entry that read earlier turns' receipts back claims them; returns the
+  // IDs it may show (another entry may have claimed some meanwhile).
+  async claimUnreadTurnReceipts(token, receiptIds, sourceApplication = 'other') {
+    const result = await this.provider.claimUnreadTurnReceipts(token, {
+      personal_space_id: this.personalSpaceId, source_application: sourceApplication, receipt_ids: receiptIds
+    });
+    return Array.isArray(result?.claimed) ? result.claimed : [];
+  }
+
   verify(sessionId, sourceApplication = 'other') {
     return this.provider.verifyTaskCheckpoint({
       personal_space_id: this.personalSpaceId, session_id: sessionId,
@@ -127,6 +145,8 @@ export function taskRecord(value) {
     workLogRequired: value.work_log_required ?? false,
     agentMemory: value.agent_memory ?? null,
     previousCheckpointMissing: Boolean(value.previous_checkpoint_missing),
+    // Receipts of this session's earlier turns that never reached a reply.
+    unreadTurnReceipts: Array.isArray(value.unread_turn_receipts) ? value.unread_turn_receipts : [],
     checkpoint: value.checkpoint ? {
       ...value.checkpoint, captureStatus: value.checkpoint.capture_status,
       ...(value.checkpoint.knowledge_usage_result ? { knowledgeUsageResult: value.checkpoint.knowledge_usage_result } : {}),

@@ -53,6 +53,8 @@ export async function fixture(t, { registered = REGISTERED } = {}) {
     runtimeConfigPath,
     taskContextRegistry: new TaskContextRegistry(),
     fetchImpl: async url => { throw new Error(`Unexpected Provider request ${new URL(url).pathname}`); } });
+  // The turn receipt's read-back (rec#20): these tests check notices, not saved items.
+  app.personal.readTurnReceipt = async () => ({ entries: [], unchanged_count: 0 });
   app.upsertPersonalProject = async input => {
     writes.push({ kind: 'project', project: input.projectId });
     projects.add(input.projectId);

@@ -22,6 +22,7 @@ from .knowledge_usage_models import KnowledgeUsageCreate
 from .task_context_auto_close import close_previous_routine_fallback, routine_context_state
 from .task_worker_attribution import lock_checkpoint_context, checkpoint_collaboration
 from .task_activity_origin import context_activity_origin
+from .task_turn_receipts import mark_turn_receipt_unread, unread_session_turn_receipts
 
 
 class StoreTaskContexts:
@@ -41,7 +42,11 @@ class StoreTaskContexts:
             session_id = scoped._task_session_id(request.personal_space_id, request.source_application, request.session_id)
             await scoped._lock_task_context_session(session_id)
             await scoped._link_task_context_sessions(request.personal_space_id, [session_id])
-            return await scoped._begin_task_context(actor, request)
+            saved = await scoped._begin_task_context(actor, request)
+            # A retried entry of the same turn gets the turn's saved token back,
+            # not the one it sent: receipts belong to that canonical identity.
+            unread = await unread_session_turn_receipts(scoped, session_id, saved['token'])
+            return {**saved, **({'unread_turn_receipts': unread} if unread else {})}
 
     async def _lock_task_context_session(self, session_id):
         # One completed query per ID: a batch MERGE can lock Space before the
@@ -375,6 +380,8 @@ class StoreTaskContexts:
         )
         if not rows or not rows[0]['matches']:
             raise HTTPException(status_code=409, detail='Task checkpoint conflicts or was superseded')
+        if request.phase == 'complete':
+            await mark_turn_receipt_unread(self, request.personal_space_id, token, request.capture_results)
         saved = task_context_record(rows[0])
         if rows[0].get('knowledge_usage_result_json'):
             saved['checkpoint']['knowledge_usage_result'] = json.loads(rows[0]['knowledge_usage_result_json'])

@@ -47,7 +47,7 @@ class Neo4jKnowledgeTagVocabulary:
         if current is None:
             return None
         if current.get('preference_scope') not in (None, 'global') and current.get('preference_project_id'):
-            return 'projects', [current['preference_project_id']]
+            return 'projects', list(current.get('preference_project_ids') or [current['preference_project_id']])
         assignment = await _read_assignment(self._store, space['id'], item_id, item_kind)
         if assignment:
             return 'projects', [assignment.project_id]

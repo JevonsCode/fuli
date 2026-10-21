@@ -19,6 +19,8 @@ export class TaskContextRegistry {
     this.tokenFactory = tokenFactory;
     this.sessions = new Map();
     this.tokens = new Map();
+    // Turn receipt delivery state per completed task, as the Provider keeps it (rec#20).
+    this.receipts = new Map();
   }
 
   begin({ sessionId, turnId = null, personalProjectId, projectAgentId = null,
@@ -45,8 +47,15 @@ export class TaskContextRegistry {
     this.sessions.delete(key);
     this.sessions.set(key, task);
     this.tokens.set(task.token, task);
+    const unreadTurnReceipts = [];
+    for (const receipt of this.receipts.values()) {
+      if (receipt.sessionKey !== key || receipt.token === task.token
+        || !(receipt.state === 'unread' || receipt.claimant === task.token)) continue;
+      unreadTurnReceipts.push({ receipt_id: receipt.token, personal_project_id: receipt.personalProjectId,
+        capture_results: receipt.captureResults });
+    }
     return {
-      ...snapshot(task),
+      ...snapshot(task), unreadTurnReceipts,
       previousCheckpointMissing: Boolean(previous && (!previous.checkpoint || previous.checkpoint.phase === 'prepare'))
     };
   }
@@ -64,7 +73,30 @@ export class TaskContextRegistry {
       );
     }
     task.checkpoint = Object.freeze({ ...checkpoint, phase: 'complete' });
+    if ((checkpoint.captureResults ?? []).some(result => ['committed', 'duplicate'].includes(result.status))) {
+      this.receipts.set(token, { token, sessionKey: sessionKey(task.sourceApplication, task.sessionId),
+        personalProjectId: task.personalProjectId, captureResults: structuredClone(checkpoint.captureResults),
+        state: 'unread', claimant: null });
+    }
     return snapshot(task);
+  }
+
+  claimUnreadTurnReceipts(token, receiptIds) {
+    const claimed = [];
+    for (const id of receiptIds) {
+      const receipt = this.receipts.get(id);
+      if (!receipt || id === token || !(receipt.state === 'unread' || receipt.claimant === token)) continue;
+      Object.assign(receipt, { state: 'delivered', claimant: token });
+      claimed.push(id);
+    }
+    return claimed;
+  }
+
+  claimTurnReceipt(token) {
+    const receipt = this.receipts.get(token);
+    if (!receipt) return false;
+    if (receipt.state === 'unread') Object.assign(receipt, { state: 'delivered', claimant: token });
+    return receipt.claimant === token;
   }
 
   prepare(token, checkpoint, sourceApplication = 'other', agentMemory = null) {

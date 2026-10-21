@@ -89,7 +89,9 @@ class TaskWorkLog(StrictModel):
 
 
 class TaskCaptureReceipt(StrictModel):
-    scope: Literal['personal_global', 'current_project']
+    # session_temporary: saved in the session's temporary project because its
+    # scope was not decided (rec#20); the items say so themselves.
+    scope: Literal['personal_global', 'current_project', 'session_temporary']
     personal_project_id: str | None = Field(default=None, min_length=1, max_length=128)
     status: Literal['committed', 'duplicate', 'capture_disabled']
     episode_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -98,7 +100,10 @@ class TaskCaptureReceipt(StrictModel):
 
     @model_validator(mode='after')
     def require_matching_scope_and_receipt(self):
-        if (self.scope == 'current_project') != bool(self.personal_project_id):
+        if self.scope == 'session_temporary':
+            if self.status != 'capture_disabled' and not (self.personal_project_id or '').startswith('temporary-'):
+                raise ValueError('a session-temporary receipt names its temporary project')
+        elif (self.scope == 'current_project') != bool(self.personal_project_id):
             raise ValueError('capture receipt must match its scope')
         if self.status == 'capture_disabled':
             if self.episode_id or self.entity_ids or self.relationship_ids:
@@ -118,7 +123,7 @@ class TaskContextCheckpoint(StrictModel):
     reason: str = Field(min_length=1, max_length=2000)
     fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
     capture_status: str | None = Field(default=None, max_length=128)
-    capture_results: list[TaskCaptureReceipt] | None = Field(default=None, min_length=1, max_length=2)
+    capture_results: list[TaskCaptureReceipt] | None = Field(default=None, min_length=1, max_length=3)
     agent_memory: TaskContextAgentMemory | None = None
     work_log: TaskWorkLog | None = None
     knowledge_usage: list[KnowledgeUsageItem] | None = Field(default=None, min_length=1, max_length=200)
@@ -138,3 +143,12 @@ class TaskContextCheckpoint(StrictModel):
                 raise ValueError('capture receipt scopes must be unique')
         reject_credentials(self, 'task checkpoint')
         return self
+
+
+class TurnReceiptClaim(StrictModel):
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    source_application: SourceApplication
+
+
+class SessionTurnReceiptClaim(TurnReceiptClaim):
+    receipt_ids: list[str] = Field(min_length=1, max_length=64)

@@ -29,6 +29,7 @@ export function experienceCapture(task, experiences, { sourceApplication = 'othe
       summary: boundary ? `${solution}\n适用边界：${boundary}` : solution,
       attributes: { searchTerms: keys, solution, ...(boundary ? { boundary } : {}) },
       originQuadrant: 'known_known', epistemicStatus: 'observed', confirmationStatus: 'pending',
+      contentSource: 'agent_inferred',
       confirmationBasis: { existenceReason: 'The task owner reported this approach after completing the task.',
         quadrantReason: 'Observed in this task; it stays pending until a person confirms it.',
         proposedBy: { kind: 'agent', label: task.projectAgentId ?? null } }
