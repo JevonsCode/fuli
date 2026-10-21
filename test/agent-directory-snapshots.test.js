@@ -11,7 +11,10 @@ import { callAgentTool } from '../src/agent-tools.js';
 import { createAgentDirectorySnapshots } from '../src/agents/directory-snapshots.js';
 import { FederatedGraphApplication, openFederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { withTaskMemorySnapshot } from '../src/graphiti/project-agent-memory.js';
-import { assertFileMode, requiresPermissionDenial, requiresSymlinks } from '../test-support/platform-capabilities.js';
+import { writeWhileReaderHoldsOpen } from '../test-support/open-file-reader.js';
+import {
+  assertFileMode, refusesRenameOverOpenFile, requiresPermissionDenial, requiresSymlinks
+} from '../test-support/platform-capabilities.js';
 
 // Synthetic temp data and an HTTP Provider double only.
 const SPACE = 'test-space';
@@ -300,6 +303,25 @@ test('unauthorized reads, task-only Agents and plain applications produce no sna
     const plain = new FederatedGraphApplication(config(), { fetchImpl: provider().fetchImpl });
     const view = await callAgentTool(plain, 'get_project_agent_memory', memoryInput());
     assert.equal(view.directorySnapshot, undefined, 'no machine-global fallback without a runtime config');
+  } finally { cleanup(); }
+});
+
+test('a snapshot file is replaced while another process is reading it', refusesRenameOverOpenFile, async () => {
+  const { root, cleanup } = fixture();
+  try {
+    const snapshots = createAgentDirectorySnapshots({ root, providerIdentity: 'http://127.0.0.1:8787' });
+    const agent = { agentId: 'engineer', memoryScope: 'reviewed_agent', profile: { name: 'Engineer' } };
+    const project = revision => snapshots.materialize({ personalSpaceId: SPACE, agent,
+      layers: [{ personalProjectId: 'sample-project', revision, current: null }] });
+    const first = project(3);
+    const memory = first.files.find(file => file.scope === 'project').file;
+    const memoryPath = join(root, ...first.path.split('/').slice(1), memory);
+
+    const second = await writeWhileReaderHoldsOpen(memoryPath, () => project(5));
+
+    assert.equal(second.status, 'current');
+    assert.deepEqual(second.files.map(({ scope, state }) => [scope, state]), [['identity', 'unchanged'], ['project', 'written']]);
+    assert.match(readFileSync(memoryPath, 'utf8'), /Database revision: 5/);
   } finally { cleanup(); }
 });
 
