@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { connectClaudeCode } from '../../src/setup/claude-code-config.js';
+import { connectAgent } from '../../src/setup/agents.js';
 import {
   resolveAlignmentTimeouts,
   summarizeClaudeExecutionError,
@@ -38,7 +38,7 @@ try {
   );
   writeFileSync(mcpConfigPath, '{"mcpServers":{}}\n', { mode: 0o600 });
   writeFileSync(settingsPath, '{}\n', { mode: 0o600 });
-  connectClaudeCode({
+  connectAgent({
     id: 'claude-code',
     label: 'Claude Code',
     configPath: mcpConfigPath,

@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { adapter } from './index.js';
+import { agentAdapter } from '../registry.js';
 import { inspectAgentInstallations } from '../../agent-installation-status.js';
+
+const adapter = agentAdapter('claude-code');
 
 test('claude-code: registry discovery and temporary configuration preserve unrelated entries', (t) => {
   const homeDir = mkdtempSync(path.join(tmpdir(), 'fuli-claude-code-'));

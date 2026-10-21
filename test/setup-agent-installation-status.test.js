@@ -12,6 +12,9 @@ import test from 'node:test';
 import { connectCodex, replaceFuliTable } from '../src/setup/codex-config.js';
 import { inspectAgentInstallations } from '../src/setup/agent-installation-status.js';
 import { claudeLifecycleCommand } from '../src/agents/claude-code/lifecycle-hooks.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
+
+const CODEX_PACK = builtInClientPack('codex');
 
 const CONTEXT = Object.freeze({
   nodePath: 'C:/Runtime/node.exe',
@@ -66,7 +69,7 @@ test('setup distinguishes current, outdated, and missing Agent integrations', ()
     '--tool-profile',
     'chat'
   ];
-  const currentCodex = replaceFuliTable('', {
+  const currentCodex = replaceFuliTable('', { ...CODEX_PACK.mcpServer,
     command: CONTEXT.nodePath,
     args: desiredArgs
   });
@@ -217,7 +220,7 @@ test('Claude Code requires always-loaded Fuli plus task lifecycle hooks', () => 
 
 test('Codex requires a current global bootstrap in addition to MCP and Skills', () => {
   const codex = AGENTS[0];
-  const currentConfig = replaceFuliTable('', {
+  const currentConfig = replaceFuliTable('', { ...CODEX_PACK.mcpServer,
     command: CONTEXT.nodePath,
     args: [
       CONTEXT.mcpServerPath,
@@ -245,7 +248,7 @@ test('Codex accepts current lifecycle hooks consolidated in config.toml', () => 
     hooksPath: 'C:/User/.codex/hooks.json'
   };
   let currentConfig = [
-    replaceFuliTable('', {
+    replaceFuliTable('', { ...CODEX_PACK.mcpServer,
       command: CONTEXT.nodePath,
       args: [
         CONTEXT.mcpServerPath,
@@ -264,7 +267,7 @@ test('Codex accepts current lifecycle hooks consolidated in config.toml', () => 
     ''
   ].join('\n');
 
-  connectCodex(codex, CONTEXT, {
+  connectCodex(CODEX_PACK, codex, CONTEXT, {
     readConfig: () => currentConfig,
     writeConfig: (_path, value) => { currentConfig = value; },
     readHooks: () => ({}),

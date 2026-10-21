@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "id": "cursor",
+  "version": "1.0.0",
+  "digest": "sha256:a4010856f31ea9f3bea192010945dfd392dabc031ef5bcd81c84ec60d1900d59",
+  "label": "Cursor",
+  "command": "cursor",
+  "detection": {
+    "clientHome": {
+      "from": "homeDir",
+      "path": [
+        ".cursor"
+      ]
+    },
+    "files": {
+      "configPath": {
+        "from": "clientHome",
+        "path": [
+          "mcp.json"
+        ]
+      },
+      "hooksPath": {
+        "from": "clientHome",
+        "path": [
+          "hooks.json"
+        ]
+      }
+    },
+    "skillsRoot": {
+      "from": "clientHome",
+      "path": [
+        "skills"
+      ]
+    },
+    "availableWhen": [
+      {
+        "probe": "commandOnPath"
+      },
+      {
+        "probe": "pathExists",
+        "target": "configPath"
+      },
+      {
+        "probe": "pathExists",
+        "target": "clientHome"
+      }
+    ]
+  },
+  "commandSkills": {
+    "review": {
+      "userCommand": "/flreview",
+      "nativeInvocation": "/flreview"
+    },
+    "sessionCommand": true
+  },
+  "configWriter": "cursor-hooks",
+  "mcpServer": {
+    "command": "{nodePath}",
+    "args": [
+      "{mcpServerPath}",
+      "--runtime-config",
+      "{runtimeConfigPath}",
+      "--source-application",
+      "cursor",
+      "{toolProfileArgs}"
+    ]
+  },
+  "lifecycleHooks": {
+    "timeoutSec": 30,
+    "events": [
+      {
+        "event": "sessionStart"
+      },
+      {
+        "event": "beforeSubmitPrompt"
+      },
+      {
+        "event": "stop",
+        "loopLimit": 2
+      }
+    ]
+  }
+}

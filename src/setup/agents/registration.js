@@ -1,13 +1,13 @@
-import { installedToolProfile } from '../installed-tool-profile.js';
-
-export function jsonRegistration(agent, context, readers, { source, profile, fixedProfile, optionalProfile } = {}) {
+// Whether a JSON client's FULI entry is present and runs the expected command
+// and arguments. `expectedEntry` receives the installed entry, so an explicit
+// tool profile the person chose is kept; a failure counts as outdated.
+export function jsonRegistration(agent, readers, expectedEntry) {
   let present = false;
   try {
     const server = readers.readJson(agent.configPath)?.mcpServers?.fuli;
     present = Boolean(server && typeof server === 'object' && !Array.isArray(server));
-    const args = [context.mcpServerPath, '--runtime-config', context.runtimeConfigPath, '--source-application', source];
-    if (profile || fixedProfile || (optionalProfile && server?.args?.includes('--tool-profile'))) args.push('--tool-profile', fixedProfile ?? installedToolProfile(server?.args, context.toolProfile));
-    return { present, current: present && server.command === context.nodePath &&
-      JSON.stringify(server.args) === JSON.stringify(args) };
+    const expected = expectedEntry(server);
+    return { present, current: present && server.command === expected.command &&
+      JSON.stringify(server.args) === JSON.stringify(expected.args) };
   } catch { return { present, current: false }; }
 }

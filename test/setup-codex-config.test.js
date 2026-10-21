@@ -8,6 +8,9 @@ import {
   removeFuliTables,
   replaceFuliTable
 } from '../src/setup/codex-config.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
+
+const PACK = builtInClientPack('codex');
 
 const AGENT = Object.freeze({
   id: 'codex', label: 'Codex', configPath: '/user/.codex/config.toml'
@@ -35,7 +38,7 @@ test('Codex config preserves unrelated settings and replaces all old Fuli tables
     'command = "other"',
     ''
   ].join('\n');
-  const next = replaceFuliTable(current, {
+  const next = replaceFuliTable(current, { ...PACK.mcpServer,
     command: CONTEXT.nodePath,
     args: [CONTEXT.mcpServerPath, '--runtime-config', CONTEXT.runtimeConfigPath]
   });
@@ -50,7 +53,7 @@ test('Codex config preserves unrelated settings and replaces all old Fuli tables
 
 test('Codex connector writes the merged user config', () => {
   let write;
-  const result = connectCodex(AGENT, CONTEXT, {
+  const result = connectCodex(PACK, AGENT, CONTEXT, {
     readConfig: () => 'approval_policy = "on-request"\n',
     writeConfig: (path, value) => { write = { path, value }; }
   });
@@ -68,7 +71,7 @@ test('Codex connector writes the merged user config', () => {
 });
 
 test('Codex connector avoids rewriting a current config and reports no reload', () => {
-  const current = replaceFuliTable('', {
+  const current = replaceFuliTable('', { ...PACK.mcpServer,
     command: CONTEXT.nodePath,
     args: [
       CONTEXT.mcpServerPath,
@@ -81,7 +84,7 @@ test('Codex connector avoids rewriting a current config and reports no reload', 
     ]
   });
   let writes = 0;
-  const result = connectCodex(AGENT, CONTEXT, {
+  const result = connectCodex(PACK, AGENT, CONTEXT, {
     readConfig: () => current,
     writeConfig: () => { writes += 1; },
     installBootstrap: () => ({ changed: false })
@@ -92,13 +95,13 @@ test('Codex connector avoids rewriting a current config and reports no reload', 
 });
 
 test('Codex gets the chat tool profile, and an explicit profile in its config survives', () => {
-  const legacy = replaceFuliTable('', { command: CONTEXT.nodePath,
+  const legacy = replaceFuliTable('', { ...PACK.mcpServer, command: CONTEXT.nodePath,
     args: [CONTEXT.mcpServerPath, '--runtime-config', CONTEXT.runtimeConfigPath, '--source-application', 'codex'] });
-  const explicit = replaceFuliTable('', { command: CONTEXT.nodePath,
+  const explicit = replaceFuliTable('', { ...PACK.mcpServer, command: CONTEXT.nodePath,
     args: [CONTEXT.mcpServerPath, '--runtime-config', CONTEXT.runtimeConfigPath, '--source-application', 'codex', '--tool-profile', 'full'] });
   const written = source => {
     let value = '';
-    connectCodex(AGENT, CONTEXT, { readConfig: () => source, writeConfig: (_path, next) => { value = next; },
+    connectCodex(PACK, AGENT, CONTEXT, { readConfig: () => source, writeConfig: (_path, next) => { value = next; },
       installBootstrap: () => ({ changed: false }) });
     return value || source;
   };
@@ -131,7 +134,7 @@ test('Codex connector keeps one hook representation when config.toml already has
   const writes = [];
 
   // The expected hook command is the POSIX shell form, whatever the host is.
-  const result = connectCodex(AGENT_WITH_HOOKS, { ...CONTEXT, platform: 'linux' }, {
+  const result = connectCodex(PACK, AGENT_WITH_HOOKS, { ...CONTEXT, platform: 'linux' }, {
     readConfig: () => current,
     writeConfig: (path, value) => { writes.push({ path, value }); },
     readHooks: () => currentHooks,
@@ -161,7 +164,7 @@ test('Codex connector keeps one hook representation when config.toml already has
 
 test('Codex Windows hook commands locate the lifecycle script with Windows paths on any host', () => {
   const writes = [];
-  connectCodex(AGENT_WITH_HOOKS, {
+  connectCodex(PACK, AGENT_WITH_HOOKS, {
     nodePath: 'C:\\runtime\\node.exe',
     mcpServerPath: 'C:\\package\\src\\mcp-server.js',
     runtimeConfigPath: 'C:\\data\\graph-runtime.json',
@@ -208,12 +211,12 @@ test('Codex consolidated TOML hooks report no reload or trust review on an idemp
     installBootstrap: () => ({ changed: false })
   };
 
-  const first = connectCodex(AGENT_WITH_HOOKS, CONTEXT, options);
+  const first = connectCodex(PACK, AGENT_WITH_HOOKS, CONTEXT, options);
   assert.equal(first.newTaskRequired, true);
   assert.equal(first.trustReviewRequired, true);
   writes.length = 0;
 
-  const second = connectCodex(AGENT_WITH_HOOKS, CONTEXT, options);
+  const second = connectCodex(PACK, AGENT_WITH_HOOKS, CONTEXT, options);
   assert.equal(second.newTaskRequired, false);
   assert.equal(Object.hasOwn(second, 'trustReviewRequired'), false);
   assert.deepEqual(writes, []);
@@ -231,7 +234,7 @@ test('Codex connector rejects mixed hook representations before bootstrap or con
   let bootstrapCalls = 0;
   let writes = 0;
 
-  assert.throws(() => connectCodex(AGENT_WITH_HOOKS, CONTEXT, {
+  assert.throws(() => connectCodex(PACK, AGENT_WITH_HOOKS, CONTEXT, {
     readConfig: () => current,
     writeConfig: () => { writes += 1; },
     readHooks: () => ({
