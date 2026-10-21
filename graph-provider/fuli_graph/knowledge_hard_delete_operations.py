@@ -7,7 +7,9 @@ was lost never has to guess:
 - committed: the deletion trace carries the operation ID; it is written in
   the delete's own transaction, so it exists exactly when the delete did;
 - refused: the graph refused it (stale preview, missing confirmation, the item
-  missing or already deleted), recorded after that transaction rolled back;
+  missing or already deleted). The refusal is decided before anything is
+  written and persisted in that same transaction, under the space's
+  knowledge lock, so it is never visible while a delete of the operation runs;
 - aborted: the console gave up on it. An abort takes the space's knowledge
   lock, which the delete holds from its first statement to its commit, so it
   waits for a delete that is running and wins only when none committed; a
