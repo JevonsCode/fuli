@@ -33,7 +33,9 @@ export interface SessionEntry {
   /** The turn an item was written in, when the session saved it. */
   turn?: string | null
   link: string
-  detail: { messages?: TurnMessage[]; items?: string[]; item?: SessionItem; episode_id?: string }
+  /** sources: every episode that wrote or cited an item, with the turn it was in. */
+  detail: { messages?: TurnMessage[]; items?: string[]; item?: SessionItem;
+    sources?: { episode_id: string; turn?: string | null }[] }
 }
 
 export interface NotRecordedStretch { from: string; to: string; paused: boolean; reasons: string[] }
@@ -73,8 +75,11 @@ export function peekEntry(view: SessionRecordsView | null, key: string) {
   if (!view || !key) return null
   if (!key.startsWith('episode:')) return view.entries.find(entry => entry.key === key) ?? null
   const episode = key.slice('episode:'.length)
-  const item = view.entries.find(entry => entry.detail.episode_id === episode)
-  return (item?.turn && view.entries.find(entry => entry.key === item.turn)) || item || null
+  for (const entry of view.entries) {
+    const source = entry.detail.sources?.find(candidate => candidate.episode_id === episode)
+    if (source) return (source.turn && view.entries.find(candidate => candidate.key === source.turn)) || entry
+  }
+  return null
 }
 
 export function groupEntries(view: SessionRecordsView, group: SessionGroup) {

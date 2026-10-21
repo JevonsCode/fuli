@@ -17,8 +17,8 @@ function view(): SessionRecordsView {
   return { session: { sourceApplication: 'codex', sessionId: 's-1', url: '' }, total: 3, truncated: false,
     entries: [entry(1, 'turn:t1'), entry(2, 'turn:t2', { at: local(15, 10) }),
       entry(3, 'entity:cite', { group: 'preference_evidence', kind: 'entity', turn: 'turn:t1',
-        detail: { episode_id: 'e-1' } }),
-      entry(4, 'entity:orphan', { group: 'knowledge', kind: 'entity', detail: { episode_id: 'e-2' } })],
+        detail: { sources: [{ episode_id: 'e-1', turn: 'turn:t1' }] } }),
+      entry(4, 'entity:orphan', { group: 'knowledge', kind: 'entity', detail: { sources: [{ episode_id: 'e-2', turn: null }] } })],
     stretches: [{ from: local(14, 32), to: local(15, 10), paused: true, reasons: [] }] }
 }
 
@@ -38,6 +38,13 @@ describe('session records model', () => {
     expect(peekEntry(view(), 'entity:cite')?.number).toBe(3)
     expect(peekEntry(view(), 'turn:missing')).toBeNull()
     expect(peekEntry(null, 'turn:t1')).toBeNull()
+  })
+
+  it('every source of an item opens its own turn, not only the first (dot #263 P2-2)', () => {
+    const records = view()
+    records.entries[2].detail.sources = [{ episode_id: 'e-1', turn: 'turn:t1' }, { episode_id: 'e-3', turn: 'turn:t2' }]
+    expect(peekEntry(records, 'episode:e-1')?.key).toBe('turn:t1')
+    expect(peekEntry(records, 'episode:e-3')?.key).toBe('turn:t2')
   })
 
   it('links name the session and the record, and a source without a session links nowhere', () => {

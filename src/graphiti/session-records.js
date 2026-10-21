@@ -60,12 +60,24 @@ async function providerRead(application, session) {
 // Only what turns in this same project wrote; no project is a scope of its
 // own, not one every project sees. A stretch that only another project's
 // turns hold is left out too: even its times are that project's.
+// An item is kept when one of its sources is this project's, shown through
+// the first such source, so another project's earlier citation never hides
+// this project's own evidence.
 function withinProject(read, projectId) {
   const visible = id => (id ?? null) === projectId;
   const turns = read.turns.map(turn => visible(turn.personal_project_id) ? turn
     : { ...turn, hidden: true, messages: [] });
-  return { ...read, turns, items: read.items.filter(item => visible(item.origin_project_id)),
-    projects: (read.projects ?? []).filter(project => project.id === projectId) };
+  const items = read.items.map(item => ({ ...item, sources: itemSources(item).filter(source => visible(source.origin_project_id)) }))
+    .filter(item => item.sources.length).map(item => ({ ...item, ...item.sources[0] }));
+  return { ...read, turns, items, projects: (read.projects ?? []).filter(project => project.id === projectId) };
+}
+
+// Every episode that wrote or cited an item, oldest first; an older Provider
+// named only the first, at the top.
+function itemSources(item) {
+  return item.sources?.length ? item.sources : [{ change: item.change, episode_id: item.episode_id, task_id: item.task_id,
+    recorded_at: item.recorded_at, origin_project_id: item.origin_project_id, conversation_id: item.conversation_id,
+    excerpt: item.excerpt }];
 }
 
 function sessionRecordsView(application, session, read) {
@@ -77,7 +89,7 @@ function sessionRecordsView(application, session, read) {
       group: 'transcript', key: `turn:${turn.task_id}`, kind: 'turn', type: '会话原文',
       summary: oneLine(turnWords(turn)), at: turn.created_at, project: project(turn.personal_project_id),
       detail: { messages: turn.messages, conversation_id: turn.conversation_id ?? null,
-        items: read.items.filter(item => item.task_id === turn.task_id).map(itemKey) } })),
+        items: read.items.filter(item => itemSources(item).some(source => source.task_id === turn.task_id)).map(itemKey) } })),
     knowledge: read.items.filter(item => !item.profile_aspect && item.change !== 'evidence').map(item => itemEntry(item,
       'knowledge', `${item.change === 'updated' ? '更新' : '新增'} ${CATEGORY[item.category] ?? '知识'}`)),
     preference_evidence: read.items.filter(item => item.profile_aspect).map(item => itemEntry(item,
@@ -86,7 +98,8 @@ function sessionRecordsView(application, session, read) {
   function itemEntry(item, group, type, words = item.content || item.title) {
     return { group, key: itemKey(item), kind: item.item_kind, type, summary: oneLine(words),
       status: item.confirmation_status, at: item.recorded_at, project: project(item.origin_project_id),
-      turn: item.task_id ? `turn:${item.task_id}` : null, detail: { item, episode_id: item.episode_id } };
+      turn: turnKey(item.task_id), detail: { item, sources: itemSources(item).map(source => ({
+        episode_id: source.episode_id, turn: turnKey(source.task_id) })) } };
   }
   let number = 0;
   const entries = GROUPS.flatMap(group => grouped[group]
@@ -99,6 +112,7 @@ function sessionRecordsView(application, session, read) {
 }
 
 const itemKey = item => `${item.item_kind}:${item.item_id}`;
+const turnKey = taskId => taskId ? `turn:${taskId}` : null;
 
 function turnWords(turn) {
   return turn.messages.find(message => message.role === 'user')?.text ?? turn.messages[0]?.text ?? '';
@@ -111,13 +125,16 @@ function oneLine(value) {
 
 // Where the session recorded nothing: turns whose checkpoint says capture was
 // off, from their start to the next turn's, and journal markers of skipped
-// bytes, from the last saved event before them. Overlapping or touching
-// stretches merge. Session-layer reasons (paused, stopped) read 暂停记录.
+// bytes, from the session's last saved event before them. Overlapping or
+// touching stretches merge. Session-layer reasons (paused, stopped) read
+// 暂停记录. Only what the reader may see sets a boundary: when the next turn
+// is another project's, the stretch ends at its own last evidence instead of
+// guessing it lasted until then.
 function notRecordedStretches(turns) {
   const segments = [];
   turns.forEach((turn, index) => {
     if (turn.hidden) return;
-    const next = turns[index + 1]?.created_at ?? null;
+    const next = turns[index + 1] && !turns[index + 1].hidden ? turns[index + 1].created_at : null;
     if (turn.capture_off) {
       const last = [turn.created_at, ...turn.not_recorded.map(marker => marker.created_at)].filter(Boolean).sort().at(-1);
       segments.push({ from: turn.created_at, to: next ?? last, reasons: [turn.capture_off.layer === 'session'
@@ -157,7 +174,8 @@ function sessionRecordsMarkdown(view) {
       + `｜「${receiptSummary(entry.summary)}」｜[查看](<${entry.link}>)`);
   }
   lines.push(...stretches.map(stretchLine));
-  if (view.truncated) lines.push('会话较长，只列出最近的记录；完整清单见上方链接。');
+  // The list is bounded on the console too, so this never promises more there.
+  if (view.truncated) lines.push('会话较长，只列出了最近的记录；更早的记录没有列出。');
   return lines.join('\n');
 }
 

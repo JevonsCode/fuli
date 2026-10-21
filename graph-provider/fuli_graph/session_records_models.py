@@ -61,16 +61,23 @@ class SessionTurn(StrictModel):
     not_recorded: list[SessionNotRecorded] = Field(default_factory=list)
 
 
-class SessionRecordItem(KnowledgeItemSummary):
+class SessionRecordSource(StrictModel):
+    """One episode that wrote or cited an item: its own turn, the project of
+    that turn (whose context it came from, which may differ from where the
+    item applies), conversation, time and the words it rests on."""
     change: SessionRecordChange
     episode_id: str
     task_id: str | None = None
     recorded_at: datetime | None = None
-    # The project of the turn that wrote it (its task's, else its episode's):
-    # whose context it came from, which may differ from where it applies.
     origin_project_id: str | None = None
     conversation_id: str | None = None
     excerpt: str | None = None
+
+
+class SessionRecordItem(KnowledgeItemSummary, SessionRecordSource):
+    """An item once: its first source's fields at the top and every source,
+    oldest first, in sources."""
+    sources: list[SessionRecordSource] = Field(default_factory=list)
 
 
 class SessionRecords(StrictModel):

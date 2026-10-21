@@ -12,11 +12,13 @@ export function agentProfileUrl(application, agentId) {
 // One host session's record list (rec#5 C6), short because every saving
 // turn's receipt carries it: the console reads it in its active space and the
 // Provider finds the session's client. With an item key, that record opened
-// in the list's quick look (whose identity names the space, D-03).
-export function sessionRecordsUrl(application, { sessionId }, itemKey = null) {
+// in the list's quick look (whose identity names the space, D-03); a known
+// client is named too, so a rare shared session ID still opens that record.
+export function sessionRecordsUrl(application, { sourceApplication = null, sessionId }, itemKey = null) {
   const page = `${receiptConsoleUrl(application)}/s/${encodeURIComponent(sessionId)}`;
   if (!itemKey) return page;
-  return `${page}?item=${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(itemKey)}`;
+  return `${page}?${sourceApplication ? `client=${encodeURIComponent(sourceApplication)}&` : ''}`
+    + `item=${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(itemKey)}`;
 }
 
 export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.';

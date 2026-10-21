@@ -21,19 +21,17 @@ def started_conversation_id(binding_id):
     return stable_uuid('conversation', binding_id)
 
 
-async def session_conversation_ids(store, space_id, personal_project_id, agent_id, source_application, session_id):
-    """The conversations one host session wrote to under one Agent: the one it
-    is bound to now (a resume may rebind it) first, then the one it started in.
-    Both may hold its events."""
+async def bound_conversation_id(store, space_id, personal_project_id, agent_id, source_application, session_id):
+    """The conversation one host session writes to under one Agent now: the
+    one its binding names (a resume may rebind it), else the one its first
+    write will create."""
     binding = conversation_binding_id(conversation_scope_id(space_id, personal_project_id, agent_id),
                                       source_application, session_id)
     rows, _, _ = await store.runtime.driver.execute_query(
         'OPTIONAL MATCH (b:FuliConversationBinding {id: $id}) RETURN b.conversation_id AS conversation_id',
         id=binding, routing_='r')
-    started = started_conversation_id(binding)
-    bound = rows[0]['conversation_id'] if rows and rows[0]['conversation_id'] else started
-    return [bound] if bound == started else [bound, started]
-
+    bound = rows[0]['conversation_id'] if rows else None
+    return bound or started_conversation_id(binding)
 
 
 async def current_session_conversation_id(store, space_id, source_application, session_id):
@@ -52,5 +50,5 @@ async def current_session_conversation_id(store, space_id, source_application, s
         routing_='r')
     if not rows or not rows[0]['agent_id']:
         return None
-    return (await session_conversation_ids(store, space_id, rows[0]['project_id'], rows[0]['agent_id'],
-                                           source_application, session_id))[0]
+    return await bound_conversation_id(store, space_id, rows[0]['project_id'], rows[0]['agent_id'],
+                                       source_application, session_id)

@@ -8,6 +8,8 @@ from uuid import uuid4
 
 import pytest
 
+from fuli_graph import session_records
+
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
 
 OFF = 'Capture was off for this task (session: session_paused); FULI kept no summary.'
@@ -48,27 +50,34 @@ class Session:
             'source_application': 'codex', 'session_id': self.session_id, 'task_context_token': self.token,
             'events': list(events)}))
 
+    async def resume(self, conversation_id):
+        return ok(await self.client.post('/v1/agent-conversations/resume', json={
+            'personal_space_id': self.space_id, 'personal_project_id': self.project, 'agent_id': self.agent,
+            'source_application': 'codex', 'session_id': self.session_id, 'task_context_token': self.token,
+            'conversation_id': conversation_id}))
+
     async def say(self, words):
         return await self.append(
             {'event_id': f'{self.token}:user', 'role': 'user', 'content': words},
             {'event_id': f'{self.token}:assistant', 'role': 'assistant', 'content': f'Synthetic answer to: {words}'})
 
-    async def commit(self, entities, *, project=None):
+    async def commit(self, entities, *, project=None, personal_global=False):
         return ok(await self.client.post('/v1/knowledge/commits', json={
-            'space_id': self.space_id, 'personal_project_id': project or self.project,
+            'space_id': self.space_id, 'personal_project_id': None if personal_global else project or self.project,
             'episode': {'idempotency_key': f'{self.token}:knowledge:current_project', 'session_id': self.session_id,
                         'name': 'Synthetic turn capture', 'source_kind': 'task_remember',
                         'source_description': 'Synthetic items a turn kept.', 'source_application': 'codex',
                         'source_excerpt': entities[0]['summary'], 'reference_time': '2026-10-20T06:00:00Z',
                         'entities': entities}}))
 
-    async def checkpoint(self, saved=None, *, reason='Synthetic turn.'):
+    async def checkpoint(self, saved=None, *, reason='Synthetic turn.', personal_global=False):
         body = {'personal_space_id': self.space_id, 'source_application': 'codex', 'phase': 'complete',
                 'disposition': 'capture_candidates' if saved else 'retain_nothing', 'reason': reason,
                 'fingerprint': 'b' * 64}
         if saved:
             body |= {'capture_status': 'committed', 'capture_results': [{
-                'scope': 'current_project', 'personal_project_id': self.project, 'status': 'committed',
+                'scope': 'personal_global' if personal_global else 'current_project',
+                'personal_project_id': None if personal_global else self.project, 'status': 'committed',
                 'episode_id': saved['episode_id'], 'entity_ids': saved['entity_ids'], 'relationship_ids': []}]}
         elif reason == OFF:
             body['capture_status'] = 'capture_disabled'
@@ -200,3 +209,80 @@ async def test_a_link_naming_only_the_session_finds_its_one_client_and_never_gue
         unknown = ok(await client.post('/v1/session-records', json={
             'personal_space_id': space_id, 'session_id': 'no-such-session'}))
         assert (unknown['source_application'], unknown['clients'], unknown['turns']) == (None, [], [])
+
+
+# dot #263 P2-2: an item listed once keeps every episode that wrote or cited it.
+@pytest.mark.asyncio
+async def test_an_item_cited_in_two_turns_keeps_both_sources_with_their_own_turn_and_project():
+    async with provider_client(fixture_settings()) as (client, _):
+        space_id = await new_space(client)
+        session = Session(client, space_id, f'native-{uuid4()}')
+        cite = preference('cite', '论文引用格式用 GB/T 7714')
+        await session.begin('ledger', 'keeper')
+        first = await session.commit([cite], personal_global=True)
+        await session.checkpoint(first, personal_global=True)
+        await session.begin('thesis', 'writer')
+        second = await session.commit([cite], personal_global=True)
+        await session.checkpoint(second, personal_global=True)
+        records = ok(await session.records())
+        turns = [turn['task_id'] for turn in records['turns']]
+        [item] = records['items']
+        assert [(source['episode_id'], source['task_id'], source['origin_project_id'], source['change'])
+                for source in item['sources']] == [
+            (first['episode_id'], turns[0], 'ledger', 'created'), (second['episode_id'], turns[1], 'thesis', 'evidence')]
+        assert (item['episode_id'], item['origin_project_id']) == (first['episode_id'], 'ledger')
+
+
+# dot #263 P2-3: every conversation the session wrote to, each turn in its own.
+@pytest.mark.asyncio
+async def test_two_resumes_keep_every_conversation_and_each_turn_names_its_own():
+    async with provider_client(fixture_settings()) as (client, _):
+        space_id = await new_space(client)
+        session = Session(client, space_id, f'native-{uuid4()}')
+        others = [Session(client, space_id, f'native-{uuid4()}') for _ in range(2)]
+        await session.begin()
+        conversations = [(await session.say('S in its own conversation'))['conversation_id']]
+        for other in others:
+            await other.begin()
+            conversations.append((await other.say('Words of another session'))['conversation_id'])
+            await other.checkpoint()
+        await session.checkpoint()
+        for index, conversation_id in enumerate(conversations[1:], start=2):
+            await session.begin()
+            await session.resume(conversation_id)
+            assert (await session.say(f'S after resume {index}'))['conversation_id'] == conversation_id
+            await session.checkpoint()
+        records = ok(await session.records())
+        assert [turn['conversation_id'] for turn in records['turns']] == conversations
+        assert [turn['messages'][0]['text'] for turn in records['turns']] == [
+            'S in its own conversation', 'S after resume 2', 'S after resume 3']
+        assert 'Words of another session' not in str(records)
+
+
+# dot #263 P2-4: the event bound counts this session's events only, and says when it cut.
+@pytest.mark.asyncio
+async def test_the_event_bound_never_drops_a_session_for_another_sessions_events_and_reports_its_own(monkeypatch):
+    monkeypatch.setattr(session_records, 'MAX_EVENTS', 4)
+    async with provider_client(fixture_settings()) as (client, _):
+        space_id = await new_space(client)
+        session = Session(client, space_id, f'native-{uuid4()}')
+        await session.begin()
+        conversation_id = (await session.say('S words before the flood'))['conversation_id']
+        await session.checkpoint()
+        other = Session(client, space_id, f'native-{uuid4()}')
+        for turn in range(4):
+            await other.begin()
+            if turn == 0:
+                await other.resume(conversation_id)
+            await other.say(f'Another session turn {turn}')
+            await other.checkpoint()
+        records = ok(await session.records())
+        assert [len(turn['messages']) for turn in records['turns']] == [2]
+        assert records['truncated'] is False
+        for turn in range(2):
+            await session.begin()
+            await session.say(f'S later turn {turn}')
+            await session.checkpoint()
+        records = ok(await session.records())
+        assert records['truncated'] is True, 'six of its own events past a bound of four'
+        assert [len(turn['messages']) for turn in records['turns']] == [0, 2, 2], 'the newest are kept'

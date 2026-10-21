@@ -28,7 +28,7 @@ function view() {
     detail: { messages: [{ role: 'user', text: '第 14 轮' }], items: [] } })
   const item = (number: number, key: string, group: string, extra: object) => ({ number, group, key, kind: 'entity',
     type: '', summary: '', at: local(10, 3), project, link: '', status: 'pending', turn: 'turn:t3',
-    detail: { episode_id: `episode-${number}`, item: { ...summary, item_id: key.slice(7), title: key, content: key,
+    detail: { sources: [{ episode_id: `episode-${number}`, turn: 'turn:t3' }], item: { ...summary, item_id: key.slice(7), title: key, content: key,
       confirmation_status: 'pending', change: 'created', episode_id: `episode-${number}`, ...extra } }, ...extra })
   return { session: { sourceApplication: 'codex', sessionId: 'native-session-123456', url: '' }, total: 9, truncated: false,
     entries: [...turns,
@@ -146,10 +146,12 @@ describe('SessionRecordsPage', () => {
 describe('SessionRecordsPage short link', () => {
   it('two clients sharing a session ID are offered, never guessed; a chosen client is read by name', async () => {
     setLocale('zh-CN')
-    const { wrapper } = await open('/s/shared-id', { session: { sourceApplication: null, sessionId: 'shared-id', url: '' },
+    const { wrapper } = await open('/s/shared-id?item=space/turn%3At1', { session: { sourceApplication: null, sessionId: 'shared-id', url: '' },
       clients: ['claude_code', 'codex'], total: 0, entries: [], stretches: [], truncated: false })
-    const links = wrapper.findAll('[data-session-clients] a')
-    expect(links.map(link => link.attributes('href'))).toEqual(['/s/shared-id?client=claude_code', '/s/shared-id?client=codex'])
+    const links = wrapper.findAll('[data-session-clients] a').map(link => decodeURIComponent(link.attributes('href') ?? ''))
+    // dot #263: choosing a client keeps the record the link opened.
+    expect(links).toEqual(['/s/shared-id?item=space/turn:t1&client=claude_code', '/s/shared-id?item=space/turn:t1&client=codex'])
+    expect(document.querySelector('[data-session-peek]')).toBeNull()
     expect(wrapper.find('[data-session-group]').exists()).toBe(false)
     expect(wrapper.find('[data-session-empty]').exists()).toBe(false)
     wrapper.unmount()

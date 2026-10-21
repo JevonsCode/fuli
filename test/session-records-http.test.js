@@ -48,7 +48,7 @@ test('the receipt link opens the session list: one Provider read of exactly that
     body: { personal_space_id: 'personal-space', source_application: 'claude_code', session_id: 's-1' } }]);
   assert.equal(result.body.total, 1);
   assert.deepEqual(result.body.entries[0].project, { id: 'alpha', name: 'Alpha', temporary: false });
-  assert.match(result.body.entries[0].link, /\/s\/s-1\?item=personal-space\/turn%3Atask-1$/);
+  assert.match(result.body.entries[0].link, /\/s\/s-1\?client=claude_code&item=personal-space\/turn%3Atask-1$/);
 });
 
 test('the receipt\'s short link names only the session: the Provider finds its client', async () => {

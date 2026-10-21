@@ -74,7 +74,7 @@ test('C6-1: the list holds this session\'s 6 turns, 2 knowledge items and 1 pref
   for (const entry of view.entries) {
     assert.ok(entry.at, `${entry.key} has its time`);
     assert.equal(entry.project.name, '毕业论文');
-    assert.ok(entry.link.startsWith(`${LIST}?item=space/`), 'each item opens in the session list');
+    assert.ok(entry.link.startsWith(`${LIST}?client=codex&item=space/`), 'each item opens in the session list');
   }
   assert.equal(view.entries[0].summary, '第 1 轮：引用格式怎么改');
   assert.deepEqual(view.entries.slice(6, 8).map(entry => [entry.type, entry.status]),
@@ -117,7 +117,7 @@ test('C6-2: the Agent lists the same numbered items, types, summaries and links 
   assert.deepEqual(Object.keys(answer).sort(), ['markdown', 'total', 'truncated', 'url'],
     'the Agent gets the numbered list, not every saved word');
   assert.equal(lines[0], `FULI 本会话已记录 9 项（[查看清单](<${LIST}>)）：`);
-  assert.ok(answer.markdown.includes(`\n7. 新增 事实·待确认｜10:02｜项目 毕业论文｜「Synthetic fact-a」｜[查看](<${LIST}?item=space/entity%3Afact-a>)`));
+  assert.ok(answer.markdown.includes(`\n7. 新增 事实·待确认｜10:02｜项目 毕业论文｜「Synthetic fact-a」｜[查看](<${LIST}?client=codex&item=space/entity%3Afact-a>)`));
   assert.match(answer.markdown, /\n9\. 偏好证据·待确认｜10:04｜项目 毕业论文｜「以后引用都按 GB\/T 7714」｜/);
 });
 
@@ -169,7 +169,7 @@ test('an empty session says so and still links its list; a long one says it is c
   const read = { ...sessionRead(), turns: [], items: [], truncated: true };
   const { markdown } = await callAgentTool(app(read).app, 'read_session_records', { taskContextToken: 'fuli-task-b',
     sourceApplication: 'codex' });
-  assert.equal(markdown, `FULI 本会话还没有记录任何内容（[查看清单](<${LIST}>)）：\n会话较长，只列出最近的记录；完整清单见上方链接。`);
+  assert.equal(markdown, `FULI 本会话还没有记录任何内容（[查看清单](<${LIST}>)）：\n会话较长，只列出了最近的记录；更早的记录没有列出。`);
 });
 
 test('the page reads only the active personal space', async () => {
@@ -209,4 +209,45 @@ test('C6-5: records of turns with no project are their own scope, not visible fr
   assert.equal(fromNowhere.total, 2);
   assert.match(fromNowhere.markdown, /无项目时说的私事/);
   assert.doesNotMatch(fromNowhere.markdown, /毕业论文|引用格式/);
+});
+
+// dot #263 P2-1: only what the reader may see sets a stretch's boundary.
+test('a B pause followed by another project\'s turn ends at its own evidence, whatever A\'s time is', async () => {
+  const answer = async aMinute => {
+    const read = sessionRead();
+    read.projects.push(project('ledger', '家庭账本'));
+    read.turns = [turn(80, 9, 0, { capture_off: paused, messages: [], not_recorded: [{
+        content: notRecordedEvent(1, 2, 'session_paused').content, created_at: at(9, 1), after: null }] }),
+      turn(81, 9, aMinute, { personal_project_id: 'ledger' }), turn(82, 10, 0)];
+    read.items = [];
+    return (await callAgentTool(app(read).app, 'read_session_records', { taskContextToken: 'fuli-task-b',
+      sourceApplication: 'codex' })).markdown;
+  };
+  const early = await answer(30);
+  assert.match(early, /— 09:00～09:01 暂停记录/);
+  assert.doesNotMatch(early, /09:30/);
+  assert.equal(await answer(45), early, 'moving A\'s turn changes nothing B can see');
+});
+
+// dot #263 P2-2: one item, every source; the reader's own sources survive projection.
+test('an item cited in A and then in B keeps B\'s own evidence and turn in B\'s answer', async () => {
+  const read = sessionRead();
+  read.projects.push(project('ledger', '家庭账本'));
+  read.turns.push(turn(30, 16, 0, { personal_project_id: 'ledger', messages: [{ role: 'user', text: 'A 里说的' }] }));
+  const shared = { change: 'created', episode_id: 'episode-a', task_id: 'task-30', recorded_at: at(16, 1),
+    origin_project_id: 'ledger', conversation_id: 'conversation-a', excerpt: 'A 里的原话' };
+  const own = { change: 'evidence', episode_id: 'episode-b', task_id: 'task-5', recorded_at: at(10, 5),
+    origin_project_id: 'thesis', conversation_id: 'conversation-1', excerpt: 'B 里的原话' };
+  read.items = [item('global-pref', { profile_aspect: 'taste', category: 'taste', ...shared, sources: [shared, own] })];
+  const { markdown } = await callAgentTool(app(read).app, 'read_session_records', { taskContextToken: 'fuli-task-b',
+    sourceApplication: 'codex' });
+  assert.match(markdown, /偏好证据·待确认｜10:05｜项目 毕业论文｜「B 里的原话」/);
+  assert.doesNotMatch(markdown, /A 里|家庭账本|ledger/);
+  // The person's list keeps both sources, so either turn's link finds the item.
+  const page = await readSessionRecords(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const entry = page.entries.find(candidate => candidate.key === 'entity:global-pref');
+  assert.deepEqual(entry.detail.sources, [{ episode_id: 'episode-a', turn: 'turn:task-30' },
+    { episode_id: 'episode-b', turn: 'turn:task-5' }]);
+  assert.ok(page.entries.find(candidate => candidate.key === 'turn:task-5').detail.items.includes('entity:global-pref'),
+    'the later turn lists what it cited');
 });

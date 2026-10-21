@@ -12,7 +12,7 @@ import json
 import re
 from typing import get_args
 
-from .conversation_scope import session_conversation_ids
+from .conversation_scope import conversation_scope_id
 from .knowledge_item_view import (
     EXCERPT_LIMIT,
     episode_changes,
@@ -28,6 +28,7 @@ from .session_records_models import (
     SessionCaptureOff,
     SessionNotRecorded,
     SessionRecordItem,
+    SessionRecordSource,
     SessionRecords,
     SessionRecordsRead,
     SessionTurn,
@@ -40,7 +41,9 @@ from .store_agent_conversations import decode_event
 MAX_TURNS = 200
 MAX_EPISODES = 100
 MAX_ITEMS = 200
-# Journal events read per conversation of the session.
+# Sources kept per item: the episodes that wrote or cited it.
+MAX_SOURCES = 50
+# The session's own journal events read per Agent scope (its newest).
 MAX_EVENTS = 2000
 USER_TEXT_CHARS = 2000
 ASSISTANT_TEXT_CHARS = 280
@@ -60,7 +63,7 @@ async def read_session_records(store, actor: dict, request: SessionRecordsRead) 
             return SessionRecords(session_id=request.session_id, clients=clients)
         request = request.model_copy(update={'source_application': clients[0]})
     tasks, more_turns = await _session_tasks(store, space, request)
-    turns = await _turns(store, space, request, tasks)
+    turns, more_events = await _turns(store, space, tasks)
     episodes, more_episodes = await _session_episodes(store, space, request, tasks)
     items, more_items = await _items(store, space, episodes)
     project_ids = {turn.personal_project_id for turn in turns} | {item.origin_project_id for item in items}
@@ -68,7 +71,7 @@ async def read_session_records(store, actor: dict, request: SessionRecordsRead) 
         session_id=request.session_id, source_application=request.source_application,
         turns=turns, items=items,
         projects=await scope_projects(store, space, sorted(project for project in project_ids if project)),
-        truncated=more_turns or more_episodes or more_items)
+        truncated=more_turns or more_events or more_episodes or more_items)
 
 
 async def _session_clients(store, space, session_id):
@@ -116,45 +119,55 @@ def _capture_off(checkpoint):
     return SessionCaptureOff(reason='capture_disabled') if checkpoint.get('capture_status') == 'capture_disabled' else None
 
 
-async def _turns(store, space, request, tasks):
-    """Each task's saved transcript messages and skipped-bytes markers. A
-    session writes to one conversation per Agent it worked with."""
-    by_token = {task['token']: task for task in tasks}
-    conversation_by_agent, events_by_token = {}, {}
-    for key in {(task['project_id'], task['agent_id']) for task in tasks if task['agent_id']}:
-        conversation_ids = await session_conversation_ids(store, space['id'], *key, request.source_application,
-                                                          request.session_id)
-        conversation_by_agent[key] = conversation_ids[0]
-        for conversation_id in conversation_ids:
-            for token, event in await _conversation_events(store, conversation_id, list(by_token)):
-                events_by_token.setdefault(token, []).append(event)
-    return [SessionTurn(
-        task_id=task['id'], turn_id=task['turn_id'], created_at=task['created_at'],
-        personal_project_id=task['project_id'],
-        conversation_id=conversation_by_agent.get((task['project_id'], task['agent_id'])),
-        capture_off=task['capture_off'],
-        **_turn_events(events_by_token.get(task['token'], [])),
-    ) for task in tasks]
+async def _turns(store, space, tasks):
+    """Each task's saved transcript messages and skipped-bytes markers, and the
+    conversation that actually holds them. A session may have written to
+    several conversations of one Agent (each resume rebinds it), so events are
+    found by this session's own task tokens in every conversation of the
+    Agent's scope, never by whichever binding is current."""
+    events_by_token, truncated = {}, False
+    for project_id, agent_id in {(task['project_id'], task['agent_id']) for task in tasks if task['agent_id']}:
+        tokens = [task['token'] for task in tasks if (task['project_id'], task['agent_id']) == (project_id, agent_id)]
+        events, more = await _session_events(store, conversation_scope_id(space['id'], project_id, agent_id), tokens)
+        truncated = truncated or more
+        for token, event in events:
+            events_by_token.setdefault(token, []).append(event)
+    turns = []
+    for task in tasks:
+        events = events_by_token.get(task['token'], [])
+        turns.append(SessionTurn(
+            task_id=task['id'], turn_id=task['turn_id'], created_at=task['created_at'],
+            personal_project_id=task['project_id'],
+            conversation_id=events[0]['conversation_id'] if events else None,
+            capture_off=task['capture_off'], **_turn_events(events)))
+    return turns, truncated
 
 
-async def _conversation_events(store, conversation_id, tokens):
-    """(token, event) for the session's own events, in journal order, with the
-    time of the event before each one so a skipped stretch has a start."""
+async def _session_events(store, scope, tokens):
+    """(token, event) for these task tokens only, newest MAX_EVENTS of them,
+    with True when more exist. The limit applies after the session's own
+    events are picked, so another session writing to a shared conversation
+    never pushes this one's out. Each event carries the time of this session's
+    previous event in the same conversation, so a skipped stretch starts at
+    something this session wrote."""
     records, _, _ = await store.runtime.driver.execute_query(
         '''
-        MATCH (:FuliConversation {id: $id})-[:HAS_EVENT]->(event:FuliConversationEvent)
-        WITH event ORDER BY event.sequence DESC LIMIT $limit
-        RETURN event.payload AS payload, event.sequence AS sequence, event.created_at AS created_at,
-               event.task_context_token AS token
-        ORDER BY sequence
-        ''', id=conversation_id, limit=MAX_EVENTS, routing_='r')
-    events, previous = [], None
-    for record in records:
+        MATCH (conversation:FuliConversation {scope: $scope})-[:HAS_EVENT]->(event:FuliConversationEvent)
+        WHERE event.task_context_token IN $tokens
+        WITH conversation, event ORDER BY event.created_at DESC, event.sequence DESC LIMIT $limit
+        RETURN conversation.id AS conversation_id, event.payload AS payload, event.sequence AS sequence,
+               event.created_at AS created_at, event.task_context_token AS token
+        ''', scope=scope, tokens=tokens, limit=MAX_EVENTS + 1, routing_='r')
+    kept = sorted(records[:MAX_EVENTS], key=lambda record: (record['conversation_id'], record['sequence']))
+    events, previous = [], {}
+    for record in kept:
         created_at = native_datetime(record['created_at'])
-        if record['token'] in tokens:
-            events.append((record['token'], {**decode_event(record), 'created_at': created_at, 'after': previous}))
-        previous = created_at or previous
-    return events
+        conversation_id = record['conversation_id']
+        events.append((record['token'], {**decode_event(record), 'created_at': created_at,
+                                         'after': previous.get(conversation_id),
+                                         'conversation_id': conversation_id}))
+        previous[conversation_id] = created_at or previous.get(conversation_id)
+    return events, len(records) > MAX_EVENTS
 
 
 def _turn_events(events):
@@ -212,23 +225,33 @@ def _task_at(tasks, moment):
 async def _items(store, space, episodes):
     """What each episode created or updated, and the preferences it only cited
     again (its words became their evidence). Other items mentioned again
-    changed nothing and are left out."""
-    items, seen = [], set()
+    changed nothing and are left out. An item is listed once with every
+    episode that wrote or cited it, oldest first: each source keeps its own
+    turn and project, so a reader allowed fewer projects still finds its own."""
+    items = {}
     for episode in episodes:
         for item_kind, item_id, change in await episode_changes(store, space, [episode['id']]):
-            if (item_kind, item_id) in seen:
+            item = items.get((item_kind, item_id))
+            if item is None:
+                if len(items) == MAX_ITEMS:
+                    return _listed(items), True
+                current = await _read_item(store, space, item_id, item_kind)
+                if current is None or (change is None and not current.get('profile_aspect')):
+                    continue
+                _, source_ids = await item_evidence(store, space, item_kind, item_id, limit=0)
+                summary = await item_summary(store, space, item_kind, item_id, current, source_ids=source_ids)
+                item = items[(item_kind, item_id)] = {'summary': summary, 'sources': []}
+            elif change is None and not item['summary'].profile_aspect:
                 continue
-            current = await _read_item(store, space, item_id, item_kind)
-            if current is None or (change is None and not current.get('profile_aspect')):
-                continue
-            if len(items) == MAX_ITEMS:
-                return items, True
-            seen.add((item_kind, item_id))
-            _, source_ids = await item_evidence(store, space, item_kind, item_id, limit=0)
-            summary = await item_summary(store, space, item_kind, item_id, current, source_ids=source_ids)
-            items.append(SessionRecordItem(
-                **summary.model_dump(), change=change or 'evidence', episode_id=episode['id'],
-                task_id=episode['task']['id'] if episode['task'] else None, recorded_at=episode['created_at'],
-                origin_project_id=episode['origin_project_id'], conversation_id=episode['conversation_id'],
-                excerpt=episode['excerpt']))
-    return items, False
+            if len(item['sources']) < MAX_SOURCES:
+                item['sources'].append(SessionRecordSource(
+                    change=change or 'evidence', episode_id=episode['id'],
+                    task_id=episode['task']['id'] if episode['task'] else None, recorded_at=episode['created_at'],
+                    origin_project_id=episode['origin_project_id'], conversation_id=episode['conversation_id'],
+                    excerpt=episode['excerpt']))
+    return _listed(items), False
+
+
+def _listed(items):
+    return [SessionRecordItem(**item['summary'].model_dump(), **item['sources'][0].model_dump(),
+                              sources=item['sources']) for item in items.values()]

@@ -11,7 +11,7 @@ import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay
 import { useRoutePeek } from '@/composables/useRoutePeek'
 import SessionRecordPeek from '@/features/session-records/SessionRecordPeek.vue'
 import {
-  SESSION_GROUPS, clockTime, entryTypeLabel, groupEntries, peekEntry, projectLabel, sessionRecordsPath, stretchLabel,
+  SESSION_GROUPS, clockTime, entryTypeLabel, groupEntries, peekEntry, projectLabel, stretchLabel,
   transcriptRows,
   type SessionEntry, type SessionRecordsView,
 } from '@/features/session-records/model'
@@ -116,7 +116,7 @@ watch([spaceId, requestedClient, sessionId], () => {
           <p class="m-0 text-sm">{{ t('sessionRecords.chooseClient') }}</p>
           <div class="flex flex-wrap gap-2">
             <Button v-for="name in view.clients" :key="name" variant="outline" size="sm" as-child>
-              <RouterLink :to="sessionRecordsPath(sessionId, { client: name })">{{ name }}</RouterLink>
+              <RouterLink :to="{ query: { ...route.query, client: name } }">{{ name }}</RouterLink>
             </Button>
           </div>
         </div>
@@ -180,8 +180,8 @@ watch([spaceId, requestedClient, sessionId], () => {
       </template>
     </div>
 
-    <Dialog :open="Boolean(view && peekKey)" @update:open="peekOpenChange">
-      <DialogContent v-if="view && peekKey" size="lg" data-session-peek @open-auto-focus="focusDialog" @close-auto-focus="returnFocus">
+    <Dialog :open="Boolean(view && peekKey && !view.clients?.length)" @update:open="peekOpenChange">
+      <DialogContent v-if="view && peekKey && !view.clients?.length" size="lg" data-session-peek @open-auto-focus="focusDialog" @close-auto-focus="returnFocus">
         <SessionRecordPeek :entry="opened" :view="view" :space-id="spaceId" @open="open" @close="peek.close()" />
       </DialogContent>
     </Dialog>
