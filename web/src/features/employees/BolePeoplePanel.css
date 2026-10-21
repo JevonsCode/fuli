@@ -5,7 +5,7 @@
 .bole-tabs { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .bole-view-count { color: var(--color-muted); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .bole-refresh:disabled { cursor: progress; }
-.bole-controls { display: grid; gap: 8px; min-width: 0; }
+.bole-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
 .bole-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .bole-search { flex: 1 1 220px; width: auto; }
 .bole-filters .project-scope-picker { flex: 0 1 260px; min-width: 0; }
