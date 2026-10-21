@@ -484,6 +484,29 @@ async def test_a_start_waits_for_the_lock_and_reads_the_ledger_again_under_it(gr
     assert rows == [{'owner': None}]
 
 
+BLOCKED_WAIT_SECONDS = 20
+
+
+async def _until_blocked_on_a_lock(driver, racing):
+    """Wait until Neo4j lists a transaction blocked on a lock, never by time
+    alone; fail if the racing transaction finishes first or none blocks."""
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + BLOCKED_WAIT_SECONDS
+    while loop.time() < deadline:
+        assert not racing.done(), 'the second transaction finished without waiting for the lock'
+        rows = await _rows(driver, '''
+            SHOW TRANSACTIONS YIELD status, currentQuery
+            WHERE status STARTS WITH 'Blocked' AND currentQuery CONTAINS '_format_lock'
+            RETURN count(*) AS blocked
+        ''')
+        if rows and rows[0]['blocked']:
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError('no transaction was blocked on the ledger lock')
+
+
 class _InTransaction:
     """Runs ledger queries inside one open transaction, to hold its locks."""
 
@@ -518,9 +541,8 @@ async def test_two_starts_racing_for_a_free_lock_only_one_takes_it(graph):
                 acquire_graph_migration_lock(_InTransaction(second), 'start-b', until=until)
             )
             # Barrier: the second start waits on the identity node's write lock
-            # before it reads who holds the lease.
-            await asyncio.sleep(0.5)
-            assert not racing.done()
+            # before it reads who holds the lease, as Neo4j itself reports.
+            await _until_blocked_on_a_lock(driver, racing)
             await first.commit()
             took_second = await racing
             await second.commit()
@@ -559,8 +581,7 @@ async def test_racing_stamps_never_move_the_version_back(graph):
             racing = asyncio.create_task(stamp_graph_version(
                 _InTransaction(second), 6, owner='start-a', now=now_utc, until=until
             ))
-            await asyncio.sleep(0.5)
-            assert not racing.done()
+            await _until_blocked_on_a_lock(driver, racing)
             await first.commit()
             with pytest.raises(GraphFormatLockLost):
                 await racing
