@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Readable } from 'node:stream';
 
+import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
@@ -146,4 +147,22 @@ test('an old link that writes a replaced or outdated item back gets a conflict t
     assert.equal(result.status, 409);
     assert.equal(result.body.code, code);
   }
+});
+
+test('D-20.7 trusted entry: only the console route speaks as the person; an Agent tool never does', async () => {
+  const { app, calls } = application(() => ({ status: 200, body: { id: 'revision' } }));
+  await api(app, 'PATCH', '/api/knowledge/entity/item-1', { personalSpaceId: 'personal-space', action: 'update',
+    reason: 'Same meaning', name: 'New words', summary: 'New words', basisMeaning: 'wording_only', expectedVersion: 1,
+    operationActor: 'agent' });
+  assert.deepEqual([calls[0].body.operation_actor, calls[0].body.basis_meaning], ['human', 'wording_only']);
+  const forwarded = await callAgentTool({ getAgentAccessPolicy: () => ({ enabled: true }),
+    getCapturePolicy: () => ({ enabled: true }), reviseKnowledgeItem: input => input }, 'revise_personal_knowledge', {
+    personalSpaceId: 'personal-space', itemKind: 'entity', itemId: 'item-1', action: 'update', reason: 'Agent',
+    name: 'New words', operationActor: 'human', basisMeaning: 'wording_only' });
+  assert.equal(forwarded.operationActor, 'agent', 'a model-supplied actor is replaced');
+  const schema = listAgentTools().find(tool => tool.name === 'revise_personal_knowledge').inputSchema;
+  assert.equal(Object.hasOwn(schema.properties, 'basisMeaning'), false, 'an Agent tool offers no wording-only choice');
+  await app.reviseKnowledgeItem({ ...forwarded, personalSpaceId: 'personal-space' });
+  assert.deepEqual([calls[1].body.operation_actor, calls[1].body.basis_meaning], ['agent', 'wording_only'],
+    'the Provider sees an Agent claiming wording-only and refuses it (Neo4j suite)');
 });

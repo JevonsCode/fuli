@@ -28,6 +28,7 @@ import {
   personalProfileItems,
   profileAspectLabel,
   reviewStateLabel,
+  distinctSummary,
   preferenceListState,
   type PreferenceListState,
   knowledgeItemKey,
@@ -667,7 +668,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       >
         <button class="personal-profile-open" type="button" aria-haspopup="dialog" :aria-label="t('preferences.detail.open', { title: item.title })" @click="openItem(item)">
           <span class="profile-aspect-mark" :class="item.profileAspect">{{ profileAspectLabel(item.profileAspect) }}</span>
-          <span class="personal-profile-copy"><strong role="heading" aria-level="2">{{ item.title }}</strong><small>{{ item.body }}</small></span>
+          <span class="personal-profile-copy"><strong role="heading" aria-level="2">{{ item.title }}</strong><small v-if="distinctSummary(item)">{{ distinctSummary(item) }}</small></span>
           <span class="personal-profile-origin">
             <strong :class="{ 'has-conflict': conflictingIds.has(knowledgeItemKey(item)) }">{{ statusLabel(item) }}</strong>
             <small>

@@ -102,6 +102,9 @@ class KnowledgeVersion(StrictModel):
     reason: str | None = None
     created_at: datetime | None = None
     invalid_at: datetime | None = None
+    # Bases that were out of date when this version re-asserted its words and
+    # that it no longer rests on (依据已过时，重新确认时解除).
+    released_bases: list[str] = Field(default_factory=list)
 
 
 class KnowledgeBasis(StrictModel):
@@ -136,6 +139,12 @@ class KnowledgeItemView(KnowledgeItemSummary):
     versions: list[KnowledgeVersion] = Field(default_factory=list)
     current_item_id: str | None = None
     bases: list[KnowledgeBasis] = Field(default_factory=list)
+    # D-20.7: 'changed' while a basis changed its meaning and the conclusion
+    # waits for a person (not delivered); 'reworded' when only the wording
+    # moved (a hint, still delivered). And how many current conclusions rest
+    # on this item's chain, so an edit form can ask what the edit means.
+    basis_review: Literal['changed', 'reworded'] | None = None
+    dependent_count: int = 0
 
 
 class KnowledgeTurnReceiptRead(StrictModel):

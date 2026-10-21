@@ -17,7 +17,6 @@ import { readKnowledgeItem } from './quick-edit-api'
 // stands, who wrote it and why, read back from the Provider, with the way to
 // its own full page. It renders inside the page's Dialog.
 const props = defineProps<{ spaceId: string; version: Pick<ItemVersion, 'item_kind' | 'item_id'>; known?: ItemVersion | null }>()
-const emit = defineEmits<{ close: [] }>()
 
 const view = ref<KnowledgeItemView | null>(null)
 const error = ref('')
@@ -55,7 +54,6 @@ const when = (value?: string | null) => formatDateTime(value, currentLocale(), D
     </p>
   </template>
   <DialogFooter class="border-t pt-4">
-    <Button variant="outline" data-peek-close @click="emit('close')">{{ t('common.actions.close') }}</Button>
     <Button as-child data-version-open>
       <RouterLink :to="itemEditPath(spaceId, version)">{{ t('knowledgeQuickEdit.versionPeek.open') }}</RouterLink>
     </Button>

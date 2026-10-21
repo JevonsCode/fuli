@@ -8,8 +8,8 @@ import { sourceSessionPath } from '@/features/session-records/model'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import {
-  changedByLabel, confirmationLabel, sourceLabel, versionPeekId, versionStatusLabel, versionTone,
-  type ItemVersion, type KnowledgeItemView,
+  changedByLabel, confirmationLabel, evidenceApplicationLabel, evidenceKindLabel, sourceLabel, versionPeekId,
+  versionStatusLabel, versionTone, type ItemVersion, type KnowledgeItemView,
 } from './model'
 
 // Where the item came from and every change since: kept even after it is
@@ -39,15 +39,18 @@ const action = (value: string) => t(`knowledgeQuickEdit.history.actions.${value}
               :data-version="version.status" @click="emit('openVersion', version)">
               <span class="flex flex-wrap items-center gap-1.5">
                 <Badge :variant="versionTone(version.status)">{{ versionStatusLabel(version.status) }}</Badge>
+                <Badge v-if="version.item_id === item.item_id" variant="outline" data-version-viewing>{{ t('knowledgeQuickEdit.history.viewing') }}</Badge>
                 <span class="text-xs text-muted-foreground">
                   {{ when(version.created_at) }} · {{ changedByLabel(version.changed_by) }}
                   · {{ sourceLabel(version) }} · {{ confirmationLabel(version) }}
                 </span>
-                <span v-if="version.item_id === item.item_id" class="text-xs font-medium">{{ t('knowledgeQuickEdit.history.viewing') }}</span>
               </span>
               <span class="line-clamp-2 [overflow-wrap:anywhere]">{{ version.content }}</span>
               <span v-if="version.reason" class="text-xs text-muted-foreground [overflow-wrap:anywhere]">
                 {{ t('knowledgeQuickEdit.history.reason', { reason: version.reason }) }}
+              </span>
+              <span v-if="version.released_bases?.length" class="text-xs text-muted-foreground" data-released-bases>
+                {{ t('knowledgeQuickEdit.history.releasedBases', { count: version.released_bases.length }) }}
               </span>
             </Button>
           </li>
@@ -58,7 +61,7 @@ const action = (value: string) => t(`knowledgeQuickEdit.history.actions.${value}
         <ol v-if="item.evidence.length" class="m-0 grid list-none gap-2 p-0">
           <li v-for="source in item.evidence" :key="source.episode_id" class="grid gap-0.5 rounded-md border px-3 py-2">
             <span class="text-xs text-muted-foreground">
-              {{ when(source.created_at) }} · {{ source.source_application || '—' }} · {{ source.source_kind || '—' }}
+              {{ when(source.created_at) }} · {{ evidenceApplicationLabel(source) }} · {{ evidenceKindLabel(source) }}
               <template v-if="source.session_id"> · {{ t('knowledgeQuickEdit.history.session', { id: source.session_id.slice(0, 8) }) }}</template>
             </span>
             <span v-if="source.excerpt" class="break-words">{{ source.excerpt }}</span>

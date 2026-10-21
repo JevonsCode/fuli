@@ -75,6 +75,8 @@ export interface ItemVersion {
   reason?: string | null
   created_at?: string | null
   invalid_at?: string | null
+  /** Bases out of date when this version re-asserted its words, which it no longer rests on. */
+  released_bases?: string[]
 }
 
 /** Knowledge this item was concluded from (C8-4). */
@@ -87,10 +89,23 @@ export interface KnowledgeItemView extends KnowledgeItemSummary {
   versions?: ItemVersion[]
   current_item_id?: string | null
   bases?: ItemBasis[]
+  /** D-20.7: a basis changed its meaning (waits for a person) or only its wording (a hint). */
+  basis_review?: BasisReview | null
+  /** How many current conclusions rest on this item's versions. */
+  dependent_count?: number
 }
 
+export type BasisReview = 'changed' | 'reworded'
+/** What a person says an edit of a basis means for the conclusions drawn from it. */
+export type BasisMeaning = 'changed' | 'wording_only'
+
 /** What a PATCH answers: an edit names the new version it wrote. */
-export interface RevisionResult { version_item_id?: string | null; dependents_outdated?: number }
+export interface RevisionResult {
+  version_item_id?: string | null
+  dependents_outdated?: number
+  dependents_changed?: number
+  outcome?: 'applied' | 'pending_person'
+}
 
 export interface TurnReceiptEntry extends KnowledgeItemSummary { change: 'created' | 'updated' }
 export interface TurnReceipt { entries: TurnReceiptEntry[]; unchanged_count: number }
@@ -129,6 +144,21 @@ export function versionTone(status: VersionStatus): 'success' | 'warning' | 'sec
   if (status === 'current') return 'success'
   if (status === 'outdated' || status === 'basis_outdated') return 'warning'
   return status === 'superseded' ? 'secondary' : 'outline'
+}
+
+// An edit's own evidence says who edited it and where, not the stored enum.
+const EDIT_SOURCE_KINDS = new Set(['human_knowledge_edit', 'agent_knowledge_edit'])
+
+export function evidenceKindLabel(source: Pick<EvidenceSource, 'source_kind'>) {
+  if (source.source_kind && EDIT_SOURCE_KINDS.has(source.source_kind)) {
+    return t(`knowledgeQuickEdit.history.kinds.${source.source_kind}`)
+  }
+  return source.source_kind || '—'
+}
+
+export function evidenceApplicationLabel(source: Pick<EvidenceSource, 'source_kind' | 'source_application'>) {
+  if (source.source_application) return source.source_application
+  return source.source_kind === 'human_knowledge_edit' ? t('knowledgeQuickEdit.history.console') : '—'
 }
 
 export function changedByLabel(changedBy?: ChangedBy | null) {
@@ -203,11 +233,31 @@ export function scopeRequest(spaceId: string, item: KnowledgeItemSummary, draft:
 
 // The body of PATCH /api/knowledge/:kind/:id for a content edit: it writes a
 // new version that supersedes this one (C7), or re-asserts an outdated one (C8-3).
-export function contentRequest(spaceId: string, item: KnowledgeItemSummary, content: string, reason: string) {
+export function contentRequest(spaceId: string, item: KnowledgeItemSummary, content: string, reason: string,
+  basisMeaning?: BasisMeaning | null) {
   const text = content.trim()
   if (!text || !reason.trim()) return null
   const fields = item.item_kind === 'entity' ? { name: text.slice(0, 512), summary: text } : { fact: text }
-  return { personalSpaceId: spaceId, action: 'update', reason: reason.trim(), expectedVersion: item.version, ...fields }
+  return { personalSpaceId: spaceId, action: 'update', reason: reason.trim(), expectedVersion: item.version, ...fields,
+    ...(basisMeaning ? { basisMeaning } : {}) }
+}
+
+// A person's review of a conclusion whose basis changed: it still holds (D-20.7).
+export function reaffirmRequest(spaceId: string, item: KnowledgeItemSummary, reason: string) {
+  return reason.trim()
+    ? { personalSpaceId: spaceId, action: 'reaffirm', reason: reason.trim(), expectedVersion: item.version }
+    : null
+}
+
+// A person says later that an edit of this basis did change what conclusions mean.
+export function meaningChangedRequest(spaceId: string, item: KnowledgeItemSummary, reason: string) {
+  return reason.trim()
+    ? { personalSpaceId: spaceId, action: 'mark_meaning_changed', reason: reason.trim(), expectedVersion: item.version }
+    : null
+}
+
+export function basisReviewLabel(review: BasisReview) {
+  return t(`knowledgeQuickEdit.basisReview.${review}`)
 }
 
 // Marking outdated is the person's negative feedback and the end of the

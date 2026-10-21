@@ -6,6 +6,7 @@ import {
   batchConfirmationGroups,
   classificationExplanation,
   currentKnowledgeGraph,
+  distinctSummary,
   filterKnowledgeItems,
   humanChangeStatusLabel,
   isManagementKnowledgeItem,
@@ -38,6 +39,25 @@ describe('knowledge model', () => {
       nodes: [graph.nodes[0]],
       edges: [],
     })
+  })
+
+  it('D-20: a list line omits a summary that only repeats the name', () => {
+    expect(distinctSummary({ title: 'Docs in Markdown', body: ' Docs in Markdown ' })).toBe('')
+    expect(distinctSummary({ title: 'Docs', body: 'Docs in Markdown' })).toBe('Docs in Markdown')
+  })
+
+  it('rec#5 C7: draws a current relationship on the current version of an edited endpoint', () => {
+    const graph = {
+      nodes: [
+        { id: 'svc-v1', name: 'Billing service', type: 'System', invalid_at: '2026-10-21', replaced_by_item_id: 'svc-v2' },
+        { id: 'svc-v2', name: 'Billing API', type: 'System' },
+        { id: 'port', name: 'Port', type: 'Setting' },
+      ],
+      edges: [{ id: 'listens', source: 'svc-v1', target: 'port', type: 'LISTENS_ON', fact: 'listens on 9090' }],
+    }
+    const current = currentKnowledgeGraph(graph as never)
+    expect(current.nodes.map(node => node.id)).toEqual(['svc-v2', 'port'])
+    expect(current.edges).toEqual([{ ...graph.edges[0], source: 'svc-v2', target: 'port' }])
   })
 
   it('merges project context without duplicating evidence', () => {

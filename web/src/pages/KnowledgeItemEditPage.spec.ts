@@ -59,7 +59,9 @@ describe('KnowledgeItemEditPage', () => {
   it('reads this one item and shows its stored state, with scope pending apart from content pending', async () => {
     const wrapper = await open()
     expect(getJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1?personalSpaceId=space')
-    expect(wrapper.get('[data-item-content]').text()).toBe('Prefer short status lines')
+    // D-20: the content equals the H1 (the item title), so the card does not repeat it.
+    expect(wrapper.find('[data-item-content]').exists()).toBe(false)
+    expect(wrapper.get('[data-item-summary]').attributes('aria-label')).toBe('Prefer short status lines')
     expect(wrapper.get('[data-item-category]').text()).toBe('品味')
     expect(wrapper.get('[data-item-source]').text()).toBe('你明确说的')
     expect(wrapper.get('[data-item-confirmation]').text()).toBe('待确认')
@@ -164,7 +166,7 @@ describe('KnowledgeItemEditPage', () => {
     expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1', { personalSpaceId: 'space', action: 'update',
       reason: 'Clearer', expectedVersion: 4, name: 'Status lines stay short', summary: 'Status lines stay short' })
     expect(wrapper.vm.$route.fullPath).toBe('/knowledge/item/space/entity/item-2')
-    expect(wrapper.get('[data-item-content]').text()).toBe('Status lines stay short')
+    expect(wrapper.get('[data-item-summary]').attributes('aria-label')).toBe('Status lines stay short')
     expect(wrapper.get('[data-edit-notice]').text()).toBe('已保存为新版本')
     wrapper.unmount()
   })
@@ -232,6 +234,99 @@ describe('KnowledgeItemEditPage', () => {
     const basis = wrapper.get('[data-item-bases] li')
     expect(basis.text()).toContain('已过时')
     expect(basis.get('a').attributes('href')).toBe('/knowledge/item/space/entity/pref-1')
+    wrapper.unmount()
+  })
+
+  it('D-20: history reads as words people use, and one marker per pending choice', async () => {
+    const versions = [
+      { item_kind: 'entity', item_id: 'item-1', content: 'Prefer short status lines', status: 'current',
+        confirmation_status: 'confirmed', content_source: 'user_explicit', changed_by: 'user', created_at: '2026-10-21T02:00:00Z',
+        released_bases: ['pref-old'] },
+      { item_kind: 'entity', item_id: 'item-0', content: 'Prefer long status updates', status: 'superseded',
+        confirmation_status: 'agent_confirmed', content_source: 'agent_inferred', changed_by: 'agent', created_at: '2026-10-20T02:00:00Z' }]
+    const wrapper = await open(view({ versions, evidence: [
+      { episode_id: 'e1', source_kind: 'human_knowledge_edit', source_application: null, session_id: null, excerpt: 'x' },
+      { episode_id: 'e2', source_kind: 'agent_knowledge_edit', source_application: 'codex', session_id: null, excerpt: 'y' }] }))
+    const sources = wrapper.findAll('[data-item-sources] li')
+    expect(sources[0].text()).toContain('控制台 · 你在控制台修改')
+    expect(sources[1].text()).toContain('codex · Agent 修改')
+    expect(wrapper.get('[data-item-versions] li [data-version-viewing]').text()).toBe('正在看')
+    expect(wrapper.get('[data-released-bases]').text()).toBe('依据已过时，重新确认时解除 1 条')
+    wrapper.unmount()
+    const old = await open(view({ status: 'superseded', invalid_at: '2026-10-21T02:00:00Z', current_item_id: 'item-2',
+      weight: { percent: 85, basis: { confirmation_status: 'agent_confirmed', confirmed_by_person: false, qualified_use_count: 7,
+        distinct_task_count: 4, source_count: 2, negative_evidence_count: 0 } } }))
+    expect(old.get('[data-item-weight]').text()).toBe('不再使用 · 失效前权重 85%')
+    old.unmount()
+  })
+
+  it('D-20: the version quick look keeps a single close control', async () => {
+    const versions = [{ item_kind: 'entity', item_id: 'item-0', content: 'Old', status: 'superseded', confirmation_status: 'pending' }]
+    const wrapper = await open(view({ versions: [{ ...versions[0], item_id: 'item-1', status: 'current' }, ...versions] }))
+    await wrapper.findAll('[data-item-versions] li')[1]!.get('button').trigger('click')
+    await flushPromises()
+    const peek = document.body.querySelector('[data-version-peek]')!
+    expect(peek.querySelector('[data-peek-close]')).toBeNull()
+    expect([...peek.querySelectorAll('button')].filter(button => button.textContent?.includes('关闭'))).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('D-20.7: an edit of a basis asks what it means, defaults to a changed meaning, and sends the choice', async () => {
+    const wrapper = await open(view({ dependent_count: 2 }))
+    expect(wrapper.get('[data-basis-meaning]').text()).toContain('有 2 条结论依据它')
+    expect(wrapper.get('[data-meaning-choice="changed"] [role="radio"]').attributes('aria-checked')).toBe('true')
+    patchJson.mockResolvedValue({ version_item_id: 'item-2', dependents_changed: 2 })
+    await wrapper.get('#item-content').setValue('Status lines stay short')
+    await wrapper.get('#content-reason').setValue('Clearer')
+    await wrapper.get('[data-content-editor] form').trigger('submit')
+    await flushPromises()
+    expect(patchJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-1', expect.objectContaining({ basisMeaning: 'changed' }))
+    expect(wrapper.get('[data-edit-notice]').text()).toBe('已保存为新版本 2 条依据它的结论等你复核。')
+    wrapper.unmount()
+    const reworded = await open(view({ dependent_count: 1 }))
+    await reworded.get('[data-meaning-choice="wording_only"] [role="radio"]').trigger('click')
+    await reworded.get('#item-content').setValue('Status lines stay brief')
+    await reworded.get('#content-reason').setValue('Wording')
+    await reworded.get('[data-content-editor] form').trigger('submit')
+    await flushPromises()
+    expect(patchJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-1', expect.objectContaining({ basisMeaning: 'wording_only' }))
+    reworded.unmount()
+    const alone = await open(view({ dependent_count: 0 }))
+    expect(alone.find('[data-basis-meaning]').exists()).toBe(false)
+    expect(alone.find('[data-item-dependents]').exists()).toBe(false)
+    alone.unmount()
+  })
+
+  it('D-20.7: a conclusion whose basis changed waits for a review; 仍然成立 writes a new version', async () => {
+    const wrapper = await open(view({ basis_review: 'changed', confirmation_status: 'pending',
+      bases: [{ item_kind: 'entity', item_id: 'pref-2', content: 'Docs in AsciiDoc', status: 'current' }] }))
+    expect(wrapper.get('[data-basis-review]').text()).toBe('依据已变，待复核')
+    expect(wrapper.get('[data-basis-review-card="changed"]').text()).toContain('复核前不交付给 Agent')
+    patchJson.mockResolvedValue({ version_item_id: 'item-3' })
+    await wrapper.get('#review-reason').setValue('Still true')
+    await wrapper.get('[data-basis-review-card] form').trigger('submit')
+    await flushPromises()
+    expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1', { personalSpaceId: 'space', action: 'reaffirm',
+      reason: 'Still true', expectedVersion: 4 })
+    expect(wrapper.vm.$route.fullPath).toBe('/knowledge/item/space/entity/item-3')
+    wrapper.unmount()
+    const hinted = await open(view({ basis_review: 'reworded' }))
+    expect(hinted.get('[data-basis-review]').text()).toBe('依据已更新，请复核')
+    expect(hinted.find('[data-basis-review-card="reworded"]').exists()).toBe(true)
+    hinted.unmount()
+  })
+
+  it('D-20.7: from a basis version record a person marks later that the meaning changed', async () => {
+    const wrapper = await open(view({ status: 'superseded', invalid_at: '2026-10-21T02:00:00Z', current_item_id: 'item-2',
+      dependent_count: 3 }))
+    expect(wrapper.get('[data-item-dependents]').text()).toContain('有 3 条结论依据它')
+    patchJson.mockResolvedValue({ dependents_changed: 3 })
+    await wrapper.get('#meaning-reason').setValue('It did change the meaning')
+    await wrapper.get('[data-item-dependents] form').trigger('submit')
+    await flushPromises()
+    expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1', { personalSpaceId: 'space',
+      action: 'mark_meaning_changed', reason: 'It did change the meaning', expectedVersion: 4 })
+    expect(wrapper.get('[data-review-message]').text()).toBe('3 条结论等你复核。')
     wrapper.unmount()
   })
 

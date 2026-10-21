@@ -7,6 +7,7 @@ import { UiStatRow, type UiStat } from '@/ui'
 import { versionStatusLabel } from '@/features/knowledge-quick-edit/model'
 import type { KnowledgeItem } from '@/types'
 import {
+  distinctSummary,
   formatTime,
   humanChangeStatusLabel,
   knowledgeReviewState,
@@ -170,9 +171,8 @@ const selectedMaterialIndex = computed(() => props.selectedItem
                 </em>
               </span>
               <small>
-                {{ item.profileAspect
-                  ? `${profileAspectLabel(item.profileAspect)} · ${item.body}`
-                  : item.body }}
+                {{ [item.profileAspect ? profileAspectLabel(item.profileAspect) : '', distinctSummary(item)]
+                  .filter(Boolean).join(' · ') }}
               </small>
             </span>
             <span class="knowledge-row-quadrant" :class="item.originQuadrant">

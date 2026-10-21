@@ -90,7 +90,16 @@ KnowledgeContentRevisionAction = Literal[
     # A person's negative feedback that also ends the item's validity
     # (rec#5 C8): it leaves current answers and keeps its history.
     'mark_outdated',
+    # A person's review of a conclusion whose basis changed: it still holds,
+    # so a new version rests on the new basis (D-20.7).
+    'reaffirm',
+    # A person says, later, that an edit of this basis changed its meaning.
+    'mark_meaning_changed',
 ]
+# Whether a person's edit or confirmation of a basis changed what conclusions
+# drawn from it mean (D-20.7). Absent means it changed; only a person may say
+# it was the wording alone.
+BasisMeaning = Literal['changed', 'wording_only']
 # The knowledge an item was concluded from (rec#5 C8-4): when one of them is
 # marked outdated, the conclusion stops being delivered as a current fact.
 MAX_DERIVED_FROM = 8
@@ -1099,6 +1108,7 @@ class KnowledgeRevisionCreate(StrictModel):
     operation_actor: KnowledgeOperationActor = 'agent'
     # The version the editor read; another current version is a conflict.
     expected_version: int | None = Field(default=None, ge=0)
+    basis_meaning: BasisMeaning | None = None
 
     @model_validator(mode='after')
     def validate_update_fields(self):
@@ -1138,13 +1148,19 @@ class KnowledgeRevisionCreate(StrictModel):
                 self.inherited_project_ids,
             )):
                 raise ValueError('confirmation cannot change knowledge content or taxonomy')
-        if self.action == 'mark_outdated' and any(value is not None for value in (
+        if self.action in ('reaffirm', 'mark_meaning_changed') and self.operation_actor != 'human':
+            raise ValueError('only a person reviews what a changed basis means')
+        if self.basis_meaning is not None and self.action not in ('update', 'confirm'):
+            raise ValueError('basis_meaning belongs to an edit or a confirmation')
+        if self.basis_meaning == 'wording_only' and self.operation_actor != 'human':
+            raise ValueError('only a person can say an edit changed the wording alone')
+        if self.action in ('mark_outdated', 'reaffirm', 'mark_meaning_changed') and any(value is not None for value in (
             self.name, self.summary, self.fact, self.origin_quadrant, self.current_quadrant,
             self.epistemic_status, self.confirmation_status, self.confirmation_basis,
             self.reasoning_summary, self.profile_aspect, self.inheritance_mode,
             self.inherited_project_ids,
         )):
-            raise ValueError('marking knowledge outdated keeps its content; re-assert it as a new version')
+            raise ValueError(f'{self.action} keeps the content; re-assert it as a new version')
         if self.action == 'update':
             taxonomy_changed = any(value is not None for value in (
                 self.current_quadrant,

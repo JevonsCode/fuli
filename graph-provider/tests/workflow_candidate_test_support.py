@@ -1,3 +1,8 @@
+from contextlib import asynccontextmanager
+
+from sequential_driver_support import SequentialTransaction
+
+
 class WorkflowCommitDriver:
     def __init__(self):
         self.edges = {}
@@ -5,6 +10,11 @@ class WorkflowCommitDriver:
         self.candidate = None
         self.materialized_occurrence_counts = []
         self.workflow_session_authorities = []
+
+    @asynccontextmanager
+    async def transaction(self):
+        # A capture writes in one transaction; the fake answers it the same way.
+        yield SequentialTransaction(self)
 
     async def execute_query(self, query, **parameters):
         if 'CONTAINS_PROJECT' in query and 'RETURN project' in query:
@@ -137,6 +147,8 @@ class WorkflowCommitDriver:
                 'candidate_version': self.candidate.get('candidate_version', 1),
                 'evidence_revision': self.candidate.get('evidence_revision', 0),
             }], None, None
+        if '_knowledge_lock' in query:
+            return [], None, None  # the space's knowledge lock (rec#5 C7/C8)
         if 'item.fuli_replaced_by_item_id IS NOT NULL' in query:
             return [], None, None  # no captured entity has later versions (rec#5 C8-3)
         if 'HAS_WORKFLOW_CANDIDATE' in query:

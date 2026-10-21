@@ -11,6 +11,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { focusReturnTarget } from '@/composables/useFocusReturn'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import { useRoutePeek } from '@/composables/useRoutePeek'
+import KnowledgeBasisReview from '@/features/knowledge-quick-edit/KnowledgeBasisReview.vue'
 import KnowledgeContentEditor from '@/features/knowledge-quick-edit/KnowledgeContentEditor.vue'
 import KnowledgeItemHistory from '@/features/knowledge-quick-edit/KnowledgeItemHistory.vue'
 import KnowledgeItemSummaryCard from '@/features/knowledge-quick-edit/KnowledgeItemSummaryCard.vue'
@@ -97,8 +98,9 @@ function saved() {
 
 // The edit wrote a new version: this page is about that one now. Replace, so
 // Back still returns to the collection the page was opened from.
-function versioned(versionId: string) {
-  carriedNotice = t('knowledgeQuickEdit.content.saved')
+function versioned(versionId: string, waiting = 0) {
+  carriedNotice = [t('knowledgeQuickEdit.content.saved'),
+    waiting ? t('knowledgeQuickEdit.meaning.dependents', { count: waiting }) : ''].filter(Boolean).join(' ')
   void router.replace(itemEditPath(spaceId.value, { item_kind: kind.value, item_id: versionId }))
 }
 
@@ -139,7 +141,7 @@ watch([spaceId, kind, itemId], () => {
       <Button variant="outline" size="sm" @click="load">{{ t('knowledgeQuickEdit.retry') }}</Button>
     </div>
     <template v-else-if="item">
-      <KnowledgeItemSummaryCard :item="item" />
+      <KnowledgeItemSummaryCard :item="item" :heading="item.title" />
       <GrowthLoading v-if="loading" variant="inline" :label="t('knowledgeQuickEdit.loading')" />
       <p v-if="notice" role="status" class="m-0 text-sm" data-edit-notice>{{ notice }}</p>
       <div v-if="!active" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground" data-item-historical>
@@ -152,6 +154,7 @@ watch([spaceId, kind, itemId], () => {
         <KnowledgeScopeEditor :item="item" :space-id="spaceId" :projects="projects" @saved="saved" @failed="failed" />
         <KnowledgeTagEditor :item="item" :space-id="spaceId" @changed="saved" @failed="failed" />
       </template>
+      <KnowledgeBasisReview :item="item" :space-id="spaceId" @saved="saved" @versioned="versioned" @failed="failed" />
       <KnowledgeContentEditor :item="item" :space-id="spaceId" @saved="saved" @versioned="versioned" @failed="failed" />
       <Card v-if="item.bases?.length" as="section" data-item-bases>
         <CardHeader>
@@ -172,7 +175,7 @@ watch([spaceId, kind, itemId], () => {
   </div>
   <Dialog :open="Boolean(peekVersion)" @update:open="peekOpenChange">
     <DialogContent v-if="peekVersion" size="lg" data-version-peek @open-auto-focus="focusDialog" @close-auto-focus="returnFocus">
-      <KnowledgeVersionPeek :space-id="spaceId" :version="peekVersion" :known="peekKnown" @close="peek.close()" />
+      <KnowledgeVersionPeek :space-id="spaceId" :version="peekVersion" :known="peekKnown" />
     </DialogContent>
   </Dialog>
   </section>

@@ -126,6 +126,8 @@ async def test_c7_2_cached_readers_get_the_new_version_and_old_links_cannot_writ
             'personal_space_id': space_id, 'task_id': 'synthetic-cached-task',
             'items': [{'item_id': old_id, 'item_kind': 'entity', 'use_kind': 'applied'}]})
         assert late_use.status_code == 409
+        assert late_use.json()['detail'] == {'code': 'historical', 'current_item_id': new_id,
+                                             'message': 'historical knowledge cannot receive usage evidence'}
         current = await view(client, space_id, new_id)
         assert (current['content'], current['status'], current['weight']['basis']['qualified_use_count']) == (
             'Prefer short status lines', 'current', 0)
@@ -464,3 +466,125 @@ async def test_a_relationship_is_versioned_and_marked_outdated_the_same_way():
         edge = [edge for edge in ok(await client.get(f'/v1/spaces/{space_id}/graph', params={'limit': 500}))['edges']
                 if edge['id'] == new_id]
         assert edge[0]['version_status'] == 'outdated'
+
+
+async def stored(settings, item_id):
+    [row] = await query(settings, '''
+        MATCH (item:Entity {uuid: $item})
+        OPTIONAL MATCH (episode:Episodic)-[:MENTIONS]->(item)
+        RETURN properties(item) AS properties, count(episode) AS mentions
+        ''', item=item_id)
+    return row
+
+
+@pytest.mark.asyncio
+async def test_d20_6_a_same_key_capture_after_an_edit_lands_on_the_new_version_and_leaves_history_alone():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        words = preference('reply-language', 'Reply in English', content_source='agent_inferred')
+        old_id = (await commit(client, space_id, [words]))['entity_ids'][0]
+        await confirm(client, space_id, old_id)
+        new_id = ok(await edit(client, space_id, old_id, 'Keep terms in English, the rest in Chinese',
+                               version=(await view(client, space_id, old_id))['version']))['version_item_id']
+        before = await stored(settings, old_id)
+        later = await commit(client, space_id, [words], key=f'later-{uuid4()}')
+        assert later['entity_ids'] == [new_id], 'the capture lands on the head of the chain'
+        after = await stored(settings, old_id)
+        assert after == before, 'a replaced version is never changed and gains no mentions'
+        current = await view(client, space_id, new_id)
+        assert later['episode_id'] in {source['episode_id'] for source in current['evidence']}
+        assert current['content'] == 'Keep terms in English, the rest in Chinese'
+        assert await entry_instructions(client, space_id, 'alpha') == {
+            new_id: 'Keep terms in English, the rest in Chinese'}
+
+
+@pytest.mark.asyncio
+async def test_d20_10_an_agent_cannot_end_what_a_person_confirmed_only_report_it():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        item_id = (await commit(client, space_id, [preference('weekly-report', 'Weekly reports in Word')]))[
+            'entity_ids'][0]
+        await confirm(client, space_id, item_id)
+        fact = {'key': 'template', 'name': 'The template is a .docx file', 'type': 'ProjectFact',
+                'summary': 'The template is a .docx file', 'derived_from': [item_id]}
+        fact_id = (await commit(client, space_id, [fact], project='alpha'))['entity_ids'][0]
+        reported = ok(await mark_outdated(client, space_id, item_id, actor='agent',
+                                          version=(await view(client, space_id, item_id))['version']))
+        assert (reported['outcome'], reported['dependents_outdated']) == ('pending_person', 0)
+        still = await view(client, space_id, item_id)
+        assert (still['status'], still['confirmation_status']) == ('current', 'confirmed')
+        assert still['weight']['basis']['negative_evidence_count'] == 1
+        assert 'mark_outdated' not in {revision['action'] for revision in still['revisions']}
+        assert item_id in await applied(client, space_id, 'alpha')
+        assert (await view(client, space_id, fact_id))['status'] == 'current'
+        # The console is the person: it ends validity.
+        ok(await mark_outdated(client, space_id, item_id, version=still['version']))
+        assert (await view(client, space_id, item_id))['status'] == 'outdated'
+        assert (await view(client, space_id, fact_id))['status'] == 'basis_outdated'
+        # What usage alone confirmed keeps the Agent path.
+        inferred = (await commit(client, space_id, [preference(
+            'headings', 'Use many headings', content_source='agent_inferred')]))['entity_ids'][0]
+        await promote_by_usage(client, space_id, inferred)
+        ended = ok(await mark_outdated(client, space_id, inferred, actor='agent',
+                                       version=(await view(client, space_id, inferred))['version']))
+        assert ended['outcome'] == 'applied'
+        assert (await view(client, space_id, inferred))['status'] == 'outdated'
+
+
+@pytest.mark.asyncio
+async def test_a_reasserted_version_rests_only_on_bases_that_are_current():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        bases = []
+        for key, text in [('word', 'Reports in Word'), ('share', 'Reports live on the share')]:
+            base_id = (await commit(client, space_id, [preference(key, text)]))['entity_ids'][0]
+            await confirm(client, space_id, base_id)
+            bases.append(base_id)
+        word, share = bases
+        fact = {'key': 'template', 'name': 'The template is share/report.docx', 'type': 'ProjectFact',
+                'summary': 'The template is share/report.docx', 'derived_from': bases}
+        fact_id = (await commit(client, space_id, [fact], project='alpha'))['entity_ids'][0]
+        share_v2 = ok(await edit(client, space_id, share, 'Reports live on the team drive',
+                                 version=(await view(client, space_id, share))['version']))['version_item_id']
+        ok(await mark_outdated(client, space_id, word, version=(await view(client, space_id, word))['version']))
+        derived = await view(client, space_id, fact_id)
+        assert derived['status'] == 'basis_outdated'
+        reasserted = ok(await edit(client, space_id, fact_id, 'The template is share/report.docx',
+                                   version=derived['version'], reason='Still true for the old reports'))
+        current = await view(client, space_id, reasserted['version_item_id'])
+        assert [basis['item_id'] for basis in current['bases']] == [share_v2], (
+            'the outdated basis is dropped; the edited one is followed to its current version')
+        assert current['bases'][0]['status'] == 'current'
+
+
+@pytest.mark.asyncio
+async def test_d20_5_editing_a_deactivated_item_writes_a_new_version_and_restore_still_works():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        item_id = (await commit(client, space_id, [preference('tone', 'Keep a calm tone')]))['entity_ids'][0]
+        await confirm(client, space_id, item_id)
+        ok(await client.patch(f'/v1/knowledge/items/{item_id}', json={
+            'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'invalidate',
+            'reason': 'Paused for now.', 'operation_actor': 'human',
+            'expected_version': (await view(client, space_id, item_id))['version']}))
+        inactive = await view(client, space_id, item_id)
+        assert inactive['status'] == 'inactive'
+        new_id = ok(await edit(client, space_id, item_id, 'Keep a calm, direct tone',
+                               version=inactive['version']))['version_item_id']
+        assert new_id and new_id != item_id
+        old = await view(client, space_id, item_id)
+        assert (old['content'], old['invalid_at']) == ('Keep a calm tone', inactive['invalid_at'])
+        assert new_id in await applied(client, space_id, 'alpha')
+        other = (await commit(client, space_id, [preference('brevity', 'Be brief')]))['entity_ids'][0]
+        await confirm(client, space_id, other)
+        ok(await client.patch(f'/v1/knowledge/items/{other}', json={
+            'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'invalidate', 'reason': 'Paused.',
+            'operation_actor': 'human', 'expected_version': (await view(client, space_id, other))['version']}))
+        ok(await client.patch(f'/v1/knowledge/items/{other}', json={
+            'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'restore', 'reason': 'Back on.',
+            'operation_actor': 'human', 'expected_version': (await view(client, space_id, other))['version']}))
+        assert (await view(client, space_id, other))['status'] == 'current'

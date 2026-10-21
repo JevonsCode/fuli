@@ -10,7 +10,8 @@ import re
 
 from fastapi import HTTPException
 
-from .knowledge_dependencies import item_bases
+from .knowledge_basis_review import basis_review
+from .knowledge_dependencies import dependents_of, item_bases
 from .knowledge_item_view_models import (
     KnowledgeEvidenceSource,
     KnowledgeItemRef,
@@ -48,10 +49,13 @@ async def read_knowledge_item_view(store, actor: dict, request: KnowledgeItemRef
     summary = await item_summary(store, space, request.item_kind, request.item_id, current,
                                  source_ids=source_ids, revisions=revisions)
     versions = await version_chain(store, space, request.item_kind, request.item_id)
+    head = next((version['item_id'] for version in versions if version['status'] == 'current'), None)
     return KnowledgeItemView(
+        basis_review=basis_review(revisions),
+        dependent_count=len(await dependents_of(store, space, request.item_kind, head or request.item_id)),
         **summary.model_dump(), evidence=evidence, evidence_count=len(source_ids),
         revisions=revisions[:REVISION_LIMIT], versions=versions,
-        current_item_id=next((version['item_id'] for version in versions if version['status'] == 'current'), None),
+        current_item_id=head,
         bases=await item_bases(store, space, request.item_kind, request.item_id, current))
 
 

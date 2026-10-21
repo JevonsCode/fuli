@@ -40,8 +40,8 @@ async def test_revision_from_a_stale_read_is_refused_and_records_nothing(item_ki
         'ai_review_lock_version': 7,
     }
     # The item moved after the read, so the new version's compare-and-set on the
-    # old one matches nothing (no revisions yet; then the lock).
-    driver = SequentialDriver([[current], [], []])
+    # old one matches nothing (no revisions yet; the space lock; then the item lock).
+    driver = SequentialDriver([[current], [], [], []])
 
     with pytest.raises(HTTPException) as stale:
         await revise_knowledge_item(StoreStub(driver), {'id': 'principal-1'}, 'item-1',
@@ -51,13 +51,14 @@ async def test_revision_from_a_stale_read_is_refused_and_records_nothing(item_ki
         ))
 
     assert stale.value.status_code == 409
-    query, parameters = driver.calls[2]
+    assert '_knowledge_lock' in driver.calls[2][0]
+    query, parameters = driver.calls[3]
     assert parameters['expected'] == 7
     assert (
         'SET item.fuli_ai_review_lock_version = coalesce(item.fuli_ai_review_lock_version, 0) + 1 '
         'WITH item WHERE item.fuli_ai_review_lock_version = $expected + 1'
     ) in ' '.join(query.split())
-    assert len(driver.calls) == 3, 'No new version, revision record or human-change audit.'
+    assert len(driver.calls) == 4, 'No new version, revision record or human-change audit.'
 
 
 @pytest.mark.asyncio
@@ -503,6 +504,7 @@ async def test_assignment_override_moves_one_item_without_rewriting_episode_evid
             'created_at': changed_at,
             'updated_at': changed_at,
         }}],
+        [],  # the scope-change revision
     ])
     store = StoreStub(driver)
 
@@ -518,7 +520,10 @@ async def test_assignment_override_moves_one_item_without_rewriting_episode_evid
         ),
     )
 
-    assignment_query, parameters = driver.calls[-1]
+    assignment_query, parameters = driver.calls[-2]
+    revision_query, revision = driver.calls[-1]
+    assert 'FuliKnowledgeRevision' in revision_query and "action: 'scope_change'" in revision_query
+    assert revision['current_json'] == '{"projectId": "project-b", "changedBy": "agent"}'
     assert 'FuliKnowledgeAssignment' in assignment_query
     assert 'fuli_ai_review_lock_version' in assignment_query
     assert 'Episodic' not in assignment_query

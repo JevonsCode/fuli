@@ -132,16 +132,29 @@ export function endpointId(endpoint: string | KnowledgeNode) {
   return typeof endpoint === 'object' && endpoint !== null ? endpoint.id : endpoint
 }
 
+// A current relationship stays on the entity version it was stated about
+// (rec#5 C7). The current view draws it on that entity's current version;
+// one whose endpoint has no current version leaves the view, as before.
 export function currentKnowledgeGraph(graph: KnowledgeGraph): KnowledgeGraph {
-  const nodes = graph.nodes.filter((node) => !node.invalid_at)
-  const nodeIds = new Set(nodes.map(({ id }) => id))
-  const edges = graph.edges.filter(
-    (edge) =>
-      !edge.invalid_at
-      && nodeIds.has(endpointId(edge.source))
-      && nodeIds.has(endpointId(edge.target)),
-  )
-  return { ...graph, nodes, edges }
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]))
+  const currentEnd = (id: string) => {
+    let node = byId.get(id)
+    const seen = new Set<string>()
+    while (node?.invalid_at && node.replaced_by_item_id && !seen.has(node.id)) {
+      seen.add(node.id)
+      const next = byId.get(node.replaced_by_item_id)
+      if (!next) break
+      node = next
+    }
+    return node
+  }
+  const edges = graph.edges.filter((edge) => !edge.invalid_at).flatMap((edge) => {
+    const source = currentEnd(endpointId(edge.source))
+    const target = currentEnd(endpointId(edge.target))
+    return source && target && !source.invalid_at && !target.invalid_at
+      ? [{ ...edge, source: source.id, target: target.id }] : []
+  })
+  return { ...graph, nodes: graph.nodes.filter((node) => !node.invalid_at), edges }
 }
 
 export function knowledgeItems(graph: KnowledgeGraph | null): KnowledgeItem[] {
@@ -331,6 +344,11 @@ const TIME_PRECISION = { second: DATE_TIME_FULL, minute: DATE_TIME_MINUTE, day: 
 /** A recorded time; list columns pass a coarser precision than details. */
 export function formatTime(value?: string | null, precision: keyof typeof TIME_PRECISION = 'second') {
   return formatDateTime(value, currentLocale(), TIME_PRECISION[precision], { missing: t('knowledge.domain.items.notRecorded') })
+}
+
+/** A list row's second line: the summary, unless it only repeats the name. */
+export function distinctSummary(item: Pick<KnowledgeItem, 'title' | 'body'>) {
+  return item.body.trim() === item.title.trim() ? '' : item.body
 }
 
 /** Where a preference is listed: in the 历史 group once it is no longer current

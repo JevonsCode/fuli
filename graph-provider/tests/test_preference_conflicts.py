@@ -101,6 +101,7 @@ async def test_ai_keep_left_invalidates_right_and_marks_the_resolution():
         [entity_item('right')],
         [entity_item('right')],
         [entity_item('left')],
+        [],  # no revisions: a deactivation of a version that never ended
         [{'item_id': 'right'}],  # the compare-and-set write matched
         [],
         [{'conflict': resolved}],
@@ -121,7 +122,8 @@ async def test_ai_keep_left_invalidates_right_and_marks_the_resolution():
 
     assert result.status == 'resolved'
     assert result.resolved_by == 'agent'
-    update_query, update_parameters = driver.calls[5]
+    assert 'FuliKnowledgeRevision' in driver.calls[5][0], 'a version that never ended may be deactivated'
+    update_query, update_parameters = driver.calls[6]
     assert 'fuli_invalid_at' in update_query
     assert update_parameters['item_id'] == 'right'
     assert update_parameters['replaced_by_item_id'] == 'left'

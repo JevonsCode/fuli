@@ -36,13 +36,14 @@ def test_the_revision_that_ended_validity_says_why_a_version_is_history():
                                       revision('mark_outdated', 2)]) == 'outdated'
 
 
-def test_only_a_content_edit_of_the_current_version_or_a_reassertion_writes_a_version():
+def test_a_content_edit_or_a_reassertion_writes_a_version_unless_a_newer_one_exists():
     assert creates_version({}, 'current', content_changed=True)
     assert not creates_version({}, 'current', content_changed=False)
     assert creates_version({}, 'outdated', content_changed=False)
     assert creates_version({}, 'basis_outdated', content_changed=True)
     assert not creates_version({'replaced_by_item_id': 'newer'}, 'outdated', content_changed=True)
-    assert not creates_version({}, 'inactive', content_changed=True), 'a deactivation keeps its own restore'
+    assert creates_version({}, 'inactive', content_changed=True), 'D-20.5: no in-place rewrite of history'
+    assert not creates_version({}, 'inactive', content_changed=False), 'a deactivation keeps its own restore'
     assert not creates_version({'replaced_by_item_id': 'newer'}, 'superseded', content_changed=True)
 
 

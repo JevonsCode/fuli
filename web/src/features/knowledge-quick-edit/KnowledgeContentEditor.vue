@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { t } from '@/i18n'
 import {
   canReassert, contentRequest, editFailure, markOutdatedRequest, versionStatus, versionStatusLabel,
-  type EditFailure, type KnowledgeItemView,
+  type BasisMeaning, type EditFailure, type KnowledgeItemView,
 } from './model'
 import { reviseItem } from './quick-edit-api'
 
@@ -18,21 +19,24 @@ import { reviseItem } from './quick-edit-api'
 // keeps its history; an outdated item is confirmed again only as a new
 // version. Each names the version the page read.
 const props = defineProps<{ item: KnowledgeItemView; spaceId: string }>()
-const emit = defineEmits<{ saved: []; versioned: [itemId: string]; failed: [reason: EditFailure] }>()
+const emit = defineEmits<{ saved: []; versioned: [itemId: string, waiting: number]; failed: [reason: EditFailure] }>()
 
 const content = ref(props.item.content)
 const reason = ref('')
 const outdatedReason = ref('')
 const pending = ref<'content' | 'outdated' | null>(null)
+// Conclusions rest on it: the person says what the edit means (D-20.7).
+const meaning = ref<BasisMeaning>('changed')
+const dependents = computed(() => props.item.dependent_count ?? 0)
 const message = ref<{ kind: 'error' | 'status'; text: string } | null>(null)
-watch(() => [props.item.item_id, props.item.version], () => { content.value = props.item.content })
+watch(() => [props.item.item_id, props.item.version], () => { content.value = props.item.content; meaning.value = 'changed' })
 
 const current = computed(() => versionStatus(props.item) === 'current')
 const reassert = computed(() => canReassert(props.item))
 const unchanged = computed(() => content.value.trim() === props.item.content.trim())
 // Saying an outdated item again is a new version even with the same words.
 const contentBody = computed(() => unchanged.value && !reassert.value ? null
-  : contentRequest(props.spaceId, props.item, content.value, reason.value))
+  : contentRequest(props.spaceId, props.item, content.value, reason.value, dependents.value ? meaning.value : null))
 const outdatedBody = computed(() => markOutdatedRequest(props.spaceId, props.item, outdatedReason.value))
 
 async function submit(kind: 'content' | 'outdated', body: object | null) {
@@ -44,7 +48,7 @@ async function submit(kind: 'content' | 'outdated', body: object | null) {
     reason.value = ''
     outdatedReason.value = ''
     if (kind === 'content' && result.version_item_id) {
-      emit('versioned', result.version_item_id)
+      emit('versioned', result.version_item_id, result.dependents_changed ?? 0)
       return
     }
     const dependents = result.dependents_outdated ?? 0
@@ -76,6 +80,16 @@ async function submit(kind: 'content' | 'outdated', body: object | null) {
         <FieldLabel for="item-content">{{ t('knowledgeQuickEdit.content.label') }}</FieldLabel>
         <Textarea id="item-content" v-model="content" rows="3" maxlength="4096" :disabled="pending !== null" />
         <FieldDescription v-if="unchanged && !reassert">{{ t('knowledgeQuickEdit.content.unchanged') }}</FieldDescription>
+      </Field>
+      <Field v-if="dependents" data-basis-meaning>
+        <FieldLabel id="basis-meaning-label">{{ t('knowledgeQuickEdit.meaning.label', { count: dependents }) }}</FieldLabel>
+        <RadioGroup v-model="meaning" aria-labelledby="basis-meaning-label" class="grid gap-2" :disabled="pending !== null">
+          <label v-for="choice in (['changed', 'wording_only'] as const)" :key="choice" class="flex items-center gap-2 text-sm"
+            :data-meaning-choice="choice">
+            <RadioGroupItem :value="choice" />{{ t(`knowledgeQuickEdit.meaning.${choice}`) }}
+          </label>
+        </RadioGroup>
+        <FieldDescription>{{ t(`knowledgeQuickEdit.meaning.${meaning}Help`) }}</FieldDescription>
       </Field>
       <Field>
         <FieldLabel for="content-reason">{{ t('knowledgeQuickEdit.content.reason') }}</FieldLabel>

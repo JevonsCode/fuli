@@ -16,7 +16,7 @@ from .knowledge_dependencies import end_dependents
 from .knowledge_feedback_models import KnowledgeFeedbackCreate
 from .knowledge_item_version import lock_version
 from .knowledge_management import _read_item, _snapshot
-from .knowledge_versions import invalid_property, record_version_revision
+from .knowledge_versions import invalid_property, lock_knowledge, record_version_revision
 from .models import KnowledgeRevisionRecord
 
 MARK_OUTDATED_TOOL = 'mark_outdated'
@@ -24,14 +24,11 @@ MARK_OUTDATED_TOOL = 'mark_outdated'
 
 async def mark_item_outdated(scoped, actor, space, item_id, request, current, previous, *,
                              created_at, revision_id, changed_by) -> KnowledgeRevisionRecord:
-    feedback = KnowledgeFeedbackCreate(
-        personal_space_id=space['id'], task_id=f'{MARK_OUTDATED_TOOL}:{revision_id}',
-        tool_name=MARK_OUTDATED_TOOL,
-        items=[{'item_id': item_id, 'item_kind': request.item_kind, 'feedback_kind': 'outdated',
-                'reason': request.reason, 'evidence_summary': request.reason,
-                'reported_by_kind': 'user' if changed_by == 'user' else 'agent'}],
-    )
-    await _record_one_knowledge_feedback(scoped, actor, space, feedback, feedback.items[0])
+    # The same lock captures take: no conclusion naming this item can be
+    # written between the end of its validity and the dependents scan.
+    await lock_knowledge(scoped, space)
+    await _record_outdated_feedback(scoped, actor, space, item_id, request, revision_id,
+                                    'user' if changed_by == 'user' else 'agent')
     invalid = invalid_property(request.item_kind)
     # The feedback write bumped the lock once; anything else since is a conflict.
     records, _, _ = await scoped.runtime.driver.execute_query(
@@ -58,3 +55,26 @@ async def mark_item_outdated(scoped, actor, space, item_id, request, current, pr
         id=revision_id, item_id=item_id, item_kind=request.item_kind, action='mark_outdated',
         reason=request.reason, previous=previous, current=outdated, created_at=created_at,
         changed_by=changed_by, dependents_outdated=len(ended))
+
+
+async def report_outdated_to_person(scoped, actor, space, item_id, request, previous, *,
+                                    created_at, revision_id) -> KnowledgeRevisionRecord:
+    """An Agent's outdated report on what a person confirmed (D-20.10): only
+    negative feedback is recorded. The item stays valid, nothing that rests on
+    it changes, no revision is written, and the person decides in the console."""
+    await _record_outdated_feedback(scoped, actor, space, item_id, request, revision_id, 'agent')
+    return KnowledgeRevisionRecord(
+        id=revision_id, item_id=item_id, item_kind=request.item_kind, action='mark_outdated',
+        reason=request.reason, previous=previous, current=previous, created_at=created_at,
+        changed_by='agent', outcome='pending_person')
+
+
+async def _record_outdated_feedback(scoped, actor, space, item_id, request, revision_id, reporter):
+    feedback = KnowledgeFeedbackCreate(
+        personal_space_id=space['id'], task_id=f'{MARK_OUTDATED_TOOL}:{revision_id}',
+        tool_name=MARK_OUTDATED_TOOL,
+        items=[{'item_id': item_id, 'item_kind': request.item_kind, 'feedback_kind': 'outdated',
+                'reason': request.reason, 'evidence_summary': request.reason,
+                'reported_by_kind': reporter}],
+    )
+    await _record_one_knowledge_feedback(scoped, actor, space, feedback, feedback.items[0])

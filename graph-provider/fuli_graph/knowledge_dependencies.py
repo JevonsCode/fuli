@@ -6,9 +6,11 @@ preference rests on the project preferences its approved decision named. When
 any of those goes out of date, the conclusion is no longer a current fact: its
 validity ends with a `basis_outdated` revision that names what went out of
 date, and it moves to history like its basis. Conclusions drawn from it
-follow, a bounded number of steps deep. A basis edited into a new version
-still holds, so an edit changes nothing here, and a conclusion that names an
-earlier version of its basis is found through that basis's versions.
+follow, however deep the chain: a walk is never cut short and taken as
+complete. A basis edited into a new version still holds, so an edit changes
+nothing here (the conclusion's page asks a person to look again), and a
+conclusion that names an earlier version of its basis, or a decision that
+names an earlier version of its assertion, is found through those versions.
 """
 import json
 from datetime import datetime
@@ -17,10 +19,10 @@ from fastapi import HTTPException
 
 from .knowledge_audit import _item_match
 from .knowledge_management import _read_item, _snapshot
-from .knowledge_versions import invalid_property, item_revisions, lineage_ids, record_version_revision, version_status
+from .knowledge_versions import (
+    current_version_id, invalid_property, item_revisions, lineage_ids, record_version_revision, version_status,
+)
 from .provider_values import stable_uuid
-
-MAX_DEPENDENCY_DEPTH = 8
 
 _DEPENDENTS = '''
 CALL {
@@ -33,16 +35,17 @@ CALL {
   WHERE item.invalid_at IS NULL
     AND any(basis IN coalesce(item.fuli_derived_from_item_ids, []) WHERE basis IN $lineage)
   RETURN 'relationship' AS item_kind, item.uuid AS item_id
-  UNION
-  MATCH (decision:FuliPersonalGlobalPreferenceDecision {space_id: $space_id})
-  WHERE decision.global_assertion_id IS NOT NULL
-  MATCH (event:FuliPersonalGlobalPreferenceDecisionEvent {space_id: $space_id, id: decision.current_event_id})
-  WHERE any(basis IN $lineage WHERE event.source_items_json CONTAINS ('"' + basis + '"'))
-  MATCH (item:Entity {uuid: decision.global_assertion_id, group_id: $group_id})
-  WHERE item.fuli_invalid_at IS NULL
-  RETURN 'entity' AS item_kind, item.uuid AS item_id
 }
 RETURN DISTINCT item_kind, item_id ORDER BY item_kind, item_id
+'''
+# The assertions of approved personal-global decisions whose sources name the
+# basis; the assertion may have new versions since the decision named it.
+_DECISION_ASSERTIONS = '''
+MATCH (decision:FuliPersonalGlobalPreferenceDecision {space_id: $space_id})
+WHERE decision.global_assertion_id IS NOT NULL
+MATCH (event:FuliPersonalGlobalPreferenceDecisionEvent {space_id: $space_id, id: decision.current_event_id})
+WHERE any(basis IN $lineage WHERE event.source_items_json CONTAINS ('"' + basis + '"'))
+RETURN DISTINCT decision.global_assertion_id AS item_id
 '''
 
 
@@ -64,14 +67,10 @@ async def end_dependents(scoped, actor, space, item_kind, item_id, *, reason, ch
     conclusions drawn from those; return what was ended."""
     ended, seen = [], {(item_kind, item_id)}
     frontier = [(item_kind, item_id)]
-    for _ in range(MAX_DEPENDENCY_DEPTH):
+    while frontier:
         dependents = []
         for basis_kind, basis_id in frontier:
-            lineage = await lineage_ids(scoped, space, basis_kind, basis_id)
-            records, _, _ = await scoped.runtime.driver.execute_query(
-                _DEPENDENTS, group_id=space['group_id'], space_id=space['id'], lineage=lineage)
-            for record in records:
-                dependent = (record['item_kind'], record['item_id'])
+            for dependent in await dependents_of(scoped, space, basis_kind, basis_id):
                 if dependent not in seen:
                     seen.add(dependent)
                     dependents.append((dependent, (basis_kind, basis_id)))
@@ -82,9 +81,21 @@ async def end_dependents(scoped, actor, space, item_kind, item_id, *, reason, ch
                 ended.append({'item_kind': dependent_kind, 'item_id': dependent_id,
                               'basis_kind': basis_kind, 'basis_id': basis_id})
                 frontier.append((dependent_kind, dependent_id))
-        if not frontier:
-            break
     return ended
+
+
+async def dependents_of(scoped, space, basis_kind, basis_id) -> list[tuple[str, str]]:
+    lineage = await lineage_ids(scoped, space, basis_kind, basis_id)
+    records, _, _ = await scoped.runtime.driver.execute_query(
+        _DEPENDENTS, group_id=space['group_id'], lineage=lineage)
+    found = [(record['item_kind'], record['item_id']) for record in records]
+    assertions, _, _ = await scoped.runtime.driver.execute_query(
+        _DECISION_ASSERTIONS, space_id=space['id'], lineage=lineage)
+    for record in assertions:
+        current = await current_version_id(scoped, space, 'entity', record['item_id'])
+        if current and ('entity', current) not in found:
+            found.append(('entity', current))
+    return found
 
 
 async def item_bases(store, space, item_kind, item_id, current) -> list[dict]:
@@ -110,14 +121,16 @@ async def _decision_sources(store, space, item_kind, item_id) -> list[str]:
     """The project preferences an approved personal-global decision rests on."""
     if item_kind != 'entity':
         return []
+    # A decision names the assertion it wrote; a later version of that
+    # assertion rests on the same sources.
     records, _, _ = await store.runtime.driver.execute_query(
         '''
-        MATCH (decision:FuliPersonalGlobalPreferenceDecision {space_id: $space_id,
-                                                             global_assertion_id: $item_id})
+        MATCH (decision:FuliPersonalGlobalPreferenceDecision {space_id: $space_id})
+        WHERE decision.global_assertion_id IN $lineage
         MATCH (event:FuliPersonalGlobalPreferenceDecisionEvent {space_id: $space_id,
                                                                id: decision.current_event_id})
         RETURN event.source_items_json AS source_items_json
-        ''', space_id=space['id'], item_id=item_id, routing_='r')
+        ''', space_id=space['id'], lineage=await lineage_ids(store, space, 'entity', item_id), routing_='r')
     sources = []
     for record in records:
         listed = json.loads(record['source_items_json'] or '[]')

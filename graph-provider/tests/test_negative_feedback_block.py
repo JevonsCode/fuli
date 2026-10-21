@@ -461,6 +461,8 @@ class MemoryGraph:
             return self._lock_versions(query, p)
         if "action: 'batch_confirm'" in query:
             return self._batch_confirm(query, p)
+        if '_knowledge_lock' in query or 'WHERE item.fuli_replaced_by_item_id IN $item_ids' in query:
+            return []  # the space's knowledge lock; no earlier versions (rec#5 C7/C8)
         if 'RETURN revision ORDER BY revision.created_at' in query:
             return [{'revision': {
                 'id': revision['revision_id'], 'item_id': revision['item_id'], 'item_kind': revision['item_kind'],
