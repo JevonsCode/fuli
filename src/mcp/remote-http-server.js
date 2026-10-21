@@ -5,6 +5,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { isFetchBlockedPort } from '../server/blocked-ports.js';
+import { listenFetchableServer } from '../server/listen.js';
 import { createMcpServer } from './create-mcp-server.js';
 
 const MAX_REQUEST_BYTES = 1024 * 1024;
@@ -84,6 +86,7 @@ export async function createRemoteMcpHttpServer({
   ),
   shutdownGraceMs = DEFAULT_SHUTDOWN_GRACE_MS,
   now = Date.now,
+  isBlockedPort = isFetchBlockedPort,
   withRuntimeLease = (_owner, operation) => operation(),
   createMcp = createMcpServer
 }) {
@@ -149,7 +152,9 @@ export async function createRemoteMcpHttpServer({
   // the owner without allowing EventEmitter's unhandled-error behavior to take
   // down the host process.
   httpServer.on('error', (error) => { lastServerError = error; });
-  await listen(httpServer, port, host);
+  // MCP clients reach this server with fetch(), so an ephemeral port must not
+  // land on one that fetch() refuses.
+  await listenFetchableServer(httpServer, port, host, { isBlockedPort });
   const address = httpServer.address();
   authority = typeof address === 'object' && address
     ? `${address.family === 'IPv6' ? `[${address.address}]` : address.address}:${address.port}`
@@ -547,16 +552,6 @@ function sendJsonRpcError(response, status, code, message, { closeConnection = f
     ...(closeConnection ? { connection: 'close' } : {})
   });
   response.end(body);
-}
-
-function listen(server, port, host) {
-  return new Promise((resolve, reject) => {
-    const onError = (error) => { server.off('listening', onListening); reject(error); };
-    const onListening = () => { server.off('error', onError); resolve(); };
-    server.once('error', onError);
-    server.once('listening', onListening);
-    server.listen(port, host);
-  });
 }
 
 function closeHttpServer(server, graceMs) {
