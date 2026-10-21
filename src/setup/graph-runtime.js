@@ -58,6 +58,7 @@ export {
 } from './container-runtime.js';
 import { isProcessAlive, stopProcess } from '../local-runtime/processes.js';
 import { isManagedWorkspace, waitForProviderHealth } from '../local-runtime/provider-readiness.js';
+import { parseProviderEnv } from './provider-env.js';
 
 export async function ensureGraphRuntime(input, dependencies = {}) {
   const deps = graphDependencies(dependencies);
@@ -268,7 +269,7 @@ function graphConfigProfilePath(paths, mode) {
 }
 
 function ensureProviderEnvironment(path, settings, requestedMemoryProfile, deps) {
-  const previous = deps.fileExists(path) ? parseEnv(deps.readText(path)) : {};
+  const previous = deps.fileExists(path) ? parseProviderEnv(deps.readText(path)) : {};
   const memoryProfile = resolveNeo4jMemoryProfile(
     requestedMemoryProfile,
     previous.FULI_NEO4J_MEMORY_PROFILE
@@ -654,12 +655,6 @@ function runtimeResult(status, state, lanAccessToken = null) {
   };
 }
 
-function parseEnv(body) {
-  return Object.fromEntries(body.split(/\r?\n/).filter(Boolean).map((line) => {
-    const index = line.indexOf('=');
-    return [line.slice(0, index), line.slice(index + 1)];
-  }));
-}
 
 function secret() {
   return randomBytes(32).toString('base64url');

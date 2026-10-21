@@ -6,6 +6,7 @@ import pytest
 
 from test_project_agent_memory_neo4j import dismiss_agent, fixture_settings, provider_client, seed_agent
 from test_system_hr_identity_neo4j import _create_space
+from fuli_graph.runtime import ManagedNeo4jDriver
 
 
 @pytest.mark.asyncio
@@ -80,7 +81,7 @@ async def test_disabling_optional_team_growth_still_requires_a_project_lead():
 async def test_concurrent_archive_cannot_install_an_unavailable_project_lead(monkeypatch):
     from graphiti_core.driver.neo4j_driver import Neo4jDriver
     reached, proceed = asyncio.Event(), asyncio.Event()
-    execute = Neo4jDriver.execute_query
+    execute = ManagedNeo4jDriver.execute_query
     async def pause_policy(driver, query, **kwargs):
         if kwargs.get('team_agent_ids') == ['successor']:
             reached.set()
@@ -96,7 +97,7 @@ async def test_concurrent_archive_cannot_install_an_unavailable_project_lead(mon
         })
         assert original.status_code == 200, original.text
         with monkeypatch.context() as patch:
-            patch.setattr(Neo4jDriver, 'execute_query', pause_policy)
+            patch.setattr(ManagedNeo4jDriver, 'execute_query', pause_policy)
             saving = asyncio.create_task(client.put('/v1/project-agent-coordination-policy', json={
                 **scope, 'team_lead_agent_id': 'successor',
                 'expected_updated_at': original.json()['updated_at'],

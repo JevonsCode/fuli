@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from . import graph_format_backfills as backfills
+from .graph_format_journal import RecordJournal
 from .graph_format_schema import (
     BASELINE_LABELS,
     BASELINE_RULES,
@@ -33,10 +34,12 @@ class GraphMigration:
     summary: str
     rules: tuple[SchemaRule, ...] = ()
     labels: frozenset[str] = frozenset()
-    # Record-changing steps: how many records still need the step, and the
-    # step itself, which only a confirmed migration runs.
-    pending: Callable[..., Awaitable[int]] | None = None
+    # Record-changing steps: the IDs of the records that still need the step,
+    # the step itself, which only a confirmed migration runs, and what it may
+    # change so that it can be undone (graph_format_journal.py).
+    pending: Callable[..., Awaitable[list[str]]] | None = None
     apply: Callable[..., Awaitable[None]] | None = None
+    journal: RecordJournal | None = None
 
     @property
     def from_version(self) -> int:
@@ -47,8 +50,10 @@ class GraphMigration:
         return self.kind in AUTOMATIC_KINDS
 
 
-def _records(migration_id, to_version, kind, summary, pending, apply) -> GraphMigration:
-    return GraphMigration(migration_id, to_version, kind, summary, pending=pending, apply=apply)
+def _records(migration_id, to_version, kind, summary, pending, apply, journal) -> GraphMigration:
+    return GraphMigration(
+        migration_id, to_version, kind, summary, pending=pending, apply=apply, journal=journal
+    )
 
 
 GRAPH_MIGRATIONS = (
@@ -61,6 +66,7 @@ GRAPH_MIGRATIONS = (
         'graph/2-learning-bucket-ids', 2, 'rewrite',
         'stable IDs for executor learning caches; older duplicate projections are deleted',
         backfills.pending_learning_bucket_ids, backfills.apply_learning_bucket_ids,
+        backfills.LEARNING_BUCKET_JOURNAL,
     ),
     GraphMigration(
         'graph/3-control-plane-schema', 3, 'schema',
@@ -71,34 +77,40 @@ GRAPH_MIGRATIONS = (
         'graph/4-legacy-agent-assignments', 4, 'backfill',
         'space identities and assignment history for project-bound legacy Agents',
         backfills.pending_legacy_agent_assignments, backfills.apply_legacy_agent_assignments,
+        backfills.LEGACY_AGENT_JOURNAL,
     ),
     _records(
         'graph/5-knowledge-lifecycle-defaults', 5, 'backfill',
         'usage, confidence and inheritance defaults on knowledge items',
         backfills.pending_knowledge_lifecycle_defaults,
         backfills.apply_knowledge_lifecycle_defaults,
+        backfills.KNOWLEDGE_LIFECYCLE_JOURNAL,
     ),
     _records(
         'graph/6-project-relation-review-defaults', 6, 'backfill',
         'review status and revision on personal project relations',
         backfills.pending_project_relation_review_defaults,
         backfills.apply_project_relation_review_defaults,
+        backfills.RELATION_REVIEW_JOURNAL,
     ),
     _records(
         'graph/7-space-visibility-owners', 7, 'backfill',
         'space visibility and the owner of maintained project spaces',
         backfills.pending_space_visibility_and_owners,
         backfills.apply_space_visibility_and_owners,
+        backfills.SPACE_VISIBILITY_JOURNAL,
     ),
     _records(
         'graph/8-project-release-records', 8, 'backfill',
         'a legacy release record for public projects published before releases',
         backfills.pending_project_release_records, backfills.apply_project_release_records,
+        backfills.RELEASE_RECORD_JOURNAL,
     ),
     _records(
         'graph/9-group-id-separators', 9, 'rewrite',
         "Graphiti group IDs without ':' on every node and relationship of a space",
         backfills.pending_group_id_separators, backfills.apply_group_id_separators,
+        backfills.GROUP_ID_JOURNAL,
     ),
     GraphMigration(
         'graph/10-knowledge-tags', 10, 'schema',
@@ -116,8 +128,10 @@ def _validate(migrations: tuple[GraphMigration, ...]) -> None:
             raise ValueError(f'{migration.id} must move the graph to version {expected}')
         if migration.automatic and not migration.rules and not migration.labels:
             raise ValueError(f'{migration.id} declares no schema')
-        if migration.kind in RECORD_KINDS and not (migration.pending and migration.apply):
-            raise ValueError(f'{migration.id} must count and apply its record changes')
+        if migration.kind in RECORD_KINDS and not (
+            migration.pending and migration.apply and migration.journal
+        ):
+            raise ValueError(f'{migration.id} must name, apply and journal its record changes')
         if migration.kind not in AUTOMATIC_KINDS | RECORD_KINDS:
             raise ValueError(f'{migration.id} has an unknown kind {migration.kind}')
 

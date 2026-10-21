@@ -17,7 +17,7 @@ function notesFormat({ backfill = (db) => db.exec("UPDATE notes SET checked = 'y
     migrations: [
       { id: 'notes/2-tags', summary: 'note tags', to: 2, kind: 'add-columns', table: 'notes', columns: { tags: 'TEXT' } },
       { id: 'notes/3-checked', summary: 'a checked mark on every note', to: 3, kind: 'backfill', table: 'notes',
-        columns: { checked: 'TEXT' }, rowsToBackfill: (db) => db.prepare('SELECT count(*) AS n FROM notes').get().n,
+        columns: { checked: 'TEXT' }, backfillKeys: (db) => db.prepare('SELECT id FROM notes ORDER BY id').all().map((row) => row.id),
         backfill }
     ]
   });
@@ -131,7 +131,7 @@ test('an interrupted migration rolls back completely and runs again on the next 
   oldStore(path, `${NOTES_V1}; ALTER TABLE notes ADD COLUMN tags TEXT; PRAGMA user_version = 2`);
   // Earlier rows exist only inside the interrupted transaction.
   const crashing = sqliteFormat({ ...notesFormat(), migrations: [notesFormat().migrations[0], {
-    ...notesFormat().migrations[1], rowsToBackfill: () => 0, backfill: () => { throw new Error('power cut'); } }] });
+    ...notesFormat().migrations[1], backfillKeys: () => [], backfill: () => { throw new Error('power cut'); } }] });
 
   assert.throws(() => openFormattedDatabase(path, crashing), /power cut/);
   const interrupted = inspect(path);

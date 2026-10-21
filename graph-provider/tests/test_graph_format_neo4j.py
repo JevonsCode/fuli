@@ -293,7 +293,7 @@ async def test_current_write_paths_leave_nothing_for_a_record_step(graph):
     maintenance = _Maintenance(driver)
     for migration in GRAPH_MIGRATIONS:
         if not migration.automatic:
-            assert await migration.pending(maintenance, settings) == 0, migration.id
+            assert await migration.pending(maintenance, settings) == [], migration.id
 
 
 class _Maintenance:

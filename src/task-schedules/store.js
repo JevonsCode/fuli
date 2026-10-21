@@ -27,7 +27,9 @@ export const TASK_SCHEDULE_FORMAT = sqliteFormat({
     id: 'task-schedules/3-run-recovery', to: 3, kind: 'backfill', table: 'task_schedule_runs',
     summary: 'recoverable claims: a dispatch key and an expired lease on every earlier run',
     columns: RUN_RECOVERY_COLUMNS,
-    rowsToBackfill: (db) => db.prepare('SELECT count(*) AS rows FROM task_schedule_runs').get().rows,
+    // A run is named by its schedule and row, never by its slot.
+    backfillKeys: (db) => db.prepare("SELECT schedule || '#' || rowid AS key FROM task_schedule_runs ORDER BY key").all()
+      .map((row) => row.key),
     backfill(db) {
       const backfill = db.prepare(`UPDATE task_schedule_runs SET dispatch_key=?, lease_expires_at=created_at,
         updated_at=created_at WHERE schedule=? AND slot=?`);

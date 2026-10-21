@@ -9,6 +9,7 @@ import asyncio
 import pytest
 
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
+from fuli_graph.runtime import ManagedNeo4jDriver
 
 
 async def create_scope(client):
@@ -340,7 +341,7 @@ async def test_archive_between_profile_and_legacy_assignment_wins_atomically(
     from graphiti_core.driver.neo4j_driver import Neo4jDriver
 
     settings = fixture_settings()
-    execute_query = Neo4jDriver.execute_query
+    execute_query = ManagedNeo4jDriver.execute_query
     legacy_write_reached = asyncio.Event()
     continue_legacy_write = asyncio.Event()
     paused = False
@@ -380,7 +381,7 @@ async def test_archive_between_profile_and_legacy_assignment_wins_atomically(
 
         with monkeypatch.context() as concurrent:
             concurrent.setattr(
-                Neo4jDriver,
+                ManagedNeo4jDriver,
                 'execute_query',
                 pause_legacy_assignment,
             )
@@ -426,7 +427,7 @@ async def test_archive_after_assignment_authorization_blocks_assignment_create(
     from graphiti_core.driver.neo4j_driver import Neo4jDriver
 
     settings = fixture_settings()
-    execute_query = Neo4jDriver.execute_query
+    execute_query = ManagedNeo4jDriver.execute_query
     assignment_write_reached = asyncio.Event()
     continue_assignment_write = asyncio.Event()
     paused = False
@@ -464,7 +465,7 @@ async def test_archive_after_assignment_authorization_blocks_assignment_create(
         assert identity.status_code == 200, identity.text
         with monkeypatch.context() as concurrent:
             concurrent.setattr(
-                Neo4jDriver,
+                ManagedNeo4jDriver,
                 'execute_query',
                 pause_assignment_create,
             )
@@ -511,7 +512,7 @@ async def test_archive_after_replacement_authorization_blocks_assignment_replace
     from graphiti_core.driver.neo4j_driver import Neo4jDriver
 
     settings = fixture_settings()
-    execute_query = Neo4jDriver.execute_query
+    execute_query = ManagedNeo4jDriver.execute_query
     replacement_write_reached = asyncio.Event()
     continue_replacement_write = asyncio.Event()
     paused = False
@@ -561,7 +562,7 @@ async def test_archive_after_replacement_authorization_blocks_assignment_replace
         assert original.status_code == 200, original.text
         with monkeypatch.context() as concurrent:
             concurrent.setattr(
-                Neo4jDriver,
+                ManagedNeo4jDriver,
                 'execute_query',
                 pause_assignment_replace,
             )

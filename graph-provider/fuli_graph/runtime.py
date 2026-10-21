@@ -21,7 +21,7 @@ from neo4j.exceptions import ClientError
 from pydantic import BaseModel
 
 from .config import Settings
-from .graph_format import UNCHECKED, prepare_graph_format
+from .graph_format import UNCHECKED, GraphFormatUnavailable, prepare_graph_format, writer_fence
 
 _ACCESS_MODE_ERROR = 'Neo.ClientError.Statement.AccessMode'
 
@@ -155,17 +155,47 @@ class ManagedNeo4jDriver(Neo4jDriver):
     async def execute_query(self, cypher_query_, **kwargs):
         if self._access_mode() == READ_ACCESS:
             kwargs['routing_'] = RoutingControl.READ
-        try:
+            try:
+                return await super().execute_query(cypher_query_, **kwargs)
+            except ClientError as error:
+                if self._refused_write(error):
+                    raise self.format.refusal() from error
+                raise
+        if kwargs.get('routing_') in (RoutingControl.READ, 'r'):
             return await super().execute_query(cypher_query_, **kwargs)
-        except ClientError as error:
-            if self._refused_write(error):
-                raise self.format.refusal() from error
-            raise
+        return await self._fenced_query(cypher_query_, kwargs)
+
+    async def _fenced_query(self, query, kwargs):
+        """A write as one transaction with the writer fence as its last
+        statement, shaped like the driver's execute_query result (records,
+        summary, keys); the session retries a transient error (a deadlock) as
+        the driver's own call does. Deliberately not built on transaction(),
+        which callers may wrap."""
+        parameters = dict(kwargs.pop('params', None) or {})
+        parameters.pop('database_', None)
+        database = kwargs.get('database_') or self._database
+        parameters.update({key: value for key, value in kwargs.items() if not key.endswith('_')})
+
+        async def work(transaction):
+            result = await transaction.run(query, parameters)
+            eager = await result.to_eager_result()
+            await writer_fence(transaction)
+            return eager
+
+        async with self.client.session(database=database, default_access_mode=WRITE_ACCESS) as session:
+            return await session.execute_write(work)
 
     def transaction(self):
         if self._access_mode() == WRITE_ACCESS:
-            return super().transaction()
+            return self._fenced_transaction()
         return self._read_only_transaction()
+
+    @asynccontextmanager
+    async def _fenced_transaction(self):
+        """The dependency's own write transaction, the fence its last statement."""
+        async with Neo4jDriver.transaction(self) as transaction:
+            yield transaction
+            await writer_fence(transaction)
 
     @asynccontextmanager
     async def _read_only_transaction(self):
@@ -187,9 +217,60 @@ class ManagedNeo4jDriver(Neo4jDriver):
 
     def session(self, database: str | None = None):
         mode = self._access_mode()
-        return self.client.session(
-            database=database or self._database, default_access_mode=mode
+        session = self.client.session(database=database or self._database, default_access_mode=mode)
+        return _FencedSession(session) if mode == WRITE_ACCESS else session
+
+
+class _FencedSession:
+    """A write session whose transactions pass the writer fence first."""
+
+    def __init__(self, session):
+        self._session = session
+
+    async def __aenter__(self):
+        await self._session.__aenter__()
+        return self
+
+    async def __aexit__(self, *exc):
+        return await self._session.__aexit__(*exc)
+
+    async def execute_write(self, work, *args, **kwargs):
+        async def fenced(transaction, *work_args, **work_kwargs):
+            result = await work(transaction, *work_args, **work_kwargs)
+            await writer_fence(transaction)
+            return result
+
+        return await self._session.execute_write(fenced, *args, **kwargs)
+
+    async def begin_transaction(self, *args, **kwargs):
+        return _FencedTransaction(await self._session.begin_transaction(*args, **kwargs))
+
+    async def run(self, query, *args, **kwargs):
+        # An auto-commit write (CALL … IN TRANSACTIONS, as Graphiti's delete by
+        # group uses) cannot share a transaction with the fence, so it is not
+        # run at all: a write must use execute_write or a transaction. No FULI
+        # path writes this way.
+        raise GraphFormatUnavailable(
+            'data_format_unfenced_write',
+            'An auto-commit write cannot pass the graph writer fence; use a write transaction.',
         )
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
+
+
+class _FencedTransaction:
+    """An explicit write transaction whose commit passes the fence first."""
+
+    def __init__(self, transaction):
+        self._transaction = transaction
+
+    async def commit(self):
+        await writer_fence(self._transaction)
+        return await self._transaction.commit()
+
+    def __getattr__(self, name):
+        return getattr(self._transaction, name)
 
 
 class _MaintenanceDriver:
@@ -246,6 +327,11 @@ class GraphitiRuntime:
 
     async def initialize(self) -> None:
         """Check the graph's data format before any schema change or write."""
+        await self.refresh_data_format()
+
+    async def refresh_data_format(self) -> None:
+        """Decide again what the provider may do: at start, and after a person
+        applied or undid a migration (graph_format_routes.py)."""
         self.driver.format = await prepare_graph_format(self.driver.maintenance(), self.settings)
         if self.driver.format.access == 'write':
             await self._ensure_personal_space_defaults()
