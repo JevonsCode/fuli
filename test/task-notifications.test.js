@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer as createHttpServer } from 'node:http';
-import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer } from '../src/server.js';
 import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 test('task notifications stream across the local API without exposing the provider token or polling', async (t) => {
   let upstream;
@@ -20,8 +20,8 @@ test('task notifications stream across the local API without exposing the provid
     response.on('close', disconnected);
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     response.write('event: ready\ndata: {}\n\n');
-  }).listen(0, '127.0.0.1');
-  await once(provider, 'listening');
+  });
+  await listenFetchableServer(provider, 0);
   t.after(() => { provider.closeAllConnections(); provider.close(); });
   const client = new GraphitiProviderClient({ baseUrl: `http://127.0.0.1:${provider.address().port}`,
     accessToken: 'synthetic-stream-token', requestTimeoutMs: 100 });

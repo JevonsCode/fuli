@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { once } from 'node:events';
 
 import { inspectLocalRuntime } from '../src/local-runtime/lifecycle.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 test('fl status probes the Workspace protocol and verifies its authenticated session', async (t) => {
   const requests = [];
@@ -26,8 +26,7 @@ test('fl status probes the Workspace protocol and verifies its authenticated ses
       response.end(JSON.stringify({ error: { code: 'NOT_FOUND' } }));
     }
   });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenFetchableServer(server, 0);
   t.after(() => new Promise((resolve) => {
     server.close(resolve);
     server.closeAllConnections();

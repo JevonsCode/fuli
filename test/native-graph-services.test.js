@@ -12,6 +12,7 @@ import { createNativeGraphServices as createServices, ensureNativeRuntime } from
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 import { readJsonFile, writeJsonFileAtomic } from '../src/storage/json-file.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 import {
   neo4jAdminSensitiveValues, spawnWindowsNativeProvider, stopWindowsNativeProcess, windowsNativeProcessMatches
 } from '../src/native-runtime/windows-processes.js';
@@ -403,7 +404,7 @@ test('provided Windows native assets persist knowledge across owned stop and res
 
 async function freeNativePort() {
   const server = createServer();
-  await new Promise(resolveListen => server.listen(0, '127.0.0.1', resolveListen));
+  await listenFetchableServer(server, 0);
   const port = server.address().port;
   await new Promise(resolveClose => server.close(resolveClose));
   return port;
