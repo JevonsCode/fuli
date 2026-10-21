@@ -44,10 +44,11 @@ const PAUSED_BY = Object.freeze(['agent']);
 
 export class SessionCapturePauseStore {
   constructor(directory = null, { now = () => new Date().toISOString(),
-    readText = file => readFileSync(file, 'utf8') } = {}) {
+    readText = file => readFileSync(file, 'utf8'), writeJson = writeJsonFileAtomic } = {}) {
     this.directory = directory ? resolve(directory) : null;
     this.now = now;
     this.readText = readText;
+    this.writeJson = writeJson;
     this.memory = new Map();
     this.memoryPins = new Map();
     this.memoryDefault = null;
@@ -74,7 +75,8 @@ export class SessionCapturePauseStore {
     const explicit = records.find(record => record.enabled === false) ?? records.find(record => record.enabled === true);
     const enabled = explicit ? explicit.enabled : this.#startedUnder(chain);
     return { paused: Boolean(paused), since: paused?.since ?? null, by: paused?.by ?? null, stopped: !enabled,
-      fuli: { enabled, basis: !explicit ? 'default' : explicit.sessionId === sessionId ? 'session' : 'parent',
+      fuli: { enabled, basis: !explicit ? 'default' : explicit.enabledBy === 'fuli' ? 'start_unsaved'
+        : explicit.sessionId === sessionId ? 'session' : 'parent',
         since: explicit?.enabledSince ?? null },
       version: records.length ? records.map(record => `${record.generation}:${record.nonce}`).join('>') : null };
   }
@@ -94,8 +96,8 @@ export class SessionCapturePauseStore {
   setEnabled(sessionId, { enabled, sourceApplication }) {
     if (typeof enabled !== 'boolean') throw new TypeError('The FULI session switch must be on or off');
     const current = this.#read(validSessionId(sessionId));
-    this.#write(sessionId, current, { enabled, sourceApplication: requiredClient(sourceApplication),
-      enabledSince: current?.enabled === enabled ? current.enabledSince : this.now() });
+    this.#write(sessionId, current, { enabled, sourceApplication: requiredClient(sourceApplication), enabledBy: 'person',
+      enabledSince: current?.enabled === enabled && current.enabledBy === 'person' ? current.enabledSince : this.now() });
   }
 
   // Whether new sessions start with FULI on. None saved means on; a setting
@@ -112,19 +114,31 @@ export class SessionCapturePauseStore {
   setDefault(enabled) {
     if (typeof enabled !== 'boolean') throw new TypeError('The FULI session default must be on or off');
     const value = { version: RECORD_VERSION, enabled, since: this.now() };
-    if (this.directory) writeJsonFileAtomic(join(this.directory, DEFAULT_FILE), value);
+    if (this.directory) this.writeJson(join(this.directory, DEFAULT_FILE), value);
     else this.memoryDefault = value;
     return { enabled, since: value.since };
   }
 
   // Keeps, once, the default a session started under: called at its task entry.
+  // A pin that cannot be saved could let a later default turn the session on,
+  // so the session is kept off in its own record instead, until the person
+  // starts it (Dot's review of #251). Throws when neither can be saved.
   pinDefault(sessionId, sourceApplication) {
     validSessionId(sessionId);
     if (this.#pin(sessionId) !== null) return;
     const enabled = this.defaultSetting().enabled;
     const value = { version: RECORD_VERSION, sourceApplication: requiredClient(sourceApplication) };
-    if (this.directory) writeJsonFileAtomic(this.#pinPath(sessionId, enabled), value);
-    else this.memoryPins.set(sessionId, { ...value, enabled });
+    if (!this.directory) {
+      this.memoryPins.set(sessionId, { ...value, enabled });
+      return;
+    }
+    try {
+      this.writeJson(this.#pinPath(sessionId, enabled), value);
+    } catch {
+      const current = this.#read(sessionId);
+      if ((current?.enabled ?? null) !== null) return;
+      this.#write(sessionId, current, { enabled: false, enabledBy: 'fuli', enabledSince: this.now(), sourceApplication });
+    }
   }
 
   // Whether a session of this client may be recording nothing now: one is
@@ -136,11 +150,13 @@ export class SessionCapturePauseStore {
       || this.#startedOff().some(pin => pin.sourceApplication === sourceApplication);
   }
 
-  // Whether FULI may be off for any session at all, or of one client. When
-  // not, no call needs a closer look at its sessions.
+  // Whether FULI may be off for any session at all: then a call needs a
+  // closer look at its sessions. With a client, whether one of its sessions
+  // FULI saw is off: stopped, or started off and not started since.
   anyStopped(sourceApplication = null) {
     const ofClient = item => sourceApplication === null || item.sourceApplication === sourceApplication;
-    return !this.defaultSetting().enabled || this.#records().some(record => record.enabled === false && ofClient(record))
+    return (sourceApplication === null && !this.defaultSetting().enabled)
+      || this.#records().some(record => record.enabled === false && ofClient(record))
       || this.#startedOff().some(ofClient);
   }
 
@@ -187,8 +203,9 @@ export class SessionCapturePauseStore {
     const next = { version: RECORD_VERSION, generation: (current?.generation ?? 0) + 1, nonce: randomUUID(),
       paused: current?.paused ?? false, since: current?.since ?? null, by: current?.by ?? null,
       sourceApplication: current?.sourceApplication ?? null, parentSessionId: current?.parentSessionId ?? null,
-      enabled: current?.enabled ?? null, enabledSince: current?.enabledSince ?? null, ...fields };
-    if (this.directory) writeJsonFileAtomic(this.#path(sessionId), next);
+      enabled: current?.enabled ?? null, enabledSince: current?.enabledSince ?? null,
+      enabledBy: current?.enabledBy ?? null, ...fields };
+    if (this.directory) this.writeJson(this.#path(sessionId), next);
     else this.memory.set(sessionId, next);
     return { paused: next.paused, since: next.since, by: next.by };
   }
@@ -274,6 +291,8 @@ function validRecord(value) {
     && (value.sourceApplication === null || typeof value.sourceApplication === 'string')
     && (value.parentSessionId === null || (typeof value.parentSessionId === 'string' && value.parentSessionId.length > 0))
     // Records saved before the session switch (rec#5 C3b) name neither field.
-    && ((value.enabled ?? null) === null ? (value.enabledSince ?? null) === null
-      : typeof value.enabled === 'boolean' && typeof value.enabledSince === 'string');
+    && ((value.enabled ?? null) === null ? (value.enabledSince ?? null) === null && (value.enabledBy ?? null) === null
+      : typeof value.enabled === 'boolean' && typeof value.enabledSince === 'string'
+        // 'fuli': kept off because the session's starting default could not be saved.
+        && [undefined, null, 'person', 'fuli'].includes(value.enabledBy));
 }

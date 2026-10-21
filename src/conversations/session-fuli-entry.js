@@ -13,7 +13,8 @@ import { sessionUseDecision } from '../graphiti/session-layer-decision.js';
 const COMMAND = /^\s*[/$]?fuli\s+(start|stop|restart|status)\s*$/i;
 const OFF_CONTEXT = Object.freeze({
   session_stopped: 'FULI is stopped for this session by the person.',
-  session_not_started: 'FULI is not on for this session: new sessions start with it off.'
+  session_not_started: 'FULI is not on for this session: new sessions start with it off.',
+  session_start_unsaved: 'FULI could not save how this session started, so it stays off.'
 });
 const OFF_GUIDANCE = ' No FULI memory, preferences or task token this turn. Do not call FULI tools or add an agent_receipt; answer without FULI. Only the person can turn it on (/fuli start). What was already in this conversation stays in your context.';
 const UNKNOWN_CONTEXT = 'FULI could not confirm it is on for this session, so it supplied nothing.';
@@ -32,9 +33,10 @@ export async function sessionFuliCommandResult(application, { sessionId, sourceA
 
 // The refusal of a task entry for a session FULI does not serve, or null.
 export function sessionFuliEntryRefusal(application, { sessionId, sourceApplication }) {
-  keepStartingDefault(application, sessionId, sourceApplication);
+  const kept = keepStartingDefault(application, sessionId, sourceApplication);
   const decision = sessionUseDecision(application, { sessionId, sourceApplication });
-  return decision.allowed ? null : decision;
+  if (!decision.allowed) return decision;
+  return kept ? null : { allowed: false, reason: 'session_start_unsaved', layer: 'session' };
 }
 
 // The model's only FULI context for a turn FULI is off for.
@@ -43,10 +45,13 @@ export function sessionFuliOffContext(refusal) {
 }
 
 // A session's first entry keeps the default it started under, so a later
-// change of the default leaves this window alone. Best effort: without the
-// pin the session follows the default, and an unreadable default refuses.
+// change of the default leaves this window alone. False when neither that nor
+// keeping the session off could be saved: its entry is refused this time.
 function keepStartingDefault(application, sessionId, sourceApplication) {
   try {
     application.pinSessionFuliDefault?.(sessionId, sourceApplication);
-  } catch { /* see above */ }
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -265,7 +265,8 @@ function createToolMap(
           ),
           projectActionPreviews,
           commonKnowledgePreviews,
-          agentHostRequestContext({ ...requestContext, testToolsEnabled: includeTestTools }, requestHost)
+          agentHostRequestContext({ ...requestContext, testToolsEnabled: includeTestTools }, requestHost,
+            sourceApplication)
         ),
         requestContext
       );

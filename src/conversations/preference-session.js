@@ -71,8 +71,11 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
         });
       } catch { return result ?? format(value); }
     },
+    // True once the next delivery for the session is a full one: the cache was
+    // reset, or this session is never delta-delivered. False when it could not
+    // be reset; a caller that promises a full context says so (rec#5 C3b).
     async reset(origin) {
-      if (!SESSION.test(origin.nativeSessionId ?? '')) return;
+      if (!SESSION.test(origin.nativeSessionId ?? '')) return true;
       try {
         await locked(origin.sourceApplication, origin.nativeSessionId, async (_state, save) => {
           const proof = await observe(origin.sourceApplication, origin.nativeSessionId, origin);
@@ -80,7 +83,10 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
             ...(origin.nativeGeneration ? { nativeGeneration: contentHash(origin.nativeGeneration) } : {}),
             ...(proof.known ? { fileId: proof.fileId, generation: proof.generation } : {}) });
         });
-      } catch { /* A missing cache can only cause a full delivery. */ }
+        return true;
+      } catch {
+        return false;
+      }
     }
   };
 }

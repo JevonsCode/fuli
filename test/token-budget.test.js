@@ -141,7 +141,7 @@ async function measure() {
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
     projectEntryChars: await projectEntryChars(),
-    sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'policy_unavailable']
+    sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)) };
 }
 

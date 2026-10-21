@@ -37,11 +37,13 @@ export async function switchSessionFuli(application, { sessionId, sourceApplicat
       && savedSwitch(application, sessionId, { enabled, sourceApplication });
     if (!saved) return answer('unsaved', action, readState(application, sessionId));
   }
-  if (action === 'restart') await application.preferenceDelivery?.reset({ sourceApplication, nativeSessionId: sessionId });
+  // A full context next turn is promised only when the delivery was reset.
+  const fullContext = action === 'restart'
+    ? await application.preferenceDelivery?.reset({ sourceApplication, nativeSessionId: sessionId }) ?? true : null;
   const after = readState(application, sessionId);
   if (!after || after.enabled !== enabled) return answer('unsaved', action, after);
   const changed = before.enabled !== enabled;
-  const status = action === 'restart' ? 'restarted' : enabled ? (changed ? 'started' : 'already_started')
+  const status = action === 'restart' ? (fullContext ? 'restarted' : 'restarted_without_full_context') : enabled ? (changed ? 'started' : 'already_started')
     : changed ? 'stopped' : 'already_stopped';
   return answer(status, action, after, await recording(application, scope));
 }
@@ -111,18 +113,23 @@ const STOP_EFFECT = '之后不再注入记忆、不再自动记录、不再由�
 // cannot do, and who else can turn it.
 const SWITCH_NOTE = '须知：停用不会撤回已发给模型的上下文，需要完全隔离请新开会话；'
   + '能运行 shell 的 Agent 也能执行 `fuli session …` 改变这个开关，与它能读写本地文件属同等信任。';
-const NOTED = new Set(['stopped', 'already_stopped', 'started', 'already_started', 'restarted', 'status']);
+const NOTED = new Set(['stopped', 'already_stopped', 'started', 'already_started', 'restarted',
+  'restarted_without_full_context', 'status']);
 const MESSAGES = Object.freeze({
   stopped: fuli => `${sinceNotice('FULI 已在本会话停用', fuli.since)}：${STOP_EFFECT}`,
   already_stopped: fuli => fuli.basis === 'default'
     ? 'FULI 在本会话本来就未启用（新会话默认不启用），未重复执行。输入 /fuli start 可启用。'
+    : fuli.basis === 'start_unsaved' ? 'FULI 在本会话保持停用（未能保存本会话开始时的设置），未重复执行。输入 /fuli start 可启用。'
     : `${sinceNotice('FULI 在本会话已是停用状态', fuli.since)}，未重复执行。`,
   started: () => 'FULI 已在本会话启用：之后按现有权限和设置注入记忆、自动记录和协作；停用期间的对话不会补录。',
   already_started: () => 'FULI 在本会话已是启用状态，未重复执行。',
   restarted: () => 'FULI 已在本会话重新启用，下一轮重新提供完整上下文；已有记录保留，停用期间的对话不会补录。',
+  restarted_without_full_context: () => 'FULI 已在本会话重新启用，但未能重置上下文投递，下一轮可能只提供变化的部分而不是完整上下文；'
+    + '已有记录保留，停用期间的对话不会补录。需要完整上下文时请再输入一次 /fuli restart。',
   parent_stopped: () => '本会话由已停用 FULI 的会话发起，需要先在发起它的会话中启用；状态未改变。',
   unsaved: fuli => `FULI 未能保存本会话的启停状态，状态未改变${fuli ? `（当前${fuli.enabled ? '启用' : '停用'}）` : ''}。`,
   unavailable: () => 'FULI 无法读取本会话的启停状态，本会话不会自动记录；请稍后重试或检查本地数据目录。',
   status: fuli => `FULI 在本会话${fuli.enabled ? '已启用' : fuli.basis === 'default' ? '未启用（新会话默认不启用）'
+    : fuli.basis === 'start_unsaved' ? '保持停用（未能保存本会话开始时的设置）'
     : sinceNotice('已停用', fuli.since)}；新会话默认${fuli.newSessions === 'on' ? '启用' : '不启用'}。`
 });

@@ -43,7 +43,7 @@ export async function runSessionCommand(args, {
       : switchSessionFuli(app, { sessionId: target.sessionId, sourceApplication: target.sourceApplication, action,
         projectPath: cwd }));
     write(json ? JSON.stringify(result, null, 2) : result.message);
-    return { exitCode: ['unsaved', 'unavailable', 'parent_stopped'].includes(result.status) ? 1 : 0 };
+    return { exitCode: ['unsaved', 'unavailable', 'parent_stopped', 'restarted_without_full_context'].includes(result.status) ? 1 : 0 };
   } finally {
     await Promise.allSettled([leases.close(), app.close()]);
   }

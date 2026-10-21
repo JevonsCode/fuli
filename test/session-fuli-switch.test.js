@@ -9,13 +9,15 @@ import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
-import { callAgentTool } from '../src/agent-tools.js';
+import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { runCursorLifecycleHook } from '../src/agents/cursor/lifecycle-hook.js';
 import { agentHostRequestContext } from '../src/app/agent-request-context.js';
 import { parseSessionArguments, runSessionCommand } from '../src/cli/session-command.js';
 import { captureDecision } from '../src/graphiti/capture-decision.js';
-import { sessionCapturePausePathForRuntime } from '../src/graphiti/capture-session-pause.js';
+import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from '../src/graphiti/capture-session-pause.js';
+import { writeJsonFileAtomic } from '../src/storage/json-file.js';
+import { createSessionPreferenceDelivery } from '../src/conversations/preference-session.js';
 import { requestSessionFuliDefault } from '../src/graphiti/session-fuli-switch.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { claudeEntry, codexEntry, codexStop, finishTask, fixture, PRIVATE, transcriptRow } from './fixtures/capture-project-fixture.js';
@@ -89,12 +91,12 @@ test('C3b-1 sessions start with FULI on; with the default off a new session stay
   assert.equal((await mcpCall(f, host(SESSION_D), 'get_collaboration_preferences', { projectPath: f.dirs.novel,
     taskPrompt: 'Next task.' })).reason, 'session_not_started');
   assert.equal(f.app.hasStoppedSession(), true);
-  // As with a pause (#245), evidence without a task token is refused for the client while one of
-  // its sessions is off, since the call cannot be shown not to come from it.
+  // A call without a task token is refused for the client while one of its sessions is off,
+  // since it cannot be shown not to come from that session.
   f.app.recordKnowledgeUsage = async () => ({ status: 'recorded' });
   const usage = () => mcpCall(f, host(SESSION_C), 'record_knowledge_usage', { personalSpaceId: 'synthetic-space',
     taskId: 'synthetic-task', items: [{ itemId: 'synthetic-item', itemKind: 'entity', useKind: 'applied' }] });
-  assert.equal((await usage()).reason, 'policy_unavailable');
+  assert.equal((await usage()).reason, 'session_unattributed');
   await codexLine(f, SESSION_D, 'fuli start');
   assert.equal(f.app.hasStoppedSession(), false, 'no session is off any more, so calls skip the session check again');
   assert.equal((await usage()).status, 'recorded');
@@ -228,10 +230,14 @@ test('C3b-3 every memory read a model starts is refused for a stopped session, a
   // Settings and the session's own lifecycle stay open, so the Agent can say why.
   const policy = await callAgentTool(f.app, 'get_capture_policy', { sourceApplication: 'codex' }, agentHostRequestContext(null, SESSION_A));
   assert.equal(policy.current.reason, 'session_stopped');
-  // Another window, and the person's own read from the console or a terminal, still search.
+  // Another window of the same client cannot show without a task token that it is not the stopped
+  // one (Dot's review of #251), so its token-less read is refused as unattributed, not as its stop.
   const read = { query: 'chapter', sourceApplication: 'codex' };
-  for (const [context, input] of [[agentHostRequestContext(null, SESSION_B), read],
-    [agentHostRequestContext(null, 'fuli-host-synthetic-terminal'), { ...read, sourceApplication: 'other' }], [null, read]]) {
+  const other = await callAgentTool(f.app, 'search_knowledge_graph', read, agentHostRequestContext(null, SESSION_B, 'codex'));
+  assert.deepEqual([other.status, other.reason], ['fuli_off', 'session_unattributed']);
+  // The person's own read from a terminal (another client) or the console still searches.
+  for (const [context, input] of [[agentHostRequestContext(null, 'fuli-host-synthetic-terminal', 'other'), { ...read, sourceApplication: 'other' }],
+    [null, read]]) {
     assert.ok(Array.isArray((await callAgentTool(f.app, 'search_knowledge_graph', input, context)).facts));
   }
 });
@@ -305,8 +311,9 @@ test('C3b-5 one session stopping leaves another alone, a new session neither inh
   const other = await codexEntry(f, f.dirs.novel, { session: SESSION_B });
   assert.ok(other.context.taskContextToken, 'B keeps its memory');
   assert.notEqual((await finishTask(f, other.context)).capture_status, 'capture_disabled', 'and keeps recording');
-  assert.notEqual((await mcpCall(f, host(SESSION_B), 'get_collaboration_preferences', { projectPath: f.dirs.novel,
-    taskPrompt: 'B task.' })).status, 'fuli_off');
+  // B's own task token keeps it served; a call without one cannot show it is not A's.
+  assert.equal((await mcpCall(f, host(SESSION_B), 'get_collaboration_preferences', { projectPath: f.dirs.novel,
+    taskPrompt: 'B task.' })).reason, 'session_unattributed');
 
   // /clear gives the window a new session: it starts under the default and A stays stopped.
   const cleared = await codexEntry(f, f.dirs.novel, { session: SESSION_C });
@@ -472,10 +479,112 @@ test('with the default off, a client without a native session is served only wit
   assert.equal((await entry('synthetic-cursor-started')).reason, 'session_not_started');
   assert.equal((await cursorLine('/fuli start')).continue, false);
   assert.deepEqual(await cursorLine('Plan.'), { continue: true });
-  // The conversation is on, but a call without a token could come from one that is not.
+  assert.ok((await entry('synthetic-cursor-started')).taskContextToken, 'no Cursor conversation is off now');
+  // Another conversation starts under the default (off): now a call without a token could be from it.
+  await runCursorLifecycleHook(['--event', 'beforeSubmitPrompt'], {
+    readInput: async () => ({ conversation_id: 'synthetic-cursor-other', workspace_roots: [f.dirs.novel], prompt: 'Plan.' }),
+    write: () => {}, resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
+    createLeases: leases });
   assert.equal((await entry('synthetic-cursor-started')).reason, 'session_unattributed');
+  assert.deepEqual(await cursorLine('Plan.'), { continue: true });
   const served = await callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: task.taskContextToken,
     sourceApplication: 'cursor', disposition: 'retain_nothing', reason: 'Nothing to keep.',
     workLog: { status: 'completed', summary: 'Planned.' } }, process);
   assert.notEqual(served.status, 'fuli_off', 'its hook task token is served');
+});
+
+// Dot's review of #251, P1a: Claude Code keeps its MCP process, and so its native session, across
+// /clear. With A's process serving B after /clear and B stopped, a call without a task token cannot
+// show it is A's, so it is refused even though A itself is on.
+test('after /clear a native host session that is on does not let token-less calls through for the stopped session', async (t) => {
+  const f = await fixture(t);
+  await claudeEntry(f, f.dirs.novel, { session: SESSION_A });
+  await claudeEntry(f, f.dirs.novel, { session: SESSION_B, prompt: '/fuli stop' });
+  const oldProcess = { env: { CLAUDE_CODE_SESSION_ID: SESSION_A }, sourceApplication: 'claude_code' };
+  for (const [name, args] of [['search_knowledge_graph', { personalSpaceId: 'synthetic-space', query: 'chapter' }],
+    ['get_collaboration_preferences', { projectPath: f.dirs.novel, taskPrompt: 'Next.' }]]) {
+    const refused = await mcpCall(f, oldProcess, name, args);
+    assert.deepEqual([refused.status, refused.reason], ['fuli_off', 'session_unattributed'], name);
+  }
+  await claudeEntry(f, f.dirs.novel, { session: SESSION_B, prompt: '/fuli start' });
+  assert.ok(Array.isArray((await mcpCall(f, oldProcess, 'search_knowledge_graph',
+    { personalSpaceId: 'synthetic-space', query: 'chapter' })).facts));
+});
+
+// P1b: the client is the one the process was started for, for every tool, whatever the payload
+// names or leaves out.
+const OPEN_WHILE_OFF = new Set(['get_capture_policy', 'explain_settings', 'list_agent_interfaces', 'get_graphiti_status',
+  'update_capture_policy', 'verify_task_checkpoint', 'cancel_agent_message', 'cancel_agent_attention',
+  'acquire_runtime_lease', 'refresh_runtime_lease', 'release_runtime_lease']);
+
+test('every tool of the catalog is refused for a client with a stopped session when the payload omits or misnames the client', async (t) => {
+  const f = await fixture(t);
+  await codexEntry(f, f.dirs.novel, { session: SESSION_A });
+  await codexLine(f, SESSION_A, 'fuli stop');
+  const process = agentHostRequestContext(null, 'fuli-host-synthetic-codex-process', 'codex');
+  const tools = listAgentTools().map(({ name }) => name).filter(name => !OPEN_WHILE_OFF.has(name));
+  assert.ok(tools.length > 100, String(tools.length));
+  for (const name of tools) {
+    for (const input of [{}, { sourceApplication: 'other' }, { sourceApplication: 'cursor' }]) {
+      const refused = await callAgentTool(f.app, name, input, process);
+      assert.deepEqual([refused?.status, refused?.reason], ['fuli_off', 'session_unattributed'],
+        `${name} ${JSON.stringify(input)}`);
+    }
+  }
+  // Through the real MCP server too, for tools that never named their client before.
+  for (const [name, args] of [['list_personal_projects', {}], ['list_preference_conflicts', { personalSpaceId: 'synthetic-space' }],
+    ['get_agent_handoff', { personalSpaceId: 'synthetic-space', agentId: 'lead-novel' }]]) {
+    const refused = await mcpCall(f, { env: {}, sourceApplication: 'codex' }, name, args);
+    assert.deepEqual([refused.status, refused.reason], ['fuli_off', 'session_unattributed'], name);
+  }
+});
+
+// Dot's review of #251, P1c: a session whose starting default cannot be saved stays off until the
+// person starts it, so a later change of the default never turns it on.
+test('a session whose starting default cannot be saved stays off until the person starts it', async (t) => {
+  const f = await fixture(t);
+  const failPins = (path, value) => {
+    if (path.split(/[\\/]/).includes('pins')) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    return writeJsonFileAtomic(path, value);
+  };
+  f.app.sessionCapturePauseStore = f.sessionPauses = new SessionCapturePauseStore(
+    sessionCapturePausePathForRuntime(f.runtimeConfigPath), { now: () => f.clock.now, writeJson: failPins });
+  requestSessionFuliDefault(f.app, { newSessions: 'off' });
+  const entry = await codexEntry(f, f.dirs.novel, { session: SESSION_A });
+  assert.equal(entry.context, undefined);
+  assert.match(entry.output.hookSpecificOutput.additionalContext, /could not save how this session started, so it stays off/);
+  requestSessionFuliDefault(f.app, { newSessions: 'on' });
+  assert.equal((await codexEntry(f, f.dirs.novel, { session: SESSION_A })).context, undefined, 'the default turning on changes nothing');
+  assert.match(await codexLine(f, SESSION_A, 'fuli status'), /保持停用（未能保存本会话开始时的设置）/);
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'codex', sessionId: SESSION_A })).reason, 'session_start_unsaved');
+  await codexLine(f, SESSION_A, 'fuli start');
+  assert.ok((await codexEntry(f, f.dirs.novel, { session: SESSION_A })).context.taskContextToken);
+  // With nothing writable at all the entry is refused for that turn, and says why.
+  f.app.sessionCapturePauseStore = new SessionCapturePauseStore(sessionCapturePausePathForRuntime(f.runtimeConfigPath),
+    { writeJson: () => { throw new Error('read-only'); } });
+  const none = await codexEntry(f, f.dirs.novel, { session: SESSION_B });
+  assert.equal(none.context, undefined);
+  assert.match(none.output.hookSpecificOutput.additionalContext, /could not save how this session started/);
+});
+
+// P2: restart promises a full context next turn only when the delivery was reset.
+test('a restart whose context reset fails says so instead of promising a full context', async (t) => {
+  const f = await fixture(t);
+  await codexEntry(f, f.dirs.novel, { session: SESSION_A });
+  f.app.preferenceDelivery = { reset: async () => false, deliver: async (value, _origin, format) => format(value) };
+  const reply = await codexLine(f, SESSION_A, 'fuli restart');
+  assert.match(reply, /重新启用，但未能重置上下文投递，下一轮可能只提供变化的部分而不是完整上下文/);
+  assert.doesNotMatch(reply, /下一轮重新提供完整上下文/);
+  assert.equal(record(f)(SESSION_A).stopped, false, 'FULI is on all the same');
+  f.app.close = async () => {};
+  const lines = [];
+  assert.deepEqual(await runSessionCommand(['restart'], { env: { CLAUDE_CODE_SESSION_ID: SESSION_B }, cwd: f.dirs.novel,
+    write: line => lines.push(line), openApplication: () => f.app, createLeases: leases }), { exitCode: 1 });
+  // The real delivery cache reports a reset it could not save.
+  const blocked = join(f.root, 'not-a-directory');
+  await writeFile(blocked, 'x');
+  const delivery = createSessionPreferenceDelivery({ directory: join(blocked, 'cache'), env: {} });
+  assert.equal(await delivery.reset({ sourceApplication: 'codex', nativeSessionId: SESSION_A }), false);
+  assert.equal(await createSessionPreferenceDelivery({ directory: join(f.root, 'delivery'), env: {} })
+    .reset({ sourceApplication: 'codex', nativeSessionId: SESSION_A }), true);
 });

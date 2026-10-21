@@ -1,5 +1,6 @@
 import { sessionsMayBeOff, sessionUseDecision } from '../graphiti/session-layer-decision.js';
 import { captureNotice } from '../graphiti/capture-notice.js';
+import { activeAgentHostClient } from '../app/agent-request-context.js';
 
 // What an Agent may still call for a session FULI is off for (rec#5 C3b).
 // Every other tool returns stored memory or preferences to the model (entry,
@@ -32,8 +33,10 @@ export function needsSessionFuliCheck(app, name) {
 // session it names (session-layer-decision.js), never one a model can choose
 // to allow it.
 export async function sessionFuliRefusal(app, input = {}) {
-  const decision = sessionUseDecision(app, { sourceApplication: input?.sourceApplication ?? 'other',
-    sessionId: input?.sessionId ?? input?.sourceSessionId ?? null, boundSessionId: await boundSession(app, input) });
+  // The client the call's process was started for decides, whatever the payload names or omits.
+  const sourceApplication = activeAgentHostClient() ?? input?.sourceApplication ?? 'other';
+  const decision = sessionUseDecision(app, { sourceApplication,
+    sessionId: input?.sessionId ?? input?.sourceSessionId ?? null, boundSessionId: await boundSession(app, input, sourceApplication) });
   return decision.allowed ? null : { status: SESSION_FULI_OFF, reason: decision.reason,
     notice: captureNotice(decision.reason, decision.since),
     guidance: decision.reason === 'session_unattributed' ? UNATTRIBUTED_GUIDANCE : GUIDANCE };
@@ -41,10 +44,10 @@ export async function sessionFuliRefusal(app, input = {}) {
 
 // A token that does not resolve leaves the decision to the other identities;
 // the tool itself then refuses the token.
-async function boundSession(app, input) {
+async function boundSession(app, input, sourceApplication) {
   if (typeof input?.taskContextToken !== 'string' || !app.taskContextRegistry) return null;
   try {
-    return (await app.taskContextRegistry.context(input.taskContextToken, input.sourceApplication ?? 'other')).sessionId ?? null;
+    return (await app.taskContextRegistry.context(input.taskContextToken, sourceApplication)).sessionId ?? null;
   } catch {
     return null;
   }

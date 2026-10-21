@@ -1,5 +1,5 @@
 import { debuglog } from 'node:util';
-import { activeAgentHostSession } from '../app/agent-request-context.js';
+import { activeAgentHostClient, activeAgentHostSession } from '../app/agent-request-context.js';
 import { isFuliProcessSession } from '../mcp/session-id.js';
 
 // The session layer of what FULI does for a caller (rec#5 C3 and C3b): whether
@@ -37,18 +37,19 @@ export function sessionCaptureDecision(application, scope) {
 
 // Serving: memory injected at task entry or read by the Agent, preferences
 // restored after a compaction and collaboration started from the session.
-// Decided by the call's own identities, so a stop in one window never changes
-// another (C3b-5), except where they cannot show where a call comes from: a
-// call without a task token whose host is an identity FULI gave the process
-// (Codex, whose MCP processes get no session from Codex, Cursor and remote
-// clients) is refused while any session of its client is off, rather than
-// served to a session that may be the stopped one. See the /clear limit in
-// sessionCaptureDecision().
+// Decided by the call's own identities. Only a task token shows which session
+// a call is for now: a host session cannot (Claude Code keeps its MCP process,
+// and so its native session, across /clear; Codex gives its MCP processes no
+// session at all, like Cursor and remote clients). So a call without a task
+// token is refused while any session of its client is stopped or started off
+// and not started since, rather than served to a session that may be that one
+// (Dot's review of #251). Calls with a task token keep one window's stop out
+// of another (C3b-5).
 export function sessionUseDecision(application, scope) {
   if (!sessionsMayBeOff(application)) return ALLOWED;
   return decideSessions(application, scope, { refusal: offRefusal,
-    unattributed: (sourceApplication, host) => isFuliProcessSession(host)
-      && application.hasStoppedSession(sourceApplication) ? denied('session_unattributed') : null });
+    unattributed: sourceApplication => application.hasStoppedSession(sourceApplication)
+      ? denied('session_unattributed') : null });
 }
 
 // False when FULI is on for every session, the usual case, so a caller can
@@ -77,8 +78,10 @@ export function newSessionsFuli(application) {
   return application.sessionFuliDefault().enabled ? 'on' : 'off';
 }
 
-function decideSessions(application, { boundSessionId = null, sessionId = null, sourceApplication = 'other' }, policy) {
+function decideSessions(application, { boundSessionId = null, sessionId = null, sourceApplication: named = 'other' }, policy) {
   const host = activeAgentHostSession();
+  // An Agent call's client is the one its process was started for, never the payload's.
+  const sourceApplication = activeAgentHostClient() ?? named;
   const agentCall = host !== undefined;
   if (!agentCall && !boundSessionId && !sessionId) return ALLOWED;
   if (!application.getSessionCapturePause) {
@@ -115,12 +118,13 @@ function decideSessions(application, { boundSessionId = null, sessionId = null, 
   }
 }
 
-// A stop said in the session or a session that started it, or the default the
-// session started under.
+// A stop said in the session or a session that started it, the default the
+// session started under, or a start whose default could not be saved.
 function offRefusal(state) {
   if (!state.stopped) return null;
-  return state.fuli.basis === 'default' ? denied('session_not_started')
-    : { ...denied('session_stopped'), since: state.fuli.since };
+  if (state.fuli.basis === 'default') return denied('session_not_started');
+  if (state.fuli.basis === 'start_unsaved') return denied('session_start_unsaved');
+  return { ...denied('session_stopped'), since: state.fuli.since };
 }
 
 function pausedRefusal(state) {
