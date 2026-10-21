@@ -7,6 +7,7 @@ import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { sessionFuliOffContext } from '../src/conversations/session-fuli-entry.js';
 import { PASS_TASK_TOKEN } from '../src/agents/lifecycle-message.js';
+import { withCodexReviewGuidance } from '../src/agents/codex/review-command.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
@@ -91,7 +92,11 @@ const BASELINE = Object.freeze({
   sessionOffEntryChars: 302,
   // rec#5 C3b option Y: the per-turn Claude Code and Codex hook label asks for the token the Agent
   // already has, instead of a sentence in the server instructions (which must stay under 2 KiB).
-  taskTokenHintChars: 42
+  taskTokenHintChars: 42,
+  // rec#22: only a Codex turn the person starts with an exact `fuli review` line gets this
+  // one line (with its separator) after the task entry; the always-loaded Codex bootstrap
+  // dropped its dead `/flreview` bridge for it (962 -> 910 B).
+  codexReviewGuidanceBytes: 101
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -153,7 +158,14 @@ async function measure() {
     projectEntryChars: await projectEntryChars(),
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),
-    taskTokenHintChars: PASS_TASK_TOKEN.length };
+    taskTokenHintChars: PASS_TASK_TOKEN.length,
+    codexReviewGuidanceBytes: codexReviewGuidanceBytes() };
+}
+
+function codexReviewGuidanceBytes() {
+  const entry = { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'entry' } };
+  return Buffer.byteLength(withCodexReviewGuidance(entry).hookSpecificOutput.additionalContext, 'utf8')
+    - Buffer.byteLength(entry.hookSpecificOutput.additionalContext, 'utf8');
 }
 
 test('per-session token cost never grows past the recorded baseline', async () => {

@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
 
-import { codexReviewCommandBridge } from './command-skill-adapters.js';
 import { writeTextFileAtomic } from '../storage/json-file.js';
 
 const BLOCK_START = '<!-- BEGIN FULI MANAGED INSTRUCTIONS -->';
@@ -21,7 +20,6 @@ never use the full request as the only query.
 Write tools: preferences in actual payload; mentioning later is not compliance.
 Other FULI work (teams, workers, saved decisions, a relevant \`deferred_conflict\`)
 only when the task needs it: find the tool with \`list_agent_interfaces\`.
-${codexReviewCommandBridge()}
 ${BLOCK_END}`;
 
 export function installCodexBootstrap(agent, _context, {

@@ -9,7 +9,7 @@ The invoking Agent owns each review session. FULI supplies durable knowledge, de
 
 ## Start The Session
 
-For every exact `/flreview` invocation or explicit request to run the Fuli knowledge review:
+For every exact `/flreview` invocation, exact `fuli review` line (typed where a client accepts no custom slash command), or explicit request to run the Fuli knowledge review:
 
 1. Use `list_knowledge_spaces` to identify the active personal space, then call `list_personal_projects` so every project choice uses a real local personal project.
 2. Use the `visualize` Skill to render an inline setup page in the current task. Collect scope and review depth in that page, not as serial chat questions. Ask patience first. If the user selects **完全没耐心**, hide mood, available-time, and token-budget fields and use a small highest-priority batch. Otherwise collect mood, available time, and token comfort together on the same setup page. These answers control only batch size and explanation depth, never Provider ranking. If the user's request already gives an exact scope and depth, skip setup.
