@@ -251,3 +251,23 @@ test('an item cited in A and then in B keeps B\'s own evidence and turn in B\'s 
   assert.ok(page.entries.find(candidate => candidate.key === 'turn:task-5').detail.items.includes('entity:global-pref'),
     'the later turn lists what it cited');
 });
+
+// dot #263 P2-2 re-review: A, A, then B cite one preference; B keeps it, and
+// the last same-project citation is still linked to its own turn.
+test('after two citations in A, B\'s one citation keeps the item, and the last citation stays linked', async () => {
+  const read = sessionRead();
+  read.projects.push(project('ledger', '家庭账本'));
+  const source = (episode, task, origin, minute, words) => ({ change: 'evidence', episode_id: episode, task_id: task,
+    recorded_at: at(11, minute), origin_project_id: origin, conversation_id: null, excerpt: words });
+  const sources = [source('e-a1', 'task-40', 'ledger', 1, 'A 一'), source('e-a2', 'task-41', 'ledger', 2, 'A 二'),
+    source('e-b1', 'task-3', 'thesis', 3, 'B 的原话'), source('e-b2', 'task-4', 'thesis', 4, 'B 的最后一次')];
+  read.items = [item('pref', { profile_aspect: 'taste', category: 'taste', ...sources[0], change: 'created', sources })];
+  const { markdown } = await callAgentTool(app(read).app, 'read_session_records', { taskContextToken: 'fuli-task-b',
+    sourceApplication: 'codex' });
+  assert.match(markdown, /偏好证据·待确认｜11:03｜项目 毕业论文｜「B 的原话」/);
+  assert.doesNotMatch(markdown, /A 一|A 二|家庭账本/);
+  const page = await readSessionRecords(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const entry = page.entries.find(candidate => candidate.key === 'entity:pref');
+  assert.deepEqual(entry.detail.sources.at(-1), { episode_id: 'e-b2', turn: 'turn:task-4' });
+  assert.ok(page.entries.find(candidate => candidate.key === 'turn:task-4').detail.items.includes('entity:pref'));
+});

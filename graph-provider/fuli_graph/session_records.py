@@ -41,8 +41,6 @@ from .store_agent_conversations import decode_event
 MAX_TURNS = 200
 MAX_EPISODES = 100
 MAX_ITEMS = 200
-# Sources kept per item: the episodes that wrote or cited it.
-MAX_SOURCES = 50
 # The session's own journal events read per Agent scope (its newest).
 MAX_EVENTS = 2000
 USER_TEXT_CHARS = 2000
@@ -243,12 +241,13 @@ async def _items(store, space, episodes):
                 item = items[(item_kind, item_id)] = {'summary': summary, 'sources': []}
             elif change is None and not item['summary'].profile_aspect:
                 continue
-            if len(item['sources']) < MAX_SOURCES:
-                item['sources'].append(SessionRecordSource(
-                    change=change or 'evidence', episode_id=episode['id'],
-                    task_id=episode['task']['id'] if episode['task'] else None, recorded_at=episode['created_at'],
-                    origin_project_id=episode['origin_project_id'], conversation_id=episode['conversation_id'],
-                    excerpt=episode['excerpt']))
+            # Every episode read keeps its source (MAX_EPISODES bounds them): a
+            # reader allowed fewer projects is projected from all of them.
+            item['sources'].append(SessionRecordSource(
+                change=change or 'evidence', episode_id=episode['id'],
+                task_id=episode['task']['id'] if episode['task'] else None, recorded_at=episode['created_at'],
+                origin_project_id=episode['origin_project_id'], conversation_id=episode['conversation_id'],
+                excerpt=episode['excerpt']))
     return _listed(items), False
 
 

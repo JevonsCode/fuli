@@ -286,3 +286,26 @@ async def test_the_event_bound_never_drops_a_session_for_another_sessions_events
         records = ok(await session.records())
         assert records['truncated'] is True, 'six of its own events past a bound of four'
         assert [len(turn['messages']) for turn in records['turns']] == [0, 2, 2], 'the newest are kept'
+
+
+# dot #263 P2-2 (re-review): no source of any episode read is dropped before the
+# reader's projection. The cap of 2 is the per-item cap 47fe921 had; there is none now.
+@pytest.mark.asyncio
+async def test_every_source_of_an_item_survives_so_a_later_project_and_the_last_citation_are_found(monkeypatch):
+    monkeypatch.setattr(session_records, 'MAX_SOURCES', 2, raising=False)
+    async with provider_client(fixture_settings()) as (client, _):
+        space_id = await new_space(client)
+        session = Session(client, space_id, f'native-{uuid4()}')
+        cite = preference('cite', '论文引用格式用 GB/T 7714')
+        saved = []
+        for project, agent in [('ledger', 'keeper'), ('ledger', 'keeper'), ('thesis', 'writer'), ('thesis', 'writer')]:
+            await session.begin(project, agent)
+            saved.append(await session.commit([cite], personal_global=True))
+            await session.checkpoint(saved[-1], personal_global=True)
+        records = ok(await session.records())
+        turns = [turn['task_id'] for turn in records['turns']]
+        [item] = records['items']
+        assert [(source['episode_id'], source['task_id'], source['origin_project_id']) for source in item['sources']] == [
+            (episode['episode_id'], turn, project)
+            for episode, turn, project in zip(saved, turns, ['ledger', 'ledger', 'thesis', 'thesis'])]
+        assert records['truncated'] is False
