@@ -41,6 +41,12 @@ export type CaptureScopeOutcome =
   | { status: 'answered'; choice: CaptureScopeChoice; capturePolicy: CapturePolicy }
   | { status: 'gone' }
 
+// The question and the settings as the server holds them now.
+export interface CaptureOnboardingState {
+  ask: boolean
+  capturePolicy: CapturePolicy
+}
+
 export interface AgentAccessPolicy {
   enabled: boolean
   updatedAt?: string | null

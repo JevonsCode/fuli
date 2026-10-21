@@ -8,6 +8,7 @@ import type {
   CapabilityName,
   CapturePolicy,
   CapturePolicyChange,
+  CaptureOnboardingState,
   CaptureScopeAnswer,
   CaptureScopeOutcome,
   ConsoleState,
@@ -134,6 +135,16 @@ export const useConsoleStore = defineStore('console', () => {
     return outcome
   }
 
+  // The question and the settings as the server holds them once every save
+  // this console sent has answered: what an answer whose response was lost
+  // actually did (dot review P2-3, PR 266).
+  async function readCaptureOnboarding() {
+    await captureWrites
+    const read = await getJson<CaptureOnboardingState>('/api/capture-onboarding')
+    if (state.value) state.value = { ...state.value, capturePolicy: read.capturePolicy, captureOnboarding: { ask: read.ask } }
+    return read
+  }
+
   async function queueCaptureSave<T>(send: () => Promise<T>, savedPolicy: (answer: T) => CapturePolicy | null) {
     ++captureSaves
     capturesInFlight += 1
@@ -238,6 +249,7 @@ export const useConsoleStore = defineStore('console', () => {
     settledCapturePolicy,
     changeCapturePolicy,
     answerCaptureScope,
+    readCaptureOnboarding,
     rememberCapturePolicy,
     updateAgentAccessPolicy,
     updateRecallPolicy,

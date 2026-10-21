@@ -58,7 +58,8 @@ export async function questionInTerminal(question) {
   }
 }
 
-// Whether a person is at this terminal: an Agent, a script or a pipe is not.
+// Whether this is an interactive terminal (both ends a TTY). A pipe, a script
+// or an Agent's shell is not; a TTY does not prove a person is there.
 export function interactiveTerminal() {
   return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }

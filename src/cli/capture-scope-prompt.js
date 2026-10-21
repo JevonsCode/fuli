@@ -1,9 +1,11 @@
 import { questionInTerminal, writeLine } from './terminal-io.js';
 
-// A new installation's question in the person's own terminal (rec#5 C10).
-// Only an interactive terminal is asked: setup run by an Agent, a script or
-// with --yes has no person at its terminal, so the question stays open and
-// the console asks it. There is deliberately no option that answers it.
+// A new installation's question in an interactive terminal (rec#5 C10).
+// Setup without a TTY (an Agent's shell, a script, a pipe) or with --yes never
+// asks, so the question stays open and the console asks it, and no option
+// answers it. A TTY is not proof that a person is there: a local program with
+// a pseudo-terminal, like one that can reach the loopback console, is inside
+// the console's existing trust boundary (rec#11 D-19).
 const CHOICES = Object.freeze(['all', 'selected', 'off']);
 const QUESTION = [
   'FULI 要在哪些项目里记录？ / Where should FULI record?',

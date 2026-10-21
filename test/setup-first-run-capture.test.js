@@ -1,7 +1,6 @@
 // rec#5 C10 on the setup path: `fuli setup` and a first `fuli start` open the
-// question before the graph starts or any Agent connects; a person at the
-// terminal may answer it there; setup run by an Agent, a script or --yes never
-// answers it. Synthetic only: temporary data directories and stubbed runtimes,
+// question before the graph starts or any Agent connects; an interactive
+// terminal may answer it there; setup without a TTY or with --yes never asks. Synthetic only: temporary data directories and stubbed runtimes,
 // no FULI data directory, live Provider, port-2727 service or client configuration.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -86,7 +85,7 @@ async function setup(t, { args = [], interactive, answer = null }) {
   return { paths, lines, asked, result };
 }
 
-test('a person at the terminal answers during setup, and it saves like the console answer', async (t) => {
+test('an answer in an interactive terminal during setup, and it saves like the console answer', async (t) => {
   const run = await setup(t, { interactive: true, answer: 'selected' });
   assert.equal(run.asked, 1);
   const saved = settings(run.paths);
@@ -104,7 +103,7 @@ test('Enter at the terminal decides later: recording stays off and the console a
   assert.equal(run.lines.at(-1), `Recording: off until you choose where FULI records. Open ${CONSOLE} to choose.`);
 });
 
-test('setup without a person at the terminal (an Agent, a script, a pipe) or with --yes never answers', async (t) => {
+test('setup without a TTY (an Agent shell, a script, a pipe) or with --yes never asks', async (t) => {
   for (const run of [await setup(t, { interactive: false, answer: 'all' }),
     await setup(t, { args: ['--yes'], interactive: true, answer: 'all' })]) {
     assert.equal(run.asked, 0, 'nothing is asked, so nothing can be answered for the person');

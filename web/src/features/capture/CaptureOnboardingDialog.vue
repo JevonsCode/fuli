@@ -10,6 +10,7 @@ import { isFormalProject, pickerOrder, projectDisplayName } from '@/features/pro
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { CaptureScopeChoice } from '@/types'
+import { savedCaptureScope } from './capture-onboarding'
 
 // A new installation's one question (rec#5 C10): "FULI 要在哪些项目里记录？"
 // It opens over any console page while the server says the question is open,
@@ -23,7 +24,9 @@ const dismissed = ref(false)
 const open = computed(() => store.state?.captureOnboarding?.ask === true && !dismissed.value)
 const choice = ref<CaptureScopeChoice | null>(null)
 const ticked = ref<Record<string, boolean>>({})
-const saving = ref(false)
+// The request in flight: the answer, then, when its result is unknown, the read that finds out.
+const pending = ref<'saving' | 'checking' | null>(null)
+const saving = computed(() => pending.value !== null)
 const failure = ref('')
 
 const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
@@ -43,7 +46,7 @@ function chooseScope(value: unknown) {
 async function save() {
   const scope = choice.value
   if (!scope || saving.value) return
-  saving.value = true
+  pending.value = 'saving'
   failure.value = ''
   try {
     const outcome = await store.answerCaptureScope(scope === 'selected'
@@ -51,9 +54,30 @@ async function save() {
       : { choice: scope })
     store.notify(outcome.status === 'answered' ? t(`capture.onboarding.saved.${outcome.choice}`) : t('capture.onboarding.gone'))
   } catch (error) {
-    failure.value = t('capture.onboarding.failed', { reason: apiErrorReason(error) })
+    await checkSaved(apiErrorReason(error))
   } finally {
-    saving.value = false
+    pending.value = null
+  }
+}
+
+// A failed request may still have saved (a lost response, or settings saved
+// before a later step failed), so nothing is claimed until the server says
+// what it holds. A question still open means the settings are still the
+// ones it opened with: recording is off.
+async function checkSaved(reason: string) {
+  pending.value = 'checking'
+  failure.value = t('capture.onboarding.unconfirmed')
+  try {
+    const read = await store.readCaptureOnboarding()
+    if (read.ask) {
+      failure.value = t('capture.onboarding.notSaved', { reason })
+      return
+    }
+    failure.value = ''
+    const saved = savedCaptureScope(read.capturePolicy)
+    store.notify(saved ? t(`capture.onboarding.saved.${saved}`) : t('capture.onboarding.gone'))
+  } catch (error) {
+    failure.value = t('capture.onboarding.unknown', { reason: apiErrorReason(error) })
   }
 }
 </script>
@@ -95,7 +119,7 @@ async function save() {
         <Button variant="ghost" :disabled="saving" data-capture-scope-later @click="openChange(false)">
           {{ t('capture.onboarding.later') }}
         </Button>
-        <Button :disabled="!choice" :loading="saving" :loading-label="t('capture.onboarding.saving')" data-capture-scope-save
+        <Button :disabled="!choice" :loading="saving" :loading-label="t(pending === 'checking' ? 'capture.onboarding.checking' : 'capture.onboarding.saving')" data-capture-scope-save
           @click="save">
           {{ t('capture.onboarding.save') }}
         </Button>

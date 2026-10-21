@@ -13,14 +13,17 @@ const PROJECTS = [
 ]
 const OFF: CapturePolicy = { enabled: false, projectMode: 'all', updatedAt: '2026-10-21T08:00:00.000Z' }
 
-function mountDialog({ ask = true, projects = PROJECTS, answer }: {
+function mountDialog({ ask = true, projects = PROJECTS, answer, readBack = async () => Response.json({ ask: true, capturePolicy: OFF }) }: {
   ask?: boolean
   projects?: typeof PROJECTS
   answer: (body: Record<string, unknown>) => Promise<Response>
+  // GET /api/capture-onboarding: what the server holds after a failed answer.
+  readBack?: () => Promise<Response>
 }) {
   const posts: unknown[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
     if (input === '/api/capture-policy') return Response.json(OFF)
+    if (input === '/api/capture-onboarding' && (init?.method ?? 'GET') === 'GET') return readBack()
     if (input !== '/api/capture-onboarding' || init?.method !== 'POST') return Response.json({}, { status: 404 })
     const body = JSON.parse(String(init.body))
     posts.push(body)
@@ -120,13 +123,58 @@ describe('CaptureOnboardingDialog (rec#5 C10)', () => {
     wrapper.unmount()
   })
 
-  it('a failed save keeps the question open and says recording stays off', async () => {
+  // dot review P2-3 (PR 266): a failed request may still have saved.
+  it('a failed save the server confirms did not save keeps the question open, recording off', async () => {
     const { wrapper } = mountDialog({ answer: async () => Response.json({ error: 'disk full' }, { status: 500 }) })
     await flushPromises()
     await click('[data-capture-scope="all"] [role="radio"]')
     await click('[data-capture-scope-save]')
     expect(dialog()).not.toBeNull()
-    expect(find('[data-capture-scope-error]')?.textContent).toContain('没能保存，记录仍然关闭')
+    expect(find('[data-capture-scope-error]')?.textContent).toContain('没有保存，记录仍然关闭')
+    wrapper.unmount()
+  })
+
+  it('a save committed whose response was lost reads back and shows recording on', async () => {
+    let readBack!: (response: Response) => void
+    const { wrapper, store } = mountDialog({ answer: async () => { throw new TypeError('Failed to fetch') },
+      readBack: () => new Promise(resolve => { readBack = resolve }) })
+    await flushPromises()
+    await click('[data-capture-scope="all"] [role="radio"]')
+    await click('[data-capture-scope-save]')
+    expect(find('[data-capture-scope-error]')?.textContent).toBe('未能确认保存结果，正在读取当前设置。')
+    expect(find('[data-capture-scope-error]')?.textContent).not.toContain('记录仍然关闭')
+    expect(find('[data-capture-scope-save] [aria-label="正在确认记录范围是否已保存"]')).not.toBeNull()
+    const saved = { enabled: true, projectMode: 'all' as const, updatedAt: '2026-10-21T08:01:00.000Z' }
+    readBack(Response.json({ ask: false, capturePolicy: saved }))
+    await flushPromises()
+    expect(dialog()).toBeNull()
+    expect(store.state?.capturePolicy).toEqual(saved)
+    expect(store.feedback?.message).toBe('已设为记录全部项目，可以在设置里随时改。')
+    wrapper.unmount()
+  })
+
+  it('settings saved before a later step failed read back as what was saved', async () => {
+    const { wrapper, store } = mountDialog({ answer: async () => Response.json({ error: 'generation' }, { status: 500 }),
+      readBack: async () => Response.json({ ask: false, capturePolicy: { enabled: true, projectMode: 'selected',
+        selectedProjectIds: ['thesis'], unregisteredDirectories: 'skip' } }) })
+    await flushPromises()
+    await click('[data-capture-scope="selected"] [role="radio"]')
+    await click('[data-capture-scope-save]')
+    expect(dialog()).toBeNull()
+    expect(store.feedback?.message).toBe('已设为只记录勾选的项目，可以在设置里随时改。')
+    wrapper.unmount()
+  })
+
+  it('when the read back fails too, it claims nothing about recording', async () => {
+    const { wrapper } = mountDialog({ answer: async () => Response.json({ error: 'lost' }, { status: 500 }),
+      readBack: async () => Response.json({ error: 'offline' }, { status: 503 }) })
+    await flushPromises()
+    await click('[data-capture-scope="all"] [role="radio"]')
+    await click('[data-capture-scope-save]')
+    expect(dialog()).not.toBeNull()
+    const text = find('[data-capture-scope-error]')?.textContent ?? ''
+    expect(text).toContain('未能确认保存结果，请刷新页面查看当前设置')
+    expect(text).not.toContain('记录仍然关闭')
     wrapper.unmount()
   })
 

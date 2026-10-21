@@ -66,6 +66,8 @@ const CAPTURE_SETTINGS_CALL_SITES = new Map([
     "import { CAPTURE_POLICY_FORMAT } from '../graphiti/capture-policy.js';",
     "import { CAPTURE_SESSION_PAUSE_FORMAT } from '../graphiti/capture-session-pause.js';"]],
   ['src/http/graph-api-router.js', ['sendJson(response, 200, app.getCapturePolicy());']],
+  // rec#5 C10: the first-run question with the settings as saved now, for a console that lost its answer.
+  ['src/http/capture-onboarding-api-router.js', ['sendJson(response, 200, { ...app.captureOnboarding.state(), capturePolicy: app.getCapturePolicy() });']],
   ['src/conversations/capture-window.js', ['getCapturePolicy: application.getCapturePolicy?.bind(application),',
     'getCapturePolicyVersion: application.getCapturePolicyVersion?.bind(application),',
     'getSessionCapturePause: application.getSessionCapturePause?.bind(application),',

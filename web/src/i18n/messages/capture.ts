@@ -41,7 +41,10 @@ export const captureMessages = {
         off: '记录已关闭，可以在设置里随时打开。',
       },
       gone: '记录范围已经选过，或记录设置已经改动，下面按已保存的设置显示。',
-      failed: '没能保存，记录仍然关闭：{reason}',
+      checking: '正在确认记录范围是否已保存',
+      unconfirmed: '未能确认保存结果，正在读取当前设置。',
+      notSaved: '没有保存，记录仍然关闭：{reason}',
+      unknown: '未能确认保存结果，请刷新页面查看当前设置：{reason}',
     },
     settings: {
       title: '按项目记录',
@@ -156,7 +159,10 @@ export const captureMessages = {
         off: 'Recording is off. You can turn it on in Settings any time.',
       },
       gone: 'The recording scope was already chosen, or the capture settings changed; showing what is saved.',
-      failed: 'Could not save; recording stays off: {reason}',
+      checking: 'Checking whether the recording scope was saved',
+      unconfirmed: 'Could not confirm the save; reading the current settings.',
+      notSaved: 'Not saved; recording stays off: {reason}',
+      unknown: 'Could not confirm the save; reload the page to see the current settings: {reason}',
     },
     settings: {
       title: 'Recording by project',

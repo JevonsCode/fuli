@@ -150,14 +150,21 @@ export class CapturePolicyStore {
   // ifVersion: save only while the settings are still at that version();
   // accept(next): save only a result it accepts. Otherwise fail with code
   // capture_settings_changed.
-  update(input, { ifVersion = null, accept = () => true } = {}) {
+  update(input, options) {
+    return this.updateVersioned(input, options).settings;
+  }
+
+  // update() and the settings version its save produced, for a caller that
+  // must bind to exactly that save (rec#5 C10): a later version() may already
+  // include someone else's change.
+  updateVersioned(input, { ifVersion = null, accept = () => true } = {}) {
     const changed = () => Object.assign(new Error('The capture settings changed'), { code: 'capture_settings_changed' });
     if (!this.path) {
       if (ifVersion !== null && this.version() !== ifVersion) throw changed();
       const { next } = this.preview(input);
       if (!accept(next)) throw changed();
       this.memory = next;
-      return { ...next };
+      return { settings: { ...next }, version: this.version() };
     }
     for (let attempt = 1; ; attempt += 1) {
       const base = this.#fileKey();
@@ -169,8 +176,8 @@ export class CapturePolicyStore {
         return this.#fileKey() === base ? { version: usesProjectModes(next) ? 2 : 1, ...next } : undefined;
       }, { read: () => null });
       if (saved) {
-        this.#nextGeneration(this.#readGeneration(), this.#fileKey());
-        return { ...next };
+        const generation = this.#nextGeneration(this.#readGeneration(), this.#fileKey());
+        return { settings: { ...next }, version: `${generation.generation}:${generation.nonce}` };
       }
       if (attempt >= MAX_MERGE_ATTEMPTS) throw changed();
     }

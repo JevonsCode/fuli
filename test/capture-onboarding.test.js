@@ -222,7 +222,7 @@ test('C10 an answer names one of the three choices, and only "selected" names pr
   assert.deepEqual(f.app.captureOnboarding.state(), { ask: true }, 'a refused answer leaves the question open');
 });
 
-test('C10 D-16 an Agent cannot answer the question for the person', async (t) => {
+test('C10 D-16 no Agent tool (MCP or fuli_call) answers the question', async (t) => {
   const f = await fixture(t);
   beginFirstRunCapture(setupPaths(f));
   const tools = listAgentTools();
