@@ -84,94 +84,146 @@ test('C4-1 the page switch saves at once, the settings list follows, and a refus
   assert.deepEqual((await api(f, 'GET')).body.excludedProjectIds, ['family-ledger'], 'a refused switch changes nothing');
 });
 
-test('C4-2 "这个项目以后别记了": FULI words the exact change and saves it only after the person confirms', async (t) => {
+// One host session the person talks in: each turn is a task context its hook
+// began for one of the person's messages, as begin_task_context does per prompt.
+function conversation(f, { sourceApplication = 'codex', session = 'synthetic-capture-change-session' } = {}) {
+  return {
+    turn: async () => (await f.app.taskContextRegistry.begin({ sessionId: session, sourceApplication,
+      personalProjectId: null })).token,
+    call: (taskContextToken, input) => callAgentTool(f.app, 'update_capture_policy', { ...input, sourceApplication,
+      taskContextToken })
+  };
+}
+
+test('C4-2 "这个项目以后别记了": FULI words the exact change and saves it only in the person\'s next turn', async (t) => {
   const f = await namedFixture(t);
   const current = await callAgentTool(f.app, 'get_capture_policy', { projectPath: f.dirs['job-hunt'],
     sourceApplication: 'codex' });
   const projectId = current.current.personalProjectId;
   assert.equal(projectId, 'job-hunt');
 
+  const chat = conversation(f);
+  const asked = await chat.turn();
+  const change = { recordProjects: { [projectId]: false } };
   const policyFile = capturePolicyPathForRuntime(f.runtimeConfigPath);
-  const preview = await callAgentTool(f.app, 'update_capture_policy', { recordProjects: { [projectId]: false },
-    sourceApplication: 'codex' });
+  const preview = await chat.call(asked, change);
   assert.equal(preview.status, 'confirmation_required');
   assert.equal(preview.preview, '将把『求职准备』加入不记录列表，之后在这个项目里的会话都不会被记录，已有记录保留。确认吗？');
-  assert.match(preview.guidance, /word for word/);
+  assert.match(preview.guidance, /word for word and end your turn/);
   await assert.rejects(readFile(policyFile), { code: 'ENOENT' }, 'a preview saves nothing');
-  assert.equal(f.store.read().projectMode, 'all');
 
-  const saved = await callAgentTool(f.app, 'update_capture_policy', { recordProjects: { [projectId]: false },
-    previewToken: preview.previewToken, sourceApplication: 'codex' });
+  // The same turn cannot confirm: the person has not answered. The preview stays usable.
+  await assert.rejects(chat.call(asked, { ...change, previewToken: preview.previewToken }), { code: 'preview_unconfirmed' });
+  await assert.rejects(readFile(policyFile), { code: 'ENOENT' });
+
+  const answered = await chat.turn();
+  const saved = await chat.call(answered, { ...change, previewToken: preview.previewToken });
   assert.deepEqual([saved.projectMode, saved.excludedProjectIds], ['all_except', ['job-hunt']]);
   assert.ok(receiptOf((await codexEntry(f, f.dirs['job-hunt'])).context).endsWith(` · ${PROJECT_OFF}`));
 });
 
 test('C4-2 "只记这个项目" is restated with what else stops being recorded', async (t) => {
   const f = await namedFixture(t);
-  const preview = await callAgentTool(f.app, 'update_capture_policy', { projectMode: 'selected',
-    selectedProjectIds: ['thesis'] });
+  const chat = conversation(f);
+  const turn = await chat.turn();
+  const preview = await chat.call(turn, { projectMode: 'selected', selectedProjectIds: ['thesis'] });
   assert.equal(preview.preview, '将改为只记录『毕业论文』，其他项目里的会话都不会被记录；不属于任何 FULI 项目的目录不再记录，已有记录保留。确认吗？');
   const resumed = await confirmedCaptureChange(f, { projectMode: 'selected', selectedProjectIds: ['thesis'] });
   assert.equal(resumed.projectMode, 'selected');
-  assert.equal((await callAgentTool(f.app, 'update_capture_policy', { recordProjects: { novel: true } })).preview,
+  const next = await chat.turn();
+  assert.equal((await chat.call(next, { recordProjects: { novel: true } })).preview,
     '将把『小说连载』加入记录列表，之后在这个项目里的会话会被记录，已有记录保留。确认吗？');
-  assert.equal((await callAgentTool(f.app, 'update_capture_policy', { enabled: false, disabledSources: ['cursor'] })).preview,
+  assert.equal((await chat.call(next, { enabled: false, disabledSources: ['cursor'] })).preview,
     '将关闭自动记录，所有客户端和项目都不再记录；不再记录 Cursor 的会话，已有记录保留。确认吗？');
-  assert.deepEqual(await callAgentTool(f.app, 'update_capture_policy', { projectMode: 'selected' }),
+  assert.deepEqual(await chat.call(next, { projectMode: 'selected' }),
     { status: 'unchanged', guidance: 'These settings are already in place; tell the user nothing needs to change.' });
 });
 
 test('C4-2 "不用了" changes nothing, and no call without the confirmed preview can save', async (t) => {
   const f = await namedFixture(t);
+  const chat = conversation(f);
   const change = { recordProjects: { 'job-hunt': false } };
-  const declined = await callAgentTool(f.app, 'update_capture_policy', change);
+  const declined = await chat.call(await chat.turn(), change);
   // The person declined: the Agent does not call again. Nothing was saved.
   assert.equal(f.store.version(), 'absent');
 
+  // A long-term change needs the turn it is made in.
+  await assert.rejects(callAgentTool(f.app, 'update_capture_policy', change), { code: 'task_context_required' });
+  const answer = await chat.turn();
   const attempts = [
     [{ ...change, previewToken: 'made-up-token' }, 'preview_expired'],
     [{ recordProjects: { thesis: false }, previewToken: declined.previewToken }, 'preview_mismatch'],
-    // Each token is used once, whatever the outcome.
+    // Each token is spent once, whatever the outcome.
     [{ ...change, previewToken: declined.previewToken }, 'preview_expired']
   ];
-  for (const [input, code] of attempts) {
-    await assert.rejects(callAgentTool(f.app, 'update_capture_policy', input), { code });
-  }
-  // Another client cannot use the preview a client was given.
-  const codex = await callAgentTool(f.app, 'update_capture_policy', { ...change, sourceApplication: 'codex' });
-  await assert.rejects(callAgentTool(f.app, 'update_capture_policy', { ...change, sourceApplication: 'cursor',
-    previewToken: codex.previewToken }), { code: 'preview_expired' });
+  for (const [input, code] of attempts) await assert.rejects(chat.call(answer, input), { code });
+
+  // Another session of the same client, and another client, cannot spend a session's preview.
+  const asked = await chat.turn();
+  const preview = await chat.call(asked, change);
+  const otherSession = conversation(f, { session: 'synthetic-other-session' });
+  await assert.rejects(otherSession.call(await otherSession.turn(), { ...change, previewToken: preview.previewToken }),
+    { code: 'preview_expired' });
+  const cursor = conversation(f, { sourceApplication: 'cursor' });
+  await assert.rejects(cursor.call(await cursor.turn(), { ...change, previewToken: preview.previewToken }),
+    { code: 'preview_expired' });
+
   // Settings that changed after the preview (the page, another Agent) need a new preview.
-  const stale = await callAgentTool(f.app, 'update_capture_policy', change);
   f.store.update({ recordProjects: { novel: false } });
-  await assert.rejects(callAgentTool(f.app, 'update_capture_policy', { ...change, previewToken: stale.previewToken }),
+  await assert.rejects(chat.call(await chat.turn(), { ...change, previewToken: preview.previewToken }),
     { code: 'preview_stale' });
+
   // A preview expires.
   const clock = { now: Date.now() };
-  f.app.captureChanges = createCaptureChanges(f.store, { listProjects: async () => [], now: () => clock.now });
-  const late = await callAgentTool(f.app, 'update_capture_policy', change);
+  f.app.captureChanges = createCaptureChanges(f.store, { listProjects: async () => [], now: () => clock.now,
+    taskContext: (token, client) => f.app.taskContextRegistry.context(token, client) });
+  const late = await chat.call(await chat.turn(), change);
   clock.now += 10 * 60 * 1000;
-  await assert.rejects(callAgentTool(f.app, 'update_capture_policy', { ...change, previewToken: late.previewToken }),
+  await assert.rejects(chat.call(await chat.turn(), { ...change, previewToken: late.previewToken }),
     { code: 'preview_expired' });
 
   assert.deepEqual(f.store.read().excludedProjectIds, ['novel'], 'only the page change was saved');
   const stored = await readFile(join(dirname(f.store.path), 'capture-change-previews.json'), 'utf8');
-  for (const token of [declined.previewToken, codex.previewToken, late.previewToken]) {
-    assert.equal(stored.includes(token), false, 'tokens are kept as hashes only');
+  assert.equal(JSON.parse(stored).version, 1);
+  for (const token of [declined.previewToken, preview.previewToken, late.previewToken, asked]) {
+    assert.equal(stored.includes(token), false, 'preview and task tokens are kept as hashes only');
   }
 });
 
-test('C4-2 a preview made through one FULI process is confirmed through another, over MCP', async (t) => {
+test('C4-2 a console save that lands while the Agent confirms wins, and the confirm says the preview is stale', async (t) => {
+  const f = await namedFixture(t);
+  const chat = conversation(f);
+  const change = { recordProjects: { 'job-hunt': false } };
+  const preview = await chat.call(await chat.turn(), change);
+  // The console saves after the confirm checked the version and before its write takes the lock.
+  const version = f.store.version.bind(f.store);
+  let checks = 0;
+  f.store.version = () => {
+    const value = version();
+    if (++checks === 1) f.store.update({ recordProjects: { novel: false } });
+    return value;
+  };
+  await assert.rejects(chat.call(await chat.turn(), { ...change, previewToken: preview.previewToken }),
+    { code: 'preview_stale' });
+  f.store.version = version;
+  assert.deepEqual(f.store.read().excludedProjectIds, ['novel'], 'the console save stays; the Agent change is not saved');
+});
+
+test('C4-2 a preview made through one FULI process is confirmed through another, over MCP, in the next turn', async (t) => {
   const f = await namedFixture(t);
   const change = { recordProjects: { 'job-hunt': false } };
-  const preview = await mcpCall(f.app, 'codex', 'update_capture_policy', change);
+  const turn = async () => (await f.app.taskContextRegistry.begin({ sessionId: 'synthetic-mcp-session',
+    sourceApplication: 'codex', personalProjectId: null })).token;
+  const preview = await mcpCall(f.app, 'codex', 'update_capture_policy', { ...change, taskContextToken: await turn() });
   assert.equal(preview.status, 'confirmation_required');
 
   // A second process on the same runtime directory, as `fuli mcp --call` or a restarted client starts.
   const other = new FederatedGraphApplication(f.app.config, { runtimeConfigPath: f.runtimeConfigPath,
     capturePolicyStore: new CapturePolicyStore(capturePolicyPathForRuntime(f.runtimeConfigPath)),
+    taskContextRegistry: f.app.taskContextRegistry,
     fetchImpl: async () => { throw new Error('No Provider in this test'); } });
-  const saved = await mcpCall(other, 'codex', 'update_capture_policy', { ...change, previewToken: preview.previewToken });
+  const saved = await mcpCall(other, 'codex', 'update_capture_policy', { ...change, previewToken: preview.previewToken,
+    taskContextToken: await turn() });
   assert.deepEqual(saved.excludedProjectIds, ['job-hunt']);
 });
 

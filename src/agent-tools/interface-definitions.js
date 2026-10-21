@@ -62,7 +62,7 @@ export const AGENT_INTERFACE_DEFINITIONS = [
   {
     name: 'update_capture_policy',
     title: 'WRITE · Update capture policy or pause this session',
-    description: 'Only on an explicit user request. Long-term settings take two calls: the first saves nothing and returns preview; show it word for word, and only after the user confirms call again with the same settings plus previewToken. If they decline, do not call again; nothing changes. Send only settings to change; a list replaces the whole list. Never deletes existing knowledge, changes Agent access or bypasses project scope. Exception: "这次别记"/"继续记" → call at once, unconfirmed, with only sessionPaused true/false and taskContextToken; it pauses or resumes this session from now and returns the receipt to use.',
+    description: 'Only on an explicit user request. Long-term settings take two calls, each with the current taskContextToken: the first saves nothing and returns preview; show it to the user word for word and end your turn. Only after their next message confirms, call again with the same settings plus previewToken. If they decline, do not call again; nothing changes. Send only settings to change; a list replaces the whole list. Never deletes existing knowledge, changes Agent access or bypasses project scope. Exception: "这次别记"/"继续记" → call at once, unconfirmed, with only sessionPaused true/false and taskContextToken; it pauses or resumes this session from now and returns the receipt to use.',
     inputSchema: objectSchema({ enabled: { type: 'boolean' }, sessionPaused: { type: 'boolean' }, taskContextToken: id,
       previewToken: id,
       recordProjects: { type: 'object', additionalProperties: { type: 'boolean' },

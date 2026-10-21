@@ -79,7 +79,7 @@ const CAPTURE_SETTINGS_CALL_SITES = new Map([
     'const policyStore = capturePolicyStore ?? new CapturePolicyStore(', 'capturePolicyStore: policyStore,',
     'capturePolicy: app.getCapturePolicy(), consoleUrl: app.consoleUrl });', 'capturePolicyStore = new CapturePolicyStore(),',
     'this.capturePolicyStore = capturePolicyStore;',
-    'this.captureChanges = createCaptureChanges(capturePolicyStore, { listProjects: () => this.listPersonalProjects() });', 'getCapturePolicy() {', 'return this.capturePolicyStore.read();',
+    'this.captureChanges = createCaptureChanges(capturePolicyStore, captureChangeReads);', 'getCapturePolicy() {', 'return this.capturePolicyStore.read();',
     'getCapturePolicyVersion() {', 'return this.capturePolicyStore.version();',
     'advanceCapturePolicyVersion() {', 'return this.capturePolicyStore.advanceVersion();',
     'return this.capturePolicyStore.update(input);', 'capturePolicy: this.getCapturePolicy(),',

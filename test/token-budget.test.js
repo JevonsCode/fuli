@@ -71,9 +71,11 @@ const BASELINE = Object.freeze({
   // session's temporary project instead of being guessed global: 183,375 -> 183,425 B (+50 B), measured.
   // rec#5 C4: update_capture_policy takes recordProjects (one project's switch, "这个项目以后别记了")
   // and the previewToken of the change the person confirmed; its description drops the example
-  // sentence FULI now words itself: 183,425 -> 183,642 B (+217 B), measured. Chat, instructions and
+  // sentence FULI now words itself: 183,425 -> 183,642 B (+217 B), measured. Review fix: each call
+  // takes the current taskContextToken and the preview ends the turn, confirmed only in the person's
+  // next message: 183,642 -> 183,719 B (+77 B; +294 B for C4 in all), measured. Chat, instructions and
   // entry are unchanged.
-  fullToolSchemaBytes: 183642,
+  fullToolSchemaBytes: 183719,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
