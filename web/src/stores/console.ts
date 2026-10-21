@@ -92,18 +92,26 @@ export const useConsoleStore = defineStore('console', () => {
     if (!overlapped && saves === captureSaves) rememberCapturePolicy(policy)
   }
 
-  // Saves at once; the caller shows its own progress and any refusal. Only the
-  // latest save's answer is kept, since answers can arrive out of order.
+  // Saves at once; the caller shows its own progress and any refusal. Saves
+  // from every page of this console go out one after another, so the server
+  // commits them in the order they were made and the last answer is the
+  // settings after all of them (dot review P2, PR 262): with overlapping
+  // requests a later one could commit first and the earlier answer, though
+  // newer on the server, would look stale here.
+  let captureWrites: Promise<unknown> = Promise.resolve()
   async function changeCapturePolicy(change: CapturePolicyChange) {
-    const save = ++captureSaves
+    ++captureSaves
     capturesInFlight += 1
+    const write = captureWrites.then(() => patchJson<CapturePolicy>('/api/capture-policy', change))
+    captureWrites = write.catch(() => {})
     try {
-      const policy = await patchJson<CapturePolicy>('/api/capture-policy', change)
-      if (save === captureSaves) rememberCapturePolicy(policy)
+      const policy = await write
+      rememberCapturePolicy(policy)
       return policy
     } catch (error) {
-      // A refused save changed nothing, but another change may have landed meanwhile.
-      if (save === captureSaves) void refreshAfterRefusal()
+      // A refused save changed nothing, a lost answer may have saved: read the
+      // settings again once no later save will answer for them.
+      void refreshAfterRefusal()
       throw error
     } finally {
       capturesInFlight -= 1

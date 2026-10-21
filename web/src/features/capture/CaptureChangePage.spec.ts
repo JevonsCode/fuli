@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { useConsoleStore } from '@/stores/console'
+import type { CapturePolicy } from '@/types'
 import type { CaptureChangePreview } from './capture-change'
 import CaptureChangePage from './CaptureChangePage.vue'
 
@@ -22,8 +23,10 @@ const PREVIEW: CaptureChangePreview = {
   ],
 }
 
-// The console API for one previewed change: GET reads it, POST confirm/cancel answers as given.
-function mountPage(read: () => Response, act: (action: string) => Response = () => Response.json({})) {
+// The console API for one previewed change: GET reads it, POST confirm/cancel answers as given,
+// GET /api/capture-policy answers what is saved.
+function mountPage(read: () => Response, act: (action: string) => Response = () => Response.json({}),
+  saved: () => CapturePolicy = () => PREVIEW.current) {
   const posts: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input)
@@ -32,6 +35,7 @@ function mountPage(read: () => Response, act: (action: string) => Response = () 
       posts.push(action)
       return act(action)
     }
+    if (url === '/api/capture-policy') return Response.json(saved())
     return url === '/api/capture-changes/synthetic-preview' ? read() : Response.json({}, { status: 404 })
   }))
   const pinia = createPinia()
@@ -82,17 +86,42 @@ describe('CaptureChangePage (rec#5 C4-2, rec#11 D-16)', () => {
     const wrapper = await page.mount()
     await wrapper.get('[data-capture-change-confirm]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-capture-change-outcome="restart"]').text()).toContain('设置已变化，请重新发起')
+    expect(wrapper.get('[data-capture-change-outcome="stale"]').text()).toContain('设置已变化，请重新发起')
     expect(wrapper.find('[data-capture-change-confirm]').exists()).toBe(false)
     expect(page.store.state?.capturePolicy).toEqual(PREVIEW.current)
   })
 
-  it('shows a stale, used or expired request without a confirm button', async () => {
+  it('shows a stale request without a confirm button', async () => {
     const stale = await mountPage(() => Response.json({ ...PREVIEW, status: 'stale' })).mount()
-    expect(stale.find('[data-capture-change-outcome="restart"]').exists()).toBe(true)
+    expect(stale.find('[data-capture-change-outcome="stale"]').exists()).toBe(true)
     expect(stale.find('[data-capture-change-confirm]').exists()).toBe(false)
-    const gone = await mountPage(() => Response.json({ error: '设置已变化，请重新发起' }, { status: 410 })).mount()
-    expect(gone.get('[data-capture-change-outcome="restart"]').text()).toContain('没有修改任何设置')
+  })
+
+  it('a confirm whose answer was lost shows what is saved; the used link never claims nothing changed (dot review, PR 262)', async () => {
+    const applied = { ...PREVIEW.current, projectMode: 'all_except' as const, excludedProjectIds: ['job-hunt'] }
+    let committed = false
+    const page = mountPage(() => committed ? Response.json({ error: '设置已变化，请重新发起' }, { status: 410 })
+      : Response.json(PREVIEW), () => {
+      // The server commits, then the connection drops before the answer arrives.
+      committed = true
+      throw new TypeError('Failed to fetch')
+    }, () => committed ? applied : PREVIEW.current)
+    const wrapper = await page.mount()
+    await wrapper.get('[data-capture-change-confirm]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-capture-change-outcome="unknown"]').text()).toContain('没能确认是否已保存')
+    expect(wrapper.find('[data-capture-change-confirm]').exists()).toBe(false)
+    expect(wrapper.get('[data-capture-change-current]').text()).toContain('求职准备')
+    expect(wrapper.find('[data-capture-change-open-settings]').exists()).toBe(true)
+
+    // Opened again, the used link answers 410: the page shows what is saved and promises nothing.
+    const reopened = await mountPage(() => Response.json({ error: '设置已变化，请重新发起' }, { status: 410 }),
+      () => Response.json({}), () => applied).mount()
+    const notice = reopened.get('[data-capture-change-outcome="gone"]').text()
+    expect(notice).toContain('这个请求已不能再使用')
+    expect(notice).not.toContain('没有修改任何设置')
+    expect(reopened.get('[data-capture-change-current]').text()).toContain('求职准备')
+    expect(reopened.find('[data-capture-change-open-settings]').exists()).toBe(true)
   })
 
   it('cancel writes nothing and says so', async () => {

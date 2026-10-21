@@ -17,18 +17,24 @@ import {
 
 // The person's confirmation of a capture change an Agent asked for (rec#5
 // C4-2, rec#11 D-16). Confirm applies it once; a changed, used or expired
-// request writes nothing and says to ask again; cancel writes nothing.
+// request writes nothing and says to ask again; cancel writes nothing. A link
+// that can no longer be used (410) or an answer that never arrived proves
+// nothing about an earlier confirm, so the page reads the settings again and
+// shows what is saved instead of promising nothing changed (dot review, PR 262).
 const route = useRoute()
 const store = useConsoleStore()
 const previewId = computed(() => String(route.params.previewId ?? ''))
 
-type Outcome = 'saved' | 'cancelled' | 'restart'
+type Outcome = 'saved' | 'cancelled' | 'stale' | 'gone' | 'unknown'
 const change = ref<CaptureChangePreview | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 const pending = ref<'confirm' | 'cancel' | null>(null)
 const outcome = ref<Outcome | null>(null)
 const failure = ref('')
+// The settings as saved now, read again after a used link or a lost answer; null when that read failed.
+const savedNow = ref<CapturePolicy | null>(null)
+const rereadFailed = ref(false)
 
 const projectNames = computed(() => new Map((store.state?.personalProjects ?? [])
   .map(project => [project.project_id, projectDisplayName(project)])))
@@ -38,7 +44,26 @@ const CURRENT_SETTINGS: CaptureChangeSetting[] = ['enabled', 'disabledSources', 
 const projectList = (policy: CapturePolicy) => policy.projectMode === 'selected'
   ? { setting: 'selectedProjectIds' as const, ids: policy.selectedProjectIds ?? [] }
   : policy.projectMode === 'all_except' ? { setting: 'excludedProjectIds' as const, ids: policy.excludedProjectIds ?? [] } : null
-const stale = computed(() => outcome.value === 'restart' || change.value?.status === 'stale')
+const stale = computed(() => outcome.value === 'stale' || (!outcome.value && change.value?.status === 'stale'))
+const shownSettings = computed(() => savedNow.value ?? change.value?.current ?? null)
+// The settings shown under 当前设置, one row per setting, with the project list the mode uses.
+const currentRows = computed(() => {
+  const policy = shownSettings.value
+  if (!policy) return []
+  const projects = projectList(policy)
+  return [...CURRENT_SETTINGS.map(setting => ({ label: settingLabel(setting), value: value(setting, policy[setting]) })),
+    ...(projects ? [{ label: settingLabel(projects.setting), value: value(projects.setting, projects.ids) }] : [])]
+})
+
+async function readSavedSettings() {
+  try {
+    await store.loadCapturePolicy()
+    savedNow.value = store.state?.capturePolicy ?? null
+    rereadFailed.value = !savedNow.value
+  } catch {
+    rereadFailed.value = true
+  }
+}
 const time = (iso: string) => formatDateTime(iso, currentLocale(), DATE_TIME_MINUTE, { missing: '' })
 
 async function load() {
@@ -47,8 +72,12 @@ async function load() {
   try {
     change.value = await getJson<CaptureChangePreview>(`/api/capture-changes/${encodeURIComponent(previewId.value)}`)
   } catch (error) {
-    if (error instanceof ApiError && (error.status === 404 || error.status === 410)) outcome.value = 'restart'
-    else loadError.value = apiErrorReason(error)
+    if (error instanceof ApiError && (error.status === 404 || error.status === 410)) {
+      outcome.value = 'gone'
+      await readSavedSettings()
+    } else {
+      loadError.value = apiErrorReason(error)
+    }
   } finally {
     loading.value = false
   }
@@ -70,8 +99,17 @@ async function act(action: 'confirm' | 'cancel') {
       outcome.value = 'cancelled'
     }
   } catch (error) {
-    if (error instanceof ApiError && (error.status === 409 || error.status === 410)) outcome.value = 'restart'
-    else failure.value = apiErrorReason(error)
+    if (error instanceof ApiError && error.status === 409) {
+      // The settings changed after the request: the confirm wrote nothing.
+      outcome.value = 'stale'
+    } else if (error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 404 && error.status !== 410) {
+      failure.value = apiErrorReason(error)
+    } else {
+      // A used link, or an answer that never came: an earlier confirm may have saved.
+      outcome.value = error instanceof ApiError && (error.status === 404 || error.status === 410) ? 'gone' : 'unknown'
+      failure.value = apiErrorReason(error)
+      await readSavedSettings()
+    }
   } finally {
     pending.value = null
   }
@@ -95,10 +133,27 @@ onMounted(load)
       <p v-else-if="outcome === 'cancelled'" class="capture-change-notice" role="status" data-capture-change-outcome="cancelled">
         {{ t('capture.confirm.cancelled') }}
       </p>
-      <div v-else-if="stale" class="capture-change-notice capture-change-stale" role="alert" data-capture-change-outcome="restart">
+      <div v-else-if="stale" class="capture-change-notice capture-change-stale" role="alert" data-capture-change-outcome="stale">
         <strong>{{ t('capture.confirm.restart') }}</strong>
-        <span>{{ t('capture.confirm.restartHint') }}</span>
+        <span>{{ t('capture.confirm.staleHint') }}</span>
       </div>
+      <div v-else-if="outcome === 'gone' || outcome === 'unknown'" class="capture-change-notice capture-change-stale" role="alert"
+        :data-capture-change-outcome="outcome">
+        <strong>{{ t(outcome === 'gone' ? 'capture.confirm.gone' : 'capture.confirm.unknown') }}</strong>
+        <span>{{ t(outcome === 'gone' ? 'capture.confirm.goneHint' : 'capture.confirm.unknownHint') }}</span>
+        <span v-if="rereadFailed">{{ t('capture.confirm.rereadFailed') }}</span>
+        <RouterLink to="/settings" data-capture-change-open-settings>{{ t('capture.confirm.viewSettings') }}</RouterLink>
+      </div>
+
+      <Card v-if="!change && savedNow" as="section" aria-labelledby="capture-change-saved-now">
+        <CardHeader><CardTitle id="capture-change-saved-now" as="h2">{{ t('capture.confirm.current') }}</CardTitle></CardHeader>
+        <dl class="capture-change-list capture-change-body" data-capture-change-current>
+          <div v-for="row in currentRows" :key="row.label">
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+      </Card>
 
       <Card v-if="change" as="section" aria-labelledby="capture-change-request">
         <CardHeader>
@@ -130,14 +185,10 @@ onMounted(load)
           </section>
           <section aria-labelledby="capture-change-current">
             <h3 id="capture-change-current" class="capture-change-heading">{{ t('capture.confirm.current') }}</h3>
-            <dl class="capture-change-list">
-              <div v-for="setting in CURRENT_SETTINGS" :key="setting">
-                <dt>{{ settingLabel(setting) }}</dt>
-                <dd>{{ value(setting, change.current[setting]) }}</dd>
-              </div>
-              <div v-if="projectList(change.current)">
-                <dt>{{ settingLabel(projectList(change.current)!.setting) }}</dt>
-                <dd>{{ value(projectList(change.current)!.setting, projectList(change.current)!.ids) }}</dd>
+            <dl class="capture-change-list" data-capture-change-current>
+              <div v-for="row in currentRows" :key="row.label">
+                <dt>{{ row.label }}</dt>
+                <dd>{{ row.value }}</dd>
               </div>
             </dl>
           </section>
@@ -152,7 +203,7 @@ onMounted(load)
               {{ t('capture.confirm.cancel') }}
             </Button>
           </div>
-          <p v-if="failure" class="capture-change-failure" role="alert" data-capture-change-error>
+          <p v-if="failure && !outcome" class="capture-change-failure" role="alert" data-capture-change-error>
             {{ t('capture.confirm.failed', { reason: failure }) }}
           </p>
         </div>
