@@ -244,6 +244,8 @@ describe('TagVocabularyPage', () => {
     postJson.mockImplementation(async () => mergePreview({ change: 'split', tag: nature, other: back, revives: false,
       new_tag_name: '野外教学', links_moved: 1, links_remaining: 0 }))
     const { wrapper } = await open('/tags?tag=t2')
+    expect(dialog()?.querySelector('[data-tag-unfinished-restores] p')?.textContent?.trim())
+      .toBe('上次把「野外教学」拆出去还没做完：还有 1 条知识留在这个标签上。')
     const entry = dialog()?.querySelector('[data-tag-continue-restore="t5"]')
     expect(entry?.textContent?.trim()).toBe('继续恢复「野外教学」，剩余 1 条')
     await click('[data-tag-continue-restore="t5"]')

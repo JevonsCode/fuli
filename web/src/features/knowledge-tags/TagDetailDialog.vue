@@ -123,7 +123,9 @@ watch(() => props.tagId, () => { detail.value = null; void load() }, { immediate
 
     <section v-if="detail.unfinished_restores.length" class="grid gap-2 rounded-lg border border-warning bg-card px-4 py-3"
       data-tag-unfinished-restores>
-      <p class="m-0 text-sm">{{ t('knowledgeTags.unfinishedRestore') }}</p>
+      <p v-for="entry in detail.unfinished_restores" :key="entry.tag.id" class="m-0 text-sm [overflow-wrap:anywhere]">
+        {{ t('knowledgeTags.unfinishedRestore', { name: entry.tag.name, count: entry.remaining }) }}
+      </p>
       <div class="flex flex-wrap gap-2">
         <Button v-for="entry in detail.unfinished_restores" :key="entry.tag.id" size="sm" variant="outline"
           :data-tag-continue-restore="entry.tag.id" @click="open({ change: 'split', restore: entry.tag })">

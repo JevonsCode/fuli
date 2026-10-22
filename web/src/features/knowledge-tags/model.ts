@@ -187,8 +187,10 @@ export function previewLines(preview: GovernancePreview): string[] {
   if (preview.change === 'merge' && preview.relations_moved) {
     lines.push(t('knowledgeTags.preview.relationsMoved', { count: preview.relations_moved, other }))
   }
+  // A tag that comes back leaves relations behind; a merge does not carry them over.
+  const dropped = preview.change === 'revive' || preview.revives ? 'revivalDropped' : 'dropped'
   for (const drop of preview.relations_dropped) {
-    lines.push(t(`knowledgeTags.preview.dropped.${drop.reason}`, { tag: drop.tag.name, target: drop.target.name }))
+    lines.push(t(`knowledgeTags.preview.${dropped}.${drop.reason}`, { tag: drop.tag.name, target: drop.target.name }))
   }
   if (preview.undo) {
     lines.push(t('knowledgeTags.preview.undo', { action: historyActionLabel(preview.undo.action),

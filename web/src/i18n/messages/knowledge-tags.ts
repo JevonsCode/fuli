@@ -25,7 +25,7 @@ export const knowledgeTagsMessages = {
     aliasProvisional: 'Agent 添加，待你确认',
     aliasProposed: 'Agent 提议',
     reviewReason: '有待你确认的别名',
-    unfinishedRestore: '有一次拆分恢复还没做完：剩下的知识还贴在这个标签上。',
+    unfinishedRestore: '上次把「{name}」拆出去还没做完：还有 {count} 条知识留在这个标签上。',
     continueRestore: '继续恢复「{name}」，剩余 {count} 条',
     parents: '上位',
     related: '相关',
@@ -120,7 +120,7 @@ export const knowledgeTagsMessages = {
     },
     preview: {
       approve: '「{name}」变为已启用。',
-      revive: '「{name}」以原来的编号恢复使用。',
+      revive: '「{name}」恢复为原来那个标签，不是新建。',
       retire: '「{name}」退役，不再被找到或贴到知识上。',
       merge: '「{name}」合并到「{other}」：之后找「{name}」会得到「{other}」。',
       mergeLinks: '{moved} 条知识改贴「{other}」，{kept} 条原本就贴了「{other}」，不会重复。',
@@ -136,6 +136,13 @@ export const knowledgeTagsMessages = {
       relate: '「{name}」与「{other}」建立关系。',
       unrelate: '去掉「{name}」与「{other}」的关系。',
       undo: '撤销这次「{action}」，恢复：{tags}。',
+      revivalDropped: {
+        cycle: '「{tag}」与「{target}」的上位关系会形成循环，不随它回来。',
+        self: '「{tag}」不能以自己为上位或相关，不随它回来。',
+        scope: '「{tag}」的上位「{target}」在别的范围，不随它回来。',
+        limit: '「{target}」的上位或相关已满，与它的这条关系不随「{tag}」回来。',
+        gone: '「{tag}」与「{target}」的关系已不成立，不随它回来。',
+      },
       dropped: {
         cycle: '「{tag}」与「{target}」的上位关系会形成循环，不转过去。',
         self: '「{tag}」不能以自己为上位或相关，这条关系不转过去。',
@@ -176,7 +183,7 @@ export const knowledgeTagsMessages = {
     aliasProvisional: 'Added by an Agent, waiting for you',
     aliasProposed: 'Proposed by an Agent',
     reviewReason: 'Has an alias waiting for you',
-    unfinishedRestore: 'A split-back is not finished: the rest of its knowledge still carries this tag.',
+    unfinishedRestore: 'Splitting “{name}” back out is not finished: {count} knowledge items still carry this tag.',
     continueRestore: 'Continue restoring “{name}”, {count} left',
     parents: 'Broader',
     related: 'Related',
@@ -271,7 +278,7 @@ export const knowledgeTagsMessages = {
     },
     preview: {
       approve: '“{name}” becomes active.',
-      revive: '“{name}” comes back with its own ID.',
+      revive: '“{name}” comes back as the same tag, not a new one.',
       retire: '“{name}” is retired: no longer found or attached to knowledge.',
       merge: '“{name}” merges into “{other}”: looking for “{name}” finds “{other}”.',
       mergeLinks: '{moved} knowledge items move to “{other}”; {kept} already carry “{other}” and are not doubled.',
@@ -287,6 +294,13 @@ export const knowledgeTagsMessages = {
       relate: '“{name}” and “{other}” become related.',
       unrelate: 'The relation between “{name}” and “{other}” goes.',
       undo: 'Undoes this “{action}” and restores: {tags}.',
+      revivalDropped: {
+        cycle: '“{tag}” under “{target}” would make a cycle, so it does not come back with it.',
+        self: '“{tag}” cannot be its own broader or related tag, so that relation does not come back.',
+        scope: '“{target}”, broader than “{tag}”, is in another scope, so it does not come back with it.',
+        limit: '“{target}” has no room for more broader or related tags, so its relation does not come back with “{tag}”.',
+        gone: 'The relation between “{tag}” and “{target}” no longer holds, so it does not come back.',
+      },
       dropped: {
         cycle: '“{tag}” under “{target}” would make a cycle; that relation does not carry over.',
         self: '“{tag}” cannot be its own broader or related tag; that relation does not carry over.',
