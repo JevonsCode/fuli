@@ -1,11 +1,13 @@
-import { transcriptGuardFailureMessage, withTranscriptGuard } from './transcript-guard.js';
-import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry, transcriptCaptureScope,
-  withTranscriptNotice } from './sync-transcript.js';
+import { transcriptDigest, transcriptGuardFailureMessage, withTranscriptGuard } from './transcript-guard.js';
+import { syncConversationTranscript, claimTranscriptBoundary, keepEnteredHandoff, recordTranscriptTaskEntry,
+  transcriptCaptureScope, withTranscriptNotice } from './sync-transcript.js';
 import { captureDecision, captureSettingsVersion, withCaptureLookups } from '../graphiti/capture-decision.js';
-import { keepDenial, transcriptCaptureLedger, UNATTRIBUTABLE } from './transcript-capture-gap.js';
+import { keepDenial, keepUnsynced, transcriptCaptureLedger, UNATTRIBUTABLE } from './transcript-capture-gap.js';
 import { captureNotice } from '../graphiti/capture-notice.js';
 import { recoverFailedTranscriptEntry } from './fallback-transcript-boundary.js';
 import { captureWindow, withCaptureBudget } from './capture-window.js';
+
+const TIMED_OUT = 'transcript_capture_timeout';
 
 // Transcript ownership is fail-closed; preference/task entry is independent.
 // Both native adapters use this port so a capture failure cannot suppress a
@@ -67,13 +69,20 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
           return error?.code === 'capture_changed'
             ? { status: 'unsaved', entryBlocked: entry, code: 'capture_changed',
               reason: 'Capture settings changed during this import; nothing more was written' }
-            : { status: 'unsaved', entryBlocked: entry, code: 'transcript_capture_timeout',
+            : { status: 'unsaved', entryBlocked: entry, code: TIMED_OUT,
               reason: 'Native transcript import was deferred; preferences and current task context are independent' };
         }
       };
+      let owner = null;
       let sync = await capture((app, held) => syncConversationTranscript(app, input, sourceApplication, adapter, held,
-        { notRecorded }));
+        { notRecorded, unsynced: ledger?.unsyncedSpan() ?? null, onTask: task => { owner = transcriptDigest(task.token); } }));
       const skipped = sync.skipped ?? null;
+      // A Stop cut short keeps what it decided for the bytes it saw, so a hook
+      // while capture is then denied does not call them off (rec#16).
+      if (!entry && enabled && [TIMED_OUT, 'capture_changed'].includes(sync.code)) {
+        await keepUnsynced(application, ledger, input, adapter,
+          { settings, notRecorded, owner, handoffPending: Boolean(guard?.value) });
+      }
       if (entry && sync.entryBlocked) {
         await invoke();
         // Only a held guard and the fresh entry's exact native ownership can
@@ -86,10 +95,11 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
             // Keep the guard and old cursor retryable; task context is valid.
           }
         }
-        // A capture that ran out of time is retried at the next hook; say so,
+        // A capture that ran out of time is continued by the next hook; say so,
         // so a report can tell a slow import from unverified history.
+        if (sync.code === TIMED_OUT) await keepEnteredHandoff(guard, input, adapter, context).catch(() => {});
         return withTranscriptNotice(output, { ...sync, status: 'partial',
-          reason: sync.code === 'transcript_capture_timeout' ? sync.reason
+          reason: sync.code === TIMED_OUT ? sync.reason
             : 'Unverified native transcript history was not imported; preferences and current task context are available' });
       }
       const entryGuard = sync.status === 'capture_disabled' ? null : guard;
@@ -100,6 +110,7 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
           await recordTranscriptTaskEntry(entryGuard ? held : null, context);
           return claimTranscriptBoundary(app, input, sourceApplication, sync, adapter, entryGuard ? held : null);
         });
+        if (sync.code === TIMED_OUT) await keepEnteredHandoff(entryGuard, input, adapter, context).catch(() => {});
       }
       await settle(sync);
       return withCaptureNotice(withTranscriptNotice(output, sync), skipped);

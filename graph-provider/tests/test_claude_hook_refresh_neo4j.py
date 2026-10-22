@@ -51,10 +51,27 @@ const HOOKS = { claude_code: ['/src/agents/claude-code/lifecycle-hook.js', 'runC
 let result;
 if (command === 'hook') {
   const runHook = (await load(HOOKS[source][0]))[HOOKS[source][1]];
-  const { event, ...input } = request;
-  result = await runHook(['--event', event], { readInput: async () => input, write: () => {}, captureTimeoutMs: 30000,
+  const { event, expireAt, ...input } = request;
+  // rec#16: with expireAt, the first conversation request of that action or
+  // query mode never answers, so the hook's capture window expires there.
+  const openApplication = options => {
+    const app = openFederatedGraphApplication(options);
+    const conversation = app.personal.conversation.bind(app.personal);
+    let held = !expireAt;
+    app.personal.conversation = (action, query, ...rest) => {
+      if (held || (action !== expireAt && query?.mode !== expireAt)) return conversation(action, query, ...rest);
+      held = true;
+      return new Promise(() => {});
+    };
+    return app;
+  };
+  result = await runHook(['--event', event], { readInput: async () => input, write: () => {},
+    captureTimeoutMs: expireAt ? 5000 : 30000, openApplication,
     resolveRuntimeOptions: () => ({ runtimeConfigPath: runtime }),
     createLeases: () => ({ withGraphLease: async (_owner, run) => run(), close: async () => {} }) });
+} else if (command === 'capture') {
+  const { CapturePolicyStore, capturePolicyPathForRuntime } = await load('/src/graphiti/capture-policy.js');
+  result = new CapturePolicyStore(capturePolicyPathForRuntime(runtime)).update(request);
 } else if (command === 'current') {
   const task = await withApp(app => app.taskContextRegistry.current(request.session, source));
   result = task && { token: task.token, checkpoint: task.checkpoint?.phase ?? null, projectAgentId: task.projectAgentId,

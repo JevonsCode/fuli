@@ -1,5 +1,5 @@
-import { initialTranscriptBoundary, readTranscriptBatch } from './transcript-reader.js';
-import { transcriptDigest, TRANSCRIPT_SCAN_PAGE_LIMIT } from './transcript-guard.js';
+import { initialTranscriptBoundary, readTranscriptBatch, verifiedTranscriptEnd } from './transcript-reader.js';
+import { enteredHandoff, transcriptDigest, TRANSCRIPT_PAGES_PER_HOOK, TRANSCRIPT_SCAN_PAGE_LIMIT } from './transcript-guard.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
 import { appendTranscriptPage } from './transcript-append.js';
 import { recoverFallbackTranscript } from './fallback-transcript-boundary.js';
@@ -27,17 +27,20 @@ function taskTranscriptScope(input, sourceApplication, task) {
 // Nothing of a task that is not recorded is ever imported, so no handoff for
 // it stays pending: a later recorded task starts from its own prompt. Its
 // turns are skipped like any other off period (transcript-capture-gap.js).
-async function skippedTaskTranscript(application, input, sourceApplication, adapter, decision, guard) {
+async function skippedTaskTranscript(application, input, sourceApplication, adapter, decision, guard, unsynced = null) {
   if (guard?.value) await guard.clear();
-  return skipTranscriptWhileOff(application, input, sourceApplication, adapter, decision);
+  return skipTranscriptWhileOff(application, input, sourceApplication, adapter, decision, unsynced);
 }
 
 // notRecorded names why the pending interval must be skipped instead of
 // imported (transcript-capture-gap.js); the cursor still advances as usual.
+// unsynced is what an expired capture decided for the native bytes it saw;
+// a skip while capture is denied applies it before its own marker. onTask
+// learns the task this sync would import under, as soon as it is known.
 export async function syncConversationTranscript(application, input, sourceApplication, adapter, guard = null,
-  { notRecorded = null } = {}) {
+  { notRecorded = null, unsynced = null, onTask = null } = {}) {
   const capture = await captureDecision(application, transcriptCaptureScope(input, sourceApplication));
-  if (!capture.allowed) return skipTranscriptWhileOff(application, input, sourceApplication, adapter, capture);
+  if (!capture.allowed) return skipTranscriptWhileOff(application, input, sourceApplication, adapter, capture, unsynced);
   if (!input?.transcript_path) return { status: 'partial', reason: 'Host did not supply a visible transcript' };
   if (guard?.expired) return pending('Transcript guard lifetime expired; this unverified interval was not imported');
   if (guard?.value?.phase === 'scan' && (guard.value.scanPages ?? 0) >= TRANSCRIPT_SCAN_PAGE_LIMIT) {
@@ -51,7 +54,8 @@ export async function syncConversationTranscript(application, input, sourceAppli
     ownershipKnown = true;
     if (!task?.project_agent_id) return guard?.value ? pending(retryReason) : { status: 'unassigned' };
     const taskCapture = await captureDecision(application, taskTranscriptScope(input, sourceApplication, task));
-    if (!taskCapture.allowed) return skippedTaskTranscript(application, input, sourceApplication, adapter, taskCapture, guard);
+    if (!taskCapture.allowed) return skippedTaskTranscript(application, input, sourceApplication, adapter, taskCapture, guard, unsynced);
+    onTask?.(task);
     const scope = { personal_space_id: application.config.personal.spaceId, personal_project_id: task.personal_project_id,
       agent_id: task.project_agent_id, source_application: sourceApplication };
     const policy = await application.personal.conversation('query', { ...scope, mode: 'policy' });
@@ -60,13 +64,15 @@ export async function syncConversationTranscript(application, input, sourceAppli
     const recovered = await recoverFallbackTranscript(application, input, sourceApplication, adapter, guard, task, session);
     if (recovered) return recovered;
     if (!session.initialized) return guard?.value ? pending('Transcript initialization changed during handoff. Start a new host session and resume the intended Agent') : { status: 'partial', reason: 'Transcript capture needs a verified task entry boundary' };
-    if (guard?.value?.phase === 'claim') {
-      if (guard.value.nextOwner !== transcriptDigest(task.token)) return pending('Transcript task ownership changed during handoff. Start a new host session and resume the intended Agent');
-      await application.personal.conversation('boundary', { ...scope, session_id: input.session_id,
-        task_context_token: task.token, expected_cursor: guard.value.boundary, cursor: guard.value.boundary });
-      await guard.clear();
-    } else if (guard?.value && guard.value.owner !== transcriptDigest(task.token)) {
+    const owner = transcriptDigest(task.token);
+    if (enteredHandoff(guard?.value) ? guard.value.nextOwner !== owner : guard?.value && guard.value.owner !== owner) {
       return pending('Transcript task ownership changed during handoff. Start a new host session and resume the intended Agent');
+    }
+    if (enteredHandoff(guard?.value)) {
+      const handoff = await finishEnteredHandoff(application, { ...scope, session_id: input.session_id,
+        task_context_token: task.token }, input, adapter, guard, session.cursor ?? 0);
+      if (handoff.pending) return handoff.pending;
+      session = { ...session, cursor: handoff.cursor };
     }
     if (typeof input.prompt === 'string' && guard && !guard.value) {
       await guard.write({ version: 1, phase: 'scan', owner: transcriptDigest(task.token),
@@ -77,40 +83,12 @@ export async function syncConversationTranscript(application, input, sourceAppli
     }
     if (guard?.value?.phase === 'beginning') return pending('Task entry was interrupted before its new ownership was recorded. Start a new host session and resume the intended Agent; this uncertain native tail was not imported');
     if (guard?.value?.phase === 'scan') {
-      for (let page = 0; page < 8; page++) {
-        const state = guard.value;
-        if ((state.scanPages ?? 0) >= TRANSCRIPT_SCAN_PAGE_LIMIT) {
-          return pending('Transcript scan budget limit reached; this unverified interval was not imported');
-        }
-        const batch = await readTranscriptBatch(input.transcript_path, input.session_id, state.scanCursor, adapter,
-          { stopBeforeDigest: state.prompt });
-        const next = { ...state, scanCursor: batch.cursor, scanPages: (state.scanPages ?? 0) + 1,
-          userMessages: state.userMessages + (batch.userMessages ?? 0), omitted: state.omitted || batch.omitted === true,
-          uncertainFrom: state.uncertainFrom ?? batch.uncertainFrom ?? null };
-        if (batch.atPromptBoundary) {
-          await guard.write({ ...next, scanCursor: batch.promptEndCursor,
-            candidate: batch.cursor, userMessages: next.userMessages + 1 });
-          continue;
-        }
-        // A repeated prompt in old backlog is not the new turn if visible
-        // messages follow it. Only the last visible prompt can prove a handoff.
-        if (batch.events.length) next.candidate = null;
-        // EOF is a prospective boundary only if no unverified user record or
-        // omitted fragment was traversed and the last native write is complete.
-        if (!batch.hasMore && batch.completeRecord && (Number.isSafeInteger(next.candidate) || (!next.userMessages && !next.omitted))) {
-          await guard.write({ ...next, phase: 'ready', boundary: next.candidate ?? batch.cursor });
-          break;
-        }
-        if (!batch.hasMore && next.uncertainFrom !== null) next.ambiguousFrom = next.uncertainFrom;
-        await guard.write(next);
-        if (!batch.hasMore) return pending('The current prompt could not be verified in native history. Retry after the host finishes writing; if it cannot record a blocked prompt, start a new host session and resume the intended Agent');
-        if (batch.cursor === state.scanCursor) return pending(retryReason);
-      }
-      if (guard.value.phase === 'scan') return pending(retryReason);
+      const scanning = await scanHandoffPrompt(guard, input, adapter);
+      if (scanning) return scanning;
     }
     if (guard?.value && (session.cursor ?? 0) > guard.value.boundary) return pending('Transcript cursor moved beyond the verified handoff boundary; no scope was changed');
     let result, userMessages = 0, omitted = false;
-    for (let page = 0; page < 8; page += 1) {
+    for (let page = 0; page < TRANSCRIPT_PAGES_PER_HOOK; page += 1) {
       const batch = await readTranscriptBatch(input.transcript_path, input.session_id, session.cursor ?? 0, adapter,
         guard?.value ? { stopAtCursor: Math.max(session.cursor ?? 0, guard.value.ambiguousFrom ?? guard.value.boundary) } : { stopBeforePrompt: input.prompt ?? null });
       userMessages += batch.userMessages ?? 0; omitted ||= batch.omitted === true;
@@ -145,6 +123,85 @@ export async function syncConversationTranscript(application, input, sourceAppli
       reason: committedPages ? 'Some transcript pages were saved before capture failed; the next hook resumes from committed progress'
         : 'Visible transcript capture could not be confirmed; native history will be retried at the next hook' };
   }
+}
+
+// Looks for the handoff prompt after the guard's scan cursor, saving progress
+// in the guard: null once it is ready (its boundary found), otherwise why the
+// handoff stays pending. An entered handoff looks only before the native end
+// its entry saw (entryEnd), so the entered task's own turn after it can never
+// hide the prompt.
+async function scanHandoffPrompt(guard, input, adapter) {
+  for (let page = 0; page < TRANSCRIPT_PAGES_PER_HOOK; page++) {
+    const state = guard.value;
+    if ((state.scanPages ?? 0) >= TRANSCRIPT_SCAN_PAGE_LIMIT) {
+      return pending('Transcript scan budget limit reached; this unverified interval was not imported');
+    }
+    const batch = await readTranscriptBatch(input.transcript_path, input.session_id, state.scanCursor, adapter,
+      { stopBeforeDigest: state.prompt, stopAtCursor: state.entryEnd ?? null });
+    const next = { ...state, scanCursor: batch.cursor, scanPages: (state.scanPages ?? 0) + 1,
+      userMessages: state.userMessages + (batch.userMessages ?? 0), omitted: state.omitted || batch.omitted === true,
+      uncertainFrom: state.uncertainFrom ?? batch.uncertainFrom ?? null };
+    if (batch.atPromptBoundary) {
+      await guard.write({ ...next, scanCursor: batch.promptEndCursor,
+        candidate: batch.cursor, userMessages: next.userMessages + 1 });
+      continue;
+    }
+    // A repeated prompt in old backlog is not the new turn if visible
+    // messages follow it. Only the last visible prompt can prove a handoff.
+    if (batch.events.length) next.candidate = null;
+    // EOF is a prospective boundary only if no unverified user record or
+    // omitted fragment was traversed and the last native write is complete.
+    if (!batch.hasMore && batch.completeRecord && (Number.isSafeInteger(next.candidate) || (!next.userMessages && !next.omitted))) {
+      await guard.write({ ...next, phase: 'ready', boundary: next.candidate ?? batch.cursor });
+      return null;
+    }
+    if (!batch.hasMore && next.uncertainFrom !== null) next.ambiguousFrom = next.uncertainFrom;
+    await guard.write(next);
+    if (!batch.hasMore) return pending('The current prompt could not be verified in native history. Retry after the host finishes writing; if it cannot record a blocked prompt, start a new host session and resume the intended Agent');
+    if (batch.cursor === state.scanCursor) return pending(retryReason);
+  }
+  return pending(retryReason);
+}
+
+// Finishes a handoff whose prompt already entered the current task, in a
+// later hook (rec#16): the boundary is found as the entry would have found
+// it, then the entered task takes the transcript from there. A tail of the
+// old task the entry did not flush cannot be written under that task any
+// more; the Provider records it as omitted (content-free) while it hands the
+// transcript over. Returns the cursor the entered task starts at, or pending.
+async function finishEnteredHandoff(application, claim, input, adapter, guard, from) {
+  if (guard.value.phase === 'scan') {
+    const scanning = await scanHandoffPrompt(guard, input, adapter);
+    if (scanning) return { pending: scanning };
+  }
+  const { boundary } = guard.value;
+  if (from < boundary) {
+    const omitted = await application.personal.conversation('boundary', { ...claim, expected_cursor: from,
+      cursor: boundary, fallback_recovery: true });
+    if (omitted.status !== 'saved') throw new Error('The old task\'s tail was not marked omitted');
+  } else {
+    // Whatever moved the cursor past the boundary covered only bytes after the prompt.
+    await application.personal.conversation('boundary', { ...claim, expected_cursor: from, cursor: from });
+  }
+  await guard.clear();
+  return { cursor: Math.max(from, boundary) };
+}
+
+// An entry whose capture window expired after its handoff began has still
+// entered its task. With the lock it holds, the hook records that task in the
+// guard for the next hook to finish the handoff (finishEnteredHandoff): as a
+// claim once the old tail was flushed, otherwise with the native end the entry
+// saw, after which everything is the entered task's. Only the entry's own
+// prompt is recorded, and only once; nothing else is changed.
+export async function keepEnteredHandoff(guard, input, adapter, context) {
+  const state = guard?.value;
+  const token = context?.taskContextToken ?? context?.task_context_token;
+  if (!state || state.nextOwner !== undefined || typeof token !== 'string' || !token
+    || typeof input.prompt !== 'string' || state.prompt !== transcriptDigest(input.prompt)) return;
+  if (state.phase === 'beginning') return guard.write({ ...state, phase: 'claim', nextOwner: transcriptDigest(token) });
+  if (!['scan', 'ready'].includes(state.phase)) return;
+  const entryEnd = await verifiedTranscriptEnd(input.transcript_path, input.session_id, adapter);
+  await guard.write({ ...state, nextOwner: transcriptDigest(token), entryEnd });
 }
 
 export async function recordTranscriptTaskEntry(guard, context) {
