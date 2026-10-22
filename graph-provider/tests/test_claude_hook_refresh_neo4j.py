@@ -33,10 +33,12 @@ CI_EVENT = '<ci-monitor-event>"Auto-fix" saw PR #1 fail.</ci-monitor-event>'
 UNCONFIRMED = '来源和任务归属都未确认'
 NO_VALID = 'FULI: no valid task context is established for this turn'
 
-# One command per process. The runtime lease is a pass-through: the test owns this Provider and graph.
+# One command per process, for the Agent `source` names. The runtime lease is a
+# pass-through: the test owns this Provider and graph. The hook's own stdout
+# write is dropped; the driver prints the hook's result.
 DRIVER = r'''
 import { pathToFileURL } from 'node:url';
-const [root, runtime, command, payload] = process.argv.slice(1);
+const [root, runtime, source, command, payload] = process.argv.slice(1);
 const request = JSON.parse(payload);
 const load = path => import(pathToFileURL(root + path).href);
 const { openFederatedGraphApplication } = await load('/src/graphiti/federated-application.js');
@@ -44,26 +46,28 @@ const withApp = async operation => {
   const app = openFederatedGraphApplication({ runtimeConfigPath: runtime });
   try { return await operation(app); } finally { await app.close?.(); }
 };
+const HOOKS = { claude_code: ['/src/agents/claude-code/lifecycle-hook.js', 'runClaudeLifecycleHook'],
+  codex: ['/src/agents/codex/lifecycle-hook.js', 'runCodexLifecycleHook'] };
 let result;
 if (command === 'hook') {
-  const { runClaudeLifecycleHook } = await load('/src/agents/claude-code/lifecycle-hook.js');
+  const runHook = (await load(HOOKS[source][0]))[HOOKS[source][1]];
   const { event, ...input } = request;
-  result = await runClaudeLifecycleHook(['--event', event], { readInput: async () => input, captureTimeoutMs: 30000,
+  result = await runHook(['--event', event], { readInput: async () => input, write: () => {}, captureTimeoutMs: 30000,
     resolveRuntimeOptions: () => ({ runtimeConfigPath: runtime }),
     createLeases: () => ({ withGraphLease: async (_owner, run) => run(), close: async () => {} }) });
 } else if (command === 'current') {
-  const task = await withApp(app => app.taskContextRegistry.current(request.session, 'claude_code'));
+  const task = await withApp(app => app.taskContextRegistry.current(request.session, source));
   result = task && { token: task.token, checkpoint: task.checkpoint?.phase ?? null, projectAgentId: task.projectAgentId,
     personalProjectId: task.personalProjectId, preferenceScope: task.preferenceScope };
 } else if (command === 'checkpoint') {
   // The model's own MCP call, made explicitly for this turn.
   const { callAgentTool } = await load('/src/agent-tools.js');
   result = await withApp(app => callAgentTool(app, 'checkpoint_task_knowledge', { taskContextToken: request.token,
-    sourceApplication: 'claude_code', disposition: 'retain_nothing', reason: 'Synthetic explicit continuation.',
+    sourceApplication: source, disposition: 'retain_nothing', reason: 'Synthetic explicit continuation.',
     workLog: { status: 'completed', summary: 'Synthetic task finished after its background notification.' } }));
 } else if (command === 'held') {
   const { transcriptCaptureLedger } = await load('/src/conversations/transcript-capture-gap.js');
-  result = transcriptCaptureLedger(runtime, { session_id: request.session }, 'claude_code').heldTurns();
+  result = transcriptCaptureLedger(runtime, { session_id: request.session }, source).heldTurns();
 }
 process.stdout.write(JSON.stringify(result ?? null));
 '''
@@ -110,6 +114,7 @@ async def _recorded(settings, session):
 
 class Host:
     """A synthetic Claude Code host: it writes the native transcript and runs each hook in a fresh process."""
+    source = 'claude_code'
 
     def __init__(self, node, root, runtime, directory, cwd):
         self.node, self.root, self.runtime, self.directory, self.cwd = node, root, runtime, directory, cwd
@@ -142,7 +147,7 @@ class Host:
     async def run(self, command, payload):
         self.calls += 1
         process = await asyncio.create_subprocess_exec(self.node, '--input-type=module', '-e', DRIVER,
-            str(self.root), str(self.runtime), command, json.dumps(payload),
+            str(self.root), str(self.runtime), self.source, command, json.dumps(payload),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=180)
         assert process.returncode == 0, stderr.decode()
@@ -164,7 +169,7 @@ class Host:
         return await self.run('held', {'session': session})
 
     def ledger_path(self, session, directory='transcript-capture'):
-        key = hashlib.sha256(f'{self.runtime}\0claude_code\0{session}'.encode()).hexdigest()
+        key = hashlib.sha256(f'{self.runtime}\0{self.source}\0{session}'.encode()).hexdigest()
         return self.runtime.parent / directory / f'{key}.json'
 
     async def unfinished_task(self, session, text):
@@ -198,16 +203,16 @@ def token_of(context):
 
 
 @asynccontextmanager
-async def claude_host(tmp_path):
-    """A disposable Provider over HTTP with one synthetic project, Agent and preference."""
+async def claude_host(tmp_path, host_class=Host):
+    """A disposable Provider over HTTP with one synthetic project, Agent and preference, for host_class's Agent."""
     import uvicorn
     settings = fixture_settings()
     root = Path(__file__).resolve().parents[2]
     node = shutil.which('node')
     assert node
     async with provider_client(settings) as (client, access_token):
-        space = await _create_space(client, 'Synthetic Claude hook refresh')
-        await seed_agent(client, space, allowed_clients=['claude_code'])
+        space = await _create_space(client, f'Synthetic {host_class.source} hook refresh')
+        await seed_agent(client, space, allowed_clients=[host_class.source])
         await _set_preference(settings, space, 1)
         listener = socket.socket()
         listener.bind(('127.0.0.1', 0))
@@ -220,7 +225,7 @@ async def claude_host(tmp_path):
         runtime.chmod(0o600)
         cwd = tmp_path / 'sample-project'
         cwd.mkdir()
-        host = Host(node, root, runtime, tmp_path, cwd)
+        host = host_class(node, root, runtime, tmp_path, cwd)
         server = uvicorn.Server(uvicorn.Config(client._transport.app, lifespan='off', log_level='error'))
         serving = asyncio.create_task(server.serve(sockets=[listener]))
         try:

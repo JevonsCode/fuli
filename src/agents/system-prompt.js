@@ -1,11 +1,8 @@
-// Only explicit host metadata can identify a system delivery. A user can
-// paste notification/XML envelopes, so prompt text alone never bypasses entry.
+// A prompt hook input marked isMeta or is_meta. A user can paste
+// notification/XML envelopes, so prompt text alone is never such a mark. What
+// the mark proves depends on the host: each Agent's hook decides (Claude Code
+// host-notification.js, Codex lifecycle-hook.js), and neither trusts it to
+// continue a task.
 export function isSystemPromptEntry(input) {
   return input?.isMeta === true || input?.is_meta === true;
-}
-
-export function systemPromptOutput(event) {
-  return { hookSpecificOutput: { hookEventName: event, additionalContext:
-    'Fuli: host system notification, not a new user task. Keep the current task context and its '
-    + 'taskContextToken; no new task entry or fallback call is needed.' } };
 }
