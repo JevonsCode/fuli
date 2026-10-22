@@ -96,6 +96,15 @@ into a named module both import.
 - Avoid boolean flag parameters that switch behavior; split into two named functions or pass an options
   object with a named field.
 
+### Keep it simple
+
+- Use the least code that solves the requested problem. Do not speculate about future requirements or
+  add unrequested features.
+- Do not create abstractions for one-off code or add unrequested flexibility or configurability.
+- Do not add error handling for impossible scenarios.
+- If 200 lines can be written clearly in 50, rewrite them. Ask: would a senior engineer find this
+  unnecessarily complex? If so, simplify.
+
 ## 5. Vue and TypeScript
 
 - Pages compose; features own behavior. Formatting, filtering and mapping functions go in a `.ts` module
@@ -104,6 +113,14 @@ into a named module both import.
   `formatDate` in another page is a duplicate.
 - Types for API payloads live in `web/src/types.ts` or the feature's `model.ts`; do not redeclare a payload
   shape inline in a component.
+
+### Let the layout explain itself
+
+- Avoid unnecessary secondary labels and descriptions. Remove copy that repeats what the layout
+  already communicates, but keep necessary form labels and control names.
+- A redundant visible label may be omitted; the control's accessible name must remain. For example,
+  a search field beside a "Search" button still needs an associated label or equivalent accessible
+  name; the neighboring button does not name the field.
 
 ## 6. Tests
 
