@@ -19,7 +19,7 @@ test('generated taste Skills preserve the current task receipt', async () => {
 test('every task receives a required, directly renderable owner receipt', () => {
   const receipt = taskAgentReceipt(application, owner);
   assert.equal(receipt.required, true);
-  assert.equal(receipt.markdown, 'FULI Agent：负责人 [Alex Morgan](<http://127.0.0.1:3999/agents/synthetic-space/engineer>)');
+  assert.equal(receipt.markdown, 'FULI Agent：[Alex Morgan](<http://127.0.0.1:3999/agents/synthetic-space/engineer>)');
   assert.match(receipt.guidance, /every final user-visible reply/i);
   assert.match(receipt.guidance, /greetings/i);
   assert.match(receipt.guidance, /exactly once/i);
@@ -34,12 +34,20 @@ test('owner labels are escaped and missing names use the authorized identifier',
   assert.match(taskAgentReceipt(application, { ...owner, name: null }).markdown, /\[engineer\]/);
 });
 
+test('the owner is named first with its role title once, never as "负责人 role"', () => {
+  const role = 'Synthetic Framework 负责人';
+  assert.equal(taskAgentReceipt(application, { ...owner, name: 'Nova Reed', role }).markdown,
+    'FULI Agent：[Nova Reed \\[Synthetic Framework 负责人\\]](<http://127.0.0.1:3999/agents/synthetic-space/engineer>)');
+  assert.equal(taskAgentReceipt(application, { ...owner, name: null, role }).markdown,
+    'FULI Agent：[Synthetic Framework 负责人](<http://127.0.0.1:3999/agents/synthetic-space/engineer>)');
+});
+
 test('the receipt names the lead and each collaborator once, never the lead twice', () => {
   const receipt = taskAgentReceipt(application, { ...owner, collaborators: [
     { agentId: 'employee.jefa', name: 'Jefa' }, { agentId: 'engineer', name: 'Alex Morgan' },
     { agentId: 'reviewer', name: 'Nova Reed' }
   ] });
-  assert.equal(receipt.markdown, 'FULI Agent：负责人 [Alex Morgan](<http://127.0.0.1:3999/agents/synthetic-space/engineer>)'
+  assert.equal(receipt.markdown, 'FULI Agent：[Alex Morgan](<http://127.0.0.1:3999/agents/synthetic-space/engineer>)'
     + ' · 协作 [Jefa](<http://127.0.0.1:3999/agents/synthetic-space/employee.jefa>)、'
     + '[Nova Reed](<http://127.0.0.1:3999/agents/synthetic-space/reviewer>)');
   assert.deepEqual(receipt.collaborators.map(item => item.agent_id), ['employee.jefa', 'reviewer']);

@@ -58,10 +58,10 @@ export async function checkpointConversation(application, task, workLog, team = 
       events: [{ event_id: `${task.token}:summary`, role: 'summary', kind: 'checkpoint', content: safeConversationContent(workLog.summary) }]
     });
     if (result.status !== 'saved') return result;
-    const name = team ? team.name ?? null : await taskAgentName(application, task);
+    const owner = team ?? await taskAgentIdentity(application, task);
     return { ...result, agent_id: task.projectAgentId, work_status: workLog.status,
       receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
-        agentId: task.projectAgentId, name, sourceApplication: task.sourceApplication,
+        agentId: task.projectAgentId, name: owner.name ?? null, role: owner.role ?? null, sourceApplication: task.sourceApplication,
         workStatus: workLog.status, conversationId: result.conversation_id,
         persistence: result.status, collaborators: team?.collaborators ?? [] }),
       coverage: 'task_summary; visible transcript capture is confirmed separately by the host hook',
@@ -69,14 +69,14 @@ export async function checkpointConversation(application, task, workLog, team = 
   } catch { return unavailable(); }
 }
 
-// The task Agent's display name for a receipt; null when it cannot be read,
-// since metadata availability never undoes what the call already did.
-export async function taskAgentName(application, task) {
-  if (!task.projectAgentId) return null;
+// The task Agent's name and role title for a receipt; nulls when they cannot be
+// read, since metadata availability never undoes what the call already did.
+export async function taskAgentIdentity(application, task) {
+  if (!task.projectAgentId) return { name: null, role: null };
   try {
     const agent = await application.personal.getProjectAgent(application.config.personal.spaceId, task.personalProjectId, task.projectAgentId);
-    return agent?.profile?.display_name || agent?.profile?.name || null;
-  } catch { return null; }
+    return { name: agent?.profile?.display_name ?? null, role: agent?.profile?.name ?? null };
+  } catch { return { name: null, role: null }; }
 }
 
 export async function queryConversations(application, input) {
