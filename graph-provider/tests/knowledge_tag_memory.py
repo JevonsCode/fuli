@@ -70,6 +70,11 @@ class MemoryTagReader:
                        key=lambda link: (link['attached_at'], link['id']))
         return links[:limit] if limit else links
 
+    async def links_moved_into(self, targets):
+        wanted = {(target['tag_id'], target['item_kind'], target['item_id']) for target in targets}
+        return [dict(link) for link in self._vocabulary.links.values() if link['status'] == 'moved'
+                and (link.get('moved_to_tag_id'), link['item_kind'], link['item_id']) in wanted]
+
     async def link_counts(self, tag_ids):
         counts = {}
         for link in self._vocabulary.links.values():

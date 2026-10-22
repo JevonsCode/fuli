@@ -15,6 +15,7 @@ import { readVocabulary } from './tags-api'
 // Provider still decides whether the pair is allowed; `allows` only hides
 // what can never be chosen (the tag itself, another project's vocabulary).
 const SEARCH_DELAY_MS = 250
+const SELECTED = 'bg-accent border-border-strong shadow-sm'
 const props = defineProps<{ spaceId: string; label: string; allows: (tag: TagEntry) => boolean }>()
 const chosen = defineModel<TagRef | null>({ required: true })
 
@@ -54,10 +55,10 @@ void search()
     <p v-else-if="!choices.length" class="m-0 text-sm text-muted-foreground">{{ t('knowledgeTags.governance.noCandidates') }}</p>
     <ul v-if="choices.length" class="m-0 grid max-h-56 list-none gap-2 overflow-y-auto p-0" role="listbox" :aria-label="label">
       <li v-for="tag in choices" :key="tag.id" class="min-w-0">
-        <!-- The chosen tag lifts as a card; there is no side accent. -->
+        <!-- The chosen tag lifts as a card on the selected surface (rec#11 D-03 #8); no side accent. -->
         <Button type="button" variant="outline" role="option" :aria-selected="chosen?.id === tag.id"
-          class="h-auto w-full min-w-0 justify-between gap-2 rounded-lg bg-card px-3 py-2 text-left font-normal whitespace-normal transition-[border-color,box-shadow]"
-          :class="chosen?.id === tag.id ? 'border-border-strong shadow-md' : 'hover:border-border-strong'"
+          class="h-auto w-full min-w-0 justify-between gap-2 rounded-lg px-3 py-2 text-left font-normal whitespace-normal transition-[background-color,border-color,box-shadow]"
+          :class="chosen?.id === tag.id ? SELECTED : 'bg-card hover:border-border-strong'"
           :data-tag-choice="tag.id" @click="chosen = tag">
           <span class="min-w-0 [overflow-wrap:anywhere]">{{ tag.name }}</span>
           <Badge variant="secondary" class="shrink-0">{{ statusLabel(tag.status) }}</Badge>

@@ -33,6 +33,9 @@ defineEmits<{ open: [] }>()
       <Badge v-for="alias in tag.proposed_aliases" :key="`p-${alias}`" variant="outline" class="border-dashed"
         :title="t('knowledgeTags.aliasProposed')">{{ alias }}?</Badge>
     </div>
+    <p v-if="tag.needs_review && tag.status === 'active'" class="m-0 text-xs text-warning" data-tag-review-reason>
+      {{ t('knowledgeTags.reviewReason') }}
+    </p>
     <p v-if="tag.merged_into" class="m-0 text-sm text-muted-foreground [overflow-wrap:anywhere]" data-tag-merged-into>
       {{ t('knowledgeTags.mergedInto', { name: tag.merged_into.name }) }}
     </p>

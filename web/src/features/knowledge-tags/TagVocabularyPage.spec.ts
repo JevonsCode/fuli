@@ -79,7 +79,8 @@ beforeEach(() => {
 
 describe('TagVocabularyPage', () => {
   it('lists every namespace with status, aliases, relations and linked counts', async () => {
-    respond(url => url.startsWith('/api/knowledge-tags/vocabulary') ? vocabulary([outdoor, nature]) : null)
+    const short = tag('t4', '短句', { needs_review: true, proposed_aliases: ['简短句子'] })
+    respond(url => url.startsWith('/api/knowledge-tags/vocabulary') ? vocabulary([outdoor, nature, short]) : null)
     const { wrapper } = await open()
     expect(getJson).toHaveBeenCalledWith('/api/knowledge-tags/vocabulary?personalSpaceId=space&limit=100')
     expect(wrapper.findAll('[data-tag-group] h2').map(heading => heading.text())).toEqual(['项目「自然课」', '个人词表'])
@@ -89,6 +90,9 @@ describe('TagVocabularyPage', () => {
     expect(card.text()).toContain('2 条知识')
     expect(card.text()).toContain('Agent 建立')
     expect(wrapper.get('[data-tag-card="t2"]').text()).toContain('上位教学方法')
+    expect(wrapper.find('[data-tag-card="t2"] [data-tag-review-reason]').exists()).toBe(false)
+    // An active tag in the queue says why: an alias waits for the person.
+    expect(wrapper.get('[data-tag-card="t4"] [data-tag-review-reason]').text()).toBe('有待你确认的别名')
     expect(wrapper.get('[data-tag-review-count]').text()).toBe('1')
     expect(wrapper.find('h1').exists()).toBe(false)
     wrapper.unmount()
@@ -153,6 +157,11 @@ describe('TagVocabularyPage', () => {
     const { wrapper } = await open('/tags?tag=t1&change=merge&into=t2')
     expect(postJson).toHaveBeenCalledWith('/api/knowledge-tags/governance/preview',
       { personalSpaceId: 'space', change: 'merge', tagId: 't1', intoTagId: 't2' })
+    // The preselected target stands out on the selected surface (D-03 #8, D-23).
+    const selected = dialog()?.querySelector('[data-tag-choice][aria-selected="true"]')
+    expect(selected?.getAttribute('data-tag-choice')).toBe('t2')
+    expect(selected?.classList).toContain('bg-accent')
+    expect(dialog()?.querySelector('[data-tag-choice="t1"]'), 'a tag never merges into itself').toBeNull()
     const preview = dialog()?.querySelector('[data-tag-preview]')?.textContent ?? ''
     expect(preview).toContain('「户外学习」合并到「自然教育」')
     expect(preview).toContain('1 条知识改贴「自然教育」')

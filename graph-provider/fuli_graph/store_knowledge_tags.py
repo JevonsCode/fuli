@@ -182,6 +182,19 @@ class Neo4jTagReader:
             space_id=self._space_id, tag_ids=list(tag_ids), limit=limit, routing_='r')
         return [_link(record['link']) for record in records]
 
+    async def links_moved_into(self, targets):
+        """Links a merge or split moved away because their item already had the
+        target tag: each names the target tag and item it relies on."""
+        records, _, _ = await self._driver.execute_query(
+            '''
+            UNWIND $targets AS target
+            MATCH (link:FuliKnowledgeTagLink {space_id: $space_id, item_kind: target.item_kind,
+                                              item_id: target.item_id, status: 'moved',
+                                              moved_to_tag_id: target.tag_id})
+            RETURN link
+            ''', space_id=self._space_id, targets=list(targets), routing_='r')
+        return [_link(record['link']) for record in records]
+
     async def link_counts(self, tag_ids):
         records, _, _ = await self._driver.execute_query(
             '''

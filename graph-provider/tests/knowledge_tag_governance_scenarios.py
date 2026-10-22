@@ -400,6 +400,41 @@ async def undo_goes_back_one_change_at_a_time(world):
     assert (await preview(world, 'undo', tag['id']))['blocked']['code'] == 'nothing_to_undo'
 
 
+async def an_undo_never_takes_a_link_a_later_merge_relies_on(world):
+    """D-23.8: A and C both merge into B and share an item. C's merge found the
+    item already on B (A's merge put it there) and moved C's own link away, so
+    undoing A's merge first would leave the item without C's meaning. It is
+    refused; undoing C's merge and then A's restores everything exactly."""
+    await world.project('class')
+    first = (await create(world, '户外学习', 'class'))['tag']
+    second = (await create(world, '野外教学', 'class'))['tag']
+    target = await mine(world, '自然教育')
+    item = await world.item('class', 'Bird walk')
+    for tag in (first, second):
+        await attach(world, tag['id'], item, 'class')
+    start_tags, start_links = await world.stored()
+    await govern(world, 'merge', first['id'], into_tag_id=target['id'])
+    second_merge = await preview(world, 'merge', second['id'], into_tag_id=target['id'])
+    assert (second_merge['links_moved'], second_merge['links_already_on_target']) == (0, 1)
+    await govern(world, 'merge', second['id'], into_tag_id=target['id'])
+    assert await world.attached(item) == [target['id']]
+
+    refused = await preview(world, 'undo', first['id'])
+    assert (refused['undo']['action'], refused['blocked']['code']) == ('merge', 'changed_since')
+    assert (await govern(world, 'undo', first['id'], status=409))['detail']['code'] == 'changed_since'
+    assert await world.attached(item) == [target['id']], 'the refused undo changed nothing'
+
+    await govern(world, 'undo', second['id'])
+    assert await world.attached(item) == sorted([target['id'], second['id']])
+    await govern(world, 'undo', first['id'])
+    after_tags, after_links = await world.stored()
+    assert governed(after_tags) == governed(start_tags)
+    assert {link_id: value for link_id, value in linked(after_links).items() if link_id in start_links} == \
+        linked(start_links)
+    assert {link['status'] for link_id, link in after_links.items() if link_id not in start_links} == {'detached'}
+    assert sorted(await world.attached(item)) == sorted([first['id'], second['id']])
+
+
 async def a_retired_tag_is_gone_until_the_person_brings_it_back(world):
     await world.project('class')
     tag = (await create(world, '户外学习', 'class'))['tag']
@@ -421,5 +456,6 @@ GOVERNANCE_SCENARIOS = [
     parent_cycles_and_cross_scope_relations_are_refused, a_merge_racing_an_attach_lands_once_on_the_target,
     an_agent_can_preview_but_never_govern, scoped_reads_never_show_another_project,
     the_review_queue_waits_for_the_person, undo_goes_back_one_change_at_a_time,
+    an_undo_never_takes_a_link_a_later_merge_relies_on,
     a_retired_tag_is_gone_until_the_person_brings_it_back,
 ]

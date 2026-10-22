@@ -439,7 +439,7 @@ async def _undo(plan: _Plan, reader, request, reason):
         plan.basis[f'link:{link_id}'] = stored.get('version') if stored else None
         if stored is None or _link_snapshot(stored) != entry['after']:
             changed.append(link_id)
-    if changed:
+    if changed or await _relied_on(plan, reader, snapshot, stored_links):
         return 'changed_since'
     for tag_id, entry in snapshot['tags'].items():
         before = entry['before']
@@ -455,6 +455,23 @@ async def _undo(plan: _Plan, reader, request, reason):
     plan.other_id = operation.get('related_tag_id') if operation['tag_id'] == subject else operation['tag_id']
     if plan.other_id not in plan.tags:
         plan.other_id = None
+
+
+async def _relied_on(plan: _Plan, reader, snapshot: dict, stored_links: dict) -> bool:
+    """Whether a link this undo would take away carries another change's tag:
+    a later merge or split that found the link already on its target moved its
+    own link away and wrote nothing to this one (rec#11 D-23.8). That change is
+    undone first; until then its moved link still points here."""
+    leaving = [stored_links[link_id] for link_id, entry in snapshot['links'].items()
+               if stored_links[link_id]['status'] == 'attached' and (entry['before'] or {}).get('status') != 'attached']
+    if not leaving:
+        return False
+    dependents = await reader.links_moved_into(
+        [{'tag_id': link['tag_id'], 'item_kind': link['item_kind'], 'item_id': link['item_id']} for link in leaving])
+    outside = [link for link in dependents if link['id'] not in snapshot['links']]
+    for link in outside:
+        plan.basis[f'link:{link["id"]}'] = link.get('version')
+    return bool(outside)
 
 
 def governed_state(tag: dict) -> dict:

@@ -211,7 +211,8 @@ async function confirm() {
     <p v-if="notice" :role="notice.kind" class="m-0 text-sm" :class="notice.kind === 'alert' ? 'text-destructive' : ''"
       data-tag-governance-notice>{{ notice.text }}</p>
 
-    <DialogFooter class="flex-wrap gap-2">
+    <!-- Stays in view while a long split form scrolls inside the dialog. -->
+    <DialogFooter class="sticky -bottom-6 z-10 -mx-6 -mb-6 flex-wrap gap-2 border-t bg-card px-6 py-4" data-tag-governance-footer>
       <Button type="button" variant="ghost" :disabled="applying" data-tag-governance-back @click="emit('back')">
         {{ t('knowledgeTags.actions.back') }}
       </Button>
