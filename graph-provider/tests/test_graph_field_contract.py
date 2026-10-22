@@ -100,8 +100,7 @@ def cypher_properties():
             for key, value in _map_items(text, match.end()):
                 yield module, frozenset(bound.get(match.group(1), ())), key, value
         for variable, name in ASSIGNED.findall(text):
-            if variable in bound:
-                yield module, frozenset(bound[variable]), name, None
+            yield module, frozenset(bound.get(variable, ())), name, None
         for match in COMPARED.finditer(text):
             variable, name, value = match.group(1, 2, 3) if match.group(1) else match.group(4, 5, 6)
             if variable in bound:
