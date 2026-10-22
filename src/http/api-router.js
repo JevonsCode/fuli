@@ -6,6 +6,7 @@ import { handleEmployeeApiRequest } from './employee-api-router.js';
 import { handleAgentAppApiRequest } from './agent-app-api-router.js';
 import { handleDataFormatApiRequest } from './data-format-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
+import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
@@ -22,7 +23,8 @@ export async function handleApiRequest({
   peer = null,
   dataFormats = null,
   dataFormatMigrations = null,
-  knowledgeHardDelete = null
+  knowledgeHardDelete = null,
+  knowledgeScope = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
@@ -163,6 +165,7 @@ export async function handleApiRequest({
   const graphRequest = async () =>
     await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations }) ||
     await handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete: knowledgeHardDelete }) ||
+    await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope }) ||
     await handleJudgmentApiRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
     await handleGraphApiRequest({ request, response, url, app });

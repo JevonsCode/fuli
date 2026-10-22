@@ -36,8 +36,11 @@ export function mapHttpError(error) {
 
   if (isControlledError(error) && error.status >= 400 && error.status <= 499) {
     // An old link to hard-deleted knowledge says when it was deleted (rec#5 C9).
+    // A refused scope batch names its items, so the page marks them (rec#20 part 2).
     const deletedAt = error.details?.deletedAt;
-    return { status: error.status, body: { error: error.message, code: error.code, ...(deletedAt ? { deletedAt } : {}) } };
+    const items = error.details?.items;
+    return { status: error.status, body: { error: error.message, code: error.code, ...(deletedAt ? { deletedAt } : {}),
+      ...(Array.isArray(items) ? { items } : {}) } };
   }
 
   if (isControlledError(error) && BAD_REQUEST_CODES.has(error.code)) {

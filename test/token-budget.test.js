@@ -14,6 +14,7 @@ import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { readTurnReceipt } from '../src/agents/turn-receipt.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
+import { sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -133,7 +134,15 @@ const BASELINE = Object.freeze({
   // applied: one short line naming the step (and the read-only preview command).
   migrationReceiptNoneChars: 0,
   migrationReceiptPendingChars: 62,
-  migrationReceiptAppliedChars: 40
+  migrationReceiptAppliedChars: 40,
+  // rec#20 part 2: the link to a session's batch migration, with its separator. Nothing waits, or
+  // the session already worked in this project: no bytes. The session's first task in a formal
+  // project while its temporary project holds items: one line with the count (152 chars with a
+  // UUID session, about 105 of them the link). A turn in a formal project that left items
+  // undecided: one line after its receipt (149 chars). No tool, schema or instruction text.
+  sessionMigrationNoneChars: 0,
+  sessionMigrationOfferChars: 152,
+  sessionMigrationTurnChars: 149
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -196,7 +205,20 @@ async function measure() {
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
-    codexReviewGuidanceBytes: codexReviewGuidanceBytes(), ...await turnReceiptChars(), ...await migrationReceiptChars() };
+    codexReviewGuidanceBytes: codexReviewGuidanceBytes(), ...await turnReceiptChars(), ...await migrationReceiptChars(),
+    ...await sessionMigrationChars() };
+}
+
+// rec#20 part 2: the migration link line with its separator, measured with a UUID session
+// on the default console, from a synthetic Provider answer.
+async function sessionMigrationChars() {
+  const task = { sessionId: '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84', sourceApplication: 'claude_code',
+    personalProjectId: 'sample' };
+  const offer = async pending => (await sessionMigrationOffer({ config: { personal: { spaceId: 'space' } },
+    personal: { previewSessionMigration: async () => pending } }, task))?.length ?? -1;
+  return { sessionMigrationNoneChars: 1 + await offer({ held_count: 0, linked_task_count: 1 }),
+    sessionMigrationOfferChars: 1 + await offer({ held_count: 12, linked_task_count: 1 }),
+    sessionMigrationTurnChars: 1 + sessionMigrationLine({ config: { personal: { spaceId: 'space' } } }, task).length };
 }
 
 function codexReviewGuidanceBytes() {

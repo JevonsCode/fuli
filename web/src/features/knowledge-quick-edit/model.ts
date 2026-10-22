@@ -1,5 +1,6 @@
 import { ApiError } from '@/api/client'
 import { t } from '@/i18n'
+import { knowledgePath } from '@/router/paths'
 import type { KnowledgeVersionStatus } from '@/types'
 
 // rec#20: one knowledge item exactly as the Provider read it back, opened from
@@ -123,6 +124,17 @@ export function itemEditPath(spaceId: string, item: Pick<KnowledgeItemSummary, '
   return `/knowledge/item/${encodeURIComponent(spaceId)}/${item.item_kind}/${encodeURIComponent(item.item_id)}`
 }
 
+/**
+ * The item in the knowledge workspace, in its first project when it has one:
+ * where 加入项目 resolves a project that already holds the same or a
+ * conflicting item (rec#11 D-22.2).
+ */
+export function knowledgeWorkspaceItemPath(spaceId: string, item: Pick<KnowledgeItemSummary, 'item_kind' | 'item_id' | 'scope'>) {
+  const project = item.scope.projects.find(candidate => !candidate.temporary)
+  return knowledgePath('personal', spaceId, 'directory', { projectId: project?.id ?? null,
+    itemKind: item.item_kind, itemId: item.item_id })
+}
+
 export function categoryLabel(item: KnowledgeItemSummary) {
   return t(`knowledgeQuickEdit.category.${item.category}`)
 }
@@ -218,6 +230,8 @@ export function initialScopeDraft(item: KnowledgeItemSummary): ScopeDraft {
   return { choice: 'projects', projectIds, agentProjectId: projectIds[0] ?? '', agentId: '' }
 }
 
+// rec#20 part 2: facts, experiences and other knowledge apply to one or more
+// projects; global and one FLA stay a personal preference's scope.
 export function scopeChoices(item: KnowledgeItemSummary): ScopeChoice[] {
   return isPreference(item) ? ['global', 'projects', 'agent'] : ['projects']
 }
@@ -230,8 +244,7 @@ export function scopeRequest(spaceId: string, item: KnowledgeItemSummary, draft:
   if (draft.choice === 'agent') {
     return draft.agentProjectId && draft.agentId ? { ...base, projectIds: [draft.agentProjectId], agentId: draft.agentId } : null
   }
-  const projectIds = isPreference(item) ? draft.projectIds : draft.projectIds.slice(0, 1)
-  return projectIds.length ? { ...base, projectIds } : null
+  return draft.projectIds.length ? { ...base, projectIds: draft.projectIds } : null
 }
 
 // The body of PATCH /api/knowledge/:kind/:id for a content edit: it writes a
@@ -279,7 +292,8 @@ export function tagProjectId(item: KnowledgeItemSummary, tag?: Partial<Pick<Item
   return item.scope.kind === 'global' ? null : item.scope.projects[0]?.id ?? null
 }
 
-export type EditFailure = 'conflict' | 'widening' | 'superseded' | 'forbidden' | 'other'
+/** project_match: a project to add already holds the same or a conflicting item; 加入项目 decides. */
+export type EditFailure = 'conflict' | 'widening' | 'project_match' | 'superseded' | 'forbidden' | 'other'
 
 export function editFailure(error: unknown): EditFailure {
   if (!(error instanceof ApiError)) return 'other'
@@ -288,5 +302,6 @@ export function editFailure(error: unknown): EditFailure {
   let code = ''
   try { code = JSON.parse(error.detail)?.code ?? '' } catch { code = '' }
   if (code === 'widening_requires_review') return 'widening'
+  if (code === 'project_has_match') return 'project_match'
   return code === 'superseded' || code === 'reassert_as_new_version' ? 'superseded' : 'conflict'
 }

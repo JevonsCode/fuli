@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from fuli_graph.store_records import StoreRecords
 from fuli_graph.store_transactions import TransactionQueryDriver
 from fuli_graph.temporary_project_scope import (
-    TEMPORARY_SCOPE, TemporaryProjectEnsure, ensure_temporary_project,
+    TEMPORARY_SCOPE, TemporaryProjectEnsure, ensure_temporary_project, session_temporary_project_id,
 )
 from fuli_graph.task_context_adoption import adopt_task_agent
 from fuli_graph.task_context_models import TaskContextAdoptAgent
@@ -170,3 +170,12 @@ async def test_temporary_agent_adoption_requires_same_task_and_never_reads_long_
     assert result['memory_revision'] is None
     assert result['work_log_required'] is True
     assert result['project_agent_id'] == 'temporary-agent'
+
+
+def test_a_session_temporary_project_is_found_by_the_key_the_console_uses():
+    # The console's sessionTemporaryProjectId hashes the same JSON array; its
+    # test (test/session-knowledge-migration.test.js) checks the same vector.
+    assert session_temporary_project_id('space-a', 'codex', '会话-1') == (
+        'temporary-3a6448da65186aee8b8b66a7aaa191a0cee4911d8c8461c6c41cf3888f0e3317')
+    assert session_temporary_project_id('space-a', 'claude_code', '会话-1') != session_temporary_project_id(
+        'space-a', 'codex', '会话-1')

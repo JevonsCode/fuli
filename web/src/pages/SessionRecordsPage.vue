@@ -16,6 +16,7 @@ import {
   type SessionEntry, type SessionRecordsView,
 } from '@/features/session-records/model'
 import { readSessionRecords } from '@/features/session-records/session-records-api'
+import { sessionMigrationOffers } from '@/features/session-migration/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
@@ -47,6 +48,9 @@ const opened = computed(() => peekEntry(view.value, peekKey.value))
 let lastOpened = ''
 watch(opened, entry => { if (entry) lastOpened = entry.key })
 
+// rec#20 part 2: while the session holds undecided items, an offer to move
+// them into each formal project its turns worked in.
+const migrationOffers = computed(() => sessionMigrationOffers(view.value))
 const shortSession = computed(() => sessionId.value.length > 12 ? `${sessionId.value.slice(0, 8)}…` : sessionId.value)
 
 async function load() {
@@ -112,6 +116,15 @@ watch([spaceId, requestedClient, sessionId], () => {
           <GrowthLoading v-if="loading" variant="inline" :label="t('sessionRecords.loading')" />
         </div>
         <p v-if="error" role="alert" class="m-0 text-sm text-destructive">{{ t('sessionRecords.loadFailed', { error }) }}</p>
+        <div v-if="migrationOffers.length" class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-card px-4 py-3"
+          data-session-migration-offer>
+          <p class="m-0 min-w-0 flex-[1_1_16rem] text-sm">{{ t('sessionMigration.offer') }}</p>
+          <span class="flex flex-wrap gap-2">
+            <Button v-for="offer in migrationOffers" :key="offer.project.id" size="sm" as-child>
+              <RouterLink :to="offer.path">{{ t('sessionMigration.offerAction', { project: projectLabel(offer.project) }) }}</RouterLink>
+            </Button>
+          </span>
+        </div>
         <div v-if="view.clients?.length" class="ui-empty grid justify-items-start gap-2 rounded-lg border bg-card" data-session-clients>
           <p class="m-0 text-sm">{{ t('sessionRecords.chooseClient') }}</p>
           <div class="flex flex-wrap gap-2">

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { MAX_LIST_EPISODES, readTurnReceipt } from '../src/agents/turn-receipt.js';
-import { unreadTurnReceipt } from '../src/graphiti/turn-receipt-delivery.js';
+import { entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { beginTaskFromPreferences, checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
 import { providerEpisode } from '../src/graphiti/knowledge-provider-mapping.js';
@@ -183,10 +183,15 @@ test('a saved turn shows every item read back from the Provider after the identi
   const { app, begin, registry } = checkpointFixture();
   const task = begin();
   const result = await checkpointTaskKnowledge(app, checkpoint(task));
-  const [identity, heading, ...lines] = result.agent_receipt.markdown.split('\n');
+  const [identity, heading, ...rest] = result.agent_receipt.markdown.split('\n');
   assert.match(identity, /^FULI Agent：/);
   // rec#5 C6: the heading links everything this session recorded, compactly.
   assert.equal(heading, `FULI 本轮沉淀 3 条（[本会话已记录](<${SESSION_LIST}>)）：`);
+  // rec#20 part 2: the unsure item waits in the session's temporary project
+  // although the task is in project-a, so the person gets the migration link.
+  const lines = rest.slice(0, -1);
+  assert.equal(rest.at(-1), 'FULI 待迁移：本轮有条目暂存在本会话临时项目，迁入当前项目需你确认：'
+    + `[确认迁移](<${CONSOLE}/s/native-session/migrate?client=codex&project=project-a>)`);
   const byContent = Object.fromEntries(lines.map(line => [line.match(/「(.+?)」/)[1], line]));
   assert.deepEqual(Object.keys(byContent).sort(), ['stored: Deploys go through the staging gate',
     'stored: Lead with the conclusion', 'stored: Prefer short status lines']);
@@ -219,7 +224,8 @@ test('a receipt that could not be read stays unread and the next entry delivers 
   const { app, begin, registry, state } = checkpointFixture({ readable: false });
   const task = begin();
   const result = await checkpointTaskKnowledge(app, checkpoint(task));
-  assert.match(result.agent_receipt.markdown, /\nFULI 本轮沉淀：已保存，回执暂未读取，下一轮补发$/);
+  // The unsure item waits in the temporary project of this formal-project turn: the migration link follows.
+  assert.match(result.agent_receipt.markdown, /\nFULI 本轮沉淀：已保存，回执暂未读取，下一轮补发\nFULI 待迁移：本轮有条目暂存在本会话临时项目/);
   assert.doesNotMatch(result.agent_receipt.markdown, /「/, 'no item is claimed before it is read back');
   const entry = async next => beginTaskFromPreferences({ ...app, taskContextRegistry: { begin: async () => next,
     claimUnreadTurnReceipts: (...input) => registry.claimUnreadTurnReceipts(...input) } },
@@ -258,6 +264,30 @@ test('nothing is reported saved while capture is off, for retain_nothing or a du
   again.app.personal.readTurnReceipt = async () => ({ entries: [], unchanged_count: 3 });
   const repeated = await checkpointTaskKnowledge(again.app, checkpoint(again.begin()));
   assert.equal(repeated.agent_receipt.markdown.split('\n').length, 1);
+});
+
+test('rec#20 part 2 (dot P2-2): the first task\'s migration link survives into the checkpoint receipt the reply copies', async () => {
+  const { app, begin } = checkpointFixture();
+  const asked = [];
+  app.personal.previewSessionMigration = async input => {
+    asked.push(input);
+    return { held_count: 2, linked_task_count: 1 };
+  };
+  const link = `[确认迁移](<${CONSOLE}/s/native-session/migrate?client=codex&project=project-a>)`;
+  // A routine turn that saves nothing still carries the session's offer.
+  const quiet = await checkpointTaskKnowledge(app, { taskContextToken: begin().token, sourceApplication: 'codex',
+    disposition: 'retain_nothing', reason: 'Small talk.' });
+  const [, offer] = quiet.agent_receipt.markdown.split('\n');
+  assert.equal(offer, `FULI 待迁移：本会话临时项目有 2 条范围待确定，迁入当前项目需你确认：${link}`);
+  assert.equal(asked[0].target_project_id, 'project-a');
+  // A current-project capture keeps it after its own lines.
+  const saved = await checkpointTaskKnowledge(app, checkpoint(begin(), { remember: [{ kind: 'project_fact', text: 'A fact' }] }));
+  assert.equal(saved.agent_receipt.markdown.split('\n').at(-1).endsWith(link), true);
+  // A later task of the session in the project, or nothing held: no link.
+  app.personal.previewSessionMigration = async () => ({ held_count: 2, linked_task_count: 2 });
+  const later = await checkpointTaskKnowledge(app, { taskContextToken: begin().token, sourceApplication: 'codex',
+    disposition: 'retain_nothing', reason: 'Small talk.' });
+  assert.equal(later.agent_receipt.markdown.split('\n').length, 1);
 });
 
 test('the Provider registry maps unread receipts and claims through the Provider contract', async () => {
@@ -337,19 +367,19 @@ const lateReceipt = (id, episodes) => ({ receipt_id: id, personal_project_id: 'p
 test('a partly claimed late batch shows what this entry won from what it already read', async () => {
   // A was already shown by its own checkpoint reply; this entry wins only B.
   const { app, state, task } = lateEntry([lateReceipt('A', ['ea']), lateReceipt('B', ['eb'])], ['B']);
-  const receipt = await unreadTurnReceipt(app, task);
+  const receipt = await entryAgentReceipt(app, task, { markdown: 'FULI Agent：负责人 X' });
   assert.deepEqual(state.reads, [['ea'], ['eb']], 'every read happened before the claim');
-  assert.equal(receipt.summary.total, 1);
-  assert.match(receipt.lines[1], /「stored eb」/);
-  assert.doesNotMatch(receipt.lines.join('\n'), /stored ea/);
+  assert.equal(receipt.turn_receipt.total, 1);
+  assert.match(receipt.markdown.split('\n')[2], /「stored eb」/);
+  assert.doesNotMatch(receipt.markdown, /stored ea/);
 });
 
 test('a long late backlog goes in batches that fit one working full-list link', async () => {
   const backlog = Array.from({ length: 22 }, (_, index) => lateReceipt(`R${index}`, [`e${index}a`, `e${index}b`, `e${index}c`]));
   const { app, state, task } = lateEntry(backlog, backlog.map(item => item.receipt_id), { failAfterClaim: true });
-  const receipt = await unreadTurnReceipt(app, task);
+  const receipt = await entryAgentReceipt(app, task, { markdown: 'FULI Agent：负责人 X' });
   assert.equal(state.claimRequest.length, 21, '21 receipts × 3 episodes = 63, the most one link can name');
-  const link = receipt.lines.at(-1).match(/episodes=([^>]+)>/)[1].split(',');
+  const link = receipt.markdown.split('\n').at(-1).match(/episodes=([^>]+)>/)[1].split(',');
   assert.equal(link.length, 63);
   assert.ok(link.length <= MAX_LIST_EPISODES);
 });

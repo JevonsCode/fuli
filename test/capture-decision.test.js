@@ -27,7 +27,9 @@ const LEAD = { agent_id: 'synthetic-lead', personal_space_id: 'synthetic-space',
   profile: { name: 'Synthetic lead', responsibility: 'Synthetic work.', status: 'active', allowed_clients: ['codex'] } };
 const GRAPH = { space_id: 'synthetic-space', nodes: [{ id: 'entity-1', name: 'Synthetic' }], edges: [] };
 // Provider reads that send a POST body; every other non-GET request writes.
-const PROVIDER_READ_POSTS = new Set(['/v1/search', '/v1/agent-conversations/query', '/v1/project-agent-context/resolve']);
+// rec#20 part 2: the session migration preview is a read sent as POST, like the other Provider queries.
+const PROVIDER_READ_POSTS = new Set(['/v1/search', '/v1/agent-conversations/query', '/v1/project-agent-context/resolve',
+  '/v1/knowledge/session-migrations/preview']);
 const CODEX_TRANSCRIPT = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
 // Words from a session the user chose not to record. No store or receipt may keep them.
 const PRIVATE = 'synthetic-private-words';

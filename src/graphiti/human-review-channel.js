@@ -2,15 +2,19 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parseProviderEnv } from '../setup/provider-env.js';
+import { ProviderRequestError } from './provider-client.js';
 
 // The personal provider as a person's own console and CLI reach it for the
 // operations that change real data on their word: a confirmed data format
-// migration (rec#17 D-09) and a hard delete (rec#5 C9). Those provider
-// routes also take the human-review token, which only the provider's
-// environment file in the data directory holds; an Agent's access token alone
-// is refused. Only `fuli migrate` and the local console's loopback routes use
-// this module; no MCP or Agent tool module imports it
-// (test/data-format-console.test.js, test/knowledge-hard-delete-console.test.js).
+// migration (rec#17 D-09), a hard delete (rec#5 C9) and a change of where
+// knowledge applies, one item or a session's batch (rec#20, rec#11 D-22).
+// Those provider routes also take the human-review token, which only the
+// provider's environment file in the data directory holds; an Agent's access
+// token alone is refused. Like D-21 this proves the local console, not that a
+// person was present: any process of the same OS account can read that file.
+// Only `fuli migrate` and the local console's loopback routes use this module;
+// no MCP or Agent tool module imports it (test/data-format-console.test.js,
+// test/knowledge-hard-delete-console.test.js, test/session-knowledge-migration.test.js).
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -42,4 +46,18 @@ export function personalHumanReviewChannel(dataDir, {
     const payload = await response.json().catch(() => ({}));
     return { ok: response.ok, status: response.status, payload };
   };
+}
+
+// The provider's refusal on this channel as the console reports it: its code
+// and message, when a deleted item was deleted, and which items a refused
+// batch names.
+export function providerRefusal(status, payload) {
+  const detail = payload?.detail;
+  const code = typeof detail?.code === 'string' ? detail.code : status >= 500 ? 'provider_http_5xx' : 'provider_error';
+  const message = typeof detail?.message === 'string' ? detail.message
+    : typeof detail === 'string' && status < 500 ? detail : `The graph provider answered HTTP ${status}`;
+  const deletedAt = typeof detail?.deleted_at === 'string' ? detail.deleted_at : undefined;
+  const items = Array.isArray(detail?.items) ? detail.items : Array.isArray(detail?.stale_items) ? detail.stale_items : undefined;
+  const details = deletedAt || items ? { ...(deletedAt ? { deletedAt } : {}), ...(items ? { items } : {}) } : null;
+  return new ProviderRequestError(message, { status, code, details });
 }

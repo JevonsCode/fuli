@@ -88,6 +88,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('POST /api/knowledge/:itemKind/:itemId/assignment', 'reassign_personal_knowledge'),
   local('POST /api/knowledge/:itemKind/:itemId/preference-scope', 'Changing personal preference visibility requires local human review.'),
   local('POST /api/knowledge/:itemKind/:itemId/scope', 'Choosing where one knowledge item applies is the person\'s quick edit from a turn receipt; an Agent proposes, the person decides.'),
+  local('POST /api/knowledge/session-migration', 'Moving what a session held in its temporary project into a formal project is the person\'s choice of items on the console page; an Agent only links to that page (rec#20, rec#11 D-16).'),
   agent('POST /api/knowledge/entity/:itemId/project-action/preview', 'preview_personal_project_action'),
   agent('POST /api/knowledge/entity/:itemId/project-action', 'apply_personal_project_action'),
   local('POST /api/knowledge/:itemKind/:itemId/hard-delete/preview', 'Permanently deleting knowledge is a person\'s own right over their data (rec#5 C9); its preview is part of that console-only decision. An Agent may only suggest the person opens the item page.'),

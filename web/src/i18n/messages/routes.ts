@@ -49,6 +49,9 @@ export const routeMessages = {
     sessionRecords: {
       title: '本会话记了什么',
     },
+    sessionMigration: {
+      title: '迁入正式项目',
+    },
     about: {
       title: '关于',
     },
@@ -109,6 +112,9 @@ export const routeMessages = {
     },
     sessionRecords: {
       title: 'What this session recorded',
+    },
+    sessionMigration: {
+      title: 'Move into a project',
     },
     about: {
       title: 'About',

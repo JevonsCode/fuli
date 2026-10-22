@@ -34,6 +34,7 @@ import { taskRunMessages } from './messages/task-runs'
 import { knowledgeQuickEditMessages } from './messages/knowledge-quick-edit'
 import { knowledgeHardDeleteMessages } from './messages/knowledge-hard-delete'
 import { sessionRecordsMessages } from './messages/session-records'
+import { sessionMigrationMessages } from './messages/session-migration'
 import { captureMessages } from './messages/capture'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
@@ -101,6 +102,7 @@ export const messages = {
     knowledgeQuickEdit: knowledgeQuickEditMessages['zh-CN'],
     knowledgeHardDelete: knowledgeHardDeleteMessages['zh-CN'],
     sessionRecords: sessionRecordsMessages['zh-CN'],
+    sessionMigration: sessionMigrationMessages['zh-CN'],
     capture: captureMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
@@ -140,6 +142,7 @@ export const messages = {
     knowledgeQuickEdit: knowledgeQuickEditMessages['en-US'],
     knowledgeHardDelete: knowledgeHardDeleteMessages['en-US'],
     sessionRecords: sessionRecordsMessages['en-US'],
+    sessionMigration: sessionMigrationMessages['en-US'],
     capture: captureMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],

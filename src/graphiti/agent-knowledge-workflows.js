@@ -4,8 +4,8 @@ import { recordTriage, validateTriage } from './conversation-triage.js';
 import { REMEMBER_GUIDANCE, compactTaskCapture, rememberRequested } from './task-remember.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { taskTeam } from './task-collaboration-attribution.js';
-import { captureSettingsUrl, taskAgentReceipt, withTurnReceipt } from '../agents/identity-receipt.js';
-import { checkpointTurnReceipt, unreadTurnReceipt } from './turn-receipt-delivery.js';
+import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
+import { checkpointTurnReceipt, entryAgentReceipt } from './turn-receipt-delivery.js';
 import { ensureSessionTemporaryProject } from './temporary-project-scope.js';
 import { createHash } from 'node:crypto';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
@@ -115,7 +115,7 @@ export async function beginTaskFromPreferences(application, preferences, {
   const remembering = rememberRequested(taskPrompt);
   const autoClosed = !remembering && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
   const conversation = await beginConversation(application, task);
-  const unread = preferences.agent_receipt ? await unreadTurnReceipt(application, task) : null;
+  const receipt = preferences.agent_receipt ? await entryAgentReceipt(application, task, preferences.agent_receipt) : null;
   return withPreferenceScope({
     conversation,
     taskContextToken: task.token,
@@ -125,7 +125,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : {}),
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
-    ...preferences, ...(unread ? { agent_receipt: withTurnReceipt(preferences.agent_receipt, unread) } : {}),
+    ...preferences, ...(receipt ? { agent_receipt: receipt } : {}),
     ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, conversation, {
       consoleUrl: application.consoleUrl, spaceId: preferences.context?.personal_space_id, agentId: preferences.context?.project_agent_id }) } : {}),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
