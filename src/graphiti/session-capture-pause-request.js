@@ -1,6 +1,6 @@
 import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { requiredString } from '../validation/values.js';
-import { taskAgentName } from './agent-conversations.js';
+import { taskAgentIdentity } from './agent-conversations.js';
 import { captureDecision, captureSettingsVersion, taskCaptureScope } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
 
@@ -31,7 +31,7 @@ export async function setSessionCapturePause(application, { taskContextToken, se
     paused: state ? state.paused : decision.reason === 'session_paused', since: state?.since ?? decision.since ?? null,
     captured: decision.allowed,
     agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
-      agentId: task.projectAgentId ?? null, name: await taskAgentName(application, task),
+      agentId: task.projectAgentId ?? null, ...await taskAgentIdentity(application, task),
       sourceApplication: task.sourceApplication, notices: receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application) }) }),
     guidance: !state ? UNSAVED_GUIDANCE : sessionPaused ? PAUSED_GUIDANCE : RESUMED_GUIDANCE };
 }

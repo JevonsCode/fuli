@@ -1,4 +1,5 @@
 import { sourceConsoleUrl } from '../graphiti/source-marker.js';
+import { agentLabel } from './agent-label.js';
 
 // The console origin every receipt link opens.
 export function receiptConsoleUrl(application) {
@@ -38,8 +39,8 @@ export function agentContinuation(projectId, agentId, conversationId = null) {
     guidance: CONTINUATION_GUIDANCE };
 }
 
-function agentLink(application, agentId, name) {
-  return `[${receiptText(name?.trim() || agentId)}](<${agentProfileUrl(application, agentId).replace(/[<>\s]/g, encodeURIComponent)}>)`;
+function agentLink(application, agentId, name, role = null) {
+  return `[${receiptText(agentLabel(name, role) || agentId)}](<${agentProfileUrl(application, agentId).replace(/[<>\s]/g, encodeURIComponent)}>)`;
 }
 
 // One line of literal text in a Markdown receipt.
@@ -59,7 +60,7 @@ export function receiptSummary(value, characters = 60) {
 // The reply's attribution line: who led the task and who actually helped.
 export const RECEIPT_GUIDANCE = 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.';
 
-export function taskAgentReceipt(application, { projectId, agentId, name = null,
+export function taskAgentReceipt(application, { projectId, agentId, name = null, role = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
   collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [], turnReceipt = null }) {
   const owner = agentId ? { agent_id: agentId, name,
@@ -67,7 +68,7 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
   const helpers = owner ? [...new Map(collaborators.filter(item => item.agentId !== agentId)
     .map(item => [item.agentId, item])).values()].map(receiptCollaborator) : [];
   const build = () => ({ required: true, markdown: [owner
-    ? `FULI Agent：负责人 ${agentLink(application, agentId, name)}`
+    ? `FULI Agent：${agentLink(application, agentId, name, role)}`
       + (helpers.length ? ` · 协作 ${helpers.map(item => collaboratorLink(application, item)).join('、')}` : '')
     : unassignedReceipt(assignmentStatus, assignmentReason), ...notices].join(' · '), owner,
     collaborators: helpers.map(item => ({ agent_id: item.agentId, name: item.name,

@@ -60,6 +60,13 @@ for (const status of ['legacy', 'legacy_unknown']) {
   });
 }
 
+test('a frozen owner is named first with its frozen role title', async () => {
+  const f = scenario({ version: 1, status: 'frozen',
+    owner: { agent_id: 'owner', name: 'Nova Reed', role: 'Synthetic Framework 负责人' }, collaborators: [] });
+  const result = await checkpointTaskKnowledge(f.app, f.input);
+  assert.match(result.agent_receipt.markdown, /^FULI Agent：\[Nova Reed \\\[Synthetic Framework 负责人\\\]\]\(/);
+});
+
 test('frozen owner display values never consult the current directory', async () => {
   for (const name of ['Frozen owner', null]) {
     const f = scenario({ version: 1, status: 'frozen', owner: { agent_id: 'owner', name }, collaborators: [] });
