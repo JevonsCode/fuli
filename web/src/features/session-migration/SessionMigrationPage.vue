@@ -128,6 +128,7 @@ async function migrate() {
   const shown = preview.value
   try {
     const result = await applySessionMigration(body)
+    refusal = null
     changed.value = new Set()
     notice.value = { kind: 'status', text: t('sessionMigration.moved', { count: result.moved.length, project: name }) }
     await load()
@@ -143,21 +144,32 @@ async function migrate() {
 }
 
 // Nothing moved. Read again before anything else can be sent, and say whether that read worked.
+let refusal: { code: string; lead: string } | null = null
+
 async function refused(cause: ApiError, shown: SessionMigrationPreview | null, name: string) {
-  const refusal = migrationRefusal(cause.detail)
-  const named = new Set(refusal.items.map(item => `${item.item_kind}:${item.item_id}`))
-  conflicted.value = refusal.code === 'project_has_match'
+  const detail = migrationRefusal(cause.detail)
+  const named = new Set(detail.items.map(item => `${item.item_kind}:${item.item_id}`))
+  conflicted.value = detail.code === 'project_has_match'
     ? (shown?.items ?? []).filter(item => named.has(itemKey(item))) : []
+  refusal = { code: detail.code, lead: detail.code === 'project_has_match'
+    ? t('sessionMigration.projectMatch', { project: name }) : t('sessionMigration.stale') }
   stale.value = true
+  await reread()
+}
+
+// The re-read after a refusal, automatic or from 重新读取: only a read that
+// worked lifts the hold, and it marks what changed against the list the
+// refused move was made from (still shown until then) and replaces any
+// earlier failure notice.
+async function reread() {
+  const lead = refusal?.lead ?? t('sessionMigration.stale')
   const next = await load()
-  const lead = refusal.code === 'project_has_match' ? t('sessionMigration.projectMatch', { project: name })
-    : t('sessionMigration.stale')
   if (!next) {
     notice.value = { kind: 'alert', text: `${lead} ${t('sessionMigration.rereadFailed', { error: error.value })}` }
     return
   }
   changed.value = next.changed
-  notice.value = { kind: 'alert', text: [lead, refusal.code === 'project_has_match' ? '' : t('sessionMigration.reread'),
+  notice.value = { kind: 'alert', text: [lead, refusal?.code === 'project_has_match' ? '' : t('sessionMigration.reread'),
     next.gone ? t('sessionMigration.gone', { count: next.gone }) : ''].filter(Boolean).join(' ') }
 }
 
@@ -167,6 +179,7 @@ watch([spaceId, sessionId, client, projectId], () => {
   changed.value = new Set()
   conflicted.value = []
   stale.value = false
+  refusal = null
   reason.value = ''
   notice.value = null
   if (spaceId.value && linkComplete.value) void load()
@@ -199,7 +212,7 @@ watch([spaceId, sessionId, client, projectId], () => {
               </RouterLink>
             </li>
           </ul>
-          <Button v-if="stale && !loading" variant="outline" size="sm" data-migration-reread @click="load">
+          <Button v-if="stale && !loading" variant="outline" size="sm" data-migration-reread @click="reread">
             {{ t('sessionMigration.rereadAction') }}
           </Button>
         </div>

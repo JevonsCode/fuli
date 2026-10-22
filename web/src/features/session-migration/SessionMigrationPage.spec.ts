@@ -108,7 +108,7 @@ describe('SessionMigrationPage', () => {
   })
 
   it('dot UI: when the re-read after a refusal fails it says so and sends nothing until a fresh read', async () => {
-    getJson.mockResolvedValueOnce(preview([item('a', 0)]))
+    getJson.mockResolvedValueOnce(preview([item('a', 0), item('b', 0)]))
       .mockRejectedValueOnce(new ApiError('Unavailable', 503, JSON.stringify({ error: 'provider down' })))
     postJson.mockRejectedValueOnce(new ApiError('Conflict', 409, JSON.stringify({ code: 'stale_version' })))
     const wrapper = await open()
@@ -119,10 +119,17 @@ describe('SessionMigrationPage', () => {
     expect(notice).toContain('重新读取失败')
     expect(notice).not.toContain('已重新读取')
     expect(wrapper.get('[data-migration-confirm]').attributes('disabled')).toBeDefined()
-    // A fresh read lifts the hold.
+    // dot P2 (210498d): the manual re-read recovers like the automatic one would have:
+    // a changed, b left the temporary project, and the old failure is gone.
     getJson.mockResolvedValueOnce(preview([item('a', 1)]))
     await wrapper.get('[data-migration-reread]').trigger('click')
     await flushPromises()
+    expect(wrapper.find('[data-migration-item="a"] [data-migration-changed]').exists()).toBe(true)
+    expect(wrapper.find('[data-migration-item="b"]').exists()).toBe(false)
+    const recovered = wrapper.get('[data-migration-notice]').text()
+    expect(recovered).not.toContain('重新读取失败')
+    expect(recovered).toContain('已重新读取')
+    expect(recovered).toContain('1 条已经不在临时项目里')
     expect(wrapper.get('[data-migration-confirm]').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('[data-migration-reread]').exists()).toBe(false)
     wrapper.unmount()
