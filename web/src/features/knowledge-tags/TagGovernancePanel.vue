@@ -30,6 +30,8 @@ const props = defineProps<{
   change: GovernanceChange
   initialTarget?: TagRef | null
   initialRelation?: RelationKind
+  // Continue an unfinished split-back of a merge (or start one) on this tag.
+  initialRestore?: TagRef | null
   alias?: string
   operationId?: string
 }>()
@@ -38,7 +40,9 @@ const emit = defineEmits<{ done: []; back: [] }>()
 const tag = computed(() => props.detail.tag)
 const target = ref<TagRef | null>(props.initialTarget ?? null)
 const relation = ref<RelationKind>(props.initialRelation ?? 'parent')
-const split = ref<SplitChoice>({ name: '', description: '', aliases: [], links: [] })
+const split = ref<SplitChoice>(props.initialRestore
+  ? { name: props.initialRestore.name, description: '', aliases: [], links: [], restoreTagId: props.initialRestore.id }
+  : { name: '', description: '', aliases: [], links: [] })
 const reason = ref(t('knowledgeTags.governance.defaultReason'))
 const preview = ref<GovernancePreview | null>(null)
 const previewing = ref(false)
@@ -153,10 +157,15 @@ async function confirm() {
       :allows="allows" />
 
     <template v-if="change === 'split'">
-      <div v-if="detail.merged_from.length" class="flex min-w-0 flex-wrap gap-2" data-tag-split-restore>
+      <div v-if="detail.merged_from.length || detail.unfinished_restores.length" class="flex min-w-0 flex-wrap gap-2"
+        data-tag-split-restore>
         <Button v-for="merged in detail.merged_from" :key="merged.id" type="button" variant="outline" size="sm"
           :data-tag-restore="merged.id" @click="restore(merged)">
           {{ t('knowledgeTags.governance.splitRestore', { name: merged.name }) }}
+        </Button>
+        <Button v-for="entry in detail.unfinished_restores" :key="entry.tag.id" type="button" variant="outline" size="sm"
+          :data-tag-restore="entry.tag.id" @click="restore(entry.tag)">
+          {{ t('knowledgeTags.continueRestore', { name: entry.tag.name, count: entry.remaining }) }}
         </Button>
       </div>
       <p v-if="split.restoreTagId" class="m-0 flex flex-wrap items-center gap-2 text-sm" data-tag-split-restoring>

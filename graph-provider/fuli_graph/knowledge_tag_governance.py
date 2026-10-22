@@ -91,6 +91,7 @@ _MESSAGES = {
     'changed_since': 'Tags or links this change wrote changed since; undo the later change first.',
     'restore_conflict': 'Undoing this now would make a parent cycle, overflow a relation list or give two '
                         'visible tags the same word, because of a later change; change that first.',
+    'not_retired': 'Only a retired tag can come back.',
     'no_merge_to_restore': 'This tag was not merged into the one being split, or that merge was undone.',
 }
 
@@ -129,23 +130,20 @@ async def apply_governance(store, actor: dict, request: KnowledgeTagGovernanceAp
 
 
 async def revive_on_create(vocabulary, space: dict, actor_id: str, earlier: dict, reason: str):
-    """The person creates a retired tag's word again: the tag comes back with its
-    own ID, keeping only the relations and aliases that still fit (as a split
-    that revives does). Undoable like the person's other changes. Returns the
-    stored tag and what was dropped."""
-    tags = {tag['id']: tag for tag in await vocabulary.all_tags()}
-    plan = _Plan(space_id=space['id'], tags=tags, namespaces=None, change='revive', subject_id=earlier['id'],
-                 actor_id=actor_id, at=now_utc())
-    plan.read(earlier['id'])
-    plan.update(earlier['id'], status='active')
-    if word_conflict(plan, [earlier['id']]) and any(
-            earlier['name_key'] in plan.current(other).get('alias_keys', [])
-            for other in _co_visible(plan, earlier) if plan.live(other)):
-        raise HTTPException(status_code=409, detail={'code': 'name_in_use', 'message': _MESSAGES['name_in_use']})
-    settle_revived(plan, earlier['id'])
-    _drop_conflicting_aliases(plan, earlier['id'])
+    """The person creates a retired tag's word again (under the caller's lock).
+    A revival that keeps every relation and alias applies at once; one that
+    would drop anything changes nothing and returns its preview, which the
+    person confirms through the governance apply (change `revive`), as every
+    other change that drops something does. Returns (stored tag or None, preview)."""
+    request = KnowledgeTagGovernanceRequest(personal_space_id=space['id'], change='revive', tag_id=earlier['id'],
+                                            include_all_projects=True)
+    plan = await _plan(vocabulary, space, None, request, actor_id, reason=reason)
+    if plan.preview.blocked:
+        raise HTTPException(status_code=409, detail=plan.preview.blocked.model_dump())
+    if plan.preview.relations_dropped or plan.preview.aliases_dropped:
+        return None, plan.preview
     written = await vocabulary.apply(**plan.writes(reason))
-    return written[earlier['id']], plan.summary
+    return written[earlier['id']], plan.preview
 
 
 @dataclass
@@ -290,6 +288,21 @@ async def _approve(plan: _Plan, reader, request, reason):
     if plan.current(plan.subject_id)['status'] != 'provisional':
         return 'not_provisional'
     plan.update(plan.subject_id, status='active')
+    plan.summary['status_after'] = 'active'
+
+
+async def _revive(plan: _Plan, reader, request, reason):
+    """A retired tag comes back with its own ID, keeping only the relations and
+    aliases that still fit; the preview lists what it drops."""
+    tag = plan.current(plan.subject_id)
+    if tag['status'] != 'retired':
+        return 'not_retired'
+    if any(tag['name_key'] in plan.current(other).get('alias_keys', [])
+           for other in _co_visible(plan, tag) if plan.live(other)):
+        return 'name_in_use'
+    plan.update(plan.subject_id, status='active')
+    settle_revived(plan, plan.subject_id)
+    _drop_conflicting_aliases(plan, plan.subject_id)
     plan.summary['status_after'] = 'active'
 
 
@@ -448,33 +461,47 @@ async def _restore_moves(plan: _Plan, reader, source: dict, restoring: dict):
     page of links. The link the merge moved onto the split tag moves back; an
     item that already had the split tag keeps it and gets its old tag again.
     At most MAX_SPLIT_LINKS per split; the rest wait for the next batch."""
-    merges = [revision for revision in await reader.revisions(restoring['id'], 200)
-              if revision.get('action') == 'merge' and revision.get('related_tag_id') == source['id']]
-    undone = await reader.undone([revision['operation_id'] for revision in merges])
-    merge = next((revision for revision in merges if revision['operation_id'] not in undone), None)
-    if merge is None or not merge.get('snapshot_json'):
-        return 'no_merge_to_restore'
     if not (restoring['status'] == 'merged' and restoring.get('merged_into_id') == source['id']) \
             and not plan.live(restoring['id']):
         return 'no_merge_to_restore'
+    restored = await restore_remaining(reader, source['id'], restoring['id'])
+    if restored is None:
+        return 'no_merge_to_restore'
+    for link in restored:
+        plan.basis[f'link:{link["id"]}'] = link.get('version')
+    batch = restored[:MAX_SPLIT_LINKS]
+    landings = {tag_link_id(plan.space_id, source['id'], link['item_kind'], link['item_id']): link for link in batch}
+    on_source = await reader.links_by_ids(list(landings))
+    # A landing another merge relied on (it found the item already tagged here
+    # and moved its own link away) stays; the restored tag gets its own link.
+    relied = {(link['item_kind'], link['item_id']) for link in await reader.links_moved_into(
+        [{'tag_id': source['id'], 'item_kind': link['item_kind'], 'item_id': link['item_id']} for link in batch])
+        if link['tag_id'] != restoring['id']}
+    moves = []
+    for link in batch:
+        mine = on_source.get(tag_link_id(plan.space_id, source['id'], link['item_kind'], link['item_id']))
+        brought = (mine is not None and mine['status'] == 'attached' and mine.get('moved_from_tag_id') == restoring['id']
+                   and (link['item_kind'], link['item_id']) not in relied)
+        moves.append((link['item_kind'], link['item_id'], mine if brought else None))
+    return moves, len(restored) - len(batch)
+
+
+async def restore_remaining(reader, source_id: str, restoring_id: str) -> list[dict] | None:
+    """The links a merge of `restoring` into `source` took that are not back yet,
+    from that merge's own record, or None when there is no such merge to undo."""
+    merges = [revision for revision in await reader.revisions(restoring_id, 200)
+              if revision.get('action') == 'merge' and revision.get('related_tag_id') == source_id]
+    undone = await reader.undone([revision['operation_id'] for revision in merges])
+    merge = next((revision for revision in merges if revision['operation_id'] not in undone), None)
+    if merge is None or not merge.get('snapshot_json'):
+        return None
     snapshot = json.loads(merge['snapshot_json'])
     carried = [link_id for link_id, entry in snapshot['links'].items()
                if (entry['before'] or {}).get('status') == 'attached']
     stored = await reader.links_by_ids(carried)
-    restored = [stored[link_id] for link_id in sorted(carried, key=lambda link_id: (
+    return [stored[link_id] for link_id in sorted(carried, key=lambda link_id: (
         stored.get(link_id, {}).get('item_kind', ''), stored.get(link_id, {}).get('item_id', '')))
-        if link_id in stored and stored[link_id]['tag_id'] == restoring['id'] and stored[link_id]['status'] != 'attached']
-    for link in restored:
-        plan.basis[f'link:{link["id"]}'] = link.get('version')
-    batch = restored[:MAX_SPLIT_LINKS]
-    on_source = await reader.links_by_ids([tag_link_id(plan.space_id, source['id'], link['item_kind'], link['item_id'])
-                                           for link in batch])
-    moves = []
-    for link in batch:
-        mine = on_source.get(tag_link_id(plan.space_id, source['id'], link['item_kind'], link['item_id']))
-        brought = mine is not None and mine['status'] == 'attached' and mine.get('moved_from_tag_id') == restoring['id']
-        moves.append((link['item_kind'], link['item_id'], mine if brought else None))
-    return moves, len(restored) - len(batch)
+        if link_id in stored and stored[link_id]['tag_id'] == restoring_id and stored[link_id]['status'] != 'attached']
 
 
 def _drop_conflicting_aliases(plan: _Plan, tag_id: str) -> None:
@@ -647,7 +674,7 @@ def _link_restored(before: dict) -> dict:
             for name, value in before.items()}
 
 
-_PLANNERS = {'approve': _approve, 'retire': _retire, 'remove_alias': _remove_alias, 'relate': relate,
+_PLANNERS = {'revive': _revive, 'approve': _approve, 'retire': _retire, 'remove_alias': _remove_alias, 'relate': relate,
              'unrelate': unrelate, 'merge': _merge, 'split': _split, 'undo': _undo}
 
 

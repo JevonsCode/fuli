@@ -8,12 +8,14 @@ owner's all-project view a reader sees the personal vocabulary and its current
 project's, and never a link count or a linked item, because a personal tag's
 links may sit on other projects' knowledge (G2-5).
 """
+from .knowledge_tag_governance import restore_remaining
 from .knowledge_tag_governance_models import (
     KnowledgeTagDetail,
     KnowledgeTagDetailQuery,
     KnowledgeTagEntry,
     KnowledgeTagHistoryEntry,
     KnowledgeTagLinkedItem,
+    KnowledgeTagUnfinishedRestore,
     KnowledgeTagVocabulary,
     KnowledgeTagVocabularyQuery,
 )
@@ -70,8 +72,24 @@ async def read_tag_detail(store, actor: dict, request: KnowledgeTagDetailQuery) 
                   and tag['id'] in (entry.get('parent_ids') or [])],
         merged_from=[reference(entry) for entry in _by_name(shown) if entry['status'] == 'merged'
                      and entry.get('merged_into_id') == tag['id']],
+        unfinished_restores=await _unfinished_restores(reader, tag, tags, namespaces),
         links=links, links_truncated=truncated,
         history=await _history(reader, tag, tags, namespaces))
+
+
+async def _unfinished_restores(reader, tag: dict, tags: dict, namespaces) -> list[KnowledgeTagUnfinishedRestore]:
+    """Tags a split already brought back from a merge into this one while items
+    that merge took are still here: the next batch continues from the merge record."""
+    unfinished = []
+    for merge in await reader.merges_into(tag['id']):
+        merged = tags.get(merge['tag_id'])
+        if merged is None or merged['status'] not in LIVE_STATUSES or (
+                namespaces is not None and merged['namespace_key'] not in namespaces):
+            continue
+        remaining = await restore_remaining(reader, tag['id'], merged['id'])
+        if remaining:
+            unfinished.append(KnowledgeTagUnfinishedRestore(tag=reference(merged), remaining=len(remaining)))
+    return unfinished
 
 
 async def _history(reader, tag: dict, tags: dict, namespaces) -> list[KnowledgeTagHistoryEntry]:

@@ -487,9 +487,21 @@ async def an_undo_or_revival_never_closes_a_parent_cycle(world):
     # The person's create of a retired word: the cycle-closing parent is dropped, the rest kept.
     await govern(world, 'retire', middle['id'])
     await govern(world, 'relate', top['id'], relation='parent', target_tag_id=low['id'])
-    revived = await create(world, '小说', operation_actor='human', namespace='personal', reason='I use it again')
-    assert (revived['outcome'], revived['tag']['id'], revived['tag']['status']) == ('created', middle['id'], 'active')
-    assert '1 relations' in revived['guidance']
+    # Dot P2-3: a revival that would drop something changes nothing and returns its preview.
+    before = await world.stored()
+    asked = await create(world, '小说', operation_actor='human', namespace='personal', reason='I use it again')
+    assert (asked['outcome'], asked['tag']) == ('needs_person', None)
+    revival = asked['revival']
+    assert (revival['change'], revival['tag']['id'], len(revival['digest'])) == ('revive', middle['id'], 64)
+    assert [(drop['tag']['id'], drop['target']['id'], drop['reason']) for drop in revival['relations_dropped']] == [
+        (middle['id'], top['id'], 'cycle')]
+    assert await world.stored() == before, 'nothing changed before the person confirms'
+    # The person confirms that preview through the governance apply.
+    applied = await post(world, 'governance/apply', {
+        'personal_project_id': None, 'change': 'revive', 'tag_id': middle['id'], 'include_all_projects': True,
+        'reason': REASON, 'preview_digest': revival['digest']}, headers=REVIEW)
+    assert [(tag['id'], tag['status']) for tag in applied['tags'] if tag['id'] == middle['id']] == [
+        (middle['id'], 'active')]
     after = await detail(world, middle['id'])
     assert after['tag']['parents'] == []
     assert [tag['id'] for tag in after['children']] == [low['id']]
@@ -551,6 +563,57 @@ async def a_large_mistaken_merge_is_split_back_whole(world):
     assert (await preview(world, 'split', target['id'], split=split))['blocked']['code'] == 'nothing_to_split'
 
 
+async def a_split_back_keeps_a_landing_another_merge_relies_on(world):
+    """Dot round 3 P1: A→B put the item on B (link L); C→B found L and moved C's
+    own link away. Splitting A back must leave L on B for C and give A its own link."""
+    await world.project('class')
+    first = (await create(world, '户外学习', 'class'))['tag']
+    second = (await create(world, '野外教学', 'class'))['tag']
+    target = await mine(world, '自然教育', 'class')
+    item = await world.item('class', 'Bird walk')
+    for tag in (first, second):
+        await attach(world, tag['id'], item, 'class')
+    await govern(world, 'merge', first['id'], into_tag_id=target['id'])
+    await govern(world, 'merge', second['id'], into_tag_id=target['id'])
+    await alias(world, target['id'], '自然课', 'class', operation_actor='human', reason='later change')
+    split = {'restore_tag_id': first['id']}
+    shown = await preview(world, 'split', target['id'], split=split)
+    assert (shown['blocked'], shown['revives'], shown['links_moved']) == (None, True, 1)
+    await govern(world, 'split', target['id'], split=split)
+    assert await world.attached(item) == sorted([first['id'], target['id']]), 'B keeps the link C relies on'
+    assert (await detail(world, second['id']))['tag']['merged_into']['id'] == target['id']
+    _, links = await world.stored()
+    held = [link for link in links.values() if link['item_id'] == item['item_id']]
+    assert {(link['tag_id'], link['status'], link.get('moved_to_tag_id')) for link in held} == {
+        (first['id'], 'attached', None), (target['id'], 'attached', None), (second['id'], 'moved', target['id'])}
+
+
+async def a_revival_never_overflows_a_peer(world):
+    """Dot round 3 P2-1: B has 32 related including A; A is retired and B takes C.
+    Bringing A back would give B 33, so the pair is dropped on both sides (limit)."""
+    rng = random.Random(2302)
+    word = lambda: ''.join(rng.choice(string.ascii_lowercase) for _ in range(12))  # noqa: E731
+    peer, revived = await fresh(world, word()), await fresh(world, word())
+    await govern(world, 'relate', peer['id'], relation='related', target_tag_id=revived['id'])
+    for _ in range(31):
+        other = await fresh(world, word())
+        await govern(world, 'relate', peer['id'], relation='related', target_tag_id=other['id'])
+    await govern(world, 'retire', revived['id'])
+    late = await fresh(world, word())
+    await govern(world, 'relate', peer['id'], relation='related', target_tag_id=late['id'])
+    asked = await create(world, revived['name'], operation_actor='human', namespace='personal', reason='back again')
+    assert asked['outcome'] == 'needs_person'
+    assert [(drop['target']['id'], drop['reason']) for drop in asked['revival']['relations_dropped']] == [
+        (peer['id'], 'limit')]
+    await post(world, 'governance/apply', {'personal_project_id': None, 'change': 'revive', 'tag_id': revived['id'],
+                                           'include_all_projects': True, 'reason': REASON,
+                                           'preview_digest': asked['revival']['digest']}, headers=REVIEW)
+    assert len((await detail(world, peer['id']))['tag']['related']) == 32
+    assert (await detail(world, revived['id']))['tag']['related'] == []
+    stored, _ = await world.stored()
+    assert revived['id'] not in (stored[peer['id']].get('related_ids') or []), 'dropped on both sides'
+
+
 async def a_retired_tag_is_gone_until_the_person_brings_it_back(world):
     await world.project('class')
     tag = (await create(world, '户外学习', 'class'))['tag']
@@ -574,6 +637,7 @@ GOVERNANCE_SCENARIOS = [
     the_review_queue_waits_for_the_person, undo_goes_back_one_change_at_a_time,
     an_undo_never_takes_a_link_a_later_merge_relies_on, an_undo_never_gives_two_tags_one_word,
     an_undo_or_revival_never_closes_a_parent_cycle, a_merge_never_overflows_relations,
-    a_large_mistaken_merge_is_split_back_whole,
+    a_large_mistaken_merge_is_split_back_whole, a_split_back_keeps_a_landing_another_merge_relies_on,
+    a_revival_never_overflows_a_peer,
     a_retired_tag_is_gone_until_the_person_brings_it_back,
 ]

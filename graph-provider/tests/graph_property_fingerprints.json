@@ -413,6 +413,7 @@
     "reference_time",
     "registered_at",
     "registration_status",
+    "related_tag_id",
     "relation_id",
     "relation_type",
     "release_id",

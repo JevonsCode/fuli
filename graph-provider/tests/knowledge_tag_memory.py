@@ -101,6 +101,11 @@ class MemoryTagReader:
         return {revision['operation_id']: dict(revision) for revision in self._vocabulary.revisions
                 if revision.get('operation_id') in operation_ids and revision.get('snapshot_json')}
 
+    async def merges_into(self, tag_id):
+        return [dict(revision) for revision in reversed(self._vocabulary.revisions)
+                if revision.get('action') == 'merge' and revision.get('related_tag_id') == tag_id
+                and revision.get('snapshot_json')]
+
     async def undone(self, operation_ids):
         return {revision['undoes_operation_id'] for revision in self._vocabulary.revisions
                 if revision.get('undoes_operation_id') in operation_ids}

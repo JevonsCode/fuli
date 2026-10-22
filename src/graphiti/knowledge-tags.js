@@ -17,7 +17,8 @@ const ROUTES = Object.freeze({
 const CHANGES = new Set(['create', 'add_alias', 'attach', 'detach']);
 // What an Agent may ask the person for; the person also removes aliases and relates tags.
 const PROPOSALS = new Set(['approve', 'merge', 'split', 'retire', 'undo']);
-const GOVERNANCE = new Set([...PROPOSALS, 'remove_alias', 'relate', 'unrelate']);
+// revive: the person's create of a retired word that would drop something comes back as a preview.
+const GOVERNANCE = new Set([...PROPOSALS, 'remove_alias', 'relate', 'unrelate', 'revive']);
 const PROPOSAL_GUIDANCE = 'Nothing changed. Only the person applies this, on the FULI console page at confirmUrl; '
   + 'give them the link and the preview.';
 
@@ -72,10 +73,15 @@ export async function proposeTagGovernance(application, input) {
 
 // The person's own create/alias/attach/detach from the console. tagsConsole
 // sends it on the human-review channel; the Provider records it as theirs.
-export function personKnowledgeTagChange(application, tagsConsole, input) {
+export async function personKnowledgeTagChange(application, tagsConsole, input) {
   const action = knowledgeTagChange(input.action);
   activeSpace(application, input.personalSpaceId);
-  return tagsConsole.send(ROUTES[action], { ...scope(input), ...BODIES[action]({ ...input, operationActor: 'human' }) });
+  const result = await tagsConsole.send(ROUTES[action], { ...scope(input),
+    ...BODIES[action]({ ...input, operationActor: 'human' }) });
+  // A revival that would drop relations or aliases waits for the person's confirm of its preview.
+  return result?.outcome === 'needs_person' && result.revival?.tag?.id
+    ? { ...result, confirmUrl: tagConsoleUrl(application, { tagId: result.revival.tag.id, change: 'revive' }) }
+    : result;
 }
 
 // The person's governance, applied naming the digest of the preview they saw.

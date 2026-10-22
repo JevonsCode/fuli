@@ -58,8 +58,8 @@ _SHARED_REFUSED = 'shared vocabulary changes need governance and are not availab
 _NO_CURRENT_PROJECT = 'with no current project, set namespace personal explicitly'
 _HUMAN_PROOF = 'independent human review proof required'
 _RETIRED = 'A person retired this tag; only they can bring it back, from the FULI console.'
-_REVIVED = ('Brought back; {} relations and {} aliases that no longer fit were dropped; '
-            'undoing the revival in the console restores them.')
+_REVIVE_PREVIEW = ('Bringing this retired tag back would drop relations or aliases that no longer fit; '
+                   'nothing changed. Confirm the revival preview in the FULI console.')
 
 
 def project_namespace(project_id: str) -> str:
@@ -116,17 +116,18 @@ async def create_tag(store, actor: dict, request: KnowledgeTagCreate) -> Knowled
                        {candidate.id for candidate in candidates.found})
         earlier = await vocabulary.by_identity(tag['namespace_key'], key)
         if earlier is not None:
-            stored, settled = await _reuse_earlier_identity(vocabulary, space, actor, earlier, request)
+            stored, revival = await _reuse_earlier_identity(vocabulary, space, actor, earlier, request)
+            if stored is None:
+                return KnowledgeTagCreateResult(outcome='needs_person', tag=None, candidates=[], **decided,
+                                                guidance=_REVIVE_PREVIEW, revival=revival.model_dump(mode='json'))
         else:
-            stored, settled = (await vocabulary.apply(new_tags=[tag], revisions=[_revision(
-                tag, 'create', request, tag['created_at'], similarity_version=version)]))[tag['id']], {}
-    dropped = len(settled.get('dropped', [])), len(settled.get('aliases_dropped', []))
-    return KnowledgeTagCreateResult(outcome='created', tag=tag_record(stored), candidates=[], **decided,
-                                    guidance=_REVIVED.format(*dropped) if any(dropped) else None)
+            stored = (await vocabulary.apply(new_tags=[tag], revisions=[_revision(
+                tag, 'create', request, tag['created_at'], similarity_version=version)]))[tag['id']]
+    return KnowledgeTagCreateResult(outcome='created', tag=tag_record(stored), candidates=[], **decided)
 
 
 async def _reuse_earlier_identity(vocabulary, space: dict, actor: dict, earlier: dict,
-                                  request: KnowledgeTagCreate) -> tuple[dict, dict]:
+                                  request: KnowledgeTagCreate) -> tuple[dict | None, object]:
     """The word's identity in this namespace already exists but does not resolve:
     merged (its word leads elsewhere, so a reader would have found that tag
     unless the caller judged it different) or retired. Only the person brings

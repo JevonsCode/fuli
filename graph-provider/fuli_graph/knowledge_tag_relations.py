@@ -197,7 +197,9 @@ def settle_revived(plan, tag_id: str) -> None:
     for other in tag.get('related_ids') or []:
         if other not in plan.tags or not plan.live(other) or tag_id not in (plan.current(other).get('related_ids') or []):
             dropped.append((tag_id, 'related', other, 'gone'))
-        elif len(kept_related) >= MAX_RELATED:
+        elif len(kept_related) >= MAX_RELATED or live_count(plan, plan.current(other).get('related_ids')) > MAX_RELATED:
+            # Full on either side: neither side keeps the pair.
+            plan.update(other, related_ids=[peer for peer in plan.current(other)['related_ids'] if peer != tag_id])
             dropped.append((tag_id, 'related', other, 'limit'))
         else:
             kept_related.append(other)

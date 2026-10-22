@@ -34,7 +34,7 @@ const nature = tag('t2', '自然教育', { parents: [{ id: 't3', name: '教学�
 const vocabulary = (tags: TagEntry[], review = 1) => ({ tags, total: tags.length, next_offset: null, review_count: review })
 
 function detail(entry: TagEntry): TagDetail {
-  return { tag: entry, children: [], merged_from: [], links_truncated: false,
+  return { tag: entry, children: [], merged_from: [], unfinished_restores: [], links_truncated: false,
     links: [{ item_kind: 'entity', item_id: 'i1', title: 'Bird walk', attached_at: null, moved_from: null }],
     history: [{ action: 'create', actor_kind: 'agent', reason: 'new', created_at: '2026-10-22T00:00:00Z', version: 1,
       operation_id: null, alias: null, relation: null, other: null, undone: false, undoable: false }] }
@@ -234,6 +234,22 @@ describe('TagVocabularyPage', () => {
     const lines = dialog()?.querySelector('[data-tag-preview]')?.textContent ?? ''
     expect(lines).toContain('500 条知识移回「野外教学」')
     expect(lines).toContain('还剩 3 条')
+    wrapper.unmount()
+  })
+
+  it('offers to continue an unfinished split-back until it is done', async () => {
+    const back = tag('t5', '野外教学')
+    respond(url => url.startsWith('/api/knowledge-tags/detail')
+      ? { ...detail(nature), unfinished_restores: [{ tag: back, remaining: 1 }] } : vocabulary([nature, back]))
+    postJson.mockImplementation(async () => mergePreview({ change: 'split', tag: nature, other: back, revives: false,
+      new_tag_name: '野外教学', links_moved: 1, links_remaining: 0 }))
+    const { wrapper } = await open('/tags?tag=t2')
+    const entry = dialog()?.querySelector('[data-tag-continue-restore="t5"]')
+    expect(entry?.textContent?.trim()).toBe('继续恢复「野外教学」，剩余 1 条')
+    await click('[data-tag-continue-restore="t5"]')
+    expect(postJson).toHaveBeenLastCalledWith('/api/knowledge-tags/governance/preview', { personalSpaceId: 'space',
+      change: 'split', tagId: 't2', split: { restoreTagId: 't5', aliases: [] } })
+    expect(dialog()?.querySelector('[data-tag-split-restoring]')).not.toBeNull()
     wrapper.unmount()
   })
 

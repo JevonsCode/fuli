@@ -173,7 +173,10 @@ class KnowledgeTagResolveResult(StrictModel):
 
 
 class KnowledgeTagCreateResult(StrictModel):
-    outcome: Literal['created', 'existing', 'needs_decision']
+    # needs_person: the person's create would bring a retired tag back and drop
+    # relations or aliases that no longer fit; `revival` is that governance
+    # preview, confirmed through the governance apply (change revive).
+    outcome: Literal['created', 'existing', 'needs_decision', 'needs_person']
     tag: KnowledgeTagRecord | None
     normalized: str
     candidates: list[KnowledgeTagDecisionCandidate]
@@ -182,6 +185,7 @@ class KnowledgeTagCreateResult(StrictModel):
     truncated: bool
     similarity_version: str
     guidance: str | None = None
+    revival: dict | None = None
 
 
 class KnowledgeTagAliasResult(StrictModel):

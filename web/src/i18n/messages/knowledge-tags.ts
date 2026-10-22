@@ -25,6 +25,8 @@ export const knowledgeTagsMessages = {
     aliasProvisional: 'Agent 添加，待你确认',
     aliasProposed: 'Agent 提议',
     reviewReason: '有待你确认的别名',
+    unfinishedRestore: '有一次拆分恢复还没做完：剩下的知识还贴在这个标签上。',
+    continueRestore: '继续恢复「{name}」，剩余 {count} 条',
     parents: '上位',
     related: '相关',
     mergedInto: '已合并到「{name}」',
@@ -57,6 +59,7 @@ export const knowledgeTagsMessages = {
     actions: {
       label: '对这个标签',
       approve: '批准',
+      revive: '恢复使用',
       merge: '合并到…',
       split: '拆分…',
       relate: '加关系…',
@@ -69,7 +72,7 @@ export const knowledgeTagsMessages = {
       titles: {
         approve: '批准「{name}」', merge: '把「{name}」合并到另一个标签', split: '从「{name}」拆出一个新标签',
         retire: '退役「{name}」', remove_alias: '移除「{name}」的别名', relate: '给「{name}」加关系',
-        unrelate: '去掉「{name}」的关系', undo: '撤销「{name}」的一次改动',
+        unrelate: '去掉「{name}」的关系', undo: '撤销「{name}」的一次改动', revive: '恢复使用「{name}」',
       },
       hints: {
         approve: '批准后这个标签变为已启用。批准只是词表状态，不会确认任何知识。',
@@ -80,6 +83,7 @@ export const knowledgeTagsMessages = {
         relate: '上位关系不能形成循环；个人标签的上位只能是个人标签，不同项目的标签不能互相关联。',
         unrelate: '只去掉这一条关系，标签本身不变。',
         undo: '按改动时记下的原状恢复。改动之后这些标签或链接又变过时不能撤销，请先撤销后面的改动。',
+        revive: '退役的标签以原来的编号回来；已不成立的关系和被别的标签占用的别名不随它回来，下面列出。',
       },
       target: '目标标签',
       relation: '关系',
@@ -103,11 +107,11 @@ export const knowledgeTagsMessages = {
       reasonHint: '会记进修改历史。',
       defaultReason: '在标签词表里整理',
       confirm: { approve: '批准', merge: '确认合并', split: '确认拆分', retire: '确认退役', remove_alias: '确认移除',
-        relate: '确认添加', unrelate: '确认去掉', undo: '确认撤销' },
+        relate: '确认添加', unrelate: '确认去掉', undo: '确认撤销', revive: '确认恢复' },
       applying: {
         approve: '正在批准「{name}」', merge: '正在把「{name}」合并到「{other}」', split: '正在从「{name}」拆出「{other}」',
         retire: '正在退役「{name}」', remove_alias: '正在移除「{name}」的别名', relate: '正在给「{name}」加关系',
-        unrelate: '正在去掉「{name}」的关系', undo: '正在撤销「{name}」的改动',
+        unrelate: '正在去掉「{name}」的关系', undo: '正在撤销「{name}」的改动', revive: '正在恢复使用「{name}」',
       },
       stale: '词表在你预览之后变了，下面是重新预览的结果，请再看一眼。',
       done: '已完成。',
@@ -116,6 +120,7 @@ export const knowledgeTagsMessages = {
     },
     preview: {
       approve: '「{name}」变为已启用。',
+      revive: '「{name}」以原来的编号恢复使用。',
       retire: '「{name}」退役，不再被找到或贴到知识上。',
       merge: '「{name}」合并到「{other}」：之后找「{name}」会得到「{other}」。',
       mergeLinks: '{moved} 条知识改贴「{other}」，{kept} 条原本就贴了「{other}」，不会重复。',
@@ -171,6 +176,8 @@ export const knowledgeTagsMessages = {
     aliasProvisional: 'Added by an Agent, waiting for you',
     aliasProposed: 'Proposed by an Agent',
     reviewReason: 'Has an alias waiting for you',
+    unfinishedRestore: 'A split-back is not finished: the rest of its knowledge still carries this tag.',
+    continueRestore: 'Continue restoring “{name}”, {count} left',
     parents: 'Broader',
     related: 'Related',
     mergedInto: 'Merged into “{name}”',
@@ -203,6 +210,7 @@ export const knowledgeTagsMessages = {
     actions: {
       label: 'For this tag',
       approve: 'Approve',
+      revive: 'Bring back',
       merge: 'Merge into…',
       split: 'Split…',
       relate: 'Relate…',
@@ -215,7 +223,7 @@ export const knowledgeTagsMessages = {
       titles: {
         approve: 'Approve “{name}”', merge: 'Merge “{name}” into another tag', split: 'Split a new tag from “{name}”',
         retire: 'Retire “{name}”', remove_alias: 'Remove an alias of “{name}”', relate: 'Relate “{name}”',
-        unrelate: 'Remove a relation of “{name}”', undo: 'Undo a change to “{name}”',
+        unrelate: 'Remove a relation of “{name}”', undo: 'Undo a change to “{name}”', revive: 'Bring back “{name}”',
       },
       hints: {
         approve: 'Approving makes the tag active. It is vocabulary status only and confirms no knowledge.',
@@ -226,6 +234,7 @@ export const knowledgeTagsMessages = {
         relate: 'Broader tags never form a cycle; a personal tag is only under personal tags; tags of two different projects are never related.',
         unrelate: 'Only this relation goes; the tags stay as they are.',
         undo: 'Restores what the change recorded. If those tags or links changed since, undo the later change first.',
+        revive: 'The retired tag comes back with its own ID; relations that no longer hold and aliases another tag holds stay behind, as listed below.',
       },
       target: 'Target tag',
       relation: 'Relation',
@@ -249,11 +258,11 @@ export const knowledgeTagsMessages = {
       reasonHint: 'Kept in the history.',
       defaultReason: 'Tidied in the tag vocabulary',
       confirm: { approve: 'Approve', merge: 'Merge', split: 'Split', retire: 'Retire', remove_alias: 'Remove',
-        relate: 'Add relation', unrelate: 'Remove relation', undo: 'Undo' },
+        relate: 'Add relation', unrelate: 'Remove relation', undo: 'Undo', revive: 'Bring back' },
       applying: {
         approve: 'Approving “{name}”', merge: 'Merging “{name}” into “{other}”', split: 'Splitting “{other}” from “{name}”',
         retire: 'Retiring “{name}”', remove_alias: 'Removing an alias of “{name}”', relate: 'Relating “{name}”',
-        unrelate: 'Removing a relation of “{name}”', undo: 'Undoing a change to “{name}”',
+        unrelate: 'Removing a relation of “{name}”', undo: 'Undoing a change to “{name}”', revive: 'Bringing back “{name}”',
       },
       stale: 'The vocabulary changed after your preview. This is the new preview; please check it again.',
       done: 'Done.',
@@ -262,6 +271,7 @@ export const knowledgeTagsMessages = {
     },
     preview: {
       approve: '“{name}” becomes active.',
+      revive: '“{name}” comes back with its own ID.',
       retire: '“{name}” is retired: no longer found or attached to knowledge.',
       merge: '“{name}” merges into “{other}”: looking for “{name}” finds “{other}”.',
       mergeLinks: '{moved} knowledge items move to “{other}”; {kept} already carry “{other}” and are not doubled.',

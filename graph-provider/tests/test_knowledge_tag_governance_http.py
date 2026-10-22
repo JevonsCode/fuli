@@ -6,7 +6,7 @@ import asyncio
 import pytest
 
 from fuli_graph.knowledge_tag_governance_models import MAX_SPLIT_LINKS
-from knowledge_tag_governance_scenarios import GOVERNANCE_SCENARIOS, attach, govern, mine, preview
+from knowledge_tag_governance_scenarios import GOVERNANCE_SCENARIOS, attach, detail, govern, mine, preview
 from knowledge_tag_memory import memory_world
 from knowledge_tag_scenarios import TAGS, alias, create
 
@@ -36,10 +36,16 @@ async def test_a_restore_past_the_per_split_limit_goes_in_labelled_batches():
         first = await preview(world, 'split', target['id'], split=split)
         assert (first['revives'], first['links_moved'], first['links_remaining']) == (True, MAX_SPLIT_LINKS, 1)
         await govern(world, 'split', target['id'], split=split)
+        # Dot round 3 P2-2: A is back, so it is no longer "merged in"; the detail says what is unfinished.
+        page = await detail(world, target['id'])
+        assert page['merged_from'] == []
+        assert [(entry['tag']['id'], entry['remaining']) for entry in page['unfinished_restores']] == [
+            (source['id'], 1)]
         second = await preview(world, 'split', target['id'], split=split)
         assert (second['revives'], second['links_moved'], second['links_remaining']) == (False, 1, 0)
         await govern(world, 'split', target['id'], split=split)
         assert all([await world.attached(item) == [source['id']] for item in items])
+        assert (await detail(world, target['id']))['unfinished_restores'] == []
 
 
 @pytest.mark.asyncio

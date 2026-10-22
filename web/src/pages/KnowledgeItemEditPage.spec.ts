@@ -390,4 +390,28 @@ describe('KnowledgeItemEditPage', () => {
     expect(postJson).toHaveBeenLastCalledWith('/api/knowledge-tags', expect.objectContaining({ action: 'attach', tagId: 't2' }))
     wrapper.unmount()
   })
+
+  it('shows the revival preview when creating a retired word would drop something, and attaches nothing', async () => {
+    const wrapper = await open()
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/knowledge-tags') ? { candidates: [] } : view())
+    const retired = { id: 't9', name: '小说', namespace: 'personal', status: 'retired' }
+    postJson.mockResolvedValue({ outcome: 'needs_person', tag: null, candidates: [], revival: {
+      change: 'revive', tag: retired, other: null, status_after: 'active', new_tag_name: null, revives: false,
+      links_moved: null, links_already_on_target: null, links_remaining: null, aliases: [], aliases_dropped: ['fiction'],
+      relations_moved: 0, relations_dropped: [{ tag: retired, relation: 'parent',
+        target: { id: 't1', name: '写作', namespace: 'personal', status: 'active' }, reason: 'cycle' }],
+      undo: null, blocked: null, digest: 'f'.repeat(64) } })
+    await wrapper.get('#tag-search').setValue('小说')
+    await flushPromises()
+    await wrapper.get('[data-tag-create]').trigger('click')
+    await flushPromises()
+    const box = wrapper.get('[data-tag-revival]')
+    expect(box.text()).toContain('「小说」以原来的编号恢复使用。')
+    expect(box.text()).toContain('「小说」与「写作」的上位关系会形成循环')
+    expect(box.text()).toContain('fiction')
+    expect(box.get('[data-tag-revival-confirm]').attributes('href')).toBe('/tags?tag=t9&change=revive')
+    expect(postJson).toHaveBeenCalledTimes(1)
+    expect(postJson).not.toHaveBeenCalledWith('/api/knowledge-tags', expect.objectContaining({ action: 'attach' }))
+    wrapper.unmount()
+  })
 })

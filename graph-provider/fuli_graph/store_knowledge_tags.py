@@ -252,6 +252,16 @@ class Neo4jTagReader:
         return {revision['operation_id']: revision
                 for revision in (_revision(record['revision']) for record in records)}
 
+    async def merges_into(self, tag_id):
+        """The undo records of merges into this tag, newest first."""
+        records, _, _ = await self._driver.execute_query(
+            '''
+            MATCH (revision:FuliKnowledgeTagRevision {space_id: $space_id, action: 'merge', related_tag_id: $tag_id})
+            WHERE revision.snapshot_json IS NOT NULL
+            RETURN revision ORDER BY revision.created_at DESC
+            ''', space_id=self._space_id, tag_id=tag_id, routing_='r')
+        return [_revision(record['revision']) for record in records]
+
     async def undone(self, operation_ids):
         """The operations an undo already reversed."""
         if not operation_ids:

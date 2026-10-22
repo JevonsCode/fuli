@@ -7,6 +7,7 @@ import { t } from '@/i18n'
 export type TagStatus = 'provisional' | 'active' | 'merged' | 'retired'
 export type TagNamespace = 'personal' | 'project'
 export type GovernanceChange = 'approve' | 'merge' | 'split' | 'retire' | 'remove_alias' | 'relate' | 'unrelate' | 'undo'
+  | 'revive'
 export type RelationKind = 'parent' | 'related'
 export type StatusFilter = TagStatus | 'review' | ''
 
@@ -57,6 +58,8 @@ export interface TagDetail {
   tag: TagEntry
   children: TagRef[]
   merged_from: TagRef[]
+  // A split-back of a merge that moves in batches and is not finished yet.
+  unfinished_restores: { tag: TagRef; remaining: number }[]
   links: TagLinkedItem[] | null
   links_truncated: boolean
   history: TagHistoryEntry[]
@@ -155,6 +158,7 @@ export function previewLines(preview: GovernancePreview): string[] {
   const name = preview.tag.name
   const other = preview.other?.name ?? ''
   if (preview.change === 'approve') lines.push(t('knowledgeTags.preview.approve', { name }))
+  if (preview.change === 'revive') lines.push(t('knowledgeTags.preview.revive', { name }))
   if (preview.change === 'retire') lines.push(t('knowledgeTags.preview.retire', { name }))
   if (preview.change === 'merge') {
     lines.push(t('knowledgeTags.preview.merge', { name, other }))
@@ -172,9 +176,9 @@ export function previewLines(preview: GovernancePreview): string[] {
     }
     if (preview.aliases.length) lines.push(t('knowledgeTags.preview.splitAliases', { aliases: preview.aliases.join('、') }))
     if (preview.links_remaining) lines.push(t('knowledgeTags.preview.splitBatch', { count: preview.links_remaining }))
-    if (preview.aliases_dropped.length) {
-      lines.push(t('knowledgeTags.preview.aliasesDropped', { aliases: preview.aliases_dropped.join('、') }))
-    }
+  }
+  if (preview.aliases_dropped.length) {
+    lines.push(t('knowledgeTags.preview.aliasesDropped', { aliases: preview.aliases_dropped.join('、') }))
   }
   if (preview.change === 'remove_alias') lines.push(t('knowledgeTags.preview.removeAlias', { name, alias: preview.aliases[0] ?? '' }))
   if (preview.change === 'relate' || preview.change === 'unrelate') {
@@ -220,4 +224,4 @@ export function linkedChange(query: Record<string, unknown>): { tagId: string; c
   return { tagId, change, intoId: typeof query.into === 'string' ? query.into : '' }
 }
 
-const LINKABLE = new Set<GovernanceChange>(['approve', 'merge', 'split', 'retire', 'undo'])
+const LINKABLE = new Set<GovernanceChange>(['approve', 'merge', 'split', 'retire', 'undo', 'revive'])

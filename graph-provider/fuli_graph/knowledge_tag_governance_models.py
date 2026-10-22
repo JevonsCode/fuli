@@ -25,7 +25,8 @@ from .knowledge_tag_models import (
 from .model_base import StrictModel
 from .model_validation import reject_credentials
 
-GovernanceChange = Literal['approve', 'merge', 'split', 'retire', 'remove_alias', 'relate', 'unrelate', 'undo']
+GovernanceChange = Literal['approve', 'merge', 'split', 'retire', 'remove_alias', 'relate', 'unrelate', 'undo',
+                           'revive']
 TagRelationKind = Literal['parent', 'related']
 MAX_SPLIT_LINKS = 500
 MAX_SPLIT_ALIASES = 100
@@ -220,10 +221,18 @@ class KnowledgeTagHistoryEntry(StrictModel):
     undoable: bool
 
 
+class KnowledgeTagUnfinishedRestore(StrictModel):
+    """A mistaken merge split back in batches that is not finished: `tag` is
+    back, `remaining` items it carried before the merge are still here."""
+    tag: KnowledgeTagReference
+    remaining: int
+
+
 class KnowledgeTagDetail(StrictModel):
     tag: KnowledgeTagEntry
     children: list[KnowledgeTagReference]
     merged_from: list[KnowledgeTagReference]
+    unfinished_restores: list[KnowledgeTagUnfinishedRestore] = Field(default_factory=list)
     # None outside the owner's all-project view: links may be other projects' knowledge.
     links: list[KnowledgeTagLinkedItem] | None
     links_truncated: bool

@@ -29,7 +29,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ changed: [] }>()
 
-interface Mode { change: GovernanceChange; target?: TagRef | null; relation?: RelationKind; alias?: string; operationId?: string }
+interface Mode { change: GovernanceChange; target?: TagRef | null; relation?: RelationKind; alias?: string; operationId?: string
+  restore?: TagRef }
 const detail = ref<TagDetail | null>(null)
 const loading = ref(false)
 const error = ref('')
@@ -99,7 +100,7 @@ watch(() => props.tagId, () => { detail.value = null; void load() }, { immediate
   </div>
   <TagGovernancePanel v-else-if="detail && mode" :key="`${mode.change}:${mode.operationId ?? ''}:${mode.alias ?? ''}`"
     :space-id="spaceId" :detail="detail" :change="mode.change" :initial-target="mode.target"
-    :initial-relation="mode.relation" :alias="mode.alias" :operation-id="mode.operationId"
+    :initial-relation="mode.relation" :initial-restore="mode.restore" :alias="mode.alias" :operation-id="mode.operationId"
     @done="changed" @back="mode = null" />
   <div v-else-if="detail && tag" class="grid min-w-0 gap-5" :data-tag-detail="tag.id">
     <DialogHeader>
@@ -118,6 +119,17 @@ watch(() => props.tagId, () => { detail.value = null; void load() }, { immediate
       <h3 class="m-0 text-sm font-semibold">{{ t('knowledgeTags.detail.description') }}</h3>
       <p class="m-0 text-sm text-muted-foreground [overflow-wrap:anywhere]">{{ tag.description || t('knowledgeTags.detail.noDescription') }}</p>
       <p v-if="tag.merged_into" class="m-0 text-sm [overflow-wrap:anywhere]">{{ t('knowledgeTags.mergedInto', { name: tag.merged_into.name }) }}</p>
+    </section>
+
+    <section v-if="detail.unfinished_restores.length" class="grid gap-2 rounded-lg border border-warning bg-card px-4 py-3"
+      data-tag-unfinished-restores>
+      <p class="m-0 text-sm">{{ t('knowledgeTags.unfinishedRestore') }}</p>
+      <div class="flex flex-wrap gap-2">
+        <Button v-for="entry in detail.unfinished_restores" :key="entry.tag.id" size="sm" variant="outline"
+          :data-tag-continue-restore="entry.tag.id" @click="open({ change: 'split', restore: entry.tag })">
+          {{ t('knowledgeTags.continueRestore', { name: entry.tag.name, count: entry.remaining }) }}
+        </Button>
+      </div>
     </section>
 
     <section v-if="tag.aliases.length || tag.proposed_aliases.length" class="grid gap-2" data-tag-aliases>
@@ -201,6 +213,7 @@ watch(() => props.tagId, () => { detail.value = null; void load() }, { immediate
     </section>
 
     <DialogFooter class="flex-wrap justify-start gap-2 sm:justify-start" :aria-label="t('knowledgeTags.actions.label')">
+      <Button v-if="tag.status === 'retired'" data-tag-action="revive" @click="open({ change: 'revive' })">{{ t('knowledgeTags.actions.revive') }}</Button>
       <Button v-if="tag.status === 'provisional'" data-tag-action="approve" @click="open({ change: 'approve' })">{{ t('knowledgeTags.actions.approve') }}</Button>
       <Button v-if="live" variant="outline" data-tag-action="merge" @click="open({ change: 'merge' })">{{ t('knowledgeTags.actions.merge') }}</Button>
       <Button v-if="live" variant="outline" data-tag-action="split" @click="open({ change: 'split' })">{{ t('knowledgeTags.actions.split') }}</Button>

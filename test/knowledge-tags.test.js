@@ -245,6 +245,22 @@ test('the person changes and governs tags only on this computer, on the human-re
   }
 });
 
+test('a person\'s create that would revive a tag and drop something links its preview for confirmation', async () => {
+  const { app } = application();
+  const revival = { change: 'revive', tag: { id: 'tag-r', name: '小说', namespace: 'personal', status: 'retired' },
+    relations_dropped: [{ reason: 'cycle' }], aliases_dropped: [], digest: DIGEST };
+  const tagsConsole = { send: async () => ({ outcome: 'needs_person', tag: null, revival }) };
+  const answer = await api(app, 'POST', '/api/knowledge-tags', { ...space, action: 'create', name: '小说', reason: 'mine',
+    namespace: 'personal' }, { tagsConsole });
+  assert.equal(answer.body.outcome, 'needs_person');
+  assert.equal(answer.body.confirmUrl, 'http://127.0.0.1:4545/tags?tag=tag-r&change=revive');
+  // The person confirms it as a governance change of its own.
+  const sent = [];
+  await api(app, 'POST', '/api/knowledge-tags/governance', { ...space, change: 'revive', tagId: 'tag-r', reason: 'x',
+    previewDigest: DIGEST }, { tagsConsole: { send: async (route, body) => { sent.push({ route, body }); return {}; } } });
+  assert.deepEqual(sent.map(({ route, body }) => [route, body.change, body.tag_id]), [['governance/apply', 'revive', 'tag-r']]);
+});
+
 test('the console port sends the human-review token and reports the Provider refusal', async () => {
   const asked = [];
   const port = knowledgeTagsConsole('unused', { send: async (path, body, options) => {
