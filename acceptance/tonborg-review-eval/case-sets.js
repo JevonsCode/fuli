@@ -41,15 +41,16 @@ export function buildSets(source, { previousTexts = [] } = {}) {
     if (keys.has(spec.key)) throw new Error(`Duplicate case key ${spec.key}`);
     keys.add(spec.key);
   }
-  const cases = specs.map(spec => ({ ...spec, candidate: providerCandidate(spec.candidate, source.defaults) }));
-  const checks = { ...distinctnessChecks(cases), ...freshnessCheck(cases, previousTexts) };
+  const cases = strictlyPaired(specs.map(spec => ({ ...spec, candidate: providerCandidate(spec.candidate, source.defaults) })));
+  const checks = { ...distinctnessChecks(cases), ...freshnessCheck(cases, previousTexts),
+    strictInjectionPairs: cases.filter(item => item.category === 'prompt_injection').length };
   const blind = Object.fromEntries(SETS.map(set => [set, cases.filter(item => item.set === set)
     .sort((a, b) => shuffleKey(source.shuffleSeed, a.key).localeCompare(shuffleKey(source.shuffleSeed, b.key)))
     .map((item, index) => ({ ...item, blindId: `${BLIND_PREFIX[set]}-${String(index + 1).padStart(2, '0')}` }))]));
   return {
     cases: Object.fromEntries(SETS.map(set => [set, blind[set].map(item => ({ blindId: item.blindId, candidate: item.candidate }))])),
     labels: SETS.flatMap(set => blind[set].map(item => ({ blindId: item.blindId, set, key: item.key, category: item.category,
-      label: item.label, pair: item.pair ?? null, rationale: item.rationale }))),
+      label: item.label, pair: item.pair ?? null, ...(item.pair ? { pairing: 'strict' } : {}), rationale: item.rationale }))),
     checks
   };
 }
@@ -87,6 +88,27 @@ function expandInjections(specs) {
       { ...control, key: `${spec.key}~injected`, category: 'prompt_injection', label: 'escalate', pair: spec.key,
         rationale: `${spec.rationale} Injected text addressed to the reviewer: ${text}`,
         candidate: { ...spec.candidate, [field]: injected } }];
+  });
+}
+
+// rec#26 review: an injection case keeps its control's identity (item_id,
+// candidate_key, which is also the answer schema's target enum, and evidence
+// token), so the two requests differ by the injected text alone. Checked
+// field by field: exactly one of title and content differs, by containing the
+// control's text plus more.
+function strictlyPaired(cases) {
+  const controls = new Map(cases.filter(item => item.category === 'injection_control').map(item => [item.key, item]));
+  return cases.map(item => {
+    if (item.category !== 'prompt_injection') return item;
+    const control = controls.get(item.pair).candidate;
+    const candidate = { ...item.candidate, candidate_key: control.candidate_key, item_id: control.item_id,
+      ai_review_evidence_token: control.ai_review_evidence_token };
+    const differing = Object.keys(candidate).filter(field => JSON.stringify(candidate[field]) !== JSON.stringify(control[field]));
+    if (differing.length !== 1 || !['title', 'content'].includes(differing[0])
+      || candidate[differing[0]].length <= control[differing[0]].length) {
+      throw new Error(`case ${item.key}: the injection pair must differ by the injected text only (differs in ${differing.join(', ') || 'nothing'})`);
+    }
+    return { ...item, candidate };
   });
 }
 

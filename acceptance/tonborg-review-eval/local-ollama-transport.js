@@ -21,7 +21,7 @@ const MESSAGE_ROLES = new Set(['system', 'user', 'assistant']);
 // A re-wrapped body is already decoded and its length is the text's own.
 const STALE_HEADERS = ['content-encoding', 'content-length', 'transfer-encoding'];
 
-export function assertLocalOllama(url, method = 'GET') {
+function assertLocalOllama(url, method = 'GET') {
   const target = new URL(String(url));
   if (target.origin !== OLLAMA_ORIGIN) throw new Error(`Refusing network access outside ${OLLAMA_ORIGIN}: ${target.origin}`);
   if (ALLOWED_ROUTES[target.pathname] !== method.toUpperCase()) {
@@ -30,7 +30,7 @@ export function assertLocalOllama(url, method = 'GET') {
   return target;
 }
 
-export function assertToolFreeChat(body) {
+function assertToolFreeChat(body) {
   const extra = Object.keys(body).filter(field => !CHAT_FIELDS.has(field));
   if (extra.length) throw new Error(`Refusing a chat request with fields the evaluation does not send: ${extra.join(', ')}`);
   if (!Array.isArray(body.messages) || body.messages.some(message => !MESSAGE_ROLES.has(message.role)
@@ -39,11 +39,24 @@ export function assertToolFreeChat(body) {
   }
 }
 
+// The only way the evaluation reaches the network: an allowed local route,
+// and never a redirect. Native fetch follows redirects by default, so a
+// checked first URL alone could still end on another host or port.
+export function localOnlyFetch(fetchImpl = globalThis.fetch) {
+  return async function checkedFetch(url, init = {}) {
+    const target = assertLocalOllama(url, init.method ?? 'GET');
+    const response = await fetchImpl(target.href, { ...init, redirect: 'error' });
+    if (response.redirected) throw new Error(`Refusing a redirected response from ${target.href}`);
+    return response;
+  };
+}
+
 // sampling: the fixed generation settings this evaluation adds, e.g.
 // { temperature: 0, seed: 20261022 }.
 export function createLocalOllamaTransport({ sampling, fetchImpl = globalThis.fetch, onExchange = () => {} }) {
   const unknown = Object.keys(sampling).filter(field => !SAMPLING_FIELDS.has(field));
   if (unknown.length) throw new TypeError(`Unsupported sampling fields: ${unknown.join(', ')}`);
+  const send = localOnlyFetch(fetchImpl);
   return async function localOllamaFetch(url, init = {}) {
     const method = init.method ?? 'GET';
     const target = assertLocalOllama(url, method);
@@ -53,7 +66,7 @@ export function createLocalOllamaTransport({ sampling, fetchImpl = globalThis.fe
       assertToolFreeChat(chat);
       body = JSON.stringify({ ...chat, ...sampling });
     }
-    const response = await fetchImpl(target.href, { ...init, body });
+    const response = await send(target.href, { ...init, body });
     const responseText = await response.text();
     onExchange({ url: target.href, method: method.toUpperCase(), requestBody: body ?? null,
       status: response.status, contentType: response.headers.get('content-type'), responseText });

@@ -14,7 +14,7 @@ import { parseArgs } from 'node:util';
 
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { isMainModule } from '../../src/system/main-module.js';
-import { OLLAMA_ORIGIN, assertLocalOllama } from './local-ollama-transport.js';
+import { OLLAMA_ORIGIN, localOnlyFetch } from './local-ollama-transport.js';
 import { createReviewPath } from './review-path.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -35,9 +35,9 @@ async function main() {
   if (!values.cases || !values.out) throw new TypeError('--cases and --out are required');
   const runs = Number(values.runs), sampling = { temperature: 0, seed: Number(values.seed) };
   const sets = values.sets.split(',');
-  // Nothing in this process may reach another host, whichever module asks.
-  const networkFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init = {}) => networkFetch(assertLocalOllama(url, init.method ?? 'GET').href, init);
+  // Nothing in this process may reach another host, whichever module asks,
+  // directly or by redirect.
+  globalThis.fetch = localOnlyFetch(globalThis.fetch);
 
   const startedAt = new Date().toISOString();
   const model = await modelIdentity(values.model);
