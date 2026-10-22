@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from .graph_field_contract import stored_fields
 from .knowledge_hard_delete_traces import hard_deletion_record
+from .knowledge_tag_governance import LINK_FIELDS
 from .knowledge_management import _read_assignment, _read_item, _source_project_ids
 from .knowledge_project_scope import knowledge_project_ids
 from .knowledge_tag_models import LIVE_STATUSES
@@ -25,6 +26,7 @@ VISIBLE_STATUSES = list(LIVE_STATUSES)
 _DATETIME_FIELDS = ('created_at', 'updated_at')
 _LINK_DATETIME_FIELDS = ('attached_at', 'detached_at')
 _REVISION_DATETIME_FIELDS = ('created_at',)
+_LINK_WRITES = ('id', 'tag_id', 'item_kind', 'item_id', *LINK_FIELDS)
 
 
 class StoreKnowledgeTags:
@@ -307,6 +309,9 @@ class Neo4jLockedTagVocabulary(Neo4jTagReader):
                 ''', space_id=self._space_id, updates=list(updates))
             written.update({tag['id']: tag for tag in (_tag(record['tag']) for record in records)})
         if links:
+            # A row may carry the rest of a stored link; only these are written.
+            for link in links:
+                stored_fields('FuliKnowledgeTagLink', {name: link.get(name) for name in _LINK_WRITES})
             await self._driver.execute_query(
                 '''
                 UNWIND $links AS row
@@ -319,8 +324,7 @@ class Neo4jLockedTagVocabulary(Neo4jTagReader):
                     link.detached_by_kind = row.detached_by_kind, link.moved_to_tag_id = row.moved_to_tag_id,
                     link.moved_from_tag_id = row.moved_from_tag_id, link.version = link.version + 1
                 MERGE (tag)-[:TAGS]->(link)
-                ''', space_id=self._space_id,
-                links=[stored_fields('FuliKnowledgeTagLink', link) for link in links])
+                ''', space_id=self._space_id, links=list(links))
         if revisions:
             await self._driver.execute_query(
                 '''

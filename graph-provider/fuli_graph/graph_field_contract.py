@@ -4,7 +4,9 @@ Every property FULI stores, per node label and per relationship type, with
 its type and whether it may be missing, and every enum's values. A write that
 hands Neo4j a whole map (n = $map, n += row.fields) builds that map through
 stored_fields, so a key this contract does not declare raises before anything
-is written. tests/test_graph_field_contract.py checks the contract
+is written. A copy of a stored record (a new version) goes through
+carried_fields instead: what the code sets is checked the same way, and
+properties an older FULI stored are kept and named. tests/test_graph_field_contract.py checks the contract
 against the properties the Cypher names, and tests/test_graph_format.py
 records it per graph version: a new property, type, nullability or enum value
 is a format change and comes with the next graph version.
@@ -795,6 +797,19 @@ def stored_fields(owner: str, values: dict) -> dict:
         elif not any(_matches(kind, value) for kind in declared.rstrip('?').split('|')):
             raise StoredFieldError(f'{owner}.{name} must be {declared.rstrip("?")}, not {value!r:.80}')
     return values
+
+
+def carried_fields(owner: str, carried: dict, overrides: dict) -> tuple[dict, list[str]]:
+    """A record copied forward from a stored one (a new version, a copied
+    relationship): the overrides the code sets are checked like stored_fields;
+    the carried properties pass through verbatim, so a property an older FULI
+    stored and this contract does not declare survives the copy instead of
+    refusing it. Returns the record and the carried undeclared keys, which the
+    caller records so the next graph version can declare them."""
+    stored_fields(owner, overrides)
+    fields = NODE_FIELDS.get(owner) or RELATIONSHIP_FIELDS.get(owner, {})
+    legacy = sorted(set(carried) - set(fields) - set(overrides))
+    return {**carried, **overrides}, legacy
 
 
 def _matches(kind: str, value) -> bool:

@@ -6,14 +6,17 @@ The caller owns a transaction so any conflicting reference rolls everything back
 """
 
 import json
+import logging
 import re
 
 from fastapi import HTTPException
 
-from .graph_field_contract import stored_fields
+from .graph_field_contract import carried_fields
 from .project_agent_models import ProjectAgentProfile
 from .provider_values import now_utc
 from .system_agents import SYSTEM_HR_AGENT_ID
+
+logger = logging.getLogger(__name__)
 
 LEGACY_HR_AGENT_ID = 'fuli-project-hr'
 REFERENCE_FIELDS = (
@@ -107,13 +110,16 @@ async def merge_legacy_hr(store, space_id):
             raise HTTPException(409, 'Unsupported AR relationship; no data was changed')
         start_id = row['canonical_element'] if edge['start_id'] == row['legacy_element'] else edge['start_id']
         end_id = row['canonical_element'] if edge['end_id'] == row['legacy_element'] else edge['end_id']
+        props, legacy_keys = carried_fields(kind, dict(edge['props']), {})
+        if legacy_keys:
+            logger.warning('copied %s relationship keeps undeclared properties: %s', kind, ', '.join(legacy_keys))
         copied, _, _ = await driver.execute_query(
             f'''MATCH (source), (target)
                 WHERE elementId(source) = $start_id AND elementId(target) = $end_id
                 MERGE (source)-[edge:{kind}]->(target)
                 ON CREATE SET edge = $props
                 RETURN properties(edge) AS props''',
-            start_id=start_id, end_id=end_id, props=stored_fields(kind, dict(edge['props'])),
+            start_id=start_id, end_id=end_id, props=props,
         )
         if not copied or dict(copied[0]['props']) != dict(edge['props']):
             raise HTTPException(409, 'Bole identities have conflicting relationship history; no data was changed')

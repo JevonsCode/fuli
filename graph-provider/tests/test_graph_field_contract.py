@@ -31,6 +31,7 @@ from fuli_graph.graph_field_contract import (
     NODE_FIELDS,
     RELATIONSHIP_FIELDS,
     StoredFieldError,
+    carried_fields,
     stored_fields,
 )
 from fuli_graph.graph_format_journal import CREATED_TAG, UNDO_LABEL
@@ -141,8 +142,10 @@ def test_every_declared_property_is_still_named_by_the_provider():
 
 # Every write that hands Neo4j a whole map, by module, record variable and
 # operator. Its keys are invisible to the checks above, so the map is built
-# through stored_fields. knowledge_versions' `reference = old {.*, …}` copies a
-# stored record of the same label and adds only the keys it names.
+# through stored_fields, or carried_fields where it copies a stored record
+# forward (a new version, a copied relationship). knowledge_versions'
+# `reference = old {.*, …}` copies a stored record in Cypher and adds only the
+# keys it names.
 MAP_WRITES = {
     ('knowledge_versions.py', 'item', '='),
     ('knowledge_versions.py', 'link', '+='),
@@ -177,8 +180,20 @@ def test_every_map_write_goes_through_the_contract():
         'A new map write builds its map with stored_fields and is listed in MAP_WRITES'
     )
     for module in {module for module, _, _ in MAP_WRITES}:
-        assert 'from .graph_field_contract import stored_fields' in (
-            PACKAGE / module).read_text(encoding='utf-8'), module
+        assert re.search(r'from \.graph_field_contract import .*\b(stored_fields|carried_fields)\b',
+                         (PACKAGE / module).read_text(encoding='utf-8')), module
+
+
+def test_a_copy_forward_keeps_legacy_properties_and_checks_what_the_code_sets():
+    record, legacy = carried_fields(
+        'Entity', {'uuid': 'old', 'name': 'Rust', 'fuli_synthetic_legacy': 'kept'}, {'uuid': 'new'})
+    assert record == {'uuid': 'new', 'name': 'Rust', 'fuli_synthetic_legacy': 'kept'}
+    assert legacy == ['fuli_synthetic_legacy']
+    with pytest.raises(StoredFieldError, match='undeclared properties fuli_synthetic_override'):
+        carried_fields('Entity', {'uuid': 'old'}, {'fuli_synthetic_override': 1})
+    # A direct write still refuses the same legacy key.
+    with pytest.raises(StoredFieldError, match='undeclared properties fuli_synthetic_legacy'):
+        stored_fields('Entity', {'fuli_synthetic_legacy': 'kept'})
 
 
 def test_an_unknown_or_mistyped_map_key_is_refused():
