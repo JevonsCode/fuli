@@ -50,8 +50,15 @@ describe('knowledge quick edit model', () => {
     expect(scopeRequest('s', preference, { choice: 'global', projectIds: [], agentProjectId: '', agentId: '' }, ' ')).toBeNull()
     const fact = item({ profile_aspect: null, category: 'fact' })
     expect(scopeChoices(fact)).toEqual(['projects'])
+    // rec#20 part 2: a fact may apply to several projects.
     expect(scopeRequest('s', fact, { choice: 'projects', projectIds: ['a', 'b'], agentProjectId: '', agentId: '' }, 'why'))
-      .toMatchObject({ projectIds: ['a'] })
+      .toMatchObject({ scope: 'projects', projectIds: ['a', 'b'] })
+  })
+
+  it('tells a project that already holds a match apart from a stale page', () => {
+    const conflict = (code: string) => new ApiError('Conflict', 409, JSON.stringify({ code }))
+    expect(editFailure(conflict('project_has_match'))).toBe('project_match')
+    expect(editFailure(conflict('stale_version'))).toBe('conflict')
   })
 
   it('starts an undecided item from a project choice, never from global', () => {

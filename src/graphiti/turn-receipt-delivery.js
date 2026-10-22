@@ -1,5 +1,7 @@
 import { deferredTurnReceipt, MAX_LIST_EPISODES, readEpisodeReceipts, readTurnReceipt, renderTurnReceipt, savedEpisodeIds }
   from '../agents/turn-receipt.js';
+import { withReceiptLines, withTurnReceipt } from '../agents/identity-receipt.js';
+import { formalTask, sessionMigrationLine, sessionMigrationOffer } from './session-knowledge-migration.js';
 
 // When a turn's receipt reaches a reply, exactly once (rec#20). The Provider
 // marks a checkpoint that saved knowledge as unread. Its own reply claims it
@@ -16,12 +18,24 @@ export async function checkpointTurnReceipt(application, task, { memory = null, 
   if (!savedEpisodeIds(results).length) return memory ? readTurnReceipt(application, [], { memory, agentName }) : null;
   try {
     const receipt = await readTurnReceipt(application, results, { memory, agentName, session: taskSession(task) });
-    if (await application.taskContextRegistry.claimTurnReceipt(task.token, task.sourceApplication)) return receipt;
+    if (await application.taskContextRegistry.claimTurnReceipt(task.token, task.sourceApplication)) {
+      return receipt && heldInFormalProject(task, results)
+        ? { ...receipt, lines: [...receipt.lines, sessionMigrationLine(application, task)] } : receipt;
+    }
     // A later entry already showed these items; never repeat them.
     return memory ? readTurnReceipt(application, [], { memory, agentName }) : null;
   } catch {
     return deferredTurnReceipt();
   }
+}
+
+// A task entry's receipt: the identity line, then what earlier turns saved but
+// never showed, then the offer to migrate what the session's temporary project
+// holds once the session linked to a formal project (rec#20 part 2).
+export async function entryAgentReceipt(application, task, receipt) {
+  const late = await unreadTurnReceipt(application, task);
+  const migration = await sessionMigrationOffer(application, task);
+  return withReceiptLines(withTurnReceipt(receipt, late), migration ? [migration] : []);
 }
 
 // What earlier turns of this session saved but never showed. Each receipt is
@@ -31,7 +45,7 @@ export async function checkpointTurnReceipt(application, task, { memory = null, 
 // Nothing is claimed or said when a read fails; a later entry tries again. A
 // long backlog goes in batches small enough for one full-list link; the rest
 // stays unread for the next entry.
-export async function unreadTurnReceipt(application, task) {
+async function unreadTurnReceipt(application, task) {
   const unread = lateBatch((task.unreadTurnReceipts ?? []).filter(item => savedEpisodeIds(item.capture_results).length));
   if (!unread.length) return null;
   try {
@@ -48,6 +62,13 @@ export async function unreadTurnReceipt(application, task) {
   } catch {
     return null;
   }
+}
+
+// rec#20 part 2: this turn worked in a formal project yet left items in the
+// session's temporary project; its receipt links the person to the migration.
+function heldInFormalProject(task, results) {
+  return formalTask(task) && results.some(result => result.scope === 'session_temporary'
+    && savedEpisodeIds([result]).length);
 }
 
 // The host session a receipt links to: every turn of a late receipt is of

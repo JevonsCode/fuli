@@ -33,6 +33,17 @@ class TemporaryProjectEnsure(StrictModel):
     lifetime: Literal['task', 'session'] = 'task'
 
 
+def session_temporary_project_id(space_id: str, source_application: str, session_id: str) -> str:
+    """The temporary project of one host session (rec#20): the same key the
+    console's ensureSessionTemporaryProject asks for, so the session's batch
+    migration finds exactly what that session held, and nothing else."""
+    return 'temporary-' + _scope_key(['fuli-temporary-session-v1', space_id, source_application, session_id])
+
+
+def _scope_key(parts: list) -> str:
+    return hashlib.sha256(json.dumps(parts, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+
+
 async def ensure_temporary_project(store, actor, request):
     if not isinstance(store.runtime.driver, TransactionQueryDriver):
         async with query_store_transaction(store) as scoped:
@@ -41,10 +52,8 @@ async def ensure_temporary_project(store, actor, request):
     await store.authorize(actor, request.personal_space_id, 'maintainer')
     project_id = f'temporary-{request.scope_key}'
     if request.task_context_token:
-        expected = hashlib.sha256(json.dumps([
-            'fuli-temporary-task-v1', request.personal_space_id,
-            request.source_application, request.task_context_token, None,
-        ], separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+        expected = _scope_key(['fuli-temporary-task-v1', request.personal_space_id,
+                               request.source_application, request.task_context_token, None])
         if expected != request.scope_key:
             raise HTTPException(409, 'Temporary scope does not belong to this task context')
         await _bind_task_context(store, actor, request, project_id)

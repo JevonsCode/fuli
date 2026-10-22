@@ -140,6 +140,26 @@ describe('SessionRecordsPage', () => {
     const resolved = appRouter.resolve('/s/0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84')
     expect(resolved.name).toBe('session-records')
     expect(resolved.meta.layout).toBe('canvas')
+    // rec#20 part 2: the migration link an Agent surfaces opens the person's form page.
+    const migration = appRouter.resolve('/s/0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84/migrate?client=codex&project=thesis')
+    expect(migration.name).toBe('session-migration')
+    expect(migration.meta.layout).toBe('form')
+  })
+
+  it('rec#20 part 2: while the session holds undecided items, it offers to move them into its project', async () => {
+    setLocale('zh-CN')
+    const none = await open('/s/native-session-123456')
+    expect(none.wrapper.find('[data-session-migration-offer]').exists()).toBe(false)
+    none.wrapper.unmount()
+    const held = view()
+    const gate = held.entries.find(entry => entry.key === 'entity:gate')!
+    ;(gate.detail as { item: { scope: object } }).item.scope = { kind: 'temporary',
+      projects: [{ id: 'temporary-x', name: '临时会话', temporary: true }], status: 'undetermined' }
+    const { wrapper } = await open('/s/native-session-123456', held)
+    const offer = wrapper.get('[data-session-migration-offer]')
+    expect(offer.text()).toContain('迁入「毕业论文」')
+    expect(offer.get('a').attributes('href')).toBe('/s/native-session-123456/migrate?client=codex&project=thesis')
+    wrapper.unmount()
   })
 })
 

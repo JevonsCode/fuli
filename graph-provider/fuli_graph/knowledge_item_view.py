@@ -27,7 +27,8 @@ from .knowledge_item_view_models import (
     KnowledgeTurnReceiptRead,
     KnowledgeWeightBasis,
 )
-from .knowledge_management import _read_assignment, _read_item, _source_project_ids
+from .knowledge_management import _read_item
+from .knowledge_project_scope import knowledge_project_ids
 from .knowledge_tags import PERSONAL_NAMESPACE, project_namespace
 from .knowledge_versions import item_revisions, version_chain, version_status
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
@@ -127,7 +128,8 @@ def item_category(profile_aspect: str | None, item_type: str) -> str:
 
 async def item_scope(store, space, item_kind, item_id, current) -> KnowledgeItemScope:
     """Where the item applies now. A preference carries its own scope; other
-    knowledge belongs to its assigned project, else the projects its sources name."""
+    knowledge belongs to its assigned project, else the projects its sources name,
+    and to every project an active reference adds (knowledge_project_scope)."""
     status = 'undetermined' if current.get('scope_status') == 'undetermined' else 'set'
     agent_id = None
     if current.get('profile_aspect'):
@@ -138,9 +140,7 @@ async def item_scope(store, space, item_kind, item_id, current) -> KnowledgeItem
             project for project in [current.get('preference_project_id')] if project]
         agent_id = current.get('preference_agent_id') if preference_scope == 'agent' else None
     else:
-        assignment = await _read_assignment(store, space['id'], item_id, item_kind)
-        project_ids = [assignment.project_id] if assignment else await _source_project_ids(
-            store, space, item_id, item_kind)
+        project_ids = await knowledge_project_ids(store, space, item_id, item_kind)
     projects = await scope_projects(store, space, project_ids)
     if not projects:
         return KnowledgeItemScope(kind='unknown', status=status)

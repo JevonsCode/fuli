@@ -11,6 +11,7 @@ link IDs are deterministic and unique-constrained as well.
 from contextlib import asynccontextmanager
 
 from .knowledge_management import _read_assignment, _read_item, _source_project_ids
+from .knowledge_project_scope import knowledge_project_ids
 from .provider_values import native_datetime
 from .store_transactions import query_store_transaction
 
@@ -41,17 +42,21 @@ class Neo4jKnowledgeTagVocabulary:
         """None when the item is missing here, else (kind, project_ids):
         ('global', []) only for explicitly global profile knowledge;
         ('projects', ids) for a project-scoped, assigned or project-sourced item,
-        several ids when several projects' episodes mention it;
+        several ids when several projects' episodes mention it or active
+        references add projects to other knowledge;
         ('unknown', []) when no source is known."""
         current = await _read_item(self._store, space, item_id, item_kind)
         if current is None:
             return None
         if current.get('preference_scope') not in (None, 'global') and current.get('preference_project_id'):
             return 'projects', list(current.get('preference_project_ids') or [current['preference_project_id']])
+        if not current.get('profile_aspect'):
+            projects = await knowledge_project_ids(self._store, space, item_id, item_kind)
+            return ('projects', projects) if projects else ('unknown', [])
         assignment = await _read_assignment(self._store, space['id'], item_id, item_kind)
         if assignment:
             return 'projects', [assignment.project_id]
-        if current.get('profile_aspect') and current.get('preference_scope') == 'global':
+        if current.get('preference_scope') == 'global':
             return 'global', []
         sources = await _source_project_ids(self._store, space, item_id, item_kind)
         return ('projects', sources) if sources else ('unknown', [])

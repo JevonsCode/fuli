@@ -133,6 +133,16 @@ export const router = createRouter({
       meta: { title: 'routes.sessionRecords.title', layout: 'canvas', detail: true },
     },
     {
+      // rec#20 part 2: an Agent's link to move what the session held in its
+      // temporary project into the formal project it linked to; the person
+      // chooses the items. ?client= and ?project= name the session's client
+      // and the target.
+      path: '/s/:sessionId/migrate',
+      name: 'session-migration',
+      component: () => import('@/features/session-migration/SessionMigrationPage.vue'),
+      meta: { title: 'routes.sessionMigration.title', layout: 'form', detail: true },
+    },
+    {
       path: '/knowledge/turn/:spaceId',
       name: 'knowledge-turn-receipt',
       component: () => import('@/pages/KnowledgeTurnReceiptPage.vue'),

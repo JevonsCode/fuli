@@ -638,6 +638,13 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  // rec#20 part 2: what a session's temporary project holds, and the person's batch move.
+  previewSessionMigration(input) {
+    return this.#request('/v1/knowledge/session-migrations/preview', { method: 'POST', body: input });
+  }
+  applySessionMigration(input) {
+    return this.#request('/v1/knowledge/session-migrations/apply', { method: 'POST', body: input });
+  }
   // The open tag vocabulary; reads are POST queries like the other Provider queries.
   knowledgeTags(route, input) {
     if (!KNOWLEDGE_TAG_ROUTES.has(route)) throw new TypeError('Unknown knowledge tag route');

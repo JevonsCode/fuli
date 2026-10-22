@@ -17,8 +17,9 @@ import {
 } from './model'
 import { saveScope } from './quick-edit-api'
 
-// Where one item applies from now on: personal global, one or more projects,
-// or one FLA. The same item moves; nothing is copied, and the history keeps
+// Where one item applies from now on: a preference to personal global, one or
+// more projects, or one FLA; other knowledge to one or more projects (rec#20
+// part 2). The same item moves; nothing is copied, and the history keeps
 // where it applied before.
 const props = defineProps<{ item: KnowledgeItemSummary; spaceId: string; projects: PersonalProject[] }>()
 const emit = defineEmits<{ saved: []; failed: [reason: EditFailure] }>()
@@ -67,7 +68,8 @@ async function save() {
     const failure = editFailure(error)
     message.value = failure === 'widening' ? { kind: 'widening', text: t('knowledgeQuickEdit.scope.widening') }
       : { kind: 'error', text: failure === 'forbidden' ? t('knowledgeQuickEdit.forbidden')
-        : failure === 'conflict' ? t('knowledgeQuickEdit.conflict') : String((error as Error).message) }
+        : failure === 'conflict' ? t('knowledgeQuickEdit.conflict')
+          : failure === 'project_match' ? t('knowledgeQuickEdit.scope.projectMatch') : String((error as Error).message) }
     emit('failed', failure)
   } finally {
     saving.value = false
@@ -90,12 +92,11 @@ async function save() {
           </label>
         </RadioGroup>
       </Field>
-      <p v-if="!isPreference(item)" class="m-0 text-xs text-muted-foreground">{{ t('knowledgeQuickEdit.scope.onlyOneProject') }}</p>
-      <UiSelect v-if="draft.choice === 'projects' && isPreference(item)" v-model="draft.projectIds" field multiple
+      <UiSelect v-if="draft.choice === 'projects'" v-model="draft.projectIds" field multiple
         :label="t('knowledgeQuickEdit.scope.projectsField')" :options="projectOptions" :disabled="saving" data-scope-projects />
-      <UiSelect v-else-if="draft.choice === 'projects'" :model-value="draft.projectIds[0] ?? ''" field
-        :label="t('knowledgeQuickEdit.scope.project')" :options="projectOptions" :disabled="saving" data-scope-project
-        @update:model-value="value => { draft.projectIds = value ? [value] : [] }" />
+      <p v-if="!isPreference(item)" class="m-0 text-xs text-muted-foreground" data-scope-other-knowledge>
+        {{ t('knowledgeQuickEdit.scope.otherKnowledge') }}
+      </p>
       <template v-if="draft.choice === 'agent'">
         <UiSelect v-model="draft.agentProjectId" field :label="t('knowledgeQuickEdit.scope.project')"
           :options="projectOptions" :disabled="saving" data-scope-agent-project />

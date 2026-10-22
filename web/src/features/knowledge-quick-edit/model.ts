@@ -218,6 +218,8 @@ export function initialScopeDraft(item: KnowledgeItemSummary): ScopeDraft {
   return { choice: 'projects', projectIds, agentProjectId: projectIds[0] ?? '', agentId: '' }
 }
 
+// rec#20 part 2: facts, experiences and other knowledge apply to one or more
+// projects; global and one FLA stay a personal preference's scope.
 export function scopeChoices(item: KnowledgeItemSummary): ScopeChoice[] {
   return isPreference(item) ? ['global', 'projects', 'agent'] : ['projects']
 }
@@ -230,8 +232,7 @@ export function scopeRequest(spaceId: string, item: KnowledgeItemSummary, draft:
   if (draft.choice === 'agent') {
     return draft.agentProjectId && draft.agentId ? { ...base, projectIds: [draft.agentProjectId], agentId: draft.agentId } : null
   }
-  const projectIds = isPreference(item) ? draft.projectIds : draft.projectIds.slice(0, 1)
-  return projectIds.length ? { ...base, projectIds } : null
+  return draft.projectIds.length ? { ...base, projectIds: draft.projectIds } : null
 }
 
 // The body of PATCH /api/knowledge/:kind/:id for a content edit: it writes a
@@ -279,7 +280,8 @@ export function tagProjectId(item: KnowledgeItemSummary, tag?: Partial<Pick<Item
   return item.scope.kind === 'global' ? null : item.scope.projects[0]?.id ?? null
 }
 
-export type EditFailure = 'conflict' | 'widening' | 'superseded' | 'forbidden' | 'other'
+/** project_match: a project to add already holds the same or a conflicting item; 加入项目 decides. */
+export type EditFailure = 'conflict' | 'widening' | 'project_match' | 'superseded' | 'forbidden' | 'other'
 
 export function editFailure(error: unknown): EditFailure {
   if (!(error instanceof ApiError)) return 'other'
@@ -288,5 +290,6 @@ export function editFailure(error: unknown): EditFailure {
   let code = ''
   try { code = JSON.parse(error.detail)?.code ?? '' } catch { code = '' }
   if (code === 'widening_requires_review') return 'widening'
+  if (code === 'project_has_match') return 'project_match'
   return code === 'superseded' || code === 'reassert_as_new_version' ? 'superseded' : 'conflict'
 }

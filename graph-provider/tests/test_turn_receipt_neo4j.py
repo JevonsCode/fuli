@@ -224,7 +224,7 @@ async def test_quick_edit_keeps_the_same_item_and_history_and_refuses_a_stale_ve
 
 
 @pytest.mark.asyncio
-async def test_pending_items_move_freely_and_other_knowledge_moves_to_one_project():
+async def test_pending_items_move_freely_and_other_knowledge_moves_between_projects():
     settings = fixture_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta')
@@ -236,8 +236,7 @@ async def test_pending_items_move_freely_and_other_knowledge_moves_to_one_projec
         fact = (await commit(client, space_id, [{'key': 'f', 'name': 'Synthetic fact', 'type': 'ProjectFact',
                                                   'summary': 'Synthetic fact'}], project='alpha'))['entity_ids'][0]
         version = (await view(client, space_id, fact))['version']
-        assert (await move(client, space_id, fact, 'projects', version=version,
-                           projects=['alpha', 'beta'])).status_code == 422
+        # rec#20 part 2: several projects are fine (test_session_migration_neo4j); global is not.
         assert (await move(client, space_id, fact, 'global', version=version)).status_code == 422
         assert (await move(client, space_id, fact, 'projects', version=version, projects=['beta'])).status_code == 200
         moved = await view(client, space_id, fact)

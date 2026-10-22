@@ -56,7 +56,7 @@ async def preview_knowledge_project_action(
         source_project_id = await _source_project_id(
             store, space, item_id, request.item_kind
         )
-        match = await _match_target_project(
+        match = await match_target_project(
             store,
             space,
             item_id,
@@ -104,7 +104,7 @@ async def apply_knowledge_project_action(
     else:
         target_project_id = request.target_project_id
         await authorize_personal_project(store, actor, space, target_project_id)
-        match = await _match_target_project(
+        match = await match_target_project(
             store,
             space,
             item_id,
@@ -151,7 +151,7 @@ async def apply_knowledge_project_action(
         )
 
     reference_status = _reference_status(match.kind, request.conflict_resolution)
-    reference = await _upsert_reference(
+    reference = await upsert_reference(
         store,
         space,
         actor,
@@ -429,7 +429,7 @@ def _new_project_profile(item_id, item, request):
     )
 
 
-async def _match_target_project(
+async def match_target_project(
     store,
     space,
     item_id,
@@ -562,7 +562,7 @@ async def _read_entity_summary(store, space, item_id):
     return await _read_item(store, space, item_id, 'entity')
 
 
-async def _upsert_reference(
+async def upsert_reference(
     store,
     space,
     actor,

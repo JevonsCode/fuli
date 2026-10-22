@@ -559,9 +559,9 @@ async def _carry_references(scoped, space, item_kind, item_id, new_id, created_a
               (old:FuliKnowledgeProjectReference {item_kind: $item_kind, item_id: $item_id, status: 'active'})
               -[:REFERENCES_IN]->(target)
         WITH space, old, target, head([row IN $references WHERE row.project_id = old.project_id]) AS row
+        // One map, so the copy never holds the old reference's unique id.
         CREATE (reference:FuliKnowledgeProjectReference)
-        SET reference = properties(old), reference.id = row.id, reference.item_id = $new_id,
-            reference.created_at = $created_at, reference.updated_at = $created_at
+        SET reference = old {.*, id: row.id, item_id: $new_id, created_at: $created_at, updated_at: $created_at}
         MERGE (space)-[:HAS_KNOWLEDGE_REFERENCE]->(reference)
         MERGE (reference)-[:REFERENCES_IN]->(target)
         ''', space_id=space['id'], item_kind=item_kind, item_id=item_id, new_id=new_id,
