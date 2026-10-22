@@ -101,8 +101,10 @@ function governance(input) {
     ...(input.relation ? { relation: input.relation } : {}),
     ...(input.change === 'remove_alias' ? { alias: input.alias } : {}),
     ...(input.operationId ? { operation_id: input.operationId } : {}),
-    ...(split ? { split: { name: split.name, description: split.description ?? null, aliases: split.aliases ?? [],
-      links: (split.links ?? []).map(item => ({ item_kind: item.itemKind, item_id: item.itemId })) } } : {}),
+    ...(split ? { split: split.restoreTagId
+      ? { restore_tag_id: split.restoreTagId, aliases: split.aliases ?? [] }
+      : { name: split.name, description: split.description ?? null, aliases: split.aliases ?? [],
+          links: (split.links ?? []).map(item => ({ item_kind: item.itemKind, item_id: item.itemId })) } } : {}),
     include_all_projects: input.allProjects === true };
 }
 

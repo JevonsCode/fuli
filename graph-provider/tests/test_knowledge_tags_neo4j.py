@@ -8,7 +8,9 @@ from uuid import uuid4
 
 import pytest
 
+from fuli_graph.knowledge_versions import lock_knowledge
 from fuli_graph.provider_values import native_datetime
+from fuli_graph.store_transactions import query_store_transaction
 from knowledge_tag_governance_scenarios import GOVERNANCE_SCENARIOS
 from knowledge_tag_scenarios import REVIEW_TOKEN, SCENARIOS, alias, create, post, resolve
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
@@ -243,3 +245,34 @@ async def test_concurrent_vocabulary_writes_on_neo4j(scenario):
 @pytest.mark.parametrize('scenario', GOVERNANCE_SCENARIOS, ids=lambda scenario: scenario.__name__)
 async def test_tag_governance_scenario_on_neo4j(scenario):
     await run_in_world(scenario)
+
+
+async def an_attach_queued_behind_a_delete_never_tags_the_deleted_item(world):
+    """The tag/assignment follow-up, deterministically: a transaction holds the
+    space's knowledge lock (as a hard delete does) and removes the item; the
+    attach that was waiting for the lock reads the item again and finds nothing."""
+    await world.project('class')
+    tag = (await create(world, '户外学习', 'class'))['tag']
+    item = await world.item('class', 'Bird walk')
+    async with query_store_transaction(world.store) as scoped:
+        await lock_knowledge(scoped, {'id': world.space})
+        pending = asyncio.create_task(world.client.post('/v1/knowledge-tags/attach', json={
+            'personal_space_id': world.space, 'personal_project_id': 'class', 'tag_id': tag['id'], **item}))
+        await asyncio.sleep(1.0)
+        assert not pending.done(), 'the attach waits for the lock'
+        await scoped.runtime.driver.execute_query('''
+            MATCH (entity:Entity {uuid: $item_id})
+            OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {item_id: $item_id})
+            DETACH DELETE entity, assignment
+        ''', item_id=item['item_id'])
+    refused = await pending
+    assert refused.status_code == 404, refused.text
+    assert await world.attached(item) == []
+    records, _, _ = await world.driver.execute_query(
+        'MATCH (link:FuliKnowledgeTagLink {item_id: $item_id}) RETURN count(link) AS links', item_id=item['item_id'])
+    assert records[0]['links'] == 0
+
+
+@pytest.mark.asyncio
+async def test_an_attach_rereads_the_item_under_the_lock_on_neo4j():
+    await run_in_world(an_attach_queued_behind_a_delete_never_tags_the_deleted_item)

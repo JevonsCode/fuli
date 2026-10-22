@@ -12,6 +12,7 @@ unique-constrained as well.
 """
 from contextlib import asynccontextmanager
 
+from .knowledge_hard_delete_traces import hard_deletion_record
 from .knowledge_management import _read_assignment, _read_item, _source_project_ids
 from .knowledge_project_scope import knowledge_project_ids
 from .knowledge_tag_models import LIVE_STATUSES
@@ -50,7 +51,10 @@ class Neo4jKnowledgeTagVocabulary:
         ('projects', ids) for a project-scoped, assigned or project-sourced item,
         several ids when several projects' episodes mention it or active
         references add projects to other knowledge;
-        ('unknown', []) when no source is known."""
+        ('unknown', []) when no source is known. A hard-deleted item is missing,
+        whatever its tombstone says."""
+        if await hard_deletion_record(self._store, space, item_id) is not None:
+            return None
         current = await _read_item(self._store, space, item_id, item_kind)
         if current is None:
             return None

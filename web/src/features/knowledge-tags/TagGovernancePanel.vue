@@ -96,10 +96,15 @@ function toggleLink(link: TagLinkedItem, on: boolean | 'indeterminate') {
   split.value = { ...split.value, links: on === true ? [...links, link] : links }
 }
 
-// G4-5: a mistaken merge is split back under the merged tag's name, with the links it brought.
+// G4-5: a mistaken merge is split back under the merged tag's name. The Provider
+// moves every item that merge took, from the merge's own record, not from the
+// detail's first page of links; a large one comes back in labelled batches.
 function restore(merged: TagRef) {
-  split.value = { ...split.value, name: merged.name,
-    links: (props.detail.links ?? []).filter(link => link.moved_from?.id === merged.id) }
+  split.value = { ...split.value, name: merged.name, links: [], restoreTagId: merged.id }
+}
+
+function splitByHand() {
+  split.value = { ...split.value, name: '', links: [], restoreTagId: undefined }
 }
 
 async function confirm() {
@@ -154,11 +159,17 @@ async function confirm() {
           {{ t('knowledgeTags.governance.splitRestore', { name: merged.name }) }}
         </Button>
       </div>
-      <Field>
+      <p v-if="split.restoreTagId" class="m-0 flex flex-wrap items-center gap-2 text-sm" data-tag-split-restoring>
+        <span>{{ t('knowledgeTags.governance.restoreNote', { name: split.name }) }}</span>
+        <Button type="button" variant="link" size="sm" class="h-auto p-0" @click="splitByHand">
+          {{ t('knowledgeTags.governance.splitByHand') }}
+        </Button>
+      </p>
+      <Field v-else>
         <FieldLabel for="tag-split-name">{{ t('knowledgeTags.governance.splitName') }}</FieldLabel>
         <Input id="tag-split-name" v-model="split.name" maxlength="80" autocomplete="off" data-tag-split-name />
       </Field>
-      <Field>
+      <Field v-if="!split.restoreTagId">
         <FieldLabel for="tag-split-description">{{ t('knowledgeTags.governance.splitDescription') }}</FieldLabel>
         <Input id="tag-split-description" v-model="split.description" maxlength="500" autocomplete="off" />
       </Field>
@@ -171,7 +182,7 @@ async function confirm() {
           <span class="[overflow-wrap:anywhere]">{{ alias }}</span>
         </label>
       </fieldset>
-      <fieldset class="m-0 grid min-w-0 gap-2 border-0 p-0">
+      <fieldset v-if="!split.restoreTagId" class="m-0 grid min-w-0 gap-2 border-0 p-0">
         <legend class="mb-2 text-sm font-medium">{{ t('knowledgeTags.governance.splitLinks') }}</legend>
         <p v-if="!detail.links?.length" class="m-0 text-sm text-muted-foreground">{{ t('knowledgeTags.detail.noLinks') }}</p>
         <ul v-else class="m-0 grid max-h-56 list-none gap-2 overflow-y-auto p-0">

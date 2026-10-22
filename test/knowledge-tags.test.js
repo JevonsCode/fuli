@@ -178,6 +178,10 @@ test('the local console reads every project and previews governance as the owner
   assert.deepEqual(preview.body, PREVIEW);
   await assert.rejects(api(app, 'GET', '/api/knowledge-tags/vocabulary?personalSpaceId=personal-space&status=deleted'),
     /status is not one of/);
+  // Splitting a mistaken merge back names the merged tag; the Provider reads what moves from the merge.
+  await api(app, 'POST', '/api/knowledge-tags/governance/preview', { ...space, change: 'split', tagId: 'tag-b',
+    split: { restoreTagId: 'tag-a', aliases: [] } });
+  assert.deepEqual(calls.pop().body.split, { restore_tag_id: 'tag-a', aliases: [] });
   assert.deepEqual(calls.map(({ path }) => path), ['/v1/knowledge-tags/resolve', '/v1/knowledge-tags/metrics',
     '/v1/knowledge-tags/vocabulary', '/v1/knowledge-tags/detail', '/v1/knowledge-tags/governance/preview']);
   assert.deepEqual(calls[0].body, { personal_space_id: 'personal-space', personal_project_id: 'p1',

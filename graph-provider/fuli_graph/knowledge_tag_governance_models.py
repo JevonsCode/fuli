@@ -39,16 +39,27 @@ class KnowledgeTagItemRef(StrictModel):
 
 
 class KnowledgeTagSplit(StrictModel):
-    """The new tag's name and what moves to it from the split tag."""
-    name: str = Field(min_length=1, max_length=TAG_NAME_MAX * 2)
+    """The new tag's name and what moves to it from the split tag, or the tag a
+    mistaken merge took in: then every item it carried moves back, read from
+    that merge's own record, at most MAX_SPLIT_LINKS per split."""
+    name: str | None = Field(default=None, min_length=1, max_length=TAG_NAME_MAX * 2)
+    restore_tag_id: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, min_length=1, max_length=500)
     aliases: list[str] = Field(default_factory=list, max_length=MAX_SPLIT_ALIASES)
     links: list[KnowledgeTagItemRef] = Field(default_factory=list, max_length=MAX_SPLIT_LINKS)
 
     @field_validator('name')
     @classmethod
-    def visible_name(cls, value: str) -> str:
-        return tag_text(value, 'name')
+    def visible_name(cls, value: str | None) -> str | None:
+        return None if value is None else tag_text(value, 'name')
+
+    @model_validator(mode='after')
+    def one_target(self):
+        if (self.name is None) == (self.restore_tag_id is None):
+            raise ValueError('a split names a new tag or the merged tag to restore, not both')
+        if self.restore_tag_id and self.links:
+            raise ValueError('restoring a merged tag moves the links its merge recorded')
+        return self
 
     @field_validator('aliases')
     @classmethod
@@ -94,7 +105,9 @@ class KnowledgeTagRelationDrop(StrictModel):
     tag: KnowledgeTagReference
     relation: TagRelationKind
     target: KnowledgeTagReference
-    reason: Literal['cycle', 'self', 'scope']
+    # gone: a tag that came back kept a relation whose other end is gone or no
+    # longer lists it; limit: the other side's list is full.
+    reason: Literal['cycle', 'self', 'scope', 'limit', 'gone']
 
 
 class KnowledgeTagUndoPreview(StrictModel):
@@ -120,8 +133,12 @@ class KnowledgeTagGovernancePreview(StrictModel):
     revives: bool = False
     links_moved: int | None = None
     links_already_on_target: int | None = None
+    # A restoring split moves a batch at a time: what is left for the next one.
+    links_remaining: int | None = None
     # Aliases a split moves or a removal takes away.
     aliases: list[str] = Field(default_factory=list)
+    # A tag that comes back gives up aliases another visible tag holds now.
+    aliases_dropped: list[str] = Field(default_factory=list)
     relations_moved: int = 0
     relations_dropped: list[KnowledgeTagRelationDrop] = Field(default_factory=list)
     undo: KnowledgeTagUndoPreview | None = None

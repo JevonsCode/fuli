@@ -3,6 +3,8 @@ through the Provider routes. The same scenarios run on the in-memory port and
 on a disposable Neo4j. Synthetic data only.
 """
 import asyncio
+import random
+import string
 
 from knowledge_tag_scenarios import REVIEW, TAGS, alias, create, post, resolve
 
@@ -45,6 +47,17 @@ async def mine(world, name, project=None, **options):
     """The person's own tag, active at once."""
     body = {'namespace': 'personal'} if project is None else {}
     return (await create(world, name, project, operation_actor='human', reason='mine', **body, **options))['tag']
+
+
+async def fresh(world, name):
+    """The person's new personal tag, judged different from any similar one."""
+    seen = []
+    while True:
+        created = await create(world, name, operation_actor='human', reason='mine', namespace='personal',
+                               distinct_from=seen)
+        if created['tag'] is not None:
+            return created['tag']
+        seen += [candidate['id'] for candidate in created['candidates']]
 
 
 def governed(tags):
@@ -435,6 +448,109 @@ async def an_undo_never_takes_a_link_a_later_merge_relies_on(world):
     assert sorted(await world.attached(item)) == sorted([first['id'], second['id']])
 
 
+async def an_undo_never_gives_two_tags_one_word(world):
+    """Dot P1: an undo that would put an alias back after another tag took the
+    word is refused; once that tag gives the word up, the undo goes through."""
+    first, second = await mine(world, '户外学习'), await mine(world, '自然教育')
+    await alias(world, first['id'], '野外课', operation_actor='human', reason='mine')
+    await govern(world, 'remove_alias', first['id'], alias='野外课')
+    assert (await alias(world, second['id'], '野外课', operation_actor='human', reason='mine'))['outcome'] == 'added'
+    before = await world.stored()
+    refused = await preview(world, 'undo', first['id'])
+    assert (refused['undo']['action'], refused['blocked']['code']) == ('remove_alias', 'restore_conflict')
+    assert (await govern(world, 'undo', first['id'], status=409))['detail']['code'] == 'restore_conflict'
+    assert await world.stored() == before
+    await govern(world, 'remove_alias', second['id'], alias='野外课')
+    await govern(world, 'undo', first['id'])
+    found = [(item['id'], item['match']) for item in await resolve(world, '野外课') if item['match'] != 'similar']
+    assert found == [(first['id'], 'alias')]
+
+
+async def an_undo_or_revival_never_closes_a_parent_cycle(world):
+    """Dot P1: A under B, C under A; A retired; B put under C (A no longer counts).
+    Undoing the retire would close A→B→C→A, so it is refused until B's change is
+    undone. A revival by the person keeps only the relations that still fit."""
+    top, middle, low = [await mine(world, name) for name in ('写作', '小说', '短篇')]
+    await govern(world, 'relate', middle['id'], relation='parent', target_tag_id=top['id'])
+    await govern(world, 'relate', low['id'], relation='parent', target_tag_id=middle['id'])
+    await govern(world, 'retire', middle['id'])
+    await govern(world, 'relate', top['id'], relation='parent', target_tag_id=low['id'])
+    refused = await preview(world, 'undo', middle['id'])
+    assert (refused['undo']['action'], refused['blocked']['code']) == ('retire', 'restore_conflict')
+    await govern(world, 'undo', middle['id'], status=409)
+    # Reverse order: B's change first, then the retire.
+    await govern(world, 'undo', top['id'])
+    await govern(world, 'undo', middle['id'])
+    assert [tag['id'] for tag in (await detail(world, middle['id']))['tag']['parents']] == [top['id']]
+    assert [tag['id'] for tag in (await detail(world, low['id']))['tag']['parents']] == [middle['id']]
+
+    # The person's create of a retired word: the cycle-closing parent is dropped, the rest kept.
+    await govern(world, 'retire', middle['id'])
+    await govern(world, 'relate', top['id'], relation='parent', target_tag_id=low['id'])
+    revived = await create(world, '小说', operation_actor='human', namespace='personal', reason='I use it again')
+    assert (revived['outcome'], revived['tag']['id'], revived['tag']['status']) == ('created', middle['id'], 'active')
+    assert '1 relations' in revived['guidance']
+    after = await detail(world, middle['id'])
+    assert after['tag']['parents'] == []
+    assert [tag['id'] for tag in after['children']] == [low['id']]
+    assert [entry['action'] for entry in after['history']][0] == 'revive'
+
+
+async def a_merge_never_overflows_relations(world):
+    """Dot P2-1: merging a tag with 32 related tags into one that already has 32
+    drops the extra pairs on both sides, listed with reason limit; a full parent
+    list drops with reason limit too, not as a cycle."""
+    # Unrelated synthetic words, so no creation stops for a similar candidate.
+    rng = random.Random(2301)
+    word = lambda: ''.join(rng.choice(string.ascii_lowercase) for _ in range(12))  # noqa: E731
+    source, target = await fresh(world, word()), await fresh(world, word())
+    for _ in range(32):
+        for owner in (source, target):
+            other = await fresh(world, word())
+            await govern(world, 'relate', owner['id'], relation='related', target_tag_id=other['id'])
+    parent = await fresh(world, word())
+    await govern(world, 'relate', source['id'], relation='parent', target_tag_id=parent['id'])
+    for _ in range(8):
+        other = await fresh(world, word())
+        await govern(world, 'relate', target['id'], relation='parent', target_tag_id=other['id'])
+    shown = await preview(world, 'merge', source['id'], into_tag_id=target['id'])
+    reasons = [(drop['relation'], drop['reason']) for drop in shown['relations_dropped']]
+    assert reasons.count(('related', 'limit')) == 32 and reasons.count(('parent', 'limit')) == 1, reasons
+    assert ('parent', 'cycle') not in reasons
+    await govern(world, 'merge', source['id'], into_tag_id=target['id'])
+    merged = await detail(world, target['id'])
+    assert len(merged['tag']['related']) == 32 and len(merged['tag']['parents']) == 8
+    stranded = [drop['tag']['id'] for drop in shown['relations_dropped'] if drop['relation'] == 'related']
+    for tag_id in stranded:
+        assert (await detail(world, tag_id))['tag']['related'] == [], 'no one-sided pair is left'
+
+
+async def a_large_mistaken_merge_is_split_back_whole(world):
+    """Dot P2-3: the one-click restore moves back every item the merge took, read
+    from the merge's record, even past the 200 links a detail page lists."""
+    await world.project('class')
+    source = (await create(world, '户外学习', 'class'))['tag']
+    target = await mine(world, '自然教育', 'class')
+    items = [await world.item('class', f'Synthetic walk {index}') for index in range(201)]
+    for item in items:
+        await attach(world, source['id'], item, 'class')
+    await attach(world, target['id'], items[0], 'class')
+    await govern(world, 'merge', source['id'], into_tag_id=target['id'])
+    await alias(world, target['id'], '自然课', 'class', operation_actor='human', reason='later change')
+    assert (await preview(world, 'undo', source['id']))['blocked']['code'] == 'changed_since'
+    page = await detail(world, target['id'])
+    assert (len(page['links']), page['links_truncated']) == (200, True)
+    split = {'restore_tag_id': source['id']}
+    shown = await preview(world, 'split', target['id'], split=split)
+    assert (shown['revives'], shown['other']['id'], shown['links_moved'], shown['links_remaining']) == (
+        True, source['id'], 201, 0)
+    await govern(world, 'split', target['id'], split=split)
+    assert await world.attached(items[0]) == sorted([source['id'], target['id']])
+    for item in items[1:]:
+        assert await world.attached(item) == [source['id']]
+    assert (await preview(world, 'split', target['id'], split=split))['blocked']['code'] == 'nothing_to_split'
+
+
 async def a_retired_tag_is_gone_until_the_person_brings_it_back(world):
     await world.project('class')
     tag = (await create(world, '户外学习', 'class'))['tag']
@@ -456,6 +572,8 @@ GOVERNANCE_SCENARIOS = [
     parent_cycles_and_cross_scope_relations_are_refused, a_merge_racing_an_attach_lands_once_on_the_target,
     an_agent_can_preview_but_never_govern, scoped_reads_never_show_another_project,
     the_review_queue_waits_for_the_person, undo_goes_back_one_change_at_a_time,
-    an_undo_never_takes_a_link_a_later_merge_relies_on,
+    an_undo_never_takes_a_link_a_later_merge_relies_on, an_undo_never_gives_two_tags_one_word,
+    an_undo_or_revival_never_closes_a_parent_cycle, a_merge_never_overflows_relations,
+    a_large_mistaken_merge_is_split_back_whole,
     a_retired_tag_is_gone_until_the_person_brings_it_back,
 ]

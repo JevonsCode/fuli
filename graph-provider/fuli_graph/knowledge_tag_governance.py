@@ -30,6 +30,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from .knowledge_tag_governance_models import (
+    MAX_SPLIT_LINKS,
     KnowledgeTagBlocked,
     KnowledgeTagGovernanceApply,
     KnowledgeTagGovernancePreview,
@@ -45,6 +46,8 @@ from .knowledge_tag_relations import (
     carry_relations,
     other_tag,
     relate,
+    relation_violation,
+    settle_revived,
     unrelate,
 )
 from .knowledge_tags import (
@@ -66,7 +69,7 @@ LINK_FIELDS = ('status', 'attached_at', 'attached_by_kind', 'detached_at', 'deta
                'moved_to_tag_id', 'moved_from_tag_id')
 _LINK_TIMES = frozenset({'attached_at', 'detached_at'})
 _SCALAR_FIELDS = frozenset({'status', 'merged_into_id'})
-_PRIMARY_ACTION = {'approve': 'approve', 'merge': 'merge', 'split': 'split', 'retire': 'retire',
+_PRIMARY_ACTION = {'revive': 'revive', 'approve': 'approve', 'merge': 'merge', 'split': 'split', 'retire': 'retire',
                    'remove_alias': 'remove_alias', 'relate': 'relate', 'unrelate': 'unrelate', 'undo': 'undo'}
 _SECONDARY_ACTION = {'merge': 'merge_in', 'split': 'split_from', 'relate': 'relate', 'unrelate': 'unrelate',
                      'undo': 'undo'}
@@ -86,6 +89,9 @@ _MESSAGES = {
     'nothing_to_undo': 'This tag has no change left to undo.',
     'already_undone': 'This change was already undone.',
     'changed_since': 'Tags or links this change wrote changed since; undo the later change first.',
+    'restore_conflict': 'Undoing this now would make a parent cycle, overflow a relation list or give two '
+                        'visible tags the same word, because of a later change; change that first.',
+    'no_merge_to_restore': 'This tag was not merged into the one being split, or that merge was undone.',
 }
 
 
@@ -120,6 +126,26 @@ async def apply_governance(store, actor: dict, request: KnowledgeTagGovernanceAp
         change=request.change, operation_id=plan.operation_id, preview=plan.preview,
         tags=[reference(touched[tag_id]) for tag_id in plan.touched_order
               if namespaces is None or touched[tag_id]['namespace_key'] in namespaces])
+
+
+async def revive_on_create(vocabulary, space: dict, actor_id: str, earlier: dict, reason: str):
+    """The person creates a retired tag's word again: the tag comes back with its
+    own ID, keeping only the relations and aliases that still fit (as a split
+    that revives does). Undoable like the person's other changes. Returns the
+    stored tag and what was dropped."""
+    tags = {tag['id']: tag for tag in await vocabulary.all_tags()}
+    plan = _Plan(space_id=space['id'], tags=tags, namespaces=None, change='revive', subject_id=earlier['id'],
+                 actor_id=actor_id, at=now_utc())
+    plan.read(earlier['id'])
+    plan.update(earlier['id'], status='active')
+    if word_conflict(plan, [earlier['id']]) and any(
+            earlier['name_key'] in plan.current(other).get('alias_keys', [])
+            for other in _co_visible(plan, earlier) if plan.live(other)):
+        raise HTTPException(status_code=409, detail={'code': 'name_in_use', 'message': _MESSAGES['name_in_use']})
+    settle_revived(plan, earlier['id'])
+    _drop_conflicting_aliases(plan, earlier['id'])
+    written = await vocabulary.apply(**plan.writes(reason))
+    return written[earlier['id']], plan.summary
 
 
 @dataclass
@@ -185,6 +211,19 @@ class _Plan:
     def _touch(self, tag_id: str) -> None:
         if tag_id not in self.touched_order:
             self.touched_order.append(tag_id)
+
+    def all_ids(self) -> list[str]:
+        return [*self.tags, *(tag_id for tag_id in self.new_tags if tag_id not in self.tags)]
+
+    def ancestors(self, tag_id: str) -> set[str]:
+        """Every live tag above this one through live parents, in the planned state."""
+        seen, pending = set(), list(self.parents(tag_id))
+        while pending:
+            parent = pending.pop()
+            if parent not in seen:
+                seen.add(parent)
+                pending.extend(self.parents(parent))
+        return seen
 
     def parents(self, tag_id: str) -> list[str]:
         return [parent for parent in self.current(tag_id).get('parent_ids') or [] if self.live(parent)]
@@ -315,7 +354,11 @@ async def _split(plan: _Plan, reader, request, reason):
     if not plan.live(source['id']):
         return 'not_live'
     spec = request.split
-    key = identity_key(spec.name)
+    restoring = plan.tags.get(spec.restore_tag_id) if spec.restore_tag_id else None
+    if spec.restore_tag_id and (restoring is None or not plan.visible(restoring['id'])):
+        raise HTTPException(status_code=404, detail='knowledge tag not found')
+    key = restoring['name_key'] if restoring else identity_key(spec.name)
+    name = restoring['name'] if restoring else spec.name
     alias_keys = []
     for alias in spec.aliases:
         alias_key = identity_key(alias)
@@ -323,46 +366,50 @@ async def _split(plan: _Plan, reader, request, reason):
             return 'alias_not_on_tag'
         if alias_key != key and alias_key not in alias_keys:
             alias_keys.append(alias_key)
-    attached = {(link['item_kind'], link['item_id']): link for link in await reader.links_of([source['id']])}
-    chosen = []
-    for ref in spec.links:
-        link = attached.get((ref.item_kind, ref.item_id))
-        if link is None:
-            return 'link_not_on_tag'
-        if link not in chosen:
-            chosen.append(link)
-    if not alias_keys and not chosen and key not in source['alias_keys']:
+    if restoring:
+        moves = await _restore_moves(plan, reader, source, restoring)
+        if isinstance(moves, str):
+            return moves
+        moves, remaining = moves
+    else:
+        moves, remaining = await _chosen_moves(plan, reader, source, spec), 0
+        if isinstance(moves, str):
+            return moves
+    if not alias_keys and not moves and key not in source['alias_keys']:
         return 'nothing_to_split'
     moving_keys = set(alias_keys) | ({key} if key in source['alias_keys'] else set())
-    earlier = next((tag for tag in plan.tags.values() if tag['namespace_key'] == source['namespace_key']
-                    and tag['name_key'] == key), None)
-    revives = earlier is not None and (earlier['status'] == 'retired' or (
+    earlier = restoring or next((tag for tag in plan.tags.values() if tag['namespace_key'] == source['namespace_key']
+                                 and tag['name_key'] == key), None)
+    continuing = earlier is not None and plan.live(earlier['id']) and restoring is not None
+    revives = earlier is not None and not continuing and (earlier['status'] == 'retired' or (
         earlier['status'] == 'merged' and earlier.get('merged_into_id') == source['id']))
-    if earlier is not None and not revives:
+    if earlier is not None and not revives and not continuing:
         return 'name_in_use'
-    holders = _holders(plan, [PERSONAL_NAMESPACE, source['namespace_key']], key,
-                       besides=earlier['id'] if revives else None)
-    if any(holder != source['id'] or key not in moving_keys for holder in holders):
-        return 'name_in_use'
+    if not continuing:
+        holders = _holders(plan, [PERSONAL_NAMESPACE, source['namespace_key']], key,
+                           besides=earlier['id'] if revives else None)
+        if any(holder != source['id'] or key not in moving_keys for holder in holders):
+            return 'name_in_use'
     moved_aliases = [(source['aliases'][source['alias_keys'].index(alias_key)], alias_key)
                      for alias_key in alias_keys]
     keep = [index for index, alias_key in enumerate(source['alias_keys']) if alias_key not in moving_keys]
-    plan.update(source['id'], **{name: [source[name][index] for index in keep]
-                                 for name in ('aliases', 'alias_keys', 'alias_statuses')})
-    if revives:
-        plan.read(earlier['id'])
-        kept = [index for index, alias_key in enumerate(earlier['alias_keys'])
-                if alias_key not in moving_keys and alias_key not in source['alias_keys']]
+    plan.update(source['id'], **{field: [source[field][index] for index in keep]
+                                 for field in ('aliases', 'alias_keys', 'alias_statuses')})
+    if earlier is not None:
         new_id = earlier['id']
-        plan.update(new_id, status='active', merged_into_id=None, parent_ids=[], related_ids=[],
-                    aliases=[*[earlier['aliases'][index] for index in kept], *[alias for alias, _ in moved_aliases]],
-                    alias_keys=[*[earlier['alias_keys'][index] for index in kept], *alias_keys],
-                    alias_statuses=[*[earlier['alias_statuses'][index] for index in kept],
-                                    *['active'] * len(alias_keys)])
+        plan.read(new_id)
+        current = plan.current(new_id)
+        plan.update(new_id, status='active', merged_into_id=None,
+                    aliases=[*current['aliases'], *[alias for alias, _ in moved_aliases]],
+                    alias_keys=[*current['alias_keys'], *alias_keys],
+                    alias_statuses=[*current['alias_statuses'], *['active'] * len(alias_keys)])
+        if revives:
+            settle_revived(plan, new_id)
+            _drop_conflicting_aliases(plan, new_id)
     else:
         tag = new_tag_record(
             actor_id=plan.actor_id, space_id=plan.space_id, namespace=source['namespace_kind'],
-            project_id=source.get('namespace_project_id'), name=spec.name, name_key=key,
+            project_id=source.get('namespace_project_id'), name=name, name_key=key,
             description=spec.description, language=source.get('language'), actor_kind='human',
             source_application=None, reason=reason, distinct_from=[source['id']], at=plan.at)
         tag.update(aliases=[alias for alias, _ in moved_aliases], alias_keys=alias_keys,
@@ -370,16 +417,121 @@ async def _split(plan: _Plan, reader, request, reason):
         plan.create(tag)
         new_id = tag['id']
     plan.other_id = new_id
-    landings = await reader.links_by_ids([tag_link_id(plan.space_id, new_id, link['item_kind'], link['item_id'])
-                                          for link in chosen])
-    for link in chosen:
-        plan.write_link({**link, 'status': 'moved', 'moved_to_tag_id': new_id, 'detached_at': plan.at,
-                         'detached_by_kind': 'human'}, link)
-        landing = landings.get(tag_link_id(plan.space_id, new_id, link['item_kind'], link['item_id']))
-        plan.write_link(new_link(plan.space_id, new_id, link['item_kind'], link['item_id'], plan.at, 'human',
-                                 moved_from_tag_id=source['id']), landing)
-    plan.summary.update(new_tag_name=spec.name, revives=revives, links_moved=len(chosen),
+    landings = await reader.links_by_ids([tag_link_id(plan.space_id, new_id, item_kind, item_id)
+                                          for item_kind, item_id, _ in moves])
+    for item_kind, item_id, from_source in moves:
+        if from_source is not None:
+            plan.write_link({**from_source, 'status': 'moved', 'moved_to_tag_id': new_id, 'detached_at': plan.at,
+                             'detached_by_kind': 'human'}, from_source)
+        landing = landings.get(tag_link_id(plan.space_id, new_id, item_kind, item_id))
+        plan.write_link(new_link(plan.space_id, new_id, item_kind, item_id, plan.at, 'human',
+                                 moved_from_tag_id=source['id'] if from_source is not None else None), landing)
+    plan.summary.update(new_tag_name=name, revives=revives, links_moved=len(moves), links_remaining=remaining,
                         aliases=[alias for alias, _ in moved_aliases], status_after=source['status'])
+
+
+async def _chosen_moves(plan: _Plan, reader, source: dict, spec):
+    """The links the person ticked: each moves off the split tag."""
+    attached = {(link['item_kind'], link['item_id']): link for link in await reader.links_of([source['id']])}
+    chosen = {}
+    for ref in spec.links:
+        link = attached.get((ref.item_kind, ref.item_id))
+        if link is None:
+            return 'link_not_on_tag'
+        chosen[(ref.item_kind, ref.item_id)] = link
+    return [(item_kind, item_id, link) for (item_kind, item_id), link in chosen.items()]
+
+
+async def _restore_moves(plan: _Plan, reader, source: dict, restoring: dict):
+    """Splitting a mistaken merge back (G4-5): every item the merged tag carried
+    before the merge, read from that merge's own undo record rather than from a
+    page of links. The link the merge moved onto the split tag moves back; an
+    item that already had the split tag keeps it and gets its old tag again.
+    At most MAX_SPLIT_LINKS per split; the rest wait for the next batch."""
+    merges = [revision for revision in await reader.revisions(restoring['id'], 200)
+              if revision.get('action') == 'merge' and revision.get('related_tag_id') == source['id']]
+    undone = await reader.undone([revision['operation_id'] for revision in merges])
+    merge = next((revision for revision in merges if revision['operation_id'] not in undone), None)
+    if merge is None or not merge.get('snapshot_json'):
+        return 'no_merge_to_restore'
+    if not (restoring['status'] == 'merged' and restoring.get('merged_into_id') == source['id']) \
+            and not plan.live(restoring['id']):
+        return 'no_merge_to_restore'
+    snapshot = json.loads(merge['snapshot_json'])
+    carried = [link_id for link_id, entry in snapshot['links'].items()
+               if (entry['before'] or {}).get('status') == 'attached']
+    stored = await reader.links_by_ids(carried)
+    restored = [stored[link_id] for link_id in sorted(carried, key=lambda link_id: (
+        stored.get(link_id, {}).get('item_kind', ''), stored.get(link_id, {}).get('item_id', '')))
+        if link_id in stored and stored[link_id]['tag_id'] == restoring['id'] and stored[link_id]['status'] != 'attached']
+    for link in restored:
+        plan.basis[f'link:{link["id"]}'] = link.get('version')
+    batch = restored[:MAX_SPLIT_LINKS]
+    on_source = await reader.links_by_ids([tag_link_id(plan.space_id, source['id'], link['item_kind'], link['item_id'])
+                                           for link in batch])
+    moves = []
+    for link in batch:
+        mine = on_source.get(tag_link_id(plan.space_id, source['id'], link['item_kind'], link['item_id']))
+        brought = mine is not None and mine['status'] == 'attached' and mine.get('moved_from_tag_id') == restoring['id']
+        moves.append((link['item_kind'], link['item_id'], mine if brought else None))
+    return moves, len(restored) - len(batch)
+
+
+def _drop_conflicting_aliases(plan: _Plan, tag_id: str) -> None:
+    """A tag that comes back keeps only aliases no other visible tag holds now."""
+    tag = plan.current(tag_id)
+    keep = [index for index, alias_key in enumerate(tag['alias_keys'])
+            if not _word_holders_besides(plan, tag, alias_key)]
+    dropped = [tag['aliases'][index] for index in range(len(tag['alias_keys'])) if index not in keep]
+    if dropped:
+        plan.update(tag_id, **{field: [tag[field][index] for index in keep]
+                               for field in ('aliases', 'alias_keys', 'alias_statuses')})
+        plan.summary.setdefault('aliases_dropped', []).extend(dropped)
+
+
+def word_conflict(plan: _Plan, tag_ids) -> bool:
+    """Whether the planned state gives a live tag's alias (or its name as
+    someone's alias) to another tag a reader would also see."""
+    for tag_id in tag_ids:
+        if not plan.live(tag_id):
+            continue
+        tag = plan.current(tag_id)
+        if any(_word_holders_besides(plan, tag, key) for key in tag['alias_keys']):
+            return True
+        if any(tag['name_key'] in plan.current(other).get('alias_keys', []) for other in _co_visible(plan, tag)
+               if plan.live(other)):
+            return True
+    return False
+
+
+def _word_holders_besides(plan: _Plan, tag: dict, key: str) -> list[str]:
+    """Other live tags, seen together with this one, that the word leads to."""
+    holders = []
+    for other in _co_visible(plan, tag):
+        current = plan.current(other)
+        if key != current['name_key'] and key not in current.get('alias_keys', []):
+            continue
+        target = _final_target(plan, other)
+        if target is not None and target != tag['id']:
+            holders.append(target)
+    return holders
+
+
+def _co_visible(plan: _Plan, tag: dict) -> list[str]:
+    namespace = tag['namespace_key']
+    return [other for other in plan.all_ids() if other != tag['id'] and (
+        PERSONAL_NAMESPACE in (namespace, plan.current(other)['namespace_key'])
+        or plan.current(other)['namespace_key'] == namespace)]
+
+
+def _final_target(plan: _Plan, tag_id: str) -> str | None:
+    seen = set()
+    while tag_id is not None and tag_id not in seen and plan.current(tag_id)['status'] == 'merged':
+        seen.add(tag_id)
+        tag_id = plan.current(tag_id).get('merged_into_id')
+        if tag_id not in plan.tags and tag_id not in plan.new_tags:
+            return None
+    return tag_id if tag_id is not None and plan.live(tag_id) else None
 
 
 def _holders(plan: _Plan, namespaces: list[str], key: str, *, besides: str | None) -> set[str]:
@@ -451,6 +603,10 @@ async def _undo(plan: _Plan, reader, request, reason):
                      'moved_from_tag_id': None, 'moved_to_tag_id': None} if before is None
                     else _link_restored(before))
         plan.write_link({**stored, **restored}, stored)
+    # The restored state must still fit everything that changed around it.
+    touched = list(snapshot['tags'])
+    if relation_violation(plan, touched) or word_conflict(plan, touched):
+        return 'restore_conflict'
     # A tag the operation touched other than this one is named in its revisions.
     plan.other_id = operation.get('related_tag_id') if operation['tag_id'] == subject else operation['tag_id']
     if plan.other_id not in plan.tags:
@@ -503,12 +659,14 @@ def _preview(plan: _Plan, request: KnowledgeTagGovernanceRequest, blocked: str |
     dropped = [KnowledgeTagRelationDrop(tag=reference(plan.current(tag_id)), relation=relation,
                                         target=reference(plan.current(target)), reason=why)
                for tag_id, relation, target, why in summary.get('dropped', [])
-               if plan.visible(tag_id) and plan.visible(target)]
+               if target in plan.all_ids() and plan.visible(tag_id) and plan.visible(target)]
     undo = summary.get('undo')
     preview = KnowledgeTagGovernancePreview(
         change=request.change, tag=reference(plan.tags[plan.subject_id]),
         other=reference(other) if other else None, status_after=summary.get('status_after'),
         new_tag_name=summary.get('new_tag_name'), revives=summary.get('revives', False),
+        links_remaining=summary.get('links_remaining') if counted else None,
+        aliases_dropped=summary.get('aliases_dropped', []),
         links_moved=summary.get('links_moved') if counted else None,
         links_already_on_target=summary.get('links_already_on_target') if counted else None,
         aliases=summary.get('aliases', []), relations_moved=summary.get('relations_moved', 0),

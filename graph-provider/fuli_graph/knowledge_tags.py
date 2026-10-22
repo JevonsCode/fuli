@@ -58,6 +58,8 @@ _SHARED_REFUSED = 'shared vocabulary changes need governance and are not availab
 _NO_CURRENT_PROJECT = 'with no current project, set namespace personal explicitly'
 _HUMAN_PROOF = 'independent human review proof required'
 _RETIRED = 'A person retired this tag; only they can bring it back, from the FULI console.'
+_REVIVED = ('Brought back; {} relations and {} aliases that no longer fit were dropped; '
+            'undoing the revival in the console restores them.')
 
 
 def project_namespace(project_id: str) -> str:
@@ -114,14 +116,17 @@ async def create_tag(store, actor: dict, request: KnowledgeTagCreate) -> Knowled
                        {candidate.id for candidate in candidates.found})
         earlier = await vocabulary.by_identity(tag['namespace_key'], key)
         if earlier is not None:
-            stored = await _reuse_earlier_identity(vocabulary, earlier, request, version)
+            stored, settled = await _reuse_earlier_identity(vocabulary, space, actor, earlier, request)
         else:
-            stored = (await vocabulary.apply(new_tags=[tag], revisions=[_revision(
-                tag, 'create', request, tag['created_at'], similarity_version=version)]))[tag['id']]
-    return KnowledgeTagCreateResult(outcome='created', tag=tag_record(stored), candidates=[], **decided)
+            stored, settled = (await vocabulary.apply(new_tags=[tag], revisions=[_revision(
+                tag, 'create', request, tag['created_at'], similarity_version=version)]))[tag['id']], {}
+    dropped = len(settled.get('dropped', [])), len(settled.get('aliases_dropped', []))
+    return KnowledgeTagCreateResult(outcome='created', tag=tag_record(stored), candidates=[], **decided,
+                                    guidance=_REVIVED.format(*dropped) if any(dropped) else None)
 
 
-async def _reuse_earlier_identity(vocabulary, earlier: dict, request: KnowledgeTagCreate, version: str) -> dict:
+async def _reuse_earlier_identity(vocabulary, space: dict, actor: dict, earlier: dict,
+                                  request: KnowledgeTagCreate) -> tuple[dict, dict]:
     """The word's identity in this namespace already exists but does not resolve:
     merged (its word leads elsewhere, so a reader would have found that tag
     unless the caller judged it different) or retired. Only the person brings
@@ -135,10 +140,9 @@ async def _reuse_earlier_identity(vocabulary, earlier: dict, request: KnowledgeT
     if request.operation_actor != 'human':
         raise HTTPException(status_code=409, detail={'code': 'tag_retired', 'message': _RETIRED,
                                                       'tag': reference(earlier).model_dump()})
-    at = now_utc()
-    revision = _revision(earlier, 'revive', request, at)
-    return (await vocabulary.apply(updates=[{'id': earlier['id'], 'at': at, 'fields': {'status': 'active'}}],
-                                   revisions=[revision]))[earlier['id']]
+    # Imported here: governance builds on this module's records and checks.
+    from .knowledge_tag_governance import revive_on_create
+    return await revive_on_create(vocabulary, space, actor['id'], earlier, request.reason)
 
 
 async def add_tag_alias(store, actor: dict, request: KnowledgeTagAliasCreate) -> KnowledgeTagAliasResult:
@@ -192,11 +196,16 @@ async def detach_tag(store, actor: dict, request: KnowledgeTagLinkChange) -> Kno
 
 
 async def _change_link(store, actor: dict, request: KnowledgeTagLinkChange, *, attach: bool):
-    """Under the lock the tag is read again, so an attach that loses a race to a
-    merge lands on the merged-into tag, never on a tag that no longer resolves."""
+    """Under the lock the item and the tag are read again: an attach that loses a
+    race to a hard delete finds no item (no orphan link), and one that loses a
+    race to a merge lands on the merged-into tag, never on a tag that no longer
+    resolves. A hard delete and a merge take the same space lock."""
     _require_human_proof(actor, request.operation_actor)
-    space, namespaces = await _link_scope(store, actor, request)
-    async with store.knowledge_tag_vocabulary().locked(space['id']) as vocabulary:
+    space, namespaces = await visible_tag_scope(store, actor, request, 'maintainer')
+    port = store.knowledge_tag_vocabulary()
+    await visible_tag(port.reader(space['id']), namespaces, request.tag_id)
+    async with port.locked(space['id']) as vocabulary:
+        await _require_taggable(port, space, request)
         named, tag = await _live_visible_tag(vocabulary, namespaces, request.tag_id)
         link_id = tag_link_id(space['id'], tag['id'], request.item_kind, request.item_id)
         current = (await vocabulary.links_by_ids([link_id])).get(link_id)
@@ -346,15 +355,12 @@ async def _live_visible_tag(reader, namespaces, tag_id: str) -> tuple[dict, dict
     return named, tag
 
 
-async def _link_scope(store, actor: dict, request: KnowledgeTagLinkChange):
-    space, namespaces = await visible_tag_scope(store, actor, request, 'maintainer')
-    vocabulary = store.knowledge_tag_vocabulary()
-    await visible_tag(vocabulary.reader(space['id']), namespaces, request.tag_id)
-    scope = await vocabulary.item_scope(space, request.item_kind, request.item_id)
-    # Unknown, missing and out-of-scope items answer alike.
+async def _require_taggable(port, space, request: KnowledgeTagLinkChange) -> None:
+    """The item as stored now (read under the lock): unknown, missing, hard-deleted
+    and out-of-scope items answer alike."""
+    scope = await port.item_scope(space, request.item_kind, request.item_id)
     if not _taggable_here(scope, request.personal_project_id):
         raise HTTPException(status_code=404, detail='knowledge item not found')
-    return space, namespaces
 
 
 def _taggable_here(scope, project_id: str | None) -> bool:

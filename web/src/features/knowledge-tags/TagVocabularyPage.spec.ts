@@ -42,7 +42,8 @@ function detail(entry: TagEntry): TagDetail {
 
 function mergePreview(overrides: Partial<GovernancePreview> = {}): GovernancePreview {
   return { change: 'merge', tag: outdoor, other: nature, status_after: 'merged', new_tag_name: null, revives: false,
-    links_moved: 1, links_already_on_target: 0, aliases: [], relations_moved: 0, relations_dropped: [], undo: null,
+    links_moved: 1, links_already_on_target: 0, links_remaining: null, aliases: [], aliases_dropped: [],
+    relations_moved: 0, relations_dropped: [], undo: null,
     blocked: null, digest: DIGEST, ...overrides }
 }
 
@@ -169,6 +170,70 @@ describe('TagVocabularyPage', () => {
     expect(dialog()?.querySelector('[data-tag-governance-notice]')?.textContent).toContain('词表在你预览之后变了')
     expect(dialog()?.querySelector('[data-tag-preview]')?.textContent).toContain('2 条知识改贴「自然教育」')
     expect(postJson.mock.calls.filter(([url]) => url === '/api/knowledge-tags/governance')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('follows the URL: another change or target on the same tag starts afresh, Back and Forward move between them', async () => {
+    const third = tag('t3', '野外教学')
+    respond(url => url.startsWith('/api/knowledge-tags/detail') ? detail(outdoor) : vocabulary([outdoor, nature, third]))
+    postJson.mockImplementation(async (_url: string, body: { change: string; intoTagId?: string }) => mergePreview({
+      change: body.change as GovernancePreview['change'],
+      other: body.intoTagId === 't3' ? third : body.intoTagId ? nature : null }))
+    const { wrapper, router } = await open('/tags?tag=t1&change=merge&into=t2')
+    const lastPreview = () => postJson.mock.calls.filter(([url]) => url.endsWith('/governance/preview')).at(-1)?.[1]
+    const panel = () => dialog()?.querySelector('[data-tag-governance]')?.getAttribute('data-tag-governance')
+    expect(lastPreview()).toMatchObject({ change: 'merge', intoTagId: 't2' })
+    await router.push('/tags?tag=t1&change=merge&into=t3')
+    await flushPromises()
+    expect(lastPreview()).toMatchObject({ change: 'merge', intoTagId: 't3' })
+    expect(dialog()?.querySelector('[data-tag-choice][aria-selected="true"]')?.getAttribute('data-tag-choice')).toBe('t3')
+    expect(dialog()?.querySelector('[data-tag-preview]')?.textContent).toContain('「野外教学」')
+    await router.push('/tags?tag=t1&change=retire')
+    await flushPromises()
+    expect([panel(), lastPreview()?.change]).toEqual(['retire', 'retire'])
+    router.back()
+    await flushPromises()
+    await new Promise(done => setTimeout(done, 20))
+    await flushPromises()
+    expect([panel(), lastPreview()]).toEqual(['merge', expect.objectContaining({ intoTagId: 't3' })])
+    router.forward()
+    await flushPromises()
+    await new Promise(done => setTimeout(done, 20))
+    await flushPromises()
+    expect(panel()).toBe('retire')
+    await router.push('/tags')
+    await flushPromises()
+    expect(dialog()).toBeNull()
+    // Opening a card puts the tag in the URL, so Back closes it again.
+    await wrapper.get('[data-tag-card="t2"] [data-tag-open]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ tag: 't2' })
+    router.back()
+    await flushPromises()
+    await new Promise(done => setTimeout(done, 20))
+    await flushPromises()
+    expect(dialog()).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('restores a mistaken merge from the merge record, in batches the preview labels', async () => {
+    const merged = tag('t5', '野外教学', { status: 'merged', merged_into: nature })
+    respond(url => url.startsWith('/api/knowledge-tags/detail')
+      ? { ...detail(nature), merged_from: [merged], links_truncated: true } : vocabulary([nature, merged]))
+    postJson.mockImplementation(async () => mergePreview({ change: 'split', tag: nature, other: merged, revives: true,
+      new_tag_name: '野外教学', links_moved: 500, links_remaining: 3 }))
+    const { wrapper } = await open('/tags?tag=t2')
+    await click('[data-tag-action="split"]')
+    await click('[data-tag-restore="t5"]')
+    await new Promise(done => setTimeout(done, 350))
+    await flushPromises()
+    expect(postJson).toHaveBeenLastCalledWith('/api/knowledge-tags/governance/preview', { personalSpaceId: 'space',
+      change: 'split', tagId: 't2', split: { restoreTagId: 't5', aliases: [] } })
+    expect(dialog()?.querySelector('[data-tag-split-restoring]')?.textContent).toContain('「野外教学」当时带来的全部知识')
+    expect(dialog()?.querySelector('[data-tag-split-link]')).toBeNull()
+    const lines = dialog()?.querySelector('[data-tag-preview]')?.textContent ?? ''
+    expect(lines).toContain('500 条知识移回「野外教学」')
+    expect(lines).toContain('还剩 3 条')
     wrapper.unmount()
   })
 

@@ -62,7 +62,7 @@ export interface TagDetail {
   history: TagHistoryEntry[]
 }
 
-export interface RelationDrop { tag: TagRef; relation: RelationKind; target: TagRef; reason: 'cycle' | 'self' | 'scope' }
+export interface RelationDrop { tag: TagRef; relation: RelationKind; target: TagRef; reason: 'cycle' | 'self' | 'scope' | 'limit' | 'gone' }
 
 export interface GovernancePreview {
   change: GovernanceChange
@@ -73,7 +73,9 @@ export interface GovernancePreview {
   revives: boolean
   links_moved: number | null
   links_already_on_target: number | null
+  links_remaining: number | null
   aliases: string[]
+  aliases_dropped: string[]
   relations_moved: number
   relations_dropped: RelationDrop[]
   undo: { operation_id: string; action: string; created_at: string; restores: TagRef[] } | null
@@ -81,7 +83,9 @@ export interface GovernancePreview {
   digest: string
 }
 
-export interface SplitChoice { name: string; description: string; aliases: string[]; links: TagLinkedItem[] }
+// restoreTagId: split a mistaken merge back; the Provider moves every item that
+// merge took, from its own record, so links stays empty.
+export interface SplitChoice { name: string; description: string; aliases: string[]; links: TagLinkedItem[]; restoreTagId?: string }
 
 /** What a governance change sends besides the space: the same body previews and applies it. */
 export interface GovernanceRequest {
@@ -93,6 +97,7 @@ export interface GovernanceRequest {
   alias?: string
   operationId?: string
   split?: { name: string; description: string | null; aliases: string[]; links: { itemKind: string; itemId: string }[] }
+    | { restoreTagId: string; aliases: string[] }
 }
 
 export function governanceRequest(change: GovernanceChange, tag: TagRef, choice: {
@@ -107,6 +112,7 @@ export function governanceRequest(change: GovernanceChange, tag: TagRef, choice:
   if (change === 'undo') return choice.operationId ? { ...base, operationId: choice.operationId } : base
   if (change === 'split') {
     const split = choice.split
+    if (split?.restoreTagId) return { ...base, split: { restoreTagId: split.restoreTagId, aliases: split.aliases } }
     if (!split?.name.trim()) return null
     return { ...base, split: { name: split.name.trim(), description: split.description.trim() || null,
       aliases: split.aliases, links: split.links.map(link => ({ itemKind: link.item_kind, itemId: link.item_id })) } }
@@ -160,8 +166,15 @@ export function previewLines(preview: GovernancePreview): string[] {
   if (preview.change === 'split') {
     lines.push(t(preview.revives ? 'knowledgeTags.preview.splitRevives' : 'knowledgeTags.preview.split',
       { name, other: preview.new_tag_name ?? other }))
-    if (preview.links_moved !== null) lines.push(t('knowledgeTags.preview.splitLinks', { count: preview.links_moved }))
+    if (preview.links_moved !== null) {
+      lines.push(t(preview.revives ? 'knowledgeTags.preview.splitLinksBack' : 'knowledgeTags.preview.splitLinks',
+        { count: preview.links_moved, other: preview.new_tag_name ?? preview.other?.name ?? '' }))
+    }
     if (preview.aliases.length) lines.push(t('knowledgeTags.preview.splitAliases', { aliases: preview.aliases.join('、') }))
+    if (preview.links_remaining) lines.push(t('knowledgeTags.preview.splitBatch', { count: preview.links_remaining }))
+    if (preview.aliases_dropped.length) {
+      lines.push(t('knowledgeTags.preview.aliasesDropped', { aliases: preview.aliases_dropped.join('、') }))
+    }
   }
   if (preview.change === 'remove_alias') lines.push(t('knowledgeTags.preview.removeAlias', { name, alias: preview.aliases[0] ?? '' }))
   if (preview.change === 'relate' || preview.change === 'unrelate') {

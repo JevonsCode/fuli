@@ -23,7 +23,8 @@ from .name_identity import identity_key
 
 MAX_DETAIL_LINKS = 200
 MAX_HISTORY = 100
-_UNDOABLE_ACTIONS = frozenset({'approve', 'merge', 'split', 'retire', 'remove_alias', 'relate', 'unrelate'})
+_UNDOABLE_ACTIONS = frozenset({'approve', 'merge', 'split', 'retire', 'remove_alias', 'relate', 'unrelate',
+                               'revive'})
 
 
 async def list_vocabulary(store, actor: dict, request: KnowledgeTagVocabularyQuery) -> KnowledgeTagVocabulary:

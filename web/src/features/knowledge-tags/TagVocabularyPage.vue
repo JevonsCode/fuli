@@ -46,8 +46,18 @@ const error = ref('')
 const showLoading = useMinimumLoadingDisplay(computed(() => loading.value && !vocabulary.value))
 let request = 0
 
-interface Opened { id: string; name: string; change: GovernanceChange | null; target: TagRef | null }
-const opened = ref<Opened | null>(null)
+// The dialog follows the URL: ?tag=<id>[&change=<change>][&into=<id>]. Opening a
+// card pushes it, so Back and Forward move between tags and changes, and a
+// different change or target on the same tag starts afresh (the dialog's key).
+interface Opened { id: string; name: string; change: GovernanceChange | null; target: TagRef | null; key: string }
+const opened = computed<Opened | null>(() => {
+  const linked = linkedChange(route.query)
+  if (!linked) return null
+  const known = vocabulary.value?.tags.find(tag => tag.id === linked.tagId)
+  return { id: linked.tagId, name: known?.name ?? '', change: linked.change,
+    target: linked.intoId ? { id: linked.intoId, name: '', namespace: 'personal', status: 'active' } : null,
+    key: `${linked.tagId}:${linked.change ?? ''}:${linked.intoId}` }
+})
 const groups = computed(() => groupByNamespace(vocabulary.value?.tags ?? [], projectNames.value))
 const remaining = computed(() => vocabulary.value ? vocabulary.value.total - vocabulary.value.tags.length : 0)
 
@@ -88,13 +98,11 @@ async function loadMore() {
 }
 
 function open(tag: TagEntry) {
-  opened.value = { id: tag.id, name: tag.name, change: null, target: null }
+  void router.push({ query: { tag: tag.id } })
 }
 
 function closed(open: boolean) {
-  if (open) return
-  opened.value = null
-  if (route.query.tag) void router.replace({ query: {} })
+  if (!open && route.query.tag) void router.push({ query: {} })
 }
 
 const debounced = createDebouncedAction(() => void load(), SEARCH_DELAY_MS)
@@ -102,13 +110,6 @@ watch(query, () => debounced.schedule())
 watch([tab, namespace, status, spaceId], () => { vocabulary.value = null; void load() }, { immediate: true })
 onBeforeUnmount(() => debounced.cancel())
 
-// An Agent's link: ?tag=<id>&change=<change>[&into=<id>] opens that change; nothing applies until the confirm.
-watch(() => route.query, (value) => {
-  const linked = linkedChange(value)
-  if (!linked) return
-  opened.value = { id: linked.tagId, name: '', change: linked.change,
-    target: linked.intoId ? { id: linked.intoId, name: '', namespace: 'personal', status: 'active' } : null }
-}, { immediate: true })
 </script>
 
 <template>
@@ -182,7 +183,7 @@ watch(() => route.query, (value) => {
 
     <Dialog :open="Boolean(opened && spaceId)" @update:open="closed">
       <DialogContent v-if="opened && spaceId" size="lg" data-tag-dialog>
-        <TagDetailDialog :key="opened.id" :space-id="spaceId" :tag-id="opened.id" :name="opened.name || '…'"
+        <TagDetailDialog :key="opened.key" :space-id="spaceId" :tag-id="opened.id" :name="opened.name || '…'"
           :project-names="projectNames" :initial-change="opened.change" :initial-target="opened.target" @changed="load" />
       </DialogContent>
     </Dialog>

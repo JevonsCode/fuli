@@ -18,7 +18,8 @@ function entry(id: string, namespace: TagRef['namespace'] = 'personal', project_
 
 function preview(overrides: Partial<GovernancePreview>): GovernancePreview {
   return { change: 'merge', tag: ref('a', '户外学习'), other: ref('b', '自然教育'), status_after: 'merged', new_tag_name: null,
-    revives: false, links_moved: 3, links_already_on_target: 1, aliases: [], relations_moved: 0, relations_dropped: [],
+    revives: false, links_moved: 3, links_already_on_target: 1, links_remaining: null, aliases: [], aliases_dropped: [],
+    relations_moved: 0, relations_dropped: [],
     undo: null, blocked: null, digest: 'f'.repeat(64), ...overrides }
 }
 
@@ -62,7 +63,7 @@ describe('tag vocabulary display', () => {
       created_at: '2026-10-22T00:00:00Z', restores: [ref('a', '户外学习'), ref('b', '自然教育')] } }))).toEqual([
       '撤销这次「合并出去」，恢复：户外学习、自然教育。'])
     expect(previewLines(preview({ change: 'split', other: ref('n', '野外教学'), revives: true, links_moved: 1,
-      aliases: ['野外课'] }))).toEqual(['恢复之前合并进「户外学习」的标签「野外教学」。', '1 条知识移到新标签。', '别名移过去：野外课。'])
+      aliases: ['野外课'] }))).toEqual(['恢复之前合并进「户外学习」的标签「野外教学」。', '1 条知识移回「野外教学」。', '别名移过去：野外课。'])
   })
 
   it('reads an Agent link, a refusal code and history actions', () => {
