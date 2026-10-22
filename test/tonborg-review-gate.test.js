@@ -54,7 +54,7 @@ function harness(t, { mode = 'shared', backend = 'local', reviewGate, build = FI
     engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge }), reviewGate }) });
   service.store().setPolicy('s', '', { mode, quality: 'quality', client: 'codex' }, 0);
   t.after(() => service.close());
-  return { service, writes };
+  return { service, writes, app };
 }
 
 async function reviewOnce(t, options) {
@@ -153,10 +153,26 @@ test('the registry file in the data directory is read on every review, so an ent
   assert.equal(gate.status(key).reason, 'no_entry');
 });
 
-test('a matching entry under a manual policy still applies nothing', async t => {
-  const { writes, record } = await reviewOnce(t, { mode: 'manual', reviewGate: reviewGateWith(gateEntry()) });
+test('a matching entry under a manual policy still applies nothing and asks the person', async t => {
+  const { writes, result, record } = await reviewOnce(t, { mode: 'manual', reviewGate: reviewGateWith(gateEntry()) });
   assert.equal(record.outcome, 'approve');
   assert.deepEqual([record.aiReview.state, record.aiReview.interceptions], ['ai_suggested', ['manual_policy']]);
+  assert.equal(writes.length, 0);
+  assert.equal(result.human_interaction.source.id, record.id);
+  assert.match(result.human_interaction.question, /^AI 建议，待你确认 .*\(model: approve\) Routine/);
+});
+
+test('an entry removed while a batch runs stops the write that has not happened yet', async t => {
+  let entries = [gateEntry()];
+  const reviewGate = createReviewGate('synthetic-data-dir', { readText: () => JSON.stringify({ version: 1, entries }) });
+  const { service, writes, app } = harness(t, { reviewGate });
+  const list = app.listKnowledgeReviewCandidates;
+  let calls = 0;
+  // The second listing is the recheck right before the write-back; the person removes the entry meanwhile.
+  app.listKnowledgeReviewCandidates = async value => { if (++calls === 2) entries = []; return list(value); };
+  const [record] = (await service.review(input)).records;
+  assert.equal(record.aiReview.state, 'ai_reviewed');
+  assert.deepEqual([record.execution.status, record.execution.receipt.reason], ['stale', 'gate_not_passed']);
   assert.equal(writes.length, 0);
 });
 

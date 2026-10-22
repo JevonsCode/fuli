@@ -5,7 +5,8 @@ import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
 const SUGGESTION = 'AI 建议，待你确认 / AI suggestion, awaiting your decision';
 
 export function judgmentHumanInteraction(records, personalSpaceId) {
-  const record = records.find(item => item.kind === 'review' && item.outcome === 'escalate'
+  // A suggestion is asked even when the model approved (a manual policy keeps that outcome).
+  const record = records.find(item => item.kind === 'review' && (item.outcome === 'escalate' || item.aiReview?.state === 'ai_suggested')
     && !['stale', 'failed'].includes(item.execution?.status));
   if (!record) return {};
   const suggestion = record.aiReview?.state === 'ai_suggested';

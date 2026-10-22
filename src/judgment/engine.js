@@ -142,6 +142,9 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), rev
             } else {
               try {
                 await authorize(input, policy);
+                // The person may remove the build's entry while this batch runs, so the gate is read again
+                // right before each write; a refusal is stale and the next review makes it a suggestion.
+                if (reviewGate.status(reviewGateKey(answer)).status !== 'passed') throw Object.assign(new Error('gate_not_passed'), { status: 409, code: 'gate_not_passed' });
                 // The intent is stored before the Provider write, so a restart settles it (rec#8 C11).
                 record = store.execute(space, record.id, 'applying', { reviewId: run.review_id, candidateKey: decision.target,
                   aiReviewEvidenceToken: candidate.ai_review_evidence_token }, lease);
