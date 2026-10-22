@@ -169,3 +169,27 @@ test('lifecycle client setup output is byte-identical to the recorded code-adapt
   }
   assert.equal(current, readFileSync(SNAPSHOT, 'utf8'));
 });
+
+// rec#25: connect and status share one profile rule for every lifecycle client,
+// so a requested non-default profile is written by connect and read as current.
+test('a requested non-default tool profile goes through connect and status consistently', () => {
+  for (const seed of [{}, { '.codex/config.toml': SEEDS['.codex/config.toml'] }]) {
+    const homeDir = seedHome(seed);
+    try {
+      const agents = lifecycleAgents(homeDir);
+      const context = { ...CONTEXTS.linux, toolProfile: 'full' };
+      for (const agent of agents) assert.equal(connectAgent(agent, context).status, 'connected', agent.id);
+      const files = homeFiles(homeDir);
+      assert.match(files['.codex/config.toml'], /"--tool-profile", "full"]/);
+      assert.match(files['.claude.json'], /"--tool-profile",\s*"full"/);
+      assert.match(files['.cursor/mcp.json'], /"--tool-profile",\s*"full"/);
+      for (const { id, integrationDetails } of status(agents, context)) {
+        assert.equal(integrationDetails.mcp, 'current', id);
+      }
+      // A status that asks for another profile sees the written config as stale.
+      for (const { id, integrationDetails } of status(agents, { ...context, toolProfile: 'chat' })) {
+        assert.notEqual(integrationDetails.mcp, 'current', id);
+      }
+    } finally { rmSync(homeDir, { recursive: true, force: true }); }
+  }
+});

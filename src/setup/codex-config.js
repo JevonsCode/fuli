@@ -32,9 +32,7 @@ export function connectCodex(pack, agent, context, {
   installHooks = installCodexLifecycleHooks
 } = {}) {
   const current = readConfig(agent.configPath);
-  // Codex sends every listed tool schema with each request, so it gets the
-  // chat profile; an explicit profile already in the config is kept.
-  let next = replaceFuliTable(current, fuliTable(pack, context, installedToolProfile(existingFuliArgs(current))));
+  let next = replaceFuliTable(current, fuliTable(pack, context, current));
   const hooksSpec = pack.lifecycleHooks;
   const tomlHooksPresent = Boolean(
     agent.hooksPath && hasCodexTomlHookDefinitions(current)
@@ -92,8 +90,7 @@ export function codexStatus(pack, agent, context, readers) {
   const hooks = pack.lifecycleHooks;
   let registration;
   try {
-    const expected = replaceFuliTable(current,
-      fuliTable(pack, context, installedToolProfile(existingFuliArgs(current), context.toolProfile)));
+    const expected = replaceFuliTable(current, fuliTable(pack, context, current));
     const normalized = hasCodexTomlHookDefinitions(current) ? withCodexTomlLifecycleHooks(expected, { context, hooks }) : expected;
     registration = { present, current: present && normalized.replaceAll('\r\n', '\n').trim() === current.replaceAll('\r\n', '\n').trim() };
   } catch { registration = { present, current: false }; }
@@ -104,7 +101,11 @@ export function codexStatus(pack, agent, context, readers) {
       : hasCurrentCodexLifecycleHooks(readers.readJson(agent.hooksPath), { context, hooks }) } : {}) };
 }
 
-function fuliTable(pack, context, profile) {
+// The one profile rule connect and status share, as for Claude Code and Cursor:
+// a requested profile wins, else an explicit profile already in the config is
+// kept, else chat (Codex sends every listed tool schema with each request).
+function fuliTable(pack, context, current) {
+  const profile = installedToolProfile(existingFuliArgs(current), context.toolProfile);
   return renderMcpEntry(pack.mcpServer, { nodePath: context.nodePath, mcpServerPath: context.mcpServerPath,
     runtimeConfigPath: context.runtimeConfigPath, toolProfileArgs: ['--tool-profile', profile] });
 }
