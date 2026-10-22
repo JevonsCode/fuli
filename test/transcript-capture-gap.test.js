@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import fs, { chmodSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
-import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -11,7 +11,9 @@ import test from 'node:test';
 
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { CapturePolicyStore, capturePolicyPathForRuntime } from '../src/graphiti/capture-policy.js';
-import { notRecordedEvent, notRecordedReason, transcriptCaptureLedger, TURN_UNRESOLVED } from '../src/conversations/transcript-capture-gap.js';
+import { notRecordedEvent, notRecordedReason, transcriptCaptureLedger, TURN_UNRESOLVED, UNATTRIBUTABLE }
+  from '../src/conversations/transcript-capture-gap.js';
+import { transcriptDigest } from '../src/conversations/transcript-guard.js';
 
 const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' } }) + '\n';
 const row = (role, text) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role,
@@ -24,7 +26,9 @@ const row = (role, text) => JSON.stringify({ type: 'response_item', payload: { t
 // I/O needs; an expired window is tested on its own at the end of this file.
 const FUNCTIONAL_CAPTURE_MS = 30_000;
 
-async function session(t, { saved = true } = {}) {
+// newTaskPerEntry: each task entry begins a new task (task-1, task-2, ...),
+// as the Provider does, instead of keeping one task for the whole session.
+async function session(t, { saved = true, newTaskPerEntry = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-capture-gap-'));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
   const runtimeConfigPath = join(directory, 'runtime.json');
@@ -34,36 +38,49 @@ async function session(t, { saved = true } = {}) {
   const store = new CapturePolicyStore(policyPath);
   if (saved) store.update({ enabled: true, disabledSources: [] });
   let cursor = header.length;
+  // Each saved event keeps the task token it was written under.
   const appended = [];
+  const tasks = { current: newTaskPerEntry ? 'task-0' : 'task', entered: 0 };
   // The whole Provider can be unreachable: project lookups, task lookups and
   // conversation writes then all fail with a network error.
   // A held request answers only when the test releases it (see holdNext()).
   const provider = { up: true, hold: null };
   const reach = () => { if (!provider.up) throw new TypeError('fetch failed'); };
+  const answer = (operation, request) => {
+    if (request.mode === 'policy') return { enabled: true };
+    if (request.mode === 'session') return { cursor, initialized: true };
+    if (request.expected_cursor !== cursor) throw new Error('CAS mismatch');
+    if (operation === 'append') {
+      // The Provider keeps one event per ID; a retried page must match it.
+      for (const event of request.events) {
+        const saved = appended.find(item => item.event_id === event.event_id);
+        if (saved && saved.content !== event.content) throw new Error('Conversation event ID has different content');
+        if (!saved) appended.push({ ...event, token: request.task_context_token });
+      }
+      cursor = request.cursor;
+      return { status: 'saved' };
+    }
+    // The Provider's fallback omission: one content-free marker, then the cursor moves.
+    if (request.fallback_recovery) {
+      appended.push({ event_id: `jsonl-v1:${request.expected_cursor}:${request.cursor}:fallback`, token: request.task_context_token,
+        content: `[Visible transcript content omitted: unverified task ownership after fallback; bytes ${request.expected_cursor} to ${request.cursor} remain in native history.]` });
+      cursor = request.cursor;
+      return { status: 'saved' };
+    }
+    return { status: 'bound', cursor };
+  };
   const app = { config: { personal: { spaceId: 'space' } },
     getCapturePolicy: () => store.read(), getCapturePolicyVersion: () => store.version(),
     advanceCapturePolicyVersion: () => store.advanceVersion(),
     resolveProjectPath: async () => { reach(); return { status: 'matched', basis: 'repository_root', personalProjectId: 'project' }; },
     personal: {
-      currentTaskContext: async () => { reach(); return { personal_project_id: 'project', project_agent_id: 'lead', token: 'task' }; },
+      currentTaskContext: async () => { reach(); return { personal_project_id: 'project', project_agent_id: 'lead', token: tasks.current, entry_via: 'hook' }; },
       conversation: async (operation, request) => {
         reach();
         const hold = provider.hold;
-        if (hold?.matches(operation, request)) { provider.hold = null; hold.reached(); await hold.released; }
-        if (request.mode === 'policy') return { enabled: true };
-        if (request.mode === 'session') return { cursor, initialized: true };
-        if (request.expected_cursor !== cursor) throw new Error('CAS mismatch');
-        if (operation === 'append') {
-          // The Provider keeps one event per ID; a retried page must match it.
-          for (const event of request.events) {
-            const saved = appended.find(item => item.event_id === event.event_id);
-            if (saved && saved.content !== event.content) throw new Error('Conversation event ID has different content');
-            if (!saved) appended.push(event);
-          }
-          cursor = request.cursor;
-          return { status: 'saved' };
-        }
-        return { status: 'bound', cursor };
+        if (!hold?.matches(operation, request)) return answer(operation, request);
+        provider.hold = null; hold.reached(); await hold.released;
+        try { return answer(operation, request); } finally { hold.settle(); }
       }
     } };
   const notices = [];
@@ -73,7 +90,11 @@ async function session(t, { saved = true } = {}) {
     captureTimeoutMs: FUNCTIONAL_CAPTURE_MS, signal,
     resolveRuntimeOptions: () => ({ runtimeConfigPath }), openApplication: () => app,
     createLeases: () => ({ withGraphLease: async (_owner, operation) => operation(), close: async () => {} }),
-    callTool: async (_app, name) => name === 'begin_task_context' ? { taskContextToken: 'task' } : {} })
+    callTool: async (_app, name) => {
+      if (name !== 'begin_task_context') return {};
+      if (newTaskPerEntry) tasks.current = `task-${++tasks.entered}`;
+      return { taskContextToken: tasks.current };
+    } })
     .then(output => { if (output?.systemMessage) notices.push(output.systemMessage); return output; });
   // One host turn: the prompt is written, the entry hook runs, the reply is
   // written and the Stop hook runs.
@@ -83,14 +104,17 @@ async function session(t, { saved = true } = {}) {
     await appendFile(transcript, row('assistant', reply));
     if (hooks) await hook('Stop');
   };
-  // Holds the next Provider request that matches until release() is called.
+  // Holds the next Provider request that matches until release() is called;
+  // settled resolves once the Provider has answered it (or refused it).
   const holdNext = matches => {
-    let reached, release;
+    let reached, release, settle;
     const wasReached = new Promise(resolve => { reached = resolve; });
-    provider.hold = { matches, reached, released: new Promise(resolve => { release = resolve; }) };
-    return { wasReached, release };
+    const settled = new Promise(resolve => { settle = resolve; });
+    provider.hold = { matches, reached, settle, released: new Promise(resolve => { release = resolve; }) };
+    return { wasReached, release, settled };
   };
-  return { store, policyPath, transcriptPath: transcript, appended, turn, hook, holdNext, notices, provider,
+  return { store, policyPath, runtimeConfigPath, directory, transcriptPath: transcript, appended, turn, hook, holdNext,
+    notices, provider, tasks,
     contents: () => appended.map(event => event.content),
     markers: () => appended.filter(event => event.event_id.endsWith(':not_recorded')) };
 }
@@ -331,6 +355,233 @@ test('an off-period Stop whose capture expired never lets that turn be imported 
   assert.ok(s.markers().length > 0, 'the off stretch is marked once capture is back');
 });
 
+// rec#16 (1): an entry whose window expires in its handoff still enters its
+// task. The held Provider request is the old task's tail page, in flight
+// when the deadline fires; it answers only after the next Stop has finished.
+const visible = s => s.appended.filter(event => !event.content.startsWith('['));
+const guardState = async s => {
+  const directory = join(dirname(s.runtimeConfigPath), 'transcript-guards');
+  const files = (await readdir(directory).catch(() => [])).filter(name => name.endsWith('.json'));
+  return files.length ? JSON.parse(await readFile(join(directory, files[0]), 'utf8')) : null;
+};
+
+async function entryWithExpiredHandoff(s, prompt, matches) {
+  await appendFile(s.transcriptPath, row('user', prompt));
+  const hold = s.holdNext(matches);
+  const deadline = new AbortController();
+  const entry = s.hook('UserPromptSubmit', prompt, { signal: deadline.signal });
+  await hold.wasReached;
+  deadline.abort();
+  await entry;
+  assert.ok(s.notices.at(-1).includes('Native transcript import was deferred'), hookNotices(s));
+  return hold;
+}
+
+test('an entry whose capture expired in its handoff is finished by the entered task\'s Stop', async (t) => {
+  const s = await session(t, { newTaskPerEntry: true });
+  await s.turn('on before', 'answer before');
+  const hold = await entryWithExpiredHandoff(s, 'on after', operation => operation === 'append');
+  const kept = await guardState(s);
+  assert.equal(kept.phase, 'ready', 'the window expired after the prompt was found, before the old tail was flushed');
+  assert.equal(kept.nextOwner, transcriptDigest('task-2'), 'the guard names the task the entry entered');
+  await appendFile(s.transcriptPath, row('assistant', 'answer after'));
+  await s.hook('Stop');
+  assert.deepEqual(visible(s).map(event => [event.content, event.token]), [['on before', 'task-1'], ['answer before', 'task-1'],
+    ['on after', 'task-2'], ['answer after', 'task-2']], hookNotices(s));
+  assert.equal(s.appended.length, visible(s).length, 'nothing is marked: the old task had no unflushed tail');
+  assert.equal(await guardState(s), null, 'the handoff is finished');
+  // The late page answers now: the Provider refuses its stale cursor.
+  const before = s.appended.length;
+  hold.release();
+  await hold.settled;
+  assert.equal(s.appended.length, before, 'the late request writes nothing');
+  await s.hook('Stop');
+  assert.equal(s.appended.length, before, 'a repeated Stop adds nothing');
+});
+
+test('an expired handoff outlives the guard lifetime: a Stop long after its entry still finishes it', async (t) => {
+  const s = await session(t, { newTaskPerEntry: true });
+  await s.turn('on before', 'answer before');
+  await entryWithExpiredHandoff(s, 'on after', operation => operation === 'append');
+  // The entered task's turn runs for longer than the guard's 60 s lifetime.
+  const directory = join(dirname(s.runtimeConfigPath), 'transcript-guards');
+  const [name] = (await readdir(directory)).filter(file => file.endsWith('.json'));
+  const kept = JSON.parse(await readFile(join(directory, name), 'utf8'));
+  await writeFile(join(directory, name), JSON.stringify({ ...kept, createdAt: Date.now() - 10 * 60_000 }));
+  await appendFile(s.transcriptPath, row('assistant', 'answer after'));
+  await s.hook('Stop');
+  assert.deepEqual(visible(s).slice(2).map(event => [event.content, event.token]),
+    [['on after', 'task-2'], ['answer after', 'task-2']], hookNotices(s));
+});
+
+test('an expired handoff marks the old task\'s unflushed tail omitted and imports the entered task\'s turn', async (t) => {
+  const s = await session(t, { newTaskPerEntry: true });
+  // The old task's reply is never synced by its own Stop, so the entry has to flush it.
+  await appendFile(s.transcriptPath, row('user', 'on before'));
+  await s.hook('UserPromptSubmit', 'on before');
+  await appendFile(s.transcriptPath, row('assistant', 'answer before'));
+  const hold = await entryWithExpiredHandoff(s, 'on after', operation => operation === 'append');
+  await appendFile(s.transcriptPath, row('assistant', 'answer after'));
+  await s.hook('Stop');
+  assert.deepEqual(visible(s).map(event => [event.content, event.token]), [['on after', 'task-2'], ['answer after', 'task-2']],
+    hookNotices(s));
+  const omitted = s.appended.filter(event => event.event_id.endsWith(':fallback'));
+  assert.equal(omitted.length, 1, 'the old tail is one content-free omission');
+  assert.equal(omitted[0].token, 'task-2');
+  // Its page was in flight with the old task's text: it never lands.
+  hold.release();
+  await hold.settled;
+  assert.equal(s.appended.some(event => event.content.includes('answer before')), false, 'the late page writes nothing');
+});
+
+test('an entry whose window expires mid-scan leaves the scan to the entered task\'s Stop', async (t) => {
+  const s = await session(t, { newTaskPerEntry: true });
+  await s.turn('on before', 'answer before');
+  await appendFile(s.transcriptPath, row('user', 'on after'));
+  // The deadline fires when the scan opens the native transcript for its first page.
+  const deadline = new AbortController();
+  const promises = (await import('node:fs/promises')).default;
+  const open = promises.open;
+  let armed = true;
+  t.mock.method(promises, 'open', (path, ...rest) => {
+    if (armed && String(path) === s.transcriptPath) { armed = false; deadline.abort(); }
+    return open(path, ...rest);
+  });
+  syncBuiltinESMExports();
+  try {
+    await s.hook('UserPromptSubmit', 'on after', { signal: deadline.signal });
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
+  assert.equal(armed, false, 'the deadline fired inside the scan');
+  const kept = await guardState(s);
+  assert.equal(kept.phase, 'scan', 'the prompt was not found before the deadline');
+  assert.equal(kept.nextOwner, transcriptDigest('task-2'));
+  await appendFile(s.transcriptPath, row('assistant', 'answer after'));
+  await s.hook('Stop');
+  assert.deepEqual(visible(s).slice(2).map(event => [event.content, event.token]),
+    [['on after', 'task-2'], ['answer after', 'task-2']], hookNotices(s));
+  assert.equal(s.markers().length, 0);
+  assert.equal(await guardState(s), null);
+});
+
+test('the next entry finishes an expired handoff first, then hands off its own prompt', async (t) => {
+  const s = await session(t, { newTaskPerEntry: true });
+  await s.turn('on before', 'answer before');
+  await entryWithExpiredHandoff(s, 'on after', operation => operation === 'append');
+  await appendFile(s.transcriptPath, row('assistant', 'answer after'));
+  // The entered task's Stop never runs; the next prompt comes first.
+  await s.turn('on next', 'answer next');
+  assert.deepEqual(visible(s).slice(2).map(event => [event.content, event.token]),
+    [['on after', 'task-2'], ['answer after', 'task-2'], ['on next', 'task-3'], ['answer next', 'task-3']], hookNotices(s));
+  assert.equal(s.appended.length, visible(s).length);
+});
+
+// rec#16 (2): a Stop whose window expired just before recording went off.
+// The held Provider request is that Stop's session read.
+async function stopExpiredBefore(s, { meanwhile = () => {} } = {}) {
+  const hold = s.holdNext((_operation, request) => request.mode === 'session');
+  const deadline = new AbortController();
+  const stop = s.hook('Stop', undefined, { signal: deadline.signal });
+  await hold.wasReached;
+  await meanwhile();
+  deadline.abort();
+  await stop;
+  assert.ok(s.notices.at(-1).includes('Native transcript import was deferred'), hookNotices(s));
+  return hold;
+}
+
+const notRecordedRanges = s => s.markers().map(event => {
+  const [, from, to] = /native bytes (\d+) to (\d+)/.exec(event.content);
+  return { from: Number(from), to: Number(to), reason: notRecordedReason(event.content), token: event.token };
+});
+
+test('an on-period turn whose Stop expired before recording went off is imported, and only the off bytes are marked off', async (t) => {
+  const s = await session(t, { newTaskPerEntry: true });
+  await s.turn('on before', 'answer before');
+  await appendFile(s.transcriptPath, row('user', 'on after'));
+  await s.hook('UserPromptSubmit', 'on after');
+  await appendFile(s.transcriptPath, row('assistant', 'answer after'));
+  const hold = await stopExpiredBefore(s);
+  const offFrom = (await stat(s.transcriptPath)).size;
+  s.store.update({ enabled: false, disabledSources: [] });
+  await s.turn('private one', 'private answer one');
+  s.store.update({ enabled: true, disabledSources: [] });
+  await s.turn('on later', 'answer later');
+  hold.release();
+  await hold.settled;
+  assert.deepEqual(visible(s).map(event => [event.content, event.token]), [['on before', 'task-1'], ['answer before', 'task-1'],
+    ['on after', 'task-2'], ['answer after', 'task-2'], ['on later', 'task-4'], ['answer later', 'task-4']], hookNotices(s));
+  assert.equal(s.contents().some(text => text.includes('private')), false, 'no off-period byte is imported');
+  const ranges = notRecordedRanges(s);
+  assert.ok(ranges.length > 0, 'the off period is marked');
+  for (const range of ranges) {
+    assert.equal(range.reason, 'global_off');
+    assert.ok(range.from >= offFrom, `an off marker never covers the on-period turn (${range.from} < ${offFrom})`);
+  }
+});
+
+test('an expired Stop whose settings changed meanwhile marks its bytes unconfirmed, not off', async (t) => {
+  const s = await session(t, { newTaskPerEntry: true });
+  await s.turn('on before', 'answer before');
+  await appendFile(s.transcriptPath, row('user', 'on after'));
+  await s.hook('UserPromptSubmit', 'on after');
+  await appendFile(s.transcriptPath, row('assistant', 'answer after'));
+  const onEnd = (await stat(s.transcriptPath)).size;
+  // Recording goes off while the Stop is still deciding: the generation it decided under is gone.
+  const hold = await stopExpiredBefore(s, { meanwhile: () => s.store.update({ enabled: false, disabledSources: [] }) });
+  await s.turn('private one', 'private answer one');
+  hold.release();
+  await hold.settled;
+  assert.equal(s.contents().some(text => text.includes('answer after') || text.includes('private')), false,
+    'nothing it cannot prove is imported');
+  const ranges = notRecordedRanges(s);
+  assert.deepEqual(ranges[0], { from: ranges[0].from, to: onEnd, reason: UNATTRIBUTABLE, token: 'task-2' }, hookNotices(s));
+  assert.ok(ranges.slice(1).every(range => range.reason === 'global_off' && range.from >= onEnd));
+});
+
+test('an expired Stop\'s bytes are never imported under a task entered after it', async (t) => {
+  const s = await session(t, { newTaskPerEntry: true });
+  await s.turn('on before', 'answer before');
+  await appendFile(s.transcriptPath, row('user', 'on after'));
+  await s.hook('UserPromptSubmit', 'on after');
+  await appendFile(s.transcriptPath, row('assistant', 'answer after'));
+  const hold = await stopExpiredBefore(s);
+  hold.release();
+  await hold.settled;
+  const onEnd = (await stat(s.transcriptPath)).size;
+  s.store.update({ enabled: false, disabledSources: [] });
+  // The off entry cannot reach the Provider to cover them, and still enters task-3.
+  await appendFile(s.transcriptPath, row('user', 'private one'));
+  s.provider.up = false;
+  await s.hook('UserPromptSubmit', 'private one');
+  s.provider.up = true;
+  assert.equal(s.tasks.current, 'task-3');
+  await appendFile(s.transcriptPath, row('assistant', 'private answer one'));
+  await s.hook('Stop');
+  assert.equal(s.contents().some(text => text.includes('answer after') || text.includes('private')), false, hookNotices(s));
+  const ranges = notRecordedRanges(s);
+  assert.deepEqual(ranges[0], { from: ranges[0].from, to: onEnd, reason: TURN_UNRESOLVED, token: 'task-3' });
+  assert.ok(ranges.slice(1).every(range => range.reason === 'global_off' && range.from >= onEnd));
+});
+
+test('an expired Stop while a turn is held keeps it held and never imports it in an off period', async (t) => {
+  const s = await session(t);
+  await s.turn('on before', 'answer before');
+  const ledger = transcriptCaptureLedger(s.runtimeConfigPath, { session_id: 'session' }, 'codex');
+  assert.equal(ledger.holdTurn({ turn: 'held-turn', from: (await stat(s.transcriptPath)).size }), 'ledger');
+  await appendFile(s.transcriptPath, row('user', 'held prompt') + row('assistant', 'held answer'));
+  const hold = await stopExpiredBefore(s);
+  hold.release();
+  await hold.settled;
+  assert.deepEqual(ledger.heldTurns().turns.map(turn => turn.turn), ['held-turn'], 'the turn stays held');
+  s.store.update({ enabled: false, disabledSources: [] });
+  await s.turn('private one', 'private answer one');
+  assert.equal(s.contents().some(text => text.includes('held') || text.includes('private')), false, hookNotices(s));
+  assert.equal(notRecordedRanges(s)[0].reason, TURN_UNRESOLVED);
+});
+
 test('unresolved turns are held in order, skip every sync and end only as a whole after the last of them', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-unresolved-turn-'));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
@@ -370,6 +621,40 @@ test('unresolved turns are held in order, skip every sync and end only as a whol
   const marker = notRecordedEvent(240, 300, TURN_UNRESOLVED);
   assert.match(marker.content, /task ownership was not confirmed, so it was not recorded under any task; native bytes 240 to 300/);
   assert.equal(notRecordedReason(marker.content), TURN_UNRESOLVED);
+});
+
+test('an expired capture\'s decision stays in version 2, is dropped by a covering sync and is never trusted when invalid', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-unsynced-span-'));
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
+  const runtimeConfigPath = join(directory, 'runtime.json');
+  const ledger = transcriptCaptureLedger(runtimeConfigPath, { session_id: 'synthetic-session' }, 'claude_code');
+  const owner = 'a'.repeat(64);
+  ledger.record('v1');
+  ledger.observeUnsynced({ until: 120, owner });
+  assert.deepEqual(ledger.unsyncedSpan(), { until: 120, owner });
+  const [name] = (await readdir(join(directory, 'transcript-capture'))).filter((entry) => entry.endsWith('.json'));
+  const file = join(directory, 'transcript-capture', name);
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { version: 2, settings: 'v1', unsynced: { until: 120, owner } });
+  // A turn held before its end may belong to another task: skipped as unresolved, not imported.
+  ledger.holdTurn({ turn: 'turn-1', from: 100 });
+  assert.deepEqual(ledger.unsyncedSpan(), { until: 120, reason: TURN_UNRESOLVED });
+  ledger.endTurns('turn-1');
+  // A denial keeps it; a sync that covered the transcript drops it.
+  assert.equal(await ledger.deny('v2', 'global_off'), 'kept');
+  assert.deepEqual(ledger.unsyncedSpan(), { until: 120, owner });
+  ledger.record('v2');
+  assert.equal(ledger.unsyncedSpan(), null);
+  // Only a token digest or a reason code: anything else is dropped and never imports.
+  for (const unsynced of [{ until: 5, reason: 'Some words' }, { until: 5, owner: 'not-a-digest' },
+    { until: 5, owner, reason: 'global_off' }, { until: -1, owner }]) {
+    await writeFile(file, JSON.stringify({ version: 2, settings: 'v2', unsynced }));
+    assert.equal(ledger.unsyncedSpan(), null, JSON.stringify(unsynced));
+  }
+  // Never written over a record that cannot be proven.
+  await writeFile(file, '{not json');
+  ledger.observeUnsynced({ until: 130, owner });
+  assert.equal(await readFile(file, 'utf8'), '{not json');
+  assert.equal(ledger.unsyncedSpan(), null);
 });
 
 test('a ledger that cannot be proven holds the session, and an unwritable one falls back to its own hold', async (t) => {

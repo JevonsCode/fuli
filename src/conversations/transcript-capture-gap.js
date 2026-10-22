@@ -1,11 +1,12 @@
 import { lstatSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { advanceCaptureSettingsVersion, captureDisabled } from '../graphiti/capture-decision.js';
+import { advanceCaptureSettingsVersion, captureDisabled, captureSettingsVersion } from '../graphiti/capture-decision.js';
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 import { jsonFormat, updateVersionedJsonFileAtomic, withJsonFormatDirectory, writeVersionedJsonFileAtomic }
   from '../storage/json-format.js';
 import { lookupTranscriptTask } from './current-task-lookup.js';
+import { importTranscriptSpan } from './transcript-append.js';
 import { transcriptDigest } from './transcript-guard.js';
 import { verifiedTranscriptEnd } from './transcript-reader.js';
 
@@ -58,18 +59,25 @@ export function notRecordedReason(content) {
 
 // Best effort: when the marker cannot be written the cursor stays, and the
 // settings change that brings capture back makes the interval unattributable.
-export async function skipTranscriptWhileOff(application, input, sourceApplication, adapter, decision) {
+// unsynced (the ledger's unsyncedSpan()) covers the bytes an expired capture
+// saw before capture was denied: the marker saying recording was off starts
+// after them.
+export async function skipTranscriptWhileOff(application, input, sourceApplication, adapter, decision, unsynced = null) {
   const disabled = captureDisabled(decision);
   if (!input?.transcript_path) return disabled;
   const result = await skipTranscriptSpan(application, input, sourceApplication, decision.reason,
-    () => verifiedTranscriptEnd(input.transcript_path, input.session_id, adapter));
+    () => verifiedTranscriptEnd(input.transcript_path, input.session_id, adapter), { adapter, unsynced });
   return result.status === 'skipped' ? { ...disabled, skipped: { from: result.from, to: result.to } } : disabled;
 }
 
 // Moves the session cursor up to native byte end() with only the marker
 // above: 'skipped', 'none' when nothing before it is still unimported or the
 // session imports nothing (no task Agent, no verified start), or 'failed'.
-export async function skipTranscriptSpan(application, input, sourceApplication, reason, end) {
+// Bytes before unsynced.until come first, as the capture that saw them
+// decided (rec#16): imported under the task that was current then, if it
+// still is, otherwise skipped with that capture's reason. Nothing is marked
+// past them until they are covered.
+export async function skipTranscriptSpan(application, input, sourceApplication, reason, end, { adapter, unsynced = null } = {}) {
   try {
     const { task, failure } = await lookupTranscriptTask(application, input, sourceApplication);
     if (failure) return { status: 'failed' };
@@ -77,16 +85,41 @@ export async function skipTranscriptSpan(application, input, sourceApplication, 
     const scope = { personal_space_id: application.config.personal.spaceId, personal_project_id: task.personal_project_id,
       agent_id: task.project_agent_id, source_application: sourceApplication, session_id: input.session_id };
     const session = await application.personal.conversation('query', { ...scope, mode: 'session' });
-    const from = session.cursor ?? 0;
+    let from = session.cursor ?? 0;
     if (!session.initialized) return { status: 'none' };
+    const write = { ...scope, task_context_token: task.token };
+    const mark = async (start, stop, why) => (await application.personal.conversation('append', { ...write,
+      events: [notRecordedEvent(start, stop, why)], expected_cursor: start, cursor: stop })).status === 'saved';
+    if (unsynced && unsynced.until > from) {
+      const proven = unsynced.owner !== undefined && unsynced.owner === transcriptDigest(task.token);
+      const covered = proven ? await importTranscriptSpan(application, { ...write, expected_cursor: from }, input, adapter, unsynced.until)
+        : await mark(from, unsynced.until, unsynced.reason ?? TURN_UNRESOLVED) ? unsynced.until : from;
+      if (covered < unsynced.until) return { status: 'failed' };
+      from = unsynced.until;
+    }
     const to = await end();
     if (to <= from) return { status: 'none' };
-    const saved = await application.personal.conversation('append', { ...scope, task_context_token: task.token,
-      events: [notRecordedEvent(from, to, reason)], expected_cursor: from, cursor: to });
-    return saved.status === 'saved' ? { status: 'skipped', from, to } : { status: 'failed' };
+    return await mark(from, to, reason) ? { status: 'skipped', from, to } : { status: 'failed' };
   } catch {
     return { status: 'failed' };
   }
+}
+
+// A non-entry hook whose capture window expired (rec#16) keeps, for a later
+// hook while capture is denied, what it had decided for the native bytes it
+// saw (up to their verified end): an import under the task it found current
+// (owner, a token digest), or why they are skipped. An import is kept only if
+// the settings generation it decided under still holds once their end is
+// read, no handoff is pending and the task is known; otherwise they are
+// skipped as unattributable or unresolved, never marked as written while
+// recording was off. Best effort: without it the later marker covers them.
+export async function keepUnsynced(application, ledger, input, adapter, { settings, notRecorded, owner, handoffPending }) {
+  if (!ledger || !input?.transcript_path) return;
+  let until;
+  try { until = await verifiedTranscriptEnd(input.transcript_path, input.session_id, adapter); } catch { return; }
+  const reason = captureSettingsVersion(application, input.session_id) !== settings ? UNATTRIBUTABLE
+    : notRecorded ?? (handoffPending || !owner ? TURN_UNRESOLVED : null);
+  ledger.observeUnsynced(reason ? { until, reason } : { until, owner });
 }
 
 // What this host session's transcript was last handled under, kept locally:
@@ -107,6 +140,12 @@ export async function skipTranscriptSpan(application, input, sourceApplication, 
 //     replaced, or too many turns); held until a fresh task entry
 //   skipUntil: native byte before which nothing may be imported; set by a
 //     fresh task entry for what was left of the turns it ended
+//   unsynced: { until, owner } or { until, reason } (rec#16) what a capture
+//     that expired decided for the native bytes before `until` (keepUnsynced),
+//     read only by a skip while capture is denied. Unlike the turns, it may be
+//     dropped: a FULI that drops it, or reads it as invalid, only marks those
+//     bytes as written while recording was off, as before; it never imports.
+//     So it stays in version 2.
 export const TRANSCRIPT_CAPTURE_FORMAT = jsonFormat({ store: 'transcript-capture-ledger', versions: [1, 2] });
 const LEDGER_VERSION = 2;
 // When the session's record cannot be written, an unresolved turn is kept
@@ -199,7 +238,7 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
     record(version) {
       if (version === null) return;
       try {
-        update((current) => ({ ...current.record, settings: version, pending: null }));
+        update((current) => ({ ...current.record, settings: version, pending: null, unsynced: null }));
         unkeptDenials.delete(path);
       } catch { /* the next sync stays unattributable, which only skips more */ }
     },
@@ -283,6 +322,25 @@ export function transcriptCaptureLedger(runtimeConfigPath, input, sourceApplicat
       try {
         update((current) => current.record.skipUntil === skipUntil ? { ...current.record, skipUntil: null } : undefined);
       } catch { /* skipping it again only skips nothing more */ }
+    },
+    // What a capture that expired decided for the bytes it saw (keepUnsynced);
+    // a newer one replaces it and a covering sync (record) drops it. Never
+    // written over a record that cannot be proven.
+    observeUnsynced(span) {
+      try {
+        update((current) => current.state === 'unprovable' ? undefined : { ...current.record, unsynced: span });
+      } catch { /* the later marker then covers these bytes, as before */ }
+    },
+    // That decision for a skip while capture is denied, or null. A turn held
+    // or a skip boundary set since means its owner may no longer be the
+    // task that is current, so it is skipped as unresolved instead of imported.
+    unsyncedSpan() {
+      const current = readLedger(path);
+      const span = current.state === 'record' && !current.record.unprovable ? current.record.unsynced : null;
+      if (!span?.owner) return span;
+      const moved = current.record.skipUntil !== null || current.record.held.some(turn => turn.from < span.until)
+        || fallbackHeld(holdPath);
+      return moved ? { until: span.until, reason: TURN_UNRESOLVED } : span;
     }
   };
 }
@@ -299,7 +357,7 @@ export async function keepDenial(application, ledger, version, reason) {
 }
 
 function emptyLedger() {
-  return { settings: null, pending: null, held: [], unprovable: false, skipUntil: null };
+  return { settings: null, pending: null, held: [], unprovable: false, skipUntil: null, unsynced: null };
 }
 
 function unprovableLedger() {
@@ -330,7 +388,16 @@ function parseLedger(text) {
       || (value.skipUntil !== undefined && !(Number.isSafeInteger(value.skipUntil) && value.skipUntil >= 0))
       || (value.unprovable !== undefined && value.unprovable !== true)) return unprovableLedger();
   return { state: 'record', record: { settings: value.settings ?? null, pending, held,
-    unprovable: value.unprovable === true, skipUntil: value.skipUntil ?? null } };
+    unprovable: value.unprovable === true, skipUntil: value.skipUntil ?? null, unsynced: unsyncedSpan(value.unsynced) } };
+}
+
+// Either an import's owner (a token digest) or a skip reason (a reason code,
+// never content). Anything else is dropped, which never imports.
+function unsyncedSpan(span) {
+  if (!span || !Number.isSafeInteger(span.until) || span.until < 0) return null;
+  if (/^[a-f0-9]{64}$/.test(span.owner ?? '') && span.reason === undefined) return { until: span.until, owner: span.owner };
+  if (/^[a-z_]{1,64}$/.test(span.reason ?? '') && span.owner === undefined) return { until: span.until, reason: span.reason };
+  return null;
 }
 
 function heldTurn(turn) {
@@ -342,7 +409,8 @@ function ledgerDocument(record) {
   return { version: LEDGER_VERSION, ...(record.settings === null || record.settings === undefined ? {} : { settings: record.settings }),
     ...(typeof record.pending === 'string' ? { pending: record.pending } : {}),
     ...(record.held?.length ? { held: record.held } : {}), ...(record.unprovable ? { unprovable: true } : {}),
-    ...(record.skipUntil === null || record.skipUntil === undefined ? {} : { skipUntil: record.skipUntil }) };
+    ...(record.skipUntil === null || record.skipUntil === undefined ? {} : { skipUntil: record.skipUntil }),
+    ...(record.unsynced ? { unsynced: record.unsynced } : {}) };
 }
 
 function holdsTurns(record) {

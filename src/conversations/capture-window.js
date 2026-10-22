@@ -8,7 +8,9 @@ export const withCaptureBudget = (timeoutMs, operation) => budgets.run(timeoutMs
 
 // Capture/recovery must leave time for preference entry. Revoking this port
 // prevents late continuations (even broken ports ignoring AbortSignal) from
-// issuing more requests or touching a guard after its lock has been released.
+// issuing more requests or touching the guard, before or after its lock has
+// been released. Only the operation's view of the guard is revoked: the hook
+// holding the lock still records how far an expired handoff got (rec#16).
 // settings is the capture settings version the caller decided under for
 // sessionId: a conversation write is refused once it changed, so a capture
 // that started before a pause or a switch never writes after it.
@@ -47,7 +49,7 @@ export async function captureWindow(application, guard, operation, {
   };
   let cancel;
   const expired = new Promise((_, reject) => {
-    cancel = () => { active = false; guard?.invalidate?.(); controller.abort(); reject(error()); };
+    cancel = () => { active = false; controller.abort(); reject(error()); };
     timer = setTimeout(cancel, timeoutMs);
   });
   signal?.addEventListener('abort', cancel, { once: true });

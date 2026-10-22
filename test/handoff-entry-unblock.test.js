@@ -9,6 +9,7 @@ import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook
 import { runCodexLifecycleHook, runCodexLifecycleCommand } from '../src/agents/codex/lifecycle-hook.js';
 import { withTranscriptGuard, transcriptDigest, TRANSCRIPT_SCAN_PAGE_LIMIT } from '../src/conversations/transcript-guard.js';
 import { syncConversationTranscript } from '../src/conversations/sync-transcript.js';
+import { captureWindow } from '../src/conversations/capture-window.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
 import { beginConversation } from '../src/graphiti/agent-conversations.js';
 import { selectedTaskEntryPreferences } from '../src/graphiti/task-entry-preferences.js';
@@ -66,6 +67,52 @@ for (const mutation of ['clear', 'write']) {
     `], { cwd: new URL('..', import.meta.url), timeout: 5000 });
   });
 }
+
+// rec#16: expiry revokes only the operation's view of the guard. The late
+// operation can neither read nor write it, nor reach the Provider; the hook
+// that still holds the lock records how far the handoff got.
+test('an expired capture fences its late operation but leaves the lock holder able to record the handoff', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-window-fence-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const runtime = join(directory, 'runtime.json');
+  const input = { session_id: 'native', transcript_path: join(directory, 'native.jsonl') };
+  const state = { version: 1, phase: 'scan', owner: transcriptDigest('old-owner'), prompt: transcriptDigest('prompt'),
+    scanCursor: 0, userMessages: 0 };
+  const requests = [];
+  const app = { personal: { conversation: async (...request) => { requests.push(request); return { status: 'saved' }; } } };
+  await withTranscriptGuard(runtime, input, 'codex', true, async guard => {
+    await guard.write(state);
+    let resume, finished, began;
+    const gate = new Promise(resolve => { resume = resolve; });
+    const done = new Promise(resolve => { finished = resolve; });
+    const started = new Promise(resolve => { began = resolve; });
+    const late = [];
+    const deadline = new AbortController();
+    const window = captureWindow(app, guard, async (port, held) => {
+      try {
+        began();
+        await gate;
+        for (const step of [() => held.value, () => held.write({ ...state, scanCursor: 9 }), () => held.clear(),
+          () => port.personal.conversation('append', {})]) {
+          try { await step(); late.push('ran'); } catch (error) { late.push(error.code); }
+        }
+      } finally { finished(); }
+    }, { signal: deadline.signal, timeoutMs: 30_000 });
+    await started;
+    deadline.abort();
+    await assert.rejects(window, { code: 'transcript_capture_timeout' });
+    resume();
+    await done;
+    assert.deepEqual(late, Array(4).fill('transcript_capture_timeout'));
+    assert.deepEqual(requests, []);
+    assert.equal(guard.value.scanCursor, 0, 'the late write never landed');
+    await guard.write({ ...guard.value, nextOwner: transcriptDigest('entered'), entryEnd: 10 });
+  });
+  await withTranscriptGuard(runtime, input, 'codex', true, guard => {
+    assert.equal(guard.value.nextOwner, transcriptDigest('entered'));
+    assert.equal(guard.expired, false, 'an entered handoff does not expire with the lifetime');
+  });
+});
 
 async function fixture(t, source) {
   const dir = await mkdtemp(join(tmpdir(), 'fuli-handoff-unblock-'));

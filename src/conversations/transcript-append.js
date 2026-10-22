@@ -1,4 +1,6 @@
 import { ProviderRequestError } from '../graphiti/provider-client.js';
+import { TRANSCRIPT_PAGES_PER_HOOK } from './transcript-guard.js';
+import { readTranscriptBatch } from './transcript-reader.js';
 
 export const CREDENTIAL_OMISSION = '[Visible transcript content omitted: it looked like a credential and was not saved; the original remains in native history.]';
 
@@ -20,6 +22,22 @@ export async function appendTranscriptPage(application, request) {
       flagged.has(index) ? { ...event, content: CREDENTIAL_OMISSION } : event);
     return application.personal.conversation('append', { ...request, events });
   }
+}
+
+// Imports native bytes from request.expected_cursor up to `until`, a verified
+// record end, a page at a time under request's task. Returns the cursor it
+// reached: `until` once all of it was saved.
+export async function importTranscriptSpan(application, request, input, adapter, until) {
+  let cursor = request.expected_cursor;
+  for (let page = 0; page < TRANSCRIPT_PAGES_PER_HOOK && cursor < until; page++) {
+    const batch = await readTranscriptBatch(input.transcript_path, input.session_id, cursor, adapter, { stopAtCursor: until });
+    if (batch.cursor === cursor) break;
+    const saved = await appendTranscriptPage(application, { ...request, expected_cursor: cursor, cursor: batch.cursor,
+      events: batch.events });
+    if (saved.status !== 'saved') break;
+    cursor = batch.cursor;
+  }
+  return cursor;
 }
 
 function credentialEventIndexes(error, count) {

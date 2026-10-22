@@ -9,6 +9,8 @@ import { acquireTranscriptGuardLock, isTranscriptGuardBusy } from './transcript-
 export const transcriptDigest = value => createHash('sha256').update(value).digest('hex');
 export const TRANSCRIPT_GUARD_TTL_MS = 60_000;
 export const TRANSCRIPT_SCAN_PAGE_LIMIT = 64;
+// Transcript pages one hook reads; the rest waits for the next hook.
+export const TRANSCRIPT_PAGES_PER_HOOK = 8;
 
 // Only opaque hashes and byte offsets are stored locally. The per-session lock
 // covers scan, begin, and claim; a second hook must retry rather than race it.
@@ -35,6 +37,10 @@ export async function withTranscriptGuard(runtimeConfigPath, input, source, enab
         || (value.createdAt !== undefined && (!Number.isSafeInteger(value.createdAt) || value.createdAt < 0))
         || (value.scanPages !== undefined && (!Number.isSafeInteger(value.scanPages) || value.scanPages < 0))
         || (value.boundary !== undefined && (!Number.isSafeInteger(value.boundary) || value.boundary < 0))
+        || (value.nextOwner !== undefined && !/^[a-f0-9]{64}$/.test(value.nextOwner))
+        || (value.entryEnd !== undefined && (!Number.isSafeInteger(value.entryEnd) || value.entryEnd < 0))
+        || (enteredHandoff(value) && value.phase !== 'claim' && (value.entryEnd < value.scanCursor
+          || (value.boundary !== undefined && value.entryEnd < value.boundary)))
         || (value.phase === 'fallback' && (!/^[a-f0-9]{64}$/.test(value.nextOwner ?? '')
           || !Number.isSafeInteger(value.recoveryFrom) || value.recoveryFrom < 0
           || !Number.isSafeInteger(value.boundary) || value.boundary < value.recoveryFrom))) {
@@ -42,12 +48,14 @@ export async function withTranscriptGuard(runtimeConfigPath, input, source, enab
       }
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
     const guard = {
-      invalidate() { active = false; },
       get value() { return value; },
       // Legacy guards have no bounded lifetime. Do not resume their scan;
       // the entry path may quarantine a verified EOF without importing it.
-      get expired() { return Boolean(value && (!Number.isSafeInteger(value.createdAt)
-        || Date.now() < value.createdAt || Date.now() - value.createdAt >= TRANSCRIPT_GUARD_TTL_MS)); },
+      // A handoff whose prompt already entered its task is bounded without
+      // the lifetime: its owner and native bytes are fixed, and the entered
+      // task's turn usually outlasts it (rec#16).
+      get expired() { return Boolean(value && (!Number.isSafeInteger(value.createdAt) || Date.now() < value.createdAt
+        || (!enteredHandoff(value) && Date.now() - value.createdAt >= TRANSCRIPT_GUARD_TTL_MS))); },
       async write(next) {
         if (!active) throw new Error('Transcript guard is no longer owned');
         next = { ...next, createdAt: next.createdAt ?? value?.createdAt ?? Date.now(), updatedAt: Date.now() };
@@ -67,6 +75,16 @@ export async function withTranscriptGuard(runtimeConfigPath, input, source, enab
     try { return await operation(guard); }
     finally { active = false; }
   } finally { await release(); }
+}
+
+// A handoff whose prompt already entered its task (nextOwner, that task's
+// token digest): the entry recorded its claim ('claim'), or its capture window
+// expired before the old task's tail was flushed and it kept the native end it
+// had seen (entryEnd), so that a later hook finishes the handoff as the entry
+// would have (rec#16).
+export function enteredHandoff(value) {
+  return value?.phase === 'claim' || (['scan', 'ready'].includes(value?.phase)
+    && Number.isSafeInteger(value.entryEnd) && typeof value.nextOwner === 'string');
 }
 
 // Only a busy guard lock is attributed to another Fuli hook; every other guard
