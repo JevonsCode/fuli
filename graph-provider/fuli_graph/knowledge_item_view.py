@@ -90,7 +90,7 @@ async def item_summary(store, space, item_kind, item_id, current, *, source_ids,
         revisions = (await item_revisions(store, space, item_kind, [item_id])).get(item_id, [])
     scope = await item_scope(store, space, item_kind, item_id, current)
     namespaces = [PERSONAL_NAMESPACE, *(project_namespace(project.id) for project in scope.projects)]
-    tags = await store.knowledge_tag_vocabulary().item_tags(space['id'], item_kind, item_id, namespaces)
+    tags = await store.knowledge_tag_vocabulary().reader(space['id']).item_tags(item_kind, item_id, namespaces)
     status = effective_confirmation_status(current)
     weight = knowledge_weight(current, evidence_ids=source_ids)
     title = current.get('name') if item_kind == 'entity' else current.get('type')

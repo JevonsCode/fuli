@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -7,6 +8,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { previewLines, type GovernancePreview } from '@/features/knowledge-tags/model'
 import { t } from '@/i18n'
 import UiIconButton from '@/ui/UiIconButton.vue'
 import { editFailure, type EditFailure, type ItemTag, type KnowledgeItemSummary } from './model'
@@ -22,6 +24,8 @@ const query = ref('')
 const candidates = ref<TagCandidate[]>([])
 const pending = ref<'attach' | 'detach' | null>(null)
 const error = ref('')
+// A retired tag's word: bringing it back would drop something, so the person confirms its preview first.
+const revival = ref<GovernancePreview | null>(null)
 const attached = computed(() => new Set(props.item.tags.map(tag => tag.id)))
 const choices = computed(() => candidates.value.filter(tag => !attached.value.has(tag.id)))
 const exact = computed(() => candidates.value.some(tag => tag.match === 'exact'))
@@ -43,6 +47,7 @@ async function search() {
 async function run(action: 'attach' | 'detach', operation: () => Promise<unknown>) {
   pending.value = action
   error.value = ''
+  revival.value = null
   try {
     await operation()
     query.value = ''
@@ -64,6 +69,10 @@ function create() {
   const name = query.value.trim()
   return run('attach', async () => {
     const created = await createTag(props.spaceId, props.item, name, t('knowledgeQuickEdit.tags.add'))
+    if (created.outcome === 'needs_person' && created.revival) {
+      revival.value = created.revival
+      return
+    }
     if (created.outcome === 'needs_decision' || !created.tag) {
       candidates.value = created.candidates ?? []
       throw new Error(t('knowledgeQuickEdit.tags.similar', { names: candidates.value.map(tag => tag.name).join('、') }))
@@ -101,6 +110,17 @@ function create() {
       </div>
       <GrowthLoading v-if="pending" variant="inline"
         :label="t(pending === 'attach' ? 'knowledgeQuickEdit.tags.attaching' : 'knowledgeQuickEdit.tags.detaching')" />
+      <div v-if="revival" role="status" class="grid gap-2 rounded-lg border border-warning bg-card px-4 py-3 text-sm"
+        data-tag-revival>
+        <p class="m-0">{{ t('knowledgeQuickEdit.tags.revival') }}</p>
+        <ul class="m-0 grid list-disc gap-1 pl-5">
+          <li v-for="line in previewLines(revival)" :key="line" class="[overflow-wrap:anywhere]">{{ line }}</li>
+        </ul>
+        <RouterLink :to="{ path: '/tags', query: { tag: revival.tag.id, change: 'revive' } }"
+          class="justify-self-start underline underline-offset-4" data-tag-revival-confirm>
+          {{ t('knowledgeQuickEdit.tags.revivalConfirm', { name: revival.tag.name }) }}
+        </RouterLink>
+      </div>
       <p v-if="error" role="alert" class="m-0 text-sm text-destructive">{{ error }}</p>
     </div>
   </Card>

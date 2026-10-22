@@ -143,6 +143,15 @@ export const router = createRouter({
       meta: { title: 'routes.sessionMigration.title', layout: 'form', detail: true },
     },
     {
+      // rec#11 D-07 part 2: the tag vocabulary, its review queue and the
+      // person's governance. An Agent's link opens one tag's change:
+      // ?tag=<id>&change=<approve|merge|split|retire|undo>[&into=<id>].
+      path: '/tags',
+      name: 'tags',
+      component: () => import('@/features/knowledge-tags/TagVocabularyPage.vue'),
+      meta: { title: 'routes.tags.title', layout: 'canvas' },
+    },
+    {
       path: '/knowledge/turn/:spaceId',
       name: 'knowledge-turn-receipt',
       component: () => import('@/pages/KnowledgeTurnReceiptPage.vue'),

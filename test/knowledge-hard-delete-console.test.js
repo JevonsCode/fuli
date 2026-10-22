@@ -17,6 +17,7 @@ import { JudgmentStore } from '../src/judgment/store.js';
 import { knowledgeHardDelete } from '../src/knowledge-hard-delete/console-port.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { PREVIEW_ID, syntheticGraph } from '../test-support/hard-delete-graph.js';
+import { reachableModules } from '../test-support/module-graph.js';
 
 // rec#5 C9 through the local console: only a person on this computer can
 // preview and permanently delete, the provider call takes the human-review
@@ -57,29 +58,11 @@ function recordingPort(t, graph = syntheticGraph()) {
   return { port: knowledgeHardDelete(dataDirectory(t), { localStores: [], send: graph.send }), calls: graph.calls, graph };
 }
 
-// Every module a module imports, by static or dynamic import, within this repository.
-function reachable(entry) {
-  const seen = new Set();
-  const visit = (file) => {
-    if (seen.has(file)) return;
-    seen.add(file);
-    const source = readFileSync(file, 'utf8');
-    for (const [, specifier] of source.matchAll(/(?:import|export)\s[^'"]*?from\s+['"](\.[^'"]+)['"]/g)) {
-      visit(join(dirname(file), specifier));
-    }
-    for (const [, specifier] of source.matchAll(/import\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
-      visit(join(dirname(file), specifier));
-    }
-  };
-  visit(entry);
-  return seen;
-}
-
 test('no MCP or Agent tool module reaches a hard delete, and no tool is named for one', () => {
   const deleting = ['src/knowledge-hard-delete/console-port.js', 'src/http/knowledge-hard-delete-api-router.js',
     'src/graphiti/human-review-channel.js'].map((path) => join(ROOT, path));
   for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
-    const modules = reachable(join(ROOT, entry));
+    const modules = reachableModules(join(ROOT, entry));
     assert.deepEqual(deleting.filter((path) => modules.has(path)), [], entry);
   }
   assert.deepEqual(listAgentTools().map((tool) => tool.name).filter((name) => /hard|purge|erase|permanent/.test(name)), []);

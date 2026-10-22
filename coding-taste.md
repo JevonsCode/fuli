@@ -73,6 +73,8 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Task status as a badge tone | `web/src/features/project-agents/task-labels.ts` (`taskStatusTone`) | |
 | Roundtable (agent-to-agent asks, chat, wake, LAN peers) | `packages/roundtable/` (`fuli-roundtable`) | Reaches its host only through `src/host.js`; FULI's host is `src/graphiti/roundtable-host.js`. Agent-specific wake adapters live in `packages/roundtable/src/agents/<agent>/`. |
 | Identity of names people type (tags; NFKC, line-break and space collapse, lowercase, idempotent) | `graph-provider/fuli_graph/name_identity.py` (`identity_key`, `display_name`) | Never strips punctuation, accents, ZWJ or non-BMP characters. Existing stored keys (`topic_key`, project names) keep their own rule until migrated. |
+| A person's tag governance: approve, merge, split, retire, relations, undo (rec#11 D-07 part 2) | `graph-provider/fuli_graph/knowledge_tag_governance.py` (relations in `knowledge_tag_relations.py`, merged-tag redirects in `knowledge_tag_redirects.py`) | Preview by anyone who sees the tag; apply only on the human-review channel with the preview's digest. Every change records each written tag's and link's before/after state for its undo. |
+| Boundary tests: which modules an entry reaches | `test-support/module-graph.js` (`reachableModules`) | Proves no MCP or Agent tool entry reaches a console-only port. |
 | Python shared values | `provider_values.py` (`json_object`, `sha256_text`), `model_validation.py` (`unique_text_list`), `models.py` (`stored_confirmation_basis`), `auth.py` (`token_hash`) | Do not redefine a private `_helper` that one of these already provides. |
 
 Python follows the same rule: a private `_helper` copied into a second module is a signal to promote it

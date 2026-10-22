@@ -7,10 +7,16 @@ run on the in-memory port and on a disposable Neo4j. Synthetic data only.
 import asyncio
 
 TAGS = '/v1/knowledge-tags'
+# The local console's human-review channel; both worlds accept this synthetic token.
+REVIEW_TOKEN = 'synthetic-tag-review-token-0123456789abcdef'
+REVIEW = {'x-fuli-human-review-token': REVIEW_TOKEN}
 
 
-async def post(world, operation, body, status=200):
-    response = await world.client.post(f'{TAGS}/{operation}', json={
+async def post(world, operation, body, status=200, headers=None):
+    """A write claimed as the person's own goes on the human-review channel, as the console sends it."""
+    if headers is None:
+        headers = REVIEW if body.get('operation_actor') == 'human' else {}
+    response = await world.client.post(f'{TAGS}/{operation}', headers=headers, json={
         'personal_space_id': world.space, **body})
     assert response.status_code == status, response.text
     return response.json()

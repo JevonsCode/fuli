@@ -41,6 +41,8 @@
 @source "../../pages/KnowledgeTurnReceiptPage.vue";
 @source "../../features/knowledge-quick-edit";
 @source "../../features/knowledge-hard-delete";
+/* rec#11 D-07 part 2: the tag vocabulary, its review queue and governance dialogs. */
+@source "../../features/knowledge-tags";
 /* 编排 on the same canvas: the collection, its cards and each Agent's page. */
 @source "../../pages/ProjectAgentsPage.vue";
 @source "../../features/project-agents/ProjectAgentCard.vue";

@@ -5,7 +5,7 @@ export const shellMessages = {
     sections: {
       agentDirectory: '全部', orchestrate: '编排', schedules: '定时任务', occupations: '职业',
       roundtables: '圆桌', askedYou: '待决策', myProjects: '我的', publicProjects: '公开',
-      knowledge: '知识', preferences: '偏好', writing: '品味', organize: '知识整理',
+      knowledge: '知识', preferences: '偏好', writing: '品味', organize: '知识整理', tags: '标签',
       settings: '常规', connections: '连接', about: '关于',
     },
   },
@@ -15,7 +15,7 @@ export const shellMessages = {
     sections: {
       agentDirectory: 'All', orchestrate: 'Orchestrate', schedules: 'Schedules', occupations: 'Occupations',
       roundtables: 'Roundtable', askedYou: 'Decisions', myProjects: 'Mine', publicProjects: 'Public',
-      knowledge: 'Knowledge', preferences: 'Preferences', writing: 'Taste', organize: 'Organize',
+      knowledge: 'Knowledge', preferences: 'Preferences', writing: 'Taste', organize: 'Organize', tags: 'Tags',
       settings: 'General', connections: 'Connections', about: 'About',
     },
   },

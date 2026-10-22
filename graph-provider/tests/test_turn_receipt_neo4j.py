@@ -445,15 +445,17 @@ async def test_a_project_tag_of_the_second_project_is_named_with_its_project_and
                            projects=['alpha', 'beta'])).status_code == 200
         created = ok(await client.post('/v1/knowledge-tags/create', json={
             'personal_space_id': space_id, 'personal_project_id': 'beta', 'name': 'beta-only', 'namespace': 'project',
-            'reason': 'Synthetic tag.', 'operation_actor': 'human'}))
+            'reason': 'Synthetic tag.', 'operation_actor': 'human'}, headers=REVIEW))
         link = {'personal_space_id': space_id, 'tag_id': created['tag']['id'], 'item_kind': 'entity',
                 'item_id': item_id, 'operation_actor': 'human'}
-        ok(await client.post('/v1/knowledge-tags/attach', json={**link, 'personal_project_id': 'beta'}))
+        ok(await client.post('/v1/knowledge-tags/attach', json={**link, 'personal_project_id': 'beta'}, headers=REVIEW))
         [tag] = (await view(client, space_id, item_id))['tags']
         assert (tag['namespace'], tag['project_id']) == ('project', 'beta')
-        refused = await client.post('/v1/knowledge-tags/detach', json={**link, 'personal_project_id': 'alpha'})
+        refused = await client.post('/v1/knowledge-tags/detach', json={**link, 'personal_project_id': 'alpha'},
+                                    headers=REVIEW)
         assert refused.status_code == 404, 'alpha cannot see beta\'s tag'
-        ok(await client.post('/v1/knowledge-tags/detach', json={**link, 'personal_project_id': tag['project_id']}))
+        ok(await client.post('/v1/knowledge-tags/detach', json={**link, 'personal_project_id': tag['project_id']},
+                             headers=REVIEW))
         assert (await view(client, space_id, item_id))['tags'] == []
 
 

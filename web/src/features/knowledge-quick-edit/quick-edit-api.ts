@@ -1,6 +1,7 @@
 import { getJson, patchJson, postJson } from '@/api/client'
 import type { ItemKind, ItemTag, KnowledgeItemSummary, KnowledgeItemView, RevisionResult, TurnReceipt } from './model'
 import { tagProjectId } from './model'
+import type { GovernancePreview } from '@/features/knowledge-tags/model'
 
 // The console routes behind a turn receipt's links (rec#20). Content edits and
 // deactivation use the item's existing PATCH, tags the tag vocabulary routes.
@@ -38,8 +39,10 @@ export function changeTag(spaceId: string, item: KnowledgeItemSummary, action: '
     personalProjectId: tagProjectId(item, tag), tagId: tag.id, itemKind: item.item_kind, itemId: item.item_id })
 }
 
-export interface TagCreated { outcome: 'created' | 'existing' | 'needs_decision'; tag?: TagCandidate | null;
-  candidates?: TagCandidate[] }
+// needs_person: the word belongs to a retired tag that would come back without
+// some relations or aliases; nothing changed, the person confirms the preview.
+export interface TagCreated { outcome: 'created' | 'existing' | 'needs_decision' | 'needs_person'; tag?: TagCandidate | null;
+  candidates?: TagCandidate[]; revival?: GovernancePreview | null }
 
 export function createTag(spaceId: string, item: KnowledgeItemSummary, name: string, reason: string) {
   const project = tagProjectId(item)

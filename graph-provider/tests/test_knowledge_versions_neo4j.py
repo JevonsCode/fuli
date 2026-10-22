@@ -56,10 +56,9 @@ async def test_c7_1_an_edit_takes_effect_at_once_and_the_old_version_is_marked_r
         assert (await entry_instructions(client, space_id, 'alpha')) == {old_id: '回复用英文'}
         tag = ok(await client.post('/v1/knowledge-tags/create', json={
             'personal_space_id': space_id, 'name': 'language', 'namespace': 'personal',
-            'reason': 'Synthetic tag.', 'operation_actor': 'human'}))['tag']
+            'reason': 'Synthetic tag.'}))['tag']
         ok(await client.post('/v1/knowledge-tags/attach', json={
-            'personal_space_id': space_id, 'tag_id': tag['id'], 'item_kind': 'entity', 'item_id': old_id,
-            'operation_actor': 'human'}))
+            'personal_space_id': space_id, 'tag_id': tag['id'], 'item_kind': 'entity', 'item_id': old_id}))
         before = await view(client, space_id, old_id)
         edited = await edit(client, space_id, old_id, '技术术语保留英文，其余用中文', version=before['version'],
                             reason='我改主意了')

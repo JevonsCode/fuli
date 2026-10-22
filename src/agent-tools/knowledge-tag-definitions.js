@@ -4,7 +4,9 @@ const text = maximum => ({ ...stringSchema(), minLength: 1, maxLength: maximum }
 const id = text(256);
 
 // An open vocabulary: one read to find a tag, one write for the four changes,
-// so the full tool list grows by two schemas instead of five.
+// so the full tool list grows by two schemas instead of five. The same write
+// tool asks the person for governance (rec#11 D-07 part 2): it only previews,
+// and returns the console link where the person decides.
 export const KNOWLEDGE_TAG_DEFINITIONS = [
   {
     name: 'resolve_knowledge_tags',
@@ -20,12 +22,13 @@ export const KNOWLEDGE_TAG_DEFINITIONS = [
   {
     name: 'change_knowledge_tags',
     title: 'WRITE · Create, alias or attach a tag',
-    description: 'create (name, reason; this project by default, else namespace personal) returns an exact/alias match instead, or candidates until distinctFrom lists every one judged different; Agent tags start provisional. add_alias makes a synonym reuse tagId; on a personal or active tag it is only a proposal. attach/detach tagId on one item. Never merges tags or changes items.',
+    description: 'create (name, reason; this project by default, else namespace personal) returns an exact/alias match, or candidates until distinctFrom lists each one judged different; Agent tags start provisional. add_alias: a synonym reuses tagId; on a personal or active tag only a proposal. attach/detach tagId on one item. approve/merge (intoTagId)/split (name)/retire/undo: preview only, the person decides at confirmUrl. Never changes items.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
-      action: enumSchema(['create', 'add_alias', 'attach', 'detach']),
+      action: enumSchema(['create', 'add_alias', 'attach', 'detach', 'approve', 'merge', 'split', 'retire', 'undo']),
       tagId: id,
+      intoTagId: id,
       name: text(80),
       description: text(500),
       namespace: enumSchema(['personal', 'project']),

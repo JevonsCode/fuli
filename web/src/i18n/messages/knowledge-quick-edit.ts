@@ -54,6 +54,8 @@ export const knowledgeQuickEditMessages = {
       title: '标签', none: '还没有标签', add: '添加标签', search: '搜索或新建标签',
       create: '新建并添加“{name}”', remove: '移除标签 {name}', attaching: '正在添加标签', detaching: '正在移除标签',
       similar: '已有相近的标签，先确认是否就是它：{names}',
+      revival: '这个词属于一个已退役的标签。下面这些已不成立的部分会被去掉；现在还没有改动：',
+      revivalConfirm: '到标签词表确认恢复「{name}」',
     },
     meaning: {
       label: '有 {count} 条结论依据它。这次修改是：',
@@ -170,6 +172,8 @@ export const knowledgeQuickEditMessages = {
       title: 'Tags', none: 'No tags yet', add: 'Add tag', search: 'Search or create a tag',
       create: 'Create and add “{name}”', remove: 'Remove tag {name}', attaching: 'Adding the tag', detaching: 'Removing the tag',
       similar: 'Similar tags exist; check whether one is the same: {names}',
+      revival: 'This word belongs to a retired tag. What no longer fits, below, would be dropped; nothing has changed yet:',
+      revivalConfirm: 'Confirm bringing back “{name}” in the tag vocabulary',
     },
     meaning: {
       label: '{count} conclusions rest on it. This edit:',

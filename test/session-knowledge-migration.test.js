@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +15,7 @@ import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
 import { handleKnowledgeScopeRequest } from '../src/http/knowledge-scope-api-router.js';
 import { knowledgeScopeConsole } from '../src/knowledge-scope/console-port.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
+import { reachableModules } from '../test-support/module-graph.js';
 
 // rec#20 part 2: a session's batch migration from its temporary project into
 // the formal project it linked to. Synthetic Provider only.
@@ -103,7 +103,7 @@ test('a migration is confirmed only on this computer and never by an Agent tool'
   const writing = ['src/knowledge-scope/console-port.js', 'src/http/knowledge-scope-api-router.js',
     'src/graphiti/human-review-channel.js'].map(path => join(ROOT, path));
   for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
-    const modules = reachable(join(ROOT, entry));
+    const modules = reachableModules(join(ROOT, entry));
     assert.deepEqual(writing.filter(path => modules.has(path)), [], entry);
   }
   // Without a local installation there is no human-review channel: nothing is sent.
@@ -133,23 +133,6 @@ test('a refused batch comes back as a conflict naming its items, which the page 
 });
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-
-function reachable(entry) {
-  const seen = new Set();
-  const visit = (file) => {
-    const path = file.endsWith('.js') ? file : `${file}.js`;
-    if (seen.has(path)) return;
-    let source;
-    try { source = readFileSync(path, 'utf8'); } catch { return; }
-    seen.add(path);
-    for (const [, specifier] of source.matchAll(/(?:import|export)\s[^'"]*?from\s+['"](\.[^'"]+)['"]/g)) {
-      visit(join(dirname(path), specifier));
-    }
-    for (const [, specifier] of source.matchAll(/import\(\s*['"](\.[^'"]+)['"]\s*\)/g)) visit(join(dirname(path), specifier));
-  };
-  visit(entry);
-  return seen;
-}
 
 test('the session temporary project is keyed like the Provider finds it', async () => {
   const asked = [];

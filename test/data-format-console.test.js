@@ -8,6 +8,7 @@ import { DataFormatError } from '../packages/roundtable/src/storage/data-format-
 import { listAgentTools } from '../src/agent-tools.js';
 import { handleDataFormatApiRequest } from '../src/http/data-format-api-router.js';
 import { createServer } from '../src/server.js';
+import { reachableModules } from '../test-support/module-graph.js';
 
 // rec#17 D-09 part 2: the console confirms and undoes migrations on loopback
 // only, and no MCP or Agent tool path reaches the operations that change data.
@@ -70,36 +71,18 @@ test('apply and undo are refused from another device', async () => {
   assert.deepEqual(calls, []);
 });
 
-// Every module a module imports, by static import, within this repository.
-function reachable(entry) {
-  const seen = new Set();
-  const visit = (file) => {
-    if (seen.has(file)) return;
-    seen.add(file);
-    const source = readFileSync(file, 'utf8');
-    for (const [, specifier] of source.matchAll(/(?:import|export)\s[^'"]*?from\s+['"](\.[^'"]+)['"]/g)) {
-      visit(join(dirname(file), specifier));
-    }
-    for (const [, specifier] of source.matchAll(/import\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
-      visit(join(dirname(file), specifier));
-    }
-  };
-  visit(entry);
-  return seen;
-}
-
 test('no MCP or Agent tool module reaches the operations that change data formats', () => {
   const changing = ['src/data-format/migration-operations.js', 'src/data-format/graph-format-client.js',
     'src/graphiti/human-review-channel.js',
     'src/data-format/backup-retention.js', 'packages/roundtable/src/storage/database-migration.js',
     'src/storage/json-format-migration.js'].map((path) => join(ROOT, path));
   for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
-    const modules = reachable(join(ROOT, entry));
+    const modules = reachableModules(join(ROOT, entry));
     assert.deepEqual(changing.filter((path) => modules.has(path)), [], entry);
   }
   assert.deepEqual(listAgentTools().map((tool) => tool.name).filter((name) => /migrat|data_format|restore/.test(name)), []);
   // The provider routes that change records take the human-review token, which only this channel sends.
-  const senders = [...reachable(join(ROOT, 'src/cli.js'))].filter((file) => file.startsWith(join(ROOT, 'src'))
+  const senders = [...reachableModules(join(ROOT, 'src/cli.js'))].filter((file) => file.startsWith(join(ROOT, 'src'))
     && readFileSync(file, 'utf8').includes('x-fuli-human-review-token'));
   assert.deepEqual(senders, [join(ROOT, 'src/graphiti/human-review-channel.js')]);
 });

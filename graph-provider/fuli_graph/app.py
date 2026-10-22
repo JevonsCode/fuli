@@ -235,6 +235,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     HumanReviewer = Annotated[dict, Depends(current_human_reviewer)]
 
+    async def current_review_aware_actor(
+        actor: Actor,
+        x_fuli_human_review_token: Annotated[str | None, Header()] = None,
+    ) -> dict:
+        """An Agent's or the person's write on one route: a write claimed as the
+        person's own counts only with the human-review proof; a wrong proof is refused."""
+        if x_fuli_human_review_token is None:
+            return actor
+        return await current_human_reviewer(actor, x_fuli_human_review_token)
+
+    ReviewAwareActor = Annotated[dict, Depends(current_review_aware_actor)]
+
     async def current_workflow_observer(
         actor: Actor,
         x_fuli_workflow_observation_token: Annotated[
@@ -349,7 +361,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_graph_format_routes(application, runtime, resolved_settings, Actor, HumanReviewer)
     register_project_agent_routes(application, store, Actor)
-    register_knowledge_tag_routes(application, store, Actor)
+    register_knowledge_tag_routes(application, store, Actor, ReviewAwareActor, HumanReviewer)
     register_knowledge_item_routes(application, store, Actor, HumanReviewer)
     register_knowledge_hard_delete_routes(application, store, HumanReviewer)
 

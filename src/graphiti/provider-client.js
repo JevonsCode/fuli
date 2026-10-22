@@ -5,7 +5,9 @@ import { preferenceTaskSession } from './preference-task-scope.js';
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 const MAX_PROVIDER_VALIDATION_ERRORS = 5;
-const KNOWLEDGE_TAG_ROUTES = new Set(['resolve', 'create', 'aliases', 'attach', 'detach', 'metrics']);
+// The person's governance/apply is not here: it goes only on the human-review channel.
+const KNOWLEDGE_TAG_ROUTES = new Set(['resolve', 'create', 'aliases', 'attach', 'detach', 'metrics',
+  'vocabulary', 'detail', 'governance/preview']);
 
 export class ProviderRequestError extends ApplicationError {
   constructor(message, {

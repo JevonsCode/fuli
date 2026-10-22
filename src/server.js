@@ -32,6 +32,7 @@ import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
 import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
+import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -92,6 +93,9 @@ export async function createServer(options = {}) {
   // A person's change of where knowledge applies (rec#20, rec#11 D-22), console only.
   const knowledgeScope = options.knowledgeScope ?? (localOptions.runtimeConfigPath
     ? createKnowledgeScopeConsole(dirname(localOptions.runtimeConfigPath)) : null);
+  // The person's own tag changes and tag governance (rec#11 D-07 part 2), console only.
+  const knowledgeTags = options.knowledgeTags ?? (localOptions.runtimeConfigPath
+    ? createKnowledgeTagsConsole(dirname(localOptions.runtimeConfigPath)) : null);
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
   // is settled from its recorded operation, and graph deletions the record
   // lost are taken in again; what the graph cannot answer yet stays open for
@@ -176,6 +180,7 @@ export async function createServer(options = {}) {
       dataFormatMigrations,
       knowledgeHardDelete,
       knowledgeScope,
+      knowledgeTags,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -265,6 +270,7 @@ async function handleRequest({
   dataFormatMigrations,
   knowledgeHardDelete,
   knowledgeScope,
+  knowledgeTags,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -287,7 +293,8 @@ async function handleRequest({
     dataFormats,
     dataFormatMigrations,
     knowledgeHardDelete,
-    knowledgeScope
+    knowledgeScope,
+    knowledgeTags
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }
