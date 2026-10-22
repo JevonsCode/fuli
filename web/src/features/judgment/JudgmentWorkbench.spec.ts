@@ -78,6 +78,34 @@ describe('JudgmentWorkbench', () => {
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(3)
   })
 
+  it('shows a gated review as a suggestion with the model conclusion, and undoes an applied one', async () => {
+    const gate = { status: 'not_passed', reason: 'no_entry', modelId: 'synthetic-model', promptVersion: 'knowledge-review:0' }
+    getJson.mockResolvedValue({ records: [
+      record({ aiReview: { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['gate_not_passed'], gate } }),
+      record({ id: 'decision-b', outcome: 'approve', execution: { status: 'applied' },
+        aiReview: { state: 'ai_reviewed', modelOutcome: 'approve', interceptions: [], gate: { ...gate, status: 'passed', reason: null } } }),
+    ] })
+    postJson.mockImplementation(async (url: string) => url === '/api/judgment/undo'
+      ? record({ id: 'decision-b', outcome: 'approve', execution: { status: 'undone' } })
+      : {})
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+    await wrapper.get('.judgment-filter [data-value="all"]').trigger('click')
+
+    const cards = wrapper.findAll('[data-decision-card]')
+    const suggestion = cards.find(card => card.text().includes('AI 建议，待你确认'))!
+    expect(suggestion.text()).toContain('模型结论')
+    expect(suggestion.text()).toContain('通过')
+    expect(suggestion.find('[data-action="undo"]').exists()).toBe(false)
+    const reviewed = cards.find(card => card.text().includes('AI 已审核（模型 synthetic-model 已通过评测）'))!
+    await reviewed.get('[data-action="undo"]').trigger('click')
+    await flushPromises()
+
+    expect(postJson).toHaveBeenCalledWith('/api/judgment/undo', { personalSpaceId: 'space-a', decisionId: 'decision-b' })
+    expect(wrapper.text()).toContain('已撤回')
+    expect(wrapper.find('[data-action="undo"]').exists()).toBe(false)
+  })
+
   it('keeps autonomous runtime recommendations out of the human-needed queue', async () => {
     getJson.mockResolvedValueOnce({ records: [record({
       kind: 'routing', outcome: 'recommend', disposition: 'continue_current', policy: { mode: 'autonomous' },
