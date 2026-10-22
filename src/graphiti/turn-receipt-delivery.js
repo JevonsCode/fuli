@@ -11,17 +11,26 @@ import { formalTask, sessionMigrationLine, sessionMigrationOffer } from './sessi
 // task entry reads it back first and claims it only then, so one that cannot be
 // read yet stays unread for a later entry; it is shown once, marked as late.
 
-// The receipt of a completed checkpoint, or null when it saved nothing new.
-// memory: the Agent working-memory write this checkpoint made, if any.
+// The receipt of a completed checkpoint, or null when it saved nothing new
+// and no migration waits. memory: the Agent working-memory write this
+// checkpoint made, if any. The checkpoint's receipt replaces the entry's, so
+// the session's migration link is worked out again here (dot P2-2): this
+// turn left items undecided in a formal project, or it is still the session's
+// first task there while items wait.
 export async function checkpointTurnReceipt(application, task, { memory = null, agentName = null } = {}) {
   const results = task.checkpoint?.captureResults ?? [];
+  const receipt = await savedTurnReceipt(application, task, results, { memory, agentName });
+  const migration = receipt && heldInFormalProject(task, results) ? sessionMigrationLine(application, task)
+    : await sessionMigrationOffer(application, task);
+  if (!migration) return receipt;
+  return receipt ? { ...receipt, lines: [...receipt.lines, migration] } : { lines: [migration] };
+}
+
+async function savedTurnReceipt(application, task, results, { memory, agentName }) {
   if (!savedEpisodeIds(results).length) return memory ? readTurnReceipt(application, [], { memory, agentName }) : null;
   try {
     const receipt = await readTurnReceipt(application, results, { memory, agentName, session: taskSession(task) });
-    if (await application.taskContextRegistry.claimTurnReceipt(task.token, task.sourceApplication)) {
-      return receipt && heldInFormalProject(task, results)
-        ? { ...receipt, lines: [...receipt.lines, sessionMigrationLine(application, task)] } : receipt;
-    }
+    if (await application.taskContextRegistry.claimTurnReceipt(task.token, task.sourceApplication)) return receipt;
     // A later entry already showed these items; never repeat them.
     return memory ? readTurnReceipt(application, [], { memory, agentName }) : null;
   } catch {

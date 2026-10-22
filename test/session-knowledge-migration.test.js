@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +13,8 @@ import { sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/ses
 import { ensureSessionTemporaryProject } from '../src/graphiti/temporary-project-scope.js';
 import { checkpointTurnReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
+import { handleKnowledgeScopeRequest } from '../src/http/knowledge-scope-api-router.js';
+import { knowledgeScopeConsole } from '../src/knowledge-scope/console-port.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 
 // rec#20 part 2: a session's batch migration from its temporary project into
@@ -30,6 +32,13 @@ function application(reply = () => ({ status: 200, body: { ok: true } })) {
     const { status, body } = reply(call);
     return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   } });
+  // The migration leaves on the console's human-review channel (rec#11 D-22).
+  app.scopeConsole = knowledgeScopeConsole('synthetic-data-dir', { send: async (path, body, { review }) => {
+    const call = { path, body, review };
+    calls.push(call);
+    const { status, body: payload } = reply(call);
+    return { ok: status < 400, status, payload };
+  } });
   return { app, calls };
 }
 
@@ -41,7 +50,9 @@ async function api(app, method, path, body, remoteAddress = '127.0.0.1') {
   const response = { setHeader() {}, writeHead(status) { sent.status = status; },
     end(text) { sent.body = text ? JSON.parse(text) : null; } };
   try {
-    await handleGraphApiRequest({ request, response, url: new URL(`http://127.0.0.1${path}`), app });
+    const url = new URL(`http://127.0.0.1${path}`);
+    await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: app.scopeConsole })
+      || await handleGraphApiRequest({ request, response, url, app });
     return sent;
   } catch (error) {
     return mapHttpError(error);
@@ -57,7 +68,7 @@ test('the console reads what the session holds for the project it linked to', as
   const result = await api(app, 'GET', `/api/knowledge/session-migration?personalSpaceId=personal-space&client=codex&sessionId=${SESSION}&projectId=alpha`);
   assert.equal(result.status, 200);
   assert.deepEqual(calls, [{ path: '/v1/knowledge/session-migrations/preview', body: { personal_space_id: 'personal-space',
-    source_application: 'codex', session_id: SESSION, target_project_id: 'alpha', include_items: true } }]);
+    source_application: 'codex', session_id: SESSION, target_project_id: 'alpha', include_items: true, offset: 0 } }]);
   const other = await api(app, 'GET', `/api/knowledge/session-migration?personalSpaceId=someone-else&client=codex&sessionId=${SESSION}&projectId=alpha`);
   assert.equal(other.status, 400);
   assert.equal(calls.length, 1, 'another space is refused before the Provider');
@@ -67,7 +78,7 @@ test('the person\'s chosen items move with the versions the page showed, as thei
   const { app, calls } = application(() => ({ status: 200, body: { target_project_id: 'alpha', moved: [] } }));
   const result = await api(app, 'POST', '/api/knowledge/session-migration', { ...migration, operationActor: 'agent' });
   assert.equal(result.status, 200);
-  assert.deepEqual(calls, [{ path: '/v1/knowledge/session-migrations/apply', body: { personal_space_id: 'personal-space',
+  assert.deepEqual(calls, [{ path: '/v1/knowledge/session-migrations/apply', review: true, body: { personal_space_id: 'personal-space',
     source_application: 'codex', session_id: SESSION, target_project_id: 'alpha', reason: 'This session belongs to Alpha',
     items: [{ item_kind: 'entity', item_id: 'item-1', expected_version: 2 },
       { item_kind: 'relationship', item_id: 'item-2', expected_version: 0 }], operation_actor: 'human' } }]);
@@ -88,24 +99,57 @@ test('a migration is confirmed only on this computer and never by an Agent tool'
   const entry = agentInterfaceCatalog().uiMutationParity.find(item => item.route === 'POST /api/knowledge/session-migration');
   assert.equal(entry.access, 'local_user_only');
   assert.ok(!JSON.stringify(listAgentTools()).includes('session-migration'));
-  // No Agent tool or MCP module reaches the console module that posts it.
-  const root = fileURLToPath(new URL('../src', import.meta.url));
-  for (const directory of ['agent-tools', 'mcp']) {
-    for (const file of readdirSync(join(root, directory), { recursive: true }).filter(name => String(name).endsWith('.js'))) {
-      assert.doesNotMatch(readFileSync(join(root, directory, String(file)), 'utf8'), /applySessionMigration|session-migrations\/apply/,
-        `${directory}/${file}`);
-    }
+  // No MCP or Agent tool module reaches the port, the router or the channel that posts it.
+  const writing = ['src/knowledge-scope/console-port.js', 'src/http/knowledge-scope-api-router.js',
+    'src/graphiti/human-review-channel.js'].map(path => join(ROOT, path));
+  for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
+    const modules = reachable(join(ROOT, entry));
+    assert.deepEqual(writing.filter(path => modules.has(path)), [], entry);
   }
+  // Without a local installation there is no human-review channel: nothing is sent.
+  const sent = {};
+  const response = { setHeader() {}, writeHead(status) { sent.status = status; }, end(text) { sent.body = JSON.parse(text); } };
+  const request = Object.assign(Readable.from([Buffer.from(JSON.stringify(migration))]), { method: 'POST',
+    headers: { 'content-type': 'application/json' }, socket: { remoteAddress: '127.0.0.1' } });
+  await handleKnowledgeScopeRequest({ request, response, url: new URL('http://127.0.0.1/api/knowledge/session-migration'),
+    app, scopeConsole: null });
+  assert.equal(sent.status, 503);
+  assert.equal(calls.length, 0);
 });
 
-test('a stale batch comes back as a conflict the page re-reads', async () => {
+test('a refused batch comes back as a conflict naming its items, which the page marks', async () => {
   const { app } = application(() => ({ status: 409, body: { detail: { code: 'stale_version',
     stale_items: [{ item_kind: 'entity', item_id: 'item-1', reason: 'changed' }],
     message: 'some items changed since the migration was shown; nothing moved, read it again' } } }));
   const result = await api(app, 'POST', '/api/knowledge/session-migration', migration);
   assert.equal(result.status, 409);
   assert.equal(result.body.code, 'stale_version');
+  assert.deepEqual(result.body.items, [{ item_kind: 'entity', item_id: 'item-1', reason: 'changed' }]);
+  const match = application(() => ({ status: 409, body: { detail: { code: 'project_has_match',
+    items: [{ item_kind: 'entity', item_id: 'item-2' }], message: 'the target already holds a conflicting item' } } }));
+  const refused = await api(match.app, 'POST', '/api/knowledge/session-migration', migration);
+  assert.deepEqual([refused.status, refused.body.code, refused.body.items], [409, 'project_has_match',
+    [{ item_kind: 'entity', item_id: 'item-2' }]]);
 });
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+
+function reachable(entry) {
+  const seen = new Set();
+  const visit = (file) => {
+    const path = file.endsWith('.js') ? file : `${file}.js`;
+    if (seen.has(path)) return;
+    let source;
+    try { source = readFileSync(path, 'utf8'); } catch { return; }
+    seen.add(path);
+    for (const [, specifier] of source.matchAll(/(?:import|export)\s[^'"]*?from\s+['"](\.[^'"]+)['"]/g)) {
+      visit(join(dirname(path), specifier));
+    }
+    for (const [, specifier] of source.matchAll(/import\(\s*['"](\.[^'"]+)['"]\s*\)/g)) visit(join(dirname(path), specifier));
+  };
+  visit(entry);
+  return seen;
+}
 
 test('the session temporary project is keyed like the Provider finds it', async () => {
   const asked = [];

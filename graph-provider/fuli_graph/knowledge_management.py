@@ -409,7 +409,11 @@ async def reassign_knowledge_item(
 
 
 async def _reassign(store, actor, space, item_id, request, existing, previous_project_id):
-    """The assignment and its scope revision, in the caller's transaction."""
+    """The assignment and its scope revision, in the caller's transaction,
+    under the space's knowledge lock so it never lands between a scope edit's
+    version check and its write."""
+    from .knowledge_versions import lock_knowledge  # deferred: versions build on this module
+    await lock_knowledge(store, space)
     assignment = await write_project_assignment(
         store, space, item_id, request.item_kind, request.target_project_id,
         previous_project_id=previous_project_id, existing=existing,

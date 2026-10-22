@@ -350,7 +350,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_graph_format_routes(application, runtime, resolved_settings, Actor, HumanReviewer)
     register_project_agent_routes(application, store, Actor)
     register_knowledge_tag_routes(application, store, Actor)
-    register_knowledge_item_routes(application, store, Actor)
+    register_knowledge_item_routes(application, store, Actor, HumanReviewer)
     register_knowledge_hard_delete_routes(application, store, HumanReviewer)
 
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)

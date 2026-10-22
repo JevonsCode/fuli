@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { personalHumanReviewChannel } from '../graphiti/human-review-channel.js';
+import { personalHumanReviewChannel, providerRefusal } from '../graphiti/human-review-channel.js';
 import { ProviderRequestError } from '../graphiti/provider-client.js';
 import { JudgmentStore } from '../judgment/store.js';
 import { RoleWorkStore } from '../model-backends/role-work-store.js';
@@ -191,13 +191,4 @@ function defaultLocalStores(dataDir) {
 function staleRefusal() {
   return new ProviderRequestError('what this delete removes changed since the preview; read the preview again',
     { status: 409, code: 'hard_delete_preview_stale' });
-}
-
-function providerRefusal(status, payload) {
-  const detail = payload?.detail;
-  const code = typeof detail?.code === 'string' ? detail.code : status >= 500 ? 'provider_http_5xx' : 'provider_error';
-  const message = typeof detail?.message === 'string' ? detail.message
-    : typeof detail === 'string' && status < 500 ? detail : `The graph provider answered HTTP ${status}`;
-  const deletedAt = typeof detail?.deleted_at === 'string' ? detail.deleted_at : undefined;
-  return new ProviderRequestError(message, { status, code, details: deletedAt ? { deletedAt } : null });
 }

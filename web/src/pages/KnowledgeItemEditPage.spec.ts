@@ -43,7 +43,8 @@ async function open(item = view()) {
     ], projects: [], subscriptions: [] } as never
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/knowledge/item/:spaceId/:itemKind/:itemId', component: KnowledgeItemEditPage },
-    { path: '/organize', component: { template: '<div />' } }, { path: '/preferences', component: { template: '<div />' } }] })
+    { path: '/organize', component: { template: '<div />' } }, { path: '/preferences', component: { template: '<div />' } },
+    { path: '/knowledge/:scope/:spaceId/:projectId/:mode/:itemKind/:itemId', component: { template: '<div />' } }] })
   await router.push('/knowledge/item/space/entity/item-1')
   await router.isReady()
   const wrapper = mount(KnowledgeItemEditPage, { attachTo: document.body, global: { plugins: [pinia, router] } })
@@ -132,6 +133,20 @@ describe('KnowledgeItemEditPage', () => {
     await flushPromises()
     expect(wrapper.get('[data-scope-message]').text()).toContain('审核')
     expect(wrapper.get('[data-scope-message] a').attributes('href')).toBe('/preferences')
+    wrapper.unmount()
+  })
+
+  it('rec#11 D-22.2: a project that already holds a match links to the item where 加入项目 decides', async () => {
+    const wrapper = await open(view({ profile_aspect: null, category: 'fact', type: 'ProjectFact', confirmation_status: 'confirmed',
+      scope: { kind: 'projects', projects: [{ id: 'alpha', name: 'Alpha' }], status: 'set' } }))
+    expect(wrapper.get('[data-scope-other-knowledge]').text()).toContain('一个或多个项目')
+    postJson.mockRejectedValue(new ApiError('match', 409, JSON.stringify({ error: 'match', code: 'project_has_match' })))
+    await wrapper.get('#scope-reason').setValue('Also for beta')
+    await wrapper.get('[data-scope-editor] form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[data-scope-message]').text()).toContain('不替你决定')
+    expect(wrapper.get('[data-scope-join-project]').attributes('href'))
+      .toBe('/knowledge/personal/space/alpha/directory/entity/item-1')
     wrapper.unmount()
   })
 

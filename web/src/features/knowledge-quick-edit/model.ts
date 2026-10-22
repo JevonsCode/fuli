@@ -1,5 +1,6 @@
 import { ApiError } from '@/api/client'
 import { t } from '@/i18n'
+import { knowledgePath } from '@/router/paths'
 import type { KnowledgeVersionStatus } from '@/types'
 
 // rec#20: one knowledge item exactly as the Provider read it back, opened from
@@ -121,6 +122,17 @@ export const isPreference = (item: KnowledgeItemSummary) => Boolean(item.profile
 
 export function itemEditPath(spaceId: string, item: Pick<KnowledgeItemSummary, 'item_kind' | 'item_id'>) {
   return `/knowledge/item/${encodeURIComponent(spaceId)}/${item.item_kind}/${encodeURIComponent(item.item_id)}`
+}
+
+/**
+ * The item in the knowledge workspace, in its first project when it has one:
+ * where 加入项目 resolves a project that already holds the same or a
+ * conflicting item (rec#11 D-22.2).
+ */
+export function knowledgeWorkspaceItemPath(spaceId: string, item: Pick<KnowledgeItemSummary, 'item_kind' | 'item_id' | 'scope'>) {
+  const project = item.scope.projects.find(candidate => !candidate.temporary)
+  return knowledgePath('personal', spaceId, 'directory', { projectId: project?.id ?? null,
+    itemKind: item.item_kind, itemId: item.item_id })
 }
 
 export function categoryLabel(item: KnowledgeItemSummary) {

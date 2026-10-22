@@ -12,7 +12,7 @@ import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import UiSelect from '@/ui/UiSelect.vue'
 import {
-  editFailure, initialScopeDraft, isPreference, scopeChoices, scopeRequest,
+  editFailure, initialScopeDraft, isPreference, knowledgeWorkspaceItemPath, scopeChoices, scopeRequest,
   type EditFailure, type KnowledgeItemSummary, type ScopeChoice,
 } from './model'
 import { saveScope } from './quick-edit-api'
@@ -28,7 +28,7 @@ const draft = ref(initialScopeDraft(props.item))
 const reason = ref('')
 const saving = ref(false)
 const agents = ref<Array<{ value: string; label: string }>>([])
-const message = ref<{ kind: 'error' | 'status' | 'widening'; text: string } | null>(null)
+const message = ref<{ kind: 'error' | 'status' | 'widening' | 'project_match'; text: string } | null>(null)
 watch(() => props.item.version, () => { draft.value = initialScopeDraft(props.item) })
 
 const projectOptions = computed(() => props.projects.filter(project => project.scope_type !== 'temporary')
@@ -67,9 +67,9 @@ async function save() {
   } catch (error) {
     const failure = editFailure(error)
     message.value = failure === 'widening' ? { kind: 'widening', text: t('knowledgeQuickEdit.scope.widening') }
-      : { kind: 'error', text: failure === 'forbidden' ? t('knowledgeQuickEdit.forbidden')
-        : failure === 'conflict' ? t('knowledgeQuickEdit.conflict')
-          : failure === 'project_match' ? t('knowledgeQuickEdit.scope.projectMatch') : String((error as Error).message) }
+      : failure === 'project_match' ? { kind: 'project_match', text: t('knowledgeQuickEdit.scope.projectMatch') }
+        : { kind: 'error', text: failure === 'forbidden' ? t('knowledgeQuickEdit.forbidden')
+          : failure === 'conflict' ? t('knowledgeQuickEdit.conflict') : String((error as Error).message) }
     emit('failed', failure)
   } finally {
     saving.value = false
@@ -114,6 +114,10 @@ async function save() {
         {{ message.text }}
         <RouterLink v-if="message.kind === 'widening'" to="/preferences" class="underline">
           {{ t('knowledgeQuickEdit.scope.openReview') }}
+        </RouterLink>
+        <RouterLink v-else-if="message.kind === 'project_match'" :to="knowledgeWorkspaceItemPath(spaceId, item)"
+          class="underline" data-scope-join-project>
+          {{ t('knowledgeQuickEdit.scope.openJoinProject') }}
         </RouterLink>
       </p>
       <div>

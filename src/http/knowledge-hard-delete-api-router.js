@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { isLoopbackAddress } from './request-policy.js';
+import { refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 
 // The console's 「彻底删除」 of one knowledge item (rec#5 C9): a preview of
@@ -29,10 +29,7 @@ export async function handleKnowledgeHardDeleteRequest({ request, response, url,
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;
   }
-  if (!isLoopbackAddress(request.socket?.remoteAddress)) {
-    sendJson(response, 403, { error: 'Knowledge is permanently deleted only on this computer', code: 'local_user_only' });
-    return true;
-  }
+  if (refuseRemoteDecision(request, response, 'Knowledge is permanently deleted only on this computer')) return true;
   if (!hardDelete) {
     sendJson(response, 503, { error: 'Permanent deletion needs a local FULI installation' });
     return true;

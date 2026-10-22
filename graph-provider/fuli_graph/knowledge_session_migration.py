@@ -21,8 +21,8 @@ from .knowledge_item_view import item_evidence, item_scope, item_summary, person
 from .knowledge_item_view_models import KnowledgeScopeChange
 from .knowledge_management import _read_item
 from .knowledge_scope_edit import apply_scope_change, scope_editor_space
+from .knowledge_versions import lock_knowledge
 from .knowledge_session_migration_models import (
-    MAX_MIGRATION_ITEMS,
     SessionMigrationApply,
     SessionMigrationMoved,
     SessionMigrationPreview,
@@ -40,20 +40,24 @@ async def preview_session_migration(store, actor: dict, request: SessionMigratio
     temporary_id = session_temporary_project_id(space['id'], request.source_application, request.session_id)
     held = await held_items(store, space, temporary_id)
     items = []
+    end = request.offset + request.limit
     if request.include_items:
-        for item_kind, item_id, current in held[:MAX_MIGRATION_ITEMS]:
+        for item_kind, item_id, current in held[request.offset:end]:
             _, source_ids = await item_evidence(store, space, item_kind, item_id, limit=0)
             items.append(await item_summary(store, space, item_kind, item_id, current, source_ids=source_ids))
     return SessionMigrationPreview(
         temporary_project_id=temporary_id, target_project=target, held_count=len(held),
-        linked_task_count=await _linked_task_count(store, space, request),
-        truncated=request.include_items and len(held) > MAX_MIGRATION_ITEMS, items=items)
+        linked_task_count=await _linked_task_count(store, space, request), items=items,
+        next_offset=end if request.include_items and end < len(held) else None)
 
 
 async def apply_session_migration(store, actor: dict, request: SessionMigrationApply) -> SessionMigrationResult:
     space = await scope_editor_space(store, actor, request.personal_space_id)
     temporary_id = session_temporary_project_id(space['id'], request.source_application, request.session_id)
     async with query_store_transaction(store) as scoped:
+        # Held check, version check and every write under one lock: no
+        # reference or reassignment lands in between (dot P1-2).
+        await lock_knowledge(scoped, space)
         await _target_project(scoped, actor, space, request.target_project_id)
         held = {(item_kind, item_id) for item_kind, item_id, _ in await held_items(scoped, space, temporary_id)}
         stale = []

@@ -3,14 +3,15 @@ migration from its temporary project into the formal project it linked to, and
 facts or experiences that apply to several projects. Synthetic data only;
 public HTTP routes drive every write."""
 
+import asyncio
 import json
 from uuid import uuid4
 
 import pytest
 
 from fuli_graph.temporary_project_scope import session_temporary_project_id
-from test_project_agent_memory_neo4j import fixture_settings, provider_client
-from test_turn_receipt_neo4j import commit, confirm, move, ok, preference, space_with_projects, view
+from test_project_agent_memory_neo4j import provider_client
+from test_turn_receipt_neo4j import REVIEW, commit, confirm, move, ok, preference, reviewed_settings, space_with_projects, view
 
 SESSION = 'synthetic-migration-session'
 
@@ -32,14 +33,14 @@ async def link_task(client, space_id, project, *, session=SESSION):
     return token
 
 
-async def preview(client, space_id, target, *, session=SESSION, include_items=True):
+async def preview(client, space_id, target, *, session=SESSION, include_items=True, offset=0):
     return ok(await client.post('/v1/knowledge/session-migrations/preview', json={
         'personal_space_id': space_id, 'source_application': 'codex', 'session_id': session,
-        'target_project_id': target, 'include_items': include_items}))
+        'target_project_id': target, 'include_items': include_items, 'offset': offset}))
 
 
-async def migrate(client, space_id, target, items, *, session=SESSION):
-    return await client.post('/v1/knowledge/session-migrations/apply', json={
+async def migrate(client, space_id, target, items, *, session=SESSION, headers=REVIEW):
+    return await client.post('/v1/knowledge/session-migrations/apply', headers=headers, json={
         'personal_space_id': space_id, 'source_application': 'codex', 'session_id': session,
         'target_project_id': target, 'reason': 'Synthetic: this session belongs to the project.',
         'items': [{'item_kind': item['item_kind'], 'item_id': item['item_id'],
@@ -55,7 +56,7 @@ async def found_in(client, space_id, project, text):
 
 @pytest.mark.asyncio
 async def test_a_linked_session_offers_exactly_its_held_items_and_moves_only_the_chosen_ones():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta')
         temporary_id = await held_session(client, space_id)
@@ -76,7 +77,7 @@ async def test_a_linked_session_offers_exactly_its_held_items_and_moves_only_the
         offer = await preview(client, space_id, 'alpha')
         assert offer['temporary_project_id'] == temporary_id
         assert offer['target_project']['id'] == 'alpha' and offer['linked_task_count'] == 1
-        assert offer['held_count'] == 3 and not offer['truncated']
+        assert offer['held_count'] == 3 and offer['next_offset'] is None
         assert {item['item_id'] for item in offer['items']} == set(held['entity_ids'])
         assert shared not in {item['item_id'] for item in offer['items']}
         assert all(item['scope']['kind'] == 'temporary' and item['scope']['status'] == 'undetermined'
@@ -108,7 +109,7 @@ async def test_a_linked_session_offers_exactly_its_held_items_and_moves_only_the
 
 @pytest.mark.asyncio
 async def test_a_changed_item_refuses_the_whole_batch_and_names_it():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta')
         temporary_id = await held_session(client, space_id)
@@ -140,7 +141,7 @@ async def test_a_changed_item_refuses_the_whole_batch_and_names_it():
 
 @pytest.mark.asyncio
 async def test_a_migration_targets_a_registered_project_of_the_owner_only():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         temporary_id = await held_session(client, space_id)
@@ -164,7 +165,7 @@ async def test_a_migration_targets_a_registered_project_of_the_owner_only():
 
 @pytest.mark.asyncio
 async def test_a_fact_applies_to_several_projects_and_narrowing_ends_the_extra_reference():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta', 'gamma')
         text = f'Synthetic multi-project fact {uuid4().hex[:8]}'
@@ -200,7 +201,7 @@ async def test_a_fact_applies_to_several_projects_and_narrowing_ends_the_extra_r
 
 @pytest.mark.asyncio
 async def test_a_new_version_keeps_every_project_and_a_project_with_a_match_is_left_to_join_project():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta', 'gamma')
         fact = (await commit(client, space_id, [{'key': 'cfg', 'name': 'Synthetic config path', 'type': 'ProjectFact',
@@ -226,3 +227,145 @@ async def test_a_new_version_keeps_every_project_and_a_project_with_a_match_is_l
         assert refused.json()['detail']['project_id'] == 'gamma'
         assert [project['id'] for project in (await view(client, space_id, newer['item_id']))['scope']['projects']] == [
             'alpha', 'beta'], 'a refused change leaves the scope as it was'
+
+
+async def human_changes(client, space_id):
+    return ok(await client.post('/v1/knowledge/human-changes/search', json={
+        'personal_space_id': space_id, 'status': 'human_changed'}))['items']
+
+
+async def join_project(client, space_id, item_id, project):
+    """加入项目, as an Agent may ask for it."""
+    return ok(await client.post(f'/v1/knowledge/items/{item_id}/project-action', json={
+        'personal_space_id': space_id, 'mode': 'existing', 'target_project_id': project,
+        'conflict_resolution': 'defer', 'keep_source_relation': False, 'reason': 'Synthetic join.',
+        'operation_actor': 'agent'}))
+
+
+async def fact(client, space_id, project, name, summary=None, **extra):
+    return (await commit(client, space_id, [{'key': f'k-{uuid4().hex[:8]}', 'name': name, 'type': 'ProjectFact',
+                                             'summary': summary or name}], project=project, **extra))['entity_ids'][0]
+
+
+@pytest.mark.asyncio
+async def test_p1_1_an_agent_token_alone_cannot_change_scope_or_migrate_and_leaves_no_human_audit():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha', 'beta')
+        temporary_id = await held_session(client, space_id)
+        held = await fact(client, space_id, temporary_id, 'Synthetic held fact', scope_status='undetermined')
+        placed = await fact(client, space_id, 'alpha', 'Synthetic placed fact')
+        offer = (await preview(client, space_id, 'alpha'))['items']
+        version = (await view(client, space_id, placed))['version']
+        for headers in ({}, {'x-fuli-human-review-token': 'synthetic-wrong-review-token-0000000000'}):
+            assert (await migrate(client, space_id, 'alpha', offer, headers=headers)).status_code == 403
+            assert (await move(client, space_id, placed, 'projects', version=version, projects=['beta'],
+                               headers=headers)).status_code == 403
+        assert (await view(client, space_id, held))['scope']['kind'] == 'temporary', 'nothing moved'
+        after = await view(client, space_id, placed)
+        assert (after['version'], [project['id'] for project in after['scope']['projects']]) == (version, ['alpha'])
+        assert await human_changes(client, space_id) == [], 'a refused claim writes no human-change audit'
+        # The person's channel: the same writes succeed and are audited as theirs.
+        assert (await move(client, space_id, placed, 'projects', version=version, projects=['beta'])).status_code == 200
+        assert (await migrate(client, space_id, 'alpha', offer)).status_code == 200
+        assert {row['item_id'] for row in await human_changes(client, space_id)} == {held, placed}
+
+
+@pytest.mark.asyncio
+async def test_p1_2_an_old_page_cannot_undo_a_newer_join_project():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha', 'beta', 'gamma')
+        item = await fact(client, space_id, 'alpha', f'Synthetic joined fact {uuid4().hex[:6]}')
+        page = await view(client, space_id, item)
+        await join_project(client, space_id, item, 'beta')
+        joined = await view(client, space_id, item)
+        assert [project['id'] for project in joined['scope']['projects']] == ['alpha', 'beta']
+        assert joined['version'] > page['version'], '加入项目 is a scope change an open page must see'
+        stale = await move(client, space_id, item, 'projects', version=page['version'], projects=['alpha', 'gamma'])
+        assert stale.status_code == 409 and stale.json()['detail']['code'] == 'stale_version'
+        assert [project['id'] for project in (await view(client, space_id, item))['scope']['projects']] == ['alpha', 'beta']
+
+
+@pytest.mark.asyncio
+async def test_p1_2_a_batch_and_a_reference_added_meanwhile_never_lose_the_reference():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha', 'beta')
+        temporary_id = await held_session(client, space_id)
+        held = await fact(client, space_id, temporary_id, f'Synthetic raced fact {uuid4().hex[:6]}',
+                          scope_status='undetermined')
+        offer = (await preview(client, space_id, 'alpha'))['items']
+        moved, _ = await asyncio.gather(migrate(client, space_id, 'alpha', offer),
+                                        join_project(client, space_id, held, 'beta'))
+        scope = [project['id'] for project in (await view(client, space_id, held))['scope']['projects']]
+        assert 'beta' in scope, 'whichever came first, the joined project stays'
+        assert moved.status_code in {200, 409}
+        if moved.status_code == 200:
+            assert 'alpha' in scope
+        # And strictly after: the old preview no longer moves it.
+        again = await migrate(client, space_id, 'alpha', offer)
+        assert again.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_p2_1_a_new_primary_project_is_checked_for_a_match_too():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha', 'beta', 'gamma')
+        name = f'Synthetic primary check {uuid4().hex[:6]}'
+        item = await fact(client, space_id, 'alpha', name, 'Lives in alpha')
+        # 加入项目's rule: two confirmed items of one name and type with other words conflict.
+        await confirm(client, space_id, item)
+        await confirm(client, space_id, await fact(client, space_id, 'gamma', name, 'Lives somewhere else'))
+        refused = await move(client, space_id, item, 'projects', version=(await view(client, space_id, item))['version'],
+                             projects=['gamma', 'beta'])
+        assert refused.status_code == 409 and refused.json()['detail']['project_id'] == 'gamma'
+        assert [project['id'] for project in (await view(client, space_id, item))['scope']['projects']] == ['alpha']
+
+
+@pytest.mark.asyncio
+async def test_p2_1_one_conflicting_item_rolls_back_the_whole_batch():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        temporary_id = await held_session(client, space_id)
+        name = f'Synthetic batch conflict {uuid4().hex[:6]}'
+        saved = await commit(client, space_id, [preference('p', 'Synthetic batch preference'),
+                                                 {'key': 'c', 'name': name, 'type': 'ProjectFact', 'summary': 'Held words'}],
+                             project=temporary_id, scope_status='undetermined')
+        for item_id in saved['entity_ids']:
+            await confirm(client, space_id, item_id)
+        await confirm(client, space_id, await fact(client, space_id, 'alpha', name, 'Other confirmed words'))
+        offer = (await preview(client, space_id, 'alpha'))['items']
+        refused = await migrate(client, space_id, 'alpha', offer)
+        assert refused.status_code == 409 and refused.json()['detail']['code'] == 'project_has_match'
+        conflicting = next(item for item in offer if item['title'] == name)
+        assert refused.json()['detail']['items'] == [{'item_kind': 'entity', 'item_id': conflicting['item_id']}]
+        for item in offer:
+            assert (await view(client, space_id, item['item_id']))['scope']['kind'] == 'temporary', 'nothing moved'
+        assert (await preview(client, space_id, 'alpha'))['held_count'] == 2
+        # Leaving the conflicting one out, the rest moves.
+        assert (await migrate(client, space_id, 'alpha', [item for item in offer if item is not conflicting])).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_p2_3_paging_lets_the_person_choose_any_held_item_beyond_the_first_page():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        temporary_id = await held_session(client, space_id)
+        await commit(client, space_id, [{'key': f'bulk-{index:03d}', 'name': f'Synthetic bulk {index:03d}',
+                                         'type': 'ProjectFact', 'summary': f'Synthetic bulk {index:03d}'}
+                                        for index in range(101)], project=temporary_id, scope_status='undetermined')
+        first = await preview(client, space_id, 'alpha')
+        assert (first['held_count'], len(first['items']), first['next_offset']) == (101, 100, 100)
+        second = await preview(client, space_id, 'alpha', offset=first['next_offset'])
+        assert (len(second['items']), second['next_offset']) == (1, None)
+        [last] = second['items']
+        assert last['item_id'] not in {item['item_id'] for item in first['items']}
+        assert (await migrate(client, space_id, 'alpha', [last])).status_code == 200
+        assert [project['id'] for project in (await view(client, space_id, last['item_id']))['scope']['projects']] == ['alpha']
+        assert (await preview(client, space_id, 'alpha', include_items=False))['held_count'] == 100
+        too_many = await migrate(client, space_id, 'alpha', first['items'] + [last])
+        assert too_many.status_code == 422, 'one move takes at most 100'

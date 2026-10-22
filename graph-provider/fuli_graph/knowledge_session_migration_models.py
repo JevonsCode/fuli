@@ -12,7 +12,8 @@ from .knowledge_item_view_models import KnowledgeItemSummary, KnowledgeScopeProj
 from .model_base import StrictModel
 from .models import SourceApplication
 
-# One prompt lists at most this many held items; the rest wait for the next one.
+# One page of the prompt lists at most this many held items, and one move
+# takes at most this many; what can be chosen is not limited (dot P2-3).
 MAX_MIGRATION_ITEMS = 100
 
 
@@ -27,6 +28,9 @@ class SessionMigrationRead(SessionMigrationTarget):
     # False: only how many are held and how often this session already worked
     # in the project, for a task entry deciding whether to show its link.
     include_items: bool = True
+    # A page of the held items, oldest first.
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=MAX_MIGRATION_ITEMS, ge=1, le=MAX_MIGRATION_ITEMS)
 
 
 class SessionMigrationPreview(StrictModel):
@@ -36,8 +40,9 @@ class SessionMigrationPreview(StrictModel):
     # Tasks of this session in the target project, the current one included:
     # 1 means the session has just linked to it.
     linked_task_count: int = 0
-    truncated: bool = False
     items: list[KnowledgeItemSummary] = Field(default_factory=list)
+    # Where the next page starts, or None when this page reaches the end.
+    next_offset: int | None = None
 
 
 class SessionMigrationItem(StrictModel):

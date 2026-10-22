@@ -97,7 +97,9 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
 
 // What a turn saved follows the identity line (rec#20); nothing when nothing changed.
 export function withTurnReceipt(receipt, turnReceipt) {
-  return turnReceipt ? { ...withReceiptLines(receipt, turnReceipt.lines), turn_receipt: turnReceipt.summary } : receipt;
+  if (!turnReceipt) return receipt;
+  const lines = withReceiptLines(receipt, turnReceipt.lines);
+  return turnReceipt.summary ? { ...lines, turn_receipt: turnReceipt.summary } : lines;
 }
 
 // Lines appended to the receipt the Agent copies unchanged.

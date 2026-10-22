@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
@@ -162,6 +163,7 @@ async def apply_knowledge_project_action(
         reference_status,
         match.item_id,
         request.reason,
+        revision_by='user' if _human_action(actor, request) else 'agent',
     )
     conflict = None
     if match.kind == 'conflict':
@@ -205,6 +207,11 @@ async def apply_knowledge_project_action(
     return result
 
 
+def _human_action(actor, request) -> bool:
+    """A person's own action only with the human-review proof, never by claim."""
+    return request.operation_actor == 'human' and actor.get('_human_review_verified') is True
+
+
 async def _record_project_action_if_human(
     store,
     actor,
@@ -212,10 +219,7 @@ async def _record_project_action_if_human(
     item_id,
     request,
 ):
-    if (
-        request.operation_actor != 'human'
-        or actor.get('_human_review_verified') is not True
-    ):
+    if not _human_action(actor, request):
         return
     await record_human_change(
         store,
@@ -573,11 +577,29 @@ async def upsert_reference(
     status,
     matched_item_id,
     reason,
+    *,
+    revision_by=None,
 ):
+    """Write one project reference in a single statement that first takes the
+    space's knowledge lock (knowledge_versions.lock_knowledge), so it never
+    lands between a scope edit's version check and its write. revision_by
+    ('user' or 'agent'): this reference is the whole change (加入项目), so the
+    same statement records a scope_change revision and an editor that read
+    the item before sees a stale edit version. A scope edit that writes its
+    own revision passes None."""
     reference_id = _stable_uuid(
         space['id'], 'knowledge-reference', item_kind, item_id, project_id
     )
     changed_at = datetime.now(timezone.utc)
+    revision = '' if revision_by is None else '''
+        WITH space, reference
+        CREATE (revision:FuliKnowledgeRevision {
+          id: $revision_id, space_id: $space_id, item_id: $item_id, item_kind: $item_kind,
+          action: 'scope_change', reason: $reason, previous_json: '{}', current_json: $current_json,
+          created_by: $changed_by, created_at: $changed_at
+        })
+        MERGE (space)-[:HAS_KNOWLEDGE_REVISION]->(revision)
+        '''
     item_match = (
         'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})'
         if item_kind == 'entity'
@@ -589,6 +611,8 @@ async def upsert_reference(
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+        SET space._knowledge_lock = true REMOVE space._knowledge_lock
+        WITH space
         MATCH (space)-[:CONTAINS_PROJECT]->
               (target:FuliPersonalProject {project_id: $project_id})
         '''
@@ -613,8 +637,13 @@ async def upsert_reference(
             reference.updated_at = $changed_at
         MERGE (space)-[:HAS_KNOWLEDGE_REFERENCE]->(reference)
         MERGE (reference)-[:REFERENCES_IN]->(target)
+        ''' + revision + '''
         RETURN reference
         ''',
+        revision_id=_stable_uuid(space['id'], 'knowledge-revision', item_kind, item_id,
+                                 changed_at.isoformat(), actor['id'], 'reference', project_id),
+        current_json=json.dumps({'reference': {'projectId': project_id, 'status': status},
+                                 'changedBy': revision_by}, sort_keys=True),
         space_id=space['id'],
         item_kind=item_kind,
         item_id=item_id,

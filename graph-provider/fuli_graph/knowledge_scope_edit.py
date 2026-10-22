@@ -23,6 +23,7 @@ from .knowledge_item_view import item_scope, scope_snapshot
 from .knowledge_item_view_models import KnowledgeScopeChange
 from .knowledge_management import _read_item
 from .knowledge_project_scope import write_knowledge_projects
+from .knowledge_versions import lock_knowledge
 from .knowledge_weight import effective_confirmation_status
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
@@ -36,10 +37,16 @@ _WIDENING = ('This preference already applies; widening where it applies needs t
 async def change_knowledge_scope(store, actor: dict, item_id: str, request: KnowledgeScopeChange) -> dict:
     space = await scope_editor_space(store, actor, request.personal_space_id)
     async with query_store_transaction(store) as scoped:
+        await lock_knowledge(scoped, space)
         return await apply_scope_change(scoped, actor, space, item_id, request)
 
 
 async def scope_editor_space(store, actor: dict, space_id: str) -> dict:
+    """The person's space for a scope write. The change is audited as theirs,
+    so it needs the human-review channel (the route's HumanReviewer); this
+    refuses any other caller of these functions as well."""
+    if actor.get('_human_review_verified') is not True:
+        raise HTTPException(status_code=403, detail='independent human review proof required')
     store._require_personal()
     space = await store.authorize(actor, space_id, 'maintainer')
     if space['kind'] != 'personal':
@@ -48,7 +55,9 @@ async def scope_editor_space(store, actor: dict, space_id: str) -> dict:
 
 
 async def apply_scope_change(scoped, actor: dict, space: dict, item_id: str, request: KnowledgeScopeChange) -> dict:
-    """One item's scope change inside the caller's transaction."""
+    """One item's scope change inside the caller's transaction, which holds
+    the space's knowledge lock: 加入项目 takes the same lock, so no reference
+    lands between the version check and the write."""
     current = await _read_item(scoped, space, item_id, request.item_kind)
     if current is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')

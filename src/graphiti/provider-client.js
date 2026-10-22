@@ -622,7 +622,7 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
-  // rec#20: authoritative item views, a turn's receipt and the scope quick edit.
+  // rec#20: authoritative item views and a turn's receipt.
   readKnowledgeItemView(input) {
     return this.#request('/v1/knowledge/item-views', { method: 'POST', body: input });
   }
@@ -633,17 +633,10 @@ export class GraphitiProviderClient {
   readSessionRecords(input) {
     return this.#request('/v1/session-records', { method: 'POST', body: input });
   }
-  changeKnowledgeScope(itemId, input) {
-    return this.#request(`/v1/knowledge/items/${encodeURIComponent(itemId)}/scope`, {
-      method: 'POST', body: input
-    });
-  }
-  // rec#20 part 2: what a session's temporary project holds, and the person's batch move.
+  // rec#20 part 2: what a session's temporary project holds. Scope writes go
+  // through the console's human-review channel (src/knowledge-scope).
   previewSessionMigration(input) {
     return this.#request('/v1/knowledge/session-migrations/preview', { method: 'POST', body: input });
-  }
-  applySessionMigration(input) {
-    return this.#request('/v1/knowledge/session-migrations/apply', { method: 'POST', body: input });
   }
   // The open tag vocabulary; reads are POST queries like the other Provider queries.
   knowledgeTags(route, input) {

@@ -37,6 +37,16 @@ async def write_knowledge_projects(store, actor, space, item_id, item_kind, proj
     """Make the item apply to exactly `project_ids`, inside the caller's
     transaction. The primary project stays where it is when it is still
     chosen; otherwise the first chosen project becomes primary."""
+    existing = await _read_assignment(store, space['id'], item_id, item_kind)
+    sources = [] if existing else await _source_project_ids(store, space, item_id, item_kind)
+    current_primary = existing.project_id if existing else None
+    # Every project the item does not apply to yet, a new primary included,
+    # is checked like 加入项目 checks its target (dot P2-1).
+    before = await knowledge_project_ids(store, space, item_id, item_kind)
+    if item_kind == 'entity':
+        await _refuse_unresolved_matches(store, space, item_id, current,
+                                         [project for project in project_ids if project not in before],
+                                         current_primary or next(iter(sources), None))
     match = ('MATCH (item:Entity {uuid: $item_id, group_id: $group_id})' if item_kind == 'entity'
              else 'MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()')
     records, _, _ = await store.runtime.driver.execute_query(
@@ -49,15 +59,10 @@ async def write_knowledge_projects(store, actor, space, item_id, item_kind, proj
     if not records:
         raise HTTPException(status_code=409, detail={'code': 'stale_version',
                                                      'message': 'knowledge changed while its scope was being saved'})
-    existing = await _read_assignment(store, space['id'], item_id, item_kind)
-    sources = [] if existing else await _source_project_ids(store, space, item_id, item_kind)
-    current_primary = existing.project_id if existing else None
     primary = next((project for project in project_ids if project in ([current_primary] if existing else sources)),
                    project_ids[0])
     referenced = await _reference_project_ids(store, space, item_id, item_kind)
     added = [project for project in project_ids if project != primary and project not in referenced]
-    if item_kind == 'entity':
-        await _refuse_unresolved_matches(store, space, item_id, current, added, current_primary or primary)
     if primary != current_primary:
         await write_project_assignment(
             store, space, item_id, item_kind, primary,
@@ -76,6 +81,7 @@ async def _refuse_unresolved_matches(store, space, item_id, current, added, sour
         if found.kind in _UNRESOLVED_MATCHES:
             raise HTTPException(status_code=409, detail={
                 'code': 'project_has_match', 'project_id': project, 'match_item_id': found.item_id,
+                'items': [{'item_kind': 'entity', 'item_id': item_id}],
                 'message': f'{found.reason} Use 加入项目 on the knowledge page to decide how they relate.'})
 
 

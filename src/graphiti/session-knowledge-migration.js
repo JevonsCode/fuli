@@ -19,11 +19,15 @@ const MAX_PROJECT_ID = 128;
 // The Provider's limit for one migration (SessionMigrationApply).
 const MAX_ITEMS = 100;
 
+// One page of the held items, oldest first; offset is where the page starts.
 export function readSessionMigration(application, input) {
-  return application.personal.previewSessionMigration({ ...target(application, input), include_items: true });
+  const offset = input.offset === null || input.offset === undefined || input.offset === '' ? 0 : Number(input.offset);
+  if (!Number.isInteger(offset) || offset < 0) invalid('offset must be where a page of held items starts');
+  return application.personal.previewSessionMigration({ ...target(application, input), include_items: true, offset });
 }
 
-export function applySessionMigration(application, input) {
+// scopeConsole: the console port that sends it on the human-review channel (src/knowledge-scope).
+export function applySessionMigration(application, scopeConsole, input) {
   if (!Array.isArray(input.items) || !input.items.length || input.items.length > MAX_ITEMS) {
     invalid(`items names 1 to ${MAX_ITEMS} held items`);
   }
@@ -38,7 +42,7 @@ export function applySessionMigration(application, input) {
   if (new Set(items.map(item => `${item.item_kind}:${item.item_id}`)).size !== items.length) {
     invalid('each item is named once');
   }
-  return application.personal.applySessionMigration({ ...target(application, input),
+  return scopeConsole.applySessionMigration({ ...target(application, input),
     reason: requiredString(input.reason, 'reason', 2000), items, operation_actor: 'human' });
 }
 

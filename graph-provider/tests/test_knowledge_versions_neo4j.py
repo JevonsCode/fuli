@@ -10,7 +10,7 @@ import pytest
 
 from test_negative_feedback_block_neo4j import query, use
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
-from test_turn_receipt_neo4j import applied, commit, confirm, move, ok, preference, space_with_projects, view
+from test_turn_receipt_neo4j import applied, commit, confirm, move, ok, preference, reviewed_settings, space_with_projects, view
 
 
 async def edit(client, space_id, item_id, text, *, version, actor='human', kind='entity', reason='Synthetic edit.'):
@@ -97,7 +97,7 @@ async def test_c7_1_an_edit_takes_effect_at_once_and_the_old_version_is_marked_r
 
 @pytest.mark.asyncio
 async def test_c7_2_cached_readers_get_the_new_version_and_old_links_cannot_write_it_back():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         saved = await commit(client, space_id, [preference('status-line', 'Prefer long status updates')])
@@ -137,7 +137,7 @@ async def test_c7_2_cached_readers_get_the_new_version_and_old_links_cannot_writ
 @pytest.mark.asyncio
 async def test_c7_2_usage_while_a_page_is_open_is_not_an_edit_conflict():
     """rec#20 part 2: usage moves the write lock, not the edit version a page holds."""
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta')
         item_id = (await commit(client, space_id, [preference('tone', 'Keep a calm tone')]))['entity_ids'][0]

@@ -24,13 +24,14 @@ export function readTurnReceiptItems(application, { personalSpaceId, episodeIds 
   return readEpisodeReceipts(application, episodes);
 }
 
-export function changeKnowledgeScope(application, input) {
+// scopeConsole: the console port that sends it on the human-review channel (src/knowledge-scope).
+export function changeKnowledgeScope(application, scopeConsole, input) {
   const ref = itemRef(application, input);
   if (!SCOPES.has(input.scope)) invalid('scope must be global, projects or agent');
   if (!Number.isInteger(input.expectedVersion) || input.expectedVersion < 0) {
     invalid('expectedVersion must be the version the editor read');
   }
-  return application.personal.changeKnowledgeScope(ref.item_id, {
+  return scopeConsole.changeScope(ref.item_id, {
     personal_space_id: ref.personal_space_id, item_kind: ref.item_kind,
     expected_version: input.expectedVersion, reason: requiredString(input.reason, 'reason', 2000),
     scope: input.scope, project_ids: uniqueTextArray(input.projectIds ?? [], 'projectIds', MAX_SCOPE_PROJECTS),

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { ApplicationError } from '../app/application-error.js';
-import { isLoopbackAddress } from './request-policy.js';
+import { refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 
 const ROUTE = /^\/api\/agent-apps(?:\/([^/]+)(?:\/(approve|disable|rollback|delete-code|data-deletion|delete-data))?)?$/;
@@ -40,10 +40,7 @@ export async function handleAgentAppApiRequest({ request, response, url, app }) 
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;
   }
-  if (!isLoopbackAddress(request.socket?.remoteAddress)) {
-    sendJson(response, 403, { error: 'Agent apps are managed only on this computer', code: 'local_user_only' });
-    return true;
-  }
+  if (refuseRemoteDecision(request, response, 'Agent apps are managed only on this computer')) return true;
   const parsed = BODIES[action].safeParse(await readJson(request));
   if (!parsed.success) throw new TypeError('Invalid Agent app request');
   const body = parsed.data;

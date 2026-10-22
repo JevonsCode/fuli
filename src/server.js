@@ -31,6 +31,7 @@ import { personalGraphFormat } from './data-format/graph-format-client.js';
 import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
+import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -88,6 +89,9 @@ export async function createServer(options = {}) {
   const knowledgeHardDelete = options.knowledgeHardDelete ?? (localOptions.runtimeConfigPath
     ? createKnowledgeHardDelete(dirname(localOptions.runtimeConfigPath),
       { personalSpaceId: () => application.config?.personal?.spaceId ?? null }) : null);
+  // A person's change of where knowledge applies (rec#20, rec#11 D-22), console only.
+  const knowledgeScope = options.knowledgeScope ?? (localOptions.runtimeConfigPath
+    ? createKnowledgeScopeConsole(dirname(localOptions.runtimeConfigPath)) : null);
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
   // is settled from its recorded operation, and graph deletions the record
   // lost are taken in again; what the graph cannot answer yet stays open for
@@ -171,6 +175,7 @@ export async function createServer(options = {}) {
       dataFormats,
       dataFormatMigrations,
       knowledgeHardDelete,
+      knowledgeScope,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -259,6 +264,7 @@ async function handleRequest({
   dataFormats,
   dataFormatMigrations,
   knowledgeHardDelete,
+  knowledgeScope,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -280,7 +286,8 @@ async function handleRequest({
     peer,
     dataFormats,
     dataFormatMigrations,
-    knowledgeHardDelete
+    knowledgeHardDelete,
+    knowledgeScope
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }

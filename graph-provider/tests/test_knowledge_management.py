@@ -494,6 +494,7 @@ async def test_assignment_override_moves_one_item_without_rewriting_episode_evid
         [{'name': 'Rule', 'summary': 'Keep this rule', 'invalid_at': None}],
         [],
         [{'project_ids': ['project-a']}],
+        [],  # the space's knowledge lock (dot P1-2)
         [{'assignment': {
             'id': 'assignment-1',
             'item_id': 'entity-1',
@@ -520,8 +521,10 @@ async def test_assignment_override_moves_one_item_without_rewriting_episode_evid
         ),
     )
 
+    lock_query, _ = driver.calls[-3]
     assignment_query, parameters = driver.calls[-2]
     revision_query, revision = driver.calls[-1]
+    assert '_knowledge_lock' in lock_query, 'a reassignment never lands inside a scope edit'
     assert 'FuliKnowledgeRevision' in revision_query and "action: 'scope_change'" in revision_query
     assert revision['current_json'] == '{"projectId": "project-b", "changedBy": "agent"}'
     assert 'FuliKnowledgeAssignment' in assignment_query

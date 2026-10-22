@@ -11,6 +11,15 @@ import pytest
 
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
 
+# A scope write is the person's own change: it takes the human-review channel
+# the local console holds (rec#11 D-22, dot P1-1).
+REVIEW_TOKEN = 'synthetic-scope-review-token-0123456789abcdef'
+REVIEW = {'x-fuli-human-review-token': REVIEW_TOKEN}
+
+
+def reviewed_settings():
+    return fixture_settings().model_copy(update={'human_review_token': REVIEW_TOKEN})
+
 
 def ok(response):
     assert response.status_code == 200, response.text
@@ -71,15 +80,15 @@ async def applied(client, space_id, project):
     return {item['id'] for item in response['effective_preferences']}
 
 
-async def move(client, space_id, item_id, scope, *, version, projects=(), agent=None, kind='entity'):
-    return await client.post(f'/v1/knowledge/items/{item_id}/scope', json={
+async def move(client, space_id, item_id, scope, *, version, projects=(), agent=None, kind='entity', headers=REVIEW):
+    return await client.post(f'/v1/knowledge/items/{item_id}/scope', headers=headers, json={
         'personal_space_id': space_id, 'item_kind': kind, 'expected_version': version,
         'reason': 'Synthetic quick edit.', 'scope': scope, 'project_ids': list(projects), 'agent_id': agent})
 
 
 @pytest.mark.asyncio
 async def test_receipt_reads_back_only_what_a_turn_created_or_replaced():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         first = await commit(client, space_id, [
@@ -109,7 +118,7 @@ async def test_receipt_reads_back_only_what_a_turn_created_or_replaced():
 
 @pytest.mark.asyncio
 async def test_a_replacing_fact_is_reported_as_updated_not_new():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         endpoints = [{'key': 'svc', 'name': 'Service', 'type': 'System'},
@@ -127,7 +136,7 @@ async def test_a_replacing_fact_is_reported_as_updated_not_new():
 
 @pytest.mark.asyncio
 async def test_undecided_scope_stays_in_the_temporary_session_project_until_the_person_moves_it():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta')
         scope_key = hashlib.sha256(b'synthetic-session-scope').hexdigest()
@@ -166,7 +175,7 @@ async def test_undecided_scope_stays_in_the_temporary_session_project_until_the_
 
 @pytest.mark.asyncio
 async def test_quick_edit_keeps_the_same_item_and_history_and_refuses_a_stale_version():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta', 'gamma')
         saved = await commit(client, space_id, [preference('lead', 'Lead with the conclusion')])
@@ -225,7 +234,7 @@ async def test_quick_edit_keeps_the_same_item_and_history_and_refuses_a_stale_ve
 
 @pytest.mark.asyncio
 async def test_pending_items_move_freely_and_other_knowledge_moves_between_projects():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta')
         pending = (await commit(client, space_id, [preference('p', 'Synthetic pending preference')],
@@ -246,7 +255,7 @@ async def test_pending_items_move_freely_and_other_knowledge_moves_between_proje
 
 @pytest.mark.asyncio
 async def test_another_person_cannot_read_or_edit_through_a_link():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         item_id = (await commit(client, space_id, [preference('x', 'Synthetic private preference')]))['entity_ids'][0]
@@ -282,7 +291,7 @@ async def claim(client, space_id, token):
 
 @pytest.mark.asyncio
 async def test_a_turn_receipt_is_delivered_once_by_its_reply_or_else_by_the_next_entry():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         first, second, third, fourth = (f'fuli-task-{uuid4()}' for _ in range(4))
@@ -318,7 +327,7 @@ async def claim_unread(client, space_id, token, ids):
 
 @pytest.mark.asyncio
 async def test_a_preference_can_belong_to_one_fla_and_then_applies_only_to_it():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client)
         await seed_agent(client, space_id)
@@ -352,7 +361,7 @@ async def held_confirmed(client, space_id, key, text):
 
 @pytest.mark.asyncio
 async def test_a_confirmed_held_item_is_placed_global_or_with_one_fla_by_the_person():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         await seed_agent(client, space_id)
@@ -375,7 +384,7 @@ async def test_a_confirmed_held_item_is_placed_global_or_with_one_fla_by_the_per
 
 @pytest.mark.asyncio
 async def test_a_retried_entry_with_a_new_token_reads_and_claims_as_the_turns_saved_token():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         first, second = (f'fuli-task-{uuid4()}' for _ in range(2))
@@ -394,7 +403,7 @@ async def test_a_retried_entry_with_a_new_token_reads_and_claims_as_the_turns_sa
 
 @pytest.mark.asyncio
 async def test_a_reply_and_an_entry_claiming_at_once_never_both_show_the_receipt():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         for round_number in range(4):
@@ -409,7 +418,7 @@ async def test_a_reply_and_an_entry_claiming_at_once_never_both_show_the_receipt
 
 @pytest.mark.asyncio
 async def test_a_saved_turn_retried_as_a_duplicate_still_leaves_its_receipt_unread():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         token, nxt = f'fuli-task-{uuid4()}', f'fuli-task-{uuid4()}'
@@ -426,7 +435,7 @@ async def test_a_saved_turn_retried_as_a_duplicate_still_leaves_its_receipt_unre
 
 @pytest.mark.asyncio
 async def test_a_project_tag_of_the_second_project_is_named_with_its_project_and_removable_there():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta')
         item_id = (await commit(client, space_id, [preference('two', 'Synthetic two-project preference')],
@@ -450,7 +459,7 @@ async def test_a_project_tag_of_the_second_project_is_named_with_its_project_and
 
 @pytest.mark.asyncio
 async def test_a_backlog_of_65_unread_receipts_drains_in_bounded_batches():
-    settings = fixture_settings()
+    settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         for index in range(65):

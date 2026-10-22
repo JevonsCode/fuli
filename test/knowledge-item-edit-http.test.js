@@ -6,6 +6,8 @@ import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
+import { handleKnowledgeScopeRequest } from '../src/http/knowledge-scope-api-router.js';
+import { knowledgeScopeConsole } from '../src/knowledge-scope/console-port.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 
 // rec#20 quick edit through the local console's HTTP routes. Synthetic
@@ -22,21 +24,30 @@ function application(reply = () => ({ status: 200, body: { ok: true } })) {
     const { status, body } = reply(call);
     return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   } });
+  // Scope writes leave on the console's human-review channel (rec#11 D-22), never the access token alone.
+  app.scopeConsole = knowledgeScopeConsole('synthetic-data-dir', { send: async (path, body, { review }) => {
+    const call = { path, method: 'POST', body, review };
+    calls.push(call);
+    const { status, body: payload } = reply(call);
+    return { ok: status < 400, status, payload };
+  } });
   return { app, calls };
 }
 
-function request(method, body) {
+function request(method, body, remoteAddress) {
   const stream = Readable.from(body ? [Buffer.from(JSON.stringify(body))] : []);
-  return Object.assign(stream, { method, headers: { 'content-type': 'application/json' } });
+  return Object.assign(stream, { method, headers: { 'content-type': 'application/json' }, socket: { remoteAddress } });
 }
 
-async function api(app, method, path, body) {
+async function api(app, method, path, body, remoteAddress = '127.0.0.1') {
   const sent = {};
   const response = { setHeader() {}, writeHead(status) { sent.status = status; },
     end(text) { sent.body = text ? JSON.parse(text) : null; } };
   try {
-    const handled = await handleGraphApiRequest({ request: request(method, body), response,
-      url: new URL(`http://127.0.0.1${path}`), app });
+    const url = new URL(`http://127.0.0.1${path}`);
+    const incoming = request(method, body, remoteAddress);
+    const handled = await handleKnowledgeScopeRequest({ request: incoming, response, url, app, scopeConsole: app.scopeConsole })
+      || await handleGraphApiRequest({ request: incoming, response, url, app });
     return { handled, ...sent };
   } catch (error) {
     return { handled: true, ...mapHttpError(error) };
@@ -68,7 +79,7 @@ test('a scope change names the version the page read and is the person\'s own ed
     expectedVersion: 7, reason: 'Only for these two projects', scope: 'projects', projectIds: ['p1', 'p2', 'p1'],
     operationActor: 'agent' });
   assert.equal(result.status, 200);
-  assert.deepEqual(calls[0], { path: '/v1/knowledge/items/item-1/scope', method: 'POST', body: {
+  assert.deepEqual(calls[0], { path: '/v1/knowledge/items/item-1/scope', method: 'POST', review: true, body: {
     personal_space_id: 'personal-space', item_kind: 'relationship', expected_version: 7,
     reason: 'Only for these two projects', scope: 'projects', project_ids: ['p1', 'p2'], agent_id: null,
     operation_actor: 'human' } });
@@ -118,6 +129,20 @@ test('scope changes are a local person\'s decision, never an Agent tool', () => 
   const entry = agentInterfaceCatalog().uiMutationParity
     .find(item => item.route === 'POST /api/knowledge/:itemKind/:itemId/scope');
   assert.equal(entry.access, 'local_user_only');
+});
+
+test('rec#11 D-22.1: a scope change from another computer is refused before the Provider', async () => {
+  const { app, calls } = application();
+  const body = { personalSpaceId: 'personal-space', expectedVersion: 1, reason: 'mine', scope: 'projects', projectIds: ['p1'] };
+  for (const remote of ['192.168.1.20', null]) {
+    const refused = await api(app, 'POST', '/api/knowledge/entity/item-1/scope', body, remote);
+    assert.equal(refused.status, 403);
+    assert.equal(refused.body.code, 'local_user_only');
+  }
+  assert.equal(calls.length, 0);
+  for (const local of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {
+    assert.equal((await api(app, 'POST', '/api/knowledge/entity/item-1/scope', body, local)).status, 200);
+  }
 });
 
 test('rec#5 C7/C8: an edit answers its new version and marking outdated is the person\'s own', async () => {

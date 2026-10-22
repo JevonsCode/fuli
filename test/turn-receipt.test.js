@@ -224,7 +224,8 @@ test('a receipt that could not be read stays unread and the next entry delivers 
   const { app, begin, registry, state } = checkpointFixture({ readable: false });
   const task = begin();
   const result = await checkpointTaskKnowledge(app, checkpoint(task));
-  assert.match(result.agent_receipt.markdown, /\nFULI 本轮沉淀：已保存，回执暂未读取，下一轮补发$/);
+  // The unsure item waits in the temporary project of this formal-project turn: the migration link follows.
+  assert.match(result.agent_receipt.markdown, /\nFULI 本轮沉淀：已保存，回执暂未读取，下一轮补发\nFULI 待迁移：本轮有条目暂存在本会话临时项目/);
   assert.doesNotMatch(result.agent_receipt.markdown, /「/, 'no item is claimed before it is read back');
   const entry = async next => beginTaskFromPreferences({ ...app, taskContextRegistry: { begin: async () => next,
     claimUnreadTurnReceipts: (...input) => registry.claimUnreadTurnReceipts(...input) } },
@@ -263,6 +264,30 @@ test('nothing is reported saved while capture is off, for retain_nothing or a du
   again.app.personal.readTurnReceipt = async () => ({ entries: [], unchanged_count: 3 });
   const repeated = await checkpointTaskKnowledge(again.app, checkpoint(again.begin()));
   assert.equal(repeated.agent_receipt.markdown.split('\n').length, 1);
+});
+
+test('rec#20 part 2 (dot P2-2): the first task\'s migration link survives into the checkpoint receipt the reply copies', async () => {
+  const { app, begin } = checkpointFixture();
+  const asked = [];
+  app.personal.previewSessionMigration = async input => {
+    asked.push(input);
+    return { held_count: 2, linked_task_count: 1 };
+  };
+  const link = `[确认迁移](<${CONSOLE}/s/native-session/migrate?client=codex&project=project-a>)`;
+  // A routine turn that saves nothing still carries the session's offer.
+  const quiet = await checkpointTaskKnowledge(app, { taskContextToken: begin().token, sourceApplication: 'codex',
+    disposition: 'retain_nothing', reason: 'Small talk.' });
+  const [, offer] = quiet.agent_receipt.markdown.split('\n');
+  assert.equal(offer, `FULI 待迁移：本会话临时项目有 2 条范围待确定，迁入当前项目需你确认：${link}`);
+  assert.equal(asked[0].target_project_id, 'project-a');
+  // A current-project capture keeps it after its own lines.
+  const saved = await checkpointTaskKnowledge(app, checkpoint(begin(), { remember: [{ kind: 'project_fact', text: 'A fact' }] }));
+  assert.equal(saved.agent_receipt.markdown.split('\n').at(-1).endsWith(link), true);
+  // A later task of the session in the project, or nothing held: no link.
+  app.personal.previewSessionMigration = async () => ({ held_count: 2, linked_task_count: 2 });
+  const later = await checkpointTaskKnowledge(app, { taskContextToken: begin().token, sourceApplication: 'codex',
+    disposition: 'retain_nothing', reason: 'Small talk.' });
+  assert.equal(later.agent_receipt.markdown.split('\n').length, 1);
 });
 
 test('the Provider registry maps unread receipts and claims through the Provider contract', async () => {

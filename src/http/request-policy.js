@@ -63,6 +63,15 @@ function hasLanAccess(authorization, accessToken) {
     timingSafeEqual(providedBytes, expectedBytes);
 }
 
+// A console route the interface catalog marks local_user_only: the person's
+// own decision on this computer. A request from anywhere else is answered 403
+// with `error` and true is returned; a loopback request returns false.
+export function refuseRemoteDecision(request, response, error) {
+  if (isLoopbackAddress(request.socket?.remoteAddress)) return false;
+  sendJson(response, 403, { error, code: 'local_user_only' });
+  return true;
+}
+
 export function isLoopbackAddress(address) {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }

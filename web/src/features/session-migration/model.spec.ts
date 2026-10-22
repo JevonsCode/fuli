@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import type { KnowledgeItemSummary } from '@/features/knowledge-quick-edit/model'
 import type { SessionEntry, SessionRecordsView } from '@/features/session-records/model'
-import { defaultReason, migrationPath, migrationRequest, reconcileChoice, sessionMigrationOffers, type SessionMigrationPreview } from './model'
+import {
+  MAX_MOVE, appendPage, defaultReason, migrationPath, migrationRefusal, migrationRequest, reconcileChoice, sessionMigrationOffers,
+  type SessionMigrationPreview,
+} from './model'
 
 // rec#20 part 2: the requests and choices of a session's batch migration.
 function item(id: string, version = 0, overrides: Partial<KnowledgeItemSummary> = {}): KnowledgeItemSummary {
@@ -13,7 +16,7 @@ function item(id: string, version = 0, overrides: Partial<KnowledgeItemSummary> 
 
 function preview(items: KnowledgeItemSummary[]): SessionMigrationPreview {
   return { temporary_project_id: 'temporary-x', target_project: { id: 'alpha', name: 'Alpha' }, held_count: items.length,
-    linked_task_count: 1, truncated: false, items }
+    linked_task_count: 1, items, next_offset: null }
 }
 
 const target = { spaceId: 'space', sessionId: 'session-1', client: 'codex', projectId: 'alpha' }
@@ -28,6 +31,22 @@ describe('session migration model', () => {
     expect(migrationRequest(target, shown, new Set(), 'why')).toBeNull()
     expect(migrationRequest(target, shown, new Set(['entity:a']), ' ')).toBeNull()
     expect(defaultReason(shown)).toBe('这个会话属于「Alpha」')
+    // dot P2-3: any number can be chosen, but one move takes at most 100.
+    const many = preview(Array.from({ length: 101 }, (_, index) => item(`i${index}`)))
+    expect(migrationRequest(target, many, new Set(many.items.map(entry => `entity:${entry.item_id}`)), 'why')).toBeNull()
+    expect(migrationRequest(target, many, new Set(['entity:i100']), 'why')?.items).toEqual([
+      { itemKind: 'entity', itemId: 'i100', expectedVersion: 0 }])
+    expect(MAX_MOVE).toBe(100)
+  })
+
+  it('joins pages in order and reads a refusal\'s items', () => {
+    const first = { ...preview([item('a'), item('b')]), held_count: 3, next_offset: 2 }
+    const joined = appendPage(first, { ...preview([item('b'), item('c')]), held_count: 3, next_offset: null })
+    expect(joined.items.map(entry => entry.item_id)).toEqual(['a', 'b', 'c'])
+    expect(joined.next_offset).toBeNull()
+    expect(migrationRefusal(JSON.stringify({ code: 'project_has_match', items: [{ item_kind: 'entity', item_id: 'c' }] })))
+      .toEqual({ code: 'project_has_match', items: [{ item_kind: 'entity', item_id: 'c' }] })
+    expect(migrationRefusal('not json')).toEqual({ code: '', items: [] })
   })
 
   it('starts with every item chosen and keeps the person\'s choice across a re-read', () => {
@@ -35,7 +54,8 @@ describe('session migration model', () => {
     expect([...reconcileChoice(null, first, new Set()).chosen]).toEqual(['entity:a', 'entity:b', 'entity:c'])
     // b was left out, a changed meanwhile, c was placed elsewhere, d is newly held.
     const next = reconcileChoice(first, preview([item('a', 1), item('b'), item('d')]), new Set(['entity:a', 'entity:c']))
-    expect([...next.chosen]).toEqual(['entity:a', 'entity:d'])
+    // b stays left out; d, newly held, starts unchosen.
+    expect([...next.chosen]).toEqual(['entity:a'])
     expect([...next.changed]).toEqual(['entity:a'])
     expect(next.gone).toBe(1)
   })
