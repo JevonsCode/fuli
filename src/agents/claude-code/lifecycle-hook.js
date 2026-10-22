@@ -60,8 +60,8 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
 // unresolved before any of this (runClaudeLifecycleHook); onCurrentTask names
 // the task it was current for.
 function claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis) {
-  return refreshCurrentTaskInPlace(event, input, invoke, { sourceApplication: 'claude_code', delivery, currentTask,
-    onCurrentTask, unconfirmed: UNCONFIRMED_TURN[basis] });
+  return refreshCurrentTaskInPlace(event, input, invoke, { ...CLAUDE_UNRESOLVED_TURNS, unconfirmed: UNCONFIRMED_TURN[basis] },
+    { delivery, currentTask, onCurrentTask });
 }
 
 const UNPROTECTED_TURN = unprotectedTurnReason({ zh: '它像宿主通知', en: 'it looks like a host notification' });
@@ -125,9 +125,8 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
         entryRefusal, onCurrentTask: task => ledger.ownTurn(refreshTurn, transcriptDigest(task.token)) });
       if (PREFERENCE_RESET_EVENTS.includes(event)) return claudeLifecycleOutput(event, input, call,
         { delivery: app.preferenceDelivery, currentTask });
-      const unresolved = event === 'Stop' && await settleHeldTurns(app, ledger, input, currentTask, { sourceApplication:
-        'claude_code', adapter: CLAUDE_TRANSCRIPT, continuedInTurn: (token, from) =>
-        explicitlyContinuedInTurn(input.transcript_path, input.session_id, token, from) }) === 'held';
+      const unresolved = event === 'Stop'
+        && await settleHeldTurns(app, ledger, input, currentTask, CLAUDE_UNRESOLVED_TURNS) === 'held';
       // Turns held when this prompt starts end once it freshly enters a task:
       // only those (a turn held while the entry runs stays held). The entry's
       // sync skips what is left of them, and nothing before the prompt may be
@@ -146,7 +145,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
           if (name === 'begin_task_context') { entered = true; onContext(context); }
           return context;
         }, { delivery: app.preferenceDelivery, entryRefusal }) });
-      if (entered) await endTurnsObservedAtEntry(ledger, held, input, CLAUDE_TRANSCRIPT);
+      if (entered) await endTurnsObservedAtEntry(ledger, held, input, CLAUDE_UNRESOLVED_TURNS);
       return lifecycle;
     }), request);
     return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
@@ -157,6 +156,18 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
 }
 
 const CLAUDE_TRANSCRIPT = Object.freeze({ normalize: normalizeClaudeRecord, verify: verifyClaudeTranscript });
+
+// Claude Code's policy for unresolved turns (unresolved-turns.js): a
+// successful checkpoint_task_knowledge with the task's token in the turn,
+// recorded by the host, proves the turn that task's (turn-ownership.js), and
+// the model is told exactly that.
+const CLAUDE_UNRESOLVED_TURNS = Object.freeze({
+  sourceApplication: 'claude_code', adapter: CLAUDE_TRANSCRIPT,
+  resolution: 'The current task context of this session follows for reference, refreshed now. Its taskContextToken '
+    + 'is not this turn\'s confirmed task. This turn becomes that task\'s only by a successful checkpoint_task_knowledge with '
+    + 'that token in this turn, which you should make only if you know this turn continues that task\'s own work.',
+  continuedInTurn: (input, token, from) => explicitlyContinuedInTurn(input.transcript_path, input.session_id, token, from)
+});
 
 // Only SessionStart with source "startup" is documented as a new session
 // (code.claude.com/docs/en/hooks, SessionStart matchers); resume, clear,

@@ -7,15 +7,18 @@ import { codexLifecycleOutput, runCodexLifecycleCommand, runCodexLifecycleHook }
 import { transcriptCaptureLedger } from '../src/conversations/transcript-capture-gap.js';
 import { transcriptDigest } from '../src/conversations/transcript-guard.js';
 
-// rec#28. Codex's hook input defines no isMeta or is_meta (openai/codex
-// deede7201da2: codex-rs/hooks/src/schema.rs 566-584), so a turn marked that
+// rec#28. In the source at openai/codex deede7201da2 (codex-rs/hooks/src/schema.rs
+// 566-584) Codex's hook input has no isMeta or is_meta, so a turn marked that
 // way has an unprovable source: it refreshes the current task in place, is
 // held as unresolved, and never enters, switches or settles a task.
 // Synthetic sessions, Provider doubles and transcripts only.
 
 const input = { session_id: 'synthetic-codex-session', turn_id: 'synthetic-turn', cwd: '/synthetic/project',
   prompt: 'Synthetic hook verification.', transcript_path: null, model: 'synthetic-model', permission_mode: 'default' };
-const UNCONFIRMED = /本轮输入带有 isMeta 标记.*FULI: this turn carries an isMeta mark, but Codex hook input does not define that field/;
+const UNCONFIRMED = /本轮输入带有 isMeta 标记.*FULI: this turn carries an isMeta mark, but FULI cannot prove the Codex host set it/;
+// Codex has no continuation evidence, so its guidance must say a checkpoint does not resolve the turn (dot, #276).
+const CODEX_RESOLUTION = /在 Codex 中，用这个 token 调用 checkpoint_task_knowledge 不会解除本轮的未确认状态.*In Codex, a checkpoint_task_knowledge with that token does not resolve this turn: the turn stays unconfirmed and is not recorded under that task\. The turn is resolved only when another task becomes current/;
+const CLAUDE_RESOLUTION = 'This turn becomes that task\'s only by a successful checkpoint_task_knowledge';
 
 // A synthetic Codex session whose current task the fake reader re-reads in place.
 function refreshFixture({ task = { token: 'fuli-task-a', sessionId: input.session_id, sourceApplication: 'codex', checkpoint: null },
@@ -48,6 +51,8 @@ test('Codex isMeta and is_meta turns refresh the current task in place; every ot
     assert.match(context, UNCONFIRMED);
     assert.match(context, /no task was created or switched/);
     assert.match(context, /is not this turn's confirmed task/);
+    assert.match(context, CODEX_RESOLUTION);
+    assert.ok(!context.includes(CLAUDE_RESOLUTION), 'Codex never promises a resolution its Stop does not perform');
     assert.match(context, /start a task explicitly with get_collaboration_preferences/);
     assert.match(context, /"taskContextToken":"fuli-task-a"/);
     // The old trusted shortcut is gone: no "keep the current task" without a read.
@@ -269,6 +274,30 @@ test('Codex unresolved turns stay held through resume and compaction, which stil
   assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_UNKNOWN_TURN_REPLY|SYNTHETIC_AFTER_/);
 });
 
+test('Codex task entry without a transcript path keeps the held turn until its span is verified and skipped', async t => {
+  // dot, #276: an empty path is no proof that the session has no history.
+  const s = await codexSession(t);
+  await s.markedTurn('SYNTHETIC_OLD_HELD_REPLY');
+  const [old] = s.ledger.heldTurns().turns;
+  const entered = await s.hook('UserPromptSubmit', { prompt: 'Synthetic task B.', transcript_path: null });
+  assert.match(entered.hookSpecificOutput.additionalContext, /fuli-task-synthetic-b/);
+  assert.deepEqual(s.ledger.heldTurns().turns.map(turn => turn.turn), [old.turn], 'not released by a pathless entry');
+  await s.host('user', 'Synthetic task B.');
+  await s.host('assistant', 'SYNTHETIC_TASK_B_REPLY');
+  // A pathless Stop cannot verify the span either: still held, nothing settled.
+  s.calls.length = 0;
+  await s.hook('Stop', { transcript_path: null });
+  assert.deepEqual(s.calls, []);
+  assert.deepEqual(s.ledger.heldTurns().turns.map(turn => turn.turn), [old.turn]);
+  // The path comes back: the held span is skipped first, then B is settled; the old turn never reaches B.
+  await s.hook('Stop');
+  assert.deepEqual(s.ledger.heldTurns().turns, []);
+  assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_OLD_HELD_REPLY|SYNTHETIC_MARKED_PROMPT/);
+  assert.ok(s.state.appended.some(event => /task ownership was not confirmed/.test(event.content)));
+  assert.deepEqual(s.calls.map(([name, token]) => [name, token]), [['verify_task_checkpoint', null],
+    ['checkpoint_task_knowledge', 'fuli-task-synthetic-b']]);
+});
+
 test('Codex unresolved turn ends without an owner when another task became current during it', async t => {
   const s = await codexSession(t);
   await s.markedTurn('SYNTHETIC_MOVED_REPLY');
@@ -289,8 +318,8 @@ test('Codex marked turn is held back when its unresolved state cannot be kept an
   }
   const output = await s.hook('UserPromptSubmit', { prompt: 'Marked delivery.', isMeta: true });
   assert.equal(output.decision, 'block');
-  assert.match(output.reason, /FULI 拦下了这条消息.*它带有 Codex 不定义的 isMeta 标记/);
-  assert.match(output.reason, /it carries an isMeta mark that Codex does not define.*resend the message yourself/);
+  assert.match(output.reason, /FULI 拦下了这条消息.*它带有无法证明来源的 isMeta 标记/);
+  assert.match(output.reason, /it carries an isMeta mark whose source cannot be proven.*resend the message yourself/);
   assert.deepEqual(s.calls, []);
   assert.deepEqual(s.lookups, []);
 });

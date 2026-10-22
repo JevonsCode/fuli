@@ -89,8 +89,12 @@ test('Claude host-notification envelopes and system deliveries refresh the curre
     const context = output.hookSpecificOutput.additionalContext;
     if (extra.isMeta) assert.match(context, /本轮是宿主系统投递，但任务归属未确认.*host system delivery, but its task ownership is not confirmed/);
     else assert.match(context, /来源和任务归属都未确认.*its source and task ownership are not confirmed; no task was created or switched/);
-    // The refreshed task is shown for reference, never as this turn's task.
-    assert.match(context, /is not this turn's confirmed task/);
+    // The refreshed task is shown for reference, never as this turn's task, and
+    // Claude Code's guidance names the continuation its Stop proves (unchanged by #276).
+    assert.ok(context.includes('The current task context of this session follows for reference, refreshed now. Its taskContextToken '
+      + 'is not this turn\'s confirmed task. This turn becomes that task\'s only by a successful checkpoint_task_knowledge with '
+      + 'that token in this turn, which you should make only if you know this turn continues that task\'s own work.'), context);
+    assert.doesNotMatch(context, /In Codex|does not resolve this turn/);
     assert.match(context, /start a task explicitly with get_collaboration_preferences/);
     assert.doesNotMatch(context, /not a new user task|Pass taskContextToken to every FULI call/);
     assert.match(context, /"taskContextToken":"fuli-task-a"/);
@@ -502,6 +506,24 @@ test('Claude unresolved turns stay held through resets until a fresh entry, and 
   assert.deepEqual(s.calls, ['verify_task_checkpoint', 'checkpoint_task_knowledge']);
   assert.ok(s.said().some(event => event.token === 'fuli-task-synthetic-b' && /SYNTHETIC_TASK_B_REPLY/.test(event.content)));
   assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_UNKNOWN_TURN_REPLY|SYNTHETIC_AFTER_RESET/);
+});
+
+test('Claude task entry without a transcript path keeps the held turn until its span is verified and skipped', async t => {
+  // dot, #276: an empty path is no proof that the session has no history.
+  const s = await unresolvedTurnSession(t);
+  const old = await s.refreshTurn('SYNTHETIC_OLD_HELD_REPLY');
+  await s.host({ type: 'user', message: { role: 'user', content: 'Synthetic task B.' } });
+  const entered = await s.hook('UserPromptSubmit', { prompt: 'Synthetic task B.', transcript_path: undefined });
+  assert.match(entered.hookSpecificOutput.additionalContext, /fuli-task-synthetic-b/);
+  assert.deepEqual(s.ledger.heldTurns().turns.map(turn => turn.turn), [old.turn], 'not released by a pathless entry');
+  await s.host({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'SYNTHETIC_TASK_B_REPLY' }] } });
+  // The path comes back: the held span is skipped first, then B is settled; the old turn never reaches B.
+  s.calls.length = 0;
+  await s.hook('Stop');
+  assert.deepEqual(s.ledger.heldTurns().turns, []);
+  assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_OLD_HELD_REPLY|task-notification/);
+  assert.ok(s.state.appended.some(event => /task ownership was not confirmed/.test(event.content)));
+  assert.deepEqual(s.calls, ['verify_task_checkpoint', 'checkpoint_task_knowledge']);
 });
 
 test('Claude unresolved turn ends without an owner when another task became current during it', async t => {

@@ -19,14 +19,22 @@ export function turnStart(transcriptPath) {
   try { return statSync(transcriptPath).size; } catch { return 0; }
 }
 
+// Each Agent's hook passes its own policy for these turns, one object for the
+// mechanism and what the model is told about it, so the guidance can only
+// promise a resolution the host's Stop actually performs:
+//   sourceApplication, adapter  the Agent and its native transcript adapter
+//   unconfirmed  bilingual sentence: why this turn's ownership is not confirmed
+//   resolution   what the refreshed task's token can and cannot do for this turn
+//   continuedInTurn(input, token, from)  the Agent's evidence of an explicit
+//     continuation in its native history; without one no turn is ever proven
+
 // Re-reads the current task in place: the same token, scope and Agent, with
 // any preference, conflict or checkpoint change since. It never begins or
 // switches a task, so an unfinished task keeps its checkpoint, and it never
 // claims that this turn belongs to that task. Without a readable owned task it
-// establishes none. `unconfirmed` is the Agent's bilingual sentence saying why
-// this turn's ownership is not confirmed; onCurrentTask names the task found.
+// establishes none. onCurrentTask names the task found.
 export async function refreshCurrentTaskInPlace(event, input, invoke,
-  { sourceApplication, delivery, currentTask, onCurrentTask, unconfirmed }) {
+  { sourceApplication, unconfirmed, resolution }, { delivery, currentTask, onCurrentTask }) {
   let refresh;
   const lookup = async (...parameters) => {
     const task = await currentTask?.(...parameters);
@@ -40,7 +48,7 @@ export async function refreshCurrentTaskInPlace(event, input, invoke,
     refresh = { status: 'unreadable', reason: error?.code === 'preference_recovery_blocked' ? error.message : null };
   }
   return refresh.status === 'refreshed' ? preferenceHookOutput(refresh.context, event, input, delivery, sourceApplication,
-    `${unconfirmed} ${REFERENCE_ONLY} ${START_NEW_WORK} ${TASK_RULES_ON_DEMAND}`, true)
+    `${unconfirmed} ${resolution} ${START_NEW_WORK} ${TASK_RULES_ON_DEMAND}`, true)
     : { hookSpecificOutput: { hookEventName: event, additionalContext: noValidContext(refresh) } };
 }
 
@@ -64,9 +72,6 @@ export function unprotectedTurnReason(why) {
     + 'FULI does not resend it, and a host notification is not redelivered.';
 }
 
-const REFERENCE_ONLY = 'The current task context of this session follows for reference, refreshed now. Its taskContextToken '
-  + 'is not this turn\'s confirmed task. This turn becomes that task\'s only by a successful checkpoint_task_knowledge with '
-  + 'that token in this turn, which you should make only if you know this turn continues that task\'s own work.';
 // Bilingual where the person reads it too; this part is for the model.
 export const START_NEW_WORK = 'If this turn is new work, start a task explicitly with get_collaboration_preferences '
   + '(projectPath = current working directory, taskPrompt = the request) and use the taskContextToken it returns.';
@@ -84,9 +89,8 @@ const NO_VALID_CONTEXT = Object.freeze({
 // current for, which the Provider confirms (that turn is then imported under
 // the task, everything before it only as a skipped span), or another task,
 // or none, being current (all of it is skipped). A state that cannot be
-// proven, an unknown owner or a failed lookup or skip keeps them held.
-// `continuedInTurn(token, from)` is the Agent's own evidence of an explicit
-// continuation in its native history; without one no turn is ever proven.
+// proven, an unknown owner or a failed lookup or skip keeps them held. A
+// policy without continuedInTurn never proves a turn.
 export async function settleHeldTurns(application, ledger, input, currentTask,
   { sourceApplication, adapter, continuedInTurn = () => false }) {
   const held = ledger?.heldTurns();
@@ -105,7 +109,7 @@ export async function settleHeldTurns(application, ledger, input, currentTask,
   if (task === undefined) return 'held';
   const moved = !task || (latest.owner !== null && transcriptDigest(task.token) !== latest.owner);
   const proven = !moved && latest.owner !== null && task.checkpoint?.phase === 'complete'
-    && continuedInTurn(task.token, latest.from);
+    && continuedInTurn(input, task.token, latest.from);
   if (!moved && !proven) return 'held';
   const end = moved ? () => verifiedTranscriptEnd(input.transcript_path, input.session_id, adapter)
     : async () => latest.from;
@@ -116,11 +120,13 @@ export async function settleHeldTurns(application, ledger, input, currentTask,
 // Turns held when a prompt started (`held`, the ledger's entry snapshot) end
 // once that prompt freshly entered a task: only those, so a turn held while
 // the entry ran stays held. Nothing before the prompt may be imported later
-// either. A session without a native transcript has nothing to import, so
-// its boundary is the start. A boundary that cannot be read keeps them held.
-export async function endTurnsObservedAtEntry(ledger, held, input, adapter) {
-  if (!held?.any) return;
-  const before = input.transcript_path
-    ? await initialTranscriptBoundary(input.transcript_path, input.session_id, input.prompt, adapter).catch(() => null) : 0;
+// either. A boundary that cannot be read keeps them held, and so does an
+// entry without a transcript path: an empty field is no proof that the
+// session has no history, and a later hook may bring the path back with the
+// held span still unskipped (dot, #276).
+export async function endTurnsObservedAtEntry(ledger, held, input, { adapter }) {
+  if (!held?.any || typeof input.transcript_path !== 'string' || !input.transcript_path.trim()) return;
+  const before = await initialTranscriptBoundary(input.transcript_path, input.session_id, input.prompt, adapter)
+    .catch(() => null);
   if (before !== null) ledger.enteredAfter(before, held);
 }

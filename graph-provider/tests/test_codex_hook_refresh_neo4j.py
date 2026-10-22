@@ -1,8 +1,9 @@
 """The installed Codex hook against the real HTTP Provider and a disposable Neo4j.
 
-rec#28: Codex's hook input defines no isMeta or is_meta (openai/codex
-deede7201da2: codex-rs/hooks/src/schema.rs 566-584), so a turn marked that way
-has an unprovable source. It re-reads the current task in place after the
+rec#28: in the source at openai/codex deede7201da2 (codex-rs/hooks/src/schema.rs
+566-584) Codex's hook input has no isMeta or is_meta, so a turn marked that way
+has an unprovable source. The last test covers both Claude Code and Codex: a
+task entry without a transcript path never releases a held turn unverified. It re-reads the current task in place after the
 session-off check, is held as unresolved, and its Stop neither settles that
 task nor records the turn under it, until another task, or none, is current or
 a fresh task entry ends it. No Codex turn is proven an explicit continuation.
@@ -16,9 +17,12 @@ import json
 
 import pytest
 
-from test_claude_hook_refresh_neo4j import Host, NO_VALID, _recorded, _set_preference, claude_host, token_of
+from test_claude_hook_refresh_neo4j import Host, NOTIFICATION, NO_VALID, _recorded, _set_preference, claude_host, token_of
 
-UNCONFIRMED = 'Codex 的 hook 输入不定义这个字段'
+UNCONFIRMED = 'FULI 无法证明它是 Codex 宿主设置的'
+# What a checkpoint can do for the turn, as each host's Stop actually behaves (dot, #276).
+CODEX_RESOLUTION = 'In Codex, a checkpoint_task_knowledge with that token does not resolve this turn'
+CLAUDE_RESOLUTION = "This turn becomes that task's only by a successful checkpoint_task_knowledge"
 MARKED = 'Synthetic marked delivery.'
 
 
@@ -82,6 +86,7 @@ async def test_codex_marked_turns_refresh_in_place_and_never_settle_or_record_un
             await _set_preference(settings, space, revision)
             context = await host.marked_turn(session, f'SYNTHETIC_{label.upper()}_REPLY', **mark)
             assert UNCONFIRMED in context and "is not this turn's confirmed task" in context, context
+            assert CODEX_RESOLUTION in context and '不会解除本轮的未确认状态' in context and CLAUDE_RESOLUTION not in context
             assert f'Synthetic preference revision {revision}' in context, context
             assert f'Synthetic preference revision {revision - 1}' not in context
             assert token_of(context) == task_a
@@ -186,7 +191,7 @@ async def test_codex_marked_turns_stay_held_when_their_state_cannot_be_kept(tmp_
         blocked = await host.hook(nowhere, 'UserPromptSubmit', prompt=MARKED, isMeta=True)
         reason = blocked.get('reason', '')
         assert blocked.get('decision') == 'block' and 'held this message back' in reason, blocked
-        assert 'it carries an isMeta mark that Codex does not define' in reason and '它带有 Codex 不定义的 isMeta 标记' in reason
+        assert 'it carries an isMeta mark whose source cannot be proven' in reason and '它带有无法证明来源的 isMeta 标记' in reason
         assert 'transcript-turn-holds/' in reason and 'resend the message yourself' in reason and 'FULI 不会自动重发' in reason
         assert (await host.current(nowhere))['token'] == task_n
 
@@ -194,3 +199,45 @@ async def test_codex_marked_turns_stay_held_when_their_state_cannot_be_kept(tmp_
         versions = {json.loads(path.read_text()).get('version')
                     for path in (host.runtime.parent / 'transcript-capture').glob('*.json') if path.is_file()}
         assert versions == {2}, versions
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('host_class', [Host, CodexHost], ids=['claude_code', 'codex'])
+async def test_pathless_entry_never_releases_held_turns_unverified(tmp_path, host_class):
+    """dot, #276: a task entry without a transcript path is no proof that the session has no history."""
+    async with claude_host(tmp_path, host_class) as (host, settings, space):
+        session = host.sid(f'synthetic-{host.source}-pathless')
+        task_a = await host.unfinished_task(session, 'Synthetic task A: an initialized session.')
+        if host.source == 'codex':
+            context = await host.marked_turn(session, 'SYNTHETIC_OLD_HELD_REPLY')
+            assert CODEX_RESOLUTION in context and CLAUDE_RESOLUTION not in context, context
+        else:
+            context = await host.held_turn(session, NOTIFICATION, 'SYNTHETIC_OLD_HELD_REPLY')
+            assert CLAUDE_RESOLUTION in context and CODEX_RESOLUTION not in context, context
+        [old] = (await host.held(session))['turns']
+
+        # Task B enters without a transcript path: B starts, the held turn stays held.
+        prompt = 'Synthetic task B: entered without a transcript path.'
+        if host.source != 'codex':
+            host.user(session, prompt)
+        entered = await host.hook(session, 'UserPromptSubmit', prompt=prompt, transcript_path=None)
+        if host.source == 'codex':
+            host.user(session, prompt)
+        task_b = token_of((entered.get('hookSpecificOutput') or {}).get('additionalContext', ''))
+        assert task_b and task_b != task_a, entered
+        assert [turn['turn'] for turn in (await host.held(session))['turns']] == [old['turn']]
+        host.reply(session, 'SYNTHETIC_TASK_B_REPLY')
+
+        # A Stop without the path cannot verify the span: nothing is released or settled.
+        await host.hook(session, 'Stop', transcript_path=None)
+        assert [turn['turn'] for turn in (await host.held(session))['turns']] == [old['turn']]
+        assert (await host.current(session))['checkpoint'] is None
+
+        # The path comes back: the held span is skipped, then B settles; the old turn never reaches B.
+        await host.hook(session, 'Stop')
+        assert (await host.held(session))['turns'] == []
+        current = await host.current(session)
+        assert current['token'] == task_b and current['checkpoint'] == 'complete', current
+        recorded = await _recorded(settings, session)
+        assert not any('SYNTHETIC_OLD_HELD_REPLY' in text for _, text in recorded), recorded
+        assert any('task ownership was not confirmed' in text for _, text in recorded), recorded

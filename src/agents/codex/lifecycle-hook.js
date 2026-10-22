@@ -65,8 +65,8 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
   const off = await entryRefusal?.();
   if (off && review) return { decision: 'block', reason: CODEX_REVIEW_OFF_REASON };
   if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
-  if (codexRefreshTurn(event, input)) return refreshCurrentTaskInPlace(event, input, invoke, { sourceApplication: 'codex',
-    delivery, currentTask, onCurrentTask, unconfirmed: UNCONFIRMED_TURN });
+  if (codexRefreshTurn(event, input)) return refreshCurrentTaskInPlace(event, input, invoke, CODEX_UNRESOLVED_TURNS,
+    { delivery, currentTask, onCurrentTask });
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id });
@@ -131,9 +131,8 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
         entryRefusal, onCurrentTask: task => ledger.ownTurn(refreshTurn, transcriptDigest(task.token)) });
       if (PREFERENCE_RESET_EVENTS.includes(event)) return codexLifecycleOutput(event, input, call,
         { delivery: app.preferenceDelivery, currentTask });
-      // No continuation evidence is passed: see CODEX_CONTINUATION_UNPROVABLE.
-      const unresolved = event === 'Stop' && await settleHeldTurns(app, ledger, input, currentTask,
-        { sourceApplication: 'codex', adapter: CODEX_TRANSCRIPT }) === 'held';
+      const unresolved = event === 'Stop'
+        && await settleHeldTurns(app, ledger, input, currentTask, CODEX_UNRESOLVED_TURNS) === 'held';
       // Turns held when this prompt starts end once it freshly enters a task.
       const held = event === 'UserPromptSubmit' ? ledger?.entrySnapshot() : null;
       let entered = false;
@@ -145,7 +144,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
           if (name === 'begin_task_context') { entered = true; onContext(context); }
           return context;
         }, { delivery: app.preferenceDelivery, entryRefusal }) });
-      if (entered) await endTurnsObservedAtEntry(ledger, held, input, CODEX_TRANSCRIPT);
+      if (entered) await endTurnsObservedAtEntry(ledger, held, input, CODEX_UNRESOLVED_TURNS);
       return lifecycle;
     }, { signal: dependencies.signal });
     const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
@@ -159,39 +158,50 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
 
 const CODEX_TRANSCRIPT = Object.freeze({ normalize: normalizeCodexRecord, verify: verifyCodexTranscript });
 
-// rec#28: no field of Codex's hook input proves that the host, not the
-// person, sent a turn. UserPromptSubmit input is exactly session_id, turn_id,
-// agent_id, agent_type, transcript_path, cwd, hook_event_name, model,
-// permission_mode and prompt (openai/codex deede7201da2:
-// codex-rs/hooks/src/schema.rs 566-584, deny_unknown_fields; the generated
+// rec#28, from the source at openai/codex deede7201da2 only (no other version
+// and no real client was checked): no field of Codex's hook input proves that
+// the host, not the person, sent a turn. There, UserPromptSubmit input is
+// exactly session_id, turn_id, agent_id, agent_type, transcript_path, cwd,
+// hook_event_name, model, permission_mode and prompt
+// (codex-rs/hooks/src/schema.rs 566-584, deny_unknown_fields; the generated
 // user-prompt-submit.command.input.schema.json has additionalProperties
-// false): Codex never writes isMeta or is_meta. The hook runs for every
-// user-input turn (codex-rs/core/src/hook_runtime.rs 677-713), including
-// prompts Codex synthesizes itself such as a review
-// (codex-rs/core/src/session/review.rs 142-150), and nothing in the input
-// tells those apart. So a turn marked isMeta or is_meta did not come from
-// Codex's documented input and its source is unprovable: it takes the
-// conservative path of unresolved-turns.js, never a trusted shortcut. Every
-// other prompt enters as before.
+// false), with no isMeta or is_meta. The hook runs for every user-input turn
+// (codex-rs/core/src/hook_runtime.rs 677-713), including prompts Codex
+// synthesizes itself such as a review (codex-rs/core/src/session/review.rs
+// 142-150), and nothing in the input tells those apart. So the source of a
+// turn marked isMeta or is_meta is unprovable: it takes the conservative path
+// of unresolved-turns.js, never a trusted shortcut. Every other prompt enters
+// as before.
 function codexRefreshTurn(event, input) {
   return event === 'UserPromptSubmit' && isSystemPromptEntry(input);
 }
 
-// CODEX_CONTINUATION_UNPROVABLE: no held Codex turn is ever proven an
-// explicit continuation. The rollout keeps an MCP call's output
-// (response_item function_call_output) without whether it succeeded
-// (openai/codex deede7201da2: codex-rs/protocol/src/models.rs 2341-2347,
-// success is not serialized), and the records that do carry it depend on the
-// thread's history mode (codex-rs/rollout/src/policy.rs). A held Codex turn
-// therefore ends only when another task, or none, is current at a Stop (its
-// span is skipped, never imported) or when a fresh task entry ends it.
-
-// Bilingual: the person reads these in the transcript as well as the model.
-const UNCONFIRMED_TURN = 'FULI：本轮输入带有 isMeta 标记，但 Codex 的 hook 输入不定义这个字段，无法证明它来自宿主；'
-  + '来源和任务归属都未确认，没有创建或切换任务。 FULI: this turn carries an isMeta mark, but Codex hook input does not '
-  + 'define that field, so nothing proves the host sent it; its source and task ownership are not confirmed; no task was created or switched.';
-const UNPROTECTED_TURN = unprotectedTurnReason({ zh: '它带有 Codex 不定义的 isMeta 标记',
-  en: 'it carries an isMeta mark that Codex does not define' });
+// Codex's policy for unresolved turns (unresolved-turns.js). It has no
+// continuedInTurn: no held Codex turn is ever proven an explicit continuation.
+// At deede7201da2 the rollout keeps an MCP call's output (response_item
+// function_call_output) without whether it succeeded
+// (codex-rs/protocol/src/models.rs 2341-2347, success is not serialized), and
+// the records that do carry it depend on the thread's history mode
+// (codex-rs/rollout/src/policy.rs). A held Codex turn therefore ends only
+// when another task, or none, is current at a Stop (its span is skipped,
+// never imported) or when a fresh task entry ends it, and the model is told
+// that a checkpoint does not resolve it. Bilingual: the person reads these in
+// the transcript as well as the model.
+const CODEX_UNRESOLVED_TURNS = Object.freeze({
+  sourceApplication: 'codex', adapter: CODEX_TRANSCRIPT,
+  unconfirmed: 'FULI：本轮输入带有 isMeta 标记，但 FULI 无法证明它是 Codex 宿主设置的（FULI 核对过的 Codex hook 输入没有这个字段）；'
+    + '来源和任务归属都未确认，没有创建或切换任务。 FULI: this turn carries an isMeta mark, but FULI cannot prove the Codex host set it '
+    + '(the Codex hook input FULI checked has no such field); its source and task ownership are not confirmed; no task was created or switched.',
+  resolution: 'FULI：下面附上本会话当前任务的上下文，仅供参考，刚刚刷新；它的 taskContextToken 不是本轮已确认的任务。'
+    + '在 Codex 中，用这个 token 调用 checkpoint_task_knowledge 不会解除本轮的未确认状态，本轮也不会因此记到那个任务下；'
+    + '只有另一个任务成为当前任务（你明确开始新任务，或者用户的下一条消息开始新任务）时，本轮的未确认状态才会结束，而且本轮内容不会记入任何任务。 '
+    + 'The current task context of this session follows for reference, refreshed now. Its taskContextToken is not this '
+    + 'turn\'s confirmed task. In Codex, a checkpoint_task_knowledge with that token does not resolve this turn: the turn stays '
+    + 'unconfirmed and is not recorded under that task. The turn is resolved only when another task becomes current (you start '
+    + 'a new task explicitly, or the person\'s next prompt starts one), and its content is then not recorded under any task.'
+});
+const UNPROTECTED_TURN = unprotectedTurnReason({ zh: '它带有无法证明来源的 isMeta 标记',
+  en: 'it carries an isMeta mark whose source cannot be proven' });
 
 // Codex sends SessionStart source "startup" only for a new thread
 // (openai/codex 87f3c3284e16: codex-rs/core/src/session/session.rs 1974-1977,
