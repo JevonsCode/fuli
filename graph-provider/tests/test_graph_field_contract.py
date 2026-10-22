@@ -84,8 +84,9 @@ def _map_items(text, start):
 def cypher_properties():
     """(module, owners, property, value text) for each property the Cypher
     names: a key of a pattern's map or of a literal map set on a record, or a
-    property set or compared (n.p = …) on a variable the same text binds to a
-    label or type, with its literal value text where there is one."""
+    property set or compared (n.p = …), with its literal value text where there
+    is one. Owners are the labels or types the same text binds the variable
+    to; none when another string binds it (then it must be declared somewhere)."""
     for module, text in provider_texts():
         bound = defaultdict(set)
         for pattern, names in ((NODE, r'[A-Za-z_]\w*'), (RELATIONSHIP, r'[A-Z_][A-Z0-9_]*')):
@@ -190,6 +191,10 @@ def test_an_unknown_or_mistyped_map_key_is_refused():
     with pytest.raises(StoredFieldError, match='FuliKnowledgeTag.status must be tag_status'):
         stored_fields('FuliKnowledgeTag', {'status': 'archived'})
     assert stored_fields('FuliKnowledgeTag', {'merged_into_id': None}) == {'merged_into_id': None}
+    # A relationship type without a contract stores no properties.
+    assert stored_fields('HAS_PROJECT_AGENT_IDENTITY', {}) == {}
+    with pytest.raises(StoredFieldError, match='HAS_PROJECT_AGENT_IDENTITY write has undeclared properties note'):
+        stored_fields('HAS_PROJECT_AGENT_IDENTITY', {'note': 'x'})
 
 
 class RecordingDriver:

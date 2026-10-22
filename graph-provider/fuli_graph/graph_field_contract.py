@@ -467,7 +467,7 @@ NODE_FIELDS = {
         'source_session_id': 'string?', 'staffing_intent': 'staffing_intent?',
         'status': 'task_status?', 'task_executor_policy_override_json': 'string?',
         'task_id': 'string', 'task_model_strategy_override_json': 'string?', 'title': 'string?',
-        'updated_at': 'datetime|integer|string?', 'verification_required': 'boolean?',
+        'updated_at': 'datetime|string?', 'verification_required': 'boolean?',
         'verification_serial': 'integer?', 'verified_artifact_revision': 'string?',
         'verified_attempt_id': 'string?', 'work_kind': 'string?',
     },
@@ -655,7 +655,7 @@ RELATIONSHIP_FIELDS = {
         'fuli_ai_review_id': 'string?', 'fuli_ai_review_lock_version': 'integer?',
         'fuli_ai_review_project_id': 'string?', 'fuli_ai_review_scope': 'string?',
         'fuli_ai_reviewed_at': 'datetime?', 'fuli_attributes_json': 'string?',
-        'fuli_confidence': 'integer?', 'fuli_confidence_score': 'float?',
+        'fuli_confidence': 'float?', 'fuli_confidence_score': 'float?',
         'fuli_confirmation_basis_json': 'string?',
         'fuli_confirmation_status': 'confirmation_status?',
         'fuli_content_source': 'content_source?', 'fuli_current_quadrant': 'quadrant?',
@@ -780,10 +780,9 @@ class StoredFieldError(ValueError):
 def stored_fields(owner: str, values: dict) -> dict:
     """A map a write stores on a record of this label or relationship type:
     every key declared, every value of its declared type, null only where the
-    property may be missing. Returns the map unchanged."""
-    fields = NODE_FIELDS.get(owner) or RELATIONSHIP_FIELDS.get(owner)
-    if fields is None:
-        raise StoredFieldError(f'{owner} is not a declared label or relationship type')
+    property may be missing. A relationship type the contract does not list
+    stores no properties. Returns the map unchanged."""
+    fields = NODE_FIELDS.get(owner) or RELATIONSHIP_FIELDS.get(owner, {})
     unknown = sorted(set(values) - set(fields))
     if unknown:
         raise StoredFieldError(f'{owner} write has undeclared properties {", ".join(unknown)}: '
