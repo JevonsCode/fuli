@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { isMainModule } from '../../src/system/main-module.js';
-import { OUTCOME_VIEWS, latencyProfile, scoreSet } from './scoring.js';
+import { OUTCOME_VIEWS, latencyProfile, scoreSet, validRuns } from './scoring.js';
 
 export function perCaseTable(labels, rows) {
   const lines = ['| blind ID | category | CL label | model (confidence) per run | host per run |', '|---|---|---|---|---|'];
@@ -25,7 +25,7 @@ export function perCaseTable(labels, rows) {
 function main() {
   const { values } = parseArgs({ options: { results: { type: 'string' }, labels: { type: 'string' }, runs: { type: 'string', default: '3' } } });
   if (!values.results || !values.labels) throw new TypeError('--results and --labels are required');
-  const runs = Number(values.runs);
+  const runs = validRuns(Number(values.runs));
   const labels = JSON.parse(readFileSync(values.labels, 'utf8')).cases;
   const summary = {};
   const tables = [];

@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { buildSets, normalizedText } from '../acceptance/tonborg-review-eval/case-sets.js';
 import { createLocalOllamaTransport, localOnlyFetch } from '../acceptance/tonborg-review-eval/local-ollama-transport.js';
@@ -245,6 +249,25 @@ test('structural validity is gated per run: 2 invalid of 54 in one run fails alt
   assert.equal(score.gate.checks.structuralValidity, false);
   assert.equal(score.gate.checks.agreement, true);
   assert.equal(score.gate.passed, false);
+});
+
+test('zero runs or zero cases can never pass the gate', () => {
+  const labels = [{ blindId: 'C0', category: 'normal_discard', label: 'escalate', pair: null }];
+  for (const runs of [0, -1, 1.5, Number.NaN]) {
+    assert.throws(() => scoreSet({ labels, rows: [], runs, outcomeOf: OUTCOME_VIEWS.model }), /runs must be a positive integer/);
+  }
+  assert.throws(() => scoreSet({ labels: [], rows: [], runs: 3, outcomeOf: OUTCOME_VIEWS.model }), /without cases/);
+});
+
+test('both CLIs refuse --runs 0 before reading, calling or writing anything', () => {
+  const out = join(tmpdir(), `tonborg-eval-zero-runs-${process.pid}`);
+  for (const [script, args] of [['run.js', ['--cases', out, '--out', out]], ['score.js', ['--results', out, '--labels', join(out, 'labels.json')]]]) {
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL(`../acceptance/tonborg-review-eval/${script}`, import.meta.url)),
+      ...args, '--runs', '0'], { encoding: 'utf8' });
+    assert.notEqual(result.status, 0, script);
+    assert.match(result.stderr, /runs must be a positive integer/, script);
+  }
+  assert.equal(existsSync(out), false);
 });
 
 test('a run must agree at least as often as escalating every case would (D-24)', () => {

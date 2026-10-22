@@ -16,6 +16,7 @@ import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { isMainModule } from '../../src/system/main-module.js';
 import { OLLAMA_ORIGIN, localOnlyFetch } from './local-ollama-transport.js';
 import { createReviewPath } from './review-path.js';
+import { validRuns } from './scoring.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const OUTCOMES = new Set(['approve', 'escalate']);
@@ -33,7 +34,7 @@ async function main() {
   const { values } = parseArgs({ options: { cases: { type: 'string' }, out: { type: 'string' }, model: { type: 'string', default: 'qwen3.5:4b' },
     runs: { type: 'string', default: '3' }, seed: { type: 'string', default: '20261022' }, sets: { type: 'string', default: 'dev,holdout' } } });
   if (!values.cases || !values.out) throw new TypeError('--cases and --out are required');
-  const runs = Number(values.runs), sampling = { temperature: 0, seed: Number(values.seed) };
+  const runs = validRuns(Number(values.runs)), sampling = { temperature: 0, seed: Number(values.seed) };
   const sets = values.sets.split(',');
   // Nothing in this process may reach another host, whichever module asks,
   // directly or by redirect.
