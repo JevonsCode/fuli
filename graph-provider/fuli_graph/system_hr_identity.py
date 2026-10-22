@@ -10,6 +10,7 @@ import re
 
 from fastapi import HTTPException
 
+from .graph_field_contract import stored_fields
 from .project_agent_models import ProjectAgentProfile
 from .provider_values import now_utc
 from .system_agents import SYSTEM_HR_AGENT_ID
@@ -112,7 +113,7 @@ async def merge_legacy_hr(store, space_id):
                 MERGE (source)-[edge:{kind}]->(target)
                 ON CREATE SET edge = $props
                 RETURN properties(edge) AS props''',
-            start_id=start_id, end_id=end_id, props=dict(edge['props']),
+            start_id=start_id, end_id=end_id, props=stored_fields(kind, dict(edge['props'])),
         )
         if not copied or dict(copied[0]['props']) != dict(edge['props']):
             raise HTTPException(409, 'Bole identities have conflicting relationship history; no data was changed')

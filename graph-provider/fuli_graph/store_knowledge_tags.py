@@ -12,6 +12,7 @@ unique-constrained as well.
 """
 from contextlib import asynccontextmanager
 
+from .graph_field_contract import stored_fields
 from .knowledge_hard_delete_traces import hard_deletion_record
 from .knowledge_management import _read_assignment, _read_item, _source_project_ids
 from .knowledge_project_scope import knowledge_project_ids
@@ -291,9 +292,12 @@ class Neo4jLockedTagVocabulary(Neo4jTagReader):
                 CREATE (space)-[:HAS_KNOWLEDGE_TAG]->(tag:FuliKnowledgeTag)
                 SET tag = row
                 RETURN tag
-                ''', space_id=self._space_id, tags=list(new_tags))
+                ''', space_id=self._space_id,
+                tags=[stored_fields('FuliKnowledgeTag', tag) for tag in new_tags])
             written.update({tag['id']: tag for tag in (_tag(record['tag']) for record in records)})
         if updates:
+            for update in updates:
+                stored_fields('FuliKnowledgeTag', update['fields'])
             records, _, _ = await self._driver.execute_query(
                 '''
                 UNWIND $updates AS row
@@ -315,7 +319,8 @@ class Neo4jLockedTagVocabulary(Neo4jTagReader):
                     link.detached_by_kind = row.detached_by_kind, link.moved_to_tag_id = row.moved_to_tag_id,
                     link.moved_from_tag_id = row.moved_from_tag_id, link.version = link.version + 1
                 MERGE (tag)-[:TAGS]->(link)
-                ''', space_id=self._space_id, links=list(links))
+                ''', space_id=self._space_id,
+                links=[stored_fields('FuliKnowledgeTagLink', link) for link in links])
         if revisions:
             await self._driver.execute_query(
                 '''
@@ -323,7 +328,8 @@ class Neo4jLockedTagVocabulary(Neo4jTagReader):
                 MATCH (tag:FuliKnowledgeTag {id: row.tag_id, space_id: $space_id})
                 CREATE (tag)-[:HAS_TAG_REVISION]->(revision:FuliKnowledgeTagRevision)
                 SET revision = row, revision.version = tag.version
-                ''', space_id=self._space_id, revisions=list(revisions))
+                ''', space_id=self._space_id,
+                revisions=[stored_fields('FuliKnowledgeTagRevision', revision) for revision in revisions])
         return written
 
 

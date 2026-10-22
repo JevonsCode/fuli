@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from neo4j.exceptions import ConstraintError
 
+from .graph_field_contract import stored_fields
 from .project_agent_worker_access import (
     load_worker_run, lock_worker_scope, require_capability, require_open_worker_run,
     validate_worker_authority, worker_scope,
@@ -131,7 +132,7 @@ class StoreProjectAgentWorkerRuns:
                     RETURN run
                     ''', run_id=run_id, parent_id=data['parent']['id'], task_id=request.task_id,
                     space_id=request.personal_space_id, agent_id=request.agent_id,
-                    fields=fields, payload_hash=payload_hash)
+                    fields=stored_fields('FuliProjectAgentWorkerRun', fields), payload_hash=payload_hash)
             except ConstraintError as error:
                 raise HTTPException(409, 'Worker runtime capability is already assigned to another run') from error
             if not saved:

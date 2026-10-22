@@ -2,7 +2,6 @@
 fingerprint, the record-changing steps' bodies and the driver's format guard.
 Behavior against a real graph lives in test_graph_format_neo4j.py."""
 
-import ast
 import json
 import os
 import re
@@ -20,12 +19,12 @@ os.environ.setdefault('FULI_NEO4J_PASSWORD', 'synthetic-password')
 
 from fuli_graph.app import create_app
 from fuli_graph.config import Settings
+from fuli_graph.graph_field_contract import ENUMS, NODE_FIELDS, RELATIONSHIP_FIELDS
 from fuli_graph.graph_format import GraphFormatState, GraphFormatUnavailable
 from fuli_graph.graph_format_backfills import (
     apply_group_id_separators,
     apply_learning_bucket_ids,
 )
-from fuli_graph.graph_format_journal import CREATED_TAG
 from fuli_graph.graph_format_ledger import LEDGER_LABELS
 from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION, GRAPH_MIGRATIONS
 from fuli_graph.graph_format_schema import schema_fingerprint
@@ -407,51 +406,53 @@ async def test_the_format_report_reads_in_read_access_mode_even_when_the_graph_i
 
 
 PROPERTY_FINGERPRINTS = Path(__file__).with_name('graph_property_fingerprints.json')
-# A property name next to a record variable in Cypher text: n.name = …, or a
-# key of a pattern's property map, (n:Label {name: …}).
-CYPHER_PROPERTY = re.compile(r'\b[a-z_][A-Za-z0-9_]*\.([a-z][A-Za-z0-9_]*)\s*=(?!=)')
-MAP_KEY = re.compile(r'[{,]\s*([a-z][A-Za-z0-9_]*)\s*:\s*[$\'"\w\[{(-]')
 
 
-def _cypher_texts(source: str):
-    """Every string literal of a module, f-string parts included."""
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            yield node.value
+def recorded_contract() -> dict:
+    """The persisted-field contract as graph_property_fingerprints.json records it."""
+    return {
+        'nodes': {owner: dict(fields) for owner, fields in NODE_FIELDS.items()},
+        'relationships': {owner: dict(fields) for owner, fields in RELATIONSHIP_FIELDS.items()},
+        'enums': {name: list(values) for name, values in ENUMS.items()},
+    }
 
 
-def test_a_new_graph_property_comes_with_the_next_graph_version():
-    """Every property name the provider's Cypher reads or writes, by graph
-    version. Readers coalesce a missing property, but an older guarded FULI
-    ignores one it does not know, so a new stored property is a format change:
-    add a migration with the next graph version, then record the new version
-    and its property set here. A recorded version never changes once a guarded
-    release ships it (rec#17 D-11). Version 10 is the first guarded release's
-    baseline: no guarded build has been published yet (the release gate is
-    blocked), so properties added before it ships (#258's turn receipts, #263's
-    Episodic.fuli_conversation_id) are part of version 10, not a new step."""
-    properties = set()
-    for path in provider_sources():
-        for text in _cypher_texts(path.read_text(encoding='utf-8')):
-            if not re.search(r'\b(MATCH|MERGE|CREATE|SET|RETURN|WHERE)\b', text):
-                continue
-            properties.update(CYPHER_PROPERTY.findall(text))
-            properties.update(MAP_KEY.findall(text))
-    # A confirmed step's tag on what it creates is removed before its
-    # transaction commits (graph_format_journal.py); it is never stored.
-    properties -= {CREATED_TAG}
+def _contract_changes(expected: dict, actual: dict) -> list[str]:
+    changes = []
+    for section in ('nodes', 'relationships'):
+        before, after = expected.get(section, {}), actual[section]
+        for owner in sorted(set(before) | set(after)):
+            old, new = before.get(owner, {}), after.get(owner, {})
+            for name in sorted(set(old) | set(new)):
+                if old.get(name) != new.get(name):
+                    changes.append(f'{owner}.{name}: {old.get(name)} -> {new.get(name)}')
+    before, after = expected.get('enums', {}), actual['enums']
+    for name in sorted(set(before) | set(after)):
+        added = sorted(set(after.get(name, ())) - set(before.get(name, ())))
+        removed = sorted(set(before.get(name, ())) - set(after.get(name, ())))
+        changes += [f'enum {name}: +{value}' for value in added]
+        changes += [f'enum {name}: -{value}' for value in removed]
+    return changes
+
+
+def test_the_field_contract_changes_only_with_the_next_graph_version():
+    """graph_field_contract.py by graph version: every stored property with
+    its label, type and nullability, and every enum's values. Readers coalesce
+    a missing property, but an older guarded FULI ignores one it does not
+    know and misreads a value it has never seen, so any change here is a
+    format change: add a migration with the next graph version, then record
+    that version's contract here. A recorded version never changes once a
+    guarded release ships it (rec#17 D-11). Version 10 is the first guarded
+    baseline; no guarded build has been published yet (rec#30 lists the
+    release evidence), so it was regenerated from the contract and is
+    complete, map-written properties included."""
     recorded = json.loads(PROPERTY_FINGERPRINTS.read_text(encoding='utf-8'))
     assert str(GRAPH_FORMAT_VERSION) in recorded, (
-        f'Record the property set of graph version {GRAPH_FORMAT_VERSION} in '
-        f'{PROPERTY_FINGERPRINTS.name}'
+        f'Record the contract of graph version {GRAPH_FORMAT_VERSION} in {PROPERTY_FINGERPRINTS.name}'
     )
-    expected = set(recorded[str(GRAPH_FORMAT_VERSION)])
-    assert sorted(properties - expected) == [], (
-        'New graph properties need a migration with the next graph version '
-        f'(then record that version in {PROPERTY_FINGERPRINTS.name})'
-    )
-    assert sorted(expected - properties) == [], (
-        f'Properties no longer used: record the next version in {PROPERTY_FINGERPRINTS.name}'
+    assert _contract_changes(recorded[str(GRAPH_FORMAT_VERSION)], recorded_contract()) == [], (
+        'The persisted-field contract changed: add a migration with the next graph version, '
+        f'then record that version in {PROPERTY_FINGERPRINTS.name}'
     )
 
 

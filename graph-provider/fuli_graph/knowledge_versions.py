@@ -19,6 +19,7 @@ import json
 
 from fastapi import HTTPException
 
+from .graph_field_contract import stored_fields
 from .knowledge_audit import _item_match
 from .knowledge_item_version import lock_version
 from .knowledge_item_view_models import KnowledgeVersionStatus as VersionStatus
@@ -444,6 +445,7 @@ def _carried_properties(stored, item_kind, new_id, value, changed_by, created_at
 
 
 async def _create_item(scoped, space, item_kind, item_id, new_id, properties) -> None:
+    stored_fields('Entity' if item_kind == 'entity' else 'RELATES_TO', properties)
     if item_kind == 'entity':
         query = 'CREATE (item:Entity) SET item = $properties RETURN item.uuid AS item_id'
     else:
@@ -529,10 +531,11 @@ async def _carry_tags(scoped, space, item_kind, item_id, new_id, created_at) -> 
     if not records:
         return
     # The same link shape the tag vocabulary attaches (knowledge_tags.attach_tag).
-    links = [{'id': tag_link_id(space['id'], record['tag_id'], item_kind, new_id), 'space_id': space['id'],
-              'tag_id': record['tag_id'], 'item_kind': item_kind, 'item_id': new_id, 'status': 'attached',
-              'attached_at': created_at, 'attached_by_kind': record['attached_by_kind'], 'detached_at': None,
-              'version': 1} for record in records]
+    links = [stored_fields('FuliKnowledgeTagLink', {
+        'id': tag_link_id(space['id'], record['tag_id'], item_kind, new_id), 'space_id': space['id'],
+        'tag_id': record['tag_id'], 'item_kind': item_kind, 'item_id': new_id, 'status': 'attached',
+        'attached_at': created_at, 'attached_by_kind': record['attached_by_kind'], 'detached_at': None,
+        'version': 1}) for record in records]
     await scoped.runtime.driver.execute_query(
         '''
         UNWIND $links AS row
