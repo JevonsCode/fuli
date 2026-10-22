@@ -8,7 +8,9 @@ from uuid import uuid4
 
 import pytest
 
-from knowledge_tag_scenarios import SCENARIOS, alias, create, post, resolve
+from fuli_graph.provider_values import native_datetime
+from knowledge_tag_governance_scenarios import GOVERNANCE_SCENARIOS
+from knowledge_tag_scenarios import REVIEW_TOKEN, SCENARIOS, alias, create, post, resolve
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 
 
@@ -89,6 +91,29 @@ class Neo4jWorld:
             'MATCH (item:Entity {uuid: $id}) RETURN properties(item) AS item', id=item['item_id'])
         return records[0]['item']
 
+    async def stored(self):
+        """Every tag's and link's stored record, for exact before/after comparisons."""
+        tags, _, _ = await self.driver.execute_query(
+            'MATCH (tag:FuliKnowledgeTag {space_id: $space}) RETURN properties(tag) AS tag', space=self.space)
+        links, _, _ = await self.driver.execute_query(
+            'MATCH (link:FuliKnowledgeTagLink {space_id: $space}) RETURN properties(link) AS link',
+            space=self.space)
+        return ({record['tag']['id']: _native(record['tag']) for record in tags},
+                {record['link']['id']: _native(record['link']) for record in links})
+
+    async def attached(self, item):
+        """The tag IDs an item's attached links name, one entry per link."""
+        records, _, _ = await self.driver.execute_query('''
+            MATCH (tag:FuliKnowledgeTag)-[:TAGS]->(link:FuliKnowledgeTagLink {
+                space_id: $space, item_kind: $kind, item_id: $id, status: 'attached'})
+            RETURN tag.id AS tag_id ORDER BY tag_id
+        ''', space=self.space, kind=item['item_kind'], id=item['item_id'])
+        return [record['tag_id'] for record in records]
+
+
+def _native(record):
+    return {key: native_datetime(value) for key, value in record.items()}
+
 
 async def cleanup(world):
     group_id = await world.group_id()
@@ -100,7 +125,7 @@ async def cleanup(world):
 
 
 async def run_in_world(scenario):
-    settings = fixture_settings()
+    settings = fixture_settings().model_copy(update={'human_review_token': REVIEW_TOKEN})
     async with provider_client(settings) as (client, _):
         space = await client.post('/v1/spaces', json={
             'name': f'Synthetic tags {uuid4().hex[:8]}', 'kind': 'personal'})
@@ -211,4 +236,10 @@ async def stale_personal_tag_is_rechecked_under_the_lock(world):
                                       stale_personal_tag_is_rechecked_under_the_lock],
                          ids=lambda scenario: scenario.__name__)
 async def test_concurrent_vocabulary_writes_on_neo4j(scenario):
+    await run_in_world(scenario)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('scenario', GOVERNANCE_SCENARIOS, ids=lambda scenario: scenario.__name__)
+async def test_tag_governance_scenario_on_neo4j(scenario):
     await run_in_world(scenario)

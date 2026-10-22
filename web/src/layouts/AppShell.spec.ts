@@ -88,7 +88,7 @@ describe('AppShell', () => {
   it('marks the active destination and shows only the sections current capabilities allow', async () => {
     const { wrapper } = await setup('/preferences/writing')
     expect(wrapper.get('[data-destination="memory"]').attributes('aria-current')).toBe('page')
-    expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toEqual(['knowledge', 'preferences', 'writing', 'organize'])
+    expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toEqual(['knowledge', 'preferences', 'writing', 'organize', 'tags'])
     expect(wrapper.get('[data-section="writing"]').attributes('aria-current')).toBe('page')
     wrapper.unmount()
   })

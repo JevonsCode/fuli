@@ -35,6 +35,7 @@ import { knowledgeQuickEditMessages } from './messages/knowledge-quick-edit'
 import { knowledgeHardDeleteMessages } from './messages/knowledge-hard-delete'
 import { sessionRecordsMessages } from './messages/session-records'
 import { sessionMigrationMessages } from './messages/session-migration'
+import { knowledgeTagsMessages } from './messages/knowledge-tags'
 import { captureMessages } from './messages/capture'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
@@ -103,6 +104,7 @@ export const messages = {
     knowledgeHardDelete: knowledgeHardDeleteMessages['zh-CN'],
     sessionRecords: sessionRecordsMessages['zh-CN'],
     sessionMigration: sessionMigrationMessages['zh-CN'],
+    knowledgeTags: knowledgeTagsMessages['zh-CN'],
     capture: captureMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
@@ -143,6 +145,7 @@ export const messages = {
     knowledgeHardDelete: knowledgeHardDeleteMessages['en-US'],
     sessionRecords: sessionRecordsMessages['en-US'],
     sessionMigration: sessionMigrationMessages['en-US'],
+    knowledgeTags: knowledgeTagsMessages['en-US'],
     capture: captureMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],

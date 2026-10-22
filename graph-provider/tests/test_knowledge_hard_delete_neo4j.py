@@ -58,10 +58,10 @@ async def seeded(client):
                            version=(await view(client, space_id, old_id))['version']))['version_item_id']
     tag = ok(await client.post('/v1/knowledge-tags/create', json={
         'personal_space_id': space_id, 'name': 'deploy', 'namespace': 'personal', 'reason': 'Synthetic tag.',
-        'operation_actor': 'human'}))['tag']
+        'operation_actor': 'human'}, headers=REVIEW))['tag']
     ok(await client.post('/v1/knowledge-tags/attach', json={
         'personal_space_id': space_id, 'tag_id': tag['id'], 'item_kind': 'entity', 'item_id': new_id,
-        'operation_actor': 'human'}))
+        'operation_actor': 'human'}, headers=REVIEW))
     await use(client, space_id, 'synthetic-task-1', new_id)
     conclusion = (await commit(client, space_id, [preference(
         'deploy-checks', 'Run the smoke checks after every deploy', derived_from=[new_id])]))['entity_ids'][0]

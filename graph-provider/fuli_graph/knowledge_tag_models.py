@@ -1,12 +1,13 @@
 """Open tag vocabulary contracts: tags help find knowledge, never authorize or confirm it.
 
 The governance fields are fixed; the words are open. A tag lives in one
-namespace: the person's own vocabulary (personal), one personal project
-(project) or, once governance exists, a shared vocabulary (shared, refused for
-now). Status starts at provisional for Agent-proposed tags and active for a
-person's own; merged and retired arrive with governance. Status is tag
-governance only: an active tag never makes a preference human-confirmed and
-never grants a permission.
+namespace: the person's own vocabulary (personal) or one personal project
+(project); a shared vocabulary stays refused (rec#11 D-07 part 2). Status
+starts at provisional for Agent-proposed tags and active for a person's own;
+only the person makes a provisional tag active, merges a tag into another
+(merged, which redirects there and never resolves again) or retires one
+(knowledge_tag_governance). Status is tag governance only: an active tag never
+makes a preference human-confirmed and never grants a permission.
 """
 import unicodedata
 from datetime import datetime
@@ -22,7 +23,9 @@ from .name_identity import display_name, identity_key
 
 TagNamespace = Literal['personal', 'project', 'shared']
 StoredTagNamespace = Literal['personal', 'project']
-TagStatus = Literal['provisional', 'active']
+# Only provisional and active tags resolve; merged redirects, retired is gone.
+TagStatus = Literal['provisional', 'active', 'merged', 'retired']
+LIVE_STATUSES = ('provisional', 'active')
 TagMatch = Literal['exact', 'alias', 'similar']
 # lexical-hash: the Provider's local character n-gram hash, never a semantic judgment.
 TagMatchBasis = Literal['name', 'alias', 'description', 'lexical-hash']
@@ -31,7 +34,7 @@ DISTINCT_FROM_MAX = 50
 _FORBIDDEN_CATEGORIES = {'Cc', 'Cs', 'Co', 'Cn'}
 
 
-def _tag_text(value: str, label: str) -> str:
+def tag_text(value: str, label: str) -> str:
     if any(unicodedata.category(character) in _FORBIDDEN_CATEGORIES
            and not character.isspace() for character in value):
         raise ValueError(f'{label} must not contain control or unassigned characters')
@@ -54,7 +57,7 @@ class KnowledgeTagResolve(KnowledgeTagScope):
     @field_validator('query')
     @classmethod
     def visible_query(cls, value: str) -> str:
-        return _tag_text(value[:TAG_NAME_MAX], 'query')
+        return tag_text(value[:TAG_NAME_MAX], 'query')
 
 
 class _KnowledgeTagWrite(KnowledgeTagScope):
@@ -81,7 +84,7 @@ class KnowledgeTagCreate(_KnowledgeTagWrite):
     @field_validator('name')
     @classmethod
     def visible_name(cls, value: str) -> str:
-        return _tag_text(value, 'name')
+        return tag_text(value, 'name')
 
 
 class KnowledgeTagAliasCreate(_KnowledgeTagWrite):
@@ -92,7 +95,7 @@ class KnowledgeTagAliasCreate(_KnowledgeTagWrite):
     @field_validator('alias')
     @classmethod
     def visible_alias(cls, value: str) -> str:
-        return _tag_text(value, 'alias')
+        return tag_text(value, 'alias')
 
 
 class KnowledgeTagLinkChange(_KnowledgeTagWrite):
@@ -143,7 +146,9 @@ class KnowledgeTagCandidate(StrictModel):
     description: str | None
     aliases: list[str]
     # Status of the alias that matched, when match is alias.
-    alias_status: TagStatus | None = None
+    alias_status: Literal['provisional', 'active'] | None = None
+    # The merged tag whose word this is: a person merged it into this one.
+    redirected_from: str | None = None
 
 
 class KnowledgeTagReference(StrictModel):
@@ -193,6 +198,8 @@ class KnowledgeTagLinkResult(StrictModel):
     item_kind: KnowledgeItemKind
     item_id: str
     tags: list[KnowledgeTagReference]
+    # Set when tag_id was merged: the change went to the tag it redirects to.
+    redirected_to: KnowledgeTagReference | None = None
 
 
 class KnowledgeTagCount(StrictModel):

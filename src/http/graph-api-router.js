@@ -6,7 +6,6 @@ import { handleTaskSchedulesRequest } from './task-schedules-api-router.js';
 import { handleOccupationRequest } from './occupation-api-router.js';
 import { handleTopicProposalsRequest } from './topic-proposals-api-router.js';
 import { handleAgentScoreCardRequest } from './agent-score-card-api-router.js';
-import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
 import { handleKnowledgeItemRequest } from './knowledge-item-api-router.js';
 import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
@@ -24,7 +23,6 @@ export async function handleGraphApiRequest({
   if (await handleOccupationRequest({ request, response, url, app })) return true;
   if (await handleTopicProposalsRequest({ request, response, url, app })) return true;
   if (await handleAgentScoreCardRequest({ request, response, url, app })) return true;
-  if (await handleKnowledgeTagsRequest({ request, response, url, app })) return true;
   if (await handleKnowledgeItemRequest({ request, response, url, app })) return true;
   if (await handleSessionRecordsRequest({ request, response, url, app })) return true;
   if (await handleCaptureChangeRequest({ request, response, url, app })) return true;

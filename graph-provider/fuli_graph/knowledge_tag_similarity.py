@@ -5,11 +5,13 @@ match. Similar is lexical only: one name contained in another, the word inside
 a description, or the Provider's local lexical-hash embedding (character
 n-grams) at the configured threshold. A synonym that shares no characters is
 never found here; it becomes the same tag only through an alias. A candidate is
-a proposal and never merges anything.
+a proposal and never merges anything. A word of a tag the person merged is
+found as the live tag it leads to, naming the merged tag it came through.
 """
 from dataclasses import dataclass
 
 from .knowledge_tag_models import KnowledgeTagCandidate, KnowledgeTagDecisionCandidate
+from .knowledge_tag_redirects import live_target
 from .name_identity import identity_key
 
 # Bounds the similarity scan; exact and alias matches are looked up by key and
@@ -39,6 +41,12 @@ async def find_candidates(store, reader, key: str, *, key_namespaces: list[str],
     for tag in await reader.find_by_key(key_namespaces, key):
         found[tag['id']] = (tag_candidate(tag, 'exact', 'name') if tag['name_key'] == key
                             else tag_candidate(tag, 'alias', 'alias', _alias_status(tag, key)))
+    for merged, target in await _redirected(reader, key_namespaces, key):
+        if target['id'] not in found:
+            found[target['id']] = (
+                tag_candidate(target, 'exact', 'name', redirected_from=merged['id'])
+                if merged['name_key'] == key else
+                tag_candidate(target, 'alias', 'alias', _alias_status(merged, key), merged['id']))
     listed = await reader.list_visible(scan_namespaces, MAX_SCANNED_TAGS + 1)
     scanned = [tag for tag in listed[:MAX_SCANNED_TAGS] if tag['id'] not in found]
     for tag, basis in await _similar(store, key, scanned):
@@ -48,11 +56,31 @@ async def find_candidates(store, reader, key: str, *, key_namespaces: list[str],
     return TagCandidates(ordered, len(listed) > MAX_SCANNED_TAGS)
 
 
-def tag_candidate(tag: dict, match: str, basis: str, alias_status=None) -> KnowledgeTagCandidate:
+def tag_candidate(tag: dict, match: str, basis: str, alias_status=None,
+                  redirected_from=None) -> KnowledgeTagCandidate:
     return KnowledgeTagCandidate(
         id=tag['id'], name=tag['name'], namespace=tag['namespace_kind'], status=tag['status'],
         match=match, basis=basis, description=tag.get('description'),
-        aliases=list(tag.get('aliases') or []), alias_status=alias_status)
+        aliases=list(tag.get('aliases') or []), alias_status=alias_status,
+        redirected_from=redirected_from)
+
+
+async def word_holders(reader, namespace_keys, key: str) -> list[dict]:
+    """Every live tag a reader in these namespaces resolves the word to,
+    directly or through a merged tag's redirect."""
+    holders = {tag['id']: tag for tag in await reader.find_by_key(namespace_keys, key)}
+    for _, target in await _redirected(reader, namespace_keys, key):
+        holders.setdefault(target['id'], target)
+    return list(holders.values())
+
+
+async def _redirected(reader, namespace_keys, key: str):
+    pairs = []
+    for merged in await reader.find_redirects(namespace_keys, key):
+        target = await live_target(reader, merged)
+        if target is not None:
+            pairs.append((merged, target))
+    return pairs
 
 
 def decision_candidate(candidate: KnowledgeTagCandidate) -> KnowledgeTagDecisionCandidate:

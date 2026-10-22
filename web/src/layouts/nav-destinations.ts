@@ -29,11 +29,12 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
       { key: 'myProjects', to: projects, owns: ['/personal/'] },
       ...(publicProjects ? [{ key: 'publicProjects', to: '/public-projects', owns: ['/public-projects'] }] : []),
     ] },
-    { key: 'memory', icon: 'memory', to: knowledge, owns: ['/knowledge', '/preferences', '/organize'], sections: [
+    { key: 'memory', icon: 'memory', to: knowledge, owns: ['/knowledge', '/preferences', '/organize', '/tags'], sections: [
       { key: 'knowledge', to: knowledge, owns: ['/knowledge'] },
       { key: 'preferences', to: '/preferences', owns: ['/preferences'] },
       { key: 'writing', to: '/preferences/writing', owns: ['/preferences/writing'] },
       { key: 'organize', to: '/organize', owns: ['/organize'] },
+      { key: 'tags', to: '/tags', owns: ['/tags'] },
     ] },
     { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/connections', '/about'], sections: [
       { key: 'settings', to: '/settings', owns: ['/settings'] },

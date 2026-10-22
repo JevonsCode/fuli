@@ -52,6 +52,9 @@ export const routeMessages = {
     sessionMigration: {
       title: '迁入正式项目',
     },
+    tags: {
+      title: '标签词表',
+    },
     about: {
       title: '关于',
     },
@@ -115,6 +118,9 @@ export const routeMessages = {
     },
     sessionMigration: {
       title: 'Move into a project',
+    },
+    tags: {
+      title: 'Tag vocabulary',
     },
     about: {
       title: 'About',

@@ -83,7 +83,10 @@ const BASELINE = Object.freeze({
   // version (+44 B); entities and relationships of the two full capture tools take derivedFrom, the
   // current items a conclusion rests on, so it stops being current with them (C8-4, +616 B):
   // 184,107 -> 184,767 B (+660 B), measured. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 184767,
+  // rec#11 D-07 part 2: change_knowledge_tags only previews the person's tag
+  // governance (five actions, intoTagId), no new tool: 184,767 -> 184,935 B
+  // (+168 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 184935,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
