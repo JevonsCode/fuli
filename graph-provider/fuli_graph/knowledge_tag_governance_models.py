@@ -232,6 +232,7 @@ class KnowledgeTagDetail(StrictModel):
     tag: KnowledgeTagEntry
     children: list[KnowledgeTagReference]
     merged_from: list[KnowledgeTagReference]
+    # Only in the owner's all-project view: the count reads links across projects.
     unfinished_restores: list[KnowledgeTagUnfinishedRestore] = Field(default_factory=list)
     # None outside the owner's all-project view: links may be other projects' knowledge.
     links: list[KnowledgeTagLinkedItem] | None

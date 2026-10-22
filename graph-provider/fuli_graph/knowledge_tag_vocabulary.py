@@ -79,12 +79,15 @@ async def read_tag_detail(store, actor: dict, request: KnowledgeTagDetailQuery) 
 
 async def _unfinished_restores(reader, tag: dict, tags: dict, namespaces) -> list[KnowledgeTagUnfinishedRestore]:
     """Tags a split already brought back from a merge into this one while items
-    that merge took are still here: the next batch continues from the merge record."""
+    that merge took are still here: the next batch continues from the merge record.
+    Only the owner's all-project view gets them: the remaining count reads links
+    across every project, so a scoped read never sees it (G2-5, dot on 90e8baf)."""
+    if namespaces is not None:
+        return []
     unfinished = []
     for merge in await reader.merges_into(tag['id']):
         merged = tags.get(merge['tag_id'])
-        if merged is None or merged['status'] not in LIVE_STATUSES or (
-                namespaces is not None and merged['namespace_key'] not in namespaces):
+        if merged is None or merged['status'] not in LIVE_STATUSES:
             continue
         remaining = await restore_remaining(reader, tag['id'], merged['id'])
         if remaining:

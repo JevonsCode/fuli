@@ -614,6 +614,29 @@ async def a_revival_never_overflows_a_peer(world):
     assert revived['id'] not in (stored[peer['id']].get('related_ids') or []), 'dropped on both sides'
 
 
+async def an_unfinished_restore_shows_only_in_the_all_project_view(world):
+    """Dot on 90e8baf: the remaining count reads links across projects, so only the
+    owner's all-project detail lists an unfinished split-back; a read from project
+    甲, or with no current project, lists none, though both personal tags are visible."""
+    for project in ('甲', '乙'):
+        await world.project(project)
+    source, target = await mine(world, '户外学习'), await mine(world, '自然教育')
+    items = [await world.item('乙', name) for name in ('Bird walk', 'Pond dip')]
+    for item in items:
+        await attach(world, source['id'], item, '乙')
+    await govern(world, 'merge', source['id'], into_tag_id=target['id'])
+    await alias(world, target['id'], '自然课', operation_actor='human', reason='later change')
+    await govern(world, 'split', target['id'], split={'restore_tag_id': source['id']})
+    # One of the restored links goes again, so the merge's record is not fully back.
+    await post(world, 'detach', {'personal_project_id': '乙', 'tag_id': source['id'], **items[0]})
+    owner = await detail(world, target['id'])
+    assert [(entry['tag']['id'], entry['remaining']) for entry in owner['unfinished_restores']] == [
+        (source['id'], 1)]
+    for project in ('甲', None):
+        scoped = await detail(world, target['id'], project, all_projects=False)
+        assert scoped['unfinished_restores'] == [], project
+
+
 async def a_retired_tag_is_gone_until_the_person_brings_it_back(world):
     await world.project('class')
     tag = (await create(world, '户外学习', 'class'))['tag']
@@ -638,6 +661,6 @@ GOVERNANCE_SCENARIOS = [
     an_undo_never_takes_a_link_a_later_merge_relies_on, an_undo_never_gives_two_tags_one_word,
     an_undo_or_revival_never_closes_a_parent_cycle, a_merge_never_overflows_relations,
     a_large_mistaken_merge_is_split_back_whole, a_split_back_keeps_a_landing_another_merge_relies_on,
-    a_revival_never_overflows_a_peer,
+    a_revival_never_overflows_a_peer, an_unfinished_restore_shows_only_in_the_all_project_view,
     a_retired_tag_is_gone_until_the_person_brings_it_back,
 ]
