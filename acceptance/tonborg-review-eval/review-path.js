@@ -42,6 +42,8 @@ export function createReviewPath({ model, sampling, fetchImpl = globalThis.fetch
   const refuse = what => async () => { throw new Error(`${what} is not part of the evaluation`); };
   const bridge = createRoleWorkBridge({ port, store: new RoleWorkStore(':memory:'), verifySession: refuse('A session claim'), resumers: {} });
   const backend = createJudgmentBackend({ bridge, legacy: refuse('A CLI judgment client') });
+  // Everything outside DATA of the first request; every later request must repeat it exactly.
+  let instructionArea = null;
 
   async function review(candidate, requestId) {
     exchanges = [];
@@ -65,7 +67,7 @@ export function createReviewPath({ model, sampling, fetchImpl = globalThis.fetch
     const [{ call, response } = {}] = judged;
     const record = result.records.find(item => item.target === candidate.candidate_key) ?? result.records.at(-1) ?? null;
     const chats = exchanges.filter(exchange => new URL(exchange.url).pathname === CHAT_PATH);
-    assertReviewBoundary({ call, chats, candidate, record, provider });
+    instructionArea = assertReviewBoundary({ call, chats, candidate, record, provider, instructionArea });
     return {
       judgment: call ? { operation: call.operation, instructions: call.instructions, data: call.data, schema: call.schema } : null,
       exchanges: chats,
@@ -104,34 +106,36 @@ function syntheticProvider(candidate) {
 }
 
 // rec#26: the candidate reaches the model only inside DATA, the only decision
-// is propose, no tools are offered and nothing is written.
-function assertReviewBoundary({ call, chats, candidate, record, provider }) {
+// is propose, no tools are offered and nothing is written. The instruction
+// area (system message, TASK and DECISIONS) must be the same text for every
+// candidate, so no candidate text can be in it; a substring search would
+// mistake a short title such as "Preference" inside the fixed rules for a leak.
+// Returns the instruction area for the next review to compare with.
+function assertReviewBoundary({ call, chats, candidate, record, provider, instructionArea }) {
   if (provider.writes.length) throw new Error(`The review tried to write: ${provider.writes.join(', ')}`);
   if (record && record.execution.status !== 'not_applied') {
     throw new Error(`A review record left the evaluation with execution ${record.execution.status}`);
   }
-  if (!call) return;
+  if (!call) return instructionArea;
   if (call.operation !== OPERATION || call.policy.mode !== 'manual') {
     throw new Error('The evaluation must run knowledge_review under the default manual policy');
   }
   if (!call.data.candidates?.some(item => item.candidate_key === candidate.candidate_key)) {
     throw new Error('The candidate is missing from the judgment DATA');
   }
+  let area = instructionArea;
   for (const chat of chats) {
-    const body = JSON.parse(chat.requestBody);
-    const [system, user] = body.messages;
-    const lines = user.content.split('\n');
-    const dataLine = lines.find(line => line.startsWith('DATA: '));
-    if (!dataLine || lines.at(-1) !== dataLine) throw new Error('The user message must end with its DATA line');
-    if (!lines.includes('DECISIONS: propose')) throw new Error('knowledge_review must offer only the propose decision');
-    const outside = [system.content, ...lines.filter(line => line !== dataLine)].join('\n');
-    for (const text of [candidate.title, candidate.content].filter(value => value.trim().length > 1)) {
-      if (outside.includes(text) || outside.includes(JSON.stringify(text).slice(1, -1))) {
-        throw new Error('Candidate text appears outside DATA');
-      }
+    const [system, user] = JSON.parse(chat.requestBody).messages;
+    const [task, decisions, dataLine, ...rest] = user.content.split('\n');
+    if (rest.length || task !== `TASK: ${call.instructions}` || decisions !== 'DECISIONS: propose' || !dataLine?.startsWith('DATA: ')) {
+      throw new Error('The user message must be exactly TASK, DECISIONS: propose and DATA');
     }
+    const outside = `${system.content}\n${task}\n${decisions}`;
+    if (area !== null && outside !== area) throw new Error('The instruction area changed with the candidate');
+    area = outside;
     const evidence = JSON.parse(dataLine.slice('DATA: '.length)).evidence;
     const offered = JSON.parse(evidence.find(item => item.id === 'candidates')?.text ?? '[]');
     if (JSON.stringify(offered) !== JSON.stringify(call.data.candidates)) throw new Error('DATA does not carry the candidates as the engine built them');
   }
+  return area;
 }

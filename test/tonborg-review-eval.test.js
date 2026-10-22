@@ -88,6 +88,16 @@ test('a review goes through the production knowledge_review request with the can
     attempts: 1, durationMs: review.receipt.durationMs, inputTokens: 900, outputTokens: 60 });
 });
 
+test('a title that also occurs in the fixed instructions is not mistaken for a leak', async t => {
+  const ollama = fakeOllama([verdict()]);
+  const path = createReviewPath({ model: 'qwen-test', sampling: SAMPLING, fetchImpl: ollama.fetchImpl });
+  t.after(() => path.close());
+  await path.review(candidate(), 'case-1:run-1');
+  const review = await path.review(candidate({ title: 'Preference', content: '' }), 'case-2:run-1');
+  assert.match(ollama.bodies[1].messages[1].content, /^TASK: .*Preferences: apply only/);
+  assert.equal(review.modelVerdict.outcome, 'approve');
+});
+
 test('the host confidence gate is kept apart from the model outcome', async t => {
   const path = createReviewPath({ model: 'qwen-test', sampling: SAMPLING, fetchImpl: fakeOllama([verdict({ confidence: 0.6 })]).fetchImpl });
   t.after(() => path.close());
