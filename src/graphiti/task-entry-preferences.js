@@ -97,7 +97,7 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
     ...(answered.length ? { attention_replies: answered, attention_replies_guidance: ATTENTION_REPLIES_GUIDANCE } : {}),
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
-      name: context?.role?.name, sourceApplication,
+      name: context?.role?.name, role: selection?.agent?.profile?.name, sourceApplication,
       assignmentStatus: selection?.status, assignmentReason: selection?.reason, notices
     }) };
 }

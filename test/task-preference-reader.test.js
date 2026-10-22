@@ -98,6 +98,13 @@ test('owned reader delivers all long instructions and mandatory guidance in both
   assert.equal(f.reads(), pages.length);
 });
 
+test('the reader receipt names the Agent first and its role title in brackets', async () => {
+  const f = fixture();
+  f.rawAgent.profile.display_name = 'Nova Reed';
+  const value = (await call(f)).structuredContent;
+  assert.match(value.agent_receipt.markdown, /^FULI Agent：\[Nova Reed \\\[Synthetic owner\\\]\]\(/);
+});
+
 test('complete reader preserves active and queued conflict alternatives instead of delivering only effective rules', async () => {
   const f = fixture();
   const left = { ...f.preferences.project_preferences[0], id: 'left', preference_key: 'conflict-rule', instruction: 'Left complete instruction' };
