@@ -106,6 +106,15 @@ class StoreConversationTriage:
         return {'personal_project_id': request.personal_project_id,
                 'conversation_ids': [row['id'] for row in rows]}
 
+    async def read_conversation_triage(self, actor, request):
+        """One conversation's current label, or None; labeled_at is its version."""
+        self._require_personal()
+        space = await self.authorize(actor, request.personal_space_id, 'reader')
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (t:FuliConversationTriage {id: $id, space_id: $space_id}) RETURN t',
+            id=request.conversation_id, space_id=space['id'], routing_='r')
+        return {'triage': self._triage_view(dict(rows[0]['t'])) if rows else None}
+
     @staticmethod
     def _triage_view(record):
         return {key: record.get(key) for key in (

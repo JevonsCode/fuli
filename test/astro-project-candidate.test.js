@@ -14,6 +14,7 @@ import { openAiStream } from './fixtures/model-transport.js';
 // projects and prompts, a Provider double and a fake model transport only.
 
 const SPACE = 'synthetic-space';
+const CONVERSATION = 'conversation-synthetic-1';
 const GATE = { status: 'suggestion_only', role: 'assistant', operation: 'project_candidate' };
 const RECEIPT_KEYS = ['backend', 'status', 'reason', 'failureClass', 'fallbackReason', 'requestedModel', 'actualModel', 'attempts', 'usage'];
 const PROMPT = '帮我看一下花园浇水提醒为什么没有按时推送';
@@ -85,6 +86,8 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
   app.taskContextRegistry = contexts.registry;
   const writes = [];
   const reads = [];
+  const labels = new Map();
+  let triageReadError = null;
   app.upsertPersonalProject = async () => { writes.push('upsertPersonalProject'); throw new Error('no project is created'); };
   Object.assign(app.personal, {
     getProjectAgent: async (_, project, id) => ({ agent_id: id, personal_space_id: SPACE, personal_project_id: project, memory_scope: 'task_only',
@@ -98,11 +101,20 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
     collaborationPreferences: async (space, project, limit, agent) => ({ personal_space_id: space, personal_project_id: project,
       project_agent_id: agent, effective_preferences: [], global_preferences: [], conflicts: [] }),
     listPreferenceConflicts: async () => [],
-    conversation: async () => ({}),
-    conversationTriage: async operation => {
+    conversation: async operation => operation === 'append' ? { status: 'saved', conversation_id: CONVERSATION } : {},
+    // The Provider's triage store: a label per conversation, its labeled_at the version.
+    conversationTriage: async (operation, input) => {
       if (operation === 'topics') return { topics: [] };
-      writes.push(`conversationTriage:${operation}`);
-      throw new Error('triage is never recorded at entry');
+      if (operation === 'read') {
+        if (triageReadError) throw triageReadError;
+        return { triage: labels.get(input.conversation_id) ?? null };
+      }
+      assert.equal(operation, 'record');
+      if (input.source !== 'user') writes.push(`conversationTriage:${operation}`);
+      const label = { kind: input.kind, personal_project_id: input.personal_project_id, topic: input.topic, source: input.source,
+        labeled_at: new Date(Date.now() + labels.size + 1).toISOString(), formed_project_id: null };
+      labels.set(input.conversation_id, label);
+      return { triage: label, topic_count: 0 };
     }
   });
   app.searchKnowledge = async () => ({ facts: [], entities: [] });
@@ -138,7 +150,8 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
       assert.deepEqual(result.context.project_resolution, { status: 'global', basis: 'pending_assignment', personal_project_id: null });
     }
   };
-  return { app, entry, contexts, modelCalls, reads, attempts, reservations, assertNoAttribution };
+  return { app, entry, contexts, modelCalls, reads, attempts, reservations, assertNoAttribution, labels,
+    failTriageReads: error => { triageReadError = error; } };
 }
 
 const answer = (fields = {}) => openAiStream(JSON.stringify({ decision: 'propose', payload: { choice: 'project_1' },
@@ -337,17 +350,73 @@ test('malicious answers: an invented project, a forged gate or a claimed binding
   claim.assertNoAttribution(bound);
 });
 
-test('a late answer never outranks a withdrawn approval or a newer attribution', async () => {
-  let approvals = astroRole().egress.approvedProjects;
-  const withdrawn = harness({ role: () => astroRole({ egress: { approvedProjects: approvals, allowUnassigned: true } }),
-    replies: [() => { approvals = approvals.filter(project => project.personalProjectId !== 'garden'); return answer(); }] });
-  const revoked = (await withdrawn.entry()).project_candidate;
-  assert.deepEqual([revoked.status, revoked.reason, revoked.hint], ['superseded', 'permission_changed', undefined]);
-  assert.equal(revoked.modelReceipt.attempts, 1);
+// A model that answers only after `during` ran, as a delayed reply would.
+const delayed = (during, fields) => async () => { await during(); return answer(fields); };
 
-  const run = harness({ role: astroRole(), replies: [() => { run.contexts.attribute('fuli-task-synthetic-1', 'ledger'); return answer(); }] });
-  const moved = (await run.entry()).project_candidate;
-  assert.deepEqual([moved.status, moved.reason, moved.hint], ['superseded', 'attribution_changed', undefined]);
+test('a late answer is not shown once the request would no longer be allowed out', async () => {
+  // Display-time only: what was legitimately sent before cannot be recalled.
+  const withdrawals = {
+    'the chosen project': egress => ({ ...egress, approvedProjects: egress.approvedProjects.filter(project => project.personalProjectId !== 'garden') }),
+    'a candidate that was not chosen': egress => ({ ...egress, approvedProjects: egress.approvedProjects.filter(project => project.personalProjectId !== 'ledger') }),
+    'allowUnassigned for the prompt': egress => ({ ...egress, allowUnassigned: false }),
+    'the role itself': null
+  };
+  for (const [name, withdraw] of Object.entries(withdrawals)) {
+    let role = astroRole();
+    const run = harness({ role: () => role, replies: [delayed(async () => {
+      role = withdraw ? astroRole({ egress: withdraw(role.egress) }) : astroRole({ enabled: false });
+    })] });
+    const hint = (await run.entry()).project_candidate;
+    assert.deepEqual([hint.status, hint.reason, hint.hint, hint.suggestion], ['superseded', 'permission_changed', undefined, undefined], name);
+    assert.deepEqual(hint.gate, GATE, name);
+    assert.equal(hint.modelReceipt.attempts, 1, name);
+    run.assertNoAttribution();
+  }
+
+  // A fallback after an attempt is held back the same way.
+  let role = astroRole();
+  const fallback = harness({ role: () => role, replies: [async () => {
+    role = astroRole({ egress: { ...role.egress, allowUnassigned: false } });
+    return unavailable();
+  }, unavailable] });
+  const held = (await fallback.entry()).project_candidate;
+  assert.deepEqual([held.status, held.reason, held.guidance, fallback.modelCalls.length], ['superseded', 'permission_changed', undefined, 2]);
+});
+
+test('a person\'s triage made while the model runs outranks the late answer', async () => {
+  const label = {
+    'another project': { kind: 'project', personalProjectId: 'ledger' },
+    'a new topic': { kind: 'topic', topic: 'Watering' },
+    'a one-off': { kind: 'one_off' }
+  };
+  for (const [name, correction] of Object.entries(label)) {
+    const run = harness({ role: astroRole(), replies: [delayed(() => run.app.recordConversationTriage({ personalSpaceId: SPACE,
+      conversationId: CONVERSATION, ...correction }))] });
+    const result = await run.entry();
+    assert.deepEqual([result.project_candidate.status, result.project_candidate.reason, result.project_candidate.hint],
+      ['superseded', 'corrected_by_user', undefined], name);
+    // The person's label is the one the store keeps; the model wrote nothing.
+    assert.equal(run.labels.get(CONVERSATION).source, 'user', name);
+    run.assertNoAttribution(result);
+  }
+
+  // A label that was already there is no change; a newer host label is.
+  const steady = harness({ role: astroRole(), replies: [answer()] });
+  steady.labels.set(CONVERSATION, { kind: 'one_off', source: 'host', labeled_at: '2026-10-01T00:00:00.000Z' });
+  assert.equal((await steady.entry()).project_candidate.status, 'suggested');
+  const relabeled = harness({ role: astroRole(), replies: [delayed(async () => {
+    relabeled.labels.set(CONVERSATION, { kind: 'topic', topic: 'Garden', source: 'host', labeled_at: '2026-10-23T00:00:00.000Z' });
+  })] });
+  assert.equal((await relabeled.entry()).project_candidate.reason, 'attribution_changed');
+
+  // An unreadable label cannot prove there was no correction.
+  const unknown = harness({ role: astroRole(), replies: [delayed(async () => unknown.failTriageReads(new Error('Provider unavailable')))] });
+  const unread = (await unknown.entry()).project_candidate;
+  assert.deepEqual([unread.status, unread.reason], ['superseded', 'attribution_unknown']);
+
+  // A newer task attribution, as before.
+  const moved = harness({ role: astroRole(), replies: [delayed(async () => moved.contexts.attribute('fuli-task-synthetic-1', 'ledger'))] });
+  assert.equal((await moved.entry()).project_candidate.reason, 'attribution_changed');
 });
 
 test('Jefa\'s triage and management flows never reach Astro\'s model call', () => {

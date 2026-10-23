@@ -5,7 +5,8 @@ from .agent_conversation_models import (
     ConversationQuery, ConversationWrite, ConversationResume, ConversationPolicyWrite,
 )
 from .conversation_triage_models import (
-    ConversationTriageWrite, ConversationTopicQuery, ConversationTopicFormation, ConversationTopicDecline,
+    ConversationTriageWrite, ConversationTriageRead, ConversationTopicQuery, ConversationTopicFormation,
+    ConversationTopicDecline,
 )
 
 
@@ -57,6 +58,10 @@ def register_agent_conversation_routes(application, store, Actor):
     @application.post('/v1/conversation-triage/record')
     async def triage(request: ConversationTriageWrite, actor: Actor):
         return await store.record_conversation_triage(actor, request)
+
+    @application.post('/v1/conversation-triage/read')
+    async def read_triage(request: ConversationTriageRead, actor: Actor):
+        return await store.read_conversation_triage(actor, request)
 
     @application.post('/v1/conversation-triage/topics')
     async def topics(request: ConversationTopicQuery, actor: Actor):

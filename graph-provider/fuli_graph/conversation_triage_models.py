@@ -38,6 +38,11 @@ class ConversationTopicFormation(StrictModel):
     personal_project_id: str = Field(min_length=1, max_length=128)
 
 
+class ConversationTriageRead(StrictModel):
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    conversation_id: str = Field(min_length=1, max_length=128)
+
+
 class ConversationTopicDecline(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     topic: str = Field(min_length=1, max_length=80)

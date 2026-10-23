@@ -86,7 +86,7 @@ export class GraphitiProviderClient {
     });
   }
   conversationTriage(operation, input) {
-    if (!['record', 'topics', 'form'].includes(operation)) throw new TypeError('Unknown conversation triage operation');
+    if (!['record', 'read', 'topics', 'form'].includes(operation)) throw new TypeError('Unknown conversation triage operation');
     return this.#request(`/v1/conversation-triage/${operation}`, { method: 'POST', body: input });
   }
   currentTaskContext(input, { timeoutMs = this.requestTimeoutMs, signal } = {}) {

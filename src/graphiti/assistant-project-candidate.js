@@ -1,5 +1,7 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
+import { egressAllowed } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
+import { readConversationTriage } from './conversation-triage.js';
 import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
 
 // Astro's project hint for a conversation no deterministic rule attributed
@@ -29,6 +31,8 @@ const NONE_OPTION = Object.freeze({ id: NONE, description: 'The task is not clea
 const PROMPT_VERSION = `${OPERATION}:${contentHash({ instructions: INSTRUCTIONS, none: NONE_OPTION }).slice(0, 16)}`;
 const GATE = Object.freeze({ status: 'suggestion_only', role: ROLE, operation: OPERATION });
 const RESTRICTED = '（候选仅限已批外发的项目）';
+// A role that is gone or disabled allows nothing out.
+const NO_EGRESS = Object.freeze({ approvedProjects: [], allowUnassigned: false });
 const INLINE_GUIDANCE = 'Astro\'s model gave no project hint (see reason). Label the conversation at checkpoint with triage as usual.';
 
 // entry: a task entry that began (or retried) its task. Without a hint it is
@@ -53,17 +57,24 @@ async function suggestProjectCandidate(application, task, entry, taskPrompt) {
   if (!await application.taskContextRegistry.claimSessionHint(task.token, OPERATION, task.sourceApplication).catch(() => false)) return null;
 
   const request = candidateRequest(task, spaceId, taskPrompt, candidates);
+  const conversationId = entry.conversation?.conversation_id ?? null;
+  // The label before the model runs; a later one is newer attribution.
+  const labelBefore = conversationId ? await readConversationTriage(application, conversationId).catch(() => undefined) : null;
   const outcome = await application.roleWork.decide(request, { inline: true });
   if (outcome.modelReceipt.status === 'not_configured') return null;
   const receipt = { requestId: request.requestId, evidenceVersion: request.versions.evidence, promptVersion: PROMPT_VERSION,
     gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) };
+  // Nothing that followed an attempt is shown once the request would no longer be allowed out.
+  if (outcome.modelReceipt.attempts && !egressAllowed(request, assistantSettings(application)?.egress ?? NO_EGRESS)) {
+    return { status: 'superseded', reason: 'permission_changed', ...receipt };
+  }
   if (outcome.status === 'inline') return { status: 'inline', reason: outcome.fallbackReason, guidance: INLINE_GUIDANCE, ...receipt };
   if (outcome.status !== 'answered') return { status: outcome.status, reason: outcome.modelReceipt.reason, ...receipt };
   const { envelope, modelReceipt } = outcome;
   if (envelope.payload.choice === NONE) return null;
-  const project = candidates[optionIds(candidates).indexOf(envelope.payload.choice)];
-  const late = await lateChange(application, task, spaceId, project);
+  const late = await lateAttribution(application, task, conversationId, labelBefore);
   if (late) return { status: 'superseded', reason: late, ...receipt };
+  const project = candidates[optionIds(candidates).indexOf(envelope.payload.choice)];
   const name = projectDisplayName(project);
   return { status: 'suggested', hint: `可能属于「${name}」，需你确认${projects.length > candidates.length ? RESTRICTED : ''}`,
     suggestion: { personalProjectId: project.project_id, name, reason: envelope.reason, uncertainty: envelope.uncertainty },
@@ -105,11 +116,16 @@ function optionIds(candidates) {
   return candidates.map((_, index) => `project_${index + 1}`);
 }
 
-// A late answer never outranks what changed while the model ran: the project's
-// approval was withdrawn, or the task now has a project or another entry.
-async function lateChange(application, task, spaceId, project) {
-  const settings = assistantSettings(application);
-  if (!settings || !approved(settings, spaceId, project.project_id)) return 'permission_changed';
+// A late answer never outranks attribution that changed while the model ran:
+// a person's label on the conversation, any newer label, or a task that now
+// has a project or another entry. An unreadable label proves nothing either way.
+async function lateAttribution(application, task, conversationId, labelBefore) {
+  if (conversationId) {
+    const label = await readConversationTriage(application, conversationId).catch(() => undefined);
+    if (label === undefined) return 'attribution_unknown';
+    if (label?.source === 'user') return 'corrected_by_user';
+    if ((label?.labeled_at ?? null) !== (labelBefore?.labeled_at ?? null)) return 'attribution_changed';
+  }
   const current = await application.taskContextRegistry.context(task.token, task.sourceApplication).catch(() => null);
   return current && !current.personalProjectId ? null : 'attribution_changed';
 }

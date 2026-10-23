@@ -65,6 +65,12 @@ export async function recordTriage(application, task, conversation, label) {
   }
 }
 
+// The conversation's current label or null; labeled_at is its version.
+export async function readConversationTriage(application, conversationId) {
+  return (await application.personal.conversationTriage('read', {
+    personal_space_id: application.config.personal.spaceId, conversation_id: conversationId })).triage;
+}
+
 // A person's correction from the pages. It is stored as source user, so a
 // later host label never overwrites it; no project is formed on the user's behalf.
 export async function recordUserTriage(application, input) {
