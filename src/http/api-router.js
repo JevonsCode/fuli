@@ -13,6 +13,7 @@ import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
 import { handleModelBackendApiRequest } from '../model-backends/http.js';
 import { TONBORG_OPERATIONS } from '../judgment/backend.js';
+import { reviewGateKey } from '../judgment/review-build.js';
 import { FULI_VERSION } from '../package-metadata.js';
 
 export async function handleApiRequest({
@@ -29,6 +30,7 @@ export async function handleApiRequest({
   knowledgeScope = null,
   knowledgeTags = null,
   modelRoleSettings = null,
+  reviewGate = null,
   judgmentUndo = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
@@ -36,7 +38,8 @@ export async function handleApiRequest({
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
-    roleSettings: modelRoleSettings, operations: { tonborg: Object.values(TONBORG_OPERATIONS) } })) return true;
+    roleSettings: modelRoleSettings, operations: { tonborg: Object.values(TONBORG_OPERATIONS) },
+    unlockedBuilds: reviewGate ? modelId => reviewGate.unlockedBuilds(reviewGateKey({ modelId })) : null })) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {
     sendJson(response, 200, {

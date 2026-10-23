@@ -13,7 +13,8 @@ import { VERDICT_FIELDS, verdictProperties } from './verdict-schema.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
 import { PREFERENCE_RECEIPT_VERSION, preferenceDeliveryRecord, preferenceHold,
   readJudgmentPreferences } from './preference-receipt.js';
-import { REVIEW_EXAMPLE, REVIEW_PROMPT_VERSION, REVIEW_SAMPLING, reviewInstructions } from './review-prompt.js';
+import { REVIEW_EXAMPLE, reviewInstructions } from './review-prompt.js';
+import { reviewGateKey } from './review-build.js';
 import { createReviewGate } from './review-gate.js';
 
 const id = z.string().min(1).max(256);
@@ -114,7 +115,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), rev
           records.push(store.record(space, { personalProjectId: project || null, kind: 'review', target: 'review', title: 'Tonborg review',
             ...pendingRecord(answer), policy }, `pending:${answer.pending.packageId}`));
         }
-        const gate = answer.pending ? null : reviewGate.status(reviewGateKey(answer));
+        const gate = answer.pending ? null : reviewGate.status(answerBuild(answer));
         for (const decision of answer.pending ? [] : reviewDecisions(answer.value, schema, candidates)) {
           const candidate = candidates.find(c => c.candidate_key === decision.target);
           // The person may have permanently deleted it while the model answered (rec#5 C9).
@@ -144,7 +145,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), rev
                 await authorize(input, policy);
                 // The person may remove the build's entry while this batch runs, so the gate is read again
                 // right before each write; a refusal is stale and the next review makes it a suggestion.
-                if (reviewGate.status(reviewGateKey(answer)).status !== 'passed') throw Object.assign(new Error('gate_not_passed'), { status: 409, code: 'gate_not_passed' });
+                if (reviewGate.status(answerBuild(answer)).status !== 'passed') throw Object.assign(new Error('gate_not_passed'), { status: 409, code: 'gate_not_passed' });
                 // The intent is stored before the Provider write, so a restart settles it (rec#8 C11).
                 record = store.execute(space, record.id, 'applying', { reviewId: run.review_id, candidateKey: decision.target,
                   aiReviewEvidenceToken: candidate.ai_review_evidence_token }, lease);
@@ -247,13 +248,9 @@ function reviewDecisions(value, schema, candidates) {
   return decisions;
 }
 
-// The build that answered, as the review gate keys it: the model and its
-// served digest, the prompt and context versions, and the sampling. A model
-// receipt names a digest only when its backend reports one; without it no
-// entry matches. A current-session answer names no model.
-function reviewGateKey(answer) {
-  return { modelId: answer.model ?? null, modelDigest: answer.modelReceipt?.modelDigest ?? null,
-    promptVersion: REVIEW_PROMPT_VERSION, contextVersion: PREFERENCE_RECEIPT_VERSION, sampling: REVIEW_SAMPLING };
+// The build that answered, keyed as the review gate keys it (reviewGateKey).
+function answerBuild(answer) {
+  return reviewGateKey({ modelId: answer.model ?? null, modelDigest: answer.modelReceipt?.modelDigest ?? null });
 }
 
 // rec#10 D-24: what the host does with one review verdict. The model's own

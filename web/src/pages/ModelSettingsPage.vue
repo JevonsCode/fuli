@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import {
-  formatCount, readModelRoles, roleName, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
+  formatCount, gateBuilds, readModelRoles, roleName, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -68,9 +68,11 @@ async function conflict(code: ConfigConflict) {
 
 const count = (value: number) => formatCount(value, locale.value)
 
-function facts(view: ModelRoleView) {
+type Fact = { key: string; label: string; value: string; code?: boolean; title?: string }
+
+function facts(view: ModelRoleView): Fact[] {
   const answer = view.answeredBy ? t(`modelSettings.answer.${view.answeredBy}`) : t('modelSettings.none')
-  if (!view.connection) return [{ key: 'answeredBy', label: t('modelSettings.answeredBy'), value: answer }]
+  if (!view.connection) return [{ key: 'answeredBy', label: t('modelSettings.answeredBy'), value: answer }, ...gateFact(view)]
   const budget = view.budget
   const egress = view.egress
   const window = budget ? t('modelSettings.windowBudgetValue', { hours: count(budget.windowHours), tokens: count(budget.maxTokensPerWindow) })
@@ -89,8 +91,16 @@ function facts(view: ModelRoleView) {
       input: count(budget.maxInputTokens), output: count(budget.maxOutputTokens), seconds: count(budget.timeoutMs / 1000) }) : t('modelSettings.none') },
     { key: 'windowBudget', label: t('modelSettings.windowBudget'), value: window },
     { key: 'fallback', label: t('modelSettings.fallback'), value: view.fallbackToSession ? t('modelSettings.allowed') : t('modelSettings.notAllowed') },
-    ...(view.reviewGate ? [{ key: 'gate', label: t('modelSettings.gate'), value: t(`modelSettings.gates.${view.reviewGate.status}`) }] : []),
+    ...gateFact(view),
   ]
+}
+
+function gateFact(view: ModelRoleView): Fact[] {
+  const gate = view.reviewGate
+  if (!gate) return []
+  const builds = gate.entries.length ? gateBuilds(gate) : null
+  return [{ key: 'gate', label: t('modelSettings.gate'), title: builds?.title,
+    value: [t(`modelSettings.gates.${gate.status}`), builds?.text].filter(Boolean).join(' · ') }]
 }
 
 const stateTone = (state: ModelRoleView['state']) =>
@@ -134,7 +144,7 @@ onBeforeUnmount(() => reading?.abort())
               <dl class="model-role-facts">
                 <div v-for="fact in facts(view)" :key="fact.key" :data-model-fact="fact.key">
                   <dt>{{ fact.label }}</dt>
-                  <dd><code v-if="fact.code">{{ fact.value }}</code><template v-else>{{ fact.value }}</template></dd>
+                  <dd :title="fact.title"><code v-if="fact.code">{{ fact.value }}</code><template v-else>{{ fact.value }}</template></dd>
                 </div>
               </dl>
               <footer class="mt-auto flex border-t pt-3">

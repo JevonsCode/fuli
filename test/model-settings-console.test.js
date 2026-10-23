@@ -15,6 +15,9 @@ import { createModelRoleSettings } from '../src/model-backends/role-settings.js'
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { listenFetchableServer } from '../src/server/listen.js';
 import { createServer } from '../src/server.js';
+import { reviewGateKey } from '../src/judgment/review-build.js';
+import { REVIEW_GATE_FILE, createReviewGate } from '../src/judgment/review-gate.js';
+import { gateEntry } from './fixtures/review-gate.js';
 import { reachableModules } from '../test-support/module-graph.js';
 
 // rec#8: the console's model settings page. One role is saved through the
@@ -39,16 +42,19 @@ function edit(overrides = {}) {
   };
 }
 
-async function console_(t, { ledger = new ModelUsageLedger(':memory:') } = {}) {
+async function console_(t, { ledger = new ModelUsageLedger(':memory:'), gate = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-model-settings-'));
   const path = join(directory, 'model-backends.json');
   const port = createModelBackendPort({ readConfig: () => readModelBackendConfig(path), secrets: { read: async () => null }, ledger,
     fetchImpl: async () => { throw new Error('no model call in this test'); }, now: () => NOW });
   const roleSettings = createModelRoleSettings(path);
+  // The real D-24 registry read path, on the registry file in this data directory.
+  const reviewGate = createReviewGate(directory);
+  const unlockedBuilds = gate ? modelId => reviewGate.unlockedBuilds(reviewGateKey({ modelId })) : null;
   const server = createHttpServer(async (request, response) => {
     try {
       if (!await handleModelBackendApiRequest({ request, response, url: new URL(request.url, 'http://local'),
-        modelBackends: port, roleSettings, operations: { tonborg: ['knowledge_review'] } })) response.writeHead(404).end();
+        modelBackends: port, roleSettings, operations: { tonborg: ['knowledge_review'] }, unlockedBuilds })) response.writeHead(404).end();
     } catch (error) {
       const mapped = mapHttpError(error);
       response.writeHead(mapped.status, { 'content-type': 'application/json' }).end(JSON.stringify(mapped.body));
@@ -61,7 +67,7 @@ async function console_(t, { ledger = new ModelUsageLedger(':memory:') } = {}) {
     headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const roles = async () => (await fetch(`${base}/api/model-backends/roles`)).json();
   const bytes = () => { try { return readFileSync(path, 'utf8'); } catch { return null; } };
-  return { path, base, put, roles, bytes, ledger, roleSettings, port };
+  return { path, directory, base, put, roles, bytes, ledger, roleSettings, port };
 }
 
 test('a saved role reads back as the settings page shows it, with key references only', async (t) => {
@@ -133,6 +139,7 @@ test('a file that does not validate is left as it is for repair', async (t) => {
 test('the real console refuses a save from outside the local process boundary and keeps the file', async (t) => {
   const page = await console_(t);
   const runtime = await createServer({ port: 0, dataFormatNotices: () => [], modelRoleSettings: page.roleSettings,
+    reviewGate: createReviewGate(page.directory),
     app: { graphiti: true, modelBackends: page.port, async state() { throw new Error('not queried'); }, close() {} } });
   t.after(() => new Promise(done => runtime.server.close(done)));
   const { port } = runtime.server.address();
@@ -175,6 +182,9 @@ test('the real console refuses a save from outside the local process boundary an
   // The same stack accepts a loopback request with this console's Host.
   assert.equal((await put()).status, 200);
   assert.notEqual(page.bytes(), null);
+  // The same stack reads the D-24 registry for the roles: none here, so nothing is unlocked.
+  const listed = await (await fetch(`${runtime.url}/api/model-backends/roles`)).json();
+  assert.deepEqual(listed.roles.map(role => role.reviewGate.status), Array(4).fill('suggestion_only'));
 });
 
 test('no MCP or Agent tool entry reaches the save, and the catalog marks it local_user_only', () => {
@@ -184,6 +194,42 @@ test('no MCP or Agent tool entry reaches the save, and the catalog marks it loca
   for (const start of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
     assert.equal(reachableModules(join(ROOT, start)).has(save), false, start);
   }
+});
+
+test('each role shows its D-24 review gate read from the real registry file', async (t) => {
+  const page = await console_(t, { gate: true });
+  const registry = join(page.directory, REVIEW_GATE_FILE);
+  const gates = async () => Object.fromEntries((await page.roles()).roles.map(role => [role.role, role.reviewGate]));
+  assert.equal((await page.put('tonborg', edit())).status, 200);
+
+  // No registry file: nothing is unlocked; only Tonborg could be.
+  assert.deepEqual(await gates(), {
+    assistant: { status: 'suggestion_only', reason: 'no_auto_apply', entries: [] },
+    bole: { status: 'suggestion_only', reason: 'no_auto_apply', entries: [] },
+    jefa: { status: 'suggestion_only', reason: 'no_auto_apply', entries: [] },
+    tonborg: { status: 'suggestion_only', reason: 'no_entry', entries: [] }
+  });
+
+  const passing = gateEntry({ modelId: 'qwen-test', modelDigest: 'sha256:synthetic-build' });
+  const write = entries => writeFileSync(registry, JSON.stringify({ version: 1, entries }));
+  write([passing, gateEntry({ modelId: 'another-model' })]);
+  assert.deepEqual((await gates()).tonborg, { status: 'unlocked', reason: null, entries: [{ modelId: 'qwen-test',
+    modelDigest: 'sha256:synthetic-build', harnessVersion: 'synthetic-harness-1', evidence: 'synthetic evaluation fixture',
+    addedAt: '2026-10-22T00:00:00.000Z' }] });
+  assert.equal((await gates()).bole.status, 'suggestion_only');
+
+  // An entry below the gate, or for another prompt version, unlocks nothing.
+  write([{ ...passing, evaluation: { ...passing.evaluation, injection: { accepted: 1, total: 15 } } },
+    { ...passing, promptVersion: 'knowledge-review:older' }]);
+  assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'no_entry', entries: [] });
+  writeFileSync(registry, '{ not json');
+  assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'registry_unreadable', entries: [] });
+
+  // A disabled role is answered by the current session, which is never unlocked.
+  write([passing]);
+  const listed = await page.roles();
+  assert.equal((await page.put('tonborg', edit({ revision: listed.revision, settings: { ...edit().settings, enabled: false } }))).status, 200);
+  assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'no_model', entries: [] });
 });
 
 test('usage keeps unknown values unknown with their count and session fallbacks apart', async (t) => {

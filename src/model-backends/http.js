@@ -9,12 +9,12 @@ import { readJson, sendJson } from '../http/response.js';
 // no MCP or Agent tool calls it, but anything with local shell or HTTP access
 // can. Keys stay a local command (fuli models set-key).
 // operations: the task types each role already sends to its model.
-// TODO(#283): once the Tonborg review gate merges, add tonborg's reviewGate
-// status here; the console shows it read-only when present.
+// unlockedBuilds(modelId): the D-24 review gate registry's passing entries
+// for that model (src/judgment/review-gate.js), read on every request.
 const ROLE_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)$/;
 
 export async function handleModelBackendApiRequest({
-  request, response, url, modelBackends, roleWork = null, roleSettings = null, operations = {}
+  request, response, url, modelBackends, roleWork = null, roleSettings = null, operations = {}, unlockedBuilds = null
 }) {
   const roleEdit = ROLE_ROUTE.exec(url.pathname)?.[1] ?? null;
   if (!roleEdit && !['/api/model-backends/usage', '/api/model-backends/roles'].includes(url.pathname)) return false;
@@ -32,10 +32,25 @@ export async function handleModelBackendApiRequest({
     roleSettings.save(roleEdit, await readJson(request));
   }
   if (roleEdit || url.pathname === '/api/model-backends/roles') {
-    sendJson(response, 200, { ...modelBackends.roles(), operations, workPackages: roleWork?.summary().packages ?? [] });
+    const settings = modelBackends.roles();
+    sendJson(response, 200, { ...settings, roles: settings.roles.map(role => ({ ...role, reviewGate: reviewGate(role, unlockedBuilds) })),
+      operations, workPackages: roleWork?.summary().packages ?? [] });
     return true;
   }
   sendJson(response, 200, modelBackends.usage({ role: url.searchParams.get('role'),
     from: url.searchParams.get('from'), to: url.searchParams.get('to') }));
   return true;
+}
+
+// rec#10 D-24, read-only: whether a role's model may apply its result without
+// the person. Only Tonborg's knowledge review has such a path, and only a
+// model the role is answered by can be unlocked; everything else is a
+// suggestion. A registry this FULI cannot read unlocks nothing.
+function reviewGate(role, unlockedBuilds) {
+  if (role.role !== 'tonborg') return { status: 'suggestion_only', reason: 'no_auto_apply', entries: [] };
+  if (role.answeredBy !== 'model_api') return { status: 'suggestion_only', reason: 'no_model', entries: [] };
+  const builds = unlockedBuilds ? unlockedBuilds(role.connection.model) : { readable: true, entries: [] };
+  if (!builds.readable) return { status: 'suggestion_only', reason: 'registry_unreadable', entries: [] };
+  return builds.entries.length ? { status: 'unlocked', reason: null, entries: builds.entries }
+    : { status: 'suggestion_only', reason: 'no_entry', entries: [] };
 }

@@ -73,16 +73,23 @@ describe('ModelSettingsPage', () => {
     expect(tonborg.get('[data-model-fact="egress"]').text()).toContain('1 个项目')
     expect(tonborg.get('[data-model-fact="callBudget"]').text()).toContain('输入 4,000 · 输出 400 tokens · 30 秒')
     expect(tonborg.get('[data-model-fact="fallback"]').text()).toContain('允许')
-    // No gate fact until the server sends one (#283).
-    expect(tonborg.find('[data-model-fact="gate"]').exists()).toBe(false)
     expect(wrapper.get('[data-model-role="assistant"]').get('[data-model-fact="answeredBy"]').text()).toContain('当前会话')
   })
 
-  it('shows the review gate read-only when the server reports it', async () => {
+  it('shows the D-24 review gate of every role read-only, with the unlocked build', async () => {
     rolesPayload = roles()
-    ;(rolesPayload.roles[3] as Record<string, unknown>).reviewGate = { status: 'suggestion_only' }
+    for (const view of rolesPayload.roles as Array<Record<string, unknown>>) {
+      view.reviewGate = { status: 'suggestion_only', reason: 'no_auto_apply', entries: [] }
+    }
+    ;(rolesPayload.roles[3] as Record<string, unknown>).reviewGate = { status: 'unlocked', reason: null, entries: [{ modelId: 'qwen-test',
+      modelDigest: 'sha256:0123456789abcdef', harnessVersion: 'synthetic-harness-1', evidence: 'synthetic evaluation', addedAt: '2026-10-22T00:00:00.000Z' }] }
     const wrapper = await mountPage()
-    expect(wrapper.get('[data-model-role="tonborg"] [data-model-fact="gate"]').text()).toContain('仅建议')
+    for (const role of ['assistant', 'bole', 'jefa']) {
+      expect(wrapper.get(`[data-model-role="${role}"] [data-model-fact="gate"]`).text()).toContain('仅建议')
+    }
+    const gate = wrapper.get('[data-model-role="tonborg"] [data-model-fact="gate"]')
+    expect(gate.text()).toContain('已放行 · qwen-test@sha256:0…')
+    expect(gate.get('dd').attributes('title')).toBe('qwen-test@sha256:0123456789abcdef (synthetic evaluation)')
   })
 
   it('edits a role in a labelled form and saves it with the revision it read', async () => {

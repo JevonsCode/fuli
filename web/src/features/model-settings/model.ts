@@ -1,5 +1,6 @@
 import { ApiError, getJson, putJson } from '@/api/client'
 import { t } from '@/i18n'
+import { shortUniqueIds } from '@/lib/short-ids'
 
 // The console's model settings page (rec#8): each built-in Agent's model,
 // budget and egress, edited through the loopback route, and its usage from
@@ -53,8 +54,23 @@ export interface ModelRoleView {
   egress?: { approvedProjects: ApprovedProject[]; allowUnassigned: boolean }
   budget?: ModelBudget | null
   fallbackToSession?: boolean
-  // Tonborg's D-24 review gate (fuli PR 283), shown read-only once the server sends it.
-  reviewGate?: { status: 'suggestion_only' | 'unlocked' }
+  // rec#10 D-24, read from the gate registry: only Tonborg's model can be unlocked.
+  reviewGate?: ReviewGateView
+}
+
+export interface GateEntry { modelId: string; modelDigest: string; harnessVersion: string; evidence: string; addedAt: string }
+export interface ReviewGateView { status: 'suggestion_only' | 'unlocked'; reason: string | null; entries: GateEntry[] }
+
+// The unlocked builds as model@digest prefix; the full builds go in a title.
+export function gateBuilds(gate: ReviewGateView): { text: string; title: string } {
+  const digests = shortUniqueIds(gate.entries.map(entry => entry.modelDigest))
+  return {
+    text: gate.entries.map(entry => {
+      const short = digests.get(entry.modelDigest) ?? entry.modelDigest
+      return `${entry.modelId}@${short}${short === entry.modelDigest ? '' : '…'}`
+    }).join(', '),
+    title: gate.entries.map(entry => `${entry.modelId}@${entry.modelDigest} (${entry.evidence})`).join('\n'),
+  }
 }
 
 export interface ModelRolesPayload {

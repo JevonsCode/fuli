@@ -35,6 +35,7 @@ import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledg
 import { reviewUndoConsole } from './judgment/review-undo.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
 import { createModelRoleSettings } from './model-backends/role-settings.js';
+import { createReviewGate } from './judgment/review-gate.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -104,6 +105,9 @@ export async function createServer(options = {}) {
   // Saves a built-in Agent's model settings; reached only by the loopback route.
   const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
     ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath) : null);
+  // The D-24 review gate registry as the model settings page shows it (read on every request).
+  const reviewGate = options.reviewGate ?? (localOptions.runtimeConfigPath
+    ? createReviewGate(dirname(localOptions.runtimeConfigPath)) : null);
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
   // is settled from its recorded operation, and graph deletions the record
   // lost are taken in again; what the graph cannot answer yet stays open for
@@ -190,6 +194,7 @@ export async function createServer(options = {}) {
       knowledgeScope,
       knowledgeTags,
       modelRoleSettings,
+      reviewGate,
       judgmentUndo,
       authority,
       lanAuthorities: allowedLanAuthorities,
@@ -282,6 +287,7 @@ async function handleRequest({
   knowledgeScope,
   knowledgeTags,
   modelRoleSettings,
+  reviewGate,
   judgmentUndo,
   authority,
   lanAuthorities,
@@ -308,6 +314,7 @@ async function handleRequest({
     knowledgeScope,
     knowledgeTags,
     modelRoleSettings,
+    reviewGate,
     judgmentUndo
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
