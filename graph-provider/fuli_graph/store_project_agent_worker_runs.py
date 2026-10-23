@@ -164,6 +164,12 @@ class StoreProjectAgentWorkerRuns:
 
     async def seal_project_agent_worker_session(self, actor, run_id, request, capability):
         async with query_store_transaction(self) as scoped:
+            # Session admission and source deletion take the space lock first.
+            # Sealing must use the same order before it locks a new session.
+            space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
+            await lock_knowledge(scoped, space)
+            await require_source_available(scoped, space, source_application=request.source_application,
+                session_id=request.session_id)
             data = await checked_worker_run(scoped, actor, request, run_id, capability,
                                             proposed_session=request.session_id)
             run = data['run']
