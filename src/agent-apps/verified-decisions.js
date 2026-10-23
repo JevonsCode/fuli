@@ -50,8 +50,14 @@ export function createVerifiedDecisions(context, { presence }) {
 
   // Refuses before any presence prompt when the decision could not be committed
   // now, including a resident service or data migration not yet confirmed.
-  function issueChallenge(decision) {
-    return store.transaction(() => {
+  // lease: the app's owner lease decide() holds; every transaction checks its fence.
+  const transaction = (lease, work) => store.transaction(() => {
+    if (lease) context.leases.assertOwned(lease);
+    return work();
+  });
+
+  function issueChallenge(decision, lease = null) {
+    return transaction(lease, () => {
       const prepared = prepare(decision);
       const nonce = randomBytes(NONCE_BYTES).toString('base64url');
       const challengeId = `apc-${randomBytes(CHALLENGE_ID_BYTES).toString('hex')}`;
@@ -77,15 +83,15 @@ export function createVerifiedDecisions(context, { presence }) {
   // transaction records the failure. The challenge was consumed in step 1 and
   // stays consumed: a failed attempt is never offered to another submitter.
   // A crash between the steps leaves it consumed and unapproved.
-  function commitChallenge(challenge, outcome, actor) {
-    const claimed = store.transaction(() => claimChallenge(challenge));
+  function commitChallenge(challenge, outcome, actor, lease = null) {
+    const claimed = transaction(lease, () => claimChallenge(challenge));
     if (claimed.refusal) throw claimed.refusal;
     let settled;
     try {
-      settled = store.transaction(() => finalize(claimed, outcome, actor));
+      settled = transaction(lease, () => finalize(claimed, outcome, actor));
     } catch (error) {
       try {
-        store.transaction(() => finalizeFailed(claimed, actor, error));
+        transaction(lease, () => finalizeFailed(claimed, actor, error));
       } catch (cleanup) {
         throw new AggregateError([error, cleanup], 'The decision failed, and so did recording it; its challenge stays consumed');
       }
@@ -162,15 +168,20 @@ export function createVerifiedDecisions(context, { presence }) {
 
   async function decide(decision, actor) {
     if (decisionSource(actor).entrypoint !== 'cli') throw new TypeError('A presence-checked decision comes through the CLI');
-    const challenge = issueChallenge(decision);
-    let outcome;
-    try {
-      outcome = await presence.verify({ challengeId: challenge.challengeId, message: challenge.message });
-    } catch {
-      // A check that failed to answer is an unavailable one; the challenge is consumed all the same.
-      outcome = { verified: false, reason: 'presence_unavailable', detail: 'presence_check_failed' };
-    }
-    return commitChallenge(challenge, outcome, actor);
+    // The whole decision, presence check included, is one app operation
+    // (operations.js): refused before any prompt while another FULI process
+    // holds the app, and nothing else of this process changes it meanwhile.
+    return context.operations.run(decision.appId, decision.action, async (lease) => {
+      const challenge = issueChallenge(decision, lease);
+      let outcome;
+      try {
+        outcome = await presence.verify({ challengeId: challenge.challengeId, message: challenge.message });
+      } catch {
+        // A check that failed to answer is an unavailable one; the challenge is consumed all the same.
+        outcome = { verified: false, reason: 'presence_unavailable', detail: 'presence_check_failed' };
+      }
+      return commitChallenge(challenge, outcome, actor, lease);
+    });
   }
 
   return {

@@ -1,7 +1,7 @@
 import { dirname, join } from 'node:path';
 import { createEmployeeService } from '../employees/service.js';
 import { agentAppRoot, createAgentAppService } from '../agent-apps/service.js';
-import { listAgentTools } from '../agent-tools.js';
+import { callAgentTool, listAgentTools } from '../agent-tools.js';
 import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
 import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js';
@@ -147,7 +147,8 @@ export function openFederatedGraphApplication({
     app.employees = createEmployeeService({ app, runtimeConfigPath });
     app.agentApps = createAgentAppService({ root: agentAppRoot(runtimeConfigPath),
       providerIdentity: resolved.personal.providerUrl, resolveOwner: (owner) => app.getProjectAgent(owner),
-      toolNames: () => listAgentTools().map(({ name }) => name) });
+      toolNames: () => listAgentTools().map(({ name }) => name), ownerKind: 'console',
+      callFuliTool: (name, input) => callAgentTool(app, name, input) });
     app.modelBackends = openModelBackendRuntime(paths);
     app.modelTrust = openRoleTrust(paths, app.modelBackends);
     attachJudgmentRuntime(app, paths);

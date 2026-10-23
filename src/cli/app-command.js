@@ -10,7 +10,8 @@ import { presencePort } from '../presence/port.js';
 import { confirmInTerminal, writeLine } from './terminal-io.js';
 
 const USAGE = 'Usage: fl app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | '
-  + 'rollback APP_ID VERSION | delete APP_ID [--data [--output DIR]] | export APP_ID --output DIR  [--runtime-config FILE]';
+  + 'rollback APP_ID VERSION | stop APP_ID [--force] | delete APP_ID [--data [--output DIR]] | export APP_ID --output DIR  '
+  + '[--runtime-config FILE]';
 // Decisions that activate or remove Agent-written code ask at an interactive
 // terminal. That keeps piped callers from answering for the user, but a process
 // of this OS account can open a terminal too, so it does not show a person
@@ -42,7 +43,8 @@ export async function runAppCommand(args, {
   const { runtimeConfigPath } = resolveGraphRuntimeOptions(
     values['runtime-config'] ? ['--runtime-config', values['runtime-config']] : [], env);
   const context = agentAppContext({
-    root: agentAppRoot(runtimeConfigPath), toolNames: () => listAgentTools().map(({ name }) => name), platform
+    root: agentAppRoot(runtimeConfigPath), toolNames: () => listAgentTools().map(({ name }) => name), platform,
+    ownerKind: 'cli'
   });
   const service = agentAppServiceOver(context);
   const decisions = createVerifiedDecisions(context, { presence });
@@ -74,13 +76,16 @@ const ACTIONS = Object.freeze({
       appId, version, actor: localUser(), ...confirmations
     }));
   },
-  disable: ({ service, appId, print }) => printed(print, service.disable({ appId, actor: localUser() })),
+  disable: async ({ service, appId, print }) => printed(print, await service.disable({ appId, actor: localUser() })),
+  // --force against a live FULI process holding the app is refused on every
+  // platform and nothing is signalled (rec#7 D-28.29, rec#11 D-36).
+  stop: async ({ service, appId, values, print }) => printed(print, await service.stop({ appId, force: values.force === true })),
   delete: ({ service, appId, values, confirm, print }) => (values.data
     ? deleteData({ service, appId, values, confirm, print })
     : deleteCode({ service, appId, confirm, print })),
-  export: ({ service, appId, values, print }) => {
+  export: async ({ service, appId, values, print }) => {
     if (!values.output) throw new TypeError(USAGE);
-    return printed(print, service.exportData({ appId, destination: resolve(values.output) }));
+    return printed(print, await service.exportData({ appId, destination: resolve(values.output) }));
   }
 });
 
@@ -114,13 +119,13 @@ const FOLLOW_UPS = Object.freeze({
 async function deleteCode({ service, appId, confirm, print }) {
   const question = `Delete the code and pages of ${appId}? Its data is kept and the app can be restored. [y/N] `;
   if (!await confirm(question, { defaultYes: false })) return printed(print, { deleted: false });
-  return printed(print, service.deleteCode({ appId, actor: localUser() }));
+  return printed(print, await service.deleteCode({ appId, actor: localUser() }));
 }
 
 async function deleteData({ service, appId, values, confirm, print }) {
-  const offer = service.prepareDataDeletion({ appId });
+  const offer = await service.prepareDataDeletion({ appId });
   print(`${appId} keeps ${offer.dataFiles} data files (${offer.dataBytes} bytes). ${offer.warning}`);
-  if (values.output) printed(print, service.exportData({ appId, destination: resolve(values.output) }));
+  if (values.output) printed(print, await service.exportData({ appId, destination: resolve(values.output) }));
   else if (await confirm('Export the data before deleting it? [Y/n] ', { defaultYes: true })) {
     print(`Export first with: ${offer.export}`);
     return { deleted: false };
@@ -128,7 +133,7 @@ async function deleteData({ service, appId, values, confirm, print }) {
   if (!await confirm(`Permanently delete all data of ${appId}? This cannot be undone. [y/N] `, { defaultYes: false })) {
     return printed(print, { deleted: false });
   }
-  return printed(print, service.deleteData({ appId, ticket: offer.ticket, confirm: offer.confirm, actor: localUser() }));
+  return printed(print, await service.deleteData({ appId, ticket: offer.ticket, confirm: offer.confirm, actor: localUser() }));
 }
 
 function approvalPreview(detail, version) {
@@ -143,7 +148,7 @@ function approvalPreview(detail, version) {
     `  data         ${data}`,
     `  resident     ${version.resident ? 'yes, keeps running in the background' : 'no'}`,
     `  files        ${version.files} (${version.bytes} bytes)`,
-    'The approval covers only this exact package. FULI has no app runner yet, so no app code runs now.',
+    'The approval covers only this exact package. FULI has no isolation backend yet, so no app code runs now.',
     PRESENCE_NOTICE,
     'Approve it and continue to Windows Hello? [y/N] '
   ].join('\n');
@@ -171,7 +176,7 @@ function printed(print, result) {
 function parseAppArguments(args) {
   try {
     return parseArgs({ args, allowPositionals: true, strict: true, options: {
-      agent: { type: 'string' }, data: { type: 'boolean' }, output: { type: 'string' },
+      agent: { type: 'string' }, data: { type: 'boolean' }, force: { type: 'boolean' }, output: { type: 'string' },
       'runtime-config': { type: 'string' }
     } });
   } catch (error) {

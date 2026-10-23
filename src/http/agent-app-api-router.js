@@ -55,6 +55,6 @@ export async function handleAgentAppApiRequest({ request, response, url, app }) 
     'data-deletion': () => agentApps.prepareDataDeletion({ appId }),
     'delete-data': () => agentApps.deleteData({ appId, ticket: body.ticket, confirm: body.confirm, actor: LOCAL_CONSOLE })
   };
-  sendJson(response, 200, operations[action]());
+  sendJson(response, 200, await operations[action]());
   return true;
 }
