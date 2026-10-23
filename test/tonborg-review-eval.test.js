@@ -183,6 +183,9 @@ test('results name their scoring contract; older results are read as contract 1 
   assert.equal(legacy.rows[0].recordedOutcome, 'approve');
   assert.throws(() => scoreResults(labels, { dev: current('A'), holdout: legacy }, 1), /different scoring contracts/);
   assert.throws(() => readResults({ scoringContract: { version: 3 }, rows: [] }), /Unknown scoring contract 3/);
+  // a0bc023 wrote an unversioned array whose effectiveOutcome was the pre-gate counterfactual (the record said escalate).
+  assert.throws(() => readResults([{ blindId: 'B', run: 1, valid: true, modelOutcome: 'approve', effectiveOutcome: 'approve',
+    interceptions: ['gate_not_passed', 'manual_policy'], confidence: 0.9 }]), /Scoring contract unknown.*re-run or migrate/);
 });
 
 test('an answer that fails the contract twice is structurally invalid, not an escalation', async t => {

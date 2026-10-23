@@ -33,9 +33,15 @@ export function preGateHostOutcome(modelOutcome, interceptions) {
 }
 
 // One set's results file as { contract, views, rows }. A contract 1 file is
-// read under its own name and views, never as contract 2.
+// read under its own name and views, never as contract 2. Only the published
+// pre-D-24 rows (no interceptions) are contract 1: an unversioned array with
+// interceptions came from a0bc023, whose effectiveOutcome was already the
+// pre-gate counterfactual, so its meaning cannot be told from its shape.
 export function readResults(document) {
   if (Array.isArray(document)) {
+    if (document.some(row => Object.hasOwn(row, 'interceptions'))) {
+      throw new Error('Scoring contract unknown: these results carry interceptions but no contract version; re-run or migrate them from the raw records');
+    }
     return { contract: LEGACY_CONTRACT, views: ['modelOutcome', 'recordedOutcome'],
       rows: document.map(({ effectiveOutcome, ...row }) => ({ ...row, recordedOutcome: effectiveOutcome })) };
   }
