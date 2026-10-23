@@ -976,6 +976,8 @@ class CollaborationContextResult(StrictModel):
     effective_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     task_scope_excluded_count: int = Field(default=0, ge=0)
     task_scope_filtered: bool = False
+    # Keys of preferences limited to a task dimension the request did not state.
+    scope_unknown: list[str] = Field(default_factory=list)
     conflicts: list[CollaborationPreferenceConflict] = Field(default_factory=list)
     queued_conflicts: list['PreferenceConflictRecord'] = Field(default_factory=list)
     source_windows: CollaborationSourceWindows | None = None

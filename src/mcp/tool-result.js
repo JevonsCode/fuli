@@ -37,7 +37,7 @@ export function completePreferenceToolResult(value, limitBytes = TASK_PREFERENCE
   if (!value || (value.preferences_complete !== true && !['blocked', 'paginated'].includes(value.preference_delivery?.status))) {
     throw new ApplicationError('validation', 'Incomplete preference reader projection');
   }
-  const allowed = new Set(['effective_preferences', 'active_conflicts', 'deferred_conflicts',
+  const allowed = new Set(['effective_preferences', 'scope_unknown', 'active_conflicts', 'deferred_conflicts',
     'application_guidance', 'task_guidance', 'judgment_context', 'agent_receipt', 'context',
     'project_agent_context', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_guidance', 'project_scope', 'worker_run',
     'preference_delivery', 'preferences_complete', 'same_task_recovery_available', 'truncated']);

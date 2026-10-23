@@ -26,6 +26,7 @@ import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
+import { taskSceneInput } from '../../graphiti/task-scene.js';
 
 export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
@@ -46,7 +47,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     const basis = inPlaceRefreshBasis(input);
     if (basis) return claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis);
     const context = await invoke('begin_task_context', {
-      sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source
+      sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source, ...taskSceneInput(input.prompt)
     });
     return preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'claude_code',
       'Fuli task context. Read full context; apply effective_preferences. Follow checkpoint_guidance: checkpoint_task_knowledge only when there is something to record; the Stop hook closes the rest. ' + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);

@@ -99,12 +99,14 @@ function journal() {
   };
 }
 
-function entry(client, sessionId, token, recovery, pointer = null) {
+const RULES = [{ preference_key: 'synthetic-rule', preference_scope: 'project', instruction: 'Synthetic rule.' }];
+
+function entry(client, sessionId, token, recovery, pointer = null, { workKind = 'implementation', preferences = RULES } = {}) {
   const scope = { personal_space_id: 'synthetic-space', personal_project_id: 'project', project_agent_id: 'lead',
     session_id: sessionId, source_application: client,
-    preference_scope: { version: 1, work_kind: 'implementation', workflow: null } };
+    preference_scope: { version: 1, work_kind: workKind, workflow: null } };
   return compactTaskContext(withPreferenceScope({ taskContextToken: token, task_context_token: token, checkpoint_required: true,
-    effective_preferences: [{ preference_key: 'synthetic-rule', preference_scope: 'project', instruction: 'Synthetic rule.' }],
+    effective_preferences: preferences,
     context: { personal_project_id: 'project', project_agent_id: 'lead' },
     conversation: { status: 'saved', conversation_id: recovery ? CONVERSATION : `started-${sessionId}`,
       revision: recovery?.revision ?? 0, recovery: recovery ?? null,
@@ -127,8 +129,8 @@ async function fixture(fn) {
   let turn = 0;
   // One task entry: what the hook would inject, its real UTF-8 size, and
   // the recovered messages the model receives.
-  const enter = async (target, recovery, { record = true, pointer = null } = {}) => {
-    const value = entry(target.client, target.sessionId, `task-${++turn}`, recovery, pointer);
+  const enter = async (target, recovery, { record = true, pointer = null, scene } = {}) => {
+    const value = entry(target.client, target.sessionId, `task-${++turn}`, recovery, pointer, scene);
     const hook = through => preferenceHookOutput(value, 'UserPromptSubmit',
       { session_id: target.sessionId, transcript_path: target.path }, through, target.client, 'Synthetic task context.');
     const text = (await hook(delivery)).hookSpecificOutput.additionalContext;
@@ -137,7 +139,7 @@ async function fixture(fn) {
     if (record) await target.inject(text);
     const recoveryOf = context => JSON.parse(context.split('\n').at(-1)).conversation?.recovery ?? null;
     const view = recoveryOf(text);
-    return { text, bytes: bytes(text), fullBytes: bytes(full), recoveryBytes: bytes(JSON.stringify(view)),
+    return { text, frame: JSON.parse(text.split('\n').at(-1)), bytes: bytes(text), fullBytes: bytes(full), recoveryBytes: bytes(JSON.stringify(view)),
       fullRecoveryBytes: bytes(JSON.stringify(recoveryOf(full))), view,
       contents: view?.messages?.map(message => message.content) ?? [] };
   };
@@ -507,3 +509,30 @@ test('the new-session pointer stays in scope, binds and reads nothing, and its t
   assert.equal((await beginConversation(app, task)).recent_conversation, undefined);
   assert.equal(queries.length, 0);
 });
+
+// rec#15 PR1 with PR2: a scene switch frame is a confirmed delivery for both
+// the scene-personalized preferences and the recovered messages it carries.
+test('a scene switch and the recent context confirm together across frontend -> chat -> frontend', () => fixture(async f => {
+  const boundary = { preference_key: 'no-unapproved-push', preference_scope: 'global', profile_aspect: 'judgment_preference',
+    instruction: 'Synthetic boundary: no unapproved force-push.' };
+  const grid = { preference_key: 'grid', preference_scope: 'global', profile_aspect: 'taste',
+    instruction: 'Synthetic frontend grid.', attributes: { tasteDomain: 'frontend' } };
+  const scene = workKind => ({ workKind, preferences: workKind === 'chat' ? [boundary] : [boundary, grid] });
+  const h = await f.open('claude_code', H);
+  f.journal.add('user', 'xxx', 'codex', C, 'jsonl-v1:1:0:0');
+  const frontend = await f.enter(h, f.journal.recovery('claude_code', H), { scene: scene('frontend') });
+  assert.deepEqual(frontend.contents, ['xxx']);
+  assert.equal(frontend.frame.preference_delivery, undefined);
+  const chat = await f.enter(h, f.journal.recovery('claude_code', H), { scene: scene('chat') });
+  assert.equal(chat.frame.preference_delivery.status, 'scene_switch');
+  assert.deepEqual([chat.frame.effective_preferences, chat.frame.preference_delivery.replaces], [[], ['grid']]);
+  assert.deepEqual(chat.contents, [], 'xxx was confirmed by the frontend frame');
+  f.journal.add('user', 'yyy', 'codex', C, 'jsonl-v1:2:0:0');
+  const back = await f.enter(h, f.journal.recovery('claude_code', H), { scene: scene('frontend') });
+  assert.equal(back.frame.preference_delivery.status, 'scene_switch');
+  assert.deepEqual(back.frame.effective_preferences.map(item => item.preference_key), ['grid']);
+  assert.deepEqual(back.contents, ['yyy'], 'only the message no confirmed frame carried');
+  const settled = await f.enter(h, f.journal.recovery('claude_code', H), { scene: scene('frontend') });
+  assert.equal(settled.frame.preference_delivery.status, 'delta', 'the scene switch frame became the baseline');
+  assert.deepEqual([settled.frame.preference_updates, settled.contents], [[], []]);
+}));

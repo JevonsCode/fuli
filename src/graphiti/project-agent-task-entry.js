@@ -6,6 +6,7 @@ import { loadProjectTeamContext } from './project-agent-team-context.js';
 import { isPeerRoleAgent } from './project-team-view.js';
 import { resolveTaskAgentMention } from './project-agent-mention.js';
 import { dismissalLessonHint } from './project-agent-dismissal.js';
+import { taskWorkKind } from './task-scene.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -20,7 +21,8 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
   try {
     const mention = await resolveTaskAgentMention(application, resolution.personalProjectId, input);
     if (mention?.status) return mention;
-    const workKind = input.workKind ?? taskWorkKind(input.taskPrompt);
+    // Selection falls back to project history; preference filtering never does.
+    const workKind = input.workKind ?? taskWorkKind(input.taskPrompt) ?? 'project_context';
     const scope = {
       personal_space_id: application.config.personal.spaceId,
       personal_project_id: resolution.personalProjectId,
@@ -233,24 +235,14 @@ function unrelatedPeer(agent, workKind, required = []) {
     && !(required.length && required.every(value => capabilities.includes(value.toLowerCase())));
 }
 
+// A personal preference reaches a task only through its scoped
+// effective_preferences, never as context knowledge (rec#15 D-27.7).
 function scopedItems(items, agentId) {
-  return (items ?? []).filter(item => !item.project_agent_id || item.project_agent_id === agentId)
+  return (items ?? []).filter(item => !item.profile_aspect && (!item.project_agent_id || item.project_agent_id === agentId))
     .slice(0, 4).map(item => ({
       id: item.id, name: item.name, fact: item.fact, summary: item.summary,
       confirmation_status: item.confirmation_status,
       defined_project_id: item.defined_project_id,
       project_agent_id: item.project_agent_id ?? null
     }));
-}
-
-// Conservative intent hints, not a claim of semantic understanding. Explicit
-// workKind/capabilities take precedence; unmatched requests use project history.
-function taskWorkKind(prompt) {
-  const text = typeof prompt === 'string' ? prompt.slice(0, 8192) : '';
-  if (/代码审查|代码评审|code review|review code/iu.test(text)) return 'code_review';
-  if (/架构|\barchitecture\b/iu.test(text)) return 'architecture';
-  if (/修复|实现|开发|编写代码|优化|改为|接入|\b(?:implement|fix|bug|coding)\b/iu.test(text)) return 'implementation';
-  if (/测试|验证|\b(?:test|verify|validation)\b/iu.test(text)) return 'test_validation';
-  if (/看板|排期|规划|\bplanning\b/iu.test(text)) return 'project_management';
-  return 'project_context';
 }

@@ -125,9 +125,11 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
       agentToolName: 'automatic_task_knowledge_recall'
     })
   ));
+  // A personal preference reaches a task only through its scoped
+  // effective_preferences, never as recalled knowledge (rec#15 D-27.7).
   const results = settlements
     .filter(({ status }) => status === 'fulfilled')
-    .map(({ value }) => value);
+    .map(({ value }) => ({ facts: withoutPreferences(value.facts), entities: withoutPreferences(value.entities) }));
   const failedQueryCount = settlements.length - results.length;
   const focusTerms = distinctivePromptTerms(singleLine(taskPrompt).slice(0, 8192));
   const facts = rankedUnique(
@@ -201,6 +203,10 @@ function recallWithoutSearch(status, plan) {
 
 function taskKnowledgeRetrievalGuidance() {
   return { ...TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE };
+}
+
+function withoutPreferences(items) {
+  return (items ?? []).filter(item => !item?.profile_aspect);
 }
 
 // Human-authoritative first: agent-proposed pending items fill a slot only when

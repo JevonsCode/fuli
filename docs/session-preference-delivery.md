@@ -13,6 +13,16 @@ base/current revision hashes, removed identities and application guidance.
 Current task tokens, identity, role constraints, authority and conflicts remain
 in every result. The cache never supplies permission or current business data.
 
+A task in another scene of the same space, project, Agent, client and session
+(its persisted `preference_scope` changed) gets a `scene_switch` result when an
+acknowledged base exists (rec#15 D-27.8). It lists only the scene-personalized
+set, names the base by `base_result`/`supersedes` and the base keys it takes over
+in `replaces`; boundaries and hard constraints are not listed and stay in force.
+If a boundary changed too, or no base is acknowledged, the result is complete.
+Full results declare `preference_scene`, which is part of the frame hash, so a
+later switch can verify its base. Like any frame, a delivered scene switch also
+confirms the recent-context messages it carries.
+
 Instruction fingerprints use the same mandatory projection as compact entry.
 A single complete `read_task_preferences` result can establish that baseline
 while keeping its additional source metadata. Paginated results, including the

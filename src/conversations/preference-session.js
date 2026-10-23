@@ -6,7 +6,8 @@ import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';
-import { applyPreferenceDeltaSnapshot, copyPreferenceScope, preferenceSnapshot, projectPreferenceDelta } from './preference-snapshot.js';
+import { applyPreferenceDeltaSnapshot, applySceneSwitchSnapshot, framePreferenceSnapshot, preferenceSnapshot, projectPreferenceDelta }
+  from './preference-snapshot.js';
 import { deliveredRecentFrame, MAX_RECENT_FRAMES, ownRecordOffsets, projectRecentContext, recentEvidence,
   validRecentFrames, withoutDeliveryProofs } from './recent-context.js';
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
@@ -127,21 +128,24 @@ function generationState(state, proof) {
   return state;
 }
 
+// The latest verified frame of the same authorized scope, in any scene: a
+// scene switch then names it as the revision it supersedes (rec#15 D-27).
 function acknowledgedSnapshot(value, current, state, proof) {
-  const pending = new Map((state.pending ?? []).filter(item => item.scopeHash === current.scopeHash)
-    .map(item => [item.frameHash, item]));
+  const pending = new Map((state.pending ?? []).map(item => [item.frameHash, item]));
   let baseline = null;
   for (const frame of proof.frames) {
     // A delta names its base result; a record without an ID cannot be one.
     if (frame.offset < (state.floor ?? 0) || !frame.callId) continue;
     const expected = pending.get(preferenceFrameHash(frame.value));
     if (!expected) continue;
-    const delivered = frame.value.preference_delivery?.status === 'delta'
-      ? applyPreferenceDeltaSnapshot(frame.value, baseline)
-      : preferenceSnapshot(copyPreferenceScope(value, frame.value));
-    if (delivered?.scopeHash !== current.scopeHash || delivered?.snapshotHash !== expected.snapshotHash) continue;
-    baseline = { scopeHash: delivered.scopeHash, snapshotHash: delivered.snapshotHash,
-      units: delivered.units, callId: frame.callId };
+    const status = frame.value.preference_delivery?.status;
+    const delivered = status === 'delta' ? applyPreferenceDeltaSnapshot(frame.value, baseline)
+      : status === 'scene_switch' ? applySceneSwitchSnapshot(value, frame.value, baseline)
+        : framePreferenceSnapshot(value, frame.value);
+    if (delivered?.authorityHash !== current.authorityHash || delivered.scopeHash !== expected.scopeHash
+        || delivered.snapshotHash !== expected.snapshotHash) continue;
+    baseline = { scopeHash: delivered.scopeHash, authorityHash: delivered.authorityHash,
+      snapshotHash: delivered.snapshotHash, units: delivered.units, callId: frame.callId };
   }
   return baseline;
 }
