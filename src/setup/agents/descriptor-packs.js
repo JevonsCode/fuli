@@ -19,7 +19,8 @@ export function loadClientDescriptorPacks({ reservedIds = [], external = [], tru
   for (const value of trustedOverrides) {
     const pack = parseClientDescriptor(value);
     const base = builtIn.find(candidate => candidate.id === pack.id);
-    if (!base || reservedIds.includes(pack.id)) throw new TypeError(`Client override id is reserved or unknown: ${pack.id}`);
+    if (!base || reservedIds.includes(pack.id)) throw new ApplicationError('client_pack_reserved',
+      `Client override id is reserved or unknown: ${pack.id}`, { status: 409 });
     if (overrides.has(pack.id)) throw new TypeError(`Duplicate client override: ${pack.id}`);
     if (['configWriter', 'command', 'schemaVersion'].some(field => pack[field] !== base[field])) {
       throw new TypeError(`Client override is incompatible with built-in: ${pack.id}`);

@@ -14,7 +14,7 @@ export function discoverAgents({ platform = process.platform, env = process.env,
   return configuredAgentAdapters(dataDir).map((adapter) => adapter.detect(environment)).filter(Boolean);
 }
 export function connectAgent(agent, context, dependencies = {}) {
-  return agentAdapter(agent.id, context.runtimeConfigPath ? dirname(context.runtimeConfigPath) : undefined).connect(agent, context, dependencies);
+  return agentAdapter(agent.id, context.dataDir ?? (context.runtimeConfigPath ? dirname(context.runtimeConfigPath) : undefined)).connect(agent, context, dependencies);
 }
 export function disconnectAgent(agent, dependencies = {}) {
   return agentAdapter(agent.id).disconnect(agent, dependencies);

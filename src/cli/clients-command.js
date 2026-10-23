@@ -1,3 +1,4 @@
+import { FULI_VERSION } from '../package-metadata.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -65,6 +66,7 @@ export async function runClientsCommand(args, { env = process.env, write = conso
     if (compareSemanticVersions(pack.version, builtin.version) < 0) pack = builtin;
   } else if (action === 'update') {
     if (positional.length) throw new TypeError('Unexpected clients update argument');
+    write(`npm built-in descriptors: FULI v${FULI_VERSION}. Upgrade FULI to obtain newer npm built-ins.`);
     const config = existsSync(runtimePath) ? JSON.parse(readFileSync(runtimePath, 'utf8')) : {};
     if (!config.clientPackTrust) { write('No pinned manifest; using npm built-ins.'); return { status: 'current' }; }
     const result = await readPinnedClientManifest(config.clientPackTrust, { fetchImpl });

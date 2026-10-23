@@ -12,7 +12,7 @@ export function inspectAgentInstallations(agents, context, {
   bootstrapCurrent = isCodexBootstrapCurrent
 } = {}) {
   return agents.map((agent) => {
-    const { registration, ...checks } = agentAdapter(agent.id, context.runtimeConfigPath ? dirname(context.runtimeConfigPath) : undefined).status(agent, context, {
+    const { registration, ...checks } = agentAdapter(agent.id, context.dataDir ?? (context.runtimeConfigPath ? dirname(context.runtimeConfigPath) : undefined)).status(agent, context, {
       readText, readJson, fileExists, bootstrapCurrent
     });
     const skillPairs = [

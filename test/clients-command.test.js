@@ -116,3 +116,87 @@ test('client pack store v1 keeps its schema fingerprint and refuses unknown stor
   writeFileSync(path, JSON.stringify({ ...state, unexpected: true }));
   await assert.rejects(f.run(['status']), /unrecognized|Unrecognized/);
 });
+import { FULI_VERSION } from '../src/package-metadata.js';
+import { createClientInstaller } from '../src/system/client-connection-install.js';
+import { createClientConnectionObserver } from '../src/system/client-connection-status.js';
+import { planLocalUninstall } from '../src/setup/uninstall.js';
+import { runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
+import { resolveSetupPaths } from '../src/setup/paths.js';
+
+for (const absent of [false, true]) {
+  test(`failed apply preserves an intervening edit to a ${absent ? 'new' : 'previously existing'} file`, async t => {
+    const f = fixture(t);
+    if (absent) rmSync(f.agent.globalInstructionsPath);
+    await f.run(['trust', f.source, '--sha256', f.sha256]);
+    let first; let count = 0;
+    const edit = 'External client edit must survive\n';
+    await assert.rejects(f.run(['update', '--apply', 'codex@99.0.0'], { writeFile: (path, text) => {
+      if (++count === 1) { first = path; writeFileSync(path, text); return; }
+      writeFileSync(first, edit); throw new Error('synthetic later write failure');
+    } }));
+    assert.equal(readFileSync(first, 'utf8'), edit);
+    const state = JSON.parse(readFileSync(join(f.dataDir, 'client-packs.json')));
+    assert.match(state.ledger.at(-1).restoreFailures.join('\n'), /intervening edit/);
+    const status = (await f.run(['status'])).find(pack => pack.id === 'codex');
+    assert.equal(status.version, '1.0.0'); assert.equal(status.recoveryRequired, true);
+    await assert.rejects(f.run(['rollback', 'codex']), /intervening edit/);
+    assert.equal(readFileSync(first, 'utf8'), edit);
+  });
+}
+test('update identifies its npm built-in release and the package upgrade path', async t => {
+  const f = fixture(t); const before = snapshot(f.root);
+  await f.run(['update']);
+  assert.ok(f.output.some(line => line.includes(`FULI v${FULI_VERSION}`) && /npm built-in/i.test(line)));
+  assert.match(f.output.join('\n'), /upgrade FULI/i);
+  assert.deepEqual(snapshot(f.root), before);
+});
+
+for (const caller of ['install', 'observe', 'uninstall', 'start']) {
+  test(`${caller} discovers overridden paths and skills from its explicit data directory`, async t => {
+    const f = fixture(t);
+    const packPath = join(f.root, 'pack.json'); const pack = JSON.parse(readFileSync(packPath));
+    pack.detection.clientHome.path = ['.codex-custom']; pack.detection.skillsRoot = { from: 'clientHome', path: ['skills'] }; pack.digest = descriptorDigest(pack);
+    const bytes = JSON.stringify(pack); writeFileSync(packPath, bytes);
+    const manifest = JSON.parse(readFileSync(f.source)); manifest.entries[0].sha256 = hash(bytes);
+    const manifestBytes = JSON.stringify(manifest); writeFileSync(f.source, manifestBytes);
+    await f.run(['trust', f.source, '--sha256', hash(manifestBytes)]);
+    await f.run(['update', '--apply', 'codex@99.0.0']);
+    const paths = resolveSetupPaths({ dataDir: f.dataDir, env: {}, homeDir: f.homeDir });
+    const discover = options => discoverAgents({ ...options,
+      env: { FULI_DATA_DIR: join(f.root, 'different-default') }, homeDir: f.homeDir, commandExists: () => true });
+    const check = agent => {
+      assert.equal(agent.configPath, join(f.homeDir, '.codex-custom', 'config.toml'));
+      assert.ok(agent.skillPath.startsWith(join(f.homeDir, '.codex-custom')));
+    };
+    if (caller === 'install') {
+      const install = createClientInstaller({ paths, discover, install: async agent => { check(agent); return { status: 'connected' }; } });
+      await install({ clientId: 'codex' });
+    } else if (caller === 'observe') {
+      const observer = createClientConnectionObserver({ discover, context: { dataDir: paths.dataDir,
+        nodePath: process.execPath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath: paths.graphRuntimeConfigPath },
+        historyPath: join(paths.dataDir, 'observations.json'), inspect: agents => { check(agents.find(a => a.id === 'codex')); return []; } });
+      observer.observe();
+    } else if (caller === 'uninstall') {
+      const plan = planLocalUninstall({ dataDir: f.dataDir }, { env: {}, discover, resolvePaths: () => paths });
+      check(plan.agents.find(a => a.id === 'codex'));
+    } else {
+      let inspected = false;
+      const result = await runLocalRuntimeCommand('start', ['--data-dir', f.dataDir], { env: {},
+        resolvePaths: () => paths, discoverAgents: discover, inspectAgentInstallations: agents => {
+          check(agents.find(a => a.id === 'codex')); inspected = true; return [];
+        }, start: async () => ({ status: 'started', url: 'http://synthetic.invalid' }), write: () => {} });
+      assert.equal(result.agentSetupCheck.status, 'checked'); assert.equal(inspected, true);
+    }
+  });
+}
+test('apply checks each file again before writing after another file was changed', async t => {
+  const f = fixture(t); await f.run(['trust', f.source, '--sha256', f.sha256]);
+  const beforeInstructions = readFileSync(f.agent.globalInstructionsPath, 'utf8');
+  const edit = '{"external":"intervening hook edit"}\n'; let first = true;
+  await assert.rejects(f.run(['update', '--apply', 'codex@99.0.0'], { writeFile: (path, text) => {
+    writeFileSync(path, text);
+    if (first) { first = false; writeFileSync(f.agent.hooksPath, edit); }
+  } }), /changed during/);
+  assert.equal(readFileSync(f.agent.hooksPath, 'utf8'), edit);
+  assert.equal(readFileSync(f.agent.globalInstructionsPath, 'utf8'), beforeInstructions);
+});

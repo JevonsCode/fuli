@@ -54,8 +54,10 @@ export async function changeClientPack({ dataDir, pack, rollback = false, agent,
     writeClientPackState(dataDir, staged);
     const written = [];
     try {
-      for (const change of accepted) {
-        written.push(change);
+      for (const [index, change] of accepted.entries()) {
+        const actual = existsSync(change.path) ? readFileSync(change.path, 'utf8') : null;
+        if (actual !== change.before) throw new Error(`Client file changed during apply: ${change.path}`);
+        written.push({ ...change, ...files[index] });
         writeFile(change.path, change.after);
       }
       next.ledger.push({ operation, id: pack.id, from: current.version, to: pack.version, status: 'applied', rollback,
@@ -64,7 +66,11 @@ export async function changeClientPack({ dataDir, pack, rollback = false, agent,
     } catch (error) {
       const failures = [];
       for (const change of written.reverse()) {
-        try { if (change.before === null) rmSync(change.path, { force: true }); else writeTextFileAtomic(change.path, change.before); }
+        try {
+          if (restorationContent(change) === undefined) continue;
+          if (change.before === null) rmSync(change.path, { force: true });
+          else writeTextFileAtomic(change.path, change.before, { durable: true });
+        }
         catch (restoreError) { failures.push(`${change.path}: ${restoreError.message}`); }
       }
       state.ledger.push({ operation, id: pack.id, from: current.version, to: pack.version, status: 'failed', files, restoreFailures: failures });
@@ -88,10 +94,8 @@ export async function recoverClientPack({ dataDir, id, confirm, write }) {
     if (!entry) return null;
     const restores = [];
     for (const file of entry.files) {
-      const current = existsSync(file.path) ? readFileSync(file.path, 'utf8') : null;
-      const digest = current === null ? null : sha256Bytes(current);
-      if (digest === file.beforeDigest) continue;
-      if (digest !== file.afterDigest) throw new Error(`Recovery refuses an intervening edit: ${file.path}`);
+      const current = restorationContent(file);
+      if (current === undefined) continue;
       const before = file.beforeDigest === null ? null : readFileSync(file.backupPath, 'utf8');
       if (before !== null && sha256Bytes(before) !== file.beforeDigest) throw new Error(`Recovery backup digest mismatch: ${file.backupPath}`);
       write(`Restore file: ${file.path}\nBackup: ${file.backupPath}\n--- current\n${current}\n+++ restored\n${before ?? '(absent)'}`);
@@ -109,4 +113,13 @@ export async function recoverClientPack({ dataDir, id, confirm, write }) {
     writeClientPackState(dataDir, state);
     return { status: 'recovered', files: restores.length };
   } finally { release(); }
+}
+
+// Both immediate rollback and interrupted-operation recovery compare live bytes.
+function restorationContent(file) {
+  const current = existsSync(file.path) ? readFileSync(file.path, 'utf8') : null;
+  const digest = current === null ? null : sha256Bytes(current);
+  if (digest === file.beforeDigest) return undefined;
+  if (digest !== file.afterDigest) throw new Error(`Recovery refuses an intervening edit: ${file.path}`);
+  return current;
 }
