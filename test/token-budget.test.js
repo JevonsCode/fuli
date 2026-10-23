@@ -102,7 +102,7 @@ const BASELINE = Object.freeze({
   // 8,191 -> 8,302 B (+111 B), measured from the real tools/list.
   // rec#20: the same remember scope unsure, 8,302 -> 8,311 B (+9 B), measured.
   // rec#15 D-27.8: the same remember constraint/workKind/tasteDomain, 8,311 -> 8,426 B
-  // (+115 B, about 30 tokens per request), measured from the real tools/list.
+  // (+115 B), measured bytes from the real tools/list.
   chatToolSchemaBytes: 8426,
   instructionsBytes: 2041,
   // T-P00: the chat profile's own instructions name only listed tools, so a
