@@ -1,4 +1,5 @@
 import { modelFailure, transportFailure } from '../failures.js';
+import { fetchWithoutRedirect, RedirectRefusedError } from '../no-redirect-fetch.js';
 
 // Mechanics shared by every model adapter: one bounded HTTP exchange, error
 // details for classification only (never returned or stored), and
@@ -12,9 +13,12 @@ class ResponseFormatError extends Error {}
 
 export async function postJson({ fetchImpl, url, headers, body, signal }) {
   try {
-    return { response: await fetchImpl(url, { method: 'POST', signal, body: JSON.stringify(body),
+    return { response: await fetchWithoutRedirect(fetchImpl, url, { method: 'POST', signal, body: JSON.stringify(body),
       headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers } }) };
   } catch (error) {
+    // A redirect leaves the endpoint the egress check approved: a stop like
+    // egress_not_approved, never retried and never handed to the session.
+    if (error instanceof RedirectRefusedError) return { failure: modelFailure('refusal', 'endpoint_redirected') };
     return { failure: transportFailure(error) };
   }
 }
