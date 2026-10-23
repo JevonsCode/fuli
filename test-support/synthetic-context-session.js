@@ -11,8 +11,8 @@ const sha = text => createHash('sha256').update(text).digest('hex');
 // A synthetic host: its native transcript, written the way each client records
 // native messages, a tool result or a delivered hook context. `inject` returns
 // the record's offset; a Claude attachment's uuid is `attachment-<offset>`.
-export function syntheticHost(directory, client, sessionId) {
-  const path = join(directory, `${client}-${sessionId}.jsonl`);
+export function syntheticHost(directory, client, sessionId, { fileName = `${client}-${sessionId}.jsonl` } = {}) {
+  const path = join(directory, fileName);
   let size = 0;
   const write = async record => {
     const line = `${JSON.stringify(record)}\n`;
@@ -39,10 +39,10 @@ export function syntheticHost(directory, client, sessionId) {
     compact: () => write(codex ? { type: 'compacted', payload: { window_id: 'next' } }
       : { type: 'system', subtype: 'compact_boundary', sessionId }),
     // A FULI tool result whose structured copy and visible text may differ.
-    toolResult: async (id, structured, visible) => {
+    toolResult: async (id, structured, visible, name = 'mcp__fuli__begin_task_context', input = {}) => {
       const output = JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(visible) }], structuredContent: structured });
-      await write(codex ? { type: 'response_item', payload: { type: 'function_call', name: 'mcp__fuli__begin_task_context', call_id: id } }
-        : { type: 'assistant', sessionId, message: { content: [{ type: 'tool_use', id, name: 'mcp__fuli__begin_task_context' }] } });
+      await write(codex ? { type: 'response_item', payload: { type: 'function_call', name, call_id: id, arguments: JSON.stringify(input) } }
+        : { type: 'assistant', sessionId, message: { content: [{ type: 'tool_use', id, name, input }] } });
       await write(codex ? { type: 'response_item', payload: { type: 'function_call_output', call_id: id, output } }
         : { type: 'user', sessionId, message: { content: [{ type: 'tool_result', tool_use_id: id, content: output }] } });
     },

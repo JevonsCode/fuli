@@ -160,3 +160,17 @@ test('the replay journal answers with the Provider recovery window', () => {
   assert.equal(prefix.truncated, true);
   assert.match(prefix.content, /^y+…$/);
 });
+
+test('explicit resume is reused only after a complete visible result, in both fixtures and clients', async () => {
+  for (const { variant, scenarios } of await variants()) {
+    const scenario = scenarios.find(item => item.scenario === 'explicit_resume');
+    assert.ok(scenario, variant);
+    assert.deepEqual(scenario.checks.filter(check => !check.pass), [], variant);
+    const complete = scenario.detail.filter(turn => turn.note === 'complete after explicit resume');
+    assert.equal(complete.length, 2, variant);
+    for (const turn of complete) {
+      assert.equal(turn.messages_sent, 0, `${variant} ${turn.client}`);
+      assert.equal(turn.correctness.ok, true);
+    }
+  }
+});

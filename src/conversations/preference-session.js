@@ -8,7 +8,7 @@ import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';
 import { applyPreferenceDeltaSnapshot, applySceneSwitchSnapshot, completePreferenceFrame, confirmableScene,
   framePreferenceSnapshot, pendingScene, preferenceSnapshot, projectPreferenceDelta, shownRevision } from './preference-snapshot.js';
-import { deliveredRecentFrame, MAX_RECENT_FRAMES, ownRecordOffsets, projectRecentContext, recentEvidence,
+import { deliveredConversationFrame, deliveredRecentFrame, MAX_RECENT_FRAMES, ownRecordOffsets, projectRecentContext, recentEvidence,
   validRecentFrames, withoutDeliveryProofs } from './recent-context.js';
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
 import { locatePreferenceTranscript } from '../agents/preference-evidence.js';
@@ -50,6 +50,24 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
       adapter: target.adapter } : { known: false };
   }
   return {
+    async recordConversation(value, origin, format) {
+      const result = format(value);
+      if (!SESSION.test(origin.nativeSessionId ?? '')) return result;
+      try {
+        await locked(origin.sourceApplication, origin.nativeSessionId, async (state, save) => {
+          const proof = await observe(origin.sourceApplication, origin.nativeSessionId, origin);
+          if (!proof.known) return;
+          const nativeGeneration = origin.nativeGeneration ? contentHash(origin.nativeGeneration) : null;
+          state = generationState(state, proof, nativeGeneration);
+          const frame = deliveredConversationFrame(value, result);
+          if (!frame) return;
+          await save({ ...state, fileId: proof.fileId, generation: proof.generation,
+            ...(nativeGeneration ? { nativeGeneration } : {}),
+            recent: [...state.recent.filter(item => item.frameHash !== frame.frameHash), frame].slice(-MAX_RECENT_FRAMES) });
+        });
+      } catch { /* A cache failure never changes explicit history delivery. */ }
+      return result;
+    },
     async deliver(value, origin, format) {
       const output = projected => format(withoutDeliveryProofs(projected));
       const snapshot = preferenceSnapshot(value);
@@ -66,11 +84,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // saved its boundary as unknown (floor null); a new native window has
           // one too. In each case the generation starts at the current end, or
           // stays unknown: nothing before it counts and nothing is saved.
-          if (state.untrusted || state.floor === null
-              || (nativeGeneration && state.nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
-            state = { pending: [], recent: [], floor: proof.known ? proof.size : null };
-          }
-          if (proof.known && state.floor !== null) state = generationState(state, proof);
+          state = generationState(state, proof, nativeGeneration);
           // Without a readable generation no frame can ever be confirmed, so
           // none carries a revision.
           const { baseline, shown } = proof.known && state.floor !== null ? acknowledgedSnapshot(value, snapshot, state, proof)
@@ -128,7 +142,12 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
 // A replaced or shortened file proves nothing that is in it now, so the next
 // generation starts at its end. A reset record (compaction) of the same file
 // starts a generation after that record, where the evidence reader begins.
-function generationState(state, proof) {
+function generationState(state, proof, nativeGeneration) {
+  if (state.untrusted || state.floor === null
+      || (nativeGeneration && state.nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
+    return { pending: [], recent: [], floor: proof.known ? proof.size : null };
+  }
+  if (!proof.known) return state;
   const replaced = (state.fileId && state.fileId !== proof.fileId) || (state.floor ?? 0) > proof.size
     || (state.generation && state.generation !== proof.generation && !proof.since);
   if (replaced) return { pending: [], recent: [], floor: proof.size };

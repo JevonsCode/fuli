@@ -49,9 +49,9 @@ export const SCENARIOS = {
   async acceptance(world) {
     const c = await world.open('codex', 'C');
     await c.turn(WORK, { note: 'C turn 1, new session' });
-    const xxx = await talk(c, world, 'xxx');
+    await talk(c, world, 'xxx');
     await c.turn(WORK, { note: 'C turn 2, own xxx' });
-    const yyy = await talk(c, world, 'yyy');
+    await talk(c, world, 'yyy');
     const s1 = await c.turn(WORK, { note: 'S1 C turn 3, own xxx/yyy' });
     world.check('S1: C is sent neither xxx nor yyy', s1.messages_sent === 0);
     const h = await world.open('claude_code', 'H');
@@ -59,12 +59,35 @@ export const SCENARIOS = {
     world.check('S2: the new session gets a pointer and no messages', pointer.pointer_bytes !== null && pointer.messages_sent === 0);
     await h.resume(world.provider.boundTo('codex', c.sessionId).id);
     const resumed = await h.turn(WORK, { note: 'S2 H turn 2, after resume' });
-    world.check('S2: after resume H recovers the xxx/yyy window', sentExactly(resumed, [...xxx, ...yyy]) && sentWholeWindow(resumed));
+    world.check('S2: after the visible resume H holds the window without a resend', resumed.messages_sent === 0 && resumed.correctness.ok);
     const zzz = await talk(h, world, 'zzz');
     await h.turn(WORK, { note: 'S2 H turn 3, own zzz' });
     const back = await c.turn(WORK, { note: 'S3 C turn 4, back in C' });
     world.check('S3: back in C only zzz is sent', sentExactly(back, zzz));
     await c.turn(WORK, { note: 'S3 C turn 5, settled' });
+  },
+
+  async explicit_resume(world) {
+    const c = await world.open('codex', 'C');
+    await c.turn(WORK, { note: 'source entry' });
+    await talk(c, world, 'xxx');
+    const id = world.provider.boundTo('codex', c.sessionId).id;
+    for (const client of ['claude_code', 'codex']) {
+      for (const mode of ['complete', 'lost', 'preview']) {
+        const h = await world.open(client, `${client}-${mode}`);
+        await h.turn(WORK, { note: `${mode} pointer entry` });
+        await h.resume(id, { record: mode !== 'lost', preview: mode === 'preview' });
+        const after = await h.turn(WORK, { note: `${mode} after explicit resume` });
+        world.check(`${client} ${mode}: correct model view`, after.correctness.ok);
+        world.check(`${client} ${mode}: omit only a complete visible result`, mode === 'complete'
+          ? after.messages_sent === 0 : sentWholeWindow(after));
+        await h.compact();
+        const reset = await h.turn(WORK, { note: `${mode} after compaction` });
+        world.check(`${client} ${mode}: compaction restores the window`, sentWholeWindow(reset));
+        const settled = await h.turn(WORK, { note: `${mode} settled` });
+        world.check(`${client} ${mode}: the settled generation resends no messages`, settled.messages_sent === 0);
+      }
+    }
   },
 
   async compact_resume(world) {
@@ -100,7 +123,8 @@ export const SCENARIOS = {
     const fromC = await talk(c, world, 'fromC');
     await h.turn(WORK, { record: false, note: 'H output lost' });
     const again = await h.turn(WORK, { note: 'H resend, recorded' });
-    world.check('failure: H resends the lost messages', sentExactly(again, fromC));
+    world.check('failure: H receives the lost messages, with a whole window when tiny omission metadata costs more',
+      sentExactly(again, fromC) || sentWholeWindow(again));
     await h.turn(WORK, { note: 'H settled' });
   },
 

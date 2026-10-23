@@ -141,6 +141,7 @@ export function createMcpServer(
   const environmentThread = nativeSessionFromEnv(authoritativeSourceApplication, env);
   const nativeThreadId = hostSessionId === null || hostSessionId === environmentThread ? environmentThread : null;
   const effectiveHostSessionId = hostSessionId ?? environmentThread ?? mcpHostSessionId({});
+  const preferenceState = { resets: new Map() };
   const projectActionPreviews = createProjectActionPreviewTokens();
   const tools = createToolMap(
     app,
@@ -153,7 +154,8 @@ export function createMcpServer(
     toolNames ?? workerTaskContext?.toolNames ?? toolNamesForProfile(toolProfile),
     prepareToolInput,
     env,
-    workerTaskContext
+    workerTaskContext,
+    preferenceState
   );
   // Only the named chat profile expands on demand. Restricted custom/remote
   // allow-lists remain a security boundary. Every call keeps its original name.
@@ -163,7 +165,7 @@ export function createMcpServer(
   if (registerResources && !workerTaskContext) registerFuliContextResources(server, app, { withRuntimeLease });
   const onDemandTools = isChatProfile ? createToolMap(app,
     projectActionPreviews, nativeThreadId, effectiveHostSessionId,
-    clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env) : null;
+    clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, preferenceState) : null;
   if (onDemandTools) registerDispatchTool(server);
   registerCallHandler(server, tools, onDemandTools,
     !workerTaskContext && hostSessionId === null ? nativeRequestContext : null);
@@ -200,10 +202,10 @@ function createToolMap(
   toolNames,
   prepareToolInput,
   env = process.env,
-  workerTaskContext = null
+  workerTaskContext = null,
+  preferenceState
 ) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
-  const preferenceState = { resets: new Map() };
   if (toolNames !== null && !Array.isArray(toolNames)) {
     throw new TypeError('MCP toolNames must be an array or null');
   }
@@ -361,18 +363,13 @@ async function invokeTool(tool, input, requestContext = null) {
       // A new MCP process may be a resume/restart. It always establishes a new
       // full baseline, even when an older process left valid cache metadata.
       const native = requestContext?.[NATIVE_CONTEXT];
-      const origin = { ...tool.preferenceOrigin, ...(native ? { nativeSessionId: native.nativeSessionId,
-        nativeGeneration: { execution: native.nativeExecutionId, window: native.contextWindowId } } : {}) };
-      if (origin.nativeSessionId) {
-        const key = JSON.stringify([origin.nativeSessionId, origin.nativeGeneration]);
-        if (!tool.preferenceState.resets.has(key)) {
-          tool.preferenceState.resets.set(key, tool.preferenceDelivery.reset(origin));
-          if (tool.preferenceState.resets.size > 16) tool.preferenceState.resets.delete(tool.preferenceState.resets.keys().next().value);
-        }
-        await tool.preferenceState.resets.get(key);
-      }
+      const origin = await deliveryOrigin(tool, native);
       return await tool.preferenceDelivery.deliver(view,
         { ...origin, forceFull: name === 'read_task_preferences' || !native?.contextWindowId }, format);
+    }
+    if (['resume_agent_conversation', 'read_agent_conversation'].includes(tool.definition.name) && tool.preferenceDelivery) {
+      return await tool.preferenceDelivery.recordConversation(value, await deliveryOrigin(tool, requestContext?.[NATIVE_CONTEXT]),
+        view => successToolResult(view, { limitBytes }));
     }
     if (tool.definition.name === 'list_agent_interfaces') {
       return agentToolCatalogResult(value, tool.catalogDefinitions, input.toolName, limitBytes);
@@ -392,6 +389,20 @@ async function invokeTool(tool, input, requestContext = null) {
     return errorToolResult(tool.worker && requestContext?.signal?.aborted
       ? new ApplicationError('request_cancelled', 'Worker call was cancelled.') : error);
   }
+}
+
+async function deliveryOrigin(tool, native) {
+  const origin = { ...tool.preferenceOrigin, ...(native ? { nativeSessionId: native.nativeSessionId,
+    nativeGeneration: { execution: native.nativeExecutionId, window: native.contextWindowId } } : {}) };
+  if (origin.nativeSessionId) {
+    const key = JSON.stringify([origin.nativeSessionId, origin.nativeGeneration]);
+    if (!tool.preferenceState.resets.has(key)) {
+      tool.preferenceState.resets.set(key, tool.preferenceDelivery.reset(origin));
+      if (tool.preferenceState.resets.size > 16) tool.preferenceState.resets.delete(tool.preferenceState.resets.keys().next().value);
+    }
+    await tool.preferenceState.resets.get(key);
+  }
+  return origin;
 }
 
 async function invokeAgentTool(
