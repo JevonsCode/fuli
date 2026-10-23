@@ -53,18 +53,34 @@ async def check_knowledge_integrity(store, actor, request) -> KnowledgeIntegrity
         OPTIONAL MATCH (trace:FuliKnowledgeAudit {space_id: $space_id, action: 'hard_delete'})
         WHERE (ref.kind = 'episode' AND ref.id IN coalesce(trace.removed_episode_ids, []))
            OR (ref.kind + ':' + ref.id) IN coalesce(trace.deleted_item_keys, [])
-        RETURN ref.kind AS kind, ref.id AS id, present, collect(DISTINCT trace.id) AS deletion_ids
-        ''', references=list(references.values()), group_id=space['group_id'], space_id=space['id'], routing_='r')
+        RETURN ref.kind AS kind, ref.id AS id, present, collect(DISTINCT trace.id) AS deletion_ids,
+               null AS source_application, null AS session_id
+        UNION ALL
+        MATCH (episode:Episodic {group_id: $group_id})
+        WHERE $has_sessions AND episode.fuli_source_application IS NOT NULL
+          AND episode.fuli_session_id IS NOT NULL
+        RETURN DISTINCT 'session_source' AS kind, null AS id, false AS present, [] AS deletion_ids,
+               episode.fuli_source_application AS source_application, episode.fuli_session_id AS session_id
+        ''', references=list(references.values()), group_id=space['group_id'], space_id=space['id'],
+        has_sessions=any(kind == 'session' for kind, _ in references), routing_='r')
+    # Episode-only sessions need no task-session node. Read their identity pairs
+    # in the same query as the tasks/tombstones, then reuse the Provider's opaque
+    # ID function; no source text is read and no client invents an ID.
+    episode_sessions = {store._task_session_id(space['id'], row['source_application'], row['session_id'])
+                        for row in records if row['kind'] == 'session_source'}
     missing, resurrected, deletions = [], [], set()
     present_count = deleted_count = 0
     for row in records:
+        if row['kind'] == 'session_source':
+            continue
         ref = KnowledgeIntegrityRef(kind=row['kind'], id=row['id'])
+        present = row['present'] or (ref.kind == 'session' and ref.id in episode_sessions)
         if row['deletion_ids']:
             deletions.update(row['deletion_ids'])
             deleted_count += 1
-            if row['present']:
+            if present:
                 resurrected.append(ref)
-        elif row['present']:
+        elif present:
             present_count += 1
         else:
             missing.append(ref)

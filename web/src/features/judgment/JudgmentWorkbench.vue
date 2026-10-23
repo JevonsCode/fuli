@@ -2,6 +2,7 @@
 import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from 'vue'
 
+import { isKnowledgeRecoveryPending } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import { useWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
@@ -16,6 +17,7 @@ const props = defineProps<{ personalSpaceId: string }>()
 const records = ref<JudgmentDecisionRecord[]>([])
 const loading = ref(false)
 const error = ref('')
+const recoveryPending = ref(false)
 const reviewError = ref('')
 const filter = ref<'all' | 'human'>('human')
 const reviewing = ref(false)
@@ -45,6 +47,7 @@ watch(() => props.personalSpaceId, (scope) => {
   scopeGeneration += 1
   reviewGeneration += 1
   feedbackGeneration += 1
+  recoveryPending.value = false
   records.value = []
   feedbackReasons.value = {}
   feedbackReasonDirty.value = new Set()
@@ -71,6 +74,24 @@ function applyRecords(next: JudgmentDecisionRecord[]) {
   feedbackReasons.value = reasons
 }
 
+function recoveryFailure(cause: unknown) {
+  if (!isKnowledgeRecoveryPending(cause)) return false
+  // Invalidate in-flight reads and writes too: a late response cannot restore
+  // a body while the current space's deletion record is unconfirmed.
+  scopeGeneration += 1
+  records.value = []
+  feedbackReasons.value = {}
+  feedbackReasonDirty.value = new Set()
+  loading.value = false
+  reviewing.value = false
+  feedbackSavingId.value = null
+  undoingId.value = null
+  reviewError.value = ''
+  recoveryPending.value = true
+  error.value = t('common.errors.knowledgeRecoveryPending')
+  return true
+}
+
 async function load(scopeInput?: unknown) {
   const scope = typeof scopeInput === 'string' ? scopeInput : props.personalSpaceId
   const current = scopeGeneration
@@ -84,11 +105,12 @@ async function load(scopeInput?: unknown) {
   try {
     const result = await loadJudgmentRecords(scope)
     if (isCurrentScope(scope, current) && requestGeneration === loadGeneration) {
+      recoveryPending.value = false
       applyRecords(Array.isArray(result.records) ? result.records : [])
     }
   } catch (cause) {
     if (isCurrentScope(scope, current) && requestGeneration === loadGeneration) {
-      error.value = cause instanceof Error ? cause.message : judgmentText('workbench.loadError')
+      if (!recoveryFailure(cause)) error.value = cause instanceof Error ? cause.message : judgmentText('workbench.loadError')
     }
   } finally {
     if (isCurrentScope(scope, current) && requestGeneration === loadGeneration) loading.value = false
@@ -110,7 +132,7 @@ async function review() {
     applyRecords([...next.values()])
   } catch (cause) {
     if (isCurrentScope(scope, current) && requestGeneration === reviewGeneration) {
-      reviewError.value = cause instanceof Error ? cause.message : judgmentText('workbench.reviewError')
+      if (!recoveryFailure(cause)) reviewError.value = cause instanceof Error ? cause.message : judgmentText('workbench.reviewError')
     }
   } finally {
     if (isCurrentScope(scope, current) && requestGeneration === reviewGeneration) reviewing.value = false
@@ -161,6 +183,7 @@ async function persistFeedback(record: JudgmentDecisionRecord, nextVote: Judgmen
     if (isCurrentScope(scope, current) && requestGeneration === feedbackGeneration) replaceFeedback(updated)
   } catch (cause) {
     if (!isCurrentScope(scope, current) || requestGeneration !== feedbackGeneration) return
+    if (recoveryFailure(cause)) return
     if (statusCode(cause) === 409) {
       await load(scope)
       if (isCurrentScope(scope, current)) error.value = judgmentText('workbench.feedbackConflict')
@@ -183,7 +206,7 @@ async function undo(record: JudgmentDecisionRecord) {
     const index = records.value.findIndex(candidate => candidate.id === updated.id)
     if (index >= 0) records.value.splice(index, 1, updated)
   } catch (cause) {
-    if (isCurrentScope(scope, current)) error.value = cause instanceof Error ? cause.message : judgmentText('workbench.reviewError')
+    if (isCurrentScope(scope, current) && !recoveryFailure(cause)) error.value = cause instanceof Error ? cause.message : judgmentText('workbench.reviewError')
   } finally {
     if (isCurrentScope(scope, current)) undoingId.value = null
   }
@@ -291,7 +314,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
 
     <UiSegmented v-model="filter" class="judgment-filter" :label="judgmentText('workbench.filter')" :options="filterOptions" />
 
-    <GrowthLoading v-if="loading && !records.length" variant="compact" :label="judgmentText('workbench.loading')" />
+    <GrowthLoading v-if="loading && !records.length && !recoveryPending" variant="compact" :label="judgmentText('workbench.loading')" />
     <GrowthLoading v-else-if="loading" variant="inline" :label="judgmentText('workbench.loading')" />
     <div v-if="error" class="judgment-workbench-error" role="alert">
       <span>{{ error }}</span>

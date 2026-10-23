@@ -56,7 +56,7 @@ export interface HardDeletePublication {
 
 export interface HardDeletePreview {
   publications?: HardDeletePublication[]
-  drafts?: { pending: number; submitted: number }
+  drafts?: { pending: number; submitted: number; submitting: number; unknown: number }
   preview_id: string
   item_kind: ItemKind
   item_id: string

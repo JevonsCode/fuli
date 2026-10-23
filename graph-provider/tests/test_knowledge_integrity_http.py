@@ -80,3 +80,38 @@ async def test_integrity_deduplicates_inventory_and_flags_resurrected_tombstones
         'status': 'attention_required', 'expected_count': 3, 'present_count': 1,
         'hard_deleted_count': 2, 'missing_count': 0, 'missing': [],
         'resurrected': [{'kind': 'relationship', 'id': 'resurrected'}], 'deletion_ids': ['d']}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('audited', [False, True])
+async def test_episode_only_session_presence_is_not_reported_as_absence(audited):
+    from fuli_graph.provider_values import stable_uuid
+
+    target = stable_uuid('provider', 'space', 'codex', 'host-session', 'task-context-session')
+
+    class EpisodeOnlyDriver:
+        async def execute_query(self, query, **params):
+            assert params['group_id'] == 'synthetic-group'
+            assert 'episode.fuli_source_application AS source_application' in query
+            assert params['has_sessions'] is True
+            return ([{'kind': 'session', 'id': target, 'present': False,
+                      'deletion_ids': ['deleted-session'] if audited else []},
+                     {'kind': 'session_source', 'source_application': 'codex', 'session_id': 'host-session'}],
+                    None, None)
+
+    app = application(EpisodeOnlyDriver())
+    app.state.store._task_session_id = lambda space, client, session: stable_uuid(
+        'provider', space, client, session, 'task-context-session')
+
+    async def authorize(actor, space_id, role):
+        return {'id': space_id, 'group_id': 'synthetic-group', 'kind': 'personal'}
+
+    app.state.store.authorize = authorize
+    response = await call(app, '/v1/knowledge/integrity', {'personal_space_id': 'space',
+                          'references': [{'kind': 'session', 'id': target}]}, REVIEW)
+    assert response.status_code == 200
+    report = response.json()
+    assert report['missing'] == []
+    assert report['present_count'] == (0 if audited else 1)
+    assert report['resurrected'] == ([{'kind': 'session', 'id': target}] if audited else [])
+    assert report['status'] == ('attention_required' if audited else 'healthy')

@@ -14,6 +14,8 @@ import SessionRecordPeek from '@/features/session-records/SessionRecordPeek.vue'
 import SessionRecordsPage from '@/pages/SessionRecordsPage.vue'
 import KnowledgeItemEditPage from '@/pages/KnowledgeItemEditPage.vue'
 import { useConsoleStore } from '@/stores/console'
+import { setLocale } from '@/i18n'
+import { sourceRowTitle } from './source-delete-model'
 import { hardDeleteStatus } from './hard-delete-api'
 import type { SourceDeletePreview, SourceDeleteTarget } from './source-delete-model'
 import type { SessionRecordsView, SessionEntry } from '@/features/session-records/model'
@@ -65,7 +67,7 @@ async function choose(key: string) {
 async function submit() { dialog().querySelector('form')!.dispatchEvent(new Event('submit')); await flushPromises() }
 const disabled = () => dialog().querySelector<HTMLButtonElement>('[data-hard-delete-submit]')!.disabled
 
-beforeEach(() => { vi.resetAllMocks(); document.body.innerHTML = '' })
+beforeEach(() => { vi.resetAllMocks(); document.body.innerHTML = ''; setLocale('zh-CN', { persist: false }) })
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
 
 describe('source deletion uses the authoritative two-layer preview', () => {
@@ -114,12 +116,12 @@ describe('source deletion uses the authoritative two-layer preview', () => {
     expect(dialog().querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!.value).toBe('')
   })
 
-  it('explains attached relationships and leaves endpoint-first retention possible', async () => {
+  it('disables selected attached relationships while allowing endpoint retention', async () => {
     const value = preview()
     value.default_items.push({ ...value.default_items[0]!, key: 'relationship:edge', reason: 'attached_relationship' })
     postJson.mockResolvedValue(value)
     await open()
-    expect(dialog().querySelector<HTMLButtonElement>('[data-source-row="relationship:edge"] [role="checkbox"]')!.disabled).toBe(false)
+    expect(dialog().querySelector<HTMLButtonElement>('[data-source-row="relationship:edge"] [role="checkbox"]')!.disabled).toBe(true)
     expect(dialog().querySelector<HTMLButtonElement>('[data-source-row="entity:head"] [role="checkbox"]')!.disabled).toBe(false)
   })
 
@@ -139,8 +141,8 @@ describe('source deletion uses the authoritative two-layer preview', () => {
 
 const entry: SessionEntry = { number: 1, key: 'entity:head', kind: 'entity', type: 'Note', group: 'knowledge',
   summary: 'SYNTHETIC', project: null, link: '', detail: { sources: [{ episode_id: 'actual-episode', turn: 'turn:one' }] } }
-async function peek(view: SessionRecordsView) {
-  const host = defineComponent({ components: { Dialog, DialogContent, SessionRecordPeek }, setup: () => ({ view, entry }),
+async function peek(view: SessionRecordsView, selected = entry) {
+  const host = defineComponent({ components: { Dialog, DialogContent, SessionRecordPeek }, setup: () => ({ view, entry: selected }),
     template: '<Dialog open><DialogContent><SessionRecordPeek :entry="entry" :view="view" space-id="space" /></DialogContent></Dialog>' })
   const wrapper = mount(host, { attachTo: document.body, global: { plugins: [await router()] } })
   wrappers.push(wrapper); await flushPromises(); return wrapper
@@ -154,7 +156,7 @@ it('shows episode IDs from evidence and no whole-session action without the Prov
   expect(document.body.querySelector('[data-source-delete-open="session"]')).toBeNull()
   wrapper.unmount()
   await peek({ ...view, session: { ...view.session, deletionTargetId: 'provider-opaque' } })
-  expect(document.body.querySelector('[data-source-delete-open="session"]')).not.toBeNull()
+  expect(document.body.querySelector('[data-source-delete-open="session"]')).toBeNull()
 })
 
 it('clears item content and source excerpts after a source deletion with unknown result', async () => {
@@ -204,7 +206,10 @@ it('deletes a whole session with no visible records using its Provider target an
   await route.push('/s/session-one'); await route.isReady()
   const wrapper = mount(SessionRecordsPage, { attachTo: document.body, global: { plugins: [pinia, route] } }); wrappers.push(wrapper)
   await flushPromises()
-  await wrapper.get('[data-source-delete-open="session"]').trigger('click'); await flushPromises()
+  expect(wrapper.get('[data-session-records]').element.lastElementChild?.hasAttribute('data-hard-delete-section')).toBe(true)
+  expect(wrapper.find('[data-source-delete-open="session"]').exists()).toBe(false)
+  await wrapper.get('[data-hard-delete-toggle] button').trigger('click')
+  await wrapper.get('[data-hard-delete-open]').trigger('click'); await flushPromises()
   await type('delete'); await submit()
   expect(wrapper.find('[data-source-deleted-page]').exists()).toBe(true)
   expect(wrapper.find('[data-session-total]').exists()).toBe(false)
@@ -248,4 +253,107 @@ it('recognizes the Provider source_hard_deleted response and checks status inste
   expect(wrapper.emitted('deleted')?.[0]?.[0]).toMatchObject({ outcome: 'gone' })
   expect(dialog()).toBeNull()
   expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/status', { personalSpaceId: 'space' }])
+})
+
+
+it('labels the row by its current version and falls back to its first sentence, never its opaque key', async () => {
+  const value = preview()
+  expect(sourceRowTitle(value.default_items[0]!)).toBe('Head')
+  value.default_items[0]!.versions[1]!.title = ''
+  value.default_items[0]!.versions[1]!.content = 'Current first sentence. More content.'
+  expect(sourceRowTitle(value.default_items[0]!)).toBe('Current first sentence.')
+  postJson.mockResolvedValue(value)
+  await open()
+  const row = dialog().querySelector('[data-source-row="entity:head"]')!
+  expect(row.querySelector('label')!.textContent).toContain('Current first sentence.')
+  expect(row.querySelector('[role="checkbox"]')!.getAttribute('aria-label')).toBe('删除知识：Current first sentence.')
+})
+
+it.each(['zh-CN', 'en-US'] as const)('orders source sections and distinguishes selection refresh in %s', async locale => {
+  setLocale(locale, { persist: false })
+  const value = preview({ drafts: { pending: 2, submitted: 1, submitting: 0, unknown: 0 }, publications: [{
+    draft_id: 'draft', project_id: 'Synthetic public', provider_url: 'https://synthetic.invalid', proposal_id: 'proposal',
+    source_episode_ids: ['source/opaque'], status: 'submitted', local_delete_retracts: false, withdrawal_status: 'unavailable', withdrawal_url: null,
+  }] })
+  let finish!: (value: SourceDeletePreview) => void
+  postJson.mockResolvedValueOnce(value).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  await open(); await type('delete')
+  const area = dialog().querySelector('[data-hard-delete-preview]')!
+  const sequence = [...area.children].filter(node => node.matches('section,form')).map(node => node.tagName === 'FORM' ? 'confirm'
+    : node.hasAttribute('data-source-layer') ? node.getAttribute('data-source-layer') : [...node.attributes].find(attr => attr.name.startsWith('data-hard-delete'))?.name)
+  expect(sequence).toEqual(['data-hard-delete-publications', 'data-hard-delete-sources', 'default_items', 'affected_items', 'data-hard-delete-records', 'data-hard-delete-kept', 'confirm'])
+  const sources = area.querySelector('[data-hard-delete-sources]')!
+  expect(sources.querySelector('[data-source-conversation-counts]')?.previousElementSibling?.textContent).toContain(locale === 'zh-CN' ? '所选范围内' : 'selected scope')
+  expect(area.querySelector('a')).toBeNull()
+  await choose('entity:other')
+  expect(area.textContent).toContain(locale === 'zh-CN' ? '正在按新选择重新列出将删除的内容' : 'Listing what will be deleted for the new selection')
+  expect(area.textContent).toContain(locale === 'zh-CN' ? '选择已改变，确认已清空；请按新列表重新输入。' : 'Selection changed and the confirmation was cleared; type it again for the new list.')
+  const selected = preview({ include: ['entity:other'] }); selected.affected_items[0]!.selected = true
+  finish(selected); await flushPromises()
+  const row = area.querySelector('[data-source-row="entity:other"]')!
+  expect(row.textContent).toContain(locale === 'zh-CN' ? '已加入删除：这条知识的全部版本会一起删除；它另外 1 段来源不在范围内，会保留。' : 'Added to the deletion: every version of this knowledge will be deleted; its other 1 sources are outside this scope and stay.')
+  expect(row.querySelector('label')!.textContent).not.toContain(locale === 'zh-CN' ? '删除后保留' : 'remain after deletion')
+  expect(disabled()).toBe(true)
+})
+
+it.each(['zh-CN', 'en-US'] as const)('blocks submitting drafts but permits unknown submissions in %s', async locale => {
+  setLocale(locale, { persist: false })
+  postJson.mockResolvedValueOnce(preview({ drafts: { pending: 0, submitted: 0, submitting: 2, unknown: 3 } }))
+  const wrapper = await open(); await type('delete')
+  const sources = dialog().querySelector('[data-hard-delete-sources]')!
+  expect(sources.querySelector('[data-drafts-submitting]')!.textContent).toBe(locale === 'zh-CN'
+    ? '2 份公开草稿正在提交，提交结束前不能删除。' : '2 public drafts are being submitted; delete after they finish.')
+  expect(sources.querySelector('[data-drafts-unknown]')!.textContent).toBe(locale === 'zh-CN'
+    ? '3 份公开草稿提交结果未知，公开项目可能已收到正文，FULI 无法撤回；删除只清本机副本。'
+    : '3 public drafts have an unknown submission result; the public project may already have the text and FULI cannot retract it. Deleting clears only the local copy.')
+  expect(disabled()).toBe(true); await submit(); expect(postJson).toHaveBeenCalledTimes(1)
+  expect(sources.querySelector('a')).toBeNull()
+  wrapper.unmount()
+  postJson.mockResolvedValueOnce(preview({ drafts: { pending: 0, submitted: 0, submitting: 0, unknown: 1 } }))
+    .mockResolvedValueOnce({ outcome: 'complete', ...target, counts })
+  await open(); await type('delete'); expect(disabled()).toBe(false); await submit()
+  expect(postJson.mock.calls.at(-1)?.[0]).toContain('/hard-delete')
+})
+
+it('keeps source deletion controls absent for a peek with no source identity', async () => {
+  const view: SessionRecordsView = { session: { sourceApplication: 'codex', sessionId: 'session', url: '', deletionTargetId: 'target' }, entries: [], total: 0, stretches: [], truncated: false }
+  await peek(view, { ...entry, detail: {} })
+  expect(document.body.querySelector('[data-source-delete-controls]')).toBeNull()
+})
+
+
+it('distinguishes several source actions by the saved turn and time', async () => {
+  const turn = { number: 7, key: 'turn:one', kind: 'turn', type: 'turn', group: 'transcript', summary: '', project: null, link: '', detail: {}, at: '2026-10-23T08:30:00Z' } as SessionEntry
+  const second = { ...turn, key: 'turn:two', number: 8, at: '2026-10-23T09:45:00Z' }
+  const view: SessionRecordsView = { session: { sourceApplication: 'codex', sessionId: 'session', deletionTargetId: 'opaque', url: '' }, entries: [turn, second], total: 2, stretches: [], truncated: false }
+  await peek(view, { ...entry, detail: { sources: [{ episode_id: 'first', turn: turn.key }, { episode_id: 'second', turn: second.key }] } })
+  const buttons = [...document.body.querySelectorAll('[data-source-delete-open="episode"]')]
+  expect(buttons).toHaveLength(2)
+  expect(buttons[0]!.textContent).toMatch(/删除这段来源：#7 · .+…/)
+  expect(buttons[1]!.textContent).toMatch(/删除这段来源：#8 · .+…/)
+  expect(buttons[0]!.textContent).not.toBe(buttons[1]!.textContent)
+  expect(document.body.querySelector('[data-source-delete-open="session"]')).toBeNull()
+})
+
+
+it.each(['zh-CN', 'en-US'] as const)('rechecks public submission results through a fresh preview and clears typed confirmation in %s', async locale => {
+  setLocale(locale, { persist: false })
+  let finish!: (value: SourceDeletePreview) => void
+  postJson.mockResolvedValueOnce(preview({ drafts: { pending: 0, submitted: 0, submitting: 0, unknown: 1 } }))
+    .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    .mockResolvedValueOnce({ outcome: 'complete', ...target, counts })
+  await open(); await type('delete')
+  expect(disabled()).toBe(false)
+  const recheck = dialog().querySelector<HTMLButtonElement>('[data-drafts-recheck] button')!
+  expect(recheck.textContent).toBe(locale === 'zh-CN' ? '重新确认提交结果' : 'Recheck submission result')
+  recheck.click(); await flushPromises()
+  expect(disabled()).toBe(true)
+  expect(dialog().querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!.value).toBe('')
+  expect(dialog().querySelector('[data-drafts-recheck]')!.textContent).toContain(locale === 'zh-CN' ? '正在重新确认公开草稿提交结果' : 'Rechecking public draft submission results')
+  expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/preview', { personalSpaceId: 'space', include: [], exclude: [] }])
+  finish(preview({ preview_id: 'reconciled-digest', drafts: { pending: 0, submitted: 1, submitting: 0, unknown: 0 } })); await flushPromises()
+  expect(dialog().querySelector('[data-drafts-recheck]')).toBeNull()
+  expect(disabled()).toBe(true)
+  await type('delete'); await submit()
+  expect(postJson.mock.calls[2]?.[1].previewId).toBe('reconciled-digest')
 })

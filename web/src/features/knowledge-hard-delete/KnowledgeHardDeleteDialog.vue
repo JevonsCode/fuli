@@ -37,6 +37,7 @@ const selection = ref<SourceDeleteSelection>({ include: [], exclude: [] })
 const previewValid = ref(false)
 const loading = ref(false)
 const reloading = ref(false)
+const reloadCause = ref<'selection' | 'submission' | 'changed'>('changed')
 const deleting = ref(false)
 watch(deleting, value => emit('pending', value), { flush: 'sync' })
 const typed = ref('')
@@ -45,17 +46,18 @@ const error = ref('')
 let request = 0
 
 const ready = computed(() => previewValid.value && Boolean(preview.value) && !loading.value && !reloading.value
-  && confirmationMatches(preview.value!, typed.value))
+  && !preview.value?.drafts?.submitting && confirmationMatches(preview.value!, typed.value))
 const records = computed(() => preview.value ? recordCounts(preview.value.counts) : [])
 const publicProjects = computed(() => [...new Set((preview.value?.publications ?? [])
   .map(publication => publication.project_name || publication.project_id))].join(' / '))
 const when = (value?: string | null) => formatDateTime(value, currentLocale(), DATE_TIME_MINUTE, { missing: '—' })
 
-async function load(again = false) {
+async function load(again = false, cause: 'selection' | 'submission' | 'changed' = 'changed') {
   const current = ++request
   previewValid.value = false
   loading.value = !again
   reloading.value = again
+  reloadCause.value = cause
   error.value = ''
   try {
     const value = sourceTarget.value
@@ -77,14 +79,21 @@ function select(key: string, checked: boolean) {
   selection.value = sourceSelection(selection.value, key, checked, sourcePreview.value.default_items.some(row => row.key === key))
   typed.value = ''
   notice.value = t('knowledgeHardDelete.source.selectionChanged')
-  void load(true)
+  void load(true, 'selection')
 }
 
 function resetSelection() {
   if (!sourcePreview.value || deleting.value) return
   selection.value = { include: [...sourcePreview.value.include], exclude: [...sourcePreview.value.exclude] }
   typed.value = ''
-  void load(true)
+  void load(true, 'selection')
+}
+
+function recheckSubmissions() {
+  if (deleting.value || reloading.value) return
+  typed.value = ''
+  notice.value = ''
+  void load(true, 'submission')
 }
 
 async function submit() {
@@ -135,7 +144,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
   <GrowthLoading v-if="loading" variant="compact" :label="t('knowledgeHardDelete.dialog.loading')" />
   <p v-else-if="error && !preview" role="alert" class="m-0 text-sm text-destructive" data-hard-delete-error>{{ error }}</p>
   <div v-else-if="preview" class="grid min-w-0 gap-5 text-sm" data-hard-delete-preview>
-    <GrowthLoading v-if="reloading" variant="inline" :label="t('knowledgeHardDelete.dialog.reloading')" />
+    <GrowthLoading v-if="reloading && reloadCause !== 'submission'" variant="inline" :label="t(reloadCause === 'selection' ? 'knowledgeHardDelete.source.reloading' : 'knowledgeHardDelete.dialog.reloading')" />
     <p v-if="notice" role="status" class="m-0 font-medium" data-hard-delete-notice>{{ notice }}</p>
 
     <section v-if="preview.publications?.length" class="grid min-w-0 gap-2 rounded-lg border p-3 [overflow-wrap:anywhere]" data-hard-delete-publications>
@@ -148,11 +157,10 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
         </li>
       </ul>
       <p class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.withdrawalUnavailable', { project: publicProjects }) }}</p>
-      <p v-if="preview.drafts?.submitted" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.submissionCopyScrubbed') }}</p>
+      <p v-if="!sourcePreview && preview.drafts?.submitted" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.submissionCopyScrubbed') }}</p>
     </section>
 
-    <SourceDeleteSelections v-if="sourcePreview" :preview="sourcePreview" :disabled="deleting || reloading" @select="select" />
-    <section v-else class="grid gap-2" data-hard-delete-items>
+    <section v-if="!sourcePreview" class="grid gap-2" data-hard-delete-items>
       <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.dialog.removed') }}</h3>
       <ul class="m-0 grid list-none gap-2 p-0">
         <li v-for="row in preview.items" :key="`${row.item_kind}:${row.item_id}`"
@@ -169,6 +177,15 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
     <section class="grid gap-2" data-hard-delete-sources>
       <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.dialog.sources') }}</h3>
       <p class="m-0">{{ t(sourcePreview ? 'knowledgeHardDelete.source.removedSources' : 'knowledgeHardDelete.dialog.removedSources', { count: preview.removed_episodes.length }) }}</p>
+      <p v-if="sourcePreview" class="m-0" data-source-conversation-counts>{{ t('knowledgeHardDelete.source.conversations', {
+        turns: sourcePreview.counts.source_turns, events: sourcePreview.counts.conversation_events, summaries: sourcePreview.counts.conversation_summaries }) }}</p>
+      <p v-if="sourcePreview && preview.drafts?.submitted" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.submissionCopyScrubbed') }}</p>
+      <p v-if="preview.drafts?.submitting" class="m-0" data-drafts-submitting>{{ t('knowledgeHardDelete.dialog.draftsSubmitting', { count: preview.drafts.submitting }) }}</p>
+      <p v-if="preview.drafts?.unknown" class="m-0" data-drafts-unknown>{{ t('knowledgeHardDelete.dialog.draftsUnknown', { count: preview.drafts.unknown }) }}</p>
+      <div v-if="preview.drafts?.submitting || preview.drafts?.unknown" class="grid justify-items-start gap-2" data-drafts-recheck>
+        <GrowthLoading v-if="reloading && reloadCause === 'submission'" variant="inline" :label="t('knowledgeHardDelete.dialog.recheckingSubmissions')" />
+        <Button type="button" variant="outline" size="sm" :disabled="deleting || reloading" @click="recheckSubmissions">{{ t('knowledgeHardDelete.dialog.recheckSubmissions') }}</Button>
+      </div>
       <p v-if="preview.drafts?.pending" class="m-0">{{ t('knowledgeHardDelete.dialog.pendingDraftsVoided', { count: preview.drafts.pending }) }}</p>
       <ul v-if="preview.removed_episodes.length" class="m-0 grid list-none gap-2 p-0">
         <li v-for="episode in preview.removed_episodes" :key="episode.episode_id"
@@ -194,6 +211,8 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
       </ul>
       <p v-if="preview.kept_episodes.length" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.keptSourceHelp') }}</p>
     </section>
+
+    <SourceDeleteSelections v-if="sourcePreview" :preview="sourcePreview" :disabled="deleting || reloading" @select="select" />
 
     <section class="grid gap-2" data-hard-delete-records>
       <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.dialog.records') }}</h3>

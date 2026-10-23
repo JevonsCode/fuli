@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson, postJson }))
+vi.mock('@/api/client', async original => ({ ...(await original<typeof import('@/api/client')>()), getJson, postJson }))
 
+import { ApiError } from '@/api/client'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import JudgmentWorkbench from './JudgmentWorkbench.vue'
 import { provideWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
 
@@ -291,4 +293,52 @@ describe('JudgmentWorkbench', () => {
     expect(wrapper.get('[data-feedback="up"]').attributes('aria-label')).toBeTruthy()
     expect(wrapper.get('[data-feedback="down"]').attributes('title')).toBeTruthy()
   })
+})
+
+
+describe('knowledge recovery fence in the workbench', () => {
+  it.each(['read', 'review', 'feedback', 'undo'])('clears cached bodies after a %s refusal and retries only the read with inline loading', async operation => {
+    getJson.mockReset().mockResolvedValue({ records: [record({ outcome: 'escalate', execution: { status: 'applied', receipt: { text: 'SYNTHETIC RECEIPT BODY' } },
+      aiReview: { state: 'ai_reviewed', modelOutcome: 'approve', interceptions: [], gate: { status: 'passed', modelId: 'synthetic' } } })] })
+    const failure = new ApiError('503', 503, JSON.stringify({ code: 'knowledge_recovery_pending' }))
+    postJson.mockReset().mockRejectedValue(failure)
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('SYNTHETIC RECEIPT BODY')
+    if (operation === 'read') {
+      getJson.mockRejectedValueOnce(failure)
+      await wrapper.get('.judgment-workbench-actions button').trigger('click')
+    } else await wrapper.get(operation === 'review' ? '[data-action="review"]' : operation === 'feedback' ? '[data-feedback="up"]' : '[data-action="undo"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('fuli migrate reconcile-knowledge')
+    expect(wrapper.text()).not.toContain('SYNTHETIC RECEIPT BODY')
+    expect(wrapper.find('[data-decision-card]').exists()).toBe(false)
+    const pending = deferred<{ records: unknown[] }>()
+    getJson.mockReturnValueOnce(pending.promise)
+    await wrapper.get('.judgment-workbench-error button').trigger('click')
+    expect(wrapper.getComponent(GrowthLoading).props('variant')).toBe('inline')
+    pending.resolve({ records: [] }); await flushPromises()
+    expect(wrapper.text()).not.toContain('fuli migrate reconcile-knowledge')
+    expect(postJson).toHaveBeenCalledTimes(operation === 'read' ? 0 : 1)
+    wrapper.unmount()
+  })
+})
+
+
+it('never restores receipt bodies from an older feedback response after a recovery refusal', async () => {
+  getJson.mockReset().mockResolvedValueOnce({ records: [record()] })
+    .mockRejectedValueOnce(new ApiError('503', 503, '{"code":"knowledge_recovery_pending"}'))
+  const pendingFeedback = deferred<unknown>()
+  postJson.mockReset().mockReturnValueOnce(pendingFeedback.promise)
+  const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+  await flushPromises()
+  await wrapper.get('[data-feedback="up"]').trigger('click')
+  await wrapper.get('.judgment-workbench-actions button').trigger('click')
+  await flushPromises()
+  pendingFeedback.resolve(record({ summary: 'LATE SYNTHETIC BODY' }))
+  await flushPromises()
+  expect(wrapper.text()).not.toContain('LATE SYNTHETIC BODY')
+  expect(wrapper.find('[data-decision-card]').exists()).toBe(false)
+  expect(wrapper.text()).toContain('fuli migrate reconcile-knowledge')
+  wrapper.unmount()
 })

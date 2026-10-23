@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { versionStatusLabel, versionTone } from '@/features/knowledge-quick-edit/model'
 import { t } from '@/i18n'
-import type { SourceDeletePreview } from './source-delete-model'
+import { sourceRowTitle, type SourceDeletePreview } from './source-delete-model'
 defineProps<{ preview: SourceDeletePreview; disabled: boolean }>()
 const emit = defineEmits<{ select: [key: string, selected: boolean] }>()
 </script>
@@ -15,10 +15,14 @@ const emit = defineEmits<{ select: [key: string, selected: boolean] }>()
     <p v-if="!preview[layer].length" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.source.empty') }}</p>
     <div v-for="row in preview[layer]" :key="row.key" class="grid gap-2 rounded-lg border p-3" :data-source-row="row.key">
       <label class="flex cursor-pointer items-start gap-2">
-        <Checkbox :model-value="row.selected" :disabled="disabled" :aria-label="t('knowledgeHardDelete.source.select', { title: row.versions[0]?.title || row.key })"
+        <Checkbox :model-value="row.selected" :disabled="disabled || (row.reason === 'attached_relationship' && row.selected)" :aria-label="t('knowledgeHardDelete.source.select', { title: sourceRowTitle(row) })"
           @update:model-value="emit('select', row.key, $event === true)" />
-        <span>{{ t(`knowledgeHardDelete.source.reasons.${row.reason}`) }} · {{ t('knowledgeHardDelete.source.sources', { count: row.source_count, retained: row.retained_source_count }) }}</span>
+        <span class="grid min-w-0 gap-1 [overflow-wrap:anywhere]">
+          <span class="font-medium">{{ sourceRowTitle(row) }}</span>
+          <span class="text-muted-foreground">{{ t(`knowledgeHardDelete.source.reasons.${row.reason}`) }}<template v-if="layer !== 'affected_items' || !row.selected"> · {{ t('knowledgeHardDelete.source.sources', { count: row.source_count, retained: row.retained_source_count }) }}</template></span>
+        </span>
       </label>
+      <p v-if="layer === 'affected_items' && row.selected" class="m-0" data-source-added-consequence>{{ t('knowledgeHardDelete.source.addedConsequence', { retained: row.retained_source_count }) }}</p>
       <p v-if="row.reason === 'attached_relationship' && row.selected" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.source.attached') }}</p>
       <p v-if="row.basis_changed && !row.selected" class="m-0 text-muted-foreground" data-source-basis-changed>{{ t('knowledgeHardDelete.source.basisChanged') }}</p>
       <ul class="m-0 grid list-none gap-2 p-0">
@@ -29,6 +33,4 @@ const emit = defineEmits<{ select: [key: string, selected: boolean] }>()
       </ul>
     </div>
   </section>
-  <p class="m-0" data-source-conversation-counts>{{ t('knowledgeHardDelete.source.conversations', {
-    turns: preview.counts.source_turns, events: preview.counts.conversation_events, summaries: preview.counts.conversation_summaries }) }}</p>
 </template>

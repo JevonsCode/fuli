@@ -335,7 +335,7 @@ it('lists multiple public submissions with a single warning and falls back to th
 })
 
 it('explains pending draft invalidation under sources and submitted local text erasure under the public warning', async () => {
-  postJson.mockResolvedValue(preview(undefined, { drafts: { pending: 2, submitted: 1 }, publications: [{
+  postJson.mockResolvedValue(preview(undefined, { drafts: { pending: 2, submitted: 1, submitting: 0, unknown: 0 }, publications: [{
     draft_id: 'submitted', project_id: 'public-project', provider_url: 'https://public.example', proposal_id: 'proposal',
     source_episode_ids: ['e2'], status: 'submitted', local_delete_retracts: false, withdrawal_status: 'unavailable', withdrawal_url: null,
   }] }))
@@ -347,7 +347,7 @@ it('explains pending draft invalidation under sources and submitted local text e
 })
 
 it('does not claim local drafts are erased when their shared source stays', async () => {
-  postJson.mockResolvedValue(preview(undefined, { drafts: { pending: 0, submitted: 0 }, removed_episodes: [], publications: [{
+  postJson.mockResolvedValue(preview(undefined, { drafts: { pending: 0, submitted: 0, submitting: 0, unknown: 0 }, removed_episodes: [], publications: [{
     draft_id: 'shared', project_id: 'public-project', provider_url: 'https://public.example', proposal_id: 'proposal',
     source_episode_ids: ['e1'], status: 'submitted', local_delete_retracts: false, withdrawal_status: 'unavailable', withdrawal_url: null,
   }] }))

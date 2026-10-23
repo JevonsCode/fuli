@@ -11,7 +11,7 @@ import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay
 import { useRoutePeek } from '@/composables/useRoutePeek'
 import KnowledgeHardDeletedNotice from '@/features/knowledge-hard-delete/KnowledgeHardDeletedNotice.vue'
 import type { HardDeletedState } from '@/features/knowledge-hard-delete/model'
-import SourceDeleteControl from '@/features/knowledge-hard-delete/SourceDeleteControl.vue'
+import KnowledgeHardDeleteSection from '@/features/knowledge-hard-delete/KnowledgeHardDeleteSection.vue'
 import { sessionDeleteTarget, type SourceDeleteTarget } from '@/features/knowledge-hard-delete/source-delete-model'
 import SessionRecordPeek from '@/features/session-records/SessionRecordPeek.vue'
 import {
@@ -136,7 +136,6 @@ watch([spaceId, requestedClient, sessionId], () => {
           <p class="page-lede m-0 min-w-0 text-sm text-muted-foreground [overflow-wrap:anywhere]" :title="sessionId">
             {{ t('sessionRecords.lede', { client, session: shortSession }) }}
           </p>
-          <SourceDeleteControl v-if="sessionTarget" :space-id="spaceId" :target="sessionTarget" @deleted="sourceRemoved(sessionTarget!, $event)" />
           <Badge variant="secondary" data-session-total>{{ t('sessionRecords.total', { count: view.total }) }}</Badge>
           <GrowthLoading v-if="loading" variant="inline" :label="t('sessionRecords.loading')" />
         </div>
@@ -215,6 +214,7 @@ watch([spaceId, requestedClient, sessionId], () => {
           </ol>
           <p v-else class="m-0 text-sm text-muted-foreground">{{ t(`sessionRecords.groupEmpty.${group}`) }}</p>
         </section>
+        <KnowledgeHardDeleteSection v-if="sessionTarget" :space-id="spaceId" :item="sessionTarget" @deleted="sourceRemoved(sessionTarget!, $event)" />
       </template>
     </div>
 

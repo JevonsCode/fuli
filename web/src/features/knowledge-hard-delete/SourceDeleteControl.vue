@@ -8,7 +8,7 @@ import KnowledgeHardDeleteDialog from './KnowledgeHardDeleteDialog.vue'
 import KnowledgeHardDeletedNotice from './KnowledgeHardDeletedNotice.vue'
 import type { HardDeletedState } from './model'
 import type { SourceDeleteTarget } from './source-delete-model'
-const props = defineProps<{ target: SourceDeleteTarget; spaceId: string }>()
+const props = defineProps<{ target: SourceDeleteTarget; spaceId: string; label?: string }>()
 const emit = defineEmits<{ deleted: [state: HardDeletedState] }>()
 const { open, pending, changeOpen, guardDismiss } = useHardDeleteDialog()
 const state = ref<HardDeletedState | null>(null)
@@ -21,8 +21,8 @@ watch(() => [props.spaceId, props.target.item_kind, props.target.item_id], () =>
   <KnowledgeHardDeletedNotice v-if="state" :state="state" :space-id="spaceId" :item-kind="target.item_kind" :item-id="target.item_id"
     @changed="deleted" @present="state = null" />
   <span v-else ref="opener">
-    <Button variant="outline" size="sm" class="text-destructive" :data-source-delete-open="target.item_kind" @click="open = true">
-      {{ t(`knowledgeHardDelete.source.${target.item_kind}Open`) }}
+    <Button variant="link" size="sm" class="h-auto whitespace-normal text-left text-destructive" :data-source-delete-open="target.item_kind" @click="open = true">
+      {{ label || t(`knowledgeHardDelete.source.${target.item_kind}Open`) }}
     </Button>
   </span>
   <Dialog :open="open" @update:open="changeOpen">

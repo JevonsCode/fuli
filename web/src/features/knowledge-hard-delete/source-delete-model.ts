@@ -42,3 +42,10 @@ export function sessionDeleteTarget(session: { deletionTargetId?: string; source
   return session.deletionTargetId && session.sourceApplication && session.sessionId
     ? { item_kind: 'session', item_id: session.deletionTargetId, sourceApplication: session.sourceApplication, sessionId: session.sessionId } : null
 }
+
+/** The active version owns the row label, irrespective of historical sort order. */
+export function sourceRowTitle(row: SourceDeleteRow): string {
+  const current = row.versions.find(version => version.status === 'current')
+    ?? row.versions.find(version => version.role === 'item') ?? row.versions[0]
+  return current?.title?.trim() || current?.content?.trim().split(/(?<=[。！？.!?])\s*/u)[0] || '—'
+}
