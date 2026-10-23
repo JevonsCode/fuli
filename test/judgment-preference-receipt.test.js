@@ -162,13 +162,14 @@ test('a rule limited to a dimension the request did not state is scope_unknown, 
   let preferences = judged();
   assert.deepEqual(preferences.scope, { work_kind: 'unknown', workflow: 'unknown', session: 'unknown' });
   assert.deepEqual(preferences.selected.map(item => item.key), ['plain']);
-  assert.deepEqual(preferences.scope_unknown.map(item => [item.key, item.needs]),
-    [['release-signoff', ['workflow']], ['review-depth', ['work_kind']]]);
+  // Keys only: a rule that does not apply sends no body (rec#15 D-27.2).
+  assert.deepEqual(preferences.scope_unknown, ['release-signoff', 'review-depth']);
+  assert.doesNotMatch(JSON.stringify(preferences), /sign-off before publishing|line by line/);
   await service.assess(routing);
   preferences = judged();
   assert.equal(preferences.scope.work_kind, 'review');
   assert.deepEqual(preferences.selected.map(item => item.key), ['review-depth', 'plain']);
-  assert.deepEqual(preferences.scope_unknown.map(item => item.key), ['release-signoff']);
+  assert.deepEqual(preferences.scope_unknown, ['release-signoff']);
 });
 
 test('judgment passes the work kind, session and workflow it already knows', async t => {
@@ -200,7 +201,7 @@ test('the judge gets the task-entry projection of the real Provider read, scoped
     { sessionId: null, sourceSessionId: null, workKind: 'review', workflow: null }]);
   const preferences = judged();
   assert.equal(preferences.status, 'complete');
-  assert.deepEqual(preferences.scope_unknown.map(item => [item.key, item.needs]), [['release-signoff', ['workflow']]]);
+  assert.deepEqual(preferences.scope_unknown, ['release-signoff']);
   assert.deepEqual(preferences.conflicts.map(item => [item.key, item.alternatives.length]), [['notes-language', 2]]);
   assert.equal(preferences.omitted.out_of_task_scope, 1);
 });

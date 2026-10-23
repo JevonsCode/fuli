@@ -23,6 +23,7 @@ import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
+import { taskSceneInput } from '../../graphiti/task-scene.js';
 
 // Task entry gets longer: a warm entry already takes 2–4 s on a Mac and a cold
 // first one ran past 5 s, which costs the model two fallback requests. Both
@@ -69,7 +70,7 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
     { delivery, currentTask, onCurrentTask });
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
-    sourceApplication: 'codex', sourceSessionId: input.session_id });
+    sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(input.prompt) });
   const output = await preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'codex',
     'Fuli task context. Apply effective_preferences. Follow checkpoint_guidance: checkpoint with taskContextToken only when there is something to record; the Stop hook closes the rest. ' + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
   return review ? withCodexReviewGuidance(output) : output;

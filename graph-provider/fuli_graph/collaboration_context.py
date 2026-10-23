@@ -1,6 +1,5 @@
 from collections import defaultdict
 from math import isfinite
-import re
 
 from fastapi import HTTPException
 
@@ -16,6 +15,9 @@ from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .preference_conflicts import read_active_preference_conflicts
 from .provider_values import json_object, native_datetime as _native_datetime, preference_qualifiers
+from .preference_task_scope import (
+    APPLIES, SCOPE_UNKNOWN, item_qualifiers, preference_task_applicability,
+)
 from .knowledge_weight import knowledge_weight
 from .negative_feedback_block import agent_authority_suspension
 
@@ -116,7 +118,15 @@ async def read_collaboration_context(
         *edges,
         *(item for item in nodes if item.id not in edge_endpoint_ids),
     ]
-    scoped_items = [item for item in items if _applies_to_task(item, session_id, work_kind, workflow)]
+    applicability = {
+        item.id: preference_task_applicability(item_qualifiers(item), item.instruction,
+                                               session_id, work_kind, workflow)
+        for item in items
+    }
+    scope_unknown = sorted({
+        item.preference_key for item in items if applicability[item.id] == SCOPE_UNKNOWN
+    })
+    scoped_items = [item for item in items if applicability[item.id] == APPLIES]
     task_scope_excluded_count = len(items) - len(scoped_items)
     items = scoped_items
     items.sort(key=_sort_key)
@@ -198,6 +208,7 @@ async def read_collaboration_context(
         effective_preferences=effective_preferences,
         task_scope_excluded_count=task_scope_excluded_count,
         task_scope_filtered=True,
+        scope_unknown=scope_unknown,
         conflicts=conflicts,
         queued_conflicts=queued_conflicts,
         source_windows=CollaborationSourceWindows(
@@ -211,32 +222,6 @@ async def read_collaboration_context(
         overridden_lower_authority_ids=overridden_lower_authority_ids,
         truncated=truncated or ancestors_truncated or queue_truncated,
     )
-
-
-def _applies_to_task(item, session_id, work_kind, workflow):
-    qualifiers = {**item.attributes, **json_object(item.attributes.get('preference_qualifiers')),
-                  **item.preference_qualifiers}
-    conditions = [
-        (qualifiers.get('sessionId', qualifiers.get('session_id', qualifiers.get('sessionIds', qualifiers.get('session_ids', _legacy_session(item.instruction))))), session_id),
-        (qualifiers.get('workKind', qualifiers.get('work_kind', qualifiers.get('workKinds', qualifiers.get('work_kinds')))), work_kind),
-        (qualifiers.get('workflow', qualifiers.get('workflows')), workflow),
-    ]
-    for condition, actual in conditions:
-        values = [condition] if isinstance(condition, str) and condition.strip() else (
-            condition if isinstance(condition, list) and condition and
-            all(isinstance(value, str) and value.strip() for value in condition) else None
-        )
-        if values and actual and actual not in values:
-            return False
-    return True
-
-
-def _legacy_session(instruction):
-    # Read compatibility only; provenance/ambiguous business prose never scopes.
-    match = re.match(r'^仅(?:在|适用于)\s*(?:Codex|Claude Code|Cursor)\s*会话\s+'
-                     r'([a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12})'
-                     r'\s*(?:中|的|后续|[，,：:])', instruction or '')
-    return match[1] if match else None
 
 
 async def _project_scopes(store, space, personal_project_id):

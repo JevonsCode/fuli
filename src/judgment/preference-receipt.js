@@ -1,11 +1,11 @@
 import { projectAgentCollaborationPreferences } from '../graphiti/collaboration-preference-workflow.js';
-import { preferenceTaskSession, preferenceUnknownTaskDimensions } from '../graphiti/preference-task-scope.js';
+import { preferenceTaskSession } from '../graphiti/preference-task-scope.js';
 
 // The preference context Tonborg judges with is the task-entry receipt, made
 // compact. Change this version whenever its shape changes, so a judgment made
 // with an older context is never reused as if it were equivalent.
-export const PREFERENCE_RECEIPT_VERSION = 'preference-receipt-1';
-export const PREFERENCE_RECEIPT_RULES = 'Preferences: apply only preferences.selected. A scope_unknown rule is limited to a task dimension this request does not state: do not apply it, do not treat it as absent, and escalate if it could change this decision; it may replace a broader rule with the same key. Apply no side of a conflict; escalate if a conflict is relevant. omitted.truncated names source windows that were not read in full; escalate if what they omit could change this decision. A rule that is not listed is not permission.';
+export const PREFERENCE_RECEIPT_VERSION = 'preference-receipt-2';
+export const PREFERENCE_RECEIPT_RULES = 'Preferences: apply only preferences.selected. scope_unknown lists keys of rules limited to a task dimension this request does not state: do not apply them, do not treat them as absent, and escalate if one could change this decision; one may replace a broader rule with the same key. Apply no side of a conflict; escalate if a conflict is relevant. omitted.truncated names source windows that were not read in full; escalate if what they omit could change this decision. A rule that is not listed is not permission.';
 const SOURCE_WINDOWS = { candidates_truncated: 'candidates', project_ancestors_truncated: 'project_ancestors',
   queued_conflicts_truncated: 'queued_conflicts' };
 // Windows whose overflow can drop a rule. The Provider has no separately
@@ -34,14 +34,12 @@ export async function readJudgmentPreferences(app, { personalProjectId, projectA
     .map(([window]) => SOURCE_WINDOWS[window]);
   if (receipt.context.source_truncated && !truncated.length) truncated.push('source');
   // IDs, short rule text and flags only; bodies, reasoning and evidence stay in FULI.
-  const rule = item => {
-    const needs = preferenceUnknownTaskDimensions(item, taskScope);
-    return { rule: item.instruction, authority: item.confirmation_status,
-      ...(item.inherited_from_project_id ? { from: item.inherited_from_project_id } : {}), ...(needs.length ? { needs } : {}) };
-  };
-  const effective = receipt.effective_preferences.map(item => ({ key: item.preference_key, scope: item.preference_scope, ...rule(item) }));
+  const rule = item => ({ rule: item.instruction, authority: item.confirmation_status,
+    ...(item.inherited_from_project_id ? { from: item.inherited_from_project_id } : {}) });
   return { status: truncated.length ? 'partial' : 'complete', scope,
-    selected: effective.filter(item => !item.needs), scope_unknown: effective.filter(item => item.needs),
+    selected: receipt.effective_preferences.map(item => ({ key: item.preference_key, scope: item.preference_scope, ...rule(item) })),
+    // Keys only: a rule that does not apply here sends no body (rec#15 D-27.2).
+    scope_unknown: receipt.scope_unknown ?? [],
     conflicts: receipt.active_conflicts.map(conflict => ({ key: conflict.preference_key, scope: conflict.preference_scope,
       alternatives: conflict.alternatives.map(rule) })),
     omitted: { out_of_task_scope: receipt.context.task_scope_excluded_count, truncated } };
@@ -61,6 +59,6 @@ export function preferenceHold(receipt) {
 export function preferenceDeliveryRecord(receipt) {
   return { version: PREFERENCE_RECEIPT_VERSION, status: receipt.status, scope: receipt.scope,
     ...(receipt.status === 'unavailable' ? { reason: receipt.reason } : { selected: receipt.selected.length,
-      scopeUnknown: receipt.scope_unknown.map(item => item.key), conflicts: receipt.conflicts.map(item => item.key),
+      scopeUnknown: receipt.scope_unknown, conflicts: receipt.conflicts.map(item => item.key),
       truncated: receipt.omitted.truncated }) };
 }

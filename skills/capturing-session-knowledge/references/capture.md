@@ -72,6 +72,14 @@ For a preference that may have both global and project-specific forms, store a s
 `attributes.preferenceKey` on each form so the project value can explicitly override the same
 global decision without hiding unrelated preferences.
 
+Task entry injects these preferences by scene. When the user limits one to a kind of work, record
+it as `attributes.tasteDomain` (`frontend`, `ui`, `ux`, `design`, `visual`, `architecture`, `code`,
+`testing`, `chat` or `writing`, which applies everywhere) or `attributes.workKind`; any other domain
+matches no task. Every stated condition must hold, and a task that does not state one leaves the
+preference out, listed in `scope_unknown` by key only. A preference without a scene key applies to
+every task except small talk. Mark a boundary the user wants kept even in small talk with
+`attributes.constraint: "hard"`, only when the user says so.
+
 ## Route by Ownership
 
 - Route global personal knowledge to `targetKind: personal` without `personalProjectId`; it is written directly to the local personal graph.

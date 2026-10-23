@@ -360,7 +360,8 @@ async def test_collaboration_context_preserves_structured_scope_qualifiers():
         'custom_condition': {'unknown': 'retain'}, 'preferenceKey': 'scoped-rule', 'weight': 0.5,
     })
     result = await read_collaboration_context(
-        StoreStub(SequentialDriver([[node], []])), {'id': 'principal-1'}, 'personal-space'
+        StoreStub(SequentialDriver([[node], []])), {'id': 'principal-1'}, 'personal-space',
+        session_id='synthetic-session', workflow='implementation',
     )
     assert result.effective_preferences[0].preference_qualifiers == {
         'sessionId': 'synthetic-session', 'workflow': 'implementation',
@@ -385,7 +386,7 @@ async def test_scope_filter_runs_before_override_and_retains_global_same_key():
 
 
 @pytest.mark.asyncio
-async def test_workflow_scope_requires_its_own_explicit_metadata_and_keeps_unknown_conditions():
+async def test_workflow_scope_fails_closed_when_unstated_and_keeps_unknown_conditions():
     rows = [
         preference_node('business', 'business', 'Business workflow', 'Business rule'),
         preference_node('work-kind', 'work-kind', 'Work kind', 'Kind rule'),
@@ -399,7 +400,10 @@ async def test_workflow_scope_requires_its_own_explicit_metadata_and_keeps_unkno
         StoreStub(SequentialDriver([rows, []])), {'id': 'principal-1'}, 'personal-space',
         work_kind='implementation'
     )
-    assert {item.id for item in result.effective_preferences} == {'business', 'unknown'}
+    assert {item.id for item in result.effective_preferences} == {'unknown'}
+    # The workflow this task does not state: listed by key only (rec#15 D-27.2).
+    assert result.scope_unknown == ['business']
+    assert result.task_scope_excluded_count == 2
     result = await read_collaboration_context(
         StoreStub(SequentialDriver([rows, []])), {'id': 'principal-1'}, 'personal-space',
         work_kind='implementation', workflow='leave-request'
@@ -412,11 +416,13 @@ async def test_explicit_legacy_session_scope_is_filtered_before_same_key_overrid
     global_rule = preference_node('global', 'global', 'Global', 'Always apply.', preference_key='same-key')
     scoped = preference_node('legacy', 'legacy', 'Legacy', f'仅在 Codex 会话 {session} 中适用；不扩大权限。',
                              scope='project', project_id='project-a', preference_key='same-key')
-    for actual, expected in [('other-session', ['global']), (session, ['legacy']), (None, ['legacy'])]:
+    # A missing session fails closed: the scoped rule is listed by key, never applied.
+    for actual, expected in [('other-session', ['global']), (session, ['legacy']), (None, ['global'])]:
         result = await read_collaboration_context(
             StoreStub(SequentialDriver([[{'project': {'project_id': 'project-a'}}], [], [global_rule, scoped], []])),
             {'id': 'principal-1'}, 'personal-space', 'project-a', session_id=actual)
         assert [item.id for item in result.effective_preferences] == expected
+        assert result.scope_unknown == (['same-key'] if actual is None else [])
 
 @pytest.mark.asyncio
 async def test_legacy_provenance_and_ambiguous_conditions_do_not_narrow_scope():

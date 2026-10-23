@@ -6,7 +6,7 @@ import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';
-import { applyPreferenceDeltaSnapshot, copyPreferenceScope, preferenceSnapshot, projectPreferenceDelta } from './preference-snapshot.js';
+import { applyPreferenceDeltaSnapshot, framePreferenceSnapshot, preferenceSnapshot, projectPreferenceDelta } from './preference-snapshot.js';
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
 import { locatePreferenceTranscript } from '../agents/preference-evidence.js';
 
@@ -92,9 +92,10 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
   };
 }
 
+// The latest verified frame of the same authorized scope, in any scene: a
+// scene switch then names it as the revision it supersedes (rec#15 D-27).
 function acknowledgedSnapshot(value, current, state, proof) {
-  const pending = new Map((state.pending ?? []).filter(item => item.scopeHash === current.scopeHash)
-    .map(item => [item.frameHash, item]));
+  const pending = new Map((state.pending ?? []).map(item => [item.frameHash, item]));
   let baseline = null;
   for (const frame of proof.frames) {
     if (frame.offset < (state.floor ?? 0)) continue;
@@ -102,10 +103,11 @@ function acknowledgedSnapshot(value, current, state, proof) {
     if (!expected) continue;
     const delivered = frame.value.preference_delivery?.status === 'delta'
       ? applyPreferenceDeltaSnapshot(frame.value, baseline)
-      : preferenceSnapshot(copyPreferenceScope(value, frame.value));
-    if (delivered?.scopeHash !== current.scopeHash || delivered?.snapshotHash !== expected.snapshotHash) continue;
-    baseline = { scopeHash: delivered.scopeHash, snapshotHash: delivered.snapshotHash,
-      units: delivered.units, callId: frame.callId };
+      : framePreferenceSnapshot(value, frame.value);
+    if (delivered?.authorityHash !== current.authorityHash || delivered.scopeHash !== expected.scopeHash
+        || delivered.snapshotHash !== expected.snapshotHash) continue;
+    baseline = { scopeHash: delivered.scopeHash, authorityHash: delivered.authorityHash,
+      snapshotHash: delivered.snapshotHash, units: delivered.units, callId: frame.callId };
   }
   return baseline;
 }
