@@ -15,7 +15,9 @@ import { projectAgentCollaborationPreferences } from '../src/graphiti/collaborat
 import { successToolResult } from '../src/mcp/tool-result.js';
 import { codexPreferenceEvidence } from '../src/agents/codex/preference-evidence.js';
 
-const session = '019fc6ed-02a5-7832-8821-68e3b03e7cef';
+// Its own session: the delivery lock is a machine-wide pipe per session, so test files run
+// in parallel must not share one (session-preference-delivery.test.js uses another).
+const session = '019fc6ed-02a5-7832-8821-5ce9e0000291';
 const authority = { personal_space_id: 'synthetic-space', personal_project_id: 'project', project_agent_id: 'lead',
   session_id: session, source_application: 'codex' };
 const origin = { sourceApplication: 'codex', nativeSessionId: session };
@@ -73,15 +75,16 @@ const keys = frame => frame.effective_preferences.map(item => item.preference_ke
 const unchangedContext = frame => ({ receipt: frame.agent_receipt.markdown.replace(/task-\w+/, ''),
   role: frame.project_agent_context.role, guidance: frame.application_guidance });
 
-// What the model holds after each frame, applying only what the frame says.
-function modelView(view, frame) {
+// What the model holds after each frame, following only the delivery rules:
+// a delta or scene switch applies to the frame its base_result names.
+function replay(views, { id, frame }) {
   const delivery = frame.preference_delivery;
   const key = item => item.preference_key;
-  if (!delivery) return new Map(frame.effective_preferences.map(item => [key(item), item.instruction]));
-  const next = new Map(view);
-  if (delivery.status === 'scene_switch') for (const replaced of delivery.replaces) next.delete(replaced);
-  if (delivery.status === 'delta') for (const removed of delivery.removed) next.delete(key(removed));
+  const next = new Map(delivery ? views.get(delivery.base_result) : []);
+  if (delivery?.status === 'scene_switch') for (const replaced of delivery.replaces) next.delete(replaced);
+  if (delivery?.status === 'delta') for (const removed of delivery.removed) next.delete(key(removed));
   for (const item of frame.effective_preferences ?? frame.preference_updates) next.set(key(item), item.instruction);
+  views.set(id, next);
   return next;
 }
 
@@ -92,7 +95,8 @@ test('frontend -> chat -> frontend replaces only the scene set; boundaries, hard
   assert.deepEqual(keys(frontend.frame), ['no-force-push', 'no-unapproved-push', 'palette', 'spacing', 'tradeoffs']);
   assert.deepEqual(frontend.frame.preference_scene, { work_kind: 'frontend', workflow: null, table: 'task-scene-2' });
   assert.equal(frontend.frame.preference_delivery, undefined, 'the first frame has no predecessor to name');
-  let view = modelView(null, frontend.frame);
+  const views = new Map();
+  replay(views, frontend);
 
   const chat = await f.turn('task-b', 'chat', items);
   assert.equal(chat.frame.preference_delivery.status, 'scene_switch');
@@ -101,11 +105,16 @@ test('frontend -> chat -> frontend replaces only the scene set; boundaries, hard
   assert.deepEqual(keys(chat.frame), [], 'only the scene-personalized set is listed');
   assert.doesNotMatch(JSON.stringify(chat.frame), /SYNTHETIC_(?:FRONTEND|DESIGN|GENERAL)/);
   assert.deepEqual(unchangedContext(chat.frame), unchangedContext(frontend.frame));
-  view = modelView(view, chat.frame);
-  assert.deepEqual([...view.keys()].sort(), kept, 'the boundary and the hard constraint are never revoked');
+  assert.deepEqual([...replay(views, chat).keys()].sort(), kept, 'the boundary and the hard constraint are never revoked');
   assert.equal(chat.frame.preference_delivery.rules, 'fuli://rules/task-entry#preference_delivery');
-  assert.equal(entryRules().sections.preference_delivery.scene_switch,
-    '本帧仅替换上一帧的场景个性化集合（即列出的这组）；未列出的边界、硬约束、权限与安全规则继续有效。');
+  // The rule a consumer follows is the protocol replay() implements.
+  const rule = entryRules().sections.preference_delivery.scene_switch;
+  for (const clause of [/base_result 指向的那帧（修订号 supersedes），不一定是相邻的上一帧/, /移除 replaces 列出的场景条目/,
+    /列表为空也照做/, /未列出的边界、硬约束、权限与安全规则继续有效/, /read_task_preferences，不要猜/,
+    /named by base_result \(revision supersedes\)/, /Remove the scene items listed in replaces/, /even when empty/,
+    /Unlisted boundaries, hard constraints, permissions and safety rules stay in force/, /never guess/]) {
+    assert.match(rule, clause);
+  }
 
   const back = await f.turn('task-c', 'frontend', items);
   assert.equal(back.frame.preference_delivery.status, 'scene_switch');
@@ -113,7 +122,7 @@ test('frontend -> chat -> frontend replaces only the scene set; boundaries, hard
   assert.equal(back.frame.preference_delivery.supersedes, chat.frame.preference_delivery.revision);
   assert.deepEqual(back.frame.preference_delivery.replaces, []);
   assert.deepEqual(keys(back.frame), ['palette', 'spacing', 'tradeoffs']);
-  view = modelView(view, back.frame);
+  const view = replay(views, back);
   assert.deepEqual([...view.keys()].sort(), keys(frontend.frame));
   assert.equal(view.get('no-unapproved-push'), BOUNDARY.instruction);
   // The next frontend turn knows the whole set: nothing to send but a delta.
@@ -174,6 +183,12 @@ test('chat with no matching item injects no preference, and an empty set still r
   assert.equal(chat.frame.preference_delivery.status, 'scene_switch');
   assert.equal(chat.frame.preference_delivery.base_result, frontend.id);
   assert.deepEqual(chat.frame.effective_preferences, []);
+  // The old scene items exist only in replaces; removing them empties the set.
+  assert.deepEqual(chat.frame.preference_delivery.replaces, ['palette', 'spacing', 'tradeoffs']);
+  const views = new Map();
+  for (const step of [fresh, frontend]) replay(views, step);
+  assert.equal(views.get(frontend.id).size, 3);
+  assert.deepEqual([...replay(views, chat).keys()], []);
   assert.doesNotMatch(JSON.stringify(chat.frame), /SYNTHETIC_/);
   t.diagnostic(`bytes: no-match chat full ${fresh.bytes}, empty chat scene_switch ${chat.bytes}`);
 }));
@@ -187,12 +202,21 @@ test('an unacknowledged predecessor is never forged as a base: the switch is a p
   assert.deepEqual(chat.structuredContent.effective_preferences.map(item => item.preference_key), ['no-force-push']);
 }));
 
-test('another Agent or project in the same native session is not a predecessor', () => fixture(async f => {
-  await f.turn('task-a', 'frontend', [HARD, SPACING]);
+test('another Agent in the same native session is not a predecessor; a later switch finds its base by supersedes', () => fixture(async f => {
+  const frontend = await f.turn('task-a', 'frontend', [HARD, SPACING]);
   const other = compactTaskContext(withPreferenceScope(entry('task-b', 'chat', [HARD, SPACING]),
     { ...authority, project_agent_id: 'other-lead', preference_scope: { version: 1, work_kind: 'chat', workflow: null } }));
   const result = await f.service.deliver(other, origin, format);
   assert.equal(result.structuredContent.preference_delivery, undefined);
+  // The other Agent's frame is recorded between this scope's frames.
+  const between = { id: await f.record(result), frame: result.structuredContent };
+  const chat = await f.turn('task-c', 'chat', [HARD, SPACING]);
+  assert.equal(chat.frame.preference_delivery.status, 'scene_switch');
+  assert.equal(chat.frame.preference_delivery.base_result, frontend.id, 'not the adjacent frame');
+  assert.notEqual(chat.frame.preference_delivery.base_result, between.id);
+  const views = new Map();
+  for (const step of [frontend, between]) replay(views, step);
+  assert.deepEqual([...replay(views, chat).keys()], ['no-force-push']);
 }));
 
 test('a recorded copy that changes its declared scene never verifies as a predecessor', () => fixture(async f => {
