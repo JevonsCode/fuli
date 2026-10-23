@@ -200,6 +200,7 @@ jobs:
       - run: node --test test/agent-app-host-identity.test.js
 
   # macOS is the primary platform; it runs the same full suite as the Linux job.
+  # The audit stays in the Linux job: it reads the lockfile, not the platform.
   node-macos:
     runs-on: macos-latest
     steps:
@@ -209,7 +210,6 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
-      - run: npx --yes npm@11.13.0 audit --audit-level=low
       - run: npm test
       - run: npm run test:package
 
