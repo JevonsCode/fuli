@@ -129,3 +129,20 @@ test('Settings reads each role\'s backend and the open work packages over the lo
   assert.deepEqual(sent.body.workPackages, [{ role: 'bole', status: 'pending', count: 1 }]);
   assert.doesNotMatch(JSON.stringify(sent.body), /Ada finished/);
 });
+
+test('D-26.1 inline: without a model the session keeps its usual answer; no package, no fetch, a stop keeps its reason', async () => {
+  const { bridge } = harness();
+  const inline = await bridge.decide(request('session-a'), { inline: true });
+  assert.deepEqual([inline.status, inline.answeredBy, inline.fallbackReason, inline.modelReceipt.status],
+    ['inline', 'current_session', 'no_config', 'not_configured']);
+  assert.equal('workPackage' in inline, false);
+  assert.deepEqual(bridge.summary().packages, []);
+
+  // Egress not approved stops; inline never turns a stop into a session answer.
+  const config = { version: 1, connections: { local: { protocol: 'openai_chat', endpoint: 'http://127.0.0.1:11434/v1', model: 'qwen-test', secretRef: null } },
+    roles: { bole: { enabled: true, connection: 'local', allowedOperations: ['staffing_review'], fallbackToSession: true,
+      egress: { approvedProjects: [], allowUnassigned: false },
+      budget: { maxInputTokens: 4000, maxOutputTokens: 400, timeoutMs: 30_000, windowHours: 24, maxTokensPerWindow: 100_000 } } } };
+  const stopped = await harness(config).bridge.decide(request(), { inline: true });
+  assert.deepEqual([stopped.status, stopped.modelReceipt.reason, stopped.answeredBy], ['stopped', 'egress_not_approved', undefined]);
+});
