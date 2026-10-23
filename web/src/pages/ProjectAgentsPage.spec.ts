@@ -241,14 +241,16 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     expect(wrapper.get('.project-agent-row-work').text()).toContain('等待已锁定执行器')
   })
 
-  it('shows the occupation emoji as the card portrait', async () => {
+  it('shows a generated portrait instead of the occupation emoji', async () => {
     getJson.mockImplementation((url: string) => url.includes('/api/project-agents?')
       ? Promise.resolve([{ ...agents[0], profile: { ...agents[0]!.profile, occupationEmoji: '🎛️' } }])
       : orchestrationResponse(url))
     const { wrapper } = await mountPage()
     await flushPromises()
     const card = wrapper.get('.project-agent-card')
-    expect(card.get('[role="img"]').text()).toBe('🎛️')
+    expect(card.get('.agent-portrait img').attributes('src')).toMatch(/^data:image\/svg\+xml;/)
+    expect(card.get('.agent-portrait').attributes('aria-hidden')).toBe('true')
+    expect(card.get('.agent-portrait').text()).toBe('')
     expect(card.text()).toContain('活动 Agent')
     expect(card.text()).toContain('负责活动方案与复盘。')
   })

@@ -1,6 +1,7 @@
 import { mount, RouterLinkStub } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import AgentCard from './AgentCard.vue'
+import { agentAvatarUrl } from './agent-avatar'
 import type { ProjectAgentRecord } from '@/types'
 
 const agent = {
@@ -19,9 +20,16 @@ describe('AgentCard projects', () => {
     expect(wrapper.get('.agent-portrait img').attributes('src')).toContain(`${id}-avatar.webp`)
     expect(wrapper.get('.agent-portrait').text()).toBe('')
   })
-  it('keeps the occupation icon for an Agent without a portrait', () => {
+  it('keeps the generated portrait stable across profile edits and remounts', async () => {
     const wrapper = render({ agent: { ...agent, agentId: 'custom', profile: { ...agent.profile, occupationEmoji: '🔧' } } })
-    expect(wrapper.get('.agent-portrait').text()).toBe('🔧')
+    const image = () => wrapper.get('.agent-portrait img').attributes('src')
+    const original = image()
+    expect(original).toBe(agentAvatarUrl('custom'))
+    expect(wrapper.get('.agent-portrait').text()).toBe('')
+    await wrapper.setProps({ agent: { ...agent, agentId: 'custom', profile: { ...agent.profile, name: 'Renamed', occupationEmoji: '🎨' } } })
+    expect(image()).toBe(original)
+    wrapper.unmount()
+    expect(render({ agent: { ...agent, agentId: 'custom' } }).get('.agent-portrait img').attributes('src')).toBe(original)
   })
   it('uses the Agent identity colour and moves only for a reported running state', () => {
     const entry = (status: string) => ({ status, source: 'roster', taskId: null, title: null, lastUpdateAt: null })
@@ -32,7 +40,7 @@ describe('AgentCard projects', () => {
       expect(render({ agent: { ...agent, agentId: 'custom' }, entry: entry(status) }).get('[data-card-portrait]').classes()).not.toContain('is-working')
     }
   })
-  it('gives each initials portrait the same identity colour as the profile and pinned nav', () => {
+  it('gives each generated portrait the same identity colour as the profile and pinned nav', () => {
     // Only the identity colours; the working-ring phase follows the wall clock.
     const style = (agentId: string) => (render({ agent: { ...agent, agentId } }).get('[data-card-portrait]').attributes('style') ?? '')
       .split(';').filter(rule => rule.includes('--agent-identity')).join(';')

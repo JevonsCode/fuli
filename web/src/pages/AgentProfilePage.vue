@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ActivityOriginBadge from "@/features/agent-profile/ActivityOriginBadge.vue";
-import { employeeAvatarUrl } from "@/features/employees/avatars";
+import { agentAvatarUrl } from "@/features/agent-profile/agent-avatar";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
 import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
@@ -324,8 +324,7 @@ onMounted(() => {
              carries only what the name does not say. -->
         <Card as="header" class="agent-resume-header">
           <span class="agent-portrait agent-identity" :style="agentIdentityStyle(agent.agentId)" aria-hidden="true">
-            <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
-            <template v-else>{{ agent.profile.occupationEmoji || agentDisplayName(agent).slice(0, 1) }}</template>
+            <img :src="agentAvatarUrl(agent.agentId)" alt="" />
           </span>
           <div class="agent-resume-intro grid min-w-0 flex-[1_1_360px] gap-2">
             <div class="agent-resume-name-row flex-wrap justify-start gap-2">

@@ -11,5 +11,6 @@ const employeeAvatars: Readonly<Record<string, string>> = {
 }
 
 export function employeeAvatarUrl(templateId: string): string | undefined {
-  return employeeAvatars[templateId.replace(/^employee\./, '')]
+  const id = templateId.replace(/^employee\./, '')
+  return Object.hasOwn(employeeAvatars, id) ? employeeAvatars[id] : undefined
 }
