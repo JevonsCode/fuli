@@ -115,3 +115,52 @@ async def test_episode_only_session_presence_is_not_reported_as_absence(audited)
     assert report['present_count'] == (0 if audited else 1)
     assert report['resurrected'] == ([{'kind': 'session', 'id': target}] if audited else [])
     assert report['status'] == ('attention_required' if audited else 'healthy')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('state', ['present', 'scrubbed', 'restored_tuple', 'restored_body', 'restored_extra', 'damaged_tuple'])
+async def test_memory_session_integrity_checks_the_body_and_never_returns_it(state):
+    import json
+    from fuli_graph.provider_values import stable_uuid
+
+    target = stable_uuid('provider', 'space', 'codex', 'host', 'task-context-session')
+    record = dict(checkpoint_id='checkpoint', personal_space_id='space', personal_project_id=None,
+                  agent_id='agent', revision=1, created_at='2026-10-24T00:00:00Z')
+    if state in ('present', 'restored_tuple'):
+        record.update(memory={'summary': 'Synthetic private body'}, source_application='codex', source_session_id='host')
+    else:
+        record.update(memory=None, memory_state='scrubbed', scrubbed_by='deletion')
+        if state == 'restored_body':
+            record['memory'] = {'summary': 'Synthetic private body'}
+        if state == 'restored_extra':
+            record['unexpected_body'] = 'Synthetic private body'
+        if state == 'damaged_tuple':
+            record.update(source_application=['codex'], source_session_id={'damaged': 'host'})
+    checkpoint = dict(id='checkpoint', revision=1, record_json=json.dumps(record),
+                      memory_state='scrubbed', scrubbed_by='deletion')
+    if state == 'present':
+        checkpoint.update(memory_state='present', scrubbed_by=None)
+
+    class MemoryDriver:
+        async def execute_query(self, query, **params):
+            assert 'FuliProjectAgentMemory {personal_space_id: $space_id}' in query
+            assert 'trace.fuli_session_id AS session_id' in query
+            return ([{'kind': 'session', 'id': target, 'present': False,
+                      'deletion_ids': [] if state == 'present' else ['deletion']},
+                     {'kind': 'session_memory', 'source_application': 'codex' if state != 'present' else None,
+                      'session_id': 'host' if state != 'present' else None, 'memory_checkpoint': checkpoint}], None, None)
+
+    app = application(MemoryDriver())
+    app.state.store._task_session_id = lambda space, client, session: stable_uuid(
+        'provider', space, client, session, 'task-context-session')
+    async def authorize(actor, space_id, role):
+        return {'id': space_id, 'group_id': 'group', 'kind': 'personal'}
+    app.state.store.authorize = authorize
+    response = await call(app, '/v1/knowledge/integrity', {'personal_space_id': 'space',
+                          'references': [{'kind': 'session', 'id': target}]}, REVIEW)
+    assert response.status_code == 200
+    report = response.json()
+    assert report['missing_count'] == 0
+    assert report['present_count'] == int(state == 'present')
+    assert report['resurrected'] == ([] if state in ('present', 'scrubbed') else [{'kind': 'session', 'id': target}])
+    assert 'Synthetic private body' not in response.text and 'record_json' not in response.text

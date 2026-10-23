@@ -88,3 +88,62 @@ async def test_retained_task_shell_is_legitimate_absence_but_restored_body_is_re
         finally:
             await driver.execute_query('MATCH (node) WHERE node.id IN $ids OR node.space_id=$space DETACH DELETE node',
                 ids=[space, session, token], space=space)
+
+
+@pytest.mark.asyncio
+async def test_memory_only_session_integrity_tracks_live_scrubbed_and_restored_bodies():
+    """Public memory writes need neither episodes nor task contexts to establish a session."""
+    from test_project_agent_memory_neo4j import provider_client, seed_agent
+    from test_source_memory_erasure_neo4j import memory_write
+    from test_source_delete_integration_neo4j import source_preview, source_delete
+    from test_turn_receipt_neo4j import ok, space_with_projects
+    from test_knowledge_hard_delete_neo4j import REVIEW
+    from test_negative_feedback_block_neo4j import query
+
+    settings = reviewed()
+    async with provider_client(settings) as (client, _):
+        space = await space_with_projects(client)
+        foreign = await space_with_projects(client)
+        for target_space in (space, foreign):
+            await seed_agent(client, target_space, project='memory-source-project', allowed_clients=['codex', 'cursor'])
+        source = ok(await memory_write(client, space, 0, 'memory-only', 'Synthetic memory-only source'))
+        ok(await memory_write(client, space, 1, 'different-session', 'Synthetic different session'))
+        # These remain present throughout: neither is evidence for the requested tuple.
+        ok(await memory_write(client, space, 2, 'memory-only', 'Synthetic other client', source_application='cursor'))
+        ok(await memory_write(client, foreign, 0, 'memory-only', 'Synthetic foreign space source'))
+        store = client._transport.app.state.store
+        target = store._task_session_id(space, 'codex', 'memory-only')
+        absent = store._task_session_id(space, 'codex', 'never-written')
+        async def inspect(*ids):
+            return ok(await client.post('/v1/knowledge/integrity', headers=REVIEW, json={
+                'personal_space_id': space, 'references': [{'kind': 'session', 'id': id} for id in ids]}))
+        live = await inspect(target, absent)
+        assert live['present_count'] == 1
+        assert live['missing'] == [{'kind': 'session', 'id': absent}]
+        identity = dict(source_application='codex', fuli_session_id='memory-only')
+        plan = ok(await source_preview(client, space, target, 'session', **identity))
+        assert plan['removed_episodes'] == [] and plan['counts']['source_turns'] == 0
+        receipt = ok(await source_delete(client, space, target, plan, **identity))
+        cleared = await inspect(target)
+        assert cleared['status'] == 'healthy' and cleared['hard_deleted_count'] == 1
+        assert cleared['resurrected'] == []
+        rows = await query(settings, 'MATCH (c:FuliProjectAgentMemoryCheckpoint {id:$id}) RETURN c.record_json AS record',
+                           id=source['checkpoint_id'])
+        scrubbed = json.loads(rows[0]['record'])
+        assert scrubbed['memory'] is None and 'source_session_id' not in scrubbed
+        # Restore a whole old record while leaving the node's scrubbed marker.
+        # Then restore just its body: the source tuple remains erased and the
+        # audit relationship must still identify the affected session.
+        for restored in (source, {**scrubbed, 'memory': source['memory']},
+                         {**scrubbed, 'unexpected_body': 'Synthetic unexpected restored text'}):
+            await query(settings, 'MATCH (c:FuliProjectAgentMemoryCheckpoint {id:$id}) SET c.record_json=$record',
+                        id=source['checkpoint_id'], record=json.dumps(restored))
+            report = await inspect(target)
+            assert report['status'] == 'attention_required'
+            assert report['resurrected'] == [{'kind': 'session', 'id': target}]
+            assert receipt['deletion_id'] in report['deletion_ids']
+        # The foreign checkpoint and another client's same session must not
+        # make the now-legitimate erased local source look resurrected.
+        await query(settings, 'MATCH (c:FuliProjectAgentMemoryCheckpoint {id:$id}) SET c.record_json=$record',
+                    id=source['checkpoint_id'], record=json.dumps(scrubbed))
+        assert (await inspect(target))['status'] == 'healthy'
