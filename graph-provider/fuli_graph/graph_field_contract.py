@@ -158,7 +158,9 @@ NODE_FIELDS = {
     'FuliKnowledgeAudit': {
         'action': 'knowledge_audit_action', 'classification_check': 'string?',
         'conflict_check': 'string?', 'created_at': 'datetime', 'created_by': 'string',
-        'deleted_item_keys': 'string[]?', 'deleted_source_turn_keys': 'string[]?', 'deletion_counts_json': 'string?',
+        'deleted_item_keys': 'string[]?', 'deleted_source_turn_keys': 'string[]?', 'deleted_task_tokens': 'string[]?',
+        'deletion_counts_json': 'string?', 'source_application': 'string?', 'fuli_session_id': 'string?',
+        'drafts_scrubbed_json': 'string?',
         'evidence_ids': 'string[]?', 'evidence_summary': 'string?',
         'feedback_kind': 'feedback_kind?', 'human_change_version': 'integer?', 'id': 'string',
         'item_id': 'string?', 'item_kind': 'hard_delete_target_kind?', 'operation': 'string?',

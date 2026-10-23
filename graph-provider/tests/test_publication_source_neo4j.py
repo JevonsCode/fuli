@@ -28,9 +28,12 @@ async def test_all_local_draft_states_follow_the_source_and_pending_submit_is_te
         saved = ok(await client.post('/v1/knowledge/commits', json={'space_id': space, 'episode': source}))
         drafts = {}
         for status in ('pending', 'submitted', 'kept_personal', 'ignored'):
+            # A separate public capture can use a different key for the exact
+            # same source turn. Full provenance, not only episode UUID, binds it.
+            draft_source = {**source, 'idempotency_key': str(uuid4())} if status == 'ignored' else source
             row = ok(await client.post('/v1/publication-drafts', json={
                 'personal_space_id': space, 'target_project_id': status,
-                'provider_url': 'https://public.example', 'episode': source}))
+                'provider_url': 'https://public.example', 'episode': draft_source}))
             drafts[status] = row['id']
             if status != 'pending':
                 decision = {'decision': {'submitted': 'submit_public', 'kept_personal': 'keep_personal', 'ignored': 'ignore'}[status]}
@@ -56,7 +59,7 @@ async def test_all_local_draft_states_follow_the_source_and_pending_submit_is_te
                 assert row.get('payload') is None
                 assert marker not in repr(row)
                 assert row['payload_scrubbed_by'] == result['deletion_id']
-                assert json.loads(row['source_identity'])['episode_id'] == saved['episode_id']
+                assert json.loads(row['source_identity'])['source_turn_id'] == source['source_turn_id']
         for original, draft_id in drafts.items():
             row = ok(await client.get(f'/v1/publication-drafts/{draft_id}', params={'personal_space_id': space}))
             assert row['status'] == ('source_deleted' if original == 'pending' and not shared else original)

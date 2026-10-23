@@ -7,11 +7,11 @@ import json
 
 from fastapi import HTTPException
 
-from .knowledge_hard_delete_models import KnowledgeHardDeleteDrafts, KnowledgeHardDeleteEpisode
+from .knowledge_hard_delete_models import KnowledgeHardDeleteCounts, KnowledgeHardDeleteDrafts, KnowledgeHardDeleteEpisode
 from .knowledge_hard_delete_publications import publications_for_sources
 from .knowledge_source_delete_inventory import source_delete_inventory
 from .knowledge_source_delete_lineages import source_delete_lineages
-from .knowledge_source_delete_models import SourceDeleteCounts, SourceDeleteItem, SourceDeletePreview
+from .knowledge_source_delete_models import SourceDeleteItem, SourceDeletePreview
 from .knowledge_source_delete_selection import source_delete_selection
 from .knowledge_source_delete_target import source_delete_target
 from .knowledge_source_fence import source_turn_key
@@ -57,7 +57,7 @@ async def plan_source_delete(store, space, item_id, request, knowledge):
         layers[key] = SourceDeleteItem(key=key, selected=key in selected, reason=reason,
             basis_changed=key in reviewed, source_count=len(row['source_episode_ids']),
             retained_source_count=len(retained), versions=versions)
-    counts = SourceDeleteCounts(items=sum(item.item_kind == 'entity' for item in selected_items),
+    counts = KnowledgeHardDeleteCounts(items=sum(item.item_kind == 'entity' for item in selected_items),
         versions=sum(len(row['version_keys']) - 1 for row in lineages if row['key'] in selected),
         relationships=sum(item.item_kind == 'relationship' for item in selected_items),
         episodes=len(episode_ids), dependents=len(reviewed), source_turns=len(inventory['task_ids']),

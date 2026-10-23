@@ -21,6 +21,7 @@ async def hard_deletion_record(store, space, item_id) -> KnowledgeHardDeleteReco
         '''
         MATCH (trace:FuliKnowledgeAudit {space_id: $space_id, action: 'hard_delete'})
         WHERE any(key IN coalesce(trace.deleted_item_keys, []) WHERE key ENDS WITH (':' + $item_id))
+           OR $item_id IN coalesce(trace.removed_episode_ids, [])
         RETURN trace ORDER BY trace.created_at DESC LIMIT 1
         ''', space_id=space['id'], item_id=item_id, routing_='r')
     return deletion_record_of(dict(records[0]['trace'])) if records else None
@@ -42,7 +43,11 @@ def deletion_record_of(trace) -> KnowledgeHardDeleteRecord:
         deletion_id=trace['id'], item_kind=trace['item_kind'], item_id=trace['item_id'],
         deleted_at=native_datetime(trace['created_at']),
         counts=KnowledgeHardDeleteCounts(**json.loads(trace.get('deletion_counts_json') or '{}')),
-        deleted_item_ids=[key.split(':', 1)[1] for key in trace.get('deleted_item_keys') or []])
+        deleted_item_ids=sorted(set([trace['item_id'],
+            *[key.split(':', 1)[1] for key in trace.get('deleted_item_keys') or []],
+            *(trace.get('removed_episode_ids') or [])])),
+        source_application=trace.get('source_application'), fuli_session_id=trace.get('fuli_session_id'),
+        drafts_scrubbed=json.loads(trace.get('drafts_scrubbed_json') or '{}'))
 
 
 async def require_not_hard_deleted(store, space, item_id) -> None:

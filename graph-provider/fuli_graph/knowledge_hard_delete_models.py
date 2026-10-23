@@ -90,6 +90,9 @@ class KnowledgeHardDeleteCounts(StrictModel):
     decision_snapshots: int = 0
     kept_episodes: int = 0
     dependents: int = 0
+    source_turns: int = 0
+    conversation_events: int = 0
+    conversation_summaries: int = 0
 
 
 class KnowledgeHardDeletePublication(StrictModel):
@@ -114,6 +117,7 @@ class KnowledgeHardDeleteDrafts(StrictModel):
 
 class KnowledgeHardDeletePreview(StrictModel):
     publications: list[KnowledgeHardDeletePublication] = Field(default_factory=list)
+    drafts: KnowledgeHardDeleteDrafts = Field(default_factory=KnowledgeHardDeleteDrafts)
     preview_id: str
     item_kind: KnowledgeItemKind
     item_id: str
@@ -137,6 +141,9 @@ class KnowledgeHardDeletion(StrictModel):
 class KnowledgeHardDeleteRecord(KnowledgeHardDeletion):
     item_id: str
     deleted_item_ids: list[str]
+    source_application: str | None = None
+    fuli_session_id: str | None = None
+    drafts_scrubbed: dict[str, int] = Field(default_factory=dict)
 
 
 class KnowledgeHardDeleteSpace(StrictModel):

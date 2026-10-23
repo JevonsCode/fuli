@@ -4,7 +4,7 @@ Never infer destructive membership from timestamps. A turn owns explicit source
 turn IDs and checkpoint capture IDs; a session additionally owns episodes that
 name the same client and host session. Reads are deliberately unpaginated.
 """
-from .conversation_scope import conversation_scope_id
+from .conversation_scope import conversation_scope_id, conversation_scopes_for_space
 from .provider_values import json_object, sha256_text
 
 
@@ -43,6 +43,7 @@ async def source_delete_inventory(store, space, request):
         exact_turn=request.exact_turn, routing_='r')
     scopes = {conversation_scope_id(space['id'], task['project_id'], task['agent_id'])
               for task in tasks if task['agent_id']}
+    scopes.update(await conversation_scopes_for_space(store, space['id']))
     events, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (conversation:FuliConversation)-[:HAS_EVENT]->(event:FuliConversationEvent)

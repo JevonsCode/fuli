@@ -52,12 +52,6 @@ class SourceDeleteItem(StrictModel):
     versions: list[KnowledgeHardDeleteItem]
 
 
-class SourceDeleteCounts(KnowledgeHardDeleteCounts):
-    source_turns: int = 0
-    conversation_events: int = 0
-    conversation_summaries: int = 0
-
-
 class SourceDeletePreview(StrictModel):
     preview_id: str
     item_kind: Literal['episode', 'session']
@@ -70,6 +64,6 @@ class SourceDeletePreview(StrictModel):
     default_items: list[SourceDeleteItem]
     affected_items: list[SourceDeleteItem]
     removed_episodes: list[KnowledgeHardDeleteEpisode]
-    counts: SourceDeleteCounts
+    counts: KnowledgeHardDeleteCounts
     publications: list[KnowledgeHardDeletePublication]
     drafts: KnowledgeHardDeleteDrafts

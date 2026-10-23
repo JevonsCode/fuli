@@ -63,9 +63,12 @@ async def operation_outcome(store, space, operation_id) -> KnowledgeHardDeleteOp
 
 def operation_fingerprint(item_id, request) -> str:
     """What an operation ID is bound to; the confirmation only as a digest."""
+    scope = {name: getattr(request, name) for name in ('source_application', 'fuli_session_id', 'include', 'exclude')
+             if hasattr(request, name)}
     return sha256_text(json.dumps({
         'item_kind': request.item_kind, 'item_id': item_id, 'preview_id': request.preview_id,
         'confirmation': sha256_text(request.confirmation.strip()),
+        **scope,
     }, sort_keys=True, separators=(',', ':')))
 
 

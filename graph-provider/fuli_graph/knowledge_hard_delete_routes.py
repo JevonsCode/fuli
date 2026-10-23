@@ -21,6 +21,7 @@ from .knowledge_hard_delete_models import (
     KnowledgeHardDeleteSpace,
     KnowledgeHardDeleteStatus,
 )
+from .knowledge_source_delete_models import SourceDeleteRef, SourceDeleteConfirm, SourceDeletePreview
 
 
 def register_knowledge_hard_delete_routes(application, store, HumanReviewer: Any) -> None:
@@ -29,8 +30,8 @@ def register_knowledge_hard_delete_routes(application, store, HumanReviewer: Any
         return await check_knowledge_integrity(store, actor, request)
 
     @application.post('/v1/knowledge/items/{item_id}/hard-delete/preview',
-                      response_model=KnowledgeHardDeletePreview)
-    async def hard_delete_preview(item_id: str, request: KnowledgeHardDeleteRef, actor: HumanReviewer):
+                      response_model=SourceDeletePreview | KnowledgeHardDeletePreview)
+    async def hard_delete_preview(item_id: str, request: SourceDeleteRef | KnowledgeHardDeleteRef, actor: HumanReviewer):
         return await preview_hard_delete(store, actor, item_id, request)
 
     @application.post('/v1/knowledge/items/{item_id}/hard-delete/status', response_model=KnowledgeHardDeleteStatus)
@@ -52,5 +53,5 @@ def register_knowledge_hard_delete_routes(application, store, HumanReviewer: Any
         return await hard_deletions(store, actor, request)
 
     @application.post('/v1/knowledge/items/{item_id}/hard-delete', response_model=KnowledgeHardDeleteRecord)
-    async def hard_delete(item_id: str, request: KnowledgeHardDeleteConfirm, actor: HumanReviewer):
+    async def hard_delete(item_id: str, request: SourceDeleteConfirm | KnowledgeHardDeleteConfirm, actor: HumanReviewer):
         return await apply_hard_delete(store, actor, item_id, request)

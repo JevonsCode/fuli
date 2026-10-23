@@ -18,6 +18,8 @@ from .provider_values import native_datetime, now_utc, stable_uuid
 from .store_transactions import query_store_transaction
 from .task_context_models import TaskContextBegin
 from .worker_run_execution import execution_result_fields, PUBLIC_WORKER_CODES
+from .knowledge_versions import lock_knowledge
+from .knowledge_source_fence import require_source_available
 
 
 def worker_run_view(run, own_context_token=None):
@@ -192,6 +194,10 @@ class StoreProjectAgentWorkerRuns:
 
     async def admit_project_agent_worker_context(self, actor, run_id, request, capability):
         async with query_store_transaction(self) as scoped:
+            space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
+            await lock_knowledge(scoped, space)
+            await require_source_available(scoped, space, source_application=request.source_application,
+                session_id=request.session_id, source_turn_id='worker-run:' + run_id)
             data = await checked_worker_run(scoped, actor, request, run_id, capability)
             run = data['run']
             if (run['state'] not in {'sealed', 'admitted'} or request.source_application != run['target_application']
