@@ -299,7 +299,7 @@ describe('permanent delete on the item page', () => {
 
 
 it('shows public submission provenance above the deletion layers without inventing a withdrawal link', async () => {
-  postJson.mockResolvedValue(preview(undefined, { publications: [{ draft_id: 'draft', project_id: 'Synthetic public project',
+  postJson.mockResolvedValue(preview(undefined, { publications: [{ draft_id: 'draft', project_id: 'opaque-project-id', project_name: 'Synthetic public project',
     provider_url: 'https://public.example', proposal_id: 'proposal', source_episode_ids: ['e1'], status: 'submitted',
     local_delete_retracts: false, withdrawal_status: 'unavailable', withdrawal_url: null }] }))
   const wrapper = await open()
@@ -308,8 +308,28 @@ it('shows public submission provenance above the deletion layers without inventi
   expect(warning).not.toBeNull()
   expect(warning.textContent).toContain('Synthetic public project')
   expect(warning.textContent).toContain('删除来源不会撤回公开内容')
-  expect(warning.textContent).toContain('撤回入口尚未实现')
+  expect(warning.textContent).toContain('公开项目里的副本会原样保留')
+  expect(warning.textContent).toContain('FULI 还不能替你撤回')
+  expect(warning.textContent).toContain('位置 https://public.example · 提交编号 proposal')
+  expect(warning.textContent).not.toContain('opaque-project-id')
+  expect(dialog()!.querySelector('[data-hard-delete-kept]')!.textContent).not.toContain('需要在公开项目里单独撤回')
   expect(warning.querySelector('a')).toBeNull()
   expect(warning.compareDocumentPosition(dialog()!.querySelector('[data-hard-delete-items]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  wrapper.unmount()
+})
+
+it('lists multiple public submissions with a single warning and falls back to the project ID', async () => {
+  const publication = { draft_id: 'first', project_id: 'fallback-id', provider_url: 'https://public.example',
+    proposal_id: 'proposal', source_episode_ids: ['e1'], status: 'submitted' as const,
+    local_delete_retracts: false as const, withdrawal_status: 'unavailable' as const, withdrawal_url: null }
+  postJson.mockResolvedValue(preview(undefined, { publications: [publication,
+    { ...publication, draft_id: 'second', project_id: 'second-id', project_name: 'Readable project' }] }))
+  const wrapper = await open()
+  await openDialog(wrapper)
+  const warning = dialog()!.querySelector('[data-hard-delete-publications]')!
+  expect(warning.querySelectorAll('li')).toHaveLength(2)
+  expect(warning.textContent).toContain('fallback-id / Readable project')
+  expect(warning.textContent!.match(/删除来源不会撤回公开内容/g)).toHaveLength(1)
+  expect(warning.querySelector('a')).toBeNull()
   wrapper.unmount()
 })

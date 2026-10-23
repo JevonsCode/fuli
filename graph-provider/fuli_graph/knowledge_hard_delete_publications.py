@@ -29,9 +29,12 @@ async def publications_for_sources(store, space, items, episode_ids=()):
         return []
     records, _, _ = await store.runtime.driver.execute_query(
         '''
-        MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_PUBLICATION_DRAFT]->
+        MATCH (personal:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_PUBLICATION_DRAFT]->
               (draft:FuliPublicationDraft {status: 'submitted'})
-        RETURN draft ORDER BY draft.id
+        OPTIONAL MATCH (personal)-[:SUBSCRIBES_TO]->(subscription:FuliSubscription)
+        WHERE subscription.provider_url = draft.provider_url
+          AND subscription.project_id = draft.target_project_id
+        RETURN draft, head(collect(subscription.project_name)) AS project_name ORDER BY draft.id
         ''', space_id=space['id'], routing_='r')
     found = []
     for record in records:
@@ -49,6 +52,7 @@ async def publications_for_sources(store, space, items, episode_ids=()):
                 matched.append(source['episode_id'])
         if matched:
             found.append(KnowledgeHardDeletePublication(
-                draft_id=draft['id'], project_id=draft['target_project_id'], provider_url=draft['provider_url'],
+                draft_id=draft['id'], project_id=draft['target_project_id'],
+                project_name=record.get('project_name') or None, provider_url=draft['provider_url'],
                 proposal_id=draft['shared_proposal_id'], source_episode_ids=sorted(set(matched))))
     return sorted(found, key=lambda row: row.draft_id)

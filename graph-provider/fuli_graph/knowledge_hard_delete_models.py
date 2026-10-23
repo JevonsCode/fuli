@@ -94,6 +94,7 @@ class KnowledgeHardDeleteCounts(StrictModel):
 class KnowledgeHardDeletePublication(StrictModel):
     draft_id: str
     project_id: str
+    project_name: str | None = None
     provider_url: str
     proposal_id: str
     source_episode_ids: list[str]

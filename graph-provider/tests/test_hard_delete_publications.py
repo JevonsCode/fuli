@@ -18,7 +18,11 @@ class PreviewDriver:
         self.queries.append(query)
         if 'FuliPublicationDraft' in query:
             assert params['space_id'] == 'space'
-            return ([{'draft': draft} for draft in self.drafts], None, None)
+            assert 'SUBSCRIBES_TO' in query
+            assert 'subscription.provider_url = draft.provider_url' in query
+            assert 'subscription.project_id = draft.target_project_id' in query
+            return ([{'draft': draft, 'project_name': 'Readable public project' if draft['id'] == 'exact' else None}
+                     for draft in self.drafts], None, None)
         if 'RETURN episode.uuid AS episode_id' in query:
             return ([{'episode_id': stable_uuid('group', 'episode', 'original-capture'),
                       'session_id': 'session', 'source_application': 'codex', 'source_turn_id': 'turn'}], None, None)
@@ -84,6 +88,7 @@ async def test_preview_reports_exact_episode_and_turn_provenance_and_no_fake_wit
     result = await deletion.preview_hard_delete(store, {'id': 'owner'}, 'item',
                 KnowledgeHardDeleteRef(personal_space_id='space', item_kind='entity'))
     assert [row.draft_id for row in result.publications] == ['exact', 'turn']
+    assert [row.project_name for row in result.publications] == ['Readable public project', None]
     for row in result.publications:
         assert row.project_id == 'public-project'
         assert row.withdrawal_url is None

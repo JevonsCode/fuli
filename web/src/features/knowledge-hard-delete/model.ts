@@ -42,9 +42,11 @@ export type HardDeleteCounts = Record<RecordCount | 'items' | 'versions' | 'rela
 export interface HardDeletePublication {
   draft_id: string
   project_id: string
+  project_name?: string | null
   provider_url: string
   proposal_id: string
   source_episode_ids: string[]
+  // Temporary contract until public withdrawal exists; submission is not acceptance.
   status: 'submitted'
   local_delete_retracts: false
   withdrawal_status: 'unavailable'

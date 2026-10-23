@@ -35,6 +35,8 @@ let request = 0
 
 const ready = computed(() => Boolean(preview.value) && confirmationMatches(preview.value!, typed.value))
 const records = computed(() => preview.value ? recordCounts(preview.value.counts) : [])
+const publicProjects = computed(() => [...new Set((preview.value?.publications ?? [])
+  .map(publication => publication.project_name || publication.project_id))].join(' / '))
 const when = (value?: string | null) => formatDateTime(value, currentLocale(), DATE_TIME_MINUTE, { missing: '—' })
 
 async function load(again = false) {
@@ -102,15 +104,16 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
     <GrowthLoading v-if="reloading" variant="inline" :label="t('knowledgeHardDelete.dialog.reloading')" />
     <p v-if="notice" role="status" class="m-0 font-medium" data-hard-delete-notice>{{ notice }}</p>
 
-    <section v-if="preview.publications?.length" class="grid gap-2 rounded-lg border p-3" data-hard-delete-publications>
+    <section v-if="preview.publications?.length" class="grid min-w-0 gap-2 rounded-lg border p-3 [overflow-wrap:anywhere]" data-hard-delete-publications>
       <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.dialog.publications') }}</h3>
+      <p class="m-0">{{ t('knowledgeHardDelete.dialog.publicationWarning', { project: publicProjects }) }}</p>
       <ul class="m-0 grid list-none gap-2 p-0">
         <li v-for="publication in preview.publications" :key="publication.draft_id" class="grid gap-1 [overflow-wrap:anywhere]">
-          <p class="m-0">{{ t('knowledgeHardDelete.dialog.publicationWarning', { project: publication.project_id }) }}</p>
-          <p class="m-0 text-muted-foreground">{{ publication.provider_url }} · {{ publication.proposal_id }}</p>
+          <p class="m-0 font-medium">{{ publication.project_name || publication.project_id }}</p>
+          <p class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.publicationLocation', { location: publication.provider_url, submission: publication.proposal_id }) }}</p>
         </li>
       </ul>
-      <p class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.withdrawalUnavailable') }}</p>
+      <p class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.withdrawalUnavailable', { project: publicProjects }) }}</p>
     </section>
 
     <section class="grid gap-2" data-hard-delete-items>
@@ -182,7 +185,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
       <p class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedShared') }}</p>
       <p v-if="preview.item_kind === 'relationship' || preview.counts.relationships" class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedEndpoints') }}</p>
       <p class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedWorkflow') }}</p>
-      <p class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedPublic') }}</p>
+      <p v-if="!preview.publications?.length" class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedPublic') }}</p>
       <p class="m-0">{{ t('knowledgeHardDelete.dialog.trace') }}</p>
       <p class="m-0 text-foreground" data-hard-delete-disclosure>{{ t('knowledgeHardDelete.dialog.disclosure') }}</p>
     </section>
