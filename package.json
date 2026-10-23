@@ -54,6 +54,7 @@
     "test:web": "vitest run --config vitest.config.ts",
     "test:package": "node scripts/package-smoke.js",
     "test:knowledge:live": "node acceptance/knowledge-live.js",
+    "measure:context-delivery": "node acceptance/context-delivery-replay/run.js",
     "test:external-knowledge:live": "node scripts/validate-external-knowledge-live.js",
     "start": "node src/server.js",
     "graph:setup": "node src/graphiti/setup.js",

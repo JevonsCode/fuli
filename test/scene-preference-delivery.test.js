@@ -14,6 +14,7 @@ import { entryRules } from '../src/conversations/entry-rules.js';
 import { projectAgentCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';
 import { successToolResult } from '../src/mcp/tool-result.js';
 import { codexPreferenceEvidence } from '../src/agents/codex/preference-evidence.js';
+import { replayPreferences, syntheticPreference } from '../test-support/synthetic-context-session.js';
 
 // Its own session: the delivery lock is a machine-wide pipe per session, so test files run
 // in parallel must not share one (session-preference-delivery.test.js uses another).
@@ -22,9 +23,7 @@ const authority = { personal_space_id: 'synthetic-space', personal_project_id: '
   session_id: session, source_application: 'codex' };
 const origin = { sourceApplication: 'codex', nativeSessionId: session };
 const format = value => successToolResult(value, { preferenceContext: true, limitBytes: 128 * 1024, itemLimit: 1000 });
-const rule = (key, instruction, qualifiers = {}, aspect = 'taste') => ({ id: `item-${key}`, item_kind: 'entity',
-  preference_key: key, preference_scope: 'global', profile_aspect: aspect, confirmation_status: 'confirmed',
-  instruction, preference_qualifiers: qualifiers });
+const rule = syntheticPreference;
 const HARD = rule('no-force-push', 'SYNTHETIC_HARD: never force-push a shared branch.', { constraint: 'hard' }, 'judgment_preference');
 // An old-format confirmed judgment rule: no scene key, no constraint marker.
 const BOUNDARY = rule('no-unapproved-push', 'SYNTHETIC_BOUNDARY 未经批准不要强推共享分支', {}, 'judgment_preference');
@@ -75,18 +74,7 @@ const keys = frame => frame.effective_preferences.map(item => item.preference_ke
 const unchangedContext = frame => ({ receipt: frame.agent_receipt.markdown.replace(/task-\w+/, ''),
   role: frame.project_agent_context.role, guidance: frame.application_guidance });
 
-// What the model holds after each frame, following only the delivery rules:
-// a delta or scene switch applies to the frame its base_result names.
-function replay(views, { id, frame }) {
-  const delivery = frame.preference_delivery;
-  const key = item => item.preference_key;
-  const next = new Map(delivery ? views.get(delivery.base_result) : []);
-  if (delivery?.status === 'scene_switch') for (const replaced of delivery.replaces) next.delete(replaced);
-  if (delivery?.status === 'delta') for (const removed of delivery.removed) next.delete(key(removed));
-  for (const item of frame.effective_preferences ?? frame.preference_updates) next.set(key(item), item.instruction);
-  views.set(id, next);
-  return next;
-}
+const replay = replayPreferences;
 
 test('frontend -> chat -> frontend replaces only the scene set; boundaries, hard constraints and other context persist', t => fixture(async f => {
   const items = [HARD, BOUNDARY, GENERAL, SPACING, PALETTE];

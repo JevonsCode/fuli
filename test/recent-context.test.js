@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createHash, randomUUID } from 'node:crypto';
-import { appendFile, copyFile, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { appendFile, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createSessionPreferenceDelivery, PREFERENCE_SESSION_FORMAT } from '../src/conversations/preference-session.js';
@@ -11,6 +11,7 @@ import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { codexPreferenceEvidence } from '../src/agents/codex/preference-evidence.js';
 import { claudePreferenceEvidence } from '../src/agents/claude-code/preference-evidence.js';
 import { beginConversation } from '../src/graphiti/agent-conversations.js';
+import { syntheticHost as host, syntheticJournal } from '../test-support/synthetic-context-session.js';
 
 // rec#15 PR2 / rec#10 D-27: cross-client incremental recent context. Every
 // transcript, conversation and preference here is synthetic; no client runs.
@@ -19,85 +20,9 @@ import { beginConversation } from '../src/graphiti/agent-conversations.js';
 const C = randomUUID();
 const H = randomUUID();
 const CONVERSATION = 'conversation-a';
-const sha = text => createHash('sha256').update(text).digest('hex');
 const bytes = text => Buffer.byteLength(text);
 
-// A synthetic host: its native transcript, written the way each client records
-// native messages, a tool result or a delivered hook context.
-function host(directory, client, sessionId) {
-  const path = join(directory, `${client}-${sessionId}.jsonl`);
-  let size = 0;
-  const write = async record => {
-    const line = `${JSON.stringify(record)}\n`;
-    const offset = size;
-    await appendFile(path, line);
-    size += bytes(line);
-    return offset;
-  };
-  const codex = client === 'codex';
-  return {
-    client, sessionId, path,
-    start: () => write(codex ? { type: 'session_meta', payload: { id: sessionId } }
-      : { type: 'system', subtype: 'init', sessionId }),
-    // The stored event ID names the native record, as the transcript collector does.
-    say: async (role, text) => `jsonl-v1:${await write(codex
-      ? { type: 'response_item', payload: { type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] } }
-      : { type: role, sessionId, message: { role, content: role === 'user' ? text : [{ type: 'text', text }] } })}:0:0`,
-    inject: text => write(codex
-      ? { type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text }],
-        internal_chat_message_metadata_passthrough: { content_item_kinds: ['hooks.additional_context'],
-          content_item_metadata: [{ provenance: { type: 'harness', hook: true } }] } } }
-      : { type: 'attachment', sessionId, uuid: `attachment-${size}`,
-        attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit' }, rendered: [{ content: text }] }),
-    compact: () => write(codex ? { type: 'compacted', payload: { window_id: 'next' } }
-      : { type: 'system', subtype: 'compact_boundary', sessionId }),
-    // A FULI tool result whose structured copy and visible text may differ.
-    toolResult: async (id, structured, visible) => {
-      const output = JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(visible) }], structuredContent: structured });
-      await write(codex ? { type: 'response_item', payload: { type: 'function_call', name: 'mcp__fuli__begin_task_context', call_id: id } }
-        : { type: 'assistant', sessionId, message: { content: [{ type: 'tool_use', id, name: 'mcp__fuli__begin_task_context' }] } });
-      await write(codex ? { type: 'response_item', payload: { type: 'function_call_output', call_id: id, output } }
-        : { type: 'user', sessionId, message: { content: [{ type: 'tool_result', tool_use_id: id, content: output }] } });
-    },
-    // Rewrites the same file in place (same identity) with only its header
-    // and, optionally, one message at the next offset.
-    rewriteInPlace: async (text = null) => {
-      size = 0;
-      await writeFile(path, '');
-      await write(codex ? { type: 'session_meta', payload: { id: sessionId } } : { type: 'system', subtype: 'init', sessionId });
-      if (text !== null) await write(codex
-        ? { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } }
-        : { type: 'user', sessionId, message: { role: 'user', content: text } });
-    },
-    replace: async () => {
-      // The same bytes under a new file identity.
-      const copy = `${path}.copy`;
-      await copyFile(path, copy);
-      await rm(path);
-      await rename(copy, path);
-    }
-  };
-}
-
-// A synthetic Provider journal shared by both clients, with the proofs
-// add_delivery_proofs attaches for the asking session.
-function journal() {
-  const events = [];
-  return {
-    events,
-    add: (role, content, client, sessionId, eventId) => events.push({ sequence: events.length + 1, role, content,
-      source_application: client, session_id: sessionId, event_id: eventId }),
-    recovery: (client, sessionId, { window = events.length, truncate = null, override = {} } = {}) => ({
-      conversation_id: CONVERSATION, revision: events.length, summary: '', summary_role: 'historical', truncated: false,
-      latest_checkpoint: null, omitted_sequence: null, scan_truncated: false,
-      messages: events.slice(-window).map(event => {
-        const content = override[event.sequence] ?? event.content;
-        const shown = truncate === event.sequence ? { content: `${content.slice(0, 8)}…`, truncated: true } : { content };
-        return { sequence: event.sequence, role: event.role, ...shown, content_sha256: sha(content),
-          ...(event.source_application === client && event.session_id === sessionId ? { own_event: event.event_id } : {}) };
-      }) })
-  };
-}
+const journal = () => syntheticJournal(CONVERSATION);
 
 const RULES = [{ preference_key: 'synthetic-rule', preference_scope: 'project', instruction: 'Synthetic rule.' }];
 
