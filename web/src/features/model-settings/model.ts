@@ -1,5 +1,7 @@
 import { ApiError, getJson, putJson } from '@/api/client'
 import { t } from '@/i18n'
+import { shortDigest } from '@/features/data-format/model'
+import { formatDateTime } from '@/lib/date-time'
 import { shortUniqueIds } from '@/lib/short-ids'
 
 // The console's model settings page (rec#8): each built-in Agent's model,
@@ -56,20 +58,28 @@ export interface ModelRoleView {
   fallbackToSession?: boolean
   // rec#10 D-24, read from the gate registry: only Tonborg's model can be unlocked.
   reviewGate?: ReviewGateView
-  // The build that last answered on the configured model; null when it has not answered.
-  lastServed?: LastServed | null
+  // rec#10 D-32: the build a local Ollama listed after the latest answer.
+  localBuild?: LocalBuild
 }
 
-// modelDigest is null when the backend did not prove the digest for that answer.
-export interface LastServed { modelDigest: string | null; answeredAt: string }
+// An observation of the local catalog, never proof of what served an answer.
+export interface LocalBuild {
+  status: 'not_applicable' | 'no_record' | 'not_observed' | 'observed'
+  digest: string | null
+  completedAt: string | null
+}
 
-// The served digest as a short prefix marked …, with the full digest in a
-// title; 未知 when no answer proved one (the D-24 gate then matches nothing).
-export function servedDigest(served: LastServed | null | undefined): { text: string; title: string; known: boolean } {
-  const digest = served?.modelDigest
-  if (!digest) return { text: t('modelSettings.digestUnknown'), title: t('modelSettings.digestUnknownHint'), known: false }
-  const short = shortUniqueIds([digest]).get(digest) ?? digest
-  return { text: short === digest ? digest : `${short}…`, title: digest, known: true }
+// What the 本地模型版本 row says: nothing for a connection a local build is
+// never read from; otherwise the state in words, or the build as the
+// 12-character prefix `ollama list` shows, with the full build in a title.
+export function localBuildText(build: LocalBuild | undefined, locale: string): { text: string; title?: string; code: boolean } | null {
+  if (!build || build.status === 'not_applicable') return null
+  if (build.status === 'no_record') return { text: t('modelSettings.localBuild.noRecord'), code: false }
+  if (build.status === 'not_observed' || !build.digest) {
+    return { text: t('modelSettings.localBuild.notObserved'), title: t('modelSettings.localBuild.notObservedHint'), code: false }
+  }
+  const time = formatDateTime(build.completedAt, locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }, { missing: '' })
+  return { text: `${shortDigest(build.digest)}…`, title: `${build.digest}\n${t('modelSettings.localBuild.observedHint', { time })}`, code: true }
 }
 
 export interface GateEntry { modelId: string; modelDigest: string; harnessVersion: string; evidence: string; addedAt: string }

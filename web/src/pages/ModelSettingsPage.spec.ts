@@ -93,28 +93,42 @@ describe('ModelSettingsPage', () => {
     expect(gate.get('dd').attributes('title')).toBe('qwen-test@sha256:0123456789abcdef (synthetic evaluation)')
   })
 
-  it('shows the digest that served the last answer beside the model, short with the full digest in a title', async () => {
+  it('shows the local build observed after the latest answer beside the model: 12 characters, the full build and a caveat in a title', async () => {
     const digest = '0123456789abcdef'.repeat(4)
-    ;(rolesPayload.roles[3] as Record<string, unknown>).lastServed = { modelDigest: digest, answeredAt: '2026-10-24T08:00:00.000Z' }
+    ;(rolesPayload.roles[3] as Record<string, unknown>).localBuild = { status: 'observed', digest, completedAt: '2026-10-24T08:00:00.000Z' }
     const wrapper = await mountPage()
-    const fact = wrapper.get('[data-model-role="tonborg"] [data-model-fact="modelDigest"]')
-    expect(fact.get('dt').text()).toBe('模型摘要')
-    expect(fact.get('dd code').text()).toBe('01234567…')
-    expect(fact.get('dd').attributes('title')).toBe(digest)
-    // A role without a model shows no digest at all.
-    expect(wrapper.find('[data-model-role="assistant"] [data-model-fact="modelDigest"]').exists()).toBe(false)
+    const fact = wrapper.get('[data-model-role="tonborg"] [data-model-fact="localBuild"]')
+    expect(fact.get('dt').text()).toBe('本地模型版本')
+    expect(fact.get('dd code').text()).toBe('0123456789ab…')
+    const title = fact.get('dd').attributes('title')!
+    expect(title.startsWith(`${digest}\n最近一次回答（`)).toBe(true)
+    expect(title).toContain('这是观察值，不是本次回答的版本证明。')
+    // A role without a model shows no row at all.
+    expect(wrapper.find('[data-model-role="assistant"] [data-model-fact="localBuild"]').exists()).toBe(false)
   })
 
-  it('shows an unproven or missing digest as unknown, never a made-up value', async () => {
-    for (const lastServed of [null, { modelDigest: null, answeredAt: '2026-10-24T08:00:00.000Z' }]) {
-      ;(rolesPayload.roles[3] as Record<string, unknown>).lastServed = lastServed
+  it('says no record and not observed in words, never a made-up build or a cause it cannot know', async () => {
+    const cases = [
+      [{ status: 'no_record', digest: null, completedAt: null }, '尚无记录', undefined],
+      [{ status: 'not_observed', digest: null, completedAt: '2026-10-24T08:00:00.000Z' }, '未观察到', '可能是服务不支持、读取失败或未找到完整 tag'],
+    ] as const
+    for (const [localBuild, text, hint] of cases) {
+      ;(rolesPayload.roles[3] as Record<string, unknown>).localBuild = localBuild
       const wrapper = await mountPage()
-      const fact = wrapper.get('[data-model-role="tonborg"] [data-model-fact="modelDigest"]')
-      expect(fact.get('dd').text()).toBe('未知')
+      const fact = wrapper.get('[data-model-role="tonborg"] [data-model-fact="localBuild"]')
+      expect(fact.get('dd').text()).toBe(text)
       expect(fact.find('dd code').exists()).toBe(false)
-      expect(fact.get('dd').attributes('title')).toContain('审核门不会放行')
+      if (hint) expect(fact.get('dd').attributes('title')).toContain(hint)
+      else expect(fact.get('dd').attributes('title')).toBeUndefined()
+      expect(fact.get('dd').attributes('title') ?? '').not.toContain('审核门')
       wrapper.unmount()
     }
+  })
+
+  it('omits the row for a connection a local build is never read from', async () => {
+    ;(rolesPayload.roles[3] as Record<string, unknown>).localBuild = { status: 'not_applicable', digest: null, completedAt: null }
+    const wrapper = await mountPage()
+    expect(wrapper.find('[data-model-role="tonborg"] [data-model-fact="localBuild"]').exists()).toBe(false)
   })
 
   it('edits a role in a labelled form and saves it with the revision it read', async () => {

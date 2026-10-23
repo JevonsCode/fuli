@@ -11,7 +11,7 @@ import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
 import { useRoleSuggestions } from '@/features/model-settings/useRoleSuggestions'
 import {
-  formatCount, gateBuilds, readModelRoles, roleName, servedDigest, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
+  formatCount, gateBuilds, localBuildText, readModelRoles, roleName, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -88,7 +88,7 @@ function facts(view: ModelRoleView): Fact[] {
     { key: 'answeredBy', label: t('modelSettings.answeredBy'), value: answer },
     { key: 'provider', label: t('modelSettings.provider'), value: `${t(`modelSettings.protocols.${view.connection.protocol}`)} · ${view.connection.endpointHost}` },
     { key: 'model', label: t('modelSettings.model'), value: view.connection.model, code: true },
-    digestFact(view),
+    ...localBuildFact(view),
     { key: 'secretRef', label: t('modelSettings.secretRef'), value: view.connection.secretRef ?? t('modelSettings.none'), code: Boolean(view.connection.secretRef) },
     { key: 'operations', label: t('modelSettings.operations'), value: view.allowedOperations?.join(', ') || t('modelSettings.none'), code: Boolean(view.allowedOperations?.length) },
     { key: 'egress', label: t('modelSettings.egress'), value: egress
@@ -102,16 +102,16 @@ function facts(view: ModelRoleView): Fact[] {
   ]
 }
 
-function digestFact(view: ModelRoleView): Fact {
-  const digest = servedDigest(view.lastServed)
-  return { key: 'modelDigest', label: t('modelSettings.modelDigest'), value: digest.text, code: digest.known, title: digest.title }
+function localBuildFact(view: ModelRoleView): Fact[] {
+  const build = localBuildText(view.localBuild, locale.value)
+  return build ? [{ key: 'localBuild', label: t('modelSettings.localBuild.label'), value: build.text, code: build.code, title: build.title }] : []
 }
 
 function gateFact(view: ModelRoleView): Fact[] {
   const gate = view.reviewGate
   if (!gate) return []
   const builds = gate.entries.length ? gateBuilds(gate) : null
-  return [{ key: 'gate', label: t('modelSettings.gate'), title: builds?.title,
+  return [{ key: 'gate', label: t('modelSettings.gate'), title: builds?.title ?? t('modelSettings.gateNoBuildProof'),
     value: [t(`modelSettings.gates.${gate.status}`), builds?.text].filter(Boolean).join(' · ') }]
 }
 
