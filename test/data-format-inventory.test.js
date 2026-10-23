@@ -77,6 +77,32 @@ const FIRST_RELEASES = {
       attempt_id TEXT, accepted_attempt TEXT, start_attempts INTEGER NOT NULL DEFAULT 0, lease_expires_at TEXT,
       cancel_requested INTEGER NOT NULL DEFAULT 0, reply TEXT, error TEXT, via TEXT, verified INTEGER,
       expires_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`,
+  'model-usage': `CREATE TABLE model_attempts(
+        request_id TEXT NOT NULL, attempt_id TEXT NOT NULL, attempt_number INTEGER NOT NULL,
+        purpose TEXT NOT NULL CHECK(purpose IN ('initial', 'retry', 'repair', 'format_fallback')),
+        channel TEXT NOT NULL CHECK(channel IN ('model_api', 'session')),
+        role TEXT NOT NULL, operation TEXT NOT NULL, personal_space_id TEXT NOT NULL, personal_project_id TEXT,
+        connection_id TEXT, protocol TEXT, endpoint_host TEXT, requested_model TEXT, actual_model TEXT, output_mode TEXT,
+        started_at TEXT NOT NULL, duration_ms INTEGER NOT NULL,
+        outcome TEXT NOT NULL CHECK(outcome IN ('succeeded', 'failed', 'invalid_output')),
+        failure_class TEXT, failure_reason TEXT,
+        input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER, cached_input_tokens INTEGER,
+        cache_write_input_tokens INTEGER, reasoning_tokens INTEGER, usage_definition TEXT,
+        budget_ceiling_tokens INTEGER NOT NULL, estimated_cost REAL, cost_currency TEXT,
+        PRIMARY KEY(request_id, attempt_id));
+      CREATE INDEX model_attempts_role_time ON model_attempts(role, started_at);
+      CREATE TABLE model_reservations(
+        request_id TEXT NOT NULL, attempt_id TEXT NOT NULL, role TEXT NOT NULL, started_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL, ceiling_tokens INTEGER NOT NULL, ceiling_cost REAL, pending_attempt TEXT NOT NULL,
+        PRIMARY KEY(request_id, attempt_id));
+      CREATE INDEX model_reservations_role_time ON model_reservations(role, started_at);
+      CREATE TRIGGER model_attempts_no_update BEFORE UPDATE ON model_attempts
+        BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;
+      CREATE TRIGGER model_attempts_no_delete BEFORE DELETE ON model_attempts
+        BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;
+    INSERT INTO model_attempts VALUES('r1', 'a1', 1, 'initial', 'model_api', 'bole', 'pick', 'space', NULL, 'local',
+      'openai_chat', '127.0.0.1:11434', 'synthetic-model', 'synthetic-model', 'json_schema', 'x', 1, 'succeeded', NULL, NULL,
+      1, 1, 2, NULL, NULL, NULL, 'openai_chat', 2, NULL, NULL);`,
   'peer-node': `CREATE TABLE shares (binding_id TEXT PRIMARY KEY, space_id TEXT NOT NULL, project_id TEXT NOT NULL,
       agent_id TEXT NOT NULL, clients_json TEXT NOT NULL, working_directory TEXT, created_at TEXT NOT NULL, revoked_at TEXT);
     INSERT INTO shares VALUES('b1', 'space', 'project', 'agent', '[]', NULL, 'x', NULL);`

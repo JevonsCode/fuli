@@ -18,6 +18,7 @@ import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
 import { openAiStream } from './fixtures/model-transport.js';
+import { gateEntry, reviewGateWith } from './fixtures/review-gate.js';
 
 // rec#8 T1-T5 and C1-C13 for Tonborg through its production interfaces:
 // the judgment service, the model port with a fake transport, and the
@@ -44,7 +45,8 @@ const verdict = (extra = {}) => ({ target: 'entity:one', outcome: 'approve', sum
 const answer = (payload, evidenceIds = ['candidates']) => ({ decision: 'propose', payload, reason: 'Supported by the evidence.', evidenceIds, uncertainty: null });
 const reply = (payload, evidenceIds) => openAiStream(JSON.stringify(answer(payload, evidenceIds)));
 
-function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()] }), policy = {}, reviewGate = UNGATED } = {}) {
+// tags: what the fake local Ollama lists at /api/tags; without it the route is missing.
+function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()] }), policy = {}, reviewGate = UNGATED, tags = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fuli-tonborg-'));
   const clock = { at: Date.parse('2026-10-20T12:00:00.000Z') };
   const now = () => new Date(clock.at);
@@ -57,7 +59,11 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
   const ledger = new ModelUsageLedger(join(dir, 'model-usage.sqlite'));
   const port = createModelBackendPort({ readConfig: () => readModelBackendConfig('x', { read: () => config }),
     secrets: { read: async () => null }, ledger, wait: async () => {}, now,
-    fetchImpl: async (_url, init) => { calls.push(JSON.parse(init.body)); return replies(calls.length); } });
+    fetchImpl: async (url, init) => {
+      if (new URL(url).pathname === '/api/tags') return tags ? Response.json(tags) : new Response('', { status: 404 });
+      calls.push(JSON.parse(init.body));
+      return replies(calls.length);
+    } });
   const app = { config: { personal: { spaceId: 's' } },
     listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
@@ -156,6 +162,28 @@ test('T1: a configured model gives a bounded decision on exact candidate keys; u
   const schema = h.calls[0].response_format.json_schema.schema;
   assert.deepEqual(schema.properties.payload.properties.decisions.items.properties.target.enum, ['entity:one']);
   assert.equal(h.legacyRuns.length, 0);
+});
+
+test('T1: a local build observed after the answer never reaches the receipt, the record or the gate; D-24 stays model_build_unknown (D-32)', async t => {
+  const observed = '1'.repeat(64);
+  // Even a registry entry naming exactly the observed build cannot match it.
+  const h = harness(t, { roles: { tonborg: tonborg() },
+    reviewGate: reviewGateWith(gateEntry({ modelId: 'qwen-test', modelDigest: observed })),
+    tags: { models: [{ name: 'qwen-test', model: 'qwen-test', digest: observed }] },
+    replies: () => openAiStream(JSON.stringify(answer({ decisions: [verdict()] })), { model: 'qwen-test' }) });
+  const [record] = (await h.app.judgment.review(reviewInput)).records;
+  // The observation was made and kept for Settings only.
+  assert.deepEqual(h.ledger.db.prepare('SELECT observed_tag_digest AS digest FROM model_attempts').all().map(row => row.digest), [observed]);
+  assert.deepEqual([record.aiReview.state, record.aiReview.modelOutcome], ['ai_suggested', 'approve']);
+  assert.deepEqual([record.aiReview.gate.status, record.aiReview.gate.reason, record.aiReview.gate.modelId, record.aiReview.gate.modelDigest],
+    ['not_passed', 'model_build_unknown', 'qwen-test', null]);
+  assert.equal(Object.hasOwn(record.modelReceipt, 'modelDigest'), false);
+  assert.equal(JSON.stringify(record).includes(observed), false);
+  const stored = h.app.judgment.store().db.prepare('SELECT body FROM judgment_records').all().map(row => row.body);
+  assert.equal(stored.length, 1);
+  assert.equal(stored.some(body => body.includes(observed)), false);
+  assert.equal(record.execution.status, 'not_applied');
+  assert.equal(h.writes.length, 0);
 });
 
 test('T2: conflicting or negative evidence escalates even when the model is confident', async t => {

@@ -24,7 +24,7 @@ const KEYED_PROTOCOLS = new Set(['anthropic_messages', 'typesafe_systemone']);
 // OpenAI-compatible reasoning_effort; 'none' keeps a thinking model such as
 // qwen3.5 from spending the output budget on hidden reasoning.
 const REASONING_EFFORTS = Object.freeze(['none', 'minimal', 'low', 'medium', 'high']);
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+export const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const MAX_OPERATIONS = 32;
 const MAX_APPROVED_PROJECTS = 256;
 const MIN_TIMEOUT_MS = 1000;
