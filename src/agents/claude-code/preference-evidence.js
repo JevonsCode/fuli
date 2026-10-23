@@ -1,7 +1,10 @@
-import { verifyClaudeTranscript } from './conversation-transcript.js';
+import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
 
 export const claudePreferenceEvidence = Object.freeze({
   verify: verifyClaudeTranscript,
+  // The same reading the transcript collector stores, so a session's own
+  // native message can be matched to its stored event.
+  normalize: normalizeClaudeRecord,
   events(record, sessionId) {
     if (record?.sessionId !== sessionId) return [];
     if (record.type === 'system' && record.subtype === 'compact_boundary') return [{ type: 'reset' }];

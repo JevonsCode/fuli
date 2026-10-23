@@ -107,18 +107,12 @@ function isDefault(value, { counts = false, flags = false } = {}) {
     || (Array.isArray(value) && !value.length) || (typeof value === 'object' && value !== null && !Array.isArray(value) && !Object.keys(value).length);
 }
 
-// Inside the same native chat the host already holds the recent messages, so
-// only the latest saved result is repeated; another chat gets the full window.
+// The Provider's whole budgeted window is kept here. What one native session
+// has already seen is left out only at delivery, against that session's own
+// transcript (recent-context.js); a client without one receives it all.
 function conversationView(conversation, share) {
   if (!share) return conversation;
-  const view = { ...conversation, guidance: ruleTextView(conversation.guidance, 'conversation_guidance') };
-  const recovery = conversation.recovery;
-  if (conversation.same_session && recovery && Array.isArray(recovery.messages)) {
-    view.recovery = { conversation_id: recovery.conversation_id, revision: recovery.revision,
-      latest_checkpoint: recovery.latest_checkpoint ?? null, summary_role: recovery.summary_role,
-      messages_omitted: recovery.messages.length, omitted_reason: 'same_host_session' };
-  }
-  return view;
+  return { ...conversation, guidance: ruleTextView(conversation.guidance, 'conversation_guidance') };
 }
 
 function ruleOrReference(section, share) {
