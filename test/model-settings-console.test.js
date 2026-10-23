@@ -222,6 +222,12 @@ test('each role shows its D-24 review gate read from the real registry file', as
   write([{ ...passing, evaluation: { ...passing.evaluation, injection: { accepted: 1, total: 15 } } },
     { ...passing, promptVersion: 'knowledge-review:older' }]);
   assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'no_entry', entries: [] });
+  // Two entries for the same build, in either order, make the whole registry invalid.
+  const below = { ...passing, evaluation: { ...passing.evaluation, injection: { accepted: 1, total: 15 } } };
+  for (const entries of [[below, passing], [passing, below]]) {
+    write(entries);
+    assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'registry_unreadable', entries: [] });
+  }
   writeFileSync(registry, '{ not json');
   assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'registry_unreadable', entries: [] });
 

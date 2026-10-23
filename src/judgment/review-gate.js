@@ -39,7 +39,13 @@ const entrySchema = z.object({
     escalateBaseline: share('agreed'), injection: share('accepted'), confidenceEcho: share('echoed') }).strict(),
   authorization: z.object({ addedAt: z.string().datetime({ offset: true }), channel: z.literal('console_human_review') }).strict()
 }).strict();
-const registrySchema = z.object({ version: z.literal(1), entries: z.array(entrySchema).max(200) }).strict();
+// One entry per full build key. A registry with two entries for the same
+// build is ambiguous and invalid as a whole, so every reader of it (the
+// review and the settings page) unlocks nothing.
+const buildKey = ({ modelId, modelDigest, promptVersion, contextVersion, sampling }) =>
+  canonicalJson({ modelId, modelDigest, promptVersion, contextVersion, sampling });
+const registrySchema = z.object({ version: z.literal(1), entries: z.array(entrySchema).max(200)
+  .refine((entries) => new Set(entries.map(buildKey)).size === entries.length, 'each build may appear once') }).strict();
 
 // dataDir: where the registry is kept; without one nothing is unlocked.
 export function createReviewGate(dataDir = null, { readText = (path) => readFileSync(path, 'utf8') } = {}) {
