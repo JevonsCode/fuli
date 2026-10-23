@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { claudeEntry, codexEntry, fixture } from './fixtures/capture-project-fixture.js';
 import { ProviderTaskContextRegistry } from '../src/mcp/provider-task-context-registry.js';
+import { callAgentTool } from '../src/agent-tools.js';
 
 const rule = (key, instruction, qualifiers = {}, aspect = 'taste') => ({ id: `item-${key}`, item_kind: 'entity', key,
   title: key, preference_key: key, preference_scope: 'global', profile_aspect: aspect, confirmation_status: 'confirmed',
@@ -14,7 +15,9 @@ const ITEMS = [
   rule('tradeoffs', 'SYNTHETIC_GENERAL state the tradeoff in one line.', {}, 'personality'),
   rule('spacing', 'SYNTHETIC_FRONTEND use the 8px spacing grid.', { tasteDomain: 'frontend' }),
   rule('palette', 'SYNTHETIC_DESIGN prefer muted palettes.', { tasteDomain: 'design' }),
-  rule('banter', 'SYNTHETIC_CHAT keep small talk to one sentence.', { tasteDomain: 'chat' }, 'personality')
+  rule('banter', 'SYNTHETIC_CHAT keep small talk to one sentence.', { tasteDomain: 'chat' }, 'personality'),
+  // An old-format confirmed judgment rule without a scene key: a boundary (D-27.8).
+  rule('no-unapproved-push', 'SYNTHETIC_BOUNDARY 未经批准不要强推共享分支', {}, 'judgment_preference')
 ];
 const AGENT_TASTE = 'The Agent role keeps its own taste text.';
 
@@ -57,7 +60,7 @@ test('a frontend prompt persists its scene and selects frontend, design, general
   const { output, context } = await codexEntry(f, f.dirs.novel, { prompt: '按之前定好的规范修复设置页面的按钮' });
   assert.deepEqual(scopes, [{ version: 1, work_kind: 'frontend', workflow: null }]);
   assert.equal(requests[0].workKind, 'frontend');
-  assert.deepEqual(effectiveKeys(context), ['no-force-push', 'palette', 'spacing', 'tradeoffs']);
+  assert.deepEqual(effectiveKeys(context), ['no-force-push', 'no-unapproved-push', 'palette', 'spacing', 'tradeoffs']);
   // No backflow: recall, continuity knowledge, role and judgment carry no user preference.
   assert.equal(context.task_knowledge_recall.status, 'matched');
   assert.deepEqual(context.task_knowledge_recall.entities, []);
@@ -71,11 +74,11 @@ test('a frontend prompt persists its scene and selects frontend, design, general
   t.diagnostic(`bytes: Codex frontend entry additionalContext ${Buffer.byteLength(delivered(output), 'utf8')}`);
 });
 
-test('a chat prompt keeps only the hard constraint and chat items; the frame carries no other body', async t => {
+test('a chat prompt keeps chat items, the boundary and the hard constraint; the frame carries no other body', async t => {
   const { f, scopes } = await sceneFixture(t);
   const { output, context } = await claudeEntry(f, f.dirs.novel, { prompt: '你好！' });
   assert.deepEqual(scopes, [{ version: 1, work_kind: 'chat', workflow: null }]);
-  assert.deepEqual(effectiveKeys(context), ['banter', 'no-force-push']);
+  assert.deepEqual(effectiveKeys(context), ['banter', 'no-force-push', 'no-unapproved-push']);
   assert.doesNotMatch(delivered(output), /SYNTHETIC_(?:FRONTEND|DESIGN|GENERAL)/);
   t.diagnostic(`bytes: Claude Code chat entry additionalContext ${Buffer.byteLength(delivered(output), 'utf8')}`);
 });
@@ -84,12 +87,12 @@ test('an unclassified prompt keeps general items and lists scene-keyed ones by k
   const { f, scopes } = await sceneFixture(t);
   const { output, context } = await codexEntry(f, f.dirs.novel, { prompt: '今天天气怎么样' });
   assert.deepEqual(scopes, [{ version: 1, work_kind: null, workflow: null }]);
-  assert.deepEqual(effectiveKeys(context), ['no-force-push', 'tradeoffs']);
+  assert.deepEqual(effectiveKeys(context), ['no-force-push', 'no-unapproved-push', 'tradeoffs']);
   assert.deepEqual(context.scope_unknown, ['banter', 'palette', 'spacing']);
   assert.doesNotMatch(delivered(output), /SYNTHETIC_(?:FRONTEND|DESIGN|CHAT)/);
 });
 
-test('chat with no matching item and no hard constraint injects no preference at all', async t => {
+test('chat with no matching item, boundary or hard constraint injects no preference at all', async t => {
   const { f } = await sceneFixture(t);
   f.app.personal.collaborationPreferences = async (space, project, _limit, agent) => ({ personal_space_id: space,
     personal_project_id: project, project_agent_id: agent, effective_preferences: structuredClone([ITEMS[1], ITEMS[2]]),
@@ -101,6 +104,30 @@ test('chat with no matching item and no hard constraint injects no preference at
   // Project knowledge (the synthetic fact) may still be context; no preference body is.
   assert.doesNotMatch(delivered(output), /SYNTHETIC_(?!FACT)/);
   t.diagnostic(`bytes: Codex no-match chat entry additionalContext ${Buffer.byteLength(delivered(output), 'utf8')}`);
+});
+
+test('remember carries a stated hard constraint and scene qualifiers into the capture it commits', async t => {
+  const f = await fixture(t);
+  const { context } = await codexEntry(f, f.dirs.novel, { prompt: '记住：任何场景都不要强推共享分支；设置页面用 8px 网格' });
+  const remember = [
+    { kind: 'preference', aspect: 'judgment_preference', scope: 'global', constraint: 'hard',
+      text: 'Never force-push a shared branch, in any scene.', quote: '任何场景都不要强推共享分支' },
+    { kind: 'preference', aspect: 'taste', scope: 'project', workKind: 'frontend', tasteDomain: 'design',
+      text: 'Settings pages use the 8px grid.' },
+    { kind: 'preference', scope: 'project', text: 'Plain rule without qualifiers.' }];
+  await callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: context.taskContextToken,
+    sourceApplication: 'codex', disposition: 'capture_candidates', reason: 'The user asked to keep these.',
+    workLog: { status: 'completed', summary: 'Kept three preferences.' }, remember });
+  const entities = f.knowledge.flatMap(commit => commit.episode.entities);
+  const attributes = text => entities.find(entity => entity.summary === text).attributes;
+  assert.deepEqual(attributes(remember[0].text), { constraint: 'hard' });
+  assert.deepEqual(attributes(remember[1].text), { workKind: 'frontend', tasteDomain: 'design' });
+  assert.deepEqual(attributes(remember[2].text), {});
+  for (const [field, value] of [['constraint', 'always'], ['tasteDomain', 'cooking'], ['workKind', 'chatting']]) {
+    await assert.rejects(callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: context.taskContextToken,
+      sourceApplication: 'codex', disposition: 'capture_candidates', reason: 'Invalid qualifier.',
+      workLog: { status: 'completed', summary: 'Rejected.' }, remember: [{ kind: 'preference', text: 'X', [field]: value }] }));
+  }
 });
 
 test('the Provider-backed registry persists the hook scene as preference_scope', async () => {

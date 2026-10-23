@@ -6,9 +6,10 @@ test-support/task-scene-cases.json. A change to either copy needs the next
 TASK_SCENE_VERSION in both.
 """
 
-TASK_SCENE_VERSION = 'task-scene-1'
+TASK_SCENE_VERSION = 'task-scene-2'
 EVERY_SCENE = '*'
 _CHAT = 'chat'
+_GENERAL_ASPECTS = frozenset({'taste', 'personality'})
 
 TASTE_DOMAIN_SCENES = {
     'frontend': ('frontend',),
@@ -45,7 +46,15 @@ def taste_domain_scenes(qualifiers: dict):
     return list(dict.fromkeys(kind for kinds in scenes for kind in kinds))
 
 
-def general_item_excluded(qualifiers: dict, work_kind) -> bool:
-    """An item with no scene key is dropped only in a positively chat task; a
-    user's hard constraint (constraint: "hard") never is."""
-    return work_kind == _CHAT and qualifiers.get('constraint') != 'hard'
+def general_item_replaceable(qualifiers: dict, aspect) -> bool:
+    """Whether an item without a scene key is in the scene-replaceable set
+    (D-27.8): taste and personality, or any item a person marked
+    constraint: "soft". A judgment_preference without a scene key is a
+    boundary, and constraint: "hard" keeps any item out."""
+    if qualifiers.get('constraint') == 'hard':
+        return False
+    return qualifiers.get('constraint') == 'soft' or aspect in _GENERAL_ASPECTS
+
+
+def chat_scene(work_kind) -> bool:
+    return work_kind == _CHAT

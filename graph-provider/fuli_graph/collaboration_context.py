@@ -120,7 +120,7 @@ async def read_collaboration_context(
     ]
     applicability = {
         item.id: preference_task_applicability(item_qualifiers(item), item.instruction,
-                                               session_id, work_kind, workflow)
+                                               item.profile_aspect, session_id, work_kind, workflow)
         for item in items
     }
     scope_unknown = sorted({

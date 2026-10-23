@@ -79,7 +79,13 @@ test('new scope, unverified host, force-full reader and explicit reset always de
     assert.equal((await f.service.deliver(entry('fresh'), settings, format)).structuredContent.effective_preferences.length, 12);
   }
   const other = withPreferenceScope(entry(), { ...scope, preference_scope: { ...scope.preference_scope, workflow: 'release' } });
-  assert.equal((await f.service.deliver(other, origin, format)).structuredContent.effective_preferences.length, 12);
+  // Another scene of the same scope: these aspect-less rules are boundaries, so
+  // the switch replaces nothing and keeps all 12 as delivered (rec#15 D-27.8).
+  const switched = (await f.service.deliver(other, origin, format)).structuredContent;
+  assert.equal(switched.preference_delivery.status, 'scene_switch');
+  assert.deepEqual([switched.effective_preferences, switched.preference_delivery.replaces], [[], []]);
+  const otherAgent = withPreferenceScope(entry(), { ...scope, project_agent_id: 'other-lead' });
+  assert.equal((await f.service.deliver(otherAgent, origin, format)).structuredContent.effective_preferences.length, 12);
   await f.service.reset(origin);
   const reset = await f.service.deliver(entry('after-reset'), origin, format);
   assert.equal(reset.structuredContent.effective_preferences.length, 12);

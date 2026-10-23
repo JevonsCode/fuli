@@ -11,8 +11,8 @@ FIXTURE_PATH = Path(__file__).resolve().parents[2] / 'test-support' / 'task-scen
 FIXTURE = json.loads(FIXTURE_PATH.read_text(encoding='utf-8'))
 
 
-def applicability(qualifiers, task, instruction='Synthetic rule'):
-    return preference_task_applicability(qualifiers, instruction, task.get('session_id'),
+def applicability(qualifiers, task, instruction='Synthetic rule', aspect='taste'):
+    return preference_task_applicability(qualifiers, instruction, aspect, task.get('session_id'),
                                          task.get('work_kind'), task.get('workflow'))
 
 
@@ -23,7 +23,9 @@ def test_scene_table_version_matches_the_shared_cases():
 @pytest.mark.parametrize('case', FIXTURE['cases'], ids=[case['name'] for case in FIXTURE['cases']])
 def test_shared_cases(case):
     instruction = case.get('instruction', 'Synthetic rule')
-    assert applicability(case['qualifiers'], case['task'], instruction) == case['expected']
+    aspect = case.get('aspect', 'taste')
+    actual = applicability(case['qualifiers'], case['task'], instruction, aspect)
+    assert actual == case['expected']
 
 
 def test_every_taste_domain_row_and_domains_outside_the_table():

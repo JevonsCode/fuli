@@ -6,8 +6,8 @@ import { TASK_SCENE_VERSION, taskSceneInput, taskWorkKind } from '../src/graphit
 
 // Shared with graph-provider/tests/test_task_scene.py.
 const fixture = JSON.parse(readFileSync(new URL('../test-support/task-scene-cases.json', import.meta.url), 'utf8'));
-const applicability = (qualifiers, task, instruction = 'Synthetic rule') => preferenceTaskApplicability(
-  { instruction, preference_qualifiers: qualifiers },
+const applicability = (qualifiers, task, instruction = 'Synthetic rule', aspect = 'taste') => preferenceTaskApplicability(
+  { instruction, profile_aspect: aspect, preference_qualifiers: qualifiers },
   { sessionId: task.session_id, workKind: task.work_kind, workflow: task.workflow });
 
 test('the scene table version is the one the shared cases were written for', () => {
@@ -16,7 +16,7 @@ test('the scene table version is the one the shared cases were written for', () 
 
 test('shared cases: qualifier combinations, fail closed, general and hard-constraint rules', () => {
   for (const item of fixture.cases) {
-    assert.equal(applicability(item.qualifiers, item.task, item.instruction), item.expected, item.name);
+    assert.equal(applicability(item.qualifiers, item.task, item.instruction, item.aspect), item.expected, item.name);
   }
 });
 

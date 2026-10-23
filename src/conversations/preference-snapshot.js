@@ -3,6 +3,7 @@ import { entryRules, entryRulesReference } from './entry-rules.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { preferenceInstructionView } from './preference-view.js';
 import { TASK_SCENE_VERSION } from '../graphiti/task-scene.js';
+import { preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
 
 const SCOPE = Symbol('fuli.authoritativePreferenceScope');
 const IDENTITY = ['preference_key', 'preference_scope', 'preference_project_id',
@@ -56,7 +57,7 @@ export function preferenceSnapshot(value) {
   for (const item of preferences) {
     const id = unitId(item);
     if (Object.hasOwn(units, id)) return null;
-    units[id] = { hash: contentHash(JSON.parse(canonicalJson(item, { omitUndefined: true }))), identity: identity(item) };
+    units[id] = unit(item);
   }
   return { scopeHash, authorityHash: contentHash({ authority, rules }), scene, snapshotHash: contentHash({ scopeHash, units }),
     units, preferences, sessionId: scope.session_id, sourceApplication: scope.source_application };
@@ -68,11 +69,17 @@ export function projectPreferenceDelta(value, baseline) {
   const full = withPreferenceScope({ ...value, effective_preferences: snapshot.preferences,
     preference_scene: { work_kind: snapshot.scene.work_kind, workflow: snapshot.scene.workflow, table: TASK_SCENE_VERSION } }, value[SCOPE]);
   if (!baseline?.callId || baseline.authorityHash !== snapshot.authorityHash) return full;
-  // Same space, project, Agent, client and session in another scene: the
-  // complete current set replaces only the acknowledged revision's preferences.
-  if (baseline.scopeHash !== snapshot.scopeHash) return withPreferenceScope({ ...full, preference_delivery: {
-    status: 'scene_switch', supersedes: baseline.snapshotHash, base_result: baseline.callId,
-    revision: snapshot.snapshotHash, ...DELIVERY_RULES() } }, value[SCOPE]);
+  // Same space, project, Agent, client and session in another scene: only the
+  // scene-replaceable set is listed and replaced (D-27.8). Boundaries and hard
+  // constraints stay as delivered; if one of them changed too, a complete
+  // frame is sent instead.
+  if (baseline.scopeHash !== snapshot.scopeHash) {
+    if (contentHash(boundaryUnits(baseline.units)) !== contentHash(boundaryUnits(snapshot.units))) return full;
+    return withPreferenceScope({ ...full,
+      effective_preferences: snapshot.preferences.filter(item => snapshot.units[unitId(item)].scene),
+      preference_delivery: { status: 'scene_switch', supersedes: baseline.snapshotHash, base_result: baseline.callId,
+        revision: snapshot.snapshotHash, replaces: sceneKeys(baseline.units), ...DELIVERY_RULES() } }, value[SCOPE]);
+  }
   const updates = snapshot.preferences.filter(item => baseline.units[unitId(item)]?.hash !== snapshot.units[unitId(item)].hash);
   const removed = Object.entries(baseline.units).filter(([id]) => !Object.hasOwn(snapshot.units,id))
     .map(([,unit]) => unit.identity);
@@ -96,11 +103,38 @@ export function applyPreferenceDeltaSnapshot(value, baseline) {
   for (const item of delivery.removed) delete units[unitId(item)];
   for (const item of value.preference_updates) {
     if (!item?.preference_key || typeof item.instruction !== 'string') return null;
-    const projected = JSON.parse(canonicalJson(preferenceInstructionView(item), { omitUndefined: true }));
-    units[unitId(item)] = { hash: contentHash(projected), identity: identity(item) };
+    units[unitId(item)] = unit(JSON.parse(canonicalJson(preferenceInstructionView(item), { omitUndefined: true })));
   }
   const snapshotHash = contentHash({ scopeHash: baseline.scopeHash, units });
   return snapshotHash === delivery.revision ? { ...baseline, units, snapshotHash } : null;
+}
+
+// A delivered scene switch lists only replaceable items; the base's boundaries
+// and hard constraints carry over. The pending hash still binds the whole frame.
+export function applySceneSwitchSnapshot(value, frame, baseline) {
+  const delivery = frame?.preference_delivery;
+  if (!baseline || delivery?.status !== 'scene_switch' || delivery.base_result !== baseline.callId
+      || delivery.supersedes !== baseline.snapshotHash
+      || canonicalJson(delivery.replaces ?? null) !== canonicalJson(sceneKeys(baseline.units))) return null;
+  const listed = framePreferenceSnapshot(value, frame);
+  if (!listed || Object.values(listed.units).some(item => !item.scene)) return null;
+  const units = { ...boundaryUnits(baseline.units), ...listed.units };
+  const snapshotHash = contentHash({ scopeHash: listed.scopeHash, units });
+  return snapshotHash === delivery.revision ? { ...listed, units, snapshotHash } : null;
+}
+
+function unit(item) {
+  return { hash: contentHash(JSON.parse(canonicalJson(item, { omitUndefined: true }))), identity: identity(item),
+    scene: preferenceSceneReplaceable(item) };
+}
+
+// The keys a scene switch takes back: the base's whole replaceable set.
+function sceneKeys(units) {
+  return [...new Set(Object.values(units).filter(item => item.scene).map(item => item.identity.preference_key))].sort();
+}
+
+function boundaryUnits(units) {
+  return Object.fromEntries(Object.entries(units).filter(([, item]) => !item.scene));
 }
 
 function validScope(value) {

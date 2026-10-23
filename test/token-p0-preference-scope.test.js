@@ -91,3 +91,19 @@ test('an explicit unknown canonical session condition prevents legacy narrowing'
       { sessionId: 'other-session' }), true);
   }
 });
+
+// Compatibility change of rec#15 PR1: an unknown session no longer keeps a
+// session-limited rule. A broader rule with the same key may apply in its
+// place, but the narrower key stays listed, so it is not read as a new grant.
+test('a session-limited rule with an unknown session leaves its key in scope_unknown beside the broader same-key rule', async () => {
+  const items = [{ ...rule('global'), preference_key: 'same-key', instruction: 'Ask before force-pushing.' },
+    { ...rule('session'), preference_key: 'same-key', preference_scope: 'project',
+      instruction: 'In this session force-pushing the feature branch is fine.', preference_qualifiers: { sessionId: 'saved-session' } }];
+  const result = await getCollaborationPreferences({ config: { personal: { spaceId: 'space' } }, personal: {
+    collaborationPreferences: async () => ({ effective_preferences: items }), listPreferenceConflicts: async () => []
+  } }, { personalProjectId: 'project' }, { agentInvocation: true }, async () => {});
+  assert.deepEqual(result.effective_preferences.map(p => p.instruction), ['Ask before force-pushing.']);
+  assert.deepEqual(result.scope_unknown, ['same-key']);
+  assert.match(result.application_guidance.scope_unknown, /one may replace a broader rule with the same key/);
+  assert.doesNotMatch(JSON.stringify(result), /force-pushing the feature branch is fine/);
+});

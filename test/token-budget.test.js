@@ -86,7 +86,10 @@ const BASELINE = Object.freeze({
   // rec#11 D-07 part 2: change_knowledge_tags only previews the person's tag
   // governance (five actions, intoTagId), no new tool: 184,767 -> 184,935 B
   // (+168 B), measured. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 184935,
+  // rec#15 D-27.8 (dot P2 on #291): remember takes the user's stated constraint (hard|soft),
+  // workKind and tasteDomain, checked against the versioned scene table server-side so the
+  // schema lists no table: 184,935 -> 185,077 B (+142 B), measured.
+  fullToolSchemaBytes: 185077,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
@@ -98,7 +101,9 @@ const BASELINE = Object.freeze({
   // rec#5 C3b option Y: the same field on get_collaboration_preferences and the two searches:
   // 8,191 -> 8,302 B (+111 B), measured from the real tools/list.
   // rec#20: the same remember scope unsure, 8,302 -> 8,311 B (+9 B), measured.
-  chatToolSchemaBytes: 8311,
+  // rec#15 D-27.8: the same remember constraint/workKind/tasteDomain, 8,311 -> 8,426 B
+  // (+115 B, about 30 tokens per request), measured from the real tools/list.
+  chatToolSchemaBytes: 8426,
   instructionsBytes: 2041,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.

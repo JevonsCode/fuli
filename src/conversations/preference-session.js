@@ -6,7 +6,8 @@ import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';
-import { applyPreferenceDeltaSnapshot, framePreferenceSnapshot, preferenceSnapshot, projectPreferenceDelta } from './preference-snapshot.js';
+import { applyPreferenceDeltaSnapshot, applySceneSwitchSnapshot, framePreferenceSnapshot, preferenceSnapshot, projectPreferenceDelta }
+  from './preference-snapshot.js';
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
 import { locatePreferenceTranscript } from '../agents/preference-evidence.js';
 
@@ -101,9 +102,10 @@ function acknowledgedSnapshot(value, current, state, proof) {
     if (frame.offset < (state.floor ?? 0)) continue;
     const expected = pending.get(preferenceFrameHash(frame.value));
     if (!expected) continue;
-    const delivered = frame.value.preference_delivery?.status === 'delta'
-      ? applyPreferenceDeltaSnapshot(frame.value, baseline)
-      : framePreferenceSnapshot(value, frame.value);
+    const status = frame.value.preference_delivery?.status;
+    const delivered = status === 'delta' ? applyPreferenceDeltaSnapshot(frame.value, baseline)
+      : status === 'scene_switch' ? applySceneSwitchSnapshot(value, frame.value, baseline)
+        : framePreferenceSnapshot(value, frame.value);
     if (delivered?.authorityHash !== current.authorityHash || delivered.scopeHash !== expected.scopeHash
         || delivered.snapshotHash !== expected.snapshotHash) continue;
     baseline = { scopeHash: delivered.scopeHash, authorityHash: delivered.authorityHash,

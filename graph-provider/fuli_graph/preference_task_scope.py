@@ -5,13 +5,15 @@ same-key overrides and conflicts. Every dimension an item states must hold;
 a list within one dimension is any of its values. A definite mismatch
 excludes; otherwise a stated dimension the task does not supply fails closed
 as scope_unknown (not applied, listed by key only). An item with no scene key
-follows the general rule in task_scene.py.
+follows the general rule in task_scene.py: a replaceable one is dropped in
+chat, a boundary never. The session condition fails closed too; a broader
+same-key rule may then apply while the narrower key stays in scope_unknown.
 """
 
 import re
 
 from .provider_values import json_object
-from .task_scene import EVERY_SCENE, general_item_excluded, taste_domain_scenes
+from .task_scene import EVERY_SCENE, chat_scene, general_item_replaceable, taste_domain_scenes
 
 APPLIES = 'applies'
 SCOPE_UNKNOWN = 'scope_unknown'
@@ -27,7 +29,7 @@ def item_qualifiers(item) -> dict:
             **item.preference_qualifiers}
 
 
-def preference_task_applicability(qualifiers: dict, instruction, session_id, work_kind,
+def preference_task_applicability(qualifiers: dict, instruction, aspect, session_id, work_kind,
                                   workflow) -> str:
     session = _first(qualifiers, _SESSION_KEYS)
     if session is None and not any(key in qualifiers for key in _SESSION_KEYS):
@@ -44,7 +46,8 @@ def preference_task_applicability(qualifiers: dict, instruction, session_id, wor
     conditions = [condition for condition in stated if condition[0] != EVERY_SCENE]
     if any(not values or (actual and actual not in values) for values, actual, _ in conditions):
         return EXCLUDED
-    if not any(scene for _, _, scene in stated) and general_item_excluded(qualifiers, work_kind):
+    if (chat_scene(work_kind) and not any(scene for _, _, scene in stated)
+            and general_item_replaceable(qualifiers, aspect)):
         return EXCLUDED
     return SCOPE_UNKNOWN if any(not actual for _, actual, _ in conditions) else APPLIES
 

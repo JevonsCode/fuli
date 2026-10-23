@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { experienceCapture } from './task-experiences.js';
+import { PREFERENCE_CONSTRAINTS, TASTE_DOMAINS, WORK_KINDS } from './task-scene.js';
 
 // Compact memory routing at checkpoint (F-P0-08): the finishing host lists what
 // to remember as plain items and FULI builds the routed capture. The chat tool
@@ -47,7 +48,8 @@ export function rememberCapture(task, remember, { sourceApplication = 'other', n
     if (!['global', 'project', 'unsure'].includes(scope)) throw invalid('remember[].scope must be global, project or unsure');
     if (scope === 'global') quotes.push(text(item.quote, 600, 'remember[].quote (the user\'s own words, required for a global preference)'));
     return { scope: { global: 'personal_global', project: 'current_project', unsure: 'session_temporary' }[scope],
-      entity: entity(task, key, statement, 'PersonalPreference', aspect, 'The user stated this preference during the task.') };
+      entity: { ...entity(task, key, statement, 'PersonalPreference', aspect, 'The user stated this preference during the task.'),
+        ...sceneAttributes(item) } };
   }).filter(Boolean);
   const entities = items.map(item => item.entity);
   const digest = createHash('sha256').update(JSON.stringify(remember)).digest('hex').slice(0, 16);
@@ -92,6 +94,19 @@ function entity(task, key, statement, type, profileAspect, existenceReason) {
       quadrantReason: 'Stated directly; it stays pending until a person confirms it.',
       proposedBy: { kind: 'agent', label: task.projectAgentId ?? null } }
   };
+}
+
+// The scene qualifiers a user stated (task-scene.js); never inferred from the text.
+const SCENE_FIELDS = Object.freeze({ constraint: PREFERENCE_CONSTRAINTS, workKind: WORK_KINDS, tasteDomain: TASTE_DOMAINS });
+
+function sceneAttributes(item) {
+  const attributes = {};
+  for (const [field, allowed] of Object.entries(SCENE_FIELDS)) {
+    if (item[field] === undefined) continue;
+    if (!allowed.includes(item[field])) throw invalid(`remember[].${field} must be one of ${allowed.join(', ')}`);
+    attributes[field] = item[field];
+  }
+  return Object.keys(attributes).length ? { attributes } : {};
 }
 
 function text(value, limit, field) {

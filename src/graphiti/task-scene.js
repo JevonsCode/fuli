@@ -7,14 +7,22 @@
 // - tasteDomain is a scene key: TASTE_DOMAIN_SCENES maps it to the work kinds
 //   it applies to. A domain outside the table matches no scene; it never
 //   becomes general.
-// - An item with no scene key (no workKind qualifier and no tasteDomain) is
-//   general: it applies in every scene except one positively classified as
-//   chat. An unclassified (null) task keeps it. A user's hard constraint
-//   (qualifier constraint: "hard") is never dropped by this rule.
+// - The scene-replaceable personalized set (D-27.8) is every item with a scene
+//   key (a workKind qualifier or a tasteDomain), plus taste and personality
+//   items without one. Those without one are general: they apply in every
+//   scene except one positively classified as chat; an unclassified (null)
+//   task keeps them.
+// - A judgment_preference without a scene key is a boundary: it applies in
+//   every scene and a scene switch never revokes it. Nothing is guessed from
+//   its text; only a person's explicit scene key or constraint: "soft" makes
+//   it replaceable. constraint: "hard" keeps any item without a scene key out
+//   of the replaceable set.
 
-export const TASK_SCENE_VERSION = 'task-scene-1';
+export const TASK_SCENE_VERSION = 'task-scene-2';
 export const EVERY_SCENE = '*';
+export const PREFERENCE_CONSTRAINTS = Object.freeze(['hard', 'soft']);
 const CHAT = 'chat';
+const GENERAL_ASPECTS = new Set(['taste', 'personality']);
 const PROMPT_LIMIT = 8192;
 
 // Conservative hints, not semantic understanding: the first matching row wins
@@ -31,6 +39,8 @@ const WORK_KIND_HINTS = Object.freeze([
   [CHAT, /^(?:[\s!！。.,，~～?？]*(?:你好|您好|嗨|哈喽|早上好|早安|晚上好|晚安|谢谢|多谢|辛苦了|在吗|闲聊|聊聊天?|随便聊聊|hi|hello|hey|thanks|thank you|good (?:morning|evening|night)))+[\s!！。.,，~～?？]*$/iu]
 ]);
 
+export const WORK_KINDS = Object.freeze(WORK_KIND_HINTS.map(([kind]) => kind));
+
 // Versioned with TASK_SCENE_VERSION: a changed row changes which preferences a
 // scene selects, so it needs the next version (and the Provider's copy).
 const TASTE_DOMAIN_SCENES = Object.freeze({
@@ -46,6 +56,8 @@ const TASTE_DOMAIN_SCENES = Object.freeze({
   // Every reply is writing, chat included.
   writing: EVERY_SCENE
 });
+
+export const TASTE_DOMAINS = Object.freeze(Object.keys(TASTE_DOMAIN_SCENES));
 
 export function taskWorkKind(prompt) {
   const text = typeof prompt === 'string' ? prompt.slice(0, PROMPT_LIMIT) : '';
@@ -70,7 +82,12 @@ export function tasteDomainScenes(qualifiers) {
   return scenes.includes(EVERY_SCENE) ? EVERY_SCENE : [...new Set(scenes.flat())];
 }
 
-// The general rule above, for an item with no scene key.
-export function generalItemExcluded(qualifiers, workKind) {
-  return workKind === CHAT && qualifiers.constraint !== 'hard';
+// Whether an item without a scene key is in the replaceable set above.
+export function generalItemReplaceable(qualifiers, aspect) {
+  if (qualifiers.constraint === 'hard') return false;
+  return qualifiers.constraint === 'soft' || GENERAL_ASPECTS.has(aspect);
+}
+
+export function chatScene(workKind) {
+  return workKind === CHAT;
 }

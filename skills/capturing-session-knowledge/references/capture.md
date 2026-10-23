@@ -76,9 +76,11 @@ Task entry injects these preferences by scene. When the user limits one to a kin
 it as `attributes.tasteDomain` (`frontend`, `ui`, `ux`, `design`, `visual`, `architecture`, `code`,
 `testing`, `chat` or `writing`, which applies everywhere) or `attributes.workKind`; any other domain
 matches no task. Every stated condition must hold, and a task that does not state one leaves the
-preference out, listed in `scope_unknown` by key only. A preference without a scene key applies to
-every task except small talk. Mark a boundary the user wants kept even in small talk with
-`attributes.constraint: "hard"`, only when the user says so.
+preference out, listed in `scope_unknown` by key only. A taste or personality preference without
+a scene key applies to every task except small talk; a `judgment_preference` without one is a
+boundary and applies everywhere. Set `attributes.constraint` only when the user says so: `"hard"`
+keeps a rule in every scene, `"soft"` lets small talk leave it out. The compact `remember` items
+take the same `constraint`, `workKind` and `tasteDomain` fields.
 
 ## Route by Ownership
 

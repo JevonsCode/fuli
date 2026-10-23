@@ -24,6 +24,8 @@ const rule = (key, instruction, qualifiers = {}, aspect = 'taste') => ({ id: `it
   preference_key: key, preference_scope: 'global', profile_aspect: aspect, confirmation_status: 'confirmed',
   instruction, preference_qualifiers: qualifiers });
 const HARD = rule('no-force-push', 'SYNTHETIC_HARD: never force-push a shared branch.', { constraint: 'hard' }, 'judgment_preference');
+// An old-format confirmed judgment rule: no scene key, no constraint marker.
+const BOUNDARY = rule('no-unapproved-push', 'SYNTHETIC_BOUNDARY 未经批准不要强推共享分支', {}, 'judgment_preference');
 const GENERAL = rule('tradeoffs', 'SYNTHETIC_GENERAL: state the tradeoff in one line.', {}, 'personality');
 const SPACING = rule('spacing', 'SYNTHETIC_FRONTEND: use the 8px spacing grid.', { tasteDomain: 'frontend' });
 const PALETTE = rule('palette', 'SYNTHETIC_DESIGN: prefer muted palettes.', { tasteDomain: 'design' });
@@ -71,31 +73,62 @@ const keys = frame => frame.effective_preferences.map(item => item.preference_ke
 const unchangedContext = frame => ({ receipt: frame.agent_receipt.markdown.replace(/task-\w+/, ''),
   role: frame.project_agent_context.role, guidance: frame.application_guidance });
 
-test('frontend -> chat -> frontend replaces only the scene set; the hard constraint and other context persist', t => fixture(async f => {
-  const items = [HARD, GENERAL, SPACING, PALETTE];
+// What the model holds after each frame, applying only what the frame says.
+function modelView(view, frame) {
+  const delivery = frame.preference_delivery;
+  const key = item => item.preference_key;
+  if (!delivery) return new Map(frame.effective_preferences.map(item => [key(item), item.instruction]));
+  const next = new Map(view);
+  if (delivery.status === 'scene_switch') for (const replaced of delivery.replaces) next.delete(replaced);
+  if (delivery.status === 'delta') for (const removed of delivery.removed) next.delete(key(removed));
+  for (const item of frame.effective_preferences ?? frame.preference_updates) next.set(key(item), item.instruction);
+  return next;
+}
+
+test('frontend -> chat -> frontend replaces only the scene set; boundaries, hard constraints and other context persist', t => fixture(async f => {
+  const items = [HARD, BOUNDARY, GENERAL, SPACING, PALETTE];
+  const kept = ['no-force-push', 'no-unapproved-push'];
   const frontend = await f.turn('task-a', 'frontend', items);
-  assert.deepEqual(keys(frontend.frame), ['no-force-push', 'palette', 'spacing', 'tradeoffs']);
-  assert.deepEqual(frontend.frame.preference_scene, { work_kind: 'frontend', workflow: null, table: 'task-scene-1' });
+  assert.deepEqual(keys(frontend.frame), ['no-force-push', 'no-unapproved-push', 'palette', 'spacing', 'tradeoffs']);
+  assert.deepEqual(frontend.frame.preference_scene, { work_kind: 'frontend', workflow: null, table: 'task-scene-2' });
   assert.equal(frontend.frame.preference_delivery, undefined, 'the first frame has no predecessor to name');
+  let view = modelView(null, frontend.frame);
 
   const chat = await f.turn('task-b', 'chat', items);
   assert.equal(chat.frame.preference_delivery.status, 'scene_switch');
   assert.equal(chat.frame.preference_delivery.base_result, frontend.id);
-  assert.deepEqual(keys(chat.frame), ['no-force-push']);
+  assert.deepEqual(chat.frame.preference_delivery.replaces, ['palette', 'spacing', 'tradeoffs']);
+  assert.deepEqual(keys(chat.frame), [], 'only the scene-personalized set is listed');
   assert.doesNotMatch(JSON.stringify(chat.frame), /SYNTHETIC_(?:FRONTEND|DESIGN|GENERAL)/);
   assert.deepEqual(unchangedContext(chat.frame), unchangedContext(frontend.frame));
-  // The rule names one revision of this scope; it never voids every earlier FULI frame.
-  const rules = entryRules().sections.preference_delivery.scene_switch;
+  view = modelView(view, chat.frame);
+  assert.deepEqual([...view.keys()].sort(), kept, 'the boundary and the hard constraint are never revoked');
   assert.equal(chat.frame.preference_delivery.rules, 'fuli://rules/task-entry#preference_delivery');
-  assert.match(rules, /replaces only the preferences of the revision named by supersedes/);
-  assert.match(rules, /does not change role configuration, permissions, safety rules/);
+  assert.equal(entryRules().sections.preference_delivery.scene_switch,
+    '本帧仅替换上一帧的场景个性化集合（即列出的这组）；未列出的边界、硬约束、权限与安全规则继续有效。');
 
   const back = await f.turn('task-c', 'frontend', items);
   assert.equal(back.frame.preference_delivery.status, 'scene_switch');
   assert.equal(back.frame.preference_delivery.base_result, chat.id);
   assert.equal(back.frame.preference_delivery.supersedes, chat.frame.preference_delivery.revision);
-  assert.deepEqual(keys(back.frame), keys(frontend.frame));
-  t.diagnostic(`bytes: frontend full ${frontend.bytes}, chat scene_switch ${chat.bytes}, frontend scene_switch ${back.bytes}`);
+  assert.deepEqual(back.frame.preference_delivery.replaces, []);
+  assert.deepEqual(keys(back.frame), ['palette', 'spacing', 'tradeoffs']);
+  view = modelView(view, back.frame);
+  assert.deepEqual([...view.keys()].sort(), keys(frontend.frame));
+  assert.equal(view.get('no-unapproved-push'), BOUNDARY.instruction);
+  // The next frontend turn knows the whole set: nothing to send but a delta.
+  const same = await f.turn('task-d', 'frontend', items);
+  assert.equal(same.frame.preference_delivery.status, 'delta');
+  assert.deepEqual(same.frame.preference_updates, []);
+  t.diagnostic(`bytes: frontend full ${frontend.bytes}, chat scene_switch ${chat.bytes}, frontend scene_switch ${back.bytes}, same-scene delta ${same.bytes}`);
+}));
+
+test('a boundary that changes at a scene switch makes the switch a complete frame', () => fixture(async f => {
+  await f.turn('task-a', 'frontend', [BOUNDARY, SPACING]);
+  const edited = { ...BOUNDARY, instruction: 'SYNTHETIC_BOUNDARY 未经两人批准不要强推共享分支' };
+  const chat = await f.turn('task-b', 'chat', [edited, SPACING]);
+  assert.equal(chat.frame.preference_delivery, undefined);
+  assert.deepEqual(keys(chat.frame), ['no-unapproved-push']);
 }));
 
 test('a 4th preference in the same scene reaches the session as one update only', t => fixture(async f => {

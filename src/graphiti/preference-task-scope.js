@@ -1,4 +1,4 @@
-import { EVERY_SCENE, generalItemExcluded, tasteDomainScenes } from './task-scene.js';
+import { chatScene, EVERY_SCENE, generalItemReplaceable, tasteDomainScenes } from './task-scene.js';
 
 // Legacy read compatibility recognizes only an anchored restrictive session
 // clause. Provenance, keywords and unknown prose remain visible. No stored
@@ -26,14 +26,30 @@ export function preferenceTaskSession(context = {}) {
 //   dimension is unknown. A domain outside the scene table never matches.
 // - Otherwise a stated dimension the task does not supply fails closed:
 //   scope_unknown, which is not applied and is listed by key only.
-// - An item with no scene key follows the general rule in task-scene.js.
+// - An item with no scene key follows the general rule in task-scene.js: a
+//   replaceable one is dropped in chat, a boundary never.
+// - The session condition fails closed too (a compatibility change of rec#15
+//   PR1): a broader rule with the same key may then apply, but the narrower
+//   key stays listed in scope_unknown, so it is not read as a new grant.
 export function preferenceTaskApplicability(item, context = {}) {
-  const qualifiers = { ...item.attributes, ...item.attributes?.preference_qualifiers, ...item.preference_qualifiers };
+  const qualifiers = itemQualifiers(item);
   const stated = taskScopeConditions(item, qualifiers, context).filter(({ values }) => values);
   const conditions = stated.filter(({ values }) => values !== EVERY_SCENE);
   if (conditions.some(({ values, actual }) => !values.length || (actual && !values.includes(actual)))) return 'excluded';
-  if (!stated.some(({ scene }) => scene) && generalItemExcluded(qualifiers, context.workKind)) return 'excluded';
+  if (chatScene(context.workKind) && !stated.some(({ scene }) => scene)
+    && generalItemReplaceable(qualifiers, item.profile_aspect)) return 'excluded';
   return conditions.some(({ actual }) => !actual) ? 'scope_unknown' : 'applies';
+}
+
+// Whether a scene switch may replace this item (task-scene.js, D-27.8).
+export function preferenceSceneReplaceable(item) {
+  const qualifiers = itemQualifiers(item);
+  return taskScopeConditions(item, qualifiers, {}).some(({ values, scene }) => values && scene)
+    || generalItemReplaceable(qualifiers, item.profile_aspect);
+}
+
+function itemQualifiers(item) {
+  return { ...item.attributes, ...item.attributes?.preference_qualifiers, ...item.preference_qualifiers };
 }
 
 export function preferenceAppliesToTask(item, context = {}) {

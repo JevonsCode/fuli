@@ -10,16 +10,13 @@ import { CONTINUATION_GUIDANCE, RECEIPT_GUIDANCE } from '../agents/identity-rece
 const MEMORY_GUIDANCE = 'Use get_project_agent_memory before merging or checkpointing working memory; this preview omits history and may truncate notes.';
 export const DETAILS_GUIDANCE = 'Read get_project_team for staffing and list_project_agent_tasks for task history when needed.';
 // How a session-delivered preference frame relates to the earlier one it names
-// (preference-snapshot.js). A scene switch replaces only that revision's
-// preferences in the same authorized scope (rec#15 D-27, dot contract item 2).
+// (preference-snapshot.js). A scene switch lists and replaces only the
+// scene-personalized set of the same authorized scope (rec#15 D-27.8).
 const PREFERENCE_DELIVERY_GUIDANCE = Object.freeze({
   delta: 'A delta result applies preference_updates and removed to the complete result named by base_result in this same context generation. '
     + 'If that base is unavailable, call read_task_preferences with the current taskContextToken. '
     + 'Keep current identity, authority and conflicts; this cache grants no permission.',
-  scene_switch: 'A scene_switch result is the complete current effective_preferences for its preference_scene, even when the list is empty. '
-    + 'It replaces only the preferences of the revision named by supersedes (base_result), with their updates, for this same space, project, Agent, client and session; '
-    + 'a preference of that revision that is not listed here no longer applies. It does not change role configuration, permissions, safety rules, '
-    + 'constraints from other sources, other projects or Agents, or any other FULI context.'
+  scene_switch: '本帧仅替换上一帧的场景个性化集合（即列出的这组）；未列出的边界、硬约束、权限与安全规则继续有效。'
 });
 const GLOBAL_MEMORY_GUIDANCE = 'Global layer of the same employee. Read get_project_agent_memory with personalProjectId: null before merging or checkpointing it; this preview omits history and may truncate notes.';
 
