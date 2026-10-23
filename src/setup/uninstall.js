@@ -14,7 +14,7 @@ export function planLocalUninstall(options, {
   fileExists = existsSync
 } = {}) {
   const paths = resolvePaths({ dataDir: options.dataDir, env });
-  const agents = discover({ env }).filter((agent) => (
+  const agents = discover({ env, dataDir: paths.dataDir }).filter((agent) => (
     agent.available ||
     (agent.configPath && fileExists(agent.configPath)) ||
     (agent.globalInstructionsPath && fileExists(agent.globalInstructionsPath)) ||

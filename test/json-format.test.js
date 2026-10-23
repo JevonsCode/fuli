@@ -10,7 +10,7 @@ import test from 'node:test';
 import { reconcileImportedGraphIdentity } from '../src/backup/identity-reconciliation.js';
 import { transcriptCaptureLedger } from '../src/conversations/transcript-capture-gap.js';
 import { SessionCapturePauseStore } from '../src/graphiti/capture-session-pause.js';
-import { jsonFormat, writeVersionedJsonFileAtomic } from '../src/storage/json-format.js';
+import { jsonFormat, writeVersionedJsonFileAtomic, updateVersionedJsonFileAtomic } from '../src/storage/json-format.js';
 import { DEFAULT_RUNTIME_SETTINGS, writeRuntimeSettings } from '../src/system/runtime-settings.js';
 
 const SYNTHETIC_V1 = jsonFormat({ store: 'synthetic', versions: [1] });
@@ -248,3 +248,31 @@ test('a ledger that is briefly inaccessible is unkept, not removed, and keeps sk
   assert.notEqual(await ledger.skipReason('generation-1'), null, 'the stretch is still skipped');
   assert.equal(readdirSync(directoryPath).filter((name) => name.endsWith('.json')).length, 1);
 });
+
+for (const mode of ['write', 'update']) {
+  const save = (file, value, options) => mode === 'write'
+    ? writeVersionedJsonFileAtomic(file, value, SYNTHETIC_V1, options)
+    : updateVersionedJsonFileAtomic(file, SYNTHETIC_V1, () => value, options);
+  test(`versioned ${mode} fsyncs durable content before replacing the target`, t => {
+    const file = join(directory(t), 'journal.json');
+    const events = [];
+    save(file, { version: 1, pending: true }, { durable: true, io: {
+      fsyncSync(descriptor) { events.push('fsync'); fs.fsyncSync(descriptor); },
+      renameSync(from, to) { events.push('rename'); fs.renameSync(from, to); }
+    } });
+    assert.deepEqual(events, ['fsync', 'rename']);
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { version: 1, pending: true });
+  });
+  test(`versioned ${mode} leaves the previous journal when durable fsync fails`, t => {
+    const root = directory(t); const file = join(root, 'journal.json');
+    const before = JSON.stringify({ version: 1, previous: true }); writeFileSync(file, before);
+    let renamed = false;
+    assert.throws(() => save(file, { version: 1, pending: true }, { durable: true, io: {
+      fsyncSync() { throw new Error('synthetic fsync failure'); },
+      renameSync() { renamed = true; }
+    } }), /synthetic fsync failure/);
+    assert.equal(renamed, false);
+    assert.equal(readFileSync(file, 'utf8'), before);
+    assert.equal(readdirSync(root).some(name => name.endsWith('.tmp')), false);
+  });
+}

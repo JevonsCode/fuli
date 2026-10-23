@@ -135,6 +135,10 @@ const AGENT_REGISTRY = 'src/setup/agents/registry.js';
 const AGENT_IMPLEMENTATION_IMPORT = /from '[^']*(?:descriptor-adapter|descriptor-packs|(?:agents\/|\.\/)[a-z-]+\/index)\.js'/;
 
 function agentImplementationImports(path, source) {
+  // Package lifecycle owners validate data descriptors, never select code adapters.
+  if (['src/setup/agents/client-pack-store.js', 'src/setup/agents/client-pack-change.js'].includes(path)) {
+    source = source.replace(/^import \{ loadClientDescriptorPacks \} from '\.\/descriptor-packs\.js';$/m, '');
+  }
   if (path === AGENT_REGISTRY || path.endsWith('.test.js')) return [];
   return source.split(/\r?\n/).flatMap((line, index) =>
     AGENT_IMPLEMENTATION_IMPORT.test(line) && (path.startsWith('src/setup/') || /setup\/agents\//.test(line))

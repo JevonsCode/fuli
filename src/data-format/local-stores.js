@@ -1,3 +1,4 @@
+import { CLIENT_PACK_FORMAT } from '../setup/agents/client-pack-store.js';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -51,6 +52,7 @@ const sqliteStores = () => [
   ['peer/coordinator.sqlite', COORDINATOR_FORMAT]
 ];
 const jsonStores = () => [
+  ['client-packs.json', CLIENT_PACK_FORMAT],
   ['runtime-settings.json', RUNTIME_SETTINGS_FORMAT],
   ['adaptive-runtime-settings.json', ADAPTIVE_RUNTIME_SETTINGS_FORMAT],
   ['adaptive-runtime-state.json', ADAPTIVE_RUNTIME_STATE_FORMAT],

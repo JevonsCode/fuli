@@ -1,3 +1,4 @@
+import { dirname } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { agentAdapter } from './agents/registry.js';
 import { isCodexBootstrapCurrent } from './codex-bootstrap.js';
@@ -11,7 +12,7 @@ export function inspectAgentInstallations(agents, context, {
   bootstrapCurrent = isCodexBootstrapCurrent
 } = {}) {
   return agents.map((agent) => {
-    const { registration, ...checks } = agentAdapter(agent.id).status(agent, context, {
+    const { registration, ...checks } = agentAdapter(agent.id, context.dataDir ?? (context.runtimeConfigPath ? dirname(context.runtimeConfigPath) : undefined)).status(agent, context, {
       readText, readJson, fileExists, bootstrapCurrent
     });
     const skillPairs = [
