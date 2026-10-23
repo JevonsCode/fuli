@@ -11,6 +11,7 @@ import { appConflict } from './errors.js';
 const CHALLENGE_WINDOW_MS = 10 * 60_000;
 const NONCE_BYTES = 32;
 const CHALLENGE_ID_BYTES = 16;
+const EVENT_DETAIL = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 const UNVERIFIED_OUTCOME = 'Recorded as unverified: nothing was approved or activated, and the app does not run '
   + '(取消/失败/不可用一律记 unverified，不运行).';
@@ -61,36 +62,74 @@ export function createVerifiedDecisions(context, { presence }) {
     });
   }
 
-  // outcome: what the presence port reported for this challenge.
-  function commitChallenge({ appId, challengeId, nonce }, outcome, actor) {
-    const settled = store.transaction(() => {
-      const open = store.challenge(appId);
-      if (!open || open.challengeId !== challengeId || open.nonceHash !== contentHash(String(nonce))) {
-        return { refusal: appConflict('challenge_mismatch', 'This is not the open challenge of this app; start the decision again') };
+  // outcome: what the presence port reported for this challenge. Consuming
+  // the challenge and committing the decision share one transaction, so of
+  // concurrent commits exactly one consumes it. When that transaction fails
+  // instead (a data directory that cannot be created, a storage error), it
+  // rolls back whole and the challenge is consumed on its own as a failure:
+  // whatever went wrong after the verification attempt, the same answer is
+  // never committed again and nothing else changes.
+  function commitChallenge(challenge, outcome, actor) {
+    let settled;
+    try {
+      settled = store.transaction(() => commitInTransaction(challenge, outcome, actor));
+    } catch (error) {
+      try {
+        consumeAfterFailure(challenge, actor, error);
+      } catch (cleanup) {
+        throw new AggregateError([error, cleanup], 'The decision failed, and so did consuming its challenge');
       }
-      const at = now();
-      if (!store.consumeChallenge(appId, challengeId, at)) {
-        return { refusal: appConflict('challenge_replayed', 'This challenge was already used; start the decision again') };
-      }
-      const { decision } = open;
-      const checked = checkedDecision(open, outcome);
-      const consumed = { challengeId, decision: decision.action };
-      if (checked.refusal) {
-        store.recordEvent({ appId, at, action: 'challenge_consumed', version: decision.version, actor: actor.user,
-          detail: { ...consumed, outcome: checked.refusal.code, ...(outcome.detail ? { detail: outcome.detail } : {}) } });
-        return checked;
-      }
-      store.recordEvent({ appId, at, action: 'challenge_consumed', version: decision.version, actor: actor.user,
-        detail: { ...consumed, outcome: 'verified' } });
-      const check = { presence: presence.kind, verification: OS_USER_VERIFIED, challengeId, verifiedAt: at };
-      const record = { at, actor: actor.user, check,
-        detail: { entrypoint: 'cli', presence: presence.kind, verification: OS_USER_VERIFIED, challengeId } };
-      const result = decision.action === 'approve'
-        ? activation.approve(checked.prepared, record) : activation.reactivate(checked.prepared, record);
-      return { result: { ...result, approval: { entrypoint: 'cli', ...check } } };
-    });
+      throw error;
+    }
     if (settled.refusal) throw settled.refusal;
     return settled.result;
+  }
+
+  function commitInTransaction({ appId, challengeId, nonce }, outcome, actor) {
+    const open = openChallenge({ appId, challengeId, nonce });
+    if (!open) {
+      return { refusal: appConflict('challenge_mismatch', 'This is not the open challenge of this app; start the decision again') };
+    }
+    const at = now();
+    if (!store.consumeChallenge(appId, challengeId, at)) {
+      return { refusal: appConflict('challenge_replayed', 'This challenge was already used; start the decision again') };
+    }
+    const { decision } = open;
+    const checked = checkedDecision(open, outcome);
+    if (checked.refusal) {
+      recordConsumed(open, { at, actor, outcome: checked.refusal.code, detail: outcome?.detail });
+      return checked;
+    }
+    recordConsumed(open, { at, actor, outcome: 'verified' });
+    const check = { presence: presence.kind, verification: OS_USER_VERIFIED, challengeId, verifiedAt: at };
+    const record = { at, actor: actor.user, check,
+      detail: { entrypoint: 'cli', presence: presence.kind, verification: OS_USER_VERIFIED, challengeId } };
+    const result = decision.action === 'approve'
+      ? activation.approve(checked.prepared, record) : activation.reactivate(checked.prepared, record);
+    return { result: { ...result, approval: { entrypoint: 'cli', ...check } } };
+  }
+
+  // In its own transaction, and only if no other commit consumed the challenge first.
+  function consumeAfterFailure({ appId, challengeId, nonce }, actor, error) {
+    store.transaction(() => {
+      const open = openChallenge({ appId, challengeId, nonce });
+      const at = now();
+      if (open && store.consumeChallenge(appId, challengeId, at)) {
+        recordConsumed(open, { at, actor, outcome: 'decision_failed', detail: error?.code });
+      }
+    });
+  }
+
+  function openChallenge({ appId, challengeId, nonce }) {
+    const open = store.challenge(appId);
+    return open && open.challengeId === challengeId && open.nonceHash === contentHash(String(nonce)) ? open : null;
+  }
+
+  // detail: a short code from the presence port or the failed operation, never a path or message.
+  function recordConsumed({ challengeId, decision }, { at, actor, outcome, detail }) {
+    const code = typeof detail === 'string' && EVENT_DETAIL.test(detail) ? { detail } : {};
+    store.recordEvent({ appId: decision.appId, at, action: 'challenge_consumed', version: decision.version,
+      actor: actor?.user ?? null, detail: { challengeId, decision: decision.action, outcome, ...code } });
   }
 
   // Runs after the challenge is consumed: any refusal here commits with it.
@@ -116,7 +155,13 @@ export function createVerifiedDecisions(context, { presence }) {
   async function decide(decision, actor) {
     if (decisionSource(actor).entrypoint !== 'cli') throw new TypeError('A presence-checked decision comes through the CLI');
     const challenge = issueChallenge(decision);
-    const outcome = await presence.verify({ challengeId: challenge.challengeId, message: challenge.message });
+    let outcome;
+    try {
+      outcome = await presence.verify({ challengeId: challenge.challengeId, message: challenge.message });
+    } catch {
+      // A check that failed to answer is an unavailable one; the challenge is consumed all the same.
+      outcome = { verified: false, reason: 'presence_unavailable', detail: 'presence_check_failed' };
+    }
     return commitChallenge(challenge, outcome, actor);
   }
 

@@ -187,6 +187,88 @@ test('a rollback needs its own presence check and never restores an earlier one'
   assert.equal(service.read({ appId: first.appId }).run.reason, 'isolation_unavailable');
 });
 
+// A failure after the verification attempt still consumes the challenge, in a
+// transaction of its own, and leaves the approval and the versions untouched.
+function assertConsumedWithoutApproval(service, appId, { version, status, outcome, detail }) {
+  const read = service.read({ appId });
+  assert.deepEqual([read.status, read.version], [status, version]);
+  const event = read.history.filter(({ action }) => action === 'challenge_consumed').at(-1);
+  assert.deepEqual([event.detail.outcome, event.detail.detail], [outcome, detail]);
+  assert.equal(read.history.some(({ action, detail: recorded }) => action === 'approved'
+    && recorded.challengeId === event.detail.challengeId), false);
+}
+
+const failingData = (code) => () => { throw Object.assign(new Error(`synthetic ${code}`), { code }); };
+
+for (const [label, breakData, code] of [
+  ['the data root is a file', ({ root }) => writeFileSync(join(root, 'data'), 'not a directory'), 'ENOTDIR'],
+  ['the data directory is not writable', ({ context }) => { context.dataOf = failingData('EACCES'); }, 'EACCES']
+]) {
+  test(`a verified approval that fails because ${label} consumes its challenge and approves nothing`, async (t) => {
+    const { service, reopen, root } = fixture(t);
+    const app = await submitted(service);
+    const context = reopen();
+    const decisions = createVerifiedDecisions(context, { presence: { kind: 'hello' } });
+    const challenge = decisions.issueChallenge({ action: 'approve', ...approval(app) });
+    breakData({ root, context });
+
+    assert.throws(() => decisions.commitChallenge(challenge, verified(), CLI_USER), { code });
+
+    const read = service.read({ appId: app.appId });
+    assert.deepEqual([read.versions[0].state, read.versions[0].approval], ['pending', null]);
+    assertConsumedWithoutApproval(service, app.appId, { status: 'pending', version: null, outcome: 'decision_failed', detail: code });
+    // The data path is repaired; the same challenge and answer still cannot be committed.
+    rmSync(join(root, 'data'), { recursive: true, force: true });
+    context.dataOf = (appId) => join(root, 'data', appId);
+    assert.throws(() => decisions.commitChallenge(challenge, verified(), CLI_USER), { code: 'challenge_replayed' });
+    assert.equal(service.read({ appId: app.appId }).status, 'pending');
+  });
+}
+
+test('a verified rollback that fails on its data directory keeps the running version', async (t) => {
+  const { service, decisions, reopen } = fixture(t);
+  const first = await submitted(service);
+  await decisions.approve(approval(first));
+  const second = await submitted(service, { version: '1.0.1' });
+  await decisions.approve(approval(second));
+  const context = reopen();
+  context.dataOf = failingData('EACCES');
+  const failing = createVerifiedDecisions(context, { presence: { kind: 'hello', verify: async () => verified() } });
+
+  await assert.rejects(failing.rollback({ appId: first.appId, version: '1.0.0', actor: CLI_USER }), { code: 'EACCES' });
+
+  assertConsumedWithoutApproval(service, first.appId, { status: 'active', version: '1.0.1', outcome: 'decision_failed', detail: 'EACCES' });
+  const read = service.read({ appId: first.appId });
+  assert.equal(read.versions[0].approval.challengeId, read.history.find(({ action }) => action === 'approved').detail.challengeId,
+    'the earlier approval of 1.0.0 is not rewritten');
+  assert.equal(read.run.reason, 'isolation_unavailable');
+});
+
+for (const [label, outcome] of [['null', null], ['undefined', undefined]]) {
+  test(`a ${label} presence answer is unavailable, consumed and never reusable`, async (t) => {
+    const { service, decisions } = fixture(t);
+    const app = await submitted(service);
+    const challenge = decisions.issueChallenge({ action: 'approve', ...approval(app) });
+
+    assert.throws(() => decisions.commitChallenge(challenge, outcome, CLI_USER), { code: 'presence_unavailable' });
+    assertConsumedWithoutApproval(service, app.appId, { status: 'pending', version: null, outcome: 'presence_unavailable',
+      detail: undefined });
+    assert.throws(() => decisions.commitChallenge(challenge, verified(), CLI_USER), { code: 'challenge_replayed' });
+  });
+}
+
+test('a presence check that throws is unavailable and still consumes the challenge', async (t) => {
+  const { service, reopen } = fixture(t);
+  const app = await submitted(service);
+  const presence = { kind: 'hello', verify: async () => { throw new Error('synthetic helper crash'); } };
+  const decisions = createVerifiedDecisions(reopen(), { presence });
+
+  await assert.rejects(decisions.approve(approval(app)), { code: 'presence_unavailable' });
+  assertConsumedWithoutApproval(service, app.appId, { status: 'pending', version: null, outcome: 'presence_unavailable',
+    detail: 'presence_check_failed' });
+  assert.equal(service.read({ appId: app.appId }).versions[0].approval, null);
+});
+
 test('two processes consuming one nonce at once: exactly one approval wins', async (t) => {
   const { service, decisions, root } = fixture(t);
   const app = await submitted(service);
