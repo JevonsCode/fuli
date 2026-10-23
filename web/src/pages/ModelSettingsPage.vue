@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import {
-  formatCount, gateBuilds, readModelRoles, roleName, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
+  formatCount, gateBuilds, readModelRoles, roleName, servedDigest, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -82,6 +82,7 @@ function facts(view: ModelRoleView): Fact[] {
     { key: 'answeredBy', label: t('modelSettings.answeredBy'), value: answer },
     { key: 'provider', label: t('modelSettings.provider'), value: `${t(`modelSettings.protocols.${view.connection.protocol}`)} · ${view.connection.endpointHost}` },
     { key: 'model', label: t('modelSettings.model'), value: view.connection.model, code: true },
+    digestFact(view),
     { key: 'secretRef', label: t('modelSettings.secretRef'), value: view.connection.secretRef ?? t('modelSettings.none'), code: Boolean(view.connection.secretRef) },
     { key: 'operations', label: t('modelSettings.operations'), value: view.allowedOperations?.join(', ') || t('modelSettings.none'), code: Boolean(view.allowedOperations?.length) },
     { key: 'egress', label: t('modelSettings.egress'), value: egress
@@ -93,6 +94,11 @@ function facts(view: ModelRoleView): Fact[] {
     { key: 'fallback', label: t('modelSettings.fallback'), value: view.fallbackToSession ? t('modelSettings.allowed') : t('modelSettings.notAllowed') },
     ...gateFact(view),
   ]
+}
+
+function digestFact(view: ModelRoleView): Fact {
+  const digest = servedDigest(view.lastServed)
+  return { key: 'modelDigest', label: t('modelSettings.modelDigest'), value: digest.text, code: digest.known, title: digest.title }
 }
 
 function gateFact(view: ModelRoleView): Fact[] {

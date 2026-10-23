@@ -56,6 +56,20 @@ export interface ModelRoleView {
   fallbackToSession?: boolean
   // rec#10 D-24, read from the gate registry: only Tonborg's model can be unlocked.
   reviewGate?: ReviewGateView
+  // The build that last answered on the configured model; null when it has not answered.
+  lastServed?: LastServed | null
+}
+
+// modelDigest is null when the backend did not prove the digest for that answer.
+export interface LastServed { modelDigest: string | null; answeredAt: string }
+
+// The served digest as a short prefix marked …, with the full digest in a
+// title; 未知 when no answer proved one (the D-24 gate then matches nothing).
+export function servedDigest(served: LastServed | null | undefined): { text: string; title: string; known: boolean } {
+  const digest = served?.modelDigest
+  if (!digest) return { text: t('modelSettings.digestUnknown'), title: t('modelSettings.digestUnknownHint'), known: false }
+  const short = shortUniqueIds([digest]).get(digest) ?? digest
+  return { text: short === digest ? digest : `${short}…`, title: digest, known: true }
 }
 
 export interface GateEntry { modelId: string; modelDigest: string; harnessVersion: string; evidence: string; addedAt: string }

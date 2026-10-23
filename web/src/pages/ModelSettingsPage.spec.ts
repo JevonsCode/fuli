@@ -92,6 +92,30 @@ describe('ModelSettingsPage', () => {
     expect(gate.get('dd').attributes('title')).toBe('qwen-test@sha256:0123456789abcdef (synthetic evaluation)')
   })
 
+  it('shows the digest that served the last answer beside the model, short with the full digest in a title', async () => {
+    const digest = '0123456789abcdef'.repeat(4)
+    ;(rolesPayload.roles[3] as Record<string, unknown>).lastServed = { modelDigest: digest, answeredAt: '2026-10-24T08:00:00.000Z' }
+    const wrapper = await mountPage()
+    const fact = wrapper.get('[data-model-role="tonborg"] [data-model-fact="modelDigest"]')
+    expect(fact.get('dt').text()).toBe('模型摘要')
+    expect(fact.get('dd code').text()).toBe('01234567…')
+    expect(fact.get('dd').attributes('title')).toBe(digest)
+    // A role without a model shows no digest at all.
+    expect(wrapper.find('[data-model-role="assistant"] [data-model-fact="modelDigest"]').exists()).toBe(false)
+  })
+
+  it('shows an unproven or missing digest as unknown, never a made-up value', async () => {
+    for (const lastServed of [null, { modelDigest: null, answeredAt: '2026-10-24T08:00:00.000Z' }]) {
+      ;(rolesPayload.roles[3] as Record<string, unknown>).lastServed = lastServed
+      const wrapper = await mountPage()
+      const fact = wrapper.get('[data-model-role="tonborg"] [data-model-fact="modelDigest"]')
+      expect(fact.get('dd').text()).toBe('未知')
+      expect(fact.find('dd code').exists()).toBe(false)
+      expect(fact.get('dd').attributes('title')).toContain('审核门不会放行')
+      wrapper.unmount()
+    }
+  })
+
   it('edits a role in a labelled form and saves it with the revision it read', async () => {
     const saved = roles()
     api.putJson.mockResolvedValue(saved)
