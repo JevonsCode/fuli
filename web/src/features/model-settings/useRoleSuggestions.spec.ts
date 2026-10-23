@@ -33,8 +33,8 @@ describe('role suggestions recovery fence', () => {
     const oldRead = reader.load(); await reader.load(); await flushPromises()
     expect(wrapper.text()).not.toContain(entry.hint)
     expect(wrapper.text()).toContain(locale === 'zh-CN'
-      ? '正在等待图谱确认删除记录，这部分内容暂时读不到。请稍后重试；如果一直这样，运行 `fuli migrate reconcile-knowledge`。'
-      : 'Waiting for the graph to confirm deletion records; this content cannot be read yet. Try again later; if it stays this way, run `fuli migrate reconcile-knowledge`.')
+      ? '正在等待图谱确认删除记录，这部分内容暂时读不到。请稍后重试；如果一直这样，运行 fuli migrate reconcile-knowledge。'
+      : 'Waiting for the graph to confirm deletion records; this content cannot be read yet. Try again later; if it stays this way, run fuli migrate reconcile-knowledge.')
     older.resolve({ suggestions: [entry] }); await oldRead; await flushPromises()
     expect(wrapper.text()).not.toContain(entry.hint)
     const retry = deferred<{ suggestions: RoleSuggestion[] }>()
