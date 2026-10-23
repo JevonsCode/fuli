@@ -8,7 +8,9 @@ import ast
 import re
 import typing
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,6 +20,7 @@ from fuli_graph import (
     knowledge_review_models,
     knowledge_tag_governance_models,
     knowledge_tag_models,
+    knowledge_versions,
     models,
     project_action_models,
     project_agent_attention_models,
@@ -221,15 +224,52 @@ class RecordingDriver:
         return [], None, None
 
 
-async def test_a_tag_write_with_an_unknown_key_writes_nothing():
+async def test_a_tag_write_with_a_bad_key_or_value_writes_nothing():
     driver = RecordingDriver()
     vocabulary = Neo4jLockedTagVocabulary(driver, 'synthetic-space')
 
+    with pytest.raises(StoredFieldError, match='undeclared properties nickname'):
+        await vocabulary.apply(new_tags=[{'id': 'synthetic-tag', 'nickname': 'rs'}])
     with pytest.raises(StoredFieldError, match='undeclared properties synonym_keys'):
         await vocabulary.apply(updates=[{'id': 'synthetic-tag', 'at': None, 'fields': {'synonym_keys': []}}])
+    with pytest.raises(StoredFieldError, match='FuliKnowledgeTag.alias_keys must be string'):
+        await vocabulary.apply(updates=[{'id': 'synthetic-tag', 'at': None, 'fields': {'alias_keys': 'rs'}}])
+    with pytest.raises(StoredFieldError, match='FuliKnowledgeTagLink.status must be tag_link_status'):
+        await vocabulary.apply(links=[{'id': 'synthetic-link', 'tag_id': 'synthetic-tag', 'item_kind': 'entity',
+                                       'item_id': 'synthetic-item', 'status': 'archived'}])
     with pytest.raises(StoredFieldError, match='undeclared properties nickname'):
         await vocabulary.apply(revisions=[{'id': 'synthetic-revision', 'nickname': 'rs'}])
     assert driver.queries == []
+
+
+class ReadOnlyDriver(RecordingDriver):
+    """Answers each read with the given rows and records what was asked."""
+
+    def __init__(self, rows):
+        super().__init__()
+        self.rows = rows
+
+    async def execute_query(self, query, **parameters):
+        self.queries.append(query)
+        return self.rows, None, None
+
+
+async def test_a_new_version_with_a_bad_carried_tag_or_override_writes_nothing():
+    driver = ReadOnlyDriver([{'tag_id': 'synthetic-tag', 'attached_by_kind': 'robot'}])
+    scoped = SimpleNamespace(runtime=SimpleNamespace(driver=driver))
+    with pytest.raises(StoredFieldError, match='FuliKnowledgeTagLink.attached_by_kind must be operation_actor'):
+        await knowledge_versions._carry_tags(scoped, {'id': 'synthetic-space'}, 'entity', 'old', 'new',
+                                             datetime.now(timezone.utc))
+    assert len(driver.queries) == 1, 'only the read of the attached tags ran'
+    # What a new version sets is checked even though what it carries is not.
+    with pytest.raises(StoredFieldError, match='Entity.uuid must be string'):
+        carried_fields('Entity', {'name': 'Rust'}, {'uuid': 7})
+
+
+def test_a_turn_receipt_state_outside_its_enum_is_refused():
+    with pytest.raises(StoredFieldError, match='FuliTaskContext.turn_receipt_state must be turn_receipt_state'):
+        stored_fields('FuliTaskContext', {'turn_receipt_state': 'read'})
+    assert ENUMS['turn_receipt_state'] == ('unread', 'delivered')
 
 
 def _enum(declared: str):

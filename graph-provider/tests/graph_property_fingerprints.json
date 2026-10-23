@@ -372,6 +372,10 @@
         "host",
         "user"
       ],
+      "turn_receipt_state": [
+        "unread",
+        "delivered"
+      ],
       "use_kind": [
         "cited",
         "applied"
@@ -1577,7 +1581,7 @@
         "turn_id": "string?",
         "turn_receipt_claimant": "string?",
         "turn_receipt_lock": "integer?",
-        "turn_receipt_state": "string?",
+        "turn_receipt_state": "turn_receipt_state?",
         "work_log_json": "string?",
         "write_serial": "integer?"
       },

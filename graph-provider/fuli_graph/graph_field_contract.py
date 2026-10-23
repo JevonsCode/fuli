@@ -552,7 +552,7 @@ NODE_FIELDS = {
         'personal_project_id': 'string?', 'personal_space_id': 'string',
         'project_agent_id': 'string?', 'reason': 'string?', 'record_json': 'string',
         'token': 'string', 'turn_id': 'string?', 'turn_receipt_claimant': 'string?',
-        'turn_receipt_lock': 'integer?', 'turn_receipt_state': 'string?',
+        'turn_receipt_lock': 'integer?', 'turn_receipt_state': 'turn_receipt_state?',
         'work_log_json': 'string?', 'write_serial': 'integer?',
     },
     'FuliTaskContextSession': {
@@ -766,6 +766,7 @@ ENUMS = {
                     'awaiting_review', 'blocked', 'completed', 'cancelled'),
     'triage_kind': ('project', 'topic', 'one_off'),
     'triage_source': ('host', 'user'),
+    'turn_receipt_state': ('unread', 'delivered'),
     'use_kind': ('cited', 'applied'),
     'worker_execution_status': ('queued', 'running', 'completed', 'incomplete', 'blocked',
                                 'cancelled', 'failed'),
