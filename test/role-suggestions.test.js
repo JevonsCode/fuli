@@ -169,6 +169,33 @@ test('a delete that completes while the model runs keeps the late answer\'s word
   assert.equal(log.list()[0].hard_deleted, true);
 });
 
+test('a delete already open when the role reads its evidence keeps the answer\'s words out, even once it completed', (t) => {
+  const clock = { now: Date.parse('2026-10-23T00:00:00.000Z') };
+  const { directory, log } = storeIn(t, clock);
+  const ledger = hardDeleteLedger(directory, { now: () => new Date(clock.now) });
+  // The delete begins; the graph has not committed it yet.
+  const operation = ledger.begin({ spaceId: SPACE, itemKind: 'entity', itemId: 'item-1', previewId: 'preview-1', itemIds: ['item-1'] });
+  // The role reads the generation and its (old) evidence now, in this space and in another one.
+  const generation = log.deletionGeneration(SPACE);
+  const otherGeneration = log.deletionGeneration('space-b');
+  assert.deepEqual([generation, otherGeneration], [null, []]);
+  // The delete commits and completes while the model is awaited.
+  ledger.update(operation.id, { state: 'complete', deletedAt: new Date(clock.now).toISOString() });
+  clock.now += 60_000;
+  log.record({ ...jefa(jefaSuggested()), deletionGeneration: generation });
+  log.record({ ...jefa(jefaSuggested(2), 'conversation-2'), personalSpaceId: 'space-b', deletionGeneration: otherGeneration });
+  const [other, late] = log.list();
+  assert.deepEqual([late.personalSpaceId, late.hint, late.suggestion, late.hard_deleted],
+    [SPACE, undefined, { taskId: 'task-seeds', updatedAt: null }, true]);
+  assert.deepEqual([other.personalSpaceId, other.suggestion.reason, other.hard_deleted], ['space-b', 'Same page.', undefined]);
+  // A request that starts after the delete completed keeps its words.
+  const after = log.deletionGeneration(SPACE);
+  assert.deepEqual(after, [operation.id]);
+  clock.now += 60_000;
+  log.record({ ...jefa(jefaSuggested(3), 'conversation-3'), deletionGeneration: after });
+  assert.equal(log.list()[0].suggestion.reason, 'Same page.');
+});
+
 test('a delete\'s cleanup is bound to its own time: a retry or a later status check never reaches a newer record', (t) => {
   const clock = { now: Date.parse('2026-10-23T00:00:00.000Z') };
   const { log } = storeIn(t, clock);

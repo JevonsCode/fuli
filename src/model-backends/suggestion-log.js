@@ -66,11 +66,14 @@ export class RoleSuggestionLog {
   }
 
   // The permanent deletes of a space that are or may be in effect, by
-  // operation ID: a role reads this before it reads its evidence. null when
-  // the delete record cannot be read, which keeps no words.
+  // operation ID: a role reads this before it reads its evidence. null, which
+  // keeps no words, when the delete record cannot be read or a delete of the
+  // space is still open: the evidence read now may hold knowledge that delete
+  // removes, and the record cannot tell that it completed in between.
   deletionGeneration(space) {
     try {
-      return this.#deletions(space).map(operation => operation.id);
+      const deletions = this.#deletions(space);
+      return deletions.some(operation => OPEN.has(operation.state)) ? null : deletions.map(operation => operation.id);
     } catch {
       return null;
     }
