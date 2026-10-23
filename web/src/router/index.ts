@@ -212,6 +212,16 @@ export const router = createRouter({
       },
     },
     {
+      path: '/settings/models',
+      name: 'model-settings',
+      component: () => import('@/pages/ModelSettingsPage.vue'),
+      meta: {
+        title: 'modelSettings.title',
+        layout: 'canvas',
+        detail: true,
+      },
+    },
+    {
       path: '/settings/data-format',
       name: 'data-format',
       component: () => import('@/pages/DataFormatPage.vue'),

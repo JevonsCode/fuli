@@ -33,6 +33,7 @@ import { dataFormatMigrations as createDataFormatMigrations } from './data-forma
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
 import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
+import { createModelRoleSettings } from './model-backends/role-settings.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -96,6 +97,9 @@ export async function createServer(options = {}) {
   // The person's own tag changes and tag governance (rec#11 D-07 part 2), console only.
   const knowledgeTags = options.knowledgeTags ?? (localOptions.runtimeConfigPath
     ? createKnowledgeTagsConsole(dirname(localOptions.runtimeConfigPath)) : null);
+  // The person's edit of a built-in Agent's model settings, console only.
+  const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
+    ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath) : null);
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
   // is settled from its recorded operation, and graph deletions the record
   // lost are taken in again; what the graph cannot answer yet stays open for
@@ -181,6 +185,7 @@ export async function createServer(options = {}) {
       knowledgeHardDelete,
       knowledgeScope,
       knowledgeTags,
+      modelRoleSettings,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -271,6 +276,7 @@ async function handleRequest({
   knowledgeHardDelete,
   knowledgeScope,
   knowledgeTags,
+  modelRoleSettings,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -294,7 +300,8 @@ async function handleRequest({
     dataFormatMigrations,
     knowledgeHardDelete,
     knowledgeScope,
-    knowledgeTags
+    knowledgeTags,
+    modelRoleSettings
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }

@@ -22,6 +22,7 @@ import { RECALL_POLICY_FORMAT } from '../graphiti/recall-policy.js';
 import { GRAPH_RUNTIME_CONFIG_FORMAT } from '../graphiti/runtime-config.js';
 import { JUDGMENT_FORMAT } from '../judgment/store.js';
 import { HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT } from '../knowledge-hard-delete/delete-ledger.js';
+import { MODEL_BACKEND_CONFIG_FORMAT } from '../model-backends/config.js';
 import { ROLE_WORK_FORMAT } from '../model-backends/role-work-store.js';
 import { MODEL_USAGE_FORMAT } from '../model-backends/usage-ledger.js';
 import { inspectJsonStore } from '../storage/json-format.js';
@@ -64,6 +65,8 @@ const jsonStores = () => [
   ['capture-onboarding.json', CAPTURE_ONBOARDING_FORMAT],
   ['external-knowledge/bindings.json', EXTERNAL_KNOWLEDGE_FORMAT],
   ['external-knowledge/conflict-policies.json', CONFLICT_POLICY_FORMAT],
+  // The built-in Agents' model settings, saved from the console (rec#8); keys are only named here.
+  ['model-backends.json', MODEL_BACKEND_CONFIG_FORMAT],
   ['model-secrets.json', MODEL_SECRETS_FORMAT],
   ['client-connection-observations.json', CLIENT_CONNECTION_HISTORY_FORMAT],
   ['format-operations.json', FORMAT_OPERATIONS_FORMAT],
