@@ -131,6 +131,31 @@ def test_project_references_share_knowledge_without_changing_its_primary_scope()
     assert _item_scope_metadata(shared, request, scopes, False)['defined_project_id'] == 'active-project'
 
 
+@pytest.mark.parametrize('active, expected', [('project-a', 'project-a'), ('project-b', 'project-b'),
+                                               ('unrelated-project', None)])
+def test_multi_project_preference_search_applies_in_each_explicit_project(active, expected):
+    record = {'profile_aspect': 'taste', 'preference_scope': 'project',
+              'preference_project_id': 'project-a', 'preference_project_ids': ['project-a', 'project-b']}
+    request = SearchRequest(space_ids=['personal-space'], query='buttons',
+                            personal_project_ids=[active], active_personal_project_id=active)
+    scopes = {active: {'scope_distance': 0, 'scope_path': [active], 'inherited': False}}
+    actual = _item_scope_metadata(record, request, scopes, True)
+    assert (actual or {}).get('defined_project_id') == expected
+
+
+def test_multi_project_preference_uses_active_project_and_never_widens_agent_scope():
+    record = {'profile_aspect': 'taste', 'preference_scope': 'project',
+              'preference_project_id': 'project-a', 'preference_project_ids': ['project-a', 'project-b']}
+    request = SearchRequest(space_ids=['personal-space'], query='buttons', personal_project_ids=['project-a', 'project-b'],
+                            active_personal_project_id='project-b', project_agent_id='agent-a')
+    scopes = {pid: {'scope_distance': 0, 'scope_path': [pid], 'inherited': False} for pid in request.personal_project_ids}
+    assert _item_scope_metadata(record, request, scopes, False)['defined_project_id'] == 'project-b'
+    assert _item_scope_metadata({**record, 'preference_scope': 'agent', 'preference_agent_id': 'agent-a'},
+                                request, scopes, False) is None
+    legacy = {key: value for key, value in record.items() if key != 'preference_project_ids'}
+    assert _item_scope_metadata(legacy, request, scopes, False)['defined_project_id'] == 'project-a'
+
+
 def test_item_level_inheritance_is_opt_in_and_never_applies_to_preferences():
     request = SearchRequest(
         space_ids=['personal-space'],
