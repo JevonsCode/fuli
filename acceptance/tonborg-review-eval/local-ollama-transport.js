@@ -6,6 +6,8 @@
 // unchanged. Each exchange is handed to `onExchange` exactly as sent and
 // received, for the raw per-case record.
 
+import { fetchWithoutRedirect } from '../../src/model-backends/no-redirect-fetch.js';
+
 export const OLLAMA_ORIGIN = 'http://127.0.0.1:11434';
 export const CHAT_PATH = '/v1/chat/completions';
 
@@ -40,14 +42,11 @@ function assertToolFreeChat(body) {
 }
 
 // The only way the evaluation reaches the network: an allowed local route,
-// and never a redirect. Native fetch follows redirects by default, so a
-// checked first URL alone could still end on another host or port.
+// and never a redirect, refused the same way as every production model request.
 export function localOnlyFetch(fetchImpl = globalThis.fetch) {
   return async function checkedFetch(url, init = {}) {
     const target = assertLocalOllama(url, init.method ?? 'GET');
-    const response = await fetchImpl(target.href, { ...init, redirect: 'error' });
-    if (response.redirected) throw new Error(`Refusing a redirected response from ${target.href}`);
-    return response;
+    return fetchWithoutRedirect(fetchImpl, target.href, init);
   };
 }
 
