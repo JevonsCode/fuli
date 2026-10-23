@@ -9,6 +9,10 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { focusReturnTarget } from '@/composables/useFocusReturn'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import { useRoutePeek } from '@/composables/useRoutePeek'
+import KnowledgeHardDeletedNotice from '@/features/knowledge-hard-delete/KnowledgeHardDeletedNotice.vue'
+import type { HardDeletedState } from '@/features/knowledge-hard-delete/model'
+import SourceDeleteControl from '@/features/knowledge-hard-delete/SourceDeleteControl.vue'
+import { sessionDeleteTarget, type SourceDeleteTarget } from '@/features/knowledge-hard-delete/source-delete-model'
 import SessionRecordPeek from '@/features/session-records/SessionRecordPeek.vue'
 import {
   SESSION_GROUPS, clockTime, entryTypeLabel, groupEntries, peekEntry, projectLabel, stretchLabel,
@@ -33,6 +37,7 @@ const sessionId = computed(() => String(route.params.sessionId ?? ''))
 const client = computed(() => view.value?.session.sourceApplication ?? requestedClient.value)
 
 const view = ref<SessionRecordsView | null>(null)
+const sourceDeletion = ref<{ target: SourceDeleteTarget; state: HardDeletedState } | null>(null)
 const loading = ref(false)
 const error = ref('')
 const root = ref<HTMLElement | null>(null)
@@ -50,6 +55,7 @@ watch(opened, entry => { if (entry) lastOpened = entry.key })
 
 // rec#20 part 2: while the session holds undecided items, an offer to move
 // them into each formal project its turns worked in.
+const sessionTarget = computed(() => view.value ? sessionDeleteTarget(view.value.session) : null)
 const migrationOffers = computed(() => sessionMigrationOffers(view.value))
 const shortSession = computed(() => sessionId.value.length > 12 ? `${sessionId.value.slice(0, 8)}…` : sessionId.value)
 
@@ -65,6 +71,18 @@ async function load() {
   } finally {
     if (current === requestVersion) loading.value = false
   }
+}
+
+function sourceRemoved(target: SourceDeleteTarget, state: HardDeletedState) {
+  ++requestVersion
+  loading.value = false
+  view.value = null
+  sourceDeletion.value = { target, state }
+  void peek.close()
+}
+function reloadAfterSource() {
+  sourceDeletion.value = null
+  void load()
 }
 
 function open(entry: SessionEntry | string) {
@@ -94,6 +112,7 @@ watch([opened, view], async ([entry]) => {
 })
 
 watch([spaceId, requestedClient, sessionId], () => {
+  sourceDeletion.value = null
   view.value = null
   if (spaceId.value) void load()
 }, { immediate: true })
@@ -103,6 +122,11 @@ watch([spaceId, requestedClient, sessionId], () => {
   <section class="view [scrollbar-gutter:stable]">
     <div ref="root" class="@container mx-auto flex w-full max-w-(--canvas-max) flex-col gap-6" data-session-records>
       <GrowthLoading v-if="showLoading" :label="t('sessionRecords.loading')" />
+      <section v-else-if="sourceDeletion" class="grid gap-3" data-source-deleted-page>
+        <KnowledgeHardDeletedNotice :state="sourceDeletion.state" :space-id="spaceId" :item-kind="sourceDeletion.target.item_kind" :item-id="sourceDeletion.target.item_id"
+          @changed="sourceRemoved(sourceDeletion!.target, $event)" @present="reloadAfterSource" />
+        <Button v-if="sourceDeletion.state.outcome === 'complete' || sourceDeletion.state.outcome === 'gone'" variant="outline" @click="reloadAfterSource">{{ t('knowledgeHardDelete.source.reload') }}</Button>
+      </section>
       <div v-else-if="error && !view" role="alert" class="ui-empty grid justify-items-start gap-2 rounded-lg border bg-card">
         <p class="m-0 text-destructive [overflow-wrap:anywhere]">{{ t('sessionRecords.loadFailed', { error }) }}</p>
         <Button variant="outline" size="sm" @click="load">{{ t('sessionRecords.retry') }}</Button>
@@ -112,6 +136,7 @@ watch([spaceId, requestedClient, sessionId], () => {
           <p class="page-lede m-0 min-w-0 text-sm text-muted-foreground [overflow-wrap:anywhere]" :title="sessionId">
             {{ t('sessionRecords.lede', { client, session: shortSession }) }}
           </p>
+          <SourceDeleteControl v-if="sessionTarget" :space-id="spaceId" :target="sessionTarget" @deleted="sourceRemoved(sessionTarget!, $event)" />
           <Badge variant="secondary" data-session-total>{{ t('sessionRecords.total', { count: view.total }) }}</Badge>
           <GrowthLoading v-if="loading" variant="inline" :label="t('sessionRecords.loading')" />
         </div>
@@ -195,7 +220,7 @@ watch([spaceId, requestedClient, sessionId], () => {
 
     <Dialog :open="Boolean(view && peekKey && !view.clients?.length)" @update:open="peekOpenChange">
       <DialogContent v-if="view && peekKey && !view.clients?.length" size="lg" data-session-peek @open-auto-focus="focusDialog" @close-auto-focus="returnFocus">
-        <SessionRecordPeek :entry="opened" :view="view" :space-id="spaceId" @open="open" @close="peek.close()" />
+        <SessionRecordPeek :entry="opened" :view="view" :space-id="spaceId" @open="open" @close="peek.close()" @source-deleted="sourceRemoved" />
       </DialogContent>
     </Dialog>
   </section>

@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import type { KnowledgeItemSummary } from '@/features/knowledge-quick-edit/model'
 import { t } from '@/i18n'
+import { useHardDeleteDialog } from './useHardDeleteDialog'
 import KnowledgeHardDeleteDialog from './KnowledgeHardDeleteDialog.vue'
 import type { HardDeletedState } from './model'
 
@@ -16,7 +17,7 @@ import type { HardDeletedState } from './model'
 defineProps<{ item: KnowledgeItemSummary; spaceId: string }>()
 const emit = defineEmits<{ deleted: [state: HardDeletedState] }>()
 
-const open = ref(false)
+const { open, pending, changeOpen, guardDismiss } = useHardDeleteDialog()
 const opener = ref<HTMLElement | null>(null)
 
 function deleted(state: HardDeletedState) {
@@ -46,9 +47,9 @@ function returnFocus(event: Event) {
       </AccordionItem>
     </Accordion>
   </Card>
-  <Dialog v-model:open="open">
-    <DialogContent v-if="open" size="lg" data-hard-delete-dialog @close-auto-focus="returnFocus">
-      <KnowledgeHardDeleteDialog :item="item" :space-id="spaceId" @deleted="deleted" @cancel="open = false" />
+  <Dialog :open="open" @update:open="changeOpen">
+    <DialogContent v-if="open" size="lg" :show-close-button="!pending" @escape-key-down="guardDismiss" @interact-outside="guardDismiss" data-hard-delete-dialog @close-auto-focus="returnFocus">
+      <KnowledgeHardDeleteDialog :item="item" :space-id="spaceId" @deleted="deleted" @cancel="changeOpen(false)" @pending="pending = $event" />
     </DialogContent>
   </Dialog>
 </template>

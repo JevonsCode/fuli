@@ -19,6 +19,7 @@ type ReviewEpisode = {
   relationships?: unknown[]
 }
 type PersonalDraft = { id: string; created_at?: string; episode: ReviewEpisode }
+type PersonalDraftRead = Omit<PersonalDraft, 'episode'> & { episode: ReviewEpisode | null; payload_scrubbed_by?: string | null }
 type Proposal = { id: string; created_at?: string; episode: ReviewEpisode }
 
 const store = useConsoleStore()
@@ -176,12 +177,12 @@ async function loadPersonal(spaceId = store.activePersonalSpace?.id) {
   }
   try {
     const query = new URLSearchParams({ personalSpaceId: spaceId, status: 'pending' })
-    const result = await getJson<{ drafts?: PersonalDraft[] }>(
+    const result = await getJson<{ drafts?: PersonalDraftRead[] }>(
       '/api/personal-review?' + query,
       { signal: controller.signal },
     )
     if (!currentPersonalQueue(spaceId, version) || controller.signal.aborted) return
-    personalDrafts.value = result.drafts ?? []
+    personalDrafts.value = (result.drafts ?? []).filter((draft): draft is PersonalDraft => Boolean(draft.episode) && !draft.payload_scrubbed_by)
   } catch (error) {
     if (!currentPersonalQueue(spaceId, version) || controller.signal.aborted || isAbortError(error)) return
     personalError.value = errorMessage(error)

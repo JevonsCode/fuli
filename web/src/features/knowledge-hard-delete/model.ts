@@ -6,6 +6,7 @@ import type { ItemKind, VersionStatus } from '@/features/knowledge-quick-edit/mo
 // page make from them; the components only compose.
 
 export type HardDeleteRole = 'item' | 'version' | 'relationship'
+export type HardDeleteKind = ItemKind | 'episode' | 'session'
 
 export interface HardDeleteItem {
   item_kind: ItemKind
@@ -55,6 +56,7 @@ export interface HardDeletePublication {
 
 export interface HardDeletePreview {
   publications?: HardDeletePublication[]
+  drafts?: { pending: number; submitted: number }
   preview_id: string
   item_kind: ItemKind
   item_id: string
@@ -75,7 +77,7 @@ export type HardDeleteOutcome = 'complete' | 'local_pending' | 'unknown' | 'not_
 export interface HardDeleteResult {
   outcome: HardDeleteOutcome
   deletion_id?: string
-  item_kind: ItemKind
+  item_kind: HardDeleteKind
   item_id: string
   deleted_at?: string | null
   counts?: HardDeleteCounts
@@ -120,10 +122,11 @@ function apiCode(error: unknown): { code?: string; deletedAt?: string; error?: s
 }
 
 /** A read or write answered that the item was permanently deleted (410). */
-export function hardDeletedFrom(error: unknown): HardDeletedState | null {
+export function hardDeletedFrom(error: unknown, itemKind?: HardDeleteKind): HardDeletedState | null {
   if (!(error instanceof ApiError) || error.status !== 410) return null
   const body = apiCode(error)
-  return body?.code === 'hard_deleted' ? { outcome: 'gone', deletedAt: body.deletedAt ?? null } : null
+  const gone = body?.code === 'hard_deleted' || (body?.code === 'source_hard_deleted' && (itemKind === 'episode' || itemKind === 'session'))
+  return gone ? { outcome: 'gone', deletedAt: body?.deletedAt ?? null } : null
 }
 
 /** The graph itself refused the delete (a 4xx with its code): only this proves nothing was deleted.

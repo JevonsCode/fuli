@@ -5,11 +5,10 @@ import { RouterLink } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import type { ItemKind } from '@/features/knowledge-quick-edit/model'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { hardDeleteStatus } from './hard-delete-api'
-import { deletedState, ledgerDamage, type HardDeletedState } from './model'
+import { deletedState, ledgerDamage, type HardDeletedState, type HardDeleteKind } from './model'
 
 // rec#5 C9: what an item page shows once a permanent delete was sent or an
 // old link answered 410. Three states the console tells apart: the result
@@ -17,9 +16,10 @@ import { deletedState, ledgerDamage, type HardDeletedState } from './model'
 // deleted it and local cleanup is left, or everything is done. An old link
 // asks once on its own so a cleanup that a crash cut short finishes. The
 // trace holds no content, so neither does this.
-const props = defineProps<{ state: HardDeletedState; spaceId: string; itemKind: ItemKind; itemId: string }>()
+const props = defineProps<{ state: HardDeletedState; spaceId: string; itemKind: HardDeleteKind; itemId: string }>()
 const emit = defineEmits<{ changed: [state: HardDeletedState]; present: [] }>()
 
+const source = computed(() => props.itemKind === 'episode' || props.itemKind === 'session')
 const checking = ref(false)
 const damage = ref<string | null>(null)
 const when = computed(() => props.state.deletedAt
@@ -58,7 +58,7 @@ onMounted(() => {
     </template>
     <template v-else-if="deleted">
       <p v-if="state.outcome === 'local_pending'" class="m-0" data-hard-deleted-local-pending>{{ t('knowledgeHardDelete.deleted.localPending') }}</p>
-      <p v-else class="m-0">{{ t('knowledgeHardDelete.deleted.body') }}</p>
+      <p v-else class="m-0">{{ t(source ? 'knowledgeHardDelete.source.body' : 'knowledgeHardDelete.deleted.body') }}</p>
       <p v-if="when" class="m-0 text-muted-foreground" data-hard-deleted-when>{{ t('knowledgeHardDelete.deleted.when', { time: when }) }}</p>
       <p v-if="state.result?.counts" class="m-0 text-muted-foreground" data-hard-deleted-count>
         {{ t('knowledgeHardDelete.deleted.done', { items: state.result.counts.items, episodes: state.result.counts.episodes }) }}
@@ -68,7 +68,7 @@ onMounted(() => {
       </p>
       <div v-if="state.outcome === 'local_pending'"><Button variant="outline" size="sm" :disabled="checking"
         data-hard-deleted-retry @click="check">{{ t('knowledgeHardDelete.deleted.retry') }}</Button></div>
-      <p class="m-0 text-muted-foreground" data-hard-deleted-exceptions>{{ t('knowledgeHardDelete.deleted.exceptions') }}</p>
+      <p class="m-0 text-muted-foreground" data-hard-deleted-exceptions>{{ t(source ? 'knowledgeHardDelete.source.exceptions' : 'knowledgeHardDelete.deleted.exceptions') }}</p>
       <p class="m-0 text-muted-foreground" data-hard-deleted-disclosure>{{ t('knowledgeHardDelete.deleted.disclosure') }}</p>
       <div><Button variant="link" size="sm" class="h-auto p-0" as-child data-hard-deleted-backups>
         <RouterLink to="/settings/data-format">{{ t('knowledgeHardDelete.deleted.backups') }}</RouterLink></Button></div>

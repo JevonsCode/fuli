@@ -333,3 +333,28 @@ it('lists multiple public submissions with a single warning and falls back to th
   expect(warning.querySelector('a')).toBeNull()
   wrapper.unmount()
 })
+
+it('explains pending draft invalidation under sources and submitted local text erasure under the public warning', async () => {
+  postJson.mockResolvedValue(preview(undefined, { drafts: { pending: 2, submitted: 1 }, publications: [{
+    draft_id: 'submitted', project_id: 'public-project', provider_url: 'https://public.example', proposal_id: 'proposal',
+    source_episode_ids: ['e2'], status: 'submitted', local_delete_retracts: false, withdrawal_status: 'unavailable', withdrawal_url: null,
+  }] }))
+  const wrapper = await open()
+  await openDialog(wrapper)
+  expect(dialog()!.querySelector('[data-hard-delete-sources]')!.textContent).toContain('2 份还没提交的公开草稿会一起作废，之后不能再提交。')
+  expect(dialog()!.querySelector('[data-hard-delete-publications]')!.textContent).toContain('FULI 本机留下的提交副本会清掉正文，只保留提交记录。')
+  wrapper.unmount()
+})
+
+it('does not claim local drafts are erased when their shared source stays', async () => {
+  postJson.mockResolvedValue(preview(undefined, { drafts: { pending: 0, submitted: 0 }, removed_episodes: [], publications: [{
+    draft_id: 'shared', project_id: 'public-project', provider_url: 'https://public.example', proposal_id: 'proposal',
+    source_episode_ids: ['e1'], status: 'submitted', local_delete_retracts: false, withdrawal_status: 'unavailable', withdrawal_url: null,
+  }] }))
+  const wrapper = await open()
+  await openDialog(wrapper)
+  expect(dialog()!.textContent).not.toContain('公开草稿会一起作废')
+  expect(dialog()!.textContent).not.toContain('提交副本会清掉正文')
+  expect(dialog()!.textContent).toContain('删除这条知识不会撤回公开内容')
+  wrapper.unmount()
+})

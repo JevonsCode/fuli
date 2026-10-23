@@ -13,7 +13,10 @@ import { evidenceApplicationLabel, evidenceKindLabel, itemEditPath, versionStatu
   type KnowledgeItemSummary } from '@/features/knowledge-quick-edit/model'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
-import { confirmHardDelete, previewHardDelete } from './hard-delete-api'
+import { confirmHardDelete, previewHardDelete, confirmSourceDelete, previewSourceDelete } from './hard-delete-api'
+import SourceDeleteSelections from './SourceDeleteSelections.vue'
+import { sourcePreviewDetails, sourceSelection, type SourceDeletePreview, type SourceDeleteSelection,
+  type SourceDeleteTarget } from './source-delete-model'
 import { confirmationMatches, deletedState, hardDeletedFrom, ledgerDamage, recordCounts, refusedByGraph, stalePreview,
   type HardDeletePreview, type HardDeletedState } from './model'
 
@@ -21,19 +24,28 @@ import { confirmationMatches, deletedState, hardDeletedFrom, ledgerDamage, recor
 // what stays and what rests on it, then asks the person to type 删除. The
 // delete names this preview; if anything changed meanwhile the provider
 // refuses it (409) and the dialog lists again from what is stored now.
-const props = defineProps<{ item: KnowledgeItemSummary; spaceId: string }>()
-const emit = defineEmits<{ deleted: [state: HardDeletedState]; cancel: [] }>()
+const props = defineProps<{ item: KnowledgeItemSummary | SourceDeleteTarget; spaceId: string }>()
+const emit = defineEmits<{ deleted: [state: HardDeletedState]; cancel: []; pending: [value: boolean] }>()
 
-const preview = ref<HardDeletePreview | null>(null)
+const rawPreview = ref<HardDeletePreview | SourceDeletePreview | null>(null)
+const sourceTarget = computed(() => props.item.item_kind === 'episode' || props.item.item_kind === 'session'
+  ? props.item as SourceDeleteTarget : null)
+const sourcePreview = computed(() => rawPreview.value?.item_kind === 'episode' || rawPreview.value?.item_kind === 'session'
+  ? rawPreview.value as SourceDeletePreview : null)
+const preview = computed(() => sourcePreview.value ? sourcePreviewDetails(sourcePreview.value) : rawPreview.value as HardDeletePreview | null)
+const selection = ref<SourceDeleteSelection>({ include: [], exclude: [] })
+const previewValid = ref(false)
 const loading = ref(false)
 const reloading = ref(false)
 const deleting = ref(false)
+watch(deleting, value => emit('pending', value), { flush: 'sync' })
 const typed = ref('')
 const notice = ref('')
 const error = ref('')
 let request = 0
 
-const ready = computed(() => Boolean(preview.value) && confirmationMatches(preview.value!, typed.value))
+const ready = computed(() => previewValid.value && Boolean(preview.value) && !loading.value && !reloading.value
+  && confirmationMatches(preview.value!, typed.value))
 const records = computed(() => preview.value ? recordCounts(preview.value.counts) : [])
 const publicProjects = computed(() => [...new Set((preview.value?.publications ?? [])
   .map(publication => publication.project_name || publication.project_id))].join(' / '))
@@ -41,20 +53,38 @@ const when = (value?: string | null) => formatDateTime(value, currentLocale(), D
 
 async function load(again = false) {
   const current = ++request
+  previewValid.value = false
   loading.value = !again
   reloading.value = again
   error.value = ''
   try {
-    const value = await previewHardDelete(props.spaceId, props.item)
-    if (current === request) preview.value = value
+    const value = sourceTarget.value
+      ? await previewSourceDelete(props.spaceId, sourceTarget.value, selection.value)
+      : await previewHardDelete(props.spaceId, props.item as KnowledgeItemSummary)
+    if (current === request) { rawPreview.value = value; previewValid.value = true }
   } catch (cause) {
     if (current !== request) return
-    const deleted = hardDeletedFrom(cause)
+    const deleted = hardDeletedFrom(cause, props.item.item_kind)
     if (deleted) emit('deleted', deleted)
     else error.value = ledgerDamage(cause) ?? t('knowledgeHardDelete.dialog.loadFailed', { error: apiErrorReason(cause) })
   } finally {
     if (current === request) { loading.value = false; reloading.value = false }
   }
+}
+
+function select(key: string, checked: boolean) {
+  if (!sourcePreview.value || deleting.value) return
+  selection.value = sourceSelection(selection.value, key, checked, sourcePreview.value.default_items.some(row => row.key === key))
+  typed.value = ''
+  notice.value = t('knowledgeHardDelete.source.selectionChanged')
+  void load(true)
+}
+
+function resetSelection() {
+  if (!sourcePreview.value || deleting.value) return
+  selection.value = { include: [...sourcePreview.value.include], exclude: [...sourcePreview.value.exclude] }
+  typed.value = ''
+  void load(true)
 }
 
 async function submit() {
@@ -63,9 +93,11 @@ async function submit() {
   error.value = ''
   notice.value = ''
   try {
-    emit('deleted', deletedState(await confirmHardDelete(props.spaceId, preview.value, typed.value)))
+    emit('deleted', deletedState(sourceTarget.value && sourcePreview.value
+      ? await confirmSourceDelete(props.spaceId, sourceTarget.value, sourcePreview.value, typed.value)
+      : await confirmHardDelete(props.spaceId, rawPreview.value as HardDeletePreview, typed.value)))
   } catch (cause) {
-    const deleted = hardDeletedFrom(cause)
+    const deleted = hardDeletedFrom(cause, props.item.item_kind)
     if (deleted) { emit('deleted', deleted); return }
     if (stalePreview(cause)) {
       typed.value = ''
@@ -85,8 +117,10 @@ async function submit() {
   }
 }
 
-watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
-  preview.value = null
+watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarget.value?.sourceApplication,
+  sourceTarget.value?.sessionId], () => {
+  rawPreview.value = null
+  selection.value = { include: [], exclude: [] }
   typed.value = ''
   notice.value = ''
   void load()
@@ -95,7 +129,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
 
 <template>
   <DialogHeader>
-    <DialogTitle>{{ t('knowledgeHardDelete.dialog.title') }}</DialogTitle>
+    <DialogTitle>{{ t(sourceTarget ? `knowledgeHardDelete.source.${sourceTarget.item_kind}Title` : 'knowledgeHardDelete.dialog.title') }}</DialogTitle>
     <DialogDescription>{{ t('knowledgeHardDelete.dialog.description') }}</DialogDescription>
   </DialogHeader>
   <GrowthLoading v-if="loading" variant="compact" :label="t('knowledgeHardDelete.dialog.loading')" />
@@ -106,7 +140,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
 
     <section v-if="preview.publications?.length" class="grid min-w-0 gap-2 rounded-lg border p-3 [overflow-wrap:anywhere]" data-hard-delete-publications>
       <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.dialog.publications') }}</h3>
-      <p class="m-0">{{ t('knowledgeHardDelete.dialog.publicationWarning', { project: publicProjects }) }}</p>
+      <p class="m-0">{{ t(preview.removed_episodes.length ? 'knowledgeHardDelete.dialog.publicationWarning' : 'knowledgeHardDelete.dialog.publicationItemWarning', { project: publicProjects }) }}</p>
       <ul class="m-0 grid list-none gap-2 p-0">
         <li v-for="publication in preview.publications" :key="publication.draft_id" class="grid gap-1 [overflow-wrap:anywhere]">
           <p class="m-0 font-medium">{{ publication.project_name || publication.project_id }}</p>
@@ -114,9 +148,11 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
         </li>
       </ul>
       <p class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.withdrawalUnavailable', { project: publicProjects }) }}</p>
+      <p v-if="preview.drafts?.submitted" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.submissionCopyScrubbed') }}</p>
     </section>
 
-    <section class="grid gap-2" data-hard-delete-items>
+    <SourceDeleteSelections v-if="sourcePreview" :preview="sourcePreview" :disabled="deleting || reloading" @select="select" />
+    <section v-else class="grid gap-2" data-hard-delete-items>
       <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.dialog.removed') }}</h3>
       <ul class="m-0 grid list-none gap-2 p-0">
         <li v-for="row in preview.items" :key="`${row.item_kind}:${row.item_id}`"
@@ -132,7 +168,8 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
 
     <section class="grid gap-2" data-hard-delete-sources>
       <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.dialog.sources') }}</h3>
-      <p class="m-0">{{ t('knowledgeHardDelete.dialog.removedSources', { count: preview.removed_episodes.length }) }}</p>
+      <p class="m-0">{{ t(sourcePreview ? 'knowledgeHardDelete.source.removedSources' : 'knowledgeHardDelete.dialog.removedSources', { count: preview.removed_episodes.length }) }}</p>
+      <p v-if="preview.drafts?.pending" class="m-0">{{ t('knowledgeHardDelete.dialog.pendingDraftsVoided', { count: preview.drafts.pending }) }}</p>
       <ul v-if="preview.removed_episodes.length" class="m-0 grid list-none gap-2 p-0">
         <li v-for="episode in preview.removed_episodes" :key="episode.episode_id"
           class="grid min-w-0 gap-1 rounded-lg border bg-muted/40 p-3" data-hard-delete-episode="removed">
@@ -182,7 +219,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
 
     <section class="grid gap-1 text-muted-foreground" data-hard-delete-kept>
       <h3 class="m-0 text-base font-semibold text-foreground">{{ t('knowledgeHardDelete.dialog.notRemoved') }}</h3>
-      <p class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedShared') }}</p>
+      <p class="m-0">{{ t(sourcePreview ? 'knowledgeHardDelete.source.retained' : 'knowledgeHardDelete.dialog.notRemovedShared') }}</p>
       <p v-if="preview.item_kind === 'relationship' || preview.counts.relationships" class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedEndpoints') }}</p>
       <p class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedWorkflow') }}</p>
       <p v-if="!preview.publications?.length" class="m-0">{{ t('knowledgeHardDelete.dialog.notRemovedPublic') }}</p>
@@ -198,10 +235,11 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
         <FieldDescription>{{ t('knowledgeHardDelete.dialog.confirmHelp') }}</FieldDescription>
       </Field>
       <p v-if="error" role="alert" class="m-0 text-destructive" data-hard-delete-error>{{ error }}</p>
+      <Button v-if="error && sourcePreview && !previewValid" type="button" variant="outline" :disabled="reloading" data-source-reset-selection @click="resetSelection">{{ t('knowledgeHardDelete.source.resetSelection') }}</Button>
       <DialogFooter class="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="outline" :disabled="deleting" @click="emit('cancel')">{{ t('knowledgeHardDelete.dialog.cancel') }}</Button>
         <Button type="submit" variant="destructive" :disabled="!ready || reloading" :loading="deleting"
-          :loading-label="t('knowledgeHardDelete.dialog.deleting')" data-hard-delete-submit>{{ t('knowledgeHardDelete.dialog.submit') }}</Button>
+          :loading-label="t(sourceTarget ? 'knowledgeHardDelete.source.deleting' : 'knowledgeHardDelete.dialog.deleting')" data-hard-delete-submit>{{ t('knowledgeHardDelete.dialog.submit') }}</Button>
       </DialogFooter>
     </form>
   </div>

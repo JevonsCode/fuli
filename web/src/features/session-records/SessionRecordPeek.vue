@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import SourceDeleteControl from '@/features/knowledge-hard-delete/SourceDeleteControl.vue'
+import type { HardDeletedState } from '@/features/knowledge-hard-delete/model'
+import { sessionDeleteTarget, type SourceDeleteTarget } from '@/features/knowledge-hard-delete/source-delete-model'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -15,12 +18,19 @@ import { entryTypeLabel, projectLabel, recordedAt, type SessionEntry, type Sessi
 // what is stored now, the words it rests on, and the way to the turn that
 // wrote it (C6-3) and to its quick edit. It renders inside the page's Dialog.
 const props = defineProps<{ entry: SessionEntry | null; view: SessionRecordsView; spaceId: string }>()
-const emit = defineEmits<{ open: [key: string]; close: [] }>()
+const emit = defineEmits<{ open: [key: string]; close: []; sourceDeleted: [target: SourceDeleteTarget, state: HardDeletedState] }>()
 
 const byKey = computed(() => new Map(props.view.entries.map(entry => [entry.key, entry])))
 const turnRecords = computed(() => (props.entry?.detail.items ?? [])
   .map(key => byKey.value.get(key)).filter((entry): entry is SessionEntry => Boolean(entry)))
 const sourceTurn = computed(() => props.entry?.turn ? byKey.value.get(props.entry.turn) ?? null : null)
+const sources = computed(() => {
+  const values = props.entry?.kind === 'turn'
+    ? turnRecords.value.flatMap(record => record.detail.sources ?? []).filter(source => source.turn === props.entry?.key)
+    : props.entry?.detail.sources ?? []
+  return [...new Set(values.map(source => source.episode_id).filter(Boolean))]
+})
+const sessionTarget = computed(() => sessionDeleteTarget(props.view.session))
 const item = computed(() => props.entry?.detail.item ?? null)
 </script>
 
@@ -78,6 +88,12 @@ const item = computed(() => props.entry?.detail.item ?? null)
       </div>
     </template>
 
+    <section class="grid gap-2 border-t pt-4" data-source-delete-controls>
+      <SourceDeleteControl v-for="episodeId in sources" :key="episodeId" :space-id="spaceId" :target="{ item_kind: 'episode', item_id: episodeId }"
+        @deleted="emit('sourceDeleted', { item_kind: 'episode', item_id: episodeId }, $event)" />
+      <SourceDeleteControl v-if="sessionTarget" :space-id="spaceId" :target="sessionTarget"
+        @deleted="emit('sourceDeleted', sessionTarget!, $event)" />
+    </section>
     <DialogFooter class="border-t pt-4">
       <Button v-if="item" variant="outline" as-child>
         <RouterLink :to="itemEditPath(spaceId, item)" data-peek-edit>{{ t('sessionRecords.peek.edit') }}</RouterLink>
