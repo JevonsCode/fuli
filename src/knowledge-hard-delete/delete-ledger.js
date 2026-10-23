@@ -3,7 +3,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
-import { jsonFormat, requireJsonFormatVersion, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { jsonFormat, requireJsonFormatVersion, updateVersionedJsonFileAtomic, withJsonFormatDirectory } from '../storage/json-format.js';
 import { knowledgeReferences } from './forget-references.js';
 import { hardDeleteLedgerSchema, HARD_DELETE_LEDGER_FINGERPRINT, ledgerDocument } from './ledger-format.js';
 
@@ -41,9 +41,16 @@ export function hardDeleteLedger(dataDir, { now = () => new Date() } = {}) {
   const change = (mutate) => updateVersionedJsonFileAtomic(path, HARD_DELETE_LEDGER_FORMAT, (current) => {
     const operations = current === null ? [] : [...operationsOf(current)];
     mutate(operations);
+    for (const operation of operations) {
+      const problem = operationProblem(operation, 2);
+      if (problem) throw damaged(problem);
+    }
     return ledgerDocument(operations, current?.watermarks ?? {});
   }, { read: (file) => parseLedger(file), durable: true });
   return {
+    // Hold the same cross-process lock as begin/update until a synchronous
+    // body-store transaction commits. Callers must not write the ledger here.
+    withReadLock: operation => withJsonFormatDirectory(path, () => operation(readLedger(path))),
     // Only a successful console/CLI reconcile may establish this proof. A v1
     // file upgrades losslessly here; its absence of proof never means synced.
     recordWatermark(spaceId, { count, latestDeletedAt }) {
@@ -56,10 +63,11 @@ export function hardDeleteLedger(dataDir, { now = () => new Date() } = {}) {
       ), { read: parseLedger, durable: true });
     },
     // A new pending operation, before anything irreversible is sent.
-    begin({ spaceId, itemKind, itemId, previewId, itemIds }) {
+    begin({ spaceId, itemKind, itemId, previewId, itemIds, sourceApplication, sessionId }) {
       const at = now().toISOString();
       const operation = { id: randomUUID(), spaceId, itemKind, itemId, previewId, itemIds: [...new Set(itemIds)],
-        state: 'pending', deletionId: null, deletedAt: null, createdAt: at, updatedAt: at };
+        state: 'pending', deletionId: null, deletedAt: null, createdAt: at, updatedAt: at,
+        ...(sourceApplication === undefined ? {} : { sourceApplication, sessionId }) };
       change((operations) => operations.push(operation));
       return operation;
     },
@@ -194,6 +202,9 @@ function operationProblem(operation, version) {
   }
   const kinds = version === 1 ? ['entity', 'relationship'] : ['entity', 'relationship', 'episode', 'session'];
   if (!kinds.includes(operation.itemKind)) return 'has no item kind for this format version';
+  if ((operation.sourceApplication !== undefined || operation.sessionId !== undefined)
+      && (version !== 2 || !['episode', 'session'].includes(operation.itemKind)
+        || !TEXT(operation.sourceApplication) || !TEXT(operation.sessionId))) return 'has an incomplete source identity';
   if (!STATES.has(operation.state)) return `has the unknown state ${JSON.stringify(operation.state)}`;
   if (!Array.isArray(operation.itemIds) || !operation.itemIds.every(TEXT)) return 'has no list of item IDs';
   for (const field of ['previewId', 'deletionId', 'deletedAt']) {

@@ -92,7 +92,8 @@ export async function createServer(options = {}) {
   // A person's 「彻底删除」 of one knowledge item (rec#5 C9), console only.
   const knowledgeHardDelete = options.knowledgeHardDelete ?? (localOptions.runtimeConfigPath
     ? createKnowledgeHardDelete(dirname(localOptions.runtimeConfigPath),
-      { personalSpaceId: () => application.config?.personal?.spaceId ?? null }) : null);
+      { personalSpaceId: () => application.config?.personal?.spaceId ?? null,
+        reconcileSubmissions: () => application.reconcilePersonalSubmissions() }) : null);
   // A person's change of where knowledge applies (rec#20, rec#11 D-22), console only.
   const knowledgeScope = options.knowledgeScope ?? (localOptions.runtimeConfigPath
     ? createKnowledgeScopeConsole(dirname(localOptions.runtimeConfigPath)) : null);
