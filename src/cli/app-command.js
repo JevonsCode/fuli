@@ -2,9 +2,11 @@ import { userInfo } from 'node:os';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { agentAppRoot, createAgentAppService } from '../agent-apps/service.js';
+import { agentAppContext, agentAppRoot, agentAppServiceOver } from '../agent-apps/service.js';
+import { createVerifiedDecisions } from '../agent-apps/verified-decisions.js';
 import { listAgentTools } from '../agent-tools.js';
 import { resolveGraphRuntimeOptions } from '../graphiti/runtime-config.js';
+import { presencePort } from '../presence/port.js';
 import { confirmInTerminal, writeLine } from './terminal-io.js';
 
 const USAGE = 'Usage: fl app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | '
@@ -12,13 +14,25 @@ const USAGE = 'Usage: fl app list [--agent AGENT_ID] | show APP_ID | approve APP
 // Decisions that activate or remove Agent-written code ask at an interactive
 // terminal. That keeps piped callers from answering for the user, but a process
 // of this OS account can open a terminal too, so it does not show a person
-// decided: FULI records entrypoint cli with presence unverified.
+// decided. Approve and rollback therefore add an OS user verification (D-28.8);
+// delete records entrypoint cli with presence unverified.
 const INTERACTIVE_ACTIONS = new Set(['approve', 'rollback', 'delete']);
+// What the presence check proves and does not, said before the Hello dialog opens (rec#7 D-28.8).
+const PRESENCE_NOTICE = [
+  'Presence: the trusted CLI starts an OS user verification (Windows Hello) and binds that one successful result to this '
+    + 'challenge; Hello returns the user verification result and does not sign the challenge.',
+  '  可信 CLI 发起 OS 用户验证（Windows Hello），并把该次成功结果绑定到本次 challenge；Hello 返回用户验证结果，不签署 challenge。',
+  '  Agent 的 shell 可以发起 `fuli app approve`，但 Hello 对话框需本机当前用户交互；取消/失败/不可用一律记 unverified，不运行。',
+  '  The dialog is not on the secure desktop and does not stop UI automation by a process of this account '
+    + '(对话框不在安全桌面，不防同账户进程的 UI 自动化).'
+].join('\n');
 
 // Local user management of Agent apps. Normal Agent tools only submit and read;
 // approval, rollback and removal come through this command or the local console.
+// platform and presence are seams for tests; a real run uses this computer's.
 export async function runAppCommand(args, {
-  env = process.env, interactive = process.stdin.isTTY === true, confirm = confirmInTerminal, print = writeLine
+  env = process.env, interactive = process.stdin.isTTY === true, confirm = confirmInTerminal, print = writeLine,
+  platform = process.platform, presence = presencePort({ platform })
 } = {}) {
   const { values, positionals: [action, appId, version] } = parseAppArguments(args);
   if (!Object.hasOwn(ACTIONS, action ?? '') || (action !== 'list' && !appId)) throw new TypeError(USAGE);
@@ -27,11 +41,13 @@ export async function runAppCommand(args, {
   }
   const { runtimeConfigPath } = resolveGraphRuntimeOptions(
     values['runtime-config'] ? ['--runtime-config', values['runtime-config']] : [], env);
-  const service = createAgentAppService({
-    root: agentAppRoot(runtimeConfigPath), toolNames: () => listAgentTools().map(({ name }) => name)
+  const context = agentAppContext({
+    root: agentAppRoot(runtimeConfigPath), toolNames: () => listAgentTools().map(({ name }) => name), platform
   });
+  const service = agentAppServiceOver(context);
+  const decisions = createVerifiedDecisions(context, { presence });
   try {
-    return await ACTIONS[action]({ service, appId, version, values, confirm, print });
+    return await ACTIONS[action]({ service, decisions, appId, version, values, confirm, print });
   } finally {
     service.close();
   }
@@ -40,20 +56,21 @@ export async function runAppCommand(args, {
 const ACTIONS = Object.freeze({
   list: ({ service, values, print }) => printed(print, service.list({ agentId: values.agent ?? null })),
   show: ({ service, appId, print }) => printed(print, service.read({ appId })),
-  approve: async ({ service, appId, version, confirm, print }) => {
+  approve: async ({ service, decisions, appId, version, confirm, print }) => {
     const detail = service.read({ appId });
     const candidate = requiredVersion(detail, version);
     if (!await confirm(approvalPreview(detail, candidate), { defaultYes: false })) return printed(print, { approved: false });
-    return activateConfirmed({ confirm, print }, (confirmations) => service.approve({
+    return activateConfirmed({ service, confirm, print }, (confirmations) => decisions.approve({
       appId, version, digest: candidate.digest, approver: localUser(), ...confirmations
     }));
   },
-  rollback: async ({ service, appId, version, confirm, print }) => {
+  rollback: async ({ service, decisions, appId, version, confirm, print }) => {
     const detail = service.read({ appId });
     const target = requiredVersion(detail, version);
-    const question = `Activate approved version ${version} of ${appId} (${target.title}, digest ${target.digest})? [y/N] `;
+    const question = `Activate approved version ${version} of ${appId} (${target.title}, digest ${target.digest})?\n`
+      + `${PRESENCE_NOTICE}\nContinue to Windows Hello? [y/N] `;
     if (!await confirm(question, { defaultYes: false })) return printed(print, { activated: false });
-    return activateConfirmed({ confirm, print }, (confirmations) => service.rollback({
+    return activateConfirmed({ service, confirm, print }, (confirmations) => decisions.rollback({
       appId, version, actor: localUser(), ...confirmations
     }));
   },
@@ -68,12 +85,14 @@ const ACTIONS = Object.freeze({
 });
 
 // The package approval comes first; a resident service and an irreversible data
-// migration each need their own answer before the version is activated.
-async function activateConfirmed({ confirm, print }, activate) {
+// migration each need their own answer, all before the one presence check that
+// covers them. The result says what the run gate answers now.
+async function activateConfirmed({ service, confirm, print }, activate) {
   const confirmations = {};
   for (;;) {
     try {
-      return printed(print, activate(confirmations));
+      const activated = await activate(confirmations);
+      return printed(print, { ...activated, run: service.read({ appId: activated.appId }).run });
     } catch (error) {
       const followUp = FOLLOW_UPS[error?.code];
       if (!followUp || confirmations[followUp.field]) throw error;
@@ -125,7 +144,8 @@ function approvalPreview(detail, version) {
     `  resident     ${version.resident ? 'yes, keeps running in the background' : 'no'}`,
     `  files        ${version.files} (${version.bytes} bytes)`,
     'The approval covers only this exact package. FULI has no app runner yet, so no app code runs now.',
-    'Recorded as entrypoint cli, presence unverified. Approve it? [y/N] '
+    PRESENCE_NOTICE,
+    'Approve it and continue to Windows Hello? [y/N] '
   ].join('\n');
 }
 

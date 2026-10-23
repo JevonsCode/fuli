@@ -23,7 +23,8 @@ const BODIES = Object.freeze({
 // are accepted only on loopback. Loopback and the repeated digest do not show that
 // a person decided: any process of this OS account can call them, and the console
 // request policy only stops cross-site web forgery. FULI records the decision as
-// entrypoint http with presence unverified.
+// entrypoint http with presence unverified, and the run gate refuses the version
+// it activates. The presence check exists only in `fuli app approve/rollback`.
 export async function handleAgentAppApiRequest({ request, response, url, app }) {
   const route = url.pathname.match(ROUTE);
   if (!route) return false;

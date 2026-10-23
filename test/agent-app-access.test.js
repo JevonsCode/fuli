@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +16,7 @@ import { runAppCommand } from '../src/cli/app-command.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { jsonSchemaToZod } from '../src/mcp/tool-schema.js';
 import { createServer } from '../src/server.js';
+import { reachableModules } from '../test-support/module-graph.js';
 import { closeServer, requestJson } from '../test-support/server.js';
 
 const CLI = fileURLToPath(new URL('../src/cli.js', import.meta.url));
@@ -156,7 +157,7 @@ test('the local HTTP API lists apps and accepts management writes only from this
   assert.equal(deleted.body.status, 'deleted');
 });
 
-test('fuli app approve refuses non-interactive callers and records a CLI approval with unverified presence', async (t) => {
+test('fuli app approve refuses non-interactive callers and records a presence-checked CLI approval', async (t) => {
   const { runtimeConfigPath, service } = fixture(t);
   const submitted = await service.submit({
     ...submission({ resident: true, runtime: { apiVersion: 1, entry: 'service/main.js', webRoot: 'web' } }),
@@ -171,24 +172,69 @@ test('fuli app approve refuses non-interactive callers and records a CLI approva
   const piped = spawnSync(process.execPath, [CLI, 'app', ...args], { env: {}, encoding: 'utf8', timeout: 10_000 });
   assert.equal(piped.status, 1);
   assert.match(piped.stderr, /interactive terminal/);
+  // A fake presence port: it proves the CLI's state machine, never a real Windows Hello.
+  const asked = [];
+  const presence = { kind: 'hello', verify: async (challenge) => { asked.push(challenge); return { verified: true }; } };
   const prompts = [];
-  await runAppCommand(args, { interactive: true, print, confirm: async (question) => {
+  await runAppCommand(args, { interactive: true, print, platform: 'win32', presence, confirm: async (question) => {
     prompts.push(question);
     return prompts.length === 1;
   } });
   assert.match(prompts[0], new RegExp(submitted.digest));
   assert.match(prompts[0], /fuli\.search_knowledge_graph/);
+  assert.match(prompts[0], /Hello 返回用户验证结果，不签署 challenge/);
+  assert.match(prompts[0], /不在安全桌面/);
+  assert.doesNotMatch(prompts.join('\n'), /过不了 Hello|cannot pass Hello/i);
   assert.match(prompts[1], /resident/i);
+  assert.equal(asked.length, 0, 'every confirmation comes before the one presence check');
   assert.equal(service.read({ appId: submitted.appId }).status, 'pending');
 
-  await runAppCommand(args, { interactive: true, print, confirm: async () => true });
+  await runAppCommand(args, { interactive: true, print, platform: 'win32', presence, confirm: async () => true });
+  assert.equal(asked.length, 1);
+  assert.match(asked[0].message, new RegExp(`${submitted.digest}[\\s\\S]*Resident service yes[\\s\\S]*${asked[0].challengeId}`));
   const approved = service.read({ appId: submitted.appId });
   assert.equal(approved.status, 'active');
   assert.equal(approved.versions[0].approval.entrypoint, 'cli');
-  assert.equal(approved.versions[0].approval.presence, 'unverified');
+  assert.equal(approved.versions[0].approval.presence, 'hello');
+  assert.equal(approved.versions[0].approval.verification, 'os_user_verified');
+  assert.equal(approved.versions[0].approval.challengeId, asked[0].challengeId);
+  assert.equal(JSON.parse(lines.at(-1)).run.status, 'run_refused');
 
   await runAppCommand(['disable', submitted.appId, '--runtime-config', runtimeConfigPath], { interactive: false, print });
   assert.equal(service.read({ appId: submitted.appId }).status, 'disabled');
+});
+
+// rec#7 D-28.8: the normal MCP and fuli_call paths, and the console, cannot reach
+// the presence-checked decisions or the presence port. This proves the call
+// graph only: an Agent's shell can still start `fuli app approve`, and then the
+// Hello dialog needs the local user.
+test('only the CLI reaches the presence-checked approval and the presence port', () => {
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const presenceOnly = ['src/agent-apps/verified-decisions.js', 'src/presence/port.js', 'src/presence/windows-hello.js',
+    'src/presence/windows-helper-pin.js'].map((path) => join(root, path));
+  for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js', 'src/server.js']) {
+    const modules = reachableModules(join(root, entry));
+    assert.deepEqual(presenceOnly.filter((path) => modules.has(path)), [], entry);
+  }
+  const cli = reachableModules(join(root, 'src/cli.js'));
+  assert.deepEqual(presenceOnly.filter((path) => !cli.has(path)), []);
+  const importers = [...cli].filter((path) => path.startsWith(join(root, 'src'))
+    && /from '\.\.\/agent-apps\/verified-decisions\.js'|from '\.\.\/presence\/port\.js'/.test(readFileSync(path, 'utf8')));
+  assert.deepEqual(importers, [join(root, 'src/cli/app-command.js')]);
+});
+
+// D-28.10: the Add-Type probe is a developer tool behind FULI_DEV_WIN_PROBE=1, never in the shipped path.
+test('the shipped presence path never compiles a Windows probe at run time', () => {
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const shipped = [...reachableModules(join(root, 'src/cli.js')), ...reachableModules(join(root, 'src/server.js'))];
+  assert.deepEqual(shipped.filter((path) => readFileSync(path, 'utf8').includes('FULI_DEV_WIN_PROBE')), []);
+  const presence = [...reachableModules(join(root, 'src/presence/port.js')),
+    ...reachableModules(join(root, 'src/agent-apps/verified-decisions.js'))];
+  assert.deepEqual(presence.filter((path) => /Add-Type|powershell/i.test(readFileSync(path, 'utf8'))), []);
+  const probe = readFileSync(join(root, 'scripts/dev-win-hello-probe.ps1'), 'utf8');
+  assert.match(probe, /\$env:FULI_DEV_WIN_PROBE -ne '1'/);
+  const packaged = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).files;
+  assert.equal(packaged.some((entry) => entry.startsWith('scripts')), false);
 });
 
 async function routeDirectly(app, method, path, body, remoteAddress) {

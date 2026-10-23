@@ -27,7 +27,7 @@ Install and Agent connection:
   peer status|host|invite|join|share|revoke|off [--data-dir DIR]  (LAN roundtable Beta: pair devices and share project leads)
   remote-mcp --personal-project-id ID --bearer-token-file FILE [--port PORT] [--data-dir DIR] [--source-application claude|cursor|other] [--allowed-origin HTTPS_ORIGIN] [--allowed-host HOST] [--max-sessions N] [--session-idle-ttl-seconds N]
   employee install BUILT_PACKAGE_DIRECTORY [--replace] [--runtime-config FILE]
-  app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | rollback APP_ID VERSION  (Agent apps; approve and rollback ask in this terminal)
+  app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | rollback APP_ID VERSION  (Agent apps; approve and rollback ask in this terminal, then Windows Hello)
   app delete APP_ID [--data [--output DIR]] | export APP_ID --output DIR  (delete code first, data second) [--runtime-config FILE]
   models set-key SECRET_REF [--data-dir DIR]  (built-in Agent model API key; hidden entry or stdin, never echoed)
   models check assistant|bole|jefa|tonborg [--data-dir DIR]  (synthetic connection check of one role's model backend)
