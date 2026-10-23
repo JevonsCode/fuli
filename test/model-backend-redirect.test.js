@@ -71,11 +71,7 @@ for (const status of [301, 302, 303, 307, 308]) {
       });
 
       assertRedirectRefused(await portFor(endpoint, protocol).decide(request()));
-      // An openai_chat endpoint is first asked for its model digest
-      // (ollama-digest.js); that read is refused the same way.
-      const probes = protocol === 'openai_chat' ? ['/api/tags'] : [];
-      assert.equal(hits.length, probes.length + 1);
-      assert.deepEqual(hits.slice(0, probes.length), probes);
+      assert.equal(hits.length, 1);
       assert.deepEqual(reached, []);
     });
   }
@@ -84,9 +80,9 @@ for (const status of [301, 302, 303, 307, 308]) {
 // Stub transports for answers a real local server cannot produce.
 async function decideWith(answer) {
   const sent = [];
-  const fetchImpl = async (url, init) => { sent.push([new URL(url).pathname, init.redirect]); return answer(); };
+  const fetchImpl = async (url, init) => { sent.push(init.redirect); return answer(); };
   const result = await portFor('http://127.0.0.1:9', 'openai_chat', fetchImpl).decide(request());
-  assert.deepEqual(sent, [['/api/tags', 'manual'], ['/v1/chat/completions', 'manual']]);
+  assert.deepEqual(sent, ['manual']);
   return result;
 }
 

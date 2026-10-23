@@ -13,8 +13,8 @@ import { RETENTION } from './suggestion-log.js';
 // operations: the task types each role already sends to its model.
 // unlockedBuilds(modelId): the D-24 review gate registry's passing entries
 // for that model (src/judgment/review-gate.js), read on every request.
-// lastServed: the build that last answered each role on its configured model
-// (its digest, or null when the backend did not prove one), read-only.
+// localBuild: what a local Ollama listed for each role's configured model at
+// its latest answer (rec#10 D-32), read-only: an observation, never proof.
 // suggestions lists what Astro, Bole and Jefa showed after asking their own
 // model (suggestion-log.js), newest first, a limit clamped to RETENTION.rows, with
 // its retention; it is a read only, and no route writes it.
@@ -49,7 +49,8 @@ export async function handleModelBackendApiRequest({
   if (roleEdit || url.pathname === '/api/model-backends/roles') {
     const settings = modelBackends.roles();
     sendJson(response, 200, { ...settings, roles: settings.roles.map(role => ({ ...role, reviewGate: reviewGate(role, unlockedBuilds),
-      lastServed: role.connection ? modelBackends.lastServed(role) : null })),
+      localBuild: modelBackends.localBuild(role.role, role.connection?.id ?? null,
+        role.connection ? settings.connections[role.connection.id] : null) })),
       operations, workPackages: roleWork?.summary().packages ?? [] });
     return true;
   }

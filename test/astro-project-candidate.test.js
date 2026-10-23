@@ -17,7 +17,7 @@ import { openAiStream } from './fixtures/model-transport.js';
 const SPACE = 'synthetic-space';
 const CONVERSATION = 'conversation-synthetic-1';
 const GATE = { status: 'suggestion_only', role: 'assistant', operation: 'project_candidate' };
-const RECEIPT_KEYS = ['backend', 'status', 'reason', 'failureClass', 'fallbackReason', 'requestedModel', 'actualModel', 'modelDigest', 'attempts', 'usage'];
+const RECEIPT_KEYS = ['backend', 'status', 'reason', 'failureClass', 'fallbackReason', 'requestedModel', 'actualModel', 'attempts', 'usage'];
 const PROMPT = '帮我看一下花园浇水提醒为什么没有按时推送';
 const PROJECTS = {
   garden: { name: 'Garden Planner', purpose: 'Plan watering and planting reminders.' },

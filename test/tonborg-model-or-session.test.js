@@ -18,6 +18,7 @@ import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
 import { openAiStream } from './fixtures/model-transport.js';
+import { gateEntry, reviewGateWith } from './fixtures/review-gate.js';
 
 // rec#8 T1-T5 and C1-C13 for Tonborg through its production interfaces:
 // the judgment service, the model port with a fake transport, and the
@@ -163,16 +164,24 @@ test('T1: a configured model gives a bounded decision on exact candidate keys; u
   assert.equal(h.legacyRuns.length, 0);
 });
 
-test('T1: a served digest the local model proves is recorded and matched, and the empty registry still unlocks nothing', async t => {
-  const digest = '1'.repeat(64);
-  const h = harness(t, { roles: { tonborg: tonborg() }, reviewGate: createReviewGate(),
-    tags: { models: [{ name: 'qwen-test', model: 'qwen-test', digest }] },
+test('T1: a local build observed after the answer never reaches the receipt, the record or the gate; D-24 stays model_build_unknown (D-32)', async t => {
+  const observed = '1'.repeat(64);
+  // Even a registry entry naming exactly the observed build cannot match it.
+  const h = harness(t, { roles: { tonborg: tonborg() },
+    reviewGate: reviewGateWith(gateEntry({ modelId: 'qwen-test', modelDigest: observed })),
+    tags: { models: [{ name: 'qwen-test', model: 'qwen-test', digest: observed }] },
     replies: () => openAiStream(JSON.stringify(answer({ decisions: [verdict()] })), { model: 'qwen-test' }) });
   const [record] = (await h.app.judgment.review(reviewInput)).records;
+  // The observation was made and kept for Settings only.
+  assert.deepEqual(h.ledger.db.prepare('SELECT observed_tag_digest AS digest FROM model_attempts').all().map(row => row.digest), [observed]);
   assert.deepEqual([record.aiReview.state, record.aiReview.modelOutcome], ['ai_suggested', 'approve']);
-  assert.deepEqual([record.aiReview.gate.reason, record.aiReview.gate.modelId, record.aiReview.gate.modelDigest],
-    ['no_entry', 'qwen-test', digest]);
-  assert.equal(record.modelReceipt.modelDigest, digest);
+  assert.deepEqual([record.aiReview.gate.status, record.aiReview.gate.reason, record.aiReview.gate.modelId, record.aiReview.gate.modelDigest],
+    ['not_passed', 'model_build_unknown', 'qwen-test', null]);
+  assert.equal(Object.hasOwn(record.modelReceipt, 'modelDigest'), false);
+  assert.equal(JSON.stringify(record).includes(observed), false);
+  const stored = h.app.judgment.store().db.prepare('SELECT body FROM judgment_records').all().map(row => row.body);
+  assert.equal(stored.length, 1);
+  assert.equal(stored.some(body => body.includes(observed)), false);
   assert.equal(record.execution.status, 'not_applied');
   assert.equal(h.writes.length, 0);
 });
