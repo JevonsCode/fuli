@@ -384,7 +384,7 @@ for (const management of [{ status: 'degraded', managers: [{ agent_id: 'manager'
     let teamReads = 0;
     const app = { config: { personal: { spaceId: 'space' } },
       employees: { taskEntry: async () => management },
-      judgment: { store: () => ({ policy: () => ({ mode: 'autonomous' }) }) },
+      judgment: { policy: async () => { throw new Error('must not read judgment without team entry'); } },
       searchKnowledge: async () => ({ facts: [], entities: [] }), personal: {
         collaborationPreferences: async () => ({ personal_space_id: 'space', personal_project_id: 'project',
           project_agent_id: 'lead', effective_preferences: [{ instruction: 'Keep this preference.' }] }),

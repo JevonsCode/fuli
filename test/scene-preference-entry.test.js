@@ -48,7 +48,7 @@ async function sceneFixture(t) {
   // An available manager makes the entry carry the team and judgment channels.
   f.app.employees = { taskEntry: async () => ({ status: 'ready', managers: [{ agent_id: 'employee.jefa', name: 'Jefa' }] }),
     close: async () => {} };
-  f.app.judgment = { store: () => ({ policy: () => ({ mode: 'manual' }) }), close: () => {} };
+  f.app.judgment = { policy: async () => ({ mode: 'manual' }), close: () => {} };
   return { f, scopes, requests };
 }
 
