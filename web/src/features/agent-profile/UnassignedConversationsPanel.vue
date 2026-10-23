@@ -25,6 +25,8 @@ const props = defineProps<{
   spaceId: string;
   formalProjects: readonly PersonalProject[];
   existingProjectIds: string[];
+  // A conversation a link asked to show, e.g. one Astro suggested a project for: the list opens with it lifted.
+  focusConversationId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -61,7 +63,10 @@ async function load() {
   loadError.value = false;
   try {
     const list = await readUnassignedConversations(props.spaceId);
-    if (current === sequence) items.value = list;
+    if (current === sequence) {
+      items.value = list;
+      if (list.some((item) => item.conversationId === props.focusConversationId)) expanded.value = true;
+    }
   } catch {
     if (current === sequence) loadError.value = true;
   } finally {
@@ -156,6 +161,8 @@ async function handleProjectCreated(project: PersonalProject) {
         v-for="item in items"
         :key="item.conversationId"
         class="ui-card unassigned-conversation-row"
+        :class="{ 'is-selected border-border-strong shadow-md': item.conversationId === focusConversationId }"
+        :aria-current="item.conversationId === focusConversationId ? 'true' : undefined"
         data-unassigned-item
       >
         <div class="unassigned-conversation-main">

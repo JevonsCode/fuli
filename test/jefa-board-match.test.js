@@ -10,6 +10,7 @@ import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { createRoleWorkBridge } from '../src/model-backends/role-work.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { reachableModules } from '../test-support/module-graph.js';
 import { openAiStream } from './fixtures/model-transport.js';
@@ -196,6 +197,7 @@ function harness({ roles = {}, replies = [], model = true, connection = FAKE_CON
       } });
     app.roleWork = createRoleWorkBridge({ port: app.modelBackends, store, verifySession: async () => null, resumers: {} });
   }
+  app.roleSuggestions = new RoleSuggestionLog();
   const entry = (extra = {}) => app.getCollaborationPreferences({ projectPath: GARDEN_PATH, sourceApplication: 'codex',
     sessionId: 'synthetic-session-a', taskPrompt: PROMPT, agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
   const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total FROM model_attempts ORDER BY attempt_number')
@@ -209,7 +211,7 @@ function harness({ roles = {}, replies = [], model = true, connection = FAKE_CON
     assert.deepEqual(projectWrites, []);
     assert.deepEqual(store.counts(), []);
   };
-  return { app, entry, contexts, workbench, jefa, modelCalls, attempts, reservations, reads, assertNoWrites };
+  return { app, entry, contexts, workbench, jefa, modelCalls, attempts, reservations, reads, assertNoWrites, suggestions: () => app.roleSuggestions.list() };
 }
 
 const jefaOf = result => result.project_management_context.managers.find(manager => manager.template_id === 'jefa');
@@ -244,6 +246,7 @@ test('not configured: the entry answers byte for byte as today, with zero fetche
     assert.deepEqual(run.contexts.calls, [], 'no claim');
     assert.equal(run.reads(), 1, 'only the entry\'s own board read');
     assert.deepEqual(run.attempts(), []);
+    assert.deepEqual(run.suggestions(), []);
     run.assertNoWrites();
   }
 
@@ -297,6 +300,9 @@ test('Jefa suggests one listed board task as a hint; board tasks are evidence of
   assert.deepEqual(run.workbench.calls.map(({ name, project }) => [name, project]),
     [['read_board', 'garden'], ['read_board', 'garden'], ['read_board', 'garden']]);
   run.assertNoWrites();
+  const [noted] = run.suggestions();
+  assert.deepEqual([noted.role, noted.status, noted.suggestion, noted.personalProjectId, noted.gate, noted.guidance],
+    ['jefa', 'suggested', match.suggestion, 'garden', GATE, undefined]);
 
   // The MCP view keeps the hint while it omits the board details.
   const view = jefaOf(compactTaskContext(result));
@@ -430,6 +436,7 @@ test('a board task changed, moved or deleted while the model runs supersedes the
     const match = jefaOf(await run.entry()).suggested_match;
     assert.deepEqual([match.status, match.reason, match.hint, match.suggestion], ['superseded', reason, undefined, undefined], name);
     assert.deepEqual(match.gate, GATE, name);
+    assert.deepEqual(run.suggestions().map(noted => [noted.status, noted.reason, noted.suggestion]), [['superseded', reason, undefined]], name);
     run.assertNoWrites();
   }
 

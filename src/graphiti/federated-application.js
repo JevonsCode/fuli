@@ -11,7 +11,7 @@ import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
 import { createReviewGate } from '../judgment/review-gate.js';
 import { createTaskScheduleService } from '../task-schedules/service.js';
-import { openModelBackendRuntime, openRoleWorkRuntime } from '../model-backends/runtime.js';
+import { openModelBackendRuntime, openRoleSuggestionLog, openRoleWorkRuntime } from '../model-backends/runtime.js';
 import { createJudgmentBackend } from '../judgment/backend.js';
 import { roleWorkSessions } from './role-work-sessions.js';
 import { TaskScheduleStore } from '../task-schedules/store.js';
@@ -153,6 +153,7 @@ export function openFederatedGraphApplication({
     app.modelBackends = openModelBackendRuntime(paths);
     app.roleWork = openRoleWorkRuntime(paths, { port: app.modelBackends, verifySession: roleWorkSessions(app),
       resumers: { tonborg: work => app.judgment.resumeWork(work) } });
+    app.roleSuggestions = openRoleSuggestionLog(paths);
     app.judgment = createJudgmentService({ app, openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')),
       engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge: app.roleWork }), reviewGate: createReviewGate(dirname(runtimeConfigPath)) }) });
     app.taskSchedules = createTaskScheduleService({ app,
@@ -1177,7 +1178,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roleWork?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); this.agentApps?.close(); return this.employees?.close(); }
+  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roleWork?.close(); this.roleSuggestions?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); this.agentApps?.close(); return this.employees?.close(); }
 
   // View records rank knowledge by what a session looked at: a behavior trace
   // that stops with automatic recording. Reading itself needs none (rec#11 D-01).

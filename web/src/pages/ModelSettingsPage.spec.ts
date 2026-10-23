@@ -53,7 +53,8 @@ beforeEach(() => {
   rolesPayload = roles()
   api.getJson.mockReset()
   api.putJson.mockReset()
-  api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage() : rolesPayload))
+  api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage()
+    : url.startsWith('/api/model-backends/suggestions') ? { suggestions: [] } : rolesPayload))
 })
 
 const mountPage = async () => {

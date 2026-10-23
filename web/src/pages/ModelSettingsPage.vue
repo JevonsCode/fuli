@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
+import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
 import {
   formatCount, gateBuilds, readModelRoles, roleName, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
@@ -15,7 +16,8 @@ import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
 // 模型与用量 (rec#8): the four built-in Agents' model settings as one card
-// collection, each edited in a centred form, and their usage below. A save
+// collection, each edited in a centred form, then what Astro, Bole and Jefa
+// suggested with their model, and their usage below. A save
 // is accepted only at the local process boundary (a loopback request).
 const store = useConsoleStore()
 const payload = ref<ModelRolesPayload | null>(null)
@@ -156,6 +158,8 @@ onBeforeUnmount(() => reading?.abort())
             </article>
           </li>
         </ul>
+
+        <RoleSuggestions />
 
         <ModelUsage />
 

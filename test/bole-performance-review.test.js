@@ -7,6 +7,7 @@ import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { createRoleWorkBridge } from '../src/model-backends/role-work.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { openAiStream } from './fixtures/model-transport.js';
 
@@ -80,6 +81,7 @@ function harness({ role = null, dimensions = MIXED, replies = [], roleWork = tru
       return typeof reply === 'function' ? reply() : reply;
     } });
   const store = new RoleWorkStore();
+  app.roleSuggestions = new RoleSuggestionLog();
   if (roleWork) app.roleWork = createRoleWorkBridge({ port, store, verifySession: async () => null, resumers: {} });
   const read = (extra = {}) => callAgentTool(app, 'get_agent_score_card', { personalSpaceId: SPACE, agentId: AGENT, personalProjectId: PROJECT, ...extra });
   const attempts = () => ledger.db.prepare('SELECT purpose, outcome, role, operation, personal_project_id AS project, total_tokens AS total FROM model_attempts ORDER BY attempt_number').all()
@@ -91,7 +93,7 @@ function harness({ role = null, dimensions = MIXED, replies = [], roleWork = tru
     assert.ok(double.requests.every(({ path }) => path === '/v1/project-agent-score-card/query'));
     assert.deepEqual(store.counts(), []);
   };
-  return { app, double, modelCalls, read, attempts, reservations, assertNothingWritten };
+  return { app, double, modelCalls, read, attempts, reservations, assertNothingWritten, suggestions: () => app.roleSuggestions.list() };
 }
 
 const reply = (fields = {}) => openAiStream(JSON.stringify({ decision: 'propose', payload: { choice: 'coach' },
@@ -122,6 +124,7 @@ test('not configured: review: true answers byte for byte as today, with zero mod
     assert.equal(JSON.stringify(await run.read({ review: true })), plain);
     assert.deepEqual(run.modelCalls, []);
     assert.deepEqual(run.attempts(), []);
+    assert.deepEqual(run.suggestions(), [], 'no model answer, nothing for the console');
     run.assertNothingWritten();
   }
 });
@@ -152,6 +155,12 @@ test('Bole\'s model suggests one host-listed action; the host fills the gate and
   assert.equal(prompt.includes(AGENT), false, 'the Agent ID is not sent');
   assert.deepEqual(run.attempts(), [{ purpose: 'initial', outcome: 'succeeded', role: 'bole', operation: 'performance_review', project: PROJECT, total: 60 }]);
   run.assertNothingWritten();
+
+  // The console's copy: the same review without the session guidance, with the Agent to open.
+  const [noted] = run.suggestions();
+  assert.deepEqual({ ...noted, id: undefined, at: undefined }, { ...card.review, id: undefined, at: undefined, role: 'bole',
+    operation: 'performance_review', personalSpaceId: SPACE, personalProjectId: PROJECT, subject: { agentId: AGENT } });
+  assert.equal(run.suggestions().length, 1);
 
   // The same evidence is the same request; another Agent's identical card is not.
   const again = await harness({ role: boleRole(), replies: [reply()] }).read({ review: true });
@@ -203,6 +212,7 @@ test('cross-project and all-unknown cards are never sent to a model', async () =
   assert.match(card.review.guidance, /current session may review/);
   assert.equal(card.personalProjectIds, null);
   assert.deepEqual(cross.modelCalls, []);
+  assert.deepEqual(cross.suggestions(), [], 'not run is no model suggestion');
   cross.assertNothingWritten();
 
   const empty = harness({ role: boleRole(), dimensions: EMPTY, replies: [reply()] });
@@ -234,6 +244,8 @@ test('stops keep their reason and a compact receipt; failures settle every attem
     const run = harness({ role, replies });
     const card = await run.read({ review: true });
     assert.deepEqual([card.review.status, card.review.reason], expect, name);
+    assert.deepEqual(run.suggestions().map(noted => [noted.status, noted.reason, 'guidance' in noted, 'suggestion' in noted]),
+      [[...expect, false, false]], name);
     assert.match(card.review.guidance, guidance, name);
     // Only a fallback the role allows hands the review to the session.
     assert.equal(TAKEOVER.test(card.review.guidance), guidance === TAKEOVER, name);

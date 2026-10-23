@@ -6,6 +6,7 @@ import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { createRoleWorkBridge } from '../src/model-backends/role-work.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { reachableModules } from '../test-support/module-graph.js';
 import { openAiStream } from './fixtures/model-transport.js';
@@ -148,6 +149,7 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
       } });
     app.roleWork = createRoleWorkBridge({ port: app.modelBackends, store, verifySession: async () => null, resumers: {} });
   }
+  app.roleSuggestions = new RoleSuggestionLog();
   const entry = (extra = {}) => app.getCollaborationPreferences({ projectPath: '/synthetic/chat-folder', sourceApplication: 'codex',
     sessionId: 'synthetic-session-a', taskPrompt: PROMPT, agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
   const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total FROM model_attempts ORDER BY attempt_number')
@@ -163,7 +165,7 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
       assert.deepEqual(result.context.project_resolution, { status: 'global', basis: 'pending_assignment', personal_project_id: null });
     }
   };
-  return { app, entry, contexts, modelCalls, reads, attempts, reservations, assertNoAttribution, labels,
+  return { app, entry, contexts, modelCalls, reads, attempts, reservations, assertNoAttribution, labels, suggestions: () => app.roleSuggestions.list(),
     failTriageReads: error => { triageReadError = error; } };
 }
 
@@ -191,6 +193,7 @@ test('not configured: the entry answers byte for byte as today, with zero fetche
     assert.deepEqual(run.contexts.calls, [], 'no claim');
     assert.deepEqual(run.reads, today.reads, 'no extra Provider read');
     assert.deepEqual(run.attempts(), []);
+    assert.deepEqual(run.suggestions(), []);
     run.assertNoAttribution();
   }
 
@@ -238,6 +241,9 @@ test('Astro suggests one approved project as a hint; candidates are evidence wit
     [['initial', 'succeeded', 'assistant', 'project_candidate']]);
   assert.deepEqual(run.contexts.hintClaims().map(({ operation }) => operation), ['project_candidate']);
   run.assertNoAttribution(result);
+  const [noted] = run.suggestions();
+  assert.deepEqual([noted.role, noted.status, noted.hint, noted.suggestion, noted.personalProjectId, noted.subject],
+    ['assistant', 'suggested', hint.hint, hint.suggestion, null, { conversationId: result.conversation.conversation_id }]);
 
   // Every project approved: no restriction note.
   const all = harness({ role: astroRole({ egress: { approvedProjects: Object.keys(PROJECTS).map(id => ({ personalSpaceId: SPACE, personalProjectId: id })),
@@ -383,6 +389,9 @@ test('a late answer is not shown once the request would no longer be allowed out
     assert.deepEqual([hint.status, hint.reason, hint.hint, hint.suggestion], ['superseded', 'permission_changed', undefined, undefined], name);
     assert.deepEqual(hint.gate, GATE, name);
     assert.equal(hint.modelReceipt.attempts, 1, name);
+    // The console keeps only why: no hint, choice or model reason.
+    const [noted] = run.suggestions();
+    assert.deepEqual([noted.status, noted.reason, noted.hint, noted.suggestion], ['superseded', 'permission_changed', undefined, undefined], name);
     run.assertNoAttribution();
   }
 

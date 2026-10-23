@@ -1,5 +1,6 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { compactReceipt } from '../model-backends/receipt.js';
+import { noteRoleSuggestion } from '../model-backends/suggestion-log.js';
 
 // Bole's performance review of one Agent in one project (rec#8, rec#10 D-26).
 // Bole's own model, when configured, picks one host-listed next step from the
@@ -59,18 +60,24 @@ export async function reviewAgentScoreCard(application, card) {
   const outcome = await application.roleWork.decide(request, { inline: true });
   // No model for Bole: the card exactly as today, for the session to judge.
   if (outcome.modelReceipt.status === 'not_configured') return card;
-  const receipt = { requestId: request.requestId, evidenceVersion: request.versions.evidence, promptVersion: PROMPT_VERSION,
-    gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) };
+  const review = modelReview(outcome, scored, { requestId: request.requestId, evidenceVersion: request.versions.evidence,
+    promptVersion: PROMPT_VERSION, gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) });
+  noteRoleSuggestion(application, { role: GATE.role, operation: OPERATION, personalSpaceId: card.personalSpaceId, personalProjectId,
+    subject: { agentId: card.agentId }, result: review });
+  return withReview(card, review);
+}
+
+function modelReview(outcome, scored, receipt) {
   if (outcome.status !== 'answered') {
     const { status, reason } = outcome.modelReceipt;
-    return withReview(card, { status, reason, guidance: outcome.status === 'inline' ? GUIDANCE.inline : stopGuidance(outcome.modelReceipt), ...receipt });
+    return { status, reason, guidance: outcome.status === 'inline' ? GUIDANCE.inline : stopGuidance(outcome.modelReceipt), ...receipt };
   }
   const { envelope, modelReceipt } = outcome;
   const issue = negativeWithoutEvidence(envelope, scored);
-  if (issue) return withReview(card, { status: 'failed', reason: 'invalid_output', issues: [issue], guidance: GUIDANCE.rejected, ...receipt });
-  return withReview(card, { status: 'suggested',
+  if (issue) return { status: 'failed', reason: 'invalid_output', issues: [issue], guidance: GUIDANCE.rejected, ...receipt };
+  return { status: 'suggested',
     suggestion: { action: envelope.payload.choice, reason: envelope.reason, evidenceIds: envelope.evidence.refs, uncertainty: envelope.uncertainty },
-    suggestedBy: { mode: 'model_api', independent: true, model: modelReceipt.actualModel ?? modelReceipt.requestedModel }, ...receipt });
+    suggestedBy: { mode: 'model_api', independent: true, model: modelReceipt.actualModel ?? modelReceipt.requestedModel }, ...receipt };
 }
 
 // One evidence item per dimension, with its executor flags, carrying the

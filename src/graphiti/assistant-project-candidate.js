@@ -1,6 +1,7 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { projectApproved } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
+import { noteRoleSuggestion } from '../model-backends/suggestion-log.js';
 import { readConversationTriage } from './conversation-triage.js';
 import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
 
@@ -38,7 +39,10 @@ const INLINE_GUIDANCE = 'Astro\'s model gave no project hint (see reason). Label
 export async function withProjectCandidate(application, entry, { sessionId, sourceApplication = 'other', taskPrompt }) {
   if (!entry.task_context_token || entry.resumed_checkpoint) return entry;
   const hint = await suggestProjectCandidate(application, { token: entry.task_context_token, sessionId, sourceApplication }, entry, taskPrompt);
-  return hint ? { ...entry, project_candidate: hint } : entry;
+  if (!hint) return entry;
+  noteRoleSuggestion(application, { role: ROLE, operation: OPERATION, personalSpaceId: application.config.personal.spaceId,
+    subject: { conversationId: entry.conversation?.conversation_id ?? null }, result: hint });
+  return { ...entry, project_candidate: hint };
 }
 
 async function suggestProjectCandidate(application, task, entry, taskPrompt) {
