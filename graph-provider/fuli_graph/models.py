@@ -722,6 +722,7 @@ class PublicationDraftRecord(StrictModel):
     submission_id: str | None = None
     submission_started_at: datetime | None = None
     submission_unknown_at: datetime | None = None
+    submission_unknown_reason: Literal['ttl', 'remote_error'] | None = None
     last_submission_error: dict[str, str] | None = None
     submission_outcome: Literal['unknown'] | None = None
 

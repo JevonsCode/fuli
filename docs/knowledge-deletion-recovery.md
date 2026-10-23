@@ -53,3 +53,10 @@ reservation blocks source deletion; a timed-out or uncertain result can be
 reconciled by metadata lookup. If the result remains unknown, the deletion
 preview explains that the remote project may already have the text. Deleting
 clears local copies and cannot retract remote public content.
+
+Submission eligibility is checked before reserving a draft. After reservation,
+the host records whether it entered the remote call. An expired reservation can
+return to pending with `delivery_not_started: true` only for the same attempt,
+without a proposal identity, and only when uncertainty came from TTL expiry.
+Uncertainty recorded after a remote error cannot use that release path. Deleted
+or completed drafts never return to pending through it.

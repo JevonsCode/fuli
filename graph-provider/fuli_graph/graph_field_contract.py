@@ -522,6 +522,7 @@ NODE_FIELDS = {
         'source_identity': 'string?', 'payload_scrubbed_by': 'string?', 'payload_scrubbed_at': 'datetime?',
         'submission_id': 'string?', 'submission_started_at': 'datetime?',
         'submission_unknown_at': 'datetime?',
+        'submission_unknown_reason': 'submission_unknown_reason?',
         'last_submission_error': 'string?', 'submission_outcome': 'submission_outcome?',
     },
     'FuliRemoteAgentOrigin': {
@@ -749,6 +750,7 @@ ENUMS = {
     'proposal_status': ('pending', 'processing', 'approved', 'rejected'),
     'publication_draft_status': ('pending', 'submitting', 'submission_unknown', 'submitted', 'kept_personal', 'ignored', 'source_deleted'),
     'submission_outcome': ('unknown',),
+    'submission_unknown_reason': ('ttl', 'remote_error'),
     'quadrant': ('known_known', 'known_unknown', 'unknown_known', 'unknown_unknown'),
     'recruitment_status': ('awaiting_confirmation', 'requested', 'fulfilled', 'cancelled',
                            'blocked', 'no_hr'),

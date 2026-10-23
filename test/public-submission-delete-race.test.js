@@ -25,10 +25,12 @@ function fixture(t) {
       assert.equal(decision.submission_id, 'attempt');
       status = 'submitted';
     } else throw new Error(`Unexpected decision ${decision.decision}`);
-    return { id: 'draft', status, submission_id: 'attempt', submission_started_at: new Date().toISOString(),
-      provider_url: 'https://public.example', target_project_id: 'project',
-      episode: { sensitivity: 'normal', idempotency_key: 'source', entities: [], relationships: [] } };
+    return draft();
   };
+  const draft = () => ({ id: 'draft', status, submission_id: 'attempt', submission_started_at: new Date().toISOString(),
+    provider_url: 'https://public.example', target_project_id: 'project',
+    episode: { sensitivity: 'normal', idempotency_key: 'source', entities: [], relationships: [] } });
+  app.personal.getPublicationDraft = async () => draft();
   app.workspaces.values().next().value.client.createProposal = async () => {
     remoteCalls++;
     reached.resolve();

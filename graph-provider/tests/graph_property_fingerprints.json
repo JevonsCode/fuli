@@ -2150,6 +2150,10 @@
       "submission_outcome": [
         "unknown"
       ],
+      "submission_unknown_reason": [
+        "ttl",
+        "remote_error"
+      ],
       "tag_link_status": [
         "attached",
         "detached",
@@ -3358,6 +3362,7 @@
         "submission_outcome": "submission_outcome?",
         "submission_started_at": "datetime?",
         "submission_unknown_at": "datetime?",
+        "submission_unknown_reason": "submission_unknown_reason?",
         "target_project_id": "string?"
       },
       "FuliRemoteAgentOrigin": {

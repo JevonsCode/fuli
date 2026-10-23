@@ -881,6 +881,7 @@ test('personal approval submits the full draft to shared review and then marks i
     };
     const app = new FederatedGraphApplication(CONFIG, {
       fetchImpl: providerFetch(calls, {
+        '/v1/publication-drafts/draft-1': draft,
         '/v1/projects/project-1/proposals': { id: 'proposal-1', status: 'pending' },
         '/v1/publication-drafts/draft-1/decision': ({ body }) => ({
           ...draft,
@@ -915,16 +916,14 @@ test('a source-deleted draft rejects Agent submission before any remote request'
   const calls = [];
   const app = new FederatedGraphApplication(CONFIG, {
     fetchImpl: providerFetch(calls, {
-      '/v1/publication-drafts/draft-deleted/decision': () => new Response(JSON.stringify({
-        detail: { code: 'publication_draft_not_pending' }
-      }), { status: 409, headers: { 'content-type': 'application/json' } })
+      '/v1/publication-drafts/draft-deleted': { id: 'draft-deleted', status: 'source_deleted', episode: null }
     })
   });
   await assert.rejects(app.reviewPersonalDraft({ draftId: 'draft-deleted', decision: 'submit_public' }),
     (error) => error.status === 409);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].method, 'POST');
-  assert.equal(calls[0].body.decision, 'begin_submit_public');
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[0].path, '/v1/publication-drafts/draft-deleted');
 });
 
 test('personal knowledge correction stays on the personal Provider and keeps project scope',

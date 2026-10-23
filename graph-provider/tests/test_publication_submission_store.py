@@ -21,7 +21,8 @@ class SubmissionDriver(DraftDriver):
             return [{'draft': row.copy()}], None, None
         if "SET draft.status = 'submission_unknown'" in query:
             assert self.in_transaction and self.locked
-            self.rows[params['draft_id']]['status'] = 'submission_unknown'
+            self.rows[params['draft_id']].update(status='submission_unknown',
+                submission_unknown_at=params['now'], submission_unknown_reason='ttl')
             return [], None, None
         if 'SET draft.payload' in query:
             row = self.rows[params['draft_id']]

@@ -59,7 +59,8 @@ def test_expired_reservation_is_unknown_for_display_without_changing_storage():
 def test_mark_unknown_matches_attempt_and_does_not_touch_payload():
     decision = PublicationSubmissionDecision(decision='mark_submission_unknown', submission_id='attempt')
     result = submission_change({'status': 'submitting', 'submission_id': 'attempt'}, decision, NOW)
-    assert result == {'status': 'submission_unknown', 'submission_unknown_at': NOW}
+    assert result == {'status': 'submission_unknown', 'submission_unknown_at': NOW,
+                      'submission_unknown_reason': 'remote_error'}
     for status, attempt in [('pending', 'attempt'), ('submitted', 'attempt'), ('submitting', 'other')]:
         with pytest.raises(HTTPException):
             submission_change({'status': status, 'submission_id': attempt}, decision, NOW)
@@ -83,3 +84,44 @@ def test_reconciliation_uses_provider_time_and_never_restores_deleted_payload():
     assert reconciled['status'] == 'source_deleted' and 'payload' not in reconciled
     with pytest.raises(HTTPException):
         submission_change(draft, missing, NOW + timedelta(seconds=121))
+
+
+def test_no_delivery_assertion_releases_only_ttl_unknown_same_attempt():
+    release = PublicationSubmissionDecision(decision='release_submit_public', submission_id='attempt',
+                                           delivery_not_started=True)
+    draft = {'status': 'submission_unknown', 'submission_id': 'attempt', 'submission_unknown_reason': 'ttl'}
+    assert submission_change(draft, release, NOW)['status'] == 'pending'
+    for changes in ({'submission_unknown_reason': 'remote_error'}, {'submission_unknown_reason': None},
+                    {'submission_id': 'other'}, {'status': 'source_deleted'}, {'status': 'submitted'},
+                    {'shared_proposal_id': 'proposal'}, {'status': 'submitting', 'shared_proposal_id': 'proposal'}):
+        with pytest.raises(HTTPException):
+            submission_change({**draft, **changes}, release, NOW)
+    ordinary_release = PublicationSubmissionDecision(decision='release_submit_public', submission_id='attempt')
+    with pytest.raises(HTTPException):
+        submission_change(draft, ordinary_release, NOW)
+
+
+def test_late_remote_error_upgrades_ttl_uncertainty_and_cannot_be_released():
+    draft = {'status': 'submission_unknown', 'submission_id': 'attempt', 'submission_unknown_reason': 'ttl'}
+    mark = PublicationSubmissionDecision(decision='mark_submission_unknown', submission_id='attempt')
+    updates = submission_change(draft, mark, NOW)
+    assert updates['submission_unknown_reason'] == 'remote_error'
+    release = PublicationSubmissionDecision(decision='release_submit_public', submission_id='attempt', delivery_not_started=True)
+    with pytest.raises(HTTPException):
+        submission_change({**draft, **updates}, release, NOW)
+    with pytest.raises(HTTPException):
+        submission_change({**draft, 'submission_id': 'other'}, mark, NOW)
+
+
+@pytest.mark.parametrize('value', ['true', 1, None])
+def test_delivery_assertion_requires_a_boolean(value):
+    with pytest.raises(ValueError):
+        PublicationSubmissionDecision(decision='release_submit_public', submission_id='attempt', delivery_not_started=value)
+
+
+def test_delivery_assertion_is_internal_and_only_valid_for_release():
+    from fuli_graph.models import PublicationDraftDecision
+    with pytest.raises(ValueError):
+        PublicationSubmissionDecision(decision='mark_submission_unknown', submission_id='attempt', delivery_not_started=False)
+    with pytest.raises(ValueError):
+        PublicationDraftDecision(decision='release_submit_public', submission_id='attempt', delivery_not_started=True)

@@ -1,7 +1,7 @@
 """Provider transport decisions; these are not Agent tool decisions."""
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, StrictBool, model_validator
 
 from .model_base import StrictModel
 
@@ -22,6 +22,7 @@ class PublicationSubmissionDecision(StrictModel):
     shared_proposal_id: str | None = Field(default=None, min_length=1, max_length=128)
     last_submission_error: PublicationSubmissionError | None = None
     lookup_result: PublicationLookupResult | None = None
+    delivery_not_started: StrictBool = False
 
     @model_validator(mode='after')
     def valid_submission_transition(self):
@@ -32,6 +33,8 @@ class PublicationSubmissionDecision(StrictModel):
             raise ValueError('shared_proposal_id is required only when finishing a submission')
         if self.last_submission_error and self.decision != 'release_submit_public':
             raise ValueError('last_submission_error is only valid when releasing a submission')
+        if 'delivery_not_started' in self.model_fields_set and self.decision != 'release_submit_public':
+            raise ValueError('delivery_not_started is only valid when releasing a submission')
         if ('lookup_result' in self.model_fields_set) != (self.decision == 'reconcile_submit_public'):
             raise ValueError('lookup_result must be supplied only for reconciliation, including null')
         return self

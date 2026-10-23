@@ -113,6 +113,7 @@ class StoreRecords:
             submission_id=value.get('submission_id'),
             submission_started_at=native_datetime(value.get('submission_started_at')),
             submission_unknown_at=native_datetime(value.get('submission_unknown_at')),
+            submission_unknown_reason=value.get('submission_unknown_reason'),
             last_submission_error=json_object(value.get('last_submission_error')) or None,
             submission_outcome=value.get('submission_outcome'),
         )

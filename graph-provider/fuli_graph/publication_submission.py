@@ -26,6 +26,7 @@ def submission_change(draft, decision, now):
     if action == 'begin_submit_public' and status == 'pending':
         return {'status': 'submitting', 'submission_id': str(uuid4()),
                 'submission_started_at': now, 'submission_unknown_at': None,
+                'submission_unknown_reason': None,
                 'last_submission_error': None, 'submission_outcome': None}
     same_attempt = bool(decision.submission_id) and decision.submission_id == draft.get('submission_id')
     if (same_attempt and action == 'submit_public' and status in ('submitted', 'source_deleted')
@@ -36,12 +37,19 @@ def submission_change(draft, decision, now):
             status == 'source_deleted' and draft.get('submission_outcome') == 'unknown'):
         return {'status': 'source_deleted' if status == 'source_deleted' else 'submitted',
                 'shared_proposal_id': decision.shared_proposal_id, 'decided_at': now, 'submission_outcome': None}
-    if same_attempt and action == 'release_submit_public' and status == 'submitting':
+    no_delivery = getattr(decision, 'delivery_not_started', False)
+    releasable = status == 'submitting' or (no_delivery and status == 'submission_unknown'
+                                           and draft.get('submission_unknown_reason') == 'ttl')
+    if same_attempt and action == 'release_submit_public' and releasable and not draft.get('shared_proposal_id'):
         error = ({'code': decision.last_submission_error.code, 'at': now.isoformat()}
                  if decision.last_submission_error else None)
         return {'status': 'pending', 'last_submission_error': error}
-    if same_attempt and action == 'mark_submission_unknown' and status == 'submitting':
-        return {'status': 'submission_unknown', 'submission_unknown_at': now}
+    # The host may report an attempted delivery after this transaction expired
+    # its lease. Remote uncertainty must replace TTL-only uncertainty, never the reverse.
+    if same_attempt and action == 'mark_submission_unknown' and (status == 'submitting' or (
+            status == 'submission_unknown' and draft.get('submission_unknown_reason') == 'ttl')):
+        return {'status': 'submission_unknown', 'submission_unknown_at': now,
+                'submission_unknown_reason': 'remote_error'}
     if same_attempt and action == 'reconcile_submit_public':
         eligible = status == 'submission_unknown' or (
             status == 'submitting' and submission_status(draft, now) == 'submission_unknown')
@@ -63,9 +71,11 @@ async def expire_submission(scoped, space, draft, now):
     await scoped.runtime.driver.execute_query(
         '''MATCH (draft:FuliPublicationDraft {id: $draft_id, personal_space_id: $space_id})
            WHERE draft.status = 'submitting' AND draft.submission_id = $submission_id
-           SET draft.status = 'submission_unknown', draft.submission_unknown_at = $now ''',
+           SET draft.status = 'submission_unknown', draft.submission_unknown_at = $now,
+               draft.submission_unknown_reason = 'ttl' ''',
         draft_id=draft['id'], space_id=space['id'], submission_id=draft.get('submission_id'), now=now)
-    return {**draft, 'status': 'submission_unknown', 'submission_unknown_at': now}
+    return {**draft, 'status': 'submission_unknown', 'submission_unknown_at': now,
+            'submission_unknown_reason': 'ttl'}
 
 
 async def decide_submission(scoped, space, draft_id, decision, now):

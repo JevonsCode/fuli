@@ -47,25 +47,26 @@ test('submission reserves before remote send and finishes the same attempt', asy
   const result = await f.app.reviewPersonalDraft({ draftId: 'draft', decision: 'submit_public' });
   assert.equal(result.status, 'submitted');
   assert.deepEqual(f.calls.map(call => typeof call === 'string' ? call : call.decision),
-    ['begin_submit_public', 'remote', 'submit_public']);
-  assert.equal(f.calls[2].shared_proposal_id, 'proposal');
+    ['get', 'begin_submit_public', 'remote', 'submit_public']);
+  assert.equal(f.calls[3].shared_proposal_id, 'proposal');
+  assert.ok(f.calls.every(call => !Object.hasOwn(call, 'delivery_not_started')));
 });
 
-test('a deleted source refuses begin before any remote body leaves', async () => {
+test('a deleted source refuses preflight before reservation or remote send', async () => {
   const f = fixture({ deleted: true });
   await assert.rejects(f.app.reviewPersonalDraft({ draftId: 'draft', decision: 'submit_public' }), { status: 409 });
-  assert.ok(!f.calls.includes('remote'));
+  assert.deepEqual(f.calls, ['get']);
 });
 
-test('eligibility refusal releases the reservation without remote send', async () => {
+test('eligibility refusal leaves the draft unchanged without reserving or sending', async () => {
   const f = fixture({ sensitivity: 'private' });
   await assert.rejects(f.app.reviewPersonalDraft({ draftId: 'draft', decision: 'submit_public' }), /Private or restricted/);
   assert.equal(f.status(), 'pending');
   assert.ok(!f.calls.includes('remote'));
-  assert.equal(f.calls.at(-1).decision, 'release_submit_public');
+  assert.deepEqual(f.calls, ['get']);
 });
 
-test('an unsupported workspace releases its reservation before any remote request', async () => {
+test('an unsupported workspace refuses preflight without a reservation or remote request', async () => {
   const decisions = [];
   let status = 'pending';
   let remoteCalls = 0;
@@ -76,10 +77,12 @@ test('an unsupported workspace releases its reservation before any remote reques
         remoteCalls++;
         throw new Error('unexpected remote request');
       }
-      const input = JSON.parse(options.body);
-      decisions.push(input.decision);
-      status = { begin_submit_public: 'submitting', release_submit_public: 'pending',
-        mark_submission_unknown: 'submission_unknown' }[input.decision];
+      if (options.method === 'POST') {
+        const input = JSON.parse(options.body);
+        decisions.push(input.decision);
+        status = { begin_submit_public: 'submitting', release_submit_public: 'pending',
+          mark_submission_unknown: 'submission_unknown' }[input.decision];
+      }
       return Response.json({ id: 'draft', status, submission_id: 'attempt',
         submission_started_at: new Date().toISOString(), provider_url: 'https://public.example',
         target_project_id: 'project', episode: { sensitivity: 'normal', entities: [], relationships: [], idempotency_key: 'source' } });
@@ -89,7 +92,7 @@ test('an unsupported workspace releases its reservation before any remote reques
     /Operation is not supported by fuli-workspace-v1/);
   assert.equal(remoteCalls, 0);
   assert.equal(status, 'pending');
-  assert.deepEqual(decisions, ['begin_submit_public', 'release_submit_public']);
+  assert.deepEqual(decisions, []);
 });
 
 test('definite remote 4xx releases once with a code, without retrying', async () => {
@@ -99,6 +102,7 @@ test('definite remote 4xx releases once with a code, without retrying', async ()
   assert.equal(f.status(), 'pending');
   assert.equal(f.calls.filter(call => call === 'remote').length, 1);
   assert.equal(f.calls.at(-1).last_submission_error.code, 'provider_error');
+  assert.ok(f.calls.every(call => !Object.hasOwn(call, 'delivery_not_started')));
   assert.ok(!JSON.stringify(f.calls).includes('private diagnostic'));
 });
 
@@ -107,6 +111,7 @@ for (const status of [0, 408, 500, 504]) test(`uncertain remote ${status} immedi
   const f = fixture({ remoteError: failure });
   await assert.rejects(f.app.reviewPersonalDraft({ draftId: 'draft', decision: 'submit_public' }), error => error === failure);
   assert.equal(f.status(), 'submission_unknown');
+  assert.ok(f.calls.every(call => !Object.hasOwn(call, 'delivery_not_started')));
   assert.equal(f.calls.filter(call => call === 'remote').length, 1);
 });
 
@@ -206,6 +211,7 @@ test('a successful remote send followed by a lost local finish stays unknown and
   };
   await assert.rejects(f.app.reviewPersonalDraft({ draftId: 'draft', decision: 'submit_public' }), { status: 504 });
   assert.equal(f.status(), 'submission_unknown');
+  assert.ok(f.calls.every(call => !Object.hasOwn(call, 'delivery_not_started')));
   assert.ok(!f.calls.some(call => call.decision === 'release_submit_public'));
 });
 
@@ -222,5 +228,48 @@ test('provider clock ahead cannot authorize a send after host suspension or a de
     error => error.code === 'publication_submission_expired');
     assert.ok(!f.calls.includes('remote'));
     assert.equal(f.calls.at(-1).decision, 'release_submit_public');
+    assert.equal(f.calls.at(-1).delivery_not_started, true);
+    assert.equal(f.status(), 'pending');
   }
+});
+
+
+for (const changed of ['private', 'source_deleted']) test(`begin returns ${changed}: recheck before sending and assert no delivery on release`, async () => {
+  const f = fixture();
+  const decide = f.app.personal.decidePublicationDraft;
+  f.app.personal.decidePublicationDraft = async (...args) => {
+    const draft = await decide(...args);
+    if (args[2].decision !== 'begin_submit_public') return draft;
+    return changed === 'private' ? { ...draft, episode: { ...draft.episode, sensitivity: 'private' } }
+      : { ...draft, status: 'source_deleted', episode: null };
+  };
+  await assert.rejects(f.app.reviewPersonalDraft({ draftId: 'draft', decision: 'submit_public' }));
+  assert.ok(!f.calls.includes('remote'));
+  assert.equal(f.calls.at(-1).decision, 'release_submit_public');
+  assert.equal(f.calls.at(-1).delivery_not_started, true);
+});
+
+for (const status of [422, 500, null]) test(`synchronous transport failure ${status} cannot assert that delivery never started`, async () => {
+  const f = fixture();
+  const failure = status ? new ProviderRequestError('synthetic synchronous transport failure', { status })
+    : new Error('synthetic network failure');
+  f.app.workspaces.values().next().value.client.createProposal = () => {
+    f.calls.push('remote');
+    throw failure;
+  };
+  await assert.rejects(f.app.reviewPersonalDraft({ draftId: 'draft', decision: 'submit_public' }), error => error === failure);
+  assert.equal(f.calls.filter(call => call === 'remote').length, 1);
+  assert.equal(f.calls.at(-1).decision, status === 422 ? 'release_submit_public' : 'mark_submission_unknown');
+  assert.ok(f.calls.every(call => !Object.hasOwn(call, 'delivery_not_started')));
+});
+
+test('a remote response without a proposal identity is unknown without a no-delivery assertion', async () => {
+  const f = fixture();
+  f.app.workspaces.values().next().value.client.createProposal = async () => {
+    f.calls.push('remote');
+    return {};
+  };
+  await assert.rejects(f.app.reviewPersonalDraft({ draftId: 'draft', decision: 'submit_public' }), { code: 'provider_invalid_response' });
+  assert.equal(f.status(), 'submission_unknown');
+  assert.ok(f.calls.every(call => !Object.hasOwn(call, 'delivery_not_started')));
 });

@@ -24,8 +24,9 @@ test('a publication send uses its strict timeout even when ingestion has a 120-s
     principalId: 'p', spaceId: 'space' }, workspaces: [{ providerUrl: 'https://public.example', accessToken: 'synthetic' }] }, {
     providerRequestTimeoutMs: 120_000, fetchImpl: async (url, options) => {
       if (url.startsWith('https://personal.example')) {
-        const decision = JSON.parse(options.body); decisions.push(decision.decision);
-        return Response.json({ id: 'draft', status: 'submitting', submission_id: 'attempt',
+        const decision = options.method === 'POST' ? JSON.parse(options.body) : null;
+        if (decision) decisions.push(decision.decision);
+        return Response.json({ id: 'draft', status: decision ? 'submitting' : 'pending', submission_id: 'attempt',
           submission_started_at: new Date().toISOString(), provider_url: 'https://public.example', target_project_id: 'project',
           episode: { sensitivity: 'normal', idempotency_key: 'source', entities: [], relationships: [] } });
       }
