@@ -96,6 +96,7 @@ function harness({ role = null, dimensions = MIXED, replies = [], roleWork = tru
 
 const reply = (fields = {}) => openAiStream(JSON.stringify({ decision: 'propose', payload: { choice: 'coach' },
   reason: 'Completion is low on executor-a.', evidenceIds: ['completion'], uncertainty: null, ...fields }));
+const TAKEOVER = /current session may review/;
 const timeout = () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); };
 const unavailable = () => new Response(JSON.stringify({ error: { message: 'busy' } }), { status: 503, headers: { 'content-type': 'application/json' } });
 
@@ -169,7 +170,7 @@ test('malicious answers are rejected or stay a suggestion; nothing is ever writt
   assert.deepEqual([rejected.review.status, rejected.review.reason], ['failed', 'invalid_output']);
   assert.deepEqual(rejected.review.gate, GATE);
   assert.equal(rejected.review.modelReceipt.fallbackReason, 'invalid_output');
-  assert.match(rejected.review.guidance, /current session may review/);
+  assert.match(rejected.review.guidance, TAKEOVER, 'an allowed fallback after the repair hands it to the session');
   assert.deepEqual(forged.attempts().map(({ purpose, outcome }) => [purpose, outcome]), [['initial', 'invalid_output'], ['repair', 'invalid_output']]);
   forged.assertNothingWritten();
 
@@ -180,6 +181,8 @@ test('malicious answers are rejected or stay a suggestion; nothing is ever writt
     assert.deepEqual([card.review.status, card.review.reason], ['failed', 'invalid_output']);
     assert.equal(card.review.suggestion, undefined);
     assert.match(card.review.issues[0], /dismissal_interview cites/);
+    assert.match(card.review.guidance, /rejected/);
+    assert.doesNotMatch(card.review.guidance, TAKEOVER);
     assert.equal(run.attempts().length, 1, 'the attempt was settled');
     run.assertNothingWritten();
   }
@@ -214,22 +217,26 @@ test('cross-project and all-unknown cards are never sent to a model', async () =
 test('stops keep their reason and a compact receipt; failures settle every attempt and unknown usage stays unknown', async () => {
   const cases = [
     { name: 'egress', role: boleRole({ egress: { approvedProjects: [{ personalSpaceId: SPACE, personalProjectId: 'project-b' }], allowUnassigned: true } }),
-      replies: [], expect: ['stopped', 'egress_not_approved'], attempts: [] },
+      replies: [], expect: ['stopped', 'egress_not_approved'], attempts: [], guidance: /not approved for Bole's model.*approve the project/ },
     { name: 'budget', role: boleRole({ budget: { ...boleRole().budget, maxInputTokens: 50 } }),
-      replies: [], expect: ['paused', 'per_call_input'], attempts: [] },
+      replies: [], expect: ['paused', 'per_call_input'], attempts: [], guidance: /raises the budget/ },
     { name: 'timeout', role: boleRole(), replies: [timeout, timeout], expect: ['failed', 'timeout'],
-      attempts: [['initial', 'failed', null], ['retry', 'failed', null]] },
+      attempts: [['initial', 'failed', null], ['retry', 'failed', null]], guidance: TAKEOVER },
     { name: '503', role: boleRole(), replies: [unavailable, unavailable], expect: ['failed', 'server_error'],
-      attempts: [['initial', 'failed', null], ['retry', 'failed', null]] },
+      attempts: [['initial', 'failed', null], ['retry', 'failed', null]], guidance: TAKEOVER },
     { name: 'refusal', role: boleRole(), replies: [() => new Response(JSON.stringify({ error: { message: 'Request flagged by content_policy' } }),
-      { status: 400, headers: { 'content-type': 'application/json' } })], expect: ['stopped', 'content_policy'], attempts: [['initial', 'failed', null]] },
+      { status: 400, headers: { 'content-type': 'application/json' } })], expect: ['stopped', 'content_policy'], attempts: [['initial', 'failed', null]],
+      guidance: /never handed to another model or session/ },
     { name: 'no fallback', role: boleRole({ fallbackToSession: false }), replies: [timeout, timeout], expect: ['failed', 'timeout'],
-      attempts: [['initial', 'failed', null], ['retry', 'failed', null]] }
+      attempts: [['initial', 'failed', null], ['retry', 'failed', null]], guidance: /does not fall back.*enable fallback/ }
   ];
-  for (const { name, role, replies, expect, attempts } of cases) {
+  for (const { name, role, replies, expect, attempts, guidance } of cases) {
     const run = harness({ role, replies });
     const card = await run.read({ review: true });
     assert.deepEqual([card.review.status, card.review.reason], expect, name);
+    assert.match(card.review.guidance, guidance, name);
+    // Only a fallback the role allows hands the review to the session.
+    assert.equal(TAKEOVER.test(card.review.guidance), guidance === TAKEOVER, name);
     assert.deepEqual(Object.keys(card.review.modelReceipt), RECEIPT_KEYS, name);
     assert.deepEqual(card.review.gate, GATE, name);
     assert.equal(card.review.suggestion, undefined, name);

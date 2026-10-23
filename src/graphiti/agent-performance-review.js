@@ -27,11 +27,24 @@ const GATE = Object.freeze({ status: 'suggestion_only', role: 'bole', operation:
 const SESSION_REVIEW = `The current session may review the card itself: pick one of ${ACTIONS.map(action => action.id).join(', ')} `
   + 'and cite the scored dimensions behind any action but observe. That is its own assessment, never an independent review, '
   + 'and only a suggestion to put to the person.';
+// Only a fallback the role allows (inline) hands the review to the session.
+// A stop says what would let Bole's model review again, never to go ahead.
 const GUIDANCE = Object.freeze({
   single_project_only: `Bole's model reviews one project at a time. ${SESSION_REVIEW}`,
   insufficient_data: 'Every dimension is 数据不足: there is nothing to review and no conclusion either way.',
-  not_reviewed: `Bole's model did not review this card (see reason). ${SESSION_REVIEW}`
+  inline: `Bole's model did not review this card (see reason). ${SESSION_REVIEW}`,
+  egress_not_approved: 'Stopped: this project is not approved for Bole\'s model, so nothing was sent and nothing is suggested. '
+    + 'A person can approve the project for Bole in model settings to review it.',
+  paused: 'Paused by Bole\'s model budget (see reason); nothing is suggested. It can review again when the budget window allows or a person raises the budget.',
+  stopped: 'Stopped (see reason): Bole\'s model refused or was not permitted, and nothing is suggested. A stop is never handed to another model or session.',
+  failed: 'Bole\'s model failed (see reason) and Bole does not fall back to the current session, so nothing is suggested. '
+    + 'Retry later, repair the model settings, or a person can enable fallback to the session.',
+  rejected: 'Bole\'s model answer was rejected: an action against the Agent must cite dimensions with data. Nothing is suggested.'
 });
+
+function stopGuidance({ status, reason }) {
+  return reason === 'egress_not_approved' ? GUIDANCE.egress_not_approved : GUIDANCE[status];
+}
 
 // card: the score card as getAgentScoreCard returns it.
 export async function reviewAgentScoreCard(application, card) {
@@ -49,11 +62,12 @@ export async function reviewAgentScoreCard(application, card) {
   const receipt = { requestId: request.requestId, evidenceVersion: request.versions.evidence, promptVersion: PROMPT_VERSION,
     gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) };
   if (outcome.status !== 'answered') {
-    return withReview(card, { status: outcome.modelReceipt.status, reason: outcome.modelReceipt.reason, guidance: GUIDANCE.not_reviewed, ...receipt });
+    const { status, reason } = outcome.modelReceipt;
+    return withReview(card, { status, reason, guidance: outcome.status === 'inline' ? GUIDANCE.inline : stopGuidance(outcome.modelReceipt), ...receipt });
   }
   const { envelope, modelReceipt } = outcome;
   const issue = negativeWithoutEvidence(envelope, scored);
-  if (issue) return withReview(card, { status: 'failed', reason: 'invalid_output', issues: [issue], guidance: GUIDANCE.not_reviewed, ...receipt });
+  if (issue) return withReview(card, { status: 'failed', reason: 'invalid_output', issues: [issue], guidance: GUIDANCE.rejected, ...receipt });
   return withReview(card, { status: 'suggested',
     suggestion: { action: envelope.payload.choice, reason: envelope.reason, evidenceIds: envelope.evidence.refs, uncertainty: envelope.uncertainty },
     suggestedBy: { mode: 'model_api', independent: true, model: modelReceipt.actualModel ?? modelReceipt.requestedModel }, ...receipt });
