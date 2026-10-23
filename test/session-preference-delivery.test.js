@@ -212,3 +212,33 @@ test('after a confirmed base, a visible copy showing another set under its revis
   await f.delivered('native-call-c', { content: [{ type: 'text', text: JSON.stringify(next) }], structuredContent: next });
   assert.equal((await f.service.deliver(entry('task-d'), origin, format)).structuredContent.preference_delivery.base_revision, next.revision);
 }));
+
+// dot rec#10 6366498189: a block matching the structured copy beside one that
+// shows another set under the same revision, in either order. Only the match
+// may confirm; the other still takes the revision.
+test('a matching visible block never hides a conflicting one under the same revision, in either order', async () => {
+  for (const order of ['matching first', 'conflicting first']) {
+    await fixture(async f => {
+      const first = await f.service.deliver(entry(), origin, format);
+      await f.delivered('native-call-a', first);
+      const conflicting = structuredClone(first.structuredContent);
+      conflicting.effective_preferences[0].instruction = 'A different visible rule';
+      const blocks = [first.structuredContent, conflicting].map(value => ({ type: 'text', text: JSON.stringify(value) }));
+      await f.delivered('both', { content: order === 'matching first' ? blocks : blocks.reverse(),
+        structuredContent: first.structuredContent });
+      const next = (await f.service.deliver(entry('task-b'), origin, format)).structuredContent;
+      assert.equal(next.preference_delivery, undefined, order);
+      assert.equal(next.effective_preferences.length, 12, order);
+      assert.equal(next.revision.length, 16, order);
+      assert.ok(next.revision.startsWith(first.structuredContent.revision), order);
+    });
+  }
+  // Two identical matching blocks are one frame shown twice: still a base.
+  await fixture(async f => {
+    const first = await f.service.deliver(entry(), origin, format);
+    const block = { type: 'text', text: JSON.stringify(first.structuredContent) };
+    await f.delivered('twice', { content: [block, block], structuredContent: first.structuredContent });
+    assert.equal((await f.service.deliver(entry('task-b'), origin, format)).structuredContent.preference_delivery.base_revision,
+      first.structuredContent.revision);
+  });
+});

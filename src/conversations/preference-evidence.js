@@ -82,12 +82,13 @@ function preferenceFrames(output, codeMode = false, depth = 0) {
   if (structured) {
     // The preference baseline is the structured copy whose preference view
     // the model also saw; anything else (recent context) must be proven from
-    // what was actually visible, kept here as `visible`. A visible copy that
-    // differs confirms nothing, yet the model saw it, so it is kept with
+    // what was actually visible, kept here as `visible`. Every other visible
+    // copy confirms nothing, yet the model saw it, so it is kept with
     // `confirms: false`: the revision it shows is taken (rec#15 D-29.9).
-    const shown = preferenceFrames(output.content, false, depth + 1);
-    const seen = shown.find(frame => preferenceFrameHash(frame.value) === preferenceFrameHash(structured));
-    return seen ? [{ value: structured, visible: seen.visible }] : shown.map(frame => ({ ...frame, confirms: false }));
+    const expected = preferenceFrameHash(structured);
+    return preferenceFrames(output.content, false, depth + 1).map(frame =>
+      frame.confirms !== false && preferenceFrameHash(frame.value) === expected
+        ? { value: structured, visible: frame.visible } : { ...frame, confirms: false });
   }
   if (typeof output.hookSpecificOutput?.additionalContext === 'string') {
     const lines = output.hookSpecificOutput.additionalContext.split('\n');
