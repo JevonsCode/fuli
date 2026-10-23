@@ -18,7 +18,7 @@ export const codexPreferenceEvidence = Object.freeze({
     if (['function_call', 'custom_tool_call'].includes(item?.type)) {
       const name = item.type === 'custom_tool_call' && ['exec', 'wait'].includes(item.name)
         ? `functions.${item.name}` : item.name;
-      return [{ type: 'call', id: item.call_id, name }];
+      return [{ type: 'call', id: item.call_id, name, input: item.arguments }];
     }
     if (['function_call_output', 'custom_tool_call_output'].includes(item?.type)) {
       return [{ type: 'result', id: item.call_id, output: item.output }];

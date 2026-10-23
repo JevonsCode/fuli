@@ -17,6 +17,7 @@ import { claudePreferenceEvidence } from '../../src/agents/claude-code/preferenc
 import { createSessionPreferenceDelivery } from '../../src/conversations/preference-session.js';
 import { withPreferenceScope } from '../../src/conversations/preference-snapshot.js';
 import { beginConversation, resumeConversation } from '../../src/graphiti/agent-conversations.js';
+import { createMcpServer } from '../../src/mcp/create-mcp-server.js';
 import { projectAgentCollaborationPreferences } from '../../src/graphiti/collaboration-preference-workflow.js';
 import { PROVIDER_RECOVERY_WINDOW, replayPreferences, syntheticHost, syntheticJournal } from '../../test-support/synthetic-context-session.js';
 
@@ -143,9 +144,29 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       view = model();
       session.generation++;
     };
-    // The explicit resume_agent_conversation tool call (D-27.6).
-    session.resume = async conversationId => {
-      await resumeConversation(app, { taskContextToken: session.token, sourceApplication: client, conversationId });
+    // Exercise the real MCP result path and record what the native host exposes.
+    session.resume = async (conversationId, { record = true, preview = false } = {}) => {
+      const server = createMcpServer({ ...app, preferenceDelivery: delivery,
+        resumeAgentConversation: args => resumeConversation(app, args) }, {
+        env: {}, sourceApplication: client, registerResources: false, toolProfile: 'chat',
+        nativeRequestContext: () => ({ nativeSessionId: sessionId, nativeExecutionId: 'synthetic', contextWindowId: `window-${session.generation}` })
+      });
+      let result;
+      try {
+        result = await server.server._requestHandlers.get('tools/call')({ method: 'tools/call', params: {
+          name: 'fuli_call', arguments: { toolName: 'resume_agent_conversation', input: { taskContextToken: session.token, conversationId } }
+        } }, { signal: new AbortController().signal, requestId: 1 });
+      } finally { await server.close(); }
+      if (result.isError) throw new Error(JSON.stringify(result.structuredContent));
+      const visible = JSON.parse(result.content[0].text);
+      if (record) {
+        await host.toolResult(`resume-${session.token}`, result.structuredContent,
+          preview ? { preview: 'Incomplete result' } : visible, 'mcp__fuli__fuli_call', { toolName: 'resume_agent_conversation' });
+        if (!preview) for (const message of visible.context?.messages ?? []) {
+          view.messages.set(`${visible.context.conversation_id}:${message.sequence}`, message.content);
+        }
+      }
+      return visible;
     };
 
     // One prompt through the real hook entry. `record: false` loses the

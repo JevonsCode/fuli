@@ -13,7 +13,7 @@ export const SCOPE_NOTES = Object.freeze([
   'skeleton = the same entry without a cache, with no preference and no message: a separate diagnostic of what every turn costs. It is not part of any cache saving.',
   'tiny = the PR3 fixture; scaled = fixed-seed synthetic preferences of 120–400 B and messages of 120–1500 B. Both use the same prompts and the Provider recovery window: back to the third user message, packed into the default 4000-byte context_budget (test-support/synthetic-context-session.js PROVIDER_RECOVERY_WINDOW).',
   'The real claudeLifecycleOutput / codexLifecycleOutput functions run with synthetic transcripts and an in-memory Provider; no real client runs.',
-  'The reset hooks get no currentTask, so SessionStart resume covers the next prompt after the reset, not the restored frame an active task receives at once. The resume_agent_conversation result is still not tracked as a frame, so the resuming session receives those messages once more (D-29.7, out of scope).'
+  'The reset hooks get no currentTask, so SessionStart resume covers the next prompt after the reset, not the restored frame an active task receives at once. Explicit resume uses the real MCP result path and native tool records: only complete visible results suppress a later hook resend. Its tool-result bytes are outside these hook-only totals.'
 ]);
 
 const sum = (turns, field) => turns.reduce((total, turn) => total + turn[field], 0);
