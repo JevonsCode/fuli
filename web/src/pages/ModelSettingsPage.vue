@@ -175,7 +175,7 @@ onBeforeUnmount(() => {
           </li>
         </ul>
 
-        <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError" @retry="suggestions.load" />
+        <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError" @retry="suggestions.load" @recovery-pending="suggestions.blockForRecovery" />
 
         <ModelUsage />
 

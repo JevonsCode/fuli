@@ -19,7 +19,7 @@ REVIEW = {'x-fuli-human-review-token': REVIEW_TOKEN}
 PASTED = 'SYNTHETIC-PASTED-KEY-0000-not-a-real-secret'
 TRACE_KEYS = {'id', 'space_id', 'item_id', 'item_kind', 'action', 'operation', 'operation_actor', 'outcome',
               'created_by', 'created_at', 'deleted_item_keys', 'evidence_ids', 'removed_episode_ids',
-              'deletion_counts_json'}
+              'deletion_counts_json', 'drafts_scrubbed_json'}
 
 
 def reviewed():
@@ -179,7 +179,8 @@ async def test_c9_a_delete_removes_every_copy_keeps_the_shared_turn_and_holds_wh
         assert {item['conclusion'], item['follow']} <= await applied(client, space_id, 'alpha')
         plan = ok(await preview(client, space_id, item['new']))
         done = ok(await delete(client, space_id, item['new'], plan['preview_id']))
-        assert sorted(done['deleted_item_ids']) == sorted([item['new'], item['old'], item['relationship']])
+        assert sorted(done['deleted_item_ids']) == sorted([item['new'], item['old'], item['relationship'],
+                                                         item['own_episode'], item['edit_episode']])
         assert done['counts'] == plan['counts'] and done['deleted_by'] == 'user'
         gone = [item['new'], item['old'], item['relationship']]
         # Old links to any version or to the relationship say it was deleted.
@@ -347,7 +348,7 @@ async def test_dot_p1_1_saying_a_deleted_key_again_is_a_new_item_and_the_deleted
         # The status a console asks when its answer was lost: from the trace, never a second delete.
         settled = ok(await status(client, space_id, first))
         assert settled['state'] == 'deleted' and settled['deletion']['deletion_id'] == done['deletion_id']
-        assert settled['deletion']['deleted_item_ids'] == [first]
+        assert settled['deletion']['deleted_item_ids'] == done['deleted_item_ids']
         assert ok(await status(client, space_id, third))['state'] == 'present'
         assert ok(await status(client, space_id, 'synthetic-missing'))['state'] == 'missing'
         assert (await status(client, space_id, first, headers={})).status_code == 403

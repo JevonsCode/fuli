@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { hardDeleteLedger } from '../knowledge-hard-delete/delete-ledger.js';
 import { forgetDurably } from '../knowledge-hard-delete/forget-references.js';
+import { assertKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
 
 // What the built-in Agents showed after asking their own model (rec#8,
 // rec#10 D-26, D-30): Bole's performance_review, Astro's project_candidate and
@@ -20,7 +21,9 @@ import { forgetDurably } from '../knowledge-hard-delete/forget-references.js';
 //
 // Retention (D-30.2, D-30.8): a read returns only the last 90 days; rows past
 // 90 days or beyond the newest 300 are deleted when the next row is written,
-// in the same transaction. Nothing deletes them on expiry, and a plain DELETE
+// in the same transaction. Recovery takes priority: rows in a closed space
+// wait until its proof opens, so retention may temporarily exceed 300 rows.
+// Nothing deletes them on expiry, and a plain DELETE
 // is not an erasure of the medium.
 //
 // A person's permanent delete of knowledge (rec#5 C9, D-30.9): a row names no
@@ -54,9 +57,11 @@ export const ROLE_SUGGESTIONS_FORMAT = sqliteFormat({
 });
 
 export class RoleSuggestionLog {
-  constructor(path = ':memory:', { now = () => new Date() } = {}) {
+  constructor(path = ':memory:', { now = () => new Date(), recoveryGate } = {}) {
     this.path = path;
     this.now = now;
+    this.recoveryGate = recoveryGate;
+    this.droppedCount = 0;
   }
 
   // Opened on first write, so a data directory whose roles never asked a model has no file.
@@ -79,37 +84,68 @@ export class RoleSuggestionLog {
     }
   }
 
+  // Host session identity is separate from the Agent journal used for UI links.
+  sessionGeneration(space, source) {
+    if (!source?.sourceApplication || !source?.sessionId) return null;
+    try { return { ...source, ...sessionState(this.#deletions(space), source) }; }
+    catch { return null; }
+  }
+
   // Writes the row, then deletes rows past the retention, in one transaction.
   // The delete record is read inside it: a delete open now, or one the
   // generation read before the evidence did not include, keeps the words out.
   // deletionGeneration: as deletionGeneration() returned before the evidence
   // was read; a direct write without one stands for now.
-  record({ role, operation, personalSpaceId, personalProjectId = null, subject = {}, result, deletionGeneration }) {
+  record({ role, operation, personalSpaceId, personalProjectId = null, subject = {}, result, deletionGeneration, sessionGeneration }) {
     const at = this.now();
-    this.#transaction(() => {
+    // Ledger lock precedes SQLite: deletion cannot start between the final
+    // generation check and INSERT/COMMIT in another process.
+    const write = operations => this.#transaction(() => {
+      this.#assertRecovery(personalSpaceId);
       const shown = { ...result, guidance: undefined };
-      const deletions = this.#deletions(personalSpaceId);
+      const deletions = operations.filter(entry => entry.spaceId === personalSpaceId && entry.state !== 'not_deleted');
+      if (sessionGeneration !== undefined) {
+        const current = sessionGeneration && sessionState(deletions, sessionGeneration);
+        if (!current || current.blocked || sessionGeneration.blocked || current.deletionId !== sessionGeneration.deletionId) {
+          this.droppedCount++;
+          return { recorded: false, dropped: 1, reason: 'session_generation_changed' };
+        }
+      }
       const before = deletionGeneration === undefined ? deletions.map(entry => entry.id) : deletionGeneration;
       const fenced = !before || deletions.some(entry => OPEN.has(entry.state) || !before.includes(entry.id));
       this.db.prepare('INSERT INTO role_suggestions(at, role, operation, space, project, subject, result) VALUES(?, ?, ?, ?, ?, ?, ?)')
         .run(at.toISOString(), role, operation, personalSpaceId, personalProjectId, JSON.stringify(subject),
           JSON.stringify(fenced ? withoutWords(shown) : shown));
-      this.db.prepare('DELETE FROM role_suggestions WHERE at < ?').run(retentionStart(at));
-      this.db.prepare(`DELETE FROM role_suggestions WHERE id NOT IN
-        (SELECT id FROM role_suggestions ORDER BY at DESC, id DESC LIMIT ?)`).run(RETENTION.rows);
+      const expired = this.db.prepare(`SELECT id, space FROM role_suggestions WHERE at < ? OR id NOT IN
+        (SELECT id FROM role_suggestions ORDER BY at DESC, id DESC LIMIT ?)`).all(retentionStart(at), RETENTION.rows);
+      const remove = this.db.prepare('DELETE FROM role_suggestions WHERE id = ?');
+      for (const row of expired) {
+        if (this.path === ':memory:' || this.recoveryGate?.state(row.space, 'role-suggestions')?.state === 'open') remove.run(row.id);
+      }
+      return { recorded: true, dropped: 0 };
     });
+    return this.path === ':memory:' ? write([]) : hardDeleteLedger(dirname(this.path)).withReadLock(write);
   }
 
   // The last 90 days, newest first, at most RETENTION.rows. A suggestion
   // followed by a newer suggestion for the same subject reads stale: 'newer';
   // its status stays as recorded. Reading never creates the file or deletes.
-  list({ limit = LIST_LIMIT } = {}) {
+  list({ limit = LIST_LIMIT, personalSpaceId } = {}) {
+    if (personalSpaceId) this.#assertRecovery(personalSpaceId);
     if (!this.database && this.path !== ':memory:' && !existsSync(this.path)) return [];
-    const rows = this.db.prepare('SELECT * FROM role_suggestions WHERE at >= ? ORDER BY at DESC, id DESC LIMIT ?')
-      .all(retentionStart(this.now()), Math.min(Math.max(1, limit), RETENTION.rows));
+    const rows = this.db.prepare('SELECT * FROM role_suggestions WHERE at >= ? AND (? IS NULL OR space = ?) ORDER BY at DESC, id DESC LIMIT ?')
+      .all(retentionStart(this.now()), personalSpaceId ?? null, personalSpaceId ?? null, Math.min(Math.max(1, limit), RETENTION.rows));
+    const deletions = new Map();
+    for (const space of new Set(rows.map(row => row.space))) {
+      this.#assertRecovery(space);
+      deletions.set(space, this.#deletions(space));
+    }
     const suggested = new Set();
     return rows.map(row => {
-      const entry = { ...JSON.parse(row.result), id: row.id, at: row.at, role: row.role, operation: row.operation,
+      const result = JSON.parse(row.result);
+      const fenced = deletions.get(row.space).some(operation => OPEN.has(operation.state)
+        || (operation.deletedAt && row.at <= operation.deletedAt));
+      const entry = { ...(fenced ? withoutWords(result) : result), id: row.id, at: row.at, role: row.role, operation: row.operation,
         personalSpaceId: row.space, personalProjectId: row.project, subject: JSON.parse(row.subject) };
       const key = entry.status === 'suggested' ? subjectKey(entry) : null;
       if (!key) return entry;
@@ -147,6 +183,10 @@ export class RoleSuggestionLog {
       .filter(operation => operation.spaceId === space && operation.state !== 'not_deleted');
   }
 
+  #assertRecovery(space) {
+    if (this.path !== ':memory:') assertKnowledgeRecovery(this.recoveryGate, space, 'role-suggestions');
+  }
+
   // Nested calls join the open transaction.
   #transaction(work) {
     if (this.db.isTransaction) return work();
@@ -165,6 +205,13 @@ export class RoleSuggestionLog {
     this.database?.close();
     this.database = null;
   }
+}
+
+function sessionState(deletions, source) {
+  const matching = deletions.filter(entry => entry.sourceApplication === source.sourceApplication && entry.sessionId === source.sessionId);
+  const committed = matching.filter(entry => entry.deletionId).sort((a, b) =>
+    (a.deletedAt ?? '').localeCompare(b.deletedAt ?? '') || a.deletionId.localeCompare(b.deletionId));
+  return { deletionId: committed.at(-1)?.deletionId ?? null, blocked: matching.some(entry => OPEN.has(entry.state)) };
 }
 
 function withoutWords(result) {

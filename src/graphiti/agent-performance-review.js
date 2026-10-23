@@ -64,7 +64,7 @@ export async function reviewAgentScoreCard(application, card, { sourceApplicatio
   if (outcome.modelReceipt.status === 'not_configured') return card;
   // The console copy's capture decision is the last await; the review is then
   // decided and kept synchronously.
-  const keep = await prepareRoleSuggestionNote(application, () => ({ sourceApplication, personalProjectId }));
+  const keep = await prepareRoleSuggestionNote(application, () => ({ sourceApplication, personalProjectId }), card.personalSpaceId);
   const review = modelReview(outcome, scored, { requestId: request.requestId, evidenceVersion: request.versions.evidence,
     promptVersion: PROMPT_VERSION, gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) });
   keep({ role: GATE.role, operation: OPERATION, personalSpaceId: card.personalSpaceId, personalProjectId,

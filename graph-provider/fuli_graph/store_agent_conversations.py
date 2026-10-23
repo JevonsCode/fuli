@@ -14,6 +14,8 @@ from .provider_values import now_utc, stable_uuid
 from .store_conversation_triage import ASSISTANT_AGENT_ID, StoreConversationTriage
 from .store_transactions import query_store_transaction
 from .store_transcript_recovery import recover_fallback_boundary
+from .knowledge_versions import lock_knowledge
+from .knowledge_source_fence import require_source_available
 
 CONTEXT_PAGE_EVENTS = 50
 CONTEXT_SCAN_EVENTS = 1000
@@ -111,17 +113,19 @@ class StoreAgentConversations:
             'WHERE e.sequence > $after AND e.sequence <= $revision '
             'RETURN e.payload AS payload, e.sequence AS sequence '
             'ORDER BY e.sequence ASC LIMIT $limit', id=record['id'], after=request.after,
-            revision=record['revision'], limit=request.limit)
+            revision=record['revision'], limit=request.limit + 1)
         decoded = []
         total = 0
-        for event in events:
+        for event in events[:request.limit]:
             value = decode_event(event)
             total += len(json.dumps(value, ensure_ascii=False).encode())
             if total > 512 * 1024 and decoded:
                 break
             decoded.append(value)
         cursor = decoded[-1]['sequence'] if decoded else request.after
-        page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': cursor < record['revision']}
+        # Deletion leaves gaps and advances revision without adding an event.
+        # Only a retained event beyond this page proves there is another page.
+        page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': len(events) > len(decoded)}
         if request.after == 0:
             # The first history page shows what compaction extracted and where it came from.
             page['digest'] = await self._current_digest(record)
@@ -235,6 +239,10 @@ class StoreAgentConversations:
         if request.initialize_cursor or request.fallback_recovery:
             raise HTTPException(422, 'Initialize transcripts only at a verified task boundary')
         async with query_store_transaction(self) as store:
+            space = await store.authorize(actor, request.personal_space_id, 'maintainer')
+            await lock_knowledge(store, space)
+            await require_source_available(store, space, source_application=request.source_application,
+                session_id=request.session_id, task_token=request.task_context_token)
             scope = await store._conversation_scope(actor, request, write=True)
             await store._conversation_task(actor, request)
             policy = await store._conversation_policy(scope)

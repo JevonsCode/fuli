@@ -91,7 +91,7 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
   // Answers a person gave to this Agent's own requests while it was away.
   const answered = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.attentionReplies
     ? application.roundtable.attentionReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];
-  const judgmentContext = includeTeam ? taskJudgmentContext(application, projectResolution.personalProjectId) : null;
+  const judgmentContext = includeTeam ? await taskJudgmentContext(application, projectResolution.personalProjectId) : null;
   // An unclaimed conversation gets names only, so its finishing host can label it.
   const triage = selection?.agent?.agentId === ASSISTANT_AGENT_ID && !projectResolution.personalProjectId
     ? await triageCandidates(application) : null;
@@ -115,8 +115,9 @@ export async function selectedTaskEntryPreferences(application, projectResolutio
     }) };
 }
 
-export function taskJudgmentContext(application, personalProjectId) {
-  const judgmentPolicy = application.judgment?.store().policy(application.config.personal.spaceId, personalProjectId ?? '');
+export async function taskJudgmentContext(application, personalProjectId) {
+  const judgmentPolicy = await application.judgment?.policy({ personalSpaceId: application.config.personal.spaceId,
+    personalProjectId: personalProjectId ?? null });
   return judgmentPolicy ? { agentId: 'employee.tonborg', policy: judgmentPolicy,
       guidance: judgmentPolicy.mode === 'manual'
         ? 'Tonborg is available for advice via assess_agent_action; retain human review.'

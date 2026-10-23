@@ -22,6 +22,8 @@ import { completePreferences } from './fixtures/collaboration-preferences.js';
 // words back into a local store. Synthetic graph, synthetic records.
 
 const SPACE = 'personal-space';
+// These legacy cleanup tests isolate their fence from the separately tested recovery gate.
+const recoveryGate = { state: () => ({ state: 'open' }) };
 const PASTED = 'SYNTHETIC-PASTED-KEY-0000-not-a-real-secret';
 const CONFIRM = { personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: PREVIEW_ID, confirmation: '删除' };
 
@@ -33,7 +35,7 @@ function dataDirectory(t) {
 
 // A Tonborg judgment that kept the words of item-2, as a store holds it.
 function rememberWords(dataDir) {
-  const store = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+  const store = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   store.record(SPACE, { kind: 'review', target: 'entity:item-2', title: `Deploy with ${PASTED}`,
     summary: `Approve ${PASTED}`, evidence: [], outcome: 'escalate', confidence: 0.4 }, 'review:item-2');
   store.close();
@@ -208,7 +210,7 @@ test('a Tonborg review that was answering when the person deleted never records 
     sessionId: 'synthetic-session' };
   };
   const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge }),
-    openStore: () => new JudgmentStore(join(dataDir, 'judgment.sqlite')) });
+    openStore: () => new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate }) });
   t.after(() => service.close());
   service.store().setPolicy(SPACE, '', { mode: 'shared', quality: 'quality', client: 'codex' }, 0);
   const result = await service.review({ personalSpaceId: SPACE, personalProjectId: 'p', requestId: 'barrier-1', limit: 10 });
@@ -222,7 +224,7 @@ test('a late answer or result of handed-off work keeps no deleted words', async 
   const path = join(dataDir, 'role-work.sqlite');
   const at = new Date('2026-10-22T00:00:00Z');
   // A long-running process holds the store from before the delete.
-  const running = new RoleWorkStore(path);
+  const running = new RoleWorkStore(path, { recoveryGate });
   t.after(() => running.close());
   const pkg = running.create({ request: { role: 'tonborg', operation: 'review', requestId: 'late-1',
     scope: { personalSpaceId: SPACE, personalProjectId: null, sessionRef: null }, versions: { evidence: 'e', policy: 'p' },
@@ -285,7 +287,7 @@ for (const [shape, document] of Object.entries(DAMAGED)) {
     const dataDir = dataDirectory(t);
     rememberWords(dataDir);
     writeFileSync(join(dataDir, HARD_DELETE_LEDGER_FILE), JSON.stringify(document));
-    const store = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+    const store = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
     const write = () => store.record(SPACE, { kind: 'review', target: 'entity:other', title: 'Synthetic words' }, 'review:other');
     assert.throws(write, (error) => error.code === 'data_format_damaged' && /moving it out of the data directory/.test(error.message));
     store.close();
@@ -326,4 +328,28 @@ test('a ledger moved aside or restored from an older backup is rebuilt from the 
   assert.equal(fenced(dataDir), true);
   assert.deepEqual(storesHold(dataDir), []);
   assert.deepEqual(await port().reconcile(), [], 'once known, it is not taken in twice');
+});
+
+test('restored-ledger recovery blocks local knowledge reads and writes while graph tombstones are pending', async (t) => {
+  const dataDir = dataDirectory(t);
+  rememberWords(dataDir);
+  const store = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+  t.after(() => store.close());
+  const graph = syntheticGraph();
+  graph.deleted = true;
+  let release;
+  const barrier = new Promise((resolve) => { release = resolve; });
+  const port = knowledgeHardDelete(dataDir, { personalSpaceId: () => SPACE,
+    send: async (...args) => { await barrier; return graph.send(...args); } });
+  const recovery = port.reconcile();
+  try {
+    assert.throws(() => store.records(SPACE), /recover|reconcil/i);
+    assert.throws(() => store.record(SPACE, { kind: 'review', target: 'entity:item-2', title: PASTED },
+      'restored-late-write'), /recover|reconcil/i);
+  } finally {
+    release();
+    await recovery;
+    store.close();
+  }
+  assert.deepEqual(storesHold(dataDir), []);
 });

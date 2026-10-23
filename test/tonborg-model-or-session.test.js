@@ -92,14 +92,14 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
     recordProjectAgentTaskActivity: async value => { completions.push(value); task.status = 'completed'; return { ...task }; }
   };
   const open = () => {
-    const bridge = createRoleWorkBridge({ port, store: new RoleWorkStore(join(dir, 'role-work.sqlite')),
+    const bridge = createRoleWorkBridge({ port, store: new RoleWorkStore(join(dir, 'role-work.sqlite'), { recoveryGate: { state: () => ({ state: 'open' }) } }),
       verifySession: roleWorkSessions(app), resumers: { tonborg: work => app.judgment.resumeWork(work) }, now });
     const legacy = async input => {
       legacyRuns.push(input);
       return { client: 'codex', model: 'cli-model', body: JSON.stringify({ decisions: [verdict()] }) };
     };
     app.roleWork = bridge;
-    app.judgment = createJudgmentService({ app, openStore: () => new JudgmentStore(join(dir, 'judgment.sqlite')),
+    app.judgment = createJudgmentService({ app, openStore: () => new JudgmentStore(join(dir, 'judgment.sqlite'), { recoveryGate: { state: () => ({ state: 'open' }) } }),
       engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge, legacy }), reviewGate }) });
   };
   const close = () => { app.judgment.close(); app.roleWork.close(); };
@@ -263,7 +263,7 @@ test('C2 and C13: a failing model falls back to the exact session; both usages a
   assert.deepEqual(record.judgedBy, { mode: 'current_session', independent: false });
   assert.equal(record.modelReceipt.status, 'failed');
   assert.equal(h.completions.length + h.legacyRuns.length, 0);
-  assert.deepEqual(h.app.judgment.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead' }), []);
+  assert.deepEqual(await h.app.judgment.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead' }), []);
   const groups = h.ledger.usage({ role: 'tonborg' });
   assert.deepEqual(groups.map(group => [group.channel, group.requests, group.attempts]).sort(), [['model_api', 1, 2], ['session', 1, 1]]);
   assert.equal(groups.find(group => group.channel === 'session').tokens.input.reported, 900);

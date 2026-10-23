@@ -16,6 +16,7 @@ import { listenFetchableServer } from '../src/server/listen.js';
 // Synthetic suggestions only, shaped as the three roles write them: no model,
 // no data directory but a temporary one.
 const SPACE = 'space-a';
+const recoveryGate = { state: () => ({ state: 'open' }) }; // Explicit synthetic proof for these retention tests.
 const receipt = (role, operation, n = 1) => ({ requestId: `${operation}:r${n}`, evidenceVersion: String(n).repeat(64),
   promptVersion: `${operation}:p1`, gate: { status: 'suggestion_only', role, operation },
   modelReceipt: { backend: 'model_api', status: 'completed', reason: null, failureClass: null, fallbackReason: null,
@@ -34,7 +35,7 @@ const bole = (agentId, n = 1) => ({ role: 'bole', operation: 'performance_review
 function storeIn(t, clock) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-role-suggestions-'));
   const path = join(directory, 'role-suggestions.sqlite');
-  const log = new RoleSuggestionLog(path, { now: () => new Date(clock.now) });
+  const log = new RoleSuggestionLog(path, { now: () => new Date(clock.now), recoveryGate });
   t.after(() => { log.close(); rmSync(directory, { recursive: true, force: true }); });
   return { directory, path, log };
 }
@@ -134,7 +135,7 @@ test('a permanent delete in a space clears the words of every record of that spa
   // While a delete in the space is open, a new record is stored without words; one in another space is not.
   hardDeleteLedger(directory).begin({ spaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: 'preview-1', itemIds: [] });
   clock.now += 60_000;
-  const during = new RoleSuggestionLog(path, { now: () => new Date(clock.now) });
+  const during = new RoleSuggestionLog(path, { now: () => new Date(clock.now), recoveryGate });
   try {
     during.record(jefa(jefaSuggested(6), 'conversation-6'));
     during.record({ ...jefa(jefaSuggested(7), 'conversation-7'), personalSpaceId: 'space-b' });
@@ -247,7 +248,7 @@ test('the console reads suggestions over a GET-only route that never writes', as
   const serve = (roleSuggestions) => async (request, response) => {
     try {
       if (!await handleModelBackendApiRequest({ request, response, url: new URL(request.url, 'http://local'),
-        modelBackends: { roles: () => ({}) }, roleSuggestions })) response.writeHead(404).end();
+        modelBackends: { roles: () => ({}) }, readRoleSuggestions: roleSuggestions ? input => roleSuggestions.list(input) : null })) response.writeHead(404).end();
     } catch (error) {
       const mapped = mapHttpError(error);
       response.writeHead(mapped.status, { 'content-type': 'application/json' }).end(JSON.stringify(mapped.body));

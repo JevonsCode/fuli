@@ -39,6 +39,7 @@ Install and Agent connection:
   uninstall [--yes] [--data-dir DIR]
 
 Data formats:
+  migrate reconcile-knowledge [--data-dir DIR]  (resume confirmed knowledge deletion cleanup and verify local recovery)
   migrate status [--json] [--data-dir DIR]  (every store's format version, ledger and pending steps; read only, safe while FULI runs)
   migrate preview [--json] [--data-dir DIR]  (the steps waiting for you: stores, step IDs, counts, sample IDs and a plan digest; read only)
   migrate apply --digest DIGEST [--data-dir DIR]  (applies exactly that previewed plan after you confirm at this terminal; backs up first)

@@ -15,6 +15,7 @@ import { mapHttpError } from '../src/http/error-mapping.js';
 import { handleKnowledgeHardDeleteRequest } from '../src/http/knowledge-hard-delete-api-router.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { knowledgeHardDelete } from '../src/knowledge-hard-delete/console-port.js';
+import { hardDeleteLedger, readHardDeleteProof } from '../src/knowledge-hard-delete/delete-ledger.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { PREVIEW_ID, syntheticGraph } from '../test-support/hard-delete-graph.js';
@@ -27,6 +28,8 @@ import { reachableModules } from '../test-support/module-graph.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SPACE = 'personal-space';
+// Cleanup tests isolate the recovery gate; gate integration has separate coverage.
+const recoveryGate = { state: () => ({ state: 'open' }) };
 const PASTED = 'SYNTHETIC-PASTED-KEY-0000-not-a-real-secret';
 const APP = { config: { personal: { spaceId: SPACE } } };
 
@@ -65,8 +68,9 @@ test('no MCP or Agent tool module reaches a hard delete, and no tool is named fo
   for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
     const modules = reachableModules(join(ROOT, entry));
     assert.deepEqual(deleting.filter((path) => modules.has(path)), [], entry);
+    assert.ok(modules.has(join(ROOT, 'src/knowledge-hard-delete/recovery-gate.js')), entry);
   }
-  assert.deepEqual(listAgentTools().map((tool) => tool.name).filter((name) => /hard|purge|erase|permanent/.test(name)), []);
+  assert.deepEqual(listAgentTools().map((tool) => tool.name).filter((name) => /hard|purge|erase|permanent|recover|reconcile|tombstone|watermark/.test(name)), []);
   // The interface catalog tells an Agent these are the person's, not missing tools.
   const entries = agentInterfaceCatalog().uiMutationParity.filter((item) => item.route.includes('/hard-delete'));
   assert.deepEqual(entries.map((item) => [item.route, item.access]), [
@@ -167,12 +171,12 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
   // Long words spill into overflow pages, which an update frees; one store
   // writes through a write-ahead log, as a store another process set to WAL would.
   const long = `Deploy with ${PASTED} ${'synthetic filler '.repeat(400)}${PASTED}`;
-  const judgment = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+  const judgment = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   judgment.close();
   const wal = new DatabaseSync(join(dataDir, 'judgment.sqlite'));
   wal.exec('PRAGMA journal_mode = WAL');
   wal.close();
-  const judgmentAgain = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+  const judgmentAgain = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   const review = judgmentAgain.record(SPACE, { kind: 'review', target: 'entity:item-1', title: long,
     summary: `Approve ${PASTED}`, evidence: [`said ${PASTED}`], outcome: 'escalate', confidence: 0.4 }, 'review:item-1');
   judgmentAgain.execute(SPACE, review.id, 'applying', { reviewId: 'run-1', candidateKey: 'entity:item-1' });
@@ -183,7 +187,7 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
   // Another process (the running console) keeps the store open, so its log stays.
   const holder = new DatabaseSync(join(dataDir, 'judgment.sqlite'));
   holder.prepare('SELECT count(*) AS n FROM judgment_records').get();
-  const work = new RoleWorkStore(join(dataDir, 'role-work.sqlite'));
+  const work = new RoleWorkStore(join(dataDir, 'role-work.sqlite'), { recoveryGate });
   const at = new Date('2026-10-22T00:00:00Z');
   const pkg = work.create({ request: { role: 'tonborg', operation: 'review', requestId: 'review-run-1',
     scope: { personalSpaceId: SPACE, personalProjectId: null, sessionRef: null }, versions: { evidence: 'e', policy: 'p' },
@@ -193,7 +197,7 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
   reason: 'no_model', at, ttlMs: 60_000 });
   work.close();
   // A suggestion record as Jefa writes it today: identities, an evidence version and model text, no knowledge item ID.
-  const suggestions = new RoleSuggestionLog(join(dataDir, 'role-suggestions.sqlite'), { now: () => at });
+  const suggestions = new RoleSuggestionLog(join(dataDir, 'role-suggestions.sqlite'), { now: () => at, recoveryGate });
   suggestions.record({ role: 'jefa', operation: 'board_match', personalSpaceId: SPACE, personalProjectId: 'garden',
     subject: { conversationId: 'conversation-synthetic-1' }, result: { status: 'suggested', hint: '可能是看板上的「Seed inventory」任务',
       suggestion: { taskId: 'task-seeds', title: 'Seed inventory', updatedAt: null, reason: `Quoted ${PASTED}`, uncertainty: null },
@@ -209,20 +213,20 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
     [['judgment.sqlite', 'forgotten'], ['role-work.sqlite', 'forgotten'], ['role-suggestions.sqlite', 'forgotten']]);
   assert.ok(done.local_stores.every((store) => store.changed > 0));
   // Its rows name no knowledge item, so every record of the space written up to the delete lost its words (D-30.9).
-  const suggestionsAgain = new RoleSuggestionLog(join(dataDir, 'role-suggestions.sqlite'), { now: () => at });
-  const [record] = suggestionsAgain.list({ limit: 300 });
+  const suggestionsAgain = new RoleSuggestionLog(join(dataDir, 'role-suggestions.sqlite'), { now: () => at, recoveryGate });
+  const [record] = suggestionsAgain.list({ limit: 300, personalSpaceId: SPACE });
   assert.deepEqual([record.status, record.hint, record.suggestion, record.hard_deleted, record.subject],
     ['suggested', undefined, { taskId: 'task-seeds', updatedAt: null }, true, { conversationId: 'conversation-synthetic-1' }]);
   suggestionsAgain.close();
 
-  const reopened = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+  const reopened = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   const forgotten = reopened.get(SPACE, review.id);
   assert.deepEqual([forgotten.title, forgotten.summary, forgotten.evidence, forgotten.hard_deleted, forgotten.outcome],
     [null, null, [], true, 'escalate']);
   assert.equal(forgotten.feedback.reason, '');
   assert.equal(reopened.get(SPACE, kept.id).title, 'Synthetic staging target');
   reopened.close();
-  const reread = new RoleWorkStore(join(dataDir, 'role-work.sqlite'));
+  const reread = new RoleWorkStore(join(dataDir, 'role-work.sqlite'), { recoveryGate });
   const [gone, stays] = reread.get(pkg.packageId).request.evidence[0].value;
   assert.deepEqual([gone.title, gone.hard_deleted, stays.title], [null, true, 'Synthetic staging target']);
   reread.close();
@@ -251,7 +255,7 @@ test('checking an old delete again never clears a suggestion record written afte
       suggestion: { taskId: `task-${n}`, title: `Task ${n}`, reason: `Reason ${n}`, uncertainty: null },
       gate: { status: 'suggestion_only', role: 'jefa', operation: 'board_match' } } });
   const write = (when, n) => {
-    const log = new RoleSuggestionLog(path, { now: () => new Date(when) });
+    const log = new RoleSuggestionLog(path, { now: () => new Date(when), recoveryGate });
     try { log.record(suggestion(n)); } finally { log.close(); }
   };
   // T0, before the delete (the synthetic graph deletes at 2026-10-22T01:02:03Z).
@@ -267,9 +271,9 @@ test('checking an old delete again never clears a suggestion record written afte
   const again = await port.status({ personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2' });
   assert.equal(again.outcome, 'complete');
   assert.equal(again.local_stores.find((store) => store.store === 'role-suggestions.sqlite').changed, 0);
-  const log = new RoleSuggestionLog(path, { now: () => new Date('2026-10-22T03:00:00.000Z') });
+  const log = new RoleSuggestionLog(path, { now: () => new Date('2026-10-22T03:00:00.000Z'), recoveryGate });
   try {
-    const [after, before] = log.list();
+    const [after, before] = log.list({ personalSpaceId: SPACE });
     assert.deepEqual([after.suggestion.reason, after.hard_deleted], ['Reason 1', undefined]);
     assert.deepEqual([before.suggestion.reason, before.hard_deleted], [undefined, true]);
   } finally { log.close(); }
@@ -320,4 +324,84 @@ test('a receipt read in several batches counts each permanent delete once', asyn
   assert.equal(reads.length, 2);
   assert.equal(sent.status, 200);
   assert.equal(sent.body.deleted_count, 1);
+});
+
+for (const itemKind of ['episode', 'session']) test(`${itemKind} routes preserve selection and source identity through deletion and ledger adoption`, async t => {
+  const dataDir = dataDirectory(t);
+  const itemId = `synthetic-${itemKind}`;
+  const source = { source_application: 'codex', fuli_session_id: 'native-session' };
+  const selection = { include: ['entity:included'], exclude: ['entity:retained'] };
+  const input = { personalSpaceId: SPACE, ...selection,
+    ...(itemKind === 'session' ? { sourceApplication: 'codex', sessionId: 'native-session' } : {}) };
+  const plan = { preview_id: PREVIEW_ID, item_kind: itemKind, item_id: itemId, ...source,
+    default_items: [{ selected: false, versions: [{ item_id: 'retained' }] }],
+    affected_items: [{ selected: true, versions: [{ item_id: 'included' }, { item_id: 'old-version' }] }],
+    removed_episodes: [{ episode_id: 'source-episode' }] };
+  const deletion = { deletion_id: 'source-deletion', item_kind: itemKind, item_id: itemId, ...source,
+    deleted_at: '2026-10-22T01:02:03Z', deleted_item_ids: [itemId, 'included', 'old-version', 'source-episode'], counts: {} };
+  const calls = []; let reconciliations = 0;
+  const send = async (path, request, options) => {
+    calls.push({ path, request, options });
+    return { ok: true, status: 200, payload: path.endsWith('/preview') ? plan
+      : path.endsWith('/status') ? { state: 'deleted', deletion }
+        : path === '/v1/knowledge/hard-deletions' ? [deletion] : deletion };
+  };
+  const localStores = [{ name: 'fixture', forget: (_space, references) => {
+    for (const id of deletion.deleted_item_ids) assert.equal(references.names(id), true);
+    assert.equal(references.names('retained'), false);
+    return 1;
+  } }];
+  const port = knowledgeHardDelete(dataDir, { send, localStores, personalSpaceId: () => SPACE,
+    reconcileSubmissions: async () => { reconciliations++; } });
+  const base = `/api/knowledge/${itemKind}/${itemId}/hard-delete`;
+  assert.equal((await route(`${base}/preview`, input, { hardDelete: port })).status, 200);
+  const result = await route(base, { ...input, previewId: PREVIEW_ID, confirmation: '删除' }, { hardDelete: port });
+  assert.equal(result.body.outcome, 'complete');
+  assert.equal(reconciliations, 2);
+  const confirm = calls.find(call => call.path.endsWith('/hard-delete'));
+  assert.deepEqual([confirm.request.include, confirm.request.exclude], [selection.include, selection.exclude]);
+  assert.equal(confirm.request.item_kind, itemKind);
+  assert.equal(confirm.options.review, true);
+  const [operation] = hardDeleteLedger(dataDir).all();
+  assert.deepEqual([operation.sourceApplication, operation.sessionId], ['codex', 'native-session']);
+  assert.deepEqual(new Set(operation.itemIds), new Set(deletion.deleted_item_ids));
+  assert.equal((await route(`${base}/status`, { personalSpaceId: SPACE }, { hardDelete: port })).body.outcome, 'complete');
+  assert.deepEqual(calls.findLast(call => call.path.endsWith('/status')).request, { personal_space_id: SPACE, item_kind: itemKind });
+  assert.equal((await route(base, { ...input, previewId: PREVIEW_ID, confirmation: '删除', operationId: 'forged' }, { hardDelete: port })).status, 400);
+  assert.equal((await route(`${base}/preview`, input, { hardDelete: port, remoteAddress: '192.0.2.1' })).status, 403);
+
+  const restored = dataDirectory(t);
+  await knowledgeHardDelete(restored, { send, localStores, personalSpaceId: () => SPACE }).reconcile();
+  const [adopted] = hardDeleteLedger(restored).all();
+  assert.deepEqual([adopted.sourceApplication, adopted.sessionId, adopted.state], ['codex', 'native-session', 'complete']);
+  assert.equal(readHardDeleteProof(restored).watermarks[SPACE].count, 1);
+});
+
+test('a failed deletion-list read cannot create a recovery watermark', async t => {
+  const dataDir = dataDirectory(t);
+  const port = knowledgeHardDelete(dataDir, { personalSpaceId: () => SPACE, send: async () => { throw new Error('synthetic offline'); } });
+  await assert.rejects(port.reconcile(), /synthetic offline/);
+  assert.equal(readHardDeleteProof(dataDir), null);
+});
+
+test('a source deleted by another console settles its 410 through the recorded status and cleans local copies', async t => {
+  const dataDir = dataDirectory(t);
+  let cleaned = 0, statuses = 0;
+  const deletion = { deletion_id: 'foreign-delete', item_kind: 'episode', item_id: 'source',
+    deleted_at: '2026-10-23T00:00:00Z', deleted_item_ids: ['source'], counts: {} };
+  const port = knowledgeHardDelete(dataDir, { localStores: [{ name: 'fixture', forget: () => ++cleaned }],
+    send: async path => {
+      if (path.endsWith('/preview')) return { ok: true, status: 200, payload: {
+        preview_id: PREVIEW_ID, item_kind: 'episode', item_id: 'source', default_items: [], affected_items: [], removed_episodes: [] } };
+      if (path.includes('/hard-delete-operations/')) return { ok: true, status: 200,
+        payload: { state: 'refused', code: 'source_hard_deleted' } };
+      if (path.endsWith('/status')) { statuses++; return { ok: true, status: 200, payload: { state: 'deleted', deletion } }; }
+      return { ok: false, status: 410, payload: { detail: { code: 'source_hard_deleted' } } };
+    } });
+  const result = await port.confirm({ personalSpaceId: SPACE, itemKind: 'episode', itemId: 'source',
+    previewId: PREVIEW_ID, confirmation: '删除' });
+  assert.equal(result.outcome, 'complete');
+  assert.equal(statuses, 1);
+  assert.equal(cleaned, 1);
+  assert.equal(hardDeleteLedger(dataDir).all()[0].state, 'complete');
 });

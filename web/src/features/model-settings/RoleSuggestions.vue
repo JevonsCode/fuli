@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import { apiErrorReason } from '@/api/client'
+import { apiErrorReason, isKnowledgeRecoveryPending } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -22,13 +22,24 @@ import {
 // none the section is not there. An action opens the page where the person
 // decides. This section only reads.
 const props = defineProps<{ entries: RoleSuggestion[] | null; loading: boolean; error: string }>()
-const emit = defineEmits<{ retry: [] }>()
+const emit = defineEmits<{ retry: []; recoveryPending: [cause: unknown] }>()
 
 const showAll = ref(false)
 const opened = ref<number | null>(null)
 const scoreCards = ref<Record<number, ScoreCard>>({})
 const scoreCardError = ref('')
 const scoreCardLoading = ref<number | null>(null)
+let scoreCardRequest = 0
+function clearScoreCards() {
+  ++scoreCardRequest
+  opened.value = null
+  scoreCards.value = {}
+  scoreCardError.value = ''
+  scoreCardLoading.value = null
+}
+watch(() => props.entries, clearScoreCards, { flush: 'sync' })
+onBeforeUnmount(clearScoreCards)
+
 
 // Bole's suggestions name an Agent by id; its name comes from the roster.
 const boleEntries = computed(() => (props.entries ?? []).filter(entry => entry.role === 'bole' && entry.subject.agentId))
@@ -51,6 +62,7 @@ const cards = computed(() => views.value.filter(view => isSuggestion(view.state)
 const lines = computed(() => views.value.filter(view => !isSuggestion(view.state)))
 
 async function toggleScoreCard(entry: RoleSuggestion) {
+  const current = ++scoreCardRequest
   scoreCardError.value = ''
   if (opened.value === entry.id) {
     opened.value = null
@@ -60,11 +72,14 @@ async function toggleScoreCard(entry: RoleSuggestion) {
   if (scoreCards.value[entry.id]) return
   scoreCardLoading.value = entry.id
   try {
-    scoreCards.value = { ...scoreCards.value, [entry.id]: await readScoreCard(entry) }
+    const value = await readScoreCard(entry)
+    if (current === scoreCardRequest) scoreCards.value = { ...scoreCards.value, [entry.id]: value }
   } catch (cause) {
-    if (opened.value === entry.id) scoreCardError.value = apiErrorReason(cause)
+    if (current !== scoreCardRequest) return
+    if (isKnowledgeRecoveryPending(cause)) { clearScoreCards(); emit('recoveryPending', cause) }
+    else if (opened.value === entry.id) scoreCardError.value = apiErrorReason(cause)
   } finally {
-    if (scoreCardLoading.value === entry.id) scoreCardLoading.value = null
+    if (current === scoreCardRequest) scoreCardLoading.value = null
   }
 }
 </script>

@@ -42,7 +42,7 @@ export interface NotRecordedStretch { from: string; to: string; paused: boolean;
 
 export interface SessionRecordsView {
   /** sourceApplication is null when the link named no client and not exactly one has the session. */
-  session: { sourceApplication: string | null; sessionId: string; url: string }
+  session: { sourceApplication: string | null; sessionId: string; url: string; deletionTargetId?: string }
   /** Two or more clients have a session with this ID: the reader picks one. */
   clients?: string[]
   total: number

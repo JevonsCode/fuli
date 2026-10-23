@@ -82,6 +82,9 @@ class SessionRecordItem(KnowledgeItemSummary, SessionRecordSource):
 
 class SessionRecords(StrictModel):
     session_id: str
+    # Existing provider-scoped task session identity, for a human delete.
+    # Ambiguous short links do not name a deletion target.
+    deletion_target_id: str | None = None
     # None when the read named no client and not exactly one has this session;
     # clients then lists those that do (two or more: the reader chooses).
     source_application: str | None = None

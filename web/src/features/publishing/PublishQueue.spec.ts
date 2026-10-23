@@ -387,3 +387,18 @@ describe('PublishQueue', () => {
     expect(wrapper.find('[data-review-queue="shared"]').exists()).toBe(false)
   })
 })
+
+
+it('does not render or offer submission for a scrubbed personal draft snapshot', async () => {
+  getJson.mockResolvedValue({ drafts: [
+    { id: 'source-deleted', episode: null, payload_scrubbed_by: 'delete-synthetic' },
+    { ...draft('stale-copy', 'SYNTHETIC SCRUBBED BODY'), payload_scrubbed_by: 'delete-synthetic' },
+    draft('retained', 'Retained draft'),
+  ] })
+  const { wrapper } = mountReview()
+  await flushPromises()
+  expect(wrapper.text()).toContain('Retained draft')
+  expect(wrapper.text()).not.toContain('SYNTHETIC SCRUBBED BODY')
+  expect(wrapper.findAll('[data-decision="submit_public"]')).toHaveLength(1)
+  wrapper.unmount()
+})

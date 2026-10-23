@@ -1,4 +1,5 @@
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { scrubbedMemoryGuidance } from '../agents/memory-state.js';
 import { renderAgentMemoryExport } from '../agents/directory-snapshots.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { captureDecision, captureDisabled } from './capture-decision.js';
@@ -6,16 +7,24 @@ import { captureDecision, captureDisabled } from './capture-decision.js';
 export function agentMemoryRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
     !Number.isInteger(value.revision) || value.revision < 1 ||
-    !value.memory || typeof value.memory !== 'object' || Array.isArray(value.memory) ||
-    typeof value.memory.summary !== 'string') {
+    (value.memory_state != null && !['present', 'scrubbed'].includes(value.memory_state))) {
     throw invalidAgentMemoryResponse();
   }
-  return {
+  const scrubbed = value.memory_state === 'scrubbed';
+  if (scrubbed ? value.memory !== null || typeof value.scrubbed_by !== 'string' || !value.scrubbed_by
+    : !value.memory || typeof value.memory !== 'object' || Array.isArray(value.memory) || typeof value.memory.summary !== 'string') {
+    throw invalidAgentMemoryResponse();
+  }
+  const metadata = {
     checkpointId: value.checkpoint_id,
     personalSpaceId: value.personal_space_id,
     personalProjectId: value.personal_project_id,
     agentId: value.agent_id,
     revision: value.revision,
+    createdAt: value.created_at
+  };
+  if (scrubbed) return { ...metadata, memory: null, memoryState: 'scrubbed', scrubbedBy: value.scrubbed_by };
+  return { ...metadata,
     memory: {
       summary: value.memory.summary,
       decisions: memoryNotes(value.memory.decisions),
@@ -24,8 +33,7 @@ export function agentMemoryRecord(value) {
     },
     sourceApplication: value.source_application,
     sourceSessionId: value.source_session_id ?? null,
-    taskId: value.task_id ?? null,
-    createdAt: value.created_at
+    taskId: value.task_id ?? null
   };
 }
 
@@ -52,6 +60,7 @@ export function agentMemoryView(value) {
     revision: value.revision ?? 0,
     current,
     history,
+    ...(current?.memoryState === 'scrubbed' ? { scrubbedGuidance: scrubbedMemoryGuidance(current.revision) } : {}),
     workLog: (value.work_log ?? []).map(log => ({
       taskContextToken: log.task_context_token, sourceApplication: log.source_application,
       sessionId: log.session_id, createdAt: log.created_at, status: log.status,

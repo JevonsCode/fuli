@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { hardDeleteLedger } from '../src/knowledge-hard-delete/delete-ledger.js';
 
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
@@ -516,6 +520,22 @@ test('the hook entry gets the same once-per-session hint; resuming a checkpoint 
   assert.equal(resumed.project_candidate, undefined);
   assert.equal(run.modelCalls.length, 1);
   run.assertNoAttribution(first);
+});
+
+test('Astro drops its entire late suggestion when its verified source session generation changed', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-astro-generation-'));
+  const run = harness({ role: astroRole(), replies: [delayed(async () => {
+    const ledger = hardDeleteLedger(directory);
+    const operation = ledger.begin({ spaceId: SPACE, itemKind: 'session', itemId: 'source', itemIds: [],
+      sourceApplication: 'codex', sessionId: 'synthetic-session-a' });
+    ledger.update(operation.id, { state: 'complete', deletionId: 'source-deletion', deletedAt: new Date().toISOString() });
+  })] });
+  run.app.roleSuggestions = new RoleSuggestionLog(join(directory, 'role-suggestions.sqlite'),
+    { recoveryGate: { state: () => ({ state: 'open' }) } });
+  t.after(() => { run.app.roleSuggestions.close(); rmSync(directory, { recursive: true, force: true }); });
+  assert.equal((await run.entry()).project_candidate.status, 'suggested');
+  assert.equal(run.app.roleSuggestions.db.prepare('SELECT count(*) AS n FROM role_suggestions').get().n, 0);
+  assert.equal(run.app.roleSuggestions.droppedCount, 1);
 });
 
 // Local smoke, never in CI: FULI_OLLAMA_SMOKE=1 and an Ollama already serving

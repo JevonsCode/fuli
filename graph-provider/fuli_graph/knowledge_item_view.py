@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 from .knowledge_basis_review import basis_review
 from .knowledge_dependencies import dependents_of, item_bases
-from .knowledge_hard_delete_traces import hard_deletions_in_episodes, require_not_hard_deleted
+from .knowledge_hard_delete_traces import hard_deletions_in_episodes, require_not_hard_deleted, unavailable_source_bases
 from .knowledge_item_view_models import (
     KnowledgeEvidenceSource,
     KnowledgeItemRef,
@@ -60,6 +60,7 @@ async def read_knowledge_item_view(store, actor: dict, request: KnowledgeItemRef
         basis_review=basis_review(current, revisions),
         dependent_count=len(await dependents_of(store, space, request.item_kind, head or request.item_id)),
         **summary.model_dump(), evidence=evidence, evidence_count=len(source_ids),
+        unavailable_sources=await unavailable_source_bases(store, space, current.get('unresolved_bases') or []),
         revisions=revisions[:REVISION_LIMIT], versions=versions,
         current_item_id=head,
         bases=await item_bases(store, space, request.item_kind, request.item_id, current))
@@ -240,8 +241,9 @@ async def item_evidence(store, space, item_kind, item_id, *, limit=EVIDENCE_LIMI
         'MATCH (episode:Episodic {group_id: $group_id})-[:MENTIONS]->(:Entity {uuid: $item_id, group_id: $group_id})'
         if item_kind == 'entity' else
         'MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->() '
-        'UNWIND coalesce(item.episodes, []) AS episode_id '
-        'MATCH (episode:Episodic {uuid: episode_id, group_id: $group_id})')
+        'MATCH (episode:Episodic {group_id: $group_id}) '
+        'WHERE episode.uuid IN coalesce(item.episodes, []) '
+        'OR item.uuid IN coalesce(episode.entity_edges, [])')
     records, _, _ = await store.runtime.driver.execute_query(
         match + '''
         WITH DISTINCT episode ORDER BY episode.created_at DESC

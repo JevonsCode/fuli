@@ -12,11 +12,19 @@ export class ApiError extends Error {
   }
 }
 
+/** Only the recovery gate's explicit 503 code receives recovery guidance. */
+export function isKnowledgeRecoveryPending(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('status' in error) || error.status !== 503
+    || !('detail' in error) || typeof error.detail !== 'string') return false
+  try { return JSON.parse(error.detail)?.code === 'knowledge_recovery_pending' } catch { return false }
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
     const detail = (await response.text()).trim()
-    const message = response.status >= 500
+    const message = isKnowledgeRecoveryPending({ status: response.status, detail })
+      ? t('common.errors.knowledgeRecoveryPending') : response.status >= 500
       ? t('common.errors.serviceUnavailable', { status: response.status })
       : detail || t('common.errors.requestFailed', { status: response.status })
     throw new ApiError(message, response.status, detail)
@@ -27,6 +35,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 // Why a request failed, in words: the API's own { "error": "…" } text for a
 // request it refused, otherwise the error's message.
 export function apiErrorReason(error: unknown, fallback = t('common.errors.operationFailed')): string {
+  if (isKnowledgeRecoveryPending(error)) return t('common.errors.knowledgeRecoveryPending')
   if (error instanceof ApiError && error.status < 500 && error.detail) {
     try {
       const reason = (JSON.parse(error.detail) as { error?: unknown })?.error

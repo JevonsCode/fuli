@@ -23,6 +23,8 @@ from .task_context_auto_close import close_previous_routine_fallback, routine_co
 from .task_worker_attribution import lock_checkpoint_context, checkpoint_collaboration
 from .task_activity_origin import context_activity_origin
 from .task_turn_receipts import mark_turn_receipt_unread, unread_session_turn_receipts
+from .knowledge_versions import lock_knowledge
+from .knowledge_source_fence import require_source_available
 
 
 class StoreTaskContexts:
@@ -37,8 +39,11 @@ class StoreTaskContexts:
 
     async def begin_task_context(self, actor, request):
         self._require_personal()
-        await self.authorize(actor, request.personal_space_id, 'maintainer')
+        space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         async with query_store_transaction(self) as scoped:
+            await lock_knowledge(scoped, space)
+            await require_source_available(scoped, space, source_application=request.source_application,
+                session_id=request.session_id, source_turn_id=request.turn_id, task_token=request.token)
             session_id = scoped._task_session_id(request.personal_space_id, request.source_application, request.session_id)
             await scoped._lock_task_context_session(session_id)
             await scoped._link_task_context_sessions(request.personal_space_id, [session_id])
@@ -264,6 +269,9 @@ class StoreTaskContexts:
         # A rejected preparation cannot commit memory. A later host turn may
         # still supersede a successfully prepared context; complete is separate.
         async with query_store_transaction(self) as scoped:
+            space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
+            await lock_knowledge(scoped, space)
+            await require_source_available(scoped, space, task_token=token)
             await scoped.guard_worker_task_context(actor, request.personal_space_id, token, for_write=True)
             record = await scoped._checkpoint_task_context(actor, token, request)
             if request.agent_memory is not None:

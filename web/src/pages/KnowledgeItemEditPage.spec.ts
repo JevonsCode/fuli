@@ -417,3 +417,15 @@ describe('KnowledgeItemEditPage', () => {
     wrapper.unmount()
   })
 })
+
+
+it('explains a deleted source without rendering its IDs or offering source deletion again', async () => {
+  const wrapper = await open(view({ evidence: [], evidence_count: 0, basis_review: 'changed',
+    unavailable_sources: [{ episode_id: 'synthetic-removed-source', deletion_id: 'synthetic-deletion', status: 'unavailable' }] }))
+  expect(wrapper.get('[data-unavailable-sources]').text()).toContain('1 段来源已彻底删除')
+  expect(wrapper.find('[data-basis-review-card="changed"]').exists()).toBe(true)
+  expect(wrapper.get('[data-item-sources]').text()).not.toContain('没有记录来源')
+  expect(wrapper.text()).not.toContain('synthetic-removed-source')
+  expect(wrapper.find('[data-source-delete-open="episode"]').exists()).toBe(false)
+  wrapper.unmount()
+})

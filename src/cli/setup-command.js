@@ -13,6 +13,7 @@ import { confirmInTerminal, interactiveTerminal, writeLine } from './terminal-io
 import { askCaptureScope, captureScopeSummary } from './capture-scope-prompt.js';
 import { captureOnboardingFor } from '../setup/first-run-capture.js';
 import { setupMigrationNotice } from '../data-format/format-notices.js';
+import { knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconcile-local.js';
 
 export async function runSetupCommand(args, dependencies = {}) {
   const options = parseSetupOptions(args);
@@ -116,7 +117,10 @@ export function formatSetupPreview(plan, options) {
 export function formatSetupResult(result, plan) {
   const lines = [result.status === 'ready'
     ? 'Fuli is ready.'
-    : 'Fuli started, but one or more Agents are not connected.'];
+    : result.knowledgeRecovery?.status === 'pending'
+      ? 'Fuli setup needs knowledge recovery before local stores are ready.'
+      : 'Fuli started, but one or more Agents are not connected.'];
+  if (result.knowledgeRecovery) lines.push(knowledgeReconciliationMessage(result.knowledgeRecovery));
   if (result.runtime.url) lines.push(`Open: ${result.runtime.url}`);
   if (result.runtime.lan === true) {
     lines.push(

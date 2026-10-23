@@ -67,6 +67,7 @@ async def read_session_records(store, actor: dict, request: SessionRecordsRead) 
     project_ids = {turn.personal_project_id for turn in turns} | {item.origin_project_id for item in items}
     return SessionRecords(
         session_id=request.session_id, source_application=request.source_application,
+        deletion_target_id=store._task_session_id(space['id'], request.source_application, request.session_id),
         turns=turns, items=items,
         projects=await scope_projects(store, space, sorted(project for project in project_ids if project)),
         truncated=more_turns or more_events or more_episodes or more_items)

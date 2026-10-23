@@ -10,6 +10,7 @@ import { handleKnowledgeItemRequest } from './knowledge-item-api-router.js';
 import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
 import { handleCaptureOnboardingRequest } from './capture-onboarding-api-router.js';
+import { parsePersonalDraftDecision } from '../graphiti/publication-draft-input.js';
 
 export async function handleGraphApiRequest({
   request,
@@ -649,10 +650,10 @@ export async function handleGraphApiRequest({
   const personalDecision = url.pathname.match(/^\/api\/personal-review\/([^/]+)\/decision$/);
   if (personalDecision && request.method === 'POST') {
     const body = await readJson(request);
-    sendJson(response, 200, await app.reviewPersonalDraft({
-      ...body,
+    sendJson(response, 200, await app.reviewPersonalDraft(parsePersonalDraftDecision({
+      decision: body?.decision,
       draftId: decodeURIComponent(personalDecision[1])
-    }));
+    })));
     return true;
   }
   if (url.pathname === '/api/review' && request.method === 'GET') {

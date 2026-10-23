@@ -233,7 +233,7 @@ async def test_worker_run_claim_seal_and_own_context_survive_retries_and_parent_
         execute = TransactionQueryDriver.execute_query
 
         async def pause_first_admission(driver, statement, **kwargs):
-            if guarded.is_set() and 'SET session.write_serial' in statement:
+            if guarded.is_set() and 'SET space._knowledge_lock' in statement:
                 second_entering.set()
             result = await execute(driver, statement, **kwargs)
             if 'SET run.write_serial' in statement and not guarded.is_set():

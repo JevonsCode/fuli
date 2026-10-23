@@ -28,7 +28,7 @@ const GUIDANCE = 'Not run yet. The current session may complete it with role_wor
   + 'A session answer is its own assessment, never an independent verification.';
 const APPLYING_GUIDANCE = 'The answer was accepted and is being applied once. Submit again later for the result.';
 
-export function createRoleWorkBridge({ port, store, verifySession, resumers, now = () => new Date() }) {
+export function createRoleWorkBridge({ port, store, verifySession, resumers, prepareStore = async () => {}, now = () => new Date() }) {
   // execution: the token the bridge handed the role's resumer. Only the
   // execution holding a package may use its answer; an execution that lost
   // it (it was slow and another took over) stops here instead of asking
@@ -40,6 +40,7 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
   async function decide(input, { resume = null, execution = null, inline = false } = {}) {
     const request = parseDecisionRequest(input);
     if (inline) return inlineOutcome(await port.decide(request));
+    await prepareStore(request.scope.personalSpaceId);
     const at = now();
     const applying = store.applying(request.role, request.requestId);
     if ((applying || execution) && applying?.execution !== execution) throw executionLost(request);
@@ -72,8 +73,9 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
   async function claim(raw) {
     const input = parseRoleWorkClaim(raw);
     const session = await verifySession(input);
+    await prepareStore(session.personalSpaceId);
     const at = now();
-    store.expire(at);
+    store.expire(at, session.personalSpaceId);
     const found = input.packageId ? existing(input.packageId) : store.nextClaimable(session, at);
     if (!found) return { workPackage: null };
     assertHolder(found, session);
@@ -87,6 +89,7 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
   async function submit(raw) {
     const input = parseRoleWorkSubmission(raw);
     const session = await verifySession(input);
+    await prepareStore(session.personalSpaceId);
     const at = now();
     const work = existing(input.packageId);
     assertHolder(work, session);

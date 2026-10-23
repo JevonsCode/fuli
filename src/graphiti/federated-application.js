@@ -6,19 +6,17 @@ import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/
 import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
 import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js';
 import { createFuliRoundtableHost } from './roundtable-host.js';
-import { createJudgmentService } from '../judgment/service.js';
-import { JudgmentStore } from '../judgment/store.js';
-import { createJudgmentEngine } from '../judgment/engine.js';
-import { createReviewGate } from '../judgment/review-gate.js';
+import { attachJudgmentRuntime } from '../judgment/runtime.js';
 import { createTaskScheduleService } from '../task-schedules/service.js';
-import { openModelBackendRuntime, openRoleSuggestionLog, openRoleWorkRuntime } from '../model-backends/runtime.js';
-import { createJudgmentBackend } from '../judgment/backend.js';
-import { roleWorkSessions } from './role-work-sessions.js';
+import { openModelBackendRuntime, openRoleSuggestionLog } from '../model-backends/runtime.js';
 import { TaskScheduleStore } from '../task-schedules/store.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
 import { searchFederatedKnowledge } from './federated-search.js';
 import { preflightTaskCaptures } from './task-knowledge-routing.js';
+import { submitPersonalDraft } from './public-submission.js';
+import { reconcilePublicSubmissions } from './public-submission-reconciliation.js';
+import { parsePersonalDraftDecision } from './publication-draft-input.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
 import {
@@ -151,11 +149,8 @@ export function openFederatedGraphApplication({
       providerIdentity: resolved.personal.providerUrl, resolveOwner: (owner) => app.getProjectAgent(owner),
       toolNames: () => listAgentTools().map(({ name }) => name) });
     app.modelBackends = openModelBackendRuntime(paths);
-    app.roleWork = openRoleWorkRuntime(paths, { port: app.modelBackends, verifySession: roleWorkSessions(app),
-      resumers: { tonborg: work => app.judgment.resumeWork(work) } });
-    app.roleSuggestions = openRoleSuggestionLog(paths);
-    app.judgment = createJudgmentService({ app, openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')),
-      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge: app.roleWork }), reviewGate: createReviewGate(dirname(runtimeConfigPath)) }) });
+    attachJudgmentRuntime(app, paths);
+    app.roleSuggestions = openRoleSuggestionLog(paths, { recoveryGate: app.knowledgeRecoveryGate });
     app.taskSchedules = createTaskScheduleService({ app,
       openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
     app.roundtableHost = createFuliRoundtableHost(app);
@@ -992,6 +987,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (personalSpaceId !== this.config.personal.spaceId) {
       throw new TypeError('Personal review must use the active personal space');
     }
+    await this.reconcilePersonalSubmissions();
     return {
       personalSpaceId,
       drafts: await this.personal.listPublicationDrafts(
@@ -1001,31 +997,28 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  async reviewPersonalDraft(input) {
+  async readRoleSuggestions({ limit } = {}) {
     const personalSpaceId = this.config.personal.spaceId;
-    if (!['submit_public', 'keep_personal', 'ignore'].includes(input.decision)) {
-      throw new TypeError('Unknown personal draft decision');
-    }
+    await this.knowledgeRecoveryGate?.refresh(personalSpaceId);
+    return this.roleSuggestions.list({ personalSpaceId, limit });
+  }
+
+  reconcilePersonalSubmissions(options = {}) {
+    return reconcilePublicSubmissions({ personal: this.personal, workspaceFor: url => this.#workspace(url),
+      spaceId: this.config.personal.spaceId }, options);
+  }
+
+  async reviewPersonalDraft(input) {
+    input = parsePersonalDraftDecision(input);
+    const personalSpaceId = this.config.personal.spaceId;
     if (input.decision !== 'submit_public') {
       return this.personal.decidePublicationDraft(personalSpaceId, input.draftId, {
         decision: input.decision,
         shared_proposal_id: null
       });
     }
-    const draft = await this.personal.getPublicationDraft(personalSpaceId, input.draftId);
-    if (draft.status !== 'pending') throw new TypeError('Publication draft is not pending');
-    if (draft.episode.sensitivity !== 'normal') {
-      throw new TypeError('Private or restricted knowledge cannot be submitted publicly');
-    }
-    assertPublicKnowledgeEligible(draft.episode);
-    const workspace = this.#workspace(draft.provider_url);
-    const proposal = await workspace.client.createProposal(draft.target_project_id, {
-      episode: draft.episode
-    });
-    return this.personal.decidePublicationDraft(personalSpaceId, input.draftId, {
-      decision: 'submit_public',
-      shared_proposal_id: proposal.id
-    });
+    return submitPersonalDraft({ personal: this.personal, workspaceFor: url => this.#workspace(url),
+      spaceId: personalSpaceId, draftId: input.draftId });
   }
 
   async listReviewQueue({ projectId, providerUrl, status = 'pending' }) {

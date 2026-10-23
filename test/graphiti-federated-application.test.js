@@ -883,11 +883,12 @@ test('personal approval submits the full draft to shared review and then marks i
       fetchImpl: providerFetch(calls, {
         '/v1/publication-drafts/draft-1': draft,
         '/v1/projects/project-1/proposals': { id: 'proposal-1', status: 'pending' },
-        '/v1/publication-drafts/draft-1/decision': {
+        '/v1/publication-drafts/draft-1/decision': ({ body }) => ({
           ...draft,
-          status: 'submitted',
+          status: body.decision === 'begin_submit_public' ? 'submitting' : 'submitted',
+          submission_id: 'attempt', submission_started_at: new Date().toISOString(),
           shared_proposal_id: 'proposal-1'
-        }
+        })
       })
     });
 
@@ -901,14 +902,29 @@ test('personal approval submits the full draft to shared review and then marks i
       path === '/v1/projects/project-1/proposals' && method === 'POST'
     );
     assert.deepEqual(shared.body, { episode: draft.episode });
-    const finalized = calls.find(({ path, method }) =>
-      path === '/v1/publication-drafts/draft-1/decision' && method === 'POST'
+    const finalized = calls.find(({ path, method, body }) =>
+      path === '/v1/publication-drafts/draft-1/decision' && method === 'POST' && body.decision === 'submit_public'
     );
     assert.deepEqual(finalized.body, {
       decision: 'submit_public',
+      submission_id: 'attempt',
       shared_proposal_id: 'proposal-1'
     });
   });
+
+test('a source-deleted draft rejects Agent submission before any remote request', async () => {
+  const calls = [];
+  const app = new FederatedGraphApplication(CONFIG, {
+    fetchImpl: providerFetch(calls, {
+      '/v1/publication-drafts/draft-deleted': { id: 'draft-deleted', status: 'source_deleted', episode: null }
+    })
+  });
+  await assert.rejects(app.reviewPersonalDraft({ draftId: 'draft-deleted', decision: 'submit_public' }),
+    (error) => error.status === 409);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[0].path, '/v1/publication-drafts/draft-deleted');
+});
 
 test('personal knowledge correction stays on the personal Provider and keeps project scope',
   async () => {
@@ -1156,7 +1172,9 @@ function providerFetch(calls, routes) {
       body: options.body ? JSON.parse(options.body) : null,
       authorization: options.headers?.authorization
     });
-    const payload = routes[url.pathname] ?? [];
+    const route = routes[url.pathname];
+    const payload = typeof route === 'function' ? route(calls.at(-1)) : route ?? [];
+    if (payload instanceof Response) return payload;
     return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { 'content-type': 'application/json' }
