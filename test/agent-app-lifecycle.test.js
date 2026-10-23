@@ -150,32 +150,88 @@ test('P2-4 concurrent acquires in one process share one lease, one fence and one
   assert.equal(heartbeats.length, 0);
 });
 
-test('P1-6 a detached file operation that fails fails the call and is never committed', async (t) => {
+// rec#10 round 3, item 1: the explicit failure contract of the data port.
+// Every shape of a failed operation fails the call and commits nothing,
+// unless that operation tolerated the error code; no shape leaks an
+// unhandledRejection.
+const MISSING = 'missing/notes.json';
+const SHAPES = {
+  ignored: (dataFs) => { dataFs.writeFile(MISSING, 'synthetic'); },
+  'then with a success callback only': (dataFs) => { dataFs.writeFile(MISSING, 'synthetic').then(() => {}); },
+  finally: (dataFs) => { dataFs.writeFile(MISSING, 'synthetic').finally(() => {}); },
+  'catch and rethrow': (dataFs) => {
+    dataFs.writeFile(MISSING, 'synthetic').catch((error) => { throw error; }).then(() => {});
+  },
+  'awaited and caught': async (dataFs) => {
+    try { await dataFs.writeFile(MISSING, 'synthetic'); } catch { /* the tool moves on */ }
+  }
+};
+
+test('round 3: a failed data port operation fails the call in every shape unless it was tolerated', async (t) => {
   const unhandled = [];
   const onUnhandled = (reason) => unhandled.push(reason);
   process.on('unhandledRejection', onUnhandled);
   t.after(() => process.off('unhandledRejection', onUnhandled));
-  let handled = null;
+  let tolerated = null;
   const { host, appId, token } = await running(t, { write: writeTool(async (input, { dataFs }) => {
-    if (input.mode === 'detached') {
-      dataFs.writeFile('missing/notes.json', 'synthetic');
-      return 'claimed success';
+    if (input.shape === 'tolerated') {
+      try {
+        await dataFs.writeFile(MISSING, 'synthetic', { tolerate: ['ENOENT'] });
+      } catch (error) {
+        tolerated = error.code;
+      }
+      return 'tolerated';
     }
-    try {
-      await dataFs.writeFile('missing/notes.json', 'synthetic');
-    } catch (error) {
-      handled = error.code;
-    }
-    return 'handled';
+    if (input.shape === 'bad-option') return dataFs.writeFile('notes.json', 'synthetic', { tolerate: 'ENOENT' });
+    await SHAPES[input.shape](dataFs);
+    return 'claimed success';
   }) });
 
-  await assert.rejects(call(host, token, { mode: 'detached' }), { code: 'ENOENT' });
+  for (const shape of Object.keys(SHAPES)) {
+    await assert.rejects(call(host, token, { shape }), { code: 'ENOENT' }, shape);
+  }
   assert.equal(events(host, appId).includes('write_committed'), false);
-  // A failure the tool awaited and handled stays the tool's own.
-  assert.equal(await call(host, token, { mode: 'awaited' }), 'handled');
-  assert.equal(handled, 'ENOENT');
+  assert.equal(await call(host, token, { shape: 'tolerated' }), 'tolerated');
+  assert.equal(tolerated, 'ENOENT');
+  assert.equal(events(host, appId).filter((action) => action === 'write_committed').length, 1);
+  await assert.rejects(call(host, token, { shape: 'bad-option' }), TypeError);
+  await settle();
   await settle();
   assert.deepEqual(unhandled, []);
+});
+
+// rec#10 round 3, item 2: sealed is not stopped.
+test('round 3: after a failed stop the instance is not ended, so an export is refused', async (t) => {
+  const { registry, host, appId } = await running(t);
+  host.isolation.hooks.stop = async () => { throw Object.assign(new Error('synthetic stop failure'), { code: 'ESYNTH' }); };
+  await assert.rejects(host.service.stop({ appId }), { code: 'ESYNTH' });
+  await assert.rejects(host.service.exportData({ appId, destination: `${registry.directory}/export` }),
+    { code: 'instance_not_stopped' });
+});
+
+test('round 3: a host that crashed after a failed stop leaves the instance to the next owner\'s confirmed cleanup', async (t) => {
+  const { registry, host, appId } = await running(t);
+  host.isolation.hooks.stop = async () => { throw Object.assign(new Error('synthetic stop failure'), { code: 'ESYNTH' }); };
+  await assert.rejects(host.service.stop({ appId }), { code: 'ESYNTH' });
+  const unconfirmed = instance(host, appId);
+  registry.world.verdicts.set(101, 'exited');
+
+  const next = registry.host({ pid: 202 });
+  next.isolation.hooks.stopOrphan = async () => {
+    throw Object.assign(new Error('synthetic: the orphan process is not confirmed gone'), { code: 'EORPHAN' });
+  };
+  await assert.rejects(next.service.start({ appId }), { code: 'EORPHAN' });
+  assert.deepEqual(instance(next, appId), unconfirmed, 'the unconfirmed record is kept');
+  assert.equal(next.isolation.started.length, 0);
+  await assert.rejects(next.service.exportData({ appId, destination: `${registry.directory}/export` }), { code: 'EORPHAN' });
+
+  next.isolation.hooks.stopOrphan = null;
+  const started = await next.service.start({ appId });
+  assert.deepEqual([started.status, started.generation], ['running', 2]);
+  assert.equal(next.isolation.calls.filter(([kind]) => kind === 'stopOrphan').length, 1);
+  const ended = next.context.store.events(appId, 100).filter(({ action, detail }) => action === 'stopped'
+    && detail.instanceId === unconfirmed.instanceId);
+  assert.deepEqual(ended.map(({ detail }) => detail.reason), ['host_gone']);
 });
 
 test('a read tool gets a read-only data port', async (t) => {

@@ -111,7 +111,8 @@ export function createAppHost(context) {
   }
 
   // Settle → close the port (no new operation) → drain what was started →
-  // an operation that failed without the tool looking fails the call.
+  // any port operation that failed, unless tolerated by the tool for its
+  // error code, fails the call (app-data-fs.js).
   async function runWithPort({ grant, lease, tool, toolName, input, callId }) {
     const data = createAppDataFs({ callId, toolName, root: context.dataOf(grant.appId), fs: context.dataFs,
       readOnly: tool.effect !== 'write', assertOwned: () => leases.assertOwned(lease),
@@ -125,8 +126,8 @@ export function createAppHost(context) {
       recordIfOwned(lease, grant.appId, 'write_tool_detached_io', { toolName, callId, pending: data.pending() });
     }
     await data.drained();
-    const unobserved = data.unobservedFailure();
-    return unobserved && !outcome.error ? { error: unobserved } : outcome;
+    const failure = data.failure();
+    return failure && !outcome.error ? { error: failure } : outcome;
   }
 
   function recordIfOwned(lease, appId, action, detail) {

@@ -85,7 +85,11 @@ export function fakeIsolation({ selfCheck = { ok: true } } = {}) {
       await hooks.stop?.();
       calls.push(['stop', handle.pid]);
     },
-    stopOrphan: async (instance) => { calls.push(['stopOrphan', instance.instanceId]); return { stopped: true }; }
+    stopOrphan: async (instance) => {
+      await hooks.stopOrphan?.();
+      calls.push(['stopOrphan', instance.instanceId]);
+      return { stopped: true };
+    }
   };
 }
 

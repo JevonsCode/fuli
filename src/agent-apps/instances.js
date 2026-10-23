@@ -6,11 +6,15 @@ import { createDataDeletion } from './data-deletion.js';
 import { ensureDataDirectory } from './data-directory.js';
 import { appConflict } from './errors.js';
 import { createRunGate, runRefused } from './run-gate.js';
-import { LIVE_INSTANCE_STATES } from './store.js';
 
 const INSTANCE_ID_BYTES = 16;
 // Sealing waits this long for a write tool that holds the gate (D-28.17).
 const SEAL_WAIT_MS = 10_000;
+
+// An instance has ended only once its process is confirmed stopped (stoppedAt):
+// sealed alone, after a backend stop that failed, still blocks a start, an
+// export and a deletion until a stop or an orphan cleanup confirms it.
+const unfinished = (instance) => Boolean(instance) && !instance.stoppedAt;
 
 // Waits ms unless aborted; resolves either way.
 const waitFor = (ms, signal) => delay(ms, undefined, { signal }).catch(() => {});
@@ -68,7 +72,7 @@ export function createAppInstances(context) {
 
   async function launch(appId, mode, lease) {
     const earlier = store.instance(appId);
-    if (earlier && LIVE_INSTANCE_STATES.includes(earlier.state)) throw liveInstance(earlier);
+    if (unfinished(earlier)) throw liveInstance(earlier);
     const instanceId = `ins-${randomBytes(INSTANCE_ID_BYTES).toString('hex')}`;
     const opened = store.transaction(() => {
       leases.assertOwned(lease);
@@ -233,7 +237,9 @@ export function createAppInstances(context) {
   // Inside the app's write gate, holding its lease.
   async function reconcile(appId, lease) {
     const instance = store.instance(appId);
-    if (instance && LIVE_INSTANCE_STATES.includes(instance.state) && instance.ownerId !== lease.ownerId) {
+    // stopOrphan resolves only once the process is confirmed gone (or never
+    // ran); a failure keeps the record and refuses the operation.
+    if (unfinished(instance) && instance.ownerId !== lease.ownerId) {
       await isolation.stopOrphan(instance);
       // A sealing the exited host left completes here.
       if (!instance.sealedAt) {
@@ -250,7 +256,7 @@ export function createAppInstances(context) {
   // Refuses an operation while an instance has not ended.
   function assertNoInstance(appId) {
     const instance = store.instance(appId);
-    if (instance && LIVE_INSTANCE_STATES.includes(instance.state)) throw liveInstance(instance);
+    if (unfinished(instance)) throw liveInstance(instance);
   }
 
   return {
@@ -260,6 +266,10 @@ export function createAppInstances(context) {
 }
 
 function liveInstance(instance) {
+  if (instance.state === 'sealed') {
+    return appConflict('instance_not_stopped', 'The app instance is sealed but its stop is not confirmed; '
+      + 'run fuli app stop again', { instanceId: instance.instanceId });
+  }
   return instance.state === 'running'
     ? appConflict('instance_running', 'The app is running; stop it first', { instanceId: instance.instanceId })
     : appConflict('instance_sealing', 'The app is being stopped and waits for a write tool to finish',

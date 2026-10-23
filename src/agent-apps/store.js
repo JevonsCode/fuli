@@ -6,8 +6,6 @@ import { appNotFound } from './errors.js';
 // A first-generation app id is app-<identity key>; a later generation of the
 // same identity, created after the earlier one was deleted, adds -g<N>.
 const APP_ID = /^app-[0-9a-f]{32}(?:-g[1-9][0-9]{0,8})?$/;
-// An instance that has not ended yet; sealed is the end of every instance.
-export const LIVE_INSTANCE_STATES = Object.freeze(['running', 'stopping', 'sealing']);
 const OWNER_KINDS = Object.freeze(['console', 'standalone', 'cli']);
 
 // The local registry of Agent apps: identity and status, immutable versions,

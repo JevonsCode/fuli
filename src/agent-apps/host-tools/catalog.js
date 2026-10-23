@@ -16,6 +16,13 @@
 //   them; dataPathFields must be relative paths inside data/<appId>.
 // Granting a tool never widens what the owning Agent may do: the app acts in
 // that Agent's space and as that Agent.
+//
+// A host tool's contract with its data port (dataFs, app-data-fs.js): every
+// operation that fails fails the whole call and nothing is committed, even
+// when the tool catches it. A tool that expects a failure names it on that
+// one operation, e.g. dataFs.readFile('state.json', { tolerate: ['ENOENT'] })
+// for a file that may not exist yet. The FULI Agent tools granted today
+// (fuli-tools.js) never use the port.
 const appTool = (effect, scopeFields, dataPathFields = []) => Object.freeze({
   grantable: true, effect, scopeFields: Object.freeze(scopeFields), dataPathFields: Object.freeze(dataPathFields),
   marks: Object.freeze([])

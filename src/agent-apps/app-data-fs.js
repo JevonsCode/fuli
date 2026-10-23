@@ -21,53 +21,75 @@ export function isDataPath(path) {
 // root is a real directory and not a link (data_root_missing: the port never
 // creates the root, only activation does), then that no part of the path
 // below it is a link. fs is node:fs/promises in production; root is data/<appId>.
-// An operation the tool awaited (or gave a handler) reports its failure to
-// the tool; whether it did is known once its then() was called.
+// The failure contract (rec#10 round 3): any port operation that fails makes
+// the whole tool call fail, after the drain and before any commit, whether
+// the tool awaited it, caught it, chained it or ignored it. The one exception
+// is an operation the tool opted out for by error code, for example
+// readFile(path, { tolerate: ['ENOENT'] }) for a file that may not exist yet:
+// that failure still rejects to the tool but does not fail the call. Every
+// operation carries an internal rejection handler, and so does every promise
+// a tool derives from it (then, catch, finally), so a failure never becomes
+// an unhandledRejection of the host process.
 class PortOperation extends Promise {
   then(onFulfilled, onRejected) {
-    this.observed = true;
-    return super.then(onFulfilled, onRejected);
+    const derived = super.then(onFulfilled, onRejected);
+    Promise.prototype.then.call(derived, undefined, () => {});
+    return derived;
   }
 }
-const observe = (operation, onFulfilled, onRejected) => Promise.prototype.then.call(operation, onFulfilled, onRejected);
+
+const OPTION_KEYS = new Set(['tolerate']);
+
+function toleratedCodes(options, op) {
+  if (options === undefined) return [];
+  const keys = options !== null && typeof options === 'object' ? Object.keys(options) : null;
+  if (!keys || keys.some((key) => !OPTION_KEYS.has(key)) || (options.tolerate !== undefined
+    && (!Array.isArray(options.tolerate) || !options.tolerate.every((code) => typeof code === 'string' && code)))) {
+    throw new TypeError(`${op} options are { tolerate: [error codes] }`);
+  }
+  return options.tolerate ?? [];
+}
 
 // readOnly: a read tool's port, which refuses every change (read_only_port).
-// unobservedFailure(): after drained(), the first failure of an operation the
-// tool started and never looked at; the host fails the call with it.
+// failure(): after drained(), the first failure that was not tolerated; the
+// host fails the call with it.
 export function createAppDataFs({ callId, toolName, root, fs, assertOwned, onClosedUse, readOnly = false }) {
   let closed = false;
   let pending = 0;
   let wake = null;
   const failures = [];
 
-  function operation(op, path, perform, { writes = false } = {}) {
+  function operation(op, path, perform, options, { writes = false } = {}) {
     if (closed) {
       onClosedUse({ toolName, callId, op });
-      return Promise.reject(appConflict('write_port_closed',
+      const refused = PortOperation.reject(appConflict('write_port_closed',
         'This tool call has ended; its data port accepts no further operations', { toolName, callId, op }));
-    }
-    if (writes && readOnly) {
-      return Promise.reject(appForbidden('read_only_port', 'A read tool cannot change the app data', { toolName, op }));
+      Promise.prototype.then.call(refused, undefined, () => {});
+      return refused;
     }
     // Counted before any await, and until its outcome is recorded.
     pending += 1;
     const running = (async () => {
-      assertOwned();
-      const target = await resolveInside(path);
-      // The fence again right before the change, after the awaited checks.
-      assertOwned();
-      return perform(target);
+      let tolerate = [];
+      try {
+        tolerate = toleratedCodes(options, op);
+        if (writes && readOnly) throw appForbidden('read_only_port', 'A read tool cannot change the app data', { toolName, op });
+        assertOwned();
+        const target = await resolveInside(path);
+        // The fence again right before the change, after the awaited checks.
+        assertOwned();
+        return await perform(target);
+      } catch (error) {
+        if (!tolerate.includes(error?.code)) failures.push(error);
+        throw error;
+      } finally {
+        pending -= 1;
+        if (pending === 0) wake?.();
+      }
     })();
-    const tracked = new PortOperation((resolve, reject) => { observe(running, resolve, reject); });
-    const done = () => {
-      pending -= 1;
-      if (pending === 0) wake?.();
-    };
-    observe(tracked, done, (error) => {
-      failures.push({ error, tracked });
-      done();
-    });
-    return tracked;
+    const result = new PortOperation((resolve, reject) => { running.then(resolve, reject); });
+    Promise.prototype.then.call(result, undefined, () => {});
+    return result;
   }
 
   async function resolveInside(path) {
@@ -91,11 +113,14 @@ export function createAppDataFs({ callId, toolName, root, fs, assertOwned, onClo
   }
 
   const port = Object.freeze({
-    readFile: (path) => operation('readFile', path, (target) => fs.readFile(target)),
-    writeFile: (path, data) => operation('writeFile', path, (target) => fs.writeFile(target, data), { writes: true }),
-    readdir: (path) => operation('readdir', path, (target) => fs.readdir(target)),
-    mkdir: (path) => operation('mkdir', path, (target) => fs.mkdir(target, { recursive: true }), { writes: true }),
-    rm: (path) => operation('rm', path, (target) => fs.rm(target, { recursive: true, force: true }), { writes: true })
+    readFile: (path, options) => operation('readFile', path, (target) => fs.readFile(target), options),
+    writeFile: (path, data, options) => operation('writeFile', path, (target) => fs.writeFile(target, data), options,
+      { writes: true }),
+    readdir: (path, options) => operation('readdir', path, (target) => fs.readdir(target), options),
+    mkdir: (path, options) => operation('mkdir', path, (target) => fs.mkdir(target, { recursive: true }), options,
+      { writes: true }),
+    rm: (path, options) => operation('rm', path, (target) => fs.rm(target, { recursive: true, force: true }), options,
+      { writes: true })
   });
 
   return {
@@ -104,6 +129,6 @@ export function createAppDataFs({ callId, toolName, root, fs, assertOwned, onClo
     close() { closed = true; },
     pending: () => pending,
     drained: () => (pending === 0 ? Promise.resolve() : new Promise((resolve) => { wake = resolve; })),
-    unobservedFailure: () => failures.find(({ tracked }) => !tracked.observed)?.error ?? null
+    failure: () => failures[0] ?? null
   };
 }
