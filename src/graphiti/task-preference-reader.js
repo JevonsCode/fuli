@@ -75,7 +75,7 @@ export async function readTaskPreferences(application, {
   if (projectAgentRoleTextOverflows(agent)) {
     throw blocked('The task Agent role text exceeds its delivery bound; recovery does not cut role instructions.');
   }
-  const judgment = taskJudgmentContext(application, task.personalProjectId);
+  const judgment = await taskJudgmentContext(application, task.personalProjectId);
   let result = {
     ...projection,
     context: { ...projection.context, session_id: task.sessionId, source_application: task.sourceApplication,

@@ -42,7 +42,7 @@ function fixture(count = 1) {
       getPersonalProject: async () => ({ profile: { name: 'Sample', purpose: 'PROJECT_PURPOSE', boundaries: ['PROJECT_BOUNDARY'] } }),
       getProjectAgentMemory: () => { throw new Error('Recovery must not read memory'); },
       recordAgentViews: () => { throw new Error('Recovery must not record views'); } },
-    judgment: { store: () => ({ policy: () => ({ mode: 'manual', client: 'codex', revision: 1 }) }) },
+    judgment: { policy: async () => ({ mode: 'manual', client: 'codex', revision: 1 }) },
     getCollaborationPreferences: () => { throw new Error('Task entry must not run'); },
     beginTaskContext: () => { throw new Error('Task begin must not run'); }
   };
