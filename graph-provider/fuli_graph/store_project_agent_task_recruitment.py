@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from .graph_field_contract import stored_fields
 from .personal_project_access import authorize_personal_project
 from .project_agent_models import (
     ProjectAgentAssignmentCreate,
@@ -1015,7 +1016,7 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
             personal_space_id=raw['personal_space_id'],
             personal_project_id=raw['personal_project_id'],
             id=raw['id'],
-            properties=raw,
+            properties=stored_fields('FuliProjectAgentRecruitment', raw),
             occupation_keys=[raw['occupation_role'], *raw.get('occupation_tags', [])],
             builtin_occupation_keys=BUILTIN_OCCUPATION_KEYS,
             hr_agent_id=raw.get('hr_agent_id'),

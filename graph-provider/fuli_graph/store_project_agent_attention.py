@@ -3,6 +3,7 @@ import json
 
 from fastapi import HTTPException
 
+from .graph_field_contract import stored_fields
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .project_agent_attention_models import (
@@ -59,7 +60,8 @@ class StoreProjectAgentAttention:
             RETURN request
             ''',
             personal_space_id=request.personal_space_id, request_id=request_id,
-            payload=payload, fingerprint=fingerprint, timestamp=timestamp,
+            payload=stored_fields('FuliAgentAttention', payload), fingerprint=fingerprint,
+            timestamp=timestamp,
         )
         raw = dict(rows[0]['request'])
         if raw['fingerprint'] != fingerprint:

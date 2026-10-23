@@ -587,3 +587,27 @@ async def test_d20_5_editing_a_deactivated_item_writes_a_new_version_and_restore
             'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'restore', 'reason': 'Back on.',
             'operation_actor': 'human', 'expected_version': (await view(client, space_id, other))['version']}))
         assert (await view(client, space_id, other))['status'] == 'current'
+
+
+@pytest.mark.asyncio
+async def test_a_new_version_keeps_a_property_an_older_fuli_stored_and_names_it():
+    """rec#30: a property the contract does not declare (an older FULI's) is
+    copied forward verbatim instead of refusing the edit, and the revision
+    names the key, never its value, so the next graph version can declare it."""
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        old_id = (await commit(client, space_id, [preference('reply-tone', '回复简短')]))['entity_ids'][0]
+        await query(settings, 'MATCH (item:Entity {uuid: $id}) SET item.fuli_synthetic_legacy_note = $note',
+                    id=old_id, note='synthetic legacy value')
+        before = await view(client, space_id, old_id)
+        edited = await edit(client, space_id, old_id, '回复简短，先给结论', version=before['version'])
+        assert edited.status_code == 200, edited.text
+        new_id = edited.json()['version_item_id']
+        [row] = await query(settings, 'MATCH (item:Entity {uuid: $id}) RETURN item.fuli_synthetic_legacy_note AS note',
+                            id=new_id)
+        assert row['note'] == 'synthetic legacy value'
+        [supersede] = [revision for revision in (await view(client, space_id, old_id))['revisions']
+                       if revision['action'] == 'supersede']
+        assert supersede['current']['carriedLegacyKeys'] == ['fuli_synthetic_legacy_note']
+        assert 'synthetic legacy value' not in json.dumps(supersede['current'])
