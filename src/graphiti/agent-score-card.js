@@ -15,7 +15,7 @@ const DIMENSION_NAMES = Object.freeze(Object.fromEntries(
   Object.entries(DIMENSIONS).map(([name, providerName]) => [providerName, name])));
 
 export async function getAgentScoreCard(application, input) {
-  const value = await application.personal.getProjectAgentScoreCard(scoreCardQuery(application, input));
+  const value = await application.personal.getProjectAgentScoreCard(await scoreCardQuery(application, input));
   const card = {
     personalSpaceId: value.personal_space_id,
     agentId: value.agent_id,
@@ -41,7 +41,7 @@ export async function getAgentScoreCard(application, input) {
 export async function listAgentScoreEvidence(application, input) {
   const dimension = DIMENSIONS[input.dimension];
   if (!dimension) throw new TypeError(`Score card dimension must be one of ${Object.keys(DIMENSIONS).join(', ')}`);
-  const value = await application.personal.listProjectAgentScoreEvidence({ ...scoreCardQuery(application, input),
+  const value = await application.personal.listProjectAgentScoreEvidence({ ...await scoreCardQuery(application, input),
     dimension, executor_id: input.executorId ?? null, limit: input.limit ?? DEFAULT_EVIDENCE_LIMIT });
   return {
     personalSpaceId: value.personal_space_id,
@@ -55,13 +55,13 @@ export async function listAgentScoreEvidence(application, input) {
   };
 }
 
-function scoreCardQuery(application, input) {
+async function scoreCardQuery(application, input) {
   const personalProjectId = input.personalProjectId ?? null;
   return {
     personal_space_id: input.personalSpaceId,
     agent_id: input.agentId,
     personal_project_ids: personalProjectId ? [personalProjectId] : null,
-    review_verdicts: application.judgment?.reviewVerdicts({
+    review_verdicts: await application.judgment?.reviewVerdicts({
       personalSpaceId: input.personalSpaceId, agentId: input.agentId, personalProjectId
     }) ?? []
   };

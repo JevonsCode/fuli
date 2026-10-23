@@ -630,6 +630,12 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  // D-31.B5: aggregate recovery proof, never deletion identities or contents.
+  readHardDeletionWatermark({ personalSpaceId }) {
+    return this.#request('/v1/knowledge/hard-deletions/watermark', {
+      method: 'POST', body: { personal_space_id: personalSpaceId }
+    });
+  }
   // rec#20: authoritative item views and a turn's receipt.
   readKnowledgeItemView(input) {
     return this.#request('/v1/knowledge/item-views', { method: 'POST', body: input });

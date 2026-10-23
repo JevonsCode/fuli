@@ -111,17 +111,19 @@ class StoreAgentConversations:
             'WHERE e.sequence > $after AND e.sequence <= $revision '
             'RETURN e.payload AS payload, e.sequence AS sequence '
             'ORDER BY e.sequence ASC LIMIT $limit', id=record['id'], after=request.after,
-            revision=record['revision'], limit=request.limit)
+            revision=record['revision'], limit=request.limit + 1)
         decoded = []
         total = 0
-        for event in events:
+        for event in events[:request.limit]:
             value = decode_event(event)
             total += len(json.dumps(value, ensure_ascii=False).encode())
             if total > 512 * 1024 and decoded:
                 break
             decoded.append(value)
         cursor = decoded[-1]['sequence'] if decoded else request.after
-        page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': cursor < record['revision']}
+        # Deletion leaves gaps and advances revision without adding an event.
+        # Only a retained event beyond this page proves there is another page.
+        page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': len(events) > len(decoded)}
         if request.after == 0:
             # The first history page shows what compaction extracted and where it came from.
             page['digest'] = await self._current_digest(record)

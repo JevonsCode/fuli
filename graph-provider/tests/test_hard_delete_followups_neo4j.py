@@ -75,11 +75,22 @@ async def test_public_submission_is_bound_into_preview_and_never_retracted_by_lo
         submitted = ok(await client.post(f'/v1/publication-drafts/{draft["id"]}/decision',
             params={'personal_space_id': space},
             json={'decision': 'submit_public', 'shared_proposal_id': 'synthetic-public-proposal'}))
+        ok(await client.post('/v1/subscriptions', json={'personal_space_id': space,
+            'project_id': 'synthetic-public-project', 'provider_url': 'https://public.example',
+            'project_name': 'Readable synthetic project'}))
+        ok(await client.post('/v1/subscriptions', json={'personal_space_id': space,
+            'project_id': 'synthetic-public-project', 'provider_url': 'https://other.example',
+            'project_name': 'Wrong provider name'}))
+        other_space = await space_with_projects(client)
+        ok(await client.post('/v1/subscriptions', json={'personal_space_id': other_space,
+            'project_id': 'synthetic-public-project', 'provider_url': 'https://public.example',
+            'project_name': 'Wrong space name'}))
         plan = ok(await preview(client, space, item_id))
         assert plan['preview_id'] != initial['preview_id']
         assert len(plan['publications']) == 1
         publication = plan['publications'][0]
         assert publication['draft_id'] == draft['id']
+        assert publication['project_name'] == 'Readable synthetic project'
         assert publication['source_episode_ids'] == [saved['episode_id']]
         assert publication['withdrawal_status'] == 'unavailable'
         assert publication['withdrawal_url'] is None
@@ -89,4 +100,8 @@ async def test_public_submission_is_bound_into_preview_and_never_retracted_by_lo
         ok(await delete(client, space, item_id, plan['preview_id']))
         retained = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}',
                                       params={'personal_space_id': space}))
-        assert retained == submitted, 'the local public receipt and public copy are outside source deletion'
+        # Public submission metadata survives. Do not freeze the existing
+        # local payload retention bug into the contract; source deletion's
+        # separate get/list regressions must verify its body is redacted.
+        for field in ('id', 'status', 'shared_proposal_id', 'provider_url', 'target_project_id'):
+            assert retained[field] == submitted[field]

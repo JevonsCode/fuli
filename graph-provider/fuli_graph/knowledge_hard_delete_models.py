@@ -10,12 +10,13 @@ from .model_base import StrictModel
 
 PREVIEW_ID_PATTERN = r'^[0-9a-f]{64}$'
 OPERATION_ID_PATTERN = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+HardDeleteTargetKind = Literal['entity', 'relationship', 'episode', 'session']
 
 
 class KnowledgeHardDeleteRef(StrictModel):
     # The item is the route's; the body says which space and kind it is in.
     personal_space_id: str = Field(min_length=1, max_length=128)
-    item_kind: KnowledgeItemKind
+    item_kind: HardDeleteTargetKind
 
 
 class KnowledgeHardDeleteConfirm(KnowledgeHardDeleteRef):
@@ -104,6 +105,11 @@ class KnowledgeHardDeletePublication(StrictModel):
     withdrawal_url: None = None
 
 
+class KnowledgeHardDeleteDrafts(StrictModel):
+    pending: int = 0
+    submitted: int = 0
+
+
 class KnowledgeHardDeletePreview(StrictModel):
     publications: list[KnowledgeHardDeletePublication] = Field(default_factory=list)
     preview_id: str
@@ -120,7 +126,7 @@ class KnowledgeHardDeletePreview(StrictModel):
 class KnowledgeHardDeletion(StrictModel):
     """The content-free trace a hard delete leaves: when, by whom, how much."""
     deletion_id: str
-    item_kind: KnowledgeItemKind
+    item_kind: HardDeleteTargetKind
     deleted_at: datetime
     deleted_by: Literal['user'] = 'user'
     counts: KnowledgeHardDeleteCounts

@@ -119,7 +119,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), rev
         for (const decision of answer.pending ? [] : reviewDecisions(answer.value, schema, candidates)) {
           const candidate = candidates.find(c => c.candidate_key === decision.target);
           // The person may have permanently deleted it while the model answered (rec#5 C9).
-          if (store.forgets(decision.target)) continue;
+          if (store.forgets(decision.target, space)) continue;
           const protectedItem = Boolean(candidate.requires_attention || candidate.negative_evidence_count > 0
             || candidate.reasons?.includes('conflict_or_attention'));
           const aiReview = reviewDisposition(decision, { protectedItem, gate, policy });

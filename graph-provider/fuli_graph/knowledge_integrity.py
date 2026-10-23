@@ -9,11 +9,12 @@ from typing import Literal
 from pydantic import Field
 
 from .knowledge_item_view import personal_reader_space
+from .knowledge_hard_delete_models import HardDeleteTargetKind
 from .model_base import StrictModel
 
 
 class KnowledgeIntegrityRef(StrictModel):
-    kind: Literal['entity', 'relationship', 'episode']
+    kind: HardDeleteTargetKind
     id: str = Field(min_length=1, max_length=256)
 
 
@@ -45,10 +46,13 @@ async def check_knowledge_integrity(store, actor, request) -> KnowledgeIntegrity
         WHERE ref.kind = 'relationship'
         OPTIONAL MATCH (episode:Episodic {group_id: $group_id, uuid: ref.id})
         WHERE ref.kind = 'episode'
-        WITH ref, entity IS NOT NULL OR edge IS NOT NULL OR episode IS NOT NULL AS present
+        OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_TASK_CONTEXT_SESSION]->
+                       (:FuliTaskContextSession {id: ref.id})-[:HAS_CONTEXT]->(task:FuliTaskContext)
+        WHERE ref.kind = 'session'
+        WITH ref, entity IS NOT NULL OR edge IS NOT NULL OR episode IS NOT NULL OR task IS NOT NULL AS present
         OPTIONAL MATCH (trace:FuliKnowledgeAudit {space_id: $space_id, action: 'hard_delete'})
         WHERE (ref.kind = 'episode' AND ref.id IN coalesce(trace.removed_episode_ids, []))
-           OR (ref.kind <> 'episode' AND (ref.kind + ':' + ref.id) IN coalesce(trace.deleted_item_keys, []))
+           OR (ref.kind + ':' + ref.id) IN coalesce(trace.deleted_item_keys, [])
         RETURN ref.kind AS kind, ref.id AS id, present, collect(DISTINCT trace.id) AS deletion_ids
         ''', references=list(references.values()), group_id=space['group_id'], space_id=space['id'], routing_='r')
     missing, resurrected, deletions = [], [], set()

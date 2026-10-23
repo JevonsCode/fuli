@@ -105,7 +105,8 @@ function sessionRecordsView(application, session, read) {
   const entries = GROUPS.flatMap(group => grouped[group]
     .sort((left, right) => time(left.at) - time(right.at))
     .map(entry => ({ number: ++number, ...entry, link: link(entry.key) })));
-  return { session: { ...session, url: link(null) }, total: entries.length, entries,
+  return { session: { ...session, url: link(null),
+    ...(read.deletion_target_id ? { deletionTargetId: read.deletion_target_id } : {}) }, total: entries.length, entries,
     stretches: notRecordedStretches(read.turns), truncated: Boolean(read.truncated),
     // Two or more clients have a session with this ID: the reader picks one.
     ...(read.clients?.length > 1 ? { clients: read.clients } : {}) };

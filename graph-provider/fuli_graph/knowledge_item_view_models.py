@@ -132,9 +132,17 @@ class KnowledgeEvidenceSource(StrictModel):
     created_at: datetime | None = None
 
 
+class KnowledgeUnavailableSource(StrictModel):
+    """Content-free evidence whose deletion still awaits the person's review."""
+    episode_id: str
+    deletion_id: str
+    status: Literal['unavailable'] = 'unavailable'
+
+
 class KnowledgeItemView(KnowledgeItemSummary):
     evidence: list[KnowledgeEvidenceSource] = Field(default_factory=list)
     evidence_count: int = 0
+    unavailable_sources: list[KnowledgeUnavailableSource] = Field(default_factory=list)
     revisions: list[KnowledgeRevisionRecord] = Field(default_factory=list)
     # Every version, newest first, and the one current answers use now (None
     # once the whole item is history).

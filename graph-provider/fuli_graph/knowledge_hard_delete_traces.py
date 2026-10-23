@@ -117,3 +117,17 @@ async def episode_hard_deleted(store, space, episode_id) -> bool:
         RETURN count(trace) > 0 AS deleted
         ''', space_id=space['id'], episode_id=episode_id, routing_='r')
     return bool(records and records[0]['deleted'])
+
+
+async def unavailable_source_bases(store, space, reasons) -> list[dict]:
+    """Resolve only live unresolved reasons against content-free source tombstones."""
+    if not reasons:
+        return []
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (trace:FuliKnowledgeAudit {space_id: $space_id, action: 'hard_delete'})
+        UNWIND coalesce(trace.removed_episode_ids, []) AS episode_id
+        WITH trace, episode_id WHERE (episode_id + '@' + trace.id) IN $reasons
+        RETURN DISTINCT episode_id, trace.id AS deletion_id ORDER BY episode_id, deletion_id
+        ''', space_id=space['id'], reasons=list(reasons), routing_='r')
+    return [dict(row, status='unavailable') for row in records]

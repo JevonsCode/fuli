@@ -83,6 +83,16 @@ test('C6-1: the list holds this session\'s 6 turns, 2 knowledge items and 1 pref
   assert.equal(view.session.url, LIST);
 });
 
+test('session deletion identity is passed through to the console but never added to the Agent reply', async () => {
+  const read = sessionRead();
+  read.deletion_target_id = 'opaque-provider-session-target';
+  const { app: application } = app(read);
+  const view = await readSessionRecords(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  assert.equal(view.session.deletionTargetId, read.deletion_target_id);
+  const own = await readOwnSessionRecords(application, { taskContextToken: 'fuli-task-b', sourceApplication: 'codex' });
+  assert.equal(JSON.stringify(own).includes(read.deletion_target_id), false);
+});
+
 test('C6-4: paused turns hold nothing and the list marks the stretch as HH:mm～HH:mm 暂停记录', async () => {
   const { app: application } = app();
   const view = await readSessionRecords(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });

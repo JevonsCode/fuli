@@ -17,6 +17,7 @@ export function openModelBackendRuntime(paths) {
 
 // The session bridge over that port. resumers maps a role to the operation
 // that uses a submitted answer; verifySession resolves the calling session.
-export function openRoleWorkRuntime(paths, { port, verifySession, resumers }) {
-  return createRoleWorkBridge({ port, store: new RoleWorkStore(paths.roleWorkPath), verifySession, resumers });
+export function openRoleWorkRuntime(paths, { port, verifySession, resumers, recoveryGate }) {
+  return createRoleWorkBridge({ port, store: new RoleWorkStore(paths.roleWorkPath, { recoveryGate }), verifySession, resumers,
+    prepareStore: spaceId => recoveryGate?.refresh(spaceId) });
 }

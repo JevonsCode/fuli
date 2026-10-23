@@ -58,6 +58,29 @@ async def lineage_root(store, space, item_kind, item_id) -> str:
     return (await lineage_ids(store, space, item_kind, item_id))[-1]
 
 
+async def hold_deleted_sources(scoped, actor, space, item_kind, item_id, episode_ids,
+                               deletion_id, created_at) -> None:
+    """Keep a selected conclusion, but hold it while its erased evidence is unreviewed.
+
+    The caller holds the knowledge lock. Source identities stay separate from
+    public knowledge kinds; the existing reason settlement clears them after a
+    person's review exactly like a changed knowledge basis.
+    """
+    current = await _read_item(scoped, space, item_id, item_kind)
+    held = set(current.get('unresolved_bases') or [])
+    for episode_id in sorted(set(episode_ids)):
+        key = f'{episode_id}@{deletion_id}'
+        if key in held:
+            continue
+        before = _snapshot(current, item_kind)
+        await _add_reason(scoped, space, item_kind, item_id, key)
+        await _record(scoped, actor, space, item_kind, item_id, 'basis_changed',
+                      'Source evidence was permanently deleted by the person.', 'user', created_at,
+                      ('episode', episode_id), keys=[key], previous=before)
+        held.add(key)
+        current = await _read_item(scoped, space, item_id, item_kind)
+
+
 async def apply_meaning(scoped, actor, space, item_kind, item_id, *, meaning, reason, changed_by,
                         created_at, change_id=None) -> int:
     """After a person's edit or confirmation of `item_id` (or a later re-mark),

@@ -1,3 +1,5 @@
+import json
+
 from fastapi import HTTPException
 
 from .models import (
@@ -14,6 +16,10 @@ from .models import (
     SubscriptionRecord,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .publication_source_copies import publication_source_identity
+from .knowledge_source_fence import require_source_available
+from .knowledge_versions import lock_knowledge
+from .store_transactions import query_store_transaction
 
 
 class StorePublication:
@@ -23,7 +29,7 @@ class StorePublication:
         request: PublicationDraftCreate,
     ) -> PublicationDraftRecord:
         self._require_personal()
-        await self.authorize(actor, request.personal_space_id, 'maintainer')
+        space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         draft_id = stable_uuid(
             self.settings.provider_id,
             request.personal_space_id,
@@ -32,26 +38,34 @@ class StorePublication:
             request.episode.idempotency_key,
         )
         created_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
-            MERGE (draft:FuliPublicationDraft {id: $id})
-            ON CREATE SET draft.personal_space_id = $personal_space_id,
-                          draft.target_project_id = $target_project_id,
-                          draft.provider_url = $provider_url,
-                          draft.status = 'pending',
-                          draft.payload = $payload,
-                          draft.created_at = $created_at
-            MERGE (space)-[:HAS_PUBLICATION_DRAFT]->(draft)
-            RETURN draft
-            ''',
-            personal_space_id=request.personal_space_id,
-            id=draft_id,
-            target_project_id=request.target_project_id,
-            provider_url=request.provider_url,
-            payload=request.episode.model_dump_json(),
-            created_at=created_at,
-        )
+        identity = publication_source_identity(space['group_id'], request.episode.model_dump())
+        async with query_store_transaction(self) as scoped:
+            await lock_knowledge(scoped, space)
+            await require_source_available(scoped, space, episode_id=identity.get('episode_id'),
+                source_application=identity.get('source_application'), session_id=identity.get('session_id'),
+                source_turn_id=identity.get('source_turn_id'))
+            records, _, _ = await scoped.runtime.driver.execute_query(
+                '''
+                MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
+                MERGE (draft:FuliPublicationDraft {id: $id})
+                ON CREATE SET draft.personal_space_id = $personal_space_id,
+                              draft.target_project_id = $target_project_id,
+                              draft.provider_url = $provider_url,
+                              draft.status = 'pending',
+                              draft.payload = $payload,
+                              draft.source_identity = $source_identity,
+                              draft.created_at = $created_at
+                MERGE (space)-[:HAS_PUBLICATION_DRAFT]->(draft)
+                RETURN draft
+                ''',
+                personal_space_id=request.personal_space_id,
+                id=draft_id,
+                target_project_id=request.target_project_id,
+                provider_url=request.provider_url,
+                payload=request.episode.model_dump_json(),
+                source_identity=json.dumps(identity, sort_keys=True, separators=(',', ':')),
+                created_at=created_at,
+            )
         return self._publication_draft(records[0]['draft'])
 
     async def list_publication_drafts(
@@ -118,7 +132,8 @@ class StorePublication:
             draft_id=draft_id,
         )
         if not records:
-            raise HTTPException(status_code=409, detail='publication draft is not pending')
+            raise HTTPException(status_code=409, detail={
+                'code': 'publication_draft_not_pending', 'message': 'publication draft is not pending'})
         draft = self._publication_draft(records[0]['draft'])
         if decision.decision == 'keep_personal':
             await self._commit_episode(space, draft.episode)
@@ -127,19 +142,24 @@ class StorePublication:
             final_status = 'submitted'
         else:
             final_status = 'ignored'
-        updated, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (draft:FuliPublicationDraft {id: $draft_id, status: 'pending'})
-            SET draft.status = $status,
-                draft.shared_proposal_id = $shared_proposal_id,
-                draft.decided_at = $decided_at
-            RETURN draft
-            ''',
-            draft_id=draft_id,
-            status=final_status,
-            shared_proposal_id=decision.shared_proposal_id,
-            decided_at=now_utc(),
-        )
+        async with query_store_transaction(self) as scoped:
+            await lock_knowledge(scoped, space)
+            updated, _, _ = await scoped.runtime.driver.execute_query(
+                '''
+                MATCH (draft:FuliPublicationDraft {id: $draft_id, status: 'pending'})
+                SET draft.status = $status,
+                    draft.shared_proposal_id = $shared_proposal_id,
+                    draft.decided_at = $decided_at
+                RETURN draft
+                ''',
+                draft_id=draft_id,
+                status=final_status,
+                shared_proposal_id=decision.shared_proposal_id,
+                decided_at=now_utc(),
+            )
+        if not updated:
+            raise HTTPException(status_code=409, detail={
+                'code': 'publication_draft_not_pending', 'message': 'publication draft is not pending'})
         return self._publication_draft(updated[0]['draft'])
 
     async def add_membership(

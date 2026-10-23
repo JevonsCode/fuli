@@ -6,14 +6,9 @@ import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/
 import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
 import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js';
 import { createFuliRoundtableHost } from './roundtable-host.js';
-import { createJudgmentService } from '../judgment/service.js';
-import { JudgmentStore } from '../judgment/store.js';
-import { createJudgmentEngine } from '../judgment/engine.js';
-import { createReviewGate } from '../judgment/review-gate.js';
+import { attachJudgmentRuntime } from '../judgment/runtime.js';
 import { createTaskScheduleService } from '../task-schedules/service.js';
-import { openModelBackendRuntime, openRoleWorkRuntime } from '../model-backends/runtime.js';
-import { createJudgmentBackend } from '../judgment/backend.js';
-import { roleWorkSessions } from './role-work-sessions.js';
+import { openModelBackendRuntime } from '../model-backends/runtime.js';
 import { TaskScheduleStore } from '../task-schedules/store.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
@@ -151,10 +146,7 @@ export function openFederatedGraphApplication({
       providerIdentity: resolved.personal.providerUrl, resolveOwner: (owner) => app.getProjectAgent(owner),
       toolNames: () => listAgentTools().map(({ name }) => name) });
     app.modelBackends = openModelBackendRuntime(paths);
-    app.roleWork = openRoleWorkRuntime(paths, { port: app.modelBackends, verifySession: roleWorkSessions(app),
-      resumers: { tonborg: work => app.judgment.resumeWork(work) } });
-    app.judgment = createJudgmentService({ app, openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')),
-      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge: app.roleWork }), reviewGate: createReviewGate(dirname(runtimeConfigPath)) }) });
+    attachJudgmentRuntime(app, paths);
     app.taskSchedules = createTaskScheduleService({ app,
       openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
     app.roundtableHost = createFuliRoundtableHost(app);
@@ -1012,7 +1004,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       });
     }
     const draft = await this.personal.getPublicationDraft(personalSpaceId, input.draftId);
-    if (draft.status !== 'pending') throw new TypeError('Publication draft is not pending');
+    if (draft.status !== 'pending' || !draft.episode || draft.payload_scrubbed_by) {
+      throw new ApplicationError('publication_draft_not_pending', 'Publication draft is not pending', { status: 409 });
+    }
     if (draft.episode.sensitivity !== 'normal') {
       throw new TypeError('Private or restricted knowledge cannot be submitted publicly');
     }

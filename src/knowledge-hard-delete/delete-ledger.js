@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 import { jsonFormat, requireJsonFormatVersion, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { knowledgeReferences } from './forget-references.js';
+import { hardDeleteLedgerSchema, HARD_DELETE_LEDGER_FINGERPRINT, ledgerDocument } from './ledger-format.js';
 
 // The console's record of each permanent delete it starts (rec#5 C9), kept
 // beside the local stores. It holds no words: an operation ID, the target,
@@ -23,7 +24,7 @@ import { knowledgeReferences } from './forget-references.js';
 // name a deleted item, or one being deleted, are never stored again, even by
 // work that started before the delete. A refused delete leaves the fence.
 
-export const HARD_DELETE_LEDGER_FORMAT = jsonFormat({ store: 'knowledge-hard-deletes', versions: [1] });
+export const HARD_DELETE_LEDGER_FORMAT = jsonFormat({ store: 'knowledge-hard-deletes', versions: [1, 2] });
 export const HARD_DELETE_LEDGER_FILE = 'knowledge-hard-deletes.json';
 const STATES = new Set(['pending', 'graph_deleted', 'complete', 'not_deleted']);
 const OPEN_STATES = new Set(['pending', 'graph_deleted']);
@@ -36,9 +37,20 @@ export function hardDeleteLedger(dataDir, { now = () => new Date() } = {}) {
   const change = (mutate) => updateVersionedJsonFileAtomic(path, HARD_DELETE_LEDGER_FORMAT, (current) => {
     const operations = current === null ? [] : [...operationsOf(current)];
     mutate(operations);
-    return { version: 1, operations };
-  }, { read: (file) => parseLedger(file) });
+    return ledgerDocument(operations, current?.watermarks ?? {});
+  }, { read: (file) => parseLedger(file), durable: true });
   return {
+    // Only a successful console/CLI reconcile may establish this proof. A v1
+    // file upgrades losslessly here; its absence of proof never means synced.
+    recordWatermark(spaceId, { count, latestDeletedAt }) {
+      const watermark = { count, latestDeletedAt, reconciledAt: now().toISOString() };
+      validateWatermark(watermark);
+      if (!TEXT(spaceId)) throw new TypeError('Watermark needs a personal space');
+      updateVersionedJsonFileAtomic(path, HARD_DELETE_LEDGER_FORMAT, current => ledgerDocument(
+        current === null ? [] : operationsOf(current),
+        { ...(current?.watermarks ?? {}), [spaceId]: watermark }
+      ), { read: parseLedger, durable: true });
+    },
     // A new pending operation, before anything irreversible is sent.
     begin({ spaceId, itemKind, itemId, previewId, itemIds }) {
       const at = now().toISOString();
@@ -72,25 +84,39 @@ export function deletedKnowledgeBeside(storePath) {
   if (!storePath || storePath === ':memory:') return () => knowledgeReferences({});
   const path = join(dirname(storePath), HARD_DELETE_LEDGER_FILE);
   let seen = null;
-  let references = knowledgeReferences({});
-  return () => {
+  let operations = [];
+  const references = new Map();
+  return (spaceId = undefined) => {
     let stamp;
     try {
       const stat = statSync(path);
-      stamp = `${stat.mtimeMs}:${stat.size}`;
+      stamp = `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}:${stat.ino}`;
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error;
       stamp = 'missing';
     }
     if (stamp !== seen) {
-      const itemIds = readLedger(path).filter((operation) => FENCED_STATES.has(operation.state))
-        .flatMap((operation) => [operation.itemId, ...operation.itemIds]);
-      references = knowledgeReferences({ itemIds,
-        candidateKeys: itemIds.flatMap((id) => [`entity:${id}`, `relationship:${id}`]) });
+      operations = readLedger(path).filter((operation) => FENCED_STATES.has(operation.state));
+      references.clear();
       seen = stamp;
     }
-    return references;
+    if (!references.has(spaceId)) {
+      // No scope preserves the aggregate reader contract. Body stores always
+      // supply their row's space: opaque item IDs are not globally unique.
+      const itemIds = operations.filter(operation => spaceId === undefined || operation.spaceId === spaceId)
+        .flatMap(operation => [operation.itemId, ...operation.itemIds]);
+      references.set(spaceId, knowledgeReferences({ itemIds,
+        candidateKeys: itemIds.flatMap(id => ['entity', 'relationship', 'episode', 'session'].map(kind => `${kind}:${id}`)) }));
+    }
+    return references.get(spaceId);
   };
+}
+
+// Read-only, shared with the process-local gate. No migration or repair on read.
+export function readHardDeleteProof(dataDir) {
+  const document = parseLedger(join(dataDir, HARD_DELETE_LEDGER_FILE));
+  if (document !== null) operationsOf(document);
+  return document;
 }
 
 // Only a missing file is a first use. Any file that exists must be whole:
@@ -124,7 +150,25 @@ function parseLedger(path) {
     if (error instanceof DataFormatError) throw error;
     throw damaged('its format version is missing or unknown');
   }
+  if (document.version === 2) {
+    if (!hardDeleteLedgerSchema.safeParse(document).success || document.schemaFingerprint !== HARD_DELETE_LEDGER_FINGERPRINT) {
+      throw damaged('its v2 schema or fingerprint does not match');
+    }
+    if (!document.watermarks || typeof document.watermarks !== 'object' || Array.isArray(document.watermarks)) {
+      throw damaged('its watermarks are not an object');
+    }
+    for (const watermark of Object.values(document.watermarks)) validateWatermark(watermark);
+  }
   return document;
+}
+
+function validateWatermark(value) {
+  if (!value || !Number.isSafeInteger(value.count) || value.count < 0
+      || (value.latestDeletedAt !== null && (typeof value.latestDeletedAt !== 'string' || !Number.isFinite(Date.parse(value.latestDeletedAt))))
+      || (value.count === 0) !== (value.latestDeletedAt === null)
+      || typeof value.reconciledAt !== 'string' || !Number.isFinite(Date.parse(value.reconciledAt))) {
+    throw damaged('a synchronization watermark is invalid');
+  }
 }
 
 const TEXT = (value) => typeof value === 'string' && value.length > 0;
@@ -133,18 +177,19 @@ const TEXT_OR_NULL = (value) => value === null || TEXT(value);
 function operationsOf(document) {
   if (!Array.isArray(document.operations)) throw damaged('its operations are not a list');
   document.operations.forEach((operation, index) => {
-    const problem = operationProblem(operation);
+    const problem = operationProblem(operation, document.version);
     if (problem) throw damaged(`operation ${index + 1} ${problem}`);
   });
   return document.operations;
 }
 
-function operationProblem(operation) {
+function operationProblem(operation, version) {
   if (operation === null || typeof operation !== 'object' || Array.isArray(operation)) return 'is not an object';
   for (const field of ['id', 'spaceId', 'itemId', 'createdAt', 'updatedAt']) {
     if (!TEXT(operation[field])) return `has no ${field}`;
   }
-  if (!['entity', 'relationship'].includes(operation.itemKind)) return 'has no item kind';
+  const kinds = version === 1 ? ['entity', 'relationship'] : ['entity', 'relationship', 'episode', 'session'];
+  if (!kinds.includes(operation.itemKind)) return 'has no item kind for this format version';
   if (!STATES.has(operation.state)) return `has the unknown state ${JSON.stringify(operation.state)}`;
   if (!Array.isArray(operation.itemIds) || !operation.itemIds.every(TEXT)) return 'has no list of item IDs';
   for (const field of ['previewId', 'deletionId', 'deletedAt']) {

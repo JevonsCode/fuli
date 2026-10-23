@@ -26,6 +26,8 @@ import { reachableModules } from '../test-support/module-graph.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SPACE = 'personal-space';
+// Cleanup tests isolate the recovery gate; gate integration has separate coverage.
+const recoveryGate = { state: () => ({ state: 'open' }) };
 const PASTED = 'SYNTHETIC-PASTED-KEY-0000-not-a-real-secret';
 const APP = { config: { personal: { spaceId: SPACE } } };
 
@@ -64,8 +66,9 @@ test('no MCP or Agent tool module reaches a hard delete, and no tool is named fo
   for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
     const modules = reachableModules(join(ROOT, entry));
     assert.deepEqual(deleting.filter((path) => modules.has(path)), [], entry);
+    assert.ok(modules.has(join(ROOT, 'src/knowledge-hard-delete/recovery-gate.js')), entry);
   }
-  assert.deepEqual(listAgentTools().map((tool) => tool.name).filter((name) => /hard|purge|erase|permanent/.test(name)), []);
+  assert.deepEqual(listAgentTools().map((tool) => tool.name).filter((name) => /hard|purge|erase|permanent|recover|reconcile|tombstone|watermark/.test(name)), []);
   // The interface catalog tells an Agent these are the person's, not missing tools.
   const entries = agentInterfaceCatalog().uiMutationParity.filter((item) => item.route.includes('/hard-delete'));
   assert.deepEqual(entries.map((item) => [item.route, item.access]), [
@@ -166,12 +169,12 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
   // Long words spill into overflow pages, which an update frees; one store
   // writes through a write-ahead log, as a store another process set to WAL would.
   const long = `Deploy with ${PASTED} ${'synthetic filler '.repeat(400)}${PASTED}`;
-  const judgment = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+  const judgment = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   judgment.close();
   const wal = new DatabaseSync(join(dataDir, 'judgment.sqlite'));
   wal.exec('PRAGMA journal_mode = WAL');
   wal.close();
-  const judgmentAgain = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+  const judgmentAgain = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   const review = judgmentAgain.record(SPACE, { kind: 'review', target: 'entity:item-1', title: long,
     summary: `Approve ${PASTED}`, evidence: [`said ${PASTED}`], outcome: 'escalate', confidence: 0.4 }, 'review:item-1');
   judgmentAgain.execute(SPACE, review.id, 'applying', { reviewId: 'run-1', candidateKey: 'entity:item-1' });
@@ -182,7 +185,7 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
   // Another process (the running console) keeps the store open, so its log stays.
   const holder = new DatabaseSync(join(dataDir, 'judgment.sqlite'));
   holder.prepare('SELECT count(*) AS n FROM judgment_records').get();
-  const work = new RoleWorkStore(join(dataDir, 'role-work.sqlite'));
+  const work = new RoleWorkStore(join(dataDir, 'role-work.sqlite'), { recoveryGate });
   const at = new Date('2026-10-22T00:00:00Z');
   const pkg = work.create({ request: { role: 'tonborg', operation: 'review', requestId: 'review-run-1',
     scope: { personalSpaceId: SPACE, personalProjectId: null, sessionRef: null }, versions: { evidence: 'e', policy: 'p' },
@@ -199,14 +202,14 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
     [['judgment.sqlite', 'forgotten'], ['role-work.sqlite', 'forgotten']]);
   assert.ok(done.local_stores.every((store) => store.changed > 0));
 
-  const reopened = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+  const reopened = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   const forgotten = reopened.get(SPACE, review.id);
   assert.deepEqual([forgotten.title, forgotten.summary, forgotten.evidence, forgotten.hard_deleted, forgotten.outcome],
     [null, null, [], true, 'escalate']);
   assert.equal(forgotten.feedback.reason, '');
   assert.equal(reopened.get(SPACE, kept.id).title, 'Synthetic staging target');
   reopened.close();
-  const reread = new RoleWorkStore(join(dataDir, 'role-work.sqlite'));
+  const reread = new RoleWorkStore(join(dataDir, 'role-work.sqlite'), { recoveryGate });
   const [gone, stays] = reread.get(pkg.packageId).request.evidence[0].value;
   assert.deepEqual([gone.title, gone.hard_deleted, stays.title], [null, true, 'Synthetic staging target']);
   reread.close();

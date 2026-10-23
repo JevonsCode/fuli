@@ -22,7 +22,8 @@ class IntegrityDriver:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('audited', [True, False])
-async def test_integrity_distinguishes_300_audited_deletes_from_unexplained_loss(audited):
+@pytest.mark.parametrize('kind', ['entity', 'session'])
+async def test_integrity_distinguishes_300_audited_deletes_from_unexplained_loss(audited, kind):
     driver = IntegrityDriver(audited)
     app = application(driver)
 
@@ -32,7 +33,7 @@ async def test_integrity_distinguishes_300_audited_deletes_from_unexplained_loss
     app.state.store.authorize = authorize
     response = await call(app, '/v1/knowledge/integrity', {
         'personal_space_id': 'space',
-        'references': [{'kind': 'entity', 'id': f'item-{n}'} for n in range(300)]}, REVIEW)
+        'references': [{'kind': kind, 'id': f'item-{n}'} for n in range(300)]}, REVIEW)
     assert response.status_code == 200, response.text
     report = response.json()
     assert report['status'] == ('healthy' if audited else 'attention_required')

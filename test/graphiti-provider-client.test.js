@@ -6,6 +6,20 @@ import {
   ProviderRequestError
 } from '../src/graphiti/provider-client.js';
 
+test('hard-deletion watermark uses ordinary auth and sends only the personal space', async () => {
+  const calls = [];
+  const watermark = { count: 2, latest_deleted_at: '2026-10-23T00:00:00Z' };
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, watermark); } });
+  const result = await client.readHardDeletionWatermark({ personalSpaceId: 'synthetic-space', itemId: 'not-forwarded' });
+  assert.deepEqual(result, watermark);
+  assert.equal(calls[0].url, 'http://provider.test/v1/knowledge/hard-deletions/watermark');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { personal_space_id: 'synthetic-space' });
+  assert.equal(calls[0].options.headers.authorization, 'Bearer synthetic-token');
+  assert.equal(calls[0].options.headers['x-fuli-human-review-token'], undefined);
+});
+
 test('worker lookup and admission transmit capability only in a dedicated header', async () => {
   const calls = [];
   const capability = 'synthetic-worker-capability-never-in-payload';

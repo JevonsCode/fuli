@@ -19,7 +19,7 @@ const reviewVerdictSchema = z.object({ personalSpaceId: id, agentId: id, persona
 const feedbackSchema = z.object({ personalSpaceId: id, decisionId: id, vote: z.enum(['up', 'down']).nullable(),
   reason: z.string().trim().max(1000).default(''), expectedRevision: revision }).strict();
 
-export function createJudgmentService({ app, openStore = () => new JudgmentStore(), engine } = {}) {
+export function createJudgmentService({ app, openStore = () => new JudgmentStore(), prepareStore = async () => {}, engine } = {}) {
   let database;
   const store = () => database ??= openStore();
   function space(input) {
@@ -27,6 +27,7 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
   }
   async function scope(input) {
     space(input);
+    await prepareStore(input.personalSpaceId);
     if (input.personalProjectId) {
       const result = await app.listPersonalProjects({ personalSpaceId: input.personalSpaceId });
       if (!(Array.isArray(result) ? result : result.projects ?? []).some(p => (p.projectId ?? p.project_id) === input.personalProjectId && p.profile?.lifecycle !== 'archived')) {
@@ -36,9 +37,10 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
   }
   const service = {
     store, scope,
-    pins(input) { space(input); return store().pins(input.personalSpaceId); },
+    async pins(input) { space(input); return store().pins(input.personalSpaceId); },
     async pin(input) {
       const parsed = parse(pinSchema, input); space(parsed);
+      await prepareStore(parsed.personalSpaceId);
       if (parsed.pinned) {
         const roster = await app.listProjectAgents({ personalSpaceId: parsed.personalSpaceId });
         if (!(Array.isArray(roster) ? roster : roster.agents ?? []).some(agent => agent.agentId === parsed.agentId)) throw new EmployeeError('Agent not found', 404, 'not_found');
@@ -65,11 +67,13 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       return judgmentHumanInteraction(records, parsed.personalSpaceId);
     },
     // Reads the local ledger only; no judgment client runs.
-    reviewVerdicts(input) {
+    async reviewVerdicts(input) {
       const parsed = parse(reviewVerdictSchema, input); space(parsed);
+      await prepareStore(parsed.personalSpaceId);
       return acceptanceReviewVerdicts(store().acceptances(parsed.personalSpaceId, parsed.agentId, parsed.personalProjectId ?? null));
     },
-    feedback(input) { const parsed = parse(feedbackSchema, input); space(parsed);
+    async feedback(input) { const parsed = parse(feedbackSchema, input); space(parsed);
+      await prepareStore(parsed.personalSpaceId);
       return store().feedback(parsed.personalSpaceId, parsed.decisionId, parsed.vote, parsed.reason, parsed.expectedRevision); },
     async review(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.review(service, input); },
     async reviewAutomatic(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.reviewAutomatic(service, input); },

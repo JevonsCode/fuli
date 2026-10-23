@@ -4,10 +4,10 @@ No remote request is made. Submitted does not mean a remote maintainer approved
 it. The existing publication flow has no withdrawal route; never invent one.
 """
 from .knowledge_hard_delete_models import KnowledgeHardDeletePublication
-from .provider_values import json_object, stable_uuid
+from .publication_source_copies import drafts_for_sources
 
 
-async def publications_for_sources(store, space, items, episode_ids=()):
+async def publications_for_sources(store, space, items, episode_ids=(), *, source_range=None):
     """Resolve sources from item IDs and explicit deleted turns, then match the
     stored publication payload by identity. Text similarity is not provenance."""
     sources, _, _ = await store.runtime.driver.execute_query(
@@ -25,34 +25,18 @@ async def publications_for_sources(store, space, items, episode_ids=()):
         ''', group_id=space['group_id'], episode_ids=list(episode_ids),
         entity_ids=[item.item_id for item in items if item.item_kind == 'entity'],
         relationship_ids=[item.item_id for item in items if item.item_kind == 'relationship'], routing_='r')
-    if not sources:
-        return []
-    records, _, _ = await store.runtime.driver.execute_query(
-        '''
-        MATCH (personal:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_PUBLICATION_DRAFT]->
-              (draft:FuliPublicationDraft {status: 'submitted'})
-        OPTIONAL MATCH (personal)-[:SUBSCRIBES_TO]->(subscription:FuliSubscription)
-        WHERE subscription.provider_url = draft.provider_url
-          AND subscription.project_id = draft.target_project_id
-        RETURN draft, head(collect(subscription.project_name)) AS project_name ORDER BY draft.id
-        ''', space_id=space['id'], routing_='r')
+    # A submitted copy keeps its identity after the episode itself is gone.
+    # Explicit source IDs therefore remain matchable without a live source node.
+    known = {row['episode_id'] for row in sources}
+    sources = [*sources, *({'episode_id': episode_id} for episode_id in episode_ids if episode_id not in known)]
+    records = await drafts_for_sources(store, space, sources, source_range=source_range)
     found = []
     for record in records:
         draft = dict(record['draft'])
         if draft.get('status') != 'submitted' or not draft.get('shared_proposal_id'):
             continue
-        episode = json_object(draft.get('payload'))
-        key = episode.get('idempotency_key')
-        exact_id = stable_uuid(space['group_id'], 'episode', key) if key else None
-        matched = []
-        for source in sources:
-            same_turn = all(episode.get(field) and episode[field] == source.get(field)
-                            for field in ('session_id', 'source_application', 'source_turn_id'))
-            if source['episode_id'] == exact_id or same_turn:
-                matched.append(source['episode_id'])
-        if matched:
-            found.append(KnowledgeHardDeletePublication(
-                draft_id=draft['id'], project_id=draft['target_project_id'],
-                project_name=record.get('project_name') or None, provider_url=draft['provider_url'],
-                proposal_id=draft['shared_proposal_id'], source_episode_ids=sorted(set(matched))))
+        found.append(KnowledgeHardDeletePublication(
+            draft_id=draft['id'], project_id=draft['target_project_id'],
+            project_name=record['project_name'], provider_url=draft['provider_url'],
+            proposal_id=draft['shared_proposal_id'], source_episode_ids=record['source_episode_ids']))
     return sorted(found, key=lambda row: row.draft_id)

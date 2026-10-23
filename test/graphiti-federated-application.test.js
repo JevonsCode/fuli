@@ -910,6 +910,23 @@ test('personal approval submits the full draft to shared review and then marks i
     });
   });
 
+test('a source-deleted draft rejects Agent submission before any remote request', async () => {
+  const calls = [];
+  const app = new FederatedGraphApplication(CONFIG, {
+    fetchImpl: providerFetch(calls, {
+      '/v1/publication-drafts/draft-deleted': {
+        id: 'draft-deleted', status: 'source_deleted', episode: null,
+        target_project_id: 'project-1', provider_url: 'https://workspace.example',
+        payload_scrubbed_by: 'synthetic-deletion'
+      }
+    })
+  });
+  await assert.rejects(app.reviewPersonalDraft({ draftId: 'draft-deleted', decision: 'submit_public' }),
+    (error) => error.status === 409 && error.code === 'publication_draft_not_pending');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'GET');
+});
+
 test('personal knowledge correction stays on the personal Provider and keeps project scope',
   async () => {
     const calls = [];

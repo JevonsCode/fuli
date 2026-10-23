@@ -7,6 +7,7 @@ import pytest
 from fuli_graph import knowledge_hard_delete as deletion
 from fuli_graph.knowledge_hard_delete_models import KnowledgeHardDeleteItem, KnowledgeHardDeleteRef
 from fuli_graph.provider_values import stable_uuid
+from fuli_graph.knowledge_hard_delete_publications import publications_for_sources
 
 
 class PreviewDriver:
@@ -101,3 +102,39 @@ async def test_preview_reports_exact_episode_and_turn_provenance_and_no_fake_wit
     changed = await deletion.preview_hard_delete(store, {'id': 'owner'}, 'item',
                 KnowledgeHardDeleteRef(personal_space_id='space', item_kind='entity'))
     assert changed.preview_id != original_digest, 'publication warning changes require a fresh confirmation'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('scope,expected', [('episode', ['direct']), ('session', ['direct', 'other-turn'])])
+async def test_source_publications_do_not_require_a_local_episode(scope, expected):
+    drafts = [draft('direct', session_id='session', source_application='codex', source_turn_id='turn'),
+              draft('other-turn', session_id='session', source_application='codex', source_turn_id='other'),
+              draft('other-client', session_id='session', source_application='claude', source_turn_id='turn'),
+              draft('other-session', session_id='other', source_application='codex', source_turn_id='turn'),
+              draft('pending', status='pending', session_id='session', source_application='codex', source_turn_id='turn')]
+
+    async def query(cypher, **params):
+        if 'FuliPublicationDraft' in cypher:
+            return ([{'draft': value, 'project_name': None} for value in drafts], None, None)
+        return [], None, None
+
+    store = SimpleNamespace(runtime=SimpleNamespace(driver=SimpleNamespace(execute_query=query)))
+    source_range = SimpleNamespace(whole_session=scope == 'session', source_application='codex', session_id='session', turn_id='turn')
+    result = await publications_for_sources(store, {'id': 'space', 'group_id': 'group'}, [], source_range=source_range)
+    assert [row.draft_id for row in result] == expected
+    assert all(row.source_episode_ids == [] for row in result)
+
+
+@pytest.mark.asyncio
+async def test_scrubbed_submission_is_found_by_preserved_identity_after_episode_is_gone():
+    async def query(cypher, **params):
+        if 'FuliPublicationDraft' in cypher:
+            return ([{'draft': {'id': 'receipt', 'status': 'submitted',
+                'provider_url': 'https://public.example', 'target_project_id': 'project',
+                'shared_proposal_id': 'proposal', 'source_identity': json.dumps({'episode_id': 'deleted-episode'}),
+                'payload_scrubbed_by': 'deletion'}, 'project_name': None}], None, None)
+        return [], None, None
+    store = SimpleNamespace(runtime=SimpleNamespace(driver=SimpleNamespace(execute_query=query)))
+    found = await publications_for_sources(store, {'id': 'space', 'group_id': 'group'}, [], ['deleted-episode'])
+    assert [row.draft_id for row in found] == ['receipt']
+    assert found[0].source_episode_ids == ['deleted-episode']

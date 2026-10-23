@@ -7,6 +7,7 @@ import { resolveSetupPaths } from './paths.js';
 import { ensureGraphRuntime } from './graph-runtime.js';
 import { installSessionSkill } from './session-skill.js';
 import { beginFirstRunCapture } from './first-run-capture.js';
+import { reconcileLocalKnowledge } from '../knowledge-hard-delete/reconcile-local.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
   readRuntimeSettings,
@@ -135,8 +136,14 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     }));
   }
 
+  const agentsReady = agents.every(({ status }) => status === 'connected');
+  const reconcileKnowledge = dependencies.reconcileKnowledge
+    ?? (ensureRuntime === ensureGraphRuntime ? reconcileLocalKnowledge : null);
+  const knowledgeRecovery = agentsReady && reconcileKnowledge
+    ? await reconcileKnowledge(plan.paths, { fetchImpl: dependencies.fetchImpl ?? globalThis.fetch }) : null;
   return {
-    status: agents.some(({ status }) => status !== 'connected') ? 'partial' : 'ready',
+    status: agentsReady && knowledgeRecovery?.status !== 'pending' ? 'ready' : 'partial',
+    ...(knowledgeRecovery ? { knowledgeRecovery } : {}),
     runtime,
     agents
   };

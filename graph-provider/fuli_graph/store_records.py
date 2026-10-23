@@ -9,7 +9,7 @@ from .models import (
     StructuredEpisode,
     SubscriptionRecord,
 )
-from .provider_values import native_datetime, stable_uuid
+from .provider_values import json_object, native_datetime, stable_uuid
 
 
 class StoreRecords:
@@ -103,7 +103,10 @@ class StoreRecords:
             target_project_id=value['target_project_id'],
             provider_url=value['provider_url'],
             status=value['status'],
-            episode=StructuredEpisode.model_validate_json(value['payload']),
+            episode=None if value.get('payload_scrubbed_by') else StructuredEpisode.model_validate_json(value['payload']),
+            source_identity=json_object(value.get('source_identity')),
+            payload_scrubbed_by=value.get('payload_scrubbed_by'),
+            payload_scrubbed_at=native_datetime(value.get('payload_scrubbed_at')),
             created_at=native_datetime(value['created_at']),
             decided_at=native_datetime(value.get('decided_at')),
             shared_proposal_id=value.get('shared_proposal_id'),

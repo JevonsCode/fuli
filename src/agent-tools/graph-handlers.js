@@ -5,6 +5,16 @@ import { agentInterfaceCatalog } from './interface-catalog.js';
 import { captureDecision, captureDisabled, describeCapture } from '../graphiti/capture-decision.js';
 import { captureNotice } from '../graphiti/capture-notice.js';
 import { isTagGovernanceProposal, knowledgeTagChange, proposeTagGovernance } from '../graphiti/knowledge-tags.js';
+import { prepareKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
+
+// These tools read or change the two local stores that can retain deleted
+// knowledge. Provider-only reads and unrelated tools remain available.
+const RECOVERY_STORES = Object.freeze({
+  get_judgment_policy: 'judgment', pin_agent: 'judgment',
+  list_judgments: 'judgment', review_with_tonborg: 'judgment',
+  assess_agent_action: 'judgment', assess_task_completion: 'judgment',
+  get_agent_score_card: 'judgment', role_work: 'role-work'
+});
 
 const HANDLERS = Object.freeze({
   get_judgment_policy: (app, input) => app.judgment.policy(input),
@@ -317,6 +327,17 @@ export function dispatchGraphTool(app, name, input) {
       'agent_access_disabled',
       'FULI Agent access is disabled in the local console'
     );
+  }
+  const recoveryStore = RECOVERY_STORES[name];
+  if (recoveryStore && app.knowledgeRecoveryGate) {
+    const spaceId = app.config.personal.spaceId;
+    if (input.personalSpaceId !== undefined && input.personalSpaceId !== spaceId) {
+      throw new ApplicationError('scope_mismatch', 'Use the active personal space', { status: 403 });
+    }
+    // Service preparation also covers console callers; the shared proof cache
+    // avoids a second network read. Store assertions still guard each access.
+    return prepareKnowledgeRecovery(app.knowledgeRecoveryGate, spaceId, recoveryStore)
+      .then(() => handler(app, input));
   }
   return handler(app, input);
 }
