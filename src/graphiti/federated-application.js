@@ -150,7 +150,7 @@ export function openFederatedGraphApplication({
       toolNames: () => listAgentTools().map(({ name }) => name) });
     app.modelBackends = openModelBackendRuntime(paths);
     attachJudgmentRuntime(app, paths);
-    app.roleSuggestions = openRoleSuggestionLog(paths);
+    app.roleSuggestions = openRoleSuggestionLog(paths, { recoveryGate: app.knowledgeRecoveryGate });
     app.taskSchedules = createTaskScheduleService({ app,
       openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
     app.roundtableHost = createFuliRoundtableHost(app);
@@ -995,6 +995,12 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
         input.status ?? 'pending'
       )
     };
+  }
+
+  async readRoleSuggestions({ limit } = {}) {
+    const personalSpaceId = this.config.personal.spaceId;
+    await this.knowledgeRecoveryGate?.refresh(personalSpaceId);
+    return this.roleSuggestions.list({ personalSpaceId, limit });
   }
 
   reconcilePersonalSubmissions(options = {}) {

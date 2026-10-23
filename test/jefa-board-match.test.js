@@ -541,12 +541,13 @@ test('the console copy follows the recording switch, decided after the model ans
         stopped: false, fuli: { enabled: true, basis: 'started', since: null } });
     },
     'settings unreadable': run => { run.app.getCapturePolicy = () => { throw new Error('unreadable'); }; },
-    // Jefa's own recheck reads the task once more; the copy's read after it fails.
-    'task unreadable': run => {
+    // Before the model, the generation reads its trusted session too. The
+    // final capture-scope read fails, after the successful attribution check.
+    'task unreadable': (run, when) => {
       const read = run.contexts.registry.context.bind(run.contexts.registry);
       let reads = 0;
       run.contexts.registry.context = async (...args) => {
-        if (++reads > 1) throw new Error('Provider down');
+        if (++reads > (when === 'before' ? 2 : 1)) throw new Error('Provider down');
         return read(...args);
       };
     }
@@ -554,8 +555,8 @@ test('the console copy follows the recording switch, decided after the model ans
   for (const [name, turnOff] of Object.entries(off)) {
     // Before the entry, and while the model runs: both are decided after its answer.
     for (const when of ['before', 'during']) {
-      const run = harness({ roles: { jefa: jefaRole() }, replies: [when === 'before' ? answer() : delayed(async () => turnOff(run))] });
-      if (when === 'before') await turnOff(run);
+      const run = harness({ roles: { jefa: jefaRole() }, replies: [when === 'before' ? answer() : delayed(async () => turnOff(run, when))] });
+      if (when === 'before') await turnOff(run, when);
       const match = jefaOf(await run.entry()).suggested_match;
       assert.equal(JSON.stringify({ ...match, requestId: undefined }), JSON.stringify({ ...JSON.parse(shown), requestId: undefined }),
         `${name} ${when}: the hint itself is unchanged`);
@@ -572,13 +573,30 @@ test('a permanent delete that completes while the model runs leaves the hint as 
     const operation = ledger.begin({ spaceId: SPACE, itemKind: 'entity', itemId: 'item-1', previewId: 'preview-1', itemIds: ['item-1'] });
     ledger.update(operation.id, { state: 'complete', deletedAt: new Date().toISOString() });
   })] });
-  run.app.roleSuggestions = new RoleSuggestionLog(join(directory, 'role-suggestions.sqlite'));
+  run.app.roleSuggestions = new RoleSuggestionLog(join(directory, 'role-suggestions.sqlite'),
+    { recoveryGate: { state: () => ({ state: 'open' }) } });
   t.after(() => { run.app.roleSuggestions.close(); rmSync(directory, { recursive: true, force: true }); });
   const match = jefaOf(await run.entry()).suggested_match;
   assert.equal(match.status, 'suggested');
   const [kept] = run.app.roleSuggestions.list();
   assert.deepEqual([kept.status, kept.hint, kept.suggestion, kept.hard_deleted], ['suggested', undefined, { taskId: 'task-reminder', updatedAt: '2026-10-20T08:00:00.000Z' }, true]);
   run.assertNoWrites();
+});
+
+for (const itemKind of ['episode', 'session']) test(`Jefa drops its entire late suggestion after ${itemKind} deletion`, async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-jefa-generation-'));
+  const run = harness({ roles: { jefa: jefaRole() }, replies: [delayed(async () => {
+    const ledger = hardDeleteLedger(directory);
+    const operation = ledger.begin({ spaceId: SPACE, itemKind, itemId: 'source', itemIds: ['source'],
+      sourceApplication: 'codex', sessionId: 'synthetic-session-a' });
+    ledger.update(operation.id, { state: 'complete', deletionId: 'source-deletion', deletedAt: new Date().toISOString() });
+  })] });
+  run.app.roleSuggestions = new RoleSuggestionLog(join(directory, 'role-suggestions.sqlite'),
+    { recoveryGate: { state: () => ({ state: 'open' }) } });
+  t.after(() => { run.app.roleSuggestions.close(); rmSync(directory, { recursive: true, force: true }); });
+  assert.equal(jefaOf(await run.entry()).suggested_match.status, 'suggested');
+  assert.equal(run.app.roleSuggestions.db.prepare('SELECT count(*) AS n FROM role_suggestions').get().n, 0);
+  assert.equal(run.app.roleSuggestions.droppedCount, 1);
 });
 
 test('approval withdrawn during the console copy\'s own capture read: superseded, and no words kept', async () => {

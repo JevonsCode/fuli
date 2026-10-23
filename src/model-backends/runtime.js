@@ -24,6 +24,6 @@ export function openRoleWorkRuntime(paths, { port, verifySession, resumers, reco
 }
 
 // What the built-in Agents showed after asking their own model, for the console.
-export function openRoleSuggestionLog(paths) {
-  return new RoleSuggestionLog(paths.roleSuggestionsPath);
+export function openRoleSuggestionLog(paths, { recoveryGate } = {}) {
+  return new RoleSuggestionLog(paths.roleSuggestionsPath, { recoveryGate });
 }

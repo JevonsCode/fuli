@@ -20,7 +20,7 @@ const ROLE_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)$/;
 const SUGGESTIONS_ROUTE = '/api/model-backends/suggestions';
 
 export async function handleModelBackendApiRequest({
-  request, response, url, modelBackends, roleWork = null, roleSuggestions = null, roleSettings = null, operations = {}, unlockedBuilds = null
+  request, response, url, modelBackends, roleWork = null, readRoleSuggestions = null, roleSettings = null, operations = {}, unlockedBuilds = null
 }) {
   const roleEdit = ROLE_ROUTE.exec(url.pathname)?.[1] ?? null;
   if (!roleEdit && !['/api/model-backends/usage', '/api/model-backends/roles', SUGGESTIONS_ROUTE].includes(url.pathname)) return false;
@@ -29,14 +29,14 @@ export async function handleModelBackendApiRequest({
     return true;
   }
   const suggestions = url.pathname === SUGGESTIONS_ROUTE;
-  if (!modelBackends || (roleEdit && !roleSettings) || (suggestions && !roleSuggestions)) {
+  if (!modelBackends || (roleEdit && !roleSettings) || (suggestions && !readRoleSuggestions)) {
     sendJson(response, 503, { error: 'Model backends need a local FULI installation' });
     return true;
   }
   response.setHeader('Cache-Control', 'no-store');
   if (suggestions) {
     const limit = url.searchParams.get('limit');
-    sendJson(response, 200, { suggestions: roleSuggestions.list(limit === null ? {} : { limit: positiveInteger(Number(limit), 'limit', Number.MAX_SAFE_INTEGER) }),
+    sendJson(response, 200, { suggestions: await readRoleSuggestions(limit === null ? {} : { limit: positiveInteger(Number(limit), 'limit', Number.MAX_SAFE_INTEGER) }),
       retention: RETENTION });
     return true;
   }

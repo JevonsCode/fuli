@@ -4,7 +4,7 @@ import { projectApproved } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
 import { singleLine } from '../text/single-line.js';
 import { taskCaptureScope } from './capture-decision.js';
-import { prepareRoleSuggestionNote, suggestionDeletionGeneration } from './role-suggestion-note.js';
+import { prepareRoleSuggestionNote, suggestionDeletionGeneration, suggestionSessionGeneration } from './role-suggestion-note.js';
 
 // Jefa's board match at task entry (rec#8, rec#10 D-26). Once the host has
 // authorized the task's project for Jefa and read its board, Jefa's own model
@@ -64,6 +64,7 @@ async function suggestBoardMatch(application, task, manager, taskPrompt) {
   // The claim comes first: a none, a stop or a failure uses it up too.
   if (!await application.taskContextRegistry.claimSessionHint(task.token, OPERATION, task.sourceApplication).catch(() => false)) return null;
   // Before the evidence is read: a permanent delete after this keeps the hint's words out of its console copy.
+  const sessionGeneration = await suggestionSessionGeneration(application, spaceId, task);
   const deletionGeneration = suggestionDeletionGeneration(application, spaceId);
   // The entry's board view omits summaries; read the same window through the
   // employee gates again for the evidence.
@@ -84,7 +85,7 @@ async function suggestBoardMatch(application, task, manager, taskPrompt) {
     await application.taskContextRegistry.context(task.token, task.sourceApplication)));
   const result = matchResult(application, request, outcome, receipt, chosen, late);
   if (result) keep({ role: ROLE, operation: OPERATION, personalSpaceId: spaceId, personalProjectId: task.project,
-    subject: { conversationId: task.conversationId }, result, deletionGeneration });
+    subject: { conversationId: task.conversationId }, result, deletionGeneration, sessionGeneration });
   return result;
 }
 
