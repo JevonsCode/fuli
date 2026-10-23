@@ -20,7 +20,7 @@ import { openAiStream } from './fixtures/model-transport.js';
 
 const SPACE = 'synthetic-space';
 const GATE = { status: 'suggestion_only', role: 'jefa', operation: 'board_match' };
-const RECEIPT_KEYS = ['backend', 'status', 'reason', 'failureClass', 'fallbackReason', 'requestedModel', 'actualModel', 'attempts', 'usage'];
+const RECEIPT_KEYS = ['backend', 'status', 'reason', 'failureClass', 'fallbackReason', 'requestedModel', 'actualModel', 'modelDigest', 'attempts', 'usage'];
 const PROMPT = '继续修一下浇水提醒的推送时间';
 const GARDEN_PATH = '/synthetic/garden';
 const MANIFEST = parseEmployeeManifest(JSON.parse(readFileSync(new URL('../src/employees/catalog/jefa.json', import.meta.url))));

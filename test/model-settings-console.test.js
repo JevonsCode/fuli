@@ -238,6 +238,25 @@ test('each role shows its D-24 review gate read from the real registry file', as
   assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'no_model', entries: [] });
 });
 
+test('each configured role lists the build that last answered on its model, read-only and from the ledger', async (t) => {
+  const ledger = new ModelUsageLedger(':memory:');
+  const digest = '9'.repeat(64);
+  ledger.record({ requestId: 'req-1', attemptId: 'a-1', attemptNumber: 1, purpose: 'initial', channel: 'model_api', role: 'tonborg',
+    operation: 'knowledge_review', personalSpaceId: 'space-1', personalProjectId: 'alpha', connectionId: 'local-qwen',
+    protocol: 'openai_chat', endpointHost: '127.0.0.1:11434', requestedModel: 'qwen-test', actualModel: 'qwen-test',
+    modelDigest: digest, outputMode: 'json_schema', startedAt: '2026-10-23T10:00:00.000Z', durationMs: 100, outcome: 'succeeded',
+    failureClass: null, failureReason: null, usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120, cachedInputTokens: null,
+      cacheWriteInputTokens: null, reasoningTokens: null, definition: 'openai_chat' },
+    budgetCeilingTokens: 1000, estimatedCost: null, costCurrency: null });
+  const page = await console_(t, { ledger });
+  assert.equal((await page.put('tonborg', edit())).status, 200);
+  assert.equal((await page.put('bole', edit({ revision: (await page.roles()).revision }))).status, 200);
+  const served = Object.fromEntries((await page.roles()).roles.map(role => [role.role, role.lastServed]));
+  // Bole shares the connection but has not answered; a role without a model has nothing to show.
+  assert.deepEqual(served, { assistant: null, bole: null, jefa: null,
+    tonborg: { modelDigest: digest, answeredAt: '2026-10-23T10:00:00.000Z' } });
+});
+
 test('usage keeps unknown values unknown with their count and session fallbacks apart', async (t) => {
   const ledger = new ModelUsageLedger(':memory:');
   const attempt = (id, overrides) => ({ requestId: `req-${id}`, attemptId: `a-${id}`, attemptNumber: 1, purpose: 'initial',

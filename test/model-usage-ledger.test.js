@@ -70,3 +70,22 @@ test('records keep no prompt text and reject an unknown channel', () => {
   assert.equal(columns.some(name => /prompt|content|message|secret|key$/.test(name)), false);
   assert.throws(() => ledger.record(attempt({ channel: 'browser' })));
 });
+
+test('the last served build is the latest model API answer of that role, connection and model; an unproven digest stays unknown', () => {
+  const ledger = new ModelUsageLedger(':memory:');
+  const digest = 'c'.repeat(64);
+  const where = { role: 'bole', connectionId: 'local', protocol: 'openai_chat', endpointHost: '127.0.0.1:11434', requestedModel: 'qwen' };
+  assert.equal(ledger.lastServed(where), null);
+  ledger.record(attempt({ modelDigest: digest }));
+  // A failure, a session answer, another role and another model never replace it.
+  ledger.record(attempt({ requestId: 'req-2', startedAt: '2026-10-20T11:00:00.000Z', outcome: 'failed', failureClass: 'transient',
+    failureReason: 'timeout', modelDigest: 'd'.repeat(64) }));
+  ledger.record(attempt({ requestId: 'req-3', startedAt: '2026-10-20T11:00:00.000Z', channel: 'session', connectionId: null,
+    protocol: null, endpointHost: null, requestedModel: null, actualModel: null }));
+  ledger.record(attempt({ requestId: 'req-4', startedAt: '2026-10-20T11:00:00.000Z', role: 'jefa', modelDigest: 'e'.repeat(64) }));
+  ledger.record(attempt({ requestId: 'req-5', startedAt: '2026-10-20T11:00:00.000Z', requestedModel: 'qwen:8b', modelDigest: 'f'.repeat(64) }));
+  assert.deepEqual(ledger.lastServed(where), { modelDigest: digest, answeredAt: '2026-10-20T10:00:00.000Z' });
+  // A later answer whose backend proved no digest is unknown, never the earlier digest.
+  ledger.record(attempt({ requestId: 'req-6', startedAt: '2026-10-20T12:00:00.000Z' }));
+  assert.deepEqual(ledger.lastServed(where), { modelDigest: null, answeredAt: '2026-10-20T12:00:00.000Z' });
+});

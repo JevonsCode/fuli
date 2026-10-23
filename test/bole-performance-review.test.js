@@ -19,7 +19,7 @@ const PROJECT = 'project-a';
 const config = { version: 1, workspaces: [],
   personal: { providerUrl: 'http://127.0.0.1:8787', accessToken: 'synthetic-provider-token', principalId: 'test-person', spaceId: SPACE } };
 const GATE = { status: 'suggestion_only', role: 'bole', operation: 'performance_review' };
-const RECEIPT_KEYS = ['backend', 'status', 'reason', 'failureClass', 'fallbackReason', 'requestedModel', 'actualModel', 'attempts', 'usage'];
+const RECEIPT_KEYS = ['backend', 'status', 'reason', 'failureClass', 'fallbackReason', 'requestedModel', 'actualModel', 'modelDigest', 'attempts', 'usage'];
 
 const scored = (sample, passed, label) => ({ status: 'scored', sample, passed, rate: passed / sample, tier: { label, evidence_count: sample }, label: null });
 const insufficient = sample => ({ status: 'insufficient_data', sample, passed: null, rate: null, tier: null, label: '数据不足' });

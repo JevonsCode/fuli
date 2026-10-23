@@ -11,6 +11,8 @@ import { readJson, sendJson } from '../http/response.js';
 // operations: the task types each role already sends to its model.
 // unlockedBuilds(modelId): the D-24 review gate registry's passing entries
 // for that model (src/judgment/review-gate.js), read on every request.
+// lastServed: the build that last answered each role on its configured model
+// (its digest, or null when the backend did not prove one), read-only.
 const ROLE_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)$/;
 
 export async function handleModelBackendApiRequest({
@@ -33,7 +35,8 @@ export async function handleModelBackendApiRequest({
   }
   if (roleEdit || url.pathname === '/api/model-backends/roles') {
     const settings = modelBackends.roles();
-    sendJson(response, 200, { ...settings, roles: settings.roles.map(role => ({ ...role, reviewGate: reviewGate(role, unlockedBuilds) })),
+    sendJson(response, 200, { ...settings, roles: settings.roles.map(role => ({ ...role, reviewGate: reviewGate(role, unlockedBuilds),
+      lastServed: role.connection ? modelBackends.lastServed(role) : null })),
       operations, workPackages: roleWork?.summary().packages ?? [] });
     return true;
   }

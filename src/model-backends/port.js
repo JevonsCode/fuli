@@ -50,6 +50,9 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         fallbackEligible, fallbackReason: fallbackEligible ? failure.reason : null,
         connection: target?.id ?? null, protocol: target?.protocol ?? null, requestedModel: target?.model ?? null,
         actualModel: attempts.findLast(attempt => attempt.actualModel)?.actualModel ?? null,
+        // The build that served the last attempt, the one that answered; null
+        // when its backend did not prove it for that call (D-24: no match).
+        modelDigest: attempts.at(-1)?.modelDigest ?? null,
         outputMode: attempts.length ? mode : null, attempts: attempts.length, usage: receiptUsage(attempts),
         reportedConfidence, durationMs: now().getTime() - startedAt
       };
@@ -129,7 +132,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       const verdict = !result.ok ? { failure: result.failure }
         : result.payload !== undefined ? contract.validatePayload(result.payload) : contract.validateReply(result.reply);
       const attempt = {
-        ...pending, actualModel: result.actualModel, durationMs: now().getTime() - attemptStarted.getTime(),
+        ...pending, actualModel: result.actualModel, modelDigest: result.modelDigest ?? null,
+        durationMs: now().getTime() - attemptStarted.getTime(),
         outcome: verdict.ok ? 'succeeded' : verdict.issues ? 'invalid_output' : 'failed',
         failureClass: verdict.ok ? null : verdict.failure?.failureClass ?? 'configuration',
         failureReason: verdict.ok ? null : verdict.failure?.reason ?? 'invalid_output',
@@ -213,6 +217,13 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     allowsEgress(request) {
       const settings = this.operationSettings(request.role, request.operation);
       return Boolean(settings) && egressAllowed(request, settings.egress);
+    },
+    // The build that last answered a role (a roles() entry) on its configured
+    // connection and model: { modelDigest, answeredAt }, modelDigest null when
+    // unknown; null when it has not answered there. Settings shows it read-only.
+    lastServed({ role, connection }) {
+      return ledger.lastServed({ role, connectionId: connection.id, protocol: connection.protocol,
+        endpointHost: connection.endpointHost, requestedModel: connection.model });
     },
     // A current-session answer to a work package is an attempt too, kept on
     // its own channel. Its usage is what the session reported, else unknown.

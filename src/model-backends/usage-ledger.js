@@ -6,7 +6,8 @@ import { roundCost } from './budget.js';
 // (requestId, attemptId) so a duplicate report of the same attempt is stored
 // once. Logical requests are distinct requestIds. Rows never hold prompt
 // text, model output or keys. The channel keeps independent model API usage
-// apart from current-session usage.
+// apart from current-session usage. model_digest is the build that served the
+// attempt when its backend proved it for that call, else null (unknown).
 //
 // Before an attempt goes out it reserves its token (and, when priced, cost)
 // ceiling: one IMMEDIATE transaction checks the role's window and inserts the
@@ -50,7 +51,14 @@ export const MODEL_USAGE_FORMAT = sqliteFormat({
       CREATE TRIGGER IF NOT EXISTS model_attempts_no_update BEFORE UPDATE ON model_attempts
         BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;
       CREATE TRIGGER IF NOT EXISTS model_attempts_no_delete BEFORE DELETE ON model_attempts
-        BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;`
+        BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;`,
+  migrations: [{
+    // Earlier attempts read as unknown, which is what they were: no backend
+    // proved a digest before this column existed.
+    id: 'model-usage/2-served-digest', to: 2, kind: 'add-columns', table: 'model_attempts',
+    summary: 'the digest of the model build that served each attempt, when its backend proved it',
+    columns: { model_digest: 'TEXT' }
+  }]
 });
 
 export class ModelUsageLedger {
@@ -68,14 +76,15 @@ export class ModelUsageLedger {
   // True when stored, false when this (requestId, attemptId) already exists.
   record(attempt) {
     const { usage } = attempt;
-    const result = this.db.prepare(`INSERT INTO model_attempts VALUES(${Array(30).fill('?').join(',')})
+    const result = this.db.prepare(`INSERT INTO model_attempts VALUES(${Array(31).fill('?').join(',')})
       ON CONFLICT(request_id, attempt_id) DO NOTHING`).run(
       attempt.requestId, attempt.attemptId, attempt.attemptNumber, attempt.purpose, attempt.channel,
       attempt.role, attempt.operation, attempt.personalSpaceId, attempt.personalProjectId,
       attempt.connectionId, attempt.protocol, attempt.endpointHost, attempt.requestedModel, attempt.actualModel,
       attempt.outputMode, attempt.startedAt, attempt.durationMs, attempt.outcome, attempt.failureClass, attempt.failureReason,
       usage.inputTokens, usage.outputTokens, usage.totalTokens, usage.cachedInputTokens, usage.cacheWriteInputTokens,
-      usage.reasoningTokens, usage.definition, attempt.budgetCeilingTokens, attempt.estimatedCost, attempt.costCurrency);
+      usage.reasoningTokens, usage.definition, attempt.budgetCeilingTokens, attempt.estimatedCost, attempt.costCurrency,
+      attempt.modelDigest ?? null);
     return result.changes === 1;
   }
 
@@ -162,6 +171,16 @@ export class ModelUsageLedger {
       estimatedCost: row.cost_currency ? { amount: row.cost === null ? null : roundCost(row.cost), currency: row.cost_currency,
         basis: 'estimate', unknownAttempts: row.cost_unknown } : null
     }));
+  }
+
+  // The latest answer of a role from one connection and model on the model
+  // API: { modelDigest, answeredAt }, or null when there is none.
+  lastServed({ role, connectionId, protocol, endpointHost, requestedModel }) {
+    const row = this.db.prepare(`SELECT model_digest, started_at FROM model_attempts
+      WHERE role = ? AND channel = 'model_api' AND outcome = 'succeeded' AND connection_id = ? AND protocol = ?
+        AND endpoint_host = ? AND requested_model = ?
+      ORDER BY started_at DESC, rowid DESC LIMIT 1`).get(role, connectionId, protocol, endpointHost, requestedModel);
+    return row ? { modelDigest: row.model_digest, answeredAt: row.started_at } : null;
   }
 
   // Nested calls join the open transaction.
