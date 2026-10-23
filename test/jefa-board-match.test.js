@@ -98,6 +98,7 @@ function taskContexts() {
 function jefaWorkbench() {
   const board = new Map(TASKS.map(task => [task.id, structuredClone(task)]));
   const calls = [];
+  const readHooks = [];
   let revision = 1;
   const runtime = {
     describeTools: async () => [
@@ -109,6 +110,7 @@ function jefaWorkbench() {
     callTool: async (name, args, context) => {
       calls.push({ name, args: structuredClone(args), project: context.project.id });
       if (name !== 'read_board') return { status: 'updated' };
+      await readHooks.shift()?.();
       const items = [...board.values()].filter(item => item.projectId === context.project.id);
       return { version: `board-${revision}`, total: items.length, truncated: items.length > (args.limit ?? 50),
         items: items.slice(0, args.limit ?? 50).map(item => structuredClone(item)) };
@@ -118,6 +120,8 @@ function jefaWorkbench() {
   };
   return {
     calls, board,
+    // Runs during the next board reads, one hook per read.
+    duringReads: (...hooks) => { readHooks.push(...hooks); },
     writes: () => calls.filter(call => call.name !== 'read_board'),
     change: (id, fields) => { Object.assign(board.get(id), fields); revision += 1; },
     remove: id => { board.delete(id); revision += 1; },
@@ -466,6 +470,17 @@ test('permission withdrawn while the model runs: no hint is shown', async () => 
     assert.deepEqual([match.status, match.reason, match.hint, match.modelReceipt.attempts], ['superseded', 'permission_changed', undefined, 1], name);
     run.assertNoWrites();
   }
+
+  // Settings withdrawn while the board is read again for the recheck.
+  let rereadRole = jefaRole();
+  const reread = harness({ roles: { jefa: () => rereadRole }, replies: [async () => {
+    reread.workbench.duringReads(async () => { rereadRole = jefaRole({ egress: { approvedProjects: [], allowUnassigned: true } }); });
+    return answer();
+  }] });
+  const late = jefaOf(await reread.entry()).suggested_match;
+  assert.deepEqual([late.status, late.reason, late.hint], ['superseded', 'permission_changed', undefined]);
+  assert.equal(reread.reads(), 3, 'the withdrawal happened during the recheck read');
+  reread.assertNoWrites();
 
   // A fallback after an attempt is held back the same way.
   let role = jefaRole();

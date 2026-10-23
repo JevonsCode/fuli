@@ -80,6 +80,8 @@ async function suggestBoardMatch(application, task, manager, taskPrompt) {
   const chosen = listed[optionIds(listed).indexOf(envelope.payload.choice)];
   const late = await lateChange(application, manager, task, chosen);
   if (late) return { status: 'superseded', reason: late, ...receipt };
+  // Settings may change while the board is read again; check once more, synchronously, before showing.
+  if (!application.modelBackends.allowsEgress(request)) return { status: 'superseded', reason: 'permission_changed', ...receipt };
   const title = singleLine(chosen.title);
   return { status: 'suggested', hint: `可能是看板上的「${title}」任务`,
     suggestion: { taskId: chosen.id, title, updatedAt: chosen.updatedAt ?? null, reason: envelope.reason, uncertainty: envelope.uncertainty },
