@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -9,6 +9,8 @@ import { runClientsCommand } from '../src/cli/clients-command.js';
 import { descriptorDigest } from '../src/setup/agents/descriptor-schema.js';
 import { agentAdapter } from '../src/setup/agents/registry.js';
 import { discoverAgents } from '../src/setup/agents.js';
+import { writeTextFileAtomic } from '../src/storage/json-file.js';
+import { readClientPackState, writeClientPackState } from '../src/setup/agents/client-pack-store.js';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 function fixture(t, id = 'codex') {
   const root = mkdtempSync(join(tmpdir(), 'fuli-clients-e2e-'));
@@ -200,3 +202,73 @@ test('apply checks each file again before writing after another file was changed
   assert.equal(readFileSync(f.agent.hooksPath, 'utf8'), edit);
   assert.equal(readFileSync(f.agent.globalInstructionsPath, 'utf8'), beforeInstructions);
 });
+
+test('an external edit between refused rename and retry survives apply and retains recovery state', async t => {
+  const f = fixture(t); await f.run(['trust', f.source, '--sha256', f.sha256]);
+  let target; let attempts = 0;
+  const external = 'External edit during rename retry\n';
+  await assert.rejects(f.run(['update', '--apply', 'codex@99.0.0'], { writeFile: (path, text, options) => {
+    target ??= path;
+    writeTextFileAtomic(path, text, { ...options, io: {
+      renameSync(from, to) {
+        if (++attempts === 1) throw Object.assign(new Error('busy'), { code: 'EPERM' });
+        renameSync(from, to);
+      },
+      pauseSync() { writeFileSync(target, external); }
+    } });
+  } }));
+  assert.equal(attempts, 1, 'a changed target must not reach the next rename');
+  assert.equal(readFileSync(target, 'utf8'), external);
+  const status = (await f.run(['status'])).find(pack => pack.id === 'codex');
+  assert.equal(status.version, '1.0.0'); assert.equal(status.recoveryRequired, true);
+});
+
+test('an equal-version npm descriptor retires the installed override and status reports its source priority', async t => {
+  const f = fixture(t);
+  const builtin = JSON.parse(readFileSync(new URL('../src/setup/agents/codex/descriptor.json', import.meta.url)));
+  const override = { ...builtin, label: 'Retired override with equal version' };
+  override.digest = descriptorDigest(override);
+  const state = readClientPackState(f.dataDir); const key = `${override.id}@${override.version}`;
+  state.packages[key] = override; state.active[override.id] = key;
+  writeClientPackState(f.dataDir, state);
+  assert.equal(discoverAgents({ env: f.env, homeDir: f.homeDir, commandExists: () => false }).find(agent => agent.id === 'codex').label, builtin.label);
+  const status = (await f.run(['status'])).find(pack => pack.id === 'codex');
+  assert.equal(status.version, builtin.version); assert.equal(status.retired, true);
+});
+
+for (const phase of ['failure restoration', 'explicit recovery']) {
+  test(`an external edit during a rename retry survives ${phase}`, async t => {
+    const f = fixture(t); let target; let attempts = 0; let writes = 0;
+    const external = `External edit during ${phase}\n`;
+    const guardedWriter = (path, text, options) => {
+      if (phase === 'failure restoration' && !options?.durable) {
+        if (++writes === 2) throw new Error('synthetic second write failure');
+        target = path; writeTextFileAtomic(path, text, options); return;
+      }
+      writeTextFileAtomic(path, text, { ...options, io: {
+        renameSync(from, to) {
+          if (++attempts === 1) throw Object.assign(new Error('busy'), { code: 'EACCES' });
+          renameSync(from, to);
+        },
+        pauseSync() { writeFileSync(target, external); }
+      } });
+    };
+    if (phase === 'failure restoration') {
+      await f.run(['trust', f.source, '--sha256', f.sha256]);
+      await assert.rejects(f.run(['update', '--apply', 'codex@99.0.0'], { writeFile: guardedWriter }), /restoration failed/);
+    } else {
+      target = f.agent.globalInstructionsPath;
+      const before = readFileSync(target, 'utf8'); const after = 'Synthetic interrupted update\n';
+      const backupPath = join(f.dataDir, 'synthetic-recovery.bak'); writeFileSync(backupPath, before);
+      const state = readClientPackState(f.dataDir);
+      state.ledger.push({ operation: 'synthetic', id: 'codex', from: '1.0.0', to: '99.0.0', status: 'pending',
+        files: [{ path: target, backupPath, beforeDigest: hash(before), afterDigest: hash(after) }] });
+      writeClientPackState(f.dataDir, state); writeFileSync(target, after);
+      await assert.rejects(f.run(['rollback', 'codex'], { writeFile: guardedWriter }), /changed before replacement/);
+    }
+    assert.equal(attempts, 1);
+    assert.equal(readFileSync(target, 'utf8'), external);
+    const status = (await f.run(['status'])).find(pack => pack.id === 'codex');
+    assert.equal(status.version, '1.0.0'); assert.equal(status.recoveryRequired, true);
+  });
+}

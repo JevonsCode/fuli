@@ -50,15 +50,17 @@ export async function runClientsCommand(args, { env = process.env, write = conso
   const active = installedClientPacks(paths.dataDir);
   if (action === 'status') {
     const state = readClientPackState(paths.dataDir);
+    const builtins = clientDescriptorPacks();
     const status = active.map(pack => ({ id: pack.id, version: pack.version,
       recoveryRequired: state.ledger.some(entry => entry.id === pack.id && (entry.status === 'pending' || entry.restoreFailures?.length)),
-      retired: Boolean(state.active[pack.id] && state.packages[state.active[pack.id]].version !== pack.version) }));
+      retired: Boolean(state.active[pack.id] && compareSemanticVersions(state.packages[state.active[pack.id]].version,
+        builtins.find(builtin => builtin.id === pack.id).version) <= 0) }));
     write(JSON.stringify(status, null, 2)); return status;
   }
   let pack;
   if (action === 'rollback') {
     if (positional.length !== 1) throw new TypeError('rollback needs one client id');
-    const recovered = await recoverClientPack({ dataDir: paths.dataDir, id: positional[0], confirm, write });
+    const recovered = await recoverClientPack({ dataDir: paths.dataDir, id: positional[0], confirm, write, writeFile });
     if (recovered) return recovered;
     pack = readClientPackState(paths.dataDir).history[positional[0]]?.at(-1);
     if (!pack) { write('No prior client pack; no changes.'); return { status: 'current' }; }

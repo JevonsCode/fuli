@@ -58,7 +58,7 @@ export async function changeClientPack({ dataDir, pack, rollback = false, agent,
         const actual = existsSync(change.path) ? readFileSync(change.path, 'utf8') : null;
         if (actual !== change.before) throw new Error(`Client file changed during apply: ${change.path}`);
         written.push({ ...change, ...files[index] });
-        writeFile(change.path, change.after);
+        writeFile(change.path, change.after, { beforeReplace: () => assertClientContent(change.path, change.before) });
       }
       next.ledger.push({ operation, id: pack.id, from: current.version, to: pack.version, status: 'applied', rollback,
         files });
@@ -67,9 +67,11 @@ export async function changeClientPack({ dataDir, pack, rollback = false, agent,
       const failures = [];
       for (const change of written.reverse()) {
         try {
-          if (restorationContent(change) === undefined) continue;
+          const current = restorationContent(change);
+          if (current === undefined) continue;
           if (change.before === null) rmSync(change.path, { force: true });
-          else writeTextFileAtomic(change.path, change.before, { durable: true });
+          else writeFile(change.path, change.before, { durable: true,
+            beforeReplace: () => assertClientContent(change.path, current) });
         }
         catch (restoreError) { failures.push(`${change.path}: ${restoreError.message}`); }
       }
@@ -86,7 +88,7 @@ export async function changeClientPack({ dataDir, pack, rollback = false, agent,
 
 // Explicit recovery is a rollback, reviewed file by file. It never overwrites an
 // intervening client edit, and the durable journal stays pending until all restores finish.
-export async function recoverClientPack({ dataDir, id, confirm, write }) {
+export async function recoverClientPack({ dataDir, id, confirm, write, writeFile = writeTextFileAtomic }) {
   const release = acquireFileLock(join(dataDir, '.client-pack-operation.lock'));
   try {
     const state = readClientPackState(dataDir);
@@ -106,13 +108,19 @@ export async function recoverClientPack({ dataDir, id, confirm, write }) {
       const current = existsSync(file.path) ? readFileSync(file.path, 'utf8') : null;
       if (current !== file.current) throw new Error(`File changed during recovery review: ${file.path}`);
       if (file.before === null) rmSync(file.path, { force: true });
-      else writeTextFileAtomic(file.path, file.before, { durable: true });
+      else writeFile(file.path, file.before, { durable: true,
+        beforeReplace: () => assertClientContent(file.path, file.current) });
     }
     entry.status = 'recovered';
     delete entry.restoreFailures;
     writeClientPackState(dataDir, state);
     return { status: 'recovered', files: restores.length };
   } finally { release(); }
+}
+
+function assertClientContent(path, expected) {
+  const actual = existsSync(path) ? readFileSync(path, 'utf8') : null;
+  if (actual !== expected) throw new Error(`Client file changed before replacement: ${path}`);
 }
 
 // Both immediate rollback and interrupted-operation recovery compare live bytes.
