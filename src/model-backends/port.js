@@ -25,6 +25,11 @@ const MIN_ATTEMPT_MS = 1000;
 // A live attempt aborts at its timeout; a reservation still unsettled this
 // long after that belongs to a process that stopped before settling it.
 const RESERVATION_GRACE_MS = 60_000;
+// rec#10 D-32: the local build is read once after a valid answer, within
+// what is left of that attempt's deadline and never longer than this; with
+// less left than LOCAL_BUILD_MIN_MS it is not read at all.
+const LOCAL_BUILD_MAX_MS = 2000;
+const LOCAL_BUILD_MIN_MS = 100;
 
 const USAGE_NOTES = 'One record per actual model API attempt; requests count distinct requestIds. '
   + 'reported is null when no attempt reported that value: unknown, never 0. '
@@ -107,7 +112,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         requestId: request.requestId, attemptId: randomUUID(), attemptNumber: attempts.length + 1, purpose, channel: 'model_api',
         role: request.role, operation: request.operation, personalSpaceId: request.scope.personalSpaceId,
         personalProjectId: request.scope.personalProjectId, connectionId: target.id, protocol: target.protocol,
-        endpointHost: new URL(target.endpoint).host, requestedModel: target.model, outputMode: mode,
+        endpointHost: new URL(target.endpoint).host, endpoint: target.endpoint, requestedModel: target.model, outputMode: mode,
         startedAt: attemptStarted.toISOString(), budgetCeilingTokens: inputTokens + limits.maxOutputTokens,
         costCurrency: target.pricing?.currency ?? null
       };
@@ -119,8 +124,9 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       if (blocked) return stop('budget_exhausted', blocked);
 
       let result;
+      const attemptSignal = AbortSignal.timeout(remainingMs);
       try {
-        result = await adapter.call({ connection: target, secret, request, mode, signal: AbortSignal.timeout(remainingMs),
+        result = await adapter.call({ connection: target, secret, request, mode, signal: attemptSignal,
           prompt: outgoing, maxOutputTokens: limits.maxOutputTokens, fetchImpl });
       } catch (error) {
         ledger.settleUnknown(pending, { durationMs: now().getTime() - attemptStarted.getTime(), failureReason: 'attempt_error' });
@@ -135,6 +141,9 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         failureReason: verdict.ok ? null : verdict.failure?.reason ?? 'invalid_output',
         usage: result.usage, estimatedCost: estimateCost(result.usage, target.pricing)
       };
+      if (verdict.ok && result.actualModel === target.model && adapter.observesLocalBuild?.(target)) {
+        attempt.observedTagDigest = await localBuildAfter(adapter, target, attemptSignal, deadline - now().getTime());
+      }
       ledger.settle(attempt);
       attempts.push(attempt);
 
@@ -163,6 +172,16 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       purpose = 'retry';
       await wait(pauseMs);
     }
+  }
+
+  // The local build listed after a valid answer (rec#10 D-32): bounded by the
+  // attempt's own deadline signal and by the smaller of what is left and
+  // LOCAL_BUILD_MAX_MS, skipped when too little is left. It never extends the
+  // deadline and never touches the call budget; the answer is already in hand.
+  async function localBuildAfter(adapter, target, attemptSignal, remainingMs) {
+    if (remainingMs < LOCAL_BUILD_MIN_MS || attemptSignal.aborted) return null;
+    return adapter.observeLocalBuild({ connection: target, fetchImpl,
+      signal: AbortSignal.any([attemptSignal, AbortSignal.timeout(Math.min(remainingMs, LOCAL_BUILD_MAX_MS))]) });
   }
 
   async function decide(input) {
@@ -213,6 +232,21 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     allowsEgress(request) {
       const settings = this.operationSettings(request.role, request.operation);
       return Boolean(settings) && egressAllowed(request, settings.egress);
+    },
+    // What Settings shows of the local build behind a role's latest answer
+    // on its configured endpoint and model (rec#10 D-32). An observation of
+    // the local catalog, never proof of what served the answer; it reaches no
+    // receipt, review record or gate. Only a connection on the read path
+    // (openai_chat on loopback HTTP /v1) applies. connectionId and
+    // connection: the role's configured connection, or null.
+    localBuild(role, connectionId, connection) {
+      const none = status => ({ status, digest: null, completedAt: null });
+      if (!connection || !MODEL_ADAPTERS[connection.protocol].observesLocalBuild?.(connection)) return none('not_applicable');
+      const last = ledger.lastServed({ role, connectionId, protocol: connection.protocol, endpoint: connection.endpoint,
+        requestedModel: connection.model });
+      if (!last) return none('no_record');
+      return { status: last.observedTagDigest ? 'observed' : 'not_observed', digest: last.observedTagDigest,
+        completedAt: last.completedAt };
     },
     // A current-session answer to a work package is an attempt too, kept on
     // its own channel. Its usage is what the session reported, else unknown.

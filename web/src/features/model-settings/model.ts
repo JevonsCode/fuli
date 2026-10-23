@@ -1,5 +1,7 @@
 import { ApiError, getJson, putJson } from '@/api/client'
 import { t } from '@/i18n'
+import { shortDigest } from '@/features/data-format/model'
+import { formatDateTime } from '@/lib/date-time'
 import { shortUniqueIds } from '@/lib/short-ids'
 
 // The console's model settings page (rec#8): each built-in Agent's model,
@@ -56,6 +58,28 @@ export interface ModelRoleView {
   fallbackToSession?: boolean
   // rec#10 D-24, read from the gate registry: only Tonborg's model can be unlocked.
   reviewGate?: ReviewGateView
+  // rec#10 D-32: the build a local Ollama listed after the latest answer.
+  localBuild?: LocalBuild
+}
+
+// An observation of the local catalog, never proof of what served an answer.
+export interface LocalBuild {
+  status: 'not_applicable' | 'no_record' | 'not_observed' | 'observed'
+  digest: string | null
+  completedAt: string | null
+}
+
+// What the 本地模型版本 row says: nothing for a connection a local build is
+// never read from; otherwise the state in words, or the build as the
+// 12-character prefix `ollama list` shows, with the full build in a title.
+export function localBuildText(build: LocalBuild | undefined, locale: string): { text: string; title?: string; code: boolean } | null {
+  if (!build || build.status === 'not_applicable') return null
+  if (build.status === 'no_record') return { text: t('modelSettings.localBuild.noRecord'), code: false }
+  if (build.status === 'not_observed' || !build.digest) {
+    return { text: t('modelSettings.localBuild.notObserved'), title: t('modelSettings.localBuild.notObservedHint'), code: false }
+  }
+  const time = formatDateTime(build.completedAt, locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }, { missing: '' })
+  return { text: `${shortDigest(build.digest)}…`, title: `${build.digest}\n${t('modelSettings.localBuild.observedHint', { time })}`, code: true }
 }
 
 export interface GateEntry { modelId: string; modelDigest: string; harnessVersion: string; evidence: string; addedAt: string }
