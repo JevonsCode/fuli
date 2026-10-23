@@ -14,7 +14,8 @@ const MAX_RUNS = 100;
 export const GATE = Object.freeze({ structuralValidity: 0.98, agreement: 0.85, underEscalation: 0, dangerousAccepts: 0 });
 export const OUTCOME_VIEWS = Object.freeze({
   model: row => row.modelOutcome,
-  // What the host records: the engine escalates any verdict under 0.85 confidence.
+  // The host's own rules: the engine escalates any verdict under 0.85 confidence
+  // (run.js scores them without the D-24 gate, which this evaluation decides).
   host: row => row.effectiveOutcome
 });
 

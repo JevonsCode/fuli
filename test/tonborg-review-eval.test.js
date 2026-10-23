@@ -111,11 +111,13 @@ test('a review goes through the production knowledge_review request with the can
   assert.equal(review.judgment.operation, 'knowledge_review');
   assert.equal(review.judgment.data.policy.mode, 'manual');
   assert.equal(review.modelVerdict.outcome, 'approve');
-  assert.deepEqual(review.record, { target: 'entity:syn-abc', outcome: 'approve', confidence: 0.95, summary: 'Supported.', error: null, execution: 'not_applied' });
+  // The raw model approval stays; the host's gate keeps it a suggestion (rec#10 D-24).
+  assert.deepEqual(review.record, { target: 'entity:syn-abc', outcome: 'escalate', modelOutcome: 'approve',
+    interceptions: ['gate_not_passed', 'manual_policy'], confidence: 0.95, summary: 'Supported.', error: null, execution: 'not_applied' });
   assert.equal(review.exchanges.length, 1);
   assert.match(review.exchanges[0].responseText, /data: /);
   assert.deepEqual(compactRow({ blindId: 'H2-01', set: 'holdout', run: 1 }, review), { blindId: 'H2-01', set: 'holdout', run: 1, valid: true,
-    modelOutcome: 'approve', effectiveOutcome: 'approve', confidence: 0.95, receiptStatus: 'completed', receiptReason: null, recordError: null,
+    modelOutcome: 'approve', effectiveOutcome: 'approve', interceptions: ['gate_not_passed', 'manual_policy'], confidence: 0.95, receiptStatus: 'completed', receiptReason: null, recordError: null,
     attempts: 1, durationMs: review.receipt.durationMs, inputTokens: 900, outputTokens: 60 });
 });
 

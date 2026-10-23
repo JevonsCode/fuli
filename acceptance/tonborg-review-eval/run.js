@@ -23,12 +23,18 @@ const OUTCOMES = new Set(['approve', 'escalate']);
 
 export function compactRow({ blindId, set, run }, review) {
   const verdict = review.modelVerdict;
-  const valid = review.receipt?.status === 'completed' && Boolean(verdict) && OUTCOMES.has(review.record?.outcome);
-  return { blindId, set, run, valid, modelOutcome: valid ? verdict.outcome : null, effectiveOutcome: valid ? review.record.outcome : null,
+  const valid = review.receipt?.status === 'completed' && Boolean(verdict) && OUTCOMES.has(review.record?.modelOutcome);
+  return { blindId, set, run, valid, modelOutcome: valid ? review.record.modelOutcome : null, effectiveOutcome: valid ? hostOutcome(review.record) : null,
+    interceptions: review.record?.interceptions ?? [],
     confidence: verdict?.confidence ?? null, receiptStatus: review.receipt?.status ?? null, receiptReason: review.receipt?.reason ?? null,
     recordError: review.record?.error ?? null, attempts: review.receipt?.attempts ?? 0, durationMs: review.receipt?.durationMs ?? review.wallMs,
     inputTokens: review.receipt?.usage?.inputTokens ?? null, outputTokens: review.receipt?.usage?.outputTokens ?? null };
 }
+
+// The host's own rules (confidence under 0.85, attention) without the D-24
+// gate: the gate is what this evaluation decides, so it is not scored.
+const NOT_SCORED = new Set(['gate_not_passed', 'manual_policy']);
+const hostOutcome = record => record.interceptions.some(reason => !NOT_SCORED.has(reason)) ? 'escalate' : record.modelOutcome;
 
 async function main() {
   const { values } = parseArgs({ options: { cases: { type: 'string' }, out: { type: 'string' }, model: { type: 'string', default: 'qwen3.5:4b' },
