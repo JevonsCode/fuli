@@ -55,6 +55,7 @@
     "test:package": "node scripts/package-smoke.js",
     "test:neo4j": "node --test --test-concurrency=1 test/agent-dismissal-acceptance.test.js test/conversation-hook-neo4j-acceptance.test.js test/project-agent-memory-acceptance.test.js test/task-memory-checkpoint-atomicity.test.js",
     "test:knowledge:live": "node acceptance/knowledge-live.js",
+    "measure:context-delivery": "node acceptance/context-delivery-replay/run.js",
     "test:external-knowledge:live": "node scripts/validate-external-knowledge-live.js",
     "start": "node src/server.js",
     "graph:setup": "node src/graphiti/setup.js",
