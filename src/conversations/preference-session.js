@@ -6,8 +6,8 @@ import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';
-import { applyPreferenceDeltaSnapshot, applySceneSwitchSnapshot, framePreferenceSnapshot, preferenceSnapshot, projectPreferenceDelta }
-  from './preference-snapshot.js';
+import { applyPreferenceDeltaSnapshot, applySceneSwitchSnapshot, completePreferenceFrame, confirmableScene,
+  framePreferenceSnapshot, pendingScene, preferenceSnapshot, projectPreferenceDelta, shownRevision } from './preference-snapshot.js';
 import { deliveredRecentFrame, MAX_RECENT_FRAMES, ownRecordOffsets, projectRecentContext, recentEvidence,
   validRecentFrames, withoutDeliveryProofs } from './recent-context.js';
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
@@ -20,6 +20,9 @@ const MAX_PENDING = 16;
 // A version 1 record has none and is read as such, then written as version 2.
 // An older FULI refuses a version 2 record and delivers in full, as it does
 // for any cache it cannot read; nothing is ever confirmed from a missing entry.
+// A pending item's `scene` (rec#15 D-29.2) is the scene its frame was produced
+// for; an item written without one never confirms, so its frame is resent in
+// full. An older FULI ignores it and still binds the frame to its own scope hash.
 const RECORD_VERSION = 2;
 export const PREFERENCE_SESSION_FORMAT = jsonFormat({ store: 'preference-session', versions: [1, RECORD_VERSION] });
 
@@ -68,8 +71,11 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
             state = { pending: [], recent: [], floor: proof.known ? proof.size : null };
           }
           if (proof.known && state.floor !== null) state = generationState(state, proof);
-          const baseline = proof.known && state.floor !== null ? acknowledgedSnapshot(value, snapshot, state, proof) : null;
-          const preferences = origin.forceFull ? value : projectPreferenceDelta(value, baseline);
+          // Without a readable generation no frame can ever be confirmed, so
+          // none carries a revision.
+          const { baseline, shown } = proof.known && state.floor !== null ? acknowledgedSnapshot(value, snapshot, state, proof)
+            : { baseline: null, shown: null };
+          const preferences = origin.forceFull ? completePreferenceFrame(value, shown) : projectPreferenceDelta(value, baseline, shown);
           const recent = projectRecentContext(preferences, origin.forceFull ? undefined
             : recentEvidence(proof, state.recent, { sessionId: snapshot.sessionId, adapter: proof.adapter,
               floor: state.floor === null ? null : state.floor ?? 0 }));
@@ -77,12 +83,14 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           result = output(projected);
           const next = { ...state };
           // A pending hash means only produced. Only a matching complete native
-          // tool result above can acknowledge it in a later call/process.
+          // record above can acknowledge it in a later call/process; a frame
+          // without a revision can never be named as a base, so it keeps none.
           if (!result.isError && result.structuredContent?.preferences_complete !== false
+              && shownRevision(result.structuredContent)
               && preferenceDeliveryReason(projected, result.structuredContent) === null
               && result.structuredContent?.preference_delivery?.status !== 'blocked') {
             const pending = { scopeHash: snapshot.scopeHash, snapshotHash: snapshot.snapshotHash,
-              frameHash: preferenceFrameHash(result.structuredContent) };
+              frameHash: preferenceFrameHash(result.structuredContent), scene: pendingScene(snapshot) };
             next.pending = [...(state.pending ?? []).filter(item => item.frameHash !== pending.frameHash), pending].slice(-MAX_PENDING);
           }
           const frame = deliveredRecentFrame(recent.frame, projected, result);
@@ -128,26 +136,41 @@ function generationState(state, proof) {
   return state;
 }
 
-// The latest verified frame of the same authorized scope, in any scene: a
-// scene switch then names it as the revision it supersedes (rec#15 D-27).
+// What this generation shows the model, by preference revision (rec#15
+// D-29.3, D-29.9). Every complete, model-visible frame the host recorded at or
+// after the floor counts, whatever its record ID: a Claude attachment, a Codex
+// command-hook context (its adapter proves the hook provenance) or a tool
+// result. A revision names one verified set, or none once two frames show it
+// for different sets or one of them cannot be verified. The baseline is the
+// latest verified frame of the current authority, in any scene, whose revision
+// names it alone; a delta or scene switch then names it by that revision.
+const AMBIGUOUS = Object.freeze({ snapshotHash: null });
+
 function acknowledgedSnapshot(value, current, state, proof) {
   const pending = new Map((state.pending ?? []).map(item => [item.frameHash, item]));
+  const shown = new Map();
   let baseline = null;
   for (const frame of proof.frames) {
-    // A delta names its base result; a record without an ID cannot be one.
-    if (frame.offset < (state.floor ?? 0) || !frame.callId) continue;
-    const expected = pending.get(preferenceFrameHash(frame.value));
-    if (!expected) continue;
-    const status = frame.value.preference_delivery?.status;
-    const delivered = status === 'delta' ? applyPreferenceDeltaSnapshot(frame.value, baseline)
-      : status === 'scene_switch' ? applySceneSwitchSnapshot(value, frame.value, baseline)
-        : framePreferenceSnapshot(value, frame.value);
-    if (delivered?.authorityHash !== current.authorityHash || delivered.scopeHash !== expected.scopeHash
-        || delivered.snapshotHash !== expected.snapshotHash) continue;
-    baseline = { scopeHash: delivered.scopeHash, authorityHash: delivered.authorityHash,
-      snapshotHash: delivered.snapshotHash, units: delivered.units, callId: frame.callId };
+    const revision = shownRevision(frame.value);
+    if (frame.offset < (state.floor ?? 0) || !revision) continue;
+    const delivered = verifiedFrame(value, frame.value, pending.get(preferenceFrameHash(frame.value)), revision, shown);
+    const known = shown.get(revision) ?? delivered;
+    shown.set(revision, delivered && known.snapshotHash === delivered.snapshotHash ? { ...delivered, revision } : AMBIGUOUS);
+    if (delivered?.authorityHash === current.authorityHash) baseline = { ...delivered, revision };
   }
-  return baseline;
+  return { shown, baseline: baseline && shown.get(baseline.revision).snapshotHash === baseline.snapshotHash ? baseline : null };
+}
+
+// A recorded frame as the set its producer kept the pending hash for, built
+// on the base its own revision field names, in the scene the pending item kept.
+function verifiedFrame(value, frame, expected, revision, shown) {
+  if (!expected || !confirmableScene(expected.scene)) return null;
+  const delivery = frame.preference_delivery;
+  const delivered = delivery?.status === 'delta' ? applyPreferenceDeltaSnapshot(frame, shown.get(delivery.base_revision))
+    : delivery?.status === 'scene_switch' ? applySceneSwitchSnapshot(value, frame, shown.get(delivery.supersedes), expected.scene)
+      : framePreferenceSnapshot(value, frame, expected.scene);
+  return delivered?.scopeHash === expected.scopeHash && delivered.snapshotHash === expected.snapshotHash
+    && delivered.snapshotHash.startsWith(revision) ? delivered : null;
 }
 
 // A session with no record yet starts fresh at the file's beginning. Any other
@@ -171,9 +194,15 @@ async function readState(path) {
         || value.pending.length > MAX_PENDING
         || !(value.floor === undefined || value.floor === null || Number.isSafeInteger(value.floor))
         || value.pending.some(item => ![item.scopeHash, item.snapshotHash, item.frameHash]
-          .every(hash => /^[a-f0-9]{64}$/.test(hash)))) return UNTRUSTED;
+          .every(hash => /^[a-f0-9]{64}$/.test(hash)) || !(item.scene === undefined || validScene(item.scene)))) return UNTRUSTED;
     const recent = value.recent ?? [];
     return validRecentFrames(recent) ? { ...value, recent } : UNTRUSTED;
   } catch { return UNTRUSTED; }
   finally { await file.close(); }
+}
+
+const sceneValue = value => value === null || (typeof value === 'string' && value.length <= 64);
+function validScene(scene) {
+  return scene !== null && typeof scene === 'object' && sceneValue(scene.work_kind) && sceneValue(scene.workflow)
+    && typeof scene.table === 'string' && scene.table.length <= 64;
 }

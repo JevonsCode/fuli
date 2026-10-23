@@ -268,7 +268,8 @@ test('the cache is a bounded v2 record of hashes; v1 is read, a newer version is
   const record = JSON.parse(await readFile(join(cache, name), 'utf8'));
   assert.equal(record.version, 2);
   assert.ok(record.recent.length <= 8 && record.recent.every(frame => frame.messages.length <= 32));
-  assert.doesNotMatch(JSON.stringify(record), /secret body|task-/);
+  // No message body or task token; the pending scene's table name is not one.
+  assert.doesNotMatch(JSON.stringify(record), /secret body|task-\d/);
   assert.deepEqual(PREFERENCE_SESSION_FORMAT.versions, [1, 2]);
   // Eviction of old frames only resends: the window is at most what was evicted.
   assert.ok((await f.enter(c, f.journal.recovery('codex', C))).contents.length <= 12);
@@ -439,7 +440,8 @@ test('the new-session pointer stays in scope, binds and reads nothing, and its t
 // the scene-personalized preferences and the recovered messages it carries.
 test('a scene switch and the recent context confirm together across frontend -> chat -> frontend', () => fixture(async f => {
   const boundary = { preference_key: 'no-unapproved-push', preference_scope: 'global', profile_aspect: 'judgment_preference',
-    instruction: 'Synthetic boundary: no unapproved force-push.' };
+    // Long enough that a switch which leaves it out is smaller than a complete frame.
+    instruction: `Synthetic boundary: no unapproved force-push. ${'Keep the shared branch history intact. '.repeat(8)}` };
   const grid = { preference_key: 'grid', preference_scope: 'global', profile_aspect: 'taste',
     instruction: 'Synthetic frontend grid.', attributes: { tasteDomain: 'frontend' } };
   const scene = workKind => ({ workKind, preferences: workKind === 'chat' ? [boundary] : [boundary, grid] });

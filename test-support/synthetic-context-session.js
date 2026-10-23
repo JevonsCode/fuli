@@ -92,14 +92,21 @@ export const syntheticPreference = (key, instruction, qualifiers = {}, aspect = 
   confirmation_status: 'confirmed', instruction, preference_qualifiers: qualifiers });
 
 // What the model holds after each frame, following only the delivery rules:
-// a delta or scene switch applies to the frame its base_result names.
-export function replayPreferences(views, { id, frame }) {
-  const delivery = frame.preference_delivery;
+// a delta or scene switch applies to the one earlier frame of the context
+// generation (`views`, by revision) whose revision equals its base_revision or
+// supersedes. Without exactly one such set the model has no base and would
+// call read_task_preferences: the result is null, never a guess.
+export function replayPreferences(views, frame) {
+  const delivery = ['delta', 'scene_switch'].includes(frame.preference_delivery?.status) ? frame.preference_delivery : null;
+  const base = delivery ? views.get(delivery.status === 'delta' ? delivery.base_revision : delivery.supersedes) : new Map();
+  if (!base) return null;
   const key = item => item.preference_key;
-  const next = new Map(delivery ? views.get(delivery.base_result) : []);
+  const next = new Map(base);
   if (delivery?.status === 'scene_switch') for (const replaced of delivery.replaces) next.delete(replaced);
   if (delivery?.status === 'delta') for (const removed of delivery.removed) next.delete(key(removed));
   for (const item of frame.effective_preferences ?? frame.preference_updates) next.set(key(item), item.instruction);
-  views.set(id, next);
+  const revision = delivery?.revision ?? frame.revision;
+  const same = held => held && JSON.stringify([...held].sort()) === JSON.stringify([...next].sort());
+  if (revision) views.set(revision, views.has(revision) && !same(views.get(revision)) ? null : next);
   return next;
 }

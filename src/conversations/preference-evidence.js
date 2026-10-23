@@ -39,7 +39,7 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
         // line is parsed on its own, so only a complete JSON frame counts.
         if (event.type === 'context') {
           for (const { value, visible } of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
-            frames.push({ callId: event.id, value, visible, offset, end, recordHash: contentHash(line) });
+            frames.push({ value, visible, offset, end, recordHash: contentHash(line) });
           }
           continue;
         }
@@ -49,7 +49,7 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
         const codeMode = CODE_MODE.has(name);
         if (!codeMode && !DIRECT_TOOLS.test(name ?? '')) continue;
         for (const { value, visible } of preferenceFrames(event.output, codeMode)) {
-          frames.push({ callId: event.id, value, visible, offset, end, recordHash: contentHash(line) });
+          frames.push({ value, visible, offset, end, recordHash: contentHash(line) });
         }
       }
       offset = end;

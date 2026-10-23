@@ -15,7 +15,7 @@ export const claudePreferenceEvidence = Object.freeze({
         && record.attachment.hookEvent === 'UserPromptSubmit' && typeof record.uuid === 'string') {
       const text = (Array.isArray(record.rendered) ? record.rendered : []).map(block => block?.content)
         .filter(content => typeof content === 'string').join('\n');
-      return text ? [{ type: 'context', id: record.uuid, output: text }] : [];
+      return text ? [{ type: 'context', output: text }] : [];
     }
     if (!['assistant', 'user'].includes(record.type) || !Array.isArray(record.message?.content)) return [];
     return record.message.content.flatMap(block => {

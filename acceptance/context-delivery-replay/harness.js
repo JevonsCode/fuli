@@ -74,13 +74,14 @@ function syntheticProvider() {
 }
 
 // One replay world: the Provider, the session delivery cache, and native
-// sessions. `items` is the Provider's confirmed preference set right now.
-export async function replayWorld(fn, { items = [] } = {}) {
+// sessions. `items` is the Provider's confirmed preference set right now;
+// `fixture` the variant's synthetic preferences and messages (fixtures.js).
+export async function replayWorld(fn, { items = [], fixture } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-context-replay-'));
   const provider = syntheticProvider();
   const hosts = new Map();
   const tasks = new Map();
-  const world = { items, turns: [], checks: [], provider };
+  const world = { items, fixture, turns: [], checks: [], provider };
   const delivery = createSessionPreferenceDelivery({ directory: join(directory, 'cache'), locate: async (source, sessionId) => {
     const target = hosts.get(`${source}:${sessionId}`);
     return target && { path: target.path, adapter: source === 'codex' ? codexPreferenceEvidence : claudePreferenceEvidence };
@@ -115,7 +116,7 @@ export async function replayWorld(fn, { items = [] } = {}) {
     hosts.set(`${client}:${sessionId}`, host);
     await host.start();
     const session = { client, label, host, sessionId, generation: 0, token: null };
-    const model = () => ({ messages: new Map(), views: new Map(), preferences: new Map(), sent: new Set(), turns: 0 });
+    const model = () => ({ messages: new Map(), views: new Map(), preferences: new Map(), sent: new Set(), turns: 0, unlocated: false });
     let view = model();
     const input = extra => ({ session_id: sessionId, transcript_path: host.path, cwd: directory, ...extra });
     const resetHook = (event, extra = {}) => HOOKS[client](event, input(extra), async () => ({}), { delivery });
@@ -152,9 +153,10 @@ export async function replayWorld(fn, { items = [] } = {}) {
     // preview, as a host does with an oversized hook output.
     session.turn = async (prompt, { record = true, preview = false, note = '' } = {}) => {
       const before = { ...provider.calls };
-      let context;
+      let context, scene;
       const invoke = async (name, args) => {
         if (name !== 'begin_task_context') throw new Error(`Unexpected tool ${name}`);
+        scene = args.workKind ?? null;
         context = await beginTask(args);
         session.token = context.taskContextToken;
         return context;
@@ -165,16 +167,21 @@ export async function replayWorld(fn, { items = [] } = {}) {
       // The same entry through the same hook with no session cache. It reuses
       // this turn's Provider snapshot: a fair serialization comparison, not an
       // independent second retrieval.
-      const baseline = (await HOOKS[client]('UserPromptSubmit', input({ prompt }), async () => structuredClone(context), {}))
+      const uncached = async entry => (await HOOKS[client]('UserPromptSubmit', input({ prompt }), async () => entry, {}))
         .hookSpecificOutput.additionalContext;
+      const baseline = await uncached(structuredClone(context));
+      // Diagnostic only (D-29.8): the same entry with no preference and no
+      // message, uncached. The cache cannot remove these bytes.
+      const skeleton = await uncached(skeletonEntry(context));
       const frame = frameOf(text);
       const delivered = record && !preview;
       // What the host recorded, and so what the model could see: nothing when
       // the output was lost, only the preview when it was spilled.
       const visible = !record ? '' : preview ? `${text.slice(0, 40)}\n…[preview]…\n${text.slice(-40)}` : text;
-      const recordOffset = record ? await host.inject(visible) : null;
-      const turn = measure({ session, view, frame, text, visible, baseline, retrieval, delivered, note, prompt });
-      if (delivered) applyFrame(view, frame, client === 'claude_code' ? `attachment-${recordOffset}` : `codex-${world.turns.length}`);
+      if (record) await host.inject(visible);
+      const turn = measure({ session, view, frame, text, visible, baseline, skeleton, retrieval, delivered, note, prompt,
+        scene });
+      if (delivered) applyFrame(view, frame);
       turn.correctness = delivered ? correctness(view, frameOf(baseline), world.withdrawn ?? {}) : null;
       // The replayed model view, for scenario checks against their own
       // expected sets; kept out of the JSON result.
@@ -200,7 +207,7 @@ const preferenceItems = frame => frame.effective_preferences ?? frame.preference
 // takes it in. produced_bytes is the additionalContext the hook returned;
 // host_visible_bytes is what the host recorded for the model (0 when lost,
 // the preview when spilled). No other context cost is inferred.
-function measure({ session, view, frame, text, visible, baseline, retrieval, delivered, note, prompt }) {
+function measure({ session, view, frame, text, visible, baseline, skeleton, retrieval, delivered, note, prompt, scene }) {
   const recovery = recoveryOf(frame);
   const omitted = recovery?.messages_omitted ?? 0;
   const bucket = frame.preference_delivery || omitted > 0 ? 'incremental'
@@ -214,9 +221,11 @@ function measure({ session, view, frame, text, visible, baseline, retrieval, del
   const resent = items.filter(([key]) => view.sent.has(key));
   for (const [key] of items) view.sent.add(key);
   const pointer = frame.conversation?.recent_conversation;
-  return { session: session.label, client: session.client, generation: session.generation, note, scene: frame.preference_scene?.work_kind ?? null,
+  return { session: session.label, client: session.client, generation: session.generation, note, scene,
     prompt, bucket, delivered, preference_delivery: frame.preference_delivery?.status ?? 'full',
-    produced_bytes: bytes(text), host_visible_bytes: bytes(visible), no_cache_bytes: bytes(baseline),
+    produced_bytes: bytes(text), host_visible_bytes: bytes(visible), no_cache_bytes: bytes(baseline), skeleton_bytes: bytes(skeleton),
+    // The exact encoding a complete frame adds so a later frame can name it.
+    revision_field_bytes: frame.revision ? bytes(`,"revision":${JSON.stringify(frame.revision)}`) : 0,
     messages_sent: recovery?.messages?.length ?? 0, messages_omitted: omitted,
     withdrawn_sequences: recovery?.withdrawn?.sequences ?? [],
     preferences_sent: preferenceItems(frame).length,
@@ -225,16 +234,28 @@ function measure({ session, view, frame, text, visible, baseline, retrieval, del
     retrieval_calls: Object.values(retrieval).reduce((sum, value) => sum + value, 0), retrieval };
 }
 
-// What the model holds once the host recorded the frame it was shown.
-function applyFrame(view, frame, id) {
+// What the model holds once the host recorded the frame it was shown. A
+// frame whose base the model cannot locate leaves it without preferences.
+function applyFrame(view, frame) {
   const recovery = recoveryOf(frame);
   for (const sequence of recovery?.withdrawn?.sequences ?? []) view.messages.delete(`${recovery.conversation_id}:${sequence}`);
   for (const message of recovery?.messages ?? []) view.messages.set(messageKey(recovery, message), message.content);
-  view.preferences = replayPreferences(view.views, { id, frame });
+  const held = replayPreferences(view.views, frame);
+  view.unlocated = !held;
+  view.preferences = held ?? new Map();
+}
+
+// The same entry without any preference or message: what every turn costs.
+function skeletonEntry(context) {
+  const entry = structuredClone(context);
+  entry.effective_preferences = [];
+  if (entry.conversation?.recovery) entry.conversation.recovery.messages = [];
+  return entry;
 }
 
 // The model view against the same entry without a cache: every current
-// message and preference present, nothing stale, nothing withdrawn.
+// message and preference present, nothing stale, nothing withdrawn, and the
+// base of every delta or scene switch located.
 function correctness(view, expected, withdrawn) {
   const recovery = recoveryOf(expected);
   const messages = recovery?.messages ?? [];
@@ -245,9 +266,10 @@ function correctness(view, expected, withdrawn) {
   const extraPreferences = [...view.preferences.keys()].filter(key => !wanted.has(key));
   const withdrawnPresent = [
     ...(withdrawn.preferences ?? []).filter(key => view.preferences.has(key)).map(key => `preference:${key}`),
-    ...(withdrawn.messages ?? []).filter(content => [...view.messages.values()].includes(content)).map(content => `message:${content}`)
+    ...(withdrawn.messages ?? []).filter(content => [...view.messages.values()].includes(content)).map(content => `message:${content.slice(0, 32)}`)
   ];
-  return { ok: !missingMessages.length && !missingPreferences.length && !extraPreferences.length && !withdrawnPresent.length,
-    missing_messages: missingMessages, missing_preferences: missingPreferences, extra_preferences: extraPreferences,
-    withdrawn_present: withdrawnPresent };
+  const ok = !view.unlocated && !missingMessages.length && !missingPreferences.length && !extraPreferences.length
+    && !withdrawnPresent.length;
+  return { ok, base_unlocated: view.unlocated, missing_messages: missingMessages, missing_preferences: missingPreferences,
+    extra_preferences: extraPreferences, withdrawn_present: withdrawnPresent };
 }
