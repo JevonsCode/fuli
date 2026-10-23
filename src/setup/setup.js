@@ -44,7 +44,7 @@ export function planLocalSetup(options, {
     savedAdaptiveRuntimeSettings,
     { enabled: options.adaptiveMemory ?? null }
   );
-  const discovered = options.skipAgents ? [] : discover({ env });
+  const discovered = options.skipAgents ? [] : discover({ env, dataDir: paths.dataDir });
   const agents = options.codexOnly
     ? discovered.filter(({ id }) => id === 'codex')
     : discovered;

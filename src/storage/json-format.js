@@ -64,10 +64,11 @@ export function assertJsonFormatWritable(filePath, format) {
   return stored;
 }
 
-export function writeVersionedJsonFileAtomic(filePath, value, format, { io } = {}) {
+export function writeVersionedJsonFileAtomic(filePath, value, format, { io, durable = false } = {}) {
   requireJsonFormatVersion(value, format ?? {});
   // Nothing of the current file is used, so an unreadable one is replaced as before.
-  updateVersionedJsonFileAtomic(filePath, format, () => value, { io, read: () => null });
+  updateVersionedJsonFileAtomic(filePath, format, () => value, { io, read: () => null,
+    write: (path, next) => writeJsonFileAtomic(path, next, { io, durable }) });
 }
 
 // A read-modify-write of one file under the directory lock, taken once: the
