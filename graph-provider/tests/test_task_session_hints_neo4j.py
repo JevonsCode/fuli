@@ -22,8 +22,8 @@ async def claim(client, space_id, token, operation='project_candidate'):
         'personal_space_id': space_id, 'source_application': 'codex', 'operation': operation})
 
 
-async def claimed(client, space_id, token):
-    return ok(await claim(client, space_id, token))['claimed']
+async def claimed(client, space_id, token, operation='project_candidate'):
+    return ok(await claim(client, space_id, token, operation))['claimed']
 
 
 @pytest.mark.asyncio
@@ -34,12 +34,15 @@ async def test_a_session_hint_is_claimed_once_by_the_session_not_the_token():
         await begin(client, space_id, first, 'hint-session-a', 'turn-1')
         assert await claimed(client, space_id, first) is True
         assert await claimed(client, space_id, first) is False
+        # Jefa's board_match is its own once-per-session hint (rec#8 PR 3).
+        assert await claimed(client, space_id, first, 'board_match') is True
+        assert await claimed(client, space_id, first, 'board_match') is False
 
         # Only the operation and the time are kept, in the claiming task's record.
         record = ok(await client.get(f'/v1/task-contexts/{first}', params={
             'personal_space_id': space_id, 'source_application': 'codex'}))
-        assert [sorted(hint) for hint in record['session_hints']] == [['at', 'operation']]
-        assert record['session_hints'][0]['operation'] == 'project_candidate'
+        assert [sorted(hint) for hint in record['session_hints']] == [['at', 'operation']] * 2
+        assert [hint['operation'] for hint in record['session_hints']] == ['project_candidate', 'board_match']
 
         # A completed checkpoint rewrites the record and keeps the claim.
         ok(await client.put(f'/v1/task-contexts/{first}/checkpoint', json={
@@ -47,6 +50,7 @@ async def test_a_session_hint_is_claimed_once_by_the_session_not_the_token():
             'disposition': 'retain_nothing', 'reason': 'Synthetic routine finish.', 'fingerprint': 'b' * 64}))
         await begin(client, space_id, second, 'hint-session-a', 'turn-2')
         assert await claimed(client, space_id, second) is False
+        assert await claimed(client, space_id, second, 'board_match') is False
 
         await begin(client, space_id, other, 'hint-session-b', 'turn-1')
         assert await claimed(client, space_id, other) is True

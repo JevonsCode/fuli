@@ -1,5 +1,5 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
-import { egressAllowed } from '../model-backends/egress.js';
+import { projectApproved } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
 import { readConversationTriage } from './conversation-triage.js';
 import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
@@ -31,8 +31,6 @@ const NONE_OPTION = Object.freeze({ id: NONE, description: 'The task is not clea
 const PROMPT_VERSION = `${OPERATION}:${contentHash({ instructions: INSTRUCTIONS, none: NONE_OPTION }).slice(0, 16)}`;
 const GATE = Object.freeze({ status: 'suggestion_only', role: ROLE, operation: OPERATION });
 const RESTRICTED = '（候选仅限已批外发的项目）';
-// A role that is gone or disabled allows nothing out.
-const NO_EGRESS = Object.freeze({ approvedProjects: [], allowUnassigned: false });
 const INLINE_GUIDANCE = 'Astro\'s model gave no project hint (see reason). Label the conversation at checkpoint with triage as usual.';
 
 // entry: a task entry that began (or retried) its task. Without a hint it is
@@ -46,12 +44,13 @@ export async function withProjectCandidate(application, entry, { sessionId, sour
 async function suggestProjectCandidate(application, task, entry, taskPrompt) {
   if (entry.context?.project_resolution?.basis !== 'pending_assignment' || !entry.triage_candidates
     || !application.roleWork || typeof taskPrompt !== 'string' || !taskPrompt.trim()) return null;
-  // Not configured: no Provider read, no claim and no model call.
-  const settings = assistantSettings(application);
+  // Not configured: no Provider read, no claim and no model call. Settings
+  // are read on every entry, like the port: they may change between entries.
+  const settings = application.modelBackends?.operationSettings(ROLE, OPERATION);
   if (!settings) return null;
   const spaceId = application.config.personal.spaceId;
   const projects = await nameableProjects(application).catch(() => []);
-  const candidates = projects.filter(project => approved(settings, spaceId, project.project_id)).slice(0, MAX_CANDIDATES);
+  const candidates = projects.filter(project => projectApproved(settings.egress, spaceId, project.project_id)).slice(0, MAX_CANDIDATES);
   if (!candidates.length) return null;
   // The claim comes first: a none, a stop or a failure uses it up too.
   if (!await application.taskContextRegistry.claimSessionHint(task.token, OPERATION, task.sourceApplication).catch(() => false)) return null;
@@ -65,7 +64,7 @@ async function suggestProjectCandidate(application, task, entry, taskPrompt) {
   const receipt = { requestId: request.requestId, evidenceVersion: request.versions.evidence, promptVersion: PROMPT_VERSION,
     gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) };
   // Nothing that followed an attempt is shown once the request would no longer be allowed out.
-  if (outcome.modelReceipt.attempts && !egressAllowed(request, assistantSettings(application)?.egress ?? NO_EGRESS)) {
+  if (outcome.modelReceipt.attempts && !application.modelBackends.allowsEgress(request)) {
     return { status: 'superseded', reason: 'permission_changed', ...receipt };
   }
   if (outcome.status === 'inline') return { status: 'inline', reason: outcome.fallbackReason, guidance: INLINE_GUIDANCE, ...receipt };
@@ -80,17 +79,6 @@ async function suggestProjectCandidate(application, task, entry, taskPrompt) {
     suggestion: { personalProjectId: project.project_id, name, reason: envelope.reason, uncertainty: envelope.uncertainty },
     confirmWith: 'checkpoint_task_knowledge.triage',
     suggestedBy: { mode: 'model_api', independent: true, model: modelReceipt.actualModel ?? modelReceipt.requestedModel }, ...receipt };
-}
-
-// Read on every call, like the port: Settings may change between entries.
-function assistantSettings(application) {
-  const role = application.modelBackends?.roles().roles.find(entry => entry.role === ROLE);
-  return role?.state === 'enabled' && role.allowedOperations.includes(OPERATION) ? role : null;
-}
-
-function approved(settings, personalSpaceId, personalProjectId) {
-  return settings.egress.approvedProjects.some(project =>
-    project.personalSpaceId === personalSpaceId && project.personalProjectId === personalProjectId);
 }
 
 // The prompt carries no project (it needs allowUnassigned); each candidate's

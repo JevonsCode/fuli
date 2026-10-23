@@ -201,6 +201,19 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
           egress: settings.egress };
       }) };
     },
+    // A role's Settings entry while it may send this operation to its model,
+    // else null. A role reading it before a call reads it again on every call.
+    operationSettings(role, operation) {
+      const settings = this.roles().roles.find(entry => entry.role === role);
+      return settings?.state === 'enabled' && settings.allowedOperations.includes(operation) ? settings : null;
+    },
+    // Whether the whole request would still be allowed out now, for a role
+    // that rechecks before it shows a late answer. A role that is gone,
+    // disabled or no longer allowed the operation allows nothing.
+    allowsEgress(request) {
+      const settings = this.operationSettings(request.role, request.operation);
+      return Boolean(settings) && egressAllowed(request, settings.egress);
+    },
     // A current-session answer to a work package is an attempt too, kept on
     // its own channel. Its usage is what the session reported, else unknown.
     recordSessionAttempt({ request, attemptId, attemptNumber, startedAt, durationMs, outcome, usage = null }) {
