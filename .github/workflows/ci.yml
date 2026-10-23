@@ -77,6 +77,25 @@ jobs:
         env:
           FULI_TEST_PYTHON: python
 
+  # rec#7 D-28.10: the Windows Hello helper builds here on every change, and its
+  # digest is pinned the way a release pins it. It is never started in CI.
+  # Provenance attestation waits for the owner to allow id-token write (D-28.16).
+  win-helper:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - id: helper
+        uses: ./.github/actions/win-helper
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - run: node scripts/pin-win-helper.js native/win32/fuli-win-helper.exe --expect ${{ steps.helper.outputs.sha256 }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fuli-win-helper
+          path: native/win32/fuli-win-helper.exe
+          if-no-files-found: error
+
   # Installer, update, rollback and ACP code paths only run on Windows.
   node-windows:
     runs-on: windows-latest

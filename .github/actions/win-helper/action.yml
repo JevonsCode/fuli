@@ -1,0 +1,27 @@
+name: Build fuli-win-helper
+description: >-
+  Builds native/win32/fuli-win-helper.exe (rec#7 D-28.10) with Native AOT on a
+  Windows runner and reports its SHA-256 for the package to pin. Build
+  provenance attestation is not added yet: it needs the repository owner to
+  allow id-token write for Actions first (D-28.16).
+outputs:
+  sha256:
+    description: SHA-256 of native/win32/fuli-win-helper.exe
+    value: ${{ steps.digest.outputs.sha256 }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: "8.0.x"
+    - name: Publish the helper
+      shell: pwsh
+      run: dotnet publish native/win32/fuli-win-helper/fuli-win-helper.csproj -c Release -o native/win32/build
+    - name: Report its digest
+      id: digest
+      shell: pwsh
+      run: |
+        Copy-Item native/win32/build/fuli-win-helper.exe native/win32/fuli-win-helper.exe
+        $sha256 = (Get-FileHash native/win32/fuli-win-helper.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+        "sha256=$sha256" >> $env:GITHUB_OUTPUT
+        Write-Output "fuli-win-helper.exe sha256 $sha256"
