@@ -326,6 +326,12 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  // rec#10 D-26.4: a task-entry hint is claimed once per host session.
+  claimSessionHint(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/session-hints/claim`, {
+      method: 'POST', body: input
+    });
+  }
   verifyTaskCheckpoint(query) {
     return this.#request(`/v1/task-context-sessions/checkpoint?${new URLSearchParams(query)}`);
   }

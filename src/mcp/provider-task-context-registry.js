@@ -99,6 +99,15 @@ export class ProviderTaskContextRegistry {
     return Array.isArray(result?.claimed) ? result.claimed : [];
   }
 
+  // True for exactly one current entry of the task's host session (keyed by
+  // the session, not the token); only the operation and time are stored.
+  async claimSessionHint(token, operation, sourceApplication = 'other') {
+    const result = await this.provider.claimSessionHint(token, {
+      personal_space_id: this.personalSpaceId, source_application: sourceApplication, operation
+    });
+    return result?.claimed === true;
+  }
+
   verify(sessionId, sourceApplication = 'other') {
     return this.provider.verifyTaskCheckpoint({
       personal_space_id: this.personalSpaceId, session_id: sessionId,
