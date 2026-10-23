@@ -65,8 +65,13 @@ async function readSource(source, fetchImpl) {
   catch { return null; }
   if (!response.ok) return null;
   const chunks = []; let size = 0;
-  for await (const chunk of response.body) {
-    size += chunk.length; checkSize(size); chunks.push(Buffer.from(chunk));
+  try {
+    for await (const chunk of response.body) {
+      size += chunk.length; checkSize(size); chunks.push(Buffer.from(chunk));
+    }
+  } catch (error) {
+    if (size > MAX_BYTES) throw error;
+    return null;
   }
   return Buffer.concat(chunks);
 }

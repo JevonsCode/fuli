@@ -56,3 +56,10 @@ test('unknown manifest fields and a wrong internal descriptor digest are refused
   const bytes = JSON.stringify(manifest); writeFileSync(f.source, bytes);
   await assert.rejects(readPinnedClientManifest({ ...f, sha256: hash(bytes) }), /digest/);
 });
+test('a transport interrupted while reading a response is unavailable', async () => {
+  const fetchImpl = async () => ({ ok: true, body: { async *[Symbol.asyncIterator]() {
+    yield Buffer.from('{'); throw new Error('connection reset');
+  } } });
+  assert.deepEqual(await readPinnedClientManifest({ source: 'https://example.invalid/manifest.json', sha256: '0'.repeat(64) },
+    { fetchImpl }), { status: 'unavailable', packs: [] });
+});
