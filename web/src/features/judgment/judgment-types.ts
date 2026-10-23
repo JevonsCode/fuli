@@ -3,7 +3,7 @@ export type JudgmentQuality = 'quality' | 'balanced' | 'economy'
 export type JudgmentClient = 'codex' | 'claude_code'
 export type JudgmentOutcome = 'approve' | 'escalate' | 'recommend' | 'failed'
 export type JudgmentKind = 'review' | 'routing' | 'acceptance'
-export type JudgmentExecutionStatus = 'not_applied' | 'applying' | 'applied' | 'stale' | 'failed'
+export type JudgmentExecutionStatus = 'not_applied' | 'applying' | 'applied' | 'stale' | 'failed' | 'undone'
 export type JudgmentFeedbackVote = 'up' | 'down' | null
 
 export interface JudgmentPolicySelection {
@@ -41,6 +41,15 @@ export interface JudgmentSelection {
   client: string
 }
 
+// rec#10 D-24: how the host treated a knowledge review verdict. modelOutcome
+// is the model's own answer; interceptions are the host's reasons it did not apply.
+export interface JudgmentAiReview {
+  state: 'ai_suggested' | 'ai_reviewed'
+  modelOutcome: 'approve' | 'escalate'
+  interceptions: string[]
+  gate: { status: 'passed' | 'not_passed', reason: string | null, modelId: string | null, promptVersion: string }
+}
+
 export interface JudgmentDecisionRecord {
   id: string
   createdAt: string
@@ -51,6 +60,7 @@ export interface JudgmentDecisionRecord {
   objective?: string
   summary: string
   outcome: JudgmentOutcome
+  aiReview?: JudgmentAiReview
   evidence: string[]
   policy: Partial<JudgmentPolicySelection> | null
   client?: JudgmentClient | null

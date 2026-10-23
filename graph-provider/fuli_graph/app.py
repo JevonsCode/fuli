@@ -19,6 +19,8 @@ from .knowledge_feedback_models import (
     KnowledgeFeedbackResult,
 )
 from .knowledge_review_models import (
+    KnowledgeAIReviewWithdrawal,
+    KnowledgeAIReviewWithdrawalResult,
     KnowledgeReviewCandidatePage,
     KnowledgeReviewCandidateRequest,
     KnowledgeReviewDecision,
@@ -125,6 +127,7 @@ from .knowledge_review import (
     read_knowledge_review_decision,
     record_knowledge_review_progress,
     start_knowledge_review,
+    withdraw_ai_review,
 )
 from .common_knowledge import (
     apply_common_knowledge_promotion,
@@ -656,6 +659,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
     ) -> KnowledgeReviewDecisionLookupResult:
         return await read_knowledge_review_decision(store, actor, request)
+
+    # Undoing Tonborg's automatic review is the person's own decision (rec#10
+    # D-24): only the human-review channel may send it, never an Agent token.
+    @application.post(
+        '/v1/knowledge/reviews/ai-review/withdraw',
+        response_model=KnowledgeAIReviewWithdrawalResult,
+    )
+    async def withdraw_review_ai_assessment(
+        request: KnowledgeAIReviewWithdrawal,
+        reviewer: HumanReviewer,
+    ) -> KnowledgeAIReviewWithdrawalResult:
+        return await withdraw_ai_review(store, reviewer, request)
 
     @application.post(
         '/v1/knowledge/reviews/finish',

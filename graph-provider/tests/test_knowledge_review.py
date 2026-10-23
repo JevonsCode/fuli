@@ -16,8 +16,10 @@ from fuli_graph.knowledge_review import (
     read_knowledge_review_decision,
     record_knowledge_review_progress,
     start_knowledge_review,
+    withdraw_ai_review,
 )
 from fuli_graph.knowledge_review_models import (
+    KnowledgeAIReviewWithdrawal,
     KnowledgeReviewAIAssessment,
     KnowledgeReviewCandidate,
     KnowledgeReviewDecisionLookup,
@@ -441,6 +443,39 @@ async def test_decision_lookup_returns_the_run_decision_for_one_candidate_or_non
     assert parameters == {
         'space_id': 'personal-space', 'review_id': 'review-1',
         'candidate_key': 'entity:one', 'routing_': 'r',
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('item_kind, match', [
+    ('entity', 'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})'),
+    ('relationship', 'MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()'),
+])
+async def test_withdrawing_an_ai_review_clears_only_the_marks_of_that_decision(item_kind, match):
+    """rec#10 D-24: a person's undo removes this run's AI review from the item
+    while the item still carries it, and keeps the decision as history."""
+
+    driver = SequentialDriver([[{'item_id': 'one'}], []])
+    request = KnowledgeAIReviewWithdrawal(
+        personal_space_id='personal-space', review_id='review-1',
+        candidate_key=f'{item_kind}:one', ai_review_evidence_token='b' * 64,
+    )
+
+    result = await withdraw_ai_review(StoreStub(driver), {'id': 'principal-1'}, request)
+    with pytest.raises(HTTPException) as later:
+        await withdraw_ai_review(StoreStub(driver), {'id': 'principal-1'}, request)
+
+    assert result.candidate_key == f'{item_kind}:one'
+    assert later.value.status_code == 409
+    query, parameters = driver.calls[0]
+    assert query.startswith(match)
+    assert 'item.fuli_ai_review_decision_id = $decision_id' in query
+    assert 'item.fuli_ai_review_evidence_token = $ai_review_evidence_token' in query
+    assert 'REMOVE item.fuli_ai_review_evidence_token, item.fuli_ai_assessment_json' in query
+    assert 'decision' not in query.split('REMOVE')[1].replace('fuli_ai_review_decision_id', '')
+    assert parameters == {
+        'group_id': 'personal-group', 'item_id': 'one',
+        'decision_id': result.decision_id, 'ai_review_evidence_token': 'b' * 64,
     }
 
 

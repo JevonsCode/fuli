@@ -20,6 +20,7 @@ import { CAPTURE_POLICY_FORMAT } from '../graphiti/capture-policy.js';
 import { CAPTURE_SESSION_PAUSE_FORMAT } from '../graphiti/capture-session-pause.js';
 import { RECALL_POLICY_FORMAT } from '../graphiti/recall-policy.js';
 import { GRAPH_RUNTIME_CONFIG_FORMAT } from '../graphiti/runtime-config.js';
+import { REVIEW_GATE_FILE, REVIEW_GATE_FORMAT } from '../judgment/review-gate.js';
 import { JUDGMENT_FORMAT } from '../judgment/store.js';
 import { HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT } from '../knowledge-hard-delete/delete-ledger.js';
 import { MODEL_BACKEND_CONFIG_FORMAT } from '../model-backends/config.js';
@@ -72,7 +73,9 @@ const jsonStores = () => [
   ['format-operations.json', FORMAT_OPERATIONS_FORMAT],
   ['format-apply-receipts.json', APPLY_RECEIPTS_FORMAT],
   // A person's permanent deletes, content-free: their state and the fence local stores check (rec#5 C9).
-  [HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT]
+  [HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT],
+  // Model builds the person unlocked to apply Tonborg's knowledge review (rec#10 D-24); absent until one is.
+  [REVIEW_GATE_FILE, REVIEW_GATE_FORMAT]
 ];
 // One small record per session.
 const jsonDirectories = () => [

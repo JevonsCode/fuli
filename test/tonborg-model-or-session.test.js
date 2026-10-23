@@ -8,6 +8,7 @@ import { callAgentTool } from '../src/agent-tools.js';
 import { roleWorkSessions } from '../src/graphiti/role-work-sessions.js';
 import { createJudgmentBackend } from '../src/judgment/backend.js';
 import { createJudgmentEngine } from '../src/judgment/engine.js';
+import { createReviewGate } from '../src/judgment/review-gate.js';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
@@ -32,6 +33,10 @@ const SESSIONS = {
   'token-b': { sessionId: 'session-b', personalProjectId: 'p', projectAgentId: 'lead', sourceApplication: 'codex' },
   'token-q': { sessionId: 'session-q', personalProjectId: 'q', projectAgentId: 'lead', sourceApplication: 'codex' }
 };
+// These tests are about who answers and how a write survives retries and
+// restarts, so the review gate (rec#10 D-24, test/tonborg-review-gate.test.js)
+// lets every answer apply unless a test asks for the production gate.
+const UNGATED = { status: key => ({ status: 'passed', reason: null, ...key }) };
 const reviewInput = { personalSpaceId: 's', personalProjectId: 'p', requestId: 'review-1', limit: 10 };
 const verdict = (extra = {}) => ({ target: 'entity:one', outcome: 'approve', summary: 'Confirmed routine command', evidence: ['npm test'], confidence: 0.95, ...extra });
 // evidenceIds name parts of the judgment data: candidates for a review,
@@ -39,7 +44,7 @@ const verdict = (extra = {}) => ({ target: 'entity:one', outcome: 'approve', sum
 const answer = (payload, evidenceIds = ['candidates']) => ({ decision: 'propose', payload, reason: 'Supported by the evidence.', evidenceIds, uncertainty: null });
 const reply = (payload, evidenceIds) => openAiStream(JSON.stringify(answer(payload, evidenceIds)));
 
-function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()] }), policy = {} } = {}) {
+function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()] }), policy = {}, reviewGate = UNGATED } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fuli-tonborg-'));
   const clock = { at: Date.parse('2026-10-20T12:00:00.000Z') };
   const now = () => new Date(clock.at);
@@ -89,7 +94,7 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
     };
     app.roleWork = bridge;
     app.judgment = createJudgmentService({ app, openStore: () => new JudgmentStore(join(dir, 'judgment.sqlite')),
-      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge, legacy }) }) });
+      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge, legacy }), reviewGate }) });
   };
   const close = () => { app.judgment.close(); app.roleWork.close(); };
   open();
@@ -134,17 +139,19 @@ const claimAndSubmit = async (h, token, payload, evidenceIds) => {
     leaseToken: workPackage.lease.token, answer: answer(payload, evidenceIds), usage: { inputTokens: 900, outputTokens: 40 } }) };
 };
 
-test('T1: a configured model gives a bounded decision on exact candidate keys; the receipt is AI review, not a person', async t => {
-  const h = harness(t, { roles: { tonborg: tonborg() } });
+test('T1: a configured model gives a bounded decision on exact candidate keys; until its build is unlocked it is only a suggestion', async t => {
+  const h = harness(t, { roles: { tonborg: tonborg() }, reviewGate: createReviewGate() });
   const [record] = (await h.app.judgment.review(reviewInput)).records;
   assert.equal(h.calls.length, 1);
-  assert.equal(record.outcome, 'approve');
-  assert.equal(record.execution.status, 'applied');
+  assert.equal(record.outcome, 'escalate');
+  assert.deepEqual([record.aiReview.state, record.aiReview.modelOutcome], ['ai_suggested', 'approve']);
+  // The port reports no served digest, so no registry entry can match this build.
+  assert.equal(record.aiReview.gate.reason, 'model_build_unknown');
+  assert.equal(record.execution.status, 'not_applied');
   assert.deepEqual(record.judgedBy, { mode: 'model_api', independent: true });
   assert.equal(record.client, null);
   assert.equal(record.model, 'qwen-test-actual');
-  assert.equal(h.writes[0].outcome, 'ai_reviewed');
-  assert.deepEqual(h.writes[0].aiAssessment.client, null);
+  assert.equal(h.writes.length, 0);
   // The answer schema offered exactly the candidate keys.
   const schema = h.calls[0].response_format.json_schema.schema;
   assert.deepEqual(schema.properties.payload.properties.decisions.items.properties.target.enum, ['entity:one']);
