@@ -50,9 +50,10 @@ try {
   const space = await api('/v1/spaces', { name: `Synthetic worker plan CLI ${fixtureId}`, kind: 'personal' });
   const scope = { personal_space_id: space.id, personal_project_id: 'synthetic-worker-plan-project' };
   await api('/v1/personal-projects', { personal_space_id: space.id, project_id: scope.personal_project_id,
-    profile: { name: 'Synthetic worker dispatch project', lifecycle: 'active' } }, 'PUT');
+    profile: { name: 'Synthetic worker dispatch project', lifecycle: 'active',
+      purpose: 'Verify synthetic worker plan dispatch.' } }, 'PUT');
   for (const agent_id of ['owner', 'specialist']) {
-    await api('/v1/project-agents', { ...scope, agent_id, profile: { name: `Synthetic ${agent_id}`,
+    await api('/v1/project-agents', { ...scope, agent_id, occupation: { role: 'engineering' }, profile: { name: `Synthetic ${agent_id}`,
       responsibility: 'Disposable CLI acceptance.', allowed_clients: ['codex'], work_kinds: ['implementation'], capabilities: ['coding'] } }, 'PUT');
   }
   await api('/v1/project-agent-coordination-policy', { ...scope, team_lead_agent_id: 'owner', team_member_agent_ids: ['specialist'] }, 'PUT');

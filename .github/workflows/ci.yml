@@ -36,8 +36,9 @@ jobs:
       - run: python -m pytest -q graph-provider/tests
       - run: docker compose -f compose.graphiti.yml config --quiet
 
-  # The Provider's real-graph tests skip without a disposable Neo4j; this job
-  # runs them so a contract change cannot leave them silently stale.
+  # The Provider's real-graph tests and the Node Neo4j acceptance files skip
+  # without a disposable Neo4j; this job runs them so a contract change cannot
+  # leave them silently stale.
   provider-neo4j:
     runs-on: ubuntu-latest
     services:
@@ -70,6 +71,11 @@ jobs:
           cache-dependency-path: graph-provider/pyproject.toml
       - run: python -m pip install './graph-provider[dev]'
       - run: python -m pytest -q graph-provider/tests -k neo4j
+      # The Node acceptance files start the Provider over HTTP on the same graph.
+      # They share its one bootstrap principal, so the script runs them serially.
+      - run: npm run test:neo4j
+        env:
+          FULI_TEST_PYTHON: python
 
   # Installer, update, rollback and ACP code paths only run on Windows.
   node-windows:
