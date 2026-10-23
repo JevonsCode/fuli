@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { createJudgmentEngine } from '../src/judgment/engine.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
+import { FIXTURE_BUILD, gateEntry, reviewGateWith } from './fixtures/review-gate.js';
+
+// These cover the automatic review path, so the fixture model build is unlocked (rec#10 D-24).
+const unlocked = { model: FIXTURE_BUILD.model, modelReceipt: { modelDigest: FIXTURE_BUILD.modelDigest } };
 
 function fixture(t, { mode = 'shared', mutate, answer } = {}) {
   const candidates = [{ candidate_key: 'entity:one', title: 'Build command', content: 'npm test', confirmation_status: 'confirmed', changed_at: '2026-01-01', reasons: [], project_ids: ['p'] }];
@@ -19,8 +23,8 @@ function fixture(t, { mode = 'shared', mutate, answer } = {}) {
     listKnowledgeReviewCandidates: async () => ({ candidates, total_candidate_count: candidates.length }),
     recordKnowledgeReviewProgress: async input => { writes.push(input); candidates.shift(); return { outcome: input.outcome }; },
     listExecutors: async () => [] };
-  const judge = async () => { mutate?.(candidates); return { body: JSON.stringify(answer ?? { decisions: [{ target: 'entity:one', outcome: 'approve', summary: 'Evidence supports routine review', evidence: ['Current confirmed command'], confidence: 0.95 }] }), client: 'codex', model: null, sessionId: 'fixture-session' }; };
-  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge }) });
+  const judge = async () => { mutate?.(candidates); return { body: JSON.stringify(answer ?? { decisions: [{ target: 'entity:one', outcome: 'approve', summary: 'Evidence supports routine review', evidence: ['Current confirmed command'], confidence: 0.95 }] }), client: 'codex', sessionId: 'fixture-session', ...unlocked }; };
+  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge, reviewGate: reviewGateWith(gateEntry()) }) });
   service.store().setPolicy('s', '', { mode, quality: 'quality', client: 'codex' }, 0);
   t.after(() => service.close());
   return { service, writes, candidates, app };
@@ -121,7 +125,7 @@ test('one failed candidate does not starve later review pages and is retried on 
   const attempted = [];
   app.listKnowledgeReviewCandidates = async ({ offset = 0, limit }) => ({ candidates: all.slice(offset, offset + limit), total_candidate_count: all.length });
   app.recordKnowledgeReviewProgress = async ({ candidateKey }) => { attempted.push(candidateKey); if (candidateKey === 'entity:0') throw new Error('fixture failure'); return { outcome: 'ai_reviewed' }; };
-  const engine = createJudgmentEngine({ app, judge: async ({ prompt }) => ({ client: 'codex', body: JSON.stringify({ decisions: JSON.parse(prompt.split('\nDATA:\n')[1]).candidates.map(c => ({ target: c.candidate_key, outcome: 'approve', summary: 'Supported routine evidence', evidence: ['Scoped content'], confidence: 0.95 })) }) }) });
+  const engine = createJudgmentEngine({ app, judge: async ({ prompt }) => ({ client: 'codex', body: JSON.stringify({ decisions: JSON.parse(prompt.split('\nDATA:\n')[1]).candidates.map(c => ({ target: c.candidate_key, outcome: 'approve', summary: 'Supported routine evidence', evidence: ['Scoped content'], confidence: 0.95 })) }), ...unlocked }), reviewGate: reviewGateWith(gateEntry()) });
   for (let round = 0; round < 10; round++) await engine.review(service, { ...input, requestId: `page-${round}` });
   assert.ok(attempted.includes('entity:64'));
   assert.ok(attempted.filter(id => id === 'entity:0').length >= 2);

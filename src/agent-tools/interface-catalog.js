@@ -14,6 +14,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('POST /api/peer/disable', 'Leaving the LAN roundtable is a local owner decision.'),
   local('PUT /api/judgment/policy', 'Autonomy grants delegated authority and requires the local user.'),
   local('POST /api/judgment/feedback', 'Votes and reasons are human feedback, never model-generated approval.'),
+  local('POST /api/judgment/undo', 'Undoing Tonborg\'s automatic knowledge review is the person\'s decision on the human-review channel (rec#10 D-24); an Agent can only suggest it.'),
   agent('POST /api/judgment/review', 'review_with_tonborg'),
   agent('POST /api/judgment/assess', 'assess_agent_action'),
   agent('POST /api/judgment/accept', 'assess_task_completion'),

@@ -468,3 +468,59 @@ async def test_real_neo4j_pending_conflict_serializes_with_ai_review_write():
             client, space_id, source_project_id, source_item_id
         )
         assert projected['ai_assessment'] is None
+
+
+_REVIEW_TOKEN = 'synthetic-ai-review-undo-token-0123456789'
+
+
+async def _withdraw(client, space_id, review_id, candidate, *, headers, token=None):
+    return await client.post('/v1/knowledge/reviews/ai-review/withdraw', headers=headers, json={
+        'personal_space_id': space_id,
+        'review_id': review_id,
+        'candidate_key': candidate['candidate_key'],
+        'ai_review_evidence_token': token or candidate['ai_review_evidence_token'],
+    })
+
+
+@pytest.mark.asyncio
+async def test_real_neo4j_person_undoes_an_ai_review_and_an_agent_cannot():
+    """rec#10 D-24: an automatic review applied before the gate is undone on
+    the human-review channel; the item keeps its words and confirmation and
+    the decision stays as history. An Agent token alone changes nothing."""
+
+    settings = fixture_settings().model_copy(update={'human_review_token': _REVIEW_TOKEN})
+    suffix = uuid4().hex
+
+    async with provider_client(settings, raise_app_exceptions=True) as (client, _):
+        space_id, project_id, item_id = await _create_review_fixture(client, suffix)
+        run = await _start_tonborg_review(client, space_id, project_id)
+        candidate = await _read_candidate(client, space_id, run['review_id'], item_id)
+        _require_status(await _post_ai_review_progress(client, space_id, run['review_id'], candidate))
+        reviewed = await _read_graph_node(client, space_id, project_id, item_id)
+        assert reviewed['ai_assessment']['outcome'] == 'approve'
+
+        for headers in ({}, {'x-fuli-human-review-token': 'synthetic-wrong-token-000000000000000'}):
+            refused = await _withdraw(client, space_id, run['review_id'], candidate, headers=headers)
+            assert refused.status_code == 403, refused.text
+        human = {'x-fuli-human-review-token': _REVIEW_TOKEN}
+        other_evidence = await _withdraw(client, space_id, run['review_id'], candidate, headers=human, token='0' * 64)
+        assert other_evidence.status_code == 409, other_evidence.text
+        assert await _read_graph_node(client, space_id, project_id, item_id) == reviewed
+
+        withdrawn = _require_status(await _withdraw(client, space_id, run['review_id'], candidate, headers=human))
+        assert withdrawn['candidate_key'] == candidate['candidate_key']
+        restored = await _read_graph_node(client, space_id, project_id, item_id)
+        assert restored['ai_assessment'] is None
+        assert restored['ai_reviewed_at'] is None
+        assert restored['ai_review_evidence_token'] is None
+        def without_review(node):
+            return {key: value for key, value in node.items() if not key.startswith('ai_')}
+        assert without_review(restored) == without_review(reviewed)
+
+        history = _require_status(await client.post('/v1/knowledge/reviews/decision', json={
+            'personal_space_id': space_id, 'review_id': run['review_id'],
+            'candidate_key': candidate['candidate_key'],
+        }))
+        assert history['decision']['outcome'] == 'ai_reviewed'
+        again = await _withdraw(client, space_id, run['review_id'], candidate, headers=human)
+        assert again.status_code == 409, again.text

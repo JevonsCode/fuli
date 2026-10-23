@@ -66,3 +66,7 @@ export function submitJudgmentFeedback(
     expectedRevision,
   })
 }
+
+export function undoJudgmentReview(personalSpaceId: string, decisionId: string) {
+  return postJson<JudgmentDecisionRecord>('/api/judgment/undo', { personalSpaceId, decisionId })
+}
