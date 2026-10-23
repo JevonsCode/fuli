@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
+import { scrubbedMemoryGuidance } from './memory-state.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { writeTextFileAtomic } from '../storage/json-file.js';
 
@@ -47,7 +48,7 @@ export function createAgentDirectorySnapshots({ root, providerIdentity, now = ()
       try {
         const manifest = readManifest(join(directory, MANIFEST));
         const files = update(directory, manifest);
-        if (manifest.dirty) writeTextFileAtomic(join(directory, MANIFEST), `${JSON.stringify({ version: 1, files: manifest.files }, null, 2)}\n`);
+        if (manifest.dirty) writeManifest(directory, manifest);
         return { status: overall(files), path, files };
       } finally { release(); }
     } catch (error) {
@@ -84,17 +85,53 @@ export function createAgentDirectorySnapshots({ root, providerIdentity, now = ()
           : [fileStatus({ file, revision: entry.order }, 'unchanged')];
       }
       manifest.files[file] = { order: entry?.order ?? -1, bodyHash: entry?.bodyHash ?? null,
-        fileHash: entry?.fileHash ?? null, pending: Math.max(revision, entry?.pending ?? -1) };
+        fileHash: entry?.fileHash ?? null, pending: Math.max(revision, entry?.pending ?? -1),
+        ...(entry?.scrubbedRevisions ? { scrubbedRevisions: entry.scrubbedRevisions } : {}) };
       manifest.dirty = true;
       return [fileStatus({ file, revision }, 'stale')];
     });
   }
 
-  return { materialize, markStale };
+  // Console maintenance only: persist the exact erased revisions before any
+  // body rewrite, under the same lock as materialize. A late read cannot put
+  // their words back. Unselected later revisions are independent and stay.
+  function scrubMemory({ personalSpaceId, agentId, personalProjectId = null, revisions, currentRevision }) {
+    if (!agentId || !personalSpaceId || !Number.isSafeInteger(currentRevision) || currentRevision < 1
+        || !Array.isArray(revisions) || !revisions.length
+        || revisions.some(revision => !Number.isSafeInteger(revision) || revision < 1 || revision > currentRevision)) {
+      return { status: 'unavailable', path: null };
+    }
+    const file = layerFile(personalProjectId);
+    return withAgentDirectory(personalSpaceId, agentId, (directory, manifest) => {
+      const entry = manifest.files[file];
+      const existing = fileHash(join(directory, ...file.split('/')));
+      // A missing/edited manifest cannot establish which revision a surviving
+      // file contains. Keep cleanup pending until an authorized read repairs it.
+      if (existing !== null && (!entry || (!revisions.includes(entry.order) && existing !== entry.fileHash))) {
+        throw new Error('Snapshot revision cannot be verified');
+      }
+      rememberScrubbed(manifest, file, revisions);
+      writeManifest(directory, manifest);
+      if (entry && revisions.includes(entry.order)) {
+        const artifact = layerArtifact({ personalProjectId, revision: entry.order,
+          current: { memory: null, memoryState: 'scrubbed' } });
+        project(directory, manifest, artifact, now().toISOString(), { durable: true });
+        return [fileStatus(artifact, 'scrubbed')];
+      }
+      return [fileStatus({ file, revision: entry?.order ?? currentRevision }, 'retained')];
+    });
+  }
+
+  return { materialize, markStale, scrubMemory };
 }
 
-function project(directory, manifest, artifact, generatedAt) {
+function project(directory, manifest, artifact, generatedAt, { durable = false } = {}) {
+  if (artifact.scrubbed) rememberScrubbed(manifest, artifact.file, [artifact.order]);
   const entry = manifest.files[artifact.file];
+  if (artifact.file !== 'AGENTS.md' && entry?.scrubbedRevisions?.includes(artifact.order)) {
+    artifact = layerArtifact({ personalProjectId: artifact.personalProjectId, revision: artifact.order,
+      current: { memory: null, memoryState: 'scrubbed', createdAt: artifact.recordedAt } });
+  }
   // An older revision never replaces a newer one, even if its file was removed.
   if (entry && entry.order > artifact.order) return fileStatus(artifact, 'newer_present');
   const segments = artifact.file.split('/');
@@ -105,7 +142,7 @@ function project(directory, manifest, artifact, generatedAt) {
   const bodyHash = sha(artifact.render(null));
   const pending = entry?.pending !== undefined && entry.pending > artifact.order ? entry.pending : undefined;
   const intact = entry && existing === entry.fileHash;
-  if (intact && entry.order === artifact.order && entry.bodyHash === bodyHash) {
+  if (!durable && intact && entry.order === artifact.order && entry.bodyHash === bodyHash) {
     if (entry.pending !== undefined && pending === undefined) {
       delete entry.pending;
       manifest.dirty = true;
@@ -113,8 +150,9 @@ function project(directory, manifest, artifact, generatedAt) {
     return fileStatus(artifact, pending === undefined ? 'unchanged' : 'stale');
   }
   const content = artifact.render(generatedAt);
-  writeTextFileAtomic(target, content);
+  writeTextFileAtomic(target, content, { durable });
   manifest.files[artifact.file] = { order: artifact.order, bodyHash, fileHash: sha(content),
+    ...(entry?.scrubbedRevisions ? { scrubbedRevisions: entry.scrubbedRevisions } : {}),
     ...(pending === undefined ? {} : { pending }) };
   manifest.dirty = true;
   return fileStatus(artifact, pending === undefined ? 'written' : 'stale');
@@ -162,9 +200,11 @@ function identityArtifact(agent) {
 }
 
 function layerArtifact({ personalProjectId = null, revision, current }) {
-  const memory = current?.memory ?? null;
+  const scrubbed = current?.memoryState === 'scrubbed';
+  const memory = scrubbed ? null : current?.memory ?? null;
   const global = personalProjectId === null;
-  return { file: layerFile(personalProjectId), revision, order: revision,
+  return { file: layerFile(personalProjectId), revision, order: revision, personalProjectId,
+    scrubbed, recordedAt: current?.createdAt,
     render: generatedAt => document(global ? '# Working memory: global' : '# Working memory: project', [
       ...(global ? [] : [`- Project ID: \`${line(personalProjectId)}\``]),
       `- Scope: ${global ? 'private_agent_global' : 'private_agent_project'}`,
@@ -176,7 +216,7 @@ function layerArtifact({ personalProjectId = null, revision, current }) {
       ['Decisions', list(memory.decisions)],
       ['Open threads', list(memory.openThreads)],
       ['Next actions', list(memory.nextActions)]
-    ] : [['Summary', 'No working memory has been recorded in this scope yet.']]) };
+    ] : [['Summary', scrubbed ? scrubbedMemoryGuidance(revision) : 'No working memory has been recorded in this scope yet.']]) };
 }
 
 /**
@@ -296,7 +336,8 @@ function readManifest(path) {
       for (const [file, entry] of Object.entries(value.files)) {
         if (FILE_KEY.test(file) && validEntry(entry)) {
           files[file] = { order: entry.order, bodyHash: entry.bodyHash, fileHash: entry.fileHash,
-            ...(entry.pending === undefined ? {} : { pending: entry.pending }) };
+            ...(entry.pending === undefined ? {} : { pending: entry.pending }),
+            ...(entry.scrubbedRevisions === undefined ? {} : { scrubbedRevisions: [...entry.scrubbedRevisions] }) };
         }
       }
     }
@@ -309,5 +350,23 @@ function validEntry(entry) {
     && Number.isSafeInteger(entry.order) && entry.order >= -1
     && (entry.bodyHash === null || HASH.test(entry.bodyHash))
     && (entry.fileHash === null || HASH.test(entry.fileHash))
-    && (entry.pending === undefined || (Number.isSafeInteger(entry.pending) && entry.pending >= 0));
+    && (entry.pending === undefined || (Number.isSafeInteger(entry.pending) && entry.pending >= 0))
+    && (entry.scrubbedRevisions === undefined || Array.isArray(entry.scrubbedRevisions)
+      && entry.scrubbedRevisions.every(revision => Number.isSafeInteger(revision) && revision > 0));
+}
+
+// This manifest belongs to regenerated Markdown views (D09 inventory), not a
+// source store. Optional revision fences retain version-1 compatibility.
+function rememberScrubbed(manifest, file, revisions) {
+  const entry = manifest.files[file] ??= { order: -1, bodyHash: null, fileHash: null };
+  const scrubbed = [...new Set([...(entry.scrubbedRevisions ?? []), ...revisions])].sort((a, b) => a - b);
+  if (JSON.stringify(scrubbed) !== JSON.stringify(entry.scrubbedRevisions)) {
+    entry.scrubbedRevisions = scrubbed;
+    manifest.dirty = true;
+  }
+}
+
+function writeManifest(directory, manifest) {
+  writeTextFileAtomic(join(directory, MANIFEST), `${JSON.stringify({ version: 1, files: manifest.files }, null, 2)}\n`, { durable: true });
+  manifest.dirty = false;
 }

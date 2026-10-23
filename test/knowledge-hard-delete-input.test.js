@@ -34,6 +34,14 @@ test('session uses the existing UI sessionId name and maps only provider referen
   assert.equal(Object.hasOwn(hardDeleteProviderRef(value), 'confirmation'), false);
 });
 
+test('source previews can opt into an opaque later-memory group but cannot exclude mandatory source memory', () => {
+  const key = 'memory:9f3496c8-9c14-41ec-b115-a0d939a15f50';
+  assert.deepEqual(parse('episode', { include: [key] }).include, [key]);
+  assert.throws(() => parse('episode', { exclude: [key] }), TypeError);
+  assert.throws(() => parse('entity', { include: [key] }), TypeError);
+  assert.throws(() => parse('episode', { include: ['memory:invented'] }), TypeError);
+});
+
 test('status needs only the active space for every target, including interrupted session deletions', () => {
   for (const itemKind of ['entity', 'relationship', 'episode', 'session']) {
     const value = parse(itemKind, {}, 'status');

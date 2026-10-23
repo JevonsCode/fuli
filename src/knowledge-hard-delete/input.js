@@ -5,7 +5,8 @@ const space = identity(128);
 const kind = z.enum(['entity', 'relationship', 'episode', 'session']);
 const targetId = identity(512);
 const rowKey = z.string().max(512).regex(/^(entity|relationship):[^\s:]+$/u);
-const selection = z.array(rowKey).max(10000).refine(values => new Set(values).size === values.length).default([]);
+const memoryKey = z.string().regex(/^memory:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u);
+const selection = schema => z.array(schema).max(10000).refine(values => new Set(values).size === values.length).default([]);
 const confirmation = {
   previewId: z.string().regex(/^[0-9a-f]{64}$/),
   confirmation: z.string().trim().min(1).max(512)
@@ -21,7 +22,7 @@ export function parseHardDeleteInput({ action, itemKind, itemId, body, personalS
   const source = itemKind === 'episode' || itemKind === 'session';
   const fields = { personalSpaceId: space };
   if (source && action !== 'status') {
-    Object.assign(fields, { include: selection, exclude: selection });
+    Object.assign(fields, { include: selection(z.union([rowKey, memoryKey])), exclude: selection(rowKey) });
     if (itemKind === 'session') Object.assign(fields, { sourceApplication: identity(128), sessionId: identity(512) });
   }
   if (action === 'confirm') Object.assign(fields, confirmation);

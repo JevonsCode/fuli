@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { versionStatusLabel, versionTone } from '@/features/knowledge-quick-edit/model'
 import { t } from '@/i18n'
-import { sourceRowTitle, type SourceDeletePreview } from './source-delete-model'
+import { sourceMemoryScopeLabel, sourceRowTitle, type SourceDeletePreview } from './source-delete-model'
 defineProps<{ preview: SourceDeletePreview; disabled: boolean }>()
 const emit = defineEmits<{ select: [key: string, selected: boolean] }>()
 </script>
@@ -32,5 +32,20 @@ const emit = defineEmits<{ select: [key: string, selected: boolean] }>()
         </li>
       </ul>
     </div>
+  </section>
+  <section v-if="preview.agent_memory?.later.length" class="grid gap-2" data-source-memory-later>
+    <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.source.memoryLaterTitle') }}</h3>
+    <p class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.source.memoryLaterHelp') }}</p>
+    <label v-for="row in preview.agent_memory.later" :key="row.key" class="flex items-start gap-2 rounded-lg border p-3" :data-memory-row="row.key">
+      <Checkbox :model-value="row.selected" :disabled="disabled"
+        :aria-label="t('knowledgeHardDelete.source.memoryLaterSelect', { agent: sourceMemoryScopeLabel(row, preview.agent_memory), revision: row.from_revision, count: row.revisions.length })"
+        @update:model-value="emit('select', row.key, $event === true)" />
+      <span class="grid min-w-0 gap-1 [overflow-wrap:anywhere]" :title="`${row.agent_id} · ${row.personal_project_id ?? ''}`">
+        <span>{{ sourceMemoryScopeLabel(row, preview.agent_memory) }}</span>
+        <span>{{ t('knowledgeHardDelete.source.memoryLater', { revision: row.from_revision, count: row.revisions.length }) }}</span>
+        <span class="text-muted-foreground">{{ t('knowledgeHardDelete.source.memoryRevisions', { revisions: row.revisions.join(', '), current: row.current_revision }) }}</span>
+        <span v-if="row.selected">{{ t('knowledgeHardDelete.source.memorySelected') }}</span>
+      </span>
+    </label>
   </section>
 </template>

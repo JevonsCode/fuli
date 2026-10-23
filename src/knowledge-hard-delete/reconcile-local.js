@@ -3,6 +3,7 @@ import { GraphitiProviderClient } from '../graphiti/provider-client.js';
 import { personalHumanReviewChannel } from '../graphiti/human-review-channel.js';
 import { knowledgeHardDelete } from './console-port.js';
 import { createKnowledgeRecoveryGate } from './recovery-gate.js';
+import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 
 // Setup and the maintenance CLI resume the same already-confirmed deletions
 // as the console. This module is never reached from an Agent or MCP entry.
@@ -18,6 +19,7 @@ export async function reconcileLocalKnowledge(paths, {
       accessToken: personal.accessToken, fetchImpl });
     const reconcile = createReconciler(paths.dataDir, {
       send: personalHumanReviewChannel(paths.dataDir, { fetchImpl }),
+      agentSnapshots: createAgentDirectorySnapshots({ root: paths.agentDirectoryRoot, providerIdentity: personal.providerUrl }),
       personalSpaceId: () => personal.spaceId
     });
     await reconcile.reconcile();

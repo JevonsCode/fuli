@@ -26,11 +26,14 @@ async def test_plan_keeps_other_sources_and_rebinds_user_selection_and_draft_sta
     async def connected(*args): return lineages
     async def copies(*args, **kwargs): return drafts
     async def published(*args, **kwargs): return []
+    async def memories(*args, **kwargs):
+        return dict(preview={'scrubbed': [], 'later': []}, versions=[], scopes=[], checkpoints=[], direct_count=0, later_count=0)
     monkeypatch.setattr(planner, 'source_delete_target', resolved)
     monkeypatch.setattr(planner, 'source_delete_inventory', inventoried)
     monkeypatch.setattr(planner, 'source_delete_lineages', connected)
     monkeypatch.setattr(planner, 'drafts_for_sources', copies)
     monkeypatch.setattr(planner, 'publications_for_sources', published)
+    monkeypatch.setattr(planner, 'source_memory_plan', memories)
     async def item_rows(store, space, keys):
         return ([KnowledgeHardDeleteItem(item_kind='entity', item_id=key.split(':')[1], role='item',
             title='Synthetic knowledge', content='Synthetic words', status='current') for key in keys],

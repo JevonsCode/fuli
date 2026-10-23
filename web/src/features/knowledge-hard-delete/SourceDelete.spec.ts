@@ -370,3 +370,56 @@ it('repreviews a submission that starts after the shown preview instead of leavi
   expect(dialog().querySelector('[data-drafts-submitting]')!.textContent).toContain('1 份公开草稿正在提交')
   expect(dialog().querySelector('[data-drafts-recheck]')).not.toBeNull()
 })
+
+
+describe('source working-memory deletion preview', () => {
+  const scope = { agent_id: 'synthetic-agent', agent_name: 'Synthetic Guide', personal_project_id: 'synthetic-project', revisions: [2, 3], current: false, current_revision: 5 }
+  const later = { ...scope, key: 'memory:provider-head', from_revision: 2, revisions: [4, 5], selected: false }
+  it('shows exact source snapshots and no-fallback warning without fetching memory bodies', async () => {
+    postJson.mockResolvedValue(preview({ agent_memory: { scrubbed: [{ ...scope, current: true, current_revision: 3 }], later: [later] } }))
+    await open()
+    const block = dialog().querySelector('[data-source-memory]')!
+    expect(block.textContent).toContain('2 条 Agent 工作记忆快照')
+    expect(block.textContent).toContain('含当前版本')
+    expect(block.textContent).toContain('Synthetic Guide')
+    expect(block.textContent).toContain('不会回退到旧版本')
+    expect(block.textContent).toContain('仍在运行的会话')
+    expect(getJson).not.toHaveBeenCalled()
+    expect(dialog().querySelector('[data-source-memory-later] [role="checkbox"]')!.getAttribute('aria-checked')).toBe('false')
+  })
+  it('removes a later group from include without excluding any exact-source snapshot', async () => {
+    postJson.mockResolvedValueOnce(preview({ include: [later.key], agent_memory: { scrubbed: [scope], later: [{ ...later, selected: true }] } }))
+      .mockResolvedValueOnce(preview({ preview_id: 'kept-memory', agent_memory: { scrubbed: [scope], later: [later] } }))
+    await open(); await type('delete')
+    dialog().querySelector<HTMLButtonElement>('[data-source-memory-later] [role="checkbox"]')!.click()
+    await flushPromises()
+    expect(postJson.mock.calls[1]?.[1]).toEqual({ personalSpaceId: 'space', include: [], exclude: [] })
+    expect(disabled()).toBe(true)
+    expect(dialog().querySelector('[data-source-memory] [role="checkbox"]')).toBeNull()
+  })
+  it('describes session memory and the live-context limitation in English', async () => {
+    setLocale('en-US', { persist: false })
+    const session: SourceDeleteTarget = { item_kind: 'session', item_id: 'opaque-session', sourceApplication: 'codex', sessionId: 'synthetic-session' }
+    postJson.mockResolvedValue(preview({ ...session, agent_memory: { scrubbed: [{ ...scope, current: true, current_revision: 3 }], later: [later] } }))
+    await open(session)
+    const block = dialog().querySelector('[data-source-memory]')!
+    expect(block.textContent).toContain('2 Agent working-memory snapshots written in this session lose their text')
+    expect(block.textContent).toContain('including the current version')
+    expect(block.textContent).toContain('Memory does not fall back to an older version.')
+    expect(block.textContent).toContain('Still-running sessions may hold deleted text')
+    expect(dialog().querySelector('[data-source-memory-later]')!.textContent).toContain('kept by default')
+  })
+  it('repreviews only the Provider-owned memory group key and binds confirmation to the new digest', async () => {
+    postJson.mockResolvedValueOnce(preview({ agent_memory: { scrubbed: [scope], later: [later] } }))
+      .mockResolvedValueOnce(preview({ preview_id: 'memory-digest', include: [later.key], agent_memory: { scrubbed: [scope], later: [{ ...later, selected: true }] } }))
+      .mockResolvedValueOnce({ outcome: 'complete', ...target, counts })
+    await open(); await type('delete')
+    dialog().querySelector<HTMLButtonElement>('[data-source-memory-later] [role="checkbox"]')!.click()
+    await flushPromises()
+    expect(postJson.mock.calls[1]?.[1]).toEqual({ personalSpaceId: 'space', include: [later.key], exclude: [] })
+    expect(disabled()).toBe(true)
+    expect(dialog().querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!.value).toBe('')
+    await type('delete'); await submit()
+    expect(postJson.mock.calls[2]?.[1]).toEqual({ personalSpaceId: 'space', include: [later.key], exclude: [], previewId: 'memory-digest', confirmation: 'delete' })
+  })
+})

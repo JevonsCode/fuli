@@ -11,8 +11,9 @@ import json
 
 from fastapi import HTTPException
 
-from .knowledge_hard_delete_models import KnowledgeHardDeleteCounts, KnowledgeHardDeleteRecord
+from .knowledge_hard_delete_models import KnowledgeHardDeleteCounts, KnowledgeHardDeleteRecord, HardDeleteMemoryScope
 from .provider_values import native_datetime, stable_uuid
+from .knowledge_source_memory import deleted_memory_scopes
 
 
 async def hard_deletion_record(store, space, item_id) -> KnowledgeHardDeleteRecord | None:
@@ -24,7 +25,10 @@ async def hard_deletion_record(store, space, item_id) -> KnowledgeHardDeleteReco
            OR $item_id IN coalesce(trace.removed_episode_ids, [])
         RETURN trace ORDER BY trace.created_at DESC LIMIT 1
         ''', space_id=space['id'], item_id=item_id, routing_='r')
-    return deletion_record_of(dict(records[0]['trace'])) if records else None
+    if not records:
+        return None
+    result = deletion_record_of(dict(records[0]['trace']))
+    return await with_memory_scopes(store, space, result)
 
 
 async def all_hard_deletions(store, space) -> list[KnowledgeHardDeleteRecord]:
@@ -35,7 +39,14 @@ async def all_hard_deletions(store, space) -> list[KnowledgeHardDeleteRecord]:
         MATCH (trace:FuliKnowledgeAudit {space_id: $space_id, action: 'hard_delete'})
         RETURN trace ORDER BY trace.created_at
         ''', space_id=space['id'], routing_='r')
-    return [deletion_record_of(dict(record['trace'])) for record in records]
+    return [await with_memory_scopes(store, space, deletion_record_of(dict(record['trace']))) for record in records]
+
+
+async def with_memory_scopes(store, space, record):
+    if record.counts.memory_checkpoints or record.counts.memory_later_revisions:
+        scopes = await deleted_memory_scopes(store, space, record.deletion_id)
+        return record.model_copy(update={'memory_scopes': [HardDeleteMemoryScope(**scope) for scope in scopes]})
+    return record
 
 
 def deletion_record_of(trace) -> KnowledgeHardDeleteRecord:

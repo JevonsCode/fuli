@@ -15,6 +15,7 @@ import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { confirmHardDelete, previewHardDelete, confirmSourceDelete, previewSourceDelete } from './hard-delete-api'
 import SourceDeleteSelections from './SourceDeleteSelections.vue'
+import SourceDeleteMemory from './SourceDeleteMemory.vue'
 import { sourcePreviewDetails, sourceSelection, type SourceDeletePreview, type SourceDeleteSelection,
   type SourceDeleteTarget } from './source-delete-model'
 import { confirmationMatches, deletedState, draftSubmissionStarted, hardDeletedFrom, ledgerDamage, recordCounts, refusedByGraph, stalePreview,
@@ -187,6 +188,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
         <Button type="button" variant="outline" size="sm" :disabled="deleting || reloading" @click="recheckSubmissions">{{ t('knowledgeHardDelete.dialog.recheckSubmissions') }}</Button>
       </div>
       <p v-if="preview.drafts?.pending" class="m-0">{{ t('knowledgeHardDelete.dialog.pendingDraftsVoided', { count: preview.drafts.pending }) }}</p>
+      <SourceDeleteMemory v-if="sourcePreview?.agent_memory" :memory="sourcePreview.agent_memory" :kind="sourcePreview.item_kind" />
       <ul v-if="preview.removed_episodes.length" class="m-0 grid list-none gap-2 p-0">
         <li v-for="episode in preview.removed_episodes" :key="episode.episode_id"
           class="grid min-w-0 gap-1 rounded-lg border bg-muted/40 p-3" data-hard-delete-episode="removed">

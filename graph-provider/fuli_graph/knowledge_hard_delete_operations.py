@@ -34,7 +34,7 @@ import json
 from fastapi import HTTPException
 
 from .knowledge_hard_delete_models import KnowledgeHardDeleteOperation
-from .knowledge_hard_delete_traces import deletion_record_of
+from .knowledge_hard_delete_traces import deletion_record_of, with_memory_scopes
 from .knowledge_versions import lock_knowledge
 from .provider_values import now_utc, sha256_text, stable_uuid
 from .store_transactions import query_store_transaction
@@ -54,7 +54,7 @@ async def operation_outcome(store, space, operation_id) -> KnowledgeHardDeleteOp
     committed = next((record for record in found if record['action'] == 'hard_delete'), None)
     if committed is not None:
         return KnowledgeHardDeleteOperation(operation_id=operation_id, state='committed',
-                                            deletion=deletion_record_of(committed))
+            deletion=await with_memory_scopes(store, space, deletion_record_of(committed)))
     if found:
         return KnowledgeHardDeleteOperation(operation_id=operation_id, state=_RECORDED[found[0]['action']],
                                             code=found[0].get('outcome'))

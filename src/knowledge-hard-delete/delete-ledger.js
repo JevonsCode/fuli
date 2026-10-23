@@ -6,6 +6,7 @@ import { DataFormatError } from '../../packages/roundtable/src/storage/data-form
 import { jsonFormat, requireJsonFormatVersion, updateVersionedJsonFileAtomic, withJsonFormatDirectory } from '../storage/json-format.js';
 import { knowledgeReferences } from './forget-references.js';
 import { hardDeleteLedgerSchema, HARD_DELETE_LEDGER_FINGERPRINT, ledgerDocument } from './ledger-format.js';
+import { memoryScopesSchema } from './memory-scopes.js';
 
 // The console's record of each permanent delete it starts (rec#5 C9), kept
 // beside the local stores. It holds no words: an operation ID, the target,
@@ -205,6 +206,9 @@ function operationProblem(operation, version) {
   if ((operation.sourceApplication !== undefined || operation.sessionId !== undefined)
       && (version !== 2 || !['episode', 'session'].includes(operation.itemKind)
         || !TEXT(operation.sourceApplication) || !TEXT(operation.sessionId))) return 'has an incomplete source identity';
+  if (operation.memoryScopes !== undefined && (version !== 2
+      || !['episode', 'session'].includes(operation.itemKind)
+      || !memoryScopesSchema.safeParse(operation.memoryScopes).success)) return 'has invalid memory cleanup scopes';
   if (!STATES.has(operation.state)) return `has the unknown state ${JSON.stringify(operation.state)}`;
   if (!Array.isArray(operation.itemIds) || !operation.itemIds.every(TEXT)) return 'has no list of item IDs';
   for (const field of ['previewId', 'deletionId', 'deletedAt']) {

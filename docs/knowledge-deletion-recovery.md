@@ -13,7 +13,7 @@ fuli migrate reconcile-knowledge --data-dir /path/to/fuli-data
 
 The command resumes previously confirmed deletions and cleans local copies. It
 does not initiate a new deletion. Exit status zero means the local ledger and
-current graph deletion watermark agree. A pending result exits nonzero; restore
+current graph deletion watermark agree and recorded local cleanup has completed. A pending result exits nonzero; restore
 Provider availability and retry. Successful `fuli setup` performs this check too.
 
 The console and maintenance CLI alone reconcile deletion records through the
@@ -60,3 +60,27 @@ return to pending with `delivery_not_started: true` only for the same attempt,
 without a proposal identity, and only when uncertainty came from TTL expiry.
 Uncertainty recorded after a remote error cannot use that release path. Deleted
 or completed drafts never return to pending through it.
+
+Episode and session deletion also clears directly bound Agent working-memory
+revisions. Session matching uses the exact source application and session tuple;
+episode matching uses its task token and checkpoint identity. Deleting a knowledge
+item does not expand this rule to its supporting episodes. Earlier revisions and
+other scopes remain unchanged. Later revisions from other sessions are retained
+unless the person selects their scope group in the preview.
+
+Cleared checkpoints retain their identity, time and revision with `memory: null`
+and `memory_state: scrubbed`. The head revision does not move backward. Reads and
+exports explain the deletion and the expected revision for a new write; they
+never substitute an earlier revision. Deleted source sessions and replayed
+scrubbed checkpoints cannot write the old text back. A running model may already
+hold words in its context; this does not promise to prevent newly rewritten text.
+
+The console and maintenance CLI immediately rewrite affected generated Agent
+`MEMORY.md` files, including project layers. The ledger stores only the affected
+Agent/project identities and exact revision numbers. Cleanup keeps its revision
+fence under the same directory lock as snapshot writes, so a delayed old read
+cannot restore selected revisions. Unselected revisions and other files remain
+unchanged. A busy, unsafe or unverifiable snapshot keeps the deletion
+`local_pending`; it cannot report complete while this cleanup remains unfinished.
+Reconciliation obtains the same scopes from graph checkpoint deletion markers
+and reapplies cleanup after an independent local snapshot restore.

@@ -418,7 +418,8 @@ NODE_FIELDS = {
         'updated_at': 'datetime?', 'write_serial': 'integer?',
     },
     'FuliProjectAgentMemoryCheckpoint': {
-        'id': 'string', 'payload_hash': 'string', 'record_json': 'string', 'revision': 'integer',
+        'id': 'string', 'payload_hash': 'string?', 'record_json': 'string', 'revision': 'integer',
+        'memory_state': 'memory_state?', 'scrubbed_by': 'string?',
     },
     'FuliProjectAgentRecruitment': {
         'cleanup_eligible': 'boolean?', 'confirmation_mode': 'confirmation_mode',
@@ -558,6 +559,7 @@ NODE_FIELDS = {
         'knowledge_usage_json': 'string?', 'knowledge_usage_result_json': 'string?',
         'personal_project_id': 'string?', 'personal_space_id': 'string',
         'project_agent_id': 'string?', 'reason': 'string?', 'record_json': 'string',
+        'scrubbed_by': 'string?',
         'token': 'string', 'turn_id': 'string?', 'turn_receipt_claimant': 'string?',
         'turn_receipt_lock': 'integer?', 'turn_receipt_state': 'turn_receipt_state?',
         'work_log_json': 'string?', 'write_serial': 'integer?',
@@ -693,6 +695,7 @@ RELATIONSHIP_FIELDS = {
 }
 
 ENUMS = {
+    'memory_state': ('present', 'scrubbed'),
     'alias_status': ('active', 'provisional', 'proposed'),
     'assignment_status': ('active', 'ended'),
     'attention_kind': ('question', 'approval', 'review', 'permission', 'blocked'),

@@ -9,6 +9,7 @@ import { RoleSuggestionLog } from '../model-backends/suggestion-log.js';
 import { hardDeleteLedger } from './delete-ledger.js';
 import { knowledgeReferences } from './forget-references.js';
 import { hardDeleteProviderRef } from './input.js';
+import { forgetMemorySnapshots, memoryScopesFromReceipt } from './memory-scopes.js';
 
 // A person's hard delete of one knowledge item from the local console
 // (rec#5 C9). The provider plans, checks the preview and deletes in one
@@ -44,6 +45,7 @@ export function knowledgeHardDelete(dataDir, {
   // The active personal space, for rebuilding the record from the graph.
   personalSpaceId = () => null,
   reconcileSubmissions = async () => {},
+  agentSnapshots = null,
   deleteTimeoutMs = DELETE_TIMEOUT_MS,
   abortAfterMs = ABORT_AFTER_MS
 } = {}) {
@@ -65,13 +67,15 @@ export function knowledgeHardDelete(dataDir, {
     // A recorded time stays: a later status or recovery never moves the cutoff.
     deletionId: deletion.deletion_id, deletedAt: operation.deletedAt ?? deletion.deleted_at,
     ...sourceIdentity(deletion),
+    ...(['episode', 'session'].includes(deletion.item_kind) ? { memoryScopes: memoryScopesFromReceipt(deletion) } : {}),
     itemIds: [...new Set([...operation.itemIds, ...deletion.deleted_item_ids])] });
   // Local cleanup from the recorded operation: idempotent, so a retry or the
   // next console start runs it again until every store forgot. It is bound to
   // the delete's own time (the graph's deleted_at, kept in the record), so a
   // later run never reaches what was written after the delete.
   const cleanUp = (operation, deletion) => {
-    const stores = forgetLocally(localStores, operation.spaceId, operation.itemIds, operation.deletedAt ?? operation.createdAt);
+    const stores = [...forgetLocally(localStores, operation.spaceId, operation.itemIds, operation.deletedAt ?? operation.createdAt),
+      ...forgetMemorySnapshots(agentSnapshots, operation)];
     const complete = stores.every((store) => store.status === 'forgotten');
     if (complete) ledger.update(operation.id, { state: 'complete' });
     return { outcome: complete ? 'complete' : 'local_pending', ...deletion, local_stores: stores };

@@ -2010,6 +2010,10 @@
         "reviewed_agent",
         "task_only"
       ],
+      "memory_state": [
+        "present",
+        "scrubbed"
+      ],
       "migration_kind": [
         "schema",
         "backfill",
@@ -3134,9 +3138,11 @@
       },
       "FuliProjectAgentMemoryCheckpoint": {
         "id": "string",
-        "payload_hash": "string",
+        "memory_state": "memory_state?",
+        "payload_hash": "string?",
         "record_json": "string",
-        "revision": "integer"
+        "revision": "integer",
+        "scrubbed_by": "string?"
       },
       "FuliProjectAgentRecruitment": {
         "cleanup_eligible": "boolean?",
@@ -3437,6 +3443,7 @@
         "project_agent_id": "string?",
         "reason": "string?",
         "record_json": "string",
+        "scrubbed_by": "string?",
         "token": "string",
         "turn_id": "string?",
         "turn_receipt_claimant": "string?",

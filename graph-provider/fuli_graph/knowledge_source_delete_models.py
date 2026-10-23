@@ -4,12 +4,12 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from .knowledge_hard_delete_models import (
-    OPERATION_ID_PATTERN, PREVIEW_ID_PATTERN, KnowledgeHardDeleteCounts,
+    OPERATION_ID_PATTERN, PREVIEW_ID_PATTERN, KnowledgeHardDeleteCounts, HardDeleteMemoryScope,
     KnowledgeHardDeleteDrafts, KnowledgeHardDeleteEpisode, KnowledgeHardDeleteItem, KnowledgeHardDeletePublication,
 )
 from .model_base import StrictModel
 
-SourceSelectionKey = Annotated[str, Field(min_length=1, max_length=512, pattern=r'^(entity|relationship):[^\s:]+$')]
+SourceSelectionKey = Annotated[str, Field(min_length=1, max_length=512, pattern=r'^(entity|relationship|memory):[^\s:]+$')]
 
 
 class SourceDeleteRef(StrictModel):
@@ -67,3 +67,21 @@ class SourceDeletePreview(StrictModel):
     counts: KnowledgeHardDeleteCounts
     publications: list[KnowledgeHardDeletePublication]
     drafts: KnowledgeHardDeleteDrafts
+    agent_memory: 'SourceDeleteMemory' = Field(default_factory=lambda: SourceDeleteMemory())
+
+
+class SourceDeleteMemoryDirect(HardDeleteMemoryScope):
+    current: bool
+    agent_name: str | None = None
+
+
+class SourceDeleteMemoryLater(HardDeleteMemoryScope):
+    key: str
+    from_revision: int
+    selected: bool
+    agent_name: str | None = None
+
+
+class SourceDeleteMemory(StrictModel):
+    scrubbed: list[SourceDeleteMemoryDirect] = Field(default_factory=list)
+    later: list[SourceDeleteMemoryLater] = Field(default_factory=list)

@@ -274,6 +274,7 @@ async def apply_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteC
         counts=preview.counts, deleted_item_ids=sorted({*[key.split(':', 1)[1] for key in _deleted_keys(plan)],
             *[episode.episode_id for episode in preview.removed_episodes]}),
         drafts_scrubbed=plan['drafts_scrubbed'],
+          memory_scopes=plan.get('memory', {}).get('scopes', []),
         **_source_identity(plan))
 
 

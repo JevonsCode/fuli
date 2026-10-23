@@ -54,7 +54,20 @@ export interface HardDeletePublication {
   withdrawal_url: null
 }
 
+export interface SourceMemoryScope {
+  agent_id: string
+  agent_name?: string | null
+  personal_project_id: string | null
+  revisions: number[]
+  current_revision: number
+}
+export interface SourceMemoryPreview {
+  scrubbed: (SourceMemoryScope & { current: boolean })[]
+  later: (SourceMemoryScope & { key: string; from_revision: number; selected: boolean })[]
+}
+
 export interface HardDeletePreview {
+  agent_memory?: SourceMemoryPreview
   publications?: HardDeletePublication[]
   drafts?: { pending: number; submitted: number; submitting: number; unknown: number }
   preview_id: string

@@ -3,6 +3,18 @@
 export const knowledgeHardDeleteMessages = {
   'zh-CN': {
     source: {
+      memoryScope: 'Agent {agent} · {project}',
+      memorySession: '这次会话写入的 {count} 条 Agent 工作记忆快照会清掉正文（{agent}{current}），记忆不会回退到旧版本。',
+      memoryEpisode: '这段来源对应的 {count} 条 Agent 工作记忆快照会清掉正文（{agent}{current}），记忆不会回退到旧版本。',
+      memoryCurrent: '，含当前版本',
+      memoryNone: '没有按来源身份匹配到需要清正文的工作记忆快照。',
+      memoryLimitation: '仍在运行的会话可能在自己的上下文中保留已删除的文字，并写入新的工作记忆修订；FULI 无法保证阻止这种再次写入。',
+      memoryLaterTitle: '其他会话的后续工作记忆，默认保留',
+      memoryLaterHelp: '后续修订可能仍含这些文字。勾选会清掉这一组修订的正文，保留修订号，不回退旧版本。',
+      memoryLater: '该 Agent 自修订 {revision} 之后的 {count} 条工作记忆（其他会话写入）',
+      memoryLaterSelect: '清除 {agent} 自修订 {revision} 之后的 {count} 条工作记忆正文',
+      memoryRevisions: '修订 {revisions} · 当前修订 {current}',
+      memorySelected: '已加入清除：这些修订的正文会清空，修订记录仍保留。',
       episodeOpen: '删除这段来源…', sessionOpen: '删除整个会话来源…',
       episodeTitle: '彻底删除这段来源', sessionTitle: '彻底删除整个会话来源',
       default_items: '将一起删除的知识', affected_items: '受影响、默认保留的知识',
@@ -105,6 +117,18 @@ export const knowledgeHardDeleteMessages = {
   },
   'en-US': {
     source: {
+      memoryScope: 'Agent {agent} · {project}',
+      memorySession: '{count} Agent working-memory snapshots written in this session lose their text ({agent}{current}). Memory does not fall back to an older version.',
+      memoryEpisode: '{count} Agent working-memory snapshots linked to this source lose their text ({agent}{current}). Memory does not fall back to an older version.',
+      memoryCurrent: ', including the current version',
+      memoryNone: 'No working-memory snapshots matched this source identity for text removal.',
+      memoryLimitation: 'Still-running sessions may hold deleted text in their own context and write it into a new working-memory revision; FULI cannot guarantee that this rewrite will be blocked.',
+      memoryLaterTitle: 'Later working memory from other sessions, kept by default',
+      memoryLaterHelp: 'Later revisions may still hold this text. Selecting a group clears its text, keeps revision numbers and does not fall back to older versions.',
+      memoryLater: '{count} working-memory revisions after revision {revision} for this Agent (written in other sessions)',
+      memoryLaterSelect: 'Clear text from {count} working-memory revisions after revision {revision} for {agent}',
+      memoryRevisions: 'Revisions {revisions} · current revision {current}',
+      memorySelected: 'Added to text removal: these revisions lose their text; their revision records stay.',
       episodeOpen: 'Delete this source…', sessionOpen: 'Delete all session sources…',
       episodeTitle: 'Permanently delete this source', sessionTitle: 'Permanently delete all session sources',
       default_items: 'Knowledge deleted with it', affected_items: 'Affected knowledge, kept by default',

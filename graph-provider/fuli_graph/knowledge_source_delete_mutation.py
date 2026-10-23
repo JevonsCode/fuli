@@ -2,6 +2,8 @@
 from .knowledge_basis_review import apply_meaning, hold_deleted_sources
 from .knowledge_source_delete_copies import remove_source_copies
 from .publication_source_copies import scrub_publication_drafts
+from .knowledge_source_memory import scrub_source_memory
+from .knowledge_source_tasks import scrub_source_tasks
 
 
 async def remove_source_delete(scoped, actor, space, plan, deletion_id, created_at, knowledge):
@@ -13,6 +15,8 @@ async def remove_source_delete(scoped, actor, space, plan, deletion_id, created_
     """
     await hold_source_bases(scoped, actor, space, plan, deletion_id, created_at)
     await knowledge.remove_items(scoped, space, plan)
+    await scrub_source_memory(scoped, space, plan['memory'], deletion_id)
+    await scrub_source_tasks(scoped, space, plan['inventory']['task_ids'], deletion_id)
     await remove_source_copies(scoped, space, plan['inventory'])
     return await scrub_publication_drafts(scoped, space, plan['drafts'], deletion_id, created_at)
 

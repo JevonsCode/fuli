@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
+import { memoryScopesSchema } from './memory-scopes.js';
 
 const id = z.string().min(1);
 const operation = z.object({
   id, spaceId: id, itemKind: z.enum(['entity', 'relationship', 'episode', 'session']), itemId: id,
   previewId: id.nullable().optional(), itemIds: z.array(id),
   sourceApplication: id.optional(), sessionId: id.optional(),
+  memoryScopes: memoryScopesSchema.optional(),
   state: z.enum(['pending', 'graph_deleted', 'complete', 'not_deleted']),
   deletionId: id.nullable().optional(), deletedAt: id.nullable().optional(),
   createdAt: id, updatedAt: id

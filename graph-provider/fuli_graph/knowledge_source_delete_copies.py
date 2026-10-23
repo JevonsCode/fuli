@@ -60,9 +60,3 @@ async def remove_source_copies(scoped, space, inventory):
         WHERE session.current_token IN $tokens
         REMOVE session.current_token
         ''', space_id=space['id'], tokens=inventory['task_tokens'])
-    await scoped.runtime.driver.execute_query(
-        '''
-        MATCH (task:FuliTaskContext {personal_space_id: $space_id})
-        WHERE task.id IN $task_ids
-        DETACH DELETE task
-        ''', space_id=space['id'], task_ids=inventory['task_ids'])

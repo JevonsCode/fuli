@@ -14,7 +14,7 @@ interface DigestEntry { kind: string; text: string; sources: Array<{ role: strin
 interface Digest { notes?: string[]; entries?: DigestEntry[]; omitted?: number }
 interface MessagePage { events: Message[]; next_cursor?: number; has_more?: boolean; digest?: Digest | null }
 interface WorkingMemory { summary: string; decisions: string[]; openThreads: string[]; nextActions: string[] }
-interface MemoryView { revision: number; current: { revision: number; createdAt: string; sourceApplication: string; memory: WorkingMemory } | null }
+interface MemoryView { revision: number; current: { revision: number; createdAt: string; sourceApplication?: string; memory: WorkingMemory | null; memoryState?: 'present' | 'scrubbed'; scrubbedBy?: string } | null }
 interface CopyFeedback { conversationId: string; state: 'copied' | 'fallback' }
 interface MemoryExport { filename: string; markdown: string }
 const projectId = ref('')
@@ -177,8 +177,8 @@ function content(value: unknown) { return typeof value === 'string' ? value : JS
 function entryKind(value: string) {
   return t(`projectAgents.conversations.kinds.${['request', 'decision', 'correction', 'open', 'method'].includes(value) ? value : 'request'}`)
 }
-function client(value: string) {
-  return t(`projectAgents.clients.${['codex', 'claude', 'claude_code', 'cursor', 'gemini_cli', 'kiro'].includes(value) ? value : 'other'}`)
+function client(value?: string) {
+  return t(`projectAgents.clients.${['codex', 'claude', 'claude_code', 'cursor', 'gemini_cli', 'kiro'].includes(value ?? '') ? value : 'other'}`)
 }
 async function copyContinuation(conversation: Conversation) {
   const prompt = conversation.continuation_prompt
@@ -216,7 +216,8 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
         <p v-else-if="exportFeedback === 'failed'" data-export-feedback role="alert" class="conversation-hint">{{ t('projectAgents.conversations.exportMemoryFailed') }}</p>
         <GrowthLoading v-if="memoryLoading" variant="compact" :label="t('projectAgents.conversations.loadingMemory')" />
         <div v-else-if="memoryError" role="alert"><p>{{ memoryError }}</p><Button size="sm" variant="ghost" data-retry-memory @click="loadMemory">{{ t('projectAgents.retry') }}</Button></div>
-        <template v-else-if="memory?.current">
+        <p v-else-if="memory?.current && (memory.current.memoryState === 'scrubbed' || memory.current.memory === null)" class="conversation-hint" data-memory-scrubbed>{{ t('projectAgents.conversations.memoryScrubbed', { revision: memory.current.revision }) }}</p>
+        <template v-else-if="memory?.current?.memory">
           <p class="conversation-hint">{{ t('projectAgents.conversations.memoryMeta', { revision: memory.current.revision, source: client(memory.current.sourceApplication), time: date(memory.current.createdAt) }) }}</p>
           <p class="memory-summary">{{ memory.current.memory.summary }}</p>
           <template v-for="group in (['decisions', 'openThreads', 'nextActions'] as const)" :key="group">

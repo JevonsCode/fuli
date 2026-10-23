@@ -27,7 +27,7 @@ async def test_source_purge_scopes_copies_and_recounts_retained_journal_events()
     resets = [params for cypher, params in calls if "conversation.summary = ''" in cypher]
     assert resets == [{'id': 'conversation', 'remaining_bytes': message_bytes(event)}]
     deletes = [(cypher, params) for cypher, params in calls if 'DETACH DELETE' in cypher]
-    assert len(deletes) == 4
+    assert len(deletes) == 3
     assert all(any(name in params for name in ('group_id', 'space_id', 'conversation_ids'))
                for _, params in deletes)
     assert all('FuliPublicationDraft' not in cypher for cypher, _ in calls)

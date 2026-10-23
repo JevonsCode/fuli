@@ -93,6 +93,15 @@ class KnowledgeHardDeleteCounts(StrictModel):
     source_turns: int = 0
     conversation_events: int = 0
     conversation_summaries: int = 0
+    memory_checkpoints: int = 0
+    memory_later_revisions: int = 0
+
+
+class HardDeleteMemoryScope(StrictModel):
+    agent_id: str
+    personal_project_id: str | None
+    revisions: list[int]
+    current_revision: int
 
 
 class KnowledgeHardDeletePublication(StrictModel):
@@ -144,6 +153,7 @@ class KnowledgeHardDeleteRecord(KnowledgeHardDeletion):
     source_application: str | None = None
     fuli_session_id: str | None = None
     drafts_scrubbed: dict[str, int] = Field(default_factory=dict)
+    memory_scopes: list[HardDeleteMemoryScope] = Field(default_factory=list)
 
 
 class KnowledgeHardDeleteSpace(StrictModel):

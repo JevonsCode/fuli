@@ -11,6 +11,7 @@ from pydantic import Field
 from .knowledge_item_view import personal_reader_space
 from .knowledge_hard_delete_models import HardDeleteTargetKind
 from .model_base import StrictModel
+from .knowledge_source_tasks import task_shell_is_body_free
 
 
 class KnowledgeIntegrityRef(StrictModel):
@@ -49,18 +50,20 @@ async def check_knowledge_integrity(store, actor, request) -> KnowledgeIntegrity
         OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_TASK_CONTEXT_SESSION]->
                        (:FuliTaskContextSession {id: ref.id})-[:HAS_CONTEXT]->(task:FuliTaskContext)
         WHERE ref.kind = 'session'
-        WITH ref, entity IS NOT NULL OR edge IS NOT NULL OR episode IS NOT NULL OR task IS NOT NULL AS present
+        WITH ref, entity IS NOT NULL OR edge IS NOT NULL OR episode IS NOT NULL AS present,
+             collect(task) AS source_tasks
         OPTIONAL MATCH (trace:FuliKnowledgeAudit {space_id: $space_id, action: 'hard_delete'})
         WHERE (ref.kind = 'episode' AND ref.id IN coalesce(trace.removed_episode_ids, []))
            OR (ref.kind + ':' + ref.id) IN coalesce(trace.deleted_item_keys, [])
         RETURN ref.kind AS kind, ref.id AS id, present, collect(DISTINCT trace.id) AS deletion_ids,
-               null AS source_application, null AS session_id
+               null AS source_application, null AS session_id, source_tasks
         UNION ALL
         MATCH (episode:Episodic {group_id: $group_id})
         WHERE $has_sessions AND episode.fuli_source_application IS NOT NULL
           AND episode.fuli_session_id IS NOT NULL
         RETURN DISTINCT 'session_source' AS kind, null AS id, false AS present, [] AS deletion_ids,
-               episode.fuli_source_application AS source_application, episode.fuli_session_id AS session_id
+               episode.fuli_source_application AS source_application, episode.fuli_session_id AS session_id,
+               [] AS source_tasks
         ''', references=list(references.values()), group_id=space['group_id'], space_id=space['id'],
         has_sessions=any(kind == 'session' for kind, _ in references), routing_='r')
     # Episode-only sessions need no task-session node. Read their identity pairs
@@ -74,7 +77,8 @@ async def check_knowledge_integrity(store, actor, request) -> KnowledgeIntegrity
         if row['kind'] == 'session_source':
             continue
         ref = KnowledgeIntegrityRef(kind=row['kind'], id=row['id'])
-        present = row['present'] or (ref.kind == 'session' and ref.id in episode_sessions)
+        present = (row['present'] or (ref.kind == 'session' and ref.id in episode_sessions)
+                   or any(not task_shell_is_body_free(dict(task)) for task in row.get('source_tasks', [])))
         if row['deletion_ids']:
             deletions.update(row['deletion_ids'])
             deleted_count += 1

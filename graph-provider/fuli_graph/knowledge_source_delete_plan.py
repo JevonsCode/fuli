@@ -15,6 +15,7 @@ from .knowledge_source_delete_models import SourceDeleteItem, SourceDeletePrevie
 from .knowledge_source_delete_selection import source_delete_selection
 from .knowledge_source_delete_target import source_delete_target
 from .knowledge_source_fence import source_turn_key
+from .knowledge_source_memory import source_memory_plan
 from .provider_values import native_datetime, now_utc, sha256_text
 from .publication_source_copies import drafts_for_sources, publication_draft_counts
 
@@ -22,10 +23,15 @@ from .publication_source_copies import drafts_for_sources, publication_draft_cou
 async def plan_source_delete(store, space, item_id, request, knowledge):
     target = await source_delete_target(store, space, item_id, request)
     inventory = await source_delete_inventory(store, space, target)
+    memory = await source_memory_plan(store, space, target, inventory,
+        [key for key in request.include if key.startswith('memory:')],
+        [key for key in request.exclude if key.startswith('memory:')])
     episode_ids = sorted(episode['uuid'] for episode in inventory['episodes'])
     lineages = await source_delete_lineages(store, space, episode_ids)
     try:
-        selection = source_delete_selection(lineages, episode_ids, include=request.include, exclude=request.exclude)
+        selection = source_delete_selection(lineages, episode_ids,
+            include=[key for key in request.include if not key.startswith('memory:')],
+            exclude=[key for key in request.exclude if not key.startswith('memory:')])
     except ValueError as invalid:
         raise HTTPException(status_code=422, detail={'code': 'source_selection_invalid', 'message': str(invalid)}) from invalid
     all_keys = sorted({key for row in lineages for key in row['version_keys']})
@@ -62,6 +68,7 @@ async def plan_source_delete(store, space, item_id, request, knowledge):
         relationships=sum(item.item_kind == 'relationship' for item in selected_items),
         episodes=len(episode_ids), dependents=len(reviewed), source_turns=len(inventory['task_ids']),
         conversation_events=len(inventory['event_ids']), conversation_summaries=len(inventory['conversation_ids']),
+        memory_checkpoints=memory['direct_count'], memory_later_revisions=memory['later_count'],
         **{category: len(ids) for category, ids in records.items()})
     removed = [KnowledgeHardDeleteEpisode(episode_id=row['uuid'], source_kind=row.get('fuli_source_kind'),
         source_application=row.get('fuli_source_application'), session_id=row.get('fuli_session_id'),
@@ -76,6 +83,7 @@ async def plan_source_delete(store, space, item_id, request, knowledge):
         'selection': selection, 'locks': locks, 'episodes': episode_ids, 'records': records,
         'tasks': inventory['task_versions'], 'events': inventory['event_versions'],
         'conversations': inventory['conversation_versions'],
+        'agent_memory': memory['versions'],
         'drafts': [[row['draft']['id'], row['draft']['status'], row['draft'].get('submission_id'),
                     row['draft'].get('payload_scrubbed_by')] for row in drafts],
         'publications': [row.model_dump() for row in publications], 'counts': counts.model_dump()},
@@ -85,7 +93,8 @@ async def plan_source_delete(store, space, item_id, request, knowledge):
         include=sorted(set(request.include)), exclude=sorted(set(request.exclude)),
         default_items=[layers[key] for key in selection['default_keys']],
         affected_items=[layers[key] for key in selection['affected_keys']], removed_episodes=removed,
-        counts=counts, publications=publications, drafts=KnowledgeHardDeleteDrafts(**draft_counts))
+        counts=counts, publications=publications, drafts=KnowledgeHardDeleteDrafts(**draft_counts),
+        agent_memory=memory['preview'])
     return {'preview': preview, 'target': target, 'inventory': inventory, 'selection': selection,
             'deleted_source_turn_keys': turn_keys,
-            'lineages': lineages, 'items': selected_items, 'records': records, 'drafts': drafts}
+            'lineages': lineages, 'items': selected_items, 'records': records, 'drafts': drafts, 'memory': memory}

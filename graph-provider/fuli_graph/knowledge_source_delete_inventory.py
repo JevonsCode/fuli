@@ -61,6 +61,8 @@ async def source_delete_inventory(store, space, request):
         'task_ids': [task['id'] for task in tasks],
         'task_tokens': [task['token'] for task in tasks],
         'task_versions': [[task['id'], sha256_text(task['record_json'] or '')] for task in tasks],
+        'memory_targets': [{key: task[key] for key in ('token', 'project_id', 'agent_id')}
+                           for task in tasks if task['agent_id']],
         'episodes': [dict(row['episode']) for row in episodes],
         'event_ids': [row['id'] for row in events],
         'event_versions': [[row['id'], row['digest']] for row in events],
