@@ -5,8 +5,7 @@ const id = { ...stringSchema(), minLength: 1, maxLength: 256 };
 
 // Agents may only submit and read. Approving, disabling, rolling back and
 // deleting apps have no Agent tool; they come through the CLI or local console.
-export const AGENT_APP_TOOL_NAMES = Object.freeze(['submit_agent_app_version', 'list_agent_apps']);
-
+// No app is ever granted these two (src/agent-apps/host-tools/catalog.js).
 export const AGENT_APP_TOOL_DEFINITIONS = [
   {
     name: 'submit_agent_app_version', title: 'WRITE · Submit an Agent app version',

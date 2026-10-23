@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+
 import { dataUsage } from './data-directory.js';
 import { agentAppType } from './manifest.js';
 import { createRunGate } from './run-gate.js';
@@ -23,7 +25,8 @@ export function createAppViews(context) {
           type: shown ? agentAppType(shown.manifest) : null, status: app.status, version: app.activeVersion,
           pendingVersions: versions.filter(({ state }) => state === 'pending').map(({ version }) => version),
           approval: activeApproval(store.approval(app.appId, app.activeVersion)),
-          run: runGate({ appId: app.appId }), lastUsedAt: app.lastUsedAt, dataBytes: dataUsage(context.dataOf(app.appId)).bytes
+          run: runGate({ appId: app.appId }), instance: instanceView(app.appId), lastUsedAt: app.lastUsedAt,
+          dataBytes: dataUsage(context.dataOf(app.appId)).bytes, ...orphanData(app)
         };
       })
     };
@@ -33,7 +36,8 @@ export function createAppViews(context) {
     const app = store.existingApp(appId);
     return {
       appId, personalSpaceId: app.personalSpaceId, agentId: app.agentId, name: app.name, status: app.status,
-      version: app.activeVersion, run: runGate({ appId }), dataFormat: app.dataFormat,
+      version: app.activeVersion, run: runGate({ appId }), instance: instanceView(appId), owner: ownerView(appId),
+      dataFormat: app.dataFormat, ...orphanData(app),
       dataBytes: dataUsage(context.dataOf(appId)).bytes,
       lastUsedAt: app.lastUsedAt, createdAt: app.createdAt, updatedAt: app.updatedAt,
       versions: store.versions(appId).map((version) => ({
@@ -46,6 +50,26 @@ export function createAppViews(context) {
       })),
       history: store.events(appId, HISTORY_LIMIT)
     };
+  }
+
+  // While sealing, which write tool it waits for and since when.
+  function instanceView(appId) {
+    const instance = store.instance(appId);
+    if (!instance) return null;
+    const { instanceId, generation, mode, state, version, startedAt, sealedAt, stoppedAt, stopReason } = instance;
+    const waiting = state === 'sealing' ? store.lastEvent(appId, 'seal_waiting_for_writes') : null;
+    return { instanceId, generation, mode, state, version, startedAt, sealedAt, stoppedAt, stopReason,
+      ...(waiting ? { waitingFor: { toolName: waiting.detail.toolName, since: waiting.at } } : {}) };
+  }
+
+  function ownerView(appId) {
+    const { ownerKind, pid, acquiredAt, heartbeatAt } = store.owner(appId);
+    return ownerKind ? { ownerKind, pid, since: acquiredAt, heartbeatAt } : null;
+  }
+
+  // A deleted app whose data directory came back (only a manual restore does that) is kept and shown.
+  function orphanData(app) {
+    return app.status === 'deleted' && existsSync(context.dataOf(app.appId)) ? { orphanDataDirectory: true } : {};
   }
 
   return { list, read };

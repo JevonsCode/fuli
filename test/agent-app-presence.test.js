@@ -8,6 +8,8 @@ import { Worker } from 'node:worker_threads';
 
 import { agentAppContext, agentAppServiceOver } from '../src/agent-apps/service.js';
 import { createVerifiedDecisions } from '../src/agent-apps/verified-decisions.js';
+import { AGENT_APP_FORMAT } from '../src/agent-apps/store.js';
+import { applyConfirmedSqliteMigration, previewSqliteMigration } from '../packages/roundtable/src/storage/database-migration.js';
 import { presencePort } from '../src/presence/port.js';
 import { fakeHelper, windowsHello } from '../test-support/fake-win-helper.js';
 
@@ -28,6 +30,9 @@ const MANIFEST = Object.freeze({
 const FILES = Object.freeze([{ path: 'web/index.html', content: '<h1>Synthetic dispatch log</h1>' }]);
 
 const verified = () => ({ verified: true });
+// Every context here is this test process; no other host holds an app.
+const HOST = Object.freeze({ platform: 'test', self: async () => ({ pid: 101, identity: 'test:101', exePath: '/synthetic/node' }),
+  probe: async () => 'unknown' });
 const refused = (reason, detail = 'fixture') => ({ verified: false, reason, detail });
 
 // presence answers each check in turn and records the challenges it saw.
@@ -35,7 +40,7 @@ function fixture(t, { platform = 'win32', answers = [verified()] } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-app-presence-'));
   const root = join(directory, 'agent-apps');
   const clock = { now: Date.parse('2026-10-24T08:00:00.000Z') };
-  const context = agentAppContext({ root, providerIdentity: 'http://127.0.0.1:65530', platform,
+  const context = agentAppContext({ root, providerIdentity: 'http://127.0.0.1:65530', platform, hostIdentity: HOST,
     resolveOwner: async (owner) => owner, toolNames: () => TOOLS, clock: () => new Date(clock.now) });
   const service = agentAppServiceOver(context);
   const asked = [];
@@ -44,7 +49,8 @@ function fixture(t, { platform = 'win32', answers = [verified()] } = {}) {
   const opened = [service];
   // Another connection to the same registry, as a second CLI process would open.
   const reopen = (options = {}) => {
-    const again = agentAppContext({ root, platform, toolNames: () => TOOLS, clock: () => new Date(clock.now), ...options });
+    const again = agentAppContext({ root, platform, toolNames: () => TOOLS, clock: () => new Date(clock.now), hostIdentity: HOST,
+      ...options });
     opened.push(again.store);
     return again;
   };
@@ -140,7 +146,7 @@ test('terms or package changed after the verification are not covered by it', as
 
   // The console disables the app between the Hello prompt and the commit.
   const challenge = decisions.issueChallenge({ action: 'approve', ...approval(second) });
-  service.disable({ appId: first.appId, actor: CONSOLE });
+  await service.disable({ appId: first.appId, actor: CONSOLE });
   assert.throws(() => decisions.commitChallenge(challenge, verified(), CLI_USER), { code: 'challenge_mismatch' });
   const afterTerms = service.read({ appId: first.appId });
   assert.deepEqual([afterTerms.status, afterTerms.version, afterTerms.versions[1].state], ['disabled', '1.0.0', 'pending']);
@@ -175,7 +181,7 @@ test('a rollback needs its own presence check and never restores an earlier one'
   assert.equal(kept.run.reason, 'isolation_unavailable');
 
   // The console's rollback has no presence check, so it rewrites the old one as unverified.
-  service.rollback({ appId: first.appId, version: '1.0.0', actor: CONSOLE });
+  await service.rollback({ appId: first.appId, version: '1.0.0', actor: CONSOLE });
   const consoleRollback = service.read({ appId: first.appId });
   assert.equal(consoleRollback.version, '1.0.0');
   assert.equal(consoleRollback.versions[0].approval.presence, 'unverified');
@@ -198,32 +204,30 @@ function assertConsumedWithoutApproval(service, appId, { version, status, outcom
     && recorded.challengeId === event.detail.challengeId), false);
 }
 
-const failingData = (code) => () => { throw Object.assign(new Error(`synthetic ${code}`), { code }); };
+// An approval no longer creates the data directory (an instance start does,
+// rec#7 PR②), so a failing step of the decision is a registry write that throws.
+const failingWrite = (code) => () => { throw Object.assign(new Error(`synthetic ${code}`), { code }); };
 
-for (const [label, breakData, code] of [
-  ['the data root is a file', ({ root }) => writeFileSync(join(root, 'data'), 'not a directory'), 'ENOTDIR'],
-  ['the data directory is not writable', ({ context }) => { context.dataOf = failingData('EACCES'); }, 'EACCES']
-]) {
-  test(`a verified approval that fails because ${label} consumes its challenge and approves nothing`, async (t) => {
-    const { service, reopen, root } = fixture(t);
+for (const code of ['ENOTDIR', 'EACCES']) {
+  test(`a verified approval whose decision write fails (${code}) consumes its challenge and approves nothing`, async (t) => {
+    const { service, reopen } = fixture(t);
     const app = await submitted(service);
     const context = reopen();
     const decisions = createVerifiedDecisions(context, { presence: { kind: 'hello' } });
     const challenge = decisions.issueChallenge({ action: 'approve', ...approval(app) });
-    breakData({ root, context });
+    const insertApproval = context.store.insertApproval;
+    context.store.insertApproval = failingWrite(code);
 
     assert.throws(() => decisions.commitChallenge(challenge, verified(), CLI_USER), { code });
 
-    // While the data path is still broken, the registry itself shows the outcome.
     const { store } = context;
     assert.deepEqual([store.app(app.appId).status, store.version(app.appId, '1.0.0').state,
       store.approval(app.appId, '1.0.0')], ['pending', 'pending', null]);
     assert.notEqual(store.challenge(app.appId).consumedAt, null);
     assert.throws(() => decisions.commitChallenge(challenge, verified(), CLI_USER), { code: 'challenge_replayed' });
 
-    // The data path is repaired; the same challenge and answer still cannot be committed.
-    rmSync(join(root, 'data'), { recursive: true, force: true });
-    context.dataOf = (appId) => join(root, 'data', appId);
+    // The write works again; the same challenge and answer still cannot be committed.
+    context.store.insertApproval = insertApproval;
     assert.throws(() => decisions.commitChallenge(challenge, verified(), CLI_USER), { code: 'challenge_replayed' });
     assertConsumedWithoutApproval(service, app.appId, { status: 'pending', version: null, outcome: 'decision_failed', detail: code });
     assert.equal(service.read({ appId: app.appId }).versions[0].approval, null);
@@ -239,7 +243,7 @@ test('a rival commit racing a failed one at either step boundary never approves 
   for (const [boundary, name] of [[2, 'race-before-finalize'], [3, 'race-before-failure-record']]) {
     const app = await submitted(service, { name });
     const failingContext = reopen();
-    failingContext.dataOf = failingData('EACCES');
+    failingContext.store.insertApproval = failingWrite('EACCES');
     const failing = createVerifiedDecisions(failingContext, { presence: { kind: 'hello' } });
     const rival = createVerifiedDecisions(reopen(), { presence: { kind: 'hello' } });
     const challenge = failing.issueChallenge({ action: 'approve', ...approval(app) });
@@ -269,14 +273,14 @@ test('a rival commit racing a failed one at either step boundary never approves 
   }
 });
 
-test('a verified rollback that fails on its data directory keeps the running version', async (t) => {
+test('a verified rollback whose decision write fails keeps the running version', async (t) => {
   const { service, decisions, reopen } = fixture(t);
   const first = await submitted(service);
   await decisions.approve(approval(first));
   const second = await submitted(service, { version: '1.0.1' });
   await decisions.approve(approval(second));
   const context = reopen();
-  context.dataOf = failingData('EACCES');
+  context.store.setApprovalCheck = failingWrite('EACCES');
   const failing = createVerifiedDecisions(context, { presence: { kind: 'hello', verify: async () => verified() } });
 
   await assert.rejects(failing.rollback({ appId: first.appId, version: '1.0.0', actor: CLI_USER }), { code: 'EACCES' });
@@ -360,7 +364,7 @@ test('two processes consuming one nonce at once: exactly one approval wins', asy
 test('a console approval is unverified and the gate refuses it; other platforms are refused outright', async (t) => {
   const { service } = fixture(t);
   const app = await submitted(service);
-  service.approve({ ...approval(app), approver: CONSOLE });
+  await service.approve({ ...approval(app), approver: CONSOLE });
   assert.equal(service.read({ appId: app.appId }).run.reason, 'presence_unverified');
 
   const linux = fixture(t, { platform: 'linux' });
@@ -406,7 +410,13 @@ test('approvals written before presence checks migrate and count as unverified',
       'fixture-user', 'cli', 'hello', at);
   legacy.close();
 
-  const service = agentAppServiceOver(agentAppContext({ root, platform: 'win32', toolNames: () => TOOLS }));
+  // The identity keys of existing apps (rec#7 PR②) wait for a person's confirmation.
+  const registry = join(root, 'registry.sqlite');
+  assert.throws(() => agentAppServiceOver(agentAppContext({ root, platform: 'win32', toolNames: () => TOOLS,
+    hostIdentity: HOST })).read({ appId }), { code: 'data_format_pending' });
+  const plan = previewSqliteMigration(registry, AGENT_APP_FORMAT);
+  applyConfirmedSqliteMigration(registry, AGENT_APP_FORMAT, { digest: plan.digest, actor: { entrypoint: 'cli' } });
+  const service = agentAppServiceOver(agentAppContext({ root, platform: 'win32', toolNames: () => TOOLS, hostIdentity: HOST }));
   t.after(() => {
     service.close();
     rmSync(directory, { recursive: true, force: true });
@@ -417,7 +427,7 @@ test('approvals written before presence checks migrate and count as unverified',
   assert.equal(read.run.reason, 'presence_unverified');
   const ledger = new DatabaseSync(join(root, 'registry.sqlite'), { readOnly: true });
   try {
-    assert.equal(ledger.prepare('PRAGMA user_version').get().user_version, 3);
+    assert.equal(ledger.prepare('PRAGMA user_version').get().user_version, AGENT_APP_FORMAT.version);
   } finally {
     ledger.close();
   }
