@@ -152,3 +152,8 @@ class TurnReceiptClaim(StrictModel):
 
 class SessionTurnReceiptClaim(TurnReceiptClaim):
     receipt_ids: list[str] = Field(min_length=1, max_length=64)
+
+
+class SessionHintClaim(TurnReceiptClaim):
+    """A hint a built-in Agent shows once per host session (rec#10 D-26.4)."""
+    operation: Literal['project_candidate']

@@ -86,7 +86,7 @@ export class GraphitiProviderClient {
     });
   }
   conversationTriage(operation, input) {
-    if (!['record', 'topics', 'form'].includes(operation)) throw new TypeError('Unknown conversation triage operation');
+    if (!['record', 'read', 'topics', 'form'].includes(operation)) throw new TypeError('Unknown conversation triage operation');
     return this.#request(`/v1/conversation-triage/${operation}`, { method: 'POST', body: input });
   }
   currentTaskContext(input, { timeoutMs = this.requestTimeoutMs, signal } = {}) {
@@ -323,6 +323,12 @@ export class GraphitiProviderClient {
   }
   claimUnreadTurnReceipts(token, input) {
     return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/turn-receipts/claim-unread`, {
+      method: 'POST', body: input
+    });
+  }
+  // rec#10 D-26.4: a task-entry hint is claimed once per host session.
+  claimSessionHint(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/session-hints/claim`, {
       method: 'POST', body: input
     });
   }
