@@ -12,6 +12,7 @@ import { codexPreferenceEvidence } from '../src/agents/codex/preference-evidence
 import { claudePreferenceEvidence } from '../src/agents/claude-code/preference-evidence.js';
 import { beginConversation } from '../src/graphiti/agent-conversations.js';
 import { syntheticHost as host, syntheticJournal } from '../test-support/synthetic-context-session.js';
+import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 
 // rec#15 PR2 / rec#10 D-27: cross-client incremental recent context. Every
 // transcript, conversation and preference here is synthetic; no client runs.
@@ -71,6 +72,46 @@ async function fixture(fn) {
   try { await fn({ directory, delivery, open, enter, journal: journal() }); }
   finally { await rm(directory, { recursive: true, force: true }); }
 }
+
+test('an explicit history page proves only complete visible messages from its exact conversation', () => fixture(async f => {
+  f.journal.add('user', 'exact raw from another session', 'codex', C, 'foreign-event');
+  f.journal.add('assistant', 'another exact raw message', 'codex', C, 'foreign-answer');
+  for (const client of ['claude_code', 'codex']) {
+    for (const mode of ['complete', 'lost', 'preview', 'different', 'truncated', 'event-truncated', 'visible-truncated', 'visible-event-truncated']) {
+      const target = await f.open(client, randomUUID());
+      await f.enter(target, null);
+      const page = { id: CONVERSATION, revision: 2, events: [
+        { sequence: 1, kind: 'message', role: 'user', content: 'exact raw from another session' },
+        { sequence: 2, kind: 'checkpoint', role: 'summary', content: 'not a visible message' }
+      ], next_cursor: 2, has_more: true, ...(mode === 'truncated' ? { truncated: true } : {}) };
+      if (mode === 'event-truncated') page.events[0].truncated = true;
+      const server = createMcpServer({ preferenceDelivery: f.delivery, queryAgentConversations: async () => page }, {
+        env: {}, sourceApplication: client, registerResources: false, toolNames: ['read_agent_conversation'],
+        nativeRequestContext: () => ({ nativeSessionId: target.sessionId, nativeExecutionId: 'synthetic', contextWindowId: 'window' })
+      });
+      let result;
+      try {
+        result = await server.server._requestHandlers.get('tools/call')({ method: 'tools/call', params: {
+          name: 'read_agent_conversation', arguments: { personalSpaceId: 'synthetic-space', agentId: 'lead', conversationId: CONVERSATION }
+        } }, { signal: new AbortController().signal, requestId: 1 });
+      } finally { await server.close(); }
+      assert.notEqual(result.isError, true);
+      const visible = JSON.parse(result.content[0].text);
+      if (mode === 'different') visible.events[0].content = 'changed in visible copy';
+      if (mode === 'visible-truncated') visible.truncated = true;
+      if (mode === 'visible-event-truncated') visible.events[0].truncated = true;
+      if (mode !== 'lost') await target.toolResult('read-raw', result.structuredContent,
+        mode === 'preview' ? { preview: 'incomplete' } : visible, 'mcp__fuli__read_agent_conversation');
+      const after = await f.enter(target, f.journal.recovery(client, target.sessionId));
+      assert.deepEqual(after.contents, mode === 'complete' ? ['another exact raw message']
+        : ['exact raw from another session', 'another exact raw message'], `${client} ${mode}`);
+      if (mode === 'complete') {
+        await target.compact();
+        assert.equal((await f.enter(target, f.journal.recovery(client, target.sessionId))).contents.length, 2);
+      }
+    }
+  }
+}));
 
 test('acceptance: C never gets xxx/yyy back, H recovers them through the pointer and resume, C then gets only zzz', () => fixture(async f => {
   const report = [];
@@ -211,11 +252,11 @@ test('a replaced transcript, a reused offset and a pasted frame confirm nothing'
   f.journal.add('user', 'own', 'codex', C, await c.say('user', 'own'));
   f.journal.add('user', 'other', 'claude_code', H, await h.say('user', 'other'));
   const pasted = await f.enter(c, f.journal.recovery('codex', C), { record: false });
-  assert.deepEqual(pasted.contents, ['other']);
+  assert.deepEqual(pasted.contents, ['own', 'other'], 'omission metadata costs more than this tiny own message');
   // The person pastes the exact frame, and a model quotes it: neither is a host-delivered context.
   await c.say('user', pasted.text);
   await c.say('assistant', pasted.text.split('\n').at(-1));
-  assert.deepEqual((await f.enter(c, f.journal.recovery('codex', C), { record: false })).contents, ['other']);
+  assert.deepEqual((await f.enter(c, f.journal.recovery('codex', C), { record: false })).contents, ['own', 'other']);
   await f.enter(c, f.journal.recovery('codex', C));
   assert.deepEqual((await f.enter(c, f.journal.recovery('codex', C))).contents, []);
   await c.replace();
@@ -458,7 +499,8 @@ test('a scene switch and the recent context confirm together across frontend -> 
   const back = await f.enter(h, f.journal.recovery('claude_code', H), { scene: scene('frontend') });
   assert.equal(back.frame.preference_delivery.status, 'scene_switch');
   assert.deepEqual(back.frame.effective_preferences.map(item => item.preference_key), ['grid']);
-  assert.deepEqual(back.contents, ['yyy'], 'only the message no confirmed frame carried');
+  assert.deepEqual(back.contents, ['xxx', 'yyy'], 'the whole tiny window costs less than omission metadata');
+  assert.ok(back.bytes <= back.fullBytes + 26);
   const settled = await f.enter(h, f.journal.recovery('claude_code', H), { scene: scene('frontend') });
   assert.equal(settled.frame.preference_delivery.status, 'delta', 'the scene switch frame became the baseline');
   assert.deepEqual([settled.frame.preference_updates, settled.contents], [[], []]);

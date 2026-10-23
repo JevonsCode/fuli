@@ -20,7 +20,7 @@ export const claudePreferenceEvidence = Object.freeze({
     if (!['assistant', 'user'].includes(record.type) || !Array.isArray(record.message?.content)) return [];
     return record.message.content.flatMap(block => {
       if (record.type === 'assistant' && block.type === 'tool_use') {
-        return [{ type: 'call', id: block.id, name: block.name }];
+        return [{ type: 'call', id: block.id, name: block.name, input: block.input }];
       }
       if (record.type === 'user' && block.type === 'tool_result' && !block.is_error) {
         return [{ type: 'result', id: block.tool_use_id, output: block.content }];

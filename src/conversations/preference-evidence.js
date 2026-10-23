@@ -2,9 +2,10 @@ import { constants } from 'node:fs';
 import { openWithoutFollowing } from '../system/open-without-following.js';
 import { canonicalJson, contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { preferenceAuthorityView } from '../mcp/preference-delivery.js';
+import { conversationResultRecovery } from './recent-context.js';
 
 const MAX_BYTES = 32 * 1024 * 1024;
-const DIRECT_TOOLS = /^(?:mcp__fuli__|mcp__fuli\.)(?:get_collaboration_preferences|begin_task_context|read_task_preferences)$/;
+const DIRECT_TOOLS = /^(?:mcp__fuli__|mcp__fuli\.)(?:get_collaboration_preferences|begin_task_context|read_task_preferences|resume_agent_conversation|read_agent_conversation)$/;
 const CODE_MODE = new Set(['functions.exec', 'functions.wait']);
 
 // Inspect the native model-facing record, never Hook stdout, a log of writes,
@@ -34,7 +35,7 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
       if (recordOffsets.has(offset)) records.set(offset, record);
       for (const event of adapter.events(record, sessionId)) {
         if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); since = end; }
-        if (event.type === 'call' && typeof event.id === 'string') calls.set(event.id, event.name);
+        if (event.type === 'call' && typeof event.id === 'string') calls.set(event.id, evidenceToolName(event));
         // A host-recorded Hook context is model-facing like a tool result; each
         // line is parsed on its own, so only a complete JSON frame counts.
         if (event.type === 'context') {
@@ -57,6 +58,15 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
     return { known: true, fileId: `${stat.dev}:${stat.ino}`, size: bytes.length, generation, since, frames, records };
   } catch { return { known: false }; }
   finally { await file?.close(); }
+}
+
+function evidenceToolName(event) {
+  if (!/^(?:mcp__fuli__|mcp__fuli\.)fuli_call$/.test(event.name ?? '')) return event.name;
+  try {
+    const input = typeof event.input === 'string' ? JSON.parse(event.input) : event.input;
+    const direct = `mcp__fuli__${input?.toolName}`;
+    return DIRECT_TOOLS.test(direct) ? direct : null;
+  } catch { return null; }
 }
 
 export function preferenceFrameHash(value) {
@@ -98,5 +108,6 @@ function preferenceFrames(output, codeMode = false, depth = 0) {
       || (output.preference_delivery?.status === 'delta' && Array.isArray(output.preference_updates)))) {
     return [{ value: output, visible: output }];
   }
+  if (conversationResultRecovery(output)) return [{ value: output, visible: output }];
   return output.content ? preferenceFrames(output.content, false, depth + 1) : [];
 }

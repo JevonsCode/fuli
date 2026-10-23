@@ -98,6 +98,12 @@ export function projectRecentContext(value, { frames, native } = NO_EVIDENCE) {
       ...(omitted ? { messages_omitted: omitted, omitted_reason: 'seen_in_session' } : {}),
       ...(withdrawn.length ? { withdrawn: { sequences: [...new Set(withdrawn.map(([sequence]) => sequence))],
         guidance: WITHDRAWN_GUIDANCE } } : {}) };
+  // A tiny omitted message can cost less than the omitted-count metadata.
+  // Keep the full window in that case, without losing a required withdrawal.
+  if (omitted && !withdrawn.length && Buffer.byteLength(JSON.stringify(view))
+      >= Buffer.byteLength(JSON.stringify(withoutDeliveryProofs(value).conversation.recovery))) {
+    return projectRecentContext(value);
+  }
   return { value: { ...value, conversation: { ...value.conversation, recovery: view } },
     frame: sent.length || withdrawn.length ? { conversationId: recovery.conversation_id,
       messages: sent.slice(0, MAX_FRAME_ITEMS), withdrawn: withdrawn.slice(0, MAX_FRAME_ITEMS) } : null };
@@ -109,9 +115,30 @@ export function projectRecentContext(value, { frames, native } = NO_EVIDENCE) {
 export function deliveredRecentFrame(frame, projected, result) {
   const delivered = result?.structuredContent;
   if (!frame || result.isError || delivered?.truncated === true
-      || !isDeepStrictEqual(delivered?.conversation?.recovery,
-        JSON.parse(JSON.stringify(withoutDeliveryProofs(projected).conversation.recovery)))) return null;
+      || !isDeepStrictEqual(recoveryView(delivered),
+        JSON.parse(JSON.stringify(recoveryView(withoutDeliveryProofs(projected)))))) return null;
   return { ...frame, frameHash: recentFrameHash(delivered) };
+}
+
+// Explicit resume/context and raw-history results keep their public shape and
+// are never delta-delivered. Only whole messages can prove a later hook window.
+export function conversationResultRecovery(value) {
+  if (value?.truncated === true) return null;
+  if (Array.isArray(value?.context?.messages) && typeof value.context.conversation_id === 'string') return value.context;
+  if (typeof value?.id !== 'string' || !Array.isArray(value.events)) return null;
+  return { conversation_id: value.id, messages: value.events.filter(event => event.kind === 'message'
+    && event.truncated !== true && ['user', 'assistant'].includes(event.role))
+    .map(({ sequence, role, content }) => ({ sequence, role, content })) };
+}
+
+export function deliveredConversationFrame(value, result) {
+  const recovery = conversationResultRecovery(value);
+  if (!recovery) return null;
+  const messages = recovery.messages.filter(message => message.truncated !== true && Number.isSafeInteger(message.sequence)
+    && typeof message.content === 'string').map(message => [message.sequence, transcriptDigest(message.content)]);
+  if (!messages.length) return null;
+  return deliveredRecentFrame({ conversationId: recovery.conversation_id,
+    messages: messages.slice(0, MAX_FRAME_ITEMS), withdrawn: [] }, value, result);
 }
 
 export function validRecentFrames(value) {
@@ -122,10 +149,15 @@ export function validRecentFrames(value) {
 }
 
 function recentFrameHash(value) {
-  const recovery = value?.conversation?.recovery;
+  if (!value?.conversation?.recovery && conversationResultRecovery(value)) {
+    return contentHash({ purpose: 'conversation-result-v1', result: value });
+  }
+  const recovery = recoveryView(value);
   return recovery && typeof recovery === 'object'
     ? contentHash({ purpose: 'recent-context-v1', token: value.taskContextToken ?? null, recovery }) : null;
 }
+
+const recoveryView = value => value?.conversation?.recovery ?? conversationResultRecovery(value);
 
 function hasProofs(message) {
   return PROOF_FIELDS.some(field => Object.hasOwn(message ?? {}, field));

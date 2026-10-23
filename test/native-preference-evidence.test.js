@@ -60,6 +60,19 @@ test('Code Mode must finish and expose the whole body; running, failed and trunc
     codexResult('exec-a', [{ type: 'input_text', text: 'Script completed\nOutput:\n' }, { type: 'input_text', text: body.slice(0, -20) }])])).frames.length, 0);
 });
 
+test('the chat dispatcher proves history only for a paired whitelisted target', async () => {
+  const page = { id: 'synthetic-conversation', events: [{ sequence: 1, role: 'user', kind: 'message', content: 'synthetic raw' }] };
+  for (const toolName of ['resume_agent_conversation', 'read_agent_conversation', 'unrelated_tool', 'fuli_call']) {
+    const call = codexCall('dispatch', 'mcp__fuli__fuli_call');
+    call.payload.arguments = JSON.stringify({ toolName, input: {} });
+    const proof = await inspect([codexHeader, call, codexResult('dispatch', JSON.stringify(envelope(page)))]);
+    assert.equal(proof.frames.length, ['resume_agent_conversation', 'read_agent_conversation'].includes(toolName) ? 1 : 0);
+  }
+  const call = codexCall('dispatch', 'mcp__fuli__fuli_call');
+  call.payload.arguments = '{incomplete';
+  assert.equal((await inspect([codexHeader, call, codexResult('dispatch', JSON.stringify(envelope(page)))])).frames.length, 0);
+});
+
 test('current Codex stores the namespaced Code Mode exec call as a bare custom tool name', async () => {
   const proof = await inspect([codexHeader,
     { type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'native-exec' } },
