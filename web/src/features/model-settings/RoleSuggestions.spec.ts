@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const api = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn(), putJson: vi.fn(), patchJson: vi.fn(), deleteJson: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), ...api }))
 
+import { ApiError } from '@/api/client'
 import RoleSuggestions from './RoleSuggestions.vue'
 import sectionSource from './RoleSuggestions.vue?raw'
 import modelSource from './suggestions.ts?raw'
@@ -169,4 +170,51 @@ describe('RoleSuggestions', () => {
       expect(source).not.toMatch(/\b(postJson|putJson|patchJson|deleteJson|fetch\()/)
     }
   })
+})
+
+
+it('clears score-card caches when suggestions are removed by the recovery fence', async () => {
+  const entries = [SUGGESTIONS[3]!]
+  const wrapper = await mountSection({ entries })
+  await wrapper.get('[data-suggestion-action]').trigger('click'); await flushPromises()
+  expect(wrapper.get('[data-suggestion-score-card]').text()).toContain('25%')
+  await wrapper.setProps({ entries: null, error: 'recovery waiting' })
+  await wrapper.setProps({ entries: [...entries], error: '' })
+  api.getJson.mockResolvedValueOnce({ dimensions: { completion: { status: 'scored', sample: 8, passed: 6, rate: 0.75 } } })
+  await wrapper.get('[data-suggestion-action]').trigger('click'); await flushPromises()
+  expect(wrapper.get('[data-suggestion-score-card]').text()).toContain('75%')
+  expect(wrapper.text()).not.toContain('25%')
+  wrapper.unmount()
+})
+
+it('reports score-card recovery refusal to the owning suggestions read', async () => {
+  api.getJson.mockImplementation(async (url: string) => {
+    if (url.includes('/score-card')) throw new ApiError('503', 503, '{"code":"knowledge_recovery_pending"}')
+    return { agentId: 'engineer-x', personalSpaceId: 'space-1', profile: { name: 'Engineer X' } }
+  })
+  const wrapper = await mountSection({ entries: [SUGGESTIONS[3]!] })
+  await wrapper.get('[data-suggestion-action]').trigger('click'); await flushPromises()
+  expect(wrapper.emitted('recoveryPending')).toHaveLength(1)
+  wrapper.unmount()
+})
+
+
+it('does not cache a late score-card body after entries were cleared and reloaded', async () => {
+  let finish!: (value: unknown) => void
+  let reads = 0
+  api.getJson.mockImplementation(async (url: string) => {
+    if (!url.includes('/score-card')) return { agentId: 'engineer-x', personalSpaceId: 'space-1', profile: { name: 'Engineer X' } }
+    if (++reads === 1) return new Promise(resolve => { finish = resolve })
+    return { dimensions: { completion: { status: 'scored', sample: 8, passed: 6, rate: 0.75 } } }
+  })
+  const entries = [SUGGESTIONS[3]!]
+  const wrapper = await mountSection({ entries })
+  await wrapper.get('[data-suggestion-action]').trigger('click')
+  await wrapper.setProps({ entries: null, error: 'recovery waiting' })
+  await wrapper.setProps({ entries: [...entries], error: '' })
+  await wrapper.get('[data-suggestion-action]').trigger('click'); await flushPromises()
+  finish(SCORE_CARD); await flushPromises()
+  expect(wrapper.get('[data-suggestion-score-card]').text()).toContain('75%')
+  expect(wrapper.text()).not.toContain('25%')
+  wrapper.unmount()
 })
