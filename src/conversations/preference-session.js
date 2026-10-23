@@ -153,7 +153,10 @@ function acknowledgedSnapshot(value, current, state, proof) {
   for (const frame of proof.frames) {
     const revision = shownRevision(frame.value);
     if (frame.offset < (state.floor ?? 0) || !revision) continue;
-    const delivered = verifiedFrame(value, frame.value, pending.get(preferenceFrameHash(frame.value)), revision, shown);
+    // A frame that cannot confirm (a visible copy unlike its structured one)
+    // still takes the revision the model saw.
+    const delivered = frame.confirms
+      ? verifiedFrame(value, frame.value, pending.get(preferenceFrameHash(frame.value)), revision, shown) : null;
     const known = shown.get(revision) ?? delivered;
     shown.set(revision, delivered && known.snapshotHash === delivered.snapshotHash ? { ...delivered, revision } : AMBIGUOUS);
     if (delivered?.authorityHash === current.authorityHash) baseline = { ...delivered, revision };

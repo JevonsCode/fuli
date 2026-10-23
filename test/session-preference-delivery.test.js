@@ -191,3 +191,24 @@ test('a Codex hook context confirms by its revision; no provenance or a visible 
       'the structured copy is only a base when the visible text shows the same frame');
   });
 });
+
+// dot rec#10 6365998098 item 1: a mismatching visible copy confirms nothing,
+// but the model saw its revision on another set, so that revision is taken.
+test('after a confirmed base, a visible copy showing another set under its revision makes that revision unusable', () => fixture(async f => {
+  const first = await f.service.deliver(entry(), origin, format);
+  await f.delivered('native-call-a', first);
+  assert.equal((await f.service.deliver(entry('task-b'), origin, format)).structuredContent.preference_delivery.base_revision,
+    first.structuredContent.revision, 'the confirmed base before the mismatch');
+  const shown = structuredClone(first.structuredContent);
+  shown.effective_preferences[0].instruction = 'A different visible rule';
+  await f.delivered('mismatch', { content: [{ type: 'text', text: JSON.stringify(shown) }], structuredContent: first.structuredContent });
+  const next = (await f.service.deliver(entry('task-c'), origin, format)).structuredContent;
+  assert.equal(next.preference_delivery, undefined, 'never a delta on the revision two visible sets share');
+  assert.equal(next.effective_preferences.length, 12);
+  assert.equal(next.revision.length, 16);
+  assert.ok(next.revision.startsWith(first.structuredContent.revision));
+  // The mismatching record confirmed no recent context or base of its own; the
+  // longer revision is a base once recorded.
+  await f.delivered('native-call-c', { content: [{ type: 'text', text: JSON.stringify(next) }], structuredContent: next });
+  assert.equal((await f.service.deliver(entry('task-d'), origin, format)).structuredContent.preference_delivery.base_revision, next.revision);
+}));

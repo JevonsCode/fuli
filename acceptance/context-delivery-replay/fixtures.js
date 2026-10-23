@@ -2,8 +2,10 @@
 // D-29.4, D-29.11). `tiny` keeps the PR3 fixture byte for byte. `scaled` is
 // generated from fixed seeds: 6–10 preferences of 120–400 UTF-8 bytes and
 // 8–12 messages of 120–1500 bytes per scenario, mixed Chinese and English with
-// code blocks. Both use the same scenarios, prompts, recovery windows and
-// budgets; nothing is read from a real transcript or data directory.
+// code blocks. Both use the same scenarios and prompts, and the Provider's own
+// recovery window and budget (PROVIDER_RECOVERY_WINDOW in
+// test-support/synthetic-context-session.js); nothing is read from a real
+// transcript or data directory.
 import { syntheticPreference as rule } from '../../test-support/synthetic-context-session.js';
 
 const bytes = text => Buffer.byteLength(text, 'utf8');

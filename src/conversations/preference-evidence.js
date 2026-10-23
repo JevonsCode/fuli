@@ -38,8 +38,8 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
         // A host-recorded Hook context is model-facing like a tool result; each
         // line is parsed on its own, so only a complete JSON frame counts.
         if (event.type === 'context') {
-          for (const { value, visible } of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
-            frames.push({ value, visible, offset, end, recordHash: contentHash(line) });
+          for (const { value, visible, confirms = true } of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
+            frames.push({ value, visible, confirms, offset, end, recordHash: contentHash(line) });
           }
           continue;
         }
@@ -48,8 +48,8 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
         calls.delete(event.id);
         const codeMode = CODE_MODE.has(name);
         if (!codeMode && !DIRECT_TOOLS.test(name ?? '')) continue;
-        for (const { value, visible } of preferenceFrames(event.output, codeMode)) {
-          frames.push({ value, visible, offset, end, recordHash: contentHash(line) });
+        for (const { value, visible, confirms = true } of preferenceFrames(event.output, codeMode)) {
+          frames.push({ value, visible, confirms, offset, end, recordHash: contentHash(line) });
         }
       }
       offset = end;
@@ -82,10 +82,12 @@ function preferenceFrames(output, codeMode = false, depth = 0) {
   if (structured) {
     // The preference baseline is the structured copy whose preference view
     // the model also saw; anything else (recent context) must be proven from
-    // what was actually visible, kept here as `visible`.
-    const seen = preferenceFrames(output.content, false, depth + 1)
-      .find(frame => preferenceFrameHash(frame.value) === preferenceFrameHash(structured));
-    return seen ? [{ value: structured, visible: seen.visible }] : [];
+    // what was actually visible, kept here as `visible`. A visible copy that
+    // differs confirms nothing, yet the model saw it, so it is kept with
+    // `confirms: false`: the revision it shows is taken (rec#15 D-29.9).
+    const shown = preferenceFrames(output.content, false, depth + 1);
+    const seen = shown.find(frame => preferenceFrameHash(frame.value) === preferenceFrameHash(structured));
+    return seen ? [{ value: structured, visible: seen.visible }] : shown.map(frame => ({ ...frame, confirms: false }));
   }
   if (typeof output.hookSpecificOutput?.additionalContext === 'string') {
     const lines = output.hookSpecificOutput.additionalContext.split('\n');

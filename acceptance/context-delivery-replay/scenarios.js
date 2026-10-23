@@ -17,12 +17,22 @@ const WORK = '继续实现导出接口';
 const FRONTEND = '修复设置页面的按钮';
 const CHAT = '你好！';
 
-// One group of native messages; returns how many were said.
+// One group of native messages; returns their texts.
 async function talk(session, world, group) {
   const messages = world.fixture.messages[group];
   for (const [role, text] of messages) await session.say(role, text);
-  return messages.length;
+  return messages.map(([, text]) => text);
 }
+
+// The turn sent exactly those of `texts` that the Provider's recovery window
+// (the uncached entry) holds, at least one, and nothing else.
+function sentExactly(turn, texts) {
+  // A message the window cut to a prefix ends with … (pack_context).
+  const of = shown => texts.some(text => text === shown || (shown.endsWith('…') && text.startsWith(shown.slice(0, -1))));
+  const wanted = turn.windowMessages.filter(of);
+  return wanted.length > 0 && turn.sentMessages.length === wanted.length && wanted.every(text => turn.sentMessages.includes(text));
+}
+const sentWholeWindow = turn => sentExactly(turn, turn.windowMessages);
 
 // C (Codex) opens the conversation; H (Claude Code) joins it by the pointer
 // and an explicit resume.
@@ -49,11 +59,11 @@ export const SCENARIOS = {
     world.check('S2: the new session gets a pointer and no messages', pointer.pointer_bytes !== null && pointer.messages_sent === 0);
     await h.resume(world.provider.boundTo('codex', c.sessionId).id);
     const resumed = await h.turn(WORK, { note: 'S2 H turn 2, after resume' });
-    world.check('S2: after resume H recovers xxx and yyy', resumed.messages_sent === xxx + yyy);
+    world.check('S2: after resume H recovers the xxx/yyy window', sentExactly(resumed, [...xxx, ...yyy]) && sentWholeWindow(resumed));
     const zzz = await talk(h, world, 'zzz');
     await h.turn(WORK, { note: 'S2 H turn 3, own zzz' });
     const back = await c.turn(WORK, { note: 'S3 C turn 4, back in C' });
-    world.check('S3: back in C only zzz is sent', back.messages_sent === zzz);
+    world.check('S3: back in C only zzz is sent', sentExactly(back, zzz));
     await c.turn(WORK, { note: 'S3 C turn 5, settled' });
   },
 
@@ -61,17 +71,18 @@ export const SCENARIOS = {
     const { c, h } = await joined(world);
     await h.turn(WORK, { note: 'H pointer entry' });
     await h.resume(world.provider.boundTo('codex', c.sessionId).id);
-    const window = await talk(c, world, 'beforeCompaction') + await talk(h, world, 'fromH');
+    await talk(c, world, 'beforeCompaction');
+    await talk(h, world, 'fromH');
     await c.turn(WORK, { note: 'C before compaction' });
     await c.turn(WORK, { note: 'C settled' });
     await c.compact();
     const after = await c.turn(WORK, { note: 'C after compaction' });
-    world.check('compact: the new generation receives the window again', after.messages_sent === window);
+    world.check('compact: the new generation receives the window again', sentWholeWindow(after));
     await c.turn(WORK, { note: 'C after compaction, settled' });
     await h.turn(WORK, { note: 'H before resume' });
     await h.sessionStart('resume');
     const resumed = await h.turn(WORK, { note: 'H after SessionStart resume' });
-    world.check('resume: the new generation receives the window again', resumed.messages_sent === window);
+    world.check('resume: the new generation receives the window again', sentWholeWindow(resumed));
     await h.turn(WORK, { note: 'H after resume, settled' });
   },
 
@@ -84,12 +95,12 @@ export const SCENARIOS = {
     await c.turn(WORK, { record: false, note: 'C output lost again' });
     await c.turn(WORK, { preview: true, note: 'C recorded as preview only' });
     const resent = await c.turn(WORK, { note: 'C resend, recorded' });
-    world.check('failure: the lost messages are resent', resent.messages_sent === fromH);
+    world.check('failure: the lost messages are resent', sentExactly(resent, fromH));
     await c.turn(WORK, { note: 'C settled' });
     const fromC = await talk(c, world, 'fromC');
     await h.turn(WORK, { record: false, note: 'H output lost' });
     const again = await h.turn(WORK, { note: 'H resend, recorded' });
-    world.check('failure: H resends the lost messages', again.messages_sent === fromC);
+    world.check('failure: H resends the lost messages', sentExactly(again, fromC));
     await h.turn(WORK, { note: 'H settled' });
   },
 
@@ -135,8 +146,11 @@ export const SCENARIOS = {
     const { c, h } = await joined(world);
     await h.turn(FRONTEND, { note: 'H pointer entry' });
     await h.resume(world.provider.boundTo('codex', c.sessionId).id);
-    await talk(h, world, 'original');
+    // The replaced message is the newest, so the Provider's window holds it.
     await talk(h, world, 'stays');
+    const [original] = await talk(h, world, 'original');
+    const journal = world.provider.boundTo('codex', c.sessionId).journal;
+    const replaced = journal.events.find(event => event.content === original).sequence;
     await h.turn(FRONTEND, { note: 'H frontend' });
     await c.turn(FRONTEND, { note: 'C frontend' });
     const edited = [...general, ...editedSpacing, ...palette];
@@ -147,15 +161,33 @@ export const SCENARIOS = {
     }
     const kept = [...general, ...editedSpacing];
     world.items = kept;
-    world.withdrawn = { preferences: palette.map(item => item.preference_key),
-      messages: world.fixture.messages.original.map(([, text]) => text) };
-    world.provider.boundTo('codex', c.sessionId).window = { override: { 1: replacement } };
+    world.withdrawn = { preferences: palette.map(item => item.preference_key), messages: [original] };
+    world.provider.boundTo('codex', c.sessionId).window = { override: { [replaced]: replacement } };
     const hWithdrawn = await h.turn(FRONTEND, { note: 'H after a preference withdraw and a message replacement' });
     const withdrawn = await c.turn(FRONTEND, { note: 'C after a preference withdraw and a message replacement' });
-    world.check('withdraw: C is told the replaced message version is withdrawn', withdrawn.withdrawn_sequences.includes(1));
+    world.check('withdraw: C is told the replaced message version is withdrawn', withdrawn.withdrawn_sequences.includes(replaced));
     for (const turn of [hWithdrawn, withdrawn, await h.turn(FRONTEND, { note: 'H settled' }),
       await c.turn(FRONTEND, { note: 'C settled' })]) {
       world.check(`${turn.session} ${turn.note}: the model view is exactly ${keys(kept)}`, holds(turn, kept));
+    }
+  },
+
+  // Unchanged preferences for four turns: every later frame shows the same
+  // revision as the complete one, and the delivery rules still name one set,
+  // so the model never has to reread (dot rec#10 6365998098 item 2).
+  async unchanged(world) {
+    const { boundary, general, spacing, palette } = world.fixture;
+    const items = [...boundary, ...general, ...spacing, ...palette];
+    world.items = items;
+    for (const [client, label] of [['claude_code', 'H'], ['codex', 'C']]) {
+      const session = await world.open(client, label);
+      const turns = [];
+      for (const note of ['first', 'second', 'third', 'fourth']) turns.push(await session.turn(FRONTEND, { note }));
+      world.check(`${label}: one complete frame, then deltas`, turns.map(turn => turn.preference_delivery).join() === 'full,delta,delta,delta');
+      for (const turn of turns) {
+        world.check(`${label} ${turn.note}: the model view is exactly ${keys(items)}, no reread`,
+          holds(turn, items) && turn.rereads_required === 0);
+      }
     }
   },
 

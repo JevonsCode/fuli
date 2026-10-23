@@ -12,22 +12,25 @@ export const DETAILS_GUIDANCE = 'Read get_project_team for staffing and list_pro
 // How a session-delivered preference frame relates to the earlier one it names
 // (preference-snapshot.js). A frame's revision is a complete frame's
 // `revision` or a delta's or scene switch's preference_delivery.revision; a
-// later frame names its base by that string (rec#15 D-29.3). A scene switch
-// lists and replaces only the scene-personalized set of the same authorized
-// scope (rec#15 D-27.8).
+// later frame names its base by that string (rec#15 D-29.3). FULI shows one
+// revision only for one set, so several frames with it are one base; two that
+// yield different sets, or none, mean a reread (D-29.9). A scene switch lists
+// and replaces only the scene-personalized set of the same authorized scope
+// (rec#15 D-27.8).
 const PREFERENCE_DELIVERY_GUIDANCE = Object.freeze({
-  delta: 'A delta applies preference_updates and removed to the earlier frame whose revision (a complete frame\'s revision, '
+  delta: 'A delta applies preference_updates and removed to the set of the earlier frames whose revision (a complete frame\'s revision, '
     + 'or preference_delivery.revision) equals base_revision in this same context generation. '
-    + 'If no such frame, or more than one, is visible, call read_task_preferences with the current taskContextToken; never guess. '
+    + 'Frames with the same revision always hold the same set; any of them is the base. '
+    + 'If no such frame is visible, or two of them yield different sets, call read_task_preferences with the current taskContextToken; never guess. '
     + 'Keep current identity, authority and conflicts; this cache grants no permission.',
-  scene_switch: '基线是同一授权范围、同一上下文代次中修订号（完整帧的 revision，或 preference_delivery.revision）等于 supersedes 的那帧，不一定是相邻的上一帧。'
+  scene_switch: '基线是同一授权范围、同一上下文代次中修订号（完整帧的 revision，或 preference_delivery.revision）等于 supersedes 的帧，不一定是相邻的上一帧；同号的帧总是同一集合，任取其一。'
     + '先从基线移除 replaces 列出的场景条目，再应用本帧 effective_preferences，列表为空也照做；scene 是新场景。'
-    + '未列出的边界、硬约束、权限与安全规则继续有效。找不到或有多帧同号时用当前 taskContextToken 调用 read_task_preferences，不要猜。 '
-    + 'The base is the earlier frame whose revision (a complete frame\'s revision, or preference_delivery.revision) equals supersedes '
-    + 'in this same authorized scope and context generation, not necessarily the previous frame. '
+    + '未列出的边界、硬约束、权限与安全规则继续有效。找不到同号帧，或同号帧得出的集合不同时，用当前 taskContextToken 调用 read_task_preferences，不要猜。 '
+    + 'The base is the set of the earlier frames whose revision (a complete frame\'s revision, or preference_delivery.revision) equals supersedes '
+    + 'in this same authorized scope and context generation, not necessarily the previous frame; frames with the same revision always hold the same set. '
     + 'Remove the scene items listed in replaces from it, then apply this effective_preferences, even when empty; scene names the new scene. '
     + 'Unlisted boundaries, hard constraints, permissions and safety rules stay in force. '
-    + 'If no such frame, or more than one, is visible, call read_task_preferences with the current taskContextToken; never guess.'
+    + 'If no such frame is visible, or two of them yield different sets, call read_task_preferences with the current taskContextToken; never guess.'
 });
 const GLOBAL_MEMORY_GUIDANCE = 'Global layer of the same employee. Read get_project_agent_memory with personalProjectId: null before merging or checkpointing it; this preview omits history and may truncate notes.';
 

@@ -20,13 +20,17 @@ constraints, authority and conflicts remain in every result. The cache never
 supplies permission or current business data.
 
 The model locates a base by exact revision within the same context
-generation; with no such frame, or more than one, it rereads with
+generation. Several frames may show one revision (an unchanged delta repeats
+its base's): FULI shows a revision only for one set, so they are one base. With
+no such frame, or two that yield different sets, the model rereads with
 `read_task_preferences` and never guesses. The host keeps the whole snapshot
 and frame hashes privately and verifies against them. It also tracks every
 revision the generation shows: one shown by two different sets, or by a frame
 it cannot verify, names no base, so the next frame is complete and takes a
 longer revision (16, 20, … hex) that no other frame shows; if every length is
-taken, the frame is complete without one (D-29.9).
+taken, the frame is complete without one (D-29.9). A tool result whose visible
+text differs from its structured copy confirms nothing, but the revision its
+visible text shows counts as taken.
 
 A task in another scene of the same space, project, Agent, client and session
 (its persisted `preference_scope` changed) gets a `scene_switch` result when an
@@ -183,11 +187,15 @@ Protocol, lifecycle and ownership tests use explicit synthetic records.
 `npm run measure:context-delivery` replays the scenarios through the real hook
 entries with two synthetic fixtures, `tiny` and the fixed-seed `scaled` one
 (6–10 preferences of 120–400 B, 8–12 messages of 120–1500 B), and prints one
-table per fixture, with the uncached skeleton as a separate diagnostic.
-`test/context-delivery-replay.test.js` holds the gates: no turn costs more
-than the uncached entry except a complete frame's revision field (26 B) and a
-`recovery.withdrawn` block (128 B), no scenario costs more in total, the scaled
-scenarios that reuse context cost less, and every model view is whole. The
+table per fixture, with the uncached skeleton as a separate diagnostic. Both
+fixtures get the Provider's own recovery window (back to the third user
+message, packed into the default 4000-byte `context_budget`), so the uncached
+baseline holds only what the Provider would return.
+`test/context-delivery-replay.test.js` holds the gates on these fixed fixtures:
+no turn costs more than the uncached entry except a complete frame's revision
+field (26 B) and a `recovery.withdrawn` block (128 B), no scenario costs more in
+total, the scaled scenarios that reuse context cost less, no turn needs a reread
+under the delivery rules, and every model view is whole. The
 opt-in `graph-provider/tests/test_session_preference_native.py` uses a real
 Codex client, MCP stdio, HTTP Provider and a disposable loopback Neo4j. It checks
 first full delivery, a source modification/removal, same-chat delta, resume full

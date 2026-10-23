@@ -18,7 +18,7 @@ import { createSessionPreferenceDelivery } from '../../src/conversations/prefere
 import { withPreferenceScope } from '../../src/conversations/preference-snapshot.js';
 import { beginConversation, resumeConversation } from '../../src/graphiti/agent-conversations.js';
 import { projectAgentCollaborationPreferences } from '../../src/graphiti/collaboration-preference-workflow.js';
-import { replayPreferences, syntheticHost, syntheticJournal } from '../../test-support/synthetic-context-session.js';
+import { PROVIDER_RECOVERY_WINDOW, replayPreferences, syntheticHost, syntheticJournal } from '../../test-support/synthetic-context-session.js';
 
 const SPACE = 'synthetic-space';
 const PROJECT = 'project';
@@ -39,7 +39,7 @@ function syntheticProvider() {
   const bind = (client, sessionId, id) => bindings.set(`${client}:${sessionId}`, id);
   const create = () => {
     const id = `conversation-${conversations.size + 1}`;
-    conversations.set(id, { id, journal: syntheticJournal(id), window: {}, summary: null, activity: 0 });
+    conversations.set(id, { id, journal: syntheticJournal(id, PROVIDER_RECOVERY_WINDOW), window: {}, summary: null, activity: 0 });
     return conversations.get(id);
   };
   const conversation = async (operation, input) => {
@@ -183,9 +183,17 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
         scene });
       if (delivered) applyFrame(view, frame);
       turn.correctness = delivered ? correctness(view, frameOf(baseline), world.withdrawn ?? {}) : null;
-      // The replayed model view, for scenario checks against their own
-      // expected sets; kept out of the JSON result.
+      // A delta or scene switch whose base the model cannot locate by the
+      // delivery rules: it must call read_task_preferences (entry-rules.js).
+      turn.rereads_required = delivered && view.unlocated ? 1 : 0;
+      turn.no_cache_messages = recoveryOf(frameOf(baseline))?.messages?.length ?? 0;
+      // The replayed model view and the message bodies sent and in the
+      // uncached window, for scenario checks against their own expected
+      // sets; kept out of the JSON result.
       Object.defineProperty(turn, 'modelPreferences', { value: new Map(view.preferences) });
+      Object.defineProperty(turn, 'sentMessages', { value: (recoveryOf(frame)?.messages ?? []).map(message => message.content) });
+      Object.defineProperty(turn, 'windowMessages', { value: (recoveryOf(frameOf(baseline))?.messages ?? [])
+        .map(message => message.content) });
       view.turns++;
       world.turns.push(turn);
       return turn;

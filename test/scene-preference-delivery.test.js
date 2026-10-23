@@ -101,13 +101,15 @@ test('frontend -> chat -> frontend replaces only the scene set; boundaries, hard
   assert.equal(chat.frame.preference_delivery.rules, 'fuli://rules/task-entry#preference_delivery');
   // The rule a consumer follows is the protocol replay() implements.
   const rule = entryRules().sections.preference_delivery.scene_switch;
-  for (const clause of [/修订号（完整帧的 revision，或 preference_delivery.revision）等于 supersedes 的那帧，不一定是相邻的上一帧/,
+  for (const clause of [/修订号（完整帧的 revision，或 preference_delivery.revision）等于 supersedes 的帧，不一定是相邻的上一帧/,
+    /同号的帧总是同一集合，任取其一/,
     /移除 replaces 列出的场景条目/, /列表为空也照做/, /未列出的边界、硬约束、权限与安全规则继续有效/,
-    /找不到或有多帧同号时用当前 taskContextToken 调用 read_task_preferences，不要猜/,
+    /找不到同号帧，或同号帧得出的集合不同时，用当前 taskContextToken 调用 read_task_preferences，不要猜/,
     /whose revision \(a complete frame's revision, or preference_delivery.revision\) equals supersedes/,
+    /frames with the same revision always hold the same set/,
     /Remove the scene items listed in replaces/, /even when empty/,
-    /Unlisted boundaries, hard constraints, permissions and safety rules stay in force/, /If no such frame, or more than one, is visible/,
-    /never guess/]) {
+    /Unlisted boundaries, hard constraints, permissions and safety rules stay in force/,
+    /If no such frame is visible, or two of them yield different sets/, /never guess/]) {
     assert.match(rule, clause);
   }
   assert.match(entryRules().sections.preference_delivery.delta, /equals base_revision in this same context generation/);
@@ -229,3 +231,38 @@ test('a recorded copy that claims a scene or another revision never verifies as 
   assert.equal(chat.structuredContent.preference_delivery.status, 'scene_switch');
   assert.equal(chat.structuredContent.preference_delivery.supersedes, first.frame.revision);
 }));
+
+// dot rec#10 6365998098 item 2: unchanged deltas show the base's revision
+// again. The rule says frames with one revision hold one set, which the host
+// guarantees, so the replayed model finds its base every turn; no reread.
+test('four unchanged turns repeat one revision and the model never has to reread', () => fixture(async f => {
+  const items = [HARD, BOUNDARY, GENERAL, SPACING, PALETTE];
+  const views = new Map();
+  const turns = [];
+  for (const token of ['task-a', 'task-b', 'task-c', 'task-d']) {
+    const turn = await f.turn(token, 'frontend', items);
+    turns.push(turn);
+    const held = replay(views, turn.frame);
+    assert.ok(held, `${token}: the base is located`);
+    assert.deepEqual([...held.keys()].sort(), keys(turns[0].frame));
+  }
+  const [first, ...later] = turns;
+  for (const turn of later) {
+    assert.equal(turn.frame.preference_delivery.status, 'delta');
+    assert.equal(turn.frame.preference_delivery.base_revision, first.frame.revision);
+    assert.equal(turn.frame.preference_delivery.revision, first.frame.revision);
+  }
+  assert.ok(views.get(first.frame.revision), 'three frames show it and name one set');
+}));
+
+test('the replayed model rereads when no frame, or frames with different sets, show the named revision', () => {
+  const frame = (revision, instruction, extra = {}) => ({ revision, effective_preferences: [{ preference_key: 'a', instruction }], ...extra });
+  const delta = base => ({ preference_updates: [], preference_delivery: { status: 'delta', base_revision: base, revision: base, removed: [] } });
+  const views = new Map();
+  assert.equal(replay(views, delta('aaaaaaaaaaaa')), null, 'no frame shows it');
+  replay(views, frame('bbbbbbbbbbbb', 'one'));
+  replay(views, frame('bbbbbbbbbbbb', 'one'));
+  assert.equal(replay(views, delta('bbbbbbbbbbbb')).get('a'), 'one', 'two frames, one set');
+  replay(views, frame('bbbbbbbbbbbb', 'another'));
+  assert.equal(replay(views, delta('bbbbbbbbbbbb')), null, 'two sets under one revision');
+});

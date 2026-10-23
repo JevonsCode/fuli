@@ -6,14 +6,15 @@ import test from 'node:test';
 import { measure } from '../acceptance/context-delivery-replay/run.js';
 import { markdownTable } from '../acceptance/context-delivery-replay/report.js';
 import { FIXTURES } from '../acceptance/context-delivery-replay/fixtures.js';
+import { PROVIDER_RECOVERY_WINDOW, syntheticJournal } from '../test-support/synthetic-context-session.js';
 
 // The exact encoding a complete frame with preferences adds (D-29.10): its
 // 12-hex revision field. The per-turn allowance is this measured byte count.
 const REVISION_FIELD_BYTES = Buffer.byteLength(',"revision":"0123456789ab"', 'utf8');
 // A turn that carries a recovery.withdrawn block may exceed by this much more (D-29.5).
 const WITHDRAWN_ALLOWANCE_BYTES = 128;
-// D-29.5: strictly below the uncached baseline with the scaled fixture.
-const STRICTLY_SMALLER = ['acceptance', 'edit_withdraw', 'scene_switch', 'compact_resume', 'delivery_failure'];
+// D-29.5 (and the unchanged-preferences scenario): strictly below the uncached baseline with the scaled fixture.
+const STRICTLY_SMALLER = ['acceptance', 'edit_withdraw', 'scene_switch', 'compact_resume', 'delivery_failure', 'unchanged'];
 
 const result = measure();
 const variants = async () => (await result).variants;
@@ -113,4 +114,49 @@ test('the acceptance scenario keeps its pointer bound and its retrieval counted'
     assert.ok(acceptance.pointer_bytes[0] <= 320);
     assert.ok(acceptance.retrieval_calls.total > 0);
   }
+});
+
+// dot rec#10 6365998098 item 2: every reread the delivery rules require is counted.
+test('no delivered turn leaves the model without a base it can locate by the rules', async () => {
+  const rereads = [];
+  for (const { variant, scenarios } of await variants()) {
+    for (const scenario of scenarios) {
+      scenario.detail.forEach((turn, index) => {
+        if (turn.rereads_required) rereads.push(describe(variant, scenario.scenario, turn, index));
+      });
+      assert.equal(scenario.rereads_required, 0, `${variant} ${scenario.scenario}`);
+    }
+  }
+  assert.deepEqual(rereads, []);
+});
+
+// dot rec#10 6365998098 item 3: both fixtures use the Provider's own recovery
+// window (store_agent_conversations.py _context_events: back to the third
+// user message; conversation_context.py pack_context: the default 4000-byte
+// context_budget, a lone newest message as a prefix), never a wider one.
+test('the replay journal answers with the Provider recovery window', () => {
+  assert.deepEqual(PROVIDER_RECOVERY_WINDOW, { userMessages: 3, budgetBytes: 4000 });
+  const journal = syntheticJournal('conversation-w', PROVIDER_RECOVERY_WINDOW);
+  for (let turn = 1; turn <= 5; turn++) {
+    journal.add('user', `question ${turn}`, 'codex', 's', `e-${turn}-u`);
+    journal.add('assistant', `answer ${turn}`, 'codex', 's', `e-${turn}-a`);
+  }
+  const short = journal.recovery('claude_code', 'h');
+  assert.deepEqual(short.messages.map(message => message.content),
+    ['question 3', 'answer 3', 'question 4', 'answer 4', 'question 5', 'answer 5']);
+  assert.equal(short.omitted_sequence, 4);
+  assert.equal(short.truncated, true);
+  const { messages, ...packed } = short;
+  const packedBytes = Buffer.byteLength(JSON.stringify({ ...packed,
+    messages: messages.map(({ sequence, role, content }) => ({ sequence, role, content })) }));
+  assert.ok(packedBytes <= 4000);
+  // Long messages: only the newest that fit the budget; one too large alone is a prefix.
+  const long = syntheticJournal('conversation-l', PROVIDER_RECOVERY_WINDOW);
+  for (let turn = 1; turn <= 3; turn++) long.add('user', `${turn} ${'x'.repeat(1500)}`, 'codex', 's', `l-${turn}`);
+  assert.deepEqual(long.recovery('claude_code', 'h').messages.map(message => message.sequence), [2, 3]);
+  const huge = syntheticJournal('conversation-h', PROVIDER_RECOVERY_WINDOW);
+  huge.add('user', 'y'.repeat(6000), 'codex', 's', 'h-1');
+  const [prefix] = huge.recovery('claude_code', 'h').messages;
+  assert.equal(prefix.truncated, true);
+  assert.match(prefix.content, /^y+…$/);
 });
