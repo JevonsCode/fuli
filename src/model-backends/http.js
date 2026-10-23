@@ -71,7 +71,7 @@ export async function handleModelBackendApiRequest({
   if (roleEdit || trustEdit || url.pathname === '/api/model-backends/roles') {
     const settings = modelBackends.roles();
     sendJson(response, 200, { ...settings, roles: settings.roles.map(role => ({ ...role,
-      trust: trustView(role, { automaticOperations, modelTrust, readEvaluation }),
+      trust: trustView(role, settings.connections, { automaticOperations, modelTrust, readEvaluation }),
       localBuild: modelBackends.localBuild(role.role, role.connection?.id ?? null,
         role.connection ? settings.connections[role.connection.id] : null) })),
       operations, workPackages: roleWork?.summary().packages ?? [] });
@@ -86,10 +86,10 @@ export async function handleModelBackendApiRequest({
 // operation by itself now, the person's 「只给建议」 choice and warning
 // acknowledgement, and the latest local evaluation of the configured model.
 // null for a role with no such operation: everything it does is a suggestion.
-function trustView(role, { automaticOperations, modelTrust, readEvaluation }) {
+function trustView(role, connections, { automaticOperations, modelTrust, readEvaluation }) {
   const operation = automaticOperations[role.role];
   if (!operation || !modelTrust) return null;
-  const model = role.answeredBy === 'model_api' ? role.connection.model : null;
-  return { operation, ...modelTrust.view(role.role, operation),
-    evaluation: model && readEvaluation ? readEvaluation({ role: role.role, operation, model }) : null };
+  const served = role.answeredBy === 'model_api' ? connections[role.connection.id] : null;
+  return { operation, ...modelTrust.view(role.role, operation), evaluation: served && readEvaluation
+    ? readEvaluation({ role: role.role, operation, model: served.model, endpoint: served.endpoint }) : null };
 }

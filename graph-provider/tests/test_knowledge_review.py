@@ -483,6 +483,9 @@ async def test_withdrawing_an_ai_review_clears_only_the_marks_of_that_decision(i
     assert 'item.fuli_ai_review_evidence_token = $ai_review_evidence_token' in query
     assert 'REMOVE item.fuli_ai_review_evidence_token, item.fuli_ai_assessment_json' in query
     assert 'CASE WHEN carries AND NOT changed' in query
+    # The item is locked before anything is read (rec#10 D-36.12 review, round 2).
+    lock = query.index('SET item.fuli_ai_review_lock_version')
+    assert lock < query.index('AS carries') and lock < query.index('AS changed')
     assert 'item.fuli_last_human_changed_at > item.fuli_ai_reviewed_at' in query
     assert 'item.fuli_replaced_by_item_id IS NOT NULL' in query
     assert 'decision' not in query.split('REMOVE')[1].replace('fuli_ai_review_decision_id', '')

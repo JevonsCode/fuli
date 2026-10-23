@@ -1124,8 +1124,12 @@ RETURN decision
 # rec#10 D-36.12: the marks go only while they still name this run's decision
 # and evidence, the item is still the current version, and no person changed
 # it after the review; otherwise the item stays exactly as it is and the
-# answer says why.
+# answer says why. Like the apply queries above, it writes the item's lock
+# property before it reads anything, so a later review or edit still in
+# flight is waited for and its result is what the checks read: the marks it
+# wrote are never removed by an undo that read the state before it.
 _AI_REVIEW_WITHDRAW = '''
+SET item.fuli_ai_review_lock_version = coalesce(item.fuli_ai_review_lock_version, 0) + 1
 WITH item,
      coalesce(item.fuli_ai_review_decision_id = $decision_id
               AND item.fuli_ai_review_evidence_token = $ai_review_evidence_token, false) AS carries,

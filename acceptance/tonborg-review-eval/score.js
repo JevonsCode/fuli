@@ -49,9 +49,9 @@ export function scoreResults(labels, sets, runs) {
 }
 
 // The evaluation record of one scored holdout: the model's own verdicts against the labels, every run.
-export function holdoutEvaluation(summary, { model, evaluatedAt }) {
+export function holdoutEvaluation(summary, { model, endpoint, evaluatedAt }) {
   const { agreement } = summary.holdout.modelOutcome;
-  return { role: 'tonborg', operation: 'knowledge_review', model, set: 'tonborg-review-eval/holdout', evaluatedAt,
+  return { role: 'tonborg', operation: 'knowledge_review', model, endpoint, set: 'tonborg-review-eval/holdout', evaluatedAt,
     agreed: agreement.perRun.reduce((sum, agreed) => sum + agreed, 0), total: agreement.cases * agreement.perRun.length };
 }
 
@@ -70,7 +70,8 @@ function main() {
   writeFileSync(join(values.results, 'per-case-table.md'), `# Per-case outcomes\n\n${tables.join('\n')}`);
   if (values.record) {
     const read = name => JSON.parse(readFileSync(join(values.results, name), 'utf8'));
-    recordEvaluation(values.record, holdoutEvaluation(summary, { model: read('model.json').model.name,
+    const { model } = read('model.json');
+    recordEvaluation(values.record, holdoutEvaluation(summary, { model: model.name, endpoint: model.endpoint,
       evaluatedAt: read('run-meta.json').finishedAt }));
   }
   for (const set of Object.keys(sets)) {

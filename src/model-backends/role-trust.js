@@ -27,7 +27,9 @@ import { MODEL_BACKEND_ROLES } from './config.js';
 // A commit (commit below) holds this store's write lock while it checks the
 // role and runs the caller's write, and every change of a role takes the same
 // lock, so a switch to 「只给建议」 either lands before a commit (which then
-// refuses) or after its write (which was already decided).
+// refuses) or after it. The caller's write is its commit point (Tonborg
+// stores its apply intent there): a task committed before the switch has
+// started and completes, like a write that finished a moment earlier.
 
 export const MODEL_TRUST_FORMAT = sqliteFormat({
   store: 'model-trust',
@@ -57,16 +59,19 @@ export function createRoleTrust({ path = ':memory:', modelBackends, now = () => 
       warningSeen: row.warning_version === TRUST_WARNING_VERSION, warningSeenAt: row.warning_seen_at, revision: row.revision };
   }
 
-  // key: { role, operation, model, scope }. model: the configured model that
-  // answered, null for a current-session answer. scope: the answer's
-  // { personalSpaceId, personalProjectId }, checked against the role's egress
-  // approval as it is now; omitted for the settings view, which has no answer.
+  // key: { role, operation, connection, model, scope }. connection: the
+  // identity of the configured connection that answered (config.js
+  // connectionIdentity), null for a current-session answer; model names it in
+  // receipts. scope: the answer's { personalSpaceId, personalProjectId },
+  // checked against the role's egress approval as it is now; omitted for the
+  // settings view, which has no answer.
   function verdict(key, current) {
     const refuse = reason => ({ status: 'not_passed', reason, modelId: key.model ?? null });
-    if (!key.model) return refuse('session_answer');
+    if (!key.connection) return refuse('session_answer');
     const settings = modelBackends.operationSettings(key.role, key.operation);
     if (!settings) return refuse('not_configured');
-    if (settings.connection.model !== key.model) return refuse('model_changed');
+    // Another connection, endpoint, protocol or model than the one that answered.
+    if (settings.connection.identity !== key.connection) return refuse('connection_changed');
     if (key.scope && !modelBackends.allowsEgress(egressRequest(key))) return refuse('egress_not_approved');
     if (current.suggestionsOnly) return refuse('suggestions_only');
     if (!current.warningSeen) return refuse('warning_not_seen');
@@ -114,7 +119,8 @@ export function createRoleTrust({ path = ':memory:', modelBackends, now = () => 
     view(role, operation) {
       const current = state(role);
       const settings = modelBackends.operationSettings(role, operation);
-      const gate = verdict({ role, operation, model: settings?.connection.model ?? null }, current);
+      const gate = verdict({ role, operation, connection: settings?.connection.identity ?? null,
+        model: settings?.connection.model ?? null }, current);
       return { suggestionsOnly: current.suggestionsOnly, warningSeen: current.warningSeen,
         warningSeenAt: current.warningSeenAt, warningVersion: TRUST_WARNING_VERSION, revision: current.revision,
         status: gate.status === 'passed' ? 'automatic' : 'suggestion', reason: gate.reason };

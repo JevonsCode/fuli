@@ -173,8 +173,8 @@ test('results name their scoring contract; older results are read as contract 1 
   assert.deepEqual(Object.keys(summary.dev), ['modelOutcome', 'preGateHostOutcome', 'recordedOutcome', 'latency']);
   assert.deepEqual([summary.dev.preGateHostOutcome.agreement.perRun, summary.dev.recordedOutcome.agreement.perRun], [[1], [0]]);
   // What --record keeps for the settings page (rec#10 D-36.6): the holdout's model agreement, its set, day and model.
-  assert.deepEqual(holdoutEvaluation(summary, { model: 'synthetic-model', evaluatedAt: '2026-10-22T08:00:00.000Z' }),
-    { role: 'tonborg', operation: 'knowledge_review', model: 'synthetic-model', set: 'tonborg-review-eval/holdout',
+  assert.deepEqual(holdoutEvaluation(summary, { model: 'synthetic-model', endpoint: 'http://127.0.0.1:11434/v1', evaluatedAt: '2026-10-22T08:00:00.000Z' }),
+    { role: 'tonborg', operation: 'knowledge_review', model: 'synthetic-model', endpoint: 'http://127.0.0.1:11434/v1', set: 'tonborg-review-eval/holdout',
       evaluatedAt: '2026-10-22T08:00:00.000Z', agreed: 1, total: 1 });
   const table = perCaseTable([labels[0]], current('A'));
   assert.match(table, /^Scoring contract 2: /);

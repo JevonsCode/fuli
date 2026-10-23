@@ -14,17 +14,18 @@ export const MODEL_EVALUATIONS_FORMAT = jsonFormat({ store: 'model-evaluations',
 const MAX_RESULTS = 200;
 
 const text = z.string().trim().min(1).max(200);
-const resultSchema = z.object({ role: text, operation: text, model: text, set: text,
+const resultSchema = z.object({ role: text, operation: text, model: text, endpoint: text, set: text,
   evaluatedAt: z.string().datetime({ offset: true }), agreed: z.number().int().min(0), total: z.number().int().min(1) })
   .strict().refine(result => result.agreed <= result.total, 'agreed cannot exceed total');
 const documentSchema = z.object({ version: z.literal(1), results: z.array(resultSchema).max(MAX_RESULTS) }).strict();
 
-// The latest result for this role, operation and model; null when there is
-// none, or the file cannot be read as this FULI's format.
-export function latestEvaluation(path, { role, operation, model }, { read = readJsonFile } = {}) {
+// The latest result, by time, for this role, operation, model and endpoint
+// (the same model name served elsewhere is another result); null when there
+// is none, or the file cannot be read as this FULI's format.
+export function latestEvaluation(path, { role, operation, model, endpoint }, { read = readJsonFile } = {}) {
   const document = readDocument(path, read);
-  return document?.results.filter(result => result.role === role && result.operation === operation && result.model === model)
-    .sort((a, b) => a.evaluatedAt.localeCompare(b.evaluatedAt)).at(-1) ?? null;
+  return document?.results.filter(result => result.role === role && result.operation === operation && result.model === model
+    && result.endpoint === endpoint).sort((a, b) => Date.parse(a.evaluatedAt) - Date.parse(b.evaluatedAt)).at(-1) ?? null;
 }
 
 // Keeps the newest MAX_RESULTS results.

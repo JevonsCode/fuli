@@ -262,11 +262,13 @@ function reviewDecisions(value, schema, candidates) {
   return decisions;
 }
 
-// What the trust gate asks about an answer: the configured model that gave
-// it, or none when the current session or a legacy CLI answered.
+// What the trust gate asks about an answer: the configured connection and
+// model that gave it, or none when the current session or a legacy CLI answered.
 function reviewTrustKey(answer, scope) {
-  const model = answer.judgedBy?.mode === 'model_api' ? answer.modelReceipt?.requestedModel ?? null : null;
-  return { role: 'tonborg', operation: TONBORG_OPERATIONS.review, model, scope };
+  const byModel = answer.judgedBy?.mode === 'model_api';
+  return { role: 'tonborg', operation: TONBORG_OPERATIONS.review, scope,
+    connection: byModel ? answer.modelReceipt?.connectionIdentity ?? null : null,
+    model: byModel ? answer.modelReceipt?.requestedModel ?? null : null };
 }
 
 // rec#10 D-24, D-36: what the host does with one review verdict. The model's own

@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { MODEL_ADAPTERS } from './adapters/registry.js';
 import { budgetBlock, callLimits, ceilingCost, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
-import { MODEL_BACKEND_ROLES, configRevision } from './config.js';
+import { MODEL_BACKEND_ROLES, configRevision, connectionIdentity } from './config.js';
 import { decisionContract, decisionEnvelope } from './decision-contract.js';
 import { egressAllowed } from './egress.js';
 import { FAILURE_STATUS, isFallbackEligible, modelFailure } from './failures.js';
@@ -54,6 +54,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         backend: 'model_api', status, reason: failure?.reason ?? reason, failureClass: failure?.failureClass ?? null,
         fallbackEligible, fallbackReason: fallbackEligible ? failure.reason : null,
         connection: target?.id ?? null, protocol: target?.protocol ?? null, requestedModel: target?.model ?? null,
+        // Which configured connection was asked (config.js connectionIdentity); a role's trust gate compares it.
+        connectionIdentity: target ? connectionIdentity(target.id, target) : null,
         actualModel: attempts.findLast(attempt => attempt.actualModel)?.actualModel ?? null,
         outputMode: attempts.length ? mode : null, attempts: attempts.length, usage: receiptUsage(attempts),
         reportedConfidence, durationMs: now().getTime() - startedAt
@@ -215,7 +217,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         const connection = loaded.config.connections[settings.connection];
         return { role, state: settings.enabled ? 'enabled' : 'disabled', answeredBy: settings.enabled ? 'model_api' : 'current_session',
           connection: { id: settings.connection, protocol: connection.protocol, endpointHost: new URL(connection.endpoint).host,
-            model: connection.model, secretRef: connection.secretRef, pricing: connection.pricing ? 'configured' : 'unknown' },
+            model: connection.model, secretRef: connection.secretRef, pricing: connection.pricing ? 'configured' : 'unknown',
+            identity: connectionIdentity(settings.connection, connection) },
           allowedOperations: settings.allowedOperations, budget: settings.budget, fallbackToSession: settings.fallbackToSession,
           egress: settings.egress };
       }) };

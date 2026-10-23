@@ -13,7 +13,7 @@ import { handleJudgmentApiRequest } from '../src/judgment/http.js';
 import { undoAutomaticReview } from '../src/judgment/review-undo.js';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { knowledgeReferences } from '../src/knowledge-hard-delete/forget-references.js';
-import { readModelBackendConfig } from '../src/model-backends/config.js';
+import { connectionIdentity, readModelBackendConfig } from '../src/model-backends/config.js';
 import { latestEvaluation, recordEvaluation } from '../src/model-backends/evaluation-record.js';
 import { handleModelBackendApiRequest } from '../src/model-backends/http.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
@@ -67,13 +67,16 @@ function harness(t, { mode = 'shared', connection = 'local', roles, acknowledged
     finishKnowledgeReview: async () => ({}),
     listKnowledgeReviewCandidates: async () => ({ candidates, total_candidate_count: candidates.length }),
     recordKnowledgeReviewProgress: async value => { writes.push(value); return { outcome: value.outcome }; } };
-  const model = CONNECTIONS[connection].model;
   const bridge = { decide: async () => {
+    // Like the port, the answer names the connection as configured when the request started.
+    const asked = config.roles.tonborg?.connection ?? connection;
+    const used = config.connections[asked];
     await answering();
     const envelope = { payload: { decisions: candidates.map(candidate => ({ ...approval, target: candidate.candidate_key })) } };
     return answeredBy === 'model_api'
       ? { status: 'answered', mode: 'model_api', envelope,
-        modelReceipt: { backend: 'model_api', status: 'answered', requestedModel: model, actualModel: `${model}-served` } }
+        modelReceipt: { backend: 'model_api', status: 'answered', connection: asked, protocol: used.protocol,
+          connectionIdentity: connectionIdentity(asked, used), requestedModel: used.model, actualModel: `${used.model}-served` } }
       : { status: 'answered', mode: 'current_session', envelope, session: { sourceApplication: 'codex', sessionRef: 'session-1' },
         modelReceipt: { backend: 'current_session', status: 'answered', requestedModel: null, actualModel: null }, workPackageId: 'work-1' };
   } };
@@ -198,6 +201,43 @@ test('a switch to 「只给建议」 while a review is in flight stops its write
   assert.equal(second.executionHistory.some(entry => entry.status === 'applying'), false);
 });
 
+// The contract (coordinator's decision on dot's round-2 item 1): the switch
+// takes effect at the commit point, the apply intent stored under the trust
+// lock. A task whose intent was stored before the switch has already started
+// and completes like a write that finished a moment earlier; its receipt
+// offers undo. A task without a stored intent checks again and stays a suggestion.
+test('the switch takes effect at the commit point: before the stored intent no write, after it the write completes with undo', async t => {
+  // Switched before the intent is stored (between the answer and the commit).
+  const before = harness(t);
+  const switchBefore = otherProcess(before);
+  const list = before.app.listKnowledgeReviewCandidates;
+  let listings = 0;
+  before.app.listKnowledgeReviewCandidates = async value => { if (++listings === 2) switchBefore.trust.setSuggestionsOnly('tonborg', true, 1); return list(value); };
+  const [held] = (await before.service.review(input)).records;
+  switchBefore.done();
+  assert.deepEqual([held.execution.status, held.execution.receipt.reason, before.writes.length], ['stale', 'suggestions_only', 0]);
+  assert.equal(held.executionHistory.some(entry => entry.status === 'applying'), false);
+
+  // Switched after the intent was stored, before the Provider write arrives.
+  const after = harness(t);
+  const switchAfter = otherProcess(after);
+  const write = after.app.recordKnowledgeReviewProgress;
+  after.app.recordKnowledgeReviewProgress = async value => {
+    const [stored] = after.service.store().requestRecords('s', `review:p:${input.requestId}`);
+    assert.equal(stored.execution.status, 'applying', 'the intent is stored before the Provider write');
+    switchAfter.trust.setSuggestionsOnly('tonborg', true, 1);
+    return write(value);
+  };
+  const [started] = (await after.service.review(input)).records;
+  switchAfter.done();
+  assert.deepEqual([started.execution.status, after.writes.length], ['applied', 1]);
+  assert.equal(after.trust.view('tonborg', 'knowledge_review').reason, 'suggestions_only');
+  // Its receipt offers undo, and undo works.
+  const undone = await undoAutomaticReview({ judgment: after.service, input: { personalSpaceId: 's', decisionId: started.id },
+    undoConsole: { withdrawAiReview: async () => ({ decision_id: 'decision-1' }) } });
+  assert.equal(undone.execution.status, 'undone');
+});
+
 test('trust relaxes no other check: egress, the capture switch and the person\'s policy still stop a write', async t => {
   // Egress approval withdrawn after the answer: the write is not made.
   const egress = harness(t);
@@ -211,10 +251,30 @@ test('trust relaxes no other check: egress, the capture switch and the person\'s
   assert.deepEqual([stopped.execution.status, stopped.execution.receipt.reason], ['stale', 'egress_not_approved']);
   assert.equal(egress.writes.length, 0);
 
-  // The model is replaced in settings while it answers: the old model's answer is not trusted.
-  const replaced = harness(t, { answering: async () => { replaced.config.connections = { ...CONNECTIONS, local: { ...CONNECTIONS.local, model: 'other-model' } }; } });
-  const [other] = (await replaced.service.review(input)).records;
-  assert.deepEqual([other.aiReview.gate.reason, replaced.writes.length], ['model_changed', 0]);
+  // The configuration changes while the model answers: an answer from a connection the role no longer
+  // names is not trusted, even under the same model name (dot's round-2 review, item 2).
+  const changes = {
+    'another model on the same connection': config => { config.connections = { ...config.connections, local: { ...CONNECTIONS.local, model: 'other-model' } }; },
+    'the same model name on another connection': config => {
+      config.connections = { ...config.connections, mirror: { ...CONNECTIONS.local, endpoint: 'http://127.0.0.1:11435/v1' } };
+      config.roles.tonborg = { ...config.roles.tonborg, connection: 'mirror' };
+    },
+    'the same connection with its endpoint changed in place': config => {
+      config.connections = { ...config.connections, local: { ...CONNECTIONS.local, endpoint: 'http://127.0.0.1:11436/v1' } };
+    }
+  };
+  for (const [label, change] of Object.entries(changes)) {
+    const replaced = harness(t, { answering: async () => change(replaced.config) });
+    const [other] = (await replaced.service.review(input)).records;
+    assert.deepEqual([other.aiReview.gate.reason, other.execution.status, replaced.writes.length], ['connection_changed', 'not_applied', 0], label);
+  }
+  // Changed between the gate and the write: the commit compares the identity again.
+  const moved = harness(t);
+  let movedListings = 0;
+  const movedList = moved.app.listKnowledgeReviewCandidates;
+  moved.app.listKnowledgeReviewCandidates = async value => { if (++movedListings === 2) changes['the same connection with its endpoint changed in place'](moved.config); return movedList(value); };
+  const [movedRecord] = (await moved.service.review(input)).records;
+  assert.deepEqual([movedRecord.execution.status, movedRecord.execution.receipt.reason, moved.writes.length], ['stale', 'connection_changed', 0]);
 
   // Recording off, globally or for this project: a suggestion, never a write.
   for (const capture of [{ enabled: false }, { enabled: true, projectMode: 'all_except', excludedProjectIds: ['p'] }]) {
@@ -283,16 +343,19 @@ test('the settings page shows the latest local evaluation of the configured mode
   const h = harness(t);
   const path = join(mkdtempSync(join(tmpdir(), 'fuli-model-eval-')), 'model-evaluations.json');
   t.after(() => rmSync(join(path, '..'), { recursive: true, force: true }));
-  const key = { role: 'tonborg', operation: 'knowledge_review', model: 'qwen-test' };
+  const key = { role: 'tonborg', operation: 'knowledge_review', model: 'qwen-test', endpoint: CONNECTIONS.local.endpoint };
   const readEvaluation = evaluation => latestEvaluation(path, evaluation);
   const shown = async () => (await call(h, 'GET', '/api/model-backends/roles', null, '127.0.0.1', { readEvaluation }))
     .body.roles.find(role => role.role === 'tonborg').trust.evaluation;
   assert.equal(await shown(), null);
   const result = { ...key, set: 'tonborg-review-eval/holdout', evaluatedAt: '2026-10-22T08:00:00.000Z', agreed: 71, total: 162 };
+  // Another model, or the same model name served at another endpoint, is another result.
   recordEvaluation(path, { ...result, model: 'another-model' });
+  recordEvaluation(path, { ...result, endpoint: 'https://models.cloud.test', evaluatedAt: '2026-10-23T08:00:00.000Z' });
   assert.equal(await shown(), null);
   recordEvaluation(path, result);
-  recordEvaluation(path, { ...result, evaluatedAt: '2026-10-21T08:00:00.000Z', agreed: 1 });
+  // Ordered by time, not by text: 10:00+08:00 is 02:00Z, earlier than 08:00Z.
+  recordEvaluation(path, { ...result, evaluatedAt: '2026-10-22T10:00:00.000+08:00', agreed: 1 });
   assert.deepEqual(await shown(), result);
   assert.throws(() => recordEvaluation(path, { ...result, agreed: 200 }));
 });
