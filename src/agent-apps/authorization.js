@@ -1,5 +1,7 @@
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
+import { ApplicationError } from '../app/application-error.js';
 import { appConflict } from './errors.js';
+import { hostToolEntry } from './host-tools/catalog.js';
 
 // What an approval covers: the exact package and everything the user saw.
 export function approvalTerms(version) {
@@ -15,6 +17,34 @@ export function approvalBinds(approval, version) {
 
 export function tamperedPackage() {
   return appConflict('package_tampered', 'The stored package no longer matches its digest, so it will not run');
+}
+
+export function dataDeleting() {
+  return appConflict('app_data_deleting', 'This app\'s data is being deleted; nothing new is added to it');
+}
+
+// What no app may ask for, refused at submission and never silently dropped
+// (rec#7 D-28.3, D-28.4): network access, and any tool marked egress, model
+// or launch in the host tool catalog.
+export function rejectedManifest(submitted, manifest) {
+  const reasons = [];
+  if (submitted !== null && typeof submitted === 'object' && Object.hasOwn(submitted, 'network')) {
+    reasons.push('network: apps have no network; their only channel is the FULI host');
+  }
+  if (manifest) {
+    for (const permission of manifest.permissions) {
+      const marks = hostToolEntry(permission.slice('fuli.'.length))?.marks ?? [];
+      if (marks.length) reasons.push(`${permission} is marked ${marks.join(', ')}`);
+    }
+  }
+  return reasons.length ? new ApplicationError('manifest_rejected',
+    `Apps may not send data off this computer, spend model budget or start other programs: ${reasons.join('; ')}`,
+    { status: 400 }) : null;
+}
+
+// The FULI Agent tools of today an app may be granted.
+export function grantableTools(toolNames) {
+  return new Set(toolNames.filter((name) => hostToolEntry(name)?.grantable).map((name) => `fuli.${name}`));
 }
 
 // Authorization is checked against today's grantable tools, not the day of approval.

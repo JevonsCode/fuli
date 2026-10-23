@@ -1,6 +1,7 @@
 import { ApplicationError } from '../app/application-error.js';
-import { approvalBinds, approvalTerms, dataTransition, tamperedPackage, unavailablePermissions } from './authorization.js';
-import { ensureDataDirectory } from './data-directory.js';
+import {
+  approvalBinds, approvalTerms, dataDeleting, dataTransition, tamperedPackage, unavailablePermissions
+} from './authorization.js';
 import { appConflict } from './errors.js';
 import { storedPackageMatches } from './package-files.js';
 
@@ -20,6 +21,7 @@ export function createActivation(context) {
   function approvable({ appId, version, digest, confirmResident = false, confirmIrreversibleMigration = false }) {
     const app = store.existingApp(appId);
     if (app.status === 'deleted') throw appConflict('app_deleted', 'This app and its data were deleted');
+    if (app.status === 'data_deleting') throw dataDeleting();
     const candidate = requiredVersion(appId, version);
     if (candidate.state !== 'pending') {
       throw appConflict('version_not_pending', `Version ${version} is ${candidate.state}; only a pending version is approved`);
@@ -74,7 +76,8 @@ export function createActivation(context) {
     return activate(app, version, transition, { at, actor, reason: 'rollback' });
   }
 
-  // Earlier app tokens end here.
+  // Earlier app tokens end here. The data directory is not created here but when
+  // an instance of the app first starts (instances.js, rec#7 D-28.17).
   function activate(app, version, transition, { at, actor, reason }) {
     store.revokeTokens(app.appId, reason, at);
     store.saveApp({ ...app, status: 'active', activeVersion: version.version, dataFormat: transition.dataFormat,
@@ -83,7 +86,6 @@ export function createActivation(context) {
       const { note: _note, ...migration } = transition.migration;
       store.recordEvent({ appId: app.appId, at, action: 'data_migrated', version: version.version, actor, detail: migration });
     }
-    if (version.manifest.data.scope === 'app') ensureDataDirectory(context.dataOf(app.appId));
     return { appId: app.appId, version: version.version, status: 'active', digest: version.digest,
       ...(transition.migration ? { dataMigration: transition.migration } : {}) };
   }

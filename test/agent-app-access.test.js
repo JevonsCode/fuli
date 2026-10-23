@@ -23,7 +23,7 @@ const CLI = fileURLToPath(new URL('../src/cli.js', import.meta.url));
 const MANIFEST = Object.freeze({
   schemaVersion: 1, name: 'dispatch-log', version: '1.0.0', title: 'Dispatch log',
   description: 'Synthetic fixture page that lists dispatched replies.',
-  permissions: ['fuli.search_knowledge_graph'],
+  permissions: ['fuli.resolve_knowledge_tags'],
   runtime: { apiVersion: 1, webRoot: 'web' },
   data: { scope: 'app', format: 1 }
 });
@@ -181,7 +181,7 @@ test('fuli app approve refuses non-interactive callers and records a presence-ch
     return prompts.length === 1;
   } });
   assert.match(prompts[0], new RegExp(submitted.digest));
-  assert.match(prompts[0], /fuli\.search_knowledge_graph/);
+  assert.match(prompts[0], /fuli\.resolve_knowledge_tags/);
   assert.match(prompts[0], /Hello 返回用户验证结果，不签署 challenge/);
   assert.match(prompts[0], /不在安全桌面/);
   assert.doesNotMatch(prompts.join('\n'), /过不了 Hello|cannot pass Hello/i);
