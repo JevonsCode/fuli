@@ -104,10 +104,23 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
     conversation: async operation => operation === 'append' ? { status: 'saved', conversation_id: CONVERSATION } : {},
     // The Provider's triage store: a label per conversation, its labeled_at the version.
     conversationTriage: async (operation, input) => {
-      if (operation === 'topics') return { topics: [] };
+      // Open topics and forming a topic into a project, as the triage store does:
+      // forming sets formed_project_id and leaves labeled_at and source alone.
+      const open = topic => [...labels.values()].filter(label => label.kind === 'topic' && !label.formed_project_id
+        && (!topic || label.topic.toLowerCase() === topic.toLowerCase()));
+      if (operation === 'topics') {
+        const found = open(input.topic);
+        return { topics: found.length ? [{ topic: found[0].topic, count: found.length, days: 1 }] : [] };
+      }
+      if (operation === 'form') {
+        const formed = open(input.topic);
+        formed.forEach(label => { label.formed_project_id = input.personal_project_id; });
+        return { personal_project_id: input.personal_project_id, conversation_ids: formed.map(() => CONVERSATION) };
+      }
       if (operation === 'read') {
         if (triageReadError) throw triageReadError;
-        return { triage: labels.get(input.conversation_id) ?? null };
+        const label = labels.get(input.conversation_id);
+        return { triage: label ? { ...label } : null };
       }
       assert.equal(operation, 'record');
       if (input.source !== 'user') writes.push(`conversationTriage:${operation}`);
@@ -408,6 +421,24 @@ test('a person\'s triage made while the model runs outranks the late answer', as
     relabeled.labels.set(CONVERSATION, { kind: 'topic', topic: 'Garden', source: 'host', labeled_at: '2026-10-23T00:00:00.000Z' });
   })] });
   assert.equal((await relabeled.entry()).project_candidate.reason, 'attribution_changed');
+
+  // A person accepts the conversation's host topic as project B (Alpha Ledger) while
+  // the model runs: forming changes neither labeled_at nor source, and still wins.
+  const hostTopic = { kind: 'topic', personal_project_id: null, topic: 'Alpha Ledger', source: 'host',
+    labeled_at: '2026-10-01T00:00:00.000Z', formed_project_id: null };
+  const formed = harness({ role: astroRole(), replies: [delayed(() => formed.app.topicProposals('accept',
+    { personalSpaceId: SPACE, topic: 'Alpha Ledger' }))] });
+  formed.labels.set(CONVERSATION, { ...hostTopic });
+  const accepted = await formed.entry();
+  assert.deepEqual([accepted.project_candidate.status, accepted.project_candidate.reason, accepted.project_candidate.hint],
+    ['superseded', 'attribution_changed', undefined]);
+  assert.deepEqual([formed.labels.get(CONVERSATION).formed_project_id, formed.labels.get(CONVERSATION).labeled_at],
+    ['ledger', hostTopic.labeled_at]);
+  formed.assertNoAttribution(accepted);
+  // A topic formed before the entry is attribution too.
+  const already = harness({ role: astroRole(), replies: [answer()] });
+  already.labels.set(CONVERSATION, { ...hostTopic, formed_project_id: 'ledger' });
+  assert.equal((await already.entry()).project_candidate.reason, 'attribution_changed');
 
   // An unreadable label cannot prove there was no correction.
   const unknown = harness({ role: astroRole(), replies: [delayed(async () => unknown.failTriageReads(new Error('Provider unavailable')))] });

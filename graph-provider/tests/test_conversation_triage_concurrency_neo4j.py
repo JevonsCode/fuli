@@ -42,6 +42,9 @@ def store(driver, space):
         async def authorize(self, *args):
             return {'id': space}
 
+        async def get_personal_project(self, *args):
+            return {}
+
     triage = Store()
     triage.runtime = SimpleNamespace(driver=driver)
     return triage
@@ -123,7 +126,7 @@ async def test_topic_days_and_a_decline_read_back_from_real_cypher():
 @pytest.mark.asyncio
 async def test_a_read_returns_the_current_label_and_a_correction_changes_its_version():
     from neo4j import AsyncGraphDatabase
-    from fuli_graph.conversation_triage_models import ConversationTriageRead
+    from fuli_graph.conversation_triage_models import ConversationTopicFormation, ConversationTriageRead
 
     space = 'synthetic-read-' + uuid4().hex
     conversation = 'synthetic-read-' + uuid4().hex
@@ -146,6 +149,16 @@ async def test_a_read_returns_the_current_label_and_a_correction_changes_its_ver
             user = (await triage.read_conversation_triage({}, read))['triage']
             assert (user['source'], user['kind']) == ('user', 'one_off')
             assert user['labeled_at'] != host['labeled_at']
+            # Forming a topic into a project changes neither labeled_at nor source:
+            # the read still shows it, through formed_project_id.
+            await triage.record_conversation_triage({}, ConversationTriageWrite(
+                personal_space_id=space, conversation_id=conversation, kind='topic', topic='Garden', source='user'))
+            labeled = (await triage.read_conversation_triage({}, read))['triage']
+            await triage.form_conversation_topic({}, ConversationTopicFormation(
+                personal_space_id=space, topic='Garden', personal_project_id='synthetic-project-b'))
+            formed = (await triage.read_conversation_triage({}, read))['triage']
+            assert formed['formed_project_id'] == 'synthetic-project-b'
+            assert (formed['labeled_at'], formed['source']) == (labeled['labeled_at'], labeled['source'])
             # Another space never sees this conversation's label.
             assert await store(driver, 'synthetic-other').read_conversation_triage({}, ConversationTriageRead(
                 personal_space_id='synthetic-other', conversation_id=conversation)) == {'triage': None}

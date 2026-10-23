@@ -116,15 +116,16 @@ function optionIds(candidates) {
   return candidates.map((_, index) => `project_${index + 1}`);
 }
 
-// A late answer never outranks attribution that changed while the model ran:
-// a person's label on the conversation, any newer label, or a task that now
-// has a project or another entry. An unreadable label proves nothing either way.
+// A late answer never outranks attribution: a person's label on the
+// conversation, a topic already formed into a project, any change to the label
+// while the model ran, or a task that now has a project or another entry. An
+// unreadable label proves nothing either way.
 async function lateAttribution(application, task, conversationId, labelBefore) {
   if (conversationId) {
     const label = await readConversationTriage(application, conversationId).catch(() => undefined);
     if (label === undefined) return 'attribution_unknown';
     if (label?.source === 'user') return 'corrected_by_user';
-    if ((label?.labeled_at ?? null) !== (labelBefore?.labeled_at ?? null)) return 'attribution_changed';
+    if (label?.formed_project_id || JSON.stringify(label) !== JSON.stringify(labelBefore ?? null)) return 'attribution_changed';
   }
   const current = await application.taskContextRegistry.context(task.token, task.sourceApplication).catch(() => null);
   return current && !current.personalProjectId ? null : 'attribution_changed';

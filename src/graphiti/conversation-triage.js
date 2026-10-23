@@ -65,7 +65,8 @@ export async function recordTriage(application, task, conversation, label) {
   }
 }
 
-// The conversation's current label or null; labeled_at is its version.
+// The conversation's current attribution state or null: kind, project, topic,
+// source, labeled_at and the project a topic was formed into.
 export async function readConversationTriage(application, conversationId) {
   return (await application.personal.conversationTriage('read', {
     personal_space_id: application.config.personal.spaceId, conversation_id: conversationId })).triage;

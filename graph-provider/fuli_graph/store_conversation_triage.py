@@ -107,7 +107,9 @@ class StoreConversationTriage:
                 'conversation_ids': [row['id'] for row in rows]}
 
     async def read_conversation_triage(self, actor, request):
-        """One conversation's current label, or None; labeled_at is its version."""
+        """One conversation's current attribution state, or None: the label (kind,
+        project, topic, source, labeled_at) and the project its topic was formed
+        into, which forming sets without touching labeled_at or source."""
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'reader')
         rows, _, _ = await self.runtime.driver.execute_query(
