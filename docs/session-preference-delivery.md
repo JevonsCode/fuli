@@ -106,7 +106,10 @@ context generation provably holds that exact version:
 A cache record this FULI cannot trust (a newer version, corrupt or oversized)
 may have held a reset's boundary, so it is never read as a fresh session: the
 generation then starts at the transcript's current end, or, without a
-readable transcript, is unknown and nothing is left out or saved.
+readable transcript, is unknown and nothing is left out or saved. A reset
+(SessionStart, PreCompact, FULI switch) that cannot read the transcript, or
+finds its last record unfinished, saves the boundary as unknown in the same
+way, never as the file's start.
 
 The cache records, per delivered frame, its conversation, hash and explicit
 `[sequence, content hash]` pairs, never a maximum sequence. A truncated prefix

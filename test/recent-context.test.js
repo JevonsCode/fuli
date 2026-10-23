@@ -406,6 +406,35 @@ test('a newer or corrupt cache after a reset never lets an older own message be 
   }
 }));
 
+// dot 6362902224: a reset that cannot read the transcript (unfinished tail,
+// file briefly gone) keeps the boundary unknown, never the file's start.
+test('a reset while the transcript is unreadable keeps an older own message out of the seen set', () => fixture(async f => {
+  const unreadable = {
+    'unfinished tail': async target => {
+      await appendFile(target.path, '{"type":"response_item"');
+      return () => appendFile(target.path, ',"payload":{"type":"other"}}\n');
+    },
+    'file moved away': async target => {
+      await rename(target.path, `${target.path}.away`);
+      return () => rename(`${target.path}.away`, target.path);
+    }
+  };
+  for (const [name, hide] of Object.entries(unreadable)) {
+    const sessionId = randomUUID();
+    const target = await f.open('codex', sessionId);
+    const own = journal();
+    own.add('user', 'before reset', 'codex', sessionId, await target.say('user', 'before reset'));
+    assert.deepEqual((await f.enter(target, own.recovery('codex', sessionId))).contents, [], `${name}: seen before`);
+    const restore = await hide(target);
+    assert.equal(await f.delivery.reset({ sourceApplication: 'codex', nativeSessionId: sessionId, transcriptPath: target.path }), true);
+    await restore();
+    const after = await f.enter(target, own.recovery('codex', sessionId));
+    assert.deepEqual(after.contents, ['before reset'], `${name}: delivered in full after the unproven reset`);
+    assert.deepEqual((await f.enter(target, own.recovery('codex', sessionId))).contents, [],
+      `${name}: the full frame of the new generation then confirms it`);
+  }
+}));
+
 test('a version that comes back (A→B→A) is delivered again and the replacing one withdrawn', () => fixture(async f => {
   const c = await f.open('codex', C);
   const other = journal();

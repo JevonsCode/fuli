@@ -58,10 +58,12 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
             : { known: false };
           const nativeGeneration = origin.nativeGeneration ? contentHash(origin.nativeGeneration) : null;
           // A record this FULI cannot trust (newer, corrupt, oversized) may have
-          // held a reset's boundary; so may a new native window. Either way the
-          // generation starts at the current end, or is unknown (floor null):
-          // nothing before it counts and an unknown start is never saved.
-          if (state.untrusted || (nativeGeneration && state.nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
+          // held a reset's boundary; a reset that could not read the transcript
+          // saved its boundary as unknown (floor null); a new native window has
+          // one too. In each case the generation starts at the current end, or
+          // stays unknown: nothing before it counts and nothing is saved.
+          if (state.untrusted || state.floor === null
+              || (nativeGeneration && state.nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
             state = { pending: [], recent: [], floor: proof.known ? proof.size : null };
           }
           if (proof.known && state.floor !== null) state = generationState(state, proof);
@@ -100,7 +102,9 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
       try {
         await locked(origin.sourceApplication, origin.nativeSessionId, async (_state, save) => {
           const proof = await observe(origin.sourceApplication, origin.nativeSessionId, origin);
-          await save({ pending: [], recent: [], floor: proof.known ? proof.size : 0,
+          // An unreadable or unfinished transcript proves no boundary: it stays
+          // unknown until a delivery can read the file, never the file's start.
+          await save({ pending: [], recent: [], floor: proof.known ? proof.size : null,
             ...(origin.nativeGeneration ? { nativeGeneration: contentHash(origin.nativeGeneration) } : {}),
             ...(proof.known ? { fileId: proof.fileId, generation: proof.generation } : {}) });
         });
@@ -160,7 +164,8 @@ async function readState(path) {
     if (!stat.isFile() || stat.size > 64 * 1024) return UNTRUSTED;
     const value = JSON.parse(await file.readFile('utf8'));
     if (!PREFERENCE_SESSION_FORMAT.versions.includes(value.version) || !Array.isArray(value.pending)
-        || value.pending.length > MAX_PENDING || !(value.floor === undefined || Number.isSafeInteger(value.floor))
+        || value.pending.length > MAX_PENDING
+        || !(value.floor === undefined || value.floor === null || Number.isSafeInteger(value.floor))
         || value.pending.some(item => ![item.scopeHash, item.snapshotHash, item.frameHash]
           .every(hash => /^[a-f0-9]{64}$/.test(hash)))) return UNTRUSTED;
     const recent = value.recent ?? [];
