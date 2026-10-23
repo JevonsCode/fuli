@@ -73,7 +73,7 @@ export function createReviewPath({ model, sampling, fetchImpl = globalThis.fetch
       exchanges: chats,
       modelVerdict: response?.status === 'answered' ? response.value.decisions?.[0] ?? null : null,
       receipt: response?.modelReceipt ?? record?.modelReceipt ?? null,
-      // outcome is the host's gated outcome; modelOutcome and interceptions are what the D-24 gate recorded beside it.
+      // outcome is the host's gated outcome; modelOutcome and interceptions are what the host's gate (D-24, D-36) recorded beside it.
       record: record && { target: record.target, outcome: record.outcome, modelOutcome: record.aiReview?.modelOutcome ?? null,
         interceptions: record.aiReview?.interceptions ?? [], confidence: record.confidence ?? null,
         summary: record.summary ?? null, error: record.error ?? null, execution: record.execution.status },

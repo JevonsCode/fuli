@@ -41,6 +41,10 @@ const usage = () => ({ groups: [
     estimatedCost: null },
 ] })
 
+// rec#10 D-36: Tonborg's trust as the roles route reports it.
+const trust = (overrides: Record<string, unknown> = {}) => ({ operation: 'knowledge_review', suggestionsOnly: false, warningSeen: false,
+  warningSeenAt: null, warningVersion: 1, revision: 0, status: 'automatic', reason: null, evaluation: null, ...overrides })
+
 let rolesPayload = roles()
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -77,20 +81,52 @@ describe('ModelSettingsPage', () => {
     expect(wrapper.get('[data-model-role="assistant"]').get('[data-model-fact="answeredBy"]').text()).toContain('当前会话')
   })
 
-  it('shows the D-24 review gate of every role read-only, with the unlocked build', async () => {
-    rolesPayload = roles()
-    for (const view of rolesPayload.roles as Array<Record<string, unknown>>) {
-      view.reviewGate = { status: 'suggestion_only', reason: 'no_auto_apply', entries: [] }
-    }
-    ;(rolesPayload.roles[3] as Record<string, unknown>).reviewGate = { status: 'unlocked', reason: null, entries: [{ modelId: 'qwen-test',
-      modelDigest: 'sha256:0123456789abcdef', harnessVersion: 'synthetic-harness-1', evidence: 'synthetic evaluation', addedAt: '2026-10-22T00:00:00.000Z' }] }
+  it('asks the person to read the warning before Tonborg\'s model executes by itself, and saves only that acknowledgement (D-36)', async () => {
+    ;(rolesPayload.roles[3] as Record<string, unknown>).trust = trust({ status: 'suggestion', reason: 'warning_not_seen' })
     const wrapper = await mountPage()
-    for (const role of ['assistant', 'bole', 'jefa']) {
-      expect(wrapper.get(`[data-model-role="${role}"] [data-model-fact="gate"]`).text()).toContain('仅建议')
-    }
-    const gate = wrapper.get('[data-model-role="tonborg"] [data-model-fact="gate"]')
-    expect(gate.text()).toContain('已放行 · qwen-test@sha256:0…')
-    expect(gate.get('dd').attributes('title')).toBe('qwen-test@sha256:0123456789abcdef (synthetic evaluation)')
+    // Roles with nothing that runs by themselves show no execution row.
+    for (const role of ['assistant', 'bole', 'jefa']) expect(wrapper.find(`[data-model-role="${role}"] [data-model-trust]`).exists()).toBe(false)
+    const section = wrapper.get('[data-model-role="tonborg"] [data-model-trust="tonborg"]')
+    expect(section.get('[data-model-trust-status]').text()).toBe('看过下面的提示后自动执行')
+    expect(section.get('[data-model-trust-warning]').text())
+      .toBe('模型可能判断错，它的判断会直接生效；你可以随时改成「只给建议」，部分写入可在回执里撤回。')
+    expect(section.get('[role="switch"]').attributes('aria-checked')).toBe('false')
+    expect(section.find('[data-model-trust-evaluation]').exists()).toBe(false)
+    expect(api.putJson).not.toHaveBeenCalled()
+
+    let finish: (value: unknown) => void = () => {}
+    api.putJson.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    await section.get('[data-model-trust-acknowledge]').trigger('click')
+    expect(api.putJson).toHaveBeenCalledWith('/api/model-backends/roles/tonborg/trust', { expectedRevision: 0, acknowledgeWarning: 1 })
+    expect(section.get('[data-model-trust-acknowledge]').text()).toContain('正在记录你已看过 Tonborg 的提示…')
+    const next = roles()
+    ;(next.roles[3] as Record<string, unknown>).trust = trust({ warningSeen: true, revision: 1 })
+    finish(next)
+    await flushPromises()
+    expect(wrapper.get('[data-model-trust-status]').text()).toBe('由 qwen-test 自动执行')
+    expect(wrapper.find('[data-model-trust-acknowledge]').exists()).toBe(false)
+  })
+
+  it('switches Tonborg to 「只给建议」 with a loading label, and shows a local evaluation with its set, day and model', async () => {
+    ;(rolesPayload.roles[3] as Record<string, unknown>).trust = trust({ warningSeen: true, revision: 3, evaluation: { role: 'tonborg',
+      operation: 'knowledge_review', model: 'qwen-test', set: 'tonborg-review-eval/holdout', evaluatedAt: '2026-10-22T08:00:00.000Z', agreed: 71, total: 162 } })
+    const wrapper = await mountPage()
+    expect(wrapper.get('[data-model-trust-evaluation]').text())
+      .toBe('本机评测 2026/10/22 · tonborg-review-eval/holdout · qwen-test · 一致率 44%（不代表普遍准确率）')
+    api.putJson.mockImplementation(() => new Promise(() => {}))
+    await wrapper.get('[data-model-trust] [role="switch"]').trigger('click')
+    expect(api.putJson).toHaveBeenCalledWith('/api/model-backends/roles/tonborg/trust', { expectedRevision: 3, suggestionsOnly: true })
+    expect(wrapper.get('[data-model-trust]').text()).toContain('正在保存 Tonborg 的执行方式…')
+    expect(wrapper.get('[data-model-trust] [role="switch"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('shows a role its model does not answer as suggestions only, with no switch', async () => {
+    rolesPayload = roles()
+    rolesPayload.roles[3] = { role: 'tonborg', state: 'not_configured', answeredBy: 'current_session',
+      trust: trust({ status: 'suggestion', reason: 'session_answer' }) } as never
+    const wrapper = await mountPage()
+    expect(wrapper.get('[data-model-role="tonborg"] [data-model-fact="execution"]').text()).toContain('只给建议（由当前会话回答）')
+    expect(wrapper.find('[data-model-trust]').exists()).toBe(false)
   })
 
   it('shows the local build observed after the latest answer beside the model: 12 characters, the full build and a caveat in a title', async () => {

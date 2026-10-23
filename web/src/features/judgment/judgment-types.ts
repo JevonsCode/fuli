@@ -41,13 +41,14 @@ export interface JudgmentSelection {
   client: string
 }
 
-// rec#10 D-24: how the host treated a knowledge review verdict. modelOutcome
-// is the model's own answer; interceptions are the host's reasons it did not apply.
+// rec#10 D-24, D-36: how the host treated a knowledge review verdict. modelOutcome
+// is the model's own answer; interceptions are the host's reasons it did not apply;
+// gate is the role trust gate (its reason says why it refused, e.g. warning_not_seen).
 export interface JudgmentAiReview {
   state: 'ai_suggested' | 'ai_reviewed'
   modelOutcome: 'approve' | 'escalate'
   interceptions: string[]
-  gate: { status: 'passed' | 'not_passed', reason: string | null, modelId: string | null, promptVersion: string }
+  gate: { status: 'passed' | 'not_passed', reason: string | null, modelId: string | null }
 }
 
 export interface JudgmentDecisionRecord {
@@ -67,6 +68,8 @@ export interface JudgmentDecisionRecord {
   model?: string | null
   sessionId?: string | null
   error?: unknown
+  // The knowledge it judged was permanently deleted (rec#5 C9): its words are gone and nothing brings it back.
+  hard_deleted?: boolean
   selection?: JudgmentSelection | null
   disposition?: 'continue_current' | 'reuse_conversation' | 'new_session' | 'delegate' | 'ask_user'
   conversationId?: string | null

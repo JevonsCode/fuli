@@ -7,7 +7,7 @@ import { isJsonResponse, readJsonBody } from './exchange.js';
 // the digest of its build at GET /api/tags beside its /v1 API. That list is a
 // catalog snapshot, not proof of what served an answer: the observation is
 // kept for the settings page only (compare `ollama list`) and never enters a
-// receipt, a review record or the D-24 review gate.
+// receipt, a review record or the role trust gate (rec#10 D-36).
 // Observed only for loopback HTTP endpoints ending in /v1, with the exact
 // tag (no :latest normalization) listed once with a well-formed digest; any
 // other answer, a redirect, an error or an abort observes nothing (null).

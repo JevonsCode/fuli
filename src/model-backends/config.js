@@ -56,6 +56,15 @@ export function configRevision(loaded) {
   return loaded.state === 'ok' ? contentHash(loaded.config) : null;
 }
 
+// Which configured connection served an answer (rec#10 D-36): its id,
+// protocol, normalized endpoint and model, as one comparable value. A role
+// trusts an answer only while its configuration still names the same one, so
+// the same model name on another connection, or an endpoint changed in
+// place, is a different identity. A digest, so no endpoint leaves the port.
+export function connectionIdentity(id, connection) {
+  return contentHash({ id, protocol: connection.protocol, endpoint: connection.endpoint, model: connection.model });
+}
+
 // Validates a whole configuration, throwing a TypeError that names the field.
 // Its result reads back to itself, so it is also what FULI writes.
 export function normalizeConfig(raw) {

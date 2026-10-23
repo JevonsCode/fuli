@@ -12,6 +12,10 @@
       "version": 1,
       "fingerprint": "e621120361096b31c77958988cc3fc7cd0f19345732268b0fb28c6508da24b8e"
     },
+    "model-trust": {
+      "version": 1,
+      "fingerprint": "7b21ab0473e8f44cf82dec77db27549202c3aef3bc379d6dc370f8bf0a97d4fc"
+    },
     "model-usage": {
       "version": 2,
       "fingerprint": "e8657fb8e4fbcde5ce687039fbe9145d4d1bcb8952fd42dcb14bb321e2dc8fdf"

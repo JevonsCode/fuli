@@ -7,11 +7,12 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
+import ModelRoleTrust from '@/features/model-settings/ModelRoleTrust.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
 import { useRoleSuggestions } from '@/features/model-settings/useRoleSuggestions'
 import {
-  formatCount, gateBuilds, localBuildText, readModelRoles, roleName, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
+  formatCount, localBuildText, readModelRoles, roleName, trustStatusText, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -78,7 +79,7 @@ type Fact = { key: string; label: string; value: string; code?: boolean; title?:
 
 function facts(view: ModelRoleView): Fact[] {
   const answer = view.answeredBy ? t(`modelSettings.answer.${view.answeredBy}`) : t('modelSettings.none')
-  if (!view.connection) return [{ key: 'answeredBy', label: t('modelSettings.answeredBy'), value: answer }, ...gateFact(view)]
+  if (!view.connection) return [{ key: 'answeredBy', label: t('modelSettings.answeredBy'), value: answer }, ...trustFact(view)]
   const budget = view.budget
   const egress = view.egress
   const window = budget ? t('modelSettings.windowBudgetValue', { hours: count(budget.windowHours), tokens: count(budget.maxTokensPerWindow) })
@@ -98,7 +99,7 @@ function facts(view: ModelRoleView): Fact[] {
       input: count(budget.maxInputTokens), output: count(budget.maxOutputTokens), seconds: count(budget.timeoutMs / 1000) }) : t('modelSettings.none') },
     { key: 'windowBudget', label: t('modelSettings.windowBudget'), value: window },
     { key: 'fallback', label: t('modelSettings.fallback'), value: view.fallbackToSession ? t('modelSettings.allowed') : t('modelSettings.notAllowed') },
-    ...gateFact(view),
+    ...trustFact(view),
   ]
 }
 
@@ -107,12 +108,16 @@ function localBuildFact(view: ModelRoleView): Fact[] {
   return build ? [{ key: 'localBuild', label: t('modelSettings.localBuild.label'), value: build.text, code: build.code, title: build.title }] : []
 }
 
-function gateFact(view: ModelRoleView): Fact[] {
-  const gate = view.reviewGate
-  if (!gate) return []
-  const builds = gate.entries.length ? gateBuilds(gate) : null
-  return [{ key: 'gate', label: t('modelSettings.gate'), title: builds?.title ?? t('modelSettings.gateNoBuildProof'),
-    value: [t(`modelSettings.gates.${gate.status}`), builds?.text].filter(Boolean).join(' · ') }]
+// A role its own model does not answer only suggests; one it answers shows its trust section instead.
+const showsTrust = (view: ModelRoleView) => Boolean(view.trust) && view.answeredBy === 'model_api'
+
+function trustFact(view: ModelRoleView): Fact[] {
+  if (!view.trust || showsTrust(view)) return []
+  return [{ key: 'execution', label: t('modelSettings.trust.label'), value: trustStatusText(view.trust, null) }]
+}
+
+function trustSaved(next: ModelRolesPayload) {
+  payload.value = next
 }
 
 const stateTone = (state: ModelRoleView['state']) =>
@@ -165,6 +170,8 @@ onBeforeUnmount(() => {
                   <dd :title="fact.title"><code v-if="fact.code">{{ fact.value }}</code><template v-else>{{ fact.value }}</template></dd>
                 </div>
               </dl>
+              <ModelRoleTrust v-if="view.trust && showsTrust(view)" :role="view.role" :trust="view.trust"
+                :model="view.connection?.model ?? null" @saved="trustSaved" @changed="load" />
               <footer class="mt-auto flex border-t pt-3">
                 <Button variant="outline" size="sm" :disabled="payload.state === 'invalid'" data-model-role-edit
                   :aria-label="`${t('modelSettings.edit')} ${roleName(view.role)}`" @click="edit(view.role)">

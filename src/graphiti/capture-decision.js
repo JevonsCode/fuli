@@ -84,6 +84,25 @@ export function taskCaptureScope(task) {
     boundSessionId: task.sessionId ?? null };
 }
 
+// A write FULI's own Agent makes by itself, for no client and no session: a
+// knowledge review Tonborg applies automatically (rec#10 D-36.11). Only the
+// global switch and, for a project, the project layer can apply; the check is
+// synchronous so it runs inside the caller's commit. Settings that cannot be
+// read or understood allow nothing.
+export function automaticWriteDecision(application, personalProjectId = null) {
+  let policy;
+  try {
+    policy = application.getCapturePolicy();
+  } catch {
+    return denied('policy_unavailable', 'policy');
+  }
+  const settings = understoodSettings(policy);
+  if (!settings) return denied('policy_unavailable', 'policy');
+  if (!policy.enabled) return denied('global_off', 'global');
+  const reason = personalProjectId ? projectCaptureReason(settings, registeredProject(personalProjectId)) : null;
+  return reason ? denied(reason, 'project') : { allowed: true, reason: null, layer: null };
+}
+
 // The result a skipped write returns. It names the decision only, never the
 // content that was not recorded.
 export function captureDisabled(decision) {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 
-import { isKnowledgeRecoveryPending } from '@/api/client'
+import { apiErrorCode, isKnowledgeRecoveryPending } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import { useWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
@@ -23,6 +24,7 @@ const filter = ref<'all' | 'human'>('human')
 const reviewing = ref(false)
 const feedbackSavingId = ref<string | null>(null)
 const undoingId = ref<string | null>(null)
+const undoRefusals = ref<Record<string, string>>({})
 const feedbackReasons = ref<Record<string, string>>({})
 const feedbackReasonDirty = ref<Set<string>>(new Set())
 let scopeGeneration = 0
@@ -56,6 +58,7 @@ watch(() => props.personalSpaceId, (scope) => {
   reviewing.value = false
   feedbackSavingId.value = null
   undoingId.value = null
+  undoRefusals.value = {}
   void load(scope)
 }, { immediate: true })
 
@@ -193,20 +196,27 @@ async function persistFeedback(record: JudgmentDecisionRecord, nextVote: Judgmen
   }
 }
 
-// The person's one-click undo of a review Tonborg applied (rec#10 D-24).
+// The person's one-click undo of a review Tonborg applied (rec#10 D-24). An
+// undo the server refuses because the item changed or was deleted since is
+// said on that card as it is (D-36.12); nothing was undone.
+const UNDO_REFUSALS = ['ai_review_changed', 'ai_review_deleted', 'judgment_not_undoable'] as const
 async function undo(record: JudgmentDecisionRecord) {
   if (undoingId.value) return
   const scope = props.personalSpaceId
   const current = scopeGeneration
   undoingId.value = record.id
   error.value = ''
+  undoRefusals.value = { ...undoRefusals.value, [record.id]: '' }
   try {
     const updated = await undoJudgmentReview(scope, record.id)
     if (!isCurrentScope(scope, current)) return
     const index = records.value.findIndex(candidate => candidate.id === updated.id)
     if (index >= 0) records.value.splice(index, 1, updated)
   } catch (cause) {
-    if (isCurrentScope(scope, current) && !recoveryFailure(cause)) error.value = cause instanceof Error ? cause.message : judgmentText('workbench.reviewError')
+    if (!isCurrentScope(scope, current) || recoveryFailure(cause)) return
+    const refusal = UNDO_REFUSALS.find(code => code === apiErrorCode(cause))
+    if (refusal) undoRefusals.value = { ...undoRefusals.value, [record.id]: judgmentText(`workbench.undoRefused.${refusal}`) }
+    else error.value = cause instanceof Error ? cause.message : judgmentText('workbench.reviewError')
   } finally {
     if (isCurrentScope(scope, current)) undoingId.value = null
   }
@@ -230,16 +240,20 @@ function outcomeLabel(value: JudgmentDecisionRecord['outcome']) {
   return judgmentText(`workbench.outcome.${value}`)
 }
 
-// A review verdict a model may not apply is a suggestion; an applied one names the unlocked model.
+// A review verdict a model may not apply is a suggestion; an applied one names the model that executed it (rec#10 D-36.6).
 function verdictLabel(record: JudgmentDecisionRecord) {
   if (record.aiReview?.state === 'ai_suggested') return judgmentText('workbench.aiSuggested')
   if (record.aiReview?.state === 'ai_reviewed' && record.execution.status === 'applied') {
-    return t('judgment.workbench.aiReviewed', { model: record.aiReview.gate.modelId ?? '' })
+    return t('judgment.workbench.aiReviewed', { model: record.aiReview.gate.modelId ?? record.model ?? '' })
   }
   return outcomeLabel(record.outcome)
 }
 
-const undoable = (record: JudgmentDecisionRecord) => record.kind === 'review' && record.execution.status === 'applied'
+// Undo is offered only where it can work: an applied review of knowledge that was not permanently deleted.
+const undoable = (record: JudgmentDecisionRecord) => record.kind === 'review' && record.execution.status === 'applied' && !record.hard_deleted
+// rec#10 D-36.11: a trusted model's approval held back because the person had not read the warning yet.
+const awaitsTrustWarning = (record: JudgmentDecisionRecord) => record.aiReview?.state === 'ai_suggested'
+  && record.aiReview.gate?.reason === 'warning_not_seen'
 
 function executionLabel(value: JudgmentDecisionRecord['execution']['status']) {
   return judgmentText(`workbench.executionStatus.${value}`)
@@ -338,6 +352,10 @@ function hasDetails(record: JudgmentDecisionRecord) {
           <span class="judgment-outcome" :class="`is-${record.outcome}`">{{ verdictLabel(record) }}</span>
         </header>
         <p class="judgment-record-summary">{{ record.summary }}</p>
+        <p v-if="awaitsTrustWarning(record)" class="judgment-trust-warning" data-trust-warning>
+          {{ t('modelSettings.trust.warning') }} {{ judgmentText('workbench.trustWarningPending') }}
+          <RouterLink to="/settings/models">{{ judgmentText('workbench.trustWarningOpen') }}</RouterLink>
+        </p>
         <dl class="judgment-record-meta">
           <div v-if="record.aiReview"><dt>{{ judgmentText('workbench.modelConclusion') }}</dt><dd>{{ outcomeLabel(record.aiReview.modelOutcome) }}</dd></div>
           <div><dt>{{ judgmentText('workbench.execution') }}</dt><dd>{{ executionLabel(record.execution.status) }}</dd></div>
@@ -386,6 +404,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
             <Button variant="outline" size="icon-sm" data-feedback="down" :aria-label="judgmentText('workbench.feedbackDown')" :aria-pressed="record.feedback.vote === 'down'" :title="judgmentText('workbench.feedbackDown')" :disabled="feedbackSavingId === record.id" @click="feedback(record, 'down')"><span aria-hidden="true">👎</span></Button>
             <GrowthLoading v-if="feedbackSavingId === record.id" data-feedback-saving variant="inline" :label="judgmentText('workbench.feedbackSaving')" />
           </div>
+          <p v-if="undoRefusals[record.id]" class="judgment-undo-refused" role="status" data-undo-refused>{{ undoRefusals[record.id] }}</p>
         </section>
       </article>
     </div>
@@ -405,6 +424,8 @@ function hasDetails(record: JudgmentDecisionRecord) {
 .judgment-outcome.is-escalate, .judgment-outcome.is-failed { color: var(--color-danger); background: var(--color-danger-soft); }
 .judgment-outcome.is-approve { color: var(--color-success); background: var(--color-success-soft); }
 .judgment-record-summary { margin: 0; color: var(--color-ink); font-size: 13px; line-height: 1.65; }
+.judgment-trust-warning, .judgment-undo-refused { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
+.judgment-trust-warning a { color: var(--color-ink); text-decoration: underline; text-underline-offset: 2px; }
 .judgment-record-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
 .judgment-record-meta div { display: grid; gap: 3px; min-width: 0; }
 .judgment-record-meta dt { color: var(--color-muted); font-size: 11px; }

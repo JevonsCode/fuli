@@ -13,6 +13,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('POST /api/peer/devices/:nodeId/revoke', 'Revoking a paired device is a local owner decision.'),
   local('POST /api/peer/disable', 'Leaving the LAN roundtable is a local owner decision.'),
   local('PUT /api/model-backends/roles/:role', 'A built-in Agent\'s model, key reference, data egress and budget are saved only through the local console route (loopback); Agents read them with get_model_usage and have no tool to change them.'),
+  local('PUT /api/model-backends/roles/:role/trust', 'Whether a built-in Agent\'s own model carries out its operations by itself (「只给建议」) and the acknowledgement of its warning are the person\'s choice on this computer (rec#10 D-36); an Agent cannot change or acknowledge them.'),
   local('PUT /api/judgment/policy', 'Autonomy grants delegated authority and requires the local user.'),
   local('POST /api/judgment/feedback', 'Votes and reasons are human feedback, never model-generated approval.'),
   local('POST /api/judgment/undo', 'Undoing Tonborg\'s automatic knowledge review is the person\'s decision on the human-review channel (rec#10 D-24); an Agent can only suggest it.'),

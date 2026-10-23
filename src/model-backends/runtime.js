@@ -1,5 +1,6 @@
 import { readModelBackendConfig } from './config.js';
 import { createModelBackendPort } from './port.js';
+import { createRoleTrust } from './role-trust.js';
 import { createRoleWorkBridge } from './role-work.js';
 import { RoleWorkStore } from './role-work-store.js';
 import { createModelSecretStore } from './secret-store.js';
@@ -14,6 +15,12 @@ export function openModelBackendRuntime(paths) {
     secrets: createModelSecretStore({ path: paths.modelSecretStorePath }),
     ledger: new ModelUsageLedger(paths.modelUsageLedgerPath)
   });
+}
+
+// Whether each role's configured model may carry out its operations by
+// itself (rec#10 D-36), read over that port.
+export function openRoleTrust(paths, port) {
+  return createRoleTrust({ path: paths.modelTrustPath, modelBackends: port });
 }
 
 // The session bridge over that port. resumers maps a role to the operation

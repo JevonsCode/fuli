@@ -13,6 +13,7 @@ import { createStandaloneStore } from '../packages/roundtable/src/standalone/sto
 import { AgentAppStore } from '../src/agent-apps/store.js';
 import { EmployeeManagementStore } from '../src/employees/management-policy.js';
 import { JudgmentStore } from '../src/judgment/store.js';
+import { createRoleTrust } from '../src/model-backends/role-trust.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
@@ -29,6 +30,9 @@ const SQLITE_STORES = {
     const store = new EmployeeManagementStore(path); store.read('space', 'template'); return () => store.close();
   },
   judgment: (path) => { const store = new JudgmentStore(path); return () => store.close(); },
+  'model-trust': (path) => {
+    const store = createRoleTrust({ path, modelBackends: {} }); store.setSuggestionsOnly('tonborg', false, 0); return () => store.close();
+  },
   'model-usage': (path) => { const store = new ModelUsageLedger(path); void store.db; return () => store.close(); },
   'peer-coordinator': (path) => { const store = createCoordinatorStore(path); return () => store.close(); },
   'peer-node': (path) => { const store = createNodeStore(path); return () => store.close(); },
