@@ -98,9 +98,15 @@ context generation provably holds that exact version:
 - or a message in an earlier frame that the host recorded completely in a
   model-facing record of this session (Claude's UserPromptSubmit hook
   attachment or a FULI tool result; Codex's command-hook developer message or
-  a FULI tool result), matched by the whole recovery block, task token and
-  pending hash. Pasted text, quotes, nested JSON, Hook stdout, a preview of an
-  oversized context and model claims never count.
+  a FULI tool result), matched by the whole recovery block and task token as
+  the model saw them (a tool result's visible text, never its structured copy)
+  and the pending hash. Pasted text, quotes, nested JSON, Hook stdout, a preview
+  of an oversized context and model claims never count.
+
+A cache record this FULI cannot trust (a newer version, corrupt or oversized)
+may have held a reset's boundary, so it is never read as a fresh session: the
+generation then starts at the transcript's current end, or, without a
+readable transcript, is unknown and nothing is left out or saved.
 
 The cache records, per delivered frame, its conversation, hash and explicit
 `[sequence, content hash]` pairs, never a maximum sequence. A truncated prefix
@@ -108,7 +114,9 @@ is never recorded. At most eight frames of 32 pairs are kept; losing one only
 causes a resend. A message that left the window, or one cut to a prefix by a
 smaller budget, is not withdrawn. Only a confirmed version that the Provider
 now returns with different content at the same sequence is named in
-`recovery.withdrawn`, and that frame is resent until it is confirmed. The
+`recovery.withdrawn`, and that frame is resent until it is confirmed; a
+confirmed withdrawal takes that version out of what the session holds, so a
+version that comes back is delivered again. The
 Provider currently has no delete marker for conversation events and never
 replaces one in place, so this path is defensive.
 
@@ -120,8 +128,14 @@ unrecorded delivery is resent.
 A session with no bound conversation gets `conversation.recent_conversation`:
 the ID, `updated_at` and a one-line title (at most 96 bytes as serialized JSON)
 of the latest conversation in the same space, project and Agent, read with the
-same client permission and only while recording is on. It binds nothing and
-reads no messages; continuing is still an explicit `resume_agent_conversation`.
+same client permission and only while recording is on. The whole serialized
+`recent_conversation` field is at most 320 bytes (179 in the synthetic test with
+a full title); one that would be larger is left out, never cut. It binds nothing
+and reads no messages; continuing is still an explicit `resume_agent_conversation`.
+
+Known limit: the result of `resume_agent_conversation` is not tracked as a
+frame, so the next entry of the resuming session sends the resumed messages
+once more before they count as seen.
 
 Metadata is private, locked across processes and contains hashes/cursors only.
 It has a bounded pending set; unsupported, oversized or changed native files,

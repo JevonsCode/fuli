@@ -57,14 +57,19 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           const proof = verified ? await observe(snapshot.sourceApplication, snapshot.sessionId, origin, ownRecordOffsets(value))
             : { known: false };
           const nativeGeneration = origin.nativeGeneration ? contentHash(origin.nativeGeneration) : null;
-          if (nativeGeneration && state.nativeGeneration && nativeGeneration !== state.nativeGeneration) {
-            state = { pending: [], recent: [], floor: proof.known ? proof.size : 0 };
+          // A record this FULI cannot trust (newer, corrupt, oversized) may have
+          // held a reset's boundary; so may a new native window. Either way the
+          // generation starts at the current end, or is unknown (floor null):
+          // nothing before it counts and an unknown start is never saved.
+          if (state.untrusted || (nativeGeneration && state.nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
+            state = { pending: [], recent: [], floor: proof.known ? proof.size : null };
           }
-          if (proof.known) state = generationState(state, proof);
-          const baseline = proof.known ? acknowledgedSnapshot(value, snapshot, state, proof) : null;
+          if (proof.known && state.floor !== null) state = generationState(state, proof);
+          const baseline = proof.known && state.floor !== null ? acknowledgedSnapshot(value, snapshot, state, proof) : null;
           const preferences = origin.forceFull ? value : projectPreferenceDelta(value, baseline);
           const recent = projectRecentContext(preferences, origin.forceFull ? undefined
-            : recentEvidence(proof, state.recent, { sessionId: snapshot.sessionId, adapter: proof.adapter, floor: state.floor ?? 0 }));
+            : recentEvidence(proof, state.recent, { sessionId: snapshot.sessionId, adapter: proof.adapter,
+              floor: state.floor === null ? null : state.floor ?? 0 }));
           const projected = recent.value;
           result = output(projected);
           const next = { ...state };
@@ -79,7 +84,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           }
           const frame = deliveredRecentFrame(recent.frame, projected, result);
           if (frame) next.recent = [...state.recent.filter(item => item.frameHash !== frame.frameHash), frame].slice(-MAX_RECENT_FRAMES);
-          if (next.pending !== state.pending || next.recent !== state.recent) {
+          if (state.floor !== null && (next.pending !== state.pending || next.recent !== state.recent)) {
             await save({ ...next, ...(nativeGeneration ? { nativeGeneration } : {}),
               ...(proof.known ? { fileId: proof.fileId, generation: proof.generation } : {}) });
           }
@@ -137,21 +142,29 @@ function acknowledgedSnapshot(value, current, state, proof) {
   return baseline;
 }
 
-const EMPTY = Object.freeze({ pending: Object.freeze([]), recent: Object.freeze([]) });
+// A session with no record yet starts fresh at the file's beginning. Any other
+// record this FULI cannot read as its own is untrusted, not fresh: it may hold
+// the boundary of a reset that is not visible in the native file.
+const FRESH = Object.freeze({ pending: Object.freeze([]), recent: Object.freeze([]) });
+const UNTRUSTED = Object.freeze({ ...FRESH, untrusted: true });
 
 async function readState(path) {
   let file;
   try {
     file = await openWithoutFollowing(path, constants.O_RDONLY);
+  } catch (error) {
+    return error?.code === 'ENOENT' ? FRESH : UNTRUSTED;
+  }
+  try {
     const stat = await file.stat();
-    if (!stat.isFile() || stat.size > 64 * 1024) return EMPTY;
+    if (!stat.isFile() || stat.size > 64 * 1024) return UNTRUSTED;
     const value = JSON.parse(await file.readFile('utf8'));
     if (!PREFERENCE_SESSION_FORMAT.versions.includes(value.version) || !Array.isArray(value.pending)
-        || value.pending.length > MAX_PENDING
+        || value.pending.length > MAX_PENDING || !(value.floor === undefined || Number.isSafeInteger(value.floor))
         || value.pending.some(item => ![item.scopeHash, item.snapshotHash, item.frameHash]
-          .every(hash => /^[a-f0-9]{64}$/.test(hash)))) return EMPTY;
+          .every(hash => /^[a-f0-9]{64}$/.test(hash)))) return UNTRUSTED;
     const recent = value.recent ?? [];
-    return validRecentFrames(recent) ? { ...value, recent } : EMPTY;
-  } catch { return EMPTY; }
-  finally { await file?.close(); }
+    return validRecentFrames(recent) ? { ...value, recent } : UNTRUSTED;
+  } catch { return UNTRUSTED; }
+  finally { await file.close(); }
 }

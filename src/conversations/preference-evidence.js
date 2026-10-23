@@ -38,8 +38,8 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
         // A host-recorded Hook context is model-facing like a tool result; each
         // line is parsed on its own, so only a complete JSON frame counts.
         if (event.type === 'context') {
-          for (const value of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
-            frames.push({ callId: event.id, value, offset, end, recordHash: contentHash(line) });
+          for (const { value, visible } of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
+            frames.push({ callId: event.id, value, visible, offset, end, recordHash: contentHash(line) });
           }
           continue;
         }
@@ -48,8 +48,8 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
         calls.delete(event.id);
         const codeMode = CODE_MODE.has(name);
         if (!codeMode && !DIRECT_TOOLS.test(name ?? '')) continue;
-        for (const value of preferenceFrames(event.output, codeMode)) {
-          frames.push({ callId: event.id, value, offset, end, recordHash: contentHash(line) });
+        for (const { value, visible } of preferenceFrames(event.output, codeMode)) {
+          frames.push({ callId: event.id, value, visible, offset, end, recordHash: contentHash(line) });
         }
       }
       offset = end;
@@ -80,14 +80,20 @@ function preferenceFrames(output, codeMode = false, depth = 0) {
       || output.preference_delivery?.status === 'paginated') return [];
   const structured = output.structuredContent ?? output.structured_content;
   if (structured) {
-    const visible = preferenceFrames(output.content, false, depth + 1);
-    return visible.some(value => preferenceFrameHash(value) === preferenceFrameHash(structured)) ? [structured] : [];
+    // The preference baseline is the structured copy whose preference view
+    // the model also saw; anything else (recent context) must be proven from
+    // what was actually visible, kept here as `visible`.
+    const seen = preferenceFrames(output.content, false, depth + 1)
+      .find(frame => preferenceFrameHash(frame.value) === preferenceFrameHash(structured));
+    return seen ? [{ value: structured, visible: seen.visible }] : [];
   }
   if (typeof output.hookSpecificOutput?.additionalContext === 'string') {
     const lines = output.hookSpecificOutput.additionalContext.split('\n');
     return lines.flatMap(line => preferenceFrames(line, false, depth + 1));
   }
   if (typeof output.taskContextToken === 'string' && (Array.isArray(output.effective_preferences)
-      || (output.preference_delivery?.status === 'delta' && Array.isArray(output.preference_updates)))) return [output];
+      || (output.preference_delivery?.status === 'delta' && Array.isArray(output.preference_updates)))) {
+    return [{ value: output, visible: output }];
+  }
   return output.content ? preferenceFrames(output.content, false, depth + 1) : [];
 }

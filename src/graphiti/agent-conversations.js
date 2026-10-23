@@ -5,7 +5,9 @@ import { captureDecision, captureDisabled, taskCaptureScope } from './capture-de
 import { singleLine } from '../text/single-line.js';
 import { utf8Preview } from '../text/utf8-preview.js';
 
+// rec#10 D-27.6: the title, and the whole serialized `recent_conversation` field.
 const POINTER_TITLE_BYTES = 96;
+const POINTER_BYTES = 320;
 
 export function conversationScope(application, input) {
   return { personal_space_id: application.config.personal.spaceId,
@@ -64,7 +66,9 @@ async function recentConversation(application, scope) {
   const latest = conversations?.[0];
   if (!latest?.id) return null;
   const title = utf8Preview(singleLine(latest.summary), POINTER_TITLE_BYTES, text => Buffer.byteLength(JSON.stringify(text)));
-  return { id: latest.id, updated_at: latest.last_activity ?? null, ...(title ? { title } : {}) };
+  const pointer = { id: latest.id, updated_at: latest.last_activity ?? null, ...(title ? { title } : {}) };
+  // The whole entry field has its own bound; an outsized ID or time gives no pointer, never a cut one.
+  return Buffer.byteLength(JSON.stringify({ recent_conversation: pointer })) <= POINTER_BYTES ? pointer : null;
 }
 
 export async function checkpointConversation(application, task, workLog, team = null) {

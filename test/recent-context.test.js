@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFile, copyFile, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { appendFile, copyFile, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createSessionPreferenceDelivery, PREFERENCE_SESSION_FORMAT } from '../src/conversations/preference-session.js';
@@ -51,6 +51,24 @@ function host(directory, client, sessionId) {
         attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit' }, rendered: [{ content: text }] }),
     compact: () => write(codex ? { type: 'compacted', payload: { window_id: 'next' } }
       : { type: 'system', subtype: 'compact_boundary', sessionId }),
+    // A FULI tool result whose structured copy and visible text may differ.
+    toolResult: async (id, structured, visible) => {
+      const output = JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(visible) }], structuredContent: structured });
+      await write(codex ? { type: 'response_item', payload: { type: 'function_call', name: 'mcp__fuli__begin_task_context', call_id: id } }
+        : { type: 'assistant', sessionId, message: { content: [{ type: 'tool_use', id, name: 'mcp__fuli__begin_task_context' }] } });
+      await write(codex ? { type: 'response_item', payload: { type: 'function_call_output', call_id: id, output } }
+        : { type: 'user', sessionId, message: { content: [{ type: 'tool_result', tool_use_id: id, content: output }] } });
+    },
+    // Rewrites the same file in place (same identity) with only its header
+    // and, optionally, one message at the next offset.
+    rewriteInPlace: async (text = null) => {
+      size = 0;
+      await writeFile(path, '');
+      await write(codex ? { type: 'session_meta', payload: { id: sessionId } } : { type: 'system', subtype: 'init', sessionId });
+      if (text !== null) await write(codex
+        ? { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } }
+        : { type: 'user', sessionId, message: { role: 'user', content: text } });
+    },
     replace: async () => {
       // The same bytes under a new file identity.
       const copy = `${path}.copy`;
@@ -337,6 +355,87 @@ test('the cache is a bounded v2 record of hashes; v1 is read, a newer version is
   assert.equal(await readFile(join(cache, name), 'utf8'), newer);
 }));
 
+// dot 6362281995 P1-1: a tool result's structured copy is not what the model
+// saw. Same token and preferences, but a visible recovery that is missing,
+// clipped or different never confirms; the identical visible copy does.
+test('only the visible recovery block confirms a tool result, never its structured copy', () => fixture(async f => {
+  for (const [client, sessionId] of [['codex', C], ['claude_code', H]]) {
+    const target = await f.open(client, sessionId);
+    const other = journal();
+    other.add('user', 'other one', 'cursor', 'elsewhere', 'jsonl-v1:0:0:0');
+    other.add('user', 'other two', 'cursor', 'elsewhere', 'jsonl-v1:9:0:0');
+    const mismatches = {
+      missing: visible => { delete visible.conversation.recovery; },
+      clipped: visible => { visible.conversation.recovery.messages = visible.conversation.recovery.messages.slice(0, 1); },
+      different: visible => { visible.conversation.recovery.messages[1].content = 'other changed'; }
+    };
+    for (const [name, mutate] of Object.entries(mismatches)) {
+      const sent = await f.enter(target, other.recovery(client, sessionId), { record: false });
+      assert.deepEqual(sent.contents, ['other one', 'other two'], `${client} before ${name}`);
+      const structured = JSON.parse(sent.text.split('\n').at(-1));
+      const visible = structuredClone(structured);
+      mutate(visible);
+      assert.equal(visible.taskContextToken, structured.taskContextToken);
+      assert.deepEqual(visible.effective_preferences, structured.effective_preferences);
+      await target.toolResult(`call-${name}`, structured, visible);
+    }
+    const last = await f.enter(target, other.recovery(client, sessionId), { record: false });
+    assert.deepEqual(last.contents, ['other one', 'other two'], `${client}: no mismatch confirmed anything`);
+    const structured = JSON.parse(last.text.split('\n').at(-1));
+    await target.toolResult('call-identical', structured, structured);
+    assert.deepEqual((await f.enter(target, other.recovery(client, sessionId))).contents, [], `${client}: identical visible copy confirms`);
+  }
+}));
+
+// dot 6362281995 P1-2: a record this FULI cannot trust may have held a reset's
+// boundary, so the session's own message from before that reset is delivered.
+test('a newer or corrupt cache after a reset never lets an older own message be left out', () => fixture(async f => {
+  for (const unreadable of [JSON.stringify({ version: 3, pending: [], recent: [], floor: 0 }), '{"version":2,', 'x'.repeat(70 * 1024)]) {
+    const sessionId = randomUUID();
+    const target = await f.open('codex', sessionId);
+    const own = journal();
+    own.add('user', 'before reset', 'codex', sessionId, await target.say('user', 'before reset'));
+    assert.deepEqual((await f.enter(target, own.recovery('codex', sessionId))).contents, []);
+    await f.delivery.reset({ sourceApplication: 'codex', nativeSessionId: sessionId, transcriptPath: target.path });
+    assert.deepEqual((await f.enter(target, own.recovery('codex', sessionId), { record: false })).contents, ['before reset']);
+    const cache = join(f.directory, 'cache');
+    for (const name of (await readdir(cache)).filter(file => file.endsWith('.json'))) await writeFile(join(cache, name), unreadable);
+    assert.deepEqual((await f.enter(target, own.recovery('codex', sessionId), { record: false })).contents, ['before reset'],
+      `untrusted ${unreadable.slice(0, 16)} keeps the boundary`);
+    for (const name of (await readdir(cache)).filter(file => file.endsWith('.json'))) await rm(join(cache, name));
+  }
+}));
+
+test('a version that comes back (A→B→A) is delivered again and the replacing one withdrawn', () => fixture(async f => {
+  const c = await f.open('codex', C);
+  const other = journal();
+  other.add('user', 'A', 'cursor', 'elsewhere', 'jsonl-v1:0:0:0');
+  assert.deepEqual((await f.enter(c, other.recovery('codex', C))).contents, ['A']);
+  const toB = await f.enter(c, other.recovery('codex', C, { override: { 1: 'B' } }));
+  assert.deepEqual([toB.contents, toB.view.withdrawn.sequences], [['B'], [1]]);
+  const backToA = await f.enter(c, other.recovery('codex', C));
+  assert.deepEqual([backToA.contents, backToA.view.withdrawn?.sequences], [['A'], [1]]);
+  const settled = await f.enter(c, other.recovery('codex', C));
+  assert.deepEqual([settled.contents, settled.view.withdrawn], [[], undefined]);
+}));
+
+test('the same file shortened in place, or with an offset reused for another record, proves nothing it lost', () => fixture(async f => {
+  const c = await f.open('codex', C);
+  const h = await f.open('claude_code', H);
+  f.journal.add('user', 'own', 'codex', C, await c.say('user', 'own'));
+  f.journal.add('user', 'other', 'claude_code', H, await h.say('user', 'other'));
+  await f.enter(c, f.journal.recovery('codex', C));
+  assert.deepEqual((await f.enter(c, f.journal.recovery('codex', C))).contents, []);
+  const identity = (await stat(c.path)).ino;
+  await c.rewriteInPlace('different');
+  if (identity) assert.equal((await stat(c.path)).ino, identity, 'same file identity');
+  assert.deepEqual((await f.enter(c, f.journal.recovery('codex', C), { record: false })).contents, ['own', 'other'],
+    'the own offset now names another record');
+  await c.rewriteInPlace();
+  assert.deepEqual((await f.enter(c, f.journal.recovery('codex', C), { record: false })).contents, ['own', 'other'],
+    'shortened below the own record and every frame');
+}));
+
 test('the new-session pointer stays in scope, binds and reads nothing, and its title is bounded in sent bytes', async () => {
   const queries = [];
   let conversations = [{ id: 'latest', last_activity: '2026-10-23T00:00:00Z',
@@ -354,12 +453,19 @@ test('the new-session pointer stays in scope, binds and reads nothing, and its t
   assert.equal(pointer.title, `${'中'.repeat(30)}…`);
   assert.ok(bytes(JSON.stringify(pointer.title)) <= 96 && bytes(JSON.stringify(`${'中'.repeat(31)}…`)) > 96);
   assert.doesNotMatch(pointer.title, /\n/);
-  console.log(JSON.stringify({ recent_conversation_pointer_bytes: bytes(JSON.stringify({ recent_conversation: pointer })) }));
+  // Measured whole field, under its own bound (320 B), separate from the title's 96 B.
+  const whole = bytes(JSON.stringify({ recent_conversation: pointer }));
+  assert.ok(whole <= 320);
+  console.log(JSON.stringify({ recent_conversation_pointer_bytes: whole, bound: 320 }));
   const list = queries.find(query => query.mode === 'list');
   assert.deepEqual([list.personal_space_id, list.personal_project_id, list.agent_id, list.source_application, list.limit],
     ['space', 'project', 'lead', 'claude_code', 1]);
   assert.equal(queries.some(query => query.mode === 'context' || query.operation === 'resume'), false);
   assert.deepEqual(queries.filter(query => query.operation === 'append').map(query => query.events), [[]]);
+
+  // An ID or time that would push the field past its bound gives no pointer, not a cut one.
+  conversations = [{ id: 'x'.repeat(200), last_activity: '2026-10-23T00:00:00Z', summary: '中'.repeat(200) }];
+  assert.equal((await beginConversation(app, task)).recent_conversation, undefined);
 
   // Nothing in this scope: no pointer, and no other scope is asked.
   conversations = [];

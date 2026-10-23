@@ -49,11 +49,14 @@ function nativeMessageProof(proof, { sessionId, adapter, floor }) {
 }
 
 // What this context generation provably holds: pending frames the host
-// recorded completely in a model-facing record (readPreferenceEvidence keeps
-// only those, and drops them at a reset), and the session's own messages.
+// recorded in a model-facing record (readPreferenceEvidence keeps only those,
+// and drops them at a reset), hashed over the token and the whole recovery
+// block exactly as the model saw them, never over a structured copy; and the
+// session's own messages. Without a proven generation start (`floor` null)
+// neither counts.
 export function recentEvidence(proof, pending, { sessionId, adapter, floor }) {
-  if (!proof.known) return NO_EVIDENCE;
-  const recorded = new Set(proof.frames.filter(frame => frame.offset >= floor).map(frame => recentFrameHash(frame.value)));
+  if (!proof.known || floor === null) return NO_EVIDENCE;
+  const recorded = new Set(proof.frames.filter(frame => frame.offset >= floor).map(frame => recentFrameHash(frame.visible)));
   return { frames: pending.filter(item => recorded.has(item.frameHash)),
     native: nativeMessageProof(proof, { sessionId, adapter, floor }) };
 }
@@ -64,23 +67,26 @@ export function recentEvidence(proof, pending, { sessionId, adapter, floor }) {
 export function projectRecentContext(value, { frames, native } = NO_EVIDENCE) {
   const recovery = value?.conversation?.recovery;
   if (!Array.isArray(recovery?.messages) || typeof recovery.conversation_id !== 'string') return { value, frame: null };
-  const seen = new Map(), withdrawals = new Set();
-  const add = (sequence, hash) => seen.set(sequence, (seen.get(sequence) ?? new Set()).add(hash));
+  // The versions each sequence currently holds in this context, replayed in
+  // delivery order: a confirmed withdrawal takes its version out again, so a
+  // version that comes back (A→B→A) is delivered and the one it replaces withdrawn.
+  const seen = new Map();
+  const versions = sequence => seen.get(sequence) ?? seen.set(sequence, new Set()).get(sequence);
   for (const frame of frames.filter(item => item.conversationId === recovery.conversation_id)) {
-    for (const [sequence, hash] of frame.messages) add(sequence, hash);
-    for (const [sequence, hash] of frame.withdrawn) withdrawals.add(`${sequence}:${hash}`);
+    for (const [sequence, hash] of frame.withdrawn) versions(sequence).delete(hash);
+    for (const [sequence, hash] of frame.messages) versions(sequence).add(hash);
   }
-  for (const message of recovery.messages) if (native(message)) add(message.sequence, message.content_sha256);
+  for (const message of recovery.messages) if (native(message)) versions(message.sequence).add(message.content_sha256);
   const messages = [], sent = [], withdrawn = [];
   for (const message of recovery.messages) {
     const hash = HASH.test(message.content_sha256 ?? '') ? message.content_sha256 : null;
-    const versions = seen.get(message.sequence) ?? new Set();
-    if (hash && versions.has(hash)) continue;
+    const held = seen.get(message.sequence) ?? new Set();
+    if (hash && held.has(hash)) continue;
     messages.push(withoutProofs(message));
     if (!hash) continue;
     // A prefix never confirms the whole message.
     if (message.truncated !== true) sent.push([message.sequence, hash]);
-    for (const old of versions) if (!withdrawals.has(`${message.sequence}:${old}`)) withdrawn.push([message.sequence, old]);
+    for (const old of held) withdrawn.push([message.sequence, old]);
   }
   const omitted = recovery.messages.length - messages.length;
   const seenAll = omitted && !messages.length && !withdrawn.length;
