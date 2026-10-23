@@ -203,6 +203,7 @@ async def personal_edge_scopes(
                coalesce(edge.fuli_preference_scope, 'global')
                  AS preference_scope,
                edge.fuli_preference_project_id AS preference_project_id,
+               edge.fuli_preference_project_ids AS preference_project_ids,
                edge.fuli_preference_agent_id AS preference_agent_id,
                assignment.project_id AS assignment_project_id,
                [episode IN episodes
@@ -395,6 +396,7 @@ async def _personal_entities(
                     ELSE coalesce(node.fuli_preference_scope, 'global') END
                     AS preference_scope,
                node.fuli_preference_project_id AS preference_project_id,
+               node.fuli_preference_project_ids AS preference_project_ids,
                node.fuli_preference_agent_id AS preference_agent_id,
                coalesce(node.fuli_key, node.uuid) AS key,
                assignment.project_id AS assignment_project_id,
@@ -519,12 +521,11 @@ def _item_scope_metadata(
                 return None
             return _global_scope_metadata()
         project_id = record.get('preference_project_id')
-        if project_id not in request.personal_project_ids:
-            return None
         if preference_scope == 'agent':
             agent_id = record.get('preference_agent_id')
             if (
-                not request.project_agent_id
+                project_id not in request.personal_project_ids
+                or not request.project_agent_id
                 or agent_id != request.project_agent_id
                 or project_id != request.active_personal_project_id
             ):
@@ -534,7 +535,12 @@ def _item_scope_metadata(
                 project_scopes[project_id],
                 agent_id,
             )
-        return _project_scope_metadata(project_id, project_scopes[project_id])
+        project_ids = record.get('preference_project_ids') or [project_id]
+        candidates = [pid for pid in project_ids if pid in request.personal_project_ids and pid in project_scopes]
+        if not candidates:
+            return None
+        selected = min(candidates, key=lambda pid: (pid != request.active_personal_project_id, pid))
+        return _project_scope_metadata(selected, project_scopes[selected])
 
     assignment_project_id = record.get('assignment_project_id')
     episode_project_ids = list(record.get('episode_project_ids') or [])
@@ -752,6 +758,7 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
     )
     for field in (
         'attributes_json',
+        'preference_project_ids',
         'assignment_project_id',
         'episode_project_ids',
         'episode_project_agent_ids',
