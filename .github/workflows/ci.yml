@@ -79,7 +79,7 @@ jobs:
 
   # rec#7 D-28.10: the Windows Hello helper builds here on every change, and its
   # digest is pinned the way a release pins it. It is never started in CI.
-  # Provenance attestation waits for the owner to allow id-token write (D-28.16).
+  # Provenance attestation waits for the owner to allow OIDC tokens for Actions (D-28.16).
   win-helper:
     runs-on: windows-latest
     steps:

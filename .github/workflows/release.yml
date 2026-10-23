@@ -19,6 +19,9 @@ jobs:
   win-helper:
     if: github.repository == 'JevonsCode/fuli'
     runs-on: windows-latest
+    # Read-only: only the publish job keeps the workflow's OIDC grant (npm); the helper build gets none.
+    permissions:
+      contents: read
     outputs:
       sha256: ${{ steps.helper.outputs.sha256 }}
     steps:

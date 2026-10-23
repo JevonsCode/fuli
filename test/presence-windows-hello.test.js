@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -62,6 +63,17 @@ test('the Windows adapter maps Hello results and refuses abnormal output and tim
   assert.deepEqual(await ask(windowsHello(t, { spawnHelper: stuck.spawnHelper, timeoutMs: 20 })),
     { verified: false, reason: 'presence_unavailable', detail: 'helper_timeout' });
   assert.equal(stuck.runs[0].child.killed, true, 'the helper this adapter started is stopped');
+});
+
+// D-28.16: no helper build gets an OIDC token until the owner allows provenance.
+test('the release builds the helper without id-token and without a provenance step', () => {
+  const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const helperJob = release.slice(release.indexOf('\n  win-helper:'), release.indexOf('\n  publish:'));
+  assert.match(helperJob, /\n {4}permissions:\n {6}contents: read\n {4}\S/);
+  assert.doesNotMatch(helperJob, /id-token/);
+  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  for (const workflow of [release, ci]) assert.doesNotMatch(workflow, /attest-build-provenance|attestations:/);
+  assert.doesNotMatch(ci, /id-token/);
 });
 
 test('macOS and Linux have no presence check and are refused, never given a substitute', async () => {
