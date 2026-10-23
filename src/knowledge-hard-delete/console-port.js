@@ -84,7 +84,8 @@ export function knowledgeHardDelete(dataDir, {
   // A terminal answer of the graph about this operation.
   const conclude = async (operation, answer) => {
     if (answer.state === 'committed') return cleanUp(graphDeleted(operation, answer.deletion), answer.deletion);
-    if (answer.state === 'refused' && answer.code === 'hard_deleted') {
+    if (answer.state === 'refused' && (answer.code === 'hard_deleted'
+        || answer.code === 'source_hard_deleted' && ['episode', 'session'].includes(operation.itemKind))) {
       // Another delete removed the item first: clean up after that one.
       const status = await request(item('/hard-delete/status', { itemId: operation.itemId }),
         { personal_space_id: operation.spaceId, item_kind: operation.itemKind });
@@ -134,6 +135,16 @@ export function knowledgeHardDelete(dataDir, {
         Date.parse(deletion.deleted_at) > Date.parse(latest) ? deletion.deleted_at : latest, deletions[0].deleted_at) : null });
     return adopted;
   };
+  const refreshAfterDeletion = async result => {
+    if (result.outcome === 'complete') {
+      // A live deletion changes the graph watermark too. Verify the full list
+      // before reopening; never infer a new count from one deletion receipt.
+      const completed = ledger.all().filter(operation => operation.deletionId === result.deletion_id)
+        .map(operation => operation.id);
+      try { await adoptGraphDeletions(new Set(completed)); } catch { /* recovery remains closed until verification succeeds */ }
+    }
+    return result;
+  };
   return {
     preview,
     // { outcome: complete | local_pending | unknown, ...the deletion, local_stores }.
@@ -150,10 +161,10 @@ export function knowledgeHardDelete(dataDir, {
         answer = await send(item('/hard-delete', input), { ...ref(input), preview_id: input.previewId,
           confirmation: input.confirmation, operation_id: operation.id }, { review: true, timeoutMs: deleteTimeoutMs });
       } catch {
-        return settle(operation);
+        return refreshAfterDeletion(await settle(operation));
       }
-      if (answer.ok) return cleanUp(graphDeleted(operation, answer.payload), answer.payload);
-      if (answer.status === 410 || answer.status >= 500) return settle(operation);
+      if (answer.ok) return refreshAfterDeletion(cleanUp(graphDeleted(operation, answer.payload), answer.payload));
+      if (answer.status === 410 || answer.status >= 500) return refreshAfterDeletion(await settle(operation));
       notDeleted(operation, answer.payload?.detail?.code ?? null);
       throw providerRefusal(answer.status, answer.payload);
     },
@@ -161,7 +172,7 @@ export function knowledgeHardDelete(dataDir, {
     // a page that does not know, and an old link's page.
     async status(input) {
       const operation = ledger.find(input.personalSpaceId, input.itemId);
-      if (operation && ['pending', 'graph_deleted'].includes(operation.state)) return resume(operation);
+      if (operation && ['pending', 'graph_deleted'].includes(operation.state)) return refreshAfterDeletion(await resume(operation));
       const status = await request(item('/hard-delete/status', input), ref(input));
       if (status.state !== 'deleted') {
         return { outcome: status.state === 'present' ? 'not_deleted' : 'missing', item_kind: input.itemKind, item_id: input.itemId };
@@ -169,7 +180,7 @@ export function knowledgeHardDelete(dataDir, {
       // Deleted from another console, or already complete here: clean up again.
       const known = operation ?? ledger.begin({ spaceId: input.personalSpaceId, itemKind: input.itemKind,
         itemId: input.itemId, previewId: null, itemIds: status.deletion.deleted_item_ids, ...sourceIdentity(status.deletion) });
-      return cleanUp(graphDeleted(known, status.deletion), status.deletion);
+      return refreshAfterDeletion(cleanUp(graphDeleted(known, status.deletion), status.deletion));
     },
     // Console start: every operation left open by a lost answer or a crash,
     // and every graph deletion this record lost.

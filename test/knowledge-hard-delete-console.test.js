@@ -366,7 +366,7 @@ for (const itemKind of ['episode', 'session']) test(`${itemKind} routes preserve
   assert.deepEqual([operation.sourceApplication, operation.sessionId], ['codex', 'native-session']);
   assert.deepEqual(new Set(operation.itemIds), new Set(deletion.deleted_item_ids));
   assert.equal((await route(`${base}/status`, { personalSpaceId: SPACE }, { hardDelete: port })).body.outcome, 'complete');
-  assert.deepEqual(calls.at(-1).request, { personal_space_id: SPACE, item_kind: itemKind });
+  assert.deepEqual(calls.findLast(call => call.path.endsWith('/status')).request, { personal_space_id: SPACE, item_kind: itemKind });
   assert.equal((await route(base, { ...input, previewId: PREVIEW_ID, confirmation: '删除', operationId: 'forged' }, { hardDelete: port })).status, 400);
   assert.equal((await route(`${base}/preview`, input, { hardDelete: port, remoteAddress: '192.0.2.1' })).status, 403);
 
@@ -382,4 +382,26 @@ test('a failed deletion-list read cannot create a recovery watermark', async t =
   const port = knowledgeHardDelete(dataDir, { personalSpaceId: () => SPACE, send: async () => { throw new Error('synthetic offline'); } });
   await assert.rejects(port.reconcile(), /synthetic offline/);
   assert.equal(readHardDeleteProof(dataDir), null);
+});
+
+test('a source deleted by another console settles its 410 through the recorded status and cleans local copies', async t => {
+  const dataDir = dataDirectory(t);
+  let cleaned = 0, statuses = 0;
+  const deletion = { deletion_id: 'foreign-delete', item_kind: 'episode', item_id: 'source',
+    deleted_at: '2026-10-23T00:00:00Z', deleted_item_ids: ['source'], counts: {} };
+  const port = knowledgeHardDelete(dataDir, { localStores: [{ name: 'fixture', forget: () => ++cleaned }],
+    send: async path => {
+      if (path.endsWith('/preview')) return { ok: true, status: 200, payload: {
+        preview_id: PREVIEW_ID, item_kind: 'episode', item_id: 'source', default_items: [], affected_items: [], removed_episodes: [] } };
+      if (path.includes('/hard-delete-operations/')) return { ok: true, status: 200,
+        payload: { state: 'refused', code: 'source_hard_deleted' } };
+      if (path.endsWith('/status')) { statuses++; return { ok: true, status: 200, payload: { state: 'deleted', deletion } }; }
+      return { ok: false, status: 410, payload: { detail: { code: 'source_hard_deleted' } } };
+    } });
+  const result = await port.confirm({ personalSpaceId: SPACE, itemKind: 'episode', itemId: 'source',
+    previewId: PREVIEW_ID, confirmation: '删除' });
+  assert.equal(result.outcome, 'complete');
+  assert.equal(statuses, 1);
+  assert.equal(cleaned, 1);
+  assert.equal(hardDeleteLedger(dataDir).all()[0].state, 'complete');
 });

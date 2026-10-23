@@ -6,6 +6,7 @@ import test from 'node:test';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { knowledgeHardDelete } from '../src/knowledge-hard-delete/console-port.js';
 import { hardDeleteLedger } from '../src/knowledge-hard-delete/delete-ledger.js';
+import { createKnowledgeRecoveryGate } from '../src/knowledge-hard-delete/recovery-gate.js';
 import { syntheticGraph, PREVIEW_ID } from '../test-support/hard-delete-graph.js';
 
 test('reconciliation erases a restored old body store even when its deletion ledger is already complete', async () => {
@@ -35,4 +36,23 @@ test('reconciliation erases a restored old body store even when its deletion led
     assert.equal(readFileSync(path).includes(Buffer.from(secret)), false);
     assert.equal(hardDeleteLedger(directory).all().length, 1);
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a successful live delete verifies its new watermark without requiring restart or a CLI repair', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-live-delete-proof-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const graph = syntheticGraph();
+  const port = knowledgeHardDelete(directory, { send: graph.send, personalSpaceId: () => 'personal-space' });
+  const gate = createKnowledgeRecoveryGate({ dataDir: directory, readWatermark: async () => ({
+    count: Number(graph.deleted), latest_deleted_at: graph.deleted ? graph.record().deleted_at : null
+  }) });
+  await port.reconcile();
+  assert.equal((await gate.refresh('personal-space')).state, 'open');
+  const input = { personalSpaceId: 'personal-space', itemKind: 'entity', itemId: 'item-2' };
+  assert.equal((await port.confirm({ ...input, previewId: PREVIEW_ID, confirmation: '删除' })).outcome, 'complete');
+  assert.equal((await gate.refresh('personal-space')).state, 'open');
+  assert.equal((await port.status(input)).outcome, 'complete');
+  assert.equal((await gate.refresh('personal-space')).state, 'open');
+  const store = new JudgmentStore(join(directory, 'judgment.sqlite'), { recoveryGate: gate });
+  try { assert.deepEqual(store.records('personal-space'), []); } finally { store.close(); }
 });
