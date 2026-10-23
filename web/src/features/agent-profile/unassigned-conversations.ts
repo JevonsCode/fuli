@@ -74,8 +74,10 @@ function firstLine(value: string | null | undefined): string {
   return value.split(/\r?\n/)[0]?.trim() ?? ''
 }
 
-export async function readUnassignedConversations(personalSpaceId: string): Promise<UnassignedConversationItem[]> {
-  if (!personalSpaceId) return []
+// items: the conversations still to label. resolvedIds: those the same read
+// shows a person or a formed topic already labeled, so a link to one can say so.
+export async function readUnassignedConversations(personalSpaceId: string): Promise<{ items: UnassignedConversationItem[]; resolvedIds: string[] }> {
+  if (!personalSpaceId) return { items: [], resolvedIds: [] }
   try {
     const response = await postJson<{ conversations?: RawConversationRecord[] }>('/api/agent-conversations/query', {
       personalSpaceId,
@@ -104,9 +106,10 @@ export async function readUnassignedConversations(personalSpaceId: string): Prom
       })
       .filter((item) => Boolean(item.conversationId))
     const shortIds = shortUniqueIds(items.map(item => item.conversationId))
-    return items.map(item => ({ ...item, shortId: shortIds.get(item.conversationId) ?? item.conversationId }))
+    return { items: items.map(item => ({ ...item, shortId: shortIds.get(item.conversationId) ?? item.conversationId })),
+      resolvedIds: rows.filter(isResolvedConversation).map(row => String(row.conversationId ?? row.conversation_id ?? row.id ?? '')).filter(Boolean) }
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return []
+    if (error instanceof ApiError && error.status === 404) return { items: [], resolvedIds: [] }
     throw error
   }
 }

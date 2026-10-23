@@ -16,6 +16,7 @@ import { handleKnowledgeHardDeleteRequest } from '../src/http/knowledge-hard-del
 import { JudgmentStore } from '../src/judgment/store.js';
 import { knowledgeHardDelete } from '../src/knowledge-hard-delete/console-port.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { PREVIEW_ID, syntheticGraph } from '../test-support/hard-delete-graph.js';
 import { reachableModules } from '../test-support/module-graph.js';
 
@@ -194,13 +195,28 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
       { candidate_key: 'entity:other', item_id: 'other', title: 'Synthetic staging target' }] }] },
   reason: 'no_model', at, ttlMs: 60_000 });
   work.close();
+  // A suggestion record as Jefa writes it today: identities, an evidence version and model text, no knowledge item ID.
+  const suggestions = new RoleSuggestionLog(join(dataDir, 'role-suggestions.sqlite'), { now: () => at });
+  suggestions.record({ role: 'jefa', operation: 'board_match', personalSpaceId: SPACE, personalProjectId: 'garden',
+    subject: { conversationId: 'conversation-synthetic-1' }, result: { status: 'suggested', hint: '可能是看板上的「Seed inventory」任务',
+      suggestion: { taskId: 'task-seeds', title: 'Seed inventory', updatedAt: null, reason: `Quoted ${PASTED}`, uncertainty: null },
+      confirmWith: 'call_employee_tool', suggestedBy: { mode: 'model_api', independent: true, model: 'qwen-test' },
+      requestId: 'board_match:r1', evidenceVersion: 'e'.repeat(64), promptVersion: 'board_match:p1',
+      gate: { status: 'suggestion_only', role: 'jefa', operation: 'board_match' } } });
+  suggestions.close();
 
   const port = knowledgeHardDelete(dataDir, { send: syntheticGraph({ itemIds: ['item-2', 'item-1'] }).send });
   const done = await port.confirm({ personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: PREVIEW_ID,
     confirmation: '删除' });
   assert.deepEqual(done.local_stores.map(({ store, status }) => [store, status]),
-    [['judgment.sqlite', 'forgotten'], ['role-work.sqlite', 'forgotten']]);
+    [['judgment.sqlite', 'forgotten'], ['role-work.sqlite', 'forgotten'], ['role-suggestions.sqlite', 'forgotten']]);
   assert.ok(done.local_stores.every((store) => store.changed > 0));
+  // Its rows name no knowledge item, so every record of the space written up to the delete lost its words (D-30.9).
+  const suggestionsAgain = new RoleSuggestionLog(join(dataDir, 'role-suggestions.sqlite'), { now: () => at });
+  const [record] = suggestionsAgain.list({ limit: 300 });
+  assert.deepEqual([record.status, record.hint, record.suggestion, record.hard_deleted, record.subject],
+    ['suggested', undefined, { taskId: 'task-seeds', updatedAt: null }, true, { conversationId: 'conversation-synthetic-1' }]);
+  suggestionsAgain.close();
 
   const reopened = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   const forgotten = reopened.get(SPACE, review.id);
@@ -214,7 +230,7 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
   assert.deepEqual([gone.title, gone.hard_deleted, stays.title], [null, true, 'Synthetic staging target']);
   reread.close();
   // Not in the file (its free pages included), not in a write-ahead log or journal.
-  for (const file of ['judgment.sqlite', 'role-work.sqlite'].flatMap((name) => [name, `${name}-wal`, `${name}-journal`])) {
+  for (const file of ['judgment.sqlite', 'role-work.sqlite', 'role-suggestions.sqlite'].flatMap((name) => [name, `${name}-wal`, `${name}-journal`])) {
     const path = join(dataDir, file);
     if (existsSync(path)) assert.equal(readFileSync(path).includes(Buffer.from(PASTED)), false, file);
   }
@@ -228,6 +244,68 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
     previewId: PREVIEW_ID, confirmation: '删除' });
   assert.equal(reported.outcome, 'local_pending');
   assert.deepEqual(reported.local_stores, [{ store: 'judgment.sqlite', status: 'failed', reason: 'synthetic newer format' }]);
+});
+
+test('checking an old delete again never clears a suggestion record written after it', async (t) => {
+  const dataDir = dataDirectory(t);
+  const path = join(dataDir, 'role-suggestions.sqlite');
+  const suggestion = (n) => ({ role: 'jefa', operation: 'board_match', personalSpaceId: SPACE, personalProjectId: 'garden',
+    subject: { conversationId: `conversation-${n}` }, result: { status: 'suggested', hint: `hint ${n}`,
+      suggestion: { taskId: `task-${n}`, title: `Task ${n}`, reason: `Reason ${n}`, uncertainty: null },
+      gate: { status: 'suggestion_only', role: 'jefa', operation: 'board_match' } } });
+  const write = (when, n) => {
+    const log = new RoleSuggestionLog(path, { now: () => new Date(when) });
+    try { log.record(suggestion(n)); } finally { log.close(); }
+  };
+  // T0, before the delete (the synthetic graph deletes at 2026-10-22T01:02:03Z).
+  write('2026-10-22T00:00:00.000Z', 0);
+  const port = knowledgeHardDelete(dataDir, { send: syntheticGraph({ itemIds: ['item-2'] }).send });
+  // T1: the delete completes and clears the earlier record.
+  const done = await port.confirm({ personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: PREVIEW_ID,
+    confirmation: '删除' });
+  assert.equal(done.outcome, 'complete');
+  // T2: a legitimate new suggestion after the delete.
+  write('2026-10-22T02:00:00.000Z', 1);
+  // T3: an old link's status check of the same delete runs its cleanup again, bound to the same time.
+  const again = await port.status({ personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2' });
+  assert.equal(again.outcome, 'complete');
+  assert.equal(again.local_stores.find((store) => store.store === 'role-suggestions.sqlite').changed, 0);
+  const log = new RoleSuggestionLog(path, { now: () => new Date('2026-10-22T03:00:00.000Z') });
+  try {
+    const [after, before] = log.list();
+    assert.deepEqual([after.suggestion.reason, after.hard_deleted], ['Reason 1', undefined]);
+    assert.deepEqual([before.suggestion.reason, before.hard_deleted], [undefined, true]);
+  } finally { log.close(); }
+});
+
+test('every cleanup run of one delete, first, retried, recovered or re-checked, uses the delete\'s recorded time', async (t) => {
+  const dataDir = dataDirectory(t);
+  const cutoffs = [];
+  let failNext = true;
+  const localStores = [{ name: 'role-suggestions.sqlite', forget: (space, references, { deletedAt }) => {
+    cutoffs.push(deletedAt);
+    if (failNext) { failNext = false; throw new Error('synthetic busy store'); }
+    return 0;
+  } }];
+  const graph = syntheticGraph({ itemIds: ['item-2'], deletedAt: '2026-10-22T01:02:03Z' });
+  const port = knowledgeHardDelete(dataDir, { send: graph.send, localStores, now: () => new Date('2026-10-23T05:00:00Z') });
+  const input = { personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2' };
+  // The first cleanup fails, so the delete stays open for a retry and for recovery.
+  assert.equal((await port.confirm({ ...input, previewId: PREVIEW_ID, confirmation: '删除' })).outcome, 'local_pending');
+  failNext = true;
+  assert.equal((await port.reconcile())[0].outcome, 'local_pending');
+  assert.equal((await port.status(input)).outcome, 'complete');
+  assert.equal((await port.status(input)).outcome, 'complete');
+  assert.deepEqual(cutoffs, Array(4).fill('2026-10-22T01:02:03Z'));
+});
+
+test('a data directory without suggestion records is not given one by a permanent delete', async (t) => {
+  const dataDir = dataDirectory(t);
+  const done = await knowledgeHardDelete(dataDir, { send: syntheticGraph({ itemIds: ['item-2'] }).send })
+    .confirm({ personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: PREVIEW_ID, confirmation: '删除' });
+  assert.deepEqual(done.local_stores.find((store) => store.store === 'role-suggestions.sqlite'),
+    { store: 'role-suggestions.sqlite', status: 'forgotten', changed: 0 });
+  assert.equal(existsSync(join(dataDir, 'role-suggestions.sqlite')), false);
 });
 
 test('a receipt read in several batches counts each permanent delete once', async () => {

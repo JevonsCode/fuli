@@ -37,6 +37,7 @@ export function resolveSetupPaths({
     modelSecretStorePath: join(resolvedDataDir, 'model-secrets.json'),
     modelUsageLedgerPath: join(resolvedDataDir, 'model-usage.sqlite'),
     roleWorkPath: join(resolvedDataDir, 'role-work.sqlite'),
+    roleSuggestionsPath: join(resolvedDataDir, 'role-suggestions.sqlite'),
     nativeRuntimeDir,
     nativeRuntimeManifestPath: join(nativeRuntimeDir, 'manifest.json'),
     nativeProcessStatePath: join(nativeRuntimeDir, 'processes.json'),

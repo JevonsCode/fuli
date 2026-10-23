@@ -3,6 +3,7 @@ import { createModelBackendPort } from './port.js';
 import { createRoleWorkBridge } from './role-work.js';
 import { RoleWorkStore } from './role-work-store.js';
 import { createModelSecretStore } from './secret-store.js';
+import { RoleSuggestionLog } from './suggestion-log.js';
 import { ModelUsageLedger } from './usage-ledger.js';
 
 // Composition of the model port for one FULI data directory. The config is
@@ -20,4 +21,9 @@ export function openModelBackendRuntime(paths) {
 export function openRoleWorkRuntime(paths, { port, verifySession, resumers, recoveryGate }) {
   return createRoleWorkBridge({ port, store: new RoleWorkStore(paths.roleWorkPath, { recoveryGate }), verifySession, resumers,
     prepareStore: spaceId => recoveryGate?.refresh(spaceId) });
+}
+
+// What the built-in Agents showed after asking their own model, for the console.
+export function openRoleSuggestionLog(paths) {
+  return new RoleSuggestionLog(paths.roleSuggestionsPath);
 }

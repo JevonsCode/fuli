@@ -14,6 +14,7 @@ import { AgentAppStore } from '../src/agent-apps/store.js';
 import { EmployeeManagementStore } from '../src/employees/management-policy.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { TaskScheduleStore } from '../src/task-schedules/store.js';
 
@@ -32,6 +33,7 @@ const SQLITE_STORES = {
   'peer-coordinator': (path) => { const store = createCoordinatorStore(path); return () => store.close(); },
   'peer-node': (path) => { const store = createNodeStore(path); return () => store.close(); },
   'role-work': (path) => { const store = new RoleWorkStore(path); void store.db; return () => store.close(); },
+  'role-suggestions': (path) => { const store = new RoleSuggestionLog(path); void store.db; return () => store.close(); },
   roundtable: (path) => { const store = createRoundtableStore(path); return () => store.close(); },
   standalone: (path) => { const store = createStandaloneStore(path); return () => store.close(); },
   'task-schedules': (path) => { const store = new TaskScheduleStore(path); return () => store.close(); }

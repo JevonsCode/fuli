@@ -8,7 +8,7 @@ import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js'
 import { createFuliRoundtableHost } from './roundtable-host.js';
 import { attachJudgmentRuntime } from '../judgment/runtime.js';
 import { createTaskScheduleService } from '../task-schedules/service.js';
-import { openModelBackendRuntime } from '../model-backends/runtime.js';
+import { openModelBackendRuntime, openRoleSuggestionLog } from '../model-backends/runtime.js';
 import { TaskScheduleStore } from '../task-schedules/store.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
@@ -150,6 +150,7 @@ export function openFederatedGraphApplication({
       toolNames: () => listAgentTools().map(({ name }) => name) });
     app.modelBackends = openModelBackendRuntime(paths);
     attachJudgmentRuntime(app, paths);
+    app.roleSuggestions = openRoleSuggestionLog(paths);
     app.taskSchedules = createTaskScheduleService({ app,
       openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
     app.roundtableHost = createFuliRoundtableHost(app);
@@ -1164,7 +1165,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roleWork?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); this.agentApps?.close(); return this.employees?.close(); }
+  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roleWork?.close(); this.roleSuggestions?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); this.agentApps?.close(); return this.employees?.close(); }
 
   // View records rank knowledge by what a session looked at: a behavior trace
   // that stops with automatic recording. Reading itself needs none (rec#11 D-01).
