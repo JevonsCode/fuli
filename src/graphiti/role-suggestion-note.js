@@ -9,6 +9,13 @@ import { captureDecision } from './capture-decision.js';
 // the session never depends on it.
 // scope(): the capture scope, read here so a failure to read it keeps nothing.
 // Returns keep(entry), to call with the final result.
+// The space's permanent-delete generation for a console copy, read before
+// the role reads its evidence (rec#10 D-30.9): a delete that begins or ends
+// after it keeps the copy's words out. null without a log.
+export function suggestionDeletionGeneration(application, personalSpaceId) {
+  return application.roleSuggestions?.deletionGeneration(personalSpaceId) ?? null;
+}
+
 export async function prepareRoleSuggestionNote(application, scope) {
   if (!application.roleSuggestions) return () => {};
   let allowed;

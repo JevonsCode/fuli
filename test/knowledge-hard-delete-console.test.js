@@ -243,6 +243,59 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
   assert.deepEqual(reported.local_stores, [{ store: 'judgment.sqlite', status: 'failed', reason: 'synthetic newer format' }]);
 });
 
+test('checking an old delete again never clears a suggestion record written after it', async (t) => {
+  const dataDir = dataDirectory(t);
+  const path = join(dataDir, 'role-suggestions.sqlite');
+  const suggestion = (n) => ({ role: 'jefa', operation: 'board_match', personalSpaceId: SPACE, personalProjectId: 'garden',
+    subject: { conversationId: `conversation-${n}` }, result: { status: 'suggested', hint: `hint ${n}`,
+      suggestion: { taskId: `task-${n}`, title: `Task ${n}`, reason: `Reason ${n}`, uncertainty: null },
+      gate: { status: 'suggestion_only', role: 'jefa', operation: 'board_match' } } });
+  const write = (when, n) => {
+    const log = new RoleSuggestionLog(path, { now: () => new Date(when) });
+    try { log.record(suggestion(n)); } finally { log.close(); }
+  };
+  // T0, before the delete (the synthetic graph deletes at 2026-10-22T01:02:03Z).
+  write('2026-10-22T00:00:00.000Z', 0);
+  const port = knowledgeHardDelete(dataDir, { send: syntheticGraph({ itemIds: ['item-2'] }).send });
+  // T1: the delete completes and clears the earlier record.
+  const done = await port.confirm({ personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: PREVIEW_ID,
+    confirmation: '删除' });
+  assert.equal(done.outcome, 'complete');
+  // T2: a legitimate new suggestion after the delete.
+  write('2026-10-22T02:00:00.000Z', 1);
+  // T3: an old link's status check of the same delete runs its cleanup again, bound to the same time.
+  const again = await port.status({ personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2' });
+  assert.equal(again.outcome, 'complete');
+  assert.equal(again.local_stores.find((store) => store.store === 'role-suggestions.sqlite').changed, 0);
+  const log = new RoleSuggestionLog(path, { now: () => new Date('2026-10-22T03:00:00.000Z') });
+  try {
+    const [after, before] = log.list();
+    assert.deepEqual([after.suggestion.reason, after.hard_deleted], ['Reason 1', undefined]);
+    assert.deepEqual([before.suggestion.reason, before.hard_deleted], [undefined, true]);
+  } finally { log.close(); }
+});
+
+test('every cleanup run of one delete, first, retried, recovered or re-checked, uses the delete\'s recorded time', async (t) => {
+  const dataDir = dataDirectory(t);
+  const cutoffs = [];
+  let failNext = true;
+  const localStores = [{ name: 'role-suggestions.sqlite', forget: (space, references, { deletedAt }) => {
+    cutoffs.push(deletedAt);
+    if (failNext) { failNext = false; throw new Error('synthetic busy store'); }
+    return 0;
+  } }];
+  const graph = syntheticGraph({ itemIds: ['item-2'], deletedAt: '2026-10-22T01:02:03Z' });
+  const port = knowledgeHardDelete(dataDir, { send: graph.send, localStores, now: () => new Date('2026-10-23T05:00:00Z') });
+  const input = { personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2' };
+  // The first cleanup fails, so the delete stays open for a retry and for recovery.
+  assert.equal((await port.confirm({ ...input, previewId: PREVIEW_ID, confirmation: '删除' })).outcome, 'local_pending');
+  failNext = true;
+  assert.equal((await port.reconcile())[0].outcome, 'local_pending');
+  assert.equal((await port.status(input)).outcome, 'complete');
+  assert.equal((await port.status(input)).outcome, 'complete');
+  assert.deepEqual(cutoffs, Array(4).fill('2026-10-22T01:02:03Z'));
+});
+
 test('a data directory without suggestion records is not given one by a permanent delete', async (t) => {
   const dataDir = dataDirectory(t);
   const done = await knowledgeHardDelete(dataDir, { send: syntheticGraph({ itemIds: ['item-2'] }).send })

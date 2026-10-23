@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
@@ -10,6 +12,7 @@ import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { createRoleWorkBridge } from '../src/model-backends/role-work.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { hardDeleteLedger } from '../src/knowledge-hard-delete/delete-ledger.js';
 import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { reachableModules } from '../test-support/module-graph.js';
@@ -560,6 +563,22 @@ test('the console copy follows the recording switch, decided after the model ans
       run.assertNoWrites();
     }
   }
+});
+
+test('a permanent delete that completes while the model runs leaves the hint as is and keeps no words in the copy', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-jefa-suggestions-'));
+  const run = harness({ roles: { jefa: jefaRole() }, replies: [delayed(async () => {
+    const ledger = hardDeleteLedger(directory);
+    const operation = ledger.begin({ spaceId: SPACE, itemKind: 'entity', itemId: 'item-1', previewId: 'preview-1', itemIds: ['item-1'] });
+    ledger.update(operation.id, { state: 'complete', deletedAt: new Date().toISOString() });
+  })] });
+  run.app.roleSuggestions = new RoleSuggestionLog(join(directory, 'role-suggestions.sqlite'));
+  t.after(() => { run.app.roleSuggestions.close(); rmSync(directory, { recursive: true, force: true }); });
+  const match = jefaOf(await run.entry()).suggested_match;
+  assert.equal(match.status, 'suggested');
+  const [kept] = run.app.roleSuggestions.list();
+  assert.deepEqual([kept.status, kept.hint, kept.suggestion, kept.hard_deleted], ['suggested', undefined, { taskId: 'task-reminder', updatedAt: '2026-10-20T08:00:00.000Z' }, true]);
+  run.assertNoWrites();
 });
 
 test('approval withdrawn during the console copy\'s own capture read: superseded, and no words kept', async () => {

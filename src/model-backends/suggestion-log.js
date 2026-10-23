@@ -25,10 +25,14 @@ import { forgetDurably } from '../knowledge-hard-delete/forget-references.js';
 //
 // A person's permanent delete of knowledge (rec#5 C9, D-30.9): a row names no
 // knowledge item, so which model reason quoted the deleted item cannot be
-// told. Every row of the space written up to the delete therefore loses its
-// words (hint, model reason, uncertainty, project and task names) and keeps
-// its id, time, role, status and target IDs, marked hard_deleted. A row
-// written while a delete in its space is still open is stored without words.
+// told. Every row of the space written up to the delete's own fixed time (the
+// graph's deleted_at) therefore loses its words (hint, model reason,
+// uncertainty, project and task names) and keeps its id, time, role, status
+// and target IDs, marked hard_deleted; a retry or a later status check uses
+// the same time, so it never reaches a row written after the delete. A row is
+// stored without words when a delete in its space was open at the write, or
+// began after the role read its evidence (its deletion generation): the model
+// may have answered from knowledge that is gone since.
 
 export const RETENTION = Object.freeze({ days: 90, rows: 300 });
 const DAY_MS = 86_400_000;
@@ -37,6 +41,8 @@ const LIST_LIMIT = 50;
 // and uncertainty and the names it showed. Host IDs and option keys stay.
 const RESULT_WORDS = Object.freeze(['hint', 'issues']);
 const SUGGESTION_WORDS = Object.freeze(['reason', 'uncertainty', 'name', 'title']);
+// A delete whose outcome or local cleanup is not finished.
+const OPEN = new Set(['pending', 'graph_deleted']);
 
 export const ROLE_SUGGESTIONS_FORMAT = sqliteFormat({
   store: 'role-suggestions',
@@ -59,16 +65,32 @@ export class RoleSuggestionLog {
     return this.database;
   }
 
+  // The permanent deletes of a space that are or may be in effect, by
+  // operation ID: a role reads this before it reads its evidence. null when
+  // the delete record cannot be read, which keeps no words.
+  deletionGeneration(space) {
+    try {
+      return this.#deletions(space).map(operation => operation.id);
+    } catch {
+      return null;
+    }
+  }
+
   // Writes the row, then deletes rows past the retention, in one transaction.
-  // The delete ledger is read inside it, so a delete that opened before the
-  // write keeps its words out.
-  record({ role, operation, personalSpaceId, personalProjectId = null, subject = {}, result }) {
+  // The delete record is read inside it: a delete open now, or one the
+  // generation read before the evidence did not include, keeps the words out.
+  // deletionGeneration: as deletionGeneration() returned before the evidence
+  // was read; a direct write without one stands for now.
+  record({ role, operation, personalSpaceId, personalProjectId = null, subject = {}, result, deletionGeneration }) {
     const at = this.now();
     this.#transaction(() => {
       const shown = { ...result, guidance: undefined };
+      const deletions = this.#deletions(personalSpaceId);
+      const before = deletionGeneration === undefined ? deletions.map(entry => entry.id) : deletionGeneration;
+      const fenced = !before || deletions.some(entry => OPEN.has(entry.state) || !before.includes(entry.id));
       this.db.prepare('INSERT INTO role_suggestions(at, role, operation, space, project, subject, result) VALUES(?, ?, ?, ?, ?, ?, ?)')
         .run(at.toISOString(), role, operation, personalSpaceId, personalProjectId, JSON.stringify(subject),
-          JSON.stringify(this.#deleting(personalSpaceId) ? withoutWords(shown) : shown));
+          JSON.stringify(fenced ? withoutWords(shown) : shown));
       this.db.prepare('DELETE FROM role_suggestions WHERE at < ?').run(retentionStart(at));
       this.db.prepare(`DELETE FROM role_suggestions WHERE id NOT IN
         (SELECT id FROM role_suggestions ORDER BY at DESC, id DESC LIMIT ?)`).run(RETENTION.rows);
@@ -95,13 +117,15 @@ export class RoleSuggestionLog {
   }
 
   // A person hard-deleted knowledge in this space (rec#5 C9, D-30.9): every
-  // row written up to now loses its words. Returns how many rows changed.
-  forgetKnowledgeItems(space, references) {
+  // row written up to the delete's fixed time loses its words. Returns how
+  // many rows changed.
+  // deletedAt: the delete operation's own time, the same on every retry.
+  forgetKnowledgeItems(space, references, { deletedAt }) {
     if (references.empty) return 0;
+    const cutoff = new Date(deletedAt).toISOString();
     return forgetDurably(this.db, () => this.#transaction(() => {
       let changed = 0;
-      const rows = this.db.prepare('SELECT id, result FROM role_suggestions WHERE space = ? AND at <= ?')
-        .all(space, this.now().toISOString());
+      const rows = this.db.prepare('SELECT id, result FROM role_suggestions WHERE space = ? AND at <= ?').all(space, cutoff);
       for (const row of rows) {
         const result = JSON.parse(row.result);
         if (result.hard_deleted) continue;
@@ -112,10 +136,12 @@ export class RoleSuggestionLog {
     }));
   }
 
-  // A permanent delete in this space whose outcome or cleanup is not finished.
-  #deleting(space) {
-    if (this.path === ':memory:') return false;
-    return hardDeleteLedger(dirname(this.path)).open().some(operation => operation.spaceId === space);
+  // The space's permanent deletes that are or may be in effect: pending,
+  // committed or complete, never one proven not to have happened.
+  #deletions(space) {
+    if (this.path === ':memory:') return [];
+    return hardDeleteLedger(dirname(this.path)).all()
+      .filter(operation => operation.spaceId === space && operation.state !== 'not_deleted');
   }
 
   // Nested calls join the open transaction.

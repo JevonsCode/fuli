@@ -49,7 +49,8 @@ function stopGuidance({ status, reason }) {
 
 // card: the score card as getAgentScoreCard returns it. sourceApplication:
 // the client of this MCP process, whose recording switch applies to the log.
-export async function reviewAgentScoreCard(application, card, { sourceApplication = 'other' } = {}) {
+// deletionGeneration: read before the card was (role-suggestion-note.js).
+export async function reviewAgentScoreCard(application, card, { sourceApplication = 'other', deletionGeneration = null } = {}) {
   const [personalProjectId, ...otherProjects] = card.personalProjectIds ?? [];
   if (!personalProjectId || otherProjects.length) return withReview(card, notRun('single_project_only'));
   const scored = new Set(Object.entries(card.dimensions).filter(([, value]) => value.status === 'scored').map(([name]) => name));
@@ -67,7 +68,7 @@ export async function reviewAgentScoreCard(application, card, { sourceApplicatio
   const review = modelReview(outcome, scored, { requestId: request.requestId, evidenceVersion: request.versions.evidence,
     promptVersion: PROMPT_VERSION, gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) });
   keep({ role: GATE.role, operation: OPERATION, personalSpaceId: card.personalSpaceId, personalProjectId,
-    subject: { agentId: card.agentId }, result: review });
+    subject: { agentId: card.agentId }, result: review, deletionGeneration });
   return withReview(card, review);
 }
 

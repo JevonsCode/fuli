@@ -1,4 +1,5 @@
 import { reviewAgentScoreCard } from './agent-performance-review.js';
+import { suggestionDeletionGeneration } from './role-suggestion-note.js';
 
 // Bole's zero-token score card. The Provider tallies the outcomes it records;
 // this host adds the Tonborg acceptance verdicts it keeps locally. Nothing is
@@ -15,6 +16,8 @@ const DIMENSION_NAMES = Object.freeze(Object.fromEntries(
   Object.entries(DIMENSIONS).map(([name, providerName]) => [providerName, name])));
 
 export async function getAgentScoreCard(application, input) {
+  // Before the card is read: a permanent delete after this keeps the review's words out of its console copy.
+  const deletionGeneration = input.review ? suggestionDeletionGeneration(application, input.personalSpaceId) : undefined;
   const value = await application.personal.getProjectAgentScoreCard(scoreCardQuery(application, input));
   const card = {
     personalSpaceId: value.personal_space_id,
@@ -35,7 +38,7 @@ export async function getAgentScoreCard(application, input) {
     evidence: { tool: EVIDENCE_TOOL, addArgument: 'dimension', arguments: { personalSpaceId: value.personal_space_id,
       agentId: value.agent_id, ...(input.personalProjectId ? { personalProjectId: input.personalProjectId } : {}) } }
   };
-  return input.review ? reviewAgentScoreCard(application, card, { sourceApplication: input.sourceApplication }) : card;
+  return input.review ? reviewAgentScoreCard(application, card, { sourceApplication: input.sourceApplication, deletionGeneration }) : card;
 }
 
 export async function listAgentScoreEvidence(application, input) {

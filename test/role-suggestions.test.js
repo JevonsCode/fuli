@@ -111,7 +111,8 @@ test('a permanent delete in a space clears the words of every record of that spa
   const before = otherSpace();
   // The rows name no knowledge item, so the delete cannot tell which one quoted it: all of the space lose their words.
   const references = knowledgeReferences({ itemIds: ['item-1'] });
-  assert.equal(log.forgetKnowledgeItems(SPACE, references), 3);
+  const deletedAt = new Date(clock.now).toISOString();
+  assert.equal(log.forgetKnowledgeItems(SPACE, references, { deletedAt }), 3);
   const cleared = Object.fromEntries(log.list().filter(entry => entry.personalSpaceId === SPACE).map(entry => [entry.role, entry]));
   assert.deepEqual(cleared.jefa.suggestion, { taskId: 'task-seeds', updatedAt: null });
   assert.deepEqual(cleared.bole.suggestion, { action: 'coach', evidenceIds: ['completion'] });
@@ -123,7 +124,7 @@ test('a permanent delete in a space clears the words of every record of that spa
   }
   assert.deepEqual(cleared.jefa.subject, { conversationId: 'conversation-1' });
   assert.equal(otherSpace(), before, 'another space is untouched, byte for byte');
-  assert.equal(log.forgetKnowledgeItems(SPACE, references), 0, 'counted once');
+  assert.equal(log.forgetKnowledgeItems(SPACE, references, { deletedAt }), 0, 'counted once');
 
   // A record written later is not one the delete could have reached.
   clock.now += 60_000;
@@ -141,6 +142,49 @@ test('a permanent delete in a space clears the words of every record of that spa
     assert.deepEqual([fenced.hint, fenced.suggestion, fenced.hard_deleted], [undefined, { taskId: 'task-seeds', updatedAt: null }, true]);
     assert.deepEqual([other.personalSpaceId, other.suggestion.reason, other.hard_deleted], ['space-b', 'Same page.', undefined]);
   } finally { during.close(); }
+});
+
+test('a delete that completes while the model runs keeps the late answer\'s words out; a later write keeps its words', (t) => {
+  const clock = { now: Date.parse('2026-10-23T00:00:00.000Z') };
+  const { directory, log } = storeIn(t, clock);
+  const ledger = hardDeleteLedger(directory, { now: () => new Date(clock.now) });
+  // The role reads the generation, then its evidence, then waits for the model.
+  const generation = log.deletionGeneration(SPACE);
+  assert.deepEqual(generation, []);
+  // Meanwhile a delete in the space begins, commits and completes; its cleanup finds no row yet.
+  const operation = ledger.begin({ spaceId: SPACE, itemKind: 'entity', itemId: 'item-1', previewId: 'preview-1', itemIds: ['item-1'] });
+  ledger.update(operation.id, { state: 'complete', deletedAt: new Date(clock.now).toISOString() });
+  assert.equal(log.forgetKnowledgeItems(SPACE, knowledgeReferences({ itemIds: ['item-1'] }), { deletedAt: operation.createdAt }), 0);
+  // The model answers afterwards: the row is kept, without words.
+  clock.now += 60_000;
+  log.record({ ...jefa(jefaSuggested()), deletionGeneration: generation });
+  const [late] = log.list();
+  assert.deepEqual([late.status, late.hint, late.suggestion, late.hard_deleted], ['suggested', undefined, { taskId: 'task-seeds', updatedAt: null }, true]);
+  // A role that read its generation after the delete keeps its words; so does another space.
+  log.record({ ...jefa(jefaSuggested(2), 'conversation-2'), deletionGeneration: log.deletionGeneration(SPACE) });
+  log.record({ ...jefa(jefaSuggested(3), 'conversation-3'), personalSpaceId: 'space-b', deletionGeneration: [] });
+  assert.deepEqual(log.list().slice(0, 2).map(entry => entry.suggestion.reason), ['Same page.', 'Same page.']);
+  // A record that cannot be read keeps no words.
+  log.record({ ...jefa(jefaSuggested(4), 'conversation-4'), deletionGeneration: null });
+  assert.equal(log.list()[0].hard_deleted, true);
+});
+
+test('a delete\'s cleanup is bound to its own time: a retry or a later status check never reaches a newer record', (t) => {
+  const clock = { now: Date.parse('2026-10-23T00:00:00.000Z') };
+  const { log } = storeIn(t, clock);
+  log.record(jefa(jefaSuggested()));
+  // T1: the delete commits and its cleanup runs.
+  clock.now += 60_000;
+  const deletedAt = new Date(clock.now).toISOString();
+  const references = knowledgeReferences({ itemIds: ['item-1'] });
+  assert.equal(log.forgetKnowledgeItems(SPACE, references, { deletedAt }), 1);
+  // T2: a legitimate new suggestion.
+  clock.now += 60_000;
+  log.record(jefa(jefaSuggested(2), 'conversation-2'));
+  // T3: the same delete's cleanup runs again (a retry, a recovery, an old link's status).
+  clock.now += 60_000;
+  assert.equal(log.forgetKnowledgeItems(SPACE, references, { deletedAt }), 0);
+  assert.equal(log.list()[0].suggestion.reason, 'Same page.', 'the newer record keeps its words');
 });
 
 test('the console copy is kept only while recording is on, decided before the result; anything unreadable keeps nothing', async () => {

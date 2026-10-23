@@ -3,7 +3,7 @@ import { projectApproved } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
 import { taskCaptureScope } from './capture-decision.js';
 import { readConversationTriage } from './conversation-triage.js';
-import { prepareRoleSuggestionNote } from './role-suggestion-note.js';
+import { prepareRoleSuggestionNote, suggestionDeletionGeneration } from './role-suggestion-note.js';
 import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
 
 // Astro's project hint for a conversation no deterministic rule attributed
@@ -51,6 +51,8 @@ async function suggestProjectCandidate(application, task, entry, taskPrompt) {
   const settings = application.modelBackends?.operationSettings(ROLE, OPERATION);
   if (!settings) return null;
   const spaceId = application.config.personal.spaceId;
+  // Before the evidence is read: a permanent delete after this keeps the hint's words out of its console copy.
+  const deletionGeneration = suggestionDeletionGeneration(application, spaceId);
   const projects = await nameableProjects(application).catch(() => []);
   const candidates = projects.filter(project => projectApproved(settings.egress, spaceId, project.project_id)).slice(0, MAX_CANDIDATES);
   if (!candidates.length) return null;
@@ -73,7 +75,7 @@ async function suggestProjectCandidate(application, task, entry, taskPrompt) {
     await application.taskContextRegistry.context(task.token, task.sourceApplication)));
   const result = candidateResult(application, request, outcome, receipt, late,
     choice && choice !== NONE ? candidates[optionIds(candidates).indexOf(choice)] : null, projects.length > candidates.length);
-  if (result) keep({ role: ROLE, operation: OPERATION, personalSpaceId: spaceId, subject: { conversationId }, result });
+  if (result) keep({ role: ROLE, operation: OPERATION, personalSpaceId: spaceId, subject: { conversationId }, result, deletionGeneration });
   return result;
 }
 

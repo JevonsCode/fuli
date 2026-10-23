@@ -54,12 +54,15 @@ export function knowledgeHardDelete(dataDir, {
     throw providerRefusal(status, payload);
   };
   const graphDeleted = (operation, deletion) => ledger.update(operation.id, { state: 'graph_deleted',
-    deletionId: deletion.deletion_id, deletedAt: deletion.deleted_at,
+    // A recorded time stays: a later status or recovery never moves the cutoff.
+    deletionId: deletion.deletion_id, deletedAt: operation.deletedAt ?? deletion.deleted_at,
     itemIds: [...new Set([...operation.itemIds, ...deletion.deleted_item_ids])] });
   // Local cleanup from the recorded operation: idempotent, so a retry or the
-  // next console start runs it again until every store forgot.
+  // next console start runs it again until every store forgot. It is bound to
+  // the delete's own time (the graph's deleted_at, kept in the record), so a
+  // later run never reaches what was written after the delete.
   const cleanUp = (operation, deletion) => {
-    const stores = forgetLocally(localStores, operation.spaceId, operation.itemIds);
+    const stores = forgetLocally(localStores, operation.spaceId, operation.itemIds, operation.deletedAt ?? operation.createdAt);
     const complete = stores.every((store) => store.status === 'forgotten');
     if (complete) ledger.update(operation.id, { state: 'complete' });
     return { outcome: complete ? 'complete' : 'local_pending', ...deletion, local_stores: stores };
@@ -164,12 +167,12 @@ export function knowledgeHardDelete(dataDir, {
 }
 
 // Each local store forgets on its own; one that fails is reported, not hidden.
-function forgetLocally(stores, spaceId, itemIds) {
+function forgetLocally(stores, spaceId, itemIds, deletedAt) {
   const references = knowledgeReferences({ itemIds,
     candidateKeys: itemIds.flatMap((id) => [`entity:${id}`, `relationship:${id}`]) });
   return stores.map(({ name, forget }) => {
     try {
-      return { store: name, status: 'forgotten', changed: forget(spaceId, references) };
+      return { store: name, status: 'forgotten', changed: forget(spaceId, references, { deletedAt }) };
     } catch (error) {
       return { store: name, status: 'failed', reason: error instanceof Error ? error.message : String(error) };
     }
@@ -178,11 +181,11 @@ function forgetLocally(stores, spaceId, itemIds) {
 
 // A store that does not exist yet holds nothing; it is not created for this.
 function defaultLocalStores(dataDir) {
-  const sqlite = (name, open) => ({ name, forget(spaceId, references) {
+  const sqlite = (name, open) => ({ name, forget(spaceId, references, options) {
     const path = join(dataDir, name);
     if (!existsSync(path)) return 0;
     const store = open(path);
-    try { return store.forgetKnowledgeItems(spaceId, references); } finally { store.close(); }
+    try { return store.forgetKnowledgeItems(spaceId, references, options); } finally { store.close(); }
   } });
   return [
     sqlite('judgment.sqlite', (path) => new JudgmentStore(path)),
