@@ -26,6 +26,7 @@ import { JUDGMENT_FORMAT } from '../judgment/store.js';
 import { HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT } from '../knowledge-hard-delete/delete-ledger.js';
 import { MODEL_BACKEND_CONFIG_FORMAT } from '../model-backends/config.js';
 import { ROLE_WORK_FORMAT } from '../model-backends/role-work-store.js';
+import { ROLE_SUGGESTIONS_FORMAT } from '../model-backends/suggestion-log.js';
 import { MODEL_USAGE_FORMAT } from '../model-backends/usage-ledger.js';
 import { inspectJsonStore } from '../storage/json-format.js';
 import { APPLY_RECEIPTS_FORMAT } from './apply-receipts.js';
@@ -46,6 +47,8 @@ const sqliteStores = () => [
   ['agent-roundtable.sqlite', ROUNDTABLE_FORMAT],
   ['model-usage.sqlite', MODEL_USAGE_FORMAT],
   ['role-work.sqlite', ROLE_WORK_FORMAT],
+  // What Astro, Bole and Jefa showed after asking their own model; suggestions only.
+  ['role-suggestions.sqlite', ROLE_SUGGESTIONS_FORMAT],
   ['agent-apps/registry.sqlite', AGENT_APP_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
   ['peer/node.sqlite', NODE_FORMAT],

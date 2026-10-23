@@ -24,6 +24,10 @@
       "version": 2,
       "fingerprint": "84e992141a5146a52f2a2f838defca2a4478a987f0b2f4bdb572e0d1f2ee2420"
     },
+    "role-suggestions": {
+      "version": 1,
+      "fingerprint": "62e7a486ae840ecdac3a5e93e64ac41a7bfe8aded1b77a7106caa1b943de357d"
+    },
     "role-work": {
       "version": 1,
       "fingerprint": "49aaea129bdbd051a4046e7bfa38a7652da87ad54a893ce25e1deb0d9688dbe3"

@@ -1,5 +1,6 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { compactReceipt } from '../model-backends/receipt.js';
+import { prepareRoleSuggestionNote } from './role-suggestion-note.js';
 
 // Bole's performance review of one Agent in one project (rec#8, rec#10 D-26).
 // Bole's own model, when configured, picks one host-listed next step from the
@@ -46,8 +47,10 @@ function stopGuidance({ status, reason }) {
   return reason === 'egress_not_approved' ? GUIDANCE.egress_not_approved : GUIDANCE[status];
 }
 
-// card: the score card as getAgentScoreCard returns it.
-export async function reviewAgentScoreCard(application, card) {
+// card: the score card as getAgentScoreCard returns it. sourceApplication:
+// the client of this MCP process, whose recording switch applies to the log.
+// deletionGeneration: read before the card was (role-suggestion-note.js).
+export async function reviewAgentScoreCard(application, card, { sourceApplication = 'other', deletionGeneration = null } = {}) {
   const [personalProjectId, ...otherProjects] = card.personalProjectIds ?? [];
   if (!personalProjectId || otherProjects.length) return withReview(card, notRun('single_project_only'));
   const scored = new Set(Object.entries(card.dimensions).filter(([, value]) => value.status === 'scored').map(([name]) => name));
@@ -59,18 +62,27 @@ export async function reviewAgentScoreCard(application, card) {
   const outcome = await application.roleWork.decide(request, { inline: true });
   // No model for Bole: the card exactly as today, for the session to judge.
   if (outcome.modelReceipt.status === 'not_configured') return card;
-  const receipt = { requestId: request.requestId, evidenceVersion: request.versions.evidence, promptVersion: PROMPT_VERSION,
-    gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) };
+  // The console copy's capture decision is the last await; the review is then
+  // decided and kept synchronously.
+  const keep = await prepareRoleSuggestionNote(application, () => ({ sourceApplication, personalProjectId }));
+  const review = modelReview(outcome, scored, { requestId: request.requestId, evidenceVersion: request.versions.evidence,
+    promptVersion: PROMPT_VERSION, gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) });
+  keep({ role: GATE.role, operation: OPERATION, personalSpaceId: card.personalSpaceId, personalProjectId,
+    subject: { agentId: card.agentId }, result: review, deletionGeneration });
+  return withReview(card, review);
+}
+
+function modelReview(outcome, scored, receipt) {
   if (outcome.status !== 'answered') {
     const { status, reason } = outcome.modelReceipt;
-    return withReview(card, { status, reason, guidance: outcome.status === 'inline' ? GUIDANCE.inline : stopGuidance(outcome.modelReceipt), ...receipt });
+    return { status, reason, guidance: outcome.status === 'inline' ? GUIDANCE.inline : stopGuidance(outcome.modelReceipt), ...receipt };
   }
   const { envelope, modelReceipt } = outcome;
   const issue = negativeWithoutEvidence(envelope, scored);
-  if (issue) return withReview(card, { status: 'failed', reason: 'invalid_output', issues: [issue], guidance: GUIDANCE.rejected, ...receipt });
-  return withReview(card, { status: 'suggested',
+  if (issue) return { status: 'failed', reason: 'invalid_output', issues: [issue], guidance: GUIDANCE.rejected, ...receipt };
+  return { status: 'suggested',
     suggestion: { action: envelope.payload.choice, reason: envelope.reason, evidenceIds: envelope.evidence.refs, uncertainty: envelope.uncertainty },
-    suggestedBy: { mode: 'model_api', independent: true, model: modelReceipt.actualModel ?? modelReceipt.requestedModel }, ...receipt });
+    suggestedBy: { mode: 'model_api', independent: true, model: modelReceipt.actualModel ?? modelReceipt.requestedModel }, ...receipt };
 }
 
 // One evidence item per dimension, with its executor flags, carrying the

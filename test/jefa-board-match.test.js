@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
@@ -10,6 +12,8 @@ import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { createRoleWorkBridge } from '../src/model-backends/role-work.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { hardDeleteLedger } from '../src/knowledge-hard-delete/delete-ledger.js';
+import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { reachableModules } from '../test-support/module-graph.js';
 import { openAiStream } from './fixtures/model-transport.js';
@@ -196,6 +200,7 @@ function harness({ roles = {}, replies = [], model = true, connection = FAKE_CON
       } });
     app.roleWork = createRoleWorkBridge({ port: app.modelBackends, store, verifySession: async () => null, resumers: {} });
   }
+  app.roleSuggestions = new RoleSuggestionLog();
   const entry = (extra = {}) => app.getCollaborationPreferences({ projectPath: GARDEN_PATH, sourceApplication: 'codex',
     sessionId: 'synthetic-session-a', taskPrompt: PROMPT, agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
   const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total FROM model_attempts ORDER BY attempt_number')
@@ -209,7 +214,7 @@ function harness({ roles = {}, replies = [], model = true, connection = FAKE_CON
     assert.deepEqual(projectWrites, []);
     assert.deepEqual(store.counts(), []);
   };
-  return { app, entry, contexts, workbench, jefa, modelCalls, attempts, reservations, reads, assertNoWrites };
+  return { app, entry, contexts, workbench, jefa, modelCalls, attempts, reservations, reads, assertNoWrites, suggestions: () => app.roleSuggestions.list() };
 }
 
 const jefaOf = result => result.project_management_context.managers.find(manager => manager.template_id === 'jefa');
@@ -244,6 +249,7 @@ test('not configured: the entry answers byte for byte as today, with zero fetche
     assert.deepEqual(run.contexts.calls, [], 'no claim');
     assert.equal(run.reads(), 1, 'only the entry\'s own board read');
     assert.deepEqual(run.attempts(), []);
+    assert.deepEqual(run.suggestions(), []);
     run.assertNoWrites();
   }
 
@@ -297,6 +303,9 @@ test('Jefa suggests one listed board task as a hint; board tasks are evidence of
   assert.deepEqual(run.workbench.calls.map(({ name, project }) => [name, project]),
     [['read_board', 'garden'], ['read_board', 'garden'], ['read_board', 'garden']]);
   run.assertNoWrites();
+  const [noted] = run.suggestions();
+  assert.deepEqual([noted.role, noted.status, noted.suggestion, noted.personalProjectId, noted.gate, noted.guidance],
+    ['jefa', 'suggested', match.suggestion, 'garden', GATE, undefined]);
 
   // The MCP view keeps the hint while it omits the board details.
   const view = jefaOf(compactTaskContext(result));
@@ -430,6 +439,7 @@ test('a board task changed, moved or deleted while the model runs supersedes the
     const match = jefaOf(await run.entry()).suggested_match;
     assert.deepEqual([match.status, match.reason, match.hint, match.suggestion], ['superseded', reason, undefined, undefined], name);
     assert.deepEqual(match.gate, GATE, name);
+    assert.deepEqual(run.suggestions().map(noted => [noted.status, noted.reason, noted.suggestion]), [['superseded', reason, undefined]], name);
     run.assertNoWrites();
   }
 
@@ -516,6 +526,81 @@ test('the hook entry gets the same once-per-session hint; resuming a checkpoint 
   assert.equal(jefaOf(resumed).suggested_match, undefined);
   assert.equal(run.modelCalls.length, 1);
   run.assertNoWrites();
+});
+
+test('the console copy follows the recording switch, decided after the model answered; the hint is unchanged', async () => {
+  const today = harness({ roles: { jefa: jefaRole() }, replies: [answer()] });
+  const shown = JSON.stringify(jefaOf(await today.entry()).suggested_match);
+  assert.equal(today.suggestions().length, 1);
+  const off = {
+    'global recording off': run => run.app.updateCapturePolicy({ enabled: false }),
+    'this client off': run => run.app.updateCapturePolicy({ disabledSources: ['codex'] }),
+    'this project off': run => run.app.updateCapturePolicy({ recordProjects: { garden: false } }),
+    'this session paused': run => {
+      run.app.getSessionCapturePause = sessionId => ({ paused: sessionId === 'synthetic-session-a', since: '2026-10-23T08:00:00.000Z',
+        stopped: false, fuli: { enabled: true, basis: 'started', since: null } });
+    },
+    'settings unreadable': run => { run.app.getCapturePolicy = () => { throw new Error('unreadable'); }; },
+    // Jefa's own recheck reads the task once more; the copy's read after it fails.
+    'task unreadable': run => {
+      const read = run.contexts.registry.context.bind(run.contexts.registry);
+      let reads = 0;
+      run.contexts.registry.context = async (...args) => {
+        if (++reads > 1) throw new Error('Provider down');
+        return read(...args);
+      };
+    }
+  };
+  for (const [name, turnOff] of Object.entries(off)) {
+    // Before the entry, and while the model runs: both are decided after its answer.
+    for (const when of ['before', 'during']) {
+      const run = harness({ roles: { jefa: jefaRole() }, replies: [when === 'before' ? answer() : delayed(async () => turnOff(run))] });
+      if (when === 'before') await turnOff(run);
+      const match = jefaOf(await run.entry()).suggested_match;
+      assert.equal(JSON.stringify({ ...match, requestId: undefined }), JSON.stringify({ ...JSON.parse(shown), requestId: undefined }),
+        `${name} ${when}: the hint itself is unchanged`);
+      assert.deepEqual(run.suggestions(), [], `${name} ${when}: nothing kept`);
+      run.assertNoWrites();
+    }
+  }
+});
+
+test('a permanent delete that completes while the model runs leaves the hint as is and keeps no words in the copy', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-jefa-suggestions-'));
+  const run = harness({ roles: { jefa: jefaRole() }, replies: [delayed(async () => {
+    const ledger = hardDeleteLedger(directory);
+    const operation = ledger.begin({ spaceId: SPACE, itemKind: 'entity', itemId: 'item-1', previewId: 'preview-1', itemIds: ['item-1'] });
+    ledger.update(operation.id, { state: 'complete', deletedAt: new Date().toISOString() });
+  })] });
+  run.app.roleSuggestions = new RoleSuggestionLog(join(directory, 'role-suggestions.sqlite'));
+  t.after(() => { run.app.roleSuggestions.close(); rmSync(directory, { recursive: true, force: true }); });
+  const match = jefaOf(await run.entry()).suggested_match;
+  assert.equal(match.status, 'suggested');
+  const [kept] = run.app.roleSuggestions.list();
+  assert.deepEqual([kept.status, kept.hint, kept.suggestion, kept.hard_deleted], ['suggested', undefined, { taskId: 'task-reminder', updatedAt: '2026-10-20T08:00:00.000Z' }, true]);
+  run.assertNoWrites();
+});
+
+test('approval withdrawn during the console copy\'s own capture read: superseded, and no words kept', async () => {
+  for (const [name, withdrawn] of [['the project\'s approval', jefaRole({ egress: { approvedProjects: [], allowUnassigned: true } })],
+    ['the operation', jefaRole({ allowedOperations: ['other_operation'] })], ['the role itself', jefaRole({ enabled: false })]]) {
+    let role = jefaRole();
+    let armed = false;
+    const run = harness({ roles: { jefa: () => role }, replies: [delayed(async () => { armed = true; })] });
+    // After the model answered, Jefa reads the task once in its recheck; the next read is the copy's capture scope.
+    const read = run.contexts.registry.context.bind(run.contexts.registry);
+    let reads = 0;
+    run.contexts.registry.context = async (...args) => {
+      if (armed && ++reads === 2) role = withdrawn;
+      return read(...args);
+    };
+    const match = jefaOf(await run.entry()).suggested_match;
+    assert.equal(reads, 2, `${name}: withdrawn during the capture read`);
+    assert.deepEqual([match.status, match.reason, match.hint, match.suggestion], ['superseded', 'permission_changed', undefined, undefined], name);
+    assert.deepEqual(run.suggestions().map(noted => [noted.status, noted.reason, 'hint' in noted, 'suggestion' in noted]),
+      [['superseded', 'permission_changed', false, false]], name);
+    run.assertNoWrites();
+  }
 });
 
 test('Jefa\'s workbench runtime and the employee service never reach Jefa\'s model call', () => {

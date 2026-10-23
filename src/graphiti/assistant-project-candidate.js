@@ -1,7 +1,9 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { projectApproved } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
+import { taskCaptureScope } from './capture-decision.js';
 import { readConversationTriage } from './conversation-triage.js';
+import { prepareRoleSuggestionNote, suggestionDeletionGeneration } from './role-suggestion-note.js';
 import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
 
 // Astro's project hint for a conversation no deterministic rule attributed
@@ -49,6 +51,8 @@ async function suggestProjectCandidate(application, task, entry, taskPrompt) {
   const settings = application.modelBackends?.operationSettings(ROLE, OPERATION);
   if (!settings) return null;
   const spaceId = application.config.personal.spaceId;
+  // Before the evidence is read: a permanent delete after this keeps the hint's words out of its console copy.
+  const deletionGeneration = suggestionDeletionGeneration(application, spaceId);
   const projects = await nameableProjects(application).catch(() => []);
   const candidates = projects.filter(project => projectApproved(settings.egress, spaceId, project.project_id)).slice(0, MAX_CANDIDATES);
   if (!candidates.length) return null;
@@ -63,19 +67,31 @@ async function suggestProjectCandidate(application, task, entry, taskPrompt) {
   if (outcome.modelReceipt.status === 'not_configured') return null;
   const receipt = { requestId: request.requestId, evidenceVersion: request.versions.evidence, promptVersion: PROMPT_VERSION,
     gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) };
-  // Nothing that followed an attempt is shown once the request would no longer be allowed out.
+  const choice = outcome.status === 'answered' ? outcome.envelope.payload.choice : null;
+  const late = choice && choice !== NONE ? await lateAttribution(application, task, conversationId, labelBefore) : null;
+  // The console copy's capture decision is the last read; from here on
+  // nothing is awaited, so the checks below hold for what is shown and kept.
+  const keep = await prepareRoleSuggestionNote(application, async () => taskCaptureScope(
+    await application.taskContextRegistry.context(task.token, task.sourceApplication)));
+  const result = candidateResult(application, request, outcome, receipt, late,
+    choice && choice !== NONE ? candidates[optionIds(candidates).indexOf(choice)] : null, projects.length > candidates.length);
+  if (result) keep({ role: ROLE, operation: OPERATION, personalSpaceId: spaceId, subject: { conversationId }, result, deletionGeneration });
+  return result;
+}
+
+// Synchronous: nothing that followed an attempt is shown once the request
+// would no longer be allowed out, checked against the latest settings.
+function candidateResult(application, request, outcome, receipt, late, project, restricted) {
   if (outcome.modelReceipt.attempts && !application.modelBackends.allowsEgress(request)) {
     return { status: 'superseded', reason: 'permission_changed', ...receipt };
   }
   if (outcome.status === 'inline') return { status: 'inline', reason: outcome.fallbackReason, guidance: INLINE_GUIDANCE, ...receipt };
   if (outcome.status !== 'answered') return { status: outcome.status, reason: outcome.modelReceipt.reason, ...receipt };
-  const { envelope, modelReceipt } = outcome;
-  if (envelope.payload.choice === NONE) return null;
-  const late = await lateAttribution(application, task, conversationId, labelBefore);
+  if (!project) return null;
   if (late) return { status: 'superseded', reason: late, ...receipt };
-  const project = candidates[optionIds(candidates).indexOf(envelope.payload.choice)];
+  const { envelope, modelReceipt } = outcome;
   const name = projectDisplayName(project);
-  return { status: 'suggested', hint: `可能属于「${name}」，需你确认${projects.length > candidates.length ? RESTRICTED : ''}`,
+  return { status: 'suggested', hint: `可能属于「${name}」，需你确认${restricted ? RESTRICTED : ''}`,
     suggestion: { personalProjectId: project.project_id, name, reason: envelope.reason, uncertainty: envelope.uncertainty },
     confirmWith: 'checkpoint_task_knowledge.triage',
     suggestedBy: { mode: 'model_api', independent: true, model: modelReceipt.actualModel ?? modelReceipt.requestedModel }, ...receipt };
