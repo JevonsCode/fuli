@@ -54,7 +54,8 @@ test('writing a result never acknowledges it; verified native delivery enables u
   const anotherProcess = createSessionPreferenceDelivery(f.options);
   const delta = await anotherProcess.deliver(next, origin, format);
   assert.equal(delta.structuredContent.preference_delivery.status, 'delta');
-  assert.equal(delta.structuredContent.preference_delivery.base_result, 'native-call-a');
+  assert.equal(delta.structuredContent.preference_delivery.base_revision, first.structuredContent.revision);
+  assert.match(first.structuredContent.revision, /^[0-9a-f]{12}$/);
   assert.equal(delta.structuredContent.preference_updates[0].instruction, 'Changed rule');
   assert.equal(delta.structuredContent.preference_delivery.removed[0].preference_key, 'rule-1');
   assert.equal(delta.structuredContent.taskContextToken, 'task-c');
@@ -62,7 +63,7 @@ test('writing a result never acknowledges it; verified native delivery enables u
   assert.deepEqual(delta.structuredContent.agent_receipt, next.agent_receipt);
   await f.delivered('native-call-c', delta);
   const final = await anotherProcess.deliver(next, origin, format);
-  assert.equal(final.structuredContent.preference_delivery.base_result, 'native-call-c');
+  assert.equal(final.structuredContent.preference_delivery.base_revision, delta.structuredContent.preference_delivery.revision);
   assert.deepEqual(final.structuredContent.preference_updates, []);
   const files = (await readdir(f.options.directory)).filter(path => path.endsWith('.json'));
   assert.equal(files.length, 1);
@@ -90,7 +91,7 @@ test('new scope, unverified host, force-full reader and explicit reset always de
   const reset = await f.service.deliver(entry('after-reset'), origin, format);
   assert.equal(reset.structuredContent.effective_preferences.length, 12);
   await f.delivered('native-after-reset', reset);
-  assert.equal((await f.service.deliver(entry('ready'), origin, format)).structuredContent.preference_delivery.base_result, 'native-after-reset');
+  assert.equal((await f.service.deliver(entry('ready'), origin, format)).structuredContent.preference_delivery.base_revision, reset.structuredContent.revision);
 }));
 
 test('a complete reader result proves the same instruction units despite additional source metadata', () => fixture(async f => {
@@ -106,7 +107,7 @@ test('a complete reader result proves the same instruction units despite additio
   const delta = await f.service.deliver(entry('after-reader'), origin, format);
   assert.equal(delta.structuredContent.preference_delivery.status, 'delta');
   assert.deepEqual(delta.structuredContent.preference_updates, []);
-  assert.equal(delta.structuredContent.preference_delivery.base_result, 'full-reader');
+  assert.equal(delta.structuredContent.preference_delivery.base_revision, full.structuredContent.revision);
 }));
 
 test('compaction, replaced history, partial bodies and a forged result never reuse earlier instruction text', () => fixture(async f => {
@@ -116,7 +117,16 @@ test('compaction, replaced history, partial bodies and a forged result never reu
   fake.structuredContent.effective_preferences[0].instruction = 'Forged rule';
   fake.content[0].text = JSON.stringify(fake.structuredContent);
   await f.delivered('forged', fake);
-  assert.equal((await f.service.deliver(entry(), origin, format)).structuredContent.preference_delivery.base_result, 'native-call-a');
+  // The model now sees one revision on two different sets: no base is
+  // guessed (rec#15 D-29.9). The complete frame takes a longer revision.
+  const ambiguous = await f.service.deliver(entry(), origin, format);
+  assert.equal(ambiguous.structuredContent.preference_delivery, undefined);
+  assert.equal(ambiguous.structuredContent.effective_preferences.length, 12);
+  assert.equal(ambiguous.structuredContent.revision.length, 16);
+  assert.ok(ambiguous.structuredContent.revision.startsWith(first.structuredContent.revision));
+  await f.delivered('native-call-b', ambiguous);
+  assert.equal((await f.service.deliver(entry(), origin, format)).structuredContent.preference_delivery.base_revision,
+    ambiguous.structuredContent.revision);
   await appendFile(f.transcript, JSON.stringify({ type: 'compacted', payload: { window_id: 'new-window' } }) + '\n');
   assert.equal((await f.service.deliver(entry('compact'), origin, format)).structuredContent.effective_preferences.length, 12);
   await writeFile(f.transcript, JSON.stringify({ type: 'session_meta', payload: { id: 'foreign' } }) + '\n');
@@ -132,5 +142,103 @@ test('a native execution/window change forces a new complete baseline in a survi
   const recovered = await f.service.deliver(entry('new-window'), fresh, format);
   assert.equal(recovered.structuredContent.effective_preferences.length, 12);
   await f.delivered('new-window-full', recovered);
-  assert.equal((await f.service.deliver(entry('new-window-next'), fresh, format)).structuredContent.preference_delivery.base_result, 'new-window-full');
+  assert.equal((await f.service.deliver(entry('new-window-next'), fresh, format)).structuredContent.preference_delivery.base_revision, recovered.structuredContent.revision);
 }));
+
+// rec#15 D-29.2: the scene lives in the private pending item, bound to the
+// producer's scope, snapshot and whole-frame hashes.
+test('a pending item without its scene, or with another scene, confirms nothing', async () => {
+  for (const change of [item => { delete item.scene; }, item => { item.scene.work_kind = 'chat'; },
+    item => { item.scene.table = 'task-scene-1'; }]) {
+    await fixture(async f => {
+      const first = await f.service.deliver(entry(), origin, format);
+      await f.delivered('native-call-a', first);
+      const [file] = (await readdir(f.options.directory)).filter(path => path.endsWith('.json'));
+      const record = JSON.parse(await readFile(join(f.options.directory, file), 'utf8'));
+      assert.deepEqual(record.pending[0].scene, { work_kind: 'implementation', workflow: null, table: 'task-scene-2' });
+      change(record.pending[0]);
+      await writeFile(join(f.options.directory, file), JSON.stringify(record));
+      const next = (await f.service.deliver(entry('task-b'), origin, format)).structuredContent;
+      assert.equal(next.preference_delivery, undefined);
+      assert.equal(next.effective_preferences.length, 12);
+    });
+  }
+});
+
+// rec#15 D-29.3: a Codex command-hook context is a base only with the harness
+// hook provenance codex/preference-evidence.js checks; an older rollout
+// without it, or a tool result whose visible text differs, stays full.
+test('a Codex hook context confirms by its revision; no provenance or a visible mismatch never does', async () => {
+  const developer = (text, provenance) => ({ type: 'response_item', payload: { type: 'message', role: 'developer',
+    content: [{ type: 'input_text', text }], ...(provenance ? { internal_chat_message_metadata_passthrough: {
+      content_item_kinds: ['hooks.additional_context'], content_item_metadata: [{ provenance }] } } : {}) } });
+  for (const [record, confirmed] of [
+    [result => developer(`Synthetic label\n${JSON.stringify(result.structuredContent)}`, { type: 'harness', hook: true }), true],
+    [result => developer(`Synthetic label\n${JSON.stringify(result.structuredContent)}`, null), false],
+    [result => developer(`Synthetic label\n${JSON.stringify(result.structuredContent)}`, { type: 'harness', hook: false }), false]]) {
+    await fixture(async f => {
+      const first = await f.service.deliver(entry(), origin, format);
+      await appendFile(f.transcript, `${JSON.stringify(record(first))}\n`);
+      const next = (await f.service.deliver(entry('task-b'), origin, format)).structuredContent;
+      assert.equal(next.preference_delivery?.base_revision, confirmed ? first.structuredContent.revision : undefined);
+    });
+  }
+  await fixture(async f => {
+    const first = await f.service.deliver(entry(), origin, format);
+    const { revision: _revision, ...shown } = first.structuredContent;
+    await f.delivered('native-call-a', { ...first, content: [{ type: 'text', text: JSON.stringify(shown) }] });
+    assert.equal((await f.service.deliver(entry('task-b'), origin, format)).structuredContent.preference_delivery, undefined,
+      'the structured copy is only a base when the visible text shows the same frame');
+  });
+});
+
+// dot rec#10 6365998098 item 1: a mismatching visible copy confirms nothing,
+// but the model saw its revision on another set, so that revision is taken.
+test('after a confirmed base, a visible copy showing another set under its revision makes that revision unusable', () => fixture(async f => {
+  const first = await f.service.deliver(entry(), origin, format);
+  await f.delivered('native-call-a', first);
+  assert.equal((await f.service.deliver(entry('task-b'), origin, format)).structuredContent.preference_delivery.base_revision,
+    first.structuredContent.revision, 'the confirmed base before the mismatch');
+  const shown = structuredClone(first.structuredContent);
+  shown.effective_preferences[0].instruction = 'A different visible rule';
+  await f.delivered('mismatch', { content: [{ type: 'text', text: JSON.stringify(shown) }], structuredContent: first.structuredContent });
+  const next = (await f.service.deliver(entry('task-c'), origin, format)).structuredContent;
+  assert.equal(next.preference_delivery, undefined, 'never a delta on the revision two visible sets share');
+  assert.equal(next.effective_preferences.length, 12);
+  assert.equal(next.revision.length, 16);
+  assert.ok(next.revision.startsWith(first.structuredContent.revision));
+  // The mismatching record confirmed no recent context or base of its own; the
+  // longer revision is a base once recorded.
+  await f.delivered('native-call-c', { content: [{ type: 'text', text: JSON.stringify(next) }], structuredContent: next });
+  assert.equal((await f.service.deliver(entry('task-d'), origin, format)).structuredContent.preference_delivery.base_revision, next.revision);
+}));
+
+// dot rec#10 6366498189: a block matching the structured copy beside one that
+// shows another set under the same revision, in either order. Only the match
+// may confirm; the other still takes the revision.
+test('a matching visible block never hides a conflicting one under the same revision, in either order', async () => {
+  for (const order of ['matching first', 'conflicting first']) {
+    await fixture(async f => {
+      const first = await f.service.deliver(entry(), origin, format);
+      await f.delivered('native-call-a', first);
+      const conflicting = structuredClone(first.structuredContent);
+      conflicting.effective_preferences[0].instruction = 'A different visible rule';
+      const blocks = [first.structuredContent, conflicting].map(value => ({ type: 'text', text: JSON.stringify(value) }));
+      await f.delivered('both', { content: order === 'matching first' ? blocks : blocks.reverse(),
+        structuredContent: first.structuredContent });
+      const next = (await f.service.deliver(entry('task-b'), origin, format)).structuredContent;
+      assert.equal(next.preference_delivery, undefined, order);
+      assert.equal(next.effective_preferences.length, 12, order);
+      assert.equal(next.revision.length, 16, order);
+      assert.ok(next.revision.startsWith(first.structuredContent.revision), order);
+    });
+  }
+  // Two identical matching blocks are one frame shown twice: still a base.
+  await fixture(async f => {
+    const first = await f.service.deliver(entry(), origin, format);
+    const block = { type: 'text', text: JSON.stringify(first.structuredContent) };
+    await f.delivered('twice', { content: [block, block], structuredContent: first.structuredContent });
+    assert.equal((await f.service.deliver(entry('task-b'), origin, format)).structuredContent.preference_delivery.base_revision,
+      first.structuredContent.revision);
+  });
+});

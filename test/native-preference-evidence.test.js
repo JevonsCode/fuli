@@ -37,7 +37,6 @@ test('only a matching native tool call and complete result establish preference 
   const proof = await inspect([codexHeader, codexCall('call-a'), codexResult('call-a', JSON.stringify(envelope(value)))]);
   assert.equal(proof.known, true);
   assert.equal(proof.frames.length, 1);
-  assert.equal(proof.frames[0].callId, 'call-a');
   assert.deepEqual(proof.frames[0].value, value);
   for (const records of [
     [codexHeader, codexResult('unpaired', JSON.stringify(envelope(value)))],
@@ -77,7 +76,8 @@ test('compaction discards prior proofs and unfinished, foreign or unknown native
   const reset = { type: 'compacted', payload: { window_id: 'next-window' } };
   assert.equal((await inspect([...base, reset])).frames.length, 0);
   const after = await inspect([...base, reset, codexCall('after'), codexResult('after', JSON.stringify(envelope(value)))]);
-  assert.deepEqual(after.frames.map(frame => frame.callId), ['after']);
+  assert.equal(after.frames.length, 1);
+  assert.ok(after.frames[0].offset >= after.since, 'only the record after the compaction');
   assert.equal((await inspect(base, codexPreferenceEvidence, 'foreign')).known, false);
   assert.equal((await inspect(base, codexPreferenceEvidence, session, '')).known, false);
   assert.equal((await inspect([{ type: 'unknown' }])).known, false);
@@ -105,7 +105,6 @@ ${text}
     attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: ['ignored'] }, ...extra });
   const proof = await inspect([hook(JSON.stringify(value))], claudePreferenceEvidence);
   assert.equal(proof.frames.length, 1);
-  assert.equal(proof.frames[0].callId, 'hook-a');
   assert.deepEqual(proof.frames[0].value, value);
   // A preview of an oversized output, another event, another session, or text
   // that is not a complete entry is not delivery.
@@ -120,7 +119,7 @@ ${text}
 
 // openai/codex d6817454 records a command hook's context as a developer message
 // with kind hooks.additional_context and harness command-hook provenance.
-test('a Codex command-hook developer record is model-facing context without a result ID', async () => {
+test('a Codex command-hook developer record is model-facing context only with harness hook provenance', async () => {
   const developer = (text, metadata) => ({ type: 'response_item', payload: { type: 'message', role: 'developer',
     content: [{ type: 'input_text', text }], ...(metadata ? { internal_chat_message_metadata_passthrough: metadata } : {}) } });
   const hookMetadata = { content_item_kinds: ['hooks.additional_context'],
@@ -128,7 +127,7 @@ test('a Codex command-hook developer record is model-facing context without a re
   const text = `Synthetic label\n${JSON.stringify(value)}`;
   const proof = await inspect([codexHeader, developer(text, hookMetadata)]);
   assert.equal(proof.frames.length, 1);
-  assert.equal(proof.frames[0].callId, null, 'never a preference delta base');
+  assert.deepEqual(proof.frames[0].value, value, 'a delta base like any recorded frame (rec#15 D-29.3)');
   for (const record of [developer(text), developer(text, { ...hookMetadata, content_item_metadata: [{ provenance: { type: 'harness', hook: false } }] }),
     { type: 'response_item', payload: { ...developer(text, hookMetadata).payload, role: 'user' } },
     { type: 'response_item', payload: { ...developer(text, hookMetadata).payload,

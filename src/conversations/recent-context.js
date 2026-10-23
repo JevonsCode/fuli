@@ -56,7 +56,7 @@ function nativeMessageProof(proof, { sessionId, adapter, floor }) {
 // neither counts.
 export function recentEvidence(proof, pending, { sessionId, adapter, floor }) {
   if (!proof.known || floor === null) return NO_EVIDENCE;
-  const recorded = new Set(proof.frames.filter(frame => frame.offset >= floor).map(frame => recentFrameHash(frame.visible)));
+  const recorded = new Set(proof.frames.filter(frame => frame.confirms && frame.offset >= floor).map(frame => recentFrameHash(frame.visible)));
   return { frames: pending.filter(item => recorded.has(item.frameHash)),
     native: nativeMessageProof(proof, { sessionId, adapter, floor }) };
 }

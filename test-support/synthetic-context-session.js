@@ -66,24 +66,87 @@ export function syntheticHost(directory, client, sessionId) {
   };
 }
 
+// The Provider's own recovery window (graph-provider store_agent_conversations.py
+// _context_events, conversation_context.py pack_context): read back to the third
+// visible user message, then keep the newest messages whose packed JSON fits the
+// conversation policy's context_budget (default 4000 bytes), a lone newest one as
+// a prefix. A journal made with it answers as the Provider would.
+export const PROVIDER_RECOVERY_WINDOW = Object.freeze({ userMessages: 3, budgetBytes: 4000 });
+
 // A synthetic Provider journal shared by both clients, with the proofs
-// add_delivery_proofs attaches for the asking session.
-export function syntheticJournal(conversationId = 'conversation-a') {
+// add_delivery_proofs attaches for the asking session. Without `window` it
+// returns every event, as the unit tests that pick their own window expect.
+export function syntheticJournal(conversationId = 'conversation-a', window = null) {
   const events = [];
+  const proofs = (client, sessionId, current) => message => {
+    const event = events[message.sequence - 1];
+    return { ...message, content_sha256: sha(current(event)),
+      ...(event.source_application === client && event.session_id === sessionId ? { own_event: event.event_id } : {}) };
+  };
   return {
     events,
     add: (role, content, client, sessionId, eventId) => events.push({ sequence: events.length + 1, role, content,
       source_application: client, session_id: sessionId, event_id: eventId }),
-    recovery: (client, sessionId, { window = events.length, truncate = null, override = {} } = {}) => ({
-      conversation_id: conversationId, revision: events.length, summary: '', summary_role: 'historical', truncated: false,
-      latest_checkpoint: null, omitted_sequence: null, scan_truncated: false,
-      messages: events.slice(-window).map(event => {
-        const content = override[event.sequence] ?? event.content;
-        const shown = truncate === event.sequence ? { content: `${content.slice(0, 8)}…`, truncated: true } : { content };
-        return { sequence: event.sequence, role: event.role, ...shown, content_sha256: sha(content),
-          ...(event.source_application === client && event.session_id === sessionId ? { own_event: event.event_id } : {}) };
-      }) })
+    recovery: (client, sessionId, { window: count = events.length, truncate = null, override = {} } = {}) => {
+      const current = event => override[event.sequence] ?? event.content;
+      if (window) {
+        const packed = providerRecovery(events.map(event => ({ ...event, content: current(event) })), window,
+          { conversation_id: conversationId, revision: events.length });
+        return { ...packed, messages: packed.messages.map(proofs(client, sessionId, current)) };
+      }
+      return { conversation_id: conversationId, revision: events.length, summary: '', summary_role: 'historical', truncated: false,
+        latest_checkpoint: null, omitted_sequence: null, scan_truncated: false,
+        messages: events.slice(-count).map(event => {
+          const content = current(event);
+          const shown = truncate === event.sequence ? { content: `${content.slice(0, 8)}…`, truncated: true } : { content };
+          return proofs(client, sessionId, current)({ sequence: event.sequence, role: event.role, ...shown });
+        }) };
+    }
   };
+}
+
+// pack_context over the events _context_events returns; bytes as json_bytes
+// (compact separators, UTF-8), measured before the host-only proofs.
+function providerRecovery(events, { userMessages, budgetBytes }, identity) {
+  let start = events.length, users = 0;
+  while (start > 0 && users < userMessages) users += events[--start].role === 'user';
+  const scanned = events.slice(start);
+  const result = { summary: '', messages: [], truncated: start > 0, summary_role: 'historical', latest_checkpoint: null,
+    ...identity, omitted_sequence: start > 0 ? events[start].sequence - 1 : null, scan_truncated: false };
+  const fits = () => Buffer.byteLength(JSON.stringify(result), 'utf8') <= budgetBytes;
+  if (!fits()) {
+    if (scanned.length) result.omitted_sequence = scanned.at(-1).sequence;
+    return result;
+  }
+  for (const event of [...scanned].reverse()) {
+    result.messages.unshift({ sequence: event.sequence, role: event.role, content: event.content });
+    if (fits()) continue;
+    result.messages.shift();
+    result.truncated = true;
+    result.omitted_sequence = event.sequence;
+    while (result.messages.length && !fits()) result.omitted_sequence = result.messages.shift().sequence;
+    if (!result.messages.length) {
+      const newest = scanned.at(-1);
+      result.omitted_sequence = newest.sequence;
+      const item = { sequence: newest.sequence, role: newest.role, content: '', truncated: true };
+      result.messages.push(item);
+      if (fits()) fitPrefix([...newest.content], item, fits);
+      else result.messages.length = 0;
+    }
+    break;
+  }
+  return result;
+}
+
+// _fit_prefix: the longest code-point prefix plus … whose whole JSON fits.
+function fitPrefix(points, item, fits) {
+  let low = 0, high = points.length, best = '';
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    item.content = `${points.slice(0, middle).join('')}…`;
+    if (fits()) { best = item.content; low = middle + 1; } else high = middle - 1;
+  }
+  item.content = best;
 }
 
 // A confirmed Provider preference item as collaboration_context returns it.
@@ -92,14 +155,21 @@ export const syntheticPreference = (key, instruction, qualifiers = {}, aspect = 
   confirmation_status: 'confirmed', instruction, preference_qualifiers: qualifiers });
 
 // What the model holds after each frame, following only the delivery rules:
-// a delta or scene switch applies to the frame its base_result names.
-export function replayPreferences(views, { id, frame }) {
-  const delivery = frame.preference_delivery;
+// a delta or scene switch applies to the one earlier frame of the context
+// generation (`views`, by revision) whose revision equals its base_revision or
+// supersedes. Without exactly one such set the model has no base and would
+// call read_task_preferences: the result is null, never a guess.
+export function replayPreferences(views, frame) {
+  const delivery = ['delta', 'scene_switch'].includes(frame.preference_delivery?.status) ? frame.preference_delivery : null;
+  const base = delivery ? views.get(delivery.status === 'delta' ? delivery.base_revision : delivery.supersedes) : new Map();
+  if (!base) return null;
   const key = item => item.preference_key;
-  const next = new Map(delivery ? views.get(delivery.base_result) : []);
+  const next = new Map(base);
   if (delivery?.status === 'scene_switch') for (const replaced of delivery.replaces) next.delete(replaced);
   if (delivery?.status === 'delta') for (const removed of delivery.removed) next.delete(key(removed));
   for (const item of frame.effective_preferences ?? frame.preference_updates) next.set(key(item), item.instruction);
-  views.set(id, next);
+  const revision = delivery?.revision ?? frame.revision;
+  const same = held => held && JSON.stringify([...held].sort()) === JSON.stringify([...next].sort());
+  if (revision) views.set(revision, views.has(revision) && !same(views.get(revision)) ? null : next);
   return next;
 }

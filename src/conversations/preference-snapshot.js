@@ -11,6 +11,14 @@ const IDENTITY = ['preference_key', 'preference_scope', 'preference_project_id',
 // The rule text is in entry-rules.js; a frame names it, so one short added
 // rule costs one update, not a repeated paragraph.
 const DELIVERY_RULES = () => entryRulesReference('preference_delivery');
+// The model finds a delta's or scene switch's base by the short revision that
+// frame shows (rec#15 D-29.3): the first 12 hex of its snapshot hash, longer
+// while another frame of the context generation shows that string for another
+// set or for one FULI cannot verify (D-29.9). The host still verifies the
+// whole snapshot and frame hashes it keeps privately.
+const REVISION_HEX = 12;
+const REVISION_STEP = 4;
+const REVISION = /^[0-9a-f]{12,64}$/;
 
 // Only the Provider-backed task producer supplies this private metadata.
 // JSON, model tool arguments and copied transcript records cannot forge it.
@@ -22,15 +30,32 @@ export function copyPreferenceScope(value, target) {
   return value?.[SCOPE] ? withPreferenceScope(target, value[SCOPE]) : target;
 }
 
-// An earlier native frame under the current authorized scope and the scene it
-// declares. The pending hash its producer kept still has to match: a frame
-// whose declared scene was not the one it was produced for never verifies.
-// A frame without a declared scene (a full reader result) keeps the current one.
-export function framePreferenceSnapshot(value, frame) {
+// An earlier native frame under the current authorized scope, read in the
+// scene its producer kept privately beside the pending hash (rec#15 D-29.2).
+// A frame never declares its own scene, so a copy cannot claim another one.
+export function framePreferenceSnapshot(value, frame, scene) {
   const scope = value?.[SCOPE];
-  const scene = frame?.preference_scene;
-  return preferenceSnapshot(withPreferenceScope(frame, scope && scene ? { ...scope,
-    preference_scope: { version: 1, work_kind: scene.work_kind ?? null, workflow: scene.workflow ?? null } } : scope));
+  return scope ? preferenceSnapshot(withPreferenceScope(frame, { ...scope,
+    preference_scope: { version: 1, work_kind: scene.work_kind, workflow: scene.workflow } })) : null;
+}
+
+// The scene a pending record keeps for the frame it was produced as.
+export function pendingScene(snapshot) {
+  return { work_kind: snapshot.scene.work_kind ?? null, workflow: snapshot.scene.workflow ?? null, table: TASK_SCENE_VERSION };
+}
+
+// A pending record without a scene (written before D-29.2) or from another
+// scene table confirms nothing; its frame is delivered in full again.
+export function confirmableScene(scene) {
+  return scene?.table === TASK_SCENE_VERSION;
+}
+
+// The preference revision a frame shows the model: a complete frame's own
+// `revision`, or a delta's or scene switch's preference_delivery.revision.
+export function shownRevision(frame) {
+  const delivery = frame?.preference_delivery;
+  const revision = ['delta', 'scene_switch'].includes(delivery?.status) ? delivery.revision : frame?.revision;
+  return typeof revision === 'string' && REVISION.test(revision) ? revision : null;
 }
 
 export function taskPreferenceMetadata(task, personalSpaceId) {
@@ -63,64 +88,94 @@ export function preferenceSnapshot(value) {
     units, preferences, sessionId: scope.session_id, sourceApplication: scope.source_application };
 }
 
-export function projectPreferenceDelta(value, baseline) {
+// A complete result as it is, plus the revision a later delta can name.
+// `shown` is null when this session can never confirm the frame, and an empty
+// set never needs a base: both stay exactly the uncached result.
+export function completePreferenceFrame(value, shown) {
+  return withRevision(value, preferenceSnapshot(value), shown);
+}
+
+// The complete frame, or a smaller delta or scene switch against `baseline`,
+// the latest acknowledged frame of the session (preference-session.js).
+// `shown` maps each revision the generation shows to the one set it names.
+export function projectPreferenceDelta(value, baseline, shown) {
   const snapshot = preferenceSnapshot(value);
   if (!snapshot) return value;
-  const full = withPreferenceScope({ ...value, effective_preferences: snapshot.preferences,
-    preference_scene: { work_kind: snapshot.scene.work_kind, workflow: snapshot.scene.workflow, table: TASK_SCENE_VERSION } }, value[SCOPE]);
-  if (!baseline?.callId || baseline.authorityHash !== snapshot.authorityHash) return full;
+  const plain = withPreferenceScope({ ...value, effective_preferences: snapshot.preferences }, value[SCOPE]);
+  const full = withRevision(plain, snapshot, shown);
+  const revision = full.revision;
+  if (!revision || !baseline?.revision || baseline.authorityHash !== snapshot.authorityHash) return full;
   // Same space, project, Agent, client and session in another scene: only the
   // scene-replaceable set is listed and replaced (D-27.8). Boundaries and hard
   // constraints stay as delivered; if one of them changed too, a complete
   // frame is sent instead.
   if (baseline.scopeHash !== snapshot.scopeHash) {
     if (contentHash(boundaryUnits(baseline.units)) !== contentHash(boundaryUnits(snapshot.units))) return full;
-    return withPreferenceScope({ ...full,
+    return smaller(withPreferenceScope({ ...plain,
       effective_preferences: snapshot.preferences.filter(item => snapshot.units[unitId(item)].scene),
-      preference_delivery: { status: 'scene_switch', supersedes: baseline.snapshotHash, base_result: baseline.callId,
-        revision: snapshot.snapshotHash, replaces: sceneKeys(baseline.units), ...DELIVERY_RULES() } }, value[SCOPE]);
+      preference_delivery: { status: 'scene_switch', supersedes: baseline.revision, revision, scene: sceneName(snapshot.scene),
+        replaces: sceneKeys(baseline.units), ...DELIVERY_RULES() } }, value[SCOPE]), plain) ?? full;
   }
   const updates = snapshot.preferences.filter(item => baseline.units[unitId(item)]?.hash !== snapshot.units[unitId(item)].hash);
   const removed = Object.entries(baseline.units).filter(([id]) => !Object.hasOwn(snapshot.units,id))
     .map(([,unit]) => unit.identity);
   // A delta stays in its base's scene, so it does not repeat it.
-  const { effective_preferences, preference_scene, ...current } = full;
-  const delta = { ...current, preference_updates: updates, preference_delivery: {
-    status: 'delta', base_revision: baseline.snapshotHash, revision: snapshot.snapshotHash,
-    base_result: baseline.callId, removed, unchanged: snapshot.preferences.length - updates.length,
-    ...DELIVERY_RULES() } };
-  return Buffer.byteLength(JSON.stringify(delta)) < Buffer.byteLength(JSON.stringify(full)) ? delta : full;
+  const { effective_preferences, ...current } = plain;
+  return smaller({ ...current, preference_updates: updates, preference_delivery: {
+    status: 'delta', base_revision: baseline.revision, revision, removed, unchanged: snapshot.preferences.length - updates.length,
+    ...DELIVERY_RULES() } }, plain) ?? full;
 }
 
-// Reconstruct only instruction fingerprints from an actually delivered delta.
-// The producer's private pending hash must still match this whole native frame.
-export function applyPreferenceDeltaSnapshot(value, baseline) {
+// Reconstruct only instruction fingerprints from an actually delivered delta
+// on the base its base_revision names. The producer's private pending hash
+// must still match this whole native frame.
+export function applyPreferenceDeltaSnapshot(value, base) {
   const delivery = value?.preference_delivery;
-  if (!baseline || delivery?.status !== 'delta' || delivery.base_result !== baseline.callId
-      || delivery.base_revision !== baseline.snapshotHash || !Array.isArray(delivery.removed)
-      || !Array.isArray(value.preference_updates)) return null;
-  const units = structuredClone(baseline.units);
+  if (!base?.units || delivery?.status !== 'delta' || delivery.base_revision !== base.revision
+      || !Array.isArray(delivery.removed) || !Array.isArray(value.preference_updates)) return null;
+  const units = structuredClone(base.units);
   for (const item of delivery.removed) delete units[unitId(item)];
   for (const item of value.preference_updates) {
     if (!item?.preference_key || typeof item.instruction !== 'string') return null;
     units[unitId(item)] = unit(JSON.parse(canonicalJson(preferenceInstructionView(item), { omitUndefined: true })));
   }
-  const snapshotHash = contentHash({ scopeHash: baseline.scopeHash, units });
-  return snapshotHash === delivery.revision ? { ...baseline, units, snapshotHash } : null;
+  return { scopeHash: base.scopeHash, authorityHash: base.authorityHash, units,
+    snapshotHash: contentHash({ scopeHash: base.scopeHash, units }) };
 }
 
 // A delivered scene switch lists only replaceable items; the base's boundaries
 // and hard constraints carry over. The pending hash still binds the whole frame.
-export function applySceneSwitchSnapshot(value, frame, baseline) {
+export function applySceneSwitchSnapshot(value, frame, base, scene) {
   const delivery = frame?.preference_delivery;
-  if (!baseline || delivery?.status !== 'scene_switch' || delivery.base_result !== baseline.callId
-      || delivery.supersedes !== baseline.snapshotHash
-      || canonicalJson(delivery.replaces ?? null) !== canonicalJson(sceneKeys(baseline.units))) return null;
-  const listed = framePreferenceSnapshot(value, frame);
+  if (!base?.units || delivery?.status !== 'scene_switch' || delivery.supersedes !== base.revision
+      || canonicalJson(delivery.replaces ?? null) !== canonicalJson(sceneKeys(base.units))) return null;
+  const listed = framePreferenceSnapshot(value, frame, scene);
   if (!listed || Object.values(listed.units).some(item => !item.scene)) return null;
-  const units = { ...boundaryUnits(baseline.units), ...listed.units };
-  const snapshotHash = contentHash({ scopeHash: listed.scopeHash, units });
-  return snapshotHash === delivery.revision ? { ...listed, units, snapshotHash } : null;
+  const units = { ...boundaryUnits(base.units), ...listed.units };
+  return { ...listed, units, snapshotHash: contentHash({ scopeHash: listed.scopeHash, units }) };
+}
+
+function withRevision(value, snapshot, shown) {
+  const revision = shown && snapshot?.preferences.length ? uniqueRevision(snapshot.snapshotHash, shown) : null;
+  return revision ? withPreferenceScope({ ...value, revision }, value[SCOPE]) : value;
+}
+
+function uniqueRevision(hash, shown) {
+  for (let length = REVISION_HEX; length <= hash.length; length += REVISION_STEP) {
+    const revision = hash.slice(0, length), other = shown.get(revision);
+    if (!other || other.snapshotHash === hash) return revision;
+  }
+  return null;
+}
+
+// A delta or scene switch only where it is smaller than the uncached frame.
+function smaller(candidate, plain) {
+  return Buffer.byteLength(JSON.stringify(candidate)) < Buffer.byteLength(JSON.stringify(plain)) ? candidate : null;
+}
+
+// The one model-facing trace of the scene (D-29.2).
+function sceneName(scene) {
+  return [scene.work_kind, scene.workflow].filter(Boolean).join('/') || null;
 }
 
 function unit(item) {
