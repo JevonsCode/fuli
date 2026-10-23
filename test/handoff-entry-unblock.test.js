@@ -370,7 +370,10 @@ test('a fresh native chat never injects an unrelated latest checkpoint; same-ses
   const task = { token: 'task', projectAgentId: 'lead', personalProjectId: 'project', sessionId: 'native', sourceApplication: 'codex' };
   const fresh = await beginConversation(app, task);
   assert.equal(fresh.recovery, null);
-  assert.equal(requests.some(q => q.mode === 'list' || q.mode === 'context'), false);
+  // rec#10 D-27.6: a pointer to the latest conversation of this scope, no context read.
+  assert.deepEqual(fresh.recent_conversation, { id: 'unrelated-chat', updated_at: null });
+  assert.equal(requests.some(q => q.mode === 'context'), false);
+  assert.doesNotMatch(JSON.stringify(fresh), /migration was not performed/);
   same = true;
   const continued = await beginConversation(app, task);
   assert.deepEqual(continued.recovery.latest_checkpoint, checkpoint);

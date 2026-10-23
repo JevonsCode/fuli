@@ -9,7 +9,10 @@ const CODE_MODE = new Set(['functions.exec', 'functions.wait']);
 
 // Inspect the native model-facing record, never Hook stdout, a log of writes,
 // an assistant's claim, or a cache hit. Bounds/format uncertainty means full.
-export async function readPreferenceEvidence(path, sessionId, adapter) {
+// since is where the current context generation starts (after the last reset
+// record); records holds the complete native records that start at the
+// requested byte offsets, as parsed.
+export async function readPreferenceEvidence(path, sessionId, adapter, recordOffsets = new Set()) {
   let file;
   try {
     file = await openWithoutFollowing(path, constants.O_RDONLY);
@@ -19,7 +22,8 @@ export async function readPreferenceEvidence(path, sessionId, adapter) {
     const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
     if (bytesRead !== bytes.length || bytes.at(-1) !== 10) return { known: false };
     const calls = new Map();
-    let frames = [], offset = 0, generation = null;
+    const records = new Map();
+    let frames = [], offset = 0, generation = null, since = 0;
     for (const line of bytes.toString('utf8').split('\n').slice(0, -1)) {
       const end = offset + Buffer.byteLength(line) + 1;
       const record = JSON.parse(line);
@@ -27,8 +31,9 @@ export async function readPreferenceEvidence(path, sessionId, adapter) {
         if (!adapter.verify(record, sessionId)) return { known: false };
         generation = contentHash(line);
       }
+      if (recordOffsets.has(offset)) records.set(offset, record);
       for (const event of adapter.events(record, sessionId)) {
-        if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); }
+        if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); since = end; }
         if (event.type === 'call' && typeof event.id === 'string') calls.set(event.id, event.name);
         // A host-recorded Hook context is model-facing like a tool result; each
         // line is parsed on its own, so only a complete JSON frame counts.
@@ -49,7 +54,7 @@ export async function readPreferenceEvidence(path, sessionId, adapter) {
       }
       offset = end;
     }
-    return { known: true, fileId: `${stat.dev}:${stat.ino}`, size: bytes.length, generation, frames };
+    return { known: true, fileId: `${stat.dev}:${stat.ino}`, size: bytes.length, generation, since, frames, records };
   } catch { return { known: false }; }
   finally { await file?.close(); }
 }

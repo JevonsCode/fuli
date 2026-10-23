@@ -61,6 +61,20 @@ export async function initialTranscriptBoundary(path, sessionId, prompt, adapter
     return boundary;
   } finally { await file.close(); }
 }
+// The stored events of one native record at a byte offset, with the event IDs
+// that name it. Slice by code points to preserve Unicode; each chunk <= 128 KiB UTF-8.
+export function transcriptRecordEvents(normalized, recordOffset) {
+  return normalized.flatMap((event, index) => {
+    const points = Array.from(safeConversationContent(event.content));
+    const chunks = [];
+    for (let offset = 0; offset < points.length; offset += 16000) {
+      chunks.push({ ...event, event_id: `jsonl-v1:${recordOffset}:${index}:${offset}`,
+        content: points.slice(offset, offset + 16000).join('') });
+    }
+    return chunks;
+  });
+}
+
 // The hook supplies the exact current transcript. No directory scanning, native
 // transcript writes, or path/session metadata is persisted in conversation events.
 export async function readTranscriptBatch(path, sessionId, cursor, adapter, { stopBeforePrompt = null, stopBeforeDigest = null, stopAtCursor = null } = {}) {
@@ -115,17 +129,7 @@ export async function readTranscriptBatch(path, sessionId, cursor, adapter, { st
       const users = normalized.filter(event => event.role === 'user' && event.kind === 'message').length;
       userMessages += users;
       if (users) uncertainFrom ??= cursor + end;
-      let rowEvents = normalized.flatMap((event, index) => {
-        const content = safeConversationContent(event.content);
-        const chunks = [];
-        // Slice by code points to preserve Unicode; each chunk <= 128 KiB UTF-8.
-        const points = Array.from(content);
-        for (let offset = 0; offset < points.length; offset += 16000) {
-          chunks.push({ ...event, event_id: `jsonl-v1:${cursor + end}:${index}:${offset}`,
-            content: points.slice(offset, offset + 16000).join('') });
-        }
-        return chunks;
-      });
+      let rowEvents = transcriptRecordEvents(normalized, cursor + end);
       let bytes = rowEvents.reduce((sum, event) => sum + Buffer.byteLength(event.content), 0);
       if (rowEvents.length > 50 || bytes > WINDOW) {
         rowEvents = [omission(cursor + end)];

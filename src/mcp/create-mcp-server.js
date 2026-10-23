@@ -1,4 +1,5 @@
 import { compactTaskContext } from '../conversations/task-context-view.js';
+import { withoutDeliveryProofs } from '../conversations/recent-context.js';
 import { employeeToolCatalogResult } from './employee-tool-catalog.js';
 import { agentToolCatalogResult } from './agent-tool-catalog.js';
 import { toolNamesForProfile } from './tool-profiles.js';
@@ -356,7 +357,7 @@ async function invokeTool(tool, input, requestContext = null) {
           label: 'Fuli task context. Apply effective_preferences and use taskContextToken for the final checkpoint.',
           limitBytes, itemLimit: 1000
         }) : successToolResult(projected, { limitBytes, itemLimit: 1000, preferenceContext: true });
-      if (!tool.preferenceDelivery) return format(view);
+      if (!tool.preferenceDelivery) return format(withoutDeliveryProofs(view));
       // A new MCP process may be a resume/restart. It always establishes a new
       // full baseline, even when an older process left valid cache metadata.
       const native = requestContext?.[NATIVE_CONTEXT];

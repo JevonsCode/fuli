@@ -47,18 +47,17 @@ test('changed rule text is never replaced by the shared reference', () => {
   assert.equal(view.application_guidance.inheritance, 'A different inheritance rule.');
 });
 
-test('the same native chat gets the latest saved result instead of repeated messages', () => {
-  const same = compactTaskContext(entry({ conversation: { ...entry().conversation, same_session: true } }));
-  assert.deepEqual(same.conversation.recovery.latest_checkpoint, { status: 'completed', summary: 'Last saved result.' });
-  assert.equal(same.conversation.recovery.messages, undefined);
-  assert.equal(same.conversation.recovery.messages_omitted, 1);
-  const other = compactTaskContext(entry());
-  assert.equal(other.conversation.recovery.messages.length, 1);
+// rec#15 PR2: a bound session no longer drops every recovered message here; what
+// it has seen is decided per message at delivery (recent-context.test.js).
+test('the entry view keeps the whole recovered window and its latest saved result', () => {
+  const view = compactTaskContext(entry());
+  assert.deepEqual(view.conversation.recovery.latest_checkpoint, { status: 'completed', summary: 'Last saved result.' });
+  assert.equal(view.conversation.recovery.messages.length, 1);
+  assert.equal(view.conversation.recovery.messages_omitted, undefined);
 });
 
 test('a sealed worker without resource access keeps full rule text and its messages', () => {
-  const view = compactTaskContext(entry({ worker_run: { run_id: 'run-1' },
-    conversation: { ...entry().conversation, same_session: true } }));
+  const view = compactTaskContext(entry({ worker_run: { run_id: 'run-1' } }));
   assert.deepEqual(view.task_guidance, entryRules().sections.task_guidance);
   assert.equal(view.application_guidance.inheritance, entryRules().sections.application_guidance.inheritance);
   assert.equal(view.project_agent_context.team_guidance, entryRules().sections.team_guidance);
@@ -66,17 +65,26 @@ test('a sealed worker without resource access keeps full rule text and its messa
   assert.equal(view.conversation.recovery.messages.length, 1);
 });
 
-test('a conversation already opened by this native session is marked as the same chat', async () => {
+test('a bound session recovers its conversation as itself; a new one gets only a pointer', async () => {
   const sessions = { 'native-a': 'c-1' };
+  const queries = [];
   const application = { getCapturePolicy: () => ({ enabled: true }),
     config: { personal: { spaceId: 'space' } },
     personal: { conversation: async (operation, input) => {
+      queries.push(input);
       if (input.mode === 'session') return { conversation_id: sessions[input.session_id] ?? null };
-      if (input.mode === 'list') return { conversations: [{ id: 'c-1' }] };
+      if (input.mode === 'list') return { conversations: [{ id: 'c-1', summary: 'Saved result', last_activity: 't1' }] };
       if (input.mode === 'context') return { context: { messages: [] } };
       return { status: 'saved', conversation_id: 'c-1' };
     } } };
   const task = { token: 't', projectAgentId: 'agent', personalProjectId: 'p', sourceApplication: 'codex' };
-  assert.equal((await beginConversation(application, { ...task, sessionId: 'native-a' })).same_session, true);
-  assert.equal((await beginConversation(application, { ...task, sessionId: 'native-b' })).same_session, false);
+  const bound = await beginConversation(application, { ...task, sessionId: 'native-a' });
+  assert.equal(bound.same_session, undefined);
+  assert.equal(bound.recent_conversation, undefined);
+  assert.equal(queries.find(input => input.mode === 'context').session_id, 'native-a');
+  queries.length = 0;
+  const fresh = await beginConversation(application, { ...task, sessionId: 'native-b' });
+  assert.deepEqual(fresh.recent_conversation, { id: 'c-1', updated_at: 't1', title: 'Saved result' });
+  assert.equal(fresh.recovery, null);
+  assert.equal(queries.some(input => input.mode === 'context'), false);
 });
