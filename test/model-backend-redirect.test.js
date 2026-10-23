@@ -7,8 +7,9 @@ import { createModelBackendPort } from '../src/model-backends/port.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { openAiStream } from './fixtures/model-transport.js';
 
-// A configured endpoint that answers 307 or 308 must not get the request body
-// resent to the redirect target, which no egress or endpoint check has seen.
+// A configured endpoint that answers any redirect (301, 302, 303, 307, 308)
+// must not lead to a request to the redirect target, which no egress or
+// endpoint check has seen; 307 and 308 would even resend the body.
 // Local fake servers on free ports stand in for the model; no real model runs.
 
 const KEYS = { synthetic: 'synthetic-test-key' };
@@ -58,7 +59,7 @@ function assertRedirectRefused(result) {
   assert.equal(result.modelReceipt.attempts, 1);
 }
 
-for (const status of [307, 308]) {
+for (const status of [301, 302, 303, 307, 308]) {
   for (const protocol of Object.keys(PROTOCOLS)) {
     test(`a ${status} from the ${protocol} endpoint is refused, not retried, not handed to the session, and never followed`, async t => {
       const reached = [];
