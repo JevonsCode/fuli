@@ -56,8 +56,14 @@ export async function spawnWindowsJobProcess(command, args, { cwd, env, stopTime
     socket.write(JSON.stringify({ command, args, cwd, env, stopTimeoutMs, skipLaunch: stopping }) + '\n');
   });
   // Configuration is parsed as control-pipe data, never PowerShell source.
+  // The helper runs with the isolated home the ACP host gives it, so PowerShell
+  // has no module analysis cache. Auto-loading ConvertFrom-Json or Add-Type would
+  // then analyze every module on the machine's PSModulePath on each launch (tens
+  // of seconds on a hosted runner, minutes under load). Its one built-in module is
+  // imported by path instead, and discovery is off so nothing else is scanned.
   const script = [
-    "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$pipe=$null;$writer=$null;try {",
+    "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$PSModuleAutoLoadingPreference='None';$pipe=$null;$writer=$null;try {",
+    "Import-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Utility\\Microsoft.PowerShell.Utility.psd1')",
     // Overlapped mode permits the exit thread to confirm cleanup while the
     // control thread waits for a command; synchronous duplex reads lock writes.
     "$pipe=[System.IO.Pipes.NamedPipeClientStream]::new('.'," + literal(pipeName) + ",[System.IO.Pipes.PipeDirection]::InOut,[System.IO.Pipes.PipeOptions]::Asynchronous)",

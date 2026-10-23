@@ -32,6 +32,7 @@ export function createSystemService({
     discover: discoverAgents,
     // The same expected integration that `fuli setup` installs.
     context: {
+      dataDir: paths.dataDir,
       nodePath: process.execPath,
       mcpServerPath: paths.mcpServerPath,
       runtimeConfigPath,

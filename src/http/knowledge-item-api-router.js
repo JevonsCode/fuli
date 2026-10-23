@@ -1,6 +1,7 @@
 import { sendJson } from './response.js';
 import { readKnowledgeItem, readTurnReceiptItems } from '../graphiti/knowledge-item-edit.js';
 import { readSessionMigration } from '../graphiti/session-knowledge-migration.js';
+import { assertJsonObject } from '../validation/values.js';
 
 const ITEM_PATH = /^\/api\/knowledge\/(entity|relationship)\/([^/]+)$/;
 
@@ -27,7 +28,9 @@ export async function handleKnowledgeItemRequest({ request, response, url, app }
   }
   const match = url.pathname.match(ITEM_PATH);
   if (!match) return false;
+  const queryTags = url.searchParams.has('query_tags') ? JSON.parse(url.searchParams.get('query_tags')) : undefined;
+  if (queryTags !== undefined) assertJsonObject(queryTags, 'query_tags');
   sendJson(response, 200, await readKnowledgeItem(app, { itemKind: match[1], itemId: decodeURIComponent(match[2]),
-    personalSpaceId: url.searchParams.get('personalSpaceId') }));
+    personalSpaceId: url.searchParams.get('personalSpaceId'), ...(queryTags === undefined ? {} : { queryTags }) }));
   return true;
 }

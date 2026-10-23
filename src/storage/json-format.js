@@ -75,7 +75,8 @@ export function writeVersionedJsonFileAtomic(filePath, value, format, { io, dura
 // meanwhile is never overwritten from an older snapshot. mutate(current)
 // gets the parsed file (null when missing) and returns the new value, or
 // undefined to leave the file as it is. read(filePath) may replace the
-// default strict parse; write(filePath, value) the plain atomic write.
+// default strict parse; write(filePath, value) the plain atomic write. durable
+// fsyncs the default write before replacement; a custom writer owns its own durability.
 export function updateVersionedJsonFileAtomic(filePath, format, mutate, {
   io, durable = false, read = readCurrentJson, write = (path, value) => writeJsonFileAtomic(path, value, { io, durable })
 } = {}) {

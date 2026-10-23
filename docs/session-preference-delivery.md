@@ -7,21 +7,44 @@ generation. Hook stdout, writing a result, a saved file and model cache hits do
 not establish delivery.
 
 The full entry keeps existing fields. Static rule references precede dynamic
-task identifiers, and instruction units have a canonical order. A smaller delta
-contains `preference_updates` plus `preference_delivery`: its base result ID,
-base/current revision hashes, removed identities and application guidance.
-Current task tokens, identity, role constraints, authority and conflicts remain
-in every result. The cache never supplies permission or current business data.
+task identifiers, and instruction units have a canonical order. A complete
+frame with at least one preference, in a session whose generation can be read,
+adds one field, `"revision":"<12 hex>"` (26 bytes): the first 12 hex digits of
+its snapshot hash, so a later frame can name it (rec#15 D-29.3). An empty set,
+or a session that can never confirm a frame, gets exactly the uncached result.
+A delta contains `preference_updates` plus `preference_delivery`: `base_revision`,
+its own `revision`, removed identities and the rule reference. A delta or scene
+switch is sent only when it is smaller than the uncached complete frame;
+otherwise the complete frame is. Current task tokens, identity, role
+constraints, authority and conflicts remain in every result. The cache never
+supplies permission or current business data.
+
+The model locates a base by exact revision within the same context
+generation. Several frames may show one revision (an unchanged delta repeats
+its base's): FULI shows a revision only for one set, so they are one base. With
+no such frame, or two that yield different sets, the model rereads with
+`read_task_preferences` and never guesses. The host keeps the whole snapshot
+and frame hashes privately and verifies against them. It also tracks every
+revision the generation shows: one shown by two different sets, or by a frame
+it cannot verify, names no base, so the next frame is complete and takes a
+longer revision (16, 20, … hex) that no other frame shows; if every length is
+taken, the frame is complete without one (D-29.9). A tool result whose visible
+text differs from its structured copy confirms nothing, but the revision its
+visible text shows counts as taken.
 
 A task in another scene of the same space, project, Agent, client and session
 (its persisted `preference_scope` changed) gets a `scene_switch` result when an
-acknowledged base exists (rec#15 D-27.8). It lists only the scene-personalized
-set, names the base by `base_result`/`supersedes` and the base keys it takes over
-in `replaces`; boundaries and hard constraints are not listed and stay in force.
+acknowledged base exists and the switch is smaller (rec#15 D-27.8). It lists
+only the scene-personalized set, names the base by `supersedes`, the new scene
+by a short `scene` (such as `"frontend"`) and the base keys it takes over in
+`replaces`; boundaries and hard constraints are not listed and stay in force.
 If a boundary changed too, or no base is acknowledged, the result is complete.
-Full results declare `preference_scene`, which is part of the frame hash, so a
-later switch can verify its base. Like any frame, a delivered scene switch also
-confirms the recent-context messages it carries.
+A complete frame never declares its scene. The pending record the producer
+keeps for a frame stores the scene beside its scope, snapshot and whole-frame
+hashes (D-29.2); confirmation rebuilds the frame in that scene, so a copy that
+claims another scene never matches. A pending item written before this, without
+a scene, confirms nothing: that frame is sent in full again. Like any frame, a
+delivered scene switch also confirms the recent-context messages it carries.
 
 Instruction fingerprints use the same mandatory projection as compact entry.
 A single complete `read_task_preferences` result can establish that baseline
@@ -79,8 +102,10 @@ compatibility remains unchanged.
   unknown results never acknowledge preferences. A command hook's context is
   model-facing when the rollout records it as a `developer` message with one
   `input_text` part, kind `hooks.additional_context` and harness command-hook
-  provenance (openai/codex `d6817454`); it has no result ID, so it confirms
-  recent context but is never a preference delta base.
+  provenance (openai/codex `d6817454`). It has no result ID; like any complete
+  recorded frame at or after the generation start it confirms recent context
+  and, by its revision, can be a preference base (rec#15 D-29.3). An older
+  rollout without that provenance proves nothing, so Codex then resends in full.
 - Claude evidence requires same-session `tool_use`/non-error `tool_result`
   pairs. Its MCP process can use the host's own UUID `CLAUDE_CODE_SESSION_ID`
   for same-task recovery; a caller without verified provenance cannot invent
@@ -158,7 +183,19 @@ These source changes do not install or approve daily Hook configurations.
 
 ## Verification
 
-Protocol, lifecycle and ownership tests use explicit synthetic records. The
+Protocol, lifecycle and ownership tests use explicit synthetic records.
+`npm run measure:context-delivery` replays the scenarios through the real hook
+entries with two synthetic fixtures, `tiny` and the fixed-seed `scaled` one
+(6–10 preferences of 120–400 B, 8–12 messages of 120–1500 B), and prints one
+table per fixture, with the uncached skeleton as a separate diagnostic. Both
+fixtures get the Provider's own recovery window (back to the third user
+message, packed into the default 4000-byte `context_budget`), so the uncached
+baseline holds only what the Provider would return.
+`test/context-delivery-replay.test.js` holds the gates on these fixed fixtures:
+no turn costs more than the uncached entry except a complete frame's revision
+field (26 B) and a `recovery.withdrawn` block (128 B), no scenario costs more in
+total, the scaled scenarios that reuse context cost less, no turn needs a reread
+under the delivery rules, and every model view is whole. The
 opt-in `graph-provider/tests/test_session_preference_native.py` uses a real
 Codex client, MCP stdio, HTTP Provider and a disposable loopback Neo4j. It checks
 first full delivery, a source modification/removal, same-chat delta, resume full

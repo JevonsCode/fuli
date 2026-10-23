@@ -12,7 +12,9 @@ const SCOPES = new Set(['global', 'projects', 'agent']);
 const MAX_SCOPE_PROJECTS = 16;
 
 export function readKnowledgeItem(application, input) {
-  return application.personal.readKnowledgeItemView(itemRef(application, input));
+  const ref = itemRef(application, input);
+  return application.personal.readKnowledgeItemView({ ...ref,
+    ...(input.queryTags === undefined ? {} : { query_tags: input.queryTags }) });
 }
 
 // Everything one turn's episodes created or replaced, for the full list a

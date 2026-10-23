@@ -14,7 +14,7 @@ export const codexPreferenceEvidence = Object.freeze({
     if (record?.type !== 'response_item') return [];
     const item = record.payload;
     const context = hookContext(item);
-    if (context !== null) return [{ type: 'context', id: null, output: context }];
+    if (context !== null) return [{ type: 'context', output: context }];
     if (['function_call', 'custom_tool_call'].includes(item?.type)) {
       const name = item.type === 'custom_tool_call' && ['exec', 'wait'].includes(item.name)
         ? `functions.${item.name}` : item.name;

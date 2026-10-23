@@ -40,7 +40,7 @@ export function completePreferenceToolResult(value, limitBytes = TASK_PREFERENCE
   const allowed = new Set(['effective_preferences', 'scope_unknown', 'active_conflicts', 'deferred_conflicts',
     'application_guidance', 'task_guidance', 'judgment_context', 'agent_receipt', 'context',
     'project_agent_context', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_guidance', 'project_scope', 'worker_run',
-    'preference_delivery', 'preferences_complete', 'same_task_recovery_available', 'truncated']);
+    'preference_delivery', 'revision', 'preferences_complete', 'same_task_recovery_available', 'truncated']);
   // One JSON form for both channels: undefined fields never differ between them.
   const envelope = jsonEnvelope;
   const unsafe = (item, depth = 0) => depth > 64 || (item && typeof item === 'object' &&

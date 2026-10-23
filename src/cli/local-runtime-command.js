@@ -118,9 +118,10 @@ function formatStartedRuntime(title, result) {
 
 function checkAgentSetup({ paths, env, nodePath, discover, inspect }) {
   try {
-    const agents = discover({ env }).filter(({ available }) => available);
+    const agents = discover({ env, dataDir: paths.dataDir }).filter(({ available }) => available);
     if (!agents.length) return { status: 'checked', agents: [] };
     const inspected = inspect(agents, {
+      dataDir: paths.dataDir,
       nodePath,
       mcpServerPath: paths.mcpServerPath,
       runtimeConfigPath: paths.graphRuntimeConfigPath,

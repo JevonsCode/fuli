@@ -148,6 +148,7 @@ test('SQLite is opened and shaped only through a declared store format', () => {
 // FULI's JSON data files refuse to overwrite a newer FULI's file
 // (writeVersionedJsonFileAtomic). These write JSON that is not FULI data.
 const UNVERSIONED_JSON_WRITERS = new Map([
+  ['src/setup/agents/client-pack-change.js', 'client-owned configuration and byte backups; package state uses the versioned client-packs store'],
   ['src/storage/json-format.js', 'the versioned writer itself'],
   ['src/agents/directory-snapshots.js', 'generated Markdown views and their manifest, regenerated from the database'],
   ['src/conversations/transcript-guard.js', 'a hook\'s per-session handoff state that expires within a minute'],

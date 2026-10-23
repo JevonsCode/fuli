@@ -45,7 +45,7 @@ export function planLocalSetup(options, {
     savedAdaptiveRuntimeSettings,
     { enabled: options.adaptiveMemory ?? null }
   );
-  const discovered = options.skipAgents ? [] : discover({ env });
+  const discovered = options.skipAgents ? [] : discover({ env, dataDir: paths.dataDir });
   const agents = options.codexOnly
     ? discovered.filter(({ id }) => id === 'codex')
     : discovered;
@@ -62,7 +62,7 @@ export function planLocalSetup(options, {
     agents: inspectInstallations(agents, {
       nodePath,
       mcpServerPath: paths.mcpServerPath,
-      runtimeConfigPath: paths.graphRuntimeConfigPath,
+      dataDir: paths.dataDir, runtimeConfigPath: paths.graphRuntimeConfigPath,
       sessionSkillPath: paths.sessionSkillPath,
       projectSkillPath: paths.projectSkillPath,
       reviewSkillPath: paths.reviewSkillPath,
@@ -119,7 +119,7 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
   const context = {
     nodePath: dependencies.nodePath ?? process.execPath,
     mcpServerPath: plan.paths.mcpServerPath,
-    runtimeConfigPath: plan.paths.graphRuntimeConfigPath,
+    dataDir: plan.paths.dataDir, runtimeConfigPath: plan.paths.graphRuntimeConfigPath,
     sessionSkillPath: plan.paths.sessionSkillPath,
     projectSkillPath: plan.paths.projectSkillPath,
     reviewSkillPath: plan.paths.reviewSkillPath,
