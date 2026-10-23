@@ -73,6 +73,31 @@ test('the link grants nothing: another space is refused before reaching the Prov
   assert.equal(calls.length, 0);
 });
 
+test('tag ranking is an explicit detail read and preserves the typed search context', async () => {
+  const explanation = { original_rank: 2, final_rank: 1, multiplier: 1.2, matches: [], no_signal_reason: null };
+  const { app, calls } = application(() => ({ status: 200, body: { item_id: 'item-1', tag_ranking: explanation } }));
+  const context = { space_ids: ['personal-space'], query: 'deployment', personal_project_ids: ['project-a'],
+    active_personal_project_id: 'project-a', include_pending: true, include_personal_global: false, limit: 7 };
+  for (const kind of ['entity', 'relationship']) {
+    const result = await api(app, 'GET', `/api/knowledge/${kind}/item-1?personalSpaceId=personal-space`
+      + `&query_tags=${encodeURIComponent(JSON.stringify(context))}`);
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body.tag_ranking, explanation);
+    assert.deepEqual(calls.at(-1), { path: '/v1/knowledge/item-views', method: 'POST', body: {
+      personal_space_id: 'personal-space', item_kind: kind, item_id: 'item-1', query_tags: context } });
+  }
+});
+
+test('malformed tag context is rejected before a Provider read', async () => {
+  const { app, calls } = application();
+  for (const value of ['{', 'null', '[]', '"deployment"', '42']) {
+    const result = await api(app, 'GET', '/api/knowledge/entity/item-1?personalSpaceId=personal-space'
+      + `&query_tags=${encodeURIComponent(value)}`);
+    assert.equal(result.status, 400);
+  }
+  assert.equal(calls.length, 0);
+});
+
 test('a scope change names the version the page read and is the person\'s own edit', async () => {
   const { app, calls } = application(() => ({ status: 200, body: { scope: { kind: 'projects' } } }));
   const result = await api(app, 'POST', '/api/knowledge/relationship/item-1/scope', { personalSpaceId: 'personal-space',

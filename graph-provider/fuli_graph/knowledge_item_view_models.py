@@ -7,12 +7,12 @@ is authorized on its own.
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_serializer, model_validator
 
 from .knowledge_audit_models import KnowledgeChangeActor, KnowledgeItemKind, KnowledgeRevisionRecord
 from .knowledge_tag_models import KnowledgeTagReference
 from .model_base import StrictModel
-from .models import ConfirmationStatus, ContentSource
+from .models import ConfirmationStatus, ContentSource, SearchRequest
 
 # What kind of content an item holds, for its label. Derived from the item's
 # stored profile aspect or type; not a separate Rule model.
@@ -33,6 +33,14 @@ class KnowledgeItemRef(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     item_kind: KnowledgeItemKind
     item_id: str = Field(min_length=1, max_length=256)
+    # Optional console-only search context: recompute an explanation on demand.
+    query_tags: SearchRequest | None = None
+
+    @model_validator(mode='after')
+    def validate_query_tags_space(self):
+        if self.query_tags is not None and self.query_tags.space_ids != [self.personal_space_id]:
+            raise ValueError('query_tags must search exactly the item personal space')
+        return self
 
 
 class KnowledgeScopeProject(StrictModel):
@@ -133,6 +141,15 @@ class KnowledgeEvidenceSource(StrictModel):
 
 
 class KnowledgeItemView(KnowledgeItemSummary):
+    tag_ranking: dict | None = None
+
+    @model_serializer(mode='wrap')
+    def serialize_optional_tag_ranking(self, handler):
+        result = handler(self)
+        if self.tag_ranking is None:
+            result.pop('tag_ranking', None)
+        return result
+
     evidence: list[KnowledgeEvidenceSource] = Field(default_factory=list)
     evidence_count: int = 0
     revisions: list[KnowledgeRevisionRecord] = Field(default_factory=list)
