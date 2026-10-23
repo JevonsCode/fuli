@@ -34,6 +34,8 @@ export function createAppHost(context) {
   const { store, leases, gates, instances, now } = context;
 
   function authorizeCall({ token, toolName, input = {} }) {
+    // A closing process takes no new call; one already authorized still runs to its seal.
+    instances.assertOpen();
     const tool = context.hostTools().get(toolName);
     if (!tool || tool.marks.length) {
       throw new ApplicationError('tool_not_permitted', `Apps may not call ${toolName}`, { status: 403 });

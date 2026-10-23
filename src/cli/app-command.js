@@ -7,7 +7,7 @@ import { agentAppContext, agentAppRoot, agentAppServiceOver } from '../agent-app
 import { listAgentTools } from '../agent-tools.js';
 import { resolveGraphRuntimeOptions } from '../graphiti/runtime-config.js';
 import { presencePort } from '../presence/port.js';
-import { confirmInTerminal, typedLineInTerminal, writeLine } from './terminal-io.js';
+import { confirmInTerminal, interactiveTerminal, typedLineInTerminal, writeLine } from './terminal-io.js';
 
 const USAGE = 'Usage: fl app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION [--hello] | disable APP_ID | '
   + 'rollback APP_ID VERSION [--hello] | stop APP_ID [--force] | delete APP_ID [--data [--output DIR]] | export APP_ID --output DIR  '
@@ -15,7 +15,8 @@ const USAGE = 'Usage: fl app list [--agent AGENT_ID] | show APP_ID | approve APP
 // Decisions that activate or remove Agent-written code ask at an interactive
 // terminal. That keeps piped callers from answering for the user, but a process
 // of this OS account can open a terminal too, so it does not show a person
-// decided. Approve and rollback complete the terminal confirmation flow
+// decided. stdout must be a terminal too, so the terms and the warning cannot
+// be redirected away from the person typing. Approve and rollback complete the terminal confirmation flow
 // (confirmed-decisions.js, rec#11 D-36.9); delete records entrypoint cli with
 // presence unverified.
 const INTERACTIVE_ACTIONS = new Set(['approve', 'rollback', 'delete']);
@@ -25,13 +26,15 @@ const INTERACTIVE_ACTIONS = new Set(['approve', 'rollback', 'delete']);
 // confirm, typeLine, platform and presence are seams for tests; a real run
 // uses this terminal and, with --hello, this computer's Windows Hello.
 export async function runAppCommand(args, {
-  env = process.env, interactive = process.stdin.isTTY === true, confirm = confirmInTerminal, typeLine = typedLineInTerminal,
+  env = process.env, interactive = interactiveTerminal(), confirm = confirmInTerminal, typeLine = typedLineInTerminal,
   print = writeLine, platform = process.platform, presence
 } = {}) {
   const { values, positionals: [action, appId, version] } = parseAppArguments(args);
   if (!Object.hasOwn(ACTIONS, action ?? '') || (action !== 'list' && !appId)) throw new TypeError(USAGE);
   if (INTERACTIVE_ACTIONS.has(action) && !interactive) {
-    throw new TypeError(`fl app ${action} asks the local user to confirm, so run it in an interactive terminal`);
+    // Both ends: with stdout redirected, the terms and the risk warning would not be seen.
+    throw new TypeError(`fl app ${action} asks the local user to confirm, so run it in an interactive terminal `
+      + '(stdin and stdout both a terminal, so the warning is shown where the answer is typed)');
   }
   const hello = values.hello ? presence ?? presencePort({ platform }) : null;
   if (hello && !hello.kind) throw new TypeError('--hello uses Windows Hello, which this platform does not have');
@@ -45,7 +48,7 @@ export async function runAppCommand(args, {
   try {
     return await ACTIONS[action]({ service, decisions, appId, version, values, confirm, print });
   } finally {
-    service.close();
+    await service.close();
   }
 }
 

@@ -125,8 +125,9 @@ export function appRegistry(t, { tools = [] } = {}) {
   const clock = { now: Date.parse('2026-10-24T08:00:00.000Z') };
   const world = fakeWorld();
   const opened = [];
-  t.after(() => {
-    for (const service of opened) service.close();
+  // A host closes as a FULI process does: its instances are sealed and stopped first.
+  t.after(async () => {
+    await Promise.all(opened.map((service) => service.close()));
     rmSync(directory, { recursive: true, force: true });
   });
 

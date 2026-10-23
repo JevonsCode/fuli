@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { createTrustedRunner } from '../src/agent-apps/trusted-runner.js';
@@ -73,7 +74,7 @@ async function trustedHost(t, { pid = 101, ownerKind = 'console', write, wait } 
     dataPathFields: [], marks: [], run: write ?? (async () => 'ok') }]]);
   const host = registry.host({ pid, ownerKind, runner, hostTools, wait });
   const token = () => started.at(-1).environment.FULI_APP_TOKEN;
-  return { registry, host, runner, children, token };
+  return { registry, host, runner, children, token, hostTools };
 }
 
 test('a confirmed app starts as a process of this account with only its FULI_APP values, and stops through its handle', async (t) => {
@@ -186,3 +187,82 @@ test('an orphan is never signalled: the next owner waits until the app process h
   assert.deepEqual([ended.state, ended.stopReason], ['sealed', 'host_gone']);
   assert.equal(next.service.read({ appId: app.appId }).status, 'disabled');
 });
+
+// rec#10 round 2 P1: closing a FULI process ends the apps it holds, after the
+// work in flight, before the registry closes; another process then owns nothing stale.
+test('close admits nothing new, drains a write in flight, stops the real app process and frees its lease', async (t) => {
+  const entered = latch();
+  const release = latch();
+  const { registry, host, token, runner, hostTools } = await trustedHost(t, { write: async (_input, { dataFs }) => {
+    entered.open();
+    await release.promise;
+    await dataFs.writeFile('notes.json', '["before close"]');
+    return 'written';
+  } });
+  const app = await verifiedApp(host, { permissions: PERMISSIONS, runtime: { apiVersion: 1, entry: 'service/main.js' } }, FILES);
+  await host.service.start({ appId: app.appId });
+  const child = childOf(host, app.appId);
+  const appToken = token();
+  const pending = host.service.callTool({ token: appToken, toolName: 'record_decision_trace', input: {} });
+  await entered.promise;
+
+  const closing = host.service.close();
+  assert.equal(host.service.close(), closing, 'close is idempotent');
+  await assert.rejects(host.service.start({ appId: app.appId }), { code: 'host_closing' });
+  await assert.rejects(host.service.callTool({ token: appToken, toolName: 'record_decision_trace', input: {} }),
+    { code: 'host_closing' });
+  await assert.rejects(host.service.disable({ appId: app.appId, actor: CLI_USER }), { code: 'host_closing' });
+  assert.equal(alive(child), true, 'the process runs until the write in flight has drained');
+
+  release.open();
+  assert.equal(await pending, 'written');
+  await closing;
+  assert.equal(alive(child), false);
+  assert.equal(child.stdin.destroyed, true, 'the host pipe is closed');
+
+  const next = registry.host({ pid: 102, runner, hostTools });
+  const ended = next.context.store.instance(app.appId);
+  assert.deepEqual([ended.state, ended.stopReason, Boolean(ended.stoppedAt)], ['sealed', 'host_closing', true]);
+  assert.equal(next.context.store.owner(app.appId).ownerId, null, 'the lease is released, not left to a takeover');
+  assert.equal(readFileSync(join(next.context.dataOf(app.appId), 'notes.json'), 'utf8'), '["before close"]');
+  assert.deepEqual(events(next, app.appId).filter((action) => ['write_committed', 'sealed', 'stopped'].includes(action)),
+    ['write_committed', 'sealed', 'stopped']);
+  const restarted = await next.service.start({ appId: app.appId });
+  assert.deepEqual([restarted.status, restarted.generation], ['running', 2]);
+  await next.service.stop({ appId: app.appId });
+});
+
+// rec#10 round 2 P2: an app process that ends by itself ends its instance.
+const EXITS = [
+  ['an entry that throws while loading', `throw new Error('synthetic load failure ' + process.env.FULI_APP_TOKEN + ' in '
+    + process.cwd() + ' ' + 'x'.repeat(2000));\n`, 1, /synthetic load failure/],
+  ['a crash after it started', `setTimeout(() => { throw new Error('synthetic crash in ' + process.cwd()); }, 50);\n`, 1,
+    /synthetic crash in <path>/],
+  ['a normal exit', `process.stderr.write('synthetic finished\\n');\n`, 0, /synthetic finished/]
+];
+
+for (const [label, script, code, shown] of EXITS) {
+  test(`${label} ends the instance with a bounded, redacted summary, and the app can start again`, async (t) => {
+    const { host } = await trustedHost(t);
+    const app = await verifiedApp(host, { runtime: { apiVersion: 1, entry: 'service/main.js' } },
+      [{ path: 'service/main.js', content: script }]);
+    const first = await host.service.start({ appId: app.appId });
+    await until(() => host.context.store.instance(app.appId).stoppedAt, 'the exit wrapped up');
+
+    const { instance } = host.service.read({ appId: app.appId });
+    assert.deepEqual([instance.instanceId, instance.state, instance.stopReason], [first.instanceId, 'sealed', 'app_exited']);
+    assert.equal(instance.exit.code, code);
+    assert.match(instance.exit.error, shown);
+    assert.ok(Buffer.byteLength(instance.exit.error) <= 400, 'bounded');
+    const recorded = JSON.stringify(host.service.read({ appId: app.appId }));
+    assert.doesNotMatch(recorded, /fla_[A-Za-z0-9_-]{16,}/, 'no token');
+    for (const path of [host.context.packageOf(app.appId, '1.0.0'), pathToFileURL(host.context.packageOf(app.appId, '1.0.0')).href]) {
+      assert.equal(recorded.includes(path) || recorded.includes(JSON.stringify(path).slice(1, -1)), false, 'no path');
+    }
+    assert.equal(host.context.store.owner(app.appId).ownerId, null);
+
+    const again = await host.service.start({ appId: app.appId });
+    assert.deepEqual([again.status, again.generation], ['running', 2]);
+    await until(() => host.context.store.instance(app.appId).stoppedAt, 'the second exit wrapped up');
+  });
+}

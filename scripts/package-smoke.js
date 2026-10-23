@@ -108,6 +108,7 @@ try {
         'docs/project-agent-memory.md',
         'docs/agent-conversations-and-collaboration.md',
         'docs/employee-agents.md',
+        'docs/agent-apps.md',
         'docs/agent-interface-architecture.md',
         'docs/agent-roundtable.md',
         'docs/judgment-and-autonomy.md',

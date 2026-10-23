@@ -81,6 +81,29 @@ test('an app token verifies only for the current running instance this process h
   await assert.rejects(call(host, `fla_${'A'.repeat(43)}`), { code: 'app_token_invalid' });
 });
 
+// rec#10 PR312 round 2 P2: an exit is bound to the instance it was started for.
+test('an exit reported for an earlier instance never touches the current one', async (t) => {
+  const { host, appId } = await running(t);
+  const first = host.runner.started.at(-1);
+  await host.service.stop({ appId });
+  const second = await host.service.start({ appId });
+
+  first.onExit({ code: 1, signal: null, error: 'synthetic late exit' });
+  await settle();
+  await settle();
+  assert.deepEqual([instance(host, appId).instanceId, instance(host, appId).state], [second.instanceId, 'running']);
+  assert.equal(events(host, appId).includes('app_exited'), false);
+
+  // Its own exit ends it, once, even when reported twice.
+  const current = host.runner.started.at(-1);
+  current.onExit({ code: 0, signal: null, error: null });
+  current.onExit({ code: 0, signal: null, error: null });
+  await until(() => instance(host, appId).stoppedAt, 'the current exit wrapped up');
+  assert.deepEqual([instance(host, appId).stopReason, events(host, appId).filter((action) => action === 'app_exited').length],
+    ['app_exited', 1]);
+  assert.equal((await host.service.start({ appId })).generation, 3);
+});
+
 test('a decision seals and stops the running instance first, and its tokens end with it', async (t) => {
   const { host, appId, token, registry } = await running(t);
   const entry = join(registry.root, 'packages', appId, '1.0.0', 'service', 'main.js');

@@ -41,11 +41,26 @@ export function agentAppServiceOver(context) {
     stop: context.instances.stop,
     authorizeCall: host.authorizeCall,
     callTool: host.callTool,
-    close: () => {
-      context.leases.close();
-      context.store.close();
-    }
+    close: () => closeContext(context)
   };
+}
+
+// Closes once, however often it is asked: the instances this process holds
+// are sealed and their processes stopped (instances.js) before the leases and
+// the registry close. With nothing hosted or in flight the registry closes
+// before this returns.
+function closeContext(context) {
+  const finish = () => {
+    context.leases.close();
+    context.store.close();
+  };
+  if (!context.closed) {
+    const idle = context.instances.idle();
+    const ending = context.instances.close();
+    if (idle) finish();
+    context.closed = idle ? Promise.resolve() : ending.finally(finish);
+  }
+  return context.closed;
 }
 
 // One context is one FULI process's view of the registry: its owner lease

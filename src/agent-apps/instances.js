@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { createAppTokens } from './app-tokens.js';
+import { settledWithin } from './bounded-wait.js';
 import { createDataDeletion } from './data-deletion.js';
 import { ensureDataDirectory } from './data-directory.js';
 import { appConflict } from './errors.js';
@@ -10,6 +11,9 @@ import { createRunGate, runRefused } from './run-gate.js';
 const INSTANCE_ID_BYTES = 16;
 // Sealing waits this long for a write tool that holds the gate (D-28.17).
 const SEAL_WAIT_MS = 10_000;
+// Closing waits this long for work in flight and for each seal; an app process
+// still held after it is stopped, and its records are left to the next owner.
+const CLOSE_WAIT_MS = 30_000;
 
 // An instance has ended only once its process is confirmed stopped (stoppedAt):
 // sealed alone, after a runner stop that failed, still blocks a start, an
@@ -34,6 +38,13 @@ const waitFor = (ms, signal) => delay(ms, undefined, { signal }).catch(() => {})
 //   (its lease was just taken over on exit evidence) is confirmed stopped by the
 //   runner and sealed with reason host_gone, which also completes a sealing
 //   its host left; an interrupted data deletion is settled.
+// - exit: an app process that ends by itself (its entry failed to load, it
+//   crashed or it finished) is wrapped up in the app's lifecycle, bound to
+//   its instance id and generation: recorded with a short redacted summary
+//   and sealed like a stop. An exit of an earlier instance touches nothing.
+// - close: no new start, stop, decision or call is admitted; work in flight
+//   finishes, every instance this process holds is sealed and its process
+//   stopped, and only then do the lease and the registry close.
 export function createAppInstances(context) {
   const { store, leases, gates, lifecycles, runner, now } = context;
   const wait = context.wait ?? waitFor;
@@ -41,13 +52,31 @@ export function createAppInstances(context) {
   const { runGate } = createRunGate(context);
   const deletion = createDataDeletion(context);
   const hosted = new Map();
+  // Starts, stops and decisions in flight in this process, which close waits for.
+  const inFlight = new Set();
+  let closing = false;
+
+  // Work queued before close began, and calls of a closing host, are refused.
+  function assertOpen() {
+    if (closing) throw hostClosing();
+  }
+
+  // Admits one piece of lifecycle work unless this process is closing.
+  function admit(work) {
+    if (closing) return Promise.reject(hostClosing());
+    const running = work();
+    inFlight.add(running);
+    running.then(() => inFlight.delete(running), () => inFlight.delete(running));
+    return running;
+  }
 
   // start, stop and every decision on an app (operations.js) run one at a
   // time in this process (lifecycles): a decision never runs beside a start
   // still in flight, and a start never begins while an earlier instance is
   // still being sealed or stopped.
   function start({ appId, mode = 'managed' }) {
-    return lifecycles.run(appId, { toolName: 'start' }, async () => {
+    return admit(() => lifecycles.run(appId, { toolName: 'start' }, async () => {
+      assertOpen();
       const earlier = hosted.get(appId);
       if (earlier) throw earlier.sealing ? sealingRefusal({ instanceId: earlier.instanceId, waitingFor: null })
         : liveInstance({ state: 'running', instanceId: earlier.instanceId });
@@ -67,7 +96,7 @@ export function createAppInstances(context) {
       } finally {
         if (!started) leases.release(lease);
       }
-    });
+    }));
   }
 
   async function launch(appId, mode, lease) {
@@ -105,7 +134,8 @@ export function createAppInstances(context) {
       }
       handle = await runner.start({ appId, instanceId, generation, mode, manifest: version.manifest,
         packageDirectory: context.packageOf(appId, version.version), dataDirectory: context.dataOf(appId),
-        environment: { FULI_APP_ID: appId, FULI_APP_INSTANCE: instanceId, FULI_APP_TOKEN: token } });
+        environment: { FULI_APP_ID: appId, FULI_APP_INSTANCE: instanceId, FULI_APP_TOKEN: token },
+        onExit: (exit) => exited(appId, instance, exit) });
     } catch (error) {
       endInstance(appId, lease, instance, 'start_failed', { sealedAt: now() });
       throw error;
@@ -150,10 +180,12 @@ export function createAppInstances(context) {
     // When the seal completes after the caller was told sealing, a failure
     // is recorded and left to the next seal or the next owner's reconcile.
     done.catch(() => {});
+    local.done = done;
     const timeout = new AbortController();
+    // The wait ends with the race either way, a failed stop included, so no timer outlives it.
     return Promise.race([done.then(() => 'sealed'), wait(SEAL_WAIT_MS, timeout.signal).then(() => 'waiting')])
+      .finally(() => timeout.abort())
       .then((state) => {
-        timeout.abort();
         if (state === 'sealed') return { status: 'sealed', appId, instanceId: local.instanceId };
         const holder = gates.holder(appId);
         store.transaction(() => {
@@ -215,10 +247,25 @@ export function createAppInstances(context) {
     if (sealed.status === 'sealing') throw sealingRefusal(sealed);
   }
 
+  // An app process that ended by itself. Only the instance it was started
+  // for, still hosted here and not already being sealed, is wrapped up.
+  function exited(appId, { instanceId, generation }, { code = null, signal = null, error = null } = {}) {
+    lifecycles.run(appId, { toolName: 'exit' }, async () => {
+      const local = hosted.get(appId);
+      if (closing || local?.instanceId !== instanceId || local.generation !== generation || local.sealing) return;
+      store.transaction(() => {
+        if (!leases.owns(local.lease)) return;
+        store.recordEvent({ appId, at: now(), action: 'app_exited',
+          detail: { instanceId, generation, code, signal, ...(error ? { error } : {}) } });
+      });
+      await seal(appId, 'app_exited');
+    }).catch(() => {});
+  }
+
   // fuli app stop: this process's instance, or one whose host has exited
   // (taken over on exit evidence). force against a live host is refused.
   function stop({ appId, force = false }) {
-    return lifecycles.run(appId, { toolName: 'stop' }, async () => {
+    return admit(() => lifecycles.run(appId, { toolName: 'stop' }, async () => {
       if (hosted.has(appId)) {
         const sealed = await seal(appId, 'stopped');
         if (sealed.status === 'sealing') throw sealingRefusal(sealed);
@@ -231,7 +278,30 @@ export function createAppInstances(context) {
       } finally {
         leases.release(lease);
       }
-    });
+    }));
+  }
+
+  // Ends this process's part: admits nothing new, lets work in flight finish,
+  // then seals and stops every instance it holds. A seal still waiting after
+  // CLOSE_WAIT_MS (a write tool that never returns) has its process stopped
+  // through the runner all the same; its records stay for the next owner's
+  // reconcile, as after a crash.
+  async function close() {
+    closing = true;
+    await settledWithin(Promise.allSettled([...inFlight]), CLOSE_WAIT_MS);
+    await Promise.all([...hosted.entries()].map(async ([appId, local]) => {
+      // A host whose lease another process took over records nothing more; its process still ends here.
+      const owned = leases.owns(local.lease);
+      if (owned) {
+        local.sealing ??= sealHosted(appId, local, 'host_closing');
+        local.sealing.catch(() => {});
+      }
+      const sealed = owned && await settledWithin(local.done, CLOSE_WAIT_MS) && hosted.get(appId) !== local;
+      if (!sealed) {
+        await runner.stop(local.handle).catch(() => {});
+        hosted.delete(appId);
+      }
+    }));
   }
 
   // Inside the app's write gate, holding its lease.
@@ -260,10 +330,15 @@ export function createAppInstances(context) {
   }
 
   return {
-    start, stop, seal, end, reconcile, assertNoInstance, verifyToken: tokens.verifyToken,
-    hosted: (appId) => hosted.get(appId) ?? null
+    start, stop, seal, end, reconcile, assertNoInstance, admit, close, verifyToken: tokens.verifyToken,
+    hosted: (appId) => hosted.get(appId) ?? null,
+    // Nothing hosted and nothing in flight: closing has nothing to wait for.
+    idle: () => hosted.size === 0 && inFlight.size === 0,
+    assertOpen
   };
 }
+
+const hostClosing = () => appConflict('host_closing', 'This FULI process is shutting down; try again from a running FULI');
 
 function liveInstance(instance) {
   if (instance.state === 'sealed') {

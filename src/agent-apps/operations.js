@@ -9,12 +9,13 @@
 // transactions and before each data file operation. The lease and the gate
 // are released only after the work, with all its file I/O, has finished.
 // keepInstance: an export, which refuses a running instance instead of
-// stopping it.
+// stopping it. While this process closes (instances.js) no operation is admitted.
 export function createAppOperations(context) {
   const { leases, gates, lifecycles, instances, now } = context;
 
   function run(appId, operation, work, { keepInstance = false } = {}) {
-    return lifecycles.run(appId, { toolName: operation }, async () => {
+    return instances.admit(() => lifecycles.run(appId, { toolName: operation }, async () => {
+      instances.assertOpen();
       if (!keepInstance) await instances.end(appId, operation);
       const lease = await leases.acquire(appId);
       try {
@@ -25,7 +26,7 @@ export function createAppOperations(context) {
       } finally {
         leases.release(lease);
       }
-    });
+    }));
   }
 
   return { run };
