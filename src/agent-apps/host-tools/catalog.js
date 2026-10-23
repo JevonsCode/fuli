@@ -32,7 +32,6 @@ const PEERS = marked('egress', 'launch');
 
 export const HOST_TOOL_CATALOG = Object.freeze({
   // Grantable: local graph reads and writes within the owning Agent's space.
-  search_knowledge_graph: appTool('read', ['personalSpaceId']),
   list_personal_projects: appTool('read', ['personalSpaceId']),
   resolve_knowledge_tags: appTool('read', ['personalSpaceId']),
   get_project_agent_memory: appTool('read', ['personalSpaceId', 'agentId']),
@@ -55,6 +54,8 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   get_external_knowledge_conflict_policy: EGRESS,
   update_external_knowledge_conflict_policy: EGRESS,
   search_connected_knowledge: EGRESS,
+  // Federated search may pass the query to remote workspace clients.
+  search_knowledge_graph: EGRESS,
   capture_session_knowledge: EGRESS,
   get_knowledge_graph: EGRESS,
   delete_public_project: EGRESS,

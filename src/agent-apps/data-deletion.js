@@ -79,7 +79,13 @@ export function createDataDeletion(context) {
   function settle(appId, lease) {
     const app = store.existingApp(appId);
     const directory = context.dataOf(appId);
-    const leftovers = deletingDirectories(directory);
+    // Only the directory the confirmed deletion renamed is ever removed here;
+    // any other .deleting-* directory is reported, never deleted.
+    const deletionId = store.lastEvent(appId, 'data_deleting')?.detail?.deletionId;
+    const confirmed = deletionId ? deletingDirectoryOf(directory, deletionId) : null;
+    const leftovers = deletingDirectories(directory).filter((path) => path === confirmed);
+    const strays = deletingDirectories(directory).filter((path) => path !== confirmed);
+    if (strays.length) observeOnce(lease, appId, 'data_deletion_incomplete', { directories: strays.length });
     if (app.status === 'data_deleting') {
       if (existsSync(directory)) {
         // The rename never happened: the person confirms the deletion again.

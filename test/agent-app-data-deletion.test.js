@@ -48,14 +48,20 @@ test('reconciliation finishes a deletion interrupted after the commit or the ren
   const { host, appId, data } = await codeDeleted(t);
   // ① committed, ② renamed, ③ not done.
   setStatus(host, appId, 'data_deleting');
+  host.context.store.recordEvent({ appId, at: 'x', action: 'data_deleting', detail: { deletionId: '0123456789abcdef' } });
   const deleting = `${data}.deleting-0123456789abcdef`;
   mkdirSync(deleting);
   writeFileSync(join(deleting, 'notes.json'), 'synthetic');
+  // A .deleting-* directory no confirmed deletion produced is reported, never removed.
+  const stray = `${data}.deleting-fedcba9876543210`;
+  mkdirSync(stray);
   rmSync(data, { recursive: true, force: true });
 
   assert.equal((await host.service.stop({ appId })).status, 'stopped');
   assert.equal(host.service.read({ appId }).status, 'deleted');
   assert.equal(existsSync(deleting), false);
+  assert.equal(existsSync(stray), true);
+  assert.deepEqual(host.context.store.lastEvent(appId, 'data_deletion_incomplete').detail, { directories: 1 });
   assert.deepEqual(host.context.store.lastEvent(appId, 'data_deleted').detail, { reconciled: true });
 
   // ① committed, nothing on disk any more: only the record is missing.
@@ -107,7 +113,7 @@ test('a deleted identity comes back as a new generation; the tombstone and its i
 });
 
 test('a manifest asking for network or a marked tool is rejected at submission, never stripped', async (t) => {
-  const registry = appRegistry(t, { tools: ['agent_chat', 'review_with_tonborg', 'search_knowledge_graph'] });
+  const registry = appRegistry(t, { tools: ['agent_chat', 'review_with_tonborg', 'search_knowledge_graph', 'list_personal_projects'] });
   const host = registry.host({ pid: 101 });
   const submit = (manifest) => host.service.submit({ personalSpaceId: 'space-a', agentId: 'agent-jvs',
     manifest: { ...MANIFEST, ...manifest }, files: FILES });
@@ -117,7 +123,10 @@ test('a manifest asking for network or a marked tool is rejected at submission, 
     (error) => error.code === 'manifest_rejected' && /agent_chat is marked egress, launch/.test(error.message)
       && /review_with_tonborg is marked model/.test(error.message));
   await assert.rejects(submit({ permissions: ['fuli.list_project_agents'] }), { code: 'permission_unavailable' });
-  assert.equal((await submit({ permissions: ['fuli.search_knowledge_graph'] })).status, 'pending');
+  // Federated search may hand the query to remote workspace clients.
+  await assert.rejects(submit({ permissions: ['fuli.search_knowledge_graph'] }),
+    (error) => error.code === 'manifest_rejected' && /search_knowledge_graph is marked egress/.test(error.message));
+  assert.equal((await submit({ permissions: ['fuli.list_personal_projects'] })).status, 'pending');
 });
 
 test('identity keys of existing apps are backfilled only after a person confirms the migration', async (t) => {

@@ -19,11 +19,11 @@ import { fakeHelper, windowsHello } from '../test-support/fake-win-helper.js';
 
 const CLI_USER = Object.freeze({ entrypoint: 'cli', user: 'fixture-user' });
 const CONSOLE = Object.freeze({ entrypoint: 'http', user: 'local-console' });
-const TOOLS = ['search_knowledge_graph'];
+const TOOLS = ['resolve_knowledge_tags'];
 const MANIFEST = Object.freeze({
   schemaVersion: 1, name: 'dispatch-log', version: '1.0.0', title: 'Dispatch log',
   description: 'Synthetic fixture page that lists dispatched replies.',
-  permissions: ['fuli.search_knowledge_graph'],
+  permissions: ['fuli.resolve_knowledge_tags'],
   runtime: { apiVersion: 1, webRoot: 'web' },
   data: { scope: 'app', format: 1 }
 });

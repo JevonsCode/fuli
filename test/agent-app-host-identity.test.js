@@ -37,11 +37,16 @@ function fakeProc({ namespace = '4026531836', boot = BOOT, stats = {} } = {}) {
 const stat = (pid, state, starttime) => `${pid} (node) worker) ${state} 1 ${pid} ${pid} 0 -1 4194560 `
   + `${Array.from({ length: 12 }, () => '0').join(' ')} ${starttime} 1000 50 18446744073709551615`;
 
-function mockKill(t, code) {
-  return t.mock.method(process, 'kill', () => {
-    if (code) throw Object.assign(new Error('synthetic'), { code });
+// One mock of process.kill per test, restored when the test ends; answer()
+// changes what it says. A second mock of the same method in one test would
+// not be undone and would leak into later tests.
+function mockKill(t, code = null) {
+  let answer = code;
+  const mock = t.mock.method(process, 'kill', () => {
+    if (answer) throw Object.assign(new Error('synthetic'), { code: answer });
     return true;
   });
+  return Object.assign(mock, { answer: (next) => { answer = next; } });
 }
 
 const linuxIdentity = (starttime, namespace = '4026531836') => `linux:${BOOT}:${namespace}:${starttime}`;
@@ -70,15 +75,16 @@ test('T14 Linux: another PID namespace is unknown even when the PID is absent he
 });
 
 test('T9 Linux: a process table that cannot be read is unknown', async (t) => {
-  mockKill(t);
+  const kill = mockKill(t);
   const host = createHostIdentity({ platform: 'linux', procfs: fakeProc() });
   assert.equal(await host.probe({ pid: 4242, identity: linuxIdentity(98765) }), 'unknown');
   const noBoot = createHostIdentity({ platform: 'linux', procfs: fakeProc({ boot: null, stats: { 4242: stat(4242, 'S', 1) } }) });
   assert.equal(await noBoot.probe({ pid: 4242, identity: linuxIdentity(1) }), 'unknown');
-  const denied = mockKill(t, 'EINVAL');
+  kill.answer('EINVAL');
+  const before = kill.mock.callCount();
   assert.equal(await createHostIdentity({ platform: 'linux', procfs: fakeProc({ stats: { 4242: stat(4242, 'S', 1) } }) })
     .probe({ pid: 4242, identity: linuxIdentity(1) }), 'unknown');
-  assert.equal(denied.mock.callCount(), 1);
+  assert.equal(kill.mock.callCount(), before + 1);
 });
 
 test('T8 an identity from another platform is unknown and nothing is asked of the OS', async (t) => {
@@ -97,12 +103,12 @@ test('T8 an identity from another platform is unknown and nothing is asked of th
 
 test('macOS: only ESRCH or a zombie is evidence; a live process is unknown, not alive', async (t) => {
   const host = (state) => createHostIdentity({ platform: 'darwin', readPsState: async () => state });
-  mockKill(t);
+  const kill = mockKill(t);
   assert.equal((await host('S').self()).identity, 'darwin:unverified');
   assert.equal(await host('Ss').probe({ pid: 4242, identity: 'darwin:unverified' }), 'unknown');
   assert.equal(await host('Z+').probe({ pid: 4242, identity: 'darwin:unverified' }), 'exited');
   assert.equal(await host(null).probe({ pid: 4242, identity: 'darwin:unverified' }), 'unknown');
-  mockKill(t, 'ESRCH');
+  kill.answer('ESRCH');
   assert.equal(await host('S').probe({ pid: 4242, identity: 'darwin:unverified' }), 'exited');
 });
 
@@ -192,7 +198,7 @@ test('every FULI Agent tool is classified for apps, and no marked or app-managin
     }
   }
   for (const name of ['submit_agent_app_version', 'list_agent_apps', 'agent_chat', 'review_with_tonborg',
-    'call_employee_tool', 'search_connected_knowledge']) {
+    'call_employee_tool', 'search_connected_knowledge', 'search_knowledge_graph']) {
     assert.equal(HOST_TOOL_CATALOG[name].grantable, false, name);
   }
 });

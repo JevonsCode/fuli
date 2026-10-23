@@ -34,8 +34,12 @@ export function latch() {
 // Lets pending promise reactions and fs callbacks run.
 export const settle = () => new Promise((resolve) => setImmediate(resolve));
 
+// Polls by time, not by turns, so a busy test runner's slower file I/O does not time it out.
+const UNTIL_MS = 10_000;
+
 export async function until(condition, label = 'condition') {
-  for (let attempt = 0; attempt < 500; attempt += 1) {
+  const deadline = Date.now() + UNTIL_MS;
+  while (Date.now() < deadline) {
     if (await condition()) return;
     await settle();
   }
@@ -60,21 +64,27 @@ function fakeHostIdentity(world, pid) {
   };
 }
 
-// A backend that starts nothing and records what it was asked.
+// A backend that starts nothing and records what it was asked. hooks.<step>,
+// when set, runs (and may wait or throw) before selfCheck, start or stop answer.
 export function fakeIsolation({ selfCheck = { ok: true } } = {}) {
   const calls = [];
   const started = [];
+  const hooks = {};
   let next = 7000;
   return {
-    kind: 'fake', calls, started,
-    selfCheck: async () => selfCheck,
+    kind: 'fake', calls, started, hooks,
+    selfCheck: async () => { await hooks.selfCheck?.(); return selfCheck; },
     start: async (spec) => {
+      await hooks.start?.();
       calls.push(['start', spec.instanceId]);
       started.push(spec);
       next += 1;
       return { pid: next, pidIdentity: `fake:${next}`, exePath: '/synthetic/app', socket: `fake-socket-${spec.instanceId}` };
     },
-    stop: async (handle) => { calls.push(['stop', handle.pid]); },
+    stop: async (handle) => {
+      await hooks.stop?.();
+      calls.push(['stop', handle.pid]);
+    },
     stopOrphan: async (instance) => { calls.push(['stopOrphan', instance.instanceId]); return { stopped: true }; }
   };
 }
@@ -101,7 +111,7 @@ export function fakeWait() {
     waiting.push(resolve);
     signal?.addEventListener('abort', resolve, { once: true });
   });
-  return { wait, elapse: () => { for (const resolve of waiting.splice(0)) resolve(); } };
+  return { wait, elapse: () => { for (const resolve of waiting.splice(0)) resolve(); }, waiting: () => waiting.length };
 }
 
 // One registry directory and a clock shared by every host opened on it.
@@ -117,11 +127,11 @@ export function appRegistry(t, { tools = [] } = {}) {
   });
 
   function host({ pid, ownerKind = 'console', isolation = fakeIsolation(), hostTools = new Map(), fs = realFs,
-    wait } = {}) {
+    wait, timers = { setInterval: () => ({ unref() {} }), clearInterval: () => {} } } = {}) {
     const context = agentAppContext({ root, providerIdentity: 'http://127.0.0.1:65530', platform: 'win32', ownerKind,
       resolveOwner: async (owner) => owner, toolNames: () => tools, clock: () => new Date(clock.now),
       hostIdentity: fakeHostIdentity(world, pid), isolation, hostTools: () => hostTools, fs, wait,
-      timers: { setInterval: () => ({ unref() {} }), clearInterval: () => {} } });
+      timers });
     const service = agentAppServiceOver(context);
     opened.push(service);
     const decisions = createVerifiedDecisions(context, { presence: { kind: 'hello', verify: async () => ({ verified: true }) } });

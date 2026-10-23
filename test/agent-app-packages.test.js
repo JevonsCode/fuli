@@ -12,7 +12,7 @@ const OWNERS = new Set(['space-a/agent-jvs', 'space-a/agent-dot']);
 const MANIFEST = Object.freeze({
   schemaVersion: 1, name: 'dispatch-log', version: '1.0.0', title: 'Dispatch log',
   description: 'Synthetic fixture page that lists dispatched replies.',
-  permissions: ['fuli.search_knowledge_graph'],
+  permissions: ['fuli.resolve_knowledge_tags'],
   runtime: { apiVersion: 1, entry: 'service/main.js', webRoot: 'web' },
   data: { scope: 'app', format: 1 }
 });
@@ -25,7 +25,7 @@ function fixture(t, { root } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), 'fuli-agent-app-packages-'));
   const appRoot = root?.(dataDir) ?? join(dataDir, 'agent-apps');
   const clock = { now: Date.parse('2026-10-20T08:00:00.000Z') };
-  const tools = ['search_knowledge_graph', 'list_personal_projects', 'agent_chat'];
+  const tools = ['resolve_knowledge_tags', 'list_personal_projects', 'agent_chat'];
   const service = createAgentAppService({
     root: appRoot,
     providerIdentity: 'http://127.0.0.1:65530/',
@@ -37,6 +37,8 @@ function fixture(t, { root } = {}) {
     },
     toolNames: () => tools,
     clock: () => new Date(clock.now),
+    // The run gate's answers below are Windows's, the one platform with a presence check.
+    platform: 'win32',
     // A synthetic host process: nothing real is probed.
     hostIdentity: { platform: 'test', self: async () => ({ pid: 101, identity: 'test:101', exePath: '/synthetic/node' }),
       probe: async () => 'unknown' }
@@ -108,7 +110,7 @@ test('approval binds the submitted digest and refuses a package changed before o
   assert.deepEqual(recorded.approval, {
     digest: second.digest, approvedBy: 'fixture-user', entrypoint: 'cli', presence: 'unverified', verification: null, challengeId: null,
     verifiedAt: null, approvedAt: '2026-10-20T08:00:00.000Z',
-    permissions: ['fuli.search_knowledge_graph'], data: { scope: 'app', format: 1, accepts: [1], migration: 'none' },
+    permissions: ['fuli.resolve_knowledge_tags'], data: { scope: 'app', format: 1, accepts: [1], migration: 'none' },
     resident: false
   });
 });
@@ -221,7 +223,7 @@ test('activation checks the data format and the current authorization before any
   const v3 = await service.submit(submission({ manifest: { version: '3.0.0', permissions: [],
     data: { scope: 'app', format: 2 } } }));
   await service.approve(approval(v3));
-  tools.splice(tools.indexOf('search_knowledge_graph'), 1);
+  tools.splice(tools.indexOf('resolve_knowledge_tags'), 1);
   await assert.rejects(service.rollback({ appId, version: '2.0.0', actor: LOCAL_USER }), { code: 'permission_unavailable' });
   assert.equal(service.read({ appId }).version, '3.0.0');
 

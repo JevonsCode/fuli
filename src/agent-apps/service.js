@@ -74,6 +74,8 @@ export function agentAppContext({
     // A process that hosts no instance (the CLI) has no tools to run for one.
     hostTools: hostTools ?? (() => (callFuliTool ? fuliHostTools({ toolNames, callFuliTool }) : new Map())),
     gates: createWriteGates(),
+    // start, stop and decisions on one app, one at a time (instances.js, operations.js).
+    lifecycles: createWriteGates(),
     leases: createOwnerLeases({ store, hostIdentity, ownerKind, clock, now, timers })
   };
   context.instances = createAppInstances(context);

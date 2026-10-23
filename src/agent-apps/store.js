@@ -255,6 +255,11 @@ export class AgentAppStore {
       WHERE app_id = ? AND revoked_at IS NULL`).run(at, reason, appId);
   }
 
+  revokeInstanceTokens(appId, instanceId, reason, at) {
+    this.database.prepare(`UPDATE agent_app_tokens SET revoked_at = ?, revoked_reason = ?
+      WHERE app_id = ? AND instance_id = ? AND revoked_at IS NULL`).run(at, reason, appId, instanceId);
+  }
+
   // Leaves the app row and its event history: the content-free deletion record.
   eraseContent(appId) {
     for (const table of ['agent_app_versions', 'agent_app_approvals', 'agent_app_tokens', 'agent_app_instances']) {
@@ -274,10 +279,10 @@ export class AgentAppStore {
       .all(appId, limit).reverse().map(eventRecord);
   }
 
-  // How often one action happened at or after a time, for rate limits.
-  countEvents(appId, action, since) {
-    return this.database.prepare('SELECT COUNT(*) AS count FROM agent_app_events WHERE app_id = ? AND action = ? AND at >= ?')
-      .get(appId, action, since).count;
+  // How often one action of one instance happened at or after a time, for rate limits.
+  countInstanceEvents(appId, instanceId, action, since) {
+    return this.database.prepare(`SELECT COUNT(*) AS count FROM agent_app_events WHERE app_id = ? AND action = ? AND at >= ?
+      AND json_extract(detail, '$.instanceId') = ?`).get(appId, action, since, instanceId).count;
   }
 
   lastEvent(appId, action) {

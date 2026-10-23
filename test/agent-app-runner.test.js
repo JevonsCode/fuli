@@ -13,7 +13,7 @@ import {
 // Synthetic only: fake host processes over one temporary registry, a fake
 // isolation backend that starts nothing, fake host tools. No app code runs.
 
-const TOOLS = ['record_decision_trace', 'search_knowledge_graph'];
+const TOOLS = ['record_decision_trace', 'resolve_knowledge_tags'];
 const PERMISSIONS = TOOLS.map((name) => `fuli.${name}`);
 
 const writeTool = (run, extra = {}) => ({ grantable: true, effect: 'write', scopeFields: ['personalSpaceId', 'agentId'],
@@ -22,7 +22,7 @@ const readTool = (run) => ({ grantable: true, effect: 'read', scopeFields: ['per
 
 async function running(t, { write = writeTool(async () => 'ok'), read = readTool(async () => 'read'), fs, wait } = {}) {
   const registry = appRegistry(t, { tools: TOOLS });
-  const host = registry.host({ pid: 101, hostTools: new Map([['record_decision_trace', write], ['search_knowledge_graph', read]]),
+  const host = registry.host({ pid: 101, hostTools: new Map([['record_decision_trace', write], ['resolve_knowledge_tags', read]]),
     fs, wait });
   const app = await verifiedApp(host, { permissions: PERMISSIONS });
   const started = await host.service.start({ appId: app.appId });
@@ -131,14 +131,14 @@ test('a marked or unknown tool is refused at the host even when a tool map offer
   const app = await verifiedApp(host, { permissions: PERMISSIONS });
   await host.service.start({ appId: app.appId });
   await assert.rejects(call(host, lastToken(host)), { code: 'tool_not_permitted' });
-  await assert.rejects(call(host, lastToken(host), {}, 'search_knowledge_graph'), { code: 'tool_not_permitted' });
+  await assert.rejects(call(host, lastToken(host), {}, 'resolve_knowledge_tags'), { code: 'tool_not_permitted' });
 });
 
 // D-28.17 T1: a write tool holds the gate when the instance is stopped.
 test('T1 sealing waits for a write in progress, refuses decisions meanwhile and completes after it', async (t) => {
   const entered = latch();
   const release = latch();
-  const { wait, elapse } = fakeWait();
+  const { wait, elapse, waiting } = fakeWait();
   const { host, appId, token } = await running(t, { wait, write: writeTool(async (_input, { dataFs }) => {
     entered.open();
     await release.promise;
@@ -149,6 +149,7 @@ test('T1 sealing waits for a write in progress, refuses decisions meanwhile and 
   await entered.promise;
 
   const stopping = host.service.stop({ appId });
+  await until(() => waiting() > 0, 'seal wait');
   elapse();
   await assert.rejects(stopping, (error) => error.code === 'instance_sealing' && error.detail.waitingFor === 'record_decision_trace');
   assert.equal(instance(host, appId).state, 'sealing');
@@ -204,11 +205,12 @@ test('T3 a write of a superseded instance is refused and the new instance data i
 
 // D-28.17 T4 with D-28.21: the latch never opens; a restarted host reconciles.
 test('T4 a seal left waiting by a host that exited is completed by the next owner and deletion continues', async (t) => {
-  const { wait, elapse } = fakeWait();
+  const { wait, elapse, waiting } = fakeWait();
   const { registry, host, appId, token } = await running(t, { wait, write: writeTool(() => new Promise(() => {})) });
   void call(host, token);
   await settle();
   const stopping = host.service.stop({ appId });
+  await until(() => waiting() > 0, 'seal wait');
   elapse();
   await assert.rejects(stopping, { code: 'instance_sealing' });
 
@@ -237,7 +239,7 @@ test('T5 a write after the data root was moved away is refused and never creates
 test('a read tool runs outside the gate and its result is discarded when the instance ends meanwhile', async (t) => {
   const reading = latch();
   const { host, appId, token } = await running(t, { read: readTool(async () => { await reading.promise; return 'stale'; }) });
-  const pending = call(host, token, {}, 'search_knowledge_graph');
+  const pending = call(host, token, {}, 'resolve_knowledge_tags');
   await settle();
   assert.equal((await host.service.stop({ appId })).status, 'sealed', 'a read does not hold the gate');
   reading.open();
@@ -280,7 +282,7 @@ test('T4c-1 a live owner paused at L1 or L2 keeps its lease; the other host chan
 });
 
 test('T4c-2 stopping at L2 keeps the lease until the I/O completes, commits and releases it', async (t) => {
-  const { wait, elapse } = fakeWait();
+  const { wait, elapse, waiting } = fakeWait();
   const counting = countingFs();
   const context = await running(t, { fs: counting.fs, wait, write: writeTool(async (_input, { dataFs }) => {
     await dataFs.writeFile('notes.json', 'synthetic');
@@ -294,6 +296,7 @@ test('T4c-2 stopping at L2 keeps the lease until the I/O completes, commits and 
   await until(() => counting.calls.some(([name]) => name === 'writeFile'), 'L2');
 
   const stopping = host.service.stop({ appId });
+  await until(() => waiting() > 0, 'seal wait');
   elapse();
   await assert.rejects(stopping, { code: 'instance_sealing' });
   assert.equal(host.context.store.owner(appId).pid, 101);

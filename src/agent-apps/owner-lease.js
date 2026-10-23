@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { appConflict } from './errors.js';
+import { createWriteGates } from './write-gate.js';
 
 // While held, the lease is refreshed this often; the heartbeat is for display
 // and instance_unresponsive only and never lets another process take over.
@@ -47,7 +48,16 @@ export function createOwnerLeases({ store, hostIdentity, ownerKind, clock, now, 
     }
   }
 
-  async function acquire(appId, { force = false } = {}) {
+  // Acquires of one app in this process run one after another, so a second
+  // one waits for the first and then shares its lease (holders + 1) instead
+  // of taking the lease again and fencing out the first.
+  const acquiring = createWriteGates();
+
+  function acquire(appId, options = {}) {
+    return acquiring.run(appId, { toolName: 'acquire' }, () => acquireNow(appId, options));
+  }
+
+  async function acquireNow(appId, { force = false }) {
     const me = await (self ??= hostIdentity.self());
     for (let attempt = 1; ; attempt += 1) {
       const local = held.get(appId);

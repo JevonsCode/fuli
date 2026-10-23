@@ -59,7 +59,7 @@ export function createAppHost(context) {
         store.recordEvent({ appId: grant.appId, at: now(), action: 'scope_violation',
           detail: { toolName, field: violated, instanceId: grant.instanceId } });
         const since = new Date(context.clock().getTime() - SCOPE_VIOLATION_WINDOW_MS).toISOString();
-        return store.countEvents(grant.appId, 'scope_violation', since);
+        return store.countInstanceEvents(grant.appId, grant.instanceId, 'scope_violation', since);
       });
       // The refusal stands either way; a seal that fails shows in the instance state.
       if (count >= SCOPE_VIOLATION_LIMIT) instances.seal(grant.appId, 'scope_violations').catch(() => {});
@@ -93,7 +93,10 @@ export function createAppHost(context) {
           throw appConflict('write_fenced_after_fs', 'Another FULI process took over this app during the write; '
             + 'nothing more is recorded', { op: toolName });
         }
-        store.recordEvent({ appId: grant.appId, at: now(), action: 'write_committed', detail: { toolName, callId } });
+        // A failed write, its own or an I/O it left behind, is never committed.
+        if (!outcome.error) {
+          store.recordEvent({ appId: grant.appId, at: now(), action: 'write_committed', detail: { toolName, callId } });
+        }
       });
       return delivered(outcome);
     });
@@ -107,10 +110,11 @@ export function createAppHost(context) {
     return delivered(outcome);
   }
 
-  // Settle → close the port (no new operation) → drain what was started.
+  // Settle → close the port (no new operation) → drain what was started →
+  // an operation that failed without the tool looking fails the call.
   async function runWithPort({ grant, lease, tool, toolName, input, callId }) {
     const data = createAppDataFs({ callId, toolName, root: context.dataOf(grant.appId), fs: context.dataFs,
-      assertOwned: () => leases.assertOwned(lease),
+      readOnly: tool.effect !== 'write', assertOwned: () => leases.assertOwned(lease),
       onClosedUse: (detail) => recordIfOwned(lease, grant.appId, 'write_port_closed', detail) });
     const running = Promise.resolve().then(() => tool.run(input, { dataFs: data.port }));
     // Registered first, so the port closes in the first reaction to the settlement.
@@ -121,7 +125,8 @@ export function createAppHost(context) {
       recordIfOwned(lease, grant.appId, 'write_tool_detached_io', { toolName, callId, pending: data.pending() });
     }
     await data.drained();
-    return outcome;
+    const unobserved = data.unobservedFailure();
+    return unobserved && !outcome.error ? { error: unobserved } : outcome;
   }
 
   function recordIfOwned(lease, appId, action, detail) {
