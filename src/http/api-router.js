@@ -26,7 +26,8 @@ export async function handleApiRequest({
   dataFormatMigrations = null,
   knowledgeHardDelete = null,
   knowledgeScope = null,
-  knowledgeTags = null
+  knowledgeTags = null,
+  judgmentUndo = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
@@ -169,7 +170,7 @@ export async function handleApiRequest({
     await handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete: knowledgeHardDelete }) ||
     await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope }) ||
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||
-    await handleJudgmentApiRequest({ request, response, url, app }) ||
+    await handleJudgmentApiRequest({ request, response, url, app, undoConsole: judgmentUndo }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
     await handleGraphApiRequest({ request, response, url, app });
   if (system?.withGraphRuntimeLease && (

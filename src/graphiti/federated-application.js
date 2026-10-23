@@ -9,6 +9,7 @@ import { createFuliRoundtableHost } from './roundtable-host.js';
 import { createJudgmentService } from '../judgment/service.js';
 import { JudgmentStore } from '../judgment/store.js';
 import { createJudgmentEngine } from '../judgment/engine.js';
+import { createReviewGate } from '../judgment/review-gate.js';
 import { createTaskScheduleService } from '../task-schedules/service.js';
 import { openModelBackendRuntime, openRoleWorkRuntime } from '../model-backends/runtime.js';
 import { createJudgmentBackend } from '../judgment/backend.js';
@@ -153,9 +154,8 @@ export function openFederatedGraphApplication({
     app.modelBackends = openModelBackendRuntime(paths);
     app.roleWork = openRoleWorkRuntime(paths, { port: app.modelBackends, verifySession: roleWorkSessions(app),
       resumers: { tonborg: work => app.judgment.resumeWork(work) } });
-    app.judgment = createJudgmentService({ app,
-      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge: app.roleWork }) }),
-      openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')) });
+    app.judgment = createJudgmentService({ app, openStore: () => new JudgmentStore(join(dirname(runtimeConfigPath), 'judgment.sqlite')),
+      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge: app.roleWork }), reviewGate: createReviewGate(dirname(runtimeConfigPath)) }) });
     app.taskSchedules = createTaskScheduleService({ app,
       openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
     app.roundtableHost = createFuliRoundtableHost(app);

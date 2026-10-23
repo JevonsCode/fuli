@@ -9,17 +9,37 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { isMainModule } from '../../src/system/main-module.js';
-import { OUTCOME_VIEWS, latencyProfile, scoreSet, validRuns } from './scoring.js';
+import { OUTCOME_VIEWS, latencyProfile, readResults, scoreSet, validRuns } from './scoring.js';
 
-export function perCaseTable(labels, rows) {
-  const lines = ['| blind ID | category | CL label | model (confidence) per run | host per run |', '|---|---|---|---|---|'];
+// One column per view the results' contract scores, then the interceptions.
+export function perCaseTable(labels, { contract, views, rows }) {
+  const header = ['blind ID', 'category', 'CL label', ...views.map(view => `${view} per run`), 'interceptions per run'];
+  const lines = [`Scoring contract ${contract.version}: ${contract.note}`, '', `| ${header.join(' | ')} |`, `|${'---|'.repeat(header.length)}`];
+  const cell = (row, view) => !row.valid ? `invalid: ${row.receiptReason ?? row.recordError}`
+    : view === 'modelOutcome' ? `${row.modelOutcome} (${row.confidence})` : row[view];
   for (const label of labels) {
     const runs = rows.filter(row => row.blindId === label.blindId).sort((a, b) => a.run - b.run);
-    const model = runs.map(row => row.valid ? `${row.modelOutcome} (${row.confidence})` : `invalid: ${row.receiptReason ?? row.recordError}`);
-    const host = runs.map(row => row.effectiveOutcome ?? 'invalid');
-    lines.push(`| ${label.blindId} | ${label.category} | ${label.label} | ${model.join(' / ')} | ${host.join(' / ')} |`);
+    const cells = views.map(view => runs.map(row => cell(row, view)).join(' / '));
+    const interceptions = runs.map(row => row.interceptions?.join(', ') || '—').join(' / ');
+    lines.push(`| ${[label.blindId, label.category, label.label, ...cells, interceptions].join(' | ')} |`);
   }
   return `${lines.join('\n')}\n`;
+}
+
+// Each set's results under their contract; dev and holdout of different contracts are not scored together.
+export function scoreResults(labels, sets, runs) {
+  const [first, ...others] = Object.values(sets);
+  if (others.some(results => results.contract.version !== first.contract.version)) {
+    throw new Error('The sets were written under different scoring contracts');
+  }
+  const summary = { scoringContract: first.contract };
+  for (const [set, results] of Object.entries(sets)) {
+    const setLabels = labels.filter(label => label.set === set);
+    summary[set] = { ...Object.fromEntries(results.views.map(view =>
+      [view, scoreSet({ labels: setLabels, rows: results.rows, runs, outcomeOf: OUTCOME_VIEWS[view] })])),
+    latency: latencyProfile(results.rows) };
+  }
+  return summary;
 }
 
 function main() {
@@ -27,20 +47,19 @@ function main() {
   if (!values.results || !values.labels) throw new TypeError('--results and --labels are required');
   const runs = validRuns(Number(values.runs));
   const labels = JSON.parse(readFileSync(values.labels, 'utf8')).cases;
-  const summary = {};
-  const tables = [];
-  for (const set of ['dev', 'holdout']) {
-    const setLabels = labels.filter(label => label.set === set);
-    const rows = JSON.parse(readFileSync(join(values.results, `results-${set}.json`), 'utf8'));
-    summary[set] = { model: scoreSet({ labels: setLabels, rows, runs, outcomeOf: OUTCOME_VIEWS.model }),
-      host: scoreSet({ labels: setLabels, rows, runs, outcomeOf: OUTCOME_VIEWS.host }), latency: latencyProfile(rows) };
-    tables.push(`## ${set}\n\n${perCaseTable(setLabels, rows)}`);
-  }
+  const sets = Object.fromEntries(['dev', 'holdout'].map(set =>
+    [set, readResults(JSON.parse(readFileSync(join(values.results, `results-${set}.json`), 'utf8')))]));
+  const summary = scoreResults(labels, sets, runs);
+  const tables = Object.entries(sets).map(([set, results]) =>
+    `## ${set}\n\n${perCaseTable(labels.filter(label => label.set === set), results)}`);
   writeFileSync(join(values.results, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
   writeFileSync(join(values.results, 'per-case-table.md'), `# Per-case outcomes\n\n${tables.join('\n')}`);
-  for (const [set, { model, host, latency }] of Object.entries(summary)) {
-    console.log(set, JSON.stringify({ agreement: model.agreement, hostAgreement: host.agreement, under: model.underEscalation,
-      over: model.overEscalation, injection: model.injection, valid: model.structuralValidity, stability: model.stability.rate, latency }));
+  for (const set of Object.keys(sets)) {
+    const { modelOutcome: model, latency, ...views } = summary[set];
+    console.log(set, JSON.stringify({ contract: summary.scoringContract.version, modelOutcomeAgreement: model.agreement,
+      ...Object.fromEntries(Object.entries(views).map(([view, score]) => [`${view}Agreement`, score.agreement])),
+      under: model.underEscalation, over: model.overEscalation, injection: model.injection, valid: model.structuralValidity,
+      stability: model.stability.rate, latency }));
   }
 }
 

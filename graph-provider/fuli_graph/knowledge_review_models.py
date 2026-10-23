@@ -200,6 +200,28 @@ class KnowledgeReviewDecisionLookupResult(StrictModel):
     decision: KnowledgeReviewDecision | None = None
 
 
+class KnowledgeAIReviewWithdrawal(StrictModel):
+    """A person's undo of one automatic Tonborg review (rec#10 D-24)."""
+
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    review_id: str = Field(min_length=1, max_length=256)
+    candidate_key: str = Field(
+        min_length=3,
+        max_length=520,
+        pattern=r'^(entity|relationship):.+$',
+    )
+    ai_review_evidence_token: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+
+
+class KnowledgeAIReviewWithdrawalResult(StrictModel):
+    candidate_key: str
+    decision_id: str
+
+
 class KnowledgeReviewFinish(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     review_id: str = Field(min_length=1, max_length=256)

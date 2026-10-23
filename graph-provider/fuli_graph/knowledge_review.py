@@ -4,6 +4,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from .knowledge_review_models import (
+    KnowledgeAIReviewWithdrawal,
+    KnowledgeAIReviewWithdrawalResult,
     KnowledgeReviewAIAssessment,
     KnowledgeReviewCandidate,
     KnowledgeReviewCandidatePage,
@@ -385,6 +387,46 @@ async def _record_ai_review_progress(
         if not records:
             raise HTTPException(status_code=404, detail='active knowledge review not found')
         return _review_decision(dict(records[0]['decision']))
+
+
+async def withdraw_ai_review(
+    store,
+    actor: dict,
+    request: KnowledgeAIReviewWithdrawal,
+) -> KnowledgeAIReviewWithdrawalResult:
+    """A person's one-click undo of an automatic Tonborg review (rec#10 D-24).
+
+    The item loses the AI review marks only while they still name this run's
+    decision and the evidence it judged; a later review or version keeps its
+    own. The decision record stays as history of what Tonborg did.
+    """
+
+    store._require_personal()
+    space = await _personal_space(store, actor, request.personal_space_id, 'maintainer')
+    item_kind, _, item_id = request.candidate_key.partition(':')
+    decision_id = stable_uuid(
+        request.personal_space_id,
+        'knowledge-review-decision',
+        request.review_id,
+        request.candidate_key,
+    )
+    records, _, _ = await store.runtime.driver.execute_query(
+        _AI_REVIEW_ENTITY_WITHDRAW_QUERY
+        if item_kind == 'entity' else _AI_REVIEW_RELATIONSHIP_WITHDRAW_QUERY,
+        group_id=space['group_id'],
+        item_id=item_id,
+        decision_id=decision_id,
+        ai_review_evidence_token=request.ai_review_evidence_token,
+    )
+    if not records:
+        raise HTTPException(
+            status_code=409,
+            detail='the item no longer carries this AI review; nothing to undo',
+        )
+    return KnowledgeAIReviewWithdrawalResult(
+        candidate_key=request.candidate_key,
+        decision_id=decision_id,
+    )
 
 
 async def finish_knowledge_review(
@@ -1070,3 +1112,30 @@ SET item.fuli_ai_review_evidence_token = $ai_review_evidence_token,
 MERGE (run)-[:HAS_REVIEW_DECISION]->(decision)
 RETURN decision
 '''
+
+
+_AI_REVIEW_MARKS = '''
+REMOVE item.fuli_ai_review_evidence_token, item.fuli_ai_assessment_json,
+       item.fuli_ai_review_scope, item.fuli_ai_review_project_id,
+       item.fuli_ai_reviewed_at, item.fuli_ai_review_id,
+       item.fuli_ai_review_decision_id
+RETURN item.uuid AS item_id
+'''
+
+
+_AI_REVIEW_WITHDRAW_MATCH = '''
+WHERE item.fuli_ai_review_decision_id = $decision_id
+  AND item.fuli_ai_review_evidence_token = $ai_review_evidence_token
+'''
+
+
+_AI_REVIEW_ENTITY_WITHDRAW_QUERY = (
+    'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})'
+    + _AI_REVIEW_WITHDRAW_MATCH + _AI_REVIEW_MARKS
+)
+
+
+_AI_REVIEW_RELATIONSHIP_WITHDRAW_QUERY = (
+    'MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()'
+    + _AI_REVIEW_WITHDRAW_MATCH + _AI_REVIEW_MARKS
+)

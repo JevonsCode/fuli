@@ -3,11 +3,12 @@ import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { t } from '@/i18n'
 import { useWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
 import UiSegmented from '@/ui/UiSegmented.vue'
 
 import { judgmentText } from './judgment-copy'
-import { loadJudgmentRecords, requestJudgmentReview, submitJudgmentFeedback } from './judgment-api'
+import { loadJudgmentRecords, requestJudgmentReview, submitJudgmentFeedback, undoJudgmentReview } from './judgment-api'
 import { isHumanNeeded, type JudgmentDecisionRecord, type JudgmentFeedbackVote } from './judgment-types'
 
 const props = defineProps<{ personalSpaceId: string }>()
@@ -19,6 +20,7 @@ const reviewError = ref('')
 const filter = ref<'all' | 'human'>('human')
 const reviewing = ref(false)
 const feedbackSavingId = ref<string | null>(null)
+const undoingId = ref<string | null>(null)
 const feedbackReasons = ref<Record<string, string>>({})
 const feedbackReasonDirty = ref<Set<string>>(new Set())
 let scopeGeneration = 0
@@ -50,6 +52,7 @@ watch(() => props.personalSpaceId, (scope) => {
   reviewError.value = ''
   reviewing.value = false
   feedbackSavingId.value = null
+  undoingId.value = null
   void load(scope)
 }, { immediate: true })
 
@@ -167,6 +170,25 @@ async function persistFeedback(record: JudgmentDecisionRecord, nextVote: Judgmen
   }
 }
 
+// The person's one-click undo of a review Tonborg applied (rec#10 D-24).
+async function undo(record: JudgmentDecisionRecord) {
+  if (undoingId.value) return
+  const scope = props.personalSpaceId
+  const current = scopeGeneration
+  undoingId.value = record.id
+  error.value = ''
+  try {
+    const updated = await undoJudgmentReview(scope, record.id)
+    if (!isCurrentScope(scope, current)) return
+    const index = records.value.findIndex(candidate => candidate.id === updated.id)
+    if (index >= 0) records.value.splice(index, 1, updated)
+  } catch (cause) {
+    if (isCurrentScope(scope, current)) error.value = cause instanceof Error ? cause.message : judgmentText('workbench.reviewError')
+  } finally {
+    if (isCurrentScope(scope, current)) undoingId.value = null
+  }
+}
+
 function feedback(record: JudgmentDecisionRecord, vote: Exclude<JudgmentFeedbackVote, null>) {
   const nextVote: JudgmentFeedbackVote = record.feedback.vote === vote ? null : vote
   void persistFeedback(record, nextVote)
@@ -184,6 +206,17 @@ function dateLabel(value: string) {
 function outcomeLabel(value: JudgmentDecisionRecord['outcome']) {
   return judgmentText(`workbench.outcome.${value}`)
 }
+
+// A review verdict a model may not apply is a suggestion; an applied one names the unlocked model.
+function verdictLabel(record: JudgmentDecisionRecord) {
+  if (record.aiReview?.state === 'ai_suggested') return judgmentText('workbench.aiSuggested')
+  if (record.aiReview?.state === 'ai_reviewed' && record.execution.status === 'applied') {
+    return t('judgment.workbench.aiReviewed', { model: record.aiReview.gate.modelId ?? '' })
+  }
+  return outcomeLabel(record.outcome)
+}
+
+const undoable = (record: JudgmentDecisionRecord) => record.kind === 'review' && record.execution.status === 'applied'
 
 function executionLabel(value: JudgmentDecisionRecord['execution']['status']) {
   return judgmentText(`workbench.executionStatus.${value}`)
@@ -279,10 +312,11 @@ function hasDetails(record: JudgmentDecisionRecord) {
             <span class="judgment-record-kind">{{ kindLabel(record.kind) }}</span>
             <h3>{{ record.title || record.objective || kindLabel(record.kind) }}</h3>
           </div>
-          <span class="judgment-outcome" :class="`is-${record.outcome}`">{{ outcomeLabel(record.outcome) }}</span>
+          <span class="judgment-outcome" :class="`is-${record.outcome}`">{{ verdictLabel(record) }}</span>
         </header>
         <p class="judgment-record-summary">{{ record.summary }}</p>
         <dl class="judgment-record-meta">
+          <div v-if="record.aiReview"><dt>{{ judgmentText('workbench.modelConclusion') }}</dt><dd>{{ outcomeLabel(record.aiReview.modelOutcome) }}</dd></div>
           <div><dt>{{ judgmentText('workbench.execution') }}</dt><dd>{{ executionLabel(record.execution.status) }}</dd></div>
           <div><dt>{{ judgmentText('workbench.policy') }}</dt><dd>{{ policyLabel(record) }}</dd></div>
           <div v-if="record.client || record.model"><dt>{{ judgmentText('workbench.source') }}</dt><dd>{{ sourceLabel(record) }}</dd></div>
@@ -324,6 +358,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
             </div>
           </details>
           <div class="judgment-feedback-actions">
+            <Button v-if="undoable(record)" variant="outline" size="sm" data-action="undo" :disabled="Boolean(undoingId)" :loading="undoingId === record.id" :loading-label="judgmentText('workbench.undoing')" @click="undo(record)">{{ judgmentText('workbench.undo') }}</Button>
             <Button variant="outline" size="icon-sm" data-feedback="up" :aria-label="judgmentText('workbench.feedbackUp')" :aria-pressed="record.feedback.vote === 'up'" :title="judgmentText('workbench.feedbackUp')" :disabled="feedbackSavingId === record.id" @click="feedback(record, 'up')"><span aria-hidden="true">👍</span></Button>
             <Button variant="outline" size="icon-sm" data-feedback="down" :aria-label="judgmentText('workbench.feedbackDown')" :aria-pressed="record.feedback.vote === 'down'" :title="judgmentText('workbench.feedbackDown')" :disabled="feedbackSavingId === record.id" @click="feedback(record, 'down')"><span aria-hidden="true">👎</span></Button>
             <GrowthLoading v-if="feedbackSavingId === record.id" data-feedback-saving variant="inline" :label="judgmentText('workbench.feedbackSaving')" />

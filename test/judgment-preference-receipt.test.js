@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { createJudgmentEngine, fingerprint } from '../src/judgment/engine.js';
+import { FIXTURE_BUILD, gateEntry, reviewGateWith } from './fixtures/review-gate.js';
 import { getCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
 
@@ -44,9 +45,10 @@ function fixture(t, preferences) {
       ? { decisions: data.candidates.map(c => ({ target: c.candidate_key, outcome: 'approve', summary: 'Routine', evidence: ['Scoped content'], confidence: 0.95 })) }
       : data.eligible ? { executorId: 'worker', model: 'model', disposition: 'delegate', conversationId: null, summary: 'Bounded work', evidence: ['Eligible'] }
         : { outcome: 'approve', summary: 'Verified', evidence: ['report'], confidence: 0.95 };
-    return { client: 'codex', body: JSON.stringify(body) };
+    // The review write-back cases need the fixture build unlocked (rec#10 D-24).
+    return { client: 'codex', body: JSON.stringify(body), model: FIXTURE_BUILD.model, modelReceipt: { modelDigest: FIXTURE_BUILD.modelDigest } };
   };
-  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge }) });
+  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge, reviewGate: reviewGateWith(gateEntry()) }) });
   service.store().setPolicy('s', '', { mode: 'shared', quality: 'quality', client: 'codex' }, 0);
   t.after(() => service.close());
   const judged = () => JSON.parse(prompts.at(-1).split('\nDATA:\n')[1]).preferences;
