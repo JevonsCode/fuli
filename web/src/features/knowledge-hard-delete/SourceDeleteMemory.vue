@@ -7,10 +7,9 @@ defineProps<{ memory: SourceMemoryPreview; kind: 'episode' | 'session' }>()
 
 <template>
   <div class="grid gap-2" data-source-memory>
-    <p v-for="row in memory.scrubbed" :key="`${row.agent_id}:${row.personal_project_id}`" class="m-0 [overflow-wrap:anywhere]"
-      :title="`${row.agent_id} · ${row.personal_project_id ?? ''}`">
+    <p v-for="row in memory.scrubbed" :key="`${row.agent_id}:${row.personal_project_id}`" class="m-0 [overflow-wrap:anywhere]">
       {{ t(`knowledgeHardDelete.source.memory${kind === 'session' ? 'Session' : 'Episode'}`, { count: row.revisions.length,
-        agent: sourceMemoryScopeLabel(row, memory), current: row.current ? t('knowledgeHardDelete.source.memoryCurrent') : '' }) }}
+        agent: sourceMemoryScopeLabel(row), current: row.current ? t('knowledgeHardDelete.source.memoryCurrent') : '' }) }}
     </p>
     <p v-if="!memory.scrubbed.length" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.source.memoryNone') }}</p>
     <p class="m-0 text-muted-foreground" data-source-memory-limitation>{{ t('knowledgeHardDelete.source.memoryLimitation') }}</p>

@@ -3,7 +3,7 @@
 export const knowledgeHardDeleteMessages = {
   'zh-CN': {
     source: {
-      memoryScope: 'Agent {agent} · {project}',
+      memoryAgentFallback: '未命名 Agent',
       memorySession: '这次会话写入的 {count} 条 Agent 工作记忆快照会清掉正文（{agent}{current}），记忆不会回退到旧版本。',
       memoryEpisode: '这段来源对应的 {count} 条 Agent 工作记忆快照会清掉正文（{agent}{current}），记忆不会回退到旧版本。',
       memoryCurrent: '，含当前版本',
@@ -52,7 +52,7 @@ export const knowledgeHardDeleteMessages = {
       loadFailed: '列不出将删除的内容：{error}',
       stale: '预览之后内容有变化，下面是新的列表，请再确认一次。',
       publications: '已提交到公开项目，删除不会撤回',
-      publicationWarning: '这条知识的来源原文已提交到公开项目 {project}。删除来源不会撤回公开内容，公开项目里的副本会原样保留。',
+      publicationSourceWarning: '所选来源原文已提交到公开项目 {project}。删除来源不会撤回公开内容，公开项目里的副本会原样保留。',
       publicationItemWarning: '这条知识的来源原文已提交到公开项目 {project}。删除这条知识不会撤回公开内容，公开项目里的副本会原样保留。',
       submissionCopyScrubbed: 'FULI 本机留下的提交副本会清掉正文，只保留提交记录。',
       pendingDraftsVoided: '{count} 份还没提交的公开草稿会一起作废，之后不能再提交。',
@@ -117,7 +117,7 @@ export const knowledgeHardDeleteMessages = {
   },
   'en-US': {
     source: {
-      memoryScope: 'Agent {agent} · {project}',
+      memoryAgentFallback: 'Unnamed Agent',
       memorySession: '{count} Agent working-memory snapshots written in this session lose their text ({agent}{current}). Memory does not fall back to an older version.',
       memoryEpisode: '{count} Agent working-memory snapshots linked to this source lose their text ({agent}{current}). Memory does not fall back to an older version.',
       memoryCurrent: ', including the current version',
@@ -166,7 +166,7 @@ export const knowledgeHardDeleteMessages = {
       loadFailed: 'Could not list what would be deleted: {error}',
       stale: 'Something changed after the preview. This is the new list; confirm again.',
       publications: 'Already submitted publicly; deleting will not retract it',
-      publicationWarning: "This item's source text was submitted to public project {project}. Deleting the source does not retract it; the public copy stays as it is.",
+      publicationSourceWarning: "The selected source text was submitted to public project {project}. Deleting the source does not retract it; the public copy stays as it is.",
       publicationItemWarning: "This item's source text was submitted to public project {project}. Deleting this item does not retract it; the public copy stays as it is.",
       submissionCopyScrubbed: "FULI's local copy of the submission loses its text; only the submission record stays.",
       pendingDraftsVoided: '{count} unsubmitted public drafts will be voided and can no longer be submitted.',

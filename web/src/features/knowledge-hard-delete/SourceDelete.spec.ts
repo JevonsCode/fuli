@@ -283,6 +283,14 @@ it.each(['zh-CN', 'en-US'] as const)('orders source sections and distinguishes s
     : node.hasAttribute('data-source-layer') ? node.getAttribute('data-source-layer') : [...node.attributes].find(attr => attr.name.startsWith('data-hard-delete'))?.name)
   expect(sequence).toEqual(['data-hard-delete-publications', 'data-hard-delete-sources', 'default_items', 'affected_items', 'data-hard-delete-records', 'data-hard-delete-kept', 'confirm'])
   const sources = area.querySelector('[data-hard-delete-sources]')!
+  const publicBlock = area.querySelector('[data-hard-delete-publications]')!
+  const copy = locale === 'zh-CN' ? 'FULI 本机留下的提交副本会清掉正文，只保留提交记录。' : "FULI's local copy of the submission loses its text; only the submission record stays."
+  expect(publicBlock.lastElementChild?.textContent).toBe(copy)
+  expect(sources.textContent).not.toContain(copy)
+  expect(publicBlock.querySelector('p')?.textContent).toBe(locale === 'zh-CN'
+    ? '所选来源原文已提交到公开项目 Synthetic public。删除来源不会撤回公开内容，公开项目里的副本会原样保留。'
+    : 'The selected source text was submitted to public project Synthetic public. Deleting the source does not retract it; the public copy stays as it is.')
+  expect(area.querySelector('form')!.textContent).not.toContain(locale === 'zh-CN' ? '也可以输入这条知识的标题' : 'You can also type the item title')
   expect(sources.querySelector('[data-source-conversation-counts]')?.previousElementSibling?.textContent).toContain(locale === 'zh-CN' ? '所选范围内' : 'selected scope')
   expect(area.querySelector('a')).toBeNull()
   await choose('entity:other')
@@ -422,4 +430,20 @@ describe('source working-memory deletion preview', () => {
     await type('delete'); await submit()
     expect(postJson.mock.calls[2]?.[1]).toEqual({ personalSpaceId: 'space', include: [later.key], exclude: [], previewId: 'memory-digest', confirmation: 'delete' })
   })
+})
+
+it.each(['zh-CN', 'en-US'] as const)('shows memory names without opaque IDs or hover titles in %s', async locale => {
+  setLocale(locale, { persist: false })
+  const scope = { agent_id: 'opaque-agent-secret-identifier', personal_project_id: 'opaque-project-secret-identifier', revisions: [2], current_revision: 3, current: false }
+  postJson.mockResolvedValue(preview({ agent_memory: { scrubbed: [{ ...scope, agent_name: 'Synthetic Guide', project_name: 'Named project' }], later: [{ ...scope, key: 'memory:opaque-head', from_revision: 2, revisions: [3], selected: false }] } }))
+  await open()
+  const first = dialog().querySelector('[data-source-memory]')!
+  const later = dialog().querySelector('[data-source-memory-later]')!
+  expect(first.textContent).toContain('Synthetic Guide · Named project')
+  expect(later.textContent).toContain(locale === 'zh-CN' ? '未命名 Agent' : 'Unnamed Agent')
+  for (const area of [first, later]) {
+    expect(area.textContent).not.toContain('opaque-')
+    expect(area.textContent).not.toContain('…')
+    expect(area.querySelector('[title]')).toBeNull()
+  }
 })

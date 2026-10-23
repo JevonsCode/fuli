@@ -38,10 +38,10 @@ const emit = defineEmits<{ select: [key: string, selected: boolean] }>()
     <p class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.source.memoryLaterHelp') }}</p>
     <label v-for="row in preview.agent_memory.later" :key="row.key" class="flex items-start gap-2 rounded-lg border p-3" :data-memory-row="row.key">
       <Checkbox :model-value="row.selected" :disabled="disabled"
-        :aria-label="t('knowledgeHardDelete.source.memoryLaterSelect', { agent: sourceMemoryScopeLabel(row, preview.agent_memory), revision: row.from_revision, count: row.revisions.length })"
+        :aria-label="t('knowledgeHardDelete.source.memoryLaterSelect', { agent: sourceMemoryScopeLabel(row), revision: row.from_revision, count: row.revisions.length })"
         @update:model-value="emit('select', row.key, $event === true)" />
-      <span class="grid min-w-0 gap-1 [overflow-wrap:anywhere]" :title="`${row.agent_id} · ${row.personal_project_id ?? ''}`">
-        <span>{{ sourceMemoryScopeLabel(row, preview.agent_memory) }}</span>
+      <span class="grid min-w-0 gap-1 [overflow-wrap:anywhere]">
+        <span>{{ sourceMemoryScopeLabel(row) }}</span>
         <span>{{ t('knowledgeHardDelete.source.memoryLater', { revision: row.from_revision, count: row.revisions.length }) }}</span>
         <span class="text-muted-foreground">{{ t('knowledgeHardDelete.source.memoryRevisions', { revisions: row.revisions.join(', '), current: row.current_revision }) }}</span>
         <span v-if="row.selected">{{ t('knowledgeHardDelete.source.memorySelected') }}</span>

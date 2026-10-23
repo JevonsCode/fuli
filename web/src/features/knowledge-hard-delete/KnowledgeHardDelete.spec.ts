@@ -307,7 +307,7 @@ it('shows public submission provenance above the deletion layers without inventi
   const warning = dialog()!.querySelector('[data-hard-delete-publications]')!
   expect(warning).not.toBeNull()
   expect(warning.textContent).toContain('Synthetic public project')
-  expect(warning.textContent).toContain('删除来源不会撤回公开内容')
+  expect(warning.textContent).toContain('删除这条知识不会撤回公开内容')
   expect(warning.textContent).toContain('公开项目里的副本会原样保留')
   expect(warning.textContent).toContain('FULI 还不能替你撤回')
   expect(warning.textContent).toContain('位置 https://public.example · 提交编号 proposal')
@@ -329,7 +329,7 @@ it('lists multiple public submissions with a single warning and falls back to th
   const warning = dialog()!.querySelector('[data-hard-delete-publications]')!
   expect(warning.querySelectorAll('li')).toHaveLength(2)
   expect(warning.textContent).toContain('fallback-id / Readable project')
-  expect(warning.textContent!.match(/删除来源不会撤回公开内容/g)).toHaveLength(1)
+  expect(warning.textContent!.match(/删除这条知识不会撤回公开内容/g)).toHaveLength(1)
   expect(warning.querySelector('a')).toBeNull()
   wrapper.unmount()
 })
@@ -343,6 +343,8 @@ it('explains pending draft invalidation under sources and submitted local text e
   await openDialog(wrapper)
   expect(dialog()!.querySelector('[data-hard-delete-sources]')!.textContent).toContain('2 份还没提交的公开草稿会一起作废，之后不能再提交。')
   expect(dialog()!.querySelector('[data-hard-delete-publications]')!.textContent).toContain('FULI 本机留下的提交副本会清掉正文，只保留提交记录。')
+  expect(dialog()!.querySelector('[data-hard-delete-publications]')!.lastElementChild?.textContent).toBe('FULI 本机留下的提交副本会清掉正文，只保留提交记录。')
+  expect(dialog()!.querySelector('[data-hard-delete-sources]')!.textContent).not.toContain('提交副本会清掉正文')
   wrapper.unmount()
 })
 

@@ -150,7 +150,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
 
     <section v-if="preview.publications?.length" class="grid min-w-0 gap-2 rounded-lg border p-3 [overflow-wrap:anywhere]" data-hard-delete-publications>
       <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.dialog.publications') }}</h3>
-      <p class="m-0">{{ t(preview.removed_episodes.length ? 'knowledgeHardDelete.dialog.publicationWarning' : 'knowledgeHardDelete.dialog.publicationItemWarning', { project: publicProjects }) }}</p>
+      <p class="m-0">{{ t(sourcePreview ? 'knowledgeHardDelete.dialog.publicationSourceWarning' : 'knowledgeHardDelete.dialog.publicationItemWarning', { project: publicProjects }) }}</p>
       <ul class="m-0 grid list-none gap-2 p-0">
         <li v-for="publication in preview.publications" :key="publication.draft_id" class="grid gap-1 [overflow-wrap:anywhere]">
           <p class="m-0 font-medium">{{ publication.project_name || publication.project_id }}</p>
@@ -158,7 +158,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
         </li>
       </ul>
       <p class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.withdrawalUnavailable', { project: publicProjects }) }}</p>
-      <p v-if="!sourcePreview && preview.drafts?.submitted" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.submissionCopyScrubbed') }}</p>
+      <p v-if="preview.drafts?.submitted" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.submissionCopyScrubbed') }}</p>
     </section>
 
     <section v-if="!sourcePreview" class="grid gap-2" data-hard-delete-items>
@@ -180,7 +180,6 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
       <p class="m-0">{{ t(sourcePreview ? 'knowledgeHardDelete.source.removedSources' : 'knowledgeHardDelete.dialog.removedSources', { count: preview.removed_episodes.length }) }}</p>
       <p v-if="sourcePreview" class="m-0" data-source-conversation-counts>{{ t('knowledgeHardDelete.source.conversations', {
         turns: sourcePreview.counts.source_turns, events: sourcePreview.counts.conversation_events, summaries: sourcePreview.counts.conversation_summaries }) }}</p>
-      <p v-if="sourcePreview && preview.drafts?.submitted" class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.submissionCopyScrubbed') }}</p>
       <p v-if="preview.drafts?.submitting" class="m-0" data-drafts-submitting>{{ t('knowledgeHardDelete.dialog.draftsSubmitting', { count: preview.drafts.submitting }) }}</p>
       <p v-if="preview.drafts?.unknown" class="m-0" data-drafts-unknown>{{ t('knowledgeHardDelete.dialog.draftsUnknown', { count: preview.drafts.unknown }) }}</p>
       <div v-if="preview.drafts?.submitting || preview.drafts?.unknown" class="grid justify-items-start gap-2" data-drafts-recheck>
@@ -253,7 +252,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
         <FieldLabel for="hard-delete-confirm">{{ t('knowledgeHardDelete.dialog.confirmLabel') }}</FieldLabel>
         <Input id="hard-delete-confirm" v-model="typed" autocomplete="off" maxlength="512" :disabled="deleting || reloading"
           data-hard-delete-confirm />
-        <FieldDescription>{{ t('knowledgeHardDelete.dialog.confirmHelp') }}</FieldDescription>
+        <FieldDescription v-if="!sourcePreview">{{ t('knowledgeHardDelete.dialog.confirmHelp') }}</FieldDescription>
       </Field>
       <p v-if="error" role="alert" class="m-0 text-destructive" data-hard-delete-error>{{ error }}</p>
       <Button v-if="error && sourcePreview && !previewValid" type="button" variant="outline" :disabled="reloading" data-source-reset-selection @click="resetSelection">{{ t('knowledgeHardDelete.source.resetSelection') }}</Button>

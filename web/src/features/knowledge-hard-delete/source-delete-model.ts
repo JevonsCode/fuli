@@ -1,6 +1,5 @@
-import { shortUniqueIds } from '@/lib/short-ids'
 import { t } from '@/i18n'
-import type { SourceMemoryPreview, SourceMemoryScope, HardDeleteCounts, HardDeleteItem, HardDeletePreview } from './model'
+import type { SourceMemoryScope, HardDeleteCounts, HardDeleteItem, HardDeletePreview } from './model'
 
 export interface SourceDeleteTarget {
   item_kind: 'episode' | 'session'
@@ -52,12 +51,8 @@ export function sourceRowTitle(row: SourceDeleteRow): string {
   return current?.title?.trim() || current?.content?.trim().split(/(?<=[。！？.!?])\s*/u)[0] || '—'
 }
 
-/** Preview identities only: no request for the working-memory text or Agent roster. */
-export function sourceMemoryScopeLabel(scope: SourceMemoryScope, memory: SourceMemoryPreview): string {
-  const scopes = [...memory.scrubbed, ...memory.later]
-  const ids = [...new Set(scopes.flatMap(row => [row.agent_id, ...(row.personal_project_id ? [row.personal_project_id] : [])]))]
-  const short = shortUniqueIds(ids)
-  const label = (id: string) => `${short.get(id)}${short.get(id) === id ? '' : '…'}`
-  return t('knowledgeHardDelete.source.memoryScope', { agent: scope.agent_name?.trim() || label(scope.agent_id),
-    project: scope.personal_project_id ? label(scope.personal_project_id) : t('projectAgents.conversations.global') })
+/** Human-readable preview names only; opaque routing identities stay out of labels. */
+export function sourceMemoryScopeLabel(scope: SourceMemoryScope): string {
+  const agent = scope.agent_name?.trim() || t('knowledgeHardDelete.source.memoryAgentFallback')
+  return scope.project_name?.trim() ? `${agent} · ${scope.project_name.trim()}` : agent
 }

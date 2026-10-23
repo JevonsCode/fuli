@@ -57,6 +57,7 @@ export interface HardDeletePublication {
 export interface SourceMemoryScope {
   agent_id: string
   agent_name?: string | null
+  project_name?: string | null
   personal_project_id: string | null
   revisions: number[]
   current_revision: number
