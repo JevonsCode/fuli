@@ -95,7 +95,7 @@ async function toggleScoreCard(entry: RoleSuggestion) {
               <AgentName :space-id="entry.personalSpaceId" :agent-id="entry.subject.agentId!" :name="agentName(entry)" /> ·
             </template>{{ text }}
           </p>
-          <p v-if="entry.suggestion?.reason" class="role-suggestion-reason">{{ entry.suggestion.reason }}</p>
+          <p v-if="entry.suggestion?.reason && !entry.hard_deleted" class="role-suggestion-reason">{{ entry.suggestion.reason }}</p>
           <dl>
             <div>
               <dt>{{ t('modelSettings.model') }}</dt>
@@ -134,11 +134,11 @@ async function toggleScoreCard(entry: RoleSuggestion) {
     </ul>
     <ul v-if="lines.length" class="role-suggestions-lines">
       <li v-for="{ entry, state, why, model, evidence, action, at } in lines" :key="entry.id" class="role-suggestion-line"
-        :data-role-suggestion="entry.role" :data-suggestion-state="state" :title="evidence.title">
+        :data-role-suggestion="entry.role" :data-suggestion-state="state">
         <strong>{{ roleName(entry.role) }}</strong>
         <Badge :variant="TONES[state]" data-suggestion-status>{{ t(`modelSettings.suggestions.states.${state}`) }}</Badge>
         <span class="role-suggestion-why" data-suggestion-why>{{ why }}</span>
-        <span class="role-suggestion-meta"><code>{{ model ?? t('modelSettings.none') }}</code> · {{ t('modelSettings.suggestions.time') }} <time :datetime="entry.at">{{ at }}</time></span>
+        <span class="role-suggestion-meta"><code :title="evidence.title">{{ model ?? t('modelSettings.none') }}</code> · {{ t('modelSettings.suggestions.time') }} <time :datetime="entry.at">{{ at }}</time></span>
         <Button v-if="action?.kind === 'link'" as-child size="sm" variant="ghost">
           <RouterLink :to="action.to" data-suggestion-action>{{ action.label }}</RouterLink>
         </Button>
@@ -179,5 +179,9 @@ async function toggleScoreCard(entry: RoleSuggestion) {
 .role-suggestion-line + .role-suggestion-line { border-top: 1px solid var(--color-border); }
 .role-suggestion-why { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
 .role-suggestion-meta { color: var(--color-muted); font-size: 12.5px; overflow-wrap: anywhere; }
-.role-suggestions-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--color-danger); font-size: 14px; }
+/* A phone-width section: its actions are at least 44px tall to tap. */
+@container (max-width: 619px) {
+  [data-suggestion-action], [data-suggestions-show-all] { min-block-size: 44px; }
+}
+.role-suggestions-error {display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--color-danger); font-size: 14px; }
 </style>

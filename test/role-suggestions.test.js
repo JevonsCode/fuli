@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { noteRoleSuggestion } from '../src/graphiti/role-suggestion-note.js';
+import { prepareRoleSuggestionNote } from '../src/graphiti/role-suggestion-note.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { hardDeleteLedger } from '../src/knowledge-hard-delete/delete-ledger.js';
 import { knowledgeReferences } from '../src/knowledge-hard-delete/forget-references.js';
@@ -97,53 +97,73 @@ test('only a newer suggestion for the same subject in the same space and project
   assert.equal(log.list().find(entry => entry.id === 5).stale, 'newer');
 });
 
-test('a permanent delete of knowledge clears only objects that name it; rows as written today stay byte for byte', (t) => {
+test('a permanent delete in a space clears the words of every record of that space written up to it, and only those', (t) => {
   const clock = { now: Date.parse('2026-10-23T00:00:00.000Z') };
   const { directory, path, log } = storeIn(t, clock);
   log.record(jefa(jefaSuggested()));
   log.record(bole('engineer-x', 2));
   log.record({ role: 'assistant', operation: 'project_candidate', personalSpaceId: SPACE, subject: { conversationId: 'conversation-1' },
-    result: { status: 'superseded', reason: 'corrected_by_user', ...receipt('assistant', 'project_candidate', 3) } });
-  const today = JSON.stringify(log.list());
-  const references = knowledgeReferences({ itemIds: ['item-1', 'task-seeds', 'engineer-x', 'conversation-1', 'garden', '1'.repeat(64)] });
-  assert.equal(log.forgetKnowledgeItems(SPACE, references), 0);
-  assert.equal(JSON.stringify(log.list()), today);
+    result: { status: 'suggested', hint: '可能属于「Garden」，需你确认', suggestion: { personalProjectId: 'garden', name: 'Garden',
+      reason: 'Watering reminders.', uncertainty: 'low' }, confirmWith: 'checkpoint_task_knowledge.triage',
+      suggestedBy: { mode: 'model_api', independent: true, model: 'qwen-test-actual' }, ...receipt('assistant', 'project_candidate', 3) } });
+  log.record({ ...jefa(jefaSuggested(4), 'conversation-9'), personalSpaceId: 'space-b' });
+  const otherSpace = () => JSON.stringify(log.list().filter(entry => entry.personalSpaceId === 'space-b'));
+  const before = otherSpace();
+  // The rows name no knowledge item, so the delete cannot tell which one quoted it: all of the space lose their words.
+  const references = knowledgeReferences({ itemIds: ['item-1'] });
+  assert.equal(log.forgetKnowledgeItems(SPACE, references), 3);
+  const cleared = Object.fromEntries(log.list().filter(entry => entry.personalSpaceId === SPACE).map(entry => [entry.role, entry]));
+  assert.deepEqual(cleared.jefa.suggestion, { taskId: 'task-seeds', updatedAt: null });
+  assert.deepEqual(cleared.bole.suggestion, { action: 'coach', evidenceIds: ['completion'] });
+  assert.deepEqual(cleared.assistant.suggestion, { personalProjectId: 'garden' });
+  for (const entry of Object.values(cleared)) {
+    assert.deepEqual([entry.status, entry.hint, entry.hard_deleted, entry.gate.status], ['suggested', undefined, true, 'suggestion_only']);
+    assert.equal(JSON.stringify(entry).includes('Watering') || JSON.stringify(entry).includes('Seed inventory')
+      || JSON.stringify(entry).includes('Completion is low'), false);
+  }
+  assert.deepEqual(cleared.jefa.subject, { conversationId: 'conversation-1' });
+  assert.equal(otherSpace(), before, 'another space is untouched, byte for byte');
+  assert.equal(log.forgetKnowledgeItems(SPACE, references), 0, 'counted once');
 
-  // A result that named a knowledge item would keep its shape and lose its words.
-  log.record(jefa({ ...jefaSuggested(4), evidence: [{ item_id: 'item-1', title: 'Deleted words', reason: 'Quoted.' }] }, 'conversation-4'));
-  assert.equal(log.forgetKnowledgeItems(SPACE, references), 1);
-  assert.equal(log.forgetKnowledgeItems('space-b', references), 0);
-  assert.deepEqual(log.list()[0].evidence, [{ item_id: 'item-1', title: null, reason: null, hard_deleted: true }]);
-  assert.equal(JSON.stringify(log.list().slice(1)), today);
+  // A record written later is not one the delete could have reached.
+  clock.now += 60_000;
+  log.record(jefa(jefaSuggested(5), 'conversation-5'));
+  assert.equal(log.list()[0].suggestion.reason, 'Same page.');
 
-  // Written after the delete: the fence applies in the write itself.
+  // While a delete in the space is open, a new record is stored without words; one in another space is not.
   hardDeleteLedger(directory).begin({ spaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: 'preview-1', itemIds: [] });
-  const after = new RoleSuggestionLog(path, { now: () => new Date(clock.now) });
+  clock.now += 60_000;
+  const during = new RoleSuggestionLog(path, { now: () => new Date(clock.now) });
   try {
-    after.record(jefa({ ...jefaSuggested(5), evidence: [{ item_id: 'item-2', title: 'Late words' }] }, 'conversation-5'));
-    assert.deepEqual(after.list()[0].evidence, [{ item_id: 'item-2', title: null, hard_deleted: true }]);
-  } finally { after.close(); }
+    during.record(jefa(jefaSuggested(6), 'conversation-6'));
+    during.record({ ...jefa(jefaSuggested(7), 'conversation-7'), personalSpaceId: 'space-b' });
+    const [other, fenced] = during.list();
+    assert.deepEqual([fenced.hint, fenced.suggestion, fenced.hard_deleted], [undefined, { taskId: 'task-seeds', updatedAt: null }, true]);
+    assert.deepEqual([other.personalSpaceId, other.suggestion.reason, other.hard_deleted], ['space-b', 'Same page.', undefined]);
+  } finally { during.close(); }
 });
 
-test('the console copy is kept only while recording is on; anything unreadable keeps nothing', async () => {
+test('the console copy is kept only while recording is on, decided before the result; anything unreadable keeps nothing', async () => {
   const kept = [];
   const app = (policy, extra = {}) => ({ roleSuggestions: { record: entry => kept.push(entry) },
     getCapturePolicy: () => policy, ...extra });
   const entry = jefa(jefaSuggested());
   const scope = () => ({ sourceApplication: 'codex', personalProjectId: null });
-  await noteRoleSuggestion(app({ enabled: true, disabledSources: [] }), scope, entry);
+  (await prepareRoleSuggestionNote(app({ enabled: true, disabledSources: [] }), scope))(entry);
   assert.equal(kept.length, 1);
   for (const [name, application, readScope] of [
     ['global off', app({ enabled: false, disabledSources: [] }), scope],
     ['client off', app({ enabled: true, disabledSources: ['codex'] }), scope],
     ['settings unreadable', app(null, { getCapturePolicy: () => { throw new Error('unreadable'); } }), scope],
     ['scope unreadable', app({ enabled: true, disabledSources: [] }), async () => { throw new Error('Provider down'); }]]) {
-    await noteRoleSuggestion(application, readScope, entry);
+    (await prepareRoleSuggestionNote(application, readScope))(entry);
     assert.equal(kept.length, 1, name);
   }
   const failing = { roleSuggestions: { record: () => { throw new Error('disk full'); } }, getCapturePolicy: () => ({ enabled: true }) };
-  await assert.doesNotReject(noteRoleSuggestion(failing, scope, entry));
-  await assert.doesNotReject(noteRoleSuggestion({}, scope, entry));
+  const keepFailing = await prepareRoleSuggestionNote(failing, scope);
+  assert.doesNotThrow(() => keepFailing(entry));
+  const keepWithout = await prepareRoleSuggestionNote({}, scope);
+  assert.doesNotThrow(() => keepWithout(entry));
 });
 
 test('the console reads suggestions over a GET-only route that never writes', async (t) => {

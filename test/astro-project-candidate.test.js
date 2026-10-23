@@ -372,6 +372,25 @@ test('malicious answers: an invented project, a forged gate or a claimed binding
 // A model that answers only after `during` ran, as a delayed reply would.
 const delayed = (during, fields) => async () => { await during(); return answer(fields); };
 
+test('approval withdrawn during the console copy\'s own capture read: superseded, and no words kept', async () => {
+  let role = astroRole();
+  let armed = false;
+  const run = harness({ role: () => role, replies: [delayed(async () => { armed = true; })] });
+  // After the model answered, Astro reads the task once for attribution; the next read is the copy's capture scope.
+  const read = run.contexts.registry.context.bind(run.contexts.registry);
+  let reads = 0;
+  run.contexts.registry.context = async (...args) => {
+    if (armed && ++reads === 2) role = astroRole({ enabled: false });
+    return read(...args);
+  };
+  const hint = (await run.entry()).project_candidate;
+  assert.equal(reads, 2, 'withdrawn during the capture read');
+  assert.deepEqual([hint.status, hint.reason, hint.hint, hint.suggestion], ['superseded', 'permission_changed', undefined, undefined]);
+  assert.deepEqual(run.suggestions().map(noted => [noted.status, noted.reason, 'hint' in noted, 'suggestion' in noted]),
+    [['superseded', 'permission_changed', false, false]]);
+  run.assertNoAttribution();
+});
+
 test('recording turned off while the model runs keeps no console copy; the hint is the same', async () => {
   const run = harness({ role: astroRole(), replies: [delayed(() => run.app.updateCapturePolicy({ enabled: false }))] });
   const hint = (await run.entry()).project_candidate;

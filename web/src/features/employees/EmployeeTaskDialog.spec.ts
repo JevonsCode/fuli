@@ -28,13 +28,17 @@ describe('native task dialog', () => {
     await wrapper.get('form').trigger('submit'); await flushPromises()
     expect(postJson.mock.lastCall?.[1]).toMatchObject({ personalProjectId: 'project-a', tool: 'create_tasks', arguments: { tasks: [{ title: 'New task' }] } })
   })
-  it('says a task does not exist only when its own read answers 404; a gate or other failure keeps its reason', async () => {
-    postJson.mockRejectedValue(new ApiError('{"error":"no such work item"}', 404, '{"error":"no such work item"}'))
+  it('says a task does not exist only on the runtime\'s explicit task_not_found; any other 404 cannot be read now', async () => {
+    postJson.mockRejectedValue(new ApiError('gone', 404, '{"error":"No such work item","code":"task_not_found"}'))
     expect((await setup()).get('[role="alert"]').text()).toContain('任务不存在。')
-    postJson.mockRejectedValue(new ApiError('gone', 404, '{"error":"Project is unavailable","code":"project_not_found"}'))
-    expect((await setup()).get('[role="alert"]').text()).not.toContain('任务不存在')
+    for (const detail of ['{"error":"no such work item"}', '{"error":"Project is unavailable","code":"project_not_found"}', 'Not Found']) {
+      postJson.mockRejectedValue(new ApiError('404', 404, detail))
+      expect((await setup()).get('[role="alert"]').text(), detail).toContain('暂时无法读取任务。')
+    }
     postJson.mockRejectedValue(new ApiError('denied', 403, '{"error":"Employee tool is not available or permitted","code":"tool_not_permitted"}'))
-    expect((await setup()).get('[role="alert"]').text()).not.toContain('任务不存在')
+    const denied = (await setup()).get('[role="alert"]').text()
+    expect(denied).not.toContain('任务不存在')
+    expect(denied).not.toContain('暂时无法读取任务')
   })
   it('shows failures without reporting success or changing the board', async () => {
     const wrapper = await setup()

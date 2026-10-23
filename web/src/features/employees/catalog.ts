@@ -95,15 +95,16 @@ export function refreshEmployeeCatalog(spaceId: string): Promise<void> {
   return pending
 }
 
-// A 404 from the employee's own runtime: FULI's gates answer a missing
-// template or project with their own codes, so only the runtime's read of the
-// task itself is left. Anything else proves nothing about the task.
-const GATE_NOT_FOUND = ['template_not_found', 'project_not_found']
-export function missingTask(error: unknown) {
-  if (!(error instanceof ApiError) || error.status !== 404) return false
+// What a failed read of one board task proves (rec#10 D-30.8): only the
+// runtime's explicit task_not_found says the task is gone. Any other 404 (a
+// gate, a project, an unknown contract, a body that is not JSON) proves
+// nothing about the task: it cannot be read right now. Other failures keep
+// their own message.
+export function taskReadFailure(error: unknown): 'missing' | 'unreadable' | null {
+  if (!(error instanceof ApiError) || error.status !== 404) return null
   try {
-    return !GATE_NOT_FOUND.includes((JSON.parse(error.detail) as { code?: string }).code ?? '')
-  } catch { return true }
+    return (JSON.parse(error.detail) as { code?: string }).code === 'task_not_found' ? 'missing' : 'unreadable'
+  } catch { return 'unreadable' }
 }
 
 export function employeeErrorMessage(error: unknown) {

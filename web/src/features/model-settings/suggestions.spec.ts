@@ -35,6 +35,7 @@ describe('role suggestions', () => {
     expect(suggestionText(base({ hint: '可能是看板上的「Seed inventory」任务' }))).toBe('可能是看板上的「Seed inventory」任务')
     expect(suggestionText(base({ role: 'bole', suggestion: { action: 'coach' } }))).toBe('针对弱项给出反馈')
     expect(suggestionText(base({ status: 'superseded', reason: 'task_changed', hint: 'stale' }))).toBe('')
+    expect(suggestionText(base({ hard_deleted: true, suggestion: { taskId: 'task-seeds' } }))).toBe('内容已因彻底删除清除')
   })
 
   it('says why in plain words, with the code for an unknown reason', () => {
@@ -68,7 +69,7 @@ describe('role suggestions', () => {
     // Superseded: the conversation, or the project's board since no task is named any more.
     expect(suggestionAction(base({ role: 'assistant', status: 'superseded', subject: { conversationId: 'conv-1' } }))?.label).toBe('查看会话归类')
     expect(suggestionAction(base({ status: 'superseded' })))
-      .toEqual({ kind: 'link', label: '查看看板任务', to: { path: '/employees/jefa', query: { project: 'garden' } } })
+      .toEqual({ kind: 'link', label: '查看看板', to: { path: '/employees/jefa', query: { project: 'garden' } } })
     expect(suggestionAction(base({ role: 'bole', status: 'superseded', subject: { agentId: 'engineer-x' } }))).toBeNull()
     for (const status of ['inline', 'stopped', 'paused', 'failed']) {
       expect(suggestionAction(base({ status, suggestion: { taskId: 'task-1' } }))).toBeNull()

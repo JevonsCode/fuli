@@ -1,6 +1,6 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { compactReceipt } from '../model-backends/receipt.js';
-import { noteRoleSuggestion } from './role-suggestion-note.js';
+import { prepareRoleSuggestionNote } from './role-suggestion-note.js';
 
 // Bole's performance review of one Agent in one project (rec#8, rec#10 D-26).
 // Bole's own model, when configured, picks one host-listed next step from the
@@ -61,10 +61,13 @@ export async function reviewAgentScoreCard(application, card, { sourceApplicatio
   const outcome = await application.roleWork.decide(request, { inline: true });
   // No model for Bole: the card exactly as today, for the session to judge.
   if (outcome.modelReceipt.status === 'not_configured') return card;
+  // The console copy's capture decision is the last await; the review is then
+  // decided and kept synchronously.
+  const keep = await prepareRoleSuggestionNote(application, () => ({ sourceApplication, personalProjectId }));
   const review = modelReview(outcome, scored, { requestId: request.requestId, evidenceVersion: request.versions.evidence,
     promptVersion: PROMPT_VERSION, gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) });
-  await noteRoleSuggestion(application, () => ({ sourceApplication, personalProjectId }), { role: GATE.role, operation: OPERATION,
-    personalSpaceId: card.personalSpaceId, personalProjectId, subject: { agentId: card.agentId }, result: review });
+  keep({ role: GATE.role, operation: OPERATION, personalSpaceId: card.personalSpaceId, personalProjectId,
+    subject: { agentId: card.agentId }, result: review });
   return withReview(card, review);
 }
 

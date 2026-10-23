@@ -562,6 +562,28 @@ test('the console copy follows the recording switch, decided after the model ans
   }
 });
 
+test('approval withdrawn during the console copy\'s own capture read: superseded, and no words kept', async () => {
+  for (const [name, withdrawn] of [['the project\'s approval', jefaRole({ egress: { approvedProjects: [], allowUnassigned: true } })],
+    ['the operation', jefaRole({ allowedOperations: ['other_operation'] })], ['the role itself', jefaRole({ enabled: false })]]) {
+    let role = jefaRole();
+    let armed = false;
+    const run = harness({ roles: { jefa: () => role }, replies: [delayed(async () => { armed = true; })] });
+    // After the model answered, Jefa reads the task once in its recheck; the next read is the copy's capture scope.
+    const read = run.contexts.registry.context.bind(run.contexts.registry);
+    let reads = 0;
+    run.contexts.registry.context = async (...args) => {
+      if (armed && ++reads === 2) role = withdrawn;
+      return read(...args);
+    };
+    const match = jefaOf(await run.entry()).suggested_match;
+    assert.equal(reads, 2, `${name}: withdrawn during the capture read`);
+    assert.deepEqual([match.status, match.reason, match.hint, match.suggestion], ['superseded', 'permission_changed', undefined, undefined], name);
+    assert.deepEqual(run.suggestions().map(noted => [noted.status, noted.reason, 'hint' in noted, 'suggestion' in noted]),
+      [['superseded', 'permission_changed', false, false]], name);
+    run.assertNoWrites();
+  }
+});
+
 test('Jefa\'s workbench runtime and the employee service never reach Jefa\'s model call', () => {
   for (const entry of ['src/employees/service.js', 'src/employees/task-entry.js', 'src/employees/package-registry.js']) {
     const reached = [...reachableModules(entry)].some(path => path.replaceAll('\\', '/').endsWith('src/graphiti/jefa-board-match.js'));

@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
-import { deletedKnowledgeBeside } from '../knowledge-hard-delete/delete-ledger.js';
-import { forgetDurably, forgetReferences } from '../knowledge-hard-delete/forget-references.js';
+import { hardDeleteLedger } from '../knowledge-hard-delete/delete-ledger.js';
+import { forgetDurably } from '../knowledge-hard-delete/forget-references.js';
 
 // What the built-in Agents showed after asking their own model (rec#8,
 // rec#10 D-26, D-30): Bole's performance_review, Astro's project_candidate and
@@ -22,18 +23,20 @@ import { forgetDurably, forgetReferences } from '../knowledge-hard-delete/forget
 // in the same transaction. Nothing deletes them on expiry, and a plain DELETE
 // is not an erasure of the medium.
 //
-// A person's permanent delete of knowledge (rec#5 C9) forgets the words of an
-// object that names a deleted item, as in every local store. The rows written
-// today name Agents, conversations, projects and board tasks, plus evidence
-// versions and dimension names, never a knowledge item, so in practice the
-// delete finds nothing here: a model reason that quoted deleted knowledge
-// stays until retention removes its row.
+// A person's permanent delete of knowledge (rec#5 C9, D-30.9): a row names no
+// knowledge item, so which model reason quoted the deleted item cannot be
+// told. Every row of the space written up to the delete therefore loses its
+// words (hint, model reason, uncertainty, project and task names) and keeps
+// its id, time, role, status and target IDs, marked hard_deleted. A row
+// written while a delete in its space is still open is stored without words.
 
 export const RETENTION = Object.freeze({ days: 90, rows: 300 });
 const DAY_MS = 86_400_000;
 const LIST_LIMIT = 50;
-// The JSON columns that can carry words.
-const FORGETTABLE = Object.freeze(['subject', 'result']);
+// The words a row carries: its hint, and in its suggestion the model's reason
+// and uncertainty and the names it showed. Host IDs and option keys stay.
+const RESULT_WORDS = Object.freeze(['hint', 'issues']);
+const SUGGESTION_WORDS = Object.freeze(['reason', 'uncertainty', 'name', 'title']);
 
 export const ROLE_SUGGESTIONS_FORMAT = sqliteFormat({
   store: 'role-suggestions',
@@ -48,8 +51,6 @@ export class RoleSuggestionLog {
   constructor(path = ':memory:', { now = () => new Date() } = {}) {
     this.path = path;
     this.now = now;
-    // Read inside the write transaction, so a delete that finished before it is applied.
-    this.deleted = deletedKnowledgeBeside(path);
   }
 
   // Opened on first write, so a data directory whose roles never asked a model has no file.
@@ -58,17 +59,16 @@ export class RoleSuggestionLog {
     return this.database;
   }
 
-  #json(value) {
-    return JSON.stringify(forgetReferences(value, this.deleted()).value);
-  }
-
   // Writes the row, then deletes rows past the retention, in one transaction.
+  // The delete ledger is read inside it, so a delete that opened before the
+  // write keeps its words out.
   record({ role, operation, personalSpaceId, personalProjectId = null, subject = {}, result }) {
     const at = this.now();
     this.#transaction(() => {
+      const shown = { ...result, guidance: undefined };
       this.db.prepare('INSERT INTO role_suggestions(at, role, operation, space, project, subject, result) VALUES(?, ?, ?, ?, ?, ?, ?)')
-        .run(at.toISOString(), role, operation, personalSpaceId, personalProjectId, this.#json(subject),
-          this.#json({ ...result, guidance: undefined }));
+        .run(at.toISOString(), role, operation, personalSpaceId, personalProjectId, JSON.stringify(subject),
+          JSON.stringify(this.#deleting(personalSpaceId) ? withoutWords(shown) : shown));
       this.db.prepare('DELETE FROM role_suggestions WHERE at < ?').run(retentionStart(at));
       this.db.prepare(`DELETE FROM role_suggestions WHERE id NOT IN
         (SELECT id FROM role_suggestions ORDER BY at DESC, id DESC LIMIT ?)`).run(RETENTION.rows);
@@ -94,22 +94,28 @@ export class RoleSuggestionLog {
     });
   }
 
-  // A person hard-deleted knowledge (rec#5 C9): a row of this space with an
-  // object that names it keeps its shape and loses that object's words.
-  // Returns how many rows changed.
+  // A person hard-deleted knowledge in this space (rec#5 C9, D-30.9): every
+  // row written up to now loses its words. Returns how many rows changed.
   forgetKnowledgeItems(space, references) {
+    if (references.empty) return 0;
     return forgetDurably(this.db, () => this.#transaction(() => {
       let changed = 0;
-      for (const row of this.db.prepare(`SELECT id, ${FORGETTABLE.join(', ')} FROM role_suggestions WHERE space = ?`).all(space)) {
-        const updates = FORGETTABLE.map(column => [column, forgetReferences(JSON.parse(row[column]), references)])
-          .filter(([, result]) => result.changed);
-        if (!updates.length) continue;
-        this.db.prepare(`UPDATE role_suggestions SET ${updates.map(([column]) => `${column} = ?`).join(', ')} WHERE id = ?`)
-          .run(...updates.map(([, result]) => JSON.stringify(result.value)), row.id);
+      const rows = this.db.prepare('SELECT id, result FROM role_suggestions WHERE space = ? AND at <= ?')
+        .all(space, this.now().toISOString());
+      for (const row of rows) {
+        const result = JSON.parse(row.result);
+        if (result.hard_deleted) continue;
+        this.db.prepare('UPDATE role_suggestions SET result = ? WHERE id = ?').run(JSON.stringify(withoutWords(result)), row.id);
         changed++;
       }
       return changed;
     }));
+  }
+
+  // A permanent delete in this space whose outcome or cleanup is not finished.
+  #deleting(space) {
+    if (this.path === ':memory:') return false;
+    return hardDeleteLedger(dirname(this.path)).open().some(operation => operation.spaceId === space);
   }
 
   // Nested calls join the open transaction.
@@ -130,6 +136,14 @@ export class RoleSuggestionLog {
     this.database?.close();
     this.database = null;
   }
+}
+
+function withoutWords(result) {
+  const kept = Object.fromEntries(Object.entries(result).filter(([key]) => !RESULT_WORDS.includes(key)));
+  if (result.suggestion) {
+    kept.suggestion = Object.fromEntries(Object.entries(result.suggestion).filter(([key]) => !SUGGESTION_WORDS.includes(key)));
+  }
+  return { ...kept, hard_deleted: true };
 }
 
 function retentionStart(at) {

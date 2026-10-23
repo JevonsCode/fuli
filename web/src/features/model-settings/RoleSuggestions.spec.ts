@@ -118,6 +118,22 @@ describe('RoleSuggestions', () => {
       expect.anything())
   })
 
+  it('shows a record a permanent delete cleared without any of its words', async () => {
+    const cleared = { ...SUGGESTIONS[2]!, hint: undefined, suggestion: { taskId: 'task-seeds' }, hard_deleted: true as const }
+    const wrapper = await mountSection({ entries: [cleared] })
+    const card = wrapper.get('article[data-role-suggestion="jefa"]')
+    expect(card.get('[data-suggestion-text]').text()).toBe('内容已因彻底删除清除')
+    expect(card.text()).not.toContain('Seed inventory')
+    expect(card.find('.role-suggestion-reason').exists()).toBe(false)
+  })
+
+  it('keeps the evidence version only as the model\'s tooltip, not on the whole line', async () => {
+    const wrapper = await mountSection({ entries: SUGGESTIONS })
+    const line = wrapper.get('li.role-suggestion-line')
+    expect(line.attributes('title')).toBeUndefined()
+    expect(line.get('code').attributes('title')).toContain('project_candidate:r-assistant')
+  })
+
   it('says the score card cannot be opened right now when its read fails, never what it would hold', async () => {
     api.getJson.mockImplementation(async (url: string) => {
       if (url.includes('/score-card')) throw new Error('HTTP 403')

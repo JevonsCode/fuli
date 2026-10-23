@@ -192,15 +192,14 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
       { candidate_key: 'entity:other', item_id: 'other', title: 'Synthetic staging target' }] }] },
   reason: 'no_model', at, ttlMs: 60_000 });
   work.close();
-  // A suggestion record as Jefa writes it today: identities, an evidence version and model text, no knowledge item.
+  // A suggestion record as Jefa writes it today: identities, an evidence version and model text, no knowledge item ID.
   const suggestions = new RoleSuggestionLog(join(dataDir, 'role-suggestions.sqlite'), { now: () => at });
   suggestions.record({ role: 'jefa', operation: 'board_match', personalSpaceId: SPACE, personalProjectId: 'garden',
     subject: { conversationId: 'conversation-synthetic-1' }, result: { status: 'suggested', hint: '可能是看板上的「Seed inventory」任务',
-      suggestion: { taskId: 'task-seeds', title: 'Seed inventory', updatedAt: null, reason: 'Same page as item-1.', uncertainty: null },
+      suggestion: { taskId: 'task-seeds', title: 'Seed inventory', updatedAt: null, reason: `Quoted ${PASTED}`, uncertainty: null },
       confirmWith: 'call_employee_tool', suggestedBy: { mode: 'model_api', independent: true, model: 'qwen-test' },
       requestId: 'board_match:r1', evidenceVersion: 'e'.repeat(64), promptVersion: 'board_match:p1',
       gate: { status: 'suggestion_only', role: 'jefa', operation: 'board_match' } } });
-  const recorded = JSON.stringify(suggestions.list({ limit: 300 }));
   suggestions.close();
 
   const port = knowledgeHardDelete(dataDir, { send: syntheticGraph({ itemIds: ['item-2', 'item-1'] }).send });
@@ -208,10 +207,12 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
     confirmation: '删除' });
   assert.deepEqual(done.local_stores.map(({ store, status }) => [store, status]),
     [['judgment.sqlite', 'forgotten'], ['role-work.sqlite', 'forgotten'], ['role-suggestions.sqlite', 'forgotten']]);
-  assert.deepEqual(done.local_stores.map((store) => store.changed > 0), [true, true, false]);
-  // Its rows name no knowledge item, so the delete finds nothing there and changes no byte.
+  assert.ok(done.local_stores.every((store) => store.changed > 0));
+  // Its rows name no knowledge item, so every record of the space written up to the delete lost its words (D-30.9).
   const suggestionsAgain = new RoleSuggestionLog(join(dataDir, 'role-suggestions.sqlite'), { now: () => at });
-  assert.equal(JSON.stringify(suggestionsAgain.list({ limit: 300 })), recorded);
+  const [record] = suggestionsAgain.list({ limit: 300 });
+  assert.deepEqual([record.status, record.hint, record.suggestion, record.hard_deleted, record.subject],
+    ['suggested', undefined, { taskId: 'task-seeds', updatedAt: null }, true, { conversationId: 'conversation-synthetic-1' }]);
   suggestionsAgain.close();
 
   const reopened = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
@@ -226,7 +227,7 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
   assert.deepEqual([gone.title, gone.hard_deleted, stays.title], [null, true, 'Synthetic staging target']);
   reread.close();
   // Not in the file (its free pages included), not in a write-ahead log or journal.
-  for (const file of ['judgment.sqlite', 'role-work.sqlite'].flatMap((name) => [name, `${name}-wal`, `${name}-journal`])) {
+  for (const file of ['judgment.sqlite', 'role-work.sqlite', 'role-suggestions.sqlite'].flatMap((name) => [name, `${name}-wal`, `${name}-journal`])) {
     const path = join(dataDir, file);
     if (existsSync(path)) assert.equal(readFileSync(path).includes(Buffer.from(PASTED)), false, file);
   }
@@ -240,6 +241,15 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
     previewId: PREVIEW_ID, confirmation: '删除' });
   assert.equal(reported.outcome, 'local_pending');
   assert.deepEqual(reported.local_stores, [{ store: 'judgment.sqlite', status: 'failed', reason: 'synthetic newer format' }]);
+});
+
+test('a data directory without suggestion records is not given one by a permanent delete', async (t) => {
+  const dataDir = dataDirectory(t);
+  const done = await knowledgeHardDelete(dataDir, { send: syntheticGraph({ itemIds: ['item-2'] }).send })
+    .confirm({ personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: PREVIEW_ID, confirmation: '删除' });
+  assert.deepEqual(done.local_stores.find((store) => store.store === 'role-suggestions.sqlite'),
+    { store: 'role-suggestions.sqlite', status: 'forgotten', changed: 0 });
+  assert.equal(existsSync(join(dataDir, 'role-suggestions.sqlite')), false);
 });
 
 test('a receipt read in several batches counts each permanent delete once', async () => {

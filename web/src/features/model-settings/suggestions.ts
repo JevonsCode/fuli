@@ -40,6 +40,8 @@ export interface RoleSuggestion {
   modelReceipt: { requestedModel: string | null; actualModel: string | null; fallbackReason?: string | null }
   // A newer suggestion for the same subject was recorded since.
   stale?: 'newer'
+  // A permanent delete of knowledge cleared its words (rec#10 D-30.9).
+  hard_deleted?: true
 }
 
 export const readRoleSuggestions = (signal?: AbortSignal) =>
@@ -69,9 +71,11 @@ export const isSuggestion = (state: SuggestionState) => state === 'suggested' ||
 export const suggestionModel = (entry: RoleSuggestion) =>
   entry.suggestedBy?.model ?? entry.modelReceipt.actualModel ?? entry.modelReceipt.requestedModel ?? null
 
-// What was suggested, in one line; empty when nothing was.
+// What was suggested, in one line; empty when nothing was. A permanent
+// delete of knowledge cleared the words of a record (D-30.9): it says so.
 export function suggestionText(entry: RoleSuggestion) {
   if (!isSuggestion(suggestionState(entry))) return ''
+  if (entry.hard_deleted) return t('modelSettings.suggestions.cleared')
   if (entry.role === 'bole') return t(`modelSettings.suggestions.boleActions.${entry.suggestion?.action}`)
   return entry.hint ?? ''
 }
@@ -120,7 +124,7 @@ export function suggestionAction(entry: RoleSuggestion): SuggestionAction | null
     return taskId
       ? { kind: 'link', label: t('modelSettings.suggestions.openTask'), to: { path: '/employees/jefa', query: {
         item: peekItemValue({ spaceId: entry.personalSpaceId, id: boardTaskPeekId({ projectId: entry.personalProjectId, id: taskId }) }) } } }
-      : { kind: 'link', label: t('modelSettings.suggestions.openTask'), to: { path: '/employees/jefa', query: { project: entry.personalProjectId } } }
+      : { kind: 'link', label: t('modelSettings.suggestions.openBoard'), to: { path: '/employees/jefa', query: { project: entry.personalProjectId } } }
   }
   if (entry.role === 'bole' && isSuggestion(state) && entry.subject.agentId) {
     return { kind: 'score_card', label: t('modelSettings.suggestions.openScoreCard') }
