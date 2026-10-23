@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
 import { UiSegmented } from '@/ui'
 import {
-  USAGE_WINDOWS, costValue, readModelUsage, roleName, tokenValue, usageRows, usageText,
+  USAGE_WINDOWS, costValue, readModelUsage, roleName, tokenValue, usageParts, usageRows,
   type UsagePayload, type UsageRow, type UsageWindow,
 } from './model'
 
@@ -43,12 +43,12 @@ const cells = (row: UsageRow) => {
   const { group } = row
   const cost = costValue(group)
   return [
-    { key: 'input', label: t('modelSettings.usage.input'), text: usageText(tokenValue(group.tokens.input, group.attempts), locale.value) },
-    { key: 'output', label: t('modelSettings.usage.output'), text: usageText(tokenValue(group.tokens.output, group.attempts), locale.value) },
-    { key: 'cache', label: t('modelSettings.usage.cache'), text: usageText(tokenValue(group.tokens.cachedInput, group.attempts), locale.value) },
+    { key: 'input', label: t('modelSettings.usage.input'), parts: usageParts(tokenValue(group.tokens.input, group.attempts), locale.value) },
+    { key: 'output', label: t('modelSettings.usage.output'), parts: usageParts(tokenValue(group.tokens.output, group.attempts), locale.value) },
+    { key: 'cache', label: t('modelSettings.usage.cache'), parts: usageParts(tokenValue(group.tokens.cachedInput, group.attempts), locale.value) },
     ...(group.tokens.cacheWriteInput ? [{ key: 'cacheWrite', label: t('modelSettings.usage.cacheWrite'),
-      text: usageText(tokenValue(group.tokens.cacheWriteInput, group.attempts), locale.value) }] : []),
-    { key: 'cost', label: t('modelSettings.usage.cost'), text: usageText(cost, locale.value, cost.kind === 'unknown' ? undefined : cost.currency),
+      parts: usageParts(tokenValue(group.tokens.cacheWriteInput, group.attempts), locale.value) }] : []),
+    { key: 'cost', label: t('modelSettings.usage.cost'), parts: usageParts(cost, locale.value, cost.kind === 'unknown' ? undefined : cost.currency),
       source: cost.kind === 'unknown' ? '' : t('modelSettings.usage.sources.estimate') },
   ]
 }
@@ -96,7 +96,7 @@ onBeforeUnmount(() => reading?.abort())
                   </div>
                   <div v-for="cell in cells(row)" :key="cell.key" :data-usage-cell="cell.key">
                     <dt>{{ cell.label }}<small v-if="cell.source"> · {{ cell.source }}</small></dt>
-                    <dd>{{ cell.text }}</dd>
+                    <dd>{{ cell.parts.value }}<span v-if="cell.parts.note" class="model-usage-note">{{ cell.parts.note }}</span></dd>
                   </div>
                 </dl>
               </article>
@@ -127,6 +127,7 @@ onBeforeUnmount(() => reading?.abort())
 .model-usage-card dl > div:first-child { grid-column: 1 / -1; }
 .model-usage-card dt { color: var(--color-muted); font-size: 12px; }
 .model-usage-card dd { margin: 2px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.model-usage-note { display: inline-block; color: var(--color-muted); white-space: nowrap; }
 .model-usage-failed { margin-inline-start: 6px; color: var(--color-danger); font-size: 12px; }
 .model-usage-empty { display: grid; justify-items: start; gap: 8px; margin: 0; padding: 16px; border: 1px dashed var(--color-border);
   border-radius: var(--radius-card); color: var(--color-muted); font-size: 14px; }

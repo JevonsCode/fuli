@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  costValue, roleDraft, roleEdit, rolesSharing, tokenValue, usageRows, usageText, usageWindowStart, withConnection, withProject,
+  costValue, roleDraft, roleEdit, rolesSharing, tokenValue, usageParts, usageRows, usageWindowStart, withConnection, withProject,
   type ModelRolesPayload, type UsageGroup,
 } from './model'
 
@@ -83,12 +83,12 @@ describe('model usage', () => {
     expect(tokenValue({ reported: null, unknownAttempts: 2 }, 2)).toEqual({ kind: 'unknown', unknown: 2 })
     // A subset no attempt reported is absent from the group: every attempt is unknown.
     expect(tokenValue(undefined, 4)).toEqual({ kind: 'unknown', unknown: 4 })
-    expect(usageText(tokenValue(undefined, 4), 'zh-CN')).toBe('未上报 · 4 次')
-    expect(usageText(tokenValue({ reported: 1200, unknownAttempts: 1 }, 2), 'zh-CN')).toBe('1,200（另 1 次未上报）')
-    expect(usageText(tokenValue({ reported: 0, unknownAttempts: 0 }, 1), 'zh-CN')).toBe('0')
+    expect(usageParts(tokenValue(undefined, 4), 'zh-CN')).toEqual({ value: '未上报 · 4 次', note: '' })
+    expect(usageParts(tokenValue({ reported: 1200, unknownAttempts: 1 }, 2), 'zh-CN')).toEqual({ value: '1,200', note: '（另 1 次未上报）' })
+    expect(usageParts(tokenValue({ reported: 0, unknownAttempts: 0 }, 1), 'zh-CN')).toEqual({ value: '0', note: '' })
     expect(costValue(group({}))).toEqual({ kind: 'unknown', unknown: 4 })
     const priced = costValue(group({ estimatedCost: { amount: 0.0012, currency: 'USD', basis: 'estimate', unknownAttempts: 0 } }))
-    expect(usageText(priced, 'en-US', 'USD')).toBe('$0.0012')
+    expect(usageParts(priced, 'en-US', 'USD').value).toBe('$0.0012')
   })
 
   it('lists model calls and current-session fallbacks apart, with bars only for known totals', () => {

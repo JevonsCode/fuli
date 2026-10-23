@@ -132,7 +132,9 @@ describe('ModelSettingsPage', () => {
     const model = wrapper.get('[data-usage-list="model"]')
     expect(model.text()).toContain('Tonborg')
     expect(model.text()).toContain('2 次 · 3 次尝试')
-    expect(model.get('[data-usage-cell="input"]').text()).toContain('1,200（另 1 次未上报）')
+    expect(model.get('[data-usage-cell="input"] dd').text()).toBe('1,200（另 1 次未上报）')
+    // The note wraps as a whole, never inside 未上/报.
+    expect(model.get('[data-usage-cell="input"] .model-usage-note').text()).toBe('（另 1 次未上报）')
     expect(model.get('[data-usage-cell="output"]').text()).toContain('未上报 · 3 次')
     expect(model.get('[data-usage-cell="cost"]').text()).toContain('未上报 · 3 次')
     expect(model.text()).not.toMatch(/(^|\s)0(\s|$)/)

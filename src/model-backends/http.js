@@ -1,8 +1,8 @@
 import { refuseRemoteDecision } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
 
-// Console routes of the model settings page: each role's backend, the usage
-// ledger, and the person's edit of one role. The get_model_usage Agent tool
+// Routes of the model settings page: each role's backend and the usage ledger
+// (Agent-readable, contains no secrets), and the person's edit of one role. The get_model_usage Agent tool
 // reads the same port, so both share validation and output. Saving a role is
 // the person's decision on this computer: loopback only, and no Agent tool
 // reaches it. Keys stay a local command (fuli models set-key).

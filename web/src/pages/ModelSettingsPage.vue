@@ -119,7 +119,7 @@ onBeforeUnmount(() => reading?.abort())
         <GrowthLoading v-if="loading" variant="inline" :label="t('modelSettings.loading')" />
 
         <ul class="m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[620px]:grid-cols-2 @min-[1400px]:grid-cols-4">
-          <li v-for="view in payload.roles" :key="view.role" class="min-w-0">
+          <li v-for="view in payload.roles" :key="view.role" class="min-w-0" :class="{ 'self-start': view.state === 'not_configured' }">
             <article class="model-role-card flex h-full min-w-0 flex-col gap-3 rounded-lg border bg-card p-4 transition-[border-color,box-shadow]"
               :class="{ 'border-border-strong shadow-md': editing === view.role }" :data-model-role="view.role"
               :aria-labelledby="`model-role-${view.role}`">

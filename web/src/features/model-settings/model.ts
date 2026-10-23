@@ -287,13 +287,14 @@ export function usageRows(groups: UsageGroup[]): { model: UsageRow[]; session: U
 }
 
 // One usage cell in words: 未上报 with the number of attempts that reported
-// nothing, never 0.
-export function usageText(value: UsageValue, locale: string, currency?: string): string {
-  if (value.kind === 'unknown') return t('modelSettings.usage.notReportedCount', { count: value.unknown })
+// nothing, never 0. A partly reported value keeps its note apart, so the
+// note wraps as a whole instead of breaking inside a word.
+export function usageParts(value: UsageValue, locale: string, currency?: string): { value: string; note: string } {
+  if (value.kind === 'unknown') return { value: t('modelSettings.usage.notReportedCount', { count: value.unknown }), note: '' }
   const shown = currency
     ? new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 6 }).format(value.value)
     : formatCount(value.value, locale)
-  return value.kind === 'partial' ? t('modelSettings.usage.partial', { value: shown, count: value.unknown }) : shown
+  return { value: shown, note: value.kind === 'partial' ? t('modelSettings.usage.partialNote', { count: value.unknown }) : '' }
 }
 
 export const formatCount = (value: number, locale: string) => new Intl.NumberFormat(locale).format(value)

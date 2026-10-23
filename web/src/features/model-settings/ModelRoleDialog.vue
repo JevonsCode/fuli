@@ -79,11 +79,15 @@ async function save() {
 
       <div class="model-role-grid">
         <Field>
-          <UiSelect :model-value="draft.connectionId" field :label="t('modelSettings.connection')" :options="connectionOptions"
+          <FieldLabel>{{ t('modelSettings.connection') }}</FieldLabel>
+          <UiSelect :model-value="draft.connectionId" :label="t('modelSettings.connection')" :options="connectionOptions"
             :disabled="saving" data-model-connection @update:model-value="chooseConnection" />
           <FieldDescription v-if="sharing">{{ t('modelSettings.sharedWith', { names: sharing }) }}</FieldDescription>
         </Field>
-        <UiSelect v-model="draft.protocol" field :label="t('modelSettings.protocol')" :options="protocolOptions" :disabled="saving" />
+        <Field>
+          <FieldLabel>{{ t('modelSettings.protocol') }}</FieldLabel>
+          <UiSelect v-model="draft.protocol" :label="t('modelSettings.protocol')" :options="protocolOptions" :disabled="saving" />
+        </Field>
         <Field class="model-role-wide">
           <FieldLabel for="model-role-endpoint">{{ t('modelSettings.endpoint') }}</FieldLabel>
           <Input id="model-role-endpoint" v-model="draft.endpoint" type="url" inputmode="url" autocomplete="off"
@@ -93,8 +97,10 @@ async function save() {
           <FieldLabel for="model-role-model">{{ t('modelSettings.model') }}</FieldLabel>
           <Input id="model-role-model" v-model="draft.model" autocomplete="off" :disabled="saving" data-model-name />
         </Field>
-        <UiSelect v-if="draft.protocol === 'openai_chat'" v-model="draft.reasoningEffort" field
-          :label="t('modelSettings.reasoningEffort')" :options="effortOptions" :disabled="saving" />
+        <Field v-if="draft.protocol === 'openai_chat'">
+          <FieldLabel>{{ t('modelSettings.reasoningEffort') }}</FieldLabel>
+          <UiSelect v-model="draft.reasoningEffort" :label="t('modelSettings.reasoningEffort')" :options="effortOptions" :disabled="saving" />
+        </Field>
         <Field class="model-role-wide">
           <FieldLabel for="model-role-secret-ref">{{ t('modelSettings.secretRef') }}</FieldLabel>
           <Input id="model-role-secret-ref" v-model="draft.secretRef" autocomplete="off" spellcheck="false"
@@ -176,7 +182,7 @@ async function save() {
 
 <style scoped>
 .model-role-form { display: grid; gap: 16px; min-width: 0; }
-.model-role-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px 16px; }
+.model-role-grid { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px 16px; }
 .model-role-wide { grid-column: 1 / -1; }
 .model-role-fieldset { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .model-role-fieldset legend { margin-bottom: 4px; font-size: 14px; font-weight: 500; }
