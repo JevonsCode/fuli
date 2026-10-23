@@ -4,6 +4,10 @@ MCP or Agent tool can preview, delete, ask about or abort a delete."""
 
 from typing import Any
 
+from .knowledge_integrity import (
+    KnowledgeIntegrityRequest, KnowledgeIntegrityReport, check_knowledge_integrity,
+)
+
 from .knowledge_hard_delete import (
     abort_hard_delete, apply_hard_delete, hard_delete_status, hard_deletions, preview_hard_delete,
     read_hard_delete_operation,
@@ -20,6 +24,10 @@ from .knowledge_hard_delete_models import (
 
 
 def register_knowledge_hard_delete_routes(application, store, HumanReviewer: Any) -> None:
+    @application.post('/v1/knowledge/integrity', response_model=KnowledgeIntegrityReport)
+    async def knowledge_integrity(request: KnowledgeIntegrityRequest, actor: HumanReviewer):
+        return await check_knowledge_integrity(store, actor, request)
+
     @application.post('/v1/knowledge/items/{item_id}/hard-delete/preview',
                       response_model=KnowledgeHardDeletePreview)
     async def hard_delete_preview(item_id: str, request: KnowledgeHardDeleteRef, actor: HumanReviewer):
