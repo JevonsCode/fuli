@@ -57,7 +57,8 @@ Each row is the single home for that behavior; reuse it or extend it.
 | CLI line output, terminal confirmation and hidden secret entry | `src/cli/terminal-io.js` | |
 | Model API calls of the built-in Agents | `src/model-backends/port.js` | Budget, egress, retry, validation and usage live in the port; protocols only in `src/model-backends/adapters/`. |
 | A model request that never follows a redirect | `src/model-backends/no-redirect-fetch.js` (`fetchWithoutRedirect`) | Every model adapter and the Tonborg review evaluation; a redirect is a `refusal` (`endpoint_redirected`). |
-| A built-in Agent's work for the current session (no model, or a fallback-eligible failure) | `src/model-backends/role-work.js` (`decide`, `role_work` claim/submit) | Any role calls `decide` instead of the port and registers a resumer; never start a CLI, session or other model. |
+| A built-in Agent's work for the current session (no model, or a fallback-eligible failure) | `src/model-backends/role-work.js` (`decide`, `role_work` claim/submit) | Any role calls `decide` instead of the port. An operation the current session started with the evidence in hand passes `inline: true` (no package; the session keeps its usual answer); otherwise it registers a resumer for a work package. Never start a CLI, session or other model. |
+| What a role keeps or shows of a model receipt | `src/model-backends/receipt.js` (`compactReceipt`) | |
 | Web date and time display | `web/src/lib/date-time.ts` (`formatDateTime`), `web/src/lib/relative-time.ts` | Pass `currentLocale()`; never a hard-coded or browser-default locale. |
 | Web identity, debounce | `web/src/lib/identity.ts`, `web/src/lib/debounce.ts` | |
 | Web short display ids (unique prefix of a list) | `web/src/lib/short-ids.ts` (`shortUniqueIds`) | Mark a cut with … and keep the full id in a title or copy control. |

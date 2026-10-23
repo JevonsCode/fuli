@@ -33,8 +33,13 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
   // execution holding a package may use its answer; an execution that lost
   // it (it was slow and another took over) stops here instead of asking
   // anew, and a call outside any execution never takes an applying answer.
-  async function decide(input, { resume = null, execution = null } = {}) {
+  // inline: the current session asked and already holds the evidence (rec#10
+  // D-26.1). No package is created; without a model, or after a
+  // fallback-eligible failure, the caller's usual answer for the session
+  // stands. Every model attempt was still settled in the ledger by the port.
+  async function decide(input, { resume = null, execution = null, inline = false } = {}) {
     const request = parseDecisionRequest(input);
+    if (inline) return inlineOutcome(await port.decide(request));
     const at = now();
     const applying = store.applying(request.role, request.requestId);
     if ((applying || execution) && applying?.execution !== execution) throw executionLost(request);
@@ -55,7 +60,7 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
         { retryable: true });
     }
     const { envelope, modelReceipt } = await port.decide(request);
-    if (modelReceipt.status === 'completed') return { status: 'answered', mode: 'model_api', independent: true, envelope, modelReceipt };
+    if (modelReceipt.status === 'completed') return modelAnswer(envelope, modelReceipt);
     if (modelReceipt.status === 'not_configured' || modelReceipt.fallbackEligible) {
       const created = store.create({ request, resume, reason: modelReceipt.fallbackReason ?? modelReceipt.reason,
         fallbackReceipt: modelReceipt.status === 'not_configured' ? null : modelReceipt, at, ttlMs: PACKAGE_TTL_MS });
@@ -200,6 +205,21 @@ function applyingUntil(at) {
 function sessionAnswer(work) {
   return { status: 'answered', mode: 'current_session', independent: false, envelope: work.submission.envelope,
     session: work.submission.session, workPackageId: work.packageId, modelReceipt: work.fallbackReceipt };
+}
+
+function modelAnswer(envelope, modelReceipt) {
+  return { status: 'answered', mode: 'model_api', independent: true, envelope, modelReceipt };
+}
+
+// A stop (refusal, privacy or permission, exhausted budget) keeps its own
+// status and reason: the session's answer is the caller's usual one, never a
+// way around the stop.
+function inlineOutcome({ envelope, modelReceipt }) {
+  if (modelReceipt.status === 'completed') return modelAnswer(envelope, modelReceipt);
+  if (modelReceipt.status === 'not_configured' || modelReceipt.fallbackEligible) {
+    return { status: 'inline', answeredBy: 'current_session', fallbackReason: modelReceipt.fallbackReason ?? modelReceipt.reason, modelReceipt };
+  }
+  return { status: modelReceipt.status, modelReceipt };
 }
 
 function pending(work, modelReceipt) {

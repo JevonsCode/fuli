@@ -1,4 +1,5 @@
 import { runJudgment } from './model.js';
+import { compactReceipt } from '../model-backends/receipt.js';
 import { parseModelJson } from '../text/model-json.js';
 
 // Who answers a Tonborg judgment (rec#8, D-04 §2 and §6). Tonborg's model,
@@ -63,11 +64,6 @@ export function pendingRecord(answer) {
 
 export function failureProvenance(error) {
   return error.modelReceipt ? { modelReceipt: compactReceipt(error.modelReceipt) } : {};
-}
-
-function compactReceipt(receipt) {
-  const { backend, status, reason, failureClass, fallbackReason, requestedModel, actualModel, attempts, usage } = receipt;
-  return { backend, status, reason, failureClass, fallbackReason, requestedModel, actualModel, attempts, usage };
 }
 
 // Each top-level part of the judgment data is one evidence item, so the

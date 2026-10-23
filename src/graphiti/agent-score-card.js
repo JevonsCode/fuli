@@ -1,6 +1,9 @@
+import { reviewAgentScoreCard } from './agent-performance-review.js';
+
 // Bole's zero-token score card. The Provider tallies the outcomes it records;
 // this host adds the Tonborg acceptance verdicts it keeps locally. Nothing is
-// written and no model runs. Task IDs stay behind a separate drill-down read.
+// written and no model runs, unless review asks Bole's own model for a
+// suggestion. Task IDs stay behind a separate drill-down read.
 
 // The same read tool returns the task IDs once a dimension is added.
 const EVIDENCE_TOOL = 'get_agent_score_card';
@@ -13,7 +16,7 @@ const DIMENSION_NAMES = Object.freeze(Object.fromEntries(
 
 export async function getAgentScoreCard(application, input) {
   const value = await application.personal.getProjectAgentScoreCard(scoreCardQuery(application, input));
-  return {
+  const card = {
     personalSpaceId: value.personal_space_id,
     agentId: value.agent_id,
     personalProjectIds: value.personal_project_ids,
@@ -32,6 +35,7 @@ export async function getAgentScoreCard(application, input) {
     evidence: { tool: EVIDENCE_TOOL, addArgument: 'dimension', arguments: { personalSpaceId: value.personal_space_id,
       agentId: value.agent_id, ...(input.personalProjectId ? { personalProjectId: input.personalProjectId } : {}) } }
   };
+  return input.review ? reviewAgentScoreCard(application, card) : card;
 }
 
 export async function listAgentScoreEvidence(application, input) {
