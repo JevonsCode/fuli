@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { closeSync, mkdirSync, openSync, readFileSync } from 'node:fs';
@@ -6,28 +6,10 @@ import { createConnection } from 'node:net';
 import { basename, dirname, join, normalize, win32 } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { execute, OWNED_PROCESS_TYPE, powershell } from '../local-runtime/windows-process-handle.js';
+
 const samePath = (left, right) => typeof left === 'string' && typeof right === 'string'
   && normalize(left).toLowerCase() === normalize(right).toLowerCase();
-
-function execute(command, args, options = {}) {
-  const { sensitiveValues = [], ...executionOptions } = options;
-  return new Promise((resolve, reject) => execFile(command, args, {
-    encoding: 'utf8', windowsHide: true, timeout: 60_000, maxBuffer: 1024 * 1024, ...executionOptions
-  }, (error, stdout, stderr) => {
-    const clean = value => sensitiveValues.reduce((result, secret) => secret
-      ? result.replaceAll(secret, '[redacted]') : result, value);
-    if (error) reject(new Error(clean(stderr.trim() || stdout.trim()).slice(0, 2000)
-      || ('Native ' + basename(command) + ' failed: ' + (error.code ?? error.signal ?? 'unknown'))));
-    else resolve({ stdout: clean(stdout), stderr: clean(stderr) });
-  }));
-}
-
-async function powershell(script, env = process.env, options = {}) {
-  const prefix = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $ErrorActionPreference="Stop"; ';
-  const result = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
-    Buffer.from(prefix + script, 'utf16le').toString('base64')], { env, ...options });
-  return JSON.parse(result.stdout.replace(/^\uFEFF/, '').trim() || 'null');
-}
 
 export async function inspectWindowsNativeProcess(pid, { children = false, descendants = false, timeoutMs = 60_000 } = {}) {
   if (!Number.isInteger(pid) || pid <= 0) return children || descendants ? [] : null;
@@ -135,35 +117,7 @@ export async function waitForWindowsNativeDatabase(host, port, entry) {
 
 // Hold a process handle while checking its image and creation time and stopping
 // it. A PID reused after the CIM read cannot redirect termination to a new process.
-const STOP_SCRIPT = `
-Add-Type -TypeDefinition @'
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
-public static class FuliOwnedProcess {
-  [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
-  [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetProcessTimes(IntPtr handle, out long created, out long exited, out long kernel, out long user);
-  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool QueryFullProcessImageName(IntPtr handle, int flags, StringBuilder name, ref int size);
-  [DllImport("kernel32.dll", SetLastError=true)] static extern bool TerminateProcess(IntPtr handle, uint code);
-  [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr handle, uint timeout);
-  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
-  public static bool Stop(uint pid, long expectedCreated, string expectedImage) {
-    IntPtr handle = OpenProcess(0x100001 | 0x1000, false, pid);
-    if (handle == IntPtr.Zero) return false;
-    try {
-      long created, exited, kernel, user;
-      int size=32768; var image=new StringBuilder(size);
-      if (!GetProcessTimes(handle, out created, out exited, out kernel, out user)
-          || created / 10 != expectedCreated / 10
-          || !QueryFullProcessImageName(handle, 0, image, ref size)
-          || !String.Equals(image.ToString(), expectedImage, StringComparison.OrdinalIgnoreCase)) return false;
-      if (!TerminateProcess(handle, 0)) throw new System.ComponentModel.Win32Exception();
-      if (WaitForSingleObject(handle, 10000) != 0) throw new Exception("Owned process did not exit");
-      return true;
-    } finally { CloseHandle(handle); }
-  }
-}
-'@
+const STOP_SCRIPT = OWNED_PROCESS_TYPE + `
 $owner = $env:FULI_NATIVE_PROCESS_OWNER | ConvertFrom-Json
 $observed = Get-CimInstance Win32_Process -Filter ("ProcessId = " + $owner.pid)
 $stopped = $false

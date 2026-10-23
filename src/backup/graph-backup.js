@@ -1,5 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import {
   chmod,
   lstat,
@@ -12,6 +11,7 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 
 import { FULI_VERSION } from '../package-metadata.js';
+import { sha256File } from '../security/digest.js';
 
 const BACKUP_FORMAT = 'fuli-neo4j-backup';
 const BACKUP_VERSION = 1;
@@ -276,14 +276,4 @@ async function pathExists(path) {
     if (error?.code === 'ENOENT') return false;
     throw error;
   }
-}
-
-function sha256File(path) {
-  return new Promise((resolveHash, reject) => {
-    const hash = createHash('sha256');
-    const stream = createReadStream(path);
-    stream.on('error', reject);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => resolveHash(hash.digest('hex')));
-  });
 }
