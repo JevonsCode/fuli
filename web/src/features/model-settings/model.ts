@@ -1,4 +1,4 @@
-import { getJson, putJson } from '@/api/client'
+import { ApiError, getJson, putJson } from '@/api/client'
 import { t } from '@/i18n'
 
 // The console's model settings page (rec#8): each built-in Agent's model,
@@ -99,7 +99,7 @@ export interface RoleDraft {
 }
 
 // A new role starts from the example in fuli PR 236: modest per-call limits,
-// a 24-hour window and no project content leaving the computer.
+// a 24-hour window and no project approved for the model API's egress.
 const NEW_ROLE_BUDGET: ModelBudget = {
   maxInputTokens: 8000, maxOutputTokens: 600, timeoutMs: 60_000, windowHours: 24, maxTokensPerWindow: 200_000, maxCostPerWindow: null,
 }
@@ -159,7 +159,7 @@ export function withProject(draft: RoleDraft, project: ApprovedProject, approved
   return { ...draft, approvedProjects: approved ? [...others, project] : others }
 }
 
-// Other roles that use the same connection, so the person knows an edit reaches them.
+// Other roles that use the same connection, so the form says an edit reaches them.
 export function rolesSharing(payload: ModelRolesPayload, connectionId: string, role: ModelRoleId): ModelRoleId[] {
   return payload.roles.filter(entry => entry.role !== role && entry.connection?.id === connectionId).map(entry => entry.role)
 }
@@ -204,6 +204,19 @@ export function roleEdit(draft: RoleDraft, revision: string | null) {
       },
       fallbackToSession: draft.fallbackToSession,
     },
+  }
+}
+
+// The two 409s of a save: the file changed since it was read, or it no longer
+// validates. Either way the page reads the settings again.
+export type ConfigConflict = 'model_config_changed' | 'model_config_invalid'
+export function configConflict(cause: unknown): ConfigConflict | null {
+  if (!(cause instanceof ApiError) || cause.status !== 409) return null
+  try {
+    const code = (JSON.parse(cause.detail) as { code?: unknown }).code
+    return code === 'model_config_changed' || code === 'model_config_invalid' ? code : null
+  } catch {
+    return null
   }
 }
 

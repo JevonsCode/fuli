@@ -1,11 +1,13 @@
 import { refuseRemoteDecision } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
 
-// Routes of the model settings page: each role's backend and the usage ledger
-// (Agent-readable, contains no secrets), and the person's edit of one role. The get_model_usage Agent tool
-// reads the same port, so both share validation and output. Saving a role is
-// the person's decision on this computer: loopback only, and no Agent tool
-// reaches it. Keys stay a local command (fuli models set-key).
+// Routes of the model settings page. The roles and usage reads are
+// Agent-readable and contain no secrets, but include metadata (endpoints,
+// prices, approved projects); get_model_usage reads the same port. Saving one
+// role is accepted only at the local process boundary (a loopback request).
+// That does not show a person sent it and is not the human-review channel:
+// no MCP or Agent tool calls it, but anything with local shell or HTTP access
+// can. Keys stay a local command (fuli models set-key).
 // operations: the task types each role already sends to its model.
 // TODO(#283): once the Tonborg review gate merges, add tonborg's reviewGate
 // status here; the console shows it read-only when present.

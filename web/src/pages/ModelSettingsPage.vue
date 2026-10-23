@@ -9,14 +9,14 @@ import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import {
-  formatCount, readModelRoles, roleName, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
+  formatCount, readModelRoles, roleName, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
 // 模型与用量 (rec#8): the four built-in Agents' model settings as one card
-// collection, each edited in a centred form, and their usage below. Editing
-// is the person's own decision on this computer (a loopback-only route).
+// collection, each edited in a centred form, and their usage below. A save
+// is accepted only at the local process boundary (a loopback request).
 const store = useConsoleStore()
 const payload = ref<ModelRolesPayload | null>(null)
 const loading = ref(true)
@@ -56,9 +56,13 @@ function saved(next: ModelRolesPayload) {
   editing.value = null
 }
 
-async function changedMeanwhile() {
-  editing.value = null
-  stale.value = true
+// A changed file closes the form; one that stopped validating keeps it open,
+// read again and locked, until the file is repaired.
+async function conflict(code: ConfigConflict) {
+  if (code === 'model_config_changed') {
+    editing.value = null
+    stale.value = true
+  }
   await load()
 }
 
@@ -146,7 +150,7 @@ onBeforeUnmount(() => reading?.abort())
         <ModelUsage />
 
         <ModelRoleDialog :role="editing" :payload="payload" :projects="projects"
-          @close="editing = null" @saved="saved" @stale="changedMeanwhile" />
+          @close="editing = null" @saved="saved" @conflict="conflict" />
       </template>
     </div>
   </section>

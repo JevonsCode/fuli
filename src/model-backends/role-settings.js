@@ -6,10 +6,11 @@ import {
   MODEL_BACKEND_CONFIG_FORMAT, MODEL_BACKEND_ROLES, configRevision, normalizeConfig, readModelBackendConfig
 } from './config.js';
 
-// The person's edit of one built-in Agent's model settings in the local
-// console. Only the console's loopback route reaches it; no MCP or Agent tool
-// does. The edit names the saved configuration it started from: a file changed
-// since then, or one that does not validate, is refused and left as it is.
+// One built-in Agent's model settings saved from the local console. Only the
+// console's loopback route calls it (the local process boundary, not proof
+// that a person sent the request); no MCP or Agent tool does. The edit names
+// the saved configuration it started from: a file changed since then, or one
+// that does not validate, is refused and left as it is.
 // Keys never pass here; a connection names its key by secretRef only.
 
 const EDIT = z.object({

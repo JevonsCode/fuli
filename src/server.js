@@ -97,7 +97,7 @@ export async function createServer(options = {}) {
   // The person's own tag changes and tag governance (rec#11 D-07 part 2), console only.
   const knowledgeTags = options.knowledgeTags ?? (localOptions.runtimeConfigPath
     ? createKnowledgeTagsConsole(dirname(localOptions.runtimeConfigPath)) : null);
-  // The person's edit of a built-in Agent's model settings, console only.
+  // Saves a built-in Agent's model settings; reached only by the loopback route.
   const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
     ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath) : null);
   // A delete whose answer was lost, or whose local cleanup a crash cut short,

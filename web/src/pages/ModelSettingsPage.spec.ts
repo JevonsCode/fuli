@@ -127,6 +127,26 @@ describe('ModelSettingsPage', () => {
     expect(api.getJson.mock.calls.length).toBeGreaterThan(reads)
   })
 
+  it('reads the settings again and locks the form when the file stopped validating during the edit', async () => {
+    const wrapper = await mountPage()
+    await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
+    rolesPayload = roles({ state: 'invalid', error: 'roles.nobody is not a built-in Agent role', revision: null, connections: {},
+      roles: ['assistant', 'bole', 'jefa', 'tonborg'].map(role => ({ role, state: 'invalid_config', answeredBy: null })) })
+    api.putJson.mockRejectedValueOnce(new ApiError('invalid', 409, JSON.stringify({ error: 'invalid', code: 'model_config_invalid' })))
+    await wrapper.get('[data-model-role-dialog] form').trigger('submit')
+    await flushPromises()
+
+    const dialog = wrapper.get('[data-model-role-dialog]')
+    expect(dialog.get('[role="alert"]').text()).toContain('修好文件前不能编辑：roles.nobody is not a built-in Agent role')
+    expect(dialog.get('[data-model-name]').attributes('disabled')).toBeDefined()
+    expect(dialog.get('[data-model-save]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-model-stale]').exists()).toBe(false)
+    expect(wrapper.get('[data-model-config-invalid]').text()).toContain('roles.nobody')
+    expect(wrapper.findAll('[data-model-role-edit]').every(button => button.attributes('disabled') !== undefined)).toBe(true)
+    await dialog.get('form').trigger('submit')
+    expect(api.putJson).toHaveBeenCalledTimes(1)
+  })
+
   it('shows usage by role and model with 未上报 counts, and session fallbacks apart', async () => {
     const wrapper = await mountPage()
     const model = wrapper.get('[data-usage-list="model"]')

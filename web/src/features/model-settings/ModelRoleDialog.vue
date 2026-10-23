@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { apiErrorReason, ApiError } from '@/api/client'
+import { apiErrorReason } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
@@ -12,19 +12,25 @@ import { t } from '@/i18n'
 import { UiDialog, UiSelect } from '@/ui'
 import type { PersonalProject } from '@/types'
 import {
-  MODEL_PROTOCOLS, REASONING_EFFORTS, projectKey, roleDraft, roleName, rolesSharing, saveModelRole, withConnection, withProject,
-  type ModelRoleId, type ModelRolesPayload, type RoleDraft,
+  MODEL_PROTOCOLS, REASONING_EFFORTS, configConflict, projectKey, roleDraft, roleName, rolesSharing, saveModelRole, withConnection, withProject,
+  type ConfigConflict, type ModelRoleId, type ModelRolesPayload, type RoleDraft,
 } from './model'
 
 // One role's model settings as a centred form. Saving sends the whole role
 // with the revision it was read at; the server validates and refuses a file
 // that changed meanwhile, and the page then shows what it read again.
 const props = defineProps<{ role: ModelRoleId | null; payload: ModelRolesPayload; projects: readonly PersonalProject[] }>()
-const emit = defineEmits<{ close: []; saved: [payload: ModelRolesPayload]; stale: [] }>()
+const emit = defineEmits<{ close: []; saved: [payload: ModelRolesPayload]; conflict: [code: ConfigConflict] }>()
 
 const BUDGET_FIELDS = ['maxInputTokens', 'maxOutputTokens', 'timeoutSeconds', 'windowHours', 'maxTokensPerWindow'] as const
 const draft = ref<RoleDraft | null>(null)
 const saving = ref(false)
+// A file that stopped validating while the form was open: it is read again
+// and nothing here can be saved until it is repaired.
+const locked = computed(() => props.payload.state === 'invalid')
+const frozen = computed(() => saving.value || locked.value)
+const shownError = computed(() => (locked.value
+  ? t('modelSettings.invalidWhileEditing', { error: props.payload.error ?? '' }) : error.value))
 const error = ref('')
 watch(() => props.role, (role) => {
   draft.value = role ? roleDraft(props.payload, role) : null
@@ -53,13 +59,14 @@ function chooseConnection(id: string) {
 }
 
 async function save() {
-  if (!props.role || !draft.value) return
+  if (!props.role || !draft.value || locked.value) return
   saving.value = true
   error.value = ''
   try {
     emit('saved', await saveModelRole(props.role, draft.value, props.payload.revision))
   } catch (cause) {
-    if (cause instanceof ApiError && cause.status === 409 && cause.detail.includes('model_config_changed')) emit('stale')
+    const code = configConflict(cause)
+    if (code) emit('conflict', code)
     else error.value = apiErrorReason(cause)
   } finally {
     saving.value = false
@@ -68,12 +75,12 @@ async function save() {
 </script>
 
 <template>
-  <UiDialog :open="Boolean(role && draft)" form size="lg" :busy="saving" :error="error"
+  <UiDialog :open="Boolean(role && draft)" form size="lg" :busy="saving" :error="shownError"
     :title="t('modelSettings.editTitle', { name })" :description="t('modelSettings.editDescription')"
     data-model-role-dialog @close="emit('close')" @submit="save">
     <div v-if="draft" class="model-role-form">
       <Field orientation="horizontal">
-        <Switch id="model-role-enabled" v-model="draft.enabled" :disabled="saving" />
+        <Switch id="model-role-enabled" v-model="draft.enabled" :disabled="frozen" />
         <FieldLabel for="model-role-enabled">{{ t('modelSettings.enabled') }}</FieldLabel>
       </Field>
 
@@ -81,56 +88,56 @@ async function save() {
         <Field>
           <FieldLabel>{{ t('modelSettings.connection') }}</FieldLabel>
           <UiSelect :model-value="draft.connectionId" :label="t('modelSettings.connection')" :options="connectionOptions"
-            :disabled="saving" data-model-connection @update:model-value="chooseConnection" />
+            :disabled="frozen" data-model-connection @update:model-value="chooseConnection" />
           <FieldDescription v-if="sharing">{{ t('modelSettings.sharedWith', { names: sharing }) }}</FieldDescription>
         </Field>
         <Field>
           <FieldLabel>{{ t('modelSettings.protocol') }}</FieldLabel>
-          <UiSelect v-model="draft.protocol" :label="t('modelSettings.protocol')" :options="protocolOptions" :disabled="saving" />
+          <UiSelect v-model="draft.protocol" :label="t('modelSettings.protocol')" :options="protocolOptions" :disabled="frozen" />
         </Field>
         <Field class="model-role-wide">
           <FieldLabel for="model-role-endpoint">{{ t('modelSettings.endpoint') }}</FieldLabel>
           <Input id="model-role-endpoint" v-model="draft.endpoint" type="url" inputmode="url" autocomplete="off"
-            placeholder="https://" :disabled="saving" data-model-endpoint />
+            placeholder="https://" :disabled="frozen" data-model-endpoint />
         </Field>
         <Field>
           <FieldLabel for="model-role-model">{{ t('modelSettings.model') }}</FieldLabel>
-          <Input id="model-role-model" v-model="draft.model" autocomplete="off" :disabled="saving" data-model-name />
+          <Input id="model-role-model" v-model="draft.model" autocomplete="off" :disabled="frozen" data-model-name />
         </Field>
         <Field v-if="draft.protocol === 'openai_chat'">
           <FieldLabel>{{ t('modelSettings.reasoningEffort') }}</FieldLabel>
-          <UiSelect v-model="draft.reasoningEffort" :label="t('modelSettings.reasoningEffort')" :options="effortOptions" :disabled="saving" />
+          <UiSelect v-model="draft.reasoningEffort" :label="t('modelSettings.reasoningEffort')" :options="effortOptions" :disabled="frozen" />
         </Field>
         <Field class="model-role-wide">
           <FieldLabel for="model-role-secret-ref">{{ t('modelSettings.secretRef') }}</FieldLabel>
           <Input id="model-role-secret-ref" v-model="draft.secretRef" autocomplete="off" spellcheck="false"
-            :disabled="saving" data-model-secret-ref />
+            :disabled="frozen" data-model-secret-ref />
           <FieldDescription>{{ t('modelSettings.secretRefHint') }}</FieldDescription>
         </Field>
       </div>
 
       <Field orientation="horizontal">
-        <Checkbox id="model-role-priced" v-model="draft.priced" :disabled="saving" />
+        <Checkbox id="model-role-priced" v-model="draft.priced" :disabled="frozen" />
         <FieldLabel for="model-role-priced">{{ t('modelSettings.priced') }}</FieldLabel>
       </Field>
       <div v-if="draft.priced" class="model-role-grid">
         <Field>
           <FieldLabel for="model-role-currency">{{ t('modelSettings.currency') }}</FieldLabel>
-          <Input id="model-role-currency" v-model="draft.currency" maxlength="3" autocomplete="off" :disabled="saving" />
+          <Input id="model-role-currency" v-model="draft.currency" maxlength="3" autocomplete="off" :disabled="frozen" />
         </Field>
         <Field>
           <FieldLabel for="model-role-input-price">{{ t('modelSettings.inputPrice') }}</FieldLabel>
-          <Input id="model-role-input-price" v-model="draft.inputPrice" type="number" min="0" step="any" :disabled="saving" />
+          <Input id="model-role-input-price" v-model="draft.inputPrice" type="number" min="0" step="any" :disabled="frozen" />
         </Field>
         <Field>
           <FieldLabel for="model-role-output-price">{{ t('modelSettings.outputPrice') }}</FieldLabel>
-          <Input id="model-role-output-price" v-model="draft.outputPrice" type="number" min="0" step="any" :disabled="saving" />
+          <Input id="model-role-output-price" v-model="draft.outputPrice" type="number" min="0" step="any" :disabled="frozen" />
         </Field>
       </div>
 
       <Field>
         <FieldLabel for="model-role-operations">{{ t('modelSettings.operations') }}</FieldLabel>
-        <Input id="model-role-operations" v-model="draft.operations" autocomplete="off" spellcheck="false" :disabled="saving"
+        <Input id="model-role-operations" v-model="draft.operations" autocomplete="off" spellcheck="false" :disabled="frozen"
           data-model-operations />
         <FieldDescription>
           {{ t('modelSettings.operationsHint') }}
@@ -142,12 +149,12 @@ async function save() {
         <legend>{{ t('modelSettings.egressProjectsLabel') }}</legend>
         <p v-if="!projectChoices.length" class="model-role-muted">{{ t('modelSettings.noProjects') }}</p>
         <div v-for="choice in projectChoices" :key="choice.key" class="model-role-check">
-          <Checkbox :id="`model-role-project-${choice.key}`" :model-value="approved.has(choice.key)" :disabled="saving"
+          <Checkbox :id="`model-role-project-${choice.key}`" :model-value="approved.has(choice.key)" :disabled="frozen"
             data-model-egress-project @update:model-value="value => draft = withProject(draft!, choice.project, value === true)" />
           <Label :for="`model-role-project-${choice.key}`">{{ choice.label }}</Label>
         </div>
         <div class="model-role-check">
-          <Checkbox id="model-role-unassigned" v-model="draft.allowUnassigned" :disabled="saving" />
+          <Checkbox id="model-role-unassigned" v-model="draft.allowUnassigned" :disabled="frozen" />
           <Label for="model-role-unassigned">{{ t('modelSettings.allowUnassigned') }}</Label>
         </div>
       </fieldset>
@@ -155,25 +162,25 @@ async function save() {
       <div class="model-role-grid">
         <Field v-for="field in BUDGET_FIELDS" :key="field">
           <FieldLabel :for="`model-role-${field}`">{{ t(`modelSettings.${field}`) }}</FieldLabel>
-          <Input :id="`model-role-${field}`" v-model="draft[field]" type="number" min="1" step="1" :disabled="saving"
+          <Input :id="`model-role-${field}`" v-model="draft[field]" type="number" min="1" step="1" :disabled="frozen"
             :data-model-budget="field" />
         </Field>
         <Field>
           <FieldLabel for="model-role-cost-cap">{{ t('modelSettings.maxCostPerWindow') }}</FieldLabel>
           <Input id="model-role-cost-cap" v-model="draft.maxCostPerWindow" type="number" min="0" step="any"
-            :disabled="saving || !draft.priced" />
+            :disabled="frozen || !draft.priced" />
           <FieldDescription v-if="!draft.priced">{{ t('modelSettings.costNeedsPrice') }}</FieldDescription>
         </Field>
       </div>
 
       <Field orientation="horizontal">
-        <Switch id="model-role-fallback" v-model="draft.fallbackToSession" :disabled="saving" />
+        <Switch id="model-role-fallback" v-model="draft.fallbackToSession" :disabled="frozen" />
         <FieldLabel for="model-role-fallback">{{ t('modelSettings.fallback') }}</FieldLabel>
       </Field>
     </div>
     <template #footer>
       <Button variant="ghost" :disabled="saving" @click="emit('close')">{{ t('modelSettings.cancel') }}</Button>
-      <Button type="submit" :loading="saving" :loading-label="t('modelSettings.saving', { name })" data-model-save>
+      <Button type="submit" :disabled="locked" :loading="saving" :loading-label="t('modelSettings.saving', { name })" data-model-save>
         {{ t('modelSettings.save') }}
       </Button>
     </template>

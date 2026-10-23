@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { createServer as createHttpServer, request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
@@ -14,10 +14,11 @@ import { createModelBackendPort } from '../src/model-backends/port.js';
 import { createModelRoleSettings } from '../src/model-backends/role-settings.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { listenFetchableServer } from '../src/server/listen.js';
+import { createServer } from '../src/server.js';
 import { reachableModules } from '../test-support/module-graph.js';
 
-// rec#8: the console's model settings page. A person saves one role through
-// the loopback route; a refused save leaves the file byte for byte as it was,
+// rec#8: the console's model settings page. One role is saved through the
+// loopback route; a refused save leaves the file byte for byte as it was,
 // and no answer ever carries a key. Synthetic values only.
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -44,7 +45,7 @@ async function console_(t, { ledger = new ModelUsageLedger(':memory:') } = {}) {
   const port = createModelBackendPort({ readConfig: () => readModelBackendConfig(path), secrets: { read: async () => null }, ledger,
     fetchImpl: async () => { throw new Error('no model call in this test'); }, now: () => NOW });
   const roleSettings = createModelRoleSettings(path);
-  const server = createServer(async (request, response) => {
+  const server = createHttpServer(async (request, response) => {
     try {
       if (!await handleModelBackendApiRequest({ request, response, url: new URL(request.url, 'http://local'),
         modelBackends: port, roleSettings, operations: { tonborg: ['knowledge_review'] } })) response.writeHead(404).end();
@@ -112,7 +113,7 @@ test('a refused save changes nothing and never echoes a key', async (t) => {
   assert.doesNotMatch(JSON.stringify(await page.roles()), /NEVER-ECHO/);
 });
 
-test('a file that does not validate is left for the person to repair', async (t) => {
+test('a file that does not validate is left as it is for repair', async (t) => {
   const page = await console_(t);
   writeFileSync(page.path, '{"version":1,"roles":{"nobody":{}}}');
   const before = page.bytes();
@@ -124,15 +125,59 @@ test('a file that does not validate is left for the person to repair', async (t)
   assert.equal(page.bytes(), before);
 });
 
-test('only this computer saves model settings, and no Agent path reaches the save', async (t) => {
+// Through the real console stack (createServer: header policy, then the
+// route). The local process boundary is a loopback request with this
+// console's Host and no cross-site markers. It does not show that a person
+// sent the request, and it is not the human-review channel: anything that can
+// reach loopback HTTP on this computer can call the route.
+test('the real console refuses a save from outside the local process boundary and keeps the file', async (t) => {
   const page = await console_(t);
-  const sent = [];
-  const response = { setHeader() {}, writeHead: status => sent.push(status), end: body => sent.push(JSON.parse(body)) };
-  assert.equal(await handleModelBackendApiRequest({ request: { method: 'PUT', socket: { remoteAddress: '192.168.1.20' } }, response,
-    url: new URL('http://local/api/model-backends/roles/bole'), modelBackends: page.port, roleSettings: page.roleSettings }), true);
-  assert.deepEqual(sent, [403, { error: 'Model settings are changed only on this computer', code: 'local_user_only' }]);
-  assert.equal(page.bytes(), null);
+  const runtime = await createServer({ port: 0, dataFormatNotices: () => [], modelRoleSettings: page.roleSettings,
+    app: { graphiti: true, modelBackends: page.port, async state() { throw new Error('not queried'); }, close() {} } });
+  t.after(() => new Promise(done => runtime.server.close(done)));
+  const { port } = runtime.server.address();
+  const body = JSON.stringify(edit());
+  const put = ({ headers = {}, localAddress } = {}) => new Promise((resolve, reject) => {
+    const request = httpRequest({ host: '127.0.0.1', port, method: 'PUT', path: '/api/model-backends/roles/bole', localAddress,
+      headers: { host: `127.0.0.1:${port}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), ...headers } },
+    (response) => {
+      let text = '';
+      response.on('data', chunk => { text += chunk; });
+      response.on('end', () => resolve({ status: response.statusCode, text }));
+    });
+    request.on('error', reject);
+    request.end(body);
+  });
 
+  for (const [label, options] of [
+    ['a foreign Host', { headers: { host: 'evil.example' } }],
+    ['a cross-site Origin', { headers: { origin: 'http://evil.example' } }],
+    ['sec-fetch-site cross-site', { headers: { 'sec-fetch-site': 'cross-site' } }]
+  ]) {
+    const response = await put(options);
+    assert.equal(response.status, 403, label);
+    assert.equal(page.bytes(), null, label);
+  }
+  // A peer that is not this computer's loopback address (127.0.0.2 stands in
+  // for one, so no LAN listener is opened).
+  let remote = null;
+  try {
+    remote = await put({ localAddress: '127.0.0.2' });
+  } catch (error) {
+    if (!['EADDRNOTAVAIL', 'EINVAL'].includes(error.code)) throw error;
+    t.diagnostic('127.0.0.2 is not available here; the non-loopback case was not run');
+  }
+  if (remote) {
+    assert.equal(remote.status, 403);
+    assert.equal(JSON.parse(remote.text).code, 'local_user_only');
+    assert.equal(page.bytes(), null);
+  }
+  // The same stack accepts a loopback request with this console's Host.
+  assert.equal((await put()).status, 200);
+  assert.notEqual(page.bytes(), null);
+});
+
+test('no MCP or Agent tool entry reaches the save, and the catalog marks it local_user_only', () => {
   const entry = agentInterfaceCatalog().uiMutationParity.find(item => item.route === 'PUT /api/model-backends/roles/:role');
   assert.equal(entry?.access, 'local_user_only');
   const save = join(ROOT, 'src/model-backends/role-settings.js');
