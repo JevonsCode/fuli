@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 
 import { createAppHost } from './app-host.js';
 import { grantableTools } from './authorization.js';
+import { appConflict } from './errors.js';
 import { createHostIdentity } from './host-identity.js';
 import { fuliHostTools } from './host-tools/fuli-tools.js';
 import { createAppInstances } from './instances.js';
@@ -48,7 +49,10 @@ export function agentAppServiceOver(context) {
 // Closes once, however often it is asked: the instances this process holds
 // are sealed and their processes stopped (instances.js) before the leases and
 // the registry close. With nothing hosted or in flight the registry closes
-// before this returns.
+// before this returns. A close that could not confirm every app process
+// stopped (a stop that failed, a start still in flight) rejects with
+// close_incomplete and names them; their handles stay held, the records stay
+// for the next owner's reconcile, and asking again retries those stops.
 function closeContext(context) {
   const finish = () => {
     context.leases.close();
@@ -58,7 +62,12 @@ function closeContext(context) {
     const idle = context.instances.idle();
     const ending = context.instances.close();
     if (idle) finish();
-    context.closed = idle ? Promise.resolve() : ending.finally(finish);
+    context.closed = idle ? Promise.resolve() : ending.finally(finish).then((result) => {
+      if (result.complete) return;
+      context.closed = null;
+      throw appConflict('close_incomplete', 'FULI closed the registry but could not confirm that every app process it '
+        + 'started has stopped; close again to retry, or end those processes yourself', result);
+    });
   }
   return context.closed;
 }
@@ -68,16 +77,16 @@ function closeContext(context) {
 // gates. runner: what instances run in (trusted-runner.js: this version has
 // no sandbox, so an approved app runs with the user's own permissions).
 // callFuliTool runs a granted FULI Agent tool for an app; hostTools,
-// hostIdentity, dataFs, wait and timers are seams for synthetic tests.
+// hostIdentity, dataFs, wait, closeWaitMs and timers are seams for synthetic tests.
 export function agentAppContext({
   root, providerIdentity = null, resolveOwner = null, toolNames, clock = () => new Date(), ownerKind = 'cli',
   hostIdentity = createHostIdentity(), runner = createTrustedRunner({ hostIdentity }), callFuliTool = null,
-  hostTools = null, fs = dataFs, wait, timers
+  hostTools = null, fs = dataFs, wait, closeWaitMs, timers
 }) {
   const store = new AgentAppStore(join(root, 'registry.sqlite'));
   const now = () => clock().toISOString();
   const context = {
-    store, clock, now, resolveOwner, runner, wait, dataFs: fs,
+    store, clock, now, resolveOwner, runner, wait, closeWaitMs, dataFs: fs,
     provider: providerIdentity === null ? null : String(providerIdentity).replace(/\/+$/, ''),
     packagesOf: (appId) => join(root, 'packages', appId),
     packageOf: (appId, version) => join(root, 'packages', appId, version),

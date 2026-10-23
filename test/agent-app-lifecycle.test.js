@@ -207,6 +207,11 @@ test('round 3: after a failed stop the instance is not ended, so an export is re
   await assert.rejects(host.service.stop({ appId }), { code: 'ESYNTH' });
   await assert.rejects(host.service.exportData({ appId, destination: `${registry.directory}/export` }),
     { code: 'instance_not_stopped' });
+  // While the stop keeps failing, closing this host reports the app not stopped instead of a clean close.
+  await assert.rejects(host.service.close(), (error) => error.code === 'close_incomplete'
+    && error.detail.notStopped[0]?.appId === appId);
+  host.runner.hooks.stop = null;
+  await host.service.close();
 });
 
 test('round 3: a host that crashed after a failed stop leaves the instance to the next owner\'s confirmed cleanup', async (t) => {
@@ -232,6 +237,8 @@ test('round 3: a host that crashed after a failed stop leaves the instance to th
   const ended = next.context.store.events(appId, 100).filter(({ action, detail }) => action === 'stopped'
     && detail.instanceId === unconfirmed.instanceId);
   assert.deepEqual(ended.map(({ detail }) => detail.reason), ['host_gone']);
+  // The crashed host's handle is released once its synthetic stop works again.
+  host.runner.hooks.stop = null;
 });
 
 test('a read tool gets a read-only data port', async (t) => {

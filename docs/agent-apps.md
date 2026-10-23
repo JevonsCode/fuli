@@ -89,11 +89,15 @@ fl app rollback <app-id> <active-version>
 
 ## Stopping
 
-When FULI itself shuts down, it takes no new start, call or decision, lets work in flight finish, then seals and stops
-every app it started and releases them, so another FULI process can start them without a takeover. An app that ends by
-itself (its entry fails to load, it crashes or it finishes) ends its instance; the app's details show the exit code and
-a short one-line summary of its error output, with tokens and paths removed. Its full output is not kept. It can then
-be started again.
+When FULI itself shuts down, it takes no new start, call or decision, lets work in flight finish (30 seconds at most),
+then seals and stops every app it started and releases them, so another FULI process can start them without a takeover.
+A start that returns after that is stopped at once. If FULI cannot confirm that an app process it started has stopped,
+the shutdown says so and names the app instead of reporting a clean close; closing again retries the stop.
+
+An app that ends by itself ends its instance. The app's details show the exit code, the signal and one of three fixed
+categories with a fixed message: `load_failed` (it ended before its entry finished loading), `crashed` (it ended with
+an error after that) or `exited` (it finished with code 0). FULI does not read or keep anything the app writes to its
+output. It can then be started again.
 
 `fl app stop <app-id>` seals the instance (no new call verifies; a write tool in progress finishes first), stops the
 app process through the handle FULI holds and ends its tokens. `--force` is not supported on any platform in this

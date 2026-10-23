@@ -88,7 +88,7 @@ test('an exit reported for an earlier instance never touches the current one', a
   await host.service.stop({ appId });
   const second = await host.service.start({ appId });
 
-  first.onExit({ code: 1, signal: null, error: 'synthetic late exit' });
+  first.onExit({ code: 1, signal: null, category: 'crashed' });
   await settle();
   await settle();
   assert.deepEqual([instance(host, appId).instanceId, instance(host, appId).state], [second.instanceId, 'running']);
@@ -96,8 +96,8 @@ test('an exit reported for an earlier instance never touches the current one', a
 
   // Its own exit ends it, once, even when reported twice.
   const current = host.runner.started.at(-1);
-  current.onExit({ code: 0, signal: null, error: null });
-  current.onExit({ code: 0, signal: null, error: null });
+  current.onExit({ code: 0, signal: null, category: 'exited' });
+  current.onExit({ code: 0, signal: null, category: 'exited' });
   await until(() => instance(host, appId).stoppedAt, 'the current exit wrapped up');
   assert.deepEqual([instance(host, appId).stopReason, events(host, appId).filter((action) => action === 'app_exited').length],
     ['app_exited', 1]);

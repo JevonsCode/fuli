@@ -4,8 +4,6 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { settledWithin } from './bounded-wait.js';
-import { singleLine } from '../text/single-line.js';
-import { utf8Preview } from '../text/utf8-preview.js';
 import { appConflict } from './errors.js';
 import { createHostIdentity } from './host-identity.js';
 import { TRUST_MODE } from './trust-terms.js';
@@ -17,17 +15,14 @@ const STOP_WAIT_MS = 5000;
 // (provider tokens, model keys) is handed to an app.
 // Names compare case-insensitively, as Windows does.
 const PLATFORM_ENVIRONMENT = new Set(['PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'LANG']);
-// Of an app's stderr only the start is read into memory, and of that only a
-// short one-line summary is recorded when the app exits; nothing else is kept.
-const STDERR_KEEP_BYTES = 8 * 1024;
-const EXIT_SUMMARY_BYTES = 400;
-// After an exit, its last stderr bytes arrive within this time or are not waited for.
-const STDERR_FLUSH_MS = 500;
-// What a summary must not show: app tokens, file URLs and absolute paths.
-const TOKEN_TEXT = /fla_[A-Za-z0-9_-]{16,}/g;
-const FILE_URL = /file:\/\/[^\s'"()]+/g;
-// A path starts at a drive, a UNC prefix or a root slash, never inside a word (node:internal/modules stays).
-const ABSOLUTE_PATH = /(?:[A-Za-z]:[\\/]|\\\\|(?<![\w:.])\/)(?:[^\s'"():]+[\\/])+[^\s'"():]*/g;
+// How an app process ended: exited (code 0), load_failed (it ended before the
+// launcher reported its entry loaded) or crashed (any other end after that).
+// Nothing the app wrote is read or kept: no output, no error text.
+const EXIT_CATEGORIES = Object.freeze({ exited: 'exited', loadFailed: 'load_failed', crashed: 'crashed' });
+// The launcher's ready signal arrives on this descriptor; after an exit, its
+// last byte is waited for this long at most.
+const READY_FD = 3;
+const READY_FLUSH_MS = 500;
 
 // The runner an app instance runs in (rec#7 D-28.2, rec#11 D-36.2). This
 // version has no sandbox: the trusted runner starts the app's service entry
@@ -42,8 +37,8 @@ const ABSOLUTE_PATH = /(?:[A-Za-z]:[\\/]|\\\\|(?<![\w:.])\/)(?:[^\s'"():]+[\\/])
 //   dataDirectory, manifest, environment, onExit }) → a handle { pid,
 //   pidIdentity, exePath, socket } that keeps the runner's own reference to
 //   the process; environment holds only FULI_APP_* values; onExit({ code,
-//   signal, error }) is called once when the process has ended, for any
-//   reason, error being a short redacted summary of its stderr or null;
+//   signal, category }) is called once when the process has ended, for any
+//   reason, with one of EXIT_CATEGORIES;
 // - stop(handle): stops the process through that reference and waits for its exit;
 // - stopOrphan(instance): for an instance whose host has exited, answers once
 //   its process is confirmed gone, or refuses. A runner never signals a
@@ -65,18 +60,22 @@ export function createTrustedRunner({
     if (!manifest.runtime.entry) return { pid: null, pidIdentity: null, exePath: null, socket: null, child: null };
     const child = spawnProcess(nodePath, [LAUNCHER, join(packageDirectory, manifest.runtime.entry)], {
       cwd: packageDirectory, env: { ...platformEnvironment(environment), ...appEnvironment },
-      stdio: ['pipe', 'ignore', 'pipe'], shell: false, windowsHide: true
+      stdio: ['pipe', 'ignore', 'ignore', 'pipe'], shell: false, windowsHide: true
     });
-    const stderr = capturedStart(child.stderr);
+    const ready = child.stdio[READY_FD];
+    let loaded = false;
+    ready.once('data', () => { loaded = true; });
+    ready.on('error', () => {});
+    // An exit may be reported before the ready byte is read; the pipe closes after both.
+    const readyClosed = new Promise((resolve) => ready.once('close', resolve));
     child.once('exit', (code, signal) => {
-      settledWithin(stderr.closed, STDERR_FLUSH_MS).then(() => onExit({ code, signal,
-        error: exitSummary(stderr.text(), appEnvironment.FULI_APP_TOKEN) }));
+      settledWithin(readyClosed, READY_FLUSH_MS).then(() => onExit({ code, signal, category: exitCategory(code, signal, loaded) }));
     });
     await started(child);
     // A later error (the pipe of an exited app, a failed kill) shows in the stop that follows.
     child.on('error', () => {});
     child.stdin.on('error', () => {});
-    for (const each of [child, child.stdin, child.stderr]) each.unref?.();
+    for (const each of [child, child.stdin, ready]) each.unref?.();
     return { pid: child.pid, pidIdentity: await hostIdentity.identify(child.pid), exePath: nodePath, socket: null, child };
   }
 
@@ -114,25 +113,9 @@ function platformEnvironment(environment) {
     .filter(([name, value]) => value !== undefined && PLATFORM_ENVIRONMENT.has(name.toUpperCase())));
 }
 
-// Reads the first STDERR_KEEP_BYTES of a stream and drains the rest unread.
-function capturedStart(stream) {
-  const chunks = [];
-  let kept = 0;
-  stream.on('data', (chunk) => {
-    if (kept >= STDERR_KEEP_BYTES) return;
-    chunks.push(chunk.subarray(0, STDERR_KEEP_BYTES - kept));
-    kept += chunks.at(-1).length;
-  });
-  stream.on('error', () => {});
-  return { closed: new Promise((resolve) => stream.once('close', resolve)),
-    text: () => Buffer.concat(chunks).toString('utf8') };
-}
-
-// One bounded line of what the app wrote to stderr, without its token or any path.
-function exitSummary(text, token) {
-  const redacted = (token ? text.split(token).join('[token]') : text).replace(TOKEN_TEXT, '[token]')
-    .replace(FILE_URL, '<path>').replace(ABSOLUTE_PATH, '<path>');
-  return utf8Preview(singleLine(redacted).replace(/ {2,}/g, ' '), EXIT_SUMMARY_BYTES) || null;
+function exitCategory(code, signal, loaded) {
+  if (code === 0 && !signal) return EXIT_CATEGORIES.exited;
+  return loaded ? EXIT_CATEGORIES.crashed : EXIT_CATEGORIES.loadFailed;
 }
 
 function started(child) {

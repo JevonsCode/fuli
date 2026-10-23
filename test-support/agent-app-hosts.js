@@ -132,10 +132,10 @@ export function appRegistry(t, { tools = [] } = {}) {
   });
 
   function host({ pid, ownerKind = 'console', runner = fakeRunner(), hostTools = new Map(), fs = realFs,
-    wait, timers = { setInterval: () => ({ unref() {} }), clearInterval: () => {} } } = {}) {
+    wait, closeWaitMs, timers = { setInterval: () => ({ unref() {} }), clearInterval: () => {} } } = {}) {
     const context = agentAppContext({ root, providerIdentity: 'http://127.0.0.1:65530', ownerKind,
       resolveOwner: async (owner) => owner, toolNames: () => tools, clock: () => new Date(clock.now),
-      hostIdentity: fakeHostIdentity(world, pid), runner, hostTools: () => hostTools, fs, wait,
+      hostIdentity: fakeHostIdentity(world, pid), runner, hostTools: () => hostTools, fs, wait, closeWaitMs,
       timers });
     const service = agentAppServiceOver(context);
     opened.push(service);

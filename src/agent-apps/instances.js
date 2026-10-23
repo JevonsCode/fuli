@@ -20,6 +20,14 @@ const CLOSE_WAIT_MS = 30_000;
 // export and a deletion until a stop or an orphan cleanup confirms it.
 const unfinished = (instance) => Boolean(instance) && !instance.stoppedAt;
 
+// What an app_exited record says of each way an app process ends
+// (trusted-runner.js). Fixed text only: nothing the app wrote is recorded.
+const EXIT_MESSAGES = Object.freeze({
+  load_failed: 'The app ended before its entry finished loading.',
+  crashed: 'The app ended with an error after it had started.',
+  exited: 'The app finished and ended by itself.'
+});
+
 // Waits ms unless aborted; resolves either way.
 const waitFor = (ms, signal) => delay(ms, undefined, { signal }).catch(() => {});
 
@@ -44,10 +52,15 @@ const waitFor = (ms, signal) => delay(ms, undefined, { signal }).catch(() => {})
 //   and sealed like a stop. An exit of an earlier instance touches nothing.
 // - close: no new start, stop, decision or call is admitted; work in flight
 //   finishes, every instance this process holds is sealed and its process
-//   stopped, and only then do the lease and the registry close.
+//   stopped, and only then do the lease and the registry close. Every handle
+//   the runner returned is held in memory until its stop succeeded, so a
+//   start that returns after close began, a registration that throws or a
+//   stop that failed never leaves a process nobody holds; close reports what
+//   it could not stop instead of a clean close.
 export function createAppInstances(context) {
   const { store, leases, gates, lifecycles, runner, now } = context;
   const wait = context.wait ?? waitFor;
+  const closeWaitMs = context.closeWaitMs ?? CLOSE_WAIT_MS;
   const tokens = createAppTokens(context);
   const { runGate } = createRunGate(context);
   const deletion = createDataDeletion(context);
@@ -55,6 +68,24 @@ export function createAppInstances(context) {
   // Starts, stops and decisions in flight in this process, which close waits for.
   const inFlight = new Set();
   let closing = false;
+  // Every runner handle not yet confirmed stopped, with the instance it was started for.
+  const held = new Map();
+
+  // Stops a handle through the runner; only a stop that succeeded lets it go.
+  async function stopHandle(handle) {
+    await runner.stop(handle);
+    held.delete(handle);
+  }
+
+  // Once this process closes, its registry may already be closed: what a
+  // late step could not record stays for the next owner's reconcile, as after a crash.
+  function unlessClosed(work) {
+    try {
+      work();
+    } catch (error) {
+      if (!closing) throw error;
+    }
+  }
 
   // Work queued before close began, and calls of a closing host, are refused.
   function assertOpen() {
@@ -94,7 +125,7 @@ export function createAppInstances(context) {
         started = outcome.status === 'running';
         return outcome;
       } finally {
-        if (!started) leases.release(lease);
+        if (!started) unlessClosed(() => leases.release(lease));
       }
     }));
   }
@@ -137,16 +168,29 @@ export function createAppInstances(context) {
         environment: { FULI_APP_ID: appId, FULI_APP_INSTANCE: instanceId, FULI_APP_TOKEN: token },
         onExit: (exit) => exited(appId, instance, exit) });
     } catch (error) {
-      endInstance(appId, lease, instance, 'start_failed', { sealedAt: now() });
+      unlessClosed(() => endInstance(appId, lease, instance, 'start_failed', { sealedAt: now() }));
       throw error;
     }
-    const recorded = store.transaction(() => {
-      leases.assertOwned(lease);
-      return store.updateInstance(instance, { pid: handle.pid ?? null, pidIdentity: handle.pidIdentity ?? null,
-        exePath: handle.exePath ?? null, socket: handle.socket ?? null });
-    });
+    held.set(handle, { appId, instanceId, generation });
+    // A start that returns after close began is stopped, never registered.
+    if (closing) {
+      await stopHandle(handle);
+      unlessClosed(() => endInstance(appId, lease, instance, 'host_closing', { sealedAt: now() }));
+      throw hostClosing();
+    }
+    let recorded;
+    try {
+      recorded = store.transaction(() => {
+        leases.assertOwned(lease);
+        return store.updateInstance(instance, { pid: handle.pid ?? null, pidIdentity: handle.pidIdentity ?? null,
+          exePath: handle.exePath ?? null, socket: handle.socket ?? null });
+      });
+    } catch (error) {
+      await stopHandle(handle);
+      throw error;
+    }
     if (!recorded) {
-      await runner.stop(handle);
+      await stopHandle(handle);
       throw superseded();
     }
     hosted.set(appId, { lease, ...instance, handle, sealing: null, sealed: false });
@@ -211,7 +255,7 @@ export function createAppInstances(context) {
         local.sealed = true;
       }
       try {
-        await runner.stop(local.handle);
+        await stopHandle(local.handle);
       } catch (error) {
         local.sealing = null;
         store.transaction(() => {
@@ -249,14 +293,15 @@ export function createAppInstances(context) {
 
   // An app process that ended by itself. Only the instance it was started
   // for, still hosted here and not already being sealed, is wrapped up.
-  function exited(appId, { instanceId, generation }, { code = null, signal = null, error = null } = {}) {
+  function exited(appId, { instanceId, generation }, { code = null, signal = null, category } = {}) {
     lifecycles.run(appId, { toolName: 'exit' }, async () => {
       const local = hosted.get(appId);
+      const exitCategory = Object.hasOwn(EXIT_MESSAGES, category) ? category : 'crashed';
       if (closing || local?.instanceId !== instanceId || local.generation !== generation || local.sealing) return;
       store.transaction(() => {
         if (!leases.owns(local.lease)) return;
         store.recordEvent({ appId, at: now(), action: 'app_exited',
-          detail: { instanceId, generation, code, signal, ...(error ? { error } : {}) } });
+          detail: { instanceId, generation, code, signal, category: exitCategory, message: EXIT_MESSAGES[exitCategory] } });
       });
       await seal(appId, 'app_exited');
     }).catch(() => {});
@@ -281,27 +326,37 @@ export function createAppInstances(context) {
     }));
   }
 
-  // Ends this process's part: admits nothing new, lets work in flight finish,
-  // then seals and stops every instance it holds. A seal still waiting after
-  // CLOSE_WAIT_MS (a write tool that never returns) has its process stopped
-  // through the runner all the same; its records stay for the next owner's
-  // reconcile, as after a crash.
+  // Ends this process's part: admits nothing new, lets work in flight finish
+  // (for CLOSE_WAIT_MS at most), seals and stops every instance it holds, then
+  // stops every handle still held. A seal still waiting after CLOSE_WAIT_MS (a
+  // write tool that never returns) has its process stopped all the same; its
+  // records stay for the next owner's reconcile, as after a crash. Resolves
+  // { complete, startsInFlight, notStopped }: complete only when nothing is in
+  // flight and every process FULI started is confirmed stopped. Asked again,
+  // it retries the stops that failed and keeps their handles meanwhile.
   async function close() {
+    const first = !closing;
     closing = true;
-    await settledWithin(Promise.allSettled([...inFlight]), CLOSE_WAIT_MS);
+    if (first) await settledWithin(Promise.allSettled([...inFlight]), closeWaitMs);
     await Promise.all([...hosted.entries()].map(async ([appId, local]) => {
       // A host whose lease another process took over records nothing more; its process still ends here.
-      const owned = leases.owns(local.lease);
+      const owned = first && leases.owns(local.lease);
       if (owned) {
         local.sealing ??= sealHosted(appId, local, 'host_closing');
         local.sealing.catch(() => {});
       }
-      const sealed = owned && await settledWithin(local.done, CLOSE_WAIT_MS) && hosted.get(appId) !== local;
-      if (!sealed) {
-        await runner.stop(local.handle).catch(() => {});
-        hosted.delete(appId);
+      if (!owned || !await settledWithin(local.done, closeWaitMs)) hosted.delete(appId);
+    }));
+    const notStopped = [];
+    await Promise.all([...held.entries()].map(async ([handle, started]) => {
+      try {
+        await stopHandle(handle);
+      } catch (error) {
+        notStopped.push({ ...started, pid: handle.pid ?? null, code: error?.code ?? null });
       }
     }));
+    for (const [appId, local] of hosted) if (!held.has(local.handle)) hosted.delete(appId);
+    return { complete: inFlight.size === 0 && notStopped.length === 0, startsInFlight: inFlight.size, notStopped };
   }
 
   // Inside the app's write gate, holding its lease.
@@ -332,8 +387,8 @@ export function createAppInstances(context) {
   return {
     start, stop, seal, end, reconcile, assertNoInstance, admit, close, verifyToken: tokens.verifyToken,
     hosted: (appId) => hosted.get(appId) ?? null,
-    // Nothing hosted and nothing in flight: closing has nothing to wait for.
-    idle: () => hosted.size === 0 && inFlight.size === 0,
+    // Nothing hosted, held or in flight: closing has nothing to wait for.
+    idle: () => hosted.size === 0 && held.size === 0 && inFlight.size === 0,
     assertOpen
   };
 }

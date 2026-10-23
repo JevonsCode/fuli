@@ -58,12 +58,11 @@ export function createAppViews(context) {
     if (!instance) return null;
     const { instanceId, generation, mode, state, version, startedAt, sealedAt, stoppedAt, stopReason } = instance;
     const waiting = state === 'sealing' ? store.lastEvent(appId, 'seal_waiting_for_writes') : null;
-    // An app that ended by itself shows how: exit code, signal and the short redacted error summary.
+    // An app that ended by itself shows how: exit code, signal and a fixed category and message.
     const exit = stopReason === 'app_exited' ? store.lastEvent(appId, 'app_exited') : null;
     return { instanceId, generation, mode, state, version, startedAt, sealedAt, stoppedAt, stopReason,
       ...(waiting ? { waitingFor: { toolName: waiting.detail.toolName, since: waiting.at } } : {}),
-      ...(exit?.detail.instanceId === instanceId
-        ? { exit: { code: exit.detail.code, signal: exit.detail.signal, error: exit.detail.error ?? null } } : {}) };
+      ...(exit?.detail.instanceId === instanceId ? { exit: exitView(exit.detail) } : {}) };
   }
 
   function ownerView(appId) {
@@ -78,6 +77,8 @@ export function createAppViews(context) {
 
   return { list, read };
 }
+
+const exitView = ({ code, signal, category, message }) => ({ code, signal, category, message });
 
 function activeApproval(approval) {
   if (!approval) return null;
