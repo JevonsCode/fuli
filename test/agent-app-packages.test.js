@@ -103,7 +103,8 @@ test('approval binds the submitted digest and refuses a package changed before o
   const recorded = service.read({ appId: second.appId }).versions.find(({ version }) => version === '1.0.1');
   assert.equal(recorded.state, 'approved');
   assert.deepEqual(recorded.approval, {
-    digest: second.digest, approvedBy: 'fixture-user', entrypoint: 'cli', presence: 'unverified', approvedAt: '2026-10-20T08:00:00.000Z',
+    digest: second.digest, approvedBy: 'fixture-user', entrypoint: 'cli', presence: 'unverified', verification: null, challengeId: null,
+    verifiedAt: null, approvedAt: '2026-10-20T08:00:00.000Z',
     permissions: ['fuli.search_knowledge_graph'], data: { scope: 'app', format: 1, accepts: [1], migration: 'none' },
     resident: false
   });
@@ -129,7 +130,8 @@ test('an approved version records an unverified presence and still has no way to
   assert.equal(approved.status, 'active');
   assert.deepEqual(approved.approval, { entrypoint: 'cli', presence: 'unverified' });
   assert.deepEqual(service.list({}).apps[0].approval, {
-    approvedBy: 'fixture-user', entrypoint: 'cli', presence: 'unverified', approvedAt: '2026-10-20T08:00:00.000Z'
+    approvedBy: 'fixture-user', entrypoint: 'cli', presence: 'unverified', verification: null, challengeId: null,
+    verifiedAt: null, approvedAt: '2026-10-20T08:00:00.000Z'
   });
   const detail = service.read({ appId: submitted.appId });
   assert.equal(detail.versions[0].approval.presence, 'unverified');

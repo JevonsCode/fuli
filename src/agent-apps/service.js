@@ -17,10 +17,29 @@ export function agentAppRoot(runtimeConfigPath) {
 // approve, disable, rollback, deletion and export belong to the local user's
 // CLI and HTTP routes; issueToken/verifyToken are the App Host port the app
 // runner uses. resolveOwner is absent where no Agent can submit (the CLI).
-export function createAgentAppService({ root, providerIdentity = null, resolveOwner = null, toolNames, clock = () => new Date() }) {
+export function createAgentAppService(options) {
+  return agentAppServiceOver(agentAppContext(options));
+}
+
+// The CLI builds the context itself to add its presence-checked decisions
+// (verified-decisions.js) over the same registry.
+export function agentAppServiceOver(context) {
+  return {
+    ...createAppVersions(context),
+    ...createAppRemoval(context),
+    ...createAppTokens(context),
+    ...createAppViews(context),
+    close: () => context.store.close()
+  };
+}
+
+// platform: where the run gate looks for a presence check (src/presence/platforms.js).
+export function agentAppContext({
+  root, providerIdentity = null, resolveOwner = null, toolNames, clock = () => new Date(), platform = process.platform
+}) {
   const store = new AgentAppStore(join(root, 'registry.sqlite'));
-  const context = {
-    store, clock, resolveOwner,
+  return {
+    store, clock, resolveOwner, platform,
     provider: providerIdentity === null ? null : String(providerIdentity).replace(/\/+$/, ''),
     now: () => clock().toISOString(),
     packagesOf: (appId) => join(root, 'packages', appId),
@@ -29,12 +48,5 @@ export function createAgentAppService({ root, providerIdentity = null, resolveOw
     // An app may call any Agent tool except those that grow or manage apps.
     grantable: () => new Set(toolNames().filter((name) => !AGENT_APP_TOOL_NAMES.includes(name))
       .map((name) => `fuli.${name}`))
-  };
-  return {
-    ...createAppVersions(context),
-    ...createAppRemoval(context),
-    ...createAppTokens(context),
-    ...createAppViews(context),
-    close: () => store.close()
   };
 }

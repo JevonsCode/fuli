@@ -99,16 +99,62 @@ export class AgentAppStore {
     return row ? {
       appId: row.app_id, version: row.version, digest: row.digest, permissions: JSON.parse(row.permissions),
       data: JSON.parse(row.data), resident: row.resident === 1, approvedBy: row.approved_by,
-      entrypoint: row.entrypoint, presence: row.presence, approvedAt: row.approved_at
+      entrypoint: row.entrypoint, presence: row.presence, verification: row.verification,
+      challengeId: row.challenge_id, verifiedAt: row.verified_at, approvedAt: row.approved_at
     } : null;
   }
 
-  insertApproval({ appId, version, digest, permissions, data, resident, approvedBy, entrypoint, presence, approvedAt }) {
-    this.database.prepare(`INSERT INTO agent_app_approvals
-      (app_id, version, digest, permissions, data, resident, approved_by, entrypoint, presence, approved_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  // check: the presence check of the decision ({ presence, verification, challengeId, verifiedAt }).
+  insertApproval({ appId, version, digest, permissions, data, resident, approvedBy, entrypoint, approvedAt }, check) {
+    this.database.prepare(`INSERT INTO agent_app_approvals (app_id, version, digest, permissions, data, resident,
+        approved_by, entrypoint, presence, verification, challenge_id, verified_at, approved_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(appId, version, digest, JSON.stringify(permissions), JSON.stringify(data), resident ? 1 : 0,
-        approvedBy, entrypoint, presence, approvedAt);
+        approvedBy, entrypoint, check.presence, check.verification, check.challengeId, check.verifiedAt, approvedAt);
+  }
+
+  // Every activation rewrites the presence check of the version it activates,
+  // so a check made for an earlier activation never carries over to a later one.
+  setApprovalCheck(appId, version, check) {
+    this.database.prepare(`UPDATE agent_app_approvals SET presence = ?, verification = ?, challenge_id = ?, verified_at = ?
+      WHERE app_id = ? AND version = ?`)
+      .run(check.presence, check.verification, check.challengeId, check.verifiedAt, appId, version);
+  }
+
+  // One open presence challenge per app; issuing another replaces it.
+  challenge(appId) {
+    const row = this.database.prepare(`SELECT challenge_id, challenge_nonce_hash, challenge_decision, challenge_terms,
+      challenge_expires_at, challenge_consumed_at FROM agent_apps WHERE app_id = ?`).get(appId);
+    return row?.challenge_id ? {
+      challengeId: row.challenge_id, nonceHash: row.challenge_nonce_hash, decision: JSON.parse(row.challenge_decision),
+      terms: row.challenge_terms, expiresAt: row.challenge_expires_at, consumedAt: row.challenge_consumed_at
+    } : null;
+  }
+
+  saveChallenge(appId, { challengeId, nonceHash, decision, terms, expiresAt }) {
+    this.database.prepare(`UPDATE agent_apps SET challenge_id = ?, challenge_nonce_hash = ?, challenge_decision = ?,
+      challenge_terms = ?, challenge_expires_at = ?, challenge_consumed_at = NULL, challenge_claim = NULL WHERE app_id = ?`)
+      .run(challengeId, nonceHash, JSON.stringify(decision), terms, expiresAt, appId);
+  }
+
+  // Consumes the challenge for the one caller whose update still found it open,
+  // and records that caller's claim token; true for that caller only.
+  claimChallenge(appId, challengeId, { at, claim }) {
+    return Number(this.database.prepare(`UPDATE agent_apps SET challenge_consumed_at = ?, challenge_claim = ?
+      WHERE app_id = ? AND challenge_id = ? AND challenge_consumed_at IS NULL`).run(at, claim, appId, challengeId).changes) === 1;
+  }
+
+  // Ends a claim; true only for its holder, once. The challenge stays consumed.
+  releaseChallengeClaim(appId, challengeId, claim) {
+    return Number(this.database.prepare(`UPDATE agent_apps SET challenge_claim = NULL
+      WHERE app_id = ? AND challenge_id = ? AND challenge_claim = ?`).run(appId, challengeId, claim).changes) === 1;
+  }
+
+  // Whether the history records this challenge consumed by a successful presence check.
+  challengeVerified(appId, challengeId) {
+    return Boolean(this.database.prepare(`SELECT 1 FROM agent_app_events WHERE app_id = ? AND action = 'challenge_consumed'
+      AND json_extract(detail, '$.challengeId') = ? AND json_extract(detail, '$.outcome') = 'verified' LIMIT 1`)
+      .get(appId, challengeId));
   }
 
   token(tokenHash) {
@@ -134,6 +180,8 @@ export class AgentAppStore {
     for (const table of ['agent_app_versions', 'agent_app_approvals', 'agent_app_tokens']) {
       this.database.prepare(`DELETE FROM ${table} WHERE app_id = ?`).run(appId);
     }
+    this.database.prepare(`UPDATE agent_apps SET challenge_id = NULL, challenge_nonce_hash = NULL, challenge_decision = NULL,
+      challenge_terms = NULL, challenge_expires_at = NULL, challenge_consumed_at = NULL, challenge_claim = NULL WHERE app_id = ?`).run(appId);
   }
 
   recordEvent({ appId, at, action, version = null, actor = null, detail = null }) {
@@ -186,7 +234,18 @@ export const AGENT_APP_FORMAT = sqliteFormat({
     CREATE TABLE IF NOT EXISTS agent_app_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT, app_id TEXT NOT NULL, at TEXT NOT NULL,
       action TEXT NOT NULL, version TEXT, actor TEXT, detail TEXT
-    )`
+    )`,
+  migrations: [{
+    // An approval written before presence checks has none of these and reads as unverified.
+    id: 'agent-apps/2-approval-presence', to: 2, kind: 'add-columns', table: 'agent_app_approvals',
+    summary: 'the OS user verification bound to the challenge of the decision that activated the version',
+    columns: { verification: 'TEXT', challenge_id: 'TEXT', verified_at: 'TEXT' }
+  }, {
+    id: 'agent-apps/3-presence-challenges', to: 3, kind: 'add-columns', table: 'agent_apps',
+    summary: 'the open presence challenge of a CLI approval or rollback: nonce hash, decision, terms digest, expiry and claim',
+    columns: { challenge_id: 'TEXT', challenge_nonce_hash: 'TEXT', challenge_decision: 'TEXT', challenge_terms: 'TEXT',
+      challenge_expires_at: 'TEXT', challenge_consumed_at: 'TEXT', challenge_claim: 'TEXT' }
+  }]
 });
 
 function openRegistry(path) {

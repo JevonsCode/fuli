@@ -1,8 +1,8 @@
 {
   "sqlite": {
     "agent-apps": {
-      "version": 1,
-      "fingerprint": "a664b90df106360febe4332b4e67c96108e2cde881cf8df1adcc90e5a1c3c93b"
+      "version": 3,
+      "fingerprint": "53124722644686270d824e37b0f430c2d4673834f5c7b4ad5d42a4ece6870b1b"
     },
     "employee-management": {
       "version": 1,

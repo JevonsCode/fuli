@@ -7,6 +7,7 @@
     "README.zh-CN.md",
     "npm-shrinkwrap.json",
     "src/",
+    "native/win32/fuli-win-helper.exe",
     "packages/roundtable/package.json",
     "packages/roundtable/bin/",
     "packages/roundtable/src/",

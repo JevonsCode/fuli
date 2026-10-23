@@ -1,19 +1,19 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { ApplicationError } from '../app/application-error.js';
-import {
-  approvalBinds, approvalTerms, dataTransition, tamperedPackage, unavailablePermissions
-} from './authorization.js';
-import { ensureDataDirectory } from './data-directory.js';
-import { decisionSource } from './decision-source.js';
+import { createActivation } from './activation.js';
+import { unavailablePermissions } from './authorization.js';
+import { decisionSource, UNVERIFIED_CHECK } from './decision-source.js';
 import { appConflict } from './errors.js';
 import { parseAgentAppManifest } from './manifest.js';
-import { commitPackage, discardPackage, parsePackageFiles, stagePackage, storedPackageMatches } from './package-files.js';
+import { commitPackage, discardPackage, parsePackageFiles, stagePackage } from './package-files.js';
 
-// Submitting, approving and activating app versions. A version is immutable once
-// stored, and only an approval of its exact digest, given through the CLI or the
-// local console, makes it active. Part 1 has no runner: an active version runs no code.
+// Submitting app versions, and the local console's decisions on them. A version
+// is immutable once stored, and only an approval of its exact digest makes it
+// active. These decisions carry no presence check, so the run gate refuses the
+// version they activate; `fuli app approve` and `rollback` add one (verified-decisions.js).
 export function createAppVersions(context) {
   const { store, now } = context;
+  const activation = createActivation(context);
 
   async function submit({ personalSpaceId, agentId, manifest: submittedManifest, files: submittedFiles }) {
     const manifest = parseAgentAppManifest(submittedManifest);
@@ -54,48 +54,19 @@ export function createAppVersions(context) {
   function approve({ appId, version, digest, approver, confirmResident = false, confirmIrreversibleMigration = false }) {
     const source = decisionSource(approver);
     return store.transaction(() => {
-      const app = store.existingApp(appId);
-      if (app.status === 'deleted') throw appConflict('app_deleted', 'This app and its data were deleted');
-      const candidate = requiredVersion(appId, version);
-      if (candidate.state !== 'pending') {
-        throw appConflict('version_not_pending', `Version ${version} is ${candidate.state}; only a pending version is approved`);
-      }
-      if (digest !== candidate.digest) {
-        throw appConflict('digest_mismatch', 'The package digest differs from the one approved; review the version again');
-      }
-      if (candidate.manifest.resident && !confirmResident) {
-        throw appConflict('resident_confirmation_required',
-          'This version runs a resident service, which needs its own confirmation');
-      }
-      const transition = activation(app, candidate, { confirmIrreversibleMigration });
-      const at = now();
-      store.insertApproval({ appId, version, ...approvalTerms(candidate), approvedBy: approver.user, ...source, approvedAt: at });
-      store.setVersionState(appId, version, 'approved');
-      store.recordEvent({ appId, at, action: 'approved', version, actor: approver.user, detail: { digest, ...source } });
-      return { ...activate(app, candidate, transition, { at, actor: approver.user, reason: 'superseded' }), approval: source };
+      const prepared = activation.approvable({ appId, version, digest, confirmResident, confirmIrreversibleMigration });
+      const result = activation.approve(prepared, { at: now(), actor: approver.user, detail: source, check: UNVERIFIED_CHECK });
+      return { ...result, approval: source };
     });
   }
 
-  // Rollback and re-enabling both activate a version that was approved before.
+  // Without a presence check of its own, an activation never keeps the check an
+  // earlier activation of the same version had.
   function rollback({ appId, version, actor, confirmIrreversibleMigration = false }) {
     const source = decisionSource(actor);
     return store.transaction(() => {
-      const app = store.existingApp(appId);
-      if (!['active', 'disabled'].includes(app.status)) {
-        throw appConflict('app_not_activatable', `An app that is ${app.status} has no approved code to activate`);
-      }
-      const target = requiredVersion(appId, version);
-      if (target.state !== 'approved') {
-        throw appConflict('version_not_approved', `Version ${version} is ${target.state}; only an approved version is activated`);
-      }
-      if (!approvalBinds(store.approval(appId, version), target)) {
-        throw appConflict('approval_mismatch', `The approval of version ${version} does not cover this package`);
-      }
-      const transition = activation(app, target, { confirmIrreversibleMigration });
-      const at = now();
-      store.recordEvent({ appId, at, action: app.activeVersion === version ? 'enabled' : 'rolled_back', version,
-        actor: actor.user, detail: { from: app.activeVersion, ...source } });
-      return activate(app, target, transition, { at, actor: actor.user, reason: 'rollback' });
+      const prepared = activation.reactivatable({ appId, version, confirmIrreversibleMigration });
+      return activation.reactivate(prepared, { at: now(), actor: actor.user, detail: source, check: UNVERIFIED_CHECK });
     });
   }
 
@@ -115,33 +86,6 @@ export function createAppVersions(context) {
       }
       return { appId, status: 'disabled', version: app.activeVersion };
     });
-  }
-
-  function requiredVersion(appId, version) {
-    const record = store.version(appId, version);
-    if (!record) throw new ApplicationError('version_not_found', 'This app has no such version', { status: 404 });
-    return record;
-  }
-
-  function activation(app, version, options) {
-    if (!storedPackageMatches(context.packageOf(app.appId, version.version), version.digest)) throw tamperedPackage();
-    const refusal = unavailablePermissions(version.manifest.permissions, context.grantable());
-    if (refusal) throw refusal;
-    return dataTransition(app.dataFormat, version.manifest.data, options);
-  }
-
-  // The one place a version becomes the running one; earlier app tokens end here.
-  function activate(app, version, transition, { at, actor, reason }) {
-    store.revokeTokens(app.appId, reason, at);
-    store.saveApp({ ...app, status: 'active', activeVersion: version.version, dataFormat: transition.dataFormat,
-      deletionTicket: null, deletionExpiresAt: null, updatedAt: at });
-    if (transition.migration) {
-      const { note: _note, ...migration } = transition.migration;
-      store.recordEvent({ appId: app.appId, at, action: 'data_migrated', version: version.version, actor, detail: migration });
-    }
-    if (version.manifest.data.scope === 'app') ensureDataDirectory(context.dataOf(app.appId));
-    return { appId: app.appId, version: version.version, status: 'active', digest: version.digest,
-      ...(transition.migration ? { dataMigration: transition.migration } : {}) };
   }
 
   return { submit, approve, rollback, disable };
