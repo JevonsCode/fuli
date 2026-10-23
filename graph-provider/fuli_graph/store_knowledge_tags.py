@@ -117,6 +117,41 @@ class Neo4jTagReader:
     def __init__(self, driver, space_id):
         self._driver, self._space_id = driver, space_id
 
+    async def ranking_roots(self, namespaces, keys):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (tag:FuliKnowledgeTag {space_id: $space_id}) '
+            'WHERE tag.namespace_key IN $namespaces AND tag.status IN $statuses '
+            'AND (tag.name_key IN $keys OR any(key IN tag.alias_keys WHERE key IN $keys)) '
+            'RETURN tag ORDER BY tag.id', space_id=self._space_id, namespaces=namespaces,
+            keys=keys, statuses=['active', 'provisional', 'merged'], routing_='r')
+        return [_tag(record['tag']) for record in records]
+
+    async def ranking_target(self, namespaces, tag_id):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (tag:FuliKnowledgeTag {space_id: $space_id, id: $tag_id}) '
+            'WHERE tag.namespace_key IN $namespaces RETURN tag',
+            space_id=self._space_id, tag_id=tag_id, namespaces=namespaces, routing_='r')
+        return _tag(records[0]['tag']) if records else None
+
+    async def ranking_neighbors(self, namespaces, root_ids):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (root:FuliKnowledgeTag {space_id: $space_id, status: "active"}), '
+            '(tag:FuliKnowledgeTag {space_id: $space_id, status: "active"}) '
+            'WHERE root.id IN $root_ids AND root.namespace_key IN $namespaces '
+            'AND tag.namespace_key IN $namespaces '
+            'AND (root.id IN tag.parent_ids OR root.id IN tag.related_ids OR tag.id IN root.related_ids) '
+            'RETURN DISTINCT tag ORDER BY tag.id', space_id=self._space_id,
+            namespaces=namespaces, root_ids=root_ids, routing_='r')
+        return [_tag(record['tag']) for record in records]
+
+    async def ranking_links(self, tag_ids, kind, item_ids):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (tag:FuliKnowledgeTag {space_id: $space_id})-[:TAGS]->'
+            '(link:FuliKnowledgeTagLink {space_id: $space_id, status: "attached", item_kind: $kind}) '
+            'WHERE tag.id IN $tag_ids AND link.item_id IN $item_ids RETURN link ORDER BY link.id',
+            space_id=self._space_id, tag_ids=tag_ids, kind=kind, item_ids=item_ids, routing_='r')
+        return [_link(record['link']) for record in records]
+
     async def find_by_key(self, namespace_keys, key):
         """Live tags whose name or alias is the word."""
         return await self._by_key(namespace_keys, key, VISIBLE_STATUSES)

@@ -29,6 +29,7 @@ from .knowledge_item_view_models import (
 )
 from .knowledge_management import _read_item
 from .knowledge_project_scope import knowledge_project_ids
+from .knowledge_search import search_knowledge
 from .knowledge_tags import PERSONAL_NAMESPACE, project_namespace
 from .knowledge_versions import item_revisions, version_chain, version_status
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
@@ -55,13 +56,24 @@ async def read_knowledge_item_view(store, actor: dict, request: KnowledgeItemRef
                                  source_ids=source_ids, revisions=revisions)
     versions = await version_chain(store, space, request.item_kind, request.item_id)
     head = next((version['item_id'] for version in versions if version['status'] == 'current'), None)
-    return KnowledgeItemView(
+    view = KnowledgeItemView(
         basis_review=basis_review(current, revisions),
         dependent_count=len(await dependents_of(store, space, request.item_kind, head or request.item_id)),
         **summary.model_dump(), evidence=evidence, evidence_count=len(source_ids),
         revisions=revisions[:REVISION_LIMIT], versions=versions,
         current_item_id=head,
         bases=await item_bases(store, space, request.item_kind, request.item_id, current))
+    if request.query_tags is not None:
+        # Run the normal visibility pipeline again. These ranks describe the
+        # current query and graph, never a replay of an earlier search result.
+        explanations = {}
+        await search_knowledge(store, actor, request.query_tags, tag_explanations=explanations)
+        view.tag_ranking = explanations.get((request.item_kind, request.item_id), {
+            'original_rank': None, 'final_rank': None,
+            'original_score': None, 'final_score': None, 'multiplier': 1.0,
+            'matches': [], 'no_signal_reason': 'not_in_visible_candidates',
+        })
+    return view
 
 
 async def read_turn_receipt(store, actor: dict, request: KnowledgeTurnReceiptRead) -> KnowledgeTurnReceipt:

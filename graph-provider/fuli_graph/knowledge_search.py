@@ -21,6 +21,7 @@ from .search_projection import (
     source_uris_from_references,
 )
 from .knowledge_weight import knowledge_weight
+from .knowledge_tag_ranking import TagRanking
 
 MIN_TERM_COVERAGE = 0.25
 LATIN_QUERY_FILLERS = {
@@ -36,7 +37,7 @@ CHINESE_QUERY_FILLERS = (
 )
 
 
-async def search_knowledge(store, actor: dict, request: SearchRequest) -> SearchResult:
+async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_explanations=None) -> SearchResult:
     spaces = [await store.authorize(actor, space_id, 'reader') for space_id in request.space_ids]
     personal_space = await _personal_search_space(store, actor, spaces, request)
     space_ids_by_group = {space['group_id']: space['id'] for space in spaces}
@@ -79,6 +80,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest) -> Search
             if is_default_retrievable(epistemic.get(edge.uuid, {}))
         ]
     names = await _entity_names(store, edges)
+    tag_ranking = await TagRanking.for_search(store, personal_space, request, project_scopes)
     ranked_edges = sorted(
         (
             (
@@ -107,13 +109,17 @@ async def search_knowledge(store, actor: dict, request: SearchRequest) -> Search
             request.active_personal_project_id,
             request.project_agent_id,
         )
-    ranked_edges = ranked_edges[: request.limit]
+    ranked_edges = [(score, edge) for _, score, edge in await tag_ranking.rerank(
+        [(edge.uuid, score, edge) for score, edge in ranked_edges], 'relationship', tag_explanations
+    )][: request.limit]
     entities = (
         await _personal_entities(
             store,
             personal_space,
             request,
             project_scopes,
+            tag_ranking,
+            tag_explanations,
         )
         if personal_space else []
     )
@@ -337,6 +343,8 @@ async def _personal_entities(
     space,
     request: SearchRequest,
     project_scopes: dict[str, dict],
+    tag_ranking=None,
+    tag_explanations=None,
 ) -> list[EntitySearchResult]:
     if not project_scopes and not request.include_personal_global:
         return []
@@ -487,7 +495,10 @@ async def _personal_entities(
         ranked,
         request.active_personal_project_id,
         request.project_agent_id,
-    )[: request.limit]
+    )
+    ranked = [(record, score) for _, score, record in await (tag_ranking or TagRanking()).rerank(
+        [(record['id'], score, record) for record, score in ranked], 'entity', tag_explanations
+    )][: request.limit]
     return [
         _entity_search_result(record, score, space['id'])
         for record, score in ranked
@@ -681,14 +692,15 @@ def _dedupe_ranked_edges(
         quality = (
             _scope_precedence(metadata, active_project_id, project_agent_id),
             -score,
+            edge.uuid,
         )
         current = selected.get(key)
         if current is None or quality < current[0]:
             selected[key] = (quality, score, edge)
     return sorted(
         ((score, edge) for _, score, edge in selected.values()),
-        key=lambda item: item[0],
-        reverse=True,
+        key=lambda item: (-item[0], _scope_precedence(
+            metadata_by_id.get(item[1].uuid, {}), active_project_id, project_agent_id), item[1].uuid),
     )
 
 
@@ -699,14 +711,15 @@ def _dedupe_ranked_entities(ranked, active_project_id, project_agent_id=None):
         quality = (
             _scope_precedence(record, active_project_id, project_agent_id),
             -score,
+            record['id'],
         )
         current = selected.get(key)
         if current is None or quality < current[0]:
             selected[key] = (quality, record, score)
     return sorted(
         ((record, score) for _, record, score in selected.values()),
-        key=lambda item: (item[1], _timestamp(item[0].get('created_at'))),
-        reverse=True,
+        key=lambda item: (-item[1], _scope_precedence(
+            item[0], active_project_id, project_agent_id), item[0]['id']),
     )
 
 
