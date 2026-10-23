@@ -9,20 +9,38 @@ from .models import (
     ProposalDecision,
     ProposalRecord,
     PublicationDraftCreate,
-    PublicationDraftDecision,
     PublicationDraftRecord,
     SubscriptionCreate,
     SubscriptionDeleteResult,
     SubscriptionRecord,
 )
-from .provider_values import native_datetime, now_utc, stable_uuid
+from .provider_values import json_object, native_datetime, now_utc, stable_uuid
 from .publication_source_copies import publication_source_identity
 from .knowledge_source_fence import require_source_available
 from .knowledge_versions import lock_knowledge
 from .store_transactions import query_store_transaction
+from .publication_submission import decide_submission
+from .publication_submission_models import PublicationSubmissionDecision
 
 
 class StorePublication:
+    async def decide_publication_submission(self, actor, personal_space_id, draft_id, decision):
+        """Internal submission protocol; every transition serializes with erasure."""
+        self._require_personal()
+        space = await self.authorize(actor, personal_space_id, 'maintainer')
+        refusal = None
+        async with query_store_transaction(self) as scoped:
+            await lock_knowledge(scoped, space)
+            try:
+                draft = await decide_submission(scoped, space, draft_id, decision, now_utc())
+            except HTTPException as error:
+                # Expiry is a persisted state transition even if the requested
+                # follow-up transition conflicts; raising inside rolls it back.
+                refusal = error
+        if refusal is not None:
+            raise refusal
+        return self._publication_draft(draft)
+
     async def create_publication_draft(
         self,
         actor: dict,
@@ -73,21 +91,26 @@ class StorePublication:
         actor: dict,
         personal_space_id: str,
         draft_status: str = 'pending',
+        metadata_only: bool = False,
     ) -> list[PublicationDraftRecord]:
         self._require_personal()
-        await self.authorize(actor, personal_space_id, 'reader')
+        space = await self.authorize(actor, personal_space_id, 'reader')
         records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
                   [:HAS_PUBLICATION_DRAFT]->
-                  (draft:FuliPublicationDraft {status: $status})
+                  (draft:FuliPublicationDraft)
+            WHERE $status = 'all' OR draft.status = $status
             RETURN draft ORDER BY draft.created_at DESC
             ''',
             personal_space_id=personal_space_id,
             status=draft_status,
             routing_='r',
         )
-        return [self._publication_draft(record['draft']) for record in records]
+        return [self._publication_draft({**dict(record['draft']), 'source_identity': json.dumps({
+                    **publication_source_identity(space['group_id'], json_object(record['draft'].get('payload'))),
+                    **json_object(record['draft'].get('source_identity'))})}, metadata_only=metadata_only)
+                for record in records]
 
     async def get_publication_draft(
         self,
@@ -117,8 +140,10 @@ class StorePublication:
         actor: dict,
         personal_space_id: str,
         draft_id: str,
-        decision: PublicationDraftDecision,
+        decision: PublicationSubmissionDecision,
     ) -> PublicationDraftRecord:
+        if decision.decision not in ('keep_personal', 'ignore'):
+            return await self.decide_publication_submission(actor, personal_space_id, draft_id, decision)
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'maintainer')
         records, _, _ = await self.runtime.driver.execute_query(
@@ -138,8 +163,6 @@ class StorePublication:
         if decision.decision == 'keep_personal':
             await self._commit_episode(space, draft.episode)
             final_status = 'kept_personal'
-        elif decision.decision == 'submit_public':
-            final_status = 'submitted'
         else:
             final_status = 'ignored'
         async with query_store_transaction(self) as scoped:
@@ -333,6 +356,17 @@ class StorePublication:
             routing_='r',
         )
         return [self._proposal(record['proposal']) for record in records]
+
+    async def lookup_proposal(self, actor: dict, project_id: str, idempotency_key: str) -> dict | None:
+        """A contributor can reconcile only their own submission, without reading its body."""
+        self._require_workspace()
+        await self.authorize(actor, project_id, 'contributor')
+        proposal_id = stable_uuid(self.settings.provider_id, project_id, actor['id'], idempotency_key)
+        rows, _, _ = await self.runtime.driver.execute_query(
+            '''MATCH (proposal:FuliProposal {id: $id, project_id: $project_id, submitted_by: $actor_id})
+               RETURN proposal.id AS id, proposal.status AS status''',
+            id=proposal_id, project_id=project_id, actor_id=actor['id'], routing_='r')
+        return dict(rows[0]) if rows else None
 
     async def decide_proposal(
         self,

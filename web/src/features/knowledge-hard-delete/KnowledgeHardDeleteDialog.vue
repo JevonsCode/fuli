@@ -17,7 +17,7 @@ import { confirmHardDelete, previewHardDelete, confirmSourceDelete, previewSourc
 import SourceDeleteSelections from './SourceDeleteSelections.vue'
 import { sourcePreviewDetails, sourceSelection, type SourceDeletePreview, type SourceDeleteSelection,
   type SourceDeleteTarget } from './source-delete-model'
-import { confirmationMatches, deletedState, hardDeletedFrom, ledgerDamage, recordCounts, refusedByGraph, stalePreview,
+import { confirmationMatches, deletedState, draftSubmissionStarted, hardDeletedFrom, ledgerDamage, recordCounts, refusedByGraph, stalePreview,
   type HardDeletePreview, type HardDeletedState } from './model'
 
 // rec#5 C9: the second step of a permanent delete. It lists exactly what goes,
@@ -108,7 +108,7 @@ async function submit() {
   } catch (cause) {
     const deleted = hardDeletedFrom(cause, props.item.item_kind)
     if (deleted) { emit('deleted', deleted); return }
-    if (stalePreview(cause)) {
+    if (stalePreview(cause) || draftSubmissionStarted(cause)) {
       typed.value = ''
       notice.value = t('knowledgeHardDelete.dialog.stale')
       await load(true)

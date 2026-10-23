@@ -68,7 +68,7 @@ class DraftDriver:
             if 'draft_id' in params:
                 rows = [row for row in rows if row['id'] == params['draft_id']]
             status = 'pending' if "status: 'pending'" in query else params.get('status')
-            if status:
+            if status and status != 'all':
                 rows = [row for row in rows if row['status'] == status]
             return [{'draft': row.copy(), 'project_name': None} for row in rows], None, None
         raise AssertionError(query)
@@ -118,7 +118,7 @@ async def test_get_list_and_submit_after_scrub_expose_only_metadata():
             assert listed.json() == [result]
             assert confirmed_episode()['source_description'] not in response.text
         refused = await client.post('/v1/publication-drafts/pending/decision',
-            json={'decision': 'submit_public', 'shared_proposal_id': 'late-proposal'})
+            json={'decision': 'begin_submit_public'})
         assert refused.status_code == 409
         assert refused.json()['detail']['code'] == 'publication_draft_not_pending'
 
@@ -129,7 +129,7 @@ async def test_pending_decision_rechecks_after_acquiring_deletion_lock():
     driver.delete_on_lock = True
     async with client_for(app) as client:
         refused = await client.post('/v1/publication-drafts/pending/decision',
-            json={'decision': 'submit_public', 'shared_proposal_id': 'late-proposal'})
+            json={'decision': 'begin_submit_public'})
     assert refused.status_code == 409
     assert driver.rows['pending']['status'] == 'source_deleted'
     assert driver.rows['pending'].get('shared_proposal_id') is None
@@ -146,3 +146,18 @@ async def test_late_draft_creation_checks_tombstone_inside_final_write_transacti
     assert refused.status_code == 410
     assert refused.json()['detail'] == {'code': 'source_hard_deleted'}
     assert not any('MERGE (draft:' in query for query in driver.queries)
+
+
+@pytest.mark.asyncio
+async def test_metadata_list_returns_legacy_idempotency_without_payload():
+    app, driver, _, _ = setup()
+    driver.rows['pending']['status'] = 'submission_unknown'
+    async with client_for(app) as client:
+        result = await client.get('/v1/publication-drafts', params={
+            'personal_space_id': 'space', 'status': 'all', 'metadata_only': 'true'})
+    assert result.status_code == 200
+    assert len(result.json()) == 4
+    for draft in result.json():
+        assert draft['episode'] is None
+        assert draft['source_identity']['idempotency_key'] == source_episode()['idempotency_key']
+    assert source_episode()['source_description'] not in result.text

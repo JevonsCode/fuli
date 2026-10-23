@@ -57,3 +57,17 @@ async def test_plan_keeps_other_sources_and_rebinds_user_selection_and_draft_sta
     changed = await planner.plan_source_delete(None, {'id': 'space'}, 'episode', request, knowledge)
     assert changed['preview'].preview_id != preview.preview_id
     assert changed['preview'].drafts.submitted == 1
+    # TTL affects the warning, never the stored-state digest. A different
+    # reservation attempt must invalidate a previous confirmation.
+    from datetime import datetime, timedelta, timezone
+    at = datetime(2026, 10, 23, tzinfo=timezone.utc)
+    drafts[0]['draft'].update(status='submitting', submission_id='attempt', submission_started_at=at)
+    monkeypatch.setattr(planner, 'now_utc', lambda: at)
+    fresh = await planner.plan_source_delete(None, {'id': 'space'}, 'episode', request, knowledge)
+    monkeypatch.setattr(planner, 'now_utc', lambda: at + timedelta(seconds=121))
+    expired = await planner.plan_source_delete(None, {'id': 'space'}, 'episode', request, knowledge)
+    assert fresh['preview'].drafts.submitting == 1 and expired['preview'].drafts.unknown == 1
+    assert fresh['preview'].preview_id == expired['preview'].preview_id
+    drafts[0]['draft']['submission_id'] = 'another-attempt'
+    rebound = await planner.plan_source_delete(None, {'id': 'space'}, 'episode', request, knowledge)
+    assert rebound['preview'].preview_id != expired['preview'].preview_id

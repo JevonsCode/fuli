@@ -36,7 +36,7 @@ async def test_all_draft_states_are_scrubbed_by_exact_identity_and_pending_is_te
     assert [row['draft']['id'] for row in matches] == sorted(states)
     at = datetime(2026, 10, 23, tzinfo=timezone.utc)
     counts = await scrub_publication_drafts(store, {'id': 'space'}, matches, 'deletion', at)
-    assert counts == dict.fromkeys(states, 1)
+    assert counts == {**dict.fromkeys(states, 1), 'unknown': 0}
     assert saved['pending']['status'] == 'source_deleted'
     assert saved['submitted']['status'] == 'submitted'
     assert saved['submitted']['shared_proposal_id'] == 'proposal'

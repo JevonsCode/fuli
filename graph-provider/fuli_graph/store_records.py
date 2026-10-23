@@ -95,7 +95,7 @@ class StoreRecords:
             decided_at=native_datetime(value.get('decided_at')),
         )
 
-    def _publication_draft(self, raw) -> PublicationDraftRecord:
+    def _publication_draft(self, raw, *, metadata_only=False) -> PublicationDraftRecord:
         value = dict(raw)
         return PublicationDraftRecord(
             id=value['id'],
@@ -103,13 +103,18 @@ class StoreRecords:
             target_project_id=value['target_project_id'],
             provider_url=value['provider_url'],
             status=value['status'],
-            episode=None if value.get('payload_scrubbed_by') else StructuredEpisode.model_validate_json(value['payload']),
+            episode=None if metadata_only or value.get('payload_scrubbed_by') else StructuredEpisode.model_validate_json(value['payload']),
             source_identity=json_object(value.get('source_identity')),
             payload_scrubbed_by=value.get('payload_scrubbed_by'),
             payload_scrubbed_at=native_datetime(value.get('payload_scrubbed_at')),
             created_at=native_datetime(value['created_at']),
             decided_at=native_datetime(value.get('decided_at')),
             shared_proposal_id=value.get('shared_proposal_id'),
+            submission_id=value.get('submission_id'),
+            submission_started_at=native_datetime(value.get('submission_started_at')),
+            submission_unknown_at=native_datetime(value.get('submission_unknown_at')),
+            last_submission_error=json_object(value.get('last_submission_error')) or None,
+            submission_outcome=value.get('submission_outcome'),
         )
 
     def _subscription(self, raw, personal_space_id: str) -> SubscriptionRecord:

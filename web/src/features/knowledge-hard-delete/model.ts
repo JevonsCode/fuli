@@ -139,3 +139,9 @@ export function refusedByGraph(error: unknown) {
 export function stalePreview(error: unknown) {
   return error instanceof ApiError && error.status === 409 && apiCode(error)?.code === 'hard_delete_preview_stale'
 }
+
+
+/** A public draft entered submission after this delete preview was shown. */
+export function draftSubmissionStarted(error: unknown) {
+  return error instanceof ApiError && error.status === 409 && apiCode(error)?.code === 'hard_delete_draft_submitting'
+}

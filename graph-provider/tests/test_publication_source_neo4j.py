@@ -35,11 +35,15 @@ async def test_all_local_draft_states_follow_the_source_and_pending_submit_is_te
             if status != 'pending':
                 decision = {'decision': {'submitted': 'submit_public', 'kept_personal': 'keep_personal', 'ignored': 'ignore'}[status]}
                 if status == 'submitted':
+                    begun = ok(await client.post(f'/v1/publication-drafts/{row["id"]}/decision',
+                        params={'personal_space_id': space}, json={'decision': 'begin_submit_public'}))
+                    decision['submission_id'] = begun['submission_id']
                     decision['shared_proposal_id'] = 'synthetic-proposal'
                 ok(await client.post(f'/v1/publication-drafts/{row["id"]}/decision',
                     params={'personal_space_id': space}, json=decision))
         plan = ok(await preview(client, space, saved['entity_ids'][0]))
-        assert plan['drafts'] == {'pending': 0 if shared else 1, 'submitted': 0 if shared else 1}
+        assert plan['drafts'] == {'pending': 0 if shared else 1, 'submitted': 0 if shared else 1,
+                                  'submitting': 0, 'unknown': 0}
         result = ok(await delete(client, space, saved['entity_ids'][0], plan['preview_id']))
         raw = await query(settings, 'MATCH (draft:FuliPublicationDraft {personal_space_id: $space}) RETURN properties(draft) AS draft', space=space)
         assert len(raw) == 4
@@ -60,5 +64,5 @@ async def test_all_local_draft_states_follow_the_source_and_pending_submit_is_te
         listed = ok(await client.get('/v1/publication-drafts', params={'personal_space_id': space}))
         assert len(listed) == (1 if shared else 0)
         attempted = await client.post(f'/v1/publication-drafts/{drafts["pending"]}/decision',
-            params={'personal_space_id': space}, json={'decision': 'submit_public', 'shared_proposal_id': 'late'})
+            params={'personal_space_id': space}, json={'decision': 'begin_submit_public'})
         assert attempted.status_code == (200 if shared else 409)

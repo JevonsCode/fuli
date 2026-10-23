@@ -2084,6 +2084,8 @@
       ],
       "publication_draft_status": [
         "pending",
+        "submitting",
+        "submission_unknown",
         "submitted",
         "kept_personal",
         "ignored",
@@ -2144,6 +2146,9 @@
         "new_durable",
         "temporary",
         "unassigned"
+      ],
+      "submission_outcome": [
+        "unknown"
       ],
       "tag_link_status": [
         "attached",
@@ -3336,6 +3341,7 @@
         "created_at": "datetime?",
         "decided_at": "datetime?",
         "id": "string?",
+        "last_submission_error": "string?",
         "payload": "string?",
         "payload_scrubbed_at": "datetime?",
         "payload_scrubbed_by": "string?",
@@ -3344,6 +3350,10 @@
         "shared_proposal_id": "string?",
         "source_identity": "string?",
         "status": "publication_draft_status?",
+        "submission_id": "string?",
+        "submission_outcome": "submission_outcome?",
+        "submission_started_at": "datetime?",
+        "submission_unknown_at": "datetime?",
         "target_project_id": "string?"
       },
       "FuliRemoteAgentOrigin": {

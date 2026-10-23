@@ -14,6 +14,9 @@ import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js'
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
 import { searchFederatedKnowledge } from './federated-search.js';
 import { preflightTaskCaptures } from './task-knowledge-routing.js';
+import { submitPersonalDraft } from './public-submission.js';
+import { reconcilePublicSubmissions } from './public-submission-reconciliation.js';
+import { parsePersonalDraftDecision } from './publication-draft-input.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
 import {
@@ -983,6 +986,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (personalSpaceId !== this.config.personal.spaceId) {
       throw new TypeError('Personal review must use the active personal space');
     }
+    await this.reconcilePersonalSubmissions();
     return {
       personalSpaceId,
       drafts: await this.personal.listPublicationDrafts(
@@ -992,33 +996,22 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
+  reconcilePersonalSubmissions(options = {}) {
+    return reconcilePublicSubmissions({ personal: this.personal, workspaceFor: url => this.#workspace(url),
+      spaceId: this.config.personal.spaceId }, options);
+  }
+
   async reviewPersonalDraft(input) {
+    input = parsePersonalDraftDecision(input);
     const personalSpaceId = this.config.personal.spaceId;
-    if (!['submit_public', 'keep_personal', 'ignore'].includes(input.decision)) {
-      throw new TypeError('Unknown personal draft decision');
-    }
     if (input.decision !== 'submit_public') {
       return this.personal.decidePublicationDraft(personalSpaceId, input.draftId, {
         decision: input.decision,
         shared_proposal_id: null
       });
     }
-    const draft = await this.personal.getPublicationDraft(personalSpaceId, input.draftId);
-    if (draft.status !== 'pending' || !draft.episode || draft.payload_scrubbed_by) {
-      throw new ApplicationError('publication_draft_not_pending', 'Publication draft is not pending', { status: 409 });
-    }
-    if (draft.episode.sensitivity !== 'normal') {
-      throw new TypeError('Private or restricted knowledge cannot be submitted publicly');
-    }
-    assertPublicKnowledgeEligible(draft.episode);
-    const workspace = this.#workspace(draft.provider_url);
-    const proposal = await workspace.client.createProposal(draft.target_project_id, {
-      episode: draft.episode
-    });
-    return this.personal.decidePublicationDraft(personalSpaceId, input.draftId, {
-      decision: 'submit_public',
-      shared_proposal_id: proposal.id
-    });
+    return submitPersonalDraft({ personal: this.personal, workspaceFor: url => this.#workspace(url),
+      spaceId: personalSpaceId, draftId: input.draftId });
   }
 
   async listReviewQueue({ projectId, providerUrl, status = 'pending' }) {

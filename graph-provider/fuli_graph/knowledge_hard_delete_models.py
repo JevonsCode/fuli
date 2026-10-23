@@ -108,6 +108,8 @@ class KnowledgeHardDeletePublication(StrictModel):
 class KnowledgeHardDeleteDrafts(StrictModel):
     pending: int = 0
     submitted: int = 0
+    submitting: int = 0
+    unknown: int = 0
 
 
 class KnowledgeHardDeletePreview(StrictModel):

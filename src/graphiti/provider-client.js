@@ -667,9 +667,10 @@ export class GraphitiProviderClient {
   createPublicationDraft(input) {
     return this.#request('/v1/publication-drafts', { method: 'POST', body: input });
   }
-  listPublicationDrafts(personalSpaceId, status = 'pending') {
+  listPublicationDrafts(personalSpaceId, status = 'pending', { metadataOnly = false, ...options } = {}) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId, status });
-    return this.#request(`/v1/publication-drafts?${query}`);
+    if (metadataOnly) query.set('metadata_only', 'true');
+    return this.#request(`/v1/publication-drafts?${query}`, options);
   }
   getPublicationDraft(personalSpaceId, draftId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
@@ -677,11 +678,11 @@ export class GraphitiProviderClient {
       `/v1/publication-drafts/${encodeURIComponent(draftId)}?${query}`
     );
   }
-  decidePublicationDraft(personalSpaceId, draftId, input) {
+  decidePublicationDraft(personalSpaceId, draftId, input, options = {}) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return this.#request(
       `/v1/publication-drafts/${encodeURIComponent(draftId)}/decision?${query}`,
-      { method: 'POST', body: input }
+      { ...options, method: 'POST', body: input }
     );
   }
   createPrincipal(input) {
@@ -895,10 +896,14 @@ export class GraphitiProviderClient {
       { method: 'POST', body: input }
     );
   }
-  createProposal(projectId, input) {
+  createProposal(projectId, input, options = {}) {
     return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/proposals`, {
-      method: 'POST', body: input
+      ...options, method: 'POST', body: input
     });
+  }
+  lookupProposal(projectId, idempotencyKey, options = {}) {
+    const query = new URLSearchParams({ idempotency_key: idempotencyKey });
+    return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/proposals/lookup?${query}`, options);
   }
   listProposals(projectId, status = 'pending') {
     const query = new URLSearchParams({ status });

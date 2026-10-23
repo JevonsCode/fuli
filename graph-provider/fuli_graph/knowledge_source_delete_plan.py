@@ -15,8 +15,8 @@ from .knowledge_source_delete_models import SourceDeleteCounts, SourceDeleteItem
 from .knowledge_source_delete_selection import source_delete_selection
 from .knowledge_source_delete_target import source_delete_target
 from .knowledge_source_fence import source_turn_key
-from .provider_values import native_datetime, sha256_text
-from .publication_source_copies import drafts_for_sources
+from .provider_values import native_datetime, now_utc, sha256_text
+from .publication_source_copies import drafts_for_sources, publication_draft_counts
 
 
 async def plan_source_delete(store, space, item_id, request, knowledge):
@@ -41,8 +41,7 @@ async def plan_source_delete(store, space, item_id, request, knowledge):
     shown_versions = {version for row in lineages if row['key'] in shown_keys for version in row['version_keys']}
     publications = await publications_for_sources(store, space, [by_key[key] for key in sorted(shown_versions)],
                                                   episode_ids, source_range=target)
-    draft_counts = {status: sum(row['draft']['status'] == status and not row['draft'].get('payload_scrubbed_by')
-                              for row in drafts) for status in ('pending', 'submitted')}
+    draft_counts = publication_draft_counts(drafts, now_utc())
     selected = set(selection['selected_keys'])
     reviewed = set(selection['review_keys'])
     source_set = set(episode_ids)
@@ -77,7 +76,8 @@ async def plan_source_delete(store, space, item_id, request, knowledge):
         'selection': selection, 'locks': locks, 'episodes': episode_ids, 'records': records,
         'tasks': inventory['task_versions'], 'events': inventory['event_versions'],
         'conversations': inventory['conversation_versions'],
-        'drafts': [[row['draft']['id'], row['draft']['status'], row['draft'].get('payload_scrubbed_by')] for row in drafts],
+        'drafts': [[row['draft']['id'], row['draft']['status'], row['draft'].get('submission_id'),
+                    row['draft'].get('payload_scrubbed_by')] for row in drafts],
         'publications': [row.model_dump() for row in publications], 'counts': counts.model_dump()},
         sort_keys=True, separators=(',', ':'), ensure_ascii=False))
     preview = SourceDeletePreview(preview_id=digest, item_kind=request.item_kind, item_id=item_id,

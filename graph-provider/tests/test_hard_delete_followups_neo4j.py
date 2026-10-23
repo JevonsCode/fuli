@@ -72,9 +72,12 @@ async def test_public_submission_is_bound_into_preview_and_never_retracted_by_lo
             'provider_url': 'https://public.example', 'episode': episode}))
         pending = ok(await preview(client, space, item_id))
         assert pending['publications'] == []
+        begun = ok(await client.post(f'/v1/publication-drafts/{draft["id"]}/decision',
+            params={'personal_space_id': space}, json={'decision': 'begin_submit_public'}))
         submitted = ok(await client.post(f'/v1/publication-drafts/{draft["id"]}/decision',
             params={'personal_space_id': space},
-            json={'decision': 'submit_public', 'shared_proposal_id': 'synthetic-public-proposal'}))
+            json={'decision': 'submit_public', 'submission_id': begun['submission_id'],
+                  'shared_proposal_id': 'synthetic-public-proposal'}))
         ok(await client.post('/v1/subscriptions', json={'personal_space_id': space,
             'project_id': 'synthetic-public-project', 'provider_url': 'https://public.example',
             'project_name': 'Readable synthetic project'}))

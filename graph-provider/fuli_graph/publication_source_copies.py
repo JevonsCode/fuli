@@ -4,16 +4,19 @@ Remote proposals are outside this store. A scrub preserves only submission
 metadata and source identities, and makes an unsubmitted draft terminal.
 """
 import json
+from fastapi import HTTPException
 
 from .provider_values import json_object, stable_uuid
+from .publication_submission import expire_submission, submission_status
 
 SOURCE_FIELDS = ('session_id', 'source_application', 'source_turn_id')
-DRAFT_STATES = ('pending', 'submitted', 'kept_personal', 'ignored')
+DRAFT_STATES = ('pending', 'submitted', 'kept_personal', 'ignored', 'unknown')
 
 
 def publication_source_identity(group_id, episode):
     identity = {field: episode[field] for field in SOURCE_FIELDS if episode.get(field)}
     if episode.get('idempotency_key'):
+        identity['idempotency_key'] = episode['idempotency_key']
         identity['episode_id'] = stable_uuid(group_id, 'episode', episode['idempotency_key'])
     return identity
 
@@ -36,8 +39,8 @@ async def drafts_for_sources(store, space, sources, *, source_range=None):
     found = []
     for record in records:
         draft = dict(record['draft'])
-        identity = json_object(draft.get('source_identity')) or publication_source_identity(
-            space['group_id'], json_object(draft.get('payload')))
+        identity = {**publication_source_identity(space['group_id'], json_object(draft.get('payload'))),
+                    **json_object(draft.get('source_identity'))}
         matched = sorted({source['episode_id'] for source in sources
             if (identity.get('episode_id') and identity['episode_id'] == source['episode_id']) or
                all(identity.get(field) and identity[field] == source.get(field) for field in SOURCE_FIELDS)})
@@ -56,8 +59,11 @@ async def scrub_publication_drafts(scoped, space, matches, deletion_id, deleted_
     """Caller holds the knowledge-space lock in the source deletion transaction.
     `matches` is recomputed in that transaction and bound to the preview digest."""
     counts = dict.fromkeys(DRAFT_STATES, 0)
+    # A reservation refuses the entire transaction before any local body goes.
+    if any(submission_status(match['draft'], deleted_at) == 'submitting' for match in matches):
+        raise HTTPException(409, detail={'code': 'hard_delete_draft_submitting'})
     for match in matches:
-        draft = match['draft']
+        draft = await expire_submission(scoped, space, match['draft'], deleted_at)
         if draft.get('payload_scrubbed_by'):
             continue
         await scoped.runtime.driver.execute_query(
@@ -66,10 +72,27 @@ async def scrub_publication_drafts(scoped, space, matches, deletion_id, deleted_
                   (draft:FuliPublicationDraft {id: $draft_id})
             SET draft.payload = null, draft.source_identity = $source_identity,
                 draft.payload_scrubbed_by = $deletion_id, draft.payload_scrubbed_at = $deleted_at,
-                draft.status = CASE WHEN draft.status = 'pending' THEN 'source_deleted' ELSE draft.status END
+                draft.submission_outcome = CASE WHEN draft.status = 'submission_unknown'
+                    THEN 'unknown' ELSE draft.submission_outcome END,
+                draft.status = CASE WHEN draft.status IN ['pending', 'submission_unknown']
+                    THEN 'source_deleted' ELSE draft.status END
             ''', space_id=space['id'], draft_id=draft['id'],
             source_identity=json.dumps(match['source_identity'], sort_keys=True, separators=(',', ':')),
             deletion_id=deletion_id, deleted_at=deleted_at)
-        if draft['status'] in counts:
-            counts[draft['status']] += 1
+        counted = 'unknown' if draft['status'] == 'submission_unknown' else draft['status']
+        if counted in counts:
+            counts[counted] += 1
+    return counts
+
+
+def publication_draft_counts(matches, now):
+    counts = dict.fromkeys(('pending', 'submitted', 'submitting', 'unknown'), 0)
+    for match in matches:
+        draft = match['draft']
+        if draft.get('payload_scrubbed_by'):
+            continue
+        status = submission_status(draft, now)
+        status = 'unknown' if status == 'submission_unknown' else status
+        if status in counts:
+            counts[status] += 1
     return counts

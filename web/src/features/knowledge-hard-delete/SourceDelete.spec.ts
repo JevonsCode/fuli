@@ -357,3 +357,16 @@ it.each(['zh-CN', 'en-US'] as const)('rechecks public submission results through
   await type('delete'); await submit()
   expect(postJson.mock.calls[2]?.[1].previewId).toBe('reconciled-digest')
 })
+
+
+it('repreviews a submission that starts after the shown preview instead of leaving confirmation enabled', async () => {
+  postJson.mockResolvedValueOnce(preview({ drafts: { pending: 1, submitted: 0, submitting: 0, unknown: 0 } }))
+    .mockRejectedValueOnce(new ApiError('submission started', 409, '{"code":"hard_delete_draft_submitting"}'))
+    .mockResolvedValueOnce(preview({ preview_id: 'now-submitting', drafts: { pending: 0, submitted: 0, submitting: 1, unknown: 0 } }))
+  await open(); await type('delete'); await submit()
+  expect(postJson).toHaveBeenCalledTimes(3)
+  expect(dialog().querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!.value).toBe('')
+  expect(disabled()).toBe(true)
+  expect(dialog().querySelector('[data-drafts-submitting]')!.textContent).toContain('1 份公开草稿正在提交')
+  expect(dialog().querySelector('[data-drafts-recheck]')).not.toBeNull()
+})

@@ -12,6 +12,7 @@ from .auth import (
 )
 from .config import Settings, get_settings
 from .temporary_project_scope import TemporaryProjectEnsure, ensure_temporary_project
+from .publication_submission_models import PublicationSubmissionDecision
 from .graph_models import GraphResult
 from .knowledge_usage_models import KnowledgeUsageCreate, KnowledgeUsageResult
 from .knowledge_feedback_models import (
@@ -100,7 +101,6 @@ from .models import (
     ProjectDeleteResult,
     ProjectReleaseRecord,
     PublicationDraftCreate,
-    PublicationDraftDecision,
     PublicationDraftRecord,
     ProposalCreate,
     ProposalDecision,
@@ -382,8 +382,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
         draft_status: Annotated[str, Query(alias='status')] = 'pending',
+        metadata_only: bool = False,
     ) -> list[PublicationDraftRecord]:
-        return await store.list_publication_drafts(actor, personal_space_id, draft_status)
+        return await store.list_publication_drafts(actor, personal_space_id, draft_status, metadata_only)
 
     @application.get(
         '/v1/publication-drafts/{draft_id}',
@@ -402,7 +403,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def decide_publication_draft(
         draft_id: str,
-        request: PublicationDraftDecision,
+        request: PublicationSubmissionDecision,
         actor: Actor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
     ) -> PublicationDraftRecord:
@@ -925,6 +926,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         proposal_status: Annotated[str, Query(alias='status')] = 'pending',
     ) -> list[ProposalRecord]:
         return await store.list_proposals(actor, project_id, proposal_status)
+
+    @application.get('/v1/projects/{project_id}/proposals/lookup')
+    async def lookup_proposal(
+        project_id: str,
+        actor: Actor,
+        idempotency_key: Annotated[str, Query(min_length=1, max_length=256)],
+    ) -> dict | None:
+        return await store.lookup_proposal(actor, project_id, idempotency_key)
 
     @application.post(
         '/v1/projects/{project_id}/proposals/{proposal_id}/decision',

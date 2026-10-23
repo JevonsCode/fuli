@@ -711,7 +711,7 @@ class PublicationDraftRecord(StrictModel):
     personal_space_id: str
     target_project_id: str
     provider_url: str
-    status: Literal['pending', 'submitted', 'kept_personal', 'ignored', 'source_deleted']
+    status: Literal['pending', 'submitting', 'submission_unknown', 'submitted', 'kept_personal', 'ignored', 'source_deleted']
     episode: StructuredEpisode | None
     source_identity: dict[str, str] = Field(default_factory=dict)
     payload_scrubbed_by: str | None = None
@@ -719,6 +719,11 @@ class PublicationDraftRecord(StrictModel):
     created_at: datetime
     decided_at: datetime | None = None
     shared_proposal_id: str | None = None
+    submission_id: str | None = None
+    submission_started_at: datetime | None = None
+    submission_unknown_at: datetime | None = None
+    last_submission_error: dict[str, str] | None = None
+    submission_outcome: Literal['unknown'] | None = None
 
 
 class PublicationDraftDecision(StrictModel):
