@@ -32,6 +32,17 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+// The API's own { "code": "…" } for a request it refused, else null.
+export function apiErrorCode(error: unknown): string | null {
+  if (!(error instanceof ApiError) || !error.detail) return null
+  try {
+    const code = (JSON.parse(error.detail) as { code?: unknown })?.code
+    return typeof code === 'string' ? code : null
+  } catch {
+    return null
+  }
+}
+
 // Why a request failed, in words: the API's own { "error": "…" } text for a
 // request it refused, otherwise the error's message.
 export function apiErrorReason(error: unknown, fallback = t('common.errors.operationFailed')): string {

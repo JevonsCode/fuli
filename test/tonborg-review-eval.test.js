@@ -11,7 +11,7 @@ import { buildSets, normalizedText } from '../acceptance/tonborg-review-eval/cas
 import { createLocalOllamaTransport, localOnlyFetch } from '../acceptance/tonborg-review-eval/local-ollama-transport.js';
 import { createReviewPath } from '../acceptance/tonborg-review-eval/review-path.js';
 import { compactRow } from '../acceptance/tonborg-review-eval/run.js';
-import { perCaseTable, scoreResults } from '../acceptance/tonborg-review-eval/score.js';
+import { holdoutEvaluation, perCaseTable, scoreResults } from '../acceptance/tonborg-review-eval/score.js';
 import { OUTCOME_VIEWS, SCORING_CONTRACT, preGateHostOutcome, readResults, scoreSet } from '../acceptance/tonborg-review-eval/scoring.js';
 import { openAiStream } from './fixtures/model-transport.js';
 
@@ -172,6 +172,10 @@ test('results name their scoring contract; older results are read as contract 1 
   assert.match(summary.scoringContract.note, /counterfactual/);
   assert.deepEqual(Object.keys(summary.dev), ['modelOutcome', 'preGateHostOutcome', 'recordedOutcome', 'latency']);
   assert.deepEqual([summary.dev.preGateHostOutcome.agreement.perRun, summary.dev.recordedOutcome.agreement.perRun], [[1], [0]]);
+  // What --record keeps for the settings page (rec#10 D-36.6): the holdout's model agreement, its set, day and model.
+  assert.deepEqual(holdoutEvaluation(summary, { model: 'synthetic-model', evaluatedAt: '2026-10-22T08:00:00.000Z' }),
+    { role: 'tonborg', operation: 'knowledge_review', model: 'synthetic-model', set: 'tonborg-review-eval/holdout',
+      evaluatedAt: '2026-10-22T08:00:00.000Z', agreed: 1, total: 1 });
   const table = perCaseTable([labels[0]], current('A'));
   assert.match(table, /^Scoring contract 2: /);
   assert.ok(table.includes('| modelOutcome per run | preGateHostOutcome per run | recordedOutcome per run | interceptions per run |'));

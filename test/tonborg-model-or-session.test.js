@@ -8,17 +8,17 @@ import { callAgentTool } from '../src/agent-tools.js';
 import { roleWorkSessions } from '../src/graphiti/role-work-sessions.js';
 import { createJudgmentBackend } from '../src/judgment/backend.js';
 import { createJudgmentEngine } from '../src/judgment/engine.js';
-import { createReviewGate } from '../src/judgment/review-gate.js';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
+import { createRoleTrust } from '../src/model-backends/role-trust.js';
+import { WARNING_VERSION } from './fixtures/model-trust.js';
 import { createRoleWorkBridge } from '../src/model-backends/role-work.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
 import { openAiStream } from './fixtures/model-transport.js';
-import { gateEntry, reviewGateWith } from './fixtures/review-gate.js';
 
 // rec#8 T1-T5 and C1-C13 for Tonborg through its production interfaces:
 // the judgment service, the model port with a fake transport, and the
@@ -35,9 +35,15 @@ const SESSIONS = {
   'token-q': { sessionId: 'session-q', personalProjectId: 'q', projectAgentId: 'lead', sourceApplication: 'codex' }
 };
 // These tests are about who answers and how a write survives retries and
-// restarts, so the review gate (rec#10 D-24, test/tonborg-review-gate.test.js)
+// restarts, so the trust gate (rec#10 D-36, test/tonborg-model-trust.test.js)
 // lets every answer apply unless a test asks for the production gate.
-const UNGATED = { status: key => ({ status: 'passed', reason: null, ...key }) };
+const UNGATED = () => ({ status: key => ({ status: 'passed', reason: null, modelId: key.model }), commit: (key, write) => write() });
+// The production gate over the harness's model port; acknowledged: the person saw the warning.
+const productionTrust = ({ acknowledged }) => port => {
+  const trust = createRoleTrust({ modelBackends: port });
+  if (acknowledged) trust.acknowledgeWarning('tonborg', WARNING_VERSION, 0);
+  return trust;
+};
 const reviewInput = { personalSpaceId: 's', personalProjectId: 'p', requestId: 'review-1', limit: 10 };
 const verdict = (extra = {}) => ({ target: 'entity:one', outcome: 'approve', summary: 'Confirmed routine command', evidence: ['npm test'], confidence: 0.95, ...extra });
 // evidenceIds name parts of the judgment data: candidates for a review,
@@ -46,7 +52,7 @@ const answer = (payload, evidenceIds = ['candidates']) => ({ decision: 'propose'
 const reply = (payload, evidenceIds) => openAiStream(JSON.stringify(answer(payload, evidenceIds)));
 
 // tags: what the fake local Ollama lists at /api/tags; without it the route is missing.
-function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()] }), policy = {}, reviewGate = UNGATED, tags = null } = {}) {
+function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()] }), policy = {}, trust = UNGATED, tags = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fuli-tonborg-'));
   const clock = { at: Date.parse('2026-10-20T12:00:00.000Z') };
   const now = () => new Date(clock.at);
@@ -64,7 +70,7 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
       calls.push(JSON.parse(init.body));
       return replies(calls.length);
     } });
-  const app = { config: { personal: { spaceId: 's' } },
+  const app = { config: { personal: { spaceId: 's' } }, getCapturePolicy: () => ({ enabled: true }),
     listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
     getCollaborationPreferences: async () => completePreferences(),
@@ -91,6 +97,7 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
       verified_attempt: { attempt_id: 'attempt', artifact_revision: 'artifact-a', outcome: 'pass', verifier_id: 'reviewer', run_id: 'run', evidence_refs: ['report'] } }),
     recordProjectAgentTaskActivity: async value => { completions.push(value); task.status = 'completed'; return { ...task }; }
   };
+  const roleTrust = trust(port);
   const open = () => {
     const bridge = createRoleWorkBridge({ port, store: new RoleWorkStore(join(dir, 'role-work.sqlite'), { recoveryGate: { state: () => ({ state: 'open' }) } }),
       verifySession: roleWorkSessions(app), resumers: { tonborg: work => app.judgment.resumeWork(work) }, now });
@@ -100,7 +107,7 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
     };
     app.roleWork = bridge;
     app.judgment = createJudgmentService({ app, openStore: () => new JudgmentStore(join(dir, 'judgment.sqlite'), { recoveryGate: { state: () => ({ state: 'open' }) } }),
-      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge, legacy }), reviewGate }) });
+      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge, legacy }), trust: roleTrust }) });
   };
   const close = () => { app.judgment.close(); app.roleWork.close(); };
   open();
@@ -145,14 +152,14 @@ const claimAndSubmit = async (h, token, payload, evidenceIds) => {
     leaseToken: workPackage.lease.token, answer: answer(payload, evidenceIds), usage: { inputTokens: 900, outputTokens: 40 } }) };
 };
 
-test('T1: a configured model gives a bounded decision on exact candidate keys; until its build is unlocked it is only a suggestion', async t => {
-  const h = harness(t, { roles: { tonborg: tonborg() }, reviewGate: createReviewGate() });
+test('T1: a configured model gives a bounded decision on exact candidate keys; before the person saw the warning it is only a suggestion', async t => {
+  const h = harness(t, { roles: { tonborg: tonborg() }, trust: productionTrust({ acknowledged: false }) });
   const [record] = (await h.app.judgment.review(reviewInput)).records;
   assert.equal(h.calls.length, 1);
   assert.equal(record.outcome, 'escalate');
   assert.deepEqual([record.aiReview.state, record.aiReview.modelOutcome], ['ai_suggested', 'approve']);
-  // The port reports no served digest, so no registry entry can match this build.
-  assert.equal(record.aiReview.gate.reason, 'model_build_unknown');
+  // rec#10 D-36.11: until the warning is acknowledged on the settings page, the first execution is a suggestion.
+  assert.deepEqual([record.aiReview.gate.reason, record.aiReview.gate.modelId], ['warning_not_seen', 'qwen-test']);
   assert.equal(record.execution.status, 'not_applied');
   assert.deepEqual(record.judgedBy, { mode: 'model_api', independent: true });
   assert.equal(record.client, null);
@@ -164,26 +171,24 @@ test('T1: a configured model gives a bounded decision on exact candidate keys; u
   assert.equal(h.legacyRuns.length, 0);
 });
 
-test('T1: a local build observed after the answer never reaches the receipt, the record or the gate; D-24 stays model_build_unknown (D-32)', async t => {
+test('T1: a local build observed after the answer never reaches the receipt, the record or the gate (D-32)', async t => {
   const observed = '1'.repeat(64);
-  // Even a registry entry naming exactly the observed build cannot match it.
-  const h = harness(t, { roles: { tonborg: tonborg() },
-    reviewGate: reviewGateWith(gateEntry({ modelId: 'qwen-test', modelDigest: observed })),
+  const h = harness(t, { roles: { tonborg: tonborg() }, trust: productionTrust({ acknowledged: true }),
     tags: { models: [{ name: 'qwen-test', model: 'qwen-test', digest: observed }] },
     replies: () => openAiStream(JSON.stringify(answer({ decisions: [verdict()] })), { model: 'qwen-test' }) });
   const [record] = (await h.app.judgment.review(reviewInput)).records;
   // The observation was made and kept for Settings only.
   assert.deepEqual(h.ledger.db.prepare('SELECT observed_tag_digest AS digest FROM model_attempts').all().map(row => row.digest), [observed]);
-  assert.deepEqual([record.aiReview.state, record.aiReview.modelOutcome], ['ai_suggested', 'approve']);
-  assert.deepEqual([record.aiReview.gate.status, record.aiReview.gate.reason, record.aiReview.gate.modelId, record.aiReview.gate.modelDigest],
-    ['not_passed', 'model_build_unknown', 'qwen-test', null]);
+  // The configured model is trusted (rec#10 D-36.5); the gate names the model, never a build.
+  assert.deepEqual([record.aiReview.state, record.aiReview.modelOutcome], ['ai_reviewed', 'approve']);
+  assert.deepEqual(record.aiReview.gate, { status: 'passed', reason: null, modelId: 'qwen-test' });
   assert.equal(Object.hasOwn(record.modelReceipt, 'modelDigest'), false);
   assert.equal(JSON.stringify(record).includes(observed), false);
   const stored = h.app.judgment.store().db.prepare('SELECT body FROM judgment_records').all().map(row => row.body);
   assert.equal(stored.length, 1);
   assert.equal(stored.some(body => body.includes(observed)), false);
-  assert.equal(record.execution.status, 'not_applied');
-  assert.equal(h.writes.length, 0);
+  assert.equal(record.execution.status, 'applied');
+  assert.equal(JSON.stringify(h.writes).includes(observed), false);
 });
 
 test('T2: conflicting or negative evidence escalates even when the model is confident', async t => {

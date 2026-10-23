@@ -3,11 +3,17 @@
 // (rec#26): summary.json and a per-case table. Run it only after the labels
 // were committed; it never changes a label or a result.
 //
-//   node acceptance/tonborg-review-eval/score.js --results <outputs dir> --labels <labels/cl-labels.json>
+//   node acceptance/tonborg-review-eval/score.js --results <outputs dir> --labels <labels/cl-labels.json> \
+//     [--record <data dir>/model-evaluations.json]
+//
+// --record adds the holdout's model agreement to that FULI data file, which the
+// model settings page shows beside Tonborg's model (rec#10 D-36.6). It changes
+// what the page says only: no result unlocks or blocks anything.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { recordEvaluation } from '../../src/model-backends/evaluation-record.js';
 import { isMainModule } from '../../src/system/main-module.js';
 import { OUTCOME_VIEWS, latencyProfile, readResults, scoreSet, validRuns } from './scoring.js';
 
@@ -42,8 +48,16 @@ export function scoreResults(labels, sets, runs) {
   return summary;
 }
 
+// The evaluation record of one scored holdout: the model's own verdicts against the labels, every run.
+export function holdoutEvaluation(summary, { model, evaluatedAt }) {
+  const { agreement } = summary.holdout.modelOutcome;
+  return { role: 'tonborg', operation: 'knowledge_review', model, set: 'tonborg-review-eval/holdout', evaluatedAt,
+    agreed: agreement.perRun.reduce((sum, agreed) => sum + agreed, 0), total: agreement.cases * agreement.perRun.length };
+}
+
 function main() {
-  const { values } = parseArgs({ options: { results: { type: 'string' }, labels: { type: 'string' }, runs: { type: 'string', default: '3' } } });
+  const { values } = parseArgs({ options: { results: { type: 'string' }, labels: { type: 'string' }, runs: { type: 'string', default: '3' },
+    record: { type: 'string' } } });
   if (!values.results || !values.labels) throw new TypeError('--results and --labels are required');
   const runs = validRuns(Number(values.runs));
   const labels = JSON.parse(readFileSync(values.labels, 'utf8')).cases;
@@ -54,6 +68,11 @@ function main() {
     `## ${set}\n\n${perCaseTable(labels.filter(label => label.set === set), results)}`);
   writeFileSync(join(values.results, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
   writeFileSync(join(values.results, 'per-case-table.md'), `# Per-case outcomes\n\n${tables.join('\n')}`);
+  if (values.record) {
+    const read = name => JSON.parse(readFileSync(join(values.results, name), 'utf8'));
+    recordEvaluation(values.record, holdoutEvaluation(summary, { model: read('model.json').model.name,
+      evaluatedAt: read('run-meta.json').finishedAt }));
+  }
   for (const set of Object.keys(sets)) {
     const { modelOutcome: model, latency, ...views } = summary[set];
     console.log(set, JSON.stringify({ contract: summary.scoringContract.version, modelOutcomeAgreement: model.agreement,

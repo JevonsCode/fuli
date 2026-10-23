@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { createJudgmentEngine, fingerprint } from '../src/judgment/engine.js';
-import { FIXTURE_BUILD, gateEntry, reviewGateWith } from './fixtures/review-gate.js';
+import { MODEL_ANSWER, trustedTonborg } from './fixtures/model-trust.js';
 import { getCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
 
@@ -17,7 +17,7 @@ const acceptance = { personalSpaceId: 's', personalProjectId: 'p', requestId: 'a
 function fixture(t, preferences) {
   const prompts = [], requests = [], writes = [];
   const task = { taskId: 't', personalProjectId: 'p', leadAgentId: 'lead', status: 'awaiting_review', revision: 2, title: 'Release notes', objective: 'Publish release notes' };
-  const app = { config: { personal: { spaceId: 's' } }, listPersonalProjects: async () => [{ project_id: 'p' }],
+  const app = { config: { personal: { spaceId: 's' } }, getCapturePolicy: () => ({ enabled: true }), listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
     employees: { authorize: async () => ({}) },
     getCollaborationPreferences: async request => {
@@ -45,10 +45,10 @@ function fixture(t, preferences) {
       ? { decisions: data.candidates.map(c => ({ target: c.candidate_key, outcome: 'approve', summary: 'Routine', evidence: ['Scoped content'], confidence: 0.95 })) }
       : data.eligible ? { executorId: 'worker', model: 'model', disposition: 'delegate', conversationId: null, summary: 'Bounded work', evidence: ['Eligible'] }
         : { outcome: 'approve', summary: 'Verified', evidence: ['report'], confidence: 0.95 };
-    // The review write-back cases need the fixture build unlocked (rec#10 D-24).
-    return { client: 'codex', body: JSON.stringify(body), model: FIXTURE_BUILD.model, modelReceipt: { modelDigest: FIXTURE_BUILD.modelDigest } };
+    // The review write-back cases need Tonborg's configured model trusted (rec#10 D-36).
+    return { ...MODEL_ANSWER, client: 'codex', body: JSON.stringify(body) };
   };
-  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge, reviewGate: reviewGateWith(gateEntry()) }) });
+  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge, trust: trustedTonborg() }) });
   service.store().setPolicy('s', '', { mode: 'shared', quality: 'quality', client: 'codex' }, 0);
   t.after(() => service.close());
   const judged = () => JSON.parse(prompts.at(-1).split('\nDATA:\n')[1]).preferences;

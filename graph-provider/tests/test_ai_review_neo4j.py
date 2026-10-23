@@ -524,3 +524,38 @@ async def test_real_neo4j_person_undoes_an_ai_review_and_an_agent_cannot():
         assert history['decision']['outcome'] == 'ai_reviewed'
         again = await _withdraw(client, space_id, run['review_id'], candidate, headers=human)
         assert again.status_code == 409, again.text
+        assert again.json()['detail']['code'] == 'ai_review_changed'
+
+
+@pytest.mark.asyncio
+async def test_real_neo4j_undo_never_overwrites_a_later_edit_or_recreates_a_missing_item():
+    """rec#10 D-36.12: an undo after the person edited the item (a new
+    version) is refused as changed and leaves both versions as they are; an
+    undo of an item that no longer exists is refused as deleted and creates
+    nothing."""
+
+    settings = fixture_settings().model_copy(update={'human_review_token': _REVIEW_TOKEN})
+    suffix = uuid4().hex
+    human = {'x-fuli-human-review-token': _REVIEW_TOKEN}
+
+    async with provider_client(settings, raise_app_exceptions=True) as (client, _):
+        space_id, project_id, item_id = await _create_review_fixture(client, suffix)
+        run = await _start_tonborg_review(client, space_id, project_id)
+        candidate = await _read_candidate(client, space_id, run['review_id'], item_id)
+        _require_status(await _post_ai_review_progress(client, space_id, run['review_id'], candidate))
+        version_id = (await _revise_summary(client, space_id, project_id, item_id,
+                                            'The person edited this after the review.',
+                                            'Synthetic edit after the AI review.'))['version_item_id']
+        edited = await _read_graph_node(client, space_id, project_id, version_id)
+
+        refused = await _withdraw(client, space_id, run['review_id'], candidate, headers=human)
+        assert refused.status_code == 409, refused.text
+        assert refused.json()['detail']['code'] == 'ai_review_changed'
+        assert await _read_graph_node(client, space_id, project_id, version_id) == edited
+
+        missing = dict(candidate, candidate_key=f'entity:missing-{suffix}')
+        gone = await _withdraw(client, space_id, run['review_id'], missing, headers=human)
+        assert gone.status_code == 404, gone.text
+        assert gone.json()['detail']['code'] == 'ai_review_deleted'
+        graph = _require_status(await client.get(f'/v1/spaces/{space_id}/graph'))
+        assert all(node['id'] != f'missing-{suffix}' for node in graph['nodes'])

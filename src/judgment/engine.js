@@ -14,8 +14,7 @@ import { jsonSchemaToZod } from '../mcp/tool-schema.js';
 import { PREFERENCE_RECEIPT_VERSION, preferenceDeliveryRecord, preferenceHold,
   readJudgmentPreferences } from './preference-receipt.js';
 import { REVIEW_EXAMPLE, reviewInstructions } from './review-prompt.js';
-import { reviewGateKey } from './review-build.js';
-import { createReviewGate } from './review-gate.js';
+import { automaticWriteDecision } from '../graphiti/capture-decision.js';
 
 const id = z.string().min(1).max(256);
 const reviewInput = z.object({ personalSpaceId: id, personalProjectId: id.nullable().optional(), requestId: id,
@@ -30,9 +29,17 @@ const SETTLED = Object.freeze(['applied', 'stale', 'failed', 'undone']);
 const REVIEW_CONFIDENCE_FLOOR = 0.85;
 const policyVersion = p => `${PREFERENCE_RECEIPT_VERSION}:${p.revision}:${p.globalRevision}:${p.mode}:${p.quality}:${p.client}`;
 
-// reviewGate: which model builds may apply a review without the person
-// (review-gate.js, rec#10 D-24); without one, every review is a suggestion.
-export function createJudgmentEngine({ app, judge = createJudgmentBackend(), reviewGate = createReviewGate() } = {}) {
+// trust: whether Tonborg's configured model may apply a review by itself
+// (src/model-backends/role-trust.js, rec#10 D-36); without one, every review
+// is a suggestion.
+export function createJudgmentEngine({ app, judge = createJudgmentBackend(), trust = null } = {}) {
+  // The capture switch is part of the gate (rec#10 D-36.7): while recording is
+  // off for the review's scope, a trusted model's approval is a suggestion too.
+  const gateOf = key => {
+    const gate = trust ? trust.status(key) : { status: 'not_passed', reason: 'not_configured', modelId: key.model };
+    if (gate.status !== 'passed' || automaticWriteDecision(app, key.scope.personalProjectId).allowed) return gate;
+    return { ...gate, status: 'not_passed', reason: 'capture_off' };
+  };
   // Every judgment call carries its bounded instructions, data and answer
   // schema, plus the prompt an opted-in legacy CLI client reads.
   const decide = async call => judgmentAnswer(await judge({ ...call, client: call.policy.client, quality: call.policy.quality,
@@ -115,7 +122,8 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), rev
           records.push(store.record(space, { personalProjectId: project || null, kind: 'review', target: 'review', title: 'Tonborg review',
             ...pendingRecord(answer), policy }, `pending:${answer.pending.packageId}`));
         }
-        const gate = answer.pending ? null : reviewGate.status(answerBuild(answer));
+        const trustKey = answer.pending ? null : reviewTrustKey(answer, { personalSpaceId: space, personalProjectId: project || null });
+        const gate = trustKey && gateOf(trustKey);
         for (const decision of answer.pending ? [] : reviewDecisions(answer.value, schema, candidates)) {
           const candidate = candidates.find(c => c.candidate_key === decision.target);
           // The person may have permanently deleted it while the model answered (rec#5 C9).
@@ -143,12 +151,18 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), rev
             } else {
               try {
                 await authorize(input, policy);
-                // The person may remove the build's entry while this batch runs, so the gate is read again
-                // right before each write; a refusal is stale and the next review makes it a suggestion.
-                if (reviewGate.status(answerBuild(answer)).status !== 'passed') throw Object.assign(new Error('gate_not_passed'), { status: 409, code: 'gate_not_passed' });
-                // The intent is stored before the Provider write, so a restart settles it (rec#8 C11).
-                record = store.execute(space, record.id, 'applying', { reviewId: run.review_id, candidateKey: decision.target,
-                  aiReviewEvidenceToken: candidate.ai_review_evidence_token }, lease);
+                // rec#10 D-36.11: the role's mode, model and egress approval and the capture switch are read
+                // again under the trust store's lock, and the write intent is stored inside it, so a switch to
+                // 「只给建议」 while this batch ran stops every write whose intent is not stored yet. A refusal
+                // is stale and the next review makes it a suggestion. The intent is stored before the
+                // Provider write, so a restart settles it (rec#8 C11).
+                if (!trust) throw Object.assign(new Error('not_configured'), { status: 409, code: 'not_configured' });
+                record = trust.commit(trustKey, () => {
+                  const capture = automaticWriteDecision(app, project || null);
+                  if (!capture.allowed) throw Object.assign(new Error(capture.reason), { status: 409, code: 'capture_off' });
+                  return store.execute(space, record.id, 'applying', { reviewId: run.review_id, candidateKey: decision.target,
+                    aiReviewEvidenceToken: candidate.ai_review_evidence_token }, lease);
+                });
                 const receipt = await app.recordKnowledgeReviewProgress({ personalSpaceId: space, reviewId: run.review_id,
                   candidateKey: decision.target, outcome: 'ai_reviewed', aiReviewEvidenceToken: candidate.ai_review_evidence_token,
                   aiAssessment: { outcome: 'approve', summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
@@ -248,17 +262,21 @@ function reviewDecisions(value, schema, candidates) {
   return decisions;
 }
 
-// The build that answered, keyed as the review gate keys it (reviewGateKey).
-function answerBuild(answer) {
-  return reviewGateKey({ modelId: answer.model ?? null, modelDigest: answer.modelReceipt?.modelDigest ?? null });
+// What the trust gate asks about an answer: the configured model that gave
+// it, or none when the current session or a legacy CLI answered.
+function reviewTrustKey(answer, scope) {
+  const model = answer.judgedBy?.mode === 'model_api' ? answer.modelReceipt?.requestedModel ?? null : null;
+  return { role: 'tonborg', operation: TONBORG_OPERATIONS.review, model, scope };
 }
 
-// rec#10 D-24: what the host does with one review verdict. The model's own
+// rec#10 D-24, D-36: what the host does with one review verdict. The model's own
 // outcome is kept as it answered; each reason the host stopped an approval
 // from applying is listed beside it. Only an approval with no such reason is
 // applied as ai_reviewed; anything else is ai_suggested, which the person
 // decides. A manual policy keeps the approval as the outcome it shows but
-// still applies nothing.
+// still applies nothing. gate_not_passed keeps its D-24 name (the evaluation
+// harness scores by it); since D-36 it means the role trust gate refused, and
+// gate.reason says why.
 function reviewDisposition(decision, { protectedItem, gate, policy }) {
   const interceptions = decision.outcome !== 'approve' ? [] : [
     ...(protectedItem ? ['needs_attention'] : []),

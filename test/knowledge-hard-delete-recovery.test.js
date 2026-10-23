@@ -15,6 +15,7 @@ import { HARD_DELETE_LEDGER_FILE, deletedKnowledgeBeside, hardDeleteLedger } fro
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { PREVIEW_ID, syntheticGraph } from '../test-support/hard-delete-graph.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
+import { MODEL_ANSWER, trustedTonborg } from './fixtures/model-trust.js';
 
 // rec#5 C9, dot's review of #273: a delete whose answer is lost or whose
 // console crashes is settled from its recorded operation and cleaned up to
@@ -187,10 +188,12 @@ test('an abort that wins proves nothing was deleted, and a delete that arrives a
   assert.equal(graph.operations.get(operation.id).state, 'aborted');
 });
 
+// Tonborg's configured model is trusted (rec#10 D-36.7): the fence holds all the same.
 test('a Tonborg review that was answering when the person deleted never records the deleted words', async (t) => {
   const dataDir = dataDirectory(t);
   const candidates = [{ candidate_key: 'entity:item-2', title: `Deploy with ${PASTED}`, content: PASTED,
     confirmation_status: 'confirmed', changed_at: '2026-01-01', reasons: [], project_ids: ['p'] }];
+  const writes = [];
   const app = { config: { personal: { spaceId: SPACE } },
     listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'],
@@ -200,21 +203,23 @@ test('a Tonborg review that was answering when the person deleted never records 
     employees: { authorize: async () => ({}) }, personal: {},
     startKnowledgeReview: async () => ({ review_id: 'review' }), finishKnowledgeReview: async () => ({}),
     listKnowledgeReviewCandidates: async () => ({ candidates, total_candidate_count: candidates.length }),
-    recordKnowledgeReviewProgress: async () => ({ outcome: 'ai_reviewed' }), listExecutors: async () => [] };
+    getCapturePolicy: () => ({ enabled: true }),
+    recordKnowledgeReviewProgress: async (input) => { writes.push(input); return { outcome: 'ai_reviewed' }; }, listExecutors: async () => [] };
   // Barrier: the person deletes the item, and the cleanup finishes, while the model answers.
   const judge = async () => {
     const deleted = await knowledgeHardDelete(dataDir, { send: syntheticGraph().send }).confirm(CONFIRM);
     assert.equal(deleted.outcome, 'complete');
     return { body: JSON.stringify({ decisions: [{ target: 'entity:item-2', outcome: 'approve',
-      summary: `Keep ${PASTED}`, evidence: [`said ${PASTED}`], confidence: 0.95 }] }), client: 'codex', model: null,
+      summary: `Keep ${PASTED}`, evidence: [`said ${PASTED}`], confidence: 0.95 }] }), ...MODEL_ANSWER, client: 'codex',
     sessionId: 'synthetic-session' };
   };
-  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge }),
+  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge, trust: trustedTonborg() }),
     openStore: () => new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate }) });
   t.after(() => service.close());
   service.store().setPolicy(SPACE, '', { mode: 'shared', quality: 'quality', client: 'codex' }, 0);
   const result = await service.review({ personalSpaceId: SPACE, personalProjectId: 'p', requestId: 'barrier-1', limit: 10 });
   assert.equal(result.records.some((record) => record.target === 'entity:item-2'), false);
+  assert.deepEqual(writes, []);
   service.close();
   assert.deepEqual(storesHold(dataDir), []);
 });
