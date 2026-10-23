@@ -16,7 +16,7 @@ import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { isMainModule } from '../../src/system/main-module.js';
 import { OLLAMA_ORIGIN, localOnlyFetch } from './local-ollama-transport.js';
 import { createReviewPath } from './review-path.js';
-import { validRuns } from './scoring.js';
+import { SCORING_CONTRACT, preGateHostOutcome, validRuns } from './scoring.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const OUTCOMES = new Set(['approve', 'escalate']);
@@ -24,17 +24,13 @@ const OUTCOMES = new Set(['approve', 'escalate']);
 export function compactRow({ blindId, set, run }, review) {
   const verdict = review.modelVerdict;
   const valid = review.receipt?.status === 'completed' && Boolean(verdict) && OUTCOMES.has(review.record?.modelOutcome);
-  return { blindId, set, run, valid, modelOutcome: valid ? review.record.modelOutcome : null, effectiveOutcome: valid ? hostOutcome(review.record) : null,
-    interceptions: review.record?.interceptions ?? [],
+  return { blindId, set, run, valid, modelOutcome: valid ? review.record.modelOutcome : null,
+    preGateHostOutcome: valid ? preGateHostOutcome(review.record.modelOutcome, review.record.interceptions) : null,
+    recordedOutcome: valid ? review.record.outcome : null, interceptions: review.record?.interceptions ?? [],
     confidence: verdict?.confidence ?? null, receiptStatus: review.receipt?.status ?? null, receiptReason: review.receipt?.reason ?? null,
     recordError: review.record?.error ?? null, attempts: review.receipt?.attempts ?? 0, durationMs: review.receipt?.durationMs ?? review.wallMs,
     inputTokens: review.receipt?.usage?.inputTokens ?? null, outputTokens: review.receipt?.usage?.outputTokens ?? null };
 }
-
-// The host's own rules (confidence under 0.85, attention) without the D-24
-// gate: the gate is what this evaluation decides, so it is not scored.
-const NOT_SCORED = new Set(['gate_not_passed', 'manual_policy']);
-const hostOutcome = record => record.interceptions.some(reason => !NOT_SCORED.has(reason)) ? 'escalate' : record.modelOutcome;
 
 async function main() {
   const { values } = parseArgs({ options: { cases: { type: 'string' }, out: { type: 'string' }, model: { type: 'string', default: 'qwen3.5:4b' },
@@ -67,7 +63,7 @@ async function main() {
           const row = compactRow({ blindId, set, run }, review);
           rows[set].push(row);
           writeJson(join(values.out, 'raw', set, blindId, `run-${run}.json`), { blindId, set, run, requestId, startedAt: startedCall, ...review });
-          process.stdout.write(`run ${run} ${set} ${blindId} ${row.receiptStatus} model=${row.modelOutcome} host=${row.effectiveOutcome} `
+          process.stdout.write(`run ${run} ${set} ${blindId} ${row.receiptStatus} model=${row.modelOutcome} preGate=${row.preGateHostOutcome} recorded=${row.recordedOutcome} `
             + `conf=${row.confidence} ${row.durationMs}ms\n`);
         }
       }
@@ -75,7 +71,7 @@ async function main() {
   } finally {
     path.close();
   }
-  for (const set of sets) writeJson(join(values.out, `results-${set}.json`), rows[set]);
+  for (const set of sets) writeJson(join(values.out, `results-${set}.json`), { scoringContract: SCORING_CONTRACT, rows: rows[set] });
   const loaded = await ollama('/api/ps');
   writeJson(join(values.out, 'run-meta.json'), { startedAt, finishedAt: new Date().toISOString(), node: process.version,
     ollamaLoaded: loaded.models?.filter(entry => entry.name === values.model).map(({ name, digest, context_length, size_vram }) =>
