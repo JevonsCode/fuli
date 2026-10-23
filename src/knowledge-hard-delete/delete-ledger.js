@@ -22,6 +22,10 @@ import { knowledgeReferences } from './forget-references.js';
 // inside its own transaction (judgment.sqlite, role-work.sqlite): words that
 // name a deleted item, or one being deleted, are never stored again, even by
 // work that started before the delete. A refused delete leaves the fence.
+// role-suggestions.sqlite names no item, so it keeps no words at all while a
+// delete in the same space is open, or for an answer whose evidence was read
+// before a delete of the space began; each delete's cleanup there is bound to
+// its recorded deletedAt.
 
 export const HARD_DELETE_LEDGER_FORMAT = jsonFormat({ store: 'knowledge-hard-deletes', versions: [1] });
 export const HARD_DELETE_LEDGER_FILE = 'knowledge-hard-deletes.json';

@@ -3,6 +3,8 @@ import { TASK_ENTRY_BOARD_LIMIT } from '../employees/task-entry.js';
 import { projectApproved } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
 import { singleLine } from '../text/single-line.js';
+import { taskCaptureScope } from './capture-decision.js';
+import { prepareRoleSuggestionNote, suggestionDeletionGeneration } from './role-suggestion-note.js';
 
 // Jefa's board match at task entry (rec#8, rec#10 D-26). Once the host has
 // authorized the task's project for Jefa and read its board, Jefa's own model
@@ -44,10 +46,12 @@ export async function withBoardMatch(application, entry, { sessionId, sourceAppl
   const manager = managers.find(candidate => candidate.template_id === ROLE);
   if (!project || manager?.personal_project_id !== project || !manager.board?.items?.length
     || !entry.task_context_token || entry.resumed_checkpoint) return entry;
-  const task = { token: entry.task_context_token, sessionId, sourceApplication, project };
+  const task = { token: entry.task_context_token, sessionId, sourceApplication, project,
+    conversationId: entry.conversation?.conversation_id ?? null };
   const hint = await suggestBoardMatch(application, task, manager, taskPrompt);
-  return hint ? { ...entry, project_management_context: { ...entry.project_management_context,
-    managers: managers.map(candidate => candidate === manager ? { ...manager, suggested_match: hint } : candidate) } } : entry;
+  if (!hint) return entry;
+  return { ...entry, project_management_context: { ...entry.project_management_context,
+    managers: managers.map(candidate => candidate === manager ? { ...manager, suggested_match: hint } : candidate) } };
 }
 
 async function suggestBoardMatch(application, task, manager, taskPrompt) {
@@ -59,6 +63,8 @@ async function suggestBoardMatch(application, task, manager, taskPrompt) {
   if (!settings || !projectApproved(settings.egress, spaceId, task.project)) return null;
   // The claim comes first: a none, a stop or a failure uses it up too.
   if (!await application.taskContextRegistry.claimSessionHint(task.token, OPERATION, task.sourceApplication).catch(() => false)) return null;
+  // Before the evidence is read: a permanent delete after this keeps the hint's words out of its console copy.
+  const deletionGeneration = suggestionDeletionGeneration(application, spaceId);
   // The entry's board view omits summaries; read the same window through the
   // employee gates again for the evidence.
   const listed = projectTasks(await readBoard(application, manager, task).catch(() => []), task.project);
@@ -69,19 +75,30 @@ async function suggestBoardMatch(application, task, manager, taskPrompt) {
   if (outcome.modelReceipt.status === 'not_configured') return null;
   const receipt = { requestId: request.requestId, evidenceVersion: request.versions.evidence, promptVersion: PROMPT_VERSION,
     gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) };
-  // Nothing that followed an attempt is shown once the request would no longer be allowed out.
+  const choice = outcome.status === 'answered' ? outcome.envelope.payload.choice : null;
+  const chosen = choice && choice !== NONE ? listed[optionIds(listed).indexOf(choice)] : null;
+  const late = chosen ? await lateChange(application, manager, task, chosen) : null;
+  // The console copy's capture decision is the last read; from here on
+  // nothing is awaited, so the checks below hold for what is shown and kept.
+  const keep = await prepareRoleSuggestionNote(application, async () => taskCaptureScope(
+    await application.taskContextRegistry.context(task.token, task.sourceApplication)));
+  const result = matchResult(application, request, outcome, receipt, chosen, late);
+  if (result) keep({ role: ROLE, operation: OPERATION, personalSpaceId: spaceId, personalProjectId: task.project,
+    subject: { conversationId: task.conversationId }, result, deletionGeneration });
+  return result;
+}
+
+// Synchronous: nothing that followed an attempt is shown once the request
+// would no longer be allowed out, checked against the latest settings.
+function matchResult(application, request, outcome, receipt, chosen, late) {
   if (outcome.modelReceipt.attempts && !application.modelBackends.allowsEgress(request)) {
     return { status: 'superseded', reason: 'permission_changed', ...receipt };
   }
   if (outcome.status === 'inline') return { status: 'inline', reason: outcome.fallbackReason, guidance: INLINE_GUIDANCE, ...receipt };
   if (outcome.status !== 'answered') return { status: outcome.status, reason: outcome.modelReceipt.reason, ...receipt };
-  const { envelope, modelReceipt } = outcome;
-  if (envelope.payload.choice === NONE) return null;
-  const chosen = listed[optionIds(listed).indexOf(envelope.payload.choice)];
-  const late = await lateChange(application, manager, task, chosen);
+  if (!chosen) return null;
   if (late) return { status: 'superseded', reason: late, ...receipt };
-  // Settings may change while the board is read again; check once more, synchronously, before showing.
-  if (!application.modelBackends.allowsEgress(request)) return { status: 'superseded', reason: 'permission_changed', ...receipt };
+  const { envelope, modelReceipt } = outcome;
   const title = singleLine(chosen.title);
   return { status: 'suggested', hint: `可能是看板上的「${title}」任务`,
     suggestion: { taskId: chosen.id, title, updatedAt: chosen.updatedAt ?? null, reason: envelope.reason, uncertainty: envelope.uncertainty },

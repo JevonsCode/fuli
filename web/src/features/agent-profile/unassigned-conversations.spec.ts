@@ -24,7 +24,7 @@ describe('unassigned conversations reader and triage', () => {
       { id: '3f1a2b3c-aaaa-4bbb-8ccc-000000000002' },
       { id: 'b7c8d9e0-1111-4222-8333-444455556666', summary: 'Fix the header padding' },
     ] })
-    const items = await readUnassignedConversations('space-1')
+    const { items } = await readUnassignedConversations('space-1')
     expect(items.map(item => item.openingLine)).toEqual(['', '', 'Fix the header padding'])
     // The first two share 8 and 12 characters, so they keep their full IDs.
     expect(items.map(item => item.shortId)).toEqual(['3f1a2b3c-aaaa-4bbb-8ccc-000000000001', '3f1a2b3c-aaaa-4bbb-8ccc-000000000002', 'b7c8d9e0'])
@@ -54,7 +54,7 @@ describe('unassigned conversations reader and triage', () => {
       ],
     })
 
-    const items = await readUnassignedConversations('space-a')
+    const { items } = await readUnassignedConversations('space-a')
     expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', {
       personalSpaceId: 'space-a',
       personalProjectId: null,
@@ -75,7 +75,7 @@ describe('unassigned conversations reader and triage', () => {
 
   it('returns an empty list when employee.assistant has not been provisioned yet (404)', async () => {
     postJson.mockRejectedValue(new ApiError('project Agent not found', 404))
-    await expect(readUnassignedConversations('space-a')).resolves.toEqual([])
+    await expect(readUnassignedConversations('space-a')).resolves.toEqual({ items: [], resolvedIds: [] })
   })
 
   it('posts user triage corrections to /api/conversation-triage/record with source: user', async () => {

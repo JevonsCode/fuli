@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import BackLink from '@/components/BackLink.vue'
@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
+import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
+import { useRoleSuggestions } from '@/features/model-settings/useRoleSuggestions'
 import {
   formatCount, gateBuilds, readModelRoles, roleName, servedDigest, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
@@ -15,7 +17,8 @@ import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
 // 模型与用量 (rec#8): the four built-in Agents' model settings as one card
-// collection, each edited in a centred form, and their usage below. A save
+// collection, each edited in a centred form, then what Astro, Bole and Jefa
+// suggested with their model, and their usage below. A save
 // is accepted only at the local process boundary (a loopback request).
 const store = useConsoleStore()
 const payload = ref<ModelRolesPayload | null>(null)
@@ -25,6 +28,9 @@ const editing = ref<ModelRoleId | null>(null)
 const notice = ref('')
 const stale = ref(false)
 let reading: AbortController | null = null
+// Read together with the role settings, so the section never appears and then goes.
+const suggestions = useRoleSuggestions()
+const { entries: suggestionEntries, loading: suggestionsLoading, error: suggestionsError } = suggestions
 const openedFromSettings = /^\/settings(?:[?#]|$)/
 
 const projects = computed(() => store.state?.personalProjects ?? [])
@@ -115,8 +121,14 @@ const stateTone = (state: ModelRoleView['state']) =>
 onMounted(() => {
   if (store.runtimeStatus === 'idle') void store.refresh()
   void load()
+  void suggestions.load()
 })
-onBeforeUnmount(() => reading?.abort())
+// The top bar's refresh reads the console again; the suggestions with it.
+watch(() => store.runtimeStatus, (status) => { if (status === 'loading' && !suggestionsLoading.value) void suggestions.load() })
+onBeforeUnmount(() => {
+  reading?.abort()
+  suggestions.stop()
+})
 </script>
 
 <template>
@@ -162,6 +174,8 @@ onBeforeUnmount(() => reading?.abort())
             </article>
           </li>
         </ul>
+
+        <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError" @retry="suggestions.load" />
 
         <ModelUsage />
 

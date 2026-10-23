@@ -6,6 +6,7 @@ import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { createRoleWorkBridge } from '../src/model-backends/role-work.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { reachableModules } from '../test-support/module-graph.js';
 import { openAiStream } from './fixtures/model-transport.js';
@@ -148,6 +149,7 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
       } });
     app.roleWork = createRoleWorkBridge({ port: app.modelBackends, store, verifySession: async () => null, resumers: {} });
   }
+  app.roleSuggestions = new RoleSuggestionLog();
   const entry = (extra = {}) => app.getCollaborationPreferences({ projectPath: '/synthetic/chat-folder', sourceApplication: 'codex',
     sessionId: 'synthetic-session-a', taskPrompt: PROMPT, agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
   const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total FROM model_attempts ORDER BY attempt_number')
@@ -163,7 +165,7 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
       assert.deepEqual(result.context.project_resolution, { status: 'global', basis: 'pending_assignment', personal_project_id: null });
     }
   };
-  return { app, entry, contexts, modelCalls, reads, attempts, reservations, assertNoAttribution, labels,
+  return { app, entry, contexts, modelCalls, reads, attempts, reservations, assertNoAttribution, labels, suggestions: () => app.roleSuggestions.list(),
     failTriageReads: error => { triageReadError = error; } };
 }
 
@@ -191,6 +193,7 @@ test('not configured: the entry answers byte for byte as today, with zero fetche
     assert.deepEqual(run.contexts.calls, [], 'no claim');
     assert.deepEqual(run.reads, today.reads, 'no extra Provider read');
     assert.deepEqual(run.attempts(), []);
+    assert.deepEqual(run.suggestions(), []);
     run.assertNoAttribution();
   }
 
@@ -238,6 +241,9 @@ test('Astro suggests one approved project as a hint; candidates are evidence wit
     [['initial', 'succeeded', 'assistant', 'project_candidate']]);
   assert.deepEqual(run.contexts.hintClaims().map(({ operation }) => operation), ['project_candidate']);
   run.assertNoAttribution(result);
+  const [noted] = run.suggestions();
+  assert.deepEqual([noted.role, noted.status, noted.hint, noted.suggestion, noted.personalProjectId, noted.subject],
+    ['assistant', 'suggested', hint.hint, hint.suggestion, null, { conversationId: result.conversation.conversation_id }]);
 
   // Every project approved: no restriction note.
   const all = harness({ role: astroRole({ egress: { approvedProjects: Object.keys(PROJECTS).map(id => ({ personalSpaceId: SPACE, personalProjectId: id })),
@@ -366,6 +372,33 @@ test('malicious answers: an invented project, a forged gate or a claimed binding
 // A model that answers only after `during` ran, as a delayed reply would.
 const delayed = (during, fields) => async () => { await during(); return answer(fields); };
 
+test('approval withdrawn during the console copy\'s own capture read: superseded, and no words kept', async () => {
+  let role = astroRole();
+  let armed = false;
+  const run = harness({ role: () => role, replies: [delayed(async () => { armed = true; })] });
+  // After the model answered, Astro reads the task once for attribution; the next read is the copy's capture scope.
+  const read = run.contexts.registry.context.bind(run.contexts.registry);
+  let reads = 0;
+  run.contexts.registry.context = async (...args) => {
+    if (armed && ++reads === 2) role = astroRole({ enabled: false });
+    return read(...args);
+  };
+  const hint = (await run.entry()).project_candidate;
+  assert.equal(reads, 2, 'withdrawn during the capture read');
+  assert.deepEqual([hint.status, hint.reason, hint.hint, hint.suggestion], ['superseded', 'permission_changed', undefined, undefined]);
+  assert.deepEqual(run.suggestions().map(noted => [noted.status, noted.reason, 'hint' in noted, 'suggestion' in noted]),
+    [['superseded', 'permission_changed', false, false]]);
+  run.assertNoAttribution();
+});
+
+test('recording turned off while the model runs keeps no console copy; the hint is the same', async () => {
+  const run = harness({ role: astroRole(), replies: [delayed(() => run.app.updateCapturePolicy({ enabled: false }))] });
+  const hint = (await run.entry()).project_candidate;
+  assert.equal(hint.status, 'suggested');
+  assert.deepEqual(run.suggestions(), []);
+  run.assertNoAttribution();
+});
+
 test('a late answer is not shown once the request would no longer be allowed out', async () => {
   // Display-time only: what was legitimately sent before cannot be recalled.
   const withdrawals = {
@@ -383,6 +416,9 @@ test('a late answer is not shown once the request would no longer be allowed out
     assert.deepEqual([hint.status, hint.reason, hint.hint, hint.suggestion], ['superseded', 'permission_changed', undefined, undefined], name);
     assert.deepEqual(hint.gate, GATE, name);
     assert.equal(hint.modelReceipt.attempts, 1, name);
+    // The console keeps only why: no hint, choice or model reason.
+    const [noted] = run.suggestions();
+    assert.deepEqual([noted.status, noted.reason, noted.hint, noted.suggestion], ['superseded', 'permission_changed', undefined, undefined], name);
     run.assertNoAttribution();
   }
 

@@ -49,7 +49,9 @@ const CAPTURE_SOURCE_TOOLS = new Set([
   'search_human_knowledge_changes', 'search_current_project_knowledge',
   'search_connected_knowledge', 'get_user_taste_skill',
   // A session pause and a session's record list resolve the task token for this client only.
-  'update_capture_policy', 'read_session_records'
+  'update_capture_policy', 'read_session_records',
+  // Bole's model review keeps a console copy only while this client records.
+  'get_agent_score_card'
 ]);
 
 const SESSION_ID_TOOLS = new Set([

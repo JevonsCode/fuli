@@ -40,7 +40,7 @@ export async function handleApiRequest({
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
-    roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS) },
+    roleSuggestions: app.roleSuggestions, roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS) },
     unlockedBuilds: reviewGate ? modelId => reviewGate.unlockedBuilds(reviewGateKey({ modelId })) : null })) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {

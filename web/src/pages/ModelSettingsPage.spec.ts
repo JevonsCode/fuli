@@ -53,7 +53,8 @@ beforeEach(() => {
   rolesPayload = roles()
   api.getJson.mockReset()
   api.putJson.mockReset()
-  api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage() : rolesPayload))
+  api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage()
+    : url.startsWith('/api/model-backends/suggestions') ? { suggestions: [] } : rolesPayload))
 })
 
 const mountPage = async () => {
@@ -197,6 +198,25 @@ describe('ModelSettingsPage', () => {
     await wrapper.get('[data-value="today"]').trigger('click')
     await flushPromises()
     expect(api.getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/model-backends/usage')).length).toBe(2)
+  })
+
+  it('reads the suggestions with the role settings and again on the top bar refresh, never showing an empty section', async () => {
+    let answer: (value: unknown) => void = () => {}
+    api.getJson.mockImplementation((url: string) => url.startsWith('/api/model-backends/suggestions')
+      ? new Promise(resolve => { answer = resolve })
+      : Promise.resolve(url.startsWith('/api/model-backends/usage') ? usage() : rolesPayload))
+    const wrapper = await mountPage()
+    const reads = () => api.getJson.mock.calls.map(([url]) => String(url).split('?')[0])
+    expect(reads().slice(0, 2)).toEqual(['/api/model-backends/roles', '/api/model-backends/suggestions'])
+    expect(wrapper.find('[data-role-suggestions]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('建议没有')
+    answer({ suggestions: [] })
+    await flushPromises()
+    expect(wrapper.find('[data-role-suggestions]').exists()).toBe(false)
+
+    useConsoleStore().runtimeStatus = 'loading'
+    await flushPromises()
+    expect(reads().filter(url => url === '/api/model-backends/suggestions')).toHaveLength(2)
   })
 
   it('names its pending reads with GrowthLoading', async () => {

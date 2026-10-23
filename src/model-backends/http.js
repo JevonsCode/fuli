@@ -1,5 +1,7 @@
 import { refuseRemoteDecision } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
+import { positiveInteger } from '../validation/values.js';
+import { RETENTION } from './suggestion-log.js';
 
 // Routes of the model settings page. The roles and usage reads are
 // Agent-readable and contain no secrets, but include metadata (endpoints,
@@ -13,22 +15,33 @@ import { readJson, sendJson } from '../http/response.js';
 // for that model (src/judgment/review-gate.js), read on every request.
 // lastServed: the build that last answered each role on its configured model
 // (its digest, or null when the backend did not prove one), read-only.
+// suggestions lists what Astro, Bole and Jefa showed after asking their own
+// model (suggestion-log.js), newest first, a limit clamped to RETENTION.rows, with
+// its retention; it is a read only, and no route writes it.
 const ROLE_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)$/;
+const SUGGESTIONS_ROUTE = '/api/model-backends/suggestions';
 
 export async function handleModelBackendApiRequest({
-  request, response, url, modelBackends, roleWork = null, roleSettings = null, operations = {}, unlockedBuilds = null
+  request, response, url, modelBackends, roleWork = null, roleSuggestions = null, roleSettings = null, operations = {}, unlockedBuilds = null
 }) {
   const roleEdit = ROLE_ROUTE.exec(url.pathname)?.[1] ?? null;
-  if (!roleEdit && !['/api/model-backends/usage', '/api/model-backends/roles'].includes(url.pathname)) return false;
+  if (!roleEdit && !['/api/model-backends/usage', '/api/model-backends/roles', SUGGESTIONS_ROUTE].includes(url.pathname)) return false;
   if (request.method !== (roleEdit ? 'PUT' : 'GET')) {
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;
   }
-  if (!modelBackends || (roleEdit && !roleSettings)) {
+  const suggestions = url.pathname === SUGGESTIONS_ROUTE;
+  if (!modelBackends || (roleEdit && !roleSettings) || (suggestions && !roleSuggestions)) {
     sendJson(response, 503, { error: 'Model backends need a local FULI installation' });
     return true;
   }
   response.setHeader('Cache-Control', 'no-store');
+  if (suggestions) {
+    const limit = url.searchParams.get('limit');
+    sendJson(response, 200, { suggestions: roleSuggestions.list(limit === null ? {} : { limit: positiveInteger(Number(limit), 'limit', Number.MAX_SAFE_INTEGER) }),
+      retention: RETENTION });
+    return true;
+  }
   if (roleEdit) {
     if (refuseRemoteDecision(request, response, 'Model settings are changed only on this computer')) return true;
     roleSettings.save(roleEdit, await readJson(request));
