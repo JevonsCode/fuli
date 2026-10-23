@@ -3,6 +3,7 @@
 const returnPosition = { spaceId: '', expanded: false, scrollTop: 0 }
 </script>
 <script setup lang="ts">
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -79,7 +80,7 @@ const recentProjectItems = computed(() => data.denied.value ? [] : recentProject
 const selectedTask = computed(() => currentTasks.value.find(task => `${task.personalProjectId}:${task.taskId}` === selected.value))
 const board = computed<WorkbenchBoard>(() => ({
   personalSpaceId: activeSpaceId.value, tasks: currentWork(data.taskItems.value, Infinity).map(task => ({ ...task, title: taskTitle(task) })), attention: data.requestItems.value,
-  projectName, agentFace: id => ({ name: agentName(id), image: null, color: null, softColor: null }),
+  projectName, agentFace: id => ({ name: agentName(id), image: id ? agentAvatarUrl(id) : null, color: null, softColor: null }),
   taskHref: overviewTaskHref, questionHref: item => inboxLocation(item.agentId, item.requestId), statusLabel, since: formatDate,
 }))
 function pick(href: unknown) {
