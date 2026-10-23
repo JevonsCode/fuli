@@ -5,7 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { BUCKETS, markdownTable, summarize, UNIT_NOTE } from './report.js';
+import { BUCKETS, markdownTable, SCOPE_NOTES, summarize, UNIT_NOTE } from './report.js';
 import { runScenario, SCENARIOS } from './scenarios.js';
 
 const option = (args, name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
@@ -19,7 +19,7 @@ function measuredCommit() {
 export async function measure(names = Object.keys(SCENARIOS)) {
   const results = [];
   for (const name of names) results.push(summarize(name, await runScenario(name)));
-  return { unit: UNIT_NOTE, commit: measuredCommit(), buckets: BUCKETS, scenarios: results };
+  return { unit: UNIT_NOTE, scope: SCOPE_NOTES, commit: measuredCommit(), buckets: BUCKETS, scenarios: results };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

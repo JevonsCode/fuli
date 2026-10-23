@@ -3,7 +3,9 @@
 // real session delivery cache and native-evidence adapters, against synthetic
 // transcripts and an in-memory Provider. Nothing here starts a client, calls a
 // model, reads FULI data or a real transcript. It measures UTF-8 bytes only;
-// it never estimates tokens.
+// it never estimates tokens. The reset hooks get no currentTask, so a
+// SessionStart resume covers the next prompt after the reset, not the restored
+// frame an active task would receive at once.
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -160,15 +162,23 @@ export async function replayWorld(fn, { items = [] } = {}) {
       const text = (await HOOKS[client]('UserPromptSubmit', input({ prompt }), invoke, { delivery }))
         .hookSpecificOutput.additionalContext;
       const retrieval = Object.fromEntries(READS.map(name => [name, provider.calls[name] - before[name]]));
-      // The same entry through the same hook with no session cache.
+      // The same entry through the same hook with no session cache. It reuses
+      // this turn's Provider snapshot: a fair serialization comparison, not an
+      // independent second retrieval.
       const baseline = (await HOOKS[client]('UserPromptSubmit', input({ prompt }), async () => structuredClone(context), {}))
         .hookSpecificOutput.additionalContext;
       const frame = frameOf(text);
       const delivered = record && !preview;
-      const recordOffset = record ? await host.inject(preview ? `${text.slice(0, 40)}\n…[preview]…\n${text.slice(-40)}` : text) : null;
-      const turn = measure({ session, view, frame, text, baseline, retrieval, delivered, note, prompt });
+      // What the host recorded, and so what the model could see: nothing when
+      // the output was lost, only the preview when it was spilled.
+      const visible = !record ? '' : preview ? `${text.slice(0, 40)}\n…[preview]…\n${text.slice(-40)}` : text;
+      const recordOffset = record ? await host.inject(visible) : null;
+      const turn = measure({ session, view, frame, text, visible, baseline, retrieval, delivered, note, prompt });
       if (delivered) applyFrame(view, frame, client === 'claude_code' ? `attachment-${recordOffset}` : `codex-${world.turns.length}`);
       turn.correctness = delivered ? correctness(view, frameOf(baseline), world.withdrawn ?? {}) : null;
+      // The replayed model view, for scenario checks against their own
+      // expected sets; kept out of the JSON result.
+      Object.defineProperty(turn, 'modelPreferences', { value: new Map(view.preferences) });
       view.turns++;
       world.turns.push(turn);
       return turn;
@@ -186,9 +196,11 @@ const recoveryOf = frame => frame.conversation?.recovery ?? null;
 const messageKey = (recovery, message) => `${recovery.conversation_id}:${message.sequence}`;
 const preferenceItems = frame => frame.effective_preferences ?? frame.preference_updates ?? [];
 
-// Bucket, bytes and resends of one injected frame, before the model view
-// takes it in.
-function measure({ session, view, frame, text, baseline, retrieval, delivered, note, prompt }) {
+// Bucket, bytes and resends of one produced frame, before the model view
+// takes it in. produced_bytes is the additionalContext the hook returned;
+// host_visible_bytes is what the host recorded for the model (0 when lost,
+// the preview when spilled). No other context cost is inferred.
+function measure({ session, view, frame, text, visible, baseline, retrieval, delivered, note, prompt }) {
   const recovery = recoveryOf(frame);
   const omitted = recovery?.messages_omitted ?? 0;
   const bucket = frame.preference_delivery || omitted > 0 ? 'incremental'
@@ -204,7 +216,7 @@ function measure({ session, view, frame, text, baseline, retrieval, delivered, n
   const pointer = frame.conversation?.recent_conversation;
   return { session: session.label, client: session.client, generation: session.generation, note, scene: frame.preference_scene?.work_kind ?? null,
     prompt, bucket, delivered, preference_delivery: frame.preference_delivery?.status ?? 'full',
-    injected_bytes: bytes(text), no_cache_bytes: bytes(baseline),
+    produced_bytes: bytes(text), host_visible_bytes: bytes(visible), no_cache_bytes: bytes(baseline),
     messages_sent: recovery?.messages?.length ?? 0, messages_omitted: omitted,
     withdrawn_sequences: recovery?.withdrawn?.sequences ?? [],
     preferences_sent: preferenceItems(frame).length,

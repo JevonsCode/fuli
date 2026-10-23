@@ -15,7 +15,8 @@ test('the context delivery replay measures the acceptance scenario in bytes and 
   assert.equal(acceptance.turns, 8);
   assert.equal(acceptance.buckets.first_or_reset_full.turns, 2, 'C and H each start once');
   assert.ok(acceptance.buckets.incremental.turns >= 5);
-  assert.ok(acceptance.injected_bytes < acceptance.no_cache_bytes);
+  assert.ok(acceptance.produced_bytes < acceptance.no_cache_bytes);
+  assert.equal(acceptance.host_visible_bytes, acceptance.produced_bytes, 'every acceptance frame is recorded in full');
   assert.equal(acceptance.pointer_bytes.length, 1);
   assert.ok(acceptance.pointer_bytes[0] <= 320);
   assert.ok(acceptance.retrieval_calls.total > 0);
