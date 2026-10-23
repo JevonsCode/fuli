@@ -59,7 +59,8 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
   const space = await request('/v1/spaces', { name: 'Synthetic role MCP acceptance', kind: 'personal' }, { token });
   await request('/v1/personal-projects', {
     personal_space_id: space.id, project_id: projectId,
-    profile: { name: 'Synthetic role project', lifecycle: 'active' }
+    profile: { name: 'Synthetic role project', lifecycle: 'active',
+      purpose: 'Verify one synthetic role across MCP client switches.' }
   }, { token, method: 'PUT' });
   for (const [agentId, workKind, capability] of [
     ['engineer', 'implementation', 'coding'], ['reviewer', 'code_review', 'review'],
@@ -67,6 +68,7 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
   ]) {
     await request('/v1/project-agents', {
       personal_space_id: space.id, personal_project_id: projectId, agent_id: agentId,
+      occupation: { role: 'engineering' },
       profile: { name: `Synthetic ${agentId}`, display_name: `Synthetic ${agentId}`, responsibility: 'Maintain the synthetic sample.',
         character: { judgment: 'Check evidence.', taste: 'Clear writing.', personality: 'Patient.' },
         expectations: 'Preserve confirmed preferences.',
@@ -99,7 +101,8 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
       assert.equal(value.context.project_agent_id, 'engineer');
       assert.equal(value.project_agent_context.status, 'ready');
       assert.equal(value.project_agent_context.worker_started, false);
-      assert.equal(value.agent_receipt.owner.name, 'Synthetic engineer');
+      // The entry receipt only carries what is copied; owner details stay on the checkpoint receipt.
+      assert.match(value.agent_receipt.markdown, /Synthetic engineer/);
       assert.equal(value.project_agent_context.role.character.taste, 'Clear writing.');
       assert.equal(value.project_agent_context.role.expectations, 'Preserve confirmed preferences.');
       assert.equal(value.project_agent_context.memory.revision, revision);
@@ -220,7 +223,8 @@ test('real scoped checkpoint candidates require synthetic human confirmation bef
   writeFileSync(runtimeConfigPath, JSON.stringify(fixture.config), { mode: 0o600 });
   const spaceId = fixture.context.personal_space_id, projectId = fixture.context.personal_project_id;
   await fixture.request('/v1/personal-projects', { personal_space_id: spaceId, project_id: 'other-project',
-    profile: { name: 'Synthetic unrelated project', lifecycle: 'active' } }, 'PUT');
+    profile: { name: 'Synthetic unrelated project', lifecycle: 'active',
+      purpose: 'Stay apart from the synthetic scoped capture.' } }, 'PUT');
   const episode = (key, preference) => ({ idempotencyKey: key, name: key,
     sourceKind: 'synthetic_acceptance_fixture', sourceDescription: 'Synthetic proposal, not a real user preference or project fact.',
     sourceExcerpt: preference ? 'Synthetic user explicitly requests this preference across all projects.' : 'Synthetic project-local fact.',
