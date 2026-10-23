@@ -199,6 +199,20 @@ jobs:
       - run: npm ci
       - run: node --test test/agent-app-host-identity.test.js
 
+  # macOS is the primary platform; it runs the same full suite as the Linux job.
+  # The audit stays in the Linux job: it reads the lockfile, not the platform.
+  node-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:package
+
   # Installer, update, rollback and ACP code paths only run on Windows.
   node-windows:
     runs-on: windows-latest

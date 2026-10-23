@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { createJudgmentEngine } from '../src/judgment/engine.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
-import { FIXTURE_BUILD, gateEntry, reviewGateWith } from './fixtures/review-gate.js';
+import { MODEL_ANSWER, trustedTonborg } from './fixtures/model-trust.js';
 
-// These cover the automatic review path, so the fixture model build is unlocked (rec#10 D-24).
-const unlocked = { model: FIXTURE_BUILD.model, modelReceipt: { modelDigest: FIXTURE_BUILD.modelDigest } };
+// These cover the automatic review path, so Tonborg's configured model is trusted (rec#10 D-36).
+const unlocked = MODEL_ANSWER;
 
 function fixture(t, { mode = 'shared', mutate, answer } = {}) {
   const candidates = [{ candidate_key: 'entity:one', title: 'Build command', content: 'npm test', confirmation_status: 'confirmed', changed_at: '2026-01-01', reasons: [], project_ids: ['p'] }];
   const writes = [];
-  const app = { config: { personal: { spaceId: 's' } },
+  const app = { config: { personal: { spaceId: 's' } }, getCapturePolicy: () => ({ enabled: true }),
     listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
     getCollaborationPreferences: async () => completePreferences(),
@@ -24,7 +24,7 @@ function fixture(t, { mode = 'shared', mutate, answer } = {}) {
     recordKnowledgeReviewProgress: async input => { writes.push(input); candidates.shift(); return { outcome: input.outcome }; },
     listExecutors: async () => [] };
   const judge = async () => { mutate?.(candidates); return { body: JSON.stringify(answer ?? { decisions: [{ target: 'entity:one', outcome: 'approve', summary: 'Evidence supports routine review', evidence: ['Current confirmed command'], confidence: 0.95 }] }), client: 'codex', sessionId: 'fixture-session', ...unlocked }; };
-  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge, reviewGate: reviewGateWith(gateEntry()) }) });
+  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge, trust: trustedTonborg() }) });
   service.store().setPolicy('s', '', { mode, quality: 'quality', client: 'codex' }, 0);
   t.after(() => service.close());
   return { service, writes, candidates, app };
@@ -125,7 +125,7 @@ test('one failed candidate does not starve later review pages and is retried on 
   const attempted = [];
   app.listKnowledgeReviewCandidates = async ({ offset = 0, limit }) => ({ candidates: all.slice(offset, offset + limit), total_candidate_count: all.length });
   app.recordKnowledgeReviewProgress = async ({ candidateKey }) => { attempted.push(candidateKey); if (candidateKey === 'entity:0') throw new Error('fixture failure'); return { outcome: 'ai_reviewed' }; };
-  const engine = createJudgmentEngine({ app, judge: async ({ prompt }) => ({ client: 'codex', body: JSON.stringify({ decisions: JSON.parse(prompt.split('\nDATA:\n')[1]).candidates.map(c => ({ target: c.candidate_key, outcome: 'approve', summary: 'Supported routine evidence', evidence: ['Scoped content'], confidence: 0.95 })) }), ...unlocked }), reviewGate: reviewGateWith(gateEntry()) });
+  const engine = createJudgmentEngine({ app, judge: async ({ prompt }) => ({ client: 'codex', body: JSON.stringify({ decisions: JSON.parse(prompt.split('\nDATA:\n')[1]).candidates.map(c => ({ target: c.candidate_key, outcome: 'approve', summary: 'Supported routine evidence', evidence: ['Scoped content'], confidence: 0.95 })) }), ...unlocked }), trust: trustedTonborg() });
   for (let round = 0; round < 10; round++) await engine.review(service, { ...input, requestId: `page-${round}` });
   assert.ok(attempted.includes('entity:64'));
   assert.ok(attempted.filter(id => id === 'entity:0').length >= 2);

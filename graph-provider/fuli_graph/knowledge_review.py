@@ -397,8 +397,10 @@ async def withdraw_ai_review(
     """A person's one-click undo of an automatic Tonborg review (rec#10 D-24).
 
     The item loses the AI review marks only while they still name this run's
-    decision and the evidence it judged; a later review or version keeps its
-    own. The decision record stays as history of what Tonborg did.
+    decision and the evidence it judged and no person changed it after the
+    review (D-36.12); a later review, version or edit keeps its own, and a
+    missing item is never recreated. The decision record stays as history of
+    what Tonborg did.
     """
 
     store._require_personal()
@@ -419,10 +421,15 @@ async def withdraw_ai_review(
         ai_review_evidence_token=request.ai_review_evidence_token,
     )
     if not records:
-        raise HTTPException(
-            status_code=409,
-            detail='the item no longer carries this AI review; nothing to undo',
-        )
+        raise HTTPException(status_code=404, detail={
+            'code': 'ai_review_deleted',
+            'message': 'the item no longer exists; nothing to undo',
+        })
+    if not records[0]['carries'] or records[0]['changed']:
+        raise HTTPException(status_code=409, detail={
+            'code': 'ai_review_changed',
+            'message': 'the item changed after this AI review; it was left as it is',
+        })
     return KnowledgeAIReviewWithdrawalResult(
         candidate_key=request.candidate_key,
         decision_id=decision_id,
@@ -1114,28 +1121,35 @@ RETURN decision
 '''
 
 
-_AI_REVIEW_MARKS = '''
-REMOVE item.fuli_ai_review_evidence_token, item.fuli_ai_assessment_json,
-       item.fuli_ai_review_scope, item.fuli_ai_review_project_id,
-       item.fuli_ai_reviewed_at, item.fuli_ai_review_id,
-       item.fuli_ai_review_decision_id
-RETURN item.uuid AS item_id
-'''
-
-
-_AI_REVIEW_WITHDRAW_MATCH = '''
-WHERE item.fuli_ai_review_decision_id = $decision_id
-  AND item.fuli_ai_review_evidence_token = $ai_review_evidence_token
+# rec#10 D-36.12: the marks go only while they still name this run's decision
+# and evidence, the item is still the current version, and no person changed
+# it after the review; otherwise the item stays exactly as it is and the
+# answer says why. Like the apply queries above, it writes the item's lock
+# property before it reads anything, so a later review or edit still in
+# flight is waited for and its result is what the checks read: the marks it
+# wrote are never removed by an undo that read the state before it.
+_AI_REVIEW_WITHDRAW = '''
+SET item.fuli_ai_review_lock_version = coalesce(item.fuli_ai_review_lock_version, 0) + 1
+WITH item,
+     coalesce(item.fuli_ai_review_decision_id = $decision_id
+              AND item.fuli_ai_review_evidence_token = $ai_review_evidence_token, false) AS carries,
+     (item.fuli_replaced_by_item_id IS NOT NULL
+      OR coalesce(item.fuli_invalid_at, item.invalid_at) IS NOT NULL
+      OR coalesce(item.fuli_last_human_changed_at > item.fuli_ai_reviewed_at, false)) AS changed
+FOREACH (ignored IN CASE WHEN carries AND NOT changed THEN [1] ELSE [] END |
+  REMOVE item.fuli_ai_review_evidence_token, item.fuli_ai_assessment_json,
+         item.fuli_ai_review_scope, item.fuli_ai_review_project_id,
+         item.fuli_ai_reviewed_at, item.fuli_ai_review_id,
+         item.fuli_ai_review_decision_id)
+RETURN carries, changed
 '''
 
 
 _AI_REVIEW_ENTITY_WITHDRAW_QUERY = (
-    'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})'
-    + _AI_REVIEW_WITHDRAW_MATCH + _AI_REVIEW_MARKS
+    'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})' + _AI_REVIEW_WITHDRAW
 )
 
 
 _AI_REVIEW_RELATIONSHIP_WITHDRAW_QUERY = (
-    'MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()'
-    + _AI_REVIEW_WITHDRAW_MATCH + _AI_REVIEW_MARKS
+    'MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()' + _AI_REVIEW_WITHDRAW
 )

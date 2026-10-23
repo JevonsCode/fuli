@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -15,9 +15,8 @@ import { createModelRoleSettings } from '../src/model-backends/role-settings.js'
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { listenFetchableServer } from '../src/server/listen.js';
 import { createServer } from '../src/server.js';
-import { reviewGateKey } from '../src/judgment/review-build.js';
-import { REVIEW_GATE_FILE, createReviewGate } from '../src/judgment/review-gate.js';
-import { gateEntry } from './fixtures/review-gate.js';
+import { createRoleTrust } from '../src/model-backends/role-trust.js';
+import { WARNING_VERSION } from './fixtures/model-trust.js';
 import { reachableModules } from '../test-support/module-graph.js';
 
 // rec#8: the console's model settings page. One role is saved through the
@@ -42,32 +41,34 @@ function edit(overrides = {}) {
   };
 }
 
-async function console_(t, { ledger = new ModelUsageLedger(':memory:'), gate = false } = {}) {
+async function console_(t, { ledger = new ModelUsageLedger(':memory:') } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-model-settings-'));
   const path = join(directory, 'model-backends.json');
   const port = createModelBackendPort({ readConfig: () => readModelBackendConfig(path), secrets: { read: async () => null }, ledger,
     fetchImpl: async () => { throw new Error('no model call in this test'); }, now: () => NOW });
   const roleSettings = createModelRoleSettings(path);
-  // The real D-24 registry read path, on the registry file in this data directory.
-  const reviewGate = createReviewGate(directory);
-  const unlockedBuilds = gate ? modelId => reviewGate.unlockedBuilds(reviewGateKey({ modelId })) : null;
+  // The real trust store of this data directory (rec#10 D-36).
+  const trust = createRoleTrust({ path: join(directory, 'model-trust.sqlite'), modelBackends: port });
   const server = createHttpServer(async (request, response) => {
     try {
       if (!await handleModelBackendApiRequest({ request, response, url: new URL(request.url, 'http://local'),
-        modelBackends: port, roleSettings, operations: { tonborg: ['knowledge_review'] }, unlockedBuilds })) response.writeHead(404).end();
+        modelBackends: port, roleSettings, operations: { tonborg: ['knowledge_review'] },
+        automaticOperations: { tonborg: 'knowledge_review' }, modelTrust: trust })) response.writeHead(404).end();
     } catch (error) {
       const mapped = mapHttpError(error);
       response.writeHead(mapped.status, { 'content-type': 'application/json' }).end(JSON.stringify(mapped.body));
     }
   });
   await listenFetchableServer(server, 0);
-  t.after(() => { server.close(); port.close(); rmSync(directory, { recursive: true, force: true }); });
+  t.after(() => { server.close(); trust.close(); port.close(); rmSync(directory, { recursive: true, force: true }); });
   const base = `http://127.0.0.1:${server.address().port}`;
   const put = (role, body) => fetch(`${base}/api/model-backends/roles/${role}`, { method: 'PUT',
     headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const roles = async () => (await fetch(`${base}/api/model-backends/roles`)).json();
+  const putTrust = (role, body) => fetch(`${base}/api/model-backends/roles/${role}/trust`, { method: 'PUT',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const bytes = () => { try { return readFileSync(path, 'utf8'); } catch { return null; } };
-  return { path, directory, base, put, roles, bytes, ledger, roleSettings, port };
+  return { path, directory, base, put, putTrust, roles, bytes, ledger, roleSettings, port, trust };
 }
 
 test('a saved role reads back as the settings page shows it, with key references only', async (t) => {
@@ -139,8 +140,7 @@ test('a file that does not validate is left as it is for repair', async (t) => {
 test('the real console refuses a save from outside the local process boundary and keeps the file', async (t) => {
   const page = await console_(t);
   const runtime = await createServer({ port: 0, dataFormatNotices: () => [], modelRoleSettings: page.roleSettings,
-    reviewGate: createReviewGate(page.directory),
-    app: { graphiti: true, modelBackends: page.port, async state() { throw new Error('not queried'); }, close() {} } });
+    app: { graphiti: true, modelBackends: page.port, modelTrust: page.trust, async state() { throw new Error('not queried'); }, close() {} } });
   t.after(() => new Promise(done => runtime.server.close(done)));
   const { port } = runtime.server.address();
   const body = JSON.stringify(edit());
@@ -182,9 +182,9 @@ test('the real console refuses a save from outside the local process boundary an
   // The same stack accepts a loopback request with this console's Host.
   assert.equal((await put()).status, 200);
   assert.notEqual(page.bytes(), null);
-  // The same stack reads the D-24 registry for the roles: none here, so nothing is unlocked.
+  // The same stack reads the trust store for the roles: only Tonborg has an operation that runs by itself.
   const listed = await (await fetch(`${runtime.url}/api/model-backends/roles`)).json();
-  assert.deepEqual(listed.roles.map(role => role.reviewGate.status), Array(4).fill('suggestion_only'));
+  assert.deepEqual(listed.roles.map(role => role.trust?.reason ?? null), [null, null, null, 'session_answer']);
 });
 
 test('no MCP or Agent tool entry reaches the save, and the catalog marks it local_user_only', () => {
@@ -196,47 +196,40 @@ test('no MCP or Agent tool entry reaches the save, and the catalog marks it loca
   }
 });
 
-test('each role shows its D-24 review gate read from the real registry file', async (t) => {
-  const page = await console_(t, { gate: true });
-  const registry = join(page.directory, REVIEW_GATE_FILE);
-  const gates = async () => Object.fromEntries((await page.roles()).roles.map(role => [role.role, role.reviewGate]));
+test('Tonborg\'s card shows whether its model executes by itself, from the real trust store (D-36)', async (t) => {
+  const page = await console_(t);
+  const trusts = async () => Object.fromEntries((await page.roles()).roles.map(role => [role.role, role.trust]));
+  // Without a model Tonborg is answered by the current session; the other roles have nothing that runs by itself.
+  const before = await trusts();
+  assert.deepEqual([before.assistant, before.bole, before.jefa], [null, null, null]);
+  assert.deepEqual(before.tonborg, { operation: 'knowledge_review', suggestionsOnly: false, warningSeen: false, warningSeenAt: null,
+    warningVersion: WARNING_VERSION, revision: 0, status: 'suggestion', reason: 'session_answer', evaluation: null });
   assert.equal((await page.put('tonborg', edit())).status, 200);
-
-  // No registry file: nothing is unlocked; only Tonborg could be.
-  assert.deepEqual(await gates(), {
-    assistant: { status: 'suggestion_only', reason: 'no_auto_apply', entries: [] },
-    bole: { status: 'suggestion_only', reason: 'no_auto_apply', entries: [] },
-    jefa: { status: 'suggestion_only', reason: 'no_auto_apply', entries: [] },
-    tonborg: { status: 'suggestion_only', reason: 'no_entry', entries: [] }
-  });
-
-  const passing = gateEntry({ modelId: 'qwen-test', modelDigest: 'sha256:synthetic-build' });
-  const write = entries => writeFileSync(registry, JSON.stringify({ version: 1, entries }));
-  write([passing, gateEntry({ modelId: 'another-model' })]);
-  assert.deepEqual((await gates()).tonborg, { status: 'unlocked', reason: null, entries: [{ modelId: 'qwen-test',
-    modelDigest: 'sha256:synthetic-build', harnessVersion: 'synthetic-harness-1', evidence: 'synthetic evaluation fixture',
-    addedAt: '2026-10-22T00:00:00.000Z' }] });
-  assert.equal((await gates()).bole.status, 'suggestion_only');
-
-  // An entry below the gate, or for another prompt version, unlocks nothing.
-  write([{ ...passing, evaluation: { ...passing.evaluation, injection: { accepted: 1, total: 15 } } },
-    { ...passing, promptVersion: 'knowledge-review:older' }]);
-  assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'no_entry', entries: [] });
-  // Two entries for the same build, in either order, make the whole registry invalid.
-  const below = { ...passing, evaluation: { ...passing.evaluation, injection: { accepted: 1, total: 15 } } };
-  for (const entries of [[below, passing], [passing, below]]) {
-    write(entries);
-    assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'registry_unreadable', entries: [] });
-  }
-  writeFileSync(registry, '{ not json');
-  assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'registry_unreadable', entries: [] });
-
-  // A disabled role is answered by the current session, which is never unlocked.
-  write([passing]);
+  // Configured: trusted by default, but not before the warning is acknowledged.
+  assert.deepEqual(pick((await trusts()).tonborg, ['status', 'reason']), { status: 'suggestion', reason: 'warning_not_seen' });
+  // Reading the page again acknowledges nothing; no file is created by a read.
+  await page.roles();
+  assert.equal(existsSync(join(page.directory, 'model-trust.sqlite')), false);
+  const acknowledged = await page.putTrust('tonborg', { expectedRevision: 0, acknowledgeWarning: WARNING_VERSION });
+  assert.equal(acknowledged.status, 200);
+  assert.deepEqual(pick((await acknowledged.json()).roles.find(role => role.role === 'tonborg').trust, ['status', 'warningSeen', 'revision']),
+    { status: 'automatic', warningSeen: true, revision: 1 });
+  // 「只给建议」 is the person's switch; a stale revision or a malformed change saves nothing.
+  assert.equal((await page.putTrust('tonborg', { expectedRevision: 1, suggestionsOnly: true })).status, 200);
+  assert.deepEqual(pick((await trusts()).tonborg, ['status', 'reason', 'suggestionsOnly']), { status: 'suggestion', reason: 'suggestions_only', suggestionsOnly: true });
+  const stale = await page.putTrust('tonborg', { expectedRevision: 1, suggestionsOnly: false });
+  assert.deepEqual([stale.status, (await stale.json()).code], [409, 'model_trust_changed']);
+  assert.equal((await page.putTrust('tonborg', { expectedRevision: 2 })).status, 400);
+  assert.equal((await page.putTrust('tonborg', { expectedRevision: 2, acknowledgeWarning: WARNING_VERSION + 1 })).status, 409);
+  assert.equal((await page.putTrust('bole', { expectedRevision: 0, suggestionsOnly: true })).status, 400);
+  assert.equal((await trusts()).tonborg.revision, 2);
+  // A disabled role is answered by the current session, which is only ever a suggestion.
   const listed = await page.roles();
   assert.equal((await page.put('tonborg', edit({ revision: listed.revision, settings: { ...edit().settings, enabled: false } }))).status, 200);
-  assert.deepEqual((await gates()).tonborg, { status: 'suggestion_only', reason: 'no_model', entries: [] });
+  assert.deepEqual(pick((await trusts()).tonborg, ['status', 'reason']), { status: 'suggestion', reason: 'session_answer' });
 });
+
+const pick = (value, keys) => Object.fromEntries(keys.map(key => [key, value[key]]));
 
 test('each role lists the local build observed at its latest answer on its configured endpoint and model, read-only (D-32)', async (t) => {
   const ledger = new ModelUsageLedger(':memory:');

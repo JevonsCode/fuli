@@ -81,7 +81,7 @@ describe('JudgmentWorkbench', () => {
   })
 
   it('shows a gated review as a suggestion with the model conclusion, and undoes an applied one', async () => {
-    const gate = { status: 'not_passed', reason: 'no_entry', modelId: 'synthetic-model', promptVersion: 'knowledge-review:0' }
+    const gate = { status: 'not_passed', reason: 'suggestions_only', modelId: 'synthetic-model' }
     getJson.mockResolvedValue({ records: [
       record({ aiReview: { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['gate_not_passed'], gate } }),
       record({ id: 'decision-b', outcome: 'approve', execution: { status: 'applied' },
@@ -99,13 +99,46 @@ describe('JudgmentWorkbench', () => {
     expect(suggestion.text()).toContain('模型结论')
     expect(suggestion.text()).toContain('通过')
     expect(suggestion.find('[data-action="undo"]').exists()).toBe(false)
-    const reviewed = cards.find(card => card.text().includes('AI 已审核（模型 synthetic-model 已通过评测）'))!
+    const reviewed = cards.find(card => card.text().includes('由 synthetic-model 自动执行'))!
     await reviewed.get('[data-action="undo"]').trigger('click')
     await flushPromises()
 
     expect(postJson).toHaveBeenCalledWith('/api/judgment/undo', { personalSpaceId: 'space-a', decisionId: 'decision-b' })
     expect(wrapper.text()).toContain('已撤回')
     expect(wrapper.find('[data-action="undo"]').exists()).toBe(false)
+  })
+
+  it('says honestly when an undo is refused, and offers none for permanently deleted knowledge (D-36.12)', async () => {
+    const applied = { state: 'ai_reviewed', modelOutcome: 'approve', interceptions: [], gate: { status: 'passed', reason: null, modelId: 'synthetic-model' } }
+    getJson.mockResolvedValue({ records: [
+      record({ id: 'edited', outcome: 'approve', execution: { status: 'applied' }, aiReview: applied }),
+      record({ id: 'deleted', outcome: 'approve', execution: { status: 'applied' }, aiReview: applied, hard_deleted: true, title: null }),
+    ] })
+    postJson.mockRejectedValue(new ApiError('refused', 409, JSON.stringify({ error: 'the item changed', code: 'ai_review_changed' })))
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+    await wrapper.get('.judgment-filter [data-value="all"]').trigger('click')
+    const [edited, deleted] = ['edited', 'deleted'].map(id => wrapper.findAll('[data-decision-card]')
+      .find(card => card.find('[data-action="undo"]').exists() === (id === 'edited'))!)
+    expect(deleted.find('[data-action="undo"]').exists()).toBe(false)
+    await edited.get('[data-action="undo"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-undo-refused]').text()).toBe('无法撤回：已被修改')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('已撤回')
+  })
+
+  it('shows the trust warning on a receipt the model could not execute because it was not read yet (D-36.11)', async () => {
+    getJson.mockResolvedValue({ records: [record({ outcome: 'approve', aiReview: { state: 'ai_suggested', modelOutcome: 'approve',
+      interceptions: ['gate_not_passed'], gate: { status: 'not_passed', reason: 'warning_not_seen', modelId: 'synthetic-model' } } })] })
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
+    await flushPromises()
+    const warning = wrapper.get('[data-trust-warning]')
+    expect(warning.text()).toContain('模型可能判断错，它的判断会直接生效；你可以随时改成「只给建议」，部分写入可在回执里撤回。')
+    expect(warning.text()).toContain('你还没看过这条提示，所以这次只作为建议。')
+    expect(warning.text()).toContain('去模型设置确认')
+    // Showing the receipt sends nothing: only the settings page acknowledges the warning.
+    expect(postJson).not.toHaveBeenCalled()
   })
 
   it('keeps autonomous runtime recommendations out of the human-needed queue', async () => {
