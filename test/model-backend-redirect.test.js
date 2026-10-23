@@ -77,14 +77,26 @@ for (const status of [301, 302, 303, 307, 308]) {
   }
 }
 
-test('a response that reports it was redirected is refused even when the fetch ignored redirect: error', async () => {
+// Stub transports for answers a real local server cannot produce.
+async function decideWith(answer) {
   const sent = [];
-  const fetchImpl = async (url, init) => {
-    sent.push(init.redirect);
-    return Object.defineProperty(openAiStream('{}'), 'redirected', { value: true });
-  };
-  assertRedirectRefused(await portFor('http://127.0.0.1:9', 'openai_chat', fetchImpl).decide(request()));
-  assert.deepEqual(sent, ['error']);
+  const fetchImpl = async (url, init) => { sent.push(init.redirect); return answer(); };
+  const result = await portFor('http://127.0.0.1:9', 'openai_chat', fetchImpl).decide(request());
+  assert.deepEqual(sent, ['manual']);
+  return result;
+}
+
+test('a response that reports it was redirected is refused even when the fetch ignored the redirect option', async () => {
+  assertRedirectRefused(await decideWith(() => Object.defineProperty(openAiStream('{}'), 'redirected', { value: true })));
+});
+
+test('a redirected response whose body cancel rejects is still refused, never a retried network failure', async () => {
+  assertRedirectRefused(await decideWith(() => ({ type: 'basic', status: 200, redirected: true, headers: new Headers(),
+    body: { cancel: async () => { throw new TypeError('cancel failed'); } } })));
+});
+
+test('an opaque redirect response is refused', async () => {
+  assertRedirectRefused(await decideWith(() => ({ type: 'opaqueredirect', status: 0, redirected: false, headers: new Headers(), body: null })));
 });
 
 test('a normal answer from a local endpoint still completes', async t => {
