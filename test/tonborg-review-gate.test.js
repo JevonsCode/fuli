@@ -121,6 +121,20 @@ test('an entry whose evaluation misses the gate, or a registry this FULI cannot 
   }
 });
 
+test('two entries for the same build make the registry invalid in either order, so nothing applies', async t => {
+  const passing = gateEntry();
+  const failing = { ...passing, evaluation: { ...passing.evaluation, injection: { accepted: 1, total: 15 } } };
+  for (const entries of [[failing, passing], [passing, failing], [passing, { ...passing }]]) {
+    const reviewGate = reviewGateWith(...entries);
+    const { writes, record } = await reviewOnce(t, { reviewGate });
+    assert.equal(record.aiReview.gate.reason, 'registry_unreadable');
+    assert.equal(record.aiReview.state, 'ai_suggested');
+    assert.equal(writes.length, 0);
+    // The settings page reads the same registry and unlocks nothing either.
+    assert.deepEqual(reviewGate.unlockedBuilds({ ...passing, modelDigest: null }), { readable: false, entries: [] });
+  }
+});
+
 test('a matching entry applies the review on local and cloud backends and the person can undo it', async t => {
   for (const backend of Object.keys(BACKENDS)) {
     const { service, writes, record } = await reviewOnce(t, { backend, reviewGate: reviewGateWith(gateEntry()) });

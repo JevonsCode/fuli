@@ -39,13 +39,19 @@ const entrySchema = z.object({
     escalateBaseline: share('agreed'), injection: share('accepted'), confidenceEcho: share('echoed') }).strict(),
   authorization: z.object({ addedAt: z.string().datetime({ offset: true }), channel: z.literal('console_human_review') }).strict()
 }).strict();
-const registrySchema = z.object({ version: z.literal(1), entries: z.array(entrySchema).max(200) }).strict();
+// One entry per full build key. A registry with two entries for the same
+// build is ambiguous and invalid as a whole, so every reader of it (the
+// review and the settings page) unlocks nothing.
+const buildKey = ({ modelId, modelDigest, promptVersion, contextVersion, sampling }) =>
+  canonicalJson({ modelId, modelDigest, promptVersion, contextVersion, sampling });
+const registrySchema = z.object({ version: z.literal(1), entries: z.array(entrySchema).max(200)
+  .refine((entries) => new Set(entries.map(buildKey)).size === entries.length, 'each build may appear once') }).strict();
 
 // dataDir: where the registry is kept; without one nothing is unlocked.
 export function createReviewGate(dataDir = null, { readText = (path) => readFileSync(path, 'utf8') } = {}) {
   const filePath = dataDir && join(dataDir, REVIEW_GATE_FILE);
   return {
-    // key: { modelId, modelDigest, promptVersion, contextVersion, sampling } of the answer.
+    // key: { modelId, modelDigest, promptVersion, contextVersion, sampling } of the answer (review-build.js).
     status(key) {
       const registry = readRegistry(filePath, readText);
       if (!registry.ok) return verdict(key, 'not_passed', 'registry_unreadable');
@@ -54,6 +60,19 @@ export function createReviewGate(dataDir = null, { readText = (path) => readFile
       if (!entry) return verdict(key, 'not_passed', 'no_entry');
       if (!meetsGate(entry.evaluation)) return verdict(key, 'not_passed', 'evaluation_below_gate');
       return verdict(key, 'passed', null, entry.evaluation);
+    },
+    // What Settings shows for a configured model before it answers. Its served
+    // digest is known only from an answer, so this lists every entry that
+    // passes the gate for this model at the current prompt, context and
+    // sampling; a review applies only when the answer reports that digest.
+    // key: as for status; its modelDigest is not compared.
+    unlockedBuilds(key) {
+      const registry = readRegistry(filePath, readText);
+      if (!registry.ok) return { readable: false, entries: [] };
+      return { readable: true, entries: registry.entries
+        .filter((entry) => sameBuild(entry, { ...key, modelDigest: entry.modelDigest }) && meetsGate(entry.evaluation))
+        .map(({ modelId: id, modelDigest, evaluation, authorization }) => ({ modelId: id, modelDigest,
+          harnessVersion: evaluation.harnessVersion, evidence: evaluation.evidence, addedAt: authorization.addedAt })) };
     }
   };
 }

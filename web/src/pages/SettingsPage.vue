@@ -452,6 +452,17 @@ async function submitSettings(event: Event) {
               <section class="settings-card judgment-settings-card">
                 <JudgmentPolicySettings />
               </section>
+              <Card as="section" class="settings-card" aria-labelledby="settings-models-title">
+                <CardHeader>
+                  <CardTitle id="settings-models-title" as="h2">{{ t('modelSettings.title') }}</CardTitle>
+                  <CardDescription>{{ t('modelSettings.settingsEntry') }}</CardDescription>
+                  <CardAction>
+                    <Button as-child size="sm" variant="outline">
+                      <RouterLink to="/settings/models" data-open-model-settings>{{ t('modelSettings.open') }}</RouterLink>
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+              </Card>
             </TabsContent>
 
             <!-- Clients -->

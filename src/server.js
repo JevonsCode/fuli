@@ -34,6 +34,8 @@ import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-ha
 import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
 import { reviewUndoConsole } from './judgment/review-undo.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
+import { createModelRoleSettings } from './model-backends/role-settings.js';
+import { createReviewGate } from './judgment/review-gate.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -100,6 +102,12 @@ export async function createServer(options = {}) {
   // The person's own tag changes and tag governance (rec#11 D-07 part 2), console only.
   const knowledgeTags = options.knowledgeTags ?? (localOptions.runtimeConfigPath
     ? createKnowledgeTagsConsole(dirname(localOptions.runtimeConfigPath)) : null);
+  // Saves a built-in Agent's model settings; reached only by the loopback route.
+  const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
+    ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath) : null);
+  // The D-24 review gate registry as the model settings page shows it (read on every request).
+  const reviewGate = options.reviewGate ?? (localOptions.runtimeConfigPath
+    ? createReviewGate(dirname(localOptions.runtimeConfigPath)) : null);
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
   // is settled from its recorded operation, and graph deletions the record
   // lost are taken in again; what the graph cannot answer yet stays open for
@@ -185,6 +193,8 @@ export async function createServer(options = {}) {
       knowledgeHardDelete,
       knowledgeScope,
       knowledgeTags,
+      modelRoleSettings,
+      reviewGate,
       judgmentUndo,
       authority,
       lanAuthorities: allowedLanAuthorities,
@@ -276,6 +286,8 @@ async function handleRequest({
   knowledgeHardDelete,
   knowledgeScope,
   knowledgeTags,
+  modelRoleSettings,
+  reviewGate,
   judgmentUndo,
   authority,
   lanAuthorities,
@@ -301,6 +313,8 @@ async function handleRequest({
     knowledgeHardDelete,
     knowledgeScope,
     knowledgeTags,
+    modelRoleSettings,
+    reviewGate,
     judgmentUndo
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);

@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { MODEL_ADAPTERS } from './adapters/registry.js';
 import { budgetBlock, callLimits, ceilingCost, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
-import { MODEL_BACKEND_ROLES } from './config.js';
+import { MODEL_BACKEND_ROLES, configRevision } from './config.js';
 import { decisionContract, decisionEnvelope } from './decision-contract.js';
 import { egressAllowed } from './egress.js';
 import { FAILURE_STATUS, isFallbackEligible, modelFailure } from './failures.js';
@@ -183,10 +183,13 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // What Settings shows per role: which backend answers, never a key. The
     // current session answers a role without a model; an invalid file is a
     // repairable error that answers nothing, never the same as no file (C3).
+    // connections and revision are what the console edits from; they hold
+    // key references (secretRef) only.
     roles() {
       const loaded = readConfig();
       const roles = loaded.state === 'ok' ? loaded.config.roles : {};
-      return { state: loaded.state, error: loaded.error ?? null, roles: MODEL_BACKEND_ROLES.map(role => {
+      return { state: loaded.state, error: loaded.error ?? null, revision: configRevision(loaded),
+        connections: loaded.state === 'ok' ? loaded.config.connections : {}, roles: MODEL_BACKEND_ROLES.map(role => {
         const settings = roles[role];
         if (loaded.state === 'invalid') return { role, state: 'invalid_config', answeredBy: null };
         if (!settings) return { role, state: 'not_configured', answeredBy: 'current_session' };
@@ -195,7 +198,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
           connection: { id: settings.connection, protocol: connection.protocol, endpointHost: new URL(connection.endpoint).host,
             model: connection.model, secretRef: connection.secretRef, pricing: connection.pricing ? 'configured' : 'unknown' },
           allowedOperations: settings.allowedOperations, budget: settings.budget, fallbackToSession: settings.fallbackToSession,
-          egress: { approvedProjects: settings.egress.approvedProjects.length, allowUnassigned: settings.egress.allowUnassigned } };
+          egress: settings.egress };
       }) };
     },
     // A current-session answer to a work package is an attempt too, kept on

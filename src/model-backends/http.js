@@ -1,24 +1,56 @@
-import { sendJson } from '../http/response.js';
+import { refuseRemoteDecision } from '../http/request-policy.js';
+import { readJson, sendJson } from '../http/response.js';
 
-// Console reads for Settings: each role's backend and the usage ledger. The
-// get_model_usage Agent tool reads the same port, so both share validation
-// and output. Configuration stays a local file and keys a local command.
-export async function handleModelBackendApiRequest({ request, response, url, modelBackends, roleWork = null }) {
-  if (!['/api/model-backends/usage', '/api/model-backends/roles'].includes(url.pathname)) return false;
-  if (request.method !== 'GET') {
+// Routes of the model settings page. The roles and usage reads are
+// Agent-readable and contain no secrets, but include metadata (endpoints,
+// prices, approved projects); get_model_usage reads the same port. Saving one
+// role is accepted only at the local process boundary (a loopback request).
+// That does not show a person sent it and is not the human-review channel:
+// no MCP or Agent tool calls it, but anything with local shell or HTTP access
+// can. Keys stay a local command (fuli models set-key).
+// operations: the task types each role already sends to its model.
+// unlockedBuilds(modelId): the D-24 review gate registry's passing entries
+// for that model (src/judgment/review-gate.js), read on every request.
+const ROLE_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)$/;
+
+export async function handleModelBackendApiRequest({
+  request, response, url, modelBackends, roleWork = null, roleSettings = null, operations = {}, unlockedBuilds = null
+}) {
+  const roleEdit = ROLE_ROUTE.exec(url.pathname)?.[1] ?? null;
+  if (!roleEdit && !['/api/model-backends/usage', '/api/model-backends/roles'].includes(url.pathname)) return false;
+  if (request.method !== (roleEdit ? 'PUT' : 'GET')) {
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;
   }
-  if (!modelBackends) {
+  if (!modelBackends || (roleEdit && !roleSettings)) {
     sendJson(response, 503, { error: 'Model backends need a local FULI installation' });
     return true;
   }
   response.setHeader('Cache-Control', 'no-store');
-  if (url.pathname === '/api/model-backends/roles') {
-    sendJson(response, 200, { ...modelBackends.roles(), workPackages: roleWork?.summary().packages ?? [] });
+  if (roleEdit) {
+    if (refuseRemoteDecision(request, response, 'Model settings are changed only on this computer')) return true;
+    roleSettings.save(roleEdit, await readJson(request));
+  }
+  if (roleEdit || url.pathname === '/api/model-backends/roles') {
+    const settings = modelBackends.roles();
+    sendJson(response, 200, { ...settings, roles: settings.roles.map(role => ({ ...role, reviewGate: reviewGate(role, unlockedBuilds) })),
+      operations, workPackages: roleWork?.summary().packages ?? [] });
     return true;
   }
   sendJson(response, 200, modelBackends.usage({ role: url.searchParams.get('role'),
     from: url.searchParams.get('from'), to: url.searchParams.get('to') }));
   return true;
+}
+
+// rec#10 D-24, read-only: whether a role's model may apply its result without
+// the person. Only Tonborg's knowledge review has such a path, and only a
+// model the role is answered by can be unlocked; everything else is a
+// suggestion. A registry this FULI cannot read unlocks nothing.
+function reviewGate(role, unlockedBuilds) {
+  if (role.role !== 'tonborg') return { status: 'suggestion_only', reason: 'no_auto_apply', entries: [] };
+  if (role.answeredBy !== 'model_api') return { status: 'suggestion_only', reason: 'no_model', entries: [] };
+  const builds = unlockedBuilds ? unlockedBuilds(role.connection.model) : { readable: true, entries: [] };
+  if (!builds.readable) return { status: 'suggestion_only', reason: 'registry_unreadable', entries: [] };
+  return builds.entries.length ? { status: 'unlocked', reason: null, entries: builds.entries }
+    : { status: 'suggestion_only', reason: 'no_entry', entries: [] };
 }

@@ -1,3 +1,5 @@
+import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
+import { jsonFormat } from '../storage/json-format.js';
 import { readJsonFile } from '../storage/json-file.js';
 import {
   assertJsonObject, deepFreeze, positiveInteger, requiredString, uniqueTextArray
@@ -14,6 +16,8 @@ const MODEL_BACKEND_PROTOCOLS = Object.freeze(['openai_chat', 'anthropic_message
 export const OPERATION_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
 
 const CONFIG_VERSION = 1;
+// FULI writes this file when the person saves a role in the console.
+export const MODEL_BACKEND_CONFIG_FORMAT = jsonFormat({ store: 'model-backends', versions: [CONFIG_VERSION] });
 const MAX_CONNECTIONS = 32;
 const CONNECTION_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 const KEYED_PROTOCOLS = new Set(['anthropic_messages', 'typesafe_systemone']);
@@ -47,7 +51,14 @@ export function readModelBackendConfig(path, { read = readJsonFile } = {}) {
   }
 }
 
-function normalizeConfig(raw) {
+// Which saved configuration an edit starts from; null when there is none.
+export function configRevision(loaded) {
+  return loaded.state === 'ok' ? contentHash(loaded.config) : null;
+}
+
+// Validates a whole configuration, throwing a TypeError that names the field.
+// Its result reads back to itself, so it is also what FULI writes.
+export function normalizeConfig(raw) {
   object(raw, 'model backend config', ['version', 'connections', 'roles']);
   if (raw.version !== CONFIG_VERSION) throw new TypeError(`model backend config version must be ${CONFIG_VERSION}`);
   const connections = normalizeConnections(raw.connections ?? {});
@@ -94,7 +105,7 @@ function normalizeConnection(value, label) {
     model: plainText(value.model, `${label}.model`, 200),
     secretRef,
     reasoningEffort,
-    pricing: value.pricing === undefined || value.pricing === null ? null : normalizePricing(value.pricing, `${label}.pricing`)
+    pricing: value.pricing == null ? null : normalizePricing(value.pricing, `${label}.pricing`)
   };
 }
 
@@ -124,7 +135,7 @@ function normalizePricing(value, label) {
     currency: value.currency,
     inputPerMillionTokens: price(value.inputPerMillionTokens, `${label}.inputPerMillionTokens`),
     outputPerMillionTokens: price(value.outputPerMillionTokens, `${label}.outputPerMillionTokens`),
-    cachedInputPerMillionTokens: value.cachedInputPerMillionTokens === undefined
+    cachedInputPerMillionTokens: value.cachedInputPerMillionTokens == null
       ? null : price(value.cachedInputPerMillionTokens, `${label}.cachedInputPerMillionTokens`)
   };
 }
@@ -140,7 +151,7 @@ function normalizeRole(value, label, connections) {
   if (allowedOperations.some(operation => !OPERATION_PATTERN.test(operation))) {
     throw new TypeError(`${label}.allowedOperations must contain lowercase operation names such as staffing_review`);
   }
-  const budget = value.budget === undefined ? null
+  const budget = value.budget == null ? null
     : normalizeBudget(value.budget, `${label}.budget`, connections[connection]);
   if (value.enabled && !budget) throw new TypeError(`${label}.budget is required for an enabled role`);
   const fallbackToSession = value.fallbackToSession ?? false;
@@ -180,7 +191,7 @@ function normalizeBudget(value, label, connection) {
   const budget = Object.fromEntries(Object.entries(BUDGET_LIMITS).map(([key, maximum]) =>
     [key, positiveInteger(value[key], `${label}.${key}`, maximum)]));
   if (budget.timeoutMs < MIN_TIMEOUT_MS) throw new TypeError(`${label}.timeoutMs must be at least ${MIN_TIMEOUT_MS}`);
-  if (value.maxCostPerWindow === undefined) return { ...budget, maxCostPerWindow: null };
+  if (value.maxCostPerWindow == null) return { ...budget, maxCostPerWindow: null };
   if (!connection.pricing) {
     throw new TypeError(`${label}.maxCostPerWindow needs unit prices on the connection; without them the cost is unknown (费用未知)`);
   }
