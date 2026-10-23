@@ -214,16 +214,60 @@ for (const [label, breakData, code] of [
 
     assert.throws(() => decisions.commitChallenge(challenge, verified(), CLI_USER), { code });
 
-    const read = service.read({ appId: app.appId });
-    assert.deepEqual([read.versions[0].state, read.versions[0].approval], ['pending', null]);
-    assertConsumedWithoutApproval(service, app.appId, { status: 'pending', version: null, outcome: 'decision_failed', detail: code });
+    // While the data path is still broken, the registry itself shows the outcome.
+    const { store } = context;
+    assert.deepEqual([store.app(app.appId).status, store.version(app.appId, '1.0.0').state,
+      store.approval(app.appId, '1.0.0')], ['pending', 'pending', null]);
+    assert.notEqual(store.challenge(app.appId).consumedAt, null);
+    assert.throws(() => decisions.commitChallenge(challenge, verified(), CLI_USER), { code: 'challenge_replayed' });
+
     // The data path is repaired; the same challenge and answer still cannot be committed.
     rmSync(join(root, 'data'), { recursive: true, force: true });
     context.dataOf = (appId) => join(root, 'data', appId);
     assert.throws(() => decisions.commitChallenge(challenge, verified(), CLI_USER), { code: 'challenge_replayed' });
-    assert.equal(service.read({ appId: app.appId }).status, 'pending');
+    assertConsumedWithoutApproval(service, app.appId, { status: 'pending', version: null, outcome: 'decision_failed', detail: code });
+    assert.equal(service.read({ appId: app.appId }).versions[0].approval, null);
   });
 }
+
+// The interleaving dot found in round 2: a rival holding the same challenge and
+// answer commits right after the failing commit claimed it (before it
+// finalizes) or right after its finalize rolled back (before the failure is
+// recorded). Neither rival may approve, and the challenge never reopens.
+test('a rival commit racing a failed one at either step boundary never approves it', async (t) => {
+  const { service, reopen } = fixture(t);
+  for (const [boundary, name] of [[2, 'race-before-finalize'], [3, 'race-before-failure-record']]) {
+    const app = await submitted(service, { name });
+    const failingContext = reopen();
+    failingContext.dataOf = failingData('EACCES');
+    const failing = createVerifiedDecisions(failingContext, { presence: { kind: 'hello' } });
+    const rival = createVerifiedDecisions(reopen(), { presence: { kind: 'hello' } });
+    const challenge = failing.issueChallenge({ action: 'approve', ...approval(app) });
+    // Transactions of the failing commit: 1 claim, 2 finalize, 3 record the failure.
+    const transaction = failingContext.store.transaction.bind(failingContext.store);
+    const rivalOutcomes = [];
+    let calls = 0;
+    failingContext.store.transaction = (operation) => {
+      calls += 1;
+      if (calls === boundary) {
+        try {
+          rival.commitChallenge(challenge, verified(), CLI_USER);
+          rivalOutcomes.push('approved');
+        } catch (error) {
+          rivalOutcomes.push(error.code);
+        }
+      }
+      return transaction(operation);
+    };
+
+    assert.throws(() => failing.commitChallenge(challenge, verified(), CLI_USER), { code: 'EACCES' });
+
+    assert.deepEqual([calls, rivalOutcomes], [3, ['challenge_replayed']], `boundary ${boundary}`);
+    assertConsumedWithoutApproval(service, app.appId, { status: 'pending', version: null, outcome: 'decision_failed', detail: 'EACCES' });
+    assert.equal(service.read({ appId: app.appId }).versions[0].approval, null);
+    assert.throws(() => rival.commitChallenge(challenge, verified(), CLI_USER), { code: 'challenge_replayed' });
+  }
+});
 
 test('a verified rollback that fails on its data directory keeps the running version', async (t) => {
   const { service, decisions, reopen } = fixture(t);

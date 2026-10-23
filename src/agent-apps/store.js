@@ -133,14 +133,21 @@ export class AgentAppStore {
 
   saveChallenge(appId, { challengeId, nonceHash, decision, terms, expiresAt }) {
     this.database.prepare(`UPDATE agent_apps SET challenge_id = ?, challenge_nonce_hash = ?, challenge_decision = ?,
-      challenge_terms = ?, challenge_expires_at = ?, challenge_consumed_at = NULL WHERE app_id = ?`)
+      challenge_terms = ?, challenge_expires_at = ?, challenge_consumed_at = NULL, challenge_claim = NULL WHERE app_id = ?`)
       .run(challengeId, nonceHash, JSON.stringify(decision), terms, expiresAt, appId);
   }
 
-  // True for exactly one caller: the one whose update still found the challenge open.
-  consumeChallenge(appId, challengeId, at) {
-    return Number(this.database.prepare(`UPDATE agent_apps SET challenge_consumed_at = ?
-      WHERE app_id = ? AND challenge_id = ? AND challenge_consumed_at IS NULL`).run(at, appId, challengeId).changes) === 1;
+  // Consumes the challenge for the one caller whose update still found it open,
+  // and records that caller's claim token; true for that caller only.
+  claimChallenge(appId, challengeId, { at, claim }) {
+    return Number(this.database.prepare(`UPDATE agent_apps SET challenge_consumed_at = ?, challenge_claim = ?
+      WHERE app_id = ? AND challenge_id = ? AND challenge_consumed_at IS NULL`).run(at, claim, appId, challengeId).changes) === 1;
+  }
+
+  // Ends a claim; true only for its holder, once. The challenge stays consumed.
+  releaseChallengeClaim(appId, challengeId, claim) {
+    return Number(this.database.prepare(`UPDATE agent_apps SET challenge_claim = NULL
+      WHERE app_id = ? AND challenge_id = ? AND challenge_claim = ?`).run(appId, challengeId, claim).changes) === 1;
   }
 
   // Whether the history records this challenge consumed by a successful presence check.
@@ -174,7 +181,7 @@ export class AgentAppStore {
       this.database.prepare(`DELETE FROM ${table} WHERE app_id = ?`).run(appId);
     }
     this.database.prepare(`UPDATE agent_apps SET challenge_id = NULL, challenge_nonce_hash = NULL, challenge_decision = NULL,
-      challenge_terms = NULL, challenge_expires_at = NULL, challenge_consumed_at = NULL WHERE app_id = ?`).run(appId);
+      challenge_terms = NULL, challenge_expires_at = NULL, challenge_consumed_at = NULL, challenge_claim = NULL WHERE app_id = ?`).run(appId);
   }
 
   recordEvent({ appId, at, action, version = null, actor = null, detail = null }) {
@@ -235,9 +242,9 @@ export const AGENT_APP_FORMAT = sqliteFormat({
     columns: { verification: 'TEXT', challenge_id: 'TEXT', verified_at: 'TEXT' }
   }, {
     id: 'agent-apps/3-presence-challenges', to: 3, kind: 'add-columns', table: 'agent_apps',
-    summary: 'the open presence challenge of a CLI approval or rollback: nonce hash, decision, terms digest and expiry',
+    summary: 'the open presence challenge of a CLI approval or rollback: nonce hash, decision, terms digest, expiry and claim',
     columns: { challenge_id: 'TEXT', challenge_nonce_hash: 'TEXT', challenge_decision: 'TEXT', challenge_terms: 'TEXT',
-      challenge_expires_at: 'TEXT', challenge_consumed_at: 'TEXT' }
+      challenge_expires_at: 'TEXT', challenge_consumed_at: 'TEXT', challenge_claim: 'TEXT' }
   }]
 });
 

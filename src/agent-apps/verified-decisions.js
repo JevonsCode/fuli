@@ -11,6 +11,7 @@ import { appConflict } from './errors.js';
 const CHALLENGE_WINDOW_MS = 10 * 60_000;
 const NONCE_BYTES = 32;
 const CHALLENGE_ID_BYTES = 16;
+const CLAIM_BYTES = 16;
 const EVENT_DETAIL = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 const UNVERIFIED_OUTCOME = 'Recorded as unverified: nothing was approved or activated, and the app does not run '
@@ -28,11 +29,12 @@ const PRESENCE_MESSAGES = Object.freeze({
 // verification result, it does not sign the challenge. The challenge carries a
 // 10-minute nonce that only this process holds and the digest of everything
 // the decision covers: the full approval terms (approvalBinds), the app state
-// it starts from and the confirmations given. Consuming the nonce and
-// committing the decision happen in one transaction, after the terms are
-// computed again. A cancellation, failure, unavailable check, timeout, expiry
-// or changed terms consumes the challenge and approves nothing: no approval,
-// no change of the active version, no earlier approval restored.
+// it starts from and the confirmations given. The nonce is consumed once, by
+// one claim that is committed before anything else, and only that claim can
+// then commit the decision, after the terms are computed again. A
+// cancellation, failure, unavailable check, timeout, expiry, changed terms or
+// a failed commit leaves the challenge consumed and approves nothing: no
+// approval, no change of the active version, no earlier approval restored.
 // Only the CLI composes this module; the console and Agent tools cannot reach it.
 export function createVerifiedDecisions(context, { presence }) {
   const { store, now } = context;
@@ -62,22 +64,30 @@ export function createVerifiedDecisions(context, { presence }) {
     });
   }
 
-  // outcome: what the presence port reported for this challenge. Consuming
-  // the challenge and committing the decision share one transaction, so of
-  // concurrent commits exactly one consumes it. When that transaction fails
-  // instead (a data directory that cannot be created, a storage error), it
-  // rolls back whole and the challenge is consumed on its own as a failure:
-  // whatever went wrong after the verification attempt, the same answer is
-  // never committed again and nothing else changes.
+  // outcome: what the presence port reported for this challenge. The commit
+  // runs in two steps, and the first is what makes it one-time:
+  // 1. claim: one committed transaction consumes the challenge and stores a
+  //    claim token only this call holds. Of concurrent commits exactly one
+  //    claims it; every other one, then or later, is challenge_replayed.
+  // 2. finalize: one transaction checks the answer and the terms again and
+  //    either approves (or activates) and releases the claim, or records the
+  //    refusal and releases it. Only the claim holder can finalize.
+  // When finalizing throws (a data directory that cannot be created, a
+  // storage error), it rolls back whole, so nothing is approved, and a further
+  // transaction records the failure. The challenge was consumed in step 1 and
+  // stays consumed: a failed attempt is never offered to another submitter.
+  // A crash between the steps leaves it consumed and unapproved.
   function commitChallenge(challenge, outcome, actor) {
+    const claimed = store.transaction(() => claimChallenge(challenge));
+    if (claimed.refusal) throw claimed.refusal;
     let settled;
     try {
-      settled = store.transaction(() => commitInTransaction(challenge, outcome, actor));
+      settled = store.transaction(() => finalize(claimed, outcome, actor));
     } catch (error) {
       try {
-        consumeAfterFailure(challenge, actor, error);
+        store.transaction(() => finalizeFailed(claimed, actor, error));
       } catch (cleanup) {
-        throw new AggregateError([error, cleanup], 'The decision failed, and so did consuming its challenge');
+        throw new AggregateError([error, cleanup], 'The decision failed, and so did recording it; its challenge stays consumed');
       }
       throw error;
     }
@@ -85,16 +95,24 @@ export function createVerifiedDecisions(context, { presence }) {
     return settled.result;
   }
 
-  function commitInTransaction({ appId, challengeId, nonce }, outcome, actor) {
-    const open = openChallenge({ appId, challengeId, nonce });
-    if (!open) {
+  function claimChallenge({ appId, challengeId, nonce }) {
+    const open = store.challenge(appId);
+    if (!open || open.challengeId !== challengeId || open.nonceHash !== contentHash(String(nonce))) {
       return { refusal: appConflict('challenge_mismatch', 'This is not the open challenge of this app; start the decision again') };
     }
+    const claim = randomBytes(CLAIM_BYTES).toString('base64url');
     const at = now();
-    if (!store.consumeChallenge(appId, challengeId, at)) {
+    if (!store.claimChallenge(appId, challengeId, { at, claim })) {
       return { refusal: appConflict('challenge_replayed', 'This challenge was already used; start the decision again') };
     }
-    const { decision } = open;
+    return { open, claim, at };
+  }
+
+  function finalize({ open, claim, at }, outcome, actor) {
+    const { challengeId, decision } = open;
+    if (!store.releaseChallengeClaim(decision.appId, challengeId, claim)) {
+      return { refusal: appConflict('challenge_mismatch', 'Another decision replaced this challenge; start the decision again') };
+    }
     const checked = checkedDecision(open, outcome);
     if (checked.refusal) {
       recordConsumed(open, { at, actor, outcome: checked.refusal.code, detail: outcome?.detail });
@@ -109,20 +127,10 @@ export function createVerifiedDecisions(context, { presence }) {
     return { result: { ...result, approval: { entrypoint: 'cli', ...check } } };
   }
 
-  // In its own transaction, and only if no other commit consumed the challenge first.
-  function consumeAfterFailure({ appId, challengeId, nonce }, actor, error) {
-    store.transaction(() => {
-      const open = openChallenge({ appId, challengeId, nonce });
-      const at = now();
-      if (open && store.consumeChallenge(appId, challengeId, at)) {
-        recordConsumed(open, { at, actor, outcome: 'decision_failed', detail: error?.code });
-      }
-    });
-  }
-
-  function openChallenge({ appId, challengeId, nonce }) {
-    const open = store.challenge(appId);
-    return open && open.challengeId === challengeId && open.nonceHash === contentHash(String(nonce)) ? open : null;
+  function finalizeFailed({ open, claim, at }, actor, error) {
+    if (store.releaseChallengeClaim(open.decision.appId, open.challengeId, claim)) {
+      recordConsumed(open, { at, actor, outcome: 'decision_failed', detail: error?.code });
+    }
   }
 
   // detail: a short code from the presence port or the failed operation, never a path or message.
