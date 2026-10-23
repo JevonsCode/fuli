@@ -1,3 +1,4 @@
+import { createInterface as createLineInterface } from 'node:readline';
 import { createInterface } from 'node:readline/promises';
 
 export function writeLine(value) {
@@ -56,6 +57,27 @@ export async function questionInTerminal(question) {
   } finally {
     input.close();
   }
+}
+
+// Asks for one line to be typed back; null when the user cancels (Ctrl-C) or
+// the input ends, so a closed terminal never reads as an answer.
+export function typedLineInTerminal(prompt, { input = process.stdin, output = process.stdout } = {}) {
+  const terminal = createLineInterface({ input, output });
+  return new Promise((resolve) => {
+    let answered = false;
+    const finish = (line) => {
+      if (answered) return;
+      answered = true;
+      terminal.close();
+      resolve(line);
+    };
+    terminal.on('SIGINT', () => {
+      output.write('\n');
+      finish(null);
+    });
+    terminal.on('close', () => finish(null));
+    terminal.question(prompt, finish);
+  });
 }
 
 // Whether this is an interactive terminal (both ends a TTY). A pipe, a script

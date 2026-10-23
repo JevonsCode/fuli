@@ -157,69 +157,90 @@ test('the local HTTP API lists apps and accepts management writes only from this
   assert.equal(deleted.body.status, 'deleted');
 });
 
-test('fuli app approve refuses non-interactive callers and records a presence-checked CLI approval', async (t) => {
+test('fuli app approve refuses non-interactive callers and completes the terminal confirmation on every platform', async (t) => {
   const { runtimeConfigPath, service } = fixture(t);
-  const submitted = await service.submit({
-    ...submission({ resident: true, runtime: { apiVersion: 1, entry: 'service/main.js', webRoot: 'web' } }),
+  const resident = (version) => service.submit({
+    ...submission({ version, resident: true, runtime: { apiVersion: 1, entry: 'service/main.js', webRoot: 'web' } }),
     files: [...FILES, { path: 'service/main.js', content: 'export const synthetic = true;\n' }]
   });
+  const submitted = await resident('1.0.0');
   const args = ['approve', submitted.appId, '1.0.0', '--runtime-config', runtimeConfigPath];
   const lines = [];
   const print = (line) => lines.push(line);
+  const typed = [];
+  const typeLine = (answer) => async (prompt) => { typed.push(prompt); return answer; };
 
   await assert.rejects(runAppCommand(args, { interactive: false, confirm: async () => true, print }),
     /interactive terminal/);
   const piped = spawnSync(process.execPath, [CLI, 'app', ...args], { env: {}, encoding: 'utf8', timeout: 10_000 });
   assert.equal(piped.status, 1);
   assert.match(piped.stderr, /interactive terminal/);
-  // A fake presence port: it proves the CLI's state machine, never a real Windows Hello.
-  const asked = [];
-  const presence = { kind: 'hello', verify: async (challenge) => { asked.push(challenge); return { verified: true }; } };
+
+  // The resident service is answered first; declining it asks nothing more.
   const prompts = [];
-  await runAppCommand(args, { interactive: true, print, platform: 'win32', presence, confirm: async (question) => {
-    prompts.push(question);
-    return prompts.length === 1;
-  } });
-  assert.match(prompts[0], new RegExp(submitted.digest));
-  assert.match(prompts[0], /fuli\.resolve_knowledge_tags/);
-  assert.match(prompts[0], /Hello 返回用户验证结果，不签署 challenge/);
-  assert.match(prompts[0], /不在安全桌面/);
-  assert.doesNotMatch(prompts.join('\n'), /过不了 Hello|cannot pass Hello/i);
-  assert.match(prompts[1], /resident/i);
-  assert.equal(asked.length, 0, 'every confirmation comes before the one presence check');
+  await runAppCommand(args, { interactive: true, print, platform: 'linux', typeLine: typeLine(MANIFEST.name),
+    confirm: async (question) => { prompts.push(question); return false; } });
+  assert.match(prompts[0], /resident/i);
+  assert.equal(typed.length, 0);
   assert.equal(service.read({ appId: submitted.appId }).status, 'pending');
 
-  await runAppCommand(args, { interactive: true, print, platform: 'win32', presence, confirm: async () => true });
-  assert.equal(asked.length, 1);
-  assert.match(asked[0].message, new RegExp(`${submitted.digest}[\\s\\S]*Resident service yes[\\s\\S]*${asked[0].challengeId}`));
+  // macOS and Linux are no longer refused: a wrong name is, on any platform.
+  await assert.rejects(runAppCommand(args, { interactive: true, print, platform: 'linux', typeLine: typeLine('dispatch'),
+    confirm: async () => true }), { code: 'confirmation_mismatch' });
+  assert.equal(service.read({ appId: submitted.appId }).status, 'pending');
+
+  lines.length = 0;
+  await runAppCommand(args, { interactive: true, print, platform: 'darwin', typeLine: typeLine(MANIFEST.name),
+    confirm: async () => true });
+  const shown = lines.join('\n');
+  for (const text of [MANIFEST.name, submitted.digest, 'fuli.resolve_knowledge_tags', 'Resident service yes',
+    '这个应用会用你的账户权限在本机运行，FULI 不会隔离它。只批准你信任的应用。',
+    '完成终端确认流程。这不证明是真人操作，也不能抵御以同一账户运行的其他程序。']) {
+    assert.ok(shown.includes(text), text);
+  }
+  assert.match(typed.at(-1), new RegExp(`Type the app name ${MANIFEST.name}[\\s\\S]*输入应用名 ${MANIFEST.name}`));
   const approved = service.read({ appId: submitted.appId });
-  assert.equal(approved.status, 'active');
-  assert.equal(approved.versions[0].approval.entrypoint, 'cli');
-  assert.equal(approved.versions[0].approval.presence, 'hello');
-  assert.equal(approved.versions[0].approval.verification, 'os_user_verified');
-  assert.equal(approved.versions[0].approval.challengeId, asked[0].challengeId);
-  assert.equal(JSON.parse(lines.at(-1)).run.status, 'run_refused');
+  assert.deepEqual([approved.status, approved.versions[0].approval.entrypoint, approved.versions[0].approval.presence,
+    approved.versions[0].approval.verification, approved.versions[0].approval.trustMode],
+  ['active', 'cli', 'unverified', 'terminal_confirmation', 'trusted']);
+  assert.deepEqual(JSON.parse(lines.at(-1)).run, { status: 'ready', trustMode: 'trusted' });
+
+  // Windows Hello is an optional extra on Windows only. A fake port: never a real Hello.
+  await resident('1.0.1');
+  const helloArgs = ['approve', submitted.appId, '1.0.1', '--hello', '--runtime-config', runtimeConfigPath];
+  await assert.rejects(runAppCommand(helloArgs, { interactive: true, print, platform: 'linux', confirm: async () => true,
+    typeLine: typeLine(MANIFEST.name) }), /--hello uses Windows Hello/);
+  const asked = [];
+  const presence = { kind: 'hello', verify: async (challenge) => { asked.push(challenge); return { verified: true }; } };
+  await runAppCommand(helloArgs, { interactive: true, print, platform: 'win32', presence, confirm: async () => true,
+    typeLine: typeLine(MANIFEST.name) });
+  assert.equal(asked.length, 1);
+  assert.match(asked[0].message, new RegExp(`approve Agent app ${MANIFEST.name} 1\\.0\\.1[\\s\\S]*Resident service yes[\\s\\S]*${asked[0].challengeId}`));
+  const withHello = service.read({ appId: submitted.appId });
+  assert.deepEqual([withHello.version, withHello.versions[1].approval.presence, withHello.versions[1].approval.trustMode],
+    ['1.0.1', 'hello', 'trusted']);
 
   await runAppCommand(['disable', submitted.appId, '--runtime-config', runtimeConfigPath], { interactive: false, print });
   assert.equal(service.read({ appId: submitted.appId }).status, 'disabled');
 });
 
-// rec#7 D-28.8: the normal MCP and fuli_call paths, and the console, cannot reach
-// the presence-checked decisions or the presence port. This proves the call
-// graph only: an Agent's shell can still start `fuli app approve`, and then the
-// Hello dialog needs the local user.
-test('only the CLI reaches the presence-checked approval and the presence port', () => {
+// rec#7 D-28.8, rec#11 D-36.1: the normal MCP and fuli_call paths, and the
+// console, cannot reach the terminal-confirmed decisions or the Windows Hello
+// port. This proves the call graph only: an Agent's shell can still start
+// `fuli app approve` and type the name, which is why the confirmation does not
+// claim to prove a person did it.
+test('only the CLI reaches the terminal-confirmed approval and the presence port', () => {
   const root = fileURLToPath(new URL('..', import.meta.url));
-  const presenceOnly = ['src/agent-apps/verified-decisions.js', 'src/presence/port.js', 'src/presence/windows-hello.js',
+  const cliOnly = ['src/agent-apps/confirmed-decisions.js', 'src/presence/port.js', 'src/presence/windows-hello.js',
     'src/presence/windows-helper-pin.js'].map((path) => join(root, path));
   for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js', 'src/server.js']) {
     const modules = reachableModules(join(root, entry));
-    assert.deepEqual(presenceOnly.filter((path) => modules.has(path)), [], entry);
+    assert.deepEqual(cliOnly.filter((path) => modules.has(path)), [], entry);
   }
   const cli = reachableModules(join(root, 'src/cli.js'));
-  assert.deepEqual(presenceOnly.filter((path) => !cli.has(path)), []);
+  assert.deepEqual(cliOnly.filter((path) => !cli.has(path)), []);
   const importers = [...cli].filter((path) => path.startsWith(join(root, 'src'))
-    && /from '\.\.\/agent-apps\/verified-decisions\.js'|from '\.\.\/presence\/port\.js'/.test(readFileSync(path, 'utf8')));
+    && /from '\.\.\/agent-apps\/confirmed-decisions\.js'|from '\.\.\/presence\/port\.js'/.test(readFileSync(path, 'utf8')));
   assert.deepEqual(importers, [join(root, 'src/cli/app-command.js')]);
 });
 
@@ -229,7 +250,7 @@ test('the shipped presence path never compiles a Windows probe at run time', () 
   const shipped = [...reachableModules(join(root, 'src/cli.js')), ...reachableModules(join(root, 'src/server.js'))];
   assert.deepEqual(shipped.filter((path) => readFileSync(path, 'utf8').includes('FULI_DEV_WIN_PROBE')), []);
   const presence = [...reachableModules(join(root, 'src/presence/port.js')),
-    ...reachableModules(join(root, 'src/agent-apps/verified-decisions.js'))];
+    ...reachableModules(join(root, 'src/agent-apps/confirmed-decisions.js'))];
   assert.deepEqual(presence.filter((path) => /Add-Type|powershell/i.test(readFileSync(path, 'utf8'))), []);
   const probe = readFileSync(join(root, 'scripts/dev-win-hello-probe.ps1'), 'utf8');
   assert.match(probe, /\$env:FULI_DEV_WIN_PROBE -ne '1'/);

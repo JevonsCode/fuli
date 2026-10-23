@@ -177,28 +177,31 @@ export class AgentAppStore {
       appId: row.app_id, version: row.version, digest: row.digest, permissions: JSON.parse(row.permissions),
       data: JSON.parse(row.data), resident: row.resident === 1, approvedBy: row.approved_by,
       entrypoint: row.entrypoint, presence: row.presence, verification: row.verification,
-      challengeId: row.challenge_id, verifiedAt: row.verified_at, approvedAt: row.approved_at
+      challengeId: row.challenge_id, verifiedAt: row.verified_at, trustMode: row.trust_mode, termsVersion: row.terms_version,
+      approvedAt: row.approved_at
     } : null;
   }
 
-  // check: the presence check of the decision ({ presence, verification, challengeId, verifiedAt }).
+  // check: the confirmation of the decision ({ presence, verification, challengeId, verifiedAt, trustMode, termsVersion }).
   insertApproval({ appId, version, digest, permissions, data, resident, approvedBy, entrypoint, approvedAt }, check) {
     this.database.prepare(`INSERT INTO agent_app_approvals (app_id, version, digest, permissions, data, resident,
-        approved_by, entrypoint, presence, verification, challenge_id, verified_at, approved_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        approved_by, entrypoint, presence, verification, challenge_id, verified_at, trust_mode, terms_version, approved_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(appId, version, digest, JSON.stringify(permissions), JSON.stringify(data), resident ? 1 : 0,
-        approvedBy, entrypoint, check.presence, check.verification, check.challengeId, check.verifiedAt, approvedAt);
+        approvedBy, entrypoint, check.presence, check.verification, check.challengeId, check.verifiedAt,
+        check.trustMode, check.termsVersion, approvedAt);
   }
 
-  // Every activation rewrites the presence check of the version it activates,
-  // so a check made for an earlier activation never carries over to a later one.
+  // Every activation rewrites the confirmation of the version it activates, so
+  // a confirmation made for an earlier activation never carries over to a later one.
   setApprovalCheck(appId, version, check) {
-    this.database.prepare(`UPDATE agent_app_approvals SET presence = ?, verification = ?, challenge_id = ?, verified_at = ?
-      WHERE app_id = ? AND version = ?`)
-      .run(check.presence, check.verification, check.challengeId, check.verifiedAt, appId, version);
+    this.database.prepare(`UPDATE agent_app_approvals SET presence = ?, verification = ?, challenge_id = ?, verified_at = ?,
+      trust_mode = ?, terms_version = ? WHERE app_id = ? AND version = ?`)
+      .run(check.presence, check.verification, check.challengeId, check.verifiedAt, check.trustMode, check.termsVersion,
+        appId, version);
   }
 
-  // One open presence challenge per app; issuing another replaces it.
+  // One open confirmation challenge per app; issuing another replaces it.
   challenge(appId) {
     const row = this.database.prepare(`SELECT challenge_id, challenge_nonce_hash, challenge_decision, challenge_terms,
       challenge_expires_at, challenge_consumed_at FROM agent_apps WHERE app_id = ?`).get(appId);
@@ -227,10 +230,10 @@ export class AgentAppStore {
       WHERE app_id = ? AND challenge_id = ? AND challenge_claim = ?`).run(appId, challengeId, claim).changes) === 1;
   }
 
-  // Whether the history records this challenge consumed by a successful presence check.
-  challengeVerified(appId, challengeId) {
+  // Whether the history records this challenge consumed by a completed terminal confirmation.
+  challengeConfirmed(appId, challengeId) {
     return Boolean(this.database.prepare(`SELECT 1 FROM agent_app_events WHERE app_id = ? AND action = 'challenge_consumed'
-      AND json_extract(detail, '$.challengeId') = ? AND json_extract(detail, '$.outcome') = 'verified' LIMIT 1`)
+      AND json_extract(detail, '$.challengeId') = ? AND json_extract(detail, '$.outcome') = 'confirmed' LIMIT 1`)
       .get(appId, challengeId));
   }
 
@@ -379,6 +382,17 @@ export const AGENT_APP_FORMAT = sqliteFormat({
     // Asked before the column exists, so every existing app needs it.
     backfillKeys: (database) => database.prepare('SELECT app_id FROM agent_apps ORDER BY app_id').all().map((row) => row.app_id),
     backfill: (database) => database.exec('UPDATE agent_apps SET identity_key = substr(app_id, 5, 32)')
+  }, {
+    // rec#11 D-36.2/D-36.9: this version has no sandbox, so an approved app runs
+    // in trusted mode (trust-terms.js). Every approval made before it (the
+    // isolated mode of rec#7 PR①, Windows Hello approvals included) keeps NULL
+    // here, and the run gate asks for a new terminal confirmation: consent to
+    // code that was to run isolated is not consent to run it with the user's
+    // own permissions, so it is never converted.
+    id: 'agent-apps/8-approval-trust-mode', to: 8, kind: 'add-columns', table: 'agent_app_approvals',
+    summary: 'the trust mode and terms version an approval was confirmed under; an earlier approval (isolated mode, '
+      + 'Windows Hello included) has none, so its version is confirmed again before it runs',
+    columns: { trust_mode: 'TEXT', terms_version: 'INTEGER' }
   }]
 });
 

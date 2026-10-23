@@ -24,12 +24,14 @@ export function dataDeleting() {
 }
 
 // What no app may ask for, refused at submission and never silently dropped
-// (rec#7 D-28.3, D-28.4): network access, and any tool marked egress, model
-// or launch in the host tool catalog.
+// (rec#7 D-28.3, D-28.4): a network grant, and any tool marked egress, model
+// or launch in the host tool catalog. These limit only what the FULI Host API
+// grants; an app in trusted mode can still use the network or start programs
+// itself (rec#11 D-36.10).
 export function rejectedManifest(submitted, manifest) {
   const reasons = [];
   if (submitted !== null && typeof submitted === 'object' && Object.hasOwn(submitted, 'network')) {
-    reasons.push('network: apps have no network; their only channel is the FULI host');
+    reasons.push('network: the FULI host grants apps no network access');
   }
   if (manifest) {
     for (const permission of manifest.permissions) {
@@ -38,7 +40,7 @@ export function rejectedManifest(submitted, manifest) {
     }
   }
   return reasons.length ? new ApplicationError('manifest_rejected',
-    `Apps may not send data off this computer, spend model budget or start other programs: ${reasons.join('; ')}`,
+    `The FULI host grants apps nothing that sends data off this computer, spends model budget or starts other programs: ${reasons.join('; ')}`,
     { status: 400 }) : null;
 }
 

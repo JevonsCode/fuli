@@ -12,7 +12,7 @@ const INSTANCE_ID_BYTES = 16;
 const SEAL_WAIT_MS = 10_000;
 
 // An instance has ended only once its process is confirmed stopped (stoppedAt):
-// sealed alone, after a backend stop that failed, still blocks a start, an
+// sealed alone, after a runner stop that failed, still blocks a start, an
 // export and a deletion until a stop or an orphan cleanup confirms it.
 const unfinished = (instance) => Boolean(instance) && !instance.stoppedAt;
 
@@ -21,21 +21,21 @@ const waitFor = (ms, signal) => delay(ms, undefined, { signal }).catch(() => {})
 
 // The app runner (rec#7 D-28.9, D-28.14, D-28.17): the one current instance
 // of each app this process hosts, and the serial contract around it.
-// - start: the run gate and the isolation self-check pass, the owner lease is
+// - start: the run gate and the runner's self-check pass, the owner lease is
 //   taken for the instance's life, and inside the write gate the next instance
 //   generation is claimed, the data root is created (the only place it is),
-//   a token bound to the instance is issued and the backend starts it.
+//   a token bound to the instance is issued and the runner starts it.
 // - seal: stopping (no new call verifies) → sealing (a write tool still holds
 //   the gate after 10 s; every decision on the app answers instance_sealing
 //   until it ends) → sealed (sealedAt written inside the gate). Then the
-//   process stops through the backend's own reference, the tokens end and
+//   process stops through the runner's own reference, the tokens end and
 //   the lease is released.
 // - reconcile, before every operation: an instance whose host has exited
-//   (its lease was just taken over on exit evidence) is stopped through the
-//   backend and sealed with reason host_gone, which also completes a sealing
+//   (its lease was just taken over on exit evidence) is confirmed stopped by the
+//   runner and sealed with reason host_gone, which also completes a sealing
 //   its host left; an interrupted data deletion is settled.
 export function createAppInstances(context) {
-  const { store, leases, gates, lifecycles, isolation, now } = context;
+  const { store, leases, gates, lifecycles, runner, now } = context;
   const wait = context.wait ?? waitFor;
   const tokens = createAppTokens(context);
   const { runGate } = createRunGate(context);
@@ -53,8 +53,8 @@ export function createAppInstances(context) {
         : liveInstance({ state: 'running', instanceId: earlier.instanceId });
       const gate = runGate({ appId });
       if (gate.status !== 'ready') return gate;
-      const check = await isolation.selfCheck();
-      if (!check.ok) return runRefused('isolation_probe_failed');
+      const check = await runner.selfCheck();
+      if (!check.ok) return runRefused('runner_check_failed');
       const lease = await leases.acquire(appId);
       let started = false;
       try {
@@ -103,7 +103,7 @@ export function createAppInstances(context) {
         leases.assertOwned(lease);
         ensureDataDirectory(context.dataOf(appId));
       }
-      handle = await isolation.start({ appId, instanceId, generation, mode, manifest: version.manifest,
+      handle = await runner.start({ appId, instanceId, generation, mode, manifest: version.manifest,
         packageDirectory: context.packageOf(appId, version.version), dataDirectory: context.dataOf(appId),
         environment: { FULI_APP_ID: appId, FULI_APP_INSTANCE: instanceId, FULI_APP_TOKEN: token } });
     } catch (error) {
@@ -116,7 +116,7 @@ export function createAppInstances(context) {
         exePath: handle.exePath ?? null, socket: handle.socket ?? null });
     });
     if (!recorded) {
-      await isolation.stop(handle);
+      await runner.stop(handle);
       throw superseded();
     }
     hosted.set(appId, { lease, ...instance, handle, sealing: null, sealed: false });
@@ -179,7 +179,7 @@ export function createAppInstances(context) {
         local.sealed = true;
       }
       try {
-        await isolation.stop(local.handle);
+        await runner.stop(local.handle);
       } catch (error) {
         local.sealing = null;
         store.transaction(() => {
@@ -240,7 +240,7 @@ export function createAppInstances(context) {
     // stopOrphan resolves only once the process is confirmed gone (or never
     // ran); a failure keeps the record and refuses the operation.
     if (unfinished(instance) && instance.ownerId !== lease.ownerId) {
-      await isolation.stopOrphan(instance);
+      await runner.stopOrphan(instance);
       // A sealing the exited host left completes here.
       if (!instance.sealedAt) {
         store.transaction(() => {

@@ -8,9 +8,9 @@ const HISTORY_LIMIT = 20;
 
 // Management views: one compact row per app for the overview, and the full
 // metadata of one app for preview and review. Neither returns code or data.
-// Both show where each approval came in, the presence FULI verified and what
-// the run gate answers now, so a management page never presents an approval as
-// more than was checked.
+// Both show where each approval came in, the confirmation and trust mode it
+// went through and what the run gate answers now, so a management page never
+// presents an approval as more than was checked.
 export function createAppViews(context) {
   const { store } = context;
   const { runGate } = createRunGate(context);
@@ -77,8 +77,8 @@ export function createAppViews(context) {
 
 function activeApproval(approval) {
   if (!approval) return null;
-  const { approvedBy, entrypoint, presence, verification, challengeId, verifiedAt, approvedAt } = approval;
-  return { approvedBy, entrypoint, presence, verification, challengeId, verifiedAt, approvedAt };
+  const { approvedBy, entrypoint, presence, verification, challengeId, verifiedAt, trustMode, termsVersion, approvedAt } = approval;
+  return { approvedBy, entrypoint, presence, verification, challengeId, verifiedAt, trustMode, termsVersion, approvedAt };
 }
 
 function approvalView(approval) {

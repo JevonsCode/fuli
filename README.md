@@ -742,6 +742,8 @@ Tonborg's workbench shows decisions and feedback. **Project Agents → Hire an A
 Recruitment reuses a durable identity with separate project assignments. An installed employee workbench,
 API and A2A share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not
 start a model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
+Agents can also grow small [Agent apps](docs/agent-apps.md); in this version an approved app runs
+unsandboxed with your account's permissions, after you confirm it with `fl app approve` in a terminal.
 
 Project Agent identities remain control-plane records rather than one resident process per identity.
 Roles now keep versioned, project-private working memory in the same Neo4j Provider. Task entry

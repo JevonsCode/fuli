@@ -161,17 +161,20 @@ test('a real child process is probed read-only until it exits on its own', {
   }
 });
 
-// D-28.29 static invariant: nothing in src/agent-apps sends a signal that
-// stops a process, and only host-identity.js asks kill(pid, 0).
-test('src/agent-apps stops no process by signal, and only host-identity.js probes with kill(pid, 0)', () => {
+// D-28.29 static invariant: nothing in src/agent-apps signals a process by
+// PID, only host-identity.js asks kill(pid, 0), and only the trusted runner
+// stops a process: the app child it started, through its own handle (rec#11 D-36.2).
+test('src/agent-apps stops no process by PID, and only the trusted runner ends the child it holds', () => {
   const directory = join(ROOT, 'src/agent-apps');
   const files = readdirSync(directory, { recursive: true }).map(String).filter((path) => path.endsWith('.js'));
   const offenders = [];
   for (const file of files) {
     const source = readFileSync(join(directory, file), 'utf8');
+    const name = file.replaceAll('\\', '/');
     for (const [line] of source.matchAll(/^.*(?:\.kill\(|taskkill|TerminateProcess).*$/gm)) {
-      const probe = /process\.kill\(pid, 0\)/.test(line) && file.replaceAll('\\', '/') === 'host-identity.js';
-      if (!probe) offenders.push(`${file}: ${line.trim()}`);
+      const probe = /process\.kill\(pid, 0\)/.test(line) && name === 'host-identity.js';
+      const ownChild = /^\s*child\.kill\((?:'SIGKILL')?\);$/.test(line) && name === 'trusted-runner.js';
+      if (!probe && !ownChild) offenders.push(`${file}: ${line.trim()}`);
     }
   }
   assert.deepEqual(offenders, []);

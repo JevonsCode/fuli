@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { agentAppContext, agentAppServiceOver } from '../src/agent-apps/service.js';
-import { createVerifiedDecisions } from '../src/agent-apps/verified-decisions.js';
+import { createConfirmedDecisions } from '../src/agent-apps/confirmed-decisions.js';
 
 // Synthetic FULI host processes for Agent app runner tests (rec#7 PR②). Each
 // host is one context over the same registry, as a console, a standalone
 // runner and a CLI would open it. Nothing real is probed, started or
 // stopped: process liveness comes from `world`, which the test sets, and
-// instances run in a fake isolation backend that starts nothing.
+// instances run in a fake runner that starts nothing.
 
 export const CLI_USER = Object.freeze({ entrypoint: 'cli', user: 'fixture-user' });
 export const CONSOLE_USER = Object.freeze({ entrypoint: 'http', user: 'local-console' });
@@ -64,9 +64,9 @@ function fakeHostIdentity(world, pid) {
   };
 }
 
-// A backend that starts nothing and records what it was asked. hooks.<step>,
+// A runner that starts nothing and records what it was asked. hooks.<step>,
 // when set, runs (and may wait or throw) before selfCheck, start or stop answer.
-export function fakeIsolation({ selfCheck = { ok: true } } = {}) {
+export function fakeRunner({ selfCheck = { ok: true } } = {}) {
   const calls = [];
   const started = [];
   const hooks = {};
@@ -130,25 +130,26 @@ export function appRegistry(t, { tools = [] } = {}) {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  function host({ pid, ownerKind = 'console', isolation = fakeIsolation(), hostTools = new Map(), fs = realFs,
+  function host({ pid, ownerKind = 'console', runner = fakeRunner(), hostTools = new Map(), fs = realFs,
     wait, timers = { setInterval: () => ({ unref() {} }), clearInterval: () => {} } } = {}) {
-    const context = agentAppContext({ root, providerIdentity: 'http://127.0.0.1:65530', platform: 'win32', ownerKind,
+    const context = agentAppContext({ root, providerIdentity: 'http://127.0.0.1:65530', ownerKind,
       resolveOwner: async (owner) => owner, toolNames: () => tools, clock: () => new Date(clock.now),
-      hostIdentity: fakeHostIdentity(world, pid), isolation, hostTools: () => hostTools, fs, wait,
+      hostIdentity: fakeHostIdentity(world, pid), runner, hostTools: () => hostTools, fs, wait,
       timers });
     const service = agentAppServiceOver(context);
     opened.push(service);
-    const decisions = createVerifiedDecisions(context, { presence: { kind: 'hello', verify: async () => ({ verified: true }) } });
-    return { context, service, decisions, isolation, pid };
+    // The terminal confirmation answers with the app's name, as a user typing it would.
+    const decisions = createConfirmedDecisions(context, { confirmation: { ask: async ({ appName }) => appName } });
+    return { context, service, decisions, runner, pid };
   }
 
   return { directory, root, clock, world, host, dataOf: (appId) => join(root, 'data', appId) };
 }
 
-// An active version approved with a (fake) verified presence check, which the run gate accepts.
-export async function verifiedApp(host, manifest = {}) {
+// An active version approved through a (fake) terminal confirmation, which the run gate accepts.
+export async function verifiedApp(host, manifest = {}, files = FILES) {
   const submitted = await host.service.submit({ personalSpaceId: 'space-a', agentId: 'agent-jvs',
-    manifest: { ...MANIFEST, ...manifest }, files: FILES });
+    manifest: { ...MANIFEST, ...manifest }, files });
   await host.decisions.approve({ appId: submitted.appId, version: submitted.version, digest: submitted.digest, approver: CLI_USER });
   return submitted;
 }

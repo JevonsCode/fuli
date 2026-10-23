@@ -56,7 +56,7 @@ Packages live under the configured FULI data directory, separately from employee
 
 Only a regular `.installation.json` at the package root is excluded from content identity as host-generated metadata. File-type validation still rejects receipt symlinks before installation can write through them. Files with that name in subdirectories remain package content: changes require an explicit replacement, and directory contents still undergo normal validation.
 
-**Installed runtimes are trusted JavaScript running with the host's privileges, not sandboxed plugins.** Only install trusted packages. Path confinement, manifest validation, size limits, rejection of symlinks, `.env`, `.git` and `node_modules` protect the installation boundary; they do not make malicious runtime code safe.
+**Installed runtimes are trusted JavaScript running with the host's privileges, not sandboxed plugins.** Only install trusted packages. Path confinement, manifest validation, size limits, rejection of symlinks, `.env`, `.git` and `node_modules` protect the installation boundary; they do not make malicious runtime code safe. Manifest permissions and FULI's permission, egress, injection and hard-delete checks constrain only what a runtime asks of the FULI host; they do not stop trusted code from reading files, using the network or starting processes itself. [Agent apps](agent-apps.md) run on the same trusted footing in this version.
 
 ## Manifest API v1
 

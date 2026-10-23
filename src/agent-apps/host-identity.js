@@ -60,9 +60,15 @@ export function createHostIdentity({
   };
   const adapter = adapters[platform] ?? null;
 
+  // The identity a later probe compares exactly: of this process for an owner
+  // lease, of an app process the trusted runner started for its instance.
+  async function identify(pid) {
+    return adapter ? adapter.identity(pid) : null;
+  }
+
   // This process: what an owner lease records about its holder.
   async function self() {
-    return { pid: process.pid, identity: adapter ? await adapter.identity(process.pid) : null, exePath: process.execPath };
+    return { pid: process.pid, identity: await identify(process.pid), exePath: process.execPath };
   }
 
   async function probe({ pid, identity }) {
@@ -71,7 +77,7 @@ export function createHostIdentity({
     return adapter.probe(pid, identity);
   }
 
-  return { platform, self, probe };
+  return { platform, self, identify, probe };
 }
 
 // kill(pid, 0) sends no signal: it asks whether the PID exists here.

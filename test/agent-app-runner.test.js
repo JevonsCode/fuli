@@ -4,14 +4,13 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 
 import { dataDigest } from '../src/agent-apps/data-directory.js';
-import { NO_ISOLATION } from '../src/agent-apps/isolation.js';
 import {
-  appRegistry, CLI_USER, countingFs, events, fakeIsolation, fakeWait, FILES, latch, settle, until, verifiedApp
+  appRegistry, CLI_USER, countingFs, events, fakeRunner, fakeWait, FILES, latch, settle, until, verifiedApp
 } from '../test-support/agent-app-hosts.js';
 
 // rec#7 part 2 PR②: the app runner, the App Host and the serial contract.
 // Synthetic only: fake host processes over one temporary registry, a fake
-// isolation backend that starts nothing, fake host tools. No app code runs.
+// runner that starts nothing, fake host tools. No app code runs.
 
 const TOOLS = ['record_decision_trace', 'resolve_knowledge_tags'];
 const PERMISSIONS = TOOLS.map((name) => `fuli.${name}`);
@@ -29,28 +28,26 @@ async function running(t, { write = writeTool(async () => 'ok'), read = readTool
   return { registry, host, app, started, token: lastToken(host), appId: app.appId };
 }
 
-const lastToken = (host) => host.isolation.started.at(-1).environment.FULI_APP_TOKEN;
+const lastToken = (host) => host.runner.started.at(-1).environment.FULI_APP_TOKEN;
 const call = (host, token, input = {}, toolName = 'record_decision_trace') => host.service.callTool({ token, toolName, input });
 const instance = (host, appId) => host.context.store.instance(appId);
 const ordered = (host, appId, actions) => events(host, appId).filter((action) => actions.includes(action));
 
-test('an instance starts only past the run gate and the isolation self-check, and only then gets its data root', async (t) => {
+test('an instance starts only past the run gate and the runner self-check, and only then gets its data root', async (t) => {
   const registry = appRegistry(t, { tools: TOOLS });
   const host = registry.host({ pid: 101 });
   const app = await verifiedApp(host);
   assert.equal(existsSync(registry.dataOf(app.appId)), false, 'approval alone creates no data directory');
 
-  const bare = registry.host({ pid: 102, isolation: NO_ISOLATION });
-  assert.equal((await bare.service.start({ appId: app.appId })).reason, 'isolation_unavailable');
-  const failing = registry.host({ pid: 103, isolation: fakeIsolation({ selfCheck: { ok: false } }) });
-  assert.equal((await failing.service.start({ appId: app.appId })).reason, 'isolation_probe_failed');
+  const failing = registry.host({ pid: 103, runner: fakeRunner({ selfCheck: { ok: false } }) });
+  assert.equal((await failing.service.start({ appId: app.appId })).reason, 'runner_check_failed');
   assert.equal(instance(host, app.appId), null);
 
   const started = await host.service.start({ appId: app.appId });
   assert.deepEqual([started.status, started.generation, started.mode], ['running', 1, 'managed']);
   assert.match(started.instanceId, /^ins-[0-9a-f]{32}$/);
   assert.equal(existsSync(registry.dataOf(app.appId)), true);
-  const spec = host.isolation.started.at(-1);
+  const spec = host.runner.started.at(-1);
   assert.deepEqual(Object.keys(spec.environment).sort(), ['FULI_APP_ID', 'FULI_APP_INSTANCE', 'FULI_APP_TOKEN']);
   assert.equal(host.service.read({ appId: app.appId }).instance.state, 'running');
   assert.deepEqual(host.service.read({ appId: app.appId }).owner, { ownerKind: 'console', pid: 101,
@@ -220,7 +217,7 @@ test('T4 a seal left waiting by a host that exited is completed by the next owne
   const ended = instance(restarted, appId);
   assert.deepEqual([ended.state, ended.stopReason], ['sealed', 'host_gone']);
   assert.ok(events(restarted, appId).includes('owner_recovered'));
-  assert.ok(host.isolation.calls.length > 0 && restarted.isolation.calls.some(([kind]) => kind === 'stopOrphan'));
+  assert.ok(host.runner.calls.length > 0 && restarted.runner.calls.some(([kind]) => kind === 'stopOrphan'));
   const offer = await restarted.service.prepareDataDeletion({ appId });
   assert.equal((await restarted.service.deleteData({ appId, ticket: offer.ticket, confirm: appId, actor: CLI_USER })).status,
     'deleted');

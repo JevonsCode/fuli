@@ -37,8 +37,6 @@ function fixture(t, { root } = {}) {
     },
     toolNames: () => tools,
     clock: () => new Date(clock.now),
-    // The run gate's answers below are Windows's, the one platform with a presence check.
-    platform: 'win32',
     // A synthetic host process: nothing real is probed.
     hostIdentity: { platform: 'test', self: async () => ({ pid: 101, identity: 'test:101', exePath: '/synthetic/node' }),
       probe: async () => 'unknown' }
@@ -73,7 +71,7 @@ test('a submitted version stays pending, immutable and unable to run until appro
   assert.equal(submitted.status, 'pending');
   assert.match(submitted.digest, /^[0-9a-f]{64}$/);
   assert.match(submitted.approval, new RegExp(`fuli app approve ${submitted.appId} 1\\.0\\.0`));
-  assert.equal(service.read({ appId: submitted.appId }).run.reason, 'presence_unverified');
+  assert.equal(service.read({ appId: submitted.appId }).run.reason, 'confirmation_required');
   assert.deepEqual(service.list({ personalSpaceId: 'space-a' }).apps.map(
     ({ appId, agentId, name, type, status, version, pendingVersions }) =>
       ({ appId, agentId, name, type, status, version, pendingVersions })), [{
@@ -109,13 +107,13 @@ test('approval binds the submitted digest and refuses a package changed before o
   assert.equal(recorded.state, 'approved');
   assert.deepEqual(recorded.approval, {
     digest: second.digest, approvedBy: 'fixture-user', entrypoint: 'cli', presence: 'unverified', verification: null, challengeId: null,
-    verifiedAt: null, approvedAt: '2026-10-20T08:00:00.000Z',
+    verifiedAt: null, trustMode: null, termsVersion: null, approvedAt: '2026-10-20T08:00:00.000Z',
     permissions: ['fuli.resolve_knowledge_tags'], data: { scope: 'app', format: 1, accepts: [1], migration: 'none' },
     resident: false
   });
 });
 
-test('an approved version records an unverified presence and still has no way to run', async (t) => {
+test('an approved version records an unverified presence and the run gate refuses it', async (t) => {
   const { service } = fixture(t);
   const submitted = await service.submit(submission());
   await assert.rejects(service.approve(approval(submitted, { approver: { channel: 'cli', user: 'fixture-user' } })),
@@ -127,7 +125,7 @@ test('an approved version records an unverified presence and still has no way to
   assert.deepEqual(approved.approval, { entrypoint: 'cli', presence: 'unverified' });
   assert.deepEqual(service.list({}).apps[0].approval, {
     approvedBy: 'fixture-user', entrypoint: 'cli', presence: 'unverified', verification: null, challengeId: null,
-    verifiedAt: null, approvedAt: '2026-10-20T08:00:00.000Z'
+    verifiedAt: null, trustMode: null, termsVersion: null, approvedAt: '2026-10-20T08:00:00.000Z'
   });
   const detail = service.read({ appId: submitted.appId });
   assert.equal(detail.versions[0].approval.presence, 'unverified');
@@ -136,7 +134,7 @@ test('an approved version records an unverified presence and still has no way to
   // Tokens exist only for a started instance; an unverified approval never starts.
   assert.deepEqual(Object.keys(service).sort(), ['approve', 'authorizeCall', 'callTool', 'close', 'deleteCode',
     'deleteData', 'disable', 'exportData', 'list', 'prepareDataDeletion', 'read', 'rollback', 'start', 'stop', 'submit']);
-  assert.equal((await service.start({ appId: submitted.appId })).reason, 'presence_unverified');
+  assert.equal((await service.start({ appId: submitted.appId })).reason, 'confirmation_required');
 
   await service.disable({ appId: submitted.appId, actor: { entrypoint: 'http', user: 'local-console' } });
   await service.rollback({ appId: submitted.appId, version: '1.0.0', actor: LOCAL_USER });
