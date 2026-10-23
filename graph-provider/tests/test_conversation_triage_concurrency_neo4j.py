@@ -42,6 +42,9 @@ def store(driver, space):
         async def authorize(self, *args):
             return {'id': space}
 
+        async def get_personal_project(self, *args):
+            return {}
+
     triage = Store()
     triage.runtime = SimpleNamespace(driver=driver)
     return triage
@@ -118,3 +121,46 @@ async def test_topic_days_and_a_decline_read_back_from_real_cypher():
         finally:
             await driver.execute_query('MATCH (n) WHERE n.id IN $ids OR n.space_id = $space DETACH DELETE n',
                                        ids=conversations, space=space)
+
+
+@pytest.mark.asyncio
+async def test_a_read_returns_the_current_label_and_a_correction_changes_its_version():
+    from neo4j import AsyncGraphDatabase
+    from fuli_graph.conversation_triage_models import ConversationTopicFormation, ConversationTriageRead
+
+    space = 'synthetic-read-' + uuid4().hex
+    conversation = 'synthetic-read-' + uuid4().hex
+    password = os.getenv('FULI_TEST_NEO4J_PASSWORD', 'fixture-pass')
+    async with AsyncGraphDatabase.driver(disposable_uri(), auth=('neo4j', password)) as driver:
+        triage = store(driver, space)
+        read = ConversationTriageRead(personal_space_id=space, conversation_id=conversation)
+        try:
+            await driver.execute_query(
+                'CREATE (:FuliConversation {id: $id, scope: $scope})', id=conversation,
+                scope=stable_uuid('global-conversation-scope', space, SYSTEM_ASSISTANT_AGENT_ID))
+            assert await triage.read_conversation_triage({}, read) == {'triage': None}
+            await triage.record_conversation_triage({}, ConversationTriageWrite(
+                personal_space_id=space, conversation_id=conversation, kind='topic', topic='Garden'))
+            host = (await triage.read_conversation_triage({}, read))['triage']
+            assert (host['source'], host['kind']) == ('host', 'topic')
+            await asyncio.sleep(.01)
+            await triage.record_conversation_triage({}, ConversationTriageWrite(
+                personal_space_id=space, conversation_id=conversation, kind='one_off', source='user'))
+            user = (await triage.read_conversation_triage({}, read))['triage']
+            assert (user['source'], user['kind']) == ('user', 'one_off')
+            assert user['labeled_at'] != host['labeled_at']
+            # Forming a topic into a project changes neither labeled_at nor source:
+            # the read still shows it, through formed_project_id.
+            await triage.record_conversation_triage({}, ConversationTriageWrite(
+                personal_space_id=space, conversation_id=conversation, kind='topic', topic='Garden', source='user'))
+            labeled = (await triage.read_conversation_triage({}, read))['triage']
+            await triage.form_conversation_topic({}, ConversationTopicFormation(
+                personal_space_id=space, topic='Garden', personal_project_id='synthetic-project-b'))
+            formed = (await triage.read_conversation_triage({}, read))['triage']
+            assert formed['formed_project_id'] == 'synthetic-project-b'
+            assert (formed['labeled_at'], formed['source']) == (labeled['labeled_at'], labeled['source'])
+            # Another space never sees this conversation's label.
+            assert await store(driver, 'synthetic-other').read_conversation_triage({}, ConversationTriageRead(
+                personal_space_id='synthetic-other', conversation_id=conversation)) == {'triage': None}
+        finally:
+            await driver.execute_query('MATCH (n) WHERE n.id = $id DETACH DELETE n', id=conversation)

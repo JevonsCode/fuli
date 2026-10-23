@@ -1,20 +1,11 @@
 import { createHash } from 'node:crypto';
 import { ApplicationError } from '../app/application-error.js';
 import { createFuliSourceMarker } from './source-marker.js';
+import { utf8Preview } from '../text/utf8-preview.js';
 
 export const AUTOMATIC_RECALL_BYTES = 4 * 1024;
 export const SEARCH_PAGE_BYTES = 8 * 1024;
 const jsonBytes = value => Buffer.byteLength(JSON.stringify(value));
-
-export function utf8Preview(value, limit) {
-  if (Buffer.byteLength(value) <= limit) return value;
-  let text = '';
-  for (const point of value) {
-    if (Buffer.byteLength(text + point + '…') > limit) break;
-    text += point;
-  }
-  return text + '…';
-}
 
 function itemPreview(item, textBytes) {
   const result = { ...item };

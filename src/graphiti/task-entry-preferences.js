@@ -1,21 +1,34 @@
 import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
-import { beginTaskFromPreferences } from './agent-knowledge-workflows.js';
+import { beginTaskContext, beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { getCollaborationPreferences as getCollaborationPreferencesWorkflow } from './collaboration-preference-workflow.js';
 import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
 import { applyAgentAssignment } from './task-agent-assignment.js';
 import { triageCandidates } from './conversation-triage.js';
+import { withProjectCandidate } from './assistant-project-candidate.js';
+import { withBoardMatch } from './jefa-board-match.js';
 import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
 import { ATTENTION_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/attention-inbox.js';
 import { captureDecision } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 
-export function finishTaskEntryPreferences(application, preferences, input) {
+export async function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
   if (!input.sessionId || typeof input.taskPrompt !== 'string') return { ...preferences,
     task_lifecycle: { status: 'not_started', reason: !input.sessionId ? 'native_session_required' : 'task_prompt_required',
       guidance: 'Preferences were loaded, but no task token was created. Supply the current host sessionId and taskPrompt to get_collaboration_preferences. Do not guess a session ID, use an MCP process ID or reuse an earlier task token.' } };
-  return beginTaskFromPreferences(application, preferences, input);
+  return withEntryHint(application, await beginTaskFromPreferences(application, preferences, input), input);
+}
+
+// begin_task_context and the lifecycle hooks: the same hints, once per session each.
+export async function beginTaskEntry(application, input) {
+  return withEntryHint(application, await beginTaskContext(application, input), input);
+}
+
+// At most one built-in Agent model decision per entry (rec#10 D-26.2): Astro
+// while the task has no project, Jefa once the task has one.
+function withEntryHint(application, entry, input) {
+  return entry.context?.personal_project_id ? withBoardMatch(application, entry, input) : withProjectCandidate(application, entry, input);
 }
 
 export async function taskEntryPreferences(application, projectResolution, input, recordAgentViews) {

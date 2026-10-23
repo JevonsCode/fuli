@@ -12,6 +12,8 @@ the digest; its whole serialized JSON is bounded in UTF-8 bytes.
 import json
 import re
 
+from .provider_values import sha256_text
+
 # Bump when the folding rules change; an older digest is rebuilt from raw events.
 DIGEST_VERSION = 2
 DIGEST_TASKS = 12
@@ -255,3 +257,17 @@ def pack_context(summary, events, budget, checkpoint=None, *, conversation_id=No
                 result['messages'].clear()
         break
     return result
+
+
+def add_delivery_proofs(context, events, source_application, session_id):
+    """Host-only proofs for the asking session, added after packing so they never
+    spend the recovery budget: each message's full-content SHA-256 (a truncated
+    prefix keeps the hash of the whole message) and, for that session's own
+    native events, the event ID that names its native record."""
+    by_sequence = {event['sequence']: event for event in events}
+    for item in context['messages']:
+        event = by_sequence[item['sequence']]
+        item['content_sha256'] = sha256_text(event['content'])
+        if (event.get('source_application'), event.get('session_id')) == (source_application, session_id):
+            item['own_event'] = event['event_id']
+    return context

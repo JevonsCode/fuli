@@ -1,6 +1,7 @@
 import { compactTaskContext } from './task-context-view.js';
 import { hookAdditionalContextToolResult } from '../mcp/tool-result.js';
 import { SESSION_FULI_OFF } from '../agent-tools/session-fuli-gate.js';
+import { withoutDeliveryProofs } from './recent-context.js';
 
 export const PREFERENCE_RESET_EVENTS = Object.freeze(['SessionStart', 'PreCompact']);
 const RESTORED_LABEL = 'Fuli restored current mandatory preferences for the same owned task. Apply this full result; no replacement task or Agent was selected.';
@@ -39,6 +40,7 @@ export async function preferenceHookOutput(value, event, input, delivery, source
     hookEventName: event, label, limitBytes: 128 * 1024, itemLimit: 1000
   });
   const result = delivery ? await delivery.deliver(value, { sourceApplication,
-    nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull }, format) : format(value);
+    nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull }, format)
+    : format(withoutDeliveryProofs(value));
   return JSON.parse(result.content[0].text);
 }

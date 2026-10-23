@@ -30,9 +30,16 @@ export async function projectNamedInPrompt(application, taskPrompt) {
 
 // Shared by Jefa's triage: the same name rules decide which project a label means.
 export async function projectByName(application, name) {
-  const projects = (await application.personal.listPersonalProjects(application.config.personal.spaceId))
-    .filter(nameable);
-  return choice(projects.filter(project => sameName(project, name)), 'named_by_triage');
+  return choice((await nameableProjects(application)).filter(project => sameName(project, name)), 'named_by_triage');
+}
+
+// The projects a person names now; Astro's candidates come from these too.
+export async function nameableProjects(application) {
+  return (await application.personal.listPersonalProjects(application.config.personal.spaceId)).filter(nameable);
+}
+
+export function projectDisplayName(project) {
+  return project.profile?.name || project.project_id;
 }
 
 export async function createProjectNamed(application, name, purpose) {
@@ -43,8 +50,7 @@ export async function createProjectNamed(application, name, purpose) {
 
 // Display names only, for a compact triage candidate list.
 export async function projectNames(application, limit) {
-  return (await application.personal.listPersonalProjects(application.config.personal.spaceId))
-    .filter(nameable).map(project => project.profile?.name || project.project_id).slice(0, limit);
+  return (await nameableProjects(application)).map(projectDisplayName).slice(0, limit);
 }
 
 // Only the user's own description on the "新项目：" line is kept; other prompt

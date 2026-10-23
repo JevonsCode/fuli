@@ -6,7 +6,7 @@ import json
 from fastapi import HTTPException
 from .agent_conversation_models import ConversationPolicy
 from .conversation_context import (
-    DIGEST_VERSION, add_task_result, fold_messages, message_bytes, pack_context, refold_digest, render_digest,
+    DIGEST_VERSION, add_delivery_proofs, add_task_result, fold_messages, message_bytes, pack_context, refold_digest, render_digest,
 )
 from .project_agent_access import authorize_project_agent
 from .conversation_scope import conversation_binding_id, conversation_scope_id, started_conversation_id
@@ -98,9 +98,14 @@ class StoreAgentConversations:
         if request.mode == 'context':
             decoded, omitted, scan_truncated = await self._context_events(record, request.after)
             checkpoint = {'status': record.get('status') or 'reported', 'summary': record.get('summary')}
-            return {**view, 'context': pack_context('', decoded, policy.context_budget, checkpoint,
+            context = pack_context('', decoded, policy.context_budget, checkpoint,
                 conversation_id=record['id'], revision=record['revision'],
-                omitted_sequence=omitted, scan_truncated=scan_truncated)}
+                omitted_sequence=omitted, scan_truncated=scan_truncated)
+            # A session's task entry asks with its own ID; the host strips these
+            # proofs once it knows what that session has already seen.
+            if request.session_id is not None and request.source_application is not None:
+                add_delivery_proofs(context, decoded, request.source_application, request.session_id)
+            return {**view, 'context': context}
         events, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
             'WHERE e.sequence > $after AND e.sequence <= $revision '
@@ -153,7 +158,8 @@ class StoreAgentConversations:
             rows, _, _ = await self.runtime.driver.execute_query(
                 'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
                 'WHERE e.sequence > $after AND e.sequence <= $revision AND e.sequence < $before '
-                'RETURN e.payload AS payload, e.sequence AS sequence '
+                'RETURN e.payload AS payload, e.sequence AS sequence, '
+                'e.session_id AS session_id, e.source_application AS source_application '
                 'ORDER BY e.sequence DESC LIMIT $limit', id=record['id'], after=after,
                 revision=record['revision'], before=before,
                 limit=min(CONTEXT_PAGE_EVENTS, CONTEXT_SCAN_EVENTS - scanned))
@@ -162,6 +168,7 @@ class StoreAgentConversations:
             for row in rows:
                 value = decode_event(row)
                 total += len(json.dumps(value, ensure_ascii=False).encode())
+                value.update(session_id=row.get('session_id'), source_application=row.get('source_application'))
                 if total > CONTEXT_DECODE_BYTES:
                     return list(reversed(decoded)), row['sequence'], True
                 scanned += 1

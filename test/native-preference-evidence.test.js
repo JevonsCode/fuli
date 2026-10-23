@@ -117,3 +117,25 @@ ${text}
   const boundary = { sessionId: session, type: 'system', subtype: 'compact_boundary' };
   assert.equal((await inspect([hook(JSON.stringify(value)), boundary], claudePreferenceEvidence)).frames.length, 0);
 });
+
+// openai/codex d6817454 records a command hook's context as a developer message
+// with kind hooks.additional_context and harness command-hook provenance.
+test('a Codex command-hook developer record is model-facing context without a result ID', async () => {
+  const developer = (text, metadata) => ({ type: 'response_item', payload: { type: 'message', role: 'developer',
+    content: [{ type: 'input_text', text }], ...(metadata ? { internal_chat_message_metadata_passthrough: metadata } : {}) } });
+  const hookMetadata = { content_item_kinds: ['hooks.additional_context'],
+    content_item_metadata: [{ provenance: { type: 'harness', hook: true } }] };
+  const text = `Synthetic label\n${JSON.stringify(value)}`;
+  const proof = await inspect([codexHeader, developer(text, hookMetadata)]);
+  assert.equal(proof.frames.length, 1);
+  assert.equal(proof.frames[0].callId, null, 'never a preference delta base');
+  for (const record of [developer(text), developer(text, { ...hookMetadata, content_item_metadata: [{ provenance: { type: 'harness', hook: false } }] }),
+    { type: 'response_item', payload: { ...developer(text, hookMetadata).payload, role: 'user' } },
+    { type: 'response_item', payload: { ...developer(text, hookMetadata).payload,
+      content: [{ type: 'input_text', text }, { type: 'input_text', text: 'extra' }] } }]) {
+    assert.equal((await inspect([codexHeader, record])).frames.length, 0);
+  }
+  const compacted = await inspect([codexHeader, developer(text, hookMetadata), { type: 'compacted', payload: {} }]);
+  assert.equal(compacted.frames.length, 0);
+  assert.ok(compacted.since > 0);
+});

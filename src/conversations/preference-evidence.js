@@ -9,7 +9,10 @@ const CODE_MODE = new Set(['functions.exec', 'functions.wait']);
 
 // Inspect the native model-facing record, never Hook stdout, a log of writes,
 // an assistant's claim, or a cache hit. Bounds/format uncertainty means full.
-export async function readPreferenceEvidence(path, sessionId, adapter) {
+// since is where the current context generation starts (after the last reset
+// record); records holds the complete native records that start at the
+// requested byte offsets, as parsed.
+export async function readPreferenceEvidence(path, sessionId, adapter, recordOffsets = new Set()) {
   let file;
   try {
     file = await openWithoutFollowing(path, constants.O_RDONLY);
@@ -19,7 +22,8 @@ export async function readPreferenceEvidence(path, sessionId, adapter) {
     const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
     if (bytesRead !== bytes.length || bytes.at(-1) !== 10) return { known: false };
     const calls = new Map();
-    let frames = [], offset = 0, generation = null;
+    const records = new Map();
+    let frames = [], offset = 0, generation = null, since = 0;
     for (const line of bytes.toString('utf8').split('\n').slice(0, -1)) {
       const end = offset + Buffer.byteLength(line) + 1;
       const record = JSON.parse(line);
@@ -27,14 +31,15 @@ export async function readPreferenceEvidence(path, sessionId, adapter) {
         if (!adapter.verify(record, sessionId)) return { known: false };
         generation = contentHash(line);
       }
+      if (recordOffsets.has(offset)) records.set(offset, record);
       for (const event of adapter.events(record, sessionId)) {
-        if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); }
+        if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); since = end; }
         if (event.type === 'call' && typeof event.id === 'string') calls.set(event.id, event.name);
         // A host-recorded Hook context is model-facing like a tool result; each
         // line is parsed on its own, so only a complete JSON frame counts.
         if (event.type === 'context') {
-          for (const value of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
-            frames.push({ callId: event.id, value, offset, end, recordHash: contentHash(line) });
+          for (const { value, visible } of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
+            frames.push({ callId: event.id, value, visible, offset, end, recordHash: contentHash(line) });
           }
           continue;
         }
@@ -43,13 +48,13 @@ export async function readPreferenceEvidence(path, sessionId, adapter) {
         calls.delete(event.id);
         const codeMode = CODE_MODE.has(name);
         if (!codeMode && !DIRECT_TOOLS.test(name ?? '')) continue;
-        for (const value of preferenceFrames(event.output, codeMode)) {
-          frames.push({ callId: event.id, value, offset, end, recordHash: contentHash(line) });
+        for (const { value, visible } of preferenceFrames(event.output, codeMode)) {
+          frames.push({ callId: event.id, value, visible, offset, end, recordHash: contentHash(line) });
         }
       }
       offset = end;
     }
-    return { known: true, fileId: `${stat.dev}:${stat.ino}`, size: bytes.length, generation, frames };
+    return { known: true, fileId: `${stat.dev}:${stat.ino}`, size: bytes.length, generation, since, frames, records };
   } catch { return { known: false }; }
   finally { await file?.close(); }
 }
@@ -75,14 +80,20 @@ function preferenceFrames(output, codeMode = false, depth = 0) {
       || output.preference_delivery?.status === 'paginated') return [];
   const structured = output.structuredContent ?? output.structured_content;
   if (structured) {
-    const visible = preferenceFrames(output.content, false, depth + 1);
-    return visible.some(value => preferenceFrameHash(value) === preferenceFrameHash(structured)) ? [structured] : [];
+    // The preference baseline is the structured copy whose preference view
+    // the model also saw; anything else (recent context) must be proven from
+    // what was actually visible, kept here as `visible`.
+    const seen = preferenceFrames(output.content, false, depth + 1)
+      .find(frame => preferenceFrameHash(frame.value) === preferenceFrameHash(structured));
+    return seen ? [{ value: structured, visible: seen.visible }] : [];
   }
   if (typeof output.hookSpecificOutput?.additionalContext === 'string') {
     const lines = output.hookSpecificOutput.additionalContext.split('\n');
     return lines.flatMap(line => preferenceFrames(line, false, depth + 1));
   }
   if (typeof output.taskContextToken === 'string' && (Array.isArray(output.effective_preferences)
-      || (output.preference_delivery?.status === 'delta' && Array.isArray(output.preference_updates)))) return [output];
+      || (output.preference_delivery?.status === 'delta' && Array.isArray(output.preference_updates)))) {
+    return [{ value: output, visible: output }];
+  }
   return output.content ? preferenceFrames(output.content, false, depth + 1) : [];
 }

@@ -59,7 +59,6 @@ import { createNeedsPersonNotifier } from '../notifications/needs-person.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { describeSettings } from '../system/settings-guide.js';
 import {
-  beginTaskContext as beginTaskContextWorkflow,
   checkpointTaskKnowledge as checkpointTaskKnowledgeWorkflow,
   discoverCommonKnowledgeCandidates as discoverCommonKnowledgeCandidatesWorkflow,
   discoverPersonalGlobalPreferenceCandidates as
@@ -100,7 +99,7 @@ import {
   providerWorkflowTransitionObservation
 } from './workflow-observation.js';
 import { buildUserTasteSkill } from './user-taste-skill.js';
-import { taskEntryPreferences, finishTaskEntryPreferences } from './task-entry-preferences.js';
+import { beginTaskEntry, taskEntryPreferences, finishTaskEntryPreferences } from './task-entry-preferences.js';
 import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
 import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
@@ -234,7 +233,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async beginTaskContext(input) {
-    return beginTaskContextWorkflow(this, input);
+    return beginTaskEntry(this, input);
   }
 
   async checkpointTaskKnowledge(input) {

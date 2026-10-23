@@ -2,6 +2,12 @@ import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { agentContinuation, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { captureWindow } from '../conversations/capture-window.js';
 import { captureDecision, captureDisabled, taskCaptureScope } from './capture-decision.js';
+import { singleLine } from '../text/single-line.js';
+import { utf8Preview } from '../text/utf8-preview.js';
+
+// rec#10 D-27.6: the title, and the whole serialized `recent_conversation` field.
+const POINTER_TITLE_BYTES = 96;
+const POINTER_BYTES = 320;
 
 export function conversationScope(application, input) {
   return { personal_space_id: application.config.personal.spaceId,
@@ -34,18 +40,35 @@ export async function beginConversation(application, task) {
       const previousId = session.conversation_id ?? null;
       // Recover before opening this turn. Native visible messages are persisted
       // only by the transcript collector, with its stable byte-based event IDs.
+      // Asking as this session adds the Provider's delivery proofs, so the host
+      // leaves out only what this session's own context provably holds.
       const previous = previousId
-        ? await application.personal.conversation('query', { ...scope, mode: 'context', conversation_id: previousId })
+        ? await application.personal.conversation('query', { ...scope, mode: 'context', conversation_id: previousId,
+          session_id: task.sessionId })
         : null;
+      const pointer = previousId ? null : await recentConversation(application, scope);
       const saved = await application.personal.conversation('append', {
         ...conversationTask(application, task), events: []
       });
       return { ...saved, recovery: previous?.context ?? null, recovered_from: previousId ?? null,
         compacted: (previous?.compacted_through ?? 0) > 0,
-        // The same native chat already holds its recent messages.
-        same_session: Boolean(session.conversation_id), guidance: CONVERSATION_GUIDANCE };
+        ...(pointer ? { recent_conversation: pointer } : {}), guidance: CONVERSATION_GUIDANCE };
     });
   } catch { return unavailable(); }
+}
+
+// A new native chat learns only which conversation of this same space, project,
+// Agent and client permission was active last (rec#10 D-27.6): no messages, no
+// binding. Continuing it is still an explicit resume_agent_conversation. The
+// title is historical text, cut to one line of POINTER_TITLE_BYTES as sent.
+async function recentConversation(application, scope) {
+  const { conversations } = await application.personal.conversation('query', { ...scope, mode: 'list', limit: 1 });
+  const latest = conversations?.[0];
+  if (!latest?.id) return null;
+  const title = utf8Preview(singleLine(latest.summary), POINTER_TITLE_BYTES, text => Buffer.byteLength(JSON.stringify(text)));
+  const pointer = { id: latest.id, updated_at: latest.last_activity ?? null, ...(title ? { title } : {}) };
+  // The whole entry field has its own bound; an outsized ID or time gives no pointer, never a cut one.
+  return Buffer.byteLength(JSON.stringify({ recent_conversation: pointer })) <= POINTER_BYTES ? pointer : null;
 }
 
 export async function checkpointConversation(application, task, workLog, team = null) {
