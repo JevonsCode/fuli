@@ -5,49 +5,151 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { noteRoleSuggestion } from '../src/graphiti/role-suggestion-note.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
+import { hardDeleteLedger } from '../src/knowledge-hard-delete/delete-ledger.js';
+import { knowledgeReferences } from '../src/knowledge-hard-delete/forget-references.js';
 import { handleModelBackendApiRequest } from '../src/model-backends/http.js';
-import { noteRoleSuggestion, RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
+import { RETENTION, RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { listenFetchableServer } from '../src/server/listen.js';
 
-// Synthetic suggestions only: no model, no data directory but a temporary one.
-const GATE = { status: 'suggestion_only', role: 'jefa', operation: 'board_match' };
-const RECEIPT = { requestId: 'board_match:r1', evidenceVersion: 'e'.repeat(64), promptVersion: 'board_match:p1', gate: GATE,
-  modelReceipt: { backend: 'model_api', status: 'completed', requestedModel: 'qwen-test', actualModel: 'qwen-test-actual', attempts: 1 } };
-const SUGGESTED = { status: 'suggested', hint: '可能是看板上的「Seed inventory」任务', confirmWith: 'call_employee_tool',
-  suggestion: { taskId: 'task-seeds', title: 'Seed inventory', reason: 'Same page.', uncertainty: null },
-  suggestedBy: { mode: 'model_api', independent: true, model: 'qwen-test-actual' }, ...RECEIPT };
-const INLINE = { status: 'inline', reason: 'server_error', guidance: 'Match the board yourself as usual.', ...RECEIPT };
+// Synthetic suggestions only, shaped as the three roles write them: no model,
+// no data directory but a temporary one.
+const SPACE = 'space-a';
+const receipt = (role, operation, n = 1) => ({ requestId: `${operation}:r${n}`, evidenceVersion: String(n).repeat(64),
+  promptVersion: `${operation}:p1`, gate: { status: 'suggestion_only', role, operation },
+  modelReceipt: { backend: 'model_api', status: 'completed', reason: null, failureClass: null, fallbackReason: null,
+    requestedModel: 'qwen-test', actualModel: 'qwen-test-actual', attempts: 1,
+    usage: { inputTokens: 50, outputTokens: 10, totalTokens: 60, unknownAttempts: 0 } } });
+const jefaSuggested = (n = 1) => ({ status: 'suggested', hint: '可能是看板上的「Seed inventory」任务', confirmWith: 'call_employee_tool',
+  suggestion: { taskId: 'task-seeds', title: 'Seed inventory', updatedAt: null, reason: 'Same page.', uncertainty: null },
+  suggestedBy: { mode: 'model_api', independent: true, model: 'qwen-test-actual' }, ...receipt('jefa', 'board_match', n) });
+const jefa = (result, conversationId = 'conversation-1', extra = {}) => ({ role: 'jefa', operation: 'board_match', personalSpaceId: SPACE,
+  personalProjectId: 'garden', subject: { conversationId }, result, ...extra });
+const bole = (agentId, n = 1) => ({ role: 'bole', operation: 'performance_review', personalSpaceId: SPACE, personalProjectId: 'garden',
+  subject: { agentId }, result: { status: 'suggested', suggestion: { action: 'coach', reason: 'Completion is low.', evidenceIds: ['completion'],
+    uncertainty: null }, suggestedBy: { mode: 'model_api', independent: true, model: 'qwen-test-actual' },
+  ...receipt('bole', 'performance_review', n) } });
 
-
-test('the log keeps each shown result as the session got it, without the session guidance, newest first', (t) => {
+function storeIn(t, clock) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-role-suggestions-'));
   const path = join(directory, 'role-suggestions.sqlite');
-  let now = Date.parse('2026-10-23T08:00:00.000Z');
-  const log = new RoleSuggestionLog(path, { now: () => new Date(now += 60_000) });
+  const log = new RoleSuggestionLog(path, { now: () => new Date(clock.now) });
   t.after(() => { log.close(); rmSync(directory, { recursive: true, force: true }); });
+  return { directory, path, log };
+}
+
+test('a row is the result the session got, without its guidance; reading creates no file and deletes nothing', (t) => {
+  const clock = { now: Date.parse('2026-10-23T08:00:00.000Z') };
+  const { path, log } = storeIn(t, clock);
   assert.deepEqual(log.list(), []);
   assert.equal(existsSync(path), false, 'reading creates no file');
 
-  log.record({ role: 'jefa', operation: 'board_match', personalSpaceId: 'space-a', personalProjectId: 'garden', result: SUGGESTED });
-  log.record({ role: 'jefa', operation: 'board_match', personalSpaceId: 'space-a', personalProjectId: 'garden', result: INLINE });
+  log.record(jefa(jefaSuggested()));
+  clock.now += 60_000;
+  log.record(jefa({ status: 'inline', reason: 'server_error', guidance: 'Match the board yourself.', ...receipt('jefa', 'board_match', 2) }));
   const [fallback, suggested] = log.list();
-  assert.deepEqual(suggested, { ...SUGGESTED, id: 1, at: '2026-10-23T08:01:00.000Z', role: 'jefa', operation: 'board_match',
-    personalSpaceId: 'space-a', personalProjectId: 'garden', subject: {} });
-  assert.deepEqual([fallback.status, fallback.reason, 'guidance' in fallback, fallback.gate], ['inline', 'server_error', false, GATE]);
-  assert.equal(log.list({ limit: 1 }).length, 1);
+  assert.deepEqual(suggested, { ...jefaSuggested(), id: 1, at: '2026-10-23T08:00:00.000Z', role: 'jefa', operation: 'board_match',
+    personalSpaceId: SPACE, personalProjectId: 'garden', subject: { conversationId: 'conversation-1' } });
+  assert.deepEqual([fallback.status, fallback.reason, 'guidance' in fallback], ['inline', 'server_error', false]);
+
+  // A read 91 days later shows nothing and deletes nothing; the next write does.
+  clock.now += 91 * 86_400_000;
+  assert.deepEqual(log.list(), []);
+  assert.equal(log.db.prepare('SELECT COUNT(*) AS n FROM role_suggestions').get().n, 2, 'reads never delete');
+  log.record(jefa(jefaSuggested(3), 'conversation-2'));
+  assert.deepEqual(log.db.prepare('SELECT id FROM role_suggestions').all().map(row => row.id), [3]);
 });
 
-test('a log that cannot be written never changes the role\'s answer', () => {
-  const failing = { roleSuggestions: { record: () => { throw new Error('disk full'); } } };
-  assert.doesNotThrow(() => noteRoleSuggestion(failing, { role: 'jefa', result: SUGGESTED }));
-  assert.doesNotThrow(() => noteRoleSuggestion({}, { role: 'jefa', result: SUGGESTED }));
+test('the 301st row removes the oldest, in the same write; a limit is clamped to 300', (t) => {
+  const clock = { now: Date.parse('2026-10-23T00:00:00.000Z') };
+  const { log } = storeIn(t, clock);
+  for (let n = 1; n <= RETENTION.rows + 1; n++) {
+    clock.now += 1000;
+    log.record(jefa(jefaSuggested(n % 9 + 1), `conversation-${n}`));
+  }
+  const all = log.list({ limit: 10_000 });
+  assert.equal(all.length, RETENTION.rows);
+  assert.equal(all.at(-1).id, 2, 'the oldest row is gone');
+  assert.equal(log.list().length, 50);
+  assert.equal(log.list({ limit: 0 }).length, 1);
+});
+
+test('only a newer suggestion for the same subject in the same space and project marks an older one', (t) => {
+  const clock = { now: Date.parse('2026-10-23T00:00:00.000Z') };
+  const { log } = storeIn(t, clock);
+  const write = entry => { clock.now += 1000; log.record(entry); };
+  write(bole('engineer-x', 1));
+  write(bole('engineer-y', 2));
+  write({ ...bole('engineer-x', 3), personalSpaceId: 'space-b' });
+  write({ ...bole('engineer-x', 4), personalProjectId: 'ledger' });
+  write(jefa(jefaSuggested(5), 'conversation-1'));
+  write(jefa(jefaSuggested(6), null));
+  write(jefa(jefaSuggested(7), null));
+  // A superseded or stopped result for the same subject is no newer suggestion.
+  write(jefa({ status: 'superseded', reason: 'task_changed', ...receipt('jefa', 'board_match', 8) }, 'conversation-1'));
+  write(bole('engineer-x', 9));
+  write(jefa({ status: 'paused', reason: 'window_tokens', ...receipt('jefa', 'board_match', 9) }, 'conversation-1'));
+  const stale = Object.fromEntries(log.list().map(entry => [entry.id, entry.stale ?? null]));
+  assert.deepEqual(stale, { 1: 'newer', 2: null, 3: null, 4: null, 5: null, 6: null, 7: null, 8: null, 9: null, 10: null });
+  assert.equal(log.list().find(entry => entry.id === 1).status, 'suggested', 'the recorded status stays');
+  write(jefa(jefaSuggested(11), 'conversation-1'));
+  assert.equal(log.list().find(entry => entry.id === 5).stale, 'newer');
+});
+
+test('a permanent delete of knowledge clears only objects that name it; rows as written today stay byte for byte', (t) => {
+  const clock = { now: Date.parse('2026-10-23T00:00:00.000Z') };
+  const { directory, path, log } = storeIn(t, clock);
+  log.record(jefa(jefaSuggested()));
+  log.record(bole('engineer-x', 2));
+  log.record({ role: 'assistant', operation: 'project_candidate', personalSpaceId: SPACE, subject: { conversationId: 'conversation-1' },
+    result: { status: 'superseded', reason: 'corrected_by_user', ...receipt('assistant', 'project_candidate', 3) } });
+  const today = JSON.stringify(log.list());
+  const references = knowledgeReferences({ itemIds: ['item-1', 'task-seeds', 'engineer-x', 'conversation-1', 'garden', '1'.repeat(64)] });
+  assert.equal(log.forgetKnowledgeItems(SPACE, references), 0);
+  assert.equal(JSON.stringify(log.list()), today);
+
+  // A result that named a knowledge item would keep its shape and lose its words.
+  log.record(jefa({ ...jefaSuggested(4), evidence: [{ item_id: 'item-1', title: 'Deleted words', reason: 'Quoted.' }] }, 'conversation-4'));
+  assert.equal(log.forgetKnowledgeItems(SPACE, references), 1);
+  assert.equal(log.forgetKnowledgeItems('space-b', references), 0);
+  assert.deepEqual(log.list()[0].evidence, [{ item_id: 'item-1', title: null, reason: null, hard_deleted: true }]);
+  assert.equal(JSON.stringify(log.list().slice(1)), today);
+
+  // Written after the delete: the fence applies in the write itself.
+  hardDeleteLedger(directory).begin({ spaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: 'preview-1', itemIds: [] });
+  const after = new RoleSuggestionLog(path, { now: () => new Date(clock.now) });
+  try {
+    after.record(jefa({ ...jefaSuggested(5), evidence: [{ item_id: 'item-2', title: 'Late words' }] }, 'conversation-5'));
+    assert.deepEqual(after.list()[0].evidence, [{ item_id: 'item-2', title: null, hard_deleted: true }]);
+  } finally { after.close(); }
+});
+
+test('the console copy is kept only while recording is on; anything unreadable keeps nothing', async () => {
+  const kept = [];
+  const app = (policy, extra = {}) => ({ roleSuggestions: { record: entry => kept.push(entry) },
+    getCapturePolicy: () => policy, ...extra });
+  const entry = jefa(jefaSuggested());
+  const scope = () => ({ sourceApplication: 'codex', personalProjectId: null });
+  await noteRoleSuggestion(app({ enabled: true, disabledSources: [] }), scope, entry);
+  assert.equal(kept.length, 1);
+  for (const [name, application, readScope] of [
+    ['global off', app({ enabled: false, disabledSources: [] }), scope],
+    ['client off', app({ enabled: true, disabledSources: ['codex'] }), scope],
+    ['settings unreadable', app(null, { getCapturePolicy: () => { throw new Error('unreadable'); } }), scope],
+    ['scope unreadable', app({ enabled: true, disabledSources: [] }), async () => { throw new Error('Provider down'); }]]) {
+    await noteRoleSuggestion(application, readScope, entry);
+    assert.equal(kept.length, 1, name);
+  }
+  const failing = { roleSuggestions: { record: () => { throw new Error('disk full'); } }, getCapturePolicy: () => ({ enabled: true }) };
+  await assert.doesNotReject(noteRoleSuggestion(failing, scope, entry));
+  await assert.doesNotReject(noteRoleSuggestion({}, scope, entry));
 });
 
 test('the console reads suggestions over a GET-only route that never writes', async (t) => {
-  const log = new RoleSuggestionLog();
+  const log = new RoleSuggestionLog(':memory:', { now: () => new Date('2026-10-23T08:00:00.000Z') });
   t.after(() => log.close());
-  log.record({ role: 'jefa', operation: 'board_match', personalSpaceId: 'space-a', personalProjectId: 'garden', result: SUGGESTED });
+  log.record(jefa(jefaSuggested()));
   const recorded = log.record.bind(log);
   const writes = [];
   log.record = (entry) => { writes.push(entry); return recorded(entry); };
@@ -69,14 +171,16 @@ test('the console reads suggestions over a GET-only route that never writes', as
     const ok = await fetch(url(server));
     assert.equal(ok.status, 200);
     assert.equal(ok.headers.get('cache-control'), 'no-store');
-    const { suggestions } = await ok.json();
-    assert.deepEqual(suggestions.map(entry => [entry.role, entry.status, entry.suggestion.taskId, entry.gate.status]),
+    const body = await ok.json();
+    assert.deepEqual(body.retention, { days: 90, rows: 300 });
+    assert.deepEqual(body.suggestions.map(entry => [entry.role, entry.status, entry.suggestion.taskId, entry.gate.status]),
       [['jefa', 'suggested', 'task-seeds', 'suggestion_only']]);
+    assert.equal((await fetch(`${url(server)}?limit=1000`)).status, 200);
+    assert.equal((await fetch(`${url(server)}?limit=0`)).status, 400);
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
       assert.equal((await fetch(url(server), { method, body: method === 'DELETE' ? undefined : '{}' })).status, 405, method);
     }
     assert.deepEqual(writes, []);
-    assert.equal(log.list().length, 1);
     assert.equal((await fetch(url(bare))).status, 503);
   } finally {
     server.close();

@@ -525,6 +525,43 @@ test('the hook entry gets the same once-per-session hint; resuming a checkpoint 
   run.assertNoWrites();
 });
 
+test('the console copy follows the recording switch, decided after the model answered; the hint is unchanged', async () => {
+  const today = harness({ roles: { jefa: jefaRole() }, replies: [answer()] });
+  const shown = JSON.stringify(jefaOf(await today.entry()).suggested_match);
+  assert.equal(today.suggestions().length, 1);
+  const off = {
+    'global recording off': run => run.app.updateCapturePolicy({ enabled: false }),
+    'this client off': run => run.app.updateCapturePolicy({ disabledSources: ['codex'] }),
+    'this project off': run => run.app.updateCapturePolicy({ recordProjects: { garden: false } }),
+    'this session paused': run => {
+      run.app.getSessionCapturePause = sessionId => ({ paused: sessionId === 'synthetic-session-a', since: '2026-10-23T08:00:00.000Z',
+        stopped: false, fuli: { enabled: true, basis: 'started', since: null } });
+    },
+    'settings unreadable': run => { run.app.getCapturePolicy = () => { throw new Error('unreadable'); }; },
+    // Jefa's own recheck reads the task once more; the copy's read after it fails.
+    'task unreadable': run => {
+      const read = run.contexts.registry.context.bind(run.contexts.registry);
+      let reads = 0;
+      run.contexts.registry.context = async (...args) => {
+        if (++reads > 1) throw new Error('Provider down');
+        return read(...args);
+      };
+    }
+  };
+  for (const [name, turnOff] of Object.entries(off)) {
+    // Before the entry, and while the model runs: both are decided after its answer.
+    for (const when of ['before', 'during']) {
+      const run = harness({ roles: { jefa: jefaRole() }, replies: [when === 'before' ? answer() : delayed(async () => turnOff(run))] });
+      if (when === 'before') await turnOff(run);
+      const match = jefaOf(await run.entry()).suggested_match;
+      assert.equal(JSON.stringify({ ...match, requestId: undefined }), JSON.stringify({ ...JSON.parse(shown), requestId: undefined }),
+        `${name} ${when}: the hint itself is unchanged`);
+      assert.deepEqual(run.suggestions(), [], `${name} ${when}: nothing kept`);
+      run.assertNoWrites();
+    }
+  }
+});
+
 test('Jefa\'s workbench runtime and the employee service never reach Jefa\'s model call', () => {
   for (const entry of ['src/employees/service.js', 'src/employees/task-entry.js', 'src/employees/package-registry.js']) {
     const reached = [...reachableModules(entry)].some(path => path.replaceAll('\\', '/').endsWith('src/graphiti/jefa-board-match.js'));

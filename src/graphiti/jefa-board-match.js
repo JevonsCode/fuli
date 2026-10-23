@@ -2,8 +2,9 @@ import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { TASK_ENTRY_BOARD_LIMIT } from '../employees/task-entry.js';
 import { projectApproved } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
-import { noteRoleSuggestion } from '../model-backends/suggestion-log.js';
 import { singleLine } from '../text/single-line.js';
+import { taskCaptureScope } from './capture-decision.js';
+import { noteRoleSuggestion } from './role-suggestion-note.js';
 
 // Jefa's board match at task entry (rec#8, rec#10 D-26). Once the host has
 // authorized the task's project for Jefa and read its board, Jefa's own model
@@ -48,8 +49,9 @@ export async function withBoardMatch(application, entry, { sessionId, sourceAppl
   const task = { token: entry.task_context_token, sessionId, sourceApplication, project };
   const hint = await suggestBoardMatch(application, task, manager, taskPrompt);
   if (!hint) return entry;
-  noteRoleSuggestion(application, { role: ROLE, operation: OPERATION, personalSpaceId: application.config.personal.spaceId,
-    personalProjectId: project, result: hint });
+  await noteRoleSuggestion(application, async () => taskCaptureScope(await application.taskContextRegistry.context(
+    task.token, sourceApplication)), { role: ROLE, operation: OPERATION, personalSpaceId: application.config.personal.spaceId,
+    personalProjectId: project, subject: { conversationId: entry.conversation?.conversation_id ?? null }, result: hint });
   return { ...entry, project_management_context: { ...entry.project_management_context,
     managers: managers.map(candidate => candidate === manager ? { ...manager, suggested_match: hint } : candidate) } };
 }

@@ -372,6 +372,14 @@ test('malicious answers: an invented project, a forged gate or a claimed binding
 // A model that answers only after `during` ran, as a delayed reply would.
 const delayed = (during, fields) => async () => { await during(); return answer(fields); };
 
+test('recording turned off while the model runs keeps no console copy; the hint is the same', async () => {
+  const run = harness({ role: astroRole(), replies: [delayed(() => run.app.updateCapturePolicy({ enabled: false }))] });
+  const hint = (await run.entry()).project_candidate;
+  assert.equal(hint.status, 'suggested');
+  assert.deepEqual(run.suggestions(), []);
+  run.assertNoAttribution();
+});
+
 test('a late answer is not shown once the request would no longer be allowed out', async () => {
   // Display-time only: what was legitimately sent before cannot be recalled.
   const withdrawals = {

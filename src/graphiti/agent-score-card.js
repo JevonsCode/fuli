@@ -35,7 +35,7 @@ export async function getAgentScoreCard(application, input) {
     evidence: { tool: EVIDENCE_TOOL, addArgument: 'dimension', arguments: { personalSpaceId: value.personal_space_id,
       agentId: value.agent_id, ...(input.personalProjectId ? { personalProjectId: input.personalProjectId } : {}) } }
   };
-  return input.review ? reviewAgentScoreCard(application, card) : card;
+  return input.review ? reviewAgentScoreCard(application, card, { sourceApplication: input.sourceApplication }) : card;
 }
 
 export async function listAgentScoreEvidence(application, input) {

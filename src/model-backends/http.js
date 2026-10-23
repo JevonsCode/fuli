@@ -1,5 +1,7 @@
 import { refuseRemoteDecision } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
+import { positiveInteger } from '../validation/values.js';
+import { RETENTION } from './suggestion-log.js';
 
 // Routes of the model settings page. The roles and usage reads are
 // Agent-readable and contain no secrets, but include metadata (endpoints,
@@ -12,7 +14,8 @@ import { readJson, sendJson } from '../http/response.js';
 // unlockedBuilds(modelId): the D-24 review gate registry's passing entries
 // for that model (src/judgment/review-gate.js), read on every request.
 // suggestions lists what Astro, Bole and Jefa showed after asking their own
-// model (suggestion-log.js); it is a read only, and no route writes it.
+// model (suggestion-log.js), newest first, a limit clamped to RETENTION.rows, with
+// its retention; it is a read only, and no route writes it.
 const ROLE_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)$/;
 const SUGGESTIONS_ROUTE = '/api/model-backends/suggestions';
 
@@ -32,7 +35,9 @@ export async function handleModelBackendApiRequest({
   }
   response.setHeader('Cache-Control', 'no-store');
   if (suggestions) {
-    sendJson(response, 200, { suggestions: roleSuggestions.list() });
+    const limit = url.searchParams.get('limit');
+    sendJson(response, 200, { suggestions: roleSuggestions.list(limit === null ? {} : { limit: positiveInteger(Number(limit), 'limit', Number.MAX_SAFE_INTEGER) }),
+      retention: RETENTION });
     return true;
   }
   if (roleEdit) {

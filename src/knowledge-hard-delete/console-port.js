@@ -5,6 +5,7 @@ import { personalHumanReviewChannel, providerRefusal } from '../graphiti/human-r
 import { ProviderRequestError } from '../graphiti/provider-client.js';
 import { JudgmentStore } from '../judgment/store.js';
 import { RoleWorkStore } from '../model-backends/role-work-store.js';
+import { RoleSuggestionLog } from '../model-backends/suggestion-log.js';
 import { hardDeleteLedger } from './delete-ledger.js';
 import { knowledgeReferences } from './forget-references.js';
 
@@ -16,7 +17,8 @@ import { knowledgeReferences } from './forget-references.js';
 // answer lost to a timeout or a crash is settled by asking the graph, never by
 // sending the delete again. Once the graph committed, the local stores that
 // keep words about knowledge forget the removed items: Tonborg's judgments and
-// receipts (judgment.sqlite) and handed-off work packages (role-work.sqlite).
+// receipts (judgment.sqlite), handed-off work packages (role-work.sqlite) and
+// the built-in Agents' suggestion records (role-suggestions.sqlite).
 // Only the console's loopback routes use this module; no MCP or Agent tool
 // module imports it (test/knowledge-hard-delete-console.test.js).
 
@@ -184,7 +186,8 @@ function defaultLocalStores(dataDir) {
   } });
   return [
     sqlite('judgment.sqlite', (path) => new JudgmentStore(path)),
-    sqlite('role-work.sqlite', (path) => new RoleWorkStore(path))
+    sqlite('role-work.sqlite', (path) => new RoleWorkStore(path)),
+    sqlite('role-suggestions.sqlite', (path) => new RoleSuggestionLog(path))
   ];
 }
 

@@ -1,6 +1,6 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { compactReceipt } from '../model-backends/receipt.js';
-import { noteRoleSuggestion } from '../model-backends/suggestion-log.js';
+import { noteRoleSuggestion } from './role-suggestion-note.js';
 
 // Bole's performance review of one Agent in one project (rec#8, rec#10 D-26).
 // Bole's own model, when configured, picks one host-listed next step from the
@@ -47,8 +47,9 @@ function stopGuidance({ status, reason }) {
   return reason === 'egress_not_approved' ? GUIDANCE.egress_not_approved : GUIDANCE[status];
 }
 
-// card: the score card as getAgentScoreCard returns it.
-export async function reviewAgentScoreCard(application, card) {
+// card: the score card as getAgentScoreCard returns it. sourceApplication:
+// the client of this MCP process, whose recording switch applies to the log.
+export async function reviewAgentScoreCard(application, card, { sourceApplication = 'other' } = {}) {
   const [personalProjectId, ...otherProjects] = card.personalProjectIds ?? [];
   if (!personalProjectId || otherProjects.length) return withReview(card, notRun('single_project_only'));
   const scored = new Set(Object.entries(card.dimensions).filter(([, value]) => value.status === 'scored').map(([name]) => name));
@@ -62,8 +63,8 @@ export async function reviewAgentScoreCard(application, card) {
   if (outcome.modelReceipt.status === 'not_configured') return card;
   const review = modelReview(outcome, scored, { requestId: request.requestId, evidenceVersion: request.versions.evidence,
     promptVersion: PROMPT_VERSION, gate: GATE, modelReceipt: compactReceipt(outcome.modelReceipt) });
-  noteRoleSuggestion(application, { role: GATE.role, operation: OPERATION, personalSpaceId: card.personalSpaceId, personalProjectId,
-    subject: { agentId: card.agentId }, result: review });
+  await noteRoleSuggestion(application, () => ({ sourceApplication, personalProjectId }), { role: GATE.role, operation: OPERATION,
+    personalSpaceId: card.personalSpaceId, personalProjectId, subject: { agentId: card.agentId }, result: review });
   return withReview(card, review);
 }
 

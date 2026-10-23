@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { getJson } from '@/api/client'
+import { ApiError, getJson } from '@/api/client'
 import { t } from '@/i18n'
 import type { ProjectAgentAssignmentRecord, ProjectAgentRecord, ProjectAgentStatus } from '@/types'
 
@@ -93,6 +93,17 @@ export function refreshEmployeeCatalog(spaceId: string): Promise<void> {
       if (version === generation) { employeeCatalogLoading.value = false; pending = null }
     })
   return pending
+}
+
+// A 404 from the employee's own runtime: FULI's gates answer a missing
+// template or project with their own codes, so only the runtime's read of the
+// task itself is left. Anything else proves nothing about the task.
+const GATE_NOT_FOUND = ['template_not_found', 'project_not_found']
+export function missingTask(error: unknown) {
+  if (!(error instanceof ApiError) || error.status !== 404) return false
+  try {
+    return !GATE_NOT_FOUND.includes((JSON.parse(error.detail) as { code?: string }).code ?? '')
+  } catch { return true }
 }
 
 export function employeeErrorMessage(error: unknown) {

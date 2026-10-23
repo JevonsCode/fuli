@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import BackLink from '@/components/BackLink.vue'
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
+import { useRoleSuggestions } from '@/features/model-settings/useRoleSuggestions'
 import {
   formatCount, gateBuilds, readModelRoles, roleName, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
@@ -27,6 +28,9 @@ const editing = ref<ModelRoleId | null>(null)
 const notice = ref('')
 const stale = ref(false)
 let reading: AbortController | null = null
+// Read together with the role settings, so the section never appears and then goes.
+const suggestions = useRoleSuggestions()
+const { entries: suggestionEntries, loading: suggestionsLoading, error: suggestionsError } = suggestions
 const openedFromSettings = /^\/settings(?:[?#]|$)/
 
 const projects = computed(() => store.state?.personalProjects ?? [])
@@ -111,8 +115,14 @@ const stateTone = (state: ModelRoleView['state']) =>
 onMounted(() => {
   if (store.runtimeStatus === 'idle') void store.refresh()
   void load()
+  void suggestions.load()
 })
-onBeforeUnmount(() => reading?.abort())
+// The top bar's refresh reads the console again; the suggestions with it.
+watch(() => store.runtimeStatus, (status) => { if (status === 'loading' && !suggestionsLoading.value) void suggestions.load() })
+onBeforeUnmount(() => {
+  reading?.abort()
+  suggestions.stop()
+})
 </script>
 
 <template>
@@ -159,7 +169,7 @@ onBeforeUnmount(() => reading?.abort())
           </li>
         </ul>
 
-        <RoleSuggestions />
+        <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError" @retry="suggestions.load" />
 
         <ModelUsage />
 

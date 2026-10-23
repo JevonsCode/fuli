@@ -16,6 +16,7 @@ import { handleKnowledgeHardDeleteRequest } from '../src/http/knowledge-hard-del
 import { JudgmentStore } from '../src/judgment/store.js';
 import { knowledgeHardDelete } from '../src/knowledge-hard-delete/console-port.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { PREVIEW_ID, syntheticGraph } from '../test-support/hard-delete-graph.js';
 import { reachableModules } from '../test-support/module-graph.js';
 
@@ -191,13 +192,27 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
       { candidate_key: 'entity:other', item_id: 'other', title: 'Synthetic staging target' }] }] },
   reason: 'no_model', at, ttlMs: 60_000 });
   work.close();
+  // A suggestion record as Jefa writes it today: identities, an evidence version and model text, no knowledge item.
+  const suggestions = new RoleSuggestionLog(join(dataDir, 'role-suggestions.sqlite'), { now: () => at });
+  suggestions.record({ role: 'jefa', operation: 'board_match', personalSpaceId: SPACE, personalProjectId: 'garden',
+    subject: { conversationId: 'conversation-synthetic-1' }, result: { status: 'suggested', hint: '可能是看板上的「Seed inventory」任务',
+      suggestion: { taskId: 'task-seeds', title: 'Seed inventory', updatedAt: null, reason: 'Same page as item-1.', uncertainty: null },
+      confirmWith: 'call_employee_tool', suggestedBy: { mode: 'model_api', independent: true, model: 'qwen-test' },
+      requestId: 'board_match:r1', evidenceVersion: 'e'.repeat(64), promptVersion: 'board_match:p1',
+      gate: { status: 'suggestion_only', role: 'jefa', operation: 'board_match' } } });
+  const recorded = JSON.stringify(suggestions.list({ limit: 300 }));
+  suggestions.close();
 
   const port = knowledgeHardDelete(dataDir, { send: syntheticGraph({ itemIds: ['item-2', 'item-1'] }).send });
   const done = await port.confirm({ personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: PREVIEW_ID,
     confirmation: '删除' });
   assert.deepEqual(done.local_stores.map(({ store, status }) => [store, status]),
-    [['judgment.sqlite', 'forgotten'], ['role-work.sqlite', 'forgotten']]);
-  assert.ok(done.local_stores.every((store) => store.changed > 0));
+    [['judgment.sqlite', 'forgotten'], ['role-work.sqlite', 'forgotten'], ['role-suggestions.sqlite', 'forgotten']]);
+  assert.deepEqual(done.local_stores.map((store) => store.changed > 0), [true, true, false]);
+  // Its rows name no knowledge item, so the delete finds nothing there and changes no byte.
+  const suggestionsAgain = new RoleSuggestionLog(join(dataDir, 'role-suggestions.sqlite'), { now: () => at });
+  assert.equal(JSON.stringify(suggestionsAgain.list({ limit: 300 })), recorded);
+  suggestionsAgain.close();
 
   const reopened = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
   const forgotten = reopened.get(SPACE, review.id);

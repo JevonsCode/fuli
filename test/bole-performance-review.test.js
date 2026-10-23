@@ -205,6 +205,22 @@ test('malicious answers are rejected or stay a suggestion; nothing is ever writt
   claim.assertNothingWritten();
 });
 
+test('the console copy of a review is kept only while this client records; the review is the same either way', async () => {
+  const on = harness({ role: boleRole(), replies: [reply()] });
+  const review = (await on.read({ review: true })).review;
+  assert.equal(on.suggestions().length, 1);
+  // The person's switch, set on the store: the harness refuses every write method of the application.
+  for (const [name, turnOff] of [['global off', app => app.capturePolicyStore.update({ enabled: false })],
+    ['this client off', app => app.capturePolicyStore.update({ disabledSources: ['other'] })],
+    ['this project off', app => app.capturePolicyStore.update({ recordProjects: { [PROJECT]: false } })]]) {
+    const run = harness({ role: boleRole(), replies: [() => { turnOff(run.app); return reply(); }] });
+    const card = await run.read({ review: true });
+    assert.deepEqual({ ...card.review, requestId: null }, { ...review, requestId: null }, name);
+    assert.deepEqual(run.suggestions(), [], name);
+    run.assertNothingWritten();
+  }
+});
+
 test('cross-project and all-unknown cards are never sent to a model', async () => {
   const cross = harness({ role: boleRole(), replies: [reply()] });
   const card = await callAgentTool(cross.app, 'get_agent_score_card', { personalSpaceId: SPACE, agentId: AGENT, review: true });
@@ -246,6 +262,8 @@ test('stops keep their reason and a compact receipt; failures settle every attem
     assert.deepEqual([card.review.status, card.review.reason], expect, name);
     assert.deepEqual(run.suggestions().map(noted => [noted.status, noted.reason, 'guidance' in noted, 'suggestion' in noted]),
       [[...expect, false, false]], name);
+    // The console tells an allowed fallback from a stop by the receipt, as the session does (dot P2 on #297).
+    assert.equal(run.suggestions()[0].modelReceipt.fallbackReason, guidance === TAKEOVER ? expect[1] : null, name);
     assert.match(card.review.guidance, guidance, name);
     // Only a fallback the role allows hands the review to the session.
     assert.equal(TAKEOVER.test(card.review.guidance), guidance === TAKEOVER, name);

@@ -1,8 +1,9 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { projectApproved } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
-import { noteRoleSuggestion } from '../model-backends/suggestion-log.js';
+import { taskCaptureScope } from './capture-decision.js';
 import { readConversationTriage } from './conversation-triage.js';
+import { noteRoleSuggestion } from './role-suggestion-note.js';
 import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
 
 // Astro's project hint for a conversation no deterministic rule attributed
@@ -40,7 +41,8 @@ export async function withProjectCandidate(application, entry, { sessionId, sour
   if (!entry.task_context_token || entry.resumed_checkpoint) return entry;
   const hint = await suggestProjectCandidate(application, { token: entry.task_context_token, sessionId, sourceApplication }, entry, taskPrompt);
   if (!hint) return entry;
-  noteRoleSuggestion(application, { role: ROLE, operation: OPERATION, personalSpaceId: application.config.personal.spaceId,
+  await noteRoleSuggestion(application, async () => taskCaptureScope(await application.taskContextRegistry.context(
+    entry.task_context_token, sourceApplication)), { role: ROLE, operation: OPERATION, personalSpaceId: application.config.personal.spaceId,
     subject: { conversationId: entry.conversation?.conversation_id ?? null }, result: hint });
   return { ...entry, project_candidate: hint };
 }

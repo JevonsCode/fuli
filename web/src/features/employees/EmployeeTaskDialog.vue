@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
-import { employeeErrorMessage } from './catalog'
+import { employeeErrorMessage, missingTask } from './catalog'
 import type { EmployeeBoardItem } from './EmployeeTaskBoard.vue'
 import { boardTaskPeekId, type BoardTaskRef } from './board-task-peek'
 
@@ -50,7 +50,7 @@ async function load() {
     baseline.value = result.item
     title.value = result.item.title; summary.value = result.item.summary ?? ''; priority.value = result.item.priority ?? 'medium'
     criteria.value = result.item.acceptanceCriteria?.join('\n') ?? ''; tags.value = result.item.tags?.join(', ') ?? ''
-  } catch (cause) { if (current === version) error.value = employeeErrorMessage(cause) }
+  } catch (cause) { if (current === version) error.value = missingTask(cause) ? t('employees.task.notFound') : employeeErrorMessage(cause) }
   finally { if (current === version) loading.value = false }
 }
 // Each save is bound to the task (load generation) it was made for: a late

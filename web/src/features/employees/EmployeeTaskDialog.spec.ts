@@ -2,7 +2,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EmployeeTaskDialog from './EmployeeTaskDialog.vue'
 const { postJson } = vi.hoisted(() => ({ postJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ postJson }))
+vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), postJson }))
+import { ApiError } from '@/api/client'
 const item = { id: 'task-a', projectId: 'project-a', title: 'Original task', status: 'planned' as const, updatedAt: '2026-09-01T00:00:00.000Z' }
 const wrappers: ReturnType<typeof mount>[] = []
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
@@ -26,6 +27,14 @@ describe('native task dialog', () => {
     await wrapper.get('input[minlength="2"]').setValue('New task')
     await wrapper.get('form').trigger('submit'); await flushPromises()
     expect(postJson.mock.lastCall?.[1]).toMatchObject({ personalProjectId: 'project-a', tool: 'create_tasks', arguments: { tasks: [{ title: 'New task' }] } })
+  })
+  it('says a task does not exist only when its own read answers 404; a gate or other failure keeps its reason', async () => {
+    postJson.mockRejectedValue(new ApiError('{"error":"no such work item"}', 404, '{"error":"no such work item"}'))
+    expect((await setup()).get('[role="alert"]').text()).toContain('任务不存在。')
+    postJson.mockRejectedValue(new ApiError('gone', 404, '{"error":"Project is unavailable","code":"project_not_found"}'))
+    expect((await setup()).get('[role="alert"]').text()).not.toContain('任务不存在')
+    postJson.mockRejectedValue(new ApiError('denied', 403, '{"error":"Employee tool is not available or permitted","code":"tool_not_permitted"}'))
+    expect((await setup()).get('[role="alert"]').text()).not.toContain('任务不存在')
   })
   it('shows failures without reporting success or changing the board', async () => {
     const wrapper = await setup()
