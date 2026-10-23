@@ -296,3 +296,20 @@ describe('permanent delete on the item page', () => {
     wrapper.unmount()
   })
 })
+
+
+it('shows public submission provenance above the deletion layers without inventing a withdrawal link', async () => {
+  postJson.mockResolvedValue(preview(undefined, { publications: [{ draft_id: 'draft', project_id: 'Synthetic public project',
+    provider_url: 'https://public.example', proposal_id: 'proposal', source_episode_ids: ['e1'], status: 'submitted',
+    local_delete_retracts: false, withdrawal_status: 'unavailable', withdrawal_url: null }] }))
+  const wrapper = await open()
+  await openDialog(wrapper)
+  const warning = dialog()!.querySelector('[data-hard-delete-publications]')!
+  expect(warning).not.toBeNull()
+  expect(warning.textContent).toContain('Synthetic public project')
+  expect(warning.textContent).toContain('删除来源不会撤回公开内容')
+  expect(warning.textContent).toContain('撤回入口尚未实现')
+  expect(warning.querySelector('a')).toBeNull()
+  expect(warning.compareDocumentPosition(dialog()!.querySelector('[data-hard-delete-items]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  wrapper.unmount()
+})

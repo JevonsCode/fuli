@@ -39,7 +39,20 @@ export type RecordCount = typeof RECORD_COUNTS[number]
 export type HardDeleteCounts = Record<RecordCount | 'items' | 'versions' | 'relationships' | 'episodes'
   | 'kept_episodes' | 'dependents', number>
 
+export interface HardDeletePublication {
+  draft_id: string
+  project_id: string
+  provider_url: string
+  proposal_id: string
+  source_episode_ids: string[]
+  status: 'submitted'
+  local_delete_retracts: false
+  withdrawal_status: 'unavailable'
+  withdrawal_url: null
+}
+
 export interface HardDeletePreview {
+  publications?: HardDeletePublication[]
   preview_id: string
   item_kind: ItemKind
   item_id: string

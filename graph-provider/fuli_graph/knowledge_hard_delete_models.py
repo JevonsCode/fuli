@@ -91,7 +91,20 @@ class KnowledgeHardDeleteCounts(StrictModel):
     dependents: int = 0
 
 
+class KnowledgeHardDeletePublication(StrictModel):
+    draft_id: str
+    project_id: str
+    provider_url: str
+    proposal_id: str
+    source_episode_ids: list[str]
+    status: Literal['submitted'] = 'submitted'
+    local_delete_retracts: Literal[False] = False
+    withdrawal_status: Literal['unavailable'] = 'unavailable'
+    withdrawal_url: None = None
+
+
 class KnowledgeHardDeletePreview(StrictModel):
+    publications: list[KnowledgeHardDeletePublication] = Field(default_factory=list)
     preview_id: str
     item_kind: KnowledgeItemKind
     item_id: str

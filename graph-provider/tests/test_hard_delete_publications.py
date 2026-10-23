@@ -1,0 +1,98 @@
+"""Public submission provenance is shown by the real hard-delete preview."""
+import json
+from types import SimpleNamespace
+
+import pytest
+
+from fuli_graph import knowledge_hard_delete as deletion
+from fuli_graph.knowledge_hard_delete_models import KnowledgeHardDeleteItem, KnowledgeHardDeleteRef
+from fuli_graph.provider_values import stable_uuid
+
+
+class PreviewDriver:
+    def __init__(self, drafts):
+        self.drafts = drafts
+        self.queries = []
+
+    async def execute_query(self, query, **params):
+        self.queries.append(query)
+        if 'FuliPublicationDraft' in query:
+            assert params['space_id'] == 'space'
+            return ([{'draft': draft} for draft in self.drafts], None, None)
+        if 'RETURN episode.uuid AS episode_id' in query:
+            return ([{'episode_id': stable_uuid('group', 'episode', 'original-capture'),
+                      'session_id': 'session', 'source_application': 'codex', 'source_turn_id': 'turn'}], None, None)
+        if 'AS episode,' in query:
+            return ([], None, None)
+        if 'count(mention)' in query:
+            return ([{'mentions': 0}], None, None)
+        if 'RETURN DISTINCT item.uuid' in query:
+            return ([], None, None)
+        raise AssertionError(query)
+
+
+async def setup_preview(monkeypatch, drafts):
+    driver = PreviewDriver(drafts)
+
+    async def authorize(*args):
+        return {'id': 'space', 'group_id': 'group', 'kind': 'personal'}
+
+    store = SimpleNamespace(runtime=SimpleNamespace(driver=driver), authorize=authorize, _require_personal=lambda: None)
+
+    async def absent(*args):
+        return None
+
+    async def current(*args):
+        return {'name': 'Synthetic item'}
+
+    async def versions(*args):
+        return [{'item_id': 'item'}]
+
+    async def items(*args):
+        return ([KnowledgeHardDeleteItem(item_kind='entity', item_id='item', role='item', title='Synthetic item',
+                                         content='Synthetic words', status='current')], [['entity', 'item', 0]])
+
+    async def records(*args):
+        return {}
+
+    async def dependents(*args):
+        return []
+
+    monkeypatch.setattr(deletion, 'require_not_hard_deleted', absent)
+    monkeypatch.setattr(deletion, '_read_item', current)
+    monkeypatch.setattr(deletion, 'version_chain', versions)
+    monkeypatch.setattr(deletion, '_item_rows', items)
+    monkeypatch.setattr(deletion, '_record_ids', records)
+    monkeypatch.setattr(deletion, '_dependents', dependents)
+    return store, driver
+
+
+def draft(identity, key='original-capture', status='submitted', **source):
+    return {'id': identity, 'status': status, 'provider_url': 'https://public.example',
+            'target_project_id': 'public-project', 'shared_proposal_id': 'proposal',
+            'payload': json.dumps({'idempotency_key': key, **source})}
+
+
+@pytest.mark.asyncio
+async def test_preview_reports_exact_episode_and_turn_provenance_and_no_fake_withdrawal(monkeypatch):
+    drafts = [draft('exact'), draft('turn', 'different-key', session_id='session',
+              source_application='codex', source_turn_id='turn'),
+              draft('unrelated', 'other', session_id='session', source_application='codex'),
+              draft('wrong-app', 'other', session_id='session', source_application='claude', source_turn_id='turn'),
+              draft('pending', status='pending')]
+    store, driver = await setup_preview(monkeypatch, drafts)
+    result = await deletion.preview_hard_delete(store, {'id': 'owner'}, 'item',
+                KnowledgeHardDeleteRef(personal_space_id='space', item_kind='entity'))
+    assert [row.draft_id for row in result.publications] == ['exact', 'turn']
+    for row in result.publications:
+        assert row.project_id == 'public-project'
+        assert row.withdrawal_url is None
+        assert row.withdrawal_status == 'unavailable'
+        assert row.local_delete_retracts is False
+        assert row.source_episode_ids == [stable_uuid('group', 'episode', 'original-capture')]
+    assert all('SET ' not in query and 'DELETE ' not in query for query in driver.queries)
+    original_digest = result.preview_id
+    driver.drafts = []
+    changed = await deletion.preview_hard_delete(store, {'id': 'owner'}, 'item',
+                KnowledgeHardDeleteRef(personal_space_id='space', item_kind='entity'))
+    assert changed.preview_id != original_digest, 'publication warning changes require a fresh confirmation'

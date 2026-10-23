@@ -45,6 +45,7 @@ from .knowledge_hard_delete_models import (
 from .knowledge_hard_delete_operations import (
     abort_operation, operation_fingerprint, operation_outcome, record_refusal, settled_operation,
 )
+from .knowledge_hard_delete_publications import publications_for_sources
 from .knowledge_hard_delete_traces import all_hard_deletions, hard_deletion_record, require_not_hard_deleted
 from .knowledge_management import _read_item
 from .knowledge_versions import item_revisions, lock_knowledge, version_chain, version_status
@@ -342,6 +343,7 @@ async def _plan(store, space, item_kind, item_id, *, lock=False) -> dict:
         _MENTIONS, group_id=space['group_id'], entity_ids=targets['entity'], routing_='r')
     record_ids = await _record_ids(store, space, items)
     dependents = await _dependents(store, space, items)
+    publications = await publications_for_sources(store, space, [*items, *dependents])
     counts = KnowledgeHardDeleteCounts(
         items=len(items), versions=sum(item.role != 'relationship' for item in items),
         relationships=sum(item.role == 'relationship' for item in items), episodes=len(removed),
@@ -351,11 +353,11 @@ async def _plan(store, space, item_kind, item_id, *, lock=False) -> dict:
         'space': space['id'], 'item': [item_kind, item_id], 'locks': locks,
         'removed': [episode.episode_id for episode in removed], 'kept': [episode.episode_id for episode in kept],
         'records': record_ids, 'dependents': [[d.item_kind, d.item_id] for d in dependents],
-        'counts': counts.model_dump(),
+        'counts': counts.model_dump(), 'publications': [row.model_dump() for row in publications],
     }, sort_keys=True, separators=(',', ':'), ensure_ascii=False))
     title = next(item.title for item in items if item.role == 'item')
     preview = KnowledgeHardDeletePreview(
-        preview_id=digest, item_kind=item_kind, item_id=item_id, title=title, items=items,
+        publications=publications, preview_id=digest, item_kind=item_kind, item_id=item_id, title=title, items=items,
         removed_episodes=removed, kept_episodes=kept, dependents=dependents, counts=counts)
     return {'preview': preview, 'targets': targets, 'all_ids': all_ids, 'records': record_ids}
 

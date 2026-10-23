@@ -102,6 +102,17 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id], () => {
     <GrowthLoading v-if="reloading" variant="inline" :label="t('knowledgeHardDelete.dialog.reloading')" />
     <p v-if="notice" role="status" class="m-0 font-medium" data-hard-delete-notice>{{ notice }}</p>
 
+    <section v-if="preview.publications?.length" class="grid gap-2 rounded-lg border p-3" data-hard-delete-publications>
+      <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.dialog.publications') }}</h3>
+      <ul class="m-0 grid list-none gap-2 p-0">
+        <li v-for="publication in preview.publications" :key="publication.draft_id" class="grid gap-1 [overflow-wrap:anywhere]">
+          <p class="m-0">{{ t('knowledgeHardDelete.dialog.publicationWarning', { project: publication.project_id }) }}</p>
+          <p class="m-0 text-muted-foreground">{{ publication.provider_url }} · {{ publication.proposal_id }}</p>
+        </li>
+      </ul>
+      <p class="m-0 text-muted-foreground">{{ t('knowledgeHardDelete.dialog.withdrawalUnavailable') }}</p>
+    </section>
+
     <section class="grid gap-2" data-hard-delete-items>
       <h3 class="m-0 text-base font-semibold">{{ t('knowledgeHardDelete.dialog.removed') }}</h3>
       <ul class="m-0 grid list-none gap-2 p-0">
