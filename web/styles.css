@@ -122,7 +122,7 @@ body { margin: 0; min-width: 320px; }
 /* One centred work canvas (D-03); an item opens in a quick look over it. */
 .knowledge-canvas {
   display: flex; flex: 1; flex-direction: column; width: 100%; min-height: 0;
-  max-width: var(--canvas-max); margin-inline: auto;
+  max-width: var(--layout-max); margin-inline: auto;
 }
 .knowledge-mode-tabs { flex: 1 1 auto; min-width: 0; }
 .knowledge-view-heading { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
