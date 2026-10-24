@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { agentDisplayName, agentProfilePath } from '@/features/agent-profile/profile-model'
-import { employeeAvatarUrl } from '@/features/employees/avatars'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { employeeTemplateIdForAgent, employeeTemplates, type EmployeeRecruitmentResult } from '@/features/employees/catalog'
 import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
@@ -301,12 +301,9 @@ async function cleanup(person: ProjectAgentRecord) {
           <span
             class="agent-portrait agent-card-identity"
             :style="agentIdentityStyle(agent.agentId)"
-            v-bind="agent.profile.occupationEmoji
-              ? { role: 'img', 'aria-label': `${t('projectAgents.fields.occupationEmoji')}: ${agent.profile.occupationEmoji}` }
-              : { 'aria-hidden': 'true' }"
+            aria-hidden="true"
           >
-            <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
-            <template v-else>{{ agent.profile.occupationEmoji || name.slice(0, 1) }}</template>
+            <img :src="agentAvatarUrl(agent.agentId)" alt="" />
           </span>
           <div class="grid min-w-0 gap-2">
             <p class="project-agent-summary-meta" data-agent-identity>

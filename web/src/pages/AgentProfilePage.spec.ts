@@ -1,3 +1,4 @@
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -303,6 +304,7 @@ describe('Agent profile integration', () => {
     const { wrapper } = await setup()
     // The shell renders the page's one H1 from this title: the Agent's real name.
     expect(pageTitle.value.text).toBe('Aster')
+    expect(wrapper.get('.agent-portrait img').attributes('src')).toBe(agentAvatarUrl('alpha'))
     expect(wrapper.find('h1').exists()).toBe(false)
     expect(wrapper.get('.agent-portrait').attributes('style')).toMatch(/--agent-identity: var\(--identity-[0-7]\)/)
     expect(wrapper.text()).toContain('Synthetic active project')

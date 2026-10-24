@@ -1,3 +1,4 @@
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -42,6 +43,7 @@ describe('ProjectAgentDetailPage', () => {
 
     expect(getJson).toHaveBeenCalledWith('/api/project-agents?personalSpaceId=personal-1')
     expect(pageTitle.value.text).toBe('活动 Agent')
+    expect(wrapper.get('.agent-portrait img').attributes('src')).toBe(agentAvatarUrl('shared-agent'))
     expect(wrapper.find('h1').exists()).toBe(false)
     expect(wrapper.get('[data-agent-responsibility]').text()).toBe('负责活动方案与复盘。')
     const projects = wrapper.get('[data-manage-panel="projects"]').text()
