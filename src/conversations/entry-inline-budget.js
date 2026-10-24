@@ -1,5 +1,6 @@
 import { copyPreferenceScope, entryWorkKind } from './preference-snapshot.js';
 import { preferenceAlwaysInline, preferenceNamesWorkKind } from '../graphiti/preference-task-scope.js';
+import { blockedByDeliveryBudget } from '../mcp/preference-delivery.js';
 
 // A task entry bounded to the inline limit of the host that shows it (rec#11
 // D-54). An Agent adapter whose host keeps only a preview of a longer hook
@@ -37,7 +38,11 @@ export function fitUncached(fit, value, render) {
 // always stays is over the limit, it is delivered anyway.
 export function inlineEntryFit(limit, length) {
   return (value, { deliver, complete }) => {
-    const fits = attempt => length(attempt.result) <= limit;
+    // A frame the renderer blocked as over its own delivery budget is short,
+    // but delivers nothing: it does not fit. Size only grows with the entry,
+    // so both conditions stay monotonic for the search below. Any other
+    // blocked reason is kept as it is.
+    const fits = attempt => !blockedByDeliveryBudget(attempt.result.structuredContent) && length(attempt.result) <= limit;
     const levels = contextLevels(value);
     for (const level of levels) {
       const attempt = deliver(level);

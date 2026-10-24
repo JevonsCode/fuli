@@ -139,3 +139,38 @@ test('the part that always stays is delivered whole even past the inline limit',
   assert.equal(frame.preferences_omitted.count, 5);
   assert.equal(frame.taskContextToken, 'task-large');
 });
+
+// dot on #356: an entry past the renderer's own 128 KiB result budget renders
+// as a short blocked frame. That frame delivers nothing, so it never "fits".
+const CJK = '导出接口需要保留分页游标，字段单位要写清楚，回滚方案写在评审说明里，测试数据全部是合成的。';
+const cjkRule = (key, length, qualifiers, aspect) => syntheticPreference(key,
+  `SYNTHETIC_${key}: ${CJK.repeat(Math.ceil(length / CJK.length))}`.slice(0, length), qualifiers, aspect);
+
+test('an entry past the 128 KiB result budget is bounded and delivered, not blocked, with every hard rule', async () => {
+  const hard = Array.from({ length: 5 }, (_, index) => cjkRule(`hard-${index + 1}`, 300, { constraint: 'hard' }, 'judgment_preference'));
+  const soft = Array.from({ length: 100 }, (_, index) => cjkRule(`soft-${index + 1}`, 500, {}, 'taste'));
+  const entry = () => syntheticLargeEntry({ items: [...hard, ...soft], sessionId: SESSION });
+  const whole = (await codexLifecycleOutput('UserPromptSubmit', { ...input, turn_id: 'turn-1' }, async () => entry()))
+    .hookSpecificOutput.additionalContext;
+  // Unchanged for Codex: the whole entry is over the budget and blocks.
+  assert.equal(hookFrame(whole).preference_delivery.reason, 'delivery_budget');
+  assert.ok(Buffer.byteLength(JSON.stringify(entry().effective_preferences)) > 128 * 1024);
+  const text = await claudeEntry(entry());
+  assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
+  const frame = hookFrame(text);
+  assert.equal(frame.preference_delivery, undefined);
+  assert.notEqual(frame.preferences_complete, false);
+  assert.deepEqual(keys(hard).filter(key => !keys(frame.effective_preferences).includes(key)), []);
+  assert.equal(frame.preferences_omitted.count, 105 - frame.effective_preferences.length);
+  assert.ok(frame.effective_preferences.length > hard.length);
+});
+
+test('an integrity refusal stays blocked under the inline budget', async () => {
+  const entry = syntheticLargeEntry({ items: syntheticPreferences(60), sessionId: SESSION });
+  entry.context = { ...entry.context, source_truncated: true };
+  const frame = hookFrame(await claudeEntry(entry));
+  assert.deepEqual([frame.preference_delivery.status, frame.preference_delivery.reason], ['blocked', 'source_window']);
+  assert.equal(frame.preferences_complete, false);
+  assert.equal(frame.effective_preferences, undefined);
+  assert.equal(frame.preferences_omitted, undefined);
+});

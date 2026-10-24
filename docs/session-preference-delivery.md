@@ -68,7 +68,11 @@ unchanged, byte for byte. Known limit: those two still send their whole
 frame, so one longer than the preview is not confirmed.
 
 An entry over the budget is reduced in this order, each step only while the
-frame this session would get (a delta where one applies) is still too long:
+frame this session would get (a delta where one applies) is still too long.
+A frame blocked for `delivery_budget` (the whole result past its 128 KiB
+budget) is short but delivers nothing, so it counts as too long; every other
+blocked reason (`source_window`, `unsafe_projection`) is about the data and is
+delivered as blocked.
 
 1. `task_knowledge_recall` keeps its status and counts and becomes a pointer
    (`items_omitted`, `read: { tool: 'search_current_project_knowledge' }`);

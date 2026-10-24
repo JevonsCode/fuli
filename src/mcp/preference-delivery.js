@@ -21,12 +21,21 @@ const BLOCKED_AGENT_IDENTITY = ['status', 'project_agent_id', 'personal_project_
   'wake_mode', 'worker_started', 'selection_reason', 'requested_agent_id', 'requested_agent_guidance',
   'reporting_lead_agent_id', 'reporting_guidance', 'execution_agent_id', 'agent_memory_scope'];
 
+const DELIVERY_BUDGET = 'delivery_budget';
+
 // Compare the compact entry's executable preferences and their authority/scope,
 // not unrelated memory previews or historical evidence that may be omitted.
 export function preferenceDeliveryReason(original, delivered) {
   if (original?.context?.source_truncated === true) return 'source_window';
   return isDeepStrictEqual(preferenceAuthorityView(original), preferenceAuthorityView(delivered))
-    ? null : 'delivery_budget';
+    ? null : DELIVERY_BUDGET;
+}
+
+// A frame blocked only because the whole result did not fit its delivery
+// budget; a smaller entry may fit (entry-inline-budget.js). Every other
+// blocked reason (source_window, unsafe_projection) is about the data itself.
+export function blockedByDeliveryBudget(frame) {
+  return frame?.preference_delivery?.status === 'blocked' && frame.preference_delivery.reason === DELIVERY_BUDGET;
 }
 
 export function blockedPreferenceDelivery(value, reason) {
