@@ -659,7 +659,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def review_decision(
         request: KnowledgeReviewDecisionLookup,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> KnowledgeReviewDecisionLookupResult:
         return await read_knowledge_review_decision(store, actor, request)
 
@@ -818,7 +818,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response_model=list[PreferenceConflictRecord],
     )
     async def preference_conflicts(
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
         status: Annotated[str | None, Query(pattern='^(ai_pending|resolved)$')] = None,
         limit: Annotated[int, Query(ge=1, le=1000)] = 500,

@@ -16,6 +16,7 @@ from .models import (
     PreferenceConflictResolveCreate,
     PreferenceScopeChange,
 )
+from .knowledge_visibility import fla_visible_ids_cypher, knowledge_reader, reader_parameter
 from .provider_values import native_datetime as _native_datetime
 
 
@@ -140,23 +141,30 @@ async def list_preference_conflicts(
     limit: int = 500,
     offset: int = 0,
 ) -> list[PreferenceConflictRecord]:
-    await _authorize_personal_space(
+    space = await _authorize_personal_space(
         store,
         actor,
         personal_space_id,
         'reader',
     )
+    # An Agent reads as a plain session: no conflict naming any FLA's own
+    # item (an FLA meets those over its own preferences in its task context).
+    # The console reads them all with the human-review proof. Cut before the page.
+    reader = await knowledge_reader(store, actor, space, personal_project_id=None, project_agent_id=None)
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
               [:HAS_PREFERENCE_CONFLICT]->(conflict:FuliPreferenceConflict)
-        WHERE $status IS NULL OR conflict.status = $status
+        WHERE ($status IS NULL OR conflict.status = $status)
+          AND ''' + fla_visible_ids_cypher('[conflict.left_item_id, conflict.right_item_id]') + '''
         RETURN conflict
         ORDER BY conflict.updated_at DESC, conflict.id ASC
         SKIP $offset
         LIMIT $limit
         ''',
         space_id=personal_space_id,
+        group_id=space['group_id'],
+        reader=reader_parameter(reader),
         status=status,
         limit=min(max(limit, 1), 1000),
         offset=max(offset, 0),

@@ -22,6 +22,7 @@ from .knowledge_item_view_models import KnowledgeScopeChange
 from .knowledge_management import _read_item
 from .knowledge_scope_edit import apply_scope_change, scope_editor_space
 from .knowledge_versions import lock_knowledge
+from .knowledge_visibility import hidden_refs, request_reader
 from .knowledge_session_migration_models import (
     SessionMigrationApply,
     SessionMigrationMoved,
@@ -39,11 +40,16 @@ async def preview_session_migration(store, actor: dict, request: SessionMigratio
     target = await _target_project(store, actor, space, request.target_project_id)
     temporary_id = session_temporary_project_id(space['id'], request.source_application, request.session_id)
     held = await held_items(store, space, temporary_id)
+    # An Agent's offer neither counts nor lists another FLA's held items, nor
+    # counts another FLA's words among a listed item's sources.
+    reader = await request_reader(store, actor, space, request)
+    hidden = await hidden_refs(store, space, reader, [(item_kind, item_id) for item_kind, item_id, _ in held])
+    held = [row for row in held if (row[0], row[1]) not in hidden]
     items = []
     end = request.offset + request.limit
     if request.include_items:
         for item_kind, item_id, current in held[request.offset:end]:
-            _, source_ids = await item_evidence(store, space, item_kind, item_id, limit=0)
+            _, source_ids = await item_evidence(store, space, item_kind, item_id, limit=0, reader=reader)
             items.append(await item_summary(store, space, item_kind, item_id, current, source_ids=source_ids))
     return SessionMigrationPreview(
         temporary_project_id=temporary_id, target_project=target, held_count=len(held),

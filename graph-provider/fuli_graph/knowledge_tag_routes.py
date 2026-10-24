@@ -3,7 +3,9 @@ Provider queries; every write names its actor and reason. A write claimed as
 the person's own needs the human-review proof (ReviewAwareActor), and the
 person's governance (approve, merge, split, retire, relations, undo) is applied
 only on the human-review channel (HumanReviewer): an Agent can preview it,
-never apply it (rec#11 D-07 part 2, D-22)."""
+never apply it (rec#11 D-07 part 2, D-22). The owner's view across every
+project (include_all_projects) lists and counts other FLAs' links, so it too
+needs that proof; without it a read is scoped, and a claimed one is refused."""
 
 from typing import Any
 
@@ -57,19 +59,19 @@ def register_knowledge_tag_routes(application, store, Actor: Any, ReviewAwareAct
         return await detach_tag(store, actor, request)
 
     @application.post('/v1/knowledge-tags/metrics', response_model=KnowledgeTagMetrics)
-    async def metrics(request: KnowledgeTagMetricsQuery, actor: Actor):
+    async def metrics(request: KnowledgeTagMetricsQuery, actor: ReviewAwareActor):
         return await tag_metrics(store, actor, request)
 
     @application.post('/v1/knowledge-tags/vocabulary', response_model=KnowledgeTagVocabulary)
-    async def vocabulary(request: KnowledgeTagVocabularyQuery, actor: Actor):
+    async def vocabulary(request: KnowledgeTagVocabularyQuery, actor: ReviewAwareActor):
         return await list_vocabulary(store, actor, request)
 
     @application.post('/v1/knowledge-tags/detail', response_model=KnowledgeTagDetail)
-    async def detail(request: KnowledgeTagDetailQuery, actor: Actor):
+    async def detail(request: KnowledgeTagDetailQuery, actor: ReviewAwareActor):
         return await read_tag_detail(store, actor, request)
 
     @application.post('/v1/knowledge-tags/governance/preview', response_model=KnowledgeTagGovernancePreview)
-    async def governance_preview(request: KnowledgeTagGovernanceRequest, actor: Actor):
+    async def governance_preview(request: KnowledgeTagGovernanceRequest, actor: ReviewAwareActor):
         return await preview_governance(store, actor, request)
 
     @application.post('/v1/knowledge-tags/governance/apply', response_model=KnowledgeTagGovernanceResult)

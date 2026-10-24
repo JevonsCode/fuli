@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from .knowledge_audit_models import KnowledgeItemKind
-from .knowledge_item_view_models import KnowledgeItemSummary, KnowledgeScopeProject
+from .knowledge_item_view_models import AgentReaderRef, KnowledgeItemSummary, KnowledgeScopeProject
 from .model_base import StrictModel
 from .models import SourceApplication
 
@@ -24,7 +24,7 @@ class SessionMigrationTarget(StrictModel):
     target_project_id: str = Field(min_length=1, max_length=128)
 
 
-class SessionMigrationRead(SessionMigrationTarget):
+class SessionMigrationRead(SessionMigrationTarget, AgentReaderRef):
     # False: only how many are held and how often this session already worked
     # in the project, for a task entry deciding whether to show its link.
     include_items: bool = True
