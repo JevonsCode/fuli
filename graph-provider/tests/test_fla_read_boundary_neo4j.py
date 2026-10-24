@@ -268,7 +268,7 @@ async def test_human_change_search_leaves_out_a_plain_edge_to_another_flas_entit
             # As if the person had edited all three: only the plain-to-plain link may come back.
             await driver.execute_query('''
                 MATCH ()-[edge:RELATES_TO]->() WHERE edge.uuid IN $edges
-                SET edge.fuli_human_edited = true, edge.fuli_human_change_status = 'human_changed',
+                SET edge.fuli_human_edited = true, edge.fuli_human_change_status = 'unseen', edge.fuli_human_change_version = 1,
                     edge.fuli_last_human_changed_at = datetime()
             ''', edges=[space.plain_edge, space.fla_edge, space.plain_link])
         finally:
