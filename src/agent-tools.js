@@ -4,8 +4,7 @@ import { runWithAgentRequestContext } from './app/agent-request-context.js';
 import { ROUNDTABLE_TOOL_DEFINITIONS, ROUNDTABLE_TOOL_NAMES, callRoundtableTool } from './agent-roundtable/tools.js';
 import { ApplicationError } from './app/application-error.js';
 import { withCaptureLookups } from './graphiti/capture-decision.js';
-import { needsSessionFuliCheck, sessionFuliRefusal, withoutSessionAttribution, withSessionAttribution }
-  from './agent-tools/session-fuli-gate.js';
+import { runSessionGated, withoutSessionAttribution, withSessionAttribution } from './agent-tools/session-fuli-gate.js';
 
 const TOOL_DEFINITIONS = [...GRAPH_TOOL_DEFINITIONS, ...ROUNDTABLE_TOOL_DEFINITIONS].map(withSessionAttribution);
 
@@ -22,8 +21,7 @@ export function callAgentTool(app, name, input = {}, requestContext = null) {
     ? callRoundtableTool(app.roundtable, name, toolInput)
     : withCaptureLookups(() => dispatchGraphTool(app, name, toolInput));
   // A session FULI is off for gets no memory and starts no collaboration (rec#5 C3b).
-  return runWithAgentRequestContext(requestContext, needsSessionFuliCheck(app, name)
-    ? async () => await sessionFuliRefusal(app, input) ?? dispatch() : dispatch);
+  return runWithAgentRequestContext(requestContext, () => runSessionGated(app, name, input, dispatch));
 }
 
 function clone(value) {

@@ -1,6 +1,6 @@
-import { sessionsMayBeOff, sessionUseDecision } from '../graphiti/session-layer-decision.js';
+import { sessionsMayBeOff, sessionsMayBeWithoutCapture, sessionUseDecision } from '../graphiti/session-layer-decision.js';
 import { captureNotice } from '../graphiti/capture-notice.js';
-import { activeAgentHostClient } from '../app/agent-request-context.js';
+import { activeAgentHostClient, runWithTaskBoundSession } from '../app/agent-request-context.js';
 
 // What an Agent may still call for a session FULI is off for (rec#5 C3b).
 // Every other tool returns stored memory or preferences to the model (entry,
@@ -59,21 +59,37 @@ const REASON_GUIDANCE = Object.freeze({
   policy_unavailable: 'FULI could not read what it needs to decide whether this session may be served (its session state or this call\'s task), so nothing was read, recorded or started. This is not the person stopping FULI; a later call may be served.'
 });
 
-// Whether a call must first ask which sessions it speaks for: a tool that is
-// not open while FULI may be off for some session. Otherwise it runs as before.
-export function needsSessionFuliCheck(app, name) {
-  return !OPEN_TOOLS.has(name) && sessionsMayBeOff(app);
+// Runs an Agent's tool call (inside its request context) through the session
+// layer. A tool that is not open is refused while FULI may be off for some
+// session; otherwise it runs as before. A current task token an attributed
+// tool carries binds the rest of the call to the token's session, so the
+// capture decisions of its writes count that session as their task's, with
+// its pause and stop, while another session of the client records nothing.
+// A call that needs neither runs as before, synchronously.
+export function runSessionGated(app, name, input, dispatch) {
+  const checked = !OPEN_TOOLS.has(name) && sessionsMayBeOff(app);
+  if (!checked && !ATTRIBUTED_TOOLS.has(name)) return dispatch();
+  // The client the call's process was started for decides, whatever the payload names or omits.
+  const sourceApplication = activeAgentHostClient() ?? input?.sourceApplication ?? 'other';
+  if (!checked && !sessionsMayBeWithoutCapture(app, sourceApplication)) return dispatch();
+  return gatedCall(app, name, input, dispatch, { checked, sourceApplication });
+}
+
+async function gatedCall(app, name, input, dispatch, { checked, sourceApplication }) {
+  const binding = await tokenBinding(app, input, sourceApplication);
+  const refusal = checked ? sessionFuliRefusal(app, input, sourceApplication, binding) : null;
+  if (refusal) return refusal;
+  return ATTRIBUTED_TOOLS.has(name) && binding.boundSessionId
+    ? runWithTaskBoundSession(binding.boundSessionId, dispatch) : dispatch();
 }
 
 // The refusal a tool returns instead of running, or null. The session is the
 // one the call's task token was bound to, the host session of the call or a
 // session it names (session-layer-decision.js), never one a model can choose
 // to allow it.
-export async function sessionFuliRefusal(app, input = {}) {
-  // The client the call's process was started for decides, whatever the payload names or omits.
-  const sourceApplication = activeAgentHostClient() ?? input?.sourceApplication ?? 'other';
+function sessionFuliRefusal(app, input, sourceApplication, binding) {
   const decision = sessionUseDecision(app, { sourceApplication,
-    sessionId: input?.sessionId ?? input?.sourceSessionId ?? null, ...await tokenBinding(app, input, sourceApplication) });
+    sessionId: input?.sessionId ?? input?.sourceSessionId ?? null, ...binding });
   return decision.allowed ? null : { status: SESSION_FULI_OFF, reason: decision.reason,
     notice: captureNotice(decision.reason, decision.since), guidance: REASON_GUIDANCE[decision.reason] ?? GUIDANCE };
 }

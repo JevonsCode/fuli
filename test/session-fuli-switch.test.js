@@ -704,31 +704,86 @@ test('a superseded token or a failed registry read is refused with its own reaso
   assert.equal(Object.hasOwn(recorded.at(-1), 'taskContextToken'), false);
 });
 
-// rec#47 F2: the records a task writes as it goes or closes take the token too. Their schemas reject
-// unknown fields, so before this they were always refused while any session of the client was stopped.
-test('closing records accept the task token through MCP: the current one is served, a missing or stale one refused', async (t) => {
+// rec#47 F2 (dot's P2 on #349): the records a task writes as it goes or closes take the token too.
+// Their schemas reject unknown fields, so before this they were always refused while any session of
+// the client was stopped. The token's session then authorizes their capture decision as a task's
+// would: real handlers and the real capture gate, only the Provider is a double.
+const MEMORY_CHECKPOINT = { personalSpaceId: 'synthetic-space', personalProjectId: 'novel', agentId: 'lead-novel',
+  expectedRevision: 0, memory: { summary: 'Synthetic working summary.' } };
+const KNOWLEDGE_CAPTURE = { targetKind: 'personal', spaceId: 'synthetic-space', personalProjectId: 'novel', sourceKind: 'conversation',
+  name: 'Synthetic capture', sourceDescription: 'Synthetic session evidence', referenceTime: '2026-10-20T00:00:00.000Z',
+  sensitivity: 'normal', relationships: [], entities: [{ key: 'preference:synthetic', name: 'Synthetic preference', type: 'Preference',
+    originQuadrant: 'known_known', confirmationStatus: 'pending', confirmationBasis: { existenceReason: 'The user stated it.',
+      quadrantReason: 'The user stated it explicitly.', proposedBy: { kind: 'agent', label: 'Codex' } } }] };
+const CLOSING = ['checkpoint_project_agent_memory', 'capture_session_knowledge'];
+
+async function closingRecords(t) {
   const f = await fixture(t);
+  const memoryWrites = [];
+  f.app.personal.writeProjectAgentMemory = async request => {
+    memoryWrites.push(request);
+    return { checkpoint_id: `synthetic-checkpoint-${memoryWrites.length}`, personal_space_id: request.personal_space_id,
+      personal_project_id: request.personal_project_id, agent_id: request.agent_id, revision: memoryWrites.length,
+      created_at: '2026-10-20T08:00:00.000Z', memory: request.memory };
+  };
+  let call = 0;
+  // Every attempt is a new write, so an idempotent retry never hides a refusal.
+  const write = (session, name, token) => mcpCall(f, { env: {}, sourceApplication: 'codex' }, name, {
+    ...(name === 'capture_session_knowledge' ? { ...KNOWLEDGE_CAPTURE, sessionId: session } : MEMORY_CHECKPOINT),
+    idempotencyKey: `synthetic-closing-${++call}`, ...(token === undefined ? {} : { taskContextToken: token }) });
+  const written = name => name === 'capture_session_knowledge' ? f.knowledge.length : memoryWrites.length;
+  return { f, write, written };
+}
+
+test('closing records with the current token are written while another session of the client is stopped', async (t) => {
+  const { f, write, written } = await closingRecords(t);
   await codexEntry(f, f.dirs.novel, { session: SESSION_A });
   const stale = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'First task.' })).context.taskContextToken;
   const current = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'continue' })).context.taskContextToken;
   await codexLine(f, SESSION_A, 'fuli stop');
-  const seen = [];
-  f.app.checkpointProjectAgentMemory = async input => { seen.push(input); return { revision: 1 }; };
-  f.app.recordProjectAgentTaskActivity = async input => { seen.push(input); return { taskId: input.taskId }; };
-  const process = { env: {}, sourceApplication: 'codex' };
-  const calls = [['checkpoint_project_agent_memory', { personalSpaceId: 'synthetic-space', agentId: 'lead-novel', expectedRevision: 0,
-    idempotencyKey: 'synthetic-memory-1', memory: { summary: 'Synthetic summary.' } }],
-  ['record_project_agent_task_activity', { personalSpaceId: 'synthetic-space', personalProjectId: 'novel', taskId: 'synthetic-task',
-    idempotencyKey: 'synthetic-activity-1', status: 'completed', summary: 'Synthetic summary.' }]];
-  for (const [name, args] of calls) {
+  for (const name of CLOSING) {
     for (const [token, reason] of [[undefined, 'session_unattributed'], [stale, 'task_token_not_current']]) {
-      const refused = await mcpCall(f, process, name, { ...args, ...(token ? { taskContextToken: token } : {}) });
+      const refused = await write(SESSION_B, name, token);
       assert.deepEqual([refused.status, refused.reason], ['fuli_off', reason], `${name} ${reason}`);
     }
-    assert.equal(seen.length, 0, `${name}: nothing refused reached the tool`);
-    const served = await mcpCall(f, process, name, { ...args, taskContextToken: current });
-    assert.notEqual(served.status, 'fuli_off', name);
-    assert.equal(Object.hasOwn(seen.pop(), 'taskContextToken'), false, `${name}: the tool never sees the token`);
+    // A payload that names the stopped session is refused even with a current token.
+    if (name === 'capture_session_knowledge') assert.equal((await write(SESSION_A, name, current)).reason, 'session_stopped');
+    assert.equal(written(name), 0, `${name}: nothing refused was written`);
+    const served = await write(SESSION_B, name, current);
+    assert.ok(['checkpointed', 'committed'].includes(served.status), `${name} ${JSON.stringify(served)}`);
+    assert.equal(written(name), 1, `${name} written once`);
+  }
+
+  // The token's own session is held to its pause and its stop like a task's.
+  await callAgentTool(f.app, 'update_capture_policy', { sessionPaused: true, taskContextToken: current, sourceApplication: 'codex' });
+  for (const name of CLOSING) {
+    const paused = await write(SESSION_B, name, current);
+    assert.deepEqual([paused.status, paused.reason], ['capture_disabled', 'session_paused'], `${name} paused`);
+  }
+  await codexLine(f, SESSION_B, 'fuli stop');
+  for (const name of CLOSING) {
+    const stopped = await write(SESSION_B, name, current);
+    assert.deepEqual([stopped.status, stopped.reason], ['fuli_off', 'session_stopped'], `${name} stopped`);
+    assert.equal(written(name), 1, `${name}: nothing more was written`);
+  }
+});
+
+// No session is stopped, so the use gate does not refuse; a paused sibling still made every
+// token-less write of the client unattributable. The current token binds the write to its session.
+test('closing records with the current token are written while another session of the client is paused', async (t) => {
+  const { f, write, written } = await closingRecords(t);
+  const a = (await codexEntry(f, f.dirs.novel, { session: SESSION_A })).context.taskContextToken;
+  const stale = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'First task.' })).context.taskContextToken;
+  const current = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'continue' })).context.taskContextToken;
+  await callAgentTool(f.app, 'update_capture_policy', { sessionPaused: true, taskContextToken: a, sourceApplication: 'codex' });
+  for (const name of CLOSING) {
+    for (const [token, reason] of [[undefined, 'policy_unavailable'], [stale, 'policy_unavailable'], [a, 'session_paused']]) {
+      const refused = await write(SESSION_B, name, token);
+      assert.deepEqual([refused.status, refused.reason], ['capture_disabled', reason], `${name} ${token}`);
+    }
+    assert.equal(written(name), 0, `${name}: nothing refused was written`);
+    assert.ok(['checkpointed', 'committed'].includes((await write(SESSION_B, name, current)).status), name);
+    assert.equal(written(name), 1, name);
   }
 });
 
