@@ -49,10 +49,11 @@ export function agentAppServiceOver(context) {
 // Closes once, however often it is asked: the instances this process holds
 // are sealed and their processes stopped (instances.js) before the leases and
 // the registry close. With nothing hosted or in flight the registry closes
-// before this returns. A close that could not confirm every app process
-// stopped (a stop that failed, a start still in flight) rejects with
-// close_incomplete and names them; their handles stay held, the records stay
-// for the next owner's reconcile, and asking again retries those stops.
+// before this returns. Only a close that left nothing held or in flight is
+// kept as done. One that could not confirm every app process stopped (a stop
+// that failed, a late start's handle among them, or a start still in flight)
+// rejects with close_incomplete and names them; their handles stay held, the
+// records stay for the next owner's reconcile, and asking again retries those stops.
 function closeContext(context) {
   const finish = () => {
     context.leases.close();
