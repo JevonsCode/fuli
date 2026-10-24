@@ -13,6 +13,7 @@ import { receiptNotices } from './capture-notice.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
+import { standingOwnerEntry } from './task-entry-standing-owner.js';
 
 export async function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
@@ -93,6 +94,7 @@ async function entryPreferences(application, projectResolution, {
 }, selection, recordAgentViews, reads, { includeManagement = true, includeMessages = true } = {}) {
   // A rejected explicit role must not leak its private preferences via fallback.
   const selectedAgentId = selection ? selection.agent?.agentId ?? null : projectAgentId;
+  const standing = standingOwnerEntry(projectResolution, selection);
   const team = reads.management.then(management => {
     // Sealed workers already carry a coordinator's reporting contract. Ordinary
     // entry advertises team/judgment only with an available authorized manager.
@@ -141,10 +143,11 @@ async function entryPreferences(application, projectResolution, {
   // Answers a person gave to this Agent's own requests while it was away.
   const answered = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.attentionReplies
     ? application.roundtable.attentionReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];
-  const notices = [...receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
+  const notices = [...(standing?.notice ? [standing.receiptNotice] : []), ...receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
     { settingsUrl: captureSettingsUrl(application) }), ...formatNotices];
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),
+    ...(standing ? { standing_owner: standing.field } : {}),
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),
     ...(waiting.length ? { agent_messages: waiting,
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),

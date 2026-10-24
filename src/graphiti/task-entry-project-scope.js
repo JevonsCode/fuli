@@ -1,6 +1,7 @@
 import { TASK_ENTRY_TOOLS } from './repository-project-registration.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { projectNamedInPrompt } from './task-entry-project-mention.js';
+import { sessionTaskContext, withStandingOwner } from './task-entry-standing-owner.js';
 
 // The fixed assistant receives conversations no project has claimed yet.
 export const ASSISTANT_AGENT_ID = 'employee.assistant';
@@ -8,11 +9,17 @@ export const ASSISTANT_AGENT_ID = 'employee.assistant';
 // Restore only exact session provenance; a normal folder name is not a role binding.
 // An unclaimed conversation never creates a project or hires a lead: it stays
 // pending in the assistant's global scope until it is assigned to a project.
+// A standing assignment the prompt names then scopes this task alone
+// (task-entry-standing-owner.js).
 export async function resolveTaskEntryProject(application, resolution, input) {
+  if (!input.agentInvocation || !TASK_ENTRY_TOOLS.has(input.agentToolName)) return resolution;
+  return withStandingOwner(application, await sessionEntryProject(application, resolution, input), input);
+}
+
+async function sessionEntryProject(application, resolution, input) {
   // An unregistered repository ID is only a hint: when auto-registration did
   // not apply, the prompt, the session and the assistant still decide.
-  if (!input.agentInvocation || !TASK_ENTRY_TOOLS.has(input.agentToolName)
-    || resolution.personalProjectId
+  if (resolution.personalProjectId
     || !['unmatched', 'not_provided'].includes(resolution.status)) return resolution;
   // An explicit FLA outside a project uses its independent global context.
   if (input.projectAgentId || String(input.taskPrompt ?? '').trimStart().startsWith('@')) {
@@ -27,7 +34,9 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   const source = input.sourceApplication ?? 'other';
   try {
     for (const sessionId of sessions) {
-      const context = await application.taskContextRegistry?.current?.(sessionId, source);
+      // A task a standing assignment routed never moves its session there:
+      // the session continues where it was before that task.
+      const context = sessionTaskContext(await application.taskContextRegistry?.current?.(sessionId, source));
       if (context?.projectScope?.type === 'temporary') continue;
       if (context?.personalProjectId === null && context.projectAgentId) {
         return { status: 'global', basis: 'host_session_context', personalProjectId: null,
