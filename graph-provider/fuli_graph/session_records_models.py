@@ -54,6 +54,8 @@ class SessionTurn(StrictModel):
     turn_id: str | None = None
     created_at: datetime | None = None
     personal_project_id: str | None = None
+    # The FLA the turn worked under, if any: an Agent reader re-checks it.
+    project_agent_id: str | None = None
     conversation_id: str | None = None
     # Set when capture was off for this turn's checkpoint.
     capture_off: SessionCaptureOff | None = None

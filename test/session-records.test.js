@@ -191,6 +191,21 @@ test('an Agent reads its session as its task\'s FLA, or as a plain session namin
     'no proof and no FLA: the Provider reads it as a plain session');
 });
 
+test('in one project and session, H never repeats G\'s turn even if a Provider sent it', async () => {
+  // G worked first, then H; a Provider that failed to cut G's turn is checked again here.
+  const read = sessionRead();
+  read.turns = [turn(1, 10, 1, { project_agent_id: 'g', messages: [{ role: 'user', text: 'G 的私下对话', created_at: at(10, 1) }] }),
+    turn(2, 10, 2, { project_agent_id: 'h', messages: [{ role: 'user', text: 'H 的对话', created_at: at(10, 2) }] })];
+  read.items = [item('g-fact', { task_id: 'task-1' }), item('h-fact', { task_id: 'task-2' })];
+  const as = agent => app(structuredClone(read), { token: 'fuli-task-b', sessionId: SESSION, sourceApplication: 'codex',
+    personalProjectId: 'thesis', projectAgentId: agent }).app;
+  const h = (await callAgentTool(as('h'), 'read_session_records', { taskContextToken: 'fuli-task-b', sourceApplication: 'codex' })).markdown;
+  assert.ok(h.includes('H 的对话') && h.includes('Synthetic h-fact'));
+  assert.ok(!h.includes('G 的私下对话') && !h.includes('Synthetic g-fact'), h);
+  const g = (await callAgentTool(as('g'), 'read_session_records', { taskContextToken: 'fuli-task-b', sourceApplication: 'codex' })).markdown;
+  assert.ok(g.includes('G 的私下对话') && !g.includes('H 的对话'), g);
+});
+
 test('an empty session says so and still links its list; a long one says it is cut', async () => {
   const read = { ...sessionRead(), turns: [], items: [], truncated: true };
   const { markdown } = await callAgentTool(app(read).app, 'read_session_records', { taskContextToken: 'fuli-task-b',

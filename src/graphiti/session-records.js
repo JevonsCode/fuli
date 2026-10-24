@@ -47,7 +47,7 @@ export async function readOwnSessionRecords(application, { taskContextToken, sou
   const reader = providerReaderFields(taskKnowledgeReader(task));
   const read = await providerRead(application, session,
     body => application.personal.readSessionRecords({ ...body, ...reader }));
-  const view = sessionRecordsView(application, session, withinProject(read, task.personalProjectId ?? null));
+  const view = sessionRecordsView(application, session, withinReader(read, task));
   // The numbered lines carry every entry once; the same entries again as
   // data would only double what the answer costs.
   return { total: view.total, truncated: view.truncated, url: view.session.url, markdown: sessionRecordsMarkdown(view) };
@@ -67,12 +67,18 @@ async function providerRead(application, session, readRecords) {
 // turns hold is left out too: even its times are that project's.
 // An item is kept when one of its sources is this project's, shown through
 // the first such source, so another project's earlier citation never hides
-// this project's own evidence.
-function withinProject(read, projectId) {
+// this project's own evidence. A turn is also the reader's only when it worked
+// under the task's own FLA (or, for a plain session, under none): the Provider
+// already leaves out every other FLA's turns, and this checks it again.
+function withinReader(read, task) {
+  const projectId = task.personalProjectId ?? null;
+  const agentId = task.projectAgentId ?? null;
   const visible = id => (id ?? null) === projectId;
-  const turns = read.turns.map(turn => visible(turn.personal_project_id) ? turn
-    : { ...turn, hidden: true, messages: [] });
-  const items = read.items.map(item => ({ ...item, sources: itemSources(item).filter(source => visible(source.origin_project_id)) }))
+  const own = turn => visible(turn.personal_project_id) && (turn.project_agent_id ?? null) === agentId;
+  const turns = read.turns.map(turn => own(turn) ? turn : { ...turn, hidden: true, messages: [] });
+  const hiddenTasks = new Set(turns.filter(turn => turn.hidden).map(turn => turn.task_id));
+  const items = read.items.map(item => ({ ...item, sources: itemSources(item)
+    .filter(source => visible(source.origin_project_id) && !hiddenTasks.has(source.task_id)) }))
     .filter(item => item.sources.length).map(item => ({ ...item, ...item.sources[0] }));
   return { ...read, turns, items, projects: (read.projects ?? []).filter(project => project.id === projectId) };
 }

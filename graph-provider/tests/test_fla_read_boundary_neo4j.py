@@ -63,11 +63,13 @@ class Boundary:
             entity('plain-new', 'Deploys run from the pipeline'),
             {**entity('shared-habit', 'Lead with the conclusion'), 'type': 'PersonalPreference',
              'profile_aspect': 'taste'}])
-        graph = await self.graph(headers=REVIEW)
+        # The whole space: a project graph never holds a preference given to one FLA.
+        graph = await self.graph(headers=REVIEW, project=False)
         self.ids = {node['name']: node['id'] for node in graph['nodes'] if node.get('summary')}
         self.group_id = next(node['group_id'] for node in graph['nodes'] if node['id'] == self.id('plain-fact'))
         self.fla_edge = next(edge['id'] for edge in graph['edges'] if edge['fact'] == 'G deploys through the canary lane')
         self.plain_edge = f'boundary-plain-edge-{uuid4()}'
+        self.link_episode = f'boundary-link-{uuid4()}'
         # No route writes these two links today; they stand for older or
         # imported data the boundary still has to hold.
         driver = AsyncGraphDatabase.driver(settings.neo4j_uri, auth=('neo4j', settings.neo4j_password))
@@ -76,7 +78,7 @@ class Boundary:
                 MATCH (plain:Entity {uuid: $plain}), (fla:Entity {uuid: $fla}),
                       (old:Entity {uuid: $old}), (new:Entity {uuid: $new}), (habit:Entity {uuid: $habit})
                 CREATE (link:Episodic {uuid: $link_episode, group_id: $group_id, created_at: datetime(),
-                        fuli_personal_project_id: $project})
+                        fuli_personal_project_id: $project, entity_edges: [$edge]})
                 CREATE (link)-[:MENTIONS {uuid: $link_episode + '-mention', group_id: $group_id}]->(plain)
                 CREATE (plain)-[:RELATES_TO {uuid: $edge, group_id: $group_id, name: 'LINKS',
                         fact: 'Releases link to the canary lane', episodes: [$link_episode],
@@ -89,7 +91,7 @@ class Boundary:
                 CREATE (words)-[:MENTIONS {uuid: $words_episode + '-mention', group_id: $group_id}]->(habit)
             ''', plain=self.id('plain-fact'), fla=self.id('fla-fact'), old=self.id('fla-old'),
                 new=self.id('plain-new'), habit=self.id('shared-habit'), group_id=self.group_id, edge=self.plain_edge,
-                link_episode=f'boundary-link-{uuid4()}', words_episode=f'boundary-words-{uuid4()}',
+                link_episode=self.link_episode, words_episode=f'boundary-words-{uuid4()}',
                 agent=G, project=PROJECT)
         finally:
             await driver.close()
@@ -106,13 +108,15 @@ class Boundary:
     def fla_ids(self):
         return {self.id(key) for key in ('fla-fact', 'fla-target', 'fla-old', 'fla-habit')}
 
-    async def graph(self, params=None, headers=None):
+    async def graph(self, params=None, headers=None, project=True):
+        scope = {'personal_project_id': PROJECT} if project else {}
         return ok(await self.client.get(f'/v1/spaces/{self.space_id}/graph', headers=headers,
-                                        params={'personal_project_id': PROJECT, 'limit': 500, **(params or {})}))
+                                        params={**scope, 'limit': 500, **(params or {})}))
 
-    async def view(self, key, reader=None, headers=None):
+    async def view(self, key, reader=None, headers=None, kind='entity'):
+        item_id = self.id(key) if kind == 'entity' else key
         return await self.client.post('/v1/knowledge/item-views', headers=headers, json={
-            'personal_space_id': self.space_id, 'item_kind': 'entity', 'item_id': self.id(key), **(reader or {})})
+            'personal_space_id': self.space_id, 'item_kind': kind, 'item_id': item_id, **(reader or {})})
 
     async def receipt(self, episode_id, reader=None, headers=None):
         return ok(await self.client.post('/v1/knowledge/turn-receipts', headers=headers, json={
@@ -129,18 +133,21 @@ async def test_the_graph_shows_an_flas_own_knowledge_to_it_and_the_person_only()
     async with provider_client(settings) as (client, _):
         space = await Boundary().build(client, settings)
         visible_to_all = {space.id('plain-fact'), space.id('plain-new'), space.id('shared-habit')}
-        for params in ({}, {'offset': 0}):
-            owner_nodes, owner_edges = knowledge(await space.graph(params, headers=REVIEW))
-            g_nodes, g_edges = knowledge(await space.graph({**params, **AS_G}))
-            assert space.fla_ids() | visible_to_all <= owner_nodes
-            assert {space.fla_edge, space.plain_edge} <= owner_edges
-            assert g_nodes == owner_nodes and g_edges == owner_edges, 'G reads its own knowledge in full'
-            for reader in (AS_H, {}):
-                nodes, edges = knowledge(await space.graph({**params, **reader}))
-                assert not nodes & space.fla_ids(), reader
-                assert visible_to_all <= nodes
-                # The plain edge points at G's fact: it goes with its endpoint.
-                assert not edges & {space.fla_edge, space.plain_edge}, reader
+        for project in (True, False):
+            # A project graph holds no preference given to one FLA, for any reader; the whole space does.
+            own = space.fla_ids() - ({space.id('fla-habit')} if project else set())
+            for params in ({}, {'offset': 0}):
+                owner_nodes, owner_edges = knowledge(await space.graph(params, headers=REVIEW, project=project))
+                g_nodes, g_edges = knowledge(await space.graph({**params, **AS_G}, project=project))
+                assert own | visible_to_all <= owner_nodes, (project, params)
+                assert {space.fla_edge, space.plain_edge} <= owner_edges, (project, params)
+                assert g_nodes == owner_nodes and g_edges == owner_edges, 'G reads its own knowledge in full'
+                for reader in (AS_H, {}):
+                    nodes, edges = knowledge(await space.graph({**params, **reader}, project=project))
+                    assert not nodes & space.fla_ids(), (project, reader)
+                    assert visible_to_all <= nodes
+                    # The plain edge points at G's fact: it goes with its endpoint.
+                    assert not edges & {space.fla_edge, space.plain_edge}, (project, reader)
         page = await space.graph({'offset': 0, 'limit': 1, **AS_H})
         assert not {node['id'] for node in page['nodes']} & space.fla_ids(), 'hidden before the page is cut'
         # A project preference is everyone's, but G's own words as its evidence stay G's.
@@ -200,6 +207,27 @@ async def test_an_item_view_hides_another_flas_item_its_words_and_its_versions()
 
 
 @pytest.mark.asyncio
+async def test_a_plain_edge_to_another_flas_entity_is_hidden_with_it_by_id_too():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space = await Boundary().build(client, settings)
+        # Its own source is plain; its target is G's fact, so it is G's to read, as in the graph.
+        assert (await space.view(space.plain_edge, headers=REVIEW, kind='relationship')).status_code == 200
+        assert (await space.view(space.plain_edge, AS_G, kind='relationship')).status_code == 200
+        for reader in (AS_H, None):
+            hidden = await space.view(space.plain_edge, reader, kind='relationship')
+            assert (hidden.status_code, hidden.json()['detail']) == (404, 'knowledge item not found'), reader
+        owner = await space.receipt(space.link_episode, headers=REVIEW)
+        assert [entry['item_id'] for entry in owner['entries']] == [space.plain_edge]
+        assert [entry['item_id'] for entry in (await space.receipt(space.link_episode, AS_G))['entries']] == [
+            space.plain_edge]
+        for reader in (AS_H, None):
+            receipt = await space.receipt(space.link_episode, reader)
+            assert receipt['entries'] == [], reader
+            assert receipt['unchanged_count'] == owner['unchanged_count'], 'the plain fact it names stays counted'
+
+
+@pytest.mark.asyncio
 async def test_a_receipt_lists_and_counts_nothing_of_another_flas_turn():
     settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
@@ -219,30 +247,44 @@ async def test_a_receipt_lists_and_counts_nothing_of_another_flas_turn():
 
 
 @pytest.mark.asyncio
-async def test_a_sessions_records_hold_none_of_another_flas_knowledge():
+async def test_in_one_project_and_session_h_reads_none_of_gs_turns_or_knowledge():
     settings = reviewed_settings()
     async with provider_client(settings) as (client, _):
         space = await Boundary().build(client, settings)
+        # Same project, same host session: G works first, then H.
         session = Session(client, space.space_id, f'native-{uuid4()}')
         await session.begin(PROJECT, G)
-        fla = await commit(client, space.space_id, [entity('session-fla', 'G keeps the release notes')], agent=G,
-                           session_id=session.session_id)
-        await session.checkpoint(fla)
-        await session.begin(PROJECT, G)
-        plain = await commit(client, space.space_id, [entity('session-plain', 'Release notes live in docs')],
-                             session_id=session.session_id)
-        await session.checkpoint(plain)
+        await session.say('G private words about the canary rollback')
+        await session.checkpoint(await commit(client, space.space_id, [entity('session-g', 'G keeps the release notes')],
+                                              agent=G, session_id=session.session_id))
+        await session.begin(PROJECT, H)
+        await session.say('H words about the changelog')
+        await session.checkpoint(await commit(client, space.space_id, [entity('session-h', 'H keeps the changelog')],
+                                              agent=H, session_id=session.session_id))
 
-        async def items(reader=None, headers=None):
-            records = ok(await client.post('/v1/session-records', headers=headers, json={
+        async def records(reader=None, headers=None):
+            return ok(await client.post('/v1/session-records', headers=headers, json={
                 'personal_space_id': space.space_id, 'source_application': 'codex',
                 'session_id': session.session_id, **(reader or {})}))
-            return {item['content'] for item in records['items']}
 
-        both = {'G keeps the release notes', 'Release notes live in docs'}
-        assert await items(headers=REVIEW) == both
-        assert await items(AS_G) == both
-        assert await items(AS_H) == await items() == {'Release notes live in docs'}
+        def words(read):
+            return {message['text'] for turn in read['turns'] for message in turn['messages'] if message['role'] == 'user'}
+
+        def contents(read):
+            return {item['content'] for item in read['items']}
+
+        g_text, h_text = 'G private words about the canary rollback', 'H words about the changelog'
+        owner = await records(headers=REVIEW)
+        assert words(owner) == {g_text, h_text}
+        assert contents(owner) == {'G keeps the release notes', 'H keeps the changelog'}
+        as_h = await records(AS_H)
+        assert words(as_h) == {h_text} and contents(as_h) == {'H keeps the changelog'}
+        assert 'canary rollback' not in str(as_h) and 'release notes' not in str(as_h)
+        assert [turn['project_agent_id'] for turn in as_h['turns']] == [H]
+        as_g = await records(AS_G)
+        assert words(as_g) == {g_text} and contents(as_g) == {'G keeps the release notes'}
+        plain = await records()
+        assert plain['turns'] == [] and plain['items'] == [], 'no FLA: none of either FLA\'s turns'
 
 
 @pytest.mark.asyncio

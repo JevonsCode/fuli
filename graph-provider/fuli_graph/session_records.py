@@ -22,7 +22,13 @@ from .knowledge_item_view import (
     scope_projects,
 )
 from .knowledge_management import _read_item
-from .knowledge_visibility import fla_episode_visible_cypher, hidden_refs, reader_parameter, request_reader
+from .knowledge_visibility import (
+    fla_episode_visible_cypher,
+    fla_own_work_cypher,
+    hidden_refs,
+    reader_parameter,
+    request_reader,
+)
 from .models import SourceApplication
 from .provider_values import native_datetime
 from .session_records_models import (
@@ -56,15 +62,16 @@ NOT_RECORDED_EVENT = re.compile(r':not_recorded$')
 
 async def read_session_records(store, actor: dict, request: SessionRecordsRead) -> SessionRecords:
     space = await personal_reader_space(store, actor, request.personal_space_id)
-    # An Agent reads none of another FLA's episodes or items; the session's
-    # own turns are its own conversation and stay.
+    # An Agent reads only the turns of its own FLA (a plain session: turns
+    # under no FLA), and none of another FLA's episodes or items. Each is cut
+    # before its page, so neither a count nor a gap shows what was left out.
     reader = await request_reader(store, actor, space, request)
     if request.source_application is None:
         clients = await _session_clients(store, space, request.session_id)
         if len(clients) != 1:
             return SessionRecords(session_id=request.session_id, clients=clients)
         request = request.model_copy(update={'source_application': clients[0]})
-    tasks, more_turns = await _session_tasks(store, space, request)
+    tasks, more_turns = await _session_tasks(store, space, request, reader)
     turns, more_events = await _turns(store, space, tasks)
     episodes, more_episodes = await _session_episodes(store, space, request, tasks, reader)
     items, more_items = await _items(store, space, episodes, reader)
@@ -93,16 +100,17 @@ async def _session_clients(store, space, session_id):
     return sorted(nodes[record['id']] for record in records)
 
 
-async def _session_tasks(store, space, request):
+async def _session_tasks(store, space, request, reader):
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_TASK_CONTEXT_SESSION]->
               (:FuliTaskContextSession {id: $session_node})-[:HAS_CONTEXT]->(task:FuliTaskContext)
+        WHERE ''' + fla_own_work_cypher('task.project_agent_id', 'task.personal_project_id') + '''
         WITH task ORDER BY task.created_at DESC, task.id LIMIT $limit
         RETURN task.id AS id, task.token AS token, task.turn_id AS turn_id, task.created_at AS created_at,
                task.personal_project_id AS project_id, task.project_agent_id AS agent_id,
                task.record_json AS record_json
-        ''', space_id=space['id'], limit=MAX_TURNS + 1,
+        ''', space_id=space['id'], limit=MAX_TURNS + 1, reader=reader_parameter(reader),
         session_node=store._task_session_id(space['id'], request.source_application, request.session_id),
         routing_='r')
     tasks = []
@@ -140,7 +148,7 @@ async def _turns(store, space, tasks):
         events = events_by_token.get(task['token'], [])
         turns.append(SessionTurn(
             task_id=task['id'], turn_id=task['turn_id'], created_at=task['created_at'],
-            personal_project_id=task['project_id'],
+            personal_project_id=task['project_id'], project_agent_id=task['agent_id'],
             conversation_id=events[0]['conversation_id'] if events else None,
             capture_off=task['capture_off'], **_turn_events(events)))
     return turns, truncated
@@ -198,7 +206,9 @@ async def _session_episodes(store, space, request, tasks, reader):
         '''
         MATCH (episode:Episodic {group_id: $group_id})
         WHERE (episode.uuid IN $episode_ids
-               OR (episode.fuli_session_id = $session_id AND episode.fuli_source_application = $source_application))
+               OR (episode.fuli_session_id = $session_id AND episode.fuli_source_application = $source_application
+                   AND ''' + fla_own_work_cypher('episode.fuli_project_agent_id',
+                                                 'episode.fuli_personal_project_id') + '''))
           AND ''' + fla_episode_visible_cypher('episode') + '''
         WITH episode ORDER BY episode.created_at DESC, episode.uuid LIMIT $limit
         RETURN episode.uuid AS id, episode.created_at AS created_at,

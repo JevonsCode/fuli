@@ -28,7 +28,13 @@ from .project_knowledge import (
     read_personal_project_relations,
     read_project_references,
 )
-from .knowledge_visibility import fla_episode_visible_cypher, fla_visible_cypher, knowledge_reader, reader_parameter
+from .knowledge_visibility import (
+    fla_episode_visible_cypher,
+    fla_relationship_visible_cypher,
+    fla_visible_cypher,
+    knowledge_reader,
+    reader_parameter,
+)
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
 from .negative_feedback_block import agent_authority_suspension
 
@@ -365,12 +371,9 @@ def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
         )
         ''' if project_scoped else ''
     pagination = 'SKIP $offset LIMIT $limit' if paginated else 'LIMIT $limit'
-    # An edge is hidden with either endpoint, so the graph stays consistent.
     return match + project_filter + '''
         WITH source, edge, target
-        WHERE ''' + fla_visible_cypher('edge', 'relationship') + '''
-          AND ''' + fla_visible_cypher('source', 'entity') + '''
-          AND ''' + fla_visible_cypher('target', 'entity') + '''
+        WHERE ''' + fla_relationship_visible_cypher('edge', 'source', 'target') + '''
         RETURN edge.uuid AS id, source.uuid AS source, target.uuid AS target,
                source.name AS source_name, target.name AS target_name,
                edge.name AS type, edge.fact AS fact,

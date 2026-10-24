@@ -104,6 +104,48 @@ async def test_an_agent_gets_hidden_refs_per_kind_and_keeps_episode_order():
     assert await visibility.visible_episode_ids(store, space, H, ['e1', 'e2', 'e3']) == ['e1', 'e3']
 
 
+@pytest.mark.asyncio
+async def test_a_relationship_by_id_is_hidden_with_either_endpoint_as_in_the_graph():
+    queries = []
+
+    async def execute_query(query, **parameters):
+        queries.append(query)
+        return [], None, None
+    store = SimpleNamespace(runtime=SimpleNamespace(driver=SimpleNamespace(execute_query=execute_query)))
+    await visibility.hidden_refs(store, {'group_id': 'g'}, H, [('relationship', 'r')])
+    rule = visibility.fla_relationship_visible_cypher('item', 'source', 'target')
+    assert rule in queries[0] and 'MATCH (source:Entity)-[item:RELATES_TO' in queries[0]
+    for part in (visibility.fla_visible_cypher('item', 'relationship'), visibility.fla_visible_cypher('source', 'entity'),
+                 visibility.fla_visible_cypher('target', 'entity')):
+        assert part in rule
+    assert visibility.fla_relationship_visible_cypher('edge', 'source', 'target') in _edge_query(False, True)
+
+
+@pytest.mark.asyncio
+async def test_session_turns_and_episodes_are_cut_to_the_readers_own_fla_before_their_page(monkeypatch):
+    from fuli_graph import session_records
+    from fuli_graph.session_records_models import SessionRecordsRead
+    calls = []
+
+    async def execute_query(query, **parameters):
+        calls.append((query, parameters))
+        return [], None, None
+    store = SimpleNamespace(runtime=SimpleNamespace(driver=SimpleNamespace(execute_query=execute_query)),
+                            _task_session_id=lambda *parts: 'session-node')
+    monkeypatch.setattr(session_records, 'personal_reader_space', AsyncMock(return_value={'id': 's', 'group_id': 'g'}))
+    monkeypatch.setattr(session_records, 'request_reader', AsyncMock(return_value=H))
+    await session_records.read_session_records(store, {}, SessionRecordsRead(
+        personal_space_id='s', source_application='codex', session_id='native'))
+    tasks = next(query for query, _ in calls if 'FuliTaskContext)' in query)
+    episodes = next(query for query, _ in calls if 'MATCH (episode:Episodic' in query)
+    turn_rule = visibility.fla_own_work_cypher('task.project_agent_id', 'task.personal_project_id')
+    episode_rule = visibility.fla_own_work_cypher('episode.fuli_project_agent_id', 'episode.fuli_personal_project_id')
+    assert tasks.index(turn_rule) < tasks.index('LIMIT $limit')
+    assert episodes.index(episode_rule) < episodes.index('LIMIT $limit')
+    assert all(parameters['reader'] == visibility.reader_parameter(H) for query, parameters in calls
+               if query in (tasks, episodes))
+
+
 def review_row(item_id, **fields):
     return {'item_id': item_id, 'item_kind': 'entity', 'title': item_id, 'content': f'Synthetic {item_id}',
             'profile_aspect': None, 'preference_scope': None, 'assigned_project_ids': ['alpha'],

@@ -88,6 +88,26 @@ def fla_visible_cypher(item: str, item_kind: str) -> str:
           END, false))'''
 
 
+def fla_relationship_visible_cypher(edge: str, source: str, target: str) -> str:
+    """A relationship is visible only with both its endpoints: one that links
+    to another FLA's entity is hidden with it, wherever it is read (graph,
+    item view, receipt, session records)."""
+    return (f"({fla_visible_cypher(edge, 'relationship')} AND {fla_visible_cypher(source, 'entity')} "
+            f"AND {fla_visible_cypher(target, 'entity')})")
+
+
+def fla_own_work_cypher(agent: str, project: str) -> str:
+    """Work done under an FLA (a session's turn, or an episode it wrote) is
+    that FLA's conversation: an FLA reads its own in its project, a plain
+    session only work under no FLA, and only the person all of it. agent and
+    project are the Cypher expressions of that work's FLA and project. Needs
+    $reader."""
+    return f'''($reader IS NULL OR CASE WHEN $reader.project_agent_id IS NULL
+            THEN {agent} IS NULL
+            ELSE coalesce({agent} = $reader.project_agent_id
+                          AND {project} = $reader.personal_project_id, false) END)'''
+
+
 def fla_episode_visible_cypher(episode: str) -> str:
     """An episode an FLA wrote, as evidence or as a session's source: only
     that FLA in its project reads it. Needs $reader."""
@@ -108,8 +128,9 @@ _HIDDEN_QUERIES = {
           AND NOT ''' + fla_visible_cypher('item', 'entity') + '''
         RETURN item.uuid AS id''',
     'relationship': '''
-        MATCH ()-[item:RELATES_TO {group_id: $group_id}]->() WHERE item.uuid IN $item_ids
-          AND NOT ''' + fla_visible_cypher('item', 'relationship') + '''
+        MATCH (source:Entity)-[item:RELATES_TO {group_id: $group_id}]->(target:Entity)
+        WHERE item.uuid IN $item_ids
+          AND NOT ''' + fla_relationship_visible_cypher('item', 'source', 'target') + '''
         RETURN item.uuid AS id''',
 }
 
