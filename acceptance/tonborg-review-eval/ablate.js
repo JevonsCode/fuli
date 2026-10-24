@@ -21,8 +21,9 @@ const { values } = parseArgs({ options: { cases: { type: 'string' }, labels: { t
 
 // The approve criteria of rubric.md section 2, restated as instructions. Since
 // D-43 the production prompt already ends with all three, so `production` is
-// the adopted prompt and the task variants measure a repeated rule; run this
-// at 83a2858a to reproduce the rec#36 comparison against the earlier prompt.
+// the adopted prompt and the task variants measure a repeated rule. The
+// rec#36 comparison against the earlier prompt is reproduced by this script
+// as first committed (e3738960, rules inline, on the earlier prompt).
 const CRITERIA = REVIEW_CRITERIA;
 const INJECTION = REVIEW_INJECTION_RULE;
 const CONFIDENCE = REVIEW_CONFIDENCE_RULE;

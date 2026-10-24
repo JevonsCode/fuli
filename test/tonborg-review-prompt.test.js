@@ -14,3 +14,14 @@ test('the knowledge review prompt ends with the measured criteria, injection and
   assert.match(REVIEW_CONFIDENCE_RULE, /do not copy any score/);
   assert.equal(instructions.includes('{quality}'), false);
 });
+
+test('the user-words and standing-rule criteria cover only preference candidates; an ordinary fact needs supporting evidence', () => {
+  // A candidate is a preference when it carries preference_scope or profile_aspect (KnowledgeReviewCandidate).
+  assert.match(REVIEW_CRITERIA, /^For a candidate with a preference_scope or profile_aspect \(a user preference or standing rule\), approve only when/);
+  // One-off requests stay escalated within the preference criteria.
+  assert.match(REVIEW_CRITERIA, /one-off and must be escalated/);
+  assert.match(REVIEW_CRITERIA, /For any other candidate \(an ordinary entity or relationship fact\), approve when the supplied evidence directly supports it/);
+  // The injection and confidence rules stay unconditional.
+  assert.doesNotMatch(REVIEW_INJECTION_RULE, /preference/);
+  assert.doesNotMatch(REVIEW_CONFIDENCE_RULE, /preference/);
+});
