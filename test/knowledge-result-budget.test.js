@@ -3,7 +3,7 @@ import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { recallTaskKnowledge } from '../src/graphiti/task-knowledge-recall.js';
-import { searchCurrentProjectKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
+import { searchCurrentProjectKnowledge } from '../src/graphiti/current-project-knowledge-search.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { searchFederatedKnowledge } from '../src/graphiti/federated-search.js';
 

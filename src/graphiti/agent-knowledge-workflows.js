@@ -16,17 +16,13 @@ import { internalCaptureSkip, legacyCaptureReceipts, normalizeTaskCaptures, task
 import { captureDisabled, taskCaptureScope } from './capture-decision.js';
 import { checkpointCaptureDecision, storedCheckpoint } from './checkpoint-capture.js';
 import { receiptNotices } from './capture-notice.js';
+import { standingReceiptNotices } from './task-entry-standing-owner.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
-import { budgetKnowledgeSearch } from './knowledge-result-budget.js';
 
 import { onlineSourceUri } from './source-uri.js';
-import {
-  relatedProjectGuidance,
-  relatedProjectSuggestions
-} from './related-project-suggestions.js';
 
 export async function beginTaskContext(application, {
   sessionId,
@@ -226,7 +222,7 @@ export async function checkpointTaskKnowledge(application, {
         agentId: task.projectAgentId ?? null, name: team.name, role: team.role, sourceApplication: task.sourceApplication,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
         persistence: conversation?.status ?? null, collaborators: team.collaborators,
-        notices: [...receiptNotices(captureCheck, [], { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application)],
+        notices: [...standingReceiptNotices(task), ...receiptNotices(captureCheck, [], { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application)],
         turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
@@ -361,84 +357,6 @@ export async function recordDecisionTrace(application, input) {
     sensitivity: input.sensitivity ?? 'normal',
     ...trace
   });
-}
-
-export async function searchCurrentProjectKnowledge(
-  application,
-  resolution,
-  {
-    queries,
-    limitPerQuery = 12,
-    includeHistorical = false,
-    includePending = false,
-    cursor = null, sourceApplication = null
-  }
-) {
-  const projectResolution = agentProjectResolution(resolution);
-  if (!resolution.personalProjectId) {
-    return {
-      status: 'project_unresolved',
-      personal_space_id: application.config.personal.spaceId,
-      personal_project_id: null,
-      project_resolution: projectResolution,
-      results: [],
-      required_action: resolution.status === 'ambiguous'
-        ? 'Run from the exact project directory or explicitly choose one project; Fuli will not guess among workspace children.'
-        : 'Register this repository or directory as one local personal project before project-scoped search.'
-    };
-  }
-
-  const [results, relatedProjects] = await Promise.all([
-    Promise.all(queries.map((query) =>
-      application.searchKnowledge({
-        personalSpaceId: application.config.personal.spaceId,
-        personalProjectId: resolution.personalProjectId,
-        query,
-        limit: limitPerQuery,
-        includeHistorical,
-        includePending, sourceApplication,
-        agentInvocation: true,
-        agentToolName: 'search_current_project_knowledge'
-      })
-    )),
-    loadRelatedProjectSuggestions(application, resolution.personalProjectId)
-  ]);
-  return budgetKnowledgeSearch({
-    status: 'searched',
-    personal_space_id: application.config.personal.spaceId,
-    personal_project_id: resolution.personalProjectId,
-    project_resolution: projectResolution,
-    scope_policy: {
-      local_project_first: true,
-      inherited_relation_types: ['PART_OF', 'USES_KNOWLEDGE_FROM'],
-      max_inheritance_hops: 2,
-      local_same_key_overrides_parent: true,
-      unrelated_relations_expand_scope: false,
-      related_project_expansion_requires_confirmation: true
-    },
-    results,
-    related_project_suggestions: relatedProjects.suggestions,
-    related_project_suggestions_status: relatedProjects.status,
-    related_project_guidance: relatedProjectGuidance(relatedProjects.suggestions)
-  }, { cursor, consoleUrl: application.consoleUrl, toolName: 'search_current_project_knowledge',
-    context: { personalSpaceId: application.config.personal.spaceId,
-      personalProjectId: resolution.personalProjectId, queries, limitPerQuery, includeHistorical, includePending } });
-}
-
-async function loadRelatedProjectSuggestions(application, personalProjectId) {
-  try {
-    const graph = await application.personal.graph(
-      application.config.personal.spaceId,
-      2000,
-      personalProjectId
-    );
-    return {
-      status: graph?.truncated ? 'partial' : 'available',
-      suggestions: relatedProjectSuggestions(graph, personalProjectId)
-    };
-  } catch {
-    return { status: 'unavailable', suggestions: [] };
-  }
 }
 
 export async function discoverCommonKnowledgeCandidates(application, {

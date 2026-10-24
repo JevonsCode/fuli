@@ -19,13 +19,24 @@ export async function projectNamedInPrompt(application, taskPrompt) {
     if (existing.length) return choice(existing, 'named_in_prompt');
     return createNamedProject(application, spaceId, all, requested, requestedBrief(taskPrompt, requested));
   }
+  return choice(namedAtOpening(projects, taskPrompt), 'named_in_prompt');
+}
+
+// Whether the prompt names a project by the rules above, read-only: a
+// "新项目：" line counts even before its project exists, and nothing is created.
+export async function promptNamesProject(application, taskPrompt) {
+  if (typeof taskPrompt !== 'string' || !taskPrompt.trim()) return false;
+  return NEW_PROJECT.test(taskPrompt) || namedAtOpening(await nameableProjects(application), taskPrompt).length > 0;
+}
+
+// The projects whose longest name opens the prompt as a whole word.
+function namedAtOpening(projects, taskPrompt) {
   const opening = taskPrompt.trimStart().toLowerCase();
   const matches = projects
     .flatMap(project => names(project).map(name => ({ project, name: name.toLowerCase() })))
     .filter(({ name }) => opening.startsWith(name) && NAME_END.test(opening.slice(name.length)));
   const longest = Math.max(0, ...matches.map(({ name }) => name.length));
-  return choice(matches.filter(({ name }) => name.length === longest).map(({ project }) => project),
-    'named_in_prompt');
+  return matches.filter(({ name }) => name.length === longest).map(({ project }) => project);
 }
 
 // Shared by Jefa's triage: the same name rules decide which project a label means.

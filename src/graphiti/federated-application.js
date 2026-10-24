@@ -67,10 +67,10 @@ import {
   providerCommonKnowledgePromotion,
   recordDecisionTrace as recordDecisionTraceWorkflow,
   recordKnowledgeFeedback as recordKnowledgeFeedbackWorkflow,
-  searchCurrentProjectKnowledge as searchCurrentProjectKnowledgeWorkflow,
   previewPersonalGlobalPreferenceDecision as
     previewPersonalGlobalPreferenceDecisionWorkflow
 } from './agent-knowledge-workflows.js';
+import { searchCurrentProjectKnowledge as searchCurrentProjectKnowledgeWorkflow } from './current-project-knowledge-search.js';
 import {
   assertPublicKnowledgeEligible,
   providerConfirmationActor,
