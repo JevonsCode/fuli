@@ -371,9 +371,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  async getWritingTasteProfile(input = {}) {
+  async getWritingTasteProfile(input = {}, ownerReads = null) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
-    return getWritingTasteProfileWorkflow(this, input);
+    return getWritingTasteProfileWorkflow(this, input, ownerReads);
   }
 
   async #resolvePreferenceProject({ personalProjectId, projectPath }) {
@@ -476,26 +476,27 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     });
   }
 
+  // An Agent reads as its FLA (projectAgentId) or a plain session: no other FLA's knowledge. Only the
+  // console passes ownerReads (src/knowledge-owner-reads) for the person's full read; an MCP call cannot.
   async getKnowledgeGraph({
     spaceId,
     providerUrl = null,
     personalProjectId = null,
+    projectAgentId = null,
     limit = 500,
     offset = null,
     agentInvocation = false,
     agentToolName = 'get_knowledge_graph',
     sourceApplication = null
-  }) {
+  }, ownerReads = null) {
     if (!providerUrl) {
       if (spaceId !== this.config.personal.spaceId) {
         throw new TypeError('A configured providerUrl is required for a team-shared project graph');
       }
-      const result = await this.personal.graph(
-        spaceId,
-        limit,
-        personalProjectId,
-        offset
-      );
+      const result = ownerReads
+        ? await ownerReads.graph({ spaceId, limit, personalProjectId, offset })
+        : await this.personal.graph(spaceId, limit, personalProjectId, offset,
+          projectAgentId ? { personalProjectId, projectAgentId } : null);
       if (agentInvocation) {
         await this.#recordAgentViews([
           ...result.nodes.map(({ id }) => ({ item_id: id, item_kind: 'entity' })),

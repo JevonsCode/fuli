@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from .knowledge_item_view_models import KnowledgeItemSummary, KnowledgeScopeProject
+from .knowledge_item_view_models import AgentReaderRef, KnowledgeItemSummary, KnowledgeScopeProject
 from .model_base import StrictModel
 from .models import SourceApplication
 
@@ -19,7 +19,7 @@ from .models import SourceApplication
 SessionRecordChange = Literal['created', 'updated', 'evidence']
 
 
-class SessionRecordsRead(StrictModel):
+class SessionRecordsRead(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     # None: the link named only the session; its one client is found.
     source_application: SourceApplication | None = None
@@ -54,6 +54,8 @@ class SessionTurn(StrictModel):
     turn_id: str | None = None
     created_at: datetime | None = None
     personal_project_id: str | None = None
+    # The FLA the turn worked under, if any: an Agent reader re-checks it.
+    project_agent_id: str | None = None
     conversation_id: str | None = None
     # Set when capture was off for this turn's checkpoint.
     capture_off: SessionCaptureOff | None = None

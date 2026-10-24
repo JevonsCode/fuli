@@ -15,6 +15,7 @@ import { mapHttpError } from '../src/http/error-mapping.js';
 import { handleKnowledgeHardDeleteRequest } from '../src/http/knowledge-hard-delete-api-router.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { knowledgeHardDelete } from '../src/knowledge-hard-delete/console-port.js';
+import { knowledgeOwnerReads } from '../src/knowledge-owner-reads/console-port.js';
 import { hardDeleteLedger, readHardDeleteProof } from '../src/knowledge-hard-delete/delete-ledger.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
@@ -148,15 +149,17 @@ test('a stale preview is a 409 the page can read again, and a deleted item a 410
 
 test('an old link to a deleted item answers 已彻底删除 (410) with when, never 404', async () => {
   const app = new FederatedGraphApplication({ version: 1, workspaces: [], personal: { providerUrl: 'http://127.0.0.1:8787',
-    accessToken: 'synthetic-token', principalId: 'synthetic-owner', spaceId: SPACE } }, { fetchImpl: async () =>
-    new Response(JSON.stringify({ detail: { code: 'hard_deleted', message: 'this knowledge was permanently deleted by its owner',
-      deleted_at: '2026-10-22T01:02:03.123456+00:00' } }), { status: 410, headers: { 'content-type': 'application/json' } }) });
+    accessToken: 'synthetic-token', principalId: 'synthetic-owner', spaceId: SPACE } });
+  // The console reads the item on its human-review channel; the Provider answers 410 there.
+  const ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async () => ({ ok: false, status: 410,
+    payload: { detail: { code: 'hard_deleted', message: 'this knowledge was permanently deleted by its owner',
+      deleted_at: '2026-10-22T01:02:03.123456+00:00' } } }) });
   const request = Object.assign(body(), { method: 'GET', headers: {} });
   const sent = {};
   const response = { setHeader() {}, writeHead(status) { sent.status = status; }, end(text) { sent.body = JSON.parse(text); } };
   let result;
   try {
-    await handleGraphApiRequest({ request, response, app,
+    await handleGraphApiRequest({ request, response, app, ownerReads,
       url: new URL(`http://127.0.0.1/api/knowledge/entity/item-1?personalSpaceId=${SPACE}`) });
     result = sent;
   } catch (error) {
@@ -312,14 +315,14 @@ test('a data directory without suggestion records is not given one by a permanen
 test('a receipt read in several batches counts each permanent delete once', async () => {
   const reads = [];
   const app = new FederatedGraphApplication({ version: 1, workspaces: [], personal: { providerUrl: 'http://127.0.0.1:8787',
-    accessToken: 'synthetic-token', principalId: 'synthetic-owner', spaceId: SPACE } }, { fetchImpl: async (_url, options) => {
-    reads.push(JSON.parse(options.body).episode_ids);
-    return new Response(JSON.stringify({ entries: [], unchanged_count: 0, deleted_count: 1, deletion_ids: ['deletion-1'] }),
-      { status: 200, headers: { 'content-type': 'application/json' } });
+    accessToken: 'synthetic-token', principalId: 'synthetic-owner', spaceId: SPACE } });
+  const ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async (_path, read) => {
+    reads.push(read.episode_ids);
+    return { ok: true, status: 200, payload: { entries: [], unchanged_count: 0, deleted_count: 1, deletion_ids: ['deletion-1'] } };
   } });
   const sent = {};
   const response = { setHeader() {}, writeHead(status) { sent.status = status; }, end(text) { sent.body = JSON.parse(text); } };
-  await handleGraphApiRequest({ request: Object.assign(body(), { method: 'GET', headers: {} }), response, app,
+  await handleGraphApiRequest({ request: Object.assign(body(), { method: 'GET', headers: {} }), response, app, ownerReads,
     url: new URL(`http://127.0.0.1/api/knowledge/turn-receipt?personalSpaceId=${SPACE}&episodes=e1,e2,e3,e4,e5`) });
   assert.equal(reads.length, 2);
   assert.equal(sent.status, 200);

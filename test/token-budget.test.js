@@ -89,7 +89,9 @@ const BASELINE = Object.freeze({
   // rec#15 D-27.8 (dot P2 on #291): remember takes the user's stated constraint (hard|soft),
   // workKind and tasteDomain, checked against the versioned scene table server-side so the
   // schema lists no table: 184,935 -> 185,077 B (+142 B), measured.
-  fullToolSchemaBytes: 185077,
+  // 0.20.1 FLA read boundary: get_knowledge_graph takes projectAgentId, the FLA it reads as, since
+  // another reader no longer sees an FLA's own knowledge: 185,077 -> 185,199 B (+122 B), measured.
+  fullToolSchemaBytes: 185199,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

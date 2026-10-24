@@ -2,13 +2,15 @@ import { buildWritingTasteProfile } from './writing-taste-profile.js';
 
 const MAX_GRAPH_PAGES = 20;
 
+// ownerReads: the console's human-review port, so the person's profile keeps
+// the preferences given to one FLA; without it the graph reads as an Agent.
 export async function getWritingTasteProfile(application, {
   personalSpaceId,
   personalProjectId = null,
   limit = 500
-} = {}) {
+} = {}, ownerReads = null) {
   const [graph, conflictRecords] = await Promise.all([
-    readPersonalGraph(application, { personalSpaceId, limit }),
+    readPersonalGraph(application, { personalSpaceId, limit }, ownerReads),
     readPreferenceConflicts(application, personalSpaceId)
   ]);
   return buildWritingTasteProfile({
@@ -36,7 +38,7 @@ async function readPreferenceConflicts(application, personalSpaceId) {
 // Writing-taste maturity counts every durable rule, so a truncated first page
 // would understate readiness forever. Follow the provider offset cursor until
 // it stops, keeping the read bounded by MAX_GRAPH_PAGES.
-async function readPersonalGraph(application, { personalSpaceId, limit }) {
+async function readPersonalGraph(application, { personalSpaceId, limit }, ownerReads) {
   const nodes = [];
   const edges = [];
   const seenNodes = new Set();
@@ -49,7 +51,7 @@ async function readPersonalGraph(application, { personalSpaceId, limit }) {
       spaceId: personalSpaceId,
       limit,
       offset
-    });
+    }, ownerReads);
     appendUnique(nodes, seenNodes, result?.nodes);
     appendUnique(edges, seenEdges, result?.edges);
     truncated = Boolean(result?.truncated);

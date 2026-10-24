@@ -4,7 +4,10 @@ the scope quick edit and a session's batch migration into a formal project
 queries like the other Provider queries; every scope write names its expected
 version and reason. A scope write is audited as the person's own change, so
 it takes the human-review channel the local console holds (as a hard delete
-does); an Agent's access token alone is refused (rec#11 D-22, dot P1-1)."""
+does); an Agent's access token alone is refused (rec#11 D-22, dot P1-1).
+An item view, a receipt and a session's records are read in full only with
+that proof; without it the reader is an Agent and sees no other FLA's
+knowledge, and a wrong proof is refused (knowledge_visibility)."""
 
 from typing import Any
 
@@ -28,13 +31,14 @@ from .session_records import read_session_records
 from .session_records_models import SessionRecords, SessionRecordsRead
 
 
-def register_knowledge_item_routes(application, store, Actor: Any, HumanReviewer: Any) -> None:
+def register_knowledge_item_routes(application, store, Actor: Any, ReviewAwareActor: Any,
+                                   HumanReviewer: Any) -> None:
     @application.post('/v1/knowledge/item-views', response_model=KnowledgeItemView)
-    async def item_view(request: KnowledgeItemRef, actor: Actor):
+    async def item_view(request: KnowledgeItemRef, actor: ReviewAwareActor):
         return await read_knowledge_item_view(store, actor, request)
 
     @application.post('/v1/knowledge/turn-receipts', response_model=KnowledgeTurnReceipt)
-    async def turn_receipt(request: KnowledgeTurnReceiptRead, actor: Actor):
+    async def turn_receipt(request: KnowledgeTurnReceiptRead, actor: ReviewAwareActor):
         return await read_turn_receipt(store, actor, request)
 
     @application.post('/v1/knowledge/items/{item_id}/scope')
@@ -50,5 +54,5 @@ def register_knowledge_item_routes(application, store, Actor: Any, HumanReviewer
         return await apply_session_migration(store, actor, request)
 
     @application.post('/v1/session-records', response_model=SessionRecords)
-    async def session_records(request: SessionRecordsRead, actor: Actor):
+    async def session_records(request: SessionRecordsRead, actor: ReviewAwareActor):
         return await read_session_records(store, actor, request)

@@ -8,6 +8,9 @@ import { ProviderRequestError } from './provider-client.js';
 // operations that change real data on their word: a confirmed data format
 // migration (rec#17 D-09), a hard delete (rec#5 C9) and a change of where
 // knowledge applies, one item or a session's batch (rec#20, rec#11 D-22).
+// The console's full reads of knowledge (graph, item, receipt, session
+// records) take it too; without it the provider reads as an Agent and hides
+// every FLA's own knowledge (src/knowledge-owner-reads).
 // Those provider routes also take the human-review token, which only the
 // provider's environment file in the data directory holds; an Agent's access
 // token alone is refused. Like D-21 this proves the local console, not that a
@@ -18,7 +21,7 @@ import { ProviderRequestError } from './provider-client.js';
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
-// send(path, body, { review, timeoutMs }) -> { ok, status, payload }
+// send(path, body, { review, timeoutMs, method }) -> { ok, status, payload }; a GET sends no body.
 export function personalHumanReviewChannel(dataDir, {
   fetchImpl = fetch,
   readText = (path) => readFileSync(path, 'utf8')
@@ -37,12 +40,13 @@ export function personalHumanReviewChannel(dataDir, {
     if (!token) throw new TypeError('The graph provider has no human-review channel; run fuli setup again');
     return token;
   };
-  return async (path, body, { review = false, timeoutMs = REQUEST_TIMEOUT_MS } = {}) => {
+  return async (path, body, { review = false, timeoutMs = REQUEST_TIMEOUT_MS, method = 'POST' } = {}) => {
     const { providerUrl, accessToken } = connection();
-    const headers = { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json',
+    const headers = { authorization: `Bearer ${accessToken}`,
+      ...(method === 'GET' ? {} : { 'content-type': 'application/json' }),
       ...(review ? { 'x-fuli-human-review-token': reviewToken() } : {}) };
-    const response = await fetchImpl(`${providerUrl}${path}`, { method: 'POST', headers,
-      body: JSON.stringify(body ?? {}), signal: AbortSignal.timeout(timeoutMs) });
+    const response = await fetchImpl(`${providerUrl}${path}`, { method, headers,
+      ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }), signal: AbortSignal.timeout(timeoutMs) });
     const payload = await response.json().catch(() => ({}));
     return { ok: response.ok, status: response.status, payload };
   };

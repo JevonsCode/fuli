@@ -29,7 +29,15 @@ MAX_SCOPE_PROJECTS = 16
 MAX_RECEIPT_EPISODES = 3
 
 
-class KnowledgeItemRef(StrictModel):
+class AgentReaderRef(StrictModel):
+    """The Agent reading: an FLA in its project, or neither for a plain
+    session. The person's console names no reader; it proves itself with the
+    human-review channel instead (knowledge_visibility)."""
+    reader_project_id: str | None = Field(default=None, min_length=1, max_length=128)
+    reader_agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class KnowledgeItemRef(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     item_kind: KnowledgeItemKind
     item_id: str = Field(min_length=1, max_length=256)
@@ -174,7 +182,7 @@ class KnowledgeItemView(KnowledgeItemSummary):
     dependent_count: int = 0
 
 
-class KnowledgeTurnReceiptRead(StrictModel):
+class KnowledgeTurnReceiptRead(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     episode_ids: list[str] = Field(min_length=1, max_length=MAX_RECEIPT_EPISODES)
 
