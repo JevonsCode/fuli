@@ -1,5 +1,5 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
-import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { ApplicationError, ApplicationErrorCode, isControlledError } from '../app/application-error.js';
 import { identityKey } from '../text/name-identity.js';
 import { requiredString } from '../validation/values.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
@@ -89,53 +89,61 @@ function previewResult(plan) {
 
 // Other requests run while this one awaits the Provider, so the project's
 // lead and the terms are checked again just before the writes that depend on
-// them. A project or lead written before a later step fails is kept (another
-// request may already use it), and the error says exactly what was written.
+// them. Every failure after the first Provider write goes through
+// partiallyApplied: what was written stays (another request may already use
+// it, so nothing is rolled back), and the error names it, with the failure
+// itself as its cause. Before any write the failure stands as it is.
 async function confirm(application, plan, input) {
-  if (inPlace(plan)) {
-    return confirmed('unchanged', plan, { projectId: plan.project.projectId, projectCreated: false,
-      leadAgentId: plan.lead.agentId, leadHired: false }, null);
-  }
+  if (inPlace(plan)) return confirmed('unchanged', plan, existingState(plan), null);
   if (requiredString(input.confirmationDigest, 'confirmationDigest', DIGEST_LIMIT) !== contentHash(plan)) {
     throw new ApplicationError('standing_assignment_plan_changed', 'The plan is not the one previewed: it changed '
       + 'since, or the digest belongs to other input. Nothing was saved; preview again and ask the user again.',
     { status: 409 });
   }
-  // A term another request took since the plan was read refuses before anything is written.
-  application.standingAssignments.preview(registrationOf(plan, plan.project.projectId, plan.lead.agentId));
-  const written = { projectId: plan.project.projectId, projectCreated: false,
-    leadAgentId: plan.lead.agentId, leadHired: false };
-  if (!written.projectId) {
-    const created = await createProjectNamed(application, plan.project.name, plan.responsibility);
-    Object.assign(written, { projectId: created.personalProjectId, projectCreated: created.basis === 'created_from_prompt' });
-  }
-  if (!written.leadAgentId) {
-    Object.assign(written, { leadAgentId: await hireLead(application, plan, written, input.sourceApplication ?? 'other'),
-      leadHired: true });
-  }
-  const lead = await projectLead(application, plan.personalSpaceId, written.projectId);
-  if (lead !== written.leadAgentId) throw leadChanged(plan, written, lead);
+  const state = existingState(plan);
   try {
+    // A term another request took since the plan was read refuses before anything is written.
+    application.standingAssignments.preview(registrationOf(plan, state.projectId, state.leadAgentId));
+    if (!state.projectId) {
+      // Until the Provider answers, whether the project exists is unknown.
+      Object.assign(state, { attempted: true, project: 'unknown' });
+      const created = await createProjectNamed(application, plan.project.name, plan.responsibility);
+      Object.assign(state, { projectId: created.personalProjectId,
+        project: created.basis === 'created_from_prompt' ? 'created' : 'existing' });
+    }
+    if (!state.leadAgentId) await hireLead(application, plan, state, input.sourceApplication ?? 'other');
+    const lead = await projectLead(application, plan.personalSpaceId, state.projectId);
+    if (lead !== state.leadAgentId) throw leadChanged(state, lead);
     const { assignment } = application.standingAssignments.register(
-      registrationOf(plan, written.projectId, written.leadAgentId));
-    return confirmed('registered', plan, written, assignment);
+      registrationOf(plan, state.projectId, state.leadAgentId));
+    return confirmed('registered', plan, state, assignment);
   } catch (error) {
-    throw termsNotRegistered(application, plan, written, error);
+    throw state.attempted ? partiallyApplied(application, plan, state, error) : unwritten(error);
   }
 }
 
 // AR hires the lead through the ordinary default-lead staffing, with the
 // person's responsibility leading the lead's own (D4). A lead another request
 // hired meanwhile is not the lead this plan was confirmed for.
-async function hireLead(application, plan, written, sourceApplication) {
+async function hireLead(application, plan, state, sourceApplication) {
+  Object.assign(state, { attempted: true, lead: 'unknown' });
   const staffed = await application.personal.staffDefaultProjectLead({ personal_space_id: plan.personalSpaceId,
-    personal_project_id: written.projectId, source_application: sourceApplication, responsibility: plan.responsibility });
-  if (staffed?.agent?.agent_id) return staffed.agent.agent_id;
-  const lead = await projectLead(application, plan.personalSpaceId, written.projectId);
-  if (lead) throw leadChanged(plan, written, lead);
-  throw new ApplicationError('standing_assignment_lead_unavailable', `AR could not staff the project's lead `
-    + `(${staffed?.reason ?? 'unavailable'}); the terms were NOT registered. ${keptOrNothing(plan, written)} `
-    + 'Preview again later; it reuses the project.', { status: 503 });
+    personal_project_id: state.projectId, source_application: sourceApplication, responsibility: plan.responsibility });
+  if (staffed?.agent?.agent_id) {
+    Object.assign(state, { lead: 'hired', leadAgentId: staffed.agent.agent_id });
+    return;
+  }
+  state.lead = null;
+  const lead = await projectLead(application, plan.personalSpaceId, state.projectId);
+  if (lead) throw leadChanged(state, lead);
+  throw refusal('standing_assignment_lead_unavailable',
+    `AR could not staff the project's lead (${staffed?.reason ?? 'unavailable'}).`, 503);
+}
+
+// What exists before confirm writes: the plan's project and lead, if any.
+function existingState(plan) {
+  return { attempted: false, projectId: plan.project.projectId, project: plan.project.projectId ? 'existing' : null,
+    leadAgentId: plan.lead.agentId, lead: plan.lead.agentId ? 'existing' : null };
 }
 
 function registrationOf(plan, projectId, leadAgentId) {
@@ -144,49 +152,68 @@ function registrationOf(plan, projectId, leadAgentId) {
     sourceConversationId: plan.sourceConversationId };
 }
 
-function leadChanged(plan, written, lead) {
-  return new ApplicationError('standing_assignment_plan_changed', `The project's lead changed while confirming: it `
-    + `is now ${lead ?? 'nobody'}, not ${written.leadAgentId ?? 'a lead hired for this plan'}. The terms were NOT `
-    + `registered. ${keptOrNothing(plan, written)} Preview again and ask the user again; it reuses the project and `
-    + 'its current lead.', { status: 409 });
+function leadChanged(state, lead) {
+  return refusal('standing_assignment_plan_changed', 'The project\'s lead changed while confirming: it is now '
+    + `${lead ?? 'nobody'}, not ${state.leadAgentId ?? 'a lead hired for this plan'}.`, 409);
 }
 
-// A failed registration after a write names what was written and kept; with
-// nothing written the store's own refusal is already true as it stands.
-function termsNotRegistered(application, plan, written, error) {
-  if (!written.projectCreated && !written.leadHired) return error;
-  const owner = takenTerm(application, plan, written);
-  const reason = owner ? `"${owner.term}" already names the standing assignment of project ${owner.projectId} `
-    + `(lead ${owner.leadAgentId})` : error.message;
-  return new ApplicationError('standing_assignment_terms_not_registered', `Partly applied: ${writtenSoFar(plan, written)}. `
-    + `These writes are kept; the terms were NOT registered: ${reason}. Preview again: it reuses this project and lead.`,
-  { status: 409 });
+// confirm's own refusals: a reason that claims nothing about what was saved,
+// completed by unwritten or partiallyApplied.
+function refusal(code, reason, status) {
+  return Object.assign(new ApplicationError(code, reason, { status }), { refusal: true });
 }
 
-function takenTerm(application, plan, written) {
-  for (const assignment of application.standingAssignments.list(plan.personalSpaceId)) {
-    if (assignment.projectId === written.projectId && assignment.leadAgentId === written.leadAgentId) continue;
-    const keys = new Set(assignment.terms.map(identityKey));
-    const term = plan.terms.find(value => keys.has(identityKey(value)));
-    if (term) return { term, projectId: assignment.projectId, leadAgentId: assignment.leadAgentId };
+function unwritten(error) {
+  if (!error?.refusal) return error;
+  return new ApplicationError(error.code, `${error.message} The terms were NOT registered. Nothing was saved; preview `
+    + 'again and ask the user again.', { status: error.status });
+}
+
+// The written state leads; the original failure is kept as cause. A
+// diagnostic that fails only leaves its detail out.
+function partiallyApplied(application, plan, state, error) {
+  const controlled = isControlledError(error);
+  const cause = { code: typeof error?.code === 'string' ? error.code : 'internal_error',
+    message: controlled ? error.message : 'unexpected error' };
+  const detail = (cause.code === 'standing_assignment_term_taken' ? takenTermDetail(application, plan, state)
+    : cause.message)?.replace(/\.$/, '');
+  const failed = new ApplicationError('standing_assignment_partially_applied', `Partly applied: `
+    + `${writtenSoFar(plan, state)}; what was written is kept. The terms were NOT registered (${cause.code}`
+    + `${detail ? `: ${detail}` : ''}). Preview again and ask the user again: it reuses the project and lead that exist `
+    + 'now.', { status: error?.status ?? 500 });
+  return Object.assign(failed, { cause, written: { project: state.project, projectId: state.projectId,
+    projectName: plan.project.name, lead: state.lead, leadAgentId: state.leadAgentId } });
+}
+
+function takenTermDetail(application, plan, state) {
+  try {
+    for (const assignment of application.standingAssignments.list(plan.personalSpaceId)) {
+      if (assignment.projectId === state.projectId && assignment.leadAgentId === state.leadAgentId) continue;
+      const keys = new Set(assignment.terms.map(identityKey));
+      const term = plan.terms.find(value => keys.has(identityKey(value)));
+      if (term) {
+        return `"${term}" already names the standing assignment of project ${assignment.projectId} `
+          + `(lead ${assignment.leadAgentId})`;
+      }
+    }
+  } catch {
+    // Best effort: the failure and the written state are reported without it.
   }
   return null;
 }
 
-function keptOrNothing(plan, written) {
-  return written.projectCreated || written.leadHired ? `Already written and kept: ${writtenSoFar(plan, written)}.`
-    : 'Nothing was saved.';
+function writtenSoFar(plan, { project, projectId, lead, leadAgentId }) {
+  const projectPart = project === 'unknown' ? `whether project "${plan.project.name}" was created is unknown`
+    : `project "${plan.project.name}" (${projectId}) ${project === 'created' ? 'was created' : 'already existed'}`;
+  const leadPart = { hired: `AR hired its lead ${leadAgentId}`, existing: `its lead ${leadAgentId} already existed`,
+    unknown: 'whether AR hired its lead is unknown' }[lead];
+  return leadPart ? `${projectPart}, and ${leadPart}` : projectPart;
 }
 
-function writtenSoFar(plan, { projectId, projectCreated, leadAgentId, leadHired }) {
-  const project = `project "${plan.project.name}" (${projectId}) ${projectCreated ? 'was created' : 'already existed'}`;
-  return leadHired ? `${project} and AR hired its lead ${leadAgentId}` : project;
-}
-
-function confirmed(status, plan, { projectId, projectCreated, leadAgentId, leadHired }, assignment) {
+function confirmed(status, plan, { projectId, project, leadAgentId, lead }, assignment) {
   return { status, executed: false, notice: NOT_EXECUTED,
-    project: { projectId, name: plan.project.name, created: projectCreated },
-    lead: { agentId: leadAgentId, hired: leadHired },
+    project: { projectId, name: plan.project.name, created: project === 'created' },
+    lead: { agentId: leadAgentId, hired: lead === 'hired' },
     terms: plan.terms, ...(assignment ? { assignment } : {}) };
 }
 
