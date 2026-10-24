@@ -41,11 +41,21 @@ export function createModelRoleSettings(configPath, { history = null } = {}) {
         return nextConfig(before, role, edit);
       }, { read: () => null, write(path, next) {
         writeJsonFileAtomic(path, next);
-        if (history) recorded = history.recordSettings(role, before, next);
+        recorded = record(history, role, before, next);
       } });
       return { history: recorded };
     }
   };
+}
+
+// After the file was written nothing may throw: a record that fails is not_recorded.
+function record(history, role, before, next) {
+  if (!history) return 'not_recorded';
+  try {
+    return history.recordSettings(role, before, next);
+  } catch {
+    return 'not_recorded';
+  }
 }
 
 function nextConfig(loaded, role, { revision, connectionId, connection, settings }) {

@@ -4,6 +4,7 @@ import { refuseRemoteDecision } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
 import { positiveInteger } from '../validation/values.js';
 import { MODEL_BACKEND_ROLES } from './config.js';
+import { MAX_HISTORY_LIMIT } from './settings-history.js';
 import { RETENTION } from './suggestion-log.js';
 
 // Routes of the model settings page. The roles and usage reads are
@@ -95,11 +96,15 @@ export async function handleModelBackendApiRequest({
   return true;
 }
 
+// One role at most, and a limit only as a plain decimal 1..MAX_HISTORY_LIMIT.
 function historyQuery(params) {
-  const role = params.get('role') || null;
-  if (role !== null && !MODEL_BACKEND_ROLES.includes(role)) throw new TypeError(`Unknown role: ${role}`);
-  const limit = params.get('limit');
-  return { role, ...(limit === null ? {} : { limit: positiveInteger(Number(limit), 'limit', Number.MAX_SAFE_INTEGER) }) };
+  const [role = null, ...moreRoles] = params.getAll('role').map(value => value || null);
+  if (moreRoles.length || (role !== null && !MODEL_BACKEND_ROLES.includes(role))) throw new TypeError('role must name one built-in Agent');
+  const limits = params.getAll('limit');
+  if (limits.length > 1 || (limits.length && !(/^[1-9][0-9]{0,2}$/.test(limits[0]) && Number(limits[0]) <= MAX_HISTORY_LIMIT))) {
+    throw new TypeError(`limit must be a whole number from 1 to ${MAX_HISTORY_LIMIT}`);
+  }
+  return { role, ...(limits.length ? { limit: Number(limits[0]) } : {}) };
 }
 
 // rec#10 D-36, read-only: whether a role's model carries out its automatic

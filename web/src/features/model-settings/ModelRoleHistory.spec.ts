@@ -21,6 +21,7 @@ const ENTRIES: HistoryEntry[] = [
   { kind: 'suggestions_only', changeId: 'c3', changedAt: '2026-10-24T09:30:00.000Z', role: 'tonborg', fromRevision: '1', toRevision: '2',
     via: null, changes: [{ field: 'suggestionsOnly', before: false, after: true }] },
   SETTINGS,
+  { kind: 'unrecorded_gap', changedAt: null, role: 'tonborg' },
   { kind: 'settings', changeId: 'c4', changedAt: '2026-10-24T08:30:00.000Z', role: 'tonborg', fromRevision: 'c'.repeat(64),
     toRevision: 'a'.repeat(64), via: 'bole', changes: [{ field: 'connection.model', before: 'qwen-old', after: 'qwen-test' }] },
   { kind: 'warning_acknowledged', changeId: 'c1', changedAt: '2026-10-24T08:00:00.000Z', role: 'tonborg', fromRevision: '0', toRevision: '1',
@@ -42,7 +43,7 @@ beforeEach(() => {
 
 const lines = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-model-history-entry]')
   .map(entry => [entry.attributes('data-model-history-entry'), entry.find('time').exists(), entry.findAll('li').map(line => line.text())])
-const section = (revision = 'r1') => mount(ModelRoleHistory, { props: { role: 'tonborg', revision } })
+const section = (version = 1) => mount(ModelRoleHistory, { props: { role: 'tonborg', version } })
 const toggle = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-model-history-toggle]').trigger('click')
 
 describe('ModelRoleHistory', () => {
@@ -60,7 +61,7 @@ describe('ModelRoleHistory', () => {
     expect(waiting[0].attributes('aria-label')).toBe('正在读取 Tonborg 的变更记录…')
   })
 
-  it('lists changes newest first in one line each, the role a change came through, and the two markers', async () => {
+  it('lists changes newest first in one line each, the role a change came through, and the three markers', async () => {
     const wrapper = section()
     await toggle(wrapper)
     reads[0].resolve(ENTRIES)
@@ -70,6 +71,8 @@ describe('ModelRoleHistory', () => {
       ['marker', false, ['当前设置与最后一条记录不一致，有修改没有记录下来。']],
       ['change', true, ['执行方式改为「只给建议」']],
       ['change', true, ['模型：qwen-test → qwen-next', '单次输出 tokens：400 → 800', '失败时回到当前会话：否 → 是', '密钥引用已更换']],
+      // A break between two records does not speak of the current settings.
+      ['marker', false, ['这里有修改没有记录下来。']],
       ['change', true, ['通过 Bole 的设置修改', '模型：qwen-old → qwen-test']],
       ['change', true, ['看过了执行方式的提示']],
       ['marker', false, ['更早的改动没有记录。']],
@@ -82,14 +85,14 @@ describe('ModelRoleHistory', () => {
     setLocale('en-US', { persist: false })
     const wrapper = section()
     await toggle(wrapper)
-    reads[0].resolve([SETTINGS, ENTRIES[3]])
+    reads[0].resolve([SETTINGS, ENTRIES[4]])
     await flushPromises()
     expect(lines(wrapper).map(line => line[2])).toEqual([
       ['Model: qwen-test → qwen-next', 'Output tokens per call: 400 → 800', 'Fall back to the current session: No → Yes', 'Key reference replaced'],
       ['Changed through Bole\'s settings', 'Model: qwen-old → qwen-test'],
     ])
 
-    await wrapper.setProps({ revision: 'r2' })
+    await wrapper.setProps({ version: 2 })
     expect(api.getJson).toHaveBeenCalledTimes(2)
     // The loaded list stays while it is read again, with one inline wait.
     expect(wrapper.findAll('[role="status"]').map(status => status.classes())).toEqual([expect.arrayContaining(['growth-loading--inline'])])
@@ -99,30 +102,32 @@ describe('ModelRoleHistory', () => {
     expect(wrapper.get('[data-model-history-empty]').text()).toBe('No changes recorded yet.')
   })
 
-  it('reads again on reopening after a change saved while it was closed, and not otherwise', async () => {
+  it('reads again on every reopening, also after a change saved and undone while it was closed', async () => {
     const wrapper = section()
     await toggle(wrapper)
     reads[0].resolve([SETTINGS])
     await flushPromises()
     await toggle(wrapper)
-    await toggle(wrapper)
-    expect(api.getJson).toHaveBeenCalledTimes(1)
-
-    await toggle(wrapper)
-    await wrapper.setProps({ revision: 'r2' })
+    // Saved and saved back: the settings hash is the same again, the page's version is not.
+    await wrapper.setProps({ version: 2 })
+    await wrapper.setProps({ version: 3 })
     expect(api.getJson).toHaveBeenCalledTimes(1)
     await toggle(wrapper)
     expect(api.getJson).toHaveBeenCalledTimes(2)
-    reads[1].resolve([ENTRIES[1], SETTINGS])
+    reads[1].resolve([ENTRIES[1], SETTINGS, ENTRIES[4]])
     await flushPromises()
-    expect(lines(wrapper)).toHaveLength(2)
+    expect(lines(wrapper)).toHaveLength(3)
+    // Nothing saved here, and still read again: another tab may have changed it.
+    await toggle(wrapper)
+    await toggle(wrapper)
+    expect(api.getJson).toHaveBeenCalledTimes(3)
   })
 
-  it('drops a read still in flight when the revision changes while closed, and reads the new one on reopening', async () => {
+  it('drops a read still in flight when the version changes while closed, and reads the new one on reopening', async () => {
     const wrapper = section()
     await toggle(wrapper)
     await toggle(wrapper)
-    await wrapper.setProps({ revision: 'r2' })
+    await wrapper.setProps({ version: 2 })
     await toggle(wrapper)
     expect(api.getJson).toHaveBeenCalledTimes(2)
     reads[0].resolve([SETTINGS])
@@ -138,7 +143,7 @@ describe('ModelRoleHistory', () => {
   it('lets only the latest read land, so an older answer cannot replace a newer one', async () => {
     const wrapper = section()
     await toggle(wrapper)
-    await wrapper.setProps({ revision: 'r2' })
+    await wrapper.setProps({ version: 2 })
     expect(reads).toHaveLength(2)
     reads[1].resolve([ENTRIES[1], SETTINGS])
     await flushPromises()
@@ -153,7 +158,7 @@ describe('ModelRoleHistory', () => {
     await toggle(wrapper)
     reads[0].resolve([SETTINGS])
     await flushPromises()
-    await wrapper.setProps({ revision: 'r2' })
+    await wrapper.setProps({ version: 2 })
     reads[1].reject(new Error('synthetic refresh failure'))
     await flushPromises()
     expect(lines(wrapper)).toHaveLength(1)

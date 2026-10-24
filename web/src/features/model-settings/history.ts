@@ -6,10 +6,11 @@ import { formatCount, roleName, type ModelRoleId } from './model'
 // 变更记录 of one role on the model settings page (rec#11 D-42): what changed
 // in its effective settings and execution mode, and when, newest first, as
 // src/model-backends/settings-history.js records it. A change saved through
-// another role sharing the connection names that role (via). Two markers say
-// what is missing, without naming a cause: changes the current settings hold
-// but no record does, and changes made before anything was recorded. A key
-// reference is only ever "changed".
+// another role sharing the connection names that role (via). Three markers
+// say what is missing, without naming a cause: on top, current settings no
+// record reaches; between two records, changes not recorded there; at the
+// end, changes made before anything was recorded. A key reference is only
+// ever "changed".
 
 export type HistoryKind = 'settings' | 'suggestions_only' | 'warning_acknowledged'
 export type FieldChange = { field: string; before: unknown; after: unknown } | { field: string; changed: true }
@@ -17,7 +18,7 @@ export type FieldChange = { field: string; before: unknown; after: unknown } | {
 export type HistoryEntry =
   | { kind: HistoryKind; changeId: string; changedAt: string; role: ModelRoleId; fromRevision: string | null; toRevision: string;
     changes: FieldChange[]; via: ModelRoleId | null }
-  | { kind: 'unrecorded_changes' | 'earlier_changes_not_recorded'; changedAt: null; role: ModelRoleId | null }
+  | { kind: 'unrecorded_changes' | 'unrecorded_gap' | 'earlier_changes_not_recorded'; changedAt: null; role: ModelRoleId | null }
 
 export const readModelSettingsHistory = (role: ModelRoleId, signal?: AbortSignal) =>
   getJson<{ entries?: HistoryEntry[] }>(`/api/model-backends/history?${new URLSearchParams({ role })}`, { signal })

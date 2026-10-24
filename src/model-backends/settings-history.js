@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { MODEL_BACKEND_ROLES, configRevision } from './config.js';
+import { historyEntries } from './settings-history-list.js';
 
 // What changed in the built-in Agents' model settings, and when (rec#11
 // D-42). model-backends.json and model-trust.sqlite hold only what is set
@@ -21,17 +22,11 @@ import { MODEL_BACKEND_ROLES, configRevision } from './config.js';
 // A settings row is appended after the file was written, under its lock; a
 // trust row after its change committed, with the time and revision read in
 // that change's transaction. When the append fails the change stands and
-// answers not_recorded; a change that changes nothing records nothing. Rows
-// are listed by the time of their change; at the same time, trust rows of
-// one role by revision and settings rows in the order they were saved.
-//
-// Records form chains: the saves, each starting from the revision the one
-// before it left (revisions are of the whole file, so across roles), and
-// each role's trust rows. A marker that some changes were not recorded,
-// naming no cause, sits wherever a chain breaks, and on top when the current
-// file or a role's trust revision is past the latest record. A role
-// configured before any save was recorded ends with one that its earlier
-// changes were not recorded.
+// answers not_recorded; nothing here throws. A change that changes nothing
+// records nothing. The first record also keeps each role's trust revision
+// at that moment (its baseline), so a read can tell trust changes made
+// before recording began from changes whose record was lost. How the
+// history reads, with its markers, is settings-history-list.js.
 
 export const MODEL_SETTINGS_HISTORY_FORMAT = sqliteFormat({
   store: 'model-settings-history',
@@ -41,13 +36,24 @@ export const MODEL_SETTINGS_HISTORY_FORMAT = sqliteFormat({
         kind TEXT NOT NULL CHECK(kind IN ('settings', 'suggestions_only', 'warning_acknowledged')),
         from_revision TEXT, to_revision TEXT NOT NULL, changes TEXT NOT NULL, via TEXT);
       CREATE INDEX IF NOT EXISTS settings_changes_role ON settings_changes(role);
+      CREATE TABLE IF NOT EXISTS trust_baselines(role TEXT PRIMARY KEY, revision INTEGER NOT NULL);
+      CREATE TRIGGER IF NOT EXISTS settings_changes_no_replace BEFORE INSERT ON settings_changes
+        WHEN EXISTS (SELECT 1 FROM settings_changes WHERE change_id = NEW.change_id)
+        BEGIN SELECT RAISE(ABORT, 'model settings changes are immutable'); END;
       CREATE TRIGGER IF NOT EXISTS settings_changes_no_update BEFORE UPDATE ON settings_changes
         BEGIN SELECT RAISE(ABORT, 'model settings changes are immutable'); END;
       CREATE TRIGGER IF NOT EXISTS settings_changes_no_delete BEFORE DELETE ON settings_changes
-        BEGIN SELECT RAISE(ABORT, 'model settings changes are immutable'); END;`
+        BEGIN SELECT RAISE(ABORT, 'model settings changes are immutable'); END;
+      CREATE TRIGGER IF NOT EXISTS trust_baselines_no_replace BEFORE INSERT ON trust_baselines
+        WHEN EXISTS (SELECT 1 FROM trust_baselines WHERE role = NEW.role)
+        BEGIN SELECT RAISE(ABORT, 'trust baselines are immutable'); END;
+      CREATE TRIGGER IF NOT EXISTS trust_baselines_no_update BEFORE UPDATE ON trust_baselines
+        BEGIN SELECT RAISE(ABORT, 'trust baselines are immutable'); END;
+      CREATE TRIGGER IF NOT EXISTS trust_baselines_no_delete BEFORE DELETE ON trust_baselines
+        BEGIN SELECT RAISE(ABORT, 'trust baselines are immutable'); END;`
 });
 const LIST_LIMIT = 50;
-const MAX_LIST_LIMIT = 200;
+export const MAX_HISTORY_LIMIT = 200;
 // Recorded as changed only, without its value.
 const REFERENCE_FIELDS = new Set(['connection.secretRef']);
 
@@ -64,13 +70,20 @@ export function createModelSettingsHistory({
 
   // Appends the rows of one change together. 'recorded', 'unchanged', or
   // 'not_recorded' when the store could not take them: the change itself
-  // stands, and nothing here throws.
-  function record(kind, rows, changedAt = now().toISOString()) {
+  // stands. committedTrust: the role and revision a trust change started
+  // from, its baseline if this is the first record.
+  function record(kind, rows, { changedAt = now().toISOString(), committedTrust = null } = {}) {
     if (!rows.length) return 'unchanged';
     let db = null;
     try {
       db = open();
       db.exec('BEGIN IMMEDIATE');
+      if (!db.prepare('SELECT 1 FROM trust_baselines LIMIT 1').get()) {
+        const baseline = db.prepare('INSERT INTO trust_baselines VALUES(?, ?)');
+        for (const role of MODEL_BACKEND_ROLES) {
+          baseline.run(role, role === committedTrust?.role ? committedTrust.revision : readTrustRevision(role));
+        }
+      }
       const insert = db.prepare('INSERT INTO settings_changes VALUES(?, ?, ?, ?, ?, ?, ?, ?)');
       for (const row of rows) {
         insert.run(randomUUID(), changedAt, row.role, kind, row.fromRevision, row.toRevision, JSON.stringify(row.changes), row.via ?? null);
@@ -78,17 +91,26 @@ export function createModelSettingsHistory({
       db.exec('COMMIT');
       return 'recorded';
     } catch (error) {
-      if (db?.isTransaction) db.exec('ROLLBACK');
-      warn(`The ${kind} change of ${rows.map(row => row.role).join(', ')} was saved, but its change history was not recorded: `
-        + `${error?.message ?? error}`);
+      try {
+        if (db?.isTransaction) db.exec('ROLLBACK');
+        warn(`The ${kind} change of ${rows.map(row => row.role).join(', ')} was saved, but its change history was not recorded: `
+          + `${error?.message ?? error}`);
+      } catch {
+        // The warning is a courtesy; the answer says not_recorded either way.
+      }
       return 'not_recorded';
     }
   }
 
-  // Every row in append order: settings rows are appended under the file's
-  // lock, so their order is the order of the saves. A person's changes are
-  // few, so the whole store is read and its chains checked here.
-  const storedRows = () => (readable() ? open().prepare('SELECT rowid AS seq, * FROM settings_changes ORDER BY rowid').all() : []);
+  // Every row in append order, and the baselines: settings rows are
+  // appended under the file's lock, so their order is the order of the
+  // saves. A person's changes are few, so the whole store is read.
+  function stored() {
+    if (!readable()) return { rows: [], baselines: new Map() };
+    const db = open();
+    return { rows: db.prepare('SELECT rowid AS seq, * FROM settings_changes ORDER BY rowid').all(),
+      baselines: new Map(db.prepare('SELECT role, revision FROM trust_baselines').all().map(row => [row.role, row.revision])) };
+  }
 
   return {
     // editedRole: the role whose settings were saved. before: the
@@ -105,82 +127,17 @@ export function createModelSettingsHistory({
     // A committed trust change from one row revision to the next at changedAt; field names the changed column.
     recordTrust(role, kind, fromRevision, { field, before, after }, changedAt) {
       return record(kind, before === after ? [] : [{ role, fromRevision: String(fromRevision), toRevision: String(fromRevision + 1),
-        changes: [{ field, before, after }] }], changedAt);
+        changes: [{ field, before, after }] }], { changedAt, committedTrust: { role, revision: fromRevision } });
     },
-    // Newest first, with the markers of changes that are not recorded. role null reads every role.
+    // Newest first, with the markers of changes that are not recorded. role
+    // null reads every role. A role without a baseline began recording now.
     list({ role = null, limit = LIST_LIMIT } = {}) {
-      const stored = storedRows();
-      const loaded = readConfig();
-      const roles = role ? [role] : MODEL_BACKEND_ROLES;
-      const marker = { kind: 'unrecorded_changes', changedAt: null, role };
-      const settings = settingsChain(stored);
-      const trust = roles.map(each => trustChain(stored, each));
-      const items = [...stored.filter(row => roles.includes(row.role)).map(rowItem),
-        ...[settings, ...trust].flatMap(chain => chain.breaks).map(at => ({ ...at, entry: marker }))].sort(newestFirst);
-      const entries = withinLimit(items, Math.min(limit, MAX_LIST_LIMIT));
-      // The current state is newer than the latest record.
-      const ahead = (settings.latest !== undefined && settings.latest !== configRevision(loaded))
-        || roles.some((each, index) => readTrustRevision(each) > (trust[index].latest ?? 0));
-      if (ahead) entries.unshift(marker);
-      const configured = loaded.state === 'ok' && roles.some(each => Object.hasOwn(loaded.config.roles, each));
-      if (configured && !stored.some(row => row.kind === 'settings' && roles.includes(row.role))) {
-        entries.push({ kind: 'earlier_changes_not_recorded', changedAt: null, role });
-      }
-      return entries.filter((entry, index) => entry !== marker || entries[index - 1] !== marker);
+      const { rows, baselines } = stored();
+      return historyEntries({ stored: rows, roles: role ? [role] : MODEL_BACKEND_ROLES, role, loaded: readConfig(),
+        baseline: each => baselines.get(each) ?? readTrustRevision(each), limit: Math.min(limit, MAX_HISTORY_LIMIT), readTrustRevision });
     },
     close() { database?.close(); database = null; }
   };
-}
-
-// A row as a list item: its entry, and where it sorts.
-function rowItem(row) {
-  return { at: row.changed_at, seq: row.seq, role: row.role, revision: row.kind === 'settings' ? null : Number(row.to_revision),
-    entry: { changeId: row.change_id, changedAt: row.changed_at, role: row.role, kind: row.kind, fromRevision: row.from_revision,
-      toRevision: row.to_revision, changes: JSON.parse(row.changes), via: row.via } };
-}
-
-// The recorded saves in order (the rows of one save are appended together
-// and share its time and revisions): the revision the latest one left, and
-// where a save does not start from the revision the one before it left.
-// The first save may start anywhere: what came before predates the store.
-function settingsChain(stored) {
-  const saves = [];
-  for (const row of stored.filter(each => each.kind === 'settings')) {
-    const last = saves.at(-1);
-    if (last?.at === row.changed_at && last.from === row.from_revision && last.to === row.to_revision) continue;
-    saves.push({ at: row.changed_at, seq: row.seq, from: row.from_revision, to: row.to_revision });
-  }
-  return { latest: saves.at(-1)?.to, breaks: saves.slice(1).filter((save, index) => save.from !== saves[index].to)
-    .map(save => ({ at: save.at, seq: save.seq - 0.5, role: null, revision: null })) };
-}
-
-// The same for one role's trust rows, in revision order.
-function trustChain(stored, role) {
-  const rows = stored.filter(row => row.kind !== 'settings' && row.role === role)
-    .sort((a, b) => Number(a.to_revision) - Number(b.to_revision));
-  return { latest: rows.length ? Number(rows.at(-1).to_revision) : undefined,
-    breaks: rows.slice(1).filter((row, index) => row.from_revision !== rows[index].to_revision)
-      .map(row => ({ at: row.changed_at, seq: row.seq - 0.5, role, revision: Number(row.to_revision) - 0.5 })) };
-}
-
-// Newest change first; at the same time, one role's trust rows by revision
-// and anything else in the order it was appended (settings saves in the
-// order they were written). A break sorts right below the row after it.
-function newestFirst(a, b) {
-  if (a.at !== b.at) return a.at < b.at ? 1 : -1;
-  if (a.revision !== null && b.revision !== null && a.role === b.role) return b.revision - a.revision;
-  return b.seq - a.seq;
-}
-
-// The entries up to limit recorded changes, with the breaks among them.
-function withinLimit(items, limit) {
-  const entries = [];
-  let changes = 0;
-  for (const item of items) {
-    if (item.entry.changedAt !== null && changes++ === limit) break;
-    entries.push(item.entry);
-  }
-  return entries;
 }
 
 // A role's effective settings: its own settings, the connection it names,

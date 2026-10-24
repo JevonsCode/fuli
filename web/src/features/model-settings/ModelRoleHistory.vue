@@ -11,23 +11,21 @@ import { historyLines, readModelSettingsHistory, type HistoryEntry } from './his
 import { roleName, type ModelRoleId } from './model'
 
 // 变更记录 inside a role's row (rec#11 D-42): collapsed until the person opens
-// it, then read, and read again when the role's settings or execution mode
-// changed (revision): at once while open, on reopening otherwise. Each read
-// is tagged with the role and revision it was asked for; a change aborts the
-// read in flight, and an answer for a revision that is no longer current is
-// dropped (and asked again while open). A failed refresh keeps what was read.
-// Newest first; this section only reads.
-const props = defineProps<{ role: ModelRoleId; revision: string }>()
+// it, then read on every opening, and again while open whenever the page
+// saved a change (version, a counter the page bumps: a content hash can come
+// back to an earlier value). Each read is tagged with the role and version it
+// was asked for; a change aborts the read in flight, and an answer for a
+// version that is no longer current is dropped (and asked again while open).
+// A failed refresh keeps what was read. Newest first; this section only reads.
+const props = defineProps<{ role: ModelRoleId; version: number }>()
 
-type ReadTarget = { role: ModelRoleId; revision: string }
+type ReadTarget = { role: ModelRoleId; version: number }
 const open = ref(false)
 const entries = ref<HistoryEntry[] | null>(null)
-// The role and revision the shown entries were read at.
-const loadedAt = ref<ReadTarget | null>(null)
 const loading = ref(false)
 const error = ref('')
 const listId = computed(() => `model-history-${props.role}`)
-const isCurrent = (target: ReadTarget | null) => target?.role === props.role && target.revision === props.revision
+const isCurrent = (target: ReadTarget | null) => target?.role === props.role && target.version === props.version
 let reading: { request: AbortController; target: ReadTarget } | null = null
 
 function stop() {
@@ -38,7 +36,7 @@ function stop() {
 
 async function load() {
   stop()
-  const read = { request: new AbortController(), target: { role: props.role, revision: props.revision } }
+  const read = { request: new AbortController(), target: { role: props.role, version: props.version } }
   reading = read
   loading.value = true
   error.value = ''
@@ -51,7 +49,6 @@ async function load() {
       return
     }
     entries.value = value
-    loadedAt.value = read.target
   } catch (cause) {
     if (reading === read && (cause as Error)?.name !== 'AbortError') error.value = apiErrorReason(cause)
   } finally {
@@ -64,10 +61,11 @@ async function load() {
 
 function toggle() {
   open.value = !open.value
-  if (open.value && !isCurrent(loadedAt.value) && !isCurrent(reading?.target ?? null)) void load()
+  // Another tab or process may have changed the settings meanwhile.
+  if (open.value && !isCurrent(reading?.target ?? null)) void load()
 }
 
-watch(() => [props.role, props.revision], () => {
+watch(() => [props.role, props.version], () => {
   stop()
   if (open.value) void load()
 })

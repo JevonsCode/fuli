@@ -63,8 +63,11 @@ function edit(role: ModelRoleId) {
 
 // A save whose change could not be written to the change history says so (rec#11 D-42).
 const historyNote = (next: ModelRolesPayload) => (next.history === 'not_recorded' ? t('modelSettings.history.notRecorded') : '')
+// Bumped by every change this page saves, so an open change history reads again.
+const historyVersion = ref(0)
 
 function saved(next: ModelRolesPayload) {
+  historyVersion.value += 1
   notice.value = [t('modelSettings.saved', { name: roleName(editing.value!) }), historyNote(next)].filter(Boolean).join(' ')
   payload.value = next
   editing.value = null
@@ -73,6 +76,7 @@ function saved(next: ModelRolesPayload) {
 // A changed file closes the form; one that stopped validating keeps it open,
 // read again and locked, until the file is repaired.
 async function conflict(code: ConfigConflict) {
+  historyVersion.value += 1
   if (code === 'model_config_changed') {
     editing.value = null
     stale.value = true
@@ -124,6 +128,7 @@ function trustFact(view: ModelRoleView): Fact[] {
 }
 
 function trustSaved(next: ModelRolesPayload) {
+  historyVersion.value += 1
   notice.value = historyNote(next)
   payload.value = next
 }
@@ -203,7 +208,7 @@ onBeforeUnmount(() => {
                 </dl>
                 <ModelRoleTrust v-if="view.trust && showsTrust(view)" :role="view.role" :trust="view.trust"
                   :model="view.connection?.model ?? null" @saved="trustSaved" @changed="load" />
-                <ModelRoleHistory :role="view.role" :revision="`${payload.revision ?? ''}:${view.trust?.revision ?? ''}`" />
+                <ModelRoleHistory :role="view.role" :version="historyVersion" />
                 <footer class="model-role-actions">
                   <Button variant="outline" size="sm" :disabled="payload.state === 'invalid'" data-model-role-edit
                     :aria-label="`${t('modelSettings.edit')} ${roleName(view.role)}`" @click="edit(view.role)">

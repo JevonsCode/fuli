@@ -70,6 +70,7 @@ export const modelSettingsMessages = {
       notRecorded: '设置已保存，但这次改动没有写进变更记录。',
       markers: {
         unrecorded_changes: '当前设置与最后一条记录不一致，有修改没有记录下来。',
+        unrecorded_gap: '这里有修改没有记录下来。',
         earlier_changes_not_recorded: '更早的改动没有记录。',
       },
     },
@@ -249,6 +250,7 @@ export const modelSettingsMessages = {
       notRecorded: 'The settings were saved, but this change was not written to the change history.',
       markers: {
         unrecorded_changes: 'The current settings differ from the last record; some changes were not recorded.',
+        unrecorded_gap: 'Some changes here were not recorded.',
         earlier_changes_not_recorded: 'Earlier changes were not recorded.',
       },
     },
