@@ -37,12 +37,16 @@ const typed = (line = NAME) => ({ typed: line });
 const HOST = Object.freeze({ platform: 'test', self: async () => ({ pid: 101, identity: 'test:101', exePath: '/synthetic/node' }),
   identify: async () => null, probe: async () => 'unknown' });
 
+// Every context in a test reads this fixed time, worker threads too, so a
+// challenge never expires by the wall clock while the test runs.
+const FIXTURE_NOW = Date.parse('2026-10-24T08:00:00.000Z');
+
 // The prompt answers each confirmation in turn (the app name by default) and
 // records the challenges it showed.
 function fixture(t, { answers = [] } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-app-approval-'));
   const root = join(directory, 'agent-apps');
-  const clock = { now: Date.parse('2026-10-24T08:00:00.000Z') };
+  const clock = { now: FIXTURE_NOW };
   const context = agentAppContext({ root, providerIdentity: 'http://127.0.0.1:65530', hostIdentity: HOST,
     resolveOwner: async (owner) => owner, toolNames: () => TOOLS, clock: () => new Date(clock.now) });
   const service = agentAppServiceOver(context);
@@ -336,7 +340,7 @@ test('two processes consuming one nonce at once: exactly one approval wins', asy
     (async () => {
       const { agentAppContext } = await import(workerData.service);
       const { createConfirmedDecisions } = await import(workerData.decisions);
-      const context = agentAppContext({ root: workerData.root, toolNames: () => workerData.tools,
+      const context = agentAppContext({ root: workerData.root, toolNames: () => workerData.tools, clock: () => new Date(workerData.now),
         hostIdentity: { platform: 'test', self: async () => ({ pid: 1, identity: null, exePath: null }), probe: async () => 'unknown' } });
       void context.store.database;
       const decisions = createConfirmedDecisions(context, {});
@@ -350,7 +354,7 @@ test('two processes consuming one nonce at once: exactly one approval wins', asy
       } finally {
         context.store.close();
       }
-    })();`, { eval: true, workerData: { gate, root, tools: TOOLS, challenge, name: NAME,
+    })();`, { eval: true, workerData: { gate, root, tools: TOOLS, challenge, name: NAME, now: FIXTURE_NOW,
     service: new URL('../src/agent-apps/service.js', import.meta.url).href,
     decisions: new URL('../src/agent-apps/confirmed-decisions.js', import.meta.url).href } });
   const workers = [worker(), worker()];
