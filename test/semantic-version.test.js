@@ -69,3 +69,16 @@ test('compareSemanticVersions sorts the shorter prerelease first when shared ide
   assert.equal(compareSemanticVersions('1.0.0-alpha', '1.0.0-alpha.1'), -1);
   assert.equal(compareSemanticVersions('1.0.0-alpha.1', '1.0.0-alpha'), 1);
 });
+
+test('parseSemanticVersion rejects numeric prerelease identifiers with leading zeros', () => {
+  for (const version of ['1.0.0-01', '1.0.0-alpha.007', '1.0.0-0.1.00']) {
+    assert.throws(() => parseSemanticVersion(version), new TypeError(`Invalid package version: ${version}`));
+  }
+});
+
+test('parseSemanticVersion keeps a lone zero, alphanumeric identifiers and zero-padded build metadata', () => {
+  assert.deepEqual(parseSemanticVersion('1.0.0-0').prerelease, ['0']);
+  assert.deepEqual(parseSemanticVersion('1.0.0-alpha0').prerelease, ['alpha0']);
+  assert.deepEqual(parseSemanticVersion('1.0.0-0a').prerelease, ['0a']);
+  assert.deepEqual(parseSemanticVersion('1.0.0-alpha.1+00.01').prerelease, ['alpha', '1']);
+});

@@ -35,8 +35,12 @@ export function parseSemanticVersion(value) {
   if (numeric.some((part) => part.length > 1 && part.startsWith('0'))) {
     throw new TypeError(`Invalid package version: ${text}`);
   }
+  const prerelease = match[4]?.split('.') ?? [];
+  if (prerelease.some((part) => /^\d+$/.test(part) && part.length > 1 && part.startsWith('0'))) {
+    throw new TypeError(`Invalid package version: ${text}`);
+  }
   return {
     core: numeric.map((part) => BigInt(part)),
-    prerelease: match[4]?.split('.') ?? []
+    prerelease
   };
 }
