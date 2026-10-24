@@ -22,6 +22,7 @@ from .search_projection import (
 )
 from .knowledge_weight import knowledge_weight
 from .knowledge_tag_ranking import TagRanking
+from .knowledge_visibility import AgentReader, fla_endpoints_visible_cypher, fla_visible, reader_parameter
 
 MIN_TERM_COVERAGE = 0.25
 LATIN_QUERY_FILLERS = {
@@ -182,23 +183,24 @@ async def personal_edge_scopes(
         return {}
     records, _, _ = await store.runtime.driver.execute_query(
         '''
-        MATCH ()-[edge:RELATES_TO {group_id: $group_id}]->()
+        MATCH (source)-[edge:RELATES_TO {group_id: $group_id}]->(target)
         WHERE edge.uuid IN $edge_ids
           AND size(coalesce(edge.fuli_unresolved_bases, [])) = 0
+        WITH edge, ''' + fla_endpoints_visible_cypher('source', 'target') + ''' AS endpoints_visible
         OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
           space_id: $space_id,
           item_kind: 'relationship',
           item_id: edge.uuid
         })
-        WITH edge, assignment
+        WITH edge, endpoints_visible, assignment
         OPTIONAL MATCH (episode:Episodic {group_id: $group_id})
         WHERE episode.uuid IN coalesce(edge.episodes, [])
-        WITH edge, assignment, collect(DISTINCT episode) AS episodes
+        WITH edge, endpoints_visible, assignment, collect(DISTINCT episode) AS episodes
         OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_KNOWLEDGE_REFERENCE]->
               (reference:FuliKnowledgeProjectReference {
                 item_kind: 'relationship', item_id: edge.uuid, status: 'active'
               })
-        RETURN edge.uuid AS id,
+        RETURN edge.uuid AS id, endpoints_visible,
                edge.fuli_profile_aspect AS profile_aspect,
                coalesce(edge.fuli_preference_scope, 'global')
                  AS preference_scope,
@@ -226,6 +228,7 @@ async def personal_edge_scopes(
         project_ids=list(project_scopes),
         include_personal_global=include_personal_global,
         edge_ids=edge_ids,
+        reader=reader_parameter(_search_reader(request)),
         routing_='r',
     )
     return {
@@ -513,6 +516,8 @@ def _item_scope_metadata(
     project_scopes: dict[str, dict],
     include_personal_global: bool,
 ) -> dict | None:
+    if not fla_visible(record, _search_reader(request)):
+        return None
     profile_aspect = record.get('profile_aspect')
     if profile_aspect:
         preference_scope = record.get('preference_scope') or 'global'
@@ -522,18 +527,12 @@ def _item_scope_metadata(
             return _global_scope_metadata()
         project_id = record.get('preference_project_id')
         if preference_scope == 'agent':
-            agent_id = record.get('preference_agent_id')
-            if (
-                project_id not in request.personal_project_ids
-                or not request.project_agent_id
-                or agent_id != request.project_agent_id
-                or project_id != request.active_personal_project_id
-            ):
+            if project_id not in request.personal_project_ids:
                 return None
             return _agent_scope_metadata(
                 project_id,
                 project_scopes[project_id],
-                agent_id,
+                record.get('preference_agent_id'),
             )
         project_ids = record.get('preference_project_ids') or [project_id]
         candidates = [pid for pid in project_ids if pid in request.personal_project_ids and pid in project_scopes]
@@ -544,16 +543,7 @@ def _item_scope_metadata(
 
     assignment_project_id = record.get('assignment_project_id')
     episode_project_ids = list(record.get('episode_project_ids') or [])
-    episode_project_agent_ids = list(
-        record.get('episode_project_agent_ids') or []
-    )
-    if episode_project_agent_ids:
-        if (
-            not request.project_agent_id
-            or request.project_agent_id not in episode_project_agent_ids
-            or request.active_personal_project_id not in episode_project_ids
-        ):
-            return None
+    if record.get('episode_project_agent_ids'):
         return _agent_scope_metadata(
             request.active_personal_project_id,
             project_scopes[request.active_personal_project_id],
@@ -608,6 +598,12 @@ def _item_scope_metadata(
     ):
         return _global_scope_metadata()
     return None
+
+
+def _search_reader(request: SearchRequest) -> AgentReader:
+    # The FLA was authorized in _personal_search_space; search shows no
+    # FLA-scoped item to the person's console either unless it names the FLA.
+    return AgentReader(request.active_personal_project_id, request.project_agent_id)
 
 
 def _global_scope_metadata() -> dict:

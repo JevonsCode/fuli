@@ -97,7 +97,12 @@ const BASELINE = Object.freeze({
   // addTerms and removeTerms instead of a second tool (measured: a separate correction tool
   // would add ~1,170 B): 186,372 -> 186,914 B (+542 B), measured. Chat, instructions and entry
   // are unchanged.
-  fullToolSchemaBytes: 186914,
+  // 0.20.1 FLA read boundary, merged from release/0.20 (#344/#345): get_knowledge_graph takes
+  // projectAgentId, the FLA it reads as, since another reader no longer sees an FLA's own
+  // knowledge (+122 B on release); a conflict naming an FLA's item is missing to any other reader,
+  // so resolve_deferred_preference_conflict and defer_preference_conflict name the FLA too
+  // (+284 B on release): 186,914 -> 187,320 B (+406 B), measured on main after the merge.
+  fullToolSchemaBytes: 187320,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

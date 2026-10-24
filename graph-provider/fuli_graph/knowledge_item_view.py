@@ -32,6 +32,13 @@ from .knowledge_project_scope import knowledge_project_ids
 from .knowledge_search import search_knowledge
 from .knowledge_tags import PERSONAL_NAMESPACE, project_namespace
 from .knowledge_versions import item_revisions, version_chain, version_status
+from .knowledge_visibility import (
+    fla_episode_visible_cypher,
+    hidden_refs,
+    reader_parameter,
+    request_reader,
+    visible_episode_ids,
+)
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
 from .provider_values import json_object, native_datetime
 
@@ -44,26 +51,37 @@ _RULE_TYPE = re.compile(r'rule|policy|convention|constraint|guideline|standard',
 
 async def read_knowledge_item_view(store, actor: dict, request: KnowledgeItemRef) -> KnowledgeItemView:
     space = await personal_reader_space(store, actor, request.personal_space_id)
+    # An Agent sees another FLA's item as missing, and nothing of it in this
+    # view's evidence, versions, dependents or bases (knowledge_visibility).
+    reader = await request_reader(store, actor, space, request)
+    if reader is not None and request.query_tags is not None:
+        raise HTTPException(status_code=403, detail='a ranking explanation is read on the human-review channel')
     # The deletion trace is authoritative: a deleted ID answers 410 whatever
     # else is stored now (rec#5 C9).
     await require_not_hard_deleted(store, space, request.item_id)
     current = await _read_item(store, space, request.item_id, request.item_kind)
-    if current is None:
+    if current is None or await hidden_refs(store, space, reader, [(request.item_kind, request.item_id)]):
         raise HTTPException(status_code=404, detail='knowledge item not found')
-    evidence, source_ids = await item_evidence(store, space, request.item_kind, request.item_id)
+    evidence, source_ids = await item_evidence(store, space, request.item_kind, request.item_id, reader=reader)
     revisions = (await item_revisions(store, space, request.item_kind, [request.item_id])).get(request.item_id, [])
     summary = await item_summary(store, space, request.item_kind, request.item_id, current,
                                  source_ids=source_ids, revisions=revisions)
     versions = await version_chain(store, space, request.item_kind, request.item_id)
     head = next((version['item_id'] for version in versions if version['status'] == 'current'), None)
+    dependents = await dependents_of(store, space, request.item_kind, head or request.item_id)
+    bases = await item_bases(store, space, request.item_kind, request.item_id, current)
+    hidden = await hidden_refs(store, space, reader, [
+        *((request.item_kind, version['item_id']) for version in versions), *dependents,
+        *((basis['item_kind'], basis['item_id']) for basis in bases if basis['status'] != 'deleted')])
     view = KnowledgeItemView(
         basis_review=basis_review(current, revisions),
-        dependent_count=len(await dependents_of(store, space, request.item_kind, head or request.item_id)),
+        dependent_count=len([dependent for dependent in dependents if dependent not in hidden]),
         **summary.model_dump(), evidence=evidence, evidence_count=len(source_ids),
         unavailable_sources=await unavailable_source_bases(store, space, current.get('unresolved_bases') or []),
-        revisions=revisions[:REVISION_LIMIT], versions=versions,
-        current_item_id=head,
-        bases=await item_bases(store, space, request.item_kind, request.item_id, current))
+        revisions=revisions[:REVISION_LIMIT],
+        versions=[version for version in versions if (request.item_kind, version['item_id']) not in hidden],
+        current_item_id=None if (request.item_kind, head) in hidden else head,
+        bases=[basis for basis in bases if (basis['item_kind'], basis['item_id']) not in hidden])
     if request.query_tags is not None:
         # Run the normal visibility pipeline again. These ranks describe the
         # current query and graph, never a replay of an earlier search result.
@@ -79,18 +97,25 @@ async def read_knowledge_item_view(store, actor: dict, request: KnowledgeItemRef
 
 async def read_turn_receipt(store, actor: dict, request: KnowledgeTurnReceiptRead) -> KnowledgeTurnReceipt:
     space = await personal_reader_space(store, actor, request.personal_space_id)
+    # For an Agent, another FLA's episodes and items are neither listed nor counted.
+    reader = await request_reader(store, actor, space, request)
+    episode_ids = await visible_episode_ids(store, space, reader, request.episode_ids)
+    changes = await episode_changes(store, space, episode_ids)
+    hidden = await hidden_refs(store, space, reader, [(item_kind, item_id) for item_kind, item_id, _ in changes])
     entries, unchanged = [], 0
-    for item_kind, item_id, change in await episode_changes(store, space, request.episode_ids):
+    for item_kind, item_id, change in changes:
+        if (item_kind, item_id) in hidden:
+            continue
         if change is None:
             unchanged += 1
             continue
         current = await _read_item(store, space, item_id, item_kind)
         if current is None:
             continue
-        _, source_ids = await item_evidence(store, space, item_kind, item_id, limit=0)
+        _, source_ids = await item_evidence(store, space, item_kind, item_id, limit=0, reader=reader)
         summary = await item_summary(store, space, item_kind, item_id, current, source_ids=source_ids)
         entries.append(KnowledgeReceiptEntry(**summary.model_dump(), change=change))
-    deletions = await hard_deletions_in_episodes(store, space, request.episode_ids)
+    deletions = await hard_deletions_in_episodes(store, space, episode_ids)
     return KnowledgeTurnReceipt(entries=entries, unchanged_count=unchanged, deleted_count=len(deletions),
                                 deletion_ids=deletions)
 
@@ -236,7 +261,9 @@ async def episode_changes(store, space, episode_ids):
     ]
 
 
-async def item_evidence(store, space, item_kind, item_id, *, limit=EVIDENCE_LIMIT):
+async def item_evidence(store, space, item_kind, item_id, *, limit=EVIDENCE_LIMIT, reader=None):
+    """The item's source episodes, newest first. An Agent reader gets none
+    that another FLA wrote, in the list or in the ids it counts."""
     match = (
         'MATCH (episode:Episodic {group_id: $group_id})-[:MENTIONS]->(:Entity {uuid: $item_id, group_id: $group_id})'
         if item_kind == 'entity' else
@@ -246,13 +273,15 @@ async def item_evidence(store, space, item_kind, item_id, *, limit=EVIDENCE_LIMI
         'OR item.uuid IN coalesce(episode.entity_edges, [])')
     records, _, _ = await store.runtime.driver.execute_query(
         match + '''
-        WITH DISTINCT episode ORDER BY episode.created_at DESC
+        WITH DISTINCT episode WHERE ''' + fla_episode_visible_cypher('episode') + '''
+        WITH episode ORDER BY episode.created_at DESC
         WITH collect(episode) AS episodes
         RETURN [episode IN episodes | episode.uuid] AS ids, [episode IN episodes[..$limit] | episode {
           .uuid, .created_at, .fuli_source_kind, .fuli_source_application, .fuli_session_id,
           .fuli_conversation_id, .fuli_source_turn_id, .fuli_source_excerpt, .fuli_personal_project_id
         }] AS episodes
-        ''', group_id=space['group_id'], item_id=item_id, limit=limit, routing_='r')
+        ''', group_id=space['group_id'], item_id=item_id, limit=limit, reader=reader_parameter(reader),
+        routing_='r')
     if not records:
         return [], []
     return [KnowledgeEvidenceSource(

@@ -16,6 +16,9 @@ from fuli_graph.preference_conflicts import (
 )
 from sequential_driver_support import SequentialDriver
 
+# The person's console, with the human-review proof: it sees every FLA's items.
+PERSON = {'id': 'principal-1', '_human_review_verified': True}
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('extra', [0, 1])
@@ -56,7 +59,7 @@ async def test_human_can_defer_one_exact_preference_pair_until_ai_needs_it():
 
     result = await defer_preference_conflict(
         store,
-        {'id': 'principal-1'},
+        PERSON,
         PreferenceConflictDeferCreate(
             personal_space_id='personal-space',
             conflict_id='entity:left:entity:right',
@@ -97,6 +100,7 @@ async def test_ai_keep_left_invalidates_right_and_marks_the_resolution():
     }
     driver = SequentialDriver([
         [{'conflict': pending}],
+        [],  # neither side is another FLA's item
         [entity_item('left')],
         [entity_item('right')],
         [entity_item('right')],
@@ -122,8 +126,9 @@ async def test_ai_keep_left_invalidates_right_and_marks_the_resolution():
 
     assert result.status == 'resolved'
     assert result.resolved_by == 'agent'
-    assert 'FuliKnowledgeRevision' in driver.calls[5][0], 'a version that never ended may be deactivated'
-    update_query, update_parameters = driver.calls[6]
+    assert 'fla_episode' in driver.calls[1][0] and driver.calls[1][1]['item_ids'] == ['left', 'right']
+    assert 'FuliKnowledgeRevision' in driver.calls[6][0], 'a version that never ended may be deactivated'
+    update_query, update_parameters = driver.calls[7]
     assert 'fuli_invalid_at' in update_query
     assert update_parameters['item_id'] == 'right'
     assert update_parameters['replaced_by_item_id'] == 'left'
@@ -156,7 +161,7 @@ async def test_manual_resolution_closes_a_deferred_marker_without_claiming_ai_au
 
     result = await complete_preference_conflict(
         store,
-        {'id': 'principal-1'},
+        PERSON,
         pending['id'],
         PreferenceConflictCompleteCreate(
             personal_space_id='personal-space',
@@ -167,6 +172,36 @@ async def test_manual_resolution_closes_a_deferred_marker_without_claiming_ai_au
     )
 
     assert result.resolved_by == 'human'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', ['ai_pending', 'resolved'])
+async def test_a_conflict_naming_another_flas_item_is_missing_to_an_agent_and_nothing_is_written(status):
+    """0.20.1: resolve (its resolved retry too), complete and defer check both
+    items before any write or return; the Cypher is in test_fla_entry_points_neo4j.py."""
+    from fastapi import HTTPException
+    hidden = [{'id': 'left'}]
+    agent = {'id': 'principal-1'}
+    stored = {**conflict_record(), 'status': status}
+    calls = {
+        'resolve': ([[{'conflict': stored}], hidden], lambda store: resolve_preference_conflict(
+            store, agent, stored['id'], PreferenceConflictResolveCreate(
+                personal_space_id='personal-space', resolution='keep_left', reason='Synthetic.'))),
+        'complete': ([[{'conflict': stored}], hidden], lambda store: complete_preference_conflict(
+            store, agent, stored['id'], PreferenceConflictCompleteCreate(
+                personal_space_id='personal-space', resolution='merge', reason='Synthetic.'))),
+        'defer': ([[{'conflict': stored}], hidden], lambda store: defer_preference_conflict(
+            store, agent, PreferenceConflictDeferCreate(
+                personal_space_id='personal-space', conflict_id=stored['id'], preference_key='dashboard.layout',
+                preference_scope='global', left_item_id='left', left_item_kind='entity', right_item_id='right',
+                right_item_kind='entity', reason='Synthetic.', operation_actor='agent'))),
+    }
+    for name, (replies, call) in calls.items():
+        driver = SequentialDriver(replies)
+        with pytest.raises(HTTPException) as refused:
+            await call(StoreStub(driver))
+        assert (refused.value.status_code, refused.value.detail) == (404, 'preference conflict not found'), name
+        assert len(driver.calls) == 2, f'{name} wrote or returned nothing after the check'
 
 
 def test_ai_merge_requires_a_canonical_item_and_merged_instruction():

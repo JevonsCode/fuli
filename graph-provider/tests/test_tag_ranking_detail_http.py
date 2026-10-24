@@ -66,10 +66,12 @@ class DetailStore:
 def client_for(store):
     application = FastAPI()
 
+    # A ranking explanation is the console's: it carries the human-review proof.
     async def actor():
-        return {'id': 'synthetic-owner'}
+        return {'id': 'synthetic-owner', '_human_review_verified': True}
 
-    register_knowledge_item_routes(application, store, Annotated[dict, Depends(actor)], Annotated[dict, Depends(actor)])
+    owner = Annotated[dict, Depends(actor)]
+    register_knowledge_item_routes(application, store, owner, owner, owner)
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=application), base_url='http://synthetic.test')
 
 

@@ -33,6 +33,10 @@ function item(id, overrides = {}) {
 
 const paused = { layer: 'session', reason: 'session_paused' };
 
+// The console's read goes through its human-review port; here it reaches the same synthetic Provider.
+const consoleRead = (application, input) => readSessionRecords(application,
+  { sessionRecords: body => application.personal.readSessionRecords(body) }, input);
+
 // C6-1/C6-4: six saved turns, a paused stretch of eight turns (6～13), two
 // project facts and one preference whose words became its evidence.
 function sessionRead() {
@@ -65,7 +69,7 @@ function app(read = sessionRead(), task = { token: 'fuli-task-b', sessionId: SES
 
 test('C6-1: the list holds this session\'s 6 turns, 2 knowledge items and 1 preference evidence, each with time and project', async () => {
   const { app: application, reads } = app();
-  const view = await readSessionRecords(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const view = await consoleRead(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
   assert.deepEqual(reads, [{ personal_space_id: 'space', source_application: 'codex', session_id: SESSION }]);
   assert.equal(view.total, 9);
   assert.deepEqual(view.entries.map(entry => [entry.number, entry.group]), [
@@ -87,7 +91,7 @@ test('session deletion identity is passed through to the console but never added
   const read = sessionRead();
   read.deletion_target_id = 'opaque-provider-session-target';
   const { app: application } = app(read);
-  const view = await readSessionRecords(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const view = await consoleRead(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
   assert.equal(view.session.deletionTargetId, read.deletion_target_id);
   const own = await readOwnSessionRecords(application, { taskContextToken: 'fuli-task-b', sourceApplication: 'codex' });
   assert.equal(JSON.stringify(own).includes(read.deletion_target_id), false);
@@ -95,7 +99,7 @@ test('session deletion identity is passed through to the console but never added
 
 test('C6-4: paused turns hold nothing and the list marks the stretch as HH:mm～HH:mm 暂停记录', async () => {
   const { app: application } = app();
-  const view = await readSessionRecords(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const view = await consoleRead(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
   assert.ok(view.entries.every(entry => !/task-(6|7|8|9|1[0-3])$/.test(entry.key)));
   assert.deepEqual(view.stretches, [{ from: at(14, 36), to: at(15, 10), paused: true, reasons: [] }]);
   const { markdown } = await callAgentTool(application, 'read_session_records', { taskContextToken: 'fuli-task-b',
@@ -108,13 +112,13 @@ test('a skipped stretch without a paused checkpoint is 未记录, and one off fo
   read.turns = [turn(1, 9, 0), turn(2, 9, 30, { not_recorded: [{
     content: notRecordedEvent(0, 10, 'project_off').content, created_at: at(9, 20), after: at(9, 5) }] })];
   read.items = [];
-  const view = await readSessionRecords(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const view = await consoleRead(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
   assert.deepEqual(view.stretches, [{ from: at(9, 5), to: at(9, 20), paused: false, reasons: ['project_off'] }]);
 });
 
 test('C6-2: the Agent lists the same numbered items, types, summaries and links as the page', async () => {
   const { app: application } = app();
-  const page = await readSessionRecords(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const page = await consoleRead(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
   const answer = await callAgentTool(application, 'read_session_records', { taskContextToken: 'fuli-task-b',
     sourceApplication: 'codex' });
   const lines = answer.markdown.split('\n');
@@ -132,7 +136,7 @@ test('C6-2: the Agent lists the same numbered items, types, summaries and links 
 });
 
 test('C6-3: a knowledge item names the turn it came from, and the turn lists it with its own words', async () => {
-  const view = await readSessionRecords(app().app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const view = await consoleRead(app().app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
   const evidence = view.entries.find(entry => entry.key === 'entity:cite');
   assert.equal(evidence.turn, 'turn:task-4');
   const source = view.entries.find(entry => entry.key === evidence.turn);
@@ -159,7 +163,7 @@ test('C6-5: asked from project B, records the session wrote in project A never r
   assert.deepEqual(answer.markdown.split('\n').filter(line => /^\d+\. /.test(line)).map(line => parseInt(line, 10)),
     [1, 2, 3, 4, 5, 6, 7, 8]);
   // The person's own console lists everything, by the person's permission.
-  const page = await readSessionRecords(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const page = await consoleRead(application, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
   assert.equal(page.total, 11);
   assert.ok(JSON.stringify(page).includes('私密存款 12345'));
 });
@@ -175,6 +179,33 @@ test('an Agent reads only the session of its own task, never one it names', asyn
   assert.deepEqual(Object.keys(schema.properties), ['taskContextToken']);
 });
 
+test('an Agent reads its session as its task\'s FLA, or as a plain session naming no FLA', async () => {
+  const fla = app(sessionRead(), { token: 'fuli-task-b', sessionId: SESSION, sourceApplication: 'codex',
+    personalProjectId: 'thesis', projectAgentId: 'writer' });
+  await callAgentTool(fla.app, 'read_session_records', { taskContextToken: 'fuli-task-b', sourceApplication: 'codex' });
+  assert.deepEqual(fla.reads, [{ personal_space_id: 'space', source_application: 'codex', session_id: SESSION,
+    reader_project_id: 'thesis', reader_agent_id: 'writer' }]);
+  const plain = app();
+  await callAgentTool(plain.app, 'read_session_records', { taskContextToken: 'fuli-task-b', sourceApplication: 'codex' });
+  assert.deepEqual(plain.reads, [{ personal_space_id: 'space', source_application: 'codex', session_id: SESSION }],
+    'no proof and no FLA: the Provider reads it as a plain session');
+});
+
+test('in one project and session, H never repeats G\'s turn even if a Provider sent it', async () => {
+  // G worked first, then H; a Provider that failed to cut G's turn is checked again here.
+  const read = sessionRead();
+  read.turns = [turn(1, 10, 1, { project_agent_id: 'g', messages: [{ role: 'user', text: 'G 的私下对话', created_at: at(10, 1) }] }),
+    turn(2, 10, 2, { project_agent_id: 'h', messages: [{ role: 'user', text: 'H 的对话', created_at: at(10, 2) }] })];
+  read.items = [item('g-fact', { task_id: 'task-1' }), item('h-fact', { task_id: 'task-2' })];
+  const as = agent => app(structuredClone(read), { token: 'fuli-task-b', sessionId: SESSION, sourceApplication: 'codex',
+    personalProjectId: 'thesis', projectAgentId: agent }).app;
+  const h = (await callAgentTool(as('h'), 'read_session_records', { taskContextToken: 'fuli-task-b', sourceApplication: 'codex' })).markdown;
+  assert.ok(h.includes('H 的对话') && h.includes('Synthetic h-fact'));
+  assert.ok(!h.includes('G 的私下对话') && !h.includes('Synthetic g-fact'), h);
+  const g = (await callAgentTool(as('g'), 'read_session_records', { taskContextToken: 'fuli-task-b', sourceApplication: 'codex' })).markdown;
+  assert.ok(g.includes('G 的私下对话') && !g.includes('H 的对话'), g);
+});
+
 test('an empty session says so and still links its list; a long one says it is cut', async () => {
   const read = { ...sessionRead(), turns: [], items: [], truncated: true };
   const { markdown } = await callAgentTool(app(read).app, 'read_session_records', { taskContextToken: 'fuli-task-b',
@@ -184,7 +215,7 @@ test('an empty session says so and still links its list; a long one says it is c
 
 test('the page reads only the active personal space', async () => {
   const { app: application, reads } = app();
-  await assert.rejects(readSessionRecords(application, { personalSpaceId: 'other', sourceApplication: 'codex', sessionId: SESSION }),
+  await assert.rejects(consoleRead(application, { personalSpaceId: 'other', sourceApplication: 'codex', sessionId: SESSION }),
     /active personal space/);
   assert.equal(reads.length, 0);
 });
@@ -201,7 +232,7 @@ test('C6-5: a pause only project A\'s turns hold stays out of B\'s answer; one B
     sourceApplication: 'codex' });
   assert.doesNotMatch(markdown, /09:00|09:3\d|家庭账本|ledger/);
   assert.match(markdown, /— 14:36～15:10 暂停记录，这段没有任何记录/);
-  const page = await readSessionRecords(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const page = await consoleRead(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
   assert.equal(page.stretches.length, 2, 'the person sees both pauses');
 });
 
@@ -254,7 +285,7 @@ test('an item cited in A and then in B keeps B\'s own evidence and turn in B\'s 
   assert.match(markdown, /偏好证据·待确认｜10:05｜项目 毕业论文｜「B 里的原话」/);
   assert.doesNotMatch(markdown, /A 里|家庭账本|ledger/);
   // The person's list keeps both sources, so either turn's link finds the item.
-  const page = await readSessionRecords(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const page = await consoleRead(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
   const entry = page.entries.find(candidate => candidate.key === 'entity:global-pref');
   assert.deepEqual(entry.detail.sources, [{ episode_id: 'episode-a', turn: 'turn:task-30' },
     { episode_id: 'episode-b', turn: 'turn:task-5' }]);
@@ -276,7 +307,7 @@ test('after two citations in A, B\'s one citation keeps the item, and the last c
     sourceApplication: 'codex' });
   assert.match(markdown, /偏好证据·待确认｜11:03｜项目 毕业论文｜「B 的原话」/);
   assert.doesNotMatch(markdown, /A 一|A 二|家庭账本/);
-  const page = await readSessionRecords(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
+  const page = await consoleRead(app(read).app, { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: SESSION });
   const entry = page.entries.find(candidate => candidate.key === 'entity:pref');
   assert.deepEqual(entry.detail.sources.at(-1), { episode_id: 'e-b2', turn: 'turn:task-4' });
   assert.ok(page.entries.find(candidate => candidate.key === 'turn:task-4').detail.items.includes('entity:pref'));

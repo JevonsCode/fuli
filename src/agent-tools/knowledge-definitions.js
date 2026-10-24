@@ -394,11 +394,11 @@ export const KNOWLEDGE_DEFINITIONS = [
   },
   {
     name: 'get_knowledge_graph',
-    description: 'Return a bounded node-edge graph for a personal space, one exact local personal project, or a team-shared project.',
+    description: 'Return a bounded node-edge graph for a personal space, one exact local personal project, or a team-shared project. An FLA sees its own knowledge only with projectAgentId and personalProjectId.',
     inputSchema: objectSchema({
       spaceId: id,
       providerUrl: nullableStringSchema(),
-      personalProjectId: nullableStringSchema(),
+      personalProjectId: nullableStringSchema(), projectAgentId: nullableStringSchema(),
       limit: integerSchema({ minimum: 1, maximum: 2000 })
     }, ['spaceId'])
   },

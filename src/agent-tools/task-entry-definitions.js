@@ -88,9 +88,9 @@ export const TASK_ENTRY_DEFINITIONS = [
   },
   {
     name: 'resolve_deferred_preference_conflict',
-    description: 'Resolve one AI-deferred conflict from get_collaboration_preferences only when the current task needs that preference. Compare both confirmed sides with their evidence and current context before choosing. Updates effective knowledge, preserves revision history, and permanently marks prior conflict as resolved by AI. Use merge with canonical item and merged instruction, keep_left/keep_right to retain one side, or split_scope to move one side to an exact personal project.',
+    description: 'Resolve one AI-deferred conflict from get_collaboration_preferences only when the current task needs that preference. Compare both confirmed sides with their evidence and current context before choosing. Updates effective knowledge, preserves revision history, and permanently marks prior conflict as resolved by AI. Use merge with canonical item and merged instruction, keep_left/keep_right to retain one side, or split_scope to move one side to an exact personal project. An FLA names projectAgentId and personalProjectId.',
     inputSchema: objectSchema({
-      personalSpaceId: id,
+      personalSpaceId: id, personalProjectId: nullableStringSchema(), projectAgentId: nullableStringSchema(),
       conflictId: boundedString(1024),
       resolution: enumSchema([
         'merge', 'keep_left', 'keep_right', 'split_scope'

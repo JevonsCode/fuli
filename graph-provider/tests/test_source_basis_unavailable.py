@@ -10,6 +10,9 @@ from fuli_graph import knowledge_basis_review as review
 from fuli_graph import knowledge_source_delete_mutation as mutation
 from fuli_graph.knowledge_item_view_models import KnowledgeItemRef, KnowledgeItemSummary
 
+# The person's console read: it carries the human-review proof.
+CONSOLE = {'_human_review_verified': True}
+
 
 @pytest.mark.asyncio
 async def test_detail_reports_only_unresolved_deleted_sources_and_clears_after_review(monkeypatch):
@@ -30,14 +33,14 @@ async def test_detail_reports_only_unresolved_deleted_sources_and_clears_after_r
         confirmation_status='confirmed')
     monkeypatch.setattr(views, 'item_summary', AsyncMock(return_value=summary))
     request = KnowledgeItemRef(personal_space_id='space', item_kind='entity', item_id='kept')
-    detail = await views.read_knowledge_item_view(store, {}, request)
+    detail = await views.read_knowledge_item_view(store, CONSOLE, request)
     assert detail.model_dump()['unavailable_sources'] == [
         {'episode_id': 'episode', 'deletion_id': 'deletion', 'status': 'unavailable'}]
     assert detail.basis_review == 'changed' and detail.evidence == []
     assert driver.execute_query.call_args.kwargs['space_id'] == 'space'
     assert driver.execute_query.call_args.kwargs['reasons'] == current['unresolved_bases']
     current['unresolved_bases'] = []
-    detail = await views.read_knowledge_item_view(store, {}, request)
+    detail = await views.read_knowledge_item_view(store, CONSOLE, request)
     assert detail.unavailable_sources == [] and detail.basis_review is None
     assert driver.execute_query.await_count == 1
 

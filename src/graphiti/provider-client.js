@@ -1,5 +1,6 @@
 import { ApplicationError } from '../app/application-error.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
+import { graphReadPath, preferenceConflictsPath, publicationDraftsPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
 import { afterProjectWrite, sharedProjectList } from './shared-project-list.js';
 
@@ -637,10 +638,8 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId }
     });
   }
-  // rec#20: authoritative item views and a turn's receipt.
-  readKnowledgeItemView(input) {
-    return this.#request('/v1/knowledge/item-views', { method: 'POST', body: input });
-  }
+  // rec#20: a turn's receipt as an Agent reads it (knowledge-reader.js). The
+  // console's item views and full reads use its own port (src/knowledge-owner-reads).
   readTurnReceipt(input) {
     return this.#request('/v1/knowledge/turn-receipts', { method: 'POST', body: input });
   }
@@ -648,8 +647,10 @@ export class GraphitiProviderClient {
   readSessionRecords(input) {
     return this.#request('/v1/session-records', { method: 'POST', body: input });
   }
-  // rec#20 part 2: what a session's temporary project holds. Scope writes go
-  // through the console's human-review channel (src/knowledge-scope).
+  // rec#20 part 2: what a session's temporary project holds, as an Agent's
+  // offer reads it (knowledge-reader.js). The console's page reads it through
+  // its own port (src/knowledge-owner-reads); scope writes go through the
+  // console's human-review channel (src/knowledge-scope).
   previewSessionMigration(input) {
     return this.#request('/v1/knowledge/session-migrations/preview', { method: 'POST', body: input });
   }
@@ -669,9 +670,7 @@ export class GraphitiProviderClient {
     return this.#request('/v1/publication-drafts', { method: 'POST', body: input });
   }
   listPublicationDrafts(personalSpaceId, status = 'pending', { metadataOnly = false, ...options } = {}) {
-    const query = new URLSearchParams({ personal_space_id: personalSpaceId, status });
-    if (metadataOnly) query.set('metadata_only', 'true');
-    return this.#request(`/v1/publication-drafts?${query}`, options);
+    return this.#request(publicationDraftsPath(personalSpaceId, { status, metadataOnly }), options);
   }
   getPublicationDraft(personalSpaceId, draftId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
@@ -864,14 +863,9 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  // An Agent's read, as a plain session; the console's full list uses its own port (src/knowledge-owner-reads).
   listPreferenceConflicts(personalSpaceId, status = null, limit = 500, offset = 0) {
-    const query = new URLSearchParams({
-      personal_space_id: personalSpaceId,
-      limit: String(limit)
-    });
-    if (status) query.set('status', status);
-    if (offset) query.set('offset', String(offset));
-    return this.#request(`/v1/preference-conflicts?${query}`);
+    return this.#request(preferenceConflictsPath(personalSpaceId, { status, limit, offset }));
   }
   resolvePreferenceConflict(conflictId, input) {
     return this.#request(
@@ -939,11 +933,9 @@ export class GraphitiProviderClient {
     }
     return this.#request(`/v1/collaboration-preferences?${query}`);
   }
-  graph(spaceId, limit = 500, personalProjectId = null, offset = null) {
-    const query = new URLSearchParams({ limit: String(limit) });
-    if (personalProjectId) query.set('personal_project_id', personalProjectId);
-    if (offset !== null) query.set('offset', String(offset));
-    return this.#request(`/v1/spaces/${encodeURIComponent(spaceId)}/graph?${query}`);
+  // An Agent's read (knowledge-reader.js): reader names its FLA, or null for a plain session.
+  graph(spaceId, limit = 500, personalProjectId = null, offset = null, reader = null) {
+    return this.#request(graphReadPath(spaceId, { limit, personalProjectId, offset, reader }));
   }
 
   // A long-running client (an MCP server) outlives a token rotation, for

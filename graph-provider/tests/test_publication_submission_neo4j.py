@@ -10,7 +10,7 @@ from fuli_graph.provider_values import now_utc
 from fuli_graph.models import StructuredEpisode
 from fuli_graph.publication_source_copies import drafts_for_sources, scrub_publication_drafts
 from fuli_graph.store_transactions import query_store_transaction
-from test_knowledge_hard_delete_neo4j import reviewed
+from test_knowledge_hard_delete_neo4j import REVIEW, reviewed
 from test_models import confirmed_episode
 from test_negative_feedback_block_neo4j import query
 from test_project_agent_memory_neo4j import provider_client
@@ -28,8 +28,13 @@ async def test_real_reservation_unknown_reconciliation_and_source_scrub():
         draft = ok(await client.post('/v1/publication-drafts', json={'personal_space_id': space_id,
             'target_project_id': 'synthetic-public', 'provider_url': 'https://public.example', 'episode': episode}))
         endpoint = f'/v1/publication-drafts/{draft["id"]}/decision'
+        # A capture made only for the team names no local source, so it is the person's (0.20.1):
+        # the console submits and settles it with the review proof; an Agent token is told nothing.
         async def decide(body):
-            return await client.post(endpoint, params={'personal_space_id': space_id}, json=body)
+            return await client.post(endpoint, headers=REVIEW, params={'personal_space_id': space_id}, json=body)
+        unproven = await client.post(endpoint, params={'personal_space_id': space_id},
+                                     json={'decision': 'begin_submit_public'})
+        assert unproven.status_code == 404
         begun = ok(await decide({'decision': 'begin_submit_public'}))
         assert begun['status'] == 'submitting' and begun['episode']
         attempt = begun['submission_id']

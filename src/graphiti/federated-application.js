@@ -97,6 +97,8 @@ import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-projec
 import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
+import { providerReaderFields, taskKnowledgeReader } from './knowledge-reader.js';
+import { queuePublicationDraft } from './publication-draft-capture.js';
 import { knowledgeTags } from './knowledge-tags.js';
 import { withSharedProjectList } from './shared-project-list.js';
 
@@ -239,19 +241,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       const result = await this.personal.commit(commit);
       return { route: 'personal', ...result };
     }
-    const draft = await this.personal.createPublicationDraft({
-      personal_space_id: this.config.personal.spaceId,
-      target_project_id: input.spaceId,
-      provider_url: workspace.providerUrl,
-      episode
-    });
-    return {
-      route: 'personal_review',
-      status: draft.status,
-      draftId: draft.id,
-      projectId: input.spaceId,
-      providerUrl: workspace.providerUrl
-    };
+    return queuePublicationDraft(this, { input, workspace, episode });
   }
 
   async recordWorkflowTransitionObservation(input) {
@@ -348,9 +338,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  async getWritingTasteProfile(input = {}) {
+  async getWritingTasteProfile(input = {}, ownerReads = null) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
-    return getWritingTasteProfileWorkflow(this, input);
+    return getWritingTasteProfileWorkflow(this, input, ownerReads);
   }
 
   async #resolvePreferenceProject({ personalProjectId, projectPath }) {
@@ -453,26 +443,27 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     });
   }
 
+  // An Agent reads as its FLA (projectAgentId) or a plain session: no other FLA's knowledge. Only the
+  // console passes ownerReads (src/knowledge-owner-reads) for the person's full read; an MCP call cannot.
   async getKnowledgeGraph({
     spaceId,
     providerUrl = null,
     personalProjectId = null,
+    projectAgentId = null,
     limit = 500,
     offset = null,
     agentInvocation = false,
     agentToolName = 'get_knowledge_graph',
     sourceApplication = null
-  }) {
+  }, ownerReads = null) {
     if (!providerUrl) {
       if (spaceId !== this.config.personal.spaceId) {
         throw new TypeError('A configured providerUrl is required for a team-shared project graph');
       }
-      const result = await this.personal.graph(
-        spaceId,
-        limit,
-        personalProjectId,
-        offset
-      );
+      const result = ownerReads
+        ? await ownerReads.graph({ spaceId, limit, personalProjectId, offset })
+        : await this.personal.graph(spaceId, limit, personalProjectId, offset,
+          projectAgentId ? { personalProjectId, projectAgentId } : null);
       if (agentInvocation) {
         await this.#recordAgentViews([
           ...result.nodes.map(({ id }) => ({ item_id: id, item_kind: 'entity' })),
@@ -615,22 +606,20 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return knowledgeTags(this, operation, input);
   }
 
-  async listPreferenceConflicts({
-    personalSpaceId,
-    status = null,
-    limit = 500
-  }) {
+  // An Agent reads as a plain session: no conflict naming an FLA's own item (an FLA meets those in its
+  // task context). Only the console passes ownerReads (src/knowledge-owner-reads) for the full list.
+  async listPreferenceConflicts({ personalSpaceId, status = null, limit = 500 }, ownerReads = null) {
     this.#assertActivePersonalSpace(personalSpaceId);
-    return this.personal.listPreferenceConflicts(
-      personalSpaceId,
-      status,
-      limit
-    );
+    return ownerReads
+      ? ownerReads.preferenceConflicts({ personalSpaceId, status, limit })
+      : this.personal.listPreferenceConflicts(personalSpaceId, status, limit);
   }
 
-  async deferPreferenceConflict(input) {
+  // A conflict naming an item its reader may not see answers as missing: an Agent names its FLA
+  // (projectAgentId) or reads as a plain session; the console's defer and completion pass ownerReads.
+  async deferPreferenceConflict(input, ownerReads = null) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
-    return this.personal.deferPreferenceConflict({
+    const body = {
       personal_space_id: input.personalSpaceId,
       conflict_id: input.conflictId,
       preference_key: input.preferenceKey,
@@ -642,13 +631,16 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       right_item_kind: input.rightItemKind,
       reason: input.reason,
       operation_actor: input.operationActor ?? 'human'
-    });
+    };
+    return ownerReads ? ownerReads.deferPreferenceConflict(body)
+      : this.personal.deferPreferenceConflict({ ...body, ...providerReaderFields(taskKnowledgeReader(input)) });
   }
 
   async resolveDeferredPreferenceConflict(input) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return this.personal.resolvePreferenceConflict(input.conflictId, {
+      ...providerReaderFields(taskKnowledgeReader(input)),
       personal_space_id: input.personalSpaceId,
       resolution: input.resolution,
       reason: input.reason,
@@ -660,14 +652,12 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     });
   }
 
-  async completePreferenceConflict(input) {
+  async completePreferenceConflict(input, ownerReads = null) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
-    return this.personal.completePreferenceConflict(input.conflictId, {
-      personal_space_id: input.personalSpaceId,
-      resolution: input.resolution,
-      reason: input.reason,
-      operation_actor: input.operationActor ?? 'human'
-    });
+    const body = { personal_space_id: input.personalSpaceId, resolution: input.resolution, reason: input.reason,
+      operation_actor: input.operationActor ?? 'human' };
+    return ownerReads ? ownerReads.completePreferenceConflict(input.conflictId, body)
+      : this.personal.completePreferenceConflict(input.conflictId, body);
   }
 
   async confirmKnowledgeBatch(input) {
@@ -966,19 +956,17 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     );
   }
 
-  async listPersonalReviewQueue(input = {}) {
+  // An Agent's list leaves out a draft of an FLA's work (made before the Provider refused them);
+  // only the console passes ownerReads (src/knowledge-owner-reads) for the person's full list.
+  async listPersonalReviewQueue(input = {}, ownerReads = null) {
     const personalSpaceId = input.personalSpaceId ?? this.config.personal.spaceId;
     if (personalSpaceId !== this.config.personal.spaceId) {
       throw new TypeError('Personal review must use the active personal space');
     }
-    await this.reconcilePersonalSubmissions();
-    return {
-      personalSpaceId,
-      drafts: await this.personal.listPublicationDrafts(
-        personalSpaceId,
-        input.status ?? 'pending'
-      )
-    };
+    await this.reconcilePersonalSubmissions({}, ownerReads);
+    const status = input.status ?? 'pending';
+    return { personalSpaceId, drafts: ownerReads ? await ownerReads.publicationDrafts({ personalSpaceId, status })
+      : await this.personal.listPublicationDrafts(personalSpaceId, status) };
   }
 
   async readRoleSuggestions({ limit } = {}) {
@@ -987,21 +975,22 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.roleSuggestions.list({ personalSpaceId, limit });
   }
 
-  reconcilePersonalSubmissions(options = {}) {
-    return reconcilePublicSubmissions({ personal: this.personal, workspaceFor: url => this.#workspace(url),
-      spaceId: this.config.personal.spaceId }, options);
+  // ownerReads: the console's port, which alone lists and settles a draft of an FLA's work.
+  reconcilePersonalSubmissions(options = {}, ownerReads = null) {
+    return reconcilePublicSubmissions({ personal: ownerReads?.submissions ?? this.personal,
+      workspaceFor: url => this.#workspace(url), spaceId: this.config.personal.spaceId }, options);
   }
 
-  async reviewPersonalDraft(input) {
+  // ownerReads: the console's port; an Agent decides only a draft of positively plain work.
+  async reviewPersonalDraft(input, ownerReads = null) {
     input = parsePersonalDraftDecision(input);
     const personalSpaceId = this.config.personal.spaceId;
+    const personal = ownerReads?.submissions ?? this.personal;
     if (input.decision !== 'submit_public') {
-      return this.personal.decidePublicationDraft(personalSpaceId, input.draftId, {
-        decision: input.decision,
-        shared_proposal_id: null
-      });
+      return personal.decidePublicationDraft(personalSpaceId, input.draftId, { decision: input.decision,
+        shared_proposal_id: null });
     }
-    return submitPersonalDraft({ personal: this.personal, workspaceFor: url => this.#workspace(url),
+    return submitPersonalDraft({ personal, workspaceFor: url => this.#workspace(url),
       spaceId: personalSpaceId, draftId: input.draftId });
   }
 
