@@ -198,7 +198,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   <section class="view writing-taste-view">
     <!-- One centred work canvas (D-03): rules are a card collection that adds
          columns as the canvas widens instead of stretching one row. -->
-    <div class="@container mx-auto flex w-full max-w-(--canvas-max) flex-col gap-4">
+    <div class="@container mx-auto flex w-full max-w-(--layout-max) flex-col gap-4">
     <GrowthLoading v-if="loading && profile && !showInitialLoading" variant="inline" :label="t('writingTaste.page.loading')" />
     <GrowthLoading v-if="showInitialLoading" :label="t('writingTaste.page.loading')" />
 

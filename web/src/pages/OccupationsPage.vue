@@ -139,7 +139,7 @@ watch(peekKey, async (key) => {
 
 <template>
   <section class="view occupations-view">
-    <div class="@container mx-auto flex w-full max-w-(--canvas-max) flex-col gap-3">
+    <div class="@container mx-auto flex w-full max-w-(--layout-max) flex-col gap-3">
       <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
         <UiStatRow :items="stats" :label="t('occupations.statsAria')" @select="key => filter = key as typeof filter" />
         <p class="page-lede m-0 text-sm text-muted-foreground">{{ t('occupations.lede') }}</p>

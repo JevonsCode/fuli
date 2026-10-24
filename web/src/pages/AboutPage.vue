@@ -35,7 +35,7 @@ import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
 </template>
 
 <style scoped>
-/* The form column (--form-max) the shell's title lines up with. */
+/* The shell's column (--layout-max) its title lines up with. */
 .about-view {
   padding-top: clamp(24px, 4vw, 48px);
   padding-bottom: 96px;
@@ -45,7 +45,7 @@ import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
 
 .about-content {
   width: 100%;
-  max-width: var(--form-max);
+  max-width: var(--layout-max);
   display: grid;
   gap: 72px;
   margin: 0 auto;

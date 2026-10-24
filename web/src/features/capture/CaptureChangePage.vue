@@ -221,7 +221,7 @@ onMounted(load)
 </template>
 
 <style scoped>
-.capture-change { display: grid; gap: 16px; width: 100%; min-width: 0; max-width: var(--form-max); margin-inline: auto; }
+.capture-change { display: grid; gap: 16px; width: 100%; min-width: 0; max-width: var(--layout-max); margin-inline: auto; }
 .capture-change-body { display: grid; gap: 20px; min-width: 0; padding: 0 20px; }
 .capture-change-body > section { display: grid; gap: 8px; }
 .capture-change-notice { display: grid; gap: 4px; margin: 0; padding: 12px 16px; border: 1px solid var(--color-border);

@@ -127,7 +127,7 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
 
 <template>
   <section ref="page" class="view overview-view">
-    <div class="@container mx-auto w-full max-w-(--canvas-max)">
+    <div class="@container mx-auto w-full max-w-(--layout-max)">
       <template v-if="bootstrapLoading">
         <GrowthLoading :label="t('overview.read.scope')" />
         <p v-if="scopeSlow" role="status">{{ t('overview.read.slow') }}</p>

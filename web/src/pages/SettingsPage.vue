@@ -392,7 +392,7 @@ async function submitSettings(event: Event) {
 
 <template>
   <section class="view settings-view" :aria-label="t('settings.aria')">
-    <div ref="searchRoot" class="settings-content mx-auto grid w-full max-w-(--form-max) gap-4">
+    <div ref="searchRoot" class="settings-content mx-auto grid w-full max-w-(--layout-max) gap-4">
       <GrowthLoading v-if="loading && !form" variant="compact" :label="t('settings.loading')" />
       <Tabs v-if="form" v-model="activeTab" :unmount-on-hide="false" class="settings-tabs gap-4" :data-searching="searching || undefined">
         <div class="settings-tabbar flex flex-wrap items-end gap-x-4 gap-y-2 border-b">

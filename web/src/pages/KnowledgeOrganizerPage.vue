@@ -446,7 +446,7 @@ async function openReplacement(item: KnowledgeItem) {
   gap: 12px;
   width: 100%;
   min-height: 0;
-  max-width: var(--canvas-max);
+  max-width: var(--layout-max);
   margin-inline: auto;
 }
 

@@ -172,7 +172,7 @@ watch([spaceId, kind, itemId], () => {
 
 <template>
   <section class="view [scrollbar-gutter:stable]">
-  <div ref="root" class="mx-auto flex w-full max-w-(--form-max) flex-col gap-4" data-knowledge-item-edit>
+  <div ref="root" class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-4" data-knowledge-item-edit>
     <BackLink to="/organize" :from="/^\/(organize|knowledge|preferences)/" class="text-sm">{{ t('knowledgeQuickEdit.back') }}</BackLink>
     <GrowthLoading v-if="showLoading" :label="t('knowledgeQuickEdit.loading')" />
     <section v-else-if="sourceDeletion" class="grid gap-3" data-source-deleted-page>

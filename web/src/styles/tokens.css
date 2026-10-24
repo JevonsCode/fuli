@@ -18,10 +18,13 @@
   --scene-space: #1b2a47; --scene-space-deep: #0b1222; --scene-space-ink: #e9efff; --scene-space-label: rgb(14 22 40 / 70%);
   --scene-ambient: #8fa2c8; --scene-sun: #fff2dc; --scene-rim: #7fb4ff; --scene-orbit: #bfd0ff; --scene-star: #dfe8ff;
   --scene-moon: #9fb4d6; --scene-moon-done: #6f7a86; --scene-glow: #ffffff;
-  --page-max: 1680px;
   /* Rebuilt pages (D-03): one centred work canvas; wider screens add
      collection columns instead of stretching a card. Forms stay one column. */
   --canvas-max: 1840px;
+  /* rec#38: single-column content pages (profiles, details, lists of rows)
+     stay readable on wide screens; the canvas is for boards, tables, graphs
+     and tile collections. */
+  --column-max: 1080px;
   --form-max: 896px;
   --measure: 72ch;
   --page-gutter: clamp(20px, 2.4vw, 56px);

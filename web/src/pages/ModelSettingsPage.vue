@@ -223,7 +223,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .model-settings-view { padding-top: clamp(16px, 3vw, 32px); padding-bottom: 96px; color: var(--color-ink); }
 /* One centred column; sections keep one rhythm (rec#38). */
-.model-settings-column { display: grid; gap: var(--space-8); width: 100%; max-width: var(--form-max); margin-inline: auto; }
+.model-settings-column { display: grid; gap: var(--space-8); width: 100%; max-width: var(--layout-max); margin-inline: auto; }
 .model-settings-column > :first-child { justify-self: start; margin-bottom: calc(var(--space-4) - var(--space-8)); }
 .model-role-list { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .model-role-row { position: relative; min-width: 0; background: var(--color-surface); transition: box-shadow var(--motion-fast); }

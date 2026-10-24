@@ -590,7 +590,7 @@ function readmeHelpUrl(fragment: string) {
 
 <template>
   <section class="view connections-view [scrollbar-gutter:stable]">
-    <div class="mx-auto flex w-full max-w-(--form-max) flex-col gap-4">
+    <div class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-4">
     <div class="service-connection-grid" role="group" :aria-label="t('pages.connections.statusAria')">
       <article class="service-connection-card" :data-status="personalReady ? 'ready' : 'error'">
         <header>

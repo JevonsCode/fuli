@@ -299,7 +299,7 @@ onMounted(() => {
     class="view agent-profile-page"
     :aria-label="agent ? agentDisplayName(agent) : t('agentProfiles.profile')"
   >
-    <div class="@container mx-auto grid w-full max-w-(--canvas-max) gap-4">
+    <div class="@container mx-auto grid w-full max-w-(--layout-max) gap-4">
       <BackLink class="agent-profile-back" to="/project-agents" :from="openedFromDirectory">{{ t("agentProfiles.back") }}</BackLink>
 
       <GrowthLoading
