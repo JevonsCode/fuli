@@ -137,6 +137,9 @@ test('revision rows are immutable', (t) => {
   try {
     assert.throws(() => database.exec("UPDATE standing_assignment_revisions SET change = 'edited'"), /immutable/);
     assert.throws(() => database.exec('DELETE FROM standing_assignment_revisions'), /immutable/);
+    // REPLACE deletes the old row without the delete trigger; the insert trigger refuses it.
+    assert.throws(() => database.exec('INSERT OR REPLACE INTO standing_assignment_revisions '
+      + "SELECT assignment_id, revision, 'edited', source, source_conversation_id, record, recorded_at FROM standing_assignment_revisions"), /immutable/);
   } finally { database.close(); }
 });
 
@@ -149,4 +152,11 @@ test('reads create no file, and the store is registered with the data directory'
   port.register(timesheet());
   const store = inspectLocalStores(directory).find(({ label }) => label === 'standing-assignments.sqlite');
   assert.deepEqual([store.store, store.state, store.version], ['standing-assignments', 'current', 1]);
+});
+
+test('a space ID is read the same way by every call', (t) => {
+  const { port } = assignments(t);
+  port.register(timesheet());
+  assert.equal(port.list(` ${SPACE} `).length, 1);
+  assert.equal(port.match(` ${SPACE} `, 'fill iDev hours').length, 1);
 });

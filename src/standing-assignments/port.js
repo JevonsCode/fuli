@@ -87,11 +87,12 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   // Every active assignment whose terms occur in the text, with the terms that did.
   function match(personalSpaceId, text) {
     const prompt = identityKey(requiredString(text, 'text'));
+    const space = requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT);
     const matched = new Map();
-    for (const { termKey, assignmentId } of store.activeTerms(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT))) {
+    for (const { termKey, assignmentId } of store.activeTerms(space)) {
       if (termOccurs(prompt, termKey)) matched.set(assignmentId, [...(matched.get(assignmentId) ?? []), termKey]);
     }
-    return store.listActive(personalSpaceId).filter(({ assignmentId }) => matched.has(assignmentId))
+    return store.listActive(space).filter(({ assignmentId }) => matched.has(assignmentId))
       .map((assignment) => ({ assignment, matchedTerms: assignment.terms
         .filter((term) => matched.get(assignment.assignmentId).includes(identityKey(term))) }));
   }

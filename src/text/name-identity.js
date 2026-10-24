@@ -11,7 +11,11 @@ const INVISIBLE = /[﻿​]/g;
 // pathological input from looping.
 const MAX_PASSES = 4;
 
-const collapsed = (value) => value.replace(INVISIBLE, '').split(/\s+/).filter(Boolean).join(' ');
+// Python's str.split() whitespace: JavaScript's \s plus the information
+// separators U+001C–U+001F and NEXT LINE U+0085, which \s leaves out.
+const WHITESPACE = /[\s\x1c-\x1f\x85]+/u;
+
+const collapsed = (value) => value.replace(INVISIBLE, '').split(WHITESPACE).filter(Boolean).join(' ');
 
 // The writer's own characters, composed, with spacing tidied.
 export function displayName(value) {

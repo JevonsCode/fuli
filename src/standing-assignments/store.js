@@ -41,6 +41,12 @@ export const STANDING_ASSIGNMENTS_FORMAT = sqliteFormat({
       CREATE TRIGGER IF NOT EXISTS standing_assignment_revisions_no_update BEFORE UPDATE ON standing_assignment_revisions
         BEGIN SELECT RAISE(ABORT, 'standing assignment revisions are immutable'); END;
       CREATE TRIGGER IF NOT EXISTS standing_assignment_revisions_no_delete BEFORE DELETE ON standing_assignment_revisions
+        BEGIN SELECT RAISE(ABORT, 'standing assignment revisions are immutable'); END;
+      -- INSERT OR REPLACE deletes the old row without firing the delete trigger
+      -- (recursive_triggers is off), so an existing revision key is refused on insert.
+      CREATE TRIGGER IF NOT EXISTS standing_assignment_revisions_no_replace BEFORE INSERT ON standing_assignment_revisions
+        WHEN EXISTS (SELECT 1 FROM standing_assignment_revisions
+          WHERE assignment_id = NEW.assignment_id AND revision = NEW.revision)
         BEGIN SELECT RAISE(ABORT, 'standing assignment revisions are immutable'); END;`
 });
 
