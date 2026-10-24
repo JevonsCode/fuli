@@ -1,6 +1,7 @@
 // The presence check each platform has (rec#7 D-28.1). Only Windows Hello
-// exists; macOS and Linux have none yet and are refused rather than given a
-// weaker substitute (a sudo cache or a typed password is not a fresh presence).
+// exists. It is an optional extra on an Agent app approval (`--hello`, rec#11
+// D-36.1), never required: every platform approves through the terminal
+// confirmation flow, and a platform without a check simply has no `--hello`.
 const PRESENCE_BY_PLATFORM = Object.freeze({ win32: 'hello' });
 
 export function presenceKindFor(platform) {

@@ -7,7 +7,7 @@ import {
 
 // rec#10 review 6373287904 (fuli#308 round 2): lifecycle races, the lease of
 // concurrent acquires, detached file failures and read-only reads. Synthetic
-// hosts and a fake isolation backend that starts nothing.
+// hosts and a fake runner that starts nothing.
 
 const TOOLS = ['record_decision_trace', 'resolve_knowledge_tags'];
 const PERMISSIONS = TOOLS.map((name) => `fuli.${name}`);
@@ -24,7 +24,7 @@ async function running(t, { write = writeTool(async () => 'ok'), read = readTool
   return { registry, host, appId: app.appId, token: lastToken(host) };
 }
 
-const lastToken = (host) => host.isolation.started.at(-1).environment.FULI_APP_TOKEN;
+const lastToken = (host) => host.runner.started.at(-1).environment.FULI_APP_TOKEN;
 const call = (host, token, input = {}, toolName = 'record_decision_trace') => host.service.callTool({ token, toolName, input });
 const instance = (host, appId) => host.context.store.instance(appId);
 
@@ -36,7 +36,7 @@ test('P1-1 a start re-checks the run gate where it mints: an approval swapped du
     manifest: { ...MANIFEST, version: '1.1.0', permissions: PERMISSIONS }, files: FILES });
   const checking = latch();
   const resume = latch();
-  host.isolation.hooks.selfCheck = async () => { checking.open(); await resume.promise; };
+  host.runner.hooks.selfCheck = async () => { checking.open(); await resume.promise; };
   const starting = host.service.start({ appId: app.appId });
   await checking.promise;
 
@@ -46,9 +46,9 @@ test('P1-1 a start re-checks the run gate where it mints: an approval swapped du
   resume.open();
 
   const refused = await starting;
-  assert.deepEqual([refused.status, refused.reason], ['run_refused', 'presence_unverified']);
+  assert.deepEqual([refused.status, refused.reason], ['run_refused', 'confirmation_required']);
   assert.equal(instance(host, app.appId), null);
-  assert.equal(host.isolation.started.length, 0);
+  assert.equal(host.runner.started.length, 0);
   assert.equal(host.context.store.owner(app.appId).ownerId, null);
 });
 
@@ -56,14 +56,14 @@ test('P1-2 a start waits for a stop in flight, and the old cleanup never touches
   const { host, appId } = await running(t);
   const stopping = latch();
   const resume = latch();
-  host.isolation.hooks.stop = async () => { stopping.open(); await resume.promise; };
+  host.runner.hooks.stop = async () => { stopping.open(); await resume.promise; };
   const stopped = host.service.stop({ appId });
   await stopping.promise;
   const restarted = host.service.start({ appId });
   await settle();
-  assert.equal(host.isolation.started.length, 1, 'no start while the stop is in flight');
+  assert.equal(host.runner.started.length, 1, 'no start while the stop is in flight');
 
-  host.isolation.hooks.stop = null;
+  host.runner.hooks.stop = null;
   resume.open();
   assert.equal((await stopped).status, 'sealed');
   const second = await restarted;
@@ -75,7 +75,7 @@ test('P1-2 a start waits for a stop in flight, and the old cleanup never touches
 
 test('P1-2 a failed backend stop keeps the instance sealed, hosted and owned; the next stop finishes it', async (t) => {
   const { host, appId, token } = await running(t);
-  host.isolation.hooks.stop = async () => { throw Object.assign(new Error('synthetic stop failure'), { code: 'ESYNTH' }); };
+  host.runner.hooks.stop = async () => { throw Object.assign(new Error('synthetic stop failure'), { code: 'ESYNTH' }); };
   await assert.rejects(host.service.stop({ appId }), { code: 'ESYNTH' });
   assert.deepEqual([instance(host, appId).state, instance(host, appId).stoppedAt], ['sealed', null]);
   assert.ok(host.context.instances.hosted(appId));
@@ -84,7 +84,7 @@ test('P1-2 a failed backend stop keeps the instance sealed, hosted and owned; th
   await assert.rejects(call(host, token), { code: 'app_sealed' });
   await assert.rejects(host.service.start({ appId }), { code: 'instance_running' });
 
-  host.isolation.hooks.stop = null;
+  host.runner.hooks.stop = null;
   assert.equal((await host.service.stop({ appId })).status, 'sealed');
   assert.equal(instance(host, appId).stopReason, 'stopped');
   assert.equal(host.context.store.owner(appId).ownerId, null);
@@ -96,7 +96,7 @@ test('P1-3 a decision during a start in flight waits for it, then ends the insta
   const app = await verifiedApp(host, { permissions: PERMISSIONS });
   const starting = latch();
   const resume = latch();
-  host.isolation.hooks.start = async () => { starting.open(); await resume.promise; };
+  host.runner.hooks.start = async () => { starting.open(); await resume.promise; };
   const started = host.service.start({ appId: app.appId });
   await starting.promise;
   const disabled = host.service.disable({ appId: app.appId, actor: CLI_USER });
@@ -107,14 +107,14 @@ test('P1-3 a decision during a start in flight waits for it, then ends the insta
   assert.equal((await disabled).status, 'disabled');
   assert.deepEqual([instance(host, app.appId).state, instance(host, app.appId).stopReason], ['sealed', 'disable']);
   assert.equal(host.context.instances.hosted(app.appId), null);
-  assert.equal(host.isolation.calls.filter(([kind]) => kind === 'stop').length, 1);
+  assert.equal(host.runner.calls.filter(([kind]) => kind === 'stop').length, 1);
 });
 
 test('P1-3 a decision during a stop in flight waits for the stop to finish', async (t) => {
   const { host, appId } = await running(t);
   const stopping = latch();
   const resume = latch();
-  host.isolation.hooks.stop = async () => { stopping.open(); await resume.promise; };
+  host.runner.hooks.stop = async () => { stopping.open(); await resume.promise; };
   const stopped = host.service.stop({ appId });
   await stopping.promise;
   const deleted = host.service.deleteCode({ appId, actor: CLI_USER });
@@ -203,35 +203,42 @@ test('round 3: a failed data port operation fails the call in every shape unless
 // rec#10 round 3, item 2: sealed is not stopped.
 test('round 3: after a failed stop the instance is not ended, so an export is refused', async (t) => {
   const { registry, host, appId } = await running(t);
-  host.isolation.hooks.stop = async () => { throw Object.assign(new Error('synthetic stop failure'), { code: 'ESYNTH' }); };
+  host.runner.hooks.stop = async () => { throw Object.assign(new Error('synthetic stop failure'), { code: 'ESYNTH' }); };
   await assert.rejects(host.service.stop({ appId }), { code: 'ESYNTH' });
   await assert.rejects(host.service.exportData({ appId, destination: `${registry.directory}/export` }),
     { code: 'instance_not_stopped' });
+  // While the stop keeps failing, closing this host reports the app not stopped instead of a clean close.
+  await assert.rejects(host.service.close(), (error) => error.code === 'close_incomplete'
+    && error.detail.notStopped[0]?.appId === appId);
+  host.runner.hooks.stop = null;
+  await host.service.close();
 });
 
 test('round 3: a host that crashed after a failed stop leaves the instance to the next owner\'s confirmed cleanup', async (t) => {
   const { registry, host, appId } = await running(t);
-  host.isolation.hooks.stop = async () => { throw Object.assign(new Error('synthetic stop failure'), { code: 'ESYNTH' }); };
+  host.runner.hooks.stop = async () => { throw Object.assign(new Error('synthetic stop failure'), { code: 'ESYNTH' }); };
   await assert.rejects(host.service.stop({ appId }), { code: 'ESYNTH' });
   const unconfirmed = instance(host, appId);
   registry.world.verdicts.set(101, 'exited');
 
   const next = registry.host({ pid: 202 });
-  next.isolation.hooks.stopOrphan = async () => {
+  next.runner.hooks.stopOrphan = async () => {
     throw Object.assign(new Error('synthetic: the orphan process is not confirmed gone'), { code: 'EORPHAN' });
   };
   await assert.rejects(next.service.start({ appId }), { code: 'EORPHAN' });
   assert.deepEqual(instance(next, appId), unconfirmed, 'the unconfirmed record is kept');
-  assert.equal(next.isolation.started.length, 0);
+  assert.equal(next.runner.started.length, 0);
   await assert.rejects(next.service.exportData({ appId, destination: `${registry.directory}/export` }), { code: 'EORPHAN' });
 
-  next.isolation.hooks.stopOrphan = null;
+  next.runner.hooks.stopOrphan = null;
   const started = await next.service.start({ appId });
   assert.deepEqual([started.status, started.generation], ['running', 2]);
-  assert.equal(next.isolation.calls.filter(([kind]) => kind === 'stopOrphan').length, 1);
+  assert.equal(next.runner.calls.filter(([kind]) => kind === 'stopOrphan').length, 1);
   const ended = next.context.store.events(appId, 100).filter(({ action, detail }) => action === 'stopped'
     && detail.instanceId === unconfirmed.instanceId);
   assert.deepEqual(ended.map(({ detail }) => detail.reason), ['host_gone']);
+  // The crashed host's handle is released once its synthetic stop works again.
+  host.runner.hooks.stop = null;
 });
 
 test('a read tool gets a read-only data port', async (t) => {

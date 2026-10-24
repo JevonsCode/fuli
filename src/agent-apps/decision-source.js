@@ -1,26 +1,26 @@
 // Where a management decision (approve, rollback, disable, delete) came in, and
-// what FULI verified about who made it. Normal Agent tools (MCP and fuli_call)
-// expose none of these decisions, so they arrive through the CLI or the local
-// HTTP console. An interactive terminal, a loopback address, a repeated digest
-// or a one-time token can be used by any process running as the same OS
-// account, and a CSRF token only stops cross-site web forgery: none of them
-// shows that a person decided, so such a decision records presence unverified.
+// what FULI checked about it. Normal Agent tools (MCP and fuli_call) expose
+// none of these decisions, so they arrive through the CLI or the local HTTP
+// console. An interactive terminal, a loopback address, a repeated digest, a
+// typed app name or a one-time token can be used by any process running as the
+// same OS account, and a CSRF token only stops cross-site web forgery: none of
+// them shows that a person decided.
 //
-// Only `fuli app approve` and `fuli app rollback` add a presence check
-// (src/agent-apps/verified-decisions.js): the trusted CLI starts an OS user
-// verification (Windows Hello) and binds that one successful result to this
-// decision's challenge. Hello returns the user verification result; it does not
-// sign the challenge. An Agent's shell can start the command too, but the Hello
-// dialog needs the local user's interaction, and it is not on the secure
-// desktop, so it does not stop UI automation by a process of the same account.
+// Only `fuli app approve` and `fuli app rollback` complete the terminal
+// confirmation flow (src/agent-apps/confirmed-decisions.js): the CLI shows the
+// app name, a summary of its terms and the trusted-mode warning, and the app
+// name typed back commits that one challenge. This does not prove a person did
+// it and does not protect against other programs of the same account (rec#11
+// D-36.9). On Windows, `--hello` adds Windows Hello on top, recorded as
+// presence hello; it is never required.
 export const DECISION_ENTRYPOINTS = Object.freeze(['cli', 'http']);
 export const PRESENCE_LEVELS = Object.freeze(['unverified', 'hello', 'touchid', 'polkit']);
-// What a successful presence check verified: the current OS user, through the OS.
-export const OS_USER_VERIFIED = 'os_user_verified';
+// What an approval the run gate accepts went through.
+export const TERMINAL_CONFIRMATION = 'terminal_confirmation';
 
-// The presence check of a decision that had none.
+// The confirmation of a decision that had none (the console's).
 export const UNVERIFIED_CHECK = Object.freeze({
-  presence: PRESENCE_LEVELS[0], verification: null, challengeId: null, verifiedAt: null
+  presence: PRESENCE_LEVELS[0], verification: null, challengeId: null, verifiedAt: null, trustMode: null, termsVersion: null
 });
 
 export function decisionSource(actor) {

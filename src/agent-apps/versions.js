@@ -9,8 +9,9 @@ import { commitPackage, discardPackage, parsePackageFiles, stagePackage } from '
 
 // Submitting app versions, and the local console's decisions on them. A version
 // is immutable once stored, and only an approval of its exact digest makes it
-// active. These decisions carry no presence check, so the run gate refuses the
-// version they activate; `fuli app approve` and `rollback` add one (verified-decisions.js).
+// active. These decisions complete no terminal confirmation, so the run gate
+// refuses the version they activate; `fuli app approve` and `rollback` do
+// (confirmed-decisions.js).
 // Each decision runs as an app operation (operations.js): an instance this
 // process hosts is stopped first, and the owner lease is held throughout.
 export function createAppVersions(context) {
@@ -75,7 +76,7 @@ export function createAppVersions(context) {
     }));
   }
 
-  // Without a presence check of its own, an activation never keeps the check an
+  // Without a confirmation of its own, an activation never keeps the one an
   // earlier activation of the same version had.
   async function rollback({ appId, version, actor, confirmIrreversibleMigration = false }) {
     const source = decisionSource(actor);
@@ -139,6 +140,6 @@ function submitted(appId, version) {
   return {
     appId, version: version.version, status: version.state, digest: version.digest,
     ...(version.state === 'pending'
-      ? { approval: `Agent tools cannot approve it; approval comes through the CLI or local console: fuli app approve ${appId} ${version.version}` } : {})
+      ? { approval: `Agent tools cannot approve it; it runs only after the local user completes the terminal confirmation: fuli app approve ${appId} ${version.version}` } : {})
   };
 }

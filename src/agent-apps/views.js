@@ -8,9 +8,9 @@ const HISTORY_LIMIT = 20;
 
 // Management views: one compact row per app for the overview, and the full
 // metadata of one app for preview and review. Neither returns code or data.
-// Both show where each approval came in, the presence FULI verified and what
-// the run gate answers now, so a management page never presents an approval as
-// more than was checked.
+// Both show where each approval came in, the confirmation and trust mode it
+// went through and what the run gate answers now, so a management page never
+// presents an approval as more than was checked.
 export function createAppViews(context) {
   const { store } = context;
   const { runGate } = createRunGate(context);
@@ -58,8 +58,11 @@ export function createAppViews(context) {
     if (!instance) return null;
     const { instanceId, generation, mode, state, version, startedAt, sealedAt, stoppedAt, stopReason } = instance;
     const waiting = state === 'sealing' ? store.lastEvent(appId, 'seal_waiting_for_writes') : null;
+    // An app that ended by itself shows how: exit code, signal and a fixed category and message.
+    const exit = stopReason === 'app_exited' ? store.lastEvent(appId, 'app_exited') : null;
     return { instanceId, generation, mode, state, version, startedAt, sealedAt, stoppedAt, stopReason,
-      ...(waiting ? { waitingFor: { toolName: waiting.detail.toolName, since: waiting.at } } : {}) };
+      ...(waiting ? { waitingFor: { toolName: waiting.detail.toolName, since: waiting.at } } : {}),
+      ...(exit?.detail.instanceId === instanceId ? { exit: exitView(exit.detail) } : {}) };
   }
 
   function ownerView(appId) {
@@ -75,10 +78,12 @@ export function createAppViews(context) {
   return { list, read };
 }
 
+const exitView = ({ code, signal, category, message }) => ({ code, signal, category, message });
+
 function activeApproval(approval) {
   if (!approval) return null;
-  const { approvedBy, entrypoint, presence, verification, challengeId, verifiedAt, approvedAt } = approval;
-  return { approvedBy, entrypoint, presence, verification, challengeId, verifiedAt, approvedAt };
+  const { approvedBy, entrypoint, presence, verification, challengeId, verifiedAt, trustMode, termsVersion, approvedAt } = approval;
+  return { approvedBy, entrypoint, presence, verification, challengeId, verifiedAt, trustMode, termsVersion, approvedAt };
 }
 
 function approvalView(approval) {

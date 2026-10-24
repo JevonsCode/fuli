@@ -7,8 +7,8 @@ import { storedPackageMatches } from './package-files.js';
 
 // What approving or re-activating a version requires, and the one place a
 // version becomes the running one. The console's unverified decisions
-// (versions.js) and the CLI's presence-checked ones (verified-decisions.js)
-// share it; each says which presence check the activation carries.
+// (versions.js) and the CLI's terminal-confirmed ones (confirmed-decisions.js)
+// share it; each says which confirmation the activation carries.
 export function createActivation(context) {
   const { store } = context;
 
@@ -59,7 +59,7 @@ export function createActivation(context) {
     return dataTransition(app.dataFormat, version.manifest.data, options);
   }
 
-  // detail: what the event records of the decision; check: its presence check.
+  // detail: what the event records of the decision; check: its confirmation.
   function approve({ app, version, transition }, { at, actor, detail, check }) {
     store.insertApproval({ appId: app.appId, version: version.version, ...approvalTerms(version), approvedBy: actor,
       entrypoint: detail.entrypoint, approvedAt: at }, check);

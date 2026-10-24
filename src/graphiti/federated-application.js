@@ -1173,7 +1173,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roleWork?.close(); this.roleSuggestions?.close(); this.modelTrust?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); this.agentApps?.close(); return this.employees?.close(); }
+  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roleWork?.close(); this.roleSuggestions?.close(); this.modelTrust?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); return Promise.all([this.agentApps?.close(), this.employees?.close()]); }
 
   // View records rank knowledge by what a session looked at: a behavior trace
   // that stops with automatic recording. Reading itself needs none (rec#11 D-01).
