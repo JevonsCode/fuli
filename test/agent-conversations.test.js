@@ -51,6 +51,24 @@ test('checkpoint receipt is not saved when provider fails', async () => {
   assert.equal(result.status, 'unsaved');
   assert.equal(result.conversation_id, undefined);
 });
+test('an unsaved conversation names the failed step and the error code, never its message', async () => {
+  for (const [failing, step] of [['session', 'session'], ['context', 'context'], ['append', 'append']]) {
+    const { app } = fixture();
+    const original = app.personal.conversation;
+    app.personal.conversation = async (action, input) => {
+      if ((action === 'append' ? 'append' : input.mode) === failing) {
+        throw Object.assign(new Error('C:/private/path secret detail'), { code: 'provider_unavailable' });
+      }
+      return original(action, input);
+    };
+    const result = await beginConversation(app, task, 'new task');
+    assert.deepEqual([result.status, result.step, result.reason], ['unsaved', step, 'provider_unavailable'], failing);
+    assert.doesNotMatch(JSON.stringify(result), /private|secret/);
+  }
+  const { app } = fixture();
+  app.personal.conversation = async () => { throw Object.assign(new Error('x'), { status: 503 }); };
+  assert.equal((await checkpointConversation(app, task, { summary: 'done', status: 'completed' })).reason, 'status_503');
+});
 test('a Provider-disabled checkpoint never reports saved summary coverage', async () => {
   const { app } = fixture();
   app.personal.conversation = async () => ({ status: 'capture_disabled' });
