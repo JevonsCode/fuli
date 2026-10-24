@@ -31,7 +31,7 @@ export function rejectRequestOutsidePolicy({
     (requestAuthority !== authority && !lanRequest) ||
     (lanAuthorities.length > 0 && loopbackRequest && !isLoopbackAddress(request.socket?.remoteAddress)) ||
     (origin !== undefined && origin !== `http://${requestAuthority}`) ||
-    (typeof fetchSite === 'string' && fetchSite.toLowerCase() === 'cross-site')
+    (typeof fetchSite === 'string' && fetchSite.toLowerCase() === 'cross-site' && !isCrossSiteNavigation(request))
   ) {
     sendJson(response, 403, { error: 'Forbidden' });
     return true;
@@ -49,6 +49,17 @@ export function rejectRequestOutsidePolicy({
   }
 
   return false;
+}
+
+// The person opened the console from a link on another site (a GitHub issue,
+// a chat app): a top-level GET of a whole document. The other site cannot
+// read that page and the request changes nothing, so it is not forgery; the
+// server answers it with the static console only, never an API handler
+// (rec#40 A1). Frames, scripts and fetches from another site stay refused.
+export function isCrossSiteNavigation(request) {
+  const header = (name) => String(request.headers[name] ?? '').toLowerCase();
+  return ['GET', 'HEAD'].includes(request.method) && header('sec-fetch-site') === 'cross-site'
+    && header('sec-fetch-mode') === 'navigate' && header('sec-fetch-dest') === 'document';
 }
 
 function hasLanAccess(authorization, accessToken) {

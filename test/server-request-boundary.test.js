@@ -249,3 +249,49 @@ function rawStatus(url, options) {
     request.end();
   });
 }
+
+// Raw requests: fetch() sets its own Sec-Fetch-Mode, a browser navigation does not.
+function rawResponse(url, { method = 'GET', headers = {}, body } = {}) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url, { method, headers }, (response) => {
+      response.resume();
+      response.on('end', () => resolve({ status: response.statusCode, type: response.headers['content-type'] ?? '' }));
+    });
+    request.on('error', reject);
+    request.end(body);
+  });
+}
+
+const navigation = { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' };
+
+test('a console page opened from another site\'s link is served, and only as the static console (rec#40 A1)', async (t) => {
+  let stateCalls = 0;
+  const app = { state() { stateCalls += 1; return { private: true }; } };
+  const { server, url } = await createServer({ app, port: 0 });
+  t.after(() => closeServer(server));
+
+  const page = await rawResponse(`${url}/employees/jefa`, { headers: navigation });
+  assert.equal(page.status, 200);
+  assert.match(page.type, /^text\/html/);
+  // Navigating to an API path from another site never reaches its handler.
+  const api = await rawResponse(`${url}/api/state`, { headers: navigation });
+  assert.doesNotMatch(api.type, /json/);
+  assert.equal(stateCalls, 0);
+});
+
+for (const [name, headers, method] of [
+  ['a frame', { ...navigation, 'sec-fetch-dest': 'iframe' }, 'GET'],
+  ['a fetch', { ...navigation, 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty' }, 'GET'],
+  ['a script', { ...navigation, 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' }, 'GET'],
+  ['a form post', { ...navigation, 'content-type': 'application/json' }, 'POST']
+]) {
+  test(`${name} from another site is still refused`, async (t) => {
+    let calls = 0;
+    const app = { state() { calls += 1; return {}; }, captureSessionKnowledge() { calls += 1; return {}; } };
+    const { server, url } = await createServer({ app, port: 0 });
+    t.after(() => closeServer(server));
+    const response = await rawResponse(`${url}${method === 'POST' ? '/api/capture' : '/api/state'}`,
+      { method, headers, ...(method === 'POST' ? { body: '{}' } : {}) });
+    assert.deepEqual({ status: response.status, calls }, { status: 403, calls: 0 });
+  });
+}
