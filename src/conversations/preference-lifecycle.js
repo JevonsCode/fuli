@@ -2,6 +2,7 @@ import { compactTaskContext } from './task-context-view.js';
 import { hookAdditionalContextToolResult } from '../mcp/tool-result.js';
 import { SESSION_FULI_OFF } from '../agent-tools/session-fuli-gate.js';
 import { withoutDeliveryProofs } from './recent-context.js';
+import { fitUncached, inlineEntryFit, OMITTED_PREFERENCES_LABEL, WHOLE_ENTRY } from './entry-inline-budget.js';
 
 export const PREFERENCE_RESET_EVENTS = Object.freeze(['SessionStart', 'PreCompact']);
 const RESTORED_LABEL = 'Fuli restored current mandatory preferences for the same owned task. Apply this full result; no replacement task or Agent was selected.';
@@ -35,12 +36,20 @@ export async function currentTaskPreferences(input, { sourceApplication, current
   return { status: 'refreshed', context: compactTaskContext(recovered) };
 }
 
-export async function preferenceHookOutput(value, event, input, delivery, sourceApplication, label, forceFull = false) {
-  const format = projected => hookAdditionalContextToolResult(projected, {
-    hookEventName: event, label, limitBytes: 128 * 1024, itemLimit: 1000
-  });
+// `inlineChars` is the inline limit of a host that keeps only a preview of a
+// longer hook context (entry-inline-budget.js); without it the entry is whole.
+export async function preferenceHookOutput(value, event, input, delivery, sourceApplication, label, forceFull = false,
+  { inlineChars = null } = {}) {
+  const format = projected => hookAdditionalContextToolResult(projected, { hookEventName: event,
+    label: projected?.preferences_omitted ? `${label} ${OMITTED_PREFERENCES_LABEL}` : label,
+    limitBytes: 128 * 1024, itemLimit: 1000 });
+  const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength) : WHOLE_ENTRY;
   const result = delivery ? await delivery.deliver(value, { sourceApplication,
-    nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull }, format)
-    : format(withoutDeliveryProofs(value));
+    nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull }, format, fit)
+    : fitUncached(fit, value, projected => format(withoutDeliveryProofs(projected)));
   return JSON.parse(result.content[0].text);
+}
+
+function hookContextLength(result) {
+  return JSON.parse(result.content[0].text).hookSpecificOutput.additionalContext.length;
 }

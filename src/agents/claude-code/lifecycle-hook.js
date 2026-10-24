@@ -29,6 +29,15 @@ import { FULI_VERSION } from '../../package-metadata.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
 import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
 
+// Claude Code shows the model only a preview (about the first 10,000
+// characters) of a hook context longer than that and saves the rest as a file
+// (rec#47 F1b). The preferences past the preview are then never seen, and the
+// preview is no frame preference-evidence.js can confirm, so every turn
+// resends the whole entry. The task entry is bounded to this many characters,
+// label included (entry-inline-budget.js, rec#11 D-54); the rest of the 10,000
+// is room for a notice appended after it (withOutdatedMcpNotice).
+const CLAUDE_ENTRY_INLINE_CHARS = 9000;
+
 export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
   const sessionId = input?.session_id;
@@ -52,7 +61,8 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     });
     const entry = compactTaskContext(context);
     return preferenceHookOutput(entry, event, input, delivery, 'claude_code',
-      'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
+      'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND,
+      false, { inlineChars: CLAUDE_ENTRY_INLINE_CHARS });
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
   return stopHookOutcome(check, invoke, source);

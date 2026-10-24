@@ -12,6 +12,7 @@ import { deliveredConversationFrame, deliveredRecentFrame, MAX_RECENT_FRAMES, ow
   validRecentFrames, withoutDeliveryProofs } from './recent-context.js';
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
 import { locatePreferenceTranscript } from '../agents/preference-evidence.js';
+import { fitUncached, WHOLE_ENTRY } from './entry-inline-budget.js';
 
 const SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_PENDING = 16;
@@ -68,10 +69,14 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
       } catch { /* A cache failure never changes explicit history delivery. */ }
       return result;
     },
-    async deliver(value, origin, format) {
+    // `fit` bounds the entry to a host's inline limit (entry-inline-budget.js);
+    // the pending record is for the set the chosen frame actually delivers.
+    async deliver(value, origin, format, fit = WHOLE_ENTRY) {
       const output = projected => format(withoutDeliveryProofs(projected));
       const snapshot = preferenceSnapshot(value);
-      if (!snapshot || !SESSION.test(snapshot.sessionId) || origin.sourceApplication !== snapshot.sourceApplication) return output(value);
+      if (!snapshot || !SESSION.test(snapshot.sessionId) || origin.sourceApplication !== snapshot.sourceApplication) {
+        return fitUncached(fit, value, output);
+      }
       const verified = origin.nativeSessionId === snapshot.sessionId;
       let result;
       try {
@@ -89,22 +94,33 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // none carries a revision.
           const { baseline, shown } = proof.known && state.floor !== null ? acknowledgedSnapshot(value, snapshot, state, proof)
             : { baseline: null, shown: null };
-          const preferences = origin.forceFull ? completePreferenceFrame(value, shown) : projectPreferenceDelta(value, baseline, shown);
-          const recent = projectRecentContext(preferences, origin.forceFull ? undefined
+          const evidence = origin.forceFull ? undefined
             : recentEvidence(proof, state.recent, { sessionId: snapshot.sessionId, adapter: proof.adapter,
-              floor: state.floor === null ? null : state.floor ?? 0 }));
+              floor: state.floor === null ? null : state.floor ?? 0 });
+          const project = candidate => {
+            const preferences = origin.forceFull ? completePreferenceFrame(candidate, shown)
+              : projectPreferenceDelta(candidate, baseline, shown);
+            const recent = projectRecentContext(preferences, evidence);
+            return { candidate, recent, result: output(recent.value) };
+          };
+          const complete = candidate => ({ candidate, result: output(completePreferenceFrame(candidate, shown)) });
+          const chosen = fit(value, { deliver: project, complete });
+          const { recent } = chosen;
           const projected = recent.value;
-          result = output(projected);
+          // The set this frame delivers: a bounded frame's own subset, never
+          // the preferences it leaves out (D-54).
+          const delivered = preferenceSnapshot(chosen.candidate);
+          result = chosen.result;
           const next = { ...state };
           // A pending hash means only produced. Only a matching complete native
           // record above can acknowledge it in a later call/process; a frame
           // without a revision can never be named as a base, so it keeps none.
-          if (!result.isError && result.structuredContent?.preferences_complete !== false
+          if (delivered && !result.isError && result.structuredContent?.preferences_complete !== false
               && shownRevision(result.structuredContent)
               && preferenceDeliveryReason(projected, result.structuredContent) === null
               && result.structuredContent?.preference_delivery?.status !== 'blocked') {
-            const pending = { scopeHash: snapshot.scopeHash, snapshotHash: snapshot.snapshotHash,
-              frameHash: preferenceFrameHash(result.structuredContent), scene: pendingScene(snapshot) };
+            const pending = { scopeHash: delivered.scopeHash, snapshotHash: delivered.snapshotHash,
+              frameHash: preferenceFrameHash(result.structuredContent), scene: pendingScene(delivered) };
             next.pending = [...(state.pending ?? []).filter(item => item.frameHash !== pending.frameHash), pending].slice(-MAX_PENDING);
           }
           const frame = deliveredRecentFrame(recent.frame, projected, result);
@@ -115,7 +131,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           }
           return result;
         });
-      } catch { return result ?? output(value); }
+      } catch { return result ?? fitUncached(fit, value, output); }
     },
     // True once the next delivery for the session is a full one: the cache was
     // reset, or this session is never delta-delivered. False when it could not

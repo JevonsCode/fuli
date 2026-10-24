@@ -48,6 +48,20 @@ export function preferenceSceneReplaceable(item) {
     || generalItemReplaceable(qualifiers, item.profile_aspect);
 }
 
+// What an inline entry budget never leaves out (rec#11 D-54): a hard
+// constraint, and a boundary that a scene switch never revokes either.
+export function preferenceAlwaysInline(item) {
+  return itemQualifiers(item).constraint === 'hard' || !preferenceSceneReplaceable(item);
+}
+
+// Whether the item's own scene key (a workKind qualifier or a tasteDomain)
+// names this work kind: such an item is the task scene's own personalization,
+// so an inline budget keeps it before a general one (D-54).
+export function preferenceNamesWorkKind(item, workKind) {
+  return Boolean(workKind) && taskScopeConditions(item, itemQualifiers(item), {})
+    .some(({ values, scene }) => scene && Array.isArray(values) && values.includes(workKind));
+}
+
 function itemQualifiers(item) {
   return { ...item.attributes, ...item.attributes?.preference_qualifiers, ...item.preference_qualifiers };
 }
