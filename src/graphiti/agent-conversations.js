@@ -26,11 +26,12 @@ const unavailable = (error, step = null) => ({ status: 'unsaved', retryable: tru
   ...(step ? { step } : {}), reason: errorReason(error),
   guidance: 'Conversation persistence is unavailable. Do not claim this conversation was saved; retry after the Provider recovers.' });
 
-// Only codes FULI itself names (provider-client.js) or Node's network codes
+// Only codes FULI itself names (provider-client.js, capture-window.js) or Node's network codes
 // are repeated; a Provider passes its own detail.code through, so any other
 // value falls back to its HTTP status or a fixed word, never echoed.
 const KNOWN_REASONS = new Set(['provider_unavailable', 'provider_timeout', 'provider_http_5xx', 'provider_error',
-  'provider_invalid_response', 'request_cancelled', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND']);
+  'provider_invalid_response', 'request_cancelled', 'transcript_capture_timeout', 'capture_changed',
+  'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND']);
 
 function errorReason(error) {
   if (KNOWN_REASONS.has(error?.code)) return error.code;

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { beginConversation, checkpointConversation, resumeConversation } from '../src/graphiti/agent-conversations.js';
+import { withCaptureBudget } from '../src/conversations/capture-window.js';
 
 const task = { token: 'fuli-task-example', sessionId: 'native-session', personalProjectId: 'sample', projectAgentId: 'engineer', sourceApplication: 'codex' };
 function fixture() {
@@ -77,6 +78,16 @@ test('an unsaved conversation names the failed step and the error code, never it
     assert.equal(result.reason, reason);
     assert.doesNotMatch(JSON.stringify(result), /acme/);
   }
+});
+test('an entry whose capture budget runs out says so, so a timeout is told apart from a failure', async () => {
+  const { app } = fixture();
+  const original = app.personal.conversation;
+  // The session read outlasts a 5 ms capture budget.
+  app.personal.conversation = async (action, input) => input.mode === 'session'
+    ? new Promise((resolve) => setTimeout(() => resolve(original(action, input)), 200))
+    : original(action, input);
+  const result = await withCaptureBudget(5, () => beginConversation(app, task, 'new task'));
+  assert.deepEqual([result.status, result.step, result.reason], ['unsaved', 'session', 'transcript_capture_timeout']);
 });
 test('a Provider-disabled checkpoint never reports saved summary coverage', async () => {
   const { app } = fixture();
