@@ -37,13 +37,11 @@ function edit(overrides = {}) {
 const directory = () => mkdtempSync(join(tmpdir(), 'fuli-model-history-'));
 const removed = path => rmSync(path, { recursive: true, force: true });
 
-function stores(t, { historyPath } = {}) {
+// now: one second later on each read, from NOW, unless a test fixes the clock.
+function stores(t, { historyPath, now = (ticks => () => new Date(NOW.getTime() + 1000 * ticks++))(0) } = {}) {
   const dir = directory();
   const configPath = join(dir, 'model-backends.json');
   const warnings = [];
-  // One second later on each read, from NOW.
-  let ticks = 0;
-  const now = () => new Date(NOW.getTime() + 1000 * ticks++);
   let trust = null;
   const history = createModelSettingsHistory({ path: historyPath ?? join(dir, 'model-settings-history.sqlite'),
     readConfig: () => readModelBackendConfig(configPath), readTrustRevision: role => trust.revision(role), now,
@@ -228,9 +226,41 @@ test('a read marks unrecorded changes, without naming a cause, and earlier chang
   writeFileSync(s.configPath, JSON.stringify(config));
   assert.deepEqual(s.history.list({ role: 'bole' }).map(entry => [entry.kind, entry.changedAt === null]),
     [['unrecorded_changes', true], ['settings', false]]);
-  // The next console save starts from the file as it is now.
+  // The next console save starts from the file as it is now: the gap stays where it was.
   s.settings.save('bole', edit({ revision: s.revision() }));
-  assert.deepEqual(s.history.list({ role: 'bole' }).map(entry => entry.kind), ['settings', 'settings']);
+  assert.deepEqual(s.history.list({ role: 'bole' }).map(entry => entry.kind), ['settings', 'unrecorded_changes', 'settings']);
+});
+
+test('a save whose record failed shows as a break between the records around it', (t) => {
+  const s = stores(t);
+  s.settings.save('bole', edit());
+  // The second save is written, but its record is lost.
+  createModelRoleSettings(s.configPath, { history: { recordSettings: () => 'not_recorded' } })
+    .save('bole', edit({ revision: s.revision(), settings: { ...edit().settings, fallbackToSession: true } }));
+  s.settings.save('bole', edit({ revision: s.revision(), connection: { ...edit().connection, model: 'qwen-next' },
+    settings: { ...edit().settings, fallbackToSession: true } }));
+  assert.deepEqual(s.history.list({ role: 'bole' }).map(entry => entry.kind), ['settings', 'unrecorded_changes', 'settings']);
+  assert.deepEqual(s.history.list({ role: 'bole' })[0].changes, [{ field: 'connection.model', before: 'qwen-test', after: 'qwen-next' }]);
+});
+
+test('a trust change whose record failed between two recorded ones shows as a break', (t) => {
+  const s = stores(t);
+  s.trust.acknowledgeWarning('tonborg', WARNING_VERSION, 0);
+  s.trustStore({ recordTrust() { throw new Error('synthetic history failure'); } }).setSuggestionsOnly('tonborg', true, 1);
+  s.trust.setSuggestionsOnly('tonborg', false, 2);
+  assert.deepEqual(s.history.list({ role: 'tonborg' }).map(entry => [entry.kind, entry.toRevision ?? null]),
+    [['suggestions_only', '3'], ['unrecorded_changes', null], ['warning_acknowledged', '1']]);
+});
+
+test('saves in the same millisecond list in the order they were saved, and the newest one is compared', (t) => {
+  const s = stores(t, { now: () => NOW });
+  for (const model of ['qwen-a', 'qwen-b', 'qwen-c', 'qwen-d']) {
+    s.settings.save('bole', edit({ revision: s.revision(), connection: { ...edit().connection, model } }));
+  }
+  const entries = s.history.list({ role: 'bole' });
+  assert.deepEqual(entries.map(entry => entry.changes.find(change => change.field === 'connection.model').after),
+    ['qwen-d', 'qwen-c', 'qwen-b', 'qwen-a']);
+  assert.ok(entries.every(entry => entry.changedAt === NOW.toISOString()));
 });
 
 test('a read is newest first, filtered by role and limited, and creates no file', (t) => {

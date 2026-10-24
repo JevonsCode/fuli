@@ -22,14 +22,16 @@ import { MODEL_BACKEND_ROLES, configRevision } from './config.js';
 // trust row after its change committed, with the time and revision read in
 // that change's transaction. When the append fails the change stands and
 // answers not_recorded; a change that changes nothing records nothing. Rows
-// are listed by the time of their change, and trust rows of one role at one
-// time by revision, never in the order they were appended. A read starts
-// with a marker that some changes were not recorded, without naming a cause,
-// when the current file is not the one the newest settings row left
-// (revisions are of the whole file, so the newest row of any role is
-// compared) or a role's trust revision is past its newest trust row; a role
-// configured, or with trust changes, before any of them was recorded ends
-// with one that its earlier changes were not recorded.
+// are listed by the time of their change; at the same time, trust rows of
+// one role by revision and settings rows in the order they were saved.
+//
+// Records form chains: the saves, each starting from the revision the one
+// before it left (revisions are of the whole file, so across roles), and
+// each role's trust rows. A marker that some changes were not recorded,
+// naming no cause, sits wherever a chain breaks, and on top when the current
+// file or a role's trust revision is past the latest record. A role
+// configured before any save was recorded ends with one that its earlier
+// changes were not recorded.
 
 export const MODEL_SETTINGS_HISTORY_FORMAT = sqliteFormat({
   store: 'model-settings-history',
@@ -83,25 +85,10 @@ export function createModelSettingsHistory({
     }
   }
 
-  function rows(role, limit) {
-    if (!readable()) return { rows: [], newestSettings: null, roleHasSettings: false, trustRevisions: new Map() };
-    const db = open();
-    return {
-      rows: db.prepare(`SELECT * FROM settings_changes WHERE (?1 IS NULL OR role = ?1)
-        ORDER BY changed_at DESC, CASE WHEN kind = 'settings' THEN NULL ELSE CAST(to_revision AS INTEGER) END DESC, role, change_id
-        LIMIT ?2`).all(role, limit),
-      newestSettings: db.prepare('SELECT to_revision FROM settings_changes WHERE kind = \'settings\' ORDER BY changed_at DESC LIMIT 1').get() ?? null,
-      roleHasSettings: Boolean(db.prepare('SELECT 1 FROM settings_changes WHERE kind = \'settings\' AND (?1 IS NULL OR role = ?1) LIMIT 1').get(role)),
-      trustRevisions: new Map(db.prepare(`SELECT role, MAX(CAST(to_revision AS INTEGER)) AS revision FROM settings_changes
-        WHERE kind <> 'settings' GROUP BY role`).all().map(row => [row.role, row.revision]))
-    };
-  }
-
-  // Whether the current settings or trust state is past what the newest rows recorded.
-  function unrecorded(role, stored, loaded) {
-    if (stored.newestSettings && stored.newestSettings.to_revision !== configRevision(loaded)) return true;
-    return (role ? [role] : MODEL_BACKEND_ROLES).some(each => readTrustRevision(each) > (stored.trustRevisions.get(each) ?? 0));
-  }
+  // Every row in append order: settings rows are appended under the file's
+  // lock, so their order is the order of the saves. A person's changes are
+  // few, so the whole store is read and its chains checked here.
+  const storedRows = () => (readable() ? open().prepare('SELECT rowid AS seq, * FROM settings_changes ORDER BY rowid').all() : []);
 
   return {
     // editedRole: the role whose settings were saved. before: the
@@ -122,17 +109,78 @@ export function createModelSettingsHistory({
     },
     // Newest first, with the markers of changes that are not recorded. role null reads every role.
     list({ role = null, limit = LIST_LIMIT } = {}) {
-      const stored = rows(role, Math.min(limit, MAX_LIST_LIMIT));
+      const stored = storedRows();
       const loaded = readConfig();
-      const entries = stored.rows.map(row => ({ changeId: row.change_id, changedAt: row.changed_at, role: row.role, kind: row.kind,
-        fromRevision: row.from_revision, toRevision: row.to_revision, changes: JSON.parse(row.changes), via: row.via }));
-      if (unrecorded(role, stored, loaded)) entries.unshift({ kind: 'unrecorded_changes', changedAt: null, role });
-      const configured = loaded.state === 'ok' && (role ? Object.hasOwn(loaded.config.roles, role) : Object.keys(loaded.config.roles).length > 0);
-      if (configured && !stored.roleHasSettings) entries.push({ kind: 'earlier_changes_not_recorded', changedAt: null, role });
-      return entries;
+      const roles = role ? [role] : MODEL_BACKEND_ROLES;
+      const marker = { kind: 'unrecorded_changes', changedAt: null, role };
+      const settings = settingsChain(stored);
+      const trust = roles.map(each => trustChain(stored, each));
+      const items = [...stored.filter(row => roles.includes(row.role)).map(rowItem),
+        ...[settings, ...trust].flatMap(chain => chain.breaks).map(at => ({ ...at, entry: marker }))].sort(newestFirst);
+      const entries = withinLimit(items, Math.min(limit, MAX_LIST_LIMIT));
+      // The current state is newer than the latest record.
+      const ahead = (settings.latest !== undefined && settings.latest !== configRevision(loaded))
+        || roles.some((each, index) => readTrustRevision(each) > (trust[index].latest ?? 0));
+      if (ahead) entries.unshift(marker);
+      const configured = loaded.state === 'ok' && roles.some(each => Object.hasOwn(loaded.config.roles, each));
+      if (configured && !stored.some(row => row.kind === 'settings' && roles.includes(row.role))) {
+        entries.push({ kind: 'earlier_changes_not_recorded', changedAt: null, role });
+      }
+      return entries.filter((entry, index) => entry !== marker || entries[index - 1] !== marker);
     },
     close() { database?.close(); database = null; }
   };
+}
+
+// A row as a list item: its entry, and where it sorts.
+function rowItem(row) {
+  return { at: row.changed_at, seq: row.seq, role: row.role, revision: row.kind === 'settings' ? null : Number(row.to_revision),
+    entry: { changeId: row.change_id, changedAt: row.changed_at, role: row.role, kind: row.kind, fromRevision: row.from_revision,
+      toRevision: row.to_revision, changes: JSON.parse(row.changes), via: row.via } };
+}
+
+// The recorded saves in order (the rows of one save are appended together
+// and share its time and revisions): the revision the latest one left, and
+// where a save does not start from the revision the one before it left.
+// The first save may start anywhere: what came before predates the store.
+function settingsChain(stored) {
+  const saves = [];
+  for (const row of stored.filter(each => each.kind === 'settings')) {
+    const last = saves.at(-1);
+    if (last?.at === row.changed_at && last.from === row.from_revision && last.to === row.to_revision) continue;
+    saves.push({ at: row.changed_at, seq: row.seq, from: row.from_revision, to: row.to_revision });
+  }
+  return { latest: saves.at(-1)?.to, breaks: saves.slice(1).filter((save, index) => save.from !== saves[index].to)
+    .map(save => ({ at: save.at, seq: save.seq - 0.5, role: null, revision: null })) };
+}
+
+// The same for one role's trust rows, in revision order.
+function trustChain(stored, role) {
+  const rows = stored.filter(row => row.kind !== 'settings' && row.role === role)
+    .sort((a, b) => Number(a.to_revision) - Number(b.to_revision));
+  return { latest: rows.length ? Number(rows.at(-1).to_revision) : undefined,
+    breaks: rows.slice(1).filter((row, index) => row.from_revision !== rows[index].to_revision)
+      .map(row => ({ at: row.changed_at, seq: row.seq - 0.5, role, revision: Number(row.to_revision) - 0.5 })) };
+}
+
+// Newest change first; at the same time, one role's trust rows by revision
+// and anything else in the order it was appended (settings saves in the
+// order they were written). A break sorts right below the row after it.
+function newestFirst(a, b) {
+  if (a.at !== b.at) return a.at < b.at ? 1 : -1;
+  if (a.revision !== null && b.revision !== null && a.role === b.role) return b.revision - a.revision;
+  return b.seq - a.seq;
+}
+
+// The entries up to limit recorded changes, with the breaks among them.
+function withinLimit(items, limit) {
+  const entries = [];
+  let changes = 0;
+  for (const item of items) {
+    if (item.entry.changedAt !== null && changes++ === limit) break;
+    entries.push(item.entry);
+  }
+  return entries;
 }
 
 // A role's effective settings: its own settings, the connection it names,
