@@ -229,7 +229,11 @@ replaces one in place, so this path is defensive.
 Compaction, clear, resume, fork, a new MCP process, an execution/window change
 or a replaced transcript starts a new generation, which receives the window in
 full. So does a client without a readable transcript. A failed, truncated or
-unrecorded delivery is resent.
+unrecorded delivery is resent. A transcript is identified by its exact device
+and file ID (BigInt): a Windows file ID above 2^53 would round as a Number, and
+a replacement with the neighbouring ID would read as the same file. A cache
+record written with a rounded ID reads as a replaced file once, so that
+session's next entry is complete.
 
 A session with no bound conversation gets `conversation.recent_conversation`:
 the ID, `updated_at` and a one-line title (at most 96 bytes as serialized JSON)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, stat, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readPreferenceEvidence } from '../src/conversations/preference-evidence.js';
@@ -32,6 +32,21 @@ async function inspect(records, adapter = codexPreferenceEvidence, id = session,
     return await readPreferenceEvidence(file, id, adapter);
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
+
+// PR #356 CI: a Windows file ID above 2^53 rounds as a Number, so a replaced
+// transcript with the neighbouring ID read as the same file.
+test('the transcript identity is the exact file ID, never a rounded Number', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-native-preference-evidence-'));
+  try {
+    const file = join(directory, 'synthetic.jsonl');
+    await writeFile(file, `${JSON.stringify(codexHeader)}\n`);
+    const exact = await stat(file, { bigint: true });
+    assert.equal((await readPreferenceEvidence(file, session, codexPreferenceEvidence)).fileId, `${exact.dev}:${exact.ino}`);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+  // The rounding the exact identity avoids: two IDs one apart, one Number.
+  const id = 23080948092205717n;
+  assert.equal(String(Number(id)), String(Number(id - 1n)));
+});
 
 test('only a matching native tool call and complete result establish preference delivery', async () => {
   const proof = await inspect([codexHeader, codexCall('call-a'), codexResult('call-a', JSON.stringify(envelope(value)))]);
