@@ -5,6 +5,12 @@ import {
   statSync
 } from 'node:fs';
 import path from 'node:path';
+import { ApplicationError } from '../app/application-error.js';
+import { hostPathOfCallerPath } from '../system/platform-path.js';
+
+const UNSUPPORTED_PATH_MESSAGE = 'projectPath is a WSL or POSIX path this Windows FULI cannot open. '
+  + 'Pass the Windows path of the current working directory, such as C:\\Users\\name\\project; '
+  + '/mnt/<drive>/ paths are translated.';
 
 const CHILD_PROJECT_MARKERS = Object.freeze([
   '.git',
@@ -24,15 +30,15 @@ export function resolvePersonalProjectPath(projectPath, projects, {
   if (projectPath === undefined || projectPath === null) {
     return unresolved('not_provided');
   }
-  if (
-    typeof projectPath !== 'string'
-    || !projectPath.trim()
-    || !pathApi.isAbsolute(projectPath)
-  ) {
+  if (typeof projectPath !== 'string' || !projectPath.trim()) {
+    throw new TypeError('projectPath must be an existing absolute directory');
+  }
+  const hostPath = hostProjectPath(projectPath, pathApi);
+  if (!pathApi.isAbsolute(hostPath)) {
     throw new TypeError('projectPath must be an existing absolute directory');
   }
 
-  const currentPath = realPath(pathApi.resolve(projectPath));
+  const currentPath = realPath(pathApi.resolve(hostPath));
   if (!fileExists(currentPath) || !isDirectory(currentPath)) {
     throw new TypeError('projectPath must be an existing absolute directory');
   }
@@ -96,7 +102,7 @@ export function findRepositoryRoot(projectPath, {
   fileExists = existsSync,
   pathApi = path
 } = {}) {
-  let current = pathApi.resolve(projectPath);
+  let current = pathApi.resolve(hostProjectPath(projectPath, pathApi));
   const filesystemRoot = pathApi.parse(current).root;
   while (true) {
     if (fileExists(pathApi.join(current, '.git'))) return current;
@@ -105,6 +111,15 @@ export function findRepositoryRoot(projectPath, {
     if (parent === current) return null;
     current = parent;
   }
+}
+
+// The caller's directory as this host opens it (rec#48), before any existence
+// check or project match, so a translated WSL path is checked exactly like the
+// native path it names. A path this host cannot open says what to pass instead.
+function hostProjectPath(projectPath, pathApi) {
+  const hostPath = hostPathOfCallerPath(projectPath, pathApi);
+  if (hostPath === null) throw new ApplicationError('project_path_unsupported', UNSUPPORTED_PATH_MESSAGE);
+  return hostPath;
 }
 
 function worktreeOriginProjectId(gitMarkerPath, {
