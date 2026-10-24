@@ -15,7 +15,9 @@ import { createStandingAssignments } from '../src/standing-assignments/port.js';
 const SPACE = 'space-synthetic';
 const TOKEN = 'fuli-task-synthetic';
 
-function application(t, { activityOrigin = null, delegated = false, projects = [], leads = {} } = {}) {
+// interleave: steps another request takes while this one awaits the Provider,
+// run at a fixed point (after the lead's name is read, during staffing).
+function application(t, { activityOrigin = null, delegated = false, projects = [], leads = {}, interleave = {} } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-standing-entry-'));
   const path = join(directory, 'standing-assignments.sqlite');
   const standingAssignments = createStandingAssignments({ path });
@@ -24,7 +26,7 @@ function application(t, { activityOrigin = null, delegated = false, projects = [
   const policy = new Map(Object.entries(leads));
   const calls = [];
   const app = {
-    config: { personal: { spaceId: SPACE } }, standingAssignments, calls, path,
+    config: { personal: { spaceId: SPACE } }, standingAssignments, calls, path, policy,
     taskContextRegistry: { context: async (token, client) => {
       calls.push(['task', token, client]);
       if (token !== TOKEN) throw Object.assign(new Error('Unknown task context'), { status: 404 });
@@ -39,9 +41,14 @@ function application(t, { activityOrigin = null, delegated = false, projects = [
       listPersonalProjects: async () => [...registered.values()],
       getPersonalProject: async (_, id) => registered.get(id),
       getProjectAgentCoordinationPolicy: async (_, id) => ({ team_lead_agent_id: policy.get(id) ?? null }),
-      getProjectAgent: async (_, __, agentId) => ({ agent_id: agentId, profile: { name: `${agentId} name` } }),
+      getProjectAgent: async (_, __, agentId) => {
+        await interleave.afterLeadRead?.();
+        return { agent_id: agentId, profile: { name: `${agentId} name` } };
+      },
       staffDefaultProjectLead: async input => {
         calls.push(['staff', input]);
+        const instead = await interleave.duringStaffing?.(input);
+        if (instead) return instead;
         const agentId = `lead-${input.personal_project_id}`;
         policy.set(input.personal_project_id, agentId);
         return { status: 'ready', agent: { agent_id: agentId } };
@@ -151,5 +158,88 @@ test('a one-off request, internal Agent activity and an ambiguous name are refus
     { project_id: 'timesheet', scope_type: 'registered', profile: { name: 'Timesheet' } },
     { project_id: 'timesheet-2', scope_type: 'registered', profile: { name: 'timesheet' } }] });
   await assert.rejects(call(twins, 'preview', timesheet()), { code: 'standing_assignment_project_ambiguous' });
+  assert.deepEqual(writes(app), []);
+});
+
+// dot P2 on #332: races with another request, each injected at one fixed await.
+
+const ops = { project_id: 'ops', scope_type: 'registered', profile: { name: 'Ops' } };
+const deploy = (overrides = {}) => timesheet({ projectName: 'ops', terms: ['部署'], ...overrides });
+
+test('a lead that changes while confirming is refused, and a new preview uses the new lead', async (t) => {
+  let armed = false;
+  let app = null;
+  app = application(t, { projects: [ops], leads: { ops: 'lead-a' },
+    interleave: { afterLeadRead: () => { if (armed) app.policy.set('ops', 'lead-b'); } } });
+  const { confirmationDigest } = await call(app, 'preview', deploy());
+  armed = true;
+  await assert.rejects(call(app, 'confirm', { ...deploy(), confirmationDigest }), { code: 'standing_assignment_plan_changed',
+    message: 'The project\'s lead changed while confirming: it is now lead-b, not lead-a. The terms were NOT registered. '
+      + 'Nothing was saved. Preview again and ask the user again; it reuses the project and its current lead.' });
+  assert.deepEqual(app.standingAssignments.list(SPACE), []);
+  armed = false;
+  const again = await call(app, 'preview', deploy());
+  assert.notEqual(again.confirmationDigest, confirmationDigest, 'the digest covers the lead ID read');
+  const done = await call(app, 'confirm', { ...deploy(), confirmationDigest: again.confirmationDigest });
+  assert.equal(done.assignment.leadAgentId, 'lead-b');
+  assert.deepEqual(writes(app), []);
+});
+
+test('a lead another request hires first is refused, saying the created project is kept', async (t) => {
+  let app = null;
+  let raced = true;
+  app = application(t, { interleave: { duringStaffing: ({ personal_project_id: projectId }) => {
+    if (!raced) return null;
+    raced = false;
+    app.policy.set(projectId, 'lead-other');
+    return { status: 'unassigned', reason: 'team_lead_unavailable' };
+  } } });
+  const { confirmationDigest } = await call(app, 'preview', timesheet());
+  await assert.rejects(call(app, 'confirm', { ...timesheet(), confirmationDigest }), { code: 'standing_assignment_plan_changed',
+    message: 'The project\'s lead changed while confirming: it is now lead-other, not a lead hired for this plan. The terms '
+      + 'were NOT registered. Already written and kept: project "Timesheet" (timesheet) was created. Preview again and ask '
+      + 'the user again; it reuses the project and its current lead.' });
+  assert.deepEqual(app.standingAssignments.list(SPACE), []);
+  const again = await call(app, 'preview', timesheet());
+  assert.deepEqual([again.plan.project.action, again.plan.lead.agentId], ['reuse', 'lead-other']);
+  const done = await call(app, 'confirm', { ...timesheet(), confirmationDigest: again.confirmationDigest });
+  assert.deepEqual([done.project.created, done.lead, done.assignment.leadAgentId],
+    [false, { agentId: 'lead-other', hired: false }, 'lead-other']);
+  assert.deepEqual(writes(app), ['create', 'staff']);
+});
+
+test('a term taken while the lead is hired names what was written, and a new preview reuses it', async (t) => {
+  let app = null;
+  app = application(t, { interleave: { duringStaffing: () => {
+    if (!app.standingAssignments.list(SPACE).length) app.standingAssignments.register({ personalSpaceId: SPACE,
+      projectId: 'ops', leadAgentId: 'lead-ops', terms: ['iDev'], responsibility: 'Synthetic ops work', source: 'user' });
+  } } });
+  const { confirmationDigest } = await call(app, 'preview', timesheet());
+  await assert.rejects(call(app, 'confirm', { ...timesheet(), confirmationDigest }), {
+    code: 'standing_assignment_terms_not_registered',
+    message: 'Partly applied: project "Timesheet" (timesheet) was created and AR hired its lead lead-timesheet. These '
+      + 'writes are kept; the terms were NOT registered: "iDev" already names the standing assignment of project ops '
+      + '(lead lead-ops). Preview again: it reuses this project and lead.' });
+  const [other] = app.standingAssignments.list(SPACE);
+  app.standingAssignments.retire(other.assignmentId, { source: 'user', expectedRevision: 1 });
+  const again = await call(app, 'preview', timesheet());
+  assert.deepEqual([again.plan.project.action, again.plan.lead.action], ['reuse', 'reuse']);
+  const done = await call(app, 'confirm', { ...timesheet(), confirmationDigest: again.confirmationDigest });
+  assert.deepEqual([done.status, done.project.created, done.lead.hired], ['registered', false, false]);
+  assert.deepEqual(writes(app), ['create', 'staff']);
+});
+
+test('a term taken after the plan was read is refused before anything is written', async (t) => {
+  let armed = false;
+  let app = null;
+  app = application(t, { projects: [ops], leads: { ops: 'lead-a' }, interleave: { afterLeadRead: () => {
+    if (armed) app.standingAssignments.register({ personalSpaceId: SPACE, projectId: 'other', leadAgentId: 'lead-other',
+      terms: ['部署'], responsibility: 'Synthetic other work', source: 'user' });
+  } } });
+  const { confirmationDigest } = await call(app, 'preview', deploy());
+  armed = true;
+  await assert.rejects(call(app, 'confirm', { ...deploy(), confirmationDigest }), { code: 'standing_assignment_term_taken',
+    message: /"部署" already names the standing assignment of project other .*nothing was saved/ });
+  assert.deepEqual(app.standingAssignments.list(SPACE).map(({ projectId }) => projectId), ['other']);
   assert.deepEqual(writes(app), []);
 });

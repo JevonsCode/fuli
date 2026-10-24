@@ -1,5 +1,6 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { identityKey } from '../text/name-identity.js';
 import { requiredString } from '../validation/values.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { createProjectNamed, projectByName } from './task-entry-project-mention.js';
@@ -86,42 +87,106 @@ function previewResult(plan) {
     confirmationDigest: contentHash(plan), executed: false, guidance: ASK_ONCE };
 }
 
+// Other requests run while this one awaits the Provider, so the project's
+// lead and the terms are checked again just before the writes that depend on
+// them. A project or lead written before a later step fails is kept (another
+// request may already use it), and the error says exactly what was written.
 async function confirm(application, plan, input) {
-  if (inPlace(plan)) return confirmed('unchanged', plan, plan.project.projectId, plan.lead.agentId, null);
+  if (inPlace(plan)) {
+    return confirmed('unchanged', plan, { projectId: plan.project.projectId, projectCreated: false,
+      leadAgentId: plan.lead.agentId, leadHired: false }, null);
+  }
   if (requiredString(input.confirmationDigest, 'confirmationDigest', DIGEST_LIMIT) !== contentHash(plan)) {
     throw new ApplicationError('standing_assignment_plan_changed', 'The plan is not the one previewed: it changed '
       + 'since, or the digest belongs to other input. Nothing was saved; preview again and ask the user again.',
     { status: 409 });
   }
-  const projectId = plan.project.projectId
-    ?? (await createProjectNamed(application, plan.project.name, plan.responsibility)).personalProjectId;
-  const leadAgentId = plan.lead.agentId
-    ?? await hireLead(application, plan, projectId, input.sourceApplication ?? 'other');
-  const { assignment } = application.standingAssignments.register({ personalSpaceId: plan.personalSpaceId,
-    projectId, leadAgentId, terms: plan.terms, responsibility: plan.responsibility,
-    preferenceIds: plan.preferenceIds, source: 'user', sourceConversationId: plan.sourceConversationId });
-  return confirmed('registered', plan, projectId, leadAgentId, assignment);
+  // A term another request took since the plan was read refuses before anything is written.
+  application.standingAssignments.preview(registrationOf(plan, plan.project.projectId, plan.lead.agentId));
+  const written = { projectId: plan.project.projectId, projectCreated: false,
+    leadAgentId: plan.lead.agentId, leadHired: false };
+  if (!written.projectId) {
+    const created = await createProjectNamed(application, plan.project.name, plan.responsibility);
+    Object.assign(written, { projectId: created.personalProjectId, projectCreated: created.basis === 'created_from_prompt' });
+  }
+  if (!written.leadAgentId) {
+    Object.assign(written, { leadAgentId: await hireLead(application, plan, written, input.sourceApplication ?? 'other'),
+      leadHired: true });
+  }
+  const lead = await projectLead(application, plan.personalSpaceId, written.projectId);
+  if (lead !== written.leadAgentId) throw leadChanged(plan, written, lead);
+  try {
+    const { assignment } = application.standingAssignments.register(
+      registrationOf(plan, written.projectId, written.leadAgentId));
+    return confirmed('registered', plan, written, assignment);
+  } catch (error) {
+    throw termsNotRegistered(application, plan, written, error);
+  }
 }
 
 // AR hires the lead through the ordinary default-lead staffing, with the
-// person's responsibility leading the lead's own (D4).
-async function hireLead(application, plan, projectId, sourceApplication) {
+// person's responsibility leading the lead's own (D4). A lead another request
+// hired meanwhile is not the lead this plan was confirmed for.
+async function hireLead(application, plan, written, sourceApplication) {
   const staffed = await application.personal.staffDefaultProjectLead({ personal_space_id: plan.personalSpaceId,
-    personal_project_id: projectId, source_application: sourceApplication, responsibility: plan.responsibility });
-  // A lead another task hired meanwhile is the project's lead all the same.
-  const agentId = staffed?.agent?.agent_id ?? await projectLead(application, plan.personalSpaceId, projectId);
-  if (!agentId) {
-    throw new ApplicationError('standing_assignment_lead_unavailable', `Project "${plan.project.name}" exists, but `
-      + `AR could not staff its lead (${staffed?.reason ?? 'unavailable'}). Nothing was registered; preview again later.`,
-    { status: 503 });
-  }
-  return agentId;
+    personal_project_id: written.projectId, source_application: sourceApplication, responsibility: plan.responsibility });
+  if (staffed?.agent?.agent_id) return staffed.agent.agent_id;
+  const lead = await projectLead(application, plan.personalSpaceId, written.projectId);
+  if (lead) throw leadChanged(plan, written, lead);
+  throw new ApplicationError('standing_assignment_lead_unavailable', `AR could not staff the project's lead `
+    + `(${staffed?.reason ?? 'unavailable'}); the terms were NOT registered. ${keptOrNothing(plan, written)} `
+    + 'Preview again later; it reuses the project.', { status: 503 });
 }
 
-function confirmed(status, plan, projectId, leadAgentId, assignment) {
+function registrationOf(plan, projectId, leadAgentId) {
+  return { personalSpaceId: plan.personalSpaceId, projectId, leadAgentId, terms: plan.terms,
+    responsibility: plan.responsibility, preferenceIds: plan.preferenceIds, source: 'user',
+    sourceConversationId: plan.sourceConversationId };
+}
+
+function leadChanged(plan, written, lead) {
+  return new ApplicationError('standing_assignment_plan_changed', `The project's lead changed while confirming: it `
+    + `is now ${lead ?? 'nobody'}, not ${written.leadAgentId ?? 'a lead hired for this plan'}. The terms were NOT `
+    + `registered. ${keptOrNothing(plan, written)} Preview again and ask the user again; it reuses the project and `
+    + 'its current lead.', { status: 409 });
+}
+
+// A failed registration after a write names what was written and kept; with
+// nothing written the store's own refusal is already true as it stands.
+function termsNotRegistered(application, plan, written, error) {
+  if (!written.projectCreated && !written.leadHired) return error;
+  const owner = takenTerm(application, plan, written);
+  const reason = owner ? `"${owner.term}" already names the standing assignment of project ${owner.projectId} `
+    + `(lead ${owner.leadAgentId})` : error.message;
+  return new ApplicationError('standing_assignment_terms_not_registered', `Partly applied: ${writtenSoFar(plan, written)}. `
+    + `These writes are kept; the terms were NOT registered: ${reason}. Preview again: it reuses this project and lead.`,
+  { status: 409 });
+}
+
+function takenTerm(application, plan, written) {
+  for (const assignment of application.standingAssignments.list(plan.personalSpaceId)) {
+    if (assignment.projectId === written.projectId && assignment.leadAgentId === written.leadAgentId) continue;
+    const keys = new Set(assignment.terms.map(identityKey));
+    const term = plan.terms.find(value => keys.has(identityKey(value)));
+    if (term) return { term, projectId: assignment.projectId, leadAgentId: assignment.leadAgentId };
+  }
+  return null;
+}
+
+function keptOrNothing(plan, written) {
+  return written.projectCreated || written.leadHired ? `Already written and kept: ${writtenSoFar(plan, written)}.`
+    : 'Nothing was saved.';
+}
+
+function writtenSoFar(plan, { projectId, projectCreated, leadAgentId, leadHired }) {
+  const project = `project "${plan.project.name}" (${projectId}) ${projectCreated ? 'was created' : 'already existed'}`;
+  return leadHired ? `${project} and AR hired its lead ${leadAgentId}` : project;
+}
+
+function confirmed(status, plan, { projectId, projectCreated, leadAgentId, leadHired }, assignment) {
   return { status, executed: false, notice: NOT_EXECUTED,
-    project: { projectId, name: plan.project.name, created: status === 'registered' && plan.project.action === 'create' },
-    lead: { agentId: leadAgentId, hired: status === 'registered' && plan.lead.action === 'hire' },
+    project: { projectId, name: plan.project.name, created: projectCreated },
+    lead: { agentId: leadAgentId, hired: leadHired },
     terms: plan.terms, ...(assignment ? { assignment } : {}) };
 }
 
