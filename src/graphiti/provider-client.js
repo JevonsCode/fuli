@@ -1,6 +1,6 @@
 import { ApplicationError } from '../app/application-error.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
-import { graphReadPath } from './knowledge-reader.js';
+import { graphReadPath, preferenceConflictsPath, publicationDraftsPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
 import { afterProjectWrite, sharedProjectList } from './shared-project-list.js';
 
@@ -647,8 +647,10 @@ export class GraphitiProviderClient {
   readSessionRecords(input) {
     return this.#request('/v1/session-records', { method: 'POST', body: input });
   }
-  // rec#20 part 2: what a session's temporary project holds. Scope writes go
-  // through the console's human-review channel (src/knowledge-scope).
+  // rec#20 part 2: what a session's temporary project holds, as an Agent's
+  // offer reads it (knowledge-reader.js). The console's page reads it through
+  // its own port (src/knowledge-owner-reads); scope writes go through the
+  // console's human-review channel (src/knowledge-scope).
   previewSessionMigration(input) {
     return this.#request('/v1/knowledge/session-migrations/preview', { method: 'POST', body: input });
   }
@@ -668,9 +670,7 @@ export class GraphitiProviderClient {
     return this.#request('/v1/publication-drafts', { method: 'POST', body: input });
   }
   listPublicationDrafts(personalSpaceId, status = 'pending', { metadataOnly = false, ...options } = {}) {
-    const query = new URLSearchParams({ personal_space_id: personalSpaceId, status });
-    if (metadataOnly) query.set('metadata_only', 'true');
-    return this.#request(`/v1/publication-drafts?${query}`, options);
+    return this.#request(publicationDraftsPath(personalSpaceId, { status, metadataOnly }), options);
   }
   getPublicationDraft(personalSpaceId, draftId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
@@ -863,14 +863,9 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  // An Agent's read, as a plain session; the console's full list uses its own port (src/knowledge-owner-reads).
   listPreferenceConflicts(personalSpaceId, status = null, limit = 500, offset = 0) {
-    const query = new URLSearchParams({
-      personal_space_id: personalSpaceId,
-      limit: String(limit)
-    });
-    if (status) query.set('status', status);
-    if (offset) query.set('offset', String(offset));
-    return this.#request(`/v1/preference-conflicts?${query}`);
+    return this.#request(preferenceConflictsPath(personalSpaceId, { status, limit, offset }));
   }
   resolvePreferenceConflict(conflictId, input) {
     return this.#request(

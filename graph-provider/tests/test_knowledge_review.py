@@ -440,9 +440,12 @@ async def test_decision_lookup_returns_the_run_decision_for_one_candidate_or_non
     assert missing.decision is None
     query, parameters = driver.calls[0]
     assert '[:HAS_REVIEW_DECISION]->(decision:FuliKnowledgeReviewDecision' in query
+    # An Agent reads no decision on another FLA's item: the rule is in the same query.
+    assert 'fla_item.uuid IN [$item_id]' in query
     assert parameters == {
-        'space_id': 'personal-space', 'review_id': 'review-1',
-        'candidate_key': 'entity:one', 'routing_': 'r',
+        'space_id': 'personal-space', 'group_id': 'personal-group', 'review_id': 'review-1',
+        'candidate_key': 'entity:one', 'item_id': 'one',
+        'reader': {'personal_project_id': None, 'project_agent_id': None}, 'routing_': 'r',
     }
 
 

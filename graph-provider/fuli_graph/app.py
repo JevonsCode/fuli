@@ -373,13 +373,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(
         request: PublicationDraftCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> PublicationDraftRecord:
         return await store.create_publication_draft(actor, request)
 
     @application.get('/v1/publication-drafts', response_model=list[PublicationDraftRecord])
     async def list_publication_drafts(
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
         draft_status: Annotated[str, Query(alias='status')] = 'pending',
         metadata_only: bool = False,
@@ -392,7 +392,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def get_publication_draft(
         draft_id: str,
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
     ) -> PublicationDraftRecord:
         return await store.get_publication_draft(actor, personal_space_id, draft_id)
@@ -404,7 +404,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def decide_publication_draft(
         draft_id: str,
         request: PublicationSubmissionDecision,
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
     ) -> PublicationDraftRecord:
         return await store.decide_publication_draft(
@@ -659,7 +659,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def review_decision(
         request: KnowledgeReviewDecisionLookup,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> KnowledgeReviewDecisionLookupResult:
         return await read_knowledge_review_decision(store, actor, request)
 
@@ -809,7 +809,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def defer_conflict(
         request: PreferenceConflictDeferCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> PreferenceConflictRecord:
         return await defer_preference_conflict(store, actor, request)
 
@@ -818,7 +818,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response_model=list[PreferenceConflictRecord],
     )
     async def preference_conflicts(
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
         status: Annotated[str | None, Query(pattern='^(ai_pending|resolved)$')] = None,
         limit: Annotated[int, Query(ge=1, le=1000)] = 500,
@@ -856,7 +856,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def complete_conflict(
         conflict_id: str,
         request: PreferenceConflictCompleteCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> PreferenceConflictRecord:
         return await complete_preference_conflict(
             store,

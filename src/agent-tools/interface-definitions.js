@@ -184,9 +184,10 @@ export const AGENT_INTERFACE_DEFINITIONS = [
   {
     name: 'defer_preference_conflict',
     title: 'WRITE · Defer preference conflict',
-    description: 'Defer one exact preference conflict without resolving either side. The conflict remains visible for later review.',
+    description: 'Defer one exact preference conflict without resolving either side. The conflict remains visible for later review. An FLA names projectAgentId and personalProjectId.',
     inputSchema: objectSchema({
       personalSpaceId: id,
+      personalProjectId: nullableStringSchema(), projectAgentId: nullableStringSchema(),
       conflictId: { ...stringSchema(), minLength: 1, maxLength: 1024 },
       preferenceKey: label,
       preferenceScope: enumSchema(['global', 'project']),

@@ -12,7 +12,7 @@ from pydantic import Field, model_serializer, model_validator
 from .knowledge_audit_models import KnowledgeChangeActor, KnowledgeItemKind, KnowledgeRevisionRecord
 from .knowledge_tag_models import KnowledgeTagReference
 from .model_base import StrictModel
-from .models import ConfirmationStatus, ContentSource, SearchRequest
+from .models import AgentReaderRef, ConfirmationStatus, ContentSource, SearchRequest
 
 # What kind of content an item holds, for its label. Derived from the item's
 # stored profile aspect or type; not a separate Rule model.
@@ -27,14 +27,6 @@ KnowledgeVersionStatus = Literal['current', 'superseded', 'outdated', 'basis_out
 KnowledgeBasisStatus = KnowledgeVersionStatus | Literal['deleted']
 MAX_SCOPE_PROJECTS = 16
 MAX_RECEIPT_EPISODES = 3
-
-
-class AgentReaderRef(StrictModel):
-    """The Agent reading: an FLA in its project, or neither for a plain
-    session. The person's console names no reader; it proves itself with the
-    human-review channel instead (knowledge_visibility)."""
-    reader_project_id: str | None = Field(default=None, min_length=1, max_length=128)
-    reader_agent_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class KnowledgeItemRef(AgentReaderRef):

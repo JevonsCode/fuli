@@ -19,7 +19,14 @@ from .knowledge_review_models import (
     KnowledgeReviewStart,
 )
 from .ai_review import ai_review_evidence_token
-from .knowledge_visibility import PLAIN_SESSION, fla_endpoints_visible_cypher, fla_visible, reader_parameter
+from .knowledge_visibility import (
+    PLAIN_SESSION,
+    fla_endpoints_visible_cypher,
+    fla_visible,
+    fla_visible_ids_cypher,
+    knowledge_reader,
+    reader_parameter,
+)
 from .personal_project_access import authorize_personal_project
 from .provider_values import native_datetime, stable_uuid
 from .store_transactions import query_store_transaction
@@ -277,10 +284,13 @@ async def read_knowledge_review_decision(
 
     A caller whose write reply was lost settles it against this record: the
     decision is keyed by run and candidate, so it is the write's own receipt.
+    A decision on another FLA's item (one an older review made) reads as none
+    to an Agent, as if it did not exist; the console reads it with its proof.
     """
 
     store._require_personal()
     space = await _personal_space(store, actor, request.personal_space_id, 'maintainer')
+    reader = await knowledge_reader(store, actor, space, personal_project_id=None, project_agent_id=None)
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
@@ -288,11 +298,15 @@ async def read_knowledge_review_decision(
               [:HAS_REVIEW_DECISION]->(decision:FuliKnowledgeReviewDecision {
                 candidate_key: $candidate_key
               })
+        WHERE ''' + fla_visible_ids_cypher('[$item_id]') + '''
         RETURN decision LIMIT 1
         ''',
         space_id=space['id'],
+        group_id=space['group_id'],
         review_id=request.review_id,
         candidate_key=request.candidate_key,
+        item_id=request.candidate_key.partition(':')[2],
+        reader=reader_parameter(reader),
         routing_='r',
     )
     return KnowledgeReviewDecisionLookupResult(

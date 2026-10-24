@@ -5,9 +5,9 @@ queries like the other Provider queries; every scope write names its expected
 version and reason. A scope write is audited as the person's own change, so
 it takes the human-review channel the local console holds (as a hard delete
 does); an Agent's access token alone is refused (rec#11 D-22, dot P1-1).
-An item view, a receipt and a session's records are read in full only with
-that proof; without it the reader is an Agent and sees no other FLA's
-knowledge, and a wrong proof is refused (knowledge_visibility)."""
+An item view, a receipt, a session's records and its migration preview are
+read in full only with that proof; without it the reader is an Agent and sees
+no other FLA's knowledge, and a wrong proof is refused (knowledge_visibility)."""
 
 from typing import Any
 
@@ -46,7 +46,7 @@ def register_knowledge_item_routes(application, store, Actor: Any, ReviewAwareAc
         return await change_knowledge_scope(store, actor, item_id, request)
 
     @application.post('/v1/knowledge/session-migrations/preview', response_model=SessionMigrationPreview)
-    async def session_migration_preview(request: SessionMigrationRead, actor: Actor):
+    async def session_migration_preview(request: SessionMigrationRead, actor: ReviewAwareActor):
         return await preview_session_migration(store, actor, request)
 
     @application.post('/v1/knowledge/session-migrations/apply', response_model=SessionMigrationResult)

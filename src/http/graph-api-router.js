@@ -112,7 +112,7 @@ export async function handleGraphApiRequest({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       status: url.searchParams.get('status'),
       limit: numberParam(url, 'limit', 500)
-    }));
+    }, ownerReads));
     return true;
   }
   if (
@@ -122,7 +122,7 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.deferPreferenceConflict({
       ...(await readJson(request)),
       operationActor: 'agent'
-    }));
+    }, ownerReads));
     return true;
   }
   const completedPreferenceConflict = url.pathname.match(
@@ -133,7 +133,7 @@ export async function handleGraphApiRequest({
       ...(await readJson(request)),
       conflictId: decodeURIComponent(completedPreferenceConflict[1]),
       operationActor: 'human'
-    }));
+    }, ownerReads));
     return true;
   }
   const assignment = url.pathname.match(
@@ -647,7 +647,7 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.listPersonalReviewQueue({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       status: url.searchParams.get('status') ?? 'pending'
-    }));
+    }, ownerReads));
     return true;
   }
   const personalDecision = url.pathname.match(/^\/api\/personal-review\/([^/]+)\/decision$/);
@@ -656,7 +656,7 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.reviewPersonalDraft(parsePersonalDraftDecision({
       decision: body?.decision,
       draftId: decodeURIComponent(personalDecision[1])
-    })));
+    }), ownerReads));
     return true;
   }
   if (url.pathname === '/api/review' && request.method === 'GET') {
