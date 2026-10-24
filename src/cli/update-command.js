@@ -10,7 +10,12 @@ import {
 import { quoteShellArgument } from './shell-argument.js';
 import { parseUpdateOptions } from '../setup/options.js';
 import { runLocalRuntimeCommand } from './local-runtime-command.js';
-import { formatUpdateInstallation, inspectUpdateInstallation, updateEnvironment } from './update-installation.js';
+import {
+  formatShadowedLaunchers,
+  formatUpdateInstallation,
+  inspectUpdateInstallation,
+  updateEnvironment
+} from './update-installation.js';
 import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
 import {
   compareSemanticVersions,
@@ -149,6 +154,9 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
     version
   };
   write(formatUpdateResult(result));
+  // Judge the person's own PATH, not the update's, which puts this Node first.
+  const shadowed = formatShadowedLaunchers(inspectInstallation({ env: originalEnv, platform }), { target: cliPath, platform });
+  if (shadowed) write(shadowed);
   if (options.skipAgents) {
     write('Existing conversations may still use the previous MCP process. Reconnect Fuli in your client or restart the client, then open a new task. Running conversations were not restarted automatically.');
   }

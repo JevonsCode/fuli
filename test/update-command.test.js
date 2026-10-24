@@ -344,3 +344,29 @@ test('Windows npm.cmd runs through a shell only with shell-inert arguments', () 
   assert.throws(() => batchFileSpawnOptions('npm.cmd', ['view', 'x & calc']), /shell-sensitive/);
   assert.deepEqual(batchFileSpawnOptions('npm.cmd', ['install', 'fuli-context@1.2.4+build.1']), { shell: true });
 });
+
+test('update warns when an older installation shadows the bare command on the person\'s PATH (rec#41)', async () => {
+  const output = [];
+  const inspected = [];
+  await runUpdateCommand(['--yes'], {
+    platform: 'linux',
+    inspectInstallation: ({ env }) => {
+      inspected.push(env.PATH);
+      return {
+        cliPath: '/test/package/src/cli.js',
+        launchers: [{ path: '/old/bin/fl', target: '/old/lib/node_modules/fuli-context/src/cli.js', version: '0.12.4' }]
+      };
+    },
+    resolveLatestVersion: () => '9.8.7',
+    runCaptured: (command, args) => ({ status: 0, stdout: args.includes('--version') ? '9.8.7' : '/test/npm/lib/node_modules' }),
+    runInherited: () => ({ status: 0 }),
+    stopRuntime: async () => ({ status: 'stopped' }),
+    fileExists: () => true,
+    write: (line) => output.push(line)
+  });
+  // The update's own PATH puts its Node first; the warning judges the person's PATH.
+  assert.deepEqual(inspected, ['/test/bin', '/test/bin']);
+  const text = output.join('\n');
+  assert.match(text, /`fl` on PATH is another Fuli installation: \/old\/bin\/fl -> 0\.12\.4/);
+  assert.match(text, /npm uninstall --global fuli-context --prefix \/old/);
+});

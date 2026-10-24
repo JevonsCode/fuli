@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { formatUpdateInstallation, inspectUpdateInstallation, updateEnvironment } from '../src/cli/update-installation.js';
+import {
+  formatShadowedLaunchers,
+  formatUpdateInstallation,
+  inspectUpdateInstallation,
+  updateEnvironment
+} from '../src/cli/update-installation.js';
 import { requiresSymlinks } from '../test-support/platform-capabilities.js';
 
 test('update identifies duplicate PATH launchers without executing them', requiresSymlinks, () => {
@@ -36,4 +41,40 @@ test('update subprocesses use the current Node directory first without dropping 
   const env = updateEnvironment({ Path: 'C:\\old', EXAMPLE: 'keep' }, 'C:\\Node\\node.exe', 'win32');
   assert.equal(env.Path, 'C:\\Node;C:\\old');
   assert.equal(env.PATH, undefined);
+});
+
+test('setup and update name an older installation that shadows the bare command (rec#41)', requiresSymlinks, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fuli-shadow-'));
+  try {
+    const install = (prefix, version) => {
+      const root = join(dir, prefix, 'lib', 'node_modules', 'fuli-context');
+      mkdirSync(join(root, 'src'), { recursive: true });
+      mkdirSync(join(dir, prefix, 'bin'), { recursive: true });
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'fuli-context', version }));
+      writeFileSync(join(root, 'src/cli.js'), 'throw new Error("must not execute");');
+      for (const name of ['fl', 'fuli']) symlinkSync(join(root, 'src/cli.js'), join(dir, prefix, 'bin', name));
+      return { bin: join(dir, prefix, 'bin'), cli: join(root, 'src/cli.js') };
+    };
+    const old = install('old', '0.12.4');
+    const current = install('current', '0.20.0-beta.10');
+    const shadowed = formatShadowedLaunchers(
+      inspectUpdateInstallation({ env: { PATH: [old.bin, current.bin].join(delimiter) } }), { target: current.cli });
+    assert.match(shadowed, /`fl` on PATH is another Fuli installation: .*-> 0\.12\.4/);
+    assert.match(shadowed, /`fuli` on PATH is another Fuli installation/);
+    assert.match(shadowed, /client hooks and MCP use absolute paths/);
+    assert.ok(shadowed.includes(`npm uninstall --global fuli-context --prefix ${join(dir, 'old')}`));
+    assert.ok(shadowed.includes(`put ${current.bin} first in PATH`));
+
+    assert.equal(formatShadowedLaunchers(
+      inspectUpdateInstallation({ env: { PATH: [current.bin, old.bin].join(delimiter) } }), { target: current.cli }), null);
+
+    // A wrapper that is not a recognized Fuli entry point is never guessed at.
+    const other = join(dir, 'other');
+    mkdirSync(other);
+    writeFileSync(join(other, 'fl'), '#!/bin/sh\nexit 99\n');
+    assert.equal(formatShadowedLaunchers(
+      inspectUpdateInstallation({ env: { PATH: [other, current.bin].join(delimiter) } }), { target: current.cli }), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
