@@ -295,3 +295,21 @@ for (const [name, headers, method] of [
     assert.deepEqual({ status: response.status, calls }, { status: 403, calls: 0 });
   });
 }
+
+test('a repeated Sec-Fetch-Site header never hides a cross-site request', async (t) => {
+  let stateCalls = 0;
+  const app = { state() { stateCalls += 1; return {}; } };
+  const { server, url } = await createServer({ app, port: 0 });
+  t.after(() => closeServer(server));
+  // Two header lines, which Node joins as "cross-site, cross-site".
+  const status = await new Promise((resolve, reject) => {
+    const request = httpRequest(`${url}/api/state`, (response) => {
+      response.resume();
+      response.on('end', () => resolve(response.statusCode));
+    });
+    request.setHeader('sec-fetch-site', ['cross-site', 'cross-site']);
+    request.on('error', reject);
+    request.end();
+  });
+  assert.deepEqual({ status, stateCalls }, { status: 403, stateCalls: 0 });
+});
