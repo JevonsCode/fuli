@@ -16,7 +16,10 @@ export async function handleGraphApiRequest({
   request,
   response,
   url,
-  app
+  app,
+  // The console's human-review port for the person's full knowledge reads
+  // (src/knowledge-owner-reads); without it these routes read as an Agent.
+  ownerReads = null
 }) {
   if (await handleAgentAttentionRequest({ request, response, url, app })) return true;
   if (await handleTaskEventsRequest({ request, response, url, app })) return true;
@@ -24,8 +27,8 @@ export async function handleGraphApiRequest({
   if (await handleOccupationRequest({ request, response, url, app })) return true;
   if (await handleTopicProposalsRequest({ request, response, url, app })) return true;
   if (await handleAgentScoreCardRequest({ request, response, url, app })) return true;
-  if (await handleKnowledgeItemRequest({ request, response, url, app })) return true;
-  if (await handleSessionRecordsRequest({ request, response, url, app })) return true;
+  if (await handleKnowledgeItemRequest({ request, response, url, app, ownerReads })) return true;
+  if (await handleSessionRecordsRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleCaptureChangeRequest({ request, response, url, app })) return true;
   if (await handleCaptureOnboardingRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
@@ -93,7 +96,7 @@ export async function handleGraphApiRequest({
       personalProjectId: url.searchParams.get('personalProjectId'),
       limit: numberParam(url, 'limit', 500),
       offset: nonNegativeNumberParam(url, 'offset', null)
-    }));
+    }, ownerReads));
     return true;
   }
   if (url.pathname === '/api/writing-taste-profile' && request.method === 'GET') {
@@ -101,7 +104,7 @@ export async function handleGraphApiRequest({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       personalProjectId: url.searchParams.get('personalProjectId'),
       limit: numberParam(url, 'limit', 500)
-    }));
+    }, ownerReads));
     return true;
   }
   if (url.pathname === '/api/preference-conflicts' && request.method === 'GET') {

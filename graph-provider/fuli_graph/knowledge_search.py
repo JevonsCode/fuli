@@ -22,6 +22,7 @@ from .search_projection import (
 )
 from .knowledge_weight import knowledge_weight
 from .knowledge_tag_ranking import TagRanking
+from .knowledge_visibility import AgentReader, fla_visible
 
 MIN_TERM_COVERAGE = 0.25
 LATIN_QUERY_FILLERS = {
@@ -522,18 +523,15 @@ def _item_scope_metadata(
             return _global_scope_metadata()
         project_id = record.get('preference_project_id')
         if preference_scope == 'agent':
-            agent_id = record.get('preference_agent_id')
             if (
                 project_id not in request.personal_project_ids
-                or not request.project_agent_id
-                or agent_id != request.project_agent_id
-                or project_id != request.active_personal_project_id
+                or not fla_visible(record, _search_reader(request))
             ):
                 return None
             return _agent_scope_metadata(
                 project_id,
                 project_scopes[project_id],
-                agent_id,
+                record.get('preference_agent_id'),
             )
         project_ids = record.get('preference_project_ids') or [project_id]
         candidates = [pid for pid in project_ids if pid in request.personal_project_ids and pid in project_scopes]
@@ -544,15 +542,8 @@ def _item_scope_metadata(
 
     assignment_project_id = record.get('assignment_project_id')
     episode_project_ids = list(record.get('episode_project_ids') or [])
-    episode_project_agent_ids = list(
-        record.get('episode_project_agent_ids') or []
-    )
-    if episode_project_agent_ids:
-        if (
-            not request.project_agent_id
-            or request.project_agent_id not in episode_project_agent_ids
-            or request.active_personal_project_id not in episode_project_ids
-        ):
+    if record.get('episode_project_agent_ids'):
+        if not fla_visible(record, _search_reader(request)):
             return None
         return _agent_scope_metadata(
             request.active_personal_project_id,
@@ -608,6 +599,12 @@ def _item_scope_metadata(
     ):
         return _global_scope_metadata()
     return None
+
+
+def _search_reader(request: SearchRequest) -> AgentReader:
+    # The FLA was authorized in _personal_search_space; search shows no
+    # FLA-scoped item to the person's console either unless it names the FLA.
+    return AgentReader(request.active_personal_project_id, request.project_agent_id)
 
 
 def _global_scope_metadata() -> dict:

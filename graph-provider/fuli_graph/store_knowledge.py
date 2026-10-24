@@ -118,9 +118,13 @@ class StoreKnowledge:
         limit: int | None = None,
         personal_project_id: str | None = None,
         offset: int | None = None,
+        *,
+        reader_project_id: str | None = None,
+        reader_agent_id: str | None = None,
     ) -> GraphResult:
         return await read_graph(
-            self, actor, space_id, limit, personal_project_id, offset
+            self, actor, space_id, limit, personal_project_id, offset,
+            reader_project_id=reader_project_id, reader_agent_id=reader_agent_id,
         )
 
     async def collaboration_context(

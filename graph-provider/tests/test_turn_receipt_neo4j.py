@@ -59,7 +59,8 @@ async def receipt(client, space_id, *episodes):
 
 
 async def view(client, space_id, item_id, kind='entity'):
-    return ok(await client.post('/v1/knowledge/item-views', json={
+    # The quick edit's read is the console's: it shows every FLA's items.
+    return ok(await client.post('/v1/knowledge/item-views', headers=REVIEW, json={
         'personal_space_id': space_id, 'item_kind': kind, 'item_id': item_id}))
 
 

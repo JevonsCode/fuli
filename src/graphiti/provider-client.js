@@ -1,5 +1,6 @@
 import { ApplicationError } from '../app/application-error.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
+import { graphReadPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
 import { afterProjectWrite, sharedProjectList } from './shared-project-list.js';
 
@@ -637,10 +638,8 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId }
     });
   }
-  // rec#20: authoritative item views and a turn's receipt.
-  readKnowledgeItemView(input) {
-    return this.#request('/v1/knowledge/item-views', { method: 'POST', body: input });
-  }
+  // rec#20: a turn's receipt as an Agent reads it (knowledge-reader.js). The
+  // console's item views and full reads use its own port (src/knowledge-owner-reads).
   readTurnReceipt(input) {
     return this.#request('/v1/knowledge/turn-receipts', { method: 'POST', body: input });
   }
@@ -939,11 +938,9 @@ export class GraphitiProviderClient {
     }
     return this.#request(`/v1/collaboration-preferences?${query}`);
   }
-  graph(spaceId, limit = 500, personalProjectId = null, offset = null) {
-    const query = new URLSearchParams({ limit: String(limit) });
-    if (personalProjectId) query.set('personal_project_id', personalProjectId);
-    if (offset !== null) query.set('offset', String(offset));
-    return this.#request(`/v1/spaces/${encodeURIComponent(spaceId)}/graph?${query}`);
+  // An Agent's read (knowledge-reader.js): reader names its FLA, or null for a plain session.
+  graph(spaceId, limit = 500, personalProjectId = null, offset = null, reader = null) {
+    return this.#request(graphReadPath(spaceId, { limit, personalProjectId, offset, reader }));
   }
 
   // A long-running client (an MCP server) outlives a token rotation, for

@@ -3,6 +3,7 @@ import { receiptSummary, receiptText, sessionRecordsUrl } from '../agents/identi
 import { CATEGORY, CONFIRMATION } from '../agents/turn-receipt.js';
 import { notRecordedReason } from '../conversations/transcript-capture-gap.js';
 import { localClockTime } from '../text/clock-time.js';
+import { providerReaderFields, taskKnowledgeReader } from './knowledge-reader.js';
 import { requiredString } from '../validation/values.js';
 
 // "本会话记了什么" (rec#5 C6): one host session's records in three groups,
@@ -13,10 +14,12 @@ import { requiredString } from '../validation/values.js';
 // nothing was recorded (paused, stopped or otherwise off) are shown as
 // "HH:mm～HH:mm 暂停记录" / "未记录" and hold no record.
 //
-// The console is the person's own view and lists everything. An Agent reads
-// only its own session, and only what that session wrote while in the
-// Agent's own project (C6-5): records a turn wrote in another project never
-// enter this project's context, not even as a count.
+// The console is the person's own view and lists everything, read through
+// its human-review port (ownerReads). An Agent reads only its own session,
+// only what that session wrote while in the Agent's own project (C6-5), and
+// as its task's FLA or plain session, so the Provider leaves out every other
+// FLA's knowledge: records a turn wrote in another project never enter this
+// project's context, not even as a count.
 
 const GROUPS = Object.freeze(['transcript', 'knowledge', 'preference_evidence']);
 const MAX_SESSION_ID = 256;
@@ -24,13 +27,13 @@ const MAX_CLIENT = 32;
 
 // sourceApplication may be left out: a receipt's short link names only the
 // session, and the Provider finds its client (or says two clients share it).
-export async function readSessionRecords(application, { personalSpaceId, sourceApplication = null, sessionId }) {
+export async function readSessionRecords(application, ownerReads, { personalSpaceId, sourceApplication = null, sessionId }) {
   if (personalSpaceId !== application.config.personal.spaceId) {
     invalid('Session records are read in the active personal space');
   }
   const sessionIdValue = requiredString(sessionId, 'sessionId', MAX_SESSION_ID);
   const read = await providerRead(application, { sessionId: sessionIdValue,
-    sourceApplication: sourceApplication ? client(sourceApplication) : null });
+    sourceApplication: sourceApplication ? client(sourceApplication) : null }, ownerReads.sessionRecords);
   return sessionRecordsView(application, { sourceApplication: read.source_application ?? null, sessionId: sessionIdValue }, read);
 }
 
@@ -41,15 +44,17 @@ export async function readOwnSessionRecords(application, { taskContextToken, sou
   const task = await application.taskContextRegistry.context(requiredString(taskContextToken, 'taskContextToken', 160),
     client(sourceApplication));
   const session = { sourceApplication: task.sourceApplication, sessionId: task.sessionId };
-  const read = await providerRead(application, session);
+  const reader = providerReaderFields(taskKnowledgeReader(task));
+  const read = await providerRead(application, session,
+    body => application.personal.readSessionRecords({ ...body, ...reader }));
   const view = sessionRecordsView(application, session, withinProject(read, task.personalProjectId ?? null));
   // The numbered lines carry every entry once; the same entries again as
   // data would only double what the answer costs.
   return { total: view.total, truncated: view.truncated, url: view.session.url, markdown: sessionRecordsMarkdown(view) };
 }
 
-async function providerRead(application, session) {
-  const read = await application.personal.readSessionRecords({ personal_space_id: application.config.personal.spaceId,
+async function providerRead(application, session, readRecords) {
+  const read = await readRecords({ personal_space_id: application.config.personal.spaceId,
     source_application: session.sourceApplication, session_id: session.sessionId });
   if (!Array.isArray(read?.turns) || !Array.isArray(read?.items)) {
     throw new TypeError('Provider did not return the session records');

@@ -366,7 +366,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_graph_format_routes(application, runtime, resolved_settings, Actor, HumanReviewer)
     register_project_agent_routes(application, store, Actor)
     register_knowledge_tag_routes(application, store, Actor, ReviewAwareActor, HumanReviewer)
-    register_knowledge_item_routes(application, store, Actor, HumanReviewer)
+    register_knowledge_item_routes(application, store, Actor, ReviewAwareActor, HumanReviewer)
     register_knowledge_hard_delete_routes(application, store, HumanReviewer)
     register_knowledge_deletion_watermark_route(application, store, Actor)
 
@@ -985,12 +985,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get('/v1/spaces/{space_id}/graph', response_model=GraphResult)
     async def graph(
         space_id: str,
-        actor: Actor,
+        # The console's full read carries the human-review proof; any other
+        # read is an Agent's: a plain session, or the FLA it names.
+        actor: ReviewAwareActor,
         limit: Annotated[int | None, Query(ge=1, le=2000)] = None,
         personal_project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
         offset: Annotated[int | None, Query(ge=0)] = None,
+        reader_project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+        reader_agent_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
     ) -> GraphResult:
-        return await store.graph(actor, space_id, limit, personal_project_id, offset)
+        return await store.graph(actor, space_id, limit, personal_project_id, offset,
+                                 reader_project_id=reader_project_id, reader_agent_id=reader_agent_id)
 
     return application
 

@@ -28,6 +28,7 @@ from .negative_feedback_block import (
     agent_authority_suspension,
     negative_feedback_block_json,
 )
+from .knowledge_visibility import PLAIN_SESSION, fla_visible_cypher, reader_parameter
 from .provider_values import json_object, native_datetime, stable_uuid
 from .store_transactions import query_store_transaction
 
@@ -553,6 +554,9 @@ async def search_human_changes(
         'status': request.status,
         'search_query': needle,
         'limit': request.limit,
+        # Only an Agent searches human changes, and as no FLA: every FLA's own
+        # knowledge stays out of it (knowledge_visibility).
+        'reader': reader_parameter(PLAIN_SESSION),
         'routing_': 'r',
     }
     entity_records, _, _ = await store.runtime.driver.execute_query(
@@ -996,6 +1000,7 @@ WHERE item.fuli_human_edited = true
       WHERE toLower(coalesce(audit.reason, '')) CONTAINS $search_query
     }
   )
+  AND ''' + fla_visible_cypher('item', 'entity') + '''
 RETURN item.uuid AS item_id,
        item.name AS title,
        coalesce(item.summary, '') AS body,
@@ -1029,6 +1034,7 @@ WHERE item.fuli_human_edited = true
       WHERE toLower(coalesce(audit.reason, '')) CONTAINS $search_query
     }
   )
+  AND ''' + fla_visible_cypher('item', 'relationship') + '''
 RETURN item.uuid AS item_id,
        item.name AS title,
        coalesce(item.fact, '') AS body,

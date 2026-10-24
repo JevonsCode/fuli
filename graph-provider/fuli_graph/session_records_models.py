@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from .knowledge_item_view_models import KnowledgeItemSummary, KnowledgeScopeProject
+from .knowledge_item_view_models import AgentReaderRef, KnowledgeItemSummary, KnowledgeScopeProject
 from .model_base import StrictModel
 from .models import SourceApplication
 
@@ -19,7 +19,7 @@ from .models import SourceApplication
 SessionRecordChange = Literal['created', 'updated', 'evidence']
 
 
-class SessionRecordsRead(StrictModel):
+class SessionRecordsRead(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     # None: the link named only the session; its one client is found.
     source_application: SourceApplication | None = None

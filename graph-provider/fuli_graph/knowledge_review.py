@@ -19,6 +19,7 @@ from .knowledge_review_models import (
     KnowledgeReviewStart,
 )
 from .ai_review import ai_review_evidence_token
+from .knowledge_visibility import PLAIN_SESSION, fla_visible
 from .personal_project_access import authorize_personal_project
 from .provider_values import native_datetime, stable_uuid
 from .store_transactions import query_store_transaction
@@ -343,6 +344,9 @@ async def _record_ai_review_progress(
             raise HTTPException(status_code=404, detail='review candidate not found')
         current = dict(current_records[0])
         normalized = _normalize_item_row(current)
+        # Never a candidate, so answered like one that does not exist.
+        if not fla_visible(normalized, PLAIN_SESSION):
+            raise HTTPException(status_code=404, detail='review candidate not found')
         if not _item_in_scope(
             normalized,
             run['scope'],
@@ -667,6 +671,7 @@ def _normalize_item_row(row: dict[str, Any]) -> dict[str, Any]:
         'preference_agent_id': row.get('preference_agent_id'),
         'inheritance_mode': row.get('inheritance_mode') or 'local_only',
         'project_ids': project_ids,
+        'episode_project_agent_ids': sorted({value for value in row.get('episode_project_agent_ids') or [] if value}),
         'confirmation_status': row.get('confirmation_status') or 'pending',
         'confirmation_basis_json': row.get('confirmation_basis_json'),
         'current_quadrant': row.get('current_quadrant') or 'known_known',
@@ -693,6 +698,10 @@ def _pattern_signature(item: dict) -> tuple:
 
 
 def _item_in_scope(item: dict, scope: str, project_id: str | None) -> bool:
+    # The reviewer is no FLA: an FLA's own knowledge and a preference the
+    # person gave one FLA stay out of every review scope.
+    if not fla_visible(item, PLAIN_SESSION):
+        return False
     is_preference = item['profile_aspect'] is not None
     preference_scope = item['preference_scope'] or 'global'
     is_global_preference = is_preference and preference_scope == 'global'
@@ -811,6 +820,7 @@ RETURN item.uuid AS item_id,
        collect(DISTINCT assignment.project_id) AS assigned_project_ids,
        collect(DISTINCT reference.project_id) AS reference_project_ids,
        collect(DISTINCT episode.fuli_personal_project_id) AS evidence_project_ids,
+       collect(DISTINCT episode.fuli_project_agent_id) AS episode_project_agent_ids,
        collect(DISTINCT episode.fuli_session_id) AS session_ids,
        coalesce(item.fuli_confirmation_status, 'pending') AS confirmation_status,
        coalesce(item.fuli_utility_score, 0.0) AS utility_score,
@@ -866,6 +876,7 @@ RETURN item.uuid AS item_id,
        collect(DISTINCT assignment.project_id) AS assigned_project_ids,
        collect(DISTINCT reference.project_id) AS reference_project_ids,
        collect(DISTINCT episode.fuli_personal_project_id) AS evidence_project_ids,
+       collect(DISTINCT episode.fuli_project_agent_id) AS episode_project_agent_ids,
        collect(DISTINCT episode.fuli_session_id) AS session_ids,
        coalesce(item.fuli_confirmation_status, 'pending') AS confirmation_status,
        coalesce(item.fuli_utility_score, 0.0) AS utility_score,
@@ -939,7 +950,8 @@ OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_KNOWLEDGE_REFERENCE]->
 WITH item,
      collect(DISTINCT assignment.project_id) +
      collect(DISTINCT reference.project_id) +
-     collect(DISTINCT episode.fuli_personal_project_id) AS project_ids
+     collect(DISTINCT episode.fuli_personal_project_id) AS project_ids,
+     collect(DISTINCT episode.fuli_project_agent_id) AS episode_project_agent_ids
 OPTIONAL MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
                [:HAS_KNOWLEDGE_CONFLICT]->
                (knowledge:FuliKnowledgeConflict {status: 'pending'})
@@ -947,13 +959,14 @@ WHERE (knowledge.item_id = item.uuid OR knowledge.target_item_id = item.uuid)
   AND ($project_id IS NULL
        OR knowledge.target_project_id = $project_id
        OR knowledge.source_project_id = $project_id)
-WITH item, project_ids, collect(DISTINCT knowledge.id) AS knowledge_conflicts
+WITH item, project_ids, episode_project_agent_ids,
+     collect(DISTINCT knowledge.id) AS knowledge_conflicts
 OPTIONAL MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
                [:HAS_PREFERENCE_CONFLICT]->
                (preference:FuliPreferenceConflict {status: 'ai_pending'})
 WHERE (preference.left_item_id = item.uuid OR preference.right_item_id = item.uuid)
   AND ($project_id IS NULL OR preference.preference_project_id = $project_id)
-WITH item, project_ids, knowledge_conflicts,
+WITH item, project_ids, episode_project_agent_ids, knowledge_conflicts,
      collect(DISTINCT preference.id) AS preference_conflicts
 RETURN item.uuid AS item_id,
        'entity' AS item_kind,
@@ -979,6 +992,7 @@ RETURN item.uuid AS item_id,
        coalesce(item.fuli_human_change_version, 0) AS human_change_version,
        coalesce(item.fuli_attributes_json, '{}') AS attributes_json,
        project_ids,
+       episode_project_agent_ids,
        CASE WHEN size(knowledge_conflicts) + size(preference_conflicts) > 0
             THEN true ELSE false END AS has_conflict,
        item.created_at AS created_at,
@@ -1006,7 +1020,8 @@ OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_KNOWLEDGE_REFERENCE]->
 WITH item,
      collect(DISTINCT assignment.project_id) +
      collect(DISTINCT reference.project_id) +
-     collect(DISTINCT episode.fuli_personal_project_id) AS project_ids
+     collect(DISTINCT episode.fuli_personal_project_id) AS project_ids,
+     collect(DISTINCT episode.fuli_project_agent_id) AS episode_project_agent_ids
 OPTIONAL MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
                [:HAS_KNOWLEDGE_CONFLICT]->
                (knowledge:FuliKnowledgeConflict {status: 'pending'})
@@ -1014,13 +1029,14 @@ WHERE (knowledge.item_id = item.uuid OR knowledge.target_item_id = item.uuid)
   AND ($project_id IS NULL
        OR knowledge.target_project_id = $project_id
        OR knowledge.source_project_id = $project_id)
-WITH item, project_ids, collect(DISTINCT knowledge.id) AS knowledge_conflicts
+WITH item, project_ids, episode_project_agent_ids,
+     collect(DISTINCT knowledge.id) AS knowledge_conflicts
 OPTIONAL MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
                [:HAS_PREFERENCE_CONFLICT]->
                (preference:FuliPreferenceConflict {status: 'ai_pending'})
 WHERE (preference.left_item_id = item.uuid OR preference.right_item_id = item.uuid)
   AND ($project_id IS NULL OR preference.preference_project_id = $project_id)
-WITH item, project_ids, knowledge_conflicts,
+WITH item, project_ids, episode_project_agent_ids, knowledge_conflicts,
      collect(DISTINCT preference.id) AS preference_conflicts
 RETURN item.uuid AS item_id,
        'relationship' AS item_kind,
@@ -1046,6 +1062,7 @@ RETURN item.uuid AS item_id,
        coalesce(item.fuli_human_change_version, 0) AS human_change_version,
        coalesce(item.fuli_attributes_json, '{}') AS attributes_json,
        project_ids,
+       episode_project_agent_ids,
        CASE WHEN size(knowledge_conflicts) + size(preference_conflicts) > 0
             THEN true ELSE false END AS has_conflict,
        item.created_at AS created_at,
