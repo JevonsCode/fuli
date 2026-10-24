@@ -2,6 +2,7 @@
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -254,11 +255,14 @@ async def test_a_retry_with_another_source_never_returns_an_flas_stored_draft():
         # That turn turns out to be an FLA's: an older draft of its work.
         driver.project_agent_turns = {'fla-turn'}
         stored = dict(driver.rows[draft_id])
+        # Not the same create re-sent: answered exactly as a draft that does not exist.
+        missing = await client.get(f'/v1/publication-drafts/no-such-draft-{uuid4()}')
         for episode in ({k: v for k, v in turned.items() if k != 'source_turn_id'},
-                        {**turned, 'source_turn_id': 'another-turn'}):
+                        {**turned, 'source_turn_id': 'another-turn'},
+                        {**turned, 'session_id': 'another-session', 'source_turn_id': 'another-turn'}):
             retried = await client.post('/v1/publication-drafts', json={**create, 'episode': episode})
-            assert (retried.status_code, retried.json()) == (200, {'status': 'already_exists', 'draft_id': draft_id})
-            assert 'fla-turn' not in retried.text
+            assert (retried.status_code, retried.json()) == (missing.status_code, missing.json()) == (
+                404, {'detail': 'publication draft not found'})
             assert driver.rows[draft_id] == stored, 'a retry never changes the stored row'
         same = await client.post('/v1/publication-drafts', json={**create, 'episode': turned})
         assert same.status_code == 422, 'naming the FLA\'s turn is refused as before'
@@ -280,11 +284,17 @@ async def test_a_draft_whose_source_cannot_be_found_is_the_persons_alone_and_nev
         created = await client.post('/v1/publication-drafts', json=create)
         assert created.status_code == 200, 'nothing says it is an FLA\'s, so it is made'
         new_id = created.json()['id']
-        # A retry of the same key gets the stored draft back, judged by the stored row: unresolved,
-        # so an Agent learns only that it exists (no other key) and nothing changes; the person's retry gets it.
+        # A retry of the same key is judged by the stored row: unresolved. The very same create re-sent
+        # learns only that it was made (no other key); a probe with another source learns nothing.
         stored = dict(driver.rows[new_id])
         retried = await client.post('/v1/publication-drafts', json=create)
         assert (retried.status_code, retried.json()) == (200, {'status': 'already_exists', 'draft_id': new_id})
+        missing = await client.get(f'/v1/publication-drafts/no-such-draft-{uuid4()}')
+        for episode in ({**create['episode'], 'session_id': 'another-session'},
+                        {**create['episode'], 'source_application': 'codex'},
+                        {**create['episode'], 'source_turn_id': 'another-turn'}):
+            probe = await client.post('/v1/publication-drafts', json={**create, 'episode': episode})
+            assert (probe.status_code, probe.json()) == (missing.status_code, missing.json()), episode
         assert driver.rows[new_id] == stored
         assert (await client.post('/v1/publication-drafts', headers=owner, json=create)).json()['id'] == new_id
         for params in ({'status': 'all'}, {'status': 'all', 'metadata_only': 'true'}):

@@ -115,10 +115,14 @@ class StorePublication:
             )
         draft = dict(records[0]['draft'])
         # A retry of a key already drafted gets the stored draft back unchanged, so it is judged by
-        # the STORED row's provenance, not the request's. One this caller may not read answers only
-        # that it exists, so a capture whose first reply was lost still knows it was made.
+        # the STORED row's provenance, not the request's. One this caller may not read: the very same
+        # create re-sent (its whole source identity equal to the stored one) learns only that it was
+        # made, so a capture whose first reply was lost still succeeds; any other request is answered
+        # exactly as a draft that does not exist.
         if records[0]['existed'] and await self._project_agent_drafts(actor, space, [draft]):
-            return PublicationDraftExists(draft_id=draft_id)
+            if identity == _draft_identity(space, draft):
+                return PublicationDraftExists(draft_id=draft_id)
+            raise HTTPException(status_code=404, detail='publication draft not found')
         return self._publication_draft(draft)
 
     async def list_publication_drafts(
