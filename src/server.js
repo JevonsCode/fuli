@@ -104,9 +104,10 @@ export async function createServer(options = {}) {
   // The person's own tag changes and tag governance (rec#11 D-07 part 2), console only.
   const knowledgeTags = options.knowledgeTags ?? (localOptions.runtimeConfigPath
     ? createKnowledgeTagsConsole(dirname(localOptions.runtimeConfigPath)) : null);
-  // Saves a built-in Agent's model settings; reached only by the loopback route.
+  // Saves a built-in Agent's model settings, recording what changed; reached only by the loopback route.
   const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
-    ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath) : null);
+    ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath,
+      { history: application.modelSettingsHistory }) : null);
   // The latest local evaluation of a role's model, as the model settings page shows it (rec#10 D-36.6).
   const readModelEvaluation = options.readModelEvaluation ?? (localOptions.runtimeConfigPath
     ? key => latestEvaluation(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelEvaluationsPath, key) : null);

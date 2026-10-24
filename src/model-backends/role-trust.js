@@ -30,6 +30,10 @@ import { MODEL_BACKEND_ROLES } from './config.js';
 // refuses) or after it. The caller's write is its commit point (Tonborg
 // stores its apply intent there): a task committed before the switch has
 // started and completes, like a write that finished a moment earlier.
+//
+// history (settings-history.js) records each change once it committed, with
+// the row revisions it went from and to (rec#11 D-42). A change answers
+// whether it was recorded; a failed record leaves the change as it is.
 
 export const MODEL_TRUST_FORMAT = sqliteFormat({
   store: 'model-trust',
@@ -45,7 +49,7 @@ const DEFAULT_STATE = Object.freeze({ suggestionsOnly: false, suggestionsOnlyAt:
   warningSeenAt: null, revision: 0 });
 
 // modelBackends: the model port (port.js), read on every check.
-export function createRoleTrust({ path = ':memory:', modelBackends, now = () => new Date() }) {
+export function createRoleTrust({ path = ':memory:', modelBackends, history = null, now = () => new Date() }) {
   let database = null;
   // Opened on first change; a missing file is the default state, never created by a read.
   const open = () => (database ??= openFormattedDatabase(path, MODEL_TRUST_FORMAT));
@@ -78,6 +82,7 @@ export function createRoleTrust({ path = ':memory:', modelBackends, now = () => 
     return { status: 'passed', reason: null, modelId: key.model };
   }
 
+  // Returns the state the change started from.
   function change(role, expectedRevision, columns) {
     if (!MODEL_BACKEND_ROLES.includes(role)) throw new TypeError(`Unknown role: ${role}`);
     return locked(open(), () => {
@@ -93,8 +98,12 @@ export function createRoleTrust({ path = ':memory:', modelBackends, now = () => 
           suggestions_only_at = excluded.suggestions_only_at, warning_version = excluded.warning_version,
           warning_seen_at = excluded.warning_seen_at, revision = excluded.revision`)
         .run({ role, ...next, revision: expectedRevision + 1 });
+      return current;
     });
   }
+
+  const recorded = (role, kind, expectedRevision, change) =>
+    ({ history: history ? history.recordTrust(role, kind, expectedRevision, change) : 'not_recorded' });
 
   return {
     // What an answer may do by itself if it were used now.
@@ -126,13 +135,17 @@ export function createRoleTrust({ path = ':memory:', modelBackends, now = () => 
         status: gate.status === 'passed' ? 'automatic' : 'suggestion', reason: gate.reason };
     },
     setSuggestionsOnly(role, suggestionsOnly, expectedRevision) {
-      change(role, expectedRevision, { suggestions_only: suggestionsOnly ? 1 : 0, suggestions_only_at: now().toISOString() });
+      const before = change(role, expectedRevision, { suggestions_only: suggestionsOnly ? 1 : 0, suggestions_only_at: now().toISOString() });
+      return recorded(role, 'suggestions_only', expectedRevision,
+        { field: 'suggestionsOnly', before: before.suggestionsOnly, after: suggestionsOnly });
     },
     acknowledgeWarning(role, warningVersion, expectedRevision) {
       if (warningVersion !== TRUST_WARNING_VERSION) {
         throw new ApplicationError('model_trust_warning_changed', 'The warning changed since the page showed it; read it again.', { status: 409 });
       }
-      change(role, expectedRevision, { warning_version: TRUST_WARNING_VERSION, warning_seen_at: now().toISOString() });
+      const before = change(role, expectedRevision, { warning_version: TRUST_WARNING_VERSION, warning_seen_at: now().toISOString() });
+      return recorded(role, 'warning_acknowledged', expectedRevision,
+        { field: 'warningVersion', before: before.warningSeen ? TRUST_WARNING_VERSION : null, after: TRUST_WARNING_VERSION });
     },
     close() { database?.close(); database = null; }
   };

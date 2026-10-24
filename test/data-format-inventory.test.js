@@ -11,10 +11,12 @@ import { createNodeStore } from '../packages/roundtable/src/peer/node-store.js';
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { createStandaloneStore } from '../packages/roundtable/src/standalone/store.js';
 import { AgentAppStore } from '../src/agent-apps/store.js';
+import { localStoreFiles } from '../src/data-format/local-stores.js';
 import { EmployeeManagementStore } from '../src/employees/management-policy.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { createRoleTrust } from '../src/model-backends/role-trust.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { createModelSettingsHistory } from '../src/model-backends/settings-history.js';
 import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { TaskScheduleStore } from '../src/task-schedules/store.js';
@@ -32,6 +34,11 @@ const SQLITE_STORES = {
   judgment: (path) => { const store = new JudgmentStore(path); return () => store.close(); },
   'model-trust': (path) => {
     const store = createRoleTrust({ path, modelBackends: {} }); store.setSuggestionsOnly('tonborg', false, 0); return () => store.close();
+  },
+  'model-settings-history': (path) => {
+    const store = createModelSettingsHistory({ path, readConfig: () => ({ state: 'absent' }) });
+    store.recordTrust('tonborg', 'suggestions_only', 0, { field: 'suggestionsOnly', before: false, after: true });
+    return () => store.close();
   },
   'model-usage': (path) => { const store = new ModelUsageLedger(path); void store.db; return () => store.close(); },
   'peer-coordinator': (path) => { const store = createCoordinatorStore(path); return () => store.close(); },
@@ -146,6 +153,14 @@ test('each SQLite store keeps the schema its version declares', (t) => {
     + 'A shipped version\'s fingerprint never changes.');
 });
 
+// The roundtable package's standalone store lives outside a FULI data directory.
+test('every SQLite store of a data directory is in its registry, so migrate status and backups see it', () => {
+  const registered = localStoreFiles('data').filter((store) => store.kind === 'sqlite');
+  assert.deepEqual(registered.map((store) => store.format.store).sort(),
+    Object.keys(SQLITE_STORES).filter((store) => store !== 'standalone').sort());
+  assert.equal(registered.find((store) => store.format.store === 'model-settings-history').label, 'model-settings-history.sqlite');
+});
+
 test('a store from its first release upgrades to exactly the schema a fresh store gets', (t) => {
   for (const [store, firstRelease] of Object.entries(FIRST_RELEASES)) {
     const fresh = temporaryStore(t, `${store}-fresh`);
@@ -215,7 +230,9 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/graphiti/capture-policy.js',
     'its plain writes of the settings and their generation run only inside updateVersionedJsonFileAtomic, under the format lock and guard'],
   ['src/graphiti/capture-session-pause.js',
-    'its plain write runs only inside updateVersionedJsonFileAtomic, under the format lock and guard']
+    'its plain write runs only inside updateVersionedJsonFileAtomic, under the format lock and guard'],
+  ['src/model-backends/role-settings.js',
+    'its plain write of model-backends.json runs only inside updateVersionedJsonFileAtomic, under the format lock and guard']
 ]);
 
 test('every JSON data file FULI writes is written through the format guard', () => {

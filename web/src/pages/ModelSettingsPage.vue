@@ -8,6 +8,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
+import ModelRoleHistory from '@/features/model-settings/ModelRoleHistory.vue'
 import ModelRoleTrust from '@/features/model-settings/ModelRoleTrust.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
@@ -21,7 +22,7 @@ import { useConsoleStore } from '@/stores/console'
 
 // 模型与用量 (rec#8, rec#38): one centred column of grouped lists. Each
 // built-in Agent is one row (name, state, model, one summary line) that opens
-// its settings in place at full row width; editing is a centred form. Then
+// its settings and change history in place at full row width; editing is a centred form. Then
 // what Astro, Bole and Jefa suggested with their model, and their usage. A
 // save is accepted only at the local process boundary (a loopback request).
 const store = useConsoleStore()
@@ -60,8 +61,11 @@ function edit(role: ModelRoleId) {
   editing.value = role
 }
 
+// A save whose change could not be written to the change history says so (rec#11 D-42).
+const historyNote = (next: ModelRolesPayload) => (next.history === 'not_recorded' ? t('modelSettings.history.notRecorded') : '')
+
 function saved(next: ModelRolesPayload) {
-  notice.value = t('modelSettings.saved', { name: roleName(editing.value!) })
+  notice.value = [t('modelSettings.saved', { name: roleName(editing.value!) }), historyNote(next)].filter(Boolean).join(' ')
   payload.value = next
   editing.value = null
 }
@@ -120,6 +124,7 @@ function trustFact(view: ModelRoleView): Fact[] {
 }
 
 function trustSaved(next: ModelRolesPayload) {
+  notice.value = historyNote(next)
   payload.value = next
 }
 
@@ -198,6 +203,7 @@ onBeforeUnmount(() => {
                 </dl>
                 <ModelRoleTrust v-if="view.trust && showsTrust(view)" :role="view.role" :trust="view.trust"
                   :model="view.connection?.model ?? null" @saved="trustSaved" @changed="load" />
+                <ModelRoleHistory :role="view.role" :revision="`${payload.revision ?? ''}:${view.trust?.revision ?? ''}`" />
                 <footer class="model-role-actions">
                   <Button variant="outline" size="sm" :disabled="payload.state === 'invalid'" data-model-role-edit
                     :aria-label="`${t('modelSettings.edit')} ${roleName(view.role)}`" @click="edit(view.role)">

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { refuseRemoteDecision } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
 import { positiveInteger } from '../validation/values.js';
+import { MODEL_BACKEND_ROLES } from './config.js';
 import { RETENTION } from './suggestion-log.js';
 
 // Routes of the model settings page. The roles and usage reads are
@@ -22,10 +23,15 @@ import { RETENTION } from './suggestion-log.js';
 // its latest answer (rec#10 D-32), read-only: an observation, never proof.
 // suggestions lists what Astro, Bole and Jefa showed after asking their own
 // model (suggestion-log.js), newest first, a limit clamped to RETENTION.rows, with
-// its retention; it is a read only, and no route writes it.
+// its retention; it is a read only, and no route writes it. history lists
+// what changed in a role's settings and execution mode and when
+// (settings-history.js, rec#11 D-42), newest first, read only; each save and
+// trust change answers whether its change was recorded there.
 const ROLE_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)$/;
 const TRUST_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)\/trust$/;
 const SUGGESTIONS_ROUTE = '/api/model-backends/suggestions';
+const HISTORY_ROUTE = '/api/model-backends/history';
+const READ_ROUTES = ['/api/model-backends/usage', '/api/model-backends/roles', SUGGESTIONS_ROUTE, HISTORY_ROUTE];
 const revision = z.number().int().min(0);
 const TRUST_EDIT = z.union([
   z.object({ expectedRevision: revision, suggestionsOnly: z.boolean() }).strict(),
@@ -34,17 +40,19 @@ const TRUST_EDIT = z.union([
 
 export async function handleModelBackendApiRequest({
   request, response, url, modelBackends, roleWork = null, readRoleSuggestions = null, roleSettings = null, operations = {},
-  automaticOperations = {}, modelTrust = null, readEvaluation = null
+  automaticOperations = {}, modelTrust = null, settingsHistory = null, readEvaluation = null
 }) {
   const roleEdit = ROLE_ROUTE.exec(url.pathname)?.[1] ?? null;
   const trustEdit = TRUST_ROUTE.exec(url.pathname)?.[1] ?? null;
-  if (!roleEdit && !trustEdit && !['/api/model-backends/usage', '/api/model-backends/roles', SUGGESTIONS_ROUTE].includes(url.pathname)) return false;
+  if (!roleEdit && !trustEdit && !READ_ROUTES.includes(url.pathname)) return false;
   if (request.method !== (roleEdit || trustEdit ? 'PUT' : 'GET')) {
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;
   }
   const suggestions = url.pathname === SUGGESTIONS_ROUTE;
-  if (!modelBackends || (roleEdit && !roleSettings) || (trustEdit && !modelTrust) || (suggestions && !readRoleSuggestions)) {
+  const history = url.pathname === HISTORY_ROUTE;
+  if (!modelBackends || (roleEdit && !roleSettings) || (trustEdit && !modelTrust) || (suggestions && !readRoleSuggestions)
+    || (history && !settingsHistory)) {
     sendJson(response, 503, { error: 'Model backends need a local FULI installation' });
     return true;
   }
@@ -55,9 +63,14 @@ export async function handleModelBackendApiRequest({
       retention: RETENTION });
     return true;
   }
+  if (history) {
+    sendJson(response, 200, { entries: settingsHistory.list(historyQuery(url.searchParams)) });
+    return true;
+  }
+  let saved = null;
   if (roleEdit) {
     if (refuseRemoteDecision(request, response, 'Model settings are changed only on this computer')) return true;
-    roleSettings.save(roleEdit, await readJson(request));
+    saved = roleSettings.save(roleEdit, await readJson(request));
   }
   if (trustEdit) {
     if (refuseRemoteDecision(request, response, 'A role\'s execution mode is changed only on this computer')) return true;
@@ -65,8 +78,8 @@ export async function handleModelBackendApiRequest({
     const parsed = TRUST_EDIT.safeParse(await readJson(request));
     if (!parsed.success) throw new TypeError('Send expectedRevision with either suggestionsOnly or acknowledgeWarning');
     const edit = parsed.data;
-    if ('suggestionsOnly' in edit) modelTrust.setSuggestionsOnly(trustEdit, edit.suggestionsOnly, edit.expectedRevision);
-    else modelTrust.acknowledgeWarning(trustEdit, edit.acknowledgeWarning, edit.expectedRevision);
+    saved = 'suggestionsOnly' in edit ? modelTrust.setSuggestionsOnly(trustEdit, edit.suggestionsOnly, edit.expectedRevision)
+      : modelTrust.acknowledgeWarning(trustEdit, edit.acknowledgeWarning, edit.expectedRevision);
   }
   if (roleEdit || trustEdit || url.pathname === '/api/model-backends/roles') {
     const settings = modelBackends.roles();
@@ -74,12 +87,19 @@ export async function handleModelBackendApiRequest({
       trust: trustView(role, settings.connections, { automaticOperations, modelTrust, readEvaluation }),
       localBuild: modelBackends.localBuild(role.role, role.connection?.id ?? null,
         role.connection ? settings.connections[role.connection.id] : null) })),
-      operations, workPackages: roleWork?.summary().packages ?? [] });
+      operations, workPackages: roleWork?.summary().packages ?? [], ...(saved ? { history: saved.history } : {}) });
     return true;
   }
   sendJson(response, 200, modelBackends.usage({ role: url.searchParams.get('role'),
     from: url.searchParams.get('from'), to: url.searchParams.get('to') }));
   return true;
+}
+
+function historyQuery(params) {
+  const role = params.get('role') || null;
+  if (role !== null && !MODEL_BACKEND_ROLES.includes(role)) throw new TypeError(`Unknown role: ${role}`);
+  const limit = params.get('limit');
+  return { role, ...(limit === null ? {} : { limit: positiveInteger(Number(limit), 'limit', Number.MAX_SAFE_INTEGER) }) };
 }
 
 // rec#10 D-36, read-only: whether a role's model carries out its automatic
