@@ -6,7 +6,7 @@ import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../src/mcp/instructions
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { sessionFuliOffContext } from '../src/conversations/session-fuli-entry.js';
-import { PASS_TASK_TOKEN } from '../src/agents/lifecycle-message.js';
+import { PASS_TASK_TOKEN, taskClosingInstruction } from '../src/agents/lifecycle-message.js';
 import { withCodexReviewGuidance } from '../src/agents/codex/review-command.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -127,6 +127,15 @@ const BASELINE = Object.freeze({
   // rec#5 C3b option Y: the per-turn Claude Code and Codex hook label asks for the token the Agent
   // already has, instead of a sentence in the server instructions (which must stay under 2 KiB).
   taskTokenHintChars: 42,
+  // rec#47 F1: the Claude Code and Codex hook labels say how the task closes, with the token
+  // and receipt markdown, because the entry only references the checkpoint and receipt rules
+  // and Claude Code shows a long entry as a file preview, in which a tester's model searched
+  // its own hook output five times for them (+215% input tokens). Measured on the synthetic
+  // project entry, its token and receipt link included: 326 chars. The labels drop "Read full
+  // context" and "Follow checkpoint_guidance: …" (Claude Code -144, Codex -132 chars), so a
+  // turn's label grows by about 190 chars, about 50 tokens; a longer token or agent name adds
+  // its own length.
+  entryClosingChars: 326,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that
   // saved items adds one heading (14 chars) and one line per item (152 chars for a short
@@ -163,9 +172,9 @@ const BASELINE = Object.freeze({
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
   ({ name, title, description, inputSchema }))));
 
-// Synthetic project entry through the real preference workflow and the Claude
-// Code hook delivery path; no live Provider.
-async function projectEntryChars() {
+// Synthetic project entry through the real preference workflow, compacted as
+// the hook delivers it; no live Provider.
+async function projectEntry() {
   const project = { project_id: 'sample', scope_type: 'registered', profile: { name: 'Sample' } };
   const lead = { agent_id: 'lead-sample', personal_space_id: 'space', personal_project_id: 'sample',
     profile: { name: 'Synthetic lead', status: 'active', allowed_clients: ['claude_code'],
@@ -192,9 +201,17 @@ async function projectEntryChars() {
   const entry = await app.getCollaborationPreferences({ projectPath: '/synthetic/sample',
     sourceApplication: 'claude_code', sourceSessionId: 'synthetic-host', sessionId: 'synthetic-session',
     taskPrompt: 'Synthetic task', agentInvocation: true, agentToolName: 'get_collaboration_preferences' });
-  const delivered = hookAdditionalContextToolResult(compactTaskContext(entry), { hookEventName: 'UserPromptSubmit',
+  return compactTaskContext(entry);
+}
+
+// The entry through the Claude Code hook delivery path, and the closing line
+// its real label adds.
+async function projectEntryChars() {
+  const entry = await projectEntry();
+  const delivered = hookAdditionalContextToolResult(entry, { hookEventName: 'UserPromptSubmit',
     label: 'Synthetic budget entry', limitBytes: 128 * 1024, itemLimit: 1000 });
-  return JSON.parse(delivered.content[0].text).hookSpecificOutput.additionalContext.length;
+  return { projectEntryChars: JSON.parse(delivered.content[0].text).hookSpecificOutput.additionalContext.length,
+    entryClosingChars: taskClosingInstruction(entry).length };
 }
 
 // What a chat client actually receives from tools/list, dispatcher included.
@@ -216,7 +233,7 @@ async function measure() {
     chatToolSchemaBytes: await listedChatBytes(),
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
-    projectEntryChars: await projectEntryChars(),
+    ...await projectEntryChars(),
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
