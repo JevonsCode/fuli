@@ -145,6 +145,8 @@ export interface ModelRolesPayload {
   connections: Record<string, ModelConnection>
   roles: ModelRoleView[]
   operations: Partial<Record<ModelRoleId, string[]>>
+  // After a save or trust change: whether the change was written to the change history (rec#11 D-42).
+  history?: 'recorded' | 'unchanged' | 'not_recorded'
 }
 
 export const readModelRoles = (signal?: AbortSignal) =>

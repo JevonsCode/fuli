@@ -39,6 +39,7 @@ export function resolveSetupPaths({
     roleWorkPath: join(resolvedDataDir, 'role-work.sqlite'),
     roleSuggestionsPath: join(resolvedDataDir, 'role-suggestions.sqlite'),
     modelTrustPath: join(resolvedDataDir, 'model-trust.sqlite'),
+    modelSettingsHistoryPath: join(resolvedDataDir, 'model-settings-history.sqlite'),
     standingAssignmentsPath: join(resolvedDataDir, 'standing-assignments.sqlite'),
     modelEvaluationsPath: join(resolvedDataDir, 'model-evaluations.json'),
     nativeRuntimeDir,

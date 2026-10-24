@@ -42,7 +42,7 @@ export async function handleApiRequest({
     readRoleSuggestions: app.roleSuggestions ? input => app.readRoleSuggestions(input) : null,
     roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS) },
     automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
-    readEvaluation: readModelEvaluation })) return true;
+    settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation })) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {
     sendJson(response, 200, {
