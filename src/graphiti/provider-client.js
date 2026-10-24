@@ -1,6 +1,7 @@
 import { ApplicationError } from '../app/application-error.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
+import { afterProjectWrite, sharedProjectList } from './shared-project-list.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
@@ -173,17 +174,17 @@ export class GraphitiProviderClient {
     return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/releases`);
   }
   deleteProject(projectId) {
-    return this.#request(`/v1/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+    return afterProjectWrite(this, () => this.#request(`/v1/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' }));
   }
   upsertPersonalProject(input) {
-    return this.#request('/v1/personal-projects', { method: 'PUT', body: input });
+    return afterProjectWrite(this, () => this.#request('/v1/personal-projects', { method: 'PUT', body: input }));
   }
   ensureTemporaryProject(input) {
-    return this.#request('/v1/temporary-projects/ensure', { method: 'POST', body: input });
+    return afterProjectWrite(this, () => this.#request('/v1/temporary-projects/ensure', { method: 'POST', body: input }));
   }
   listPersonalProjects(personalSpaceId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
-    return this.#request(`/v1/personal-projects?${query}`);
+    return sharedProjectList(this, personalSpaceId, () => this.#request(`/v1/personal-projects?${query}`));
   }
   getPersonalProject(personalSpaceId, projectId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });

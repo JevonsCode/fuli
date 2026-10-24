@@ -24,6 +24,7 @@ import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
+import { entryBudget, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
 
 // Task entry gets longer: a warm entry already takes 2–4 s on a Mac and a cold
 // first one ran past 5 s, which costs the model two fallback requests. Both
@@ -228,7 +229,7 @@ async function closeQuietly(resource) {
 
 // The cause says whether the hook ran out of time or failed, so a report can
 // tell a slow first start from a broken install without exposing details.
-function codexLifecycleUnavailable(event, input, cause) {
+function codexLifecycleUnavailable(event, input, cause, incomplete = '') {
   // The person's review line never reaches the model unverified (rec#22).
   if (event === 'UserPromptSubmit' && isCodexReviewCommand(input?.prompt)) {
     return { decision: 'block', reason: CODEX_REVIEW_UNVERIFIED_REASON };
@@ -245,8 +246,17 @@ function codexLifecycleUnavailable(event, input, cause) {
   // session cannot replace it when the Agent falls back to the preferences tool.
   const fallback = ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Follow checkpoint_required and checkpoint_guidance; use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog when there is something to record. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.`;
   return { systemMessage: warning, hookSpecificOutput: {
-    hookEventName: event, additionalContext: warning + fallback
+    hookEventName: event, additionalContext: warning + fallback + incomplete
   } };
+}
+
+// At the deadline an entry that already wrote its task delivers its token and
+// what is missing (entry-budget.js); otherwise the fallback says what to fetch.
+function codexEntryDeadlineOutput(event, input, budget, cause) {
+  const partial = event === 'UserPromptSubmit' && !isCodexReviewCommand(input?.prompt) ? partialEntryText(budget) : null;
+  return partial ? { systemMessage: `Fuli task context is partial (${cause}).`,
+    hookSpecificOutput: { hookEventName: event, additionalContext: partial } }
+    : codexLifecycleUnavailable(event, input, cause, NO_TASK_AT_DEADLINE);
 }
 
 export async function runCodexLifecycleCommand(args, dependencies = {}) {
@@ -262,12 +272,13 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
   let input = null;
   const readInput = dependencies.readInput ?? readHookInput;
   const unavailable = cause => `${JSON.stringify(codexLifecycleUnavailable(event, input, cause))}\n`;
+  const budget = entryBudget(timeoutMs);
   let cleanup = async () => {};
   let deadline;
   const expired = new Promise(resolve => {
     deadline = setTimeout(async () => {
       controller.abort();
-      write(unavailable(`no answer within ${timeoutMs} ms`));
+      write(`${JSON.stringify(codexEntryDeadlineOutput(event, input, budget, `no answer within ${timeoutMs} ms`))}\n`);
       // A broken dependency must not hold the host open. Give opened leases
       // and connections a bounded chance to close before the process exits.
       let grace;
@@ -277,10 +288,10 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
     }, timeoutMs);
   });
   try {
-    const running = runCodexLifecycleHook(args, { ...dependencies, signal: controller.signal, write,
+    const running = runWithEntryBudget(budget, () => runCodexLifecycleHook(args, { ...dependencies, signal: controller.signal, write,
       captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
       readInput: async () => { input = await readInput(); return input; },
-      onCleanup: close => { cleanup = close; } }).then(() => ({ timedOut: false }), () => {
+      onCleanup: close => { cleanup = close; } })).then(() => ({ timedOut: false }), () => {
       // Never print prompts, transcripts, paths or credentials.
       write(unavailable('the hook failed'));
       return { timedOut: false };

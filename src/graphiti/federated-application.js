@@ -104,6 +104,7 @@ import { createSessionPreferenceDelivery } from '../conversations/preference-ses
 import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import { knowledgeTags } from './knowledge-tags.js';
+import { withSharedProjectList } from './shared-project-list.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -292,7 +293,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return { route: 'personal', ...result };
   }
 
-  async getCollaborationPreferences({
+  // A task entry reads the project list once (shared-project-list.js).
+  getCollaborationPreferences(input) { return withSharedProjectList(() => this.#collaborationPreferences(input)); }
+
+  async #collaborationPreferences({
     personalProjectId = null,
     projectAgentId = null,
     projectPath = null,
