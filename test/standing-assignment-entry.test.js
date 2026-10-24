@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { callAgentTool } from '../src/agent-tools.js';
+import { ApplicationError } from '../src/app/application-error.js';
+import { ProviderRequestError } from '../src/graphiti/provider-client.js';
 import { registerStandingAssignment } from '../src/graphiti/standing-assignment-entry.js';
 import { createStandingAssignments } from '../src/standing-assignments/port.js';
 
@@ -15,8 +17,9 @@ import { createStandingAssignments } from '../src/standing-assignments/port.js';
 const SPACE = 'space-synthetic';
 const TOKEN = 'fuli-task-synthetic';
 
-// interleave: steps another request takes while this one awaits the Provider,
-// run at a fixed point (after the lead's name is read, during staffing).
+// interleave: steps another request takes (or a failure) while this one awaits
+// the Provider, run at a fixed point: a project create, a lead's name read,
+// staffing, a coordination policy read.
 function application(t, { activityOrigin = null, delegated = false, projects = [], leads = {}, interleave = {} } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-standing-entry-'));
   const path = join(directory, 'standing-assignments.sqlite');
@@ -35,12 +38,16 @@ function application(t, { activityOrigin = null, delegated = false, projects = [
     roundtable: { taskEntryDelegation: () => (delegated ? { token: 'delegation' } : null) },
     upsertPersonalProject: async input => {
       calls.push(['create', input]);
+      await interleave.create?.();
       registered.set(input.projectId, { project_id: input.projectId, scope_type: 'registered', profile: input.profile });
     },
     personal: {
       listPersonalProjects: async () => [...registered.values()],
       getPersonalProject: async (_, id) => registered.get(id),
-      getProjectAgentCoordinationPolicy: async (_, id) => ({ team_lead_agent_id: policy.get(id) ?? null }),
+      getProjectAgentCoordinationPolicy: async (_, id) => {
+        await interleave.policyRead?.();
+        return { team_lead_agent_id: policy.get(id) ?? null };
+      },
       getProjectAgent: async (_, __, agentId) => {
         await interleave.afterLeadRead?.();
         return { agent_id: agentId, profile: { name: `${agentId} name` } };
@@ -175,7 +182,7 @@ test('a lead that changes while confirming is refused, and a new preview uses th
   armed = true;
   await assert.rejects(call(app, 'confirm', { ...deploy(), confirmationDigest }), { code: 'standing_assignment_plan_changed',
     message: 'The project\'s lead changed while confirming: it is now lead-b, not lead-a. The terms were NOT registered. '
-      + 'Nothing was saved. Preview again and ask the user again; it reuses the project and its current lead.' });
+      + 'Nothing was saved; preview again and ask the user again.' });
   assert.deepEqual(app.standingAssignments.list(SPACE), []);
   armed = false;
   const again = await call(app, 'preview', deploy());
@@ -195,10 +202,13 @@ test('a lead another request hires first is refused, saying the created project 
     return { status: 'unassigned', reason: 'team_lead_unavailable' };
   } } });
   const { confirmationDigest } = await call(app, 'preview', timesheet());
-  await assert.rejects(call(app, 'confirm', { ...timesheet(), confirmationDigest }), { code: 'standing_assignment_plan_changed',
-    message: 'The project\'s lead changed while confirming: it is now lead-other, not a lead hired for this plan. The terms '
-      + 'were NOT registered. Already written and kept: project "Timesheet" (timesheet) was created. Preview again and ask '
-      + 'the user again; it reuses the project and its current lead.' });
+  await assert.rejects(call(app, 'confirm', { ...timesheet(), confirmationDigest }), {
+    code: 'standing_assignment_partially_applied',
+    message: 'Partly applied: project "Timesheet" (timesheet) was created; what was written is kept. The terms were NOT '
+      + 'registered (standing_assignment_plan_changed: The project\'s lead changed while confirming: it is now lead-other, '
+      + 'not a lead hired for this plan). Preview again and ask the user again: it reuses the project and lead that exist now.',
+    cause: { code: 'standing_assignment_plan_changed', message: 'The project\'s lead changed while confirming: it is now '
+      + 'lead-other, not a lead hired for this plan.' } });
   assert.deepEqual(app.standingAssignments.list(SPACE), []);
   const again = await call(app, 'preview', timesheet());
   assert.deepEqual([again.plan.project.action, again.plan.lead.agentId], ['reuse', 'lead-other']);
@@ -216,10 +226,13 @@ test('a term taken while the lead is hired names what was written, and a new pre
   } } });
   const { confirmationDigest } = await call(app, 'preview', timesheet());
   await assert.rejects(call(app, 'confirm', { ...timesheet(), confirmationDigest }), {
-    code: 'standing_assignment_terms_not_registered',
-    message: 'Partly applied: project "Timesheet" (timesheet) was created and AR hired its lead lead-timesheet. These '
-      + 'writes are kept; the terms were NOT registered: "iDev" already names the standing assignment of project ops '
-      + '(lead lead-ops). Preview again: it reuses this project and lead.' });
+    code: 'standing_assignment_partially_applied',
+    message: 'Partly applied: project "Timesheet" (timesheet) was created, and AR hired its lead lead-timesheet; what was '
+      + 'written is kept. The terms were NOT registered (standing_assignment_term_taken: "iDev" already names the standing '
+      + 'assignment of project ops (lead lead-ops)). Preview again and ask the user again: it reuses the project and lead '
+      + 'that exist now.',
+    written: { project: 'created', projectId: 'timesheet', projectName: 'Timesheet', lead: 'hired',
+      leadAgentId: 'lead-timesheet' } });
   const [other] = app.standingAssignments.list(SPACE);
   app.standingAssignments.retire(other.assignmentId, { source: 'user', expectedRevision: 1 });
   const again = await call(app, 'preview', timesheet());
@@ -242,4 +255,72 @@ test('a term taken after the plan was read is refused before anything is written
     message: /"部署" already names the standing assignment of project other .*nothing was saved/ });
   assert.deepEqual(app.standingAssignments.list(SPACE).map(({ projectId }) => projectId), ['other']);
   assert.deepEqual(writes(app), []);
+});
+
+// dot P2 on 225ce739: a failure after the first write keeps the written state
+// and the original failure, even when a diagnostic read fails as well.
+
+const unavailable = () => new ProviderRequestError('Provider unavailable', { code: 'provider_unavailable', status: 503 });
+
+test('a policy read that fails after the create and hire still names both writes', async (t) => {
+  let armed = false;
+  const app = application(t, { interleave: { policyRead: () => { if (armed) throw unavailable(); } } });
+  const { confirmationDigest } = await call(app, 'preview', timesheet());
+  armed = true;
+  await assert.rejects(call(app, 'confirm', { ...timesheet(), confirmationDigest }), {
+    code: 'standing_assignment_partially_applied', status: 503,
+    message: 'Partly applied: project "Timesheet" (timesheet) was created, and AR hired its lead lead-timesheet; what was '
+      + 'written is kept. The terms were NOT registered (provider_unavailable: Provider unavailable). Preview again and ask '
+      + 'the user again: it reuses the project and lead that exist now.',
+    cause: { code: 'provider_unavailable', message: 'Provider unavailable' } });
+  armed = false;
+  const again = await call(app, 'preview', timesheet());
+  const done = await call(app, 'confirm', { ...timesheet(), confirmationDigest: again.confirmationDigest });
+  assert.deepEqual([done.status, done.project.created, done.lead.hired], ['registered', false, false]);
+  assert.deepEqual(writes(app), ['create', 'staff']);
+});
+
+test('a busy store and a failing diagnostic read leave the written state and the cause in place', async (t) => {
+  const app = application(t);
+  const port = app.standingAssignments;
+  const { confirmationDigest } = await call(app, 'preview', timesheet());
+  const busy = Object.assign(new Error('database is locked'), { code: 'ERR_SQLITE_ERROR' });
+  app.standingAssignments = { ...port, register: () => { throw busy; }, list: () => { throw busy; } };
+  await assert.rejects(call(app, 'confirm', { ...timesheet(), confirmationDigest }), {
+    code: 'standing_assignment_partially_applied',
+    message: 'Partly applied: project "Timesheet" (timesheet) was created, and AR hired its lead lead-timesheet; what was '
+      + 'written is kept. The terms were NOT registered (ERR_SQLITE_ERROR: unexpected error). Preview again and ask the '
+      + 'user again: it reuses the project and lead that exist now.',
+    cause: { code: 'ERR_SQLITE_ERROR', message: 'unexpected error' } });
+  const taken = new ApplicationError('standing_assignment_term_taken', 'taken', { status: 409 });
+  app.standingAssignments = { ...port, register: () => { throw taken; }, list: () => { throw busy; } };
+  const again = await call(app, 'preview', timesheet());
+  // The project and lead now exist, so nothing is written and the store's refusal stands as it is.
+  await assert.rejects(call(app, 'confirm', { ...timesheet(), confirmationDigest: again.confirmationDigest }), taken);
+  assert.deepEqual(writes(app), ['create', 'staff']);
+});
+
+test('a term refusal after a hire whose owner cannot be read omits only that detail', async (t) => {
+  const app = application(t, { projects: [ops] });
+  const port = app.standingAssignments;
+  const { confirmationDigest } = await call(app, 'preview', deploy());
+  app.standingAssignments = { ...port, list: () => { throw new Error('unreadable'); },
+    register: () => { throw new ApplicationError('standing_assignment_term_taken', 'taken', { status: 409 }); } };
+  await assert.rejects(call(app, 'confirm', { ...deploy(), confirmationDigest }), {
+    code: 'standing_assignment_partially_applied',
+    message: 'Partly applied: project "ops" (ops) already existed, and AR hired its lead lead-ops; what was written is '
+      + 'kept. The terms were NOT registered (standing_assignment_term_taken). Preview again and ask the user again: it '
+      + 'reuses the project and lead that exist now.' });
+});
+
+test('a create whose outcome is unknown says so instead of claiming nothing was saved', async (t) => {
+  const app = application(t, { interleave: { create: () => { throw unavailable(); } } });
+  const { confirmationDigest } = await call(app, 'preview', timesheet());
+  await assert.rejects(call(app, 'confirm', { ...timesheet(), confirmationDigest }), {
+    code: 'standing_assignment_partially_applied',
+    message: 'Partly applied: whether project "Timesheet" was created is unknown; what was written is kept. The terms '
+      + 'were NOT registered (provider_unavailable: Provider unavailable). Preview again and ask the user again: it '
+      + 'reuses the project and lead that exist now.',
+    written: { project: 'unknown', projectId: null, projectName: 'Timesheet', lead: null, leadAgentId: null } });
+  assert.deepEqual(writes(app), ['create']);
 });
