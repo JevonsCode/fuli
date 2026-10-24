@@ -104,3 +104,20 @@ test('the person\'s own names for work find the leads of this space\'s open proj
   assert.match(warnings[0], /project names only.*\(data_format_newer\)/);
   assert.doesNotMatch(warnings[0], /synthetic/);
 });
+
+test('a project whose lead cannot be read is left out of work matches; the others still match', async () => {
+  const host = createFuliRoundtableHost({
+    config: { personal: { spaceId: 'space-1' } },
+    standingAssignments: createStandingAssignments(),
+    personal: {
+      listPersonalProjects: async () => [{ project_id: 'app', profile: { name: 'App' } },
+        { project_id: 'app-store', profile: { name: 'App store' } }],
+      getProjectAgentCoordinationPolicy: async (_space, projectId) => {
+        if (projectId === 'app-store') throw new Error('synthetic policy read failure');
+        return { team_lead_agent_id: 'lead-app' };
+      }
+    }
+  });
+  assert.deepEqual(await host.matchWork('app'), [{ agentId: 'lead-app', projectId: 'app', project: 'App' }]);
+  assert.deepEqual(await host.matchWork('\u0085'), []);
+});

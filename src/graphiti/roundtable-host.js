@@ -53,6 +53,7 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     // The person's own names for work (rec#29 F4): an open formal project the
     // query names finds its lead, and an active standing assignment of this
     // space whose terms or responsibility it names finds the lead it routes to.
+    // A project whose lead cannot be read is left out; the others still match.
     async matchWork(query) {
       const open = new Map((await projects()).map(projectView).filter(project => !project.temporary && !project.archived)
         .map(project => [project.projectId, project.name]));
@@ -63,7 +64,7 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
       const key = identityKey(query);
       const named = await Promise.all([...open].filter(([projectId, name]) => name
         && !standing.some(match => match.projectId === projectId) && termsOverlap(key, identityKey(name)))
-        .map(async ([projectId, project]) => ({ agentId: await projectLeadId(projectId), projectId, project })));
+        .map(async ([projectId, project]) => ({ agentId: await projectLeadId(projectId).catch(() => null), projectId, project })));
       return [...standing, ...named.filter(match => match.agentId)];
     },
     async projectForPath(path) {

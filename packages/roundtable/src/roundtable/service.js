@@ -85,20 +85,25 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // A host that knows the person's own names for work (project names, standing
   // assignments) matches the query against them; Roundtable only places the
   // leads it names. Asked for one project, only that project's work counts.
+  // A host that cannot match leaves the directory's answer as it is and names
+  // why, as an unreachable peer does.
   async function workMatches(query, personalProjectId) {
-    const byAgent = new Map();
-    if (!query || !host.matchWork) return byAgent;
-    for (const { agentId, ...match } of await host.matchWork(query)) {
+    const work = new Map();
+    if (!query || !host.matchWork) return { work };
+    let found;
+    try { found = await host.matchWork(query); }
+    catch (error) { return { work, workUnavailable: error.code ?? 'work_match_failed' }; }
+    for (const { agentId, ...match } of found) {
       if (personalProjectId && match.projectId !== personalProjectId) continue;
-      byAgent.set(agentId, [...(byAgent.get(agentId) ?? []), match]);
+      work.set(agentId, [...(work.get(agentId) ?? []), match]);
     }
-    return byAgent;
+    return { work };
   }
 
   async function findAgents({ query = null, personalProjectId = null, occupation = null, capability = null, projectId = null } = {}) {
     const project = personalProjectId ? await resolveProjectLead(host, personalProjectId) : null;
     const needle = query?.trim().toLowerCase();
-    const work = await workMatches(query?.trim(), personalProjectId);
+    const { work, workUnavailable } = await workMatches(query?.trim(), personalProjectId);
     const names = (agent) => [agent.agentId, agent.employeeNumber ? `FLA ${agent.employeeNumber}` : null,
       agent.profile.displayName, agent.profile.name];
     const matches = (project ? (project.agent ? [project.agent] : []) : await agents()).filter((agent) => matchesAgentDiscovery(agentDiscoveryProfile(agent), { occupation, capability, projectId })
@@ -117,7 +122,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       recentConversations: await conversations(agent, personalProjectId)
     })));
     const remote = peer ? await peer.remoteAgents({ query: needle, occupation, capability, projectId }).catch(() => null) : null;
-    return { agents: local,
+    return { agents: local, ...(workUnavailable ? { workUnavailable } : {}),
       ...(project ? { project: { projectId: personalProjectId, address: `project:${personalProjectId}`, reason: project.reason } } : {}),
       ...(remote ? { remoteAgents: remote.agents, ...(remote.unavailable ? { remoteUnavailable: remote.unavailable } : {}) } : {}),
       guidance: remote

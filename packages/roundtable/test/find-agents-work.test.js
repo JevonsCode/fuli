@@ -52,3 +52,13 @@ test('asked for one project, only that project\'s work matches its lead', async 
   assert.deepEqual(await found(service, { query: '工时', personalProjectId: 'proj-other' }), []);
   assert.deepEqual(await found(service, { query: '工时', personalProjectId: 'proj-idev' }), [['ada', [IDEV]]]);
 });
+
+test('a failing matchWork leaves the directory\'s answer and names why', async () => {
+  const { roundtable: service } = roundtable({ matchWork: () => {
+    throw Object.assign(new Error('synthetic'), { code: 'provider_unavailable' }); } });
+  const exact = await service.findAgents({ query: 'Ada Lane' });
+  assert.deepEqual([exact.agents.map(({ agentId }) => agentId), exact.workUnavailable], [['ada'], 'provider_unavailable']);
+  assert.deepEqual(await found(service, { query: '工时' }), ['bo', 'exact']);
+  const { roundtable: uncoded } = roundtable({ matchWork: () => { throw new Error('synthetic'); } });
+  assert.equal((await uncoded.findAgents({ query: 'Bo' })).workUnavailable, 'work_match_failed');
+});
