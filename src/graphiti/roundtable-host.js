@@ -7,7 +7,7 @@ import { identityKey } from '../text/name-identity.js';
 
 // FULI as the Roundtable host: Agents, projects, task identity and wake
 // authority all come from the Provider of this device's personal space.
-export function createFuliRoundtableHost(app) {
+export function createFuliRoundtableHost(app, { warn = line => process.stderr.write(line) } = {}) {
   const spaceId = () => app.config.personal.spaceId;
   const projectView = project => ({ projectId: project.project_id ?? project.personal_project_id ?? project.id,
     name: project.profile?.name ?? project.name ?? null, temporary: project.scope_type === 'temporary',
@@ -18,6 +18,18 @@ export function createFuliRoundtableHost(app) {
   };
   const projectLeadId = async projectId =>
     (await app.personal.getProjectAgentCoordinationPolicy(spaceId(), projectId)).team_lead_agent_id ?? null;
+  // A standing-assignments store this run cannot read (a newer format, a
+  // locked file) leaves discovery to project names; said once, by code only,
+  // since the message may carry local paths.
+  let standingUnreadable = false;
+  const standingMatches = query => {
+    try { return app.standingAssignments.discover(spaceId(), query); }
+    catch (error) {
+      if (!standingUnreadable) warn(`FULI: find_agents is matching project names only; standing assignments are unreadable (${error.code ?? error.name}).\n`);
+      standingUnreadable = true;
+      return [];
+    }
+  };
   return assertRoundtableHost({
     spaceId,
     listAgents: () => app.listProjectAgents({ personalSpaceId: spaceId() }),
@@ -44,7 +56,7 @@ export function createFuliRoundtableHost(app) {
     async matchWork(query) {
       const open = new Map((await projects()).map(projectView).filter(project => !project.temporary && !project.archived)
         .map(project => [project.projectId, project.name]));
-      const standing = app.standingAssignments.discover(spaceId(), query)
+      const standing = standingMatches(query)
         .filter(({ assignment }) => open.has(assignment.projectId))
         .map(({ assignment, matchedTerms }) => ({ agentId: assignment.leadAgentId, projectId: assignment.projectId,
           project: open.get(assignment.projectId), responsibility: assignment.responsibility, matchedTerms }));

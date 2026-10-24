@@ -91,4 +91,16 @@ test('the person\'s own names for work find the leads of this space\'s open proj
   const [found] = (await roundtable.findAgents({ query: '工时' })).agents;
   assert.deepEqual([found.agentId, found.matchedWork], ['lead-idev', [{ projectId: 'idev', project: 'iDev 工时',
     responsibility: '每天填写 iDev 工时', matchedTerms: ['工时'] }]]);
+
+  // An unreadable store leaves project names, said once and by code only.
+  const warnings = [];
+  const unreadable = createFuliRoundtableHost({ ...app, standingAssignments: { discover: () => {
+    throw Object.assign(new Error('T:/synthetic/data/standing-assignments.sqlite is newer'), { code: 'data_format_newer' });
+  } } }, { warn: line => warnings.push(line) });
+  assert.deepEqual(await unreadable.matchWork('工时'), [{ agentId: 'lead-idev', projectId: 'idev', project: 'iDev 工时' }]);
+  const degraded = createAgentRoundtable({ host: unreadable, openStore: () => createRoundtableStore() });
+  assert.deepEqual((await degraded.findAgents({ query: 'App' })).agents.map(agent => agent.agentId), ['lead-app']);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /project names only.*\(data_format_newer\)/);
+  assert.doesNotMatch(warnings[0], /synthetic/);
 });
