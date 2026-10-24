@@ -1,6 +1,6 @@
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { agentContinuation, taskAgentReceipt } from '../agents/identity-receipt.js';
-import { captureWindow } from '../conversations/capture-window.js';
+import { captureContinued, captureWindow } from '../conversations/capture-window.js';
 import { captureDecision, captureDisabled, taskCaptureScope } from './capture-decision.js';
 import { singleLine } from '../text/single-line.js';
 import { utf8Preview } from '../text/utf8-preview.js';
@@ -25,6 +25,10 @@ export function safeConversationContent(value) {
 const unavailable = (error, step = null) => ({ status: 'unsaved', retryable: true,
   ...(step ? { step } : {}), reason: errorReason(error),
   guidance: 'Conversation persistence is unavailable. Do not claim this conversation was saved; retry after the Provider recovers.' });
+// A begin the capture budget cut short in a hook whose next run continues it:
+// this task's conversation is written from the native transcript then.
+const deferred = step => ({ status: 'deferred', step, reason: 'transcript_capture_timeout',
+  guidance: 'Conversation saving is deferred: the next FULI hook of this session saves it from the native transcript. It is not saved yet; do not claim it was saved now, and do not retry.' });
 
 // Only codes FULI itself names (provider-client.js, capture-window.js) or Node's network codes
 // are repeated; a Provider passes its own detail.code through, so any other
@@ -49,42 +53,33 @@ export async function beginConversation(application, task) {
   let step = 'capture_window';
   try {
     return await captureWindow(application, null, async application => {
-      const scope = conversationScope(application, task);
-      step = 'session';
-      const session = await application.personal.conversation('query', { ...scope, mode: 'session', session_id: task.sessionId });
-      // A different native chat is a new task, not implicit consent to resume
-      // whichever conversation happened to finish last. Explicit resume binds
-      // that conversation to this session before the next entry.
-      const previousId = session.conversation_id ?? null;
-      // Recover before opening this turn. Native visible messages are persisted
-      // only by the transcript collector, with its stable byte-based event IDs.
-      // Asking as this session adds the Provider's delivery proofs, so the host
-      // leaves out only what this session's own context provably holds.
-      step = 'context';
-      const previous = previousId
-        ? await application.personal.conversation('query', { ...scope, mode: 'context', conversation_id: previousId,
-          session_id: task.sessionId })
-        : null;
-      step = 'recent';
-      const pointer = previousId ? null : await recentConversation(application, scope);
-      step = 'append';
-      const saved = await application.personal.conversation('append', {
-        ...conversationTask(application, task), events: []
-      });
-      return { ...saved, recovery: previous?.context ?? null, recovered_from: previousId ?? null,
+      step = 'begin';
+      // One Provider round trip, so the whole entry fits the capture budget
+      // (rec#11 D-53). The Provider reads, in one transaction: the conversation
+      // bound to this native session, its recovery window asked as this session
+      // (delivery proofs, so the host leaves out only what this session's own
+      // context provably holds), or else the latest conversation of this scope;
+      // then it opens this task's conversation with no events, since native
+      // visible messages are persisted only by the transcript collector. A
+      // different native chat is a new task, never implicit consent to resume
+      // whichever conversation finished last; explicit resume binds one.
+      const { recovered_from: previousId = null, previous = null, recent = null, ...saved } =
+        await application.personal.conversation('begin', conversationTask(application, task));
+      const pointer = previousId ? null : recentPointer(recent);
+      return { ...saved, recovery: previous?.context ?? null, recovered_from: previousId,
         compacted: (previous?.compacted_through ?? 0) > 0,
         ...(pointer ? { recent_conversation: pointer } : {}), guidance: CONVERSATION_GUIDANCE };
     });
-  } catch (error) { return unavailable(error, step); }
+  } catch (error) {
+    return error?.code === 'transcript_capture_timeout' && captureContinued() ? deferred(step) : unavailable(error, step);
+  }
 }
 
 // A new native chat learns only which conversation of this same space, project,
 // Agent and client permission was active last (rec#10 D-27.6): no messages, no
 // binding. Continuing it is still an explicit resume_agent_conversation. The
 // title is historical text, cut to one line of POINTER_TITLE_BYTES as sent.
-async function recentConversation(application, scope) {
-  const { conversations } = await application.personal.conversation('query', { ...scope, mode: 'list', limit: 1 });
-  const latest = conversations?.[0];
+function recentPointer(latest) {
   if (!latest?.id) return null;
   const title = utf8Preview(singleLine(latest.summary), POINTER_TITLE_BYTES, text => Buffer.byteLength(JSON.stringify(text)));
   const pointer = { id: latest.id, updated_at: latest.last_activity ?? null, ...(title ? { title } : {}) };

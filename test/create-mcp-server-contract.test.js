@@ -265,10 +265,11 @@ function workerFixture({ memoryScope = 'reviewed_agent' } = {}) {
       getPersonalProject: async () => ({ profile: { name: 'Worker project' } }),
       listProjectAgentTasks: async () => [], getProjectAgentCoordinationPolicy: async () => ({}),
       listProjectAgents: async () => [],
-      conversation: async (operation, input) => operation === 'append'
-        ? { status: 'saved', conversation_id: 'worker-conversation' }
-        : input.mode === 'session' ? { conversation_id: 'worker-conversation' }
-          : { context: { latest_checkpoint: 'Own latest result', messages: [{ sequence: 2, role: 'user', content: 'Own recent raw' }] } }
+      // The worker's own bound conversation and its window, in the Provider's begin.
+      conversation: async operation => operation === 'begin'
+        ? { status: 'saved', conversation_id: 'worker-conversation', recovered_from: 'worker-conversation', recent: null,
+          previous: { context: { latest_checkpoint: 'Own latest result', messages: [{ sequence: 2, role: 'user', content: 'Own recent raw' }] } } }
+        : { status: 'saved', conversation_id: 'worker-conversation' }
     } };
   const port = createWorkerTaskContext(app, descriptor);
   return { app, descriptor, port, run, context, calls, close: () => { closed = true; } };

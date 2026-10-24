@@ -359,12 +359,12 @@ test('a fresh native chat never injects an unrelated latest checkpoint; same-ses
   let same = false;
   const checkpoint = { summary: 'unrelated migration was not performed', status: 'reported' };
   const app = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }), personal: {
+    // The Provider's begin: the bound chat's window, or else only the latest chat of this scope.
     conversation: async (operation, q) => {
-      requests.push(q);
-      if (q.mode === 'session') return { conversation_id: same ? 'same-chat' : null };
-      if (q.mode === 'list') return { conversations: [{ id: 'unrelated-chat' }] };
-      if (q.mode === 'context') return { context: { latest_checkpoint: checkpoint, messages: [] } };
-      return { status: 'saved' };
+      requests.push({ operation, ...q });
+      return same ? { status: 'saved', recovered_from: 'same-chat',
+        previous: { context: { latest_checkpoint: checkpoint, messages: [] } }, recent: null }
+        : { status: 'saved', recovered_from: null, previous: null, recent: { id: 'unrelated-chat' } };
     }
   } };
   const task = { token: 'task', projectAgentId: 'lead', personalProjectId: 'project', sessionId: 'native', sourceApplication: 'codex' };
@@ -372,7 +372,7 @@ test('a fresh native chat never injects an unrelated latest checkpoint; same-ses
   assert.equal(fresh.recovery, null);
   // rec#10 D-27.6: a pointer to the latest conversation of this scope, no context read.
   assert.deepEqual(fresh.recent_conversation, { id: 'unrelated-chat', updated_at: null });
-  assert.equal(requests.some(q => q.mode === 'context'), false);
+  assert.deepEqual(requests.map(q => [q.operation, q.session_id]), [['begin', 'native']]);
   assert.doesNotMatch(JSON.stringify(fresh), /migration was not performed/);
   same = true;
   const continued = await beginConversation(app, task);

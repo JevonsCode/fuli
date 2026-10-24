@@ -43,7 +43,17 @@ function syntheticProvider() {
     conversations.set(id, { id, journal: syntheticJournal(id, PROVIDER_RECOVERY_WINDOW), window: {}, summary: null, activity: 0 });
     return conversations.get(id);
   };
+  // A task entry's begin is one request; inside it the Provider makes the same
+  // reads, counted as such, then the empty append (rec#11 D-53).
+  const begin = async input => {
+    const scope = { source_application: input.source_application, session_id: input.session_id };
+    const { conversation_id: previousId } = await conversation('query', { ...scope, mode: 'session' });
+    const previous = previousId ? await conversation('query', { ...scope, mode: 'context', conversation_id: previousId }) : null;
+    const recent = previousId ? null : (await conversation('query', { mode: 'list', limit: 1 })).conversations[0] ?? null;
+    return { ...await conversation('append', input), recovered_from: previousId, previous, recent };
+  };
   const conversation = async (operation, input) => {
+    if (operation === 'begin') return begin(input);
     if (operation === 'query') {
       calls[input.mode]++;
       if (input.mode === 'session') return { conversation_id: bindings.get(`${input.source_application}:${input.session_id}`) ?? null };

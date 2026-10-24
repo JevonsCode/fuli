@@ -168,7 +168,7 @@ function harness({ roles = {}, replies = [], model = true, connection = FAKE_CON
     collaborationPreferences: async (space, project, limit, agent) => ({ personal_space_id: space, personal_project_id: project,
       project_agent_id: agent, effective_preferences: [], global_preferences: [], conflicts: [] }),
     listPreferenceConflicts: async () => [],
-    conversation: async operation => operation === 'append' ? { status: 'saved', conversation_id: 'conversation-synthetic-1' } : {},
+    conversation: async operation => ['begin', 'append'].includes(operation) ? { status: 'saved', conversation_id: 'conversation-synthetic-1' } : {},
     conversationTriage: async (operation, input) => operation === 'topics' ? { topics: [] }
       : operation === 'read' ? { triage: null } : assert.fail(`no triage ${operation} for ${input.conversation_id}`)
   });

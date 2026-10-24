@@ -55,6 +55,16 @@ Codex、Claude Code 的宿主适配器增量读取宿主提供的当前 JSONL tr
 - 本地 guard 只保存不可逆 hash 与游标，0600 原子写入；短期 loopback 互斥锁串行保护同会话。
   `Stop` 只提交确定归属的尾部，不替用户开启新任务。失败提示不能当作记忆恢复成功。
 
+任务入口只向 Provider 发一次对话请求（`/v1/agent-conversations/begin`）：同一事务里先读本会话绑定的对话和
+恢复窗口（没有绑定时只读本范围最近一次对话的指针），再为本任务打开对话。每一步沿用原接口的权限检查，
+写入被拒绝时整个请求回滚，读到的内容也不返回。入口的 `conversation.status`：
+
+| 状态 | 含义 |
+| --- | --- |
+| `saved` | 已保存 |
+| `deferred` | 保存预算（750 ms）用完，但 Hook 的 transcript guard 已记下这次入口，下一次 Hook 从原生 transcript 补写；此刻还没有保存 |
+| `unsaved` | 没有后续写入会补上（worker 或 MCP 入口、新会话的第一次入口、Provider 故障），附 `step` 和 `reason` |
+
 客户端格式、Hook 投递、数据库持久化和模型遵守指令分别验收；配置成功不等于已接续成功。
 
 ## 小组与借调

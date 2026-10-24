@@ -82,7 +82,7 @@ export class GraphitiProviderClient {
     return this.#request(`/v1/agent-loans/${operation}`, { method: 'POST', body: input });
   }
   conversation(operation, input, { signal, timeoutMs = this.requestTimeoutMs } = {}) {
-    if (!['query', 'append', 'resume', 'policy', 'boundary'].includes(operation)) throw new TypeError('Unknown conversation operation');
+    if (!['query', 'begin', 'append', 'resume', 'policy', 'boundary'].includes(operation)) throw new TypeError('Unknown conversation operation');
     return this.#request(`/v1/agent-conversations/${operation}`, {
       method: operation === 'policy' ? 'PUT' : 'POST', body: input, signal, timeoutMs
     });

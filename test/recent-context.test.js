@@ -439,11 +439,11 @@ test('the new-session pointer stays in scope, binds and reads nothing, and its t
   let conversations = [{ id: 'latest', last_activity: '2026-10-23T00:00:00Z',
     summary: `${'中'.repeat(200)}\n第二行 "引号"` }];
   const app = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }),
+    // The Provider's begin for an unbound session: the latest conversation of its scope, no messages.
     personal: { conversation: async (operation, input) => {
       queries.push({ operation, ...input });
-      if (input.mode === 'session') return { conversation_id: null };
-      if (input.mode === 'list') return { conversations };
-      return { status: 'saved', conversation_id: 'started' };
+      return { status: 'saved', conversation_id: 'started', recovered_from: null, previous: null,
+        recent: conversations[0] ?? null };
     } } };
   const task = { token: 'task', projectAgentId: 'lead', personalProjectId: 'project', sessionId: H, sourceApplication: 'claude_code' };
   const result = await beginConversation(app, task);
@@ -455,11 +455,10 @@ test('the new-session pointer stays in scope, binds and reads nothing, and its t
   const whole = bytes(JSON.stringify({ recent_conversation: pointer }));
   assert.ok(whole <= 320);
   console.log(JSON.stringify({ recent_conversation_pointer_bytes: whole, bound: 320 }));
-  const list = queries.find(query => query.mode === 'list');
-  assert.deepEqual([list.personal_space_id, list.personal_project_id, list.agent_id, list.source_application, list.limit],
-    ['space', 'project', 'lead', 'claude_code', 1]);
-  assert.equal(queries.some(query => query.mode === 'context' || query.operation === 'resume'), false);
-  assert.deepEqual(queries.filter(query => query.operation === 'append').map(query => query.events), [[]]);
+  // One begin in this scope; it binds nothing else and resumes nothing (the Provider's begin
+  // reads only the latest conversation for an unbound session: test_agent_conversations_neo4j.py).
+  assert.deepEqual(queries.map(query => [query.operation, query.personal_space_id, query.personal_project_id,
+    query.agent_id, query.source_application, query.session_id]), [['begin', 'space', 'project', 'lead', 'claude_code', H]]);
 
   // An ID or time that would push the field past its bound gives no pointer, not a cut one.
   conversations = [{ id: 'x'.repeat(200), last_activity: '2026-10-23T00:00:00Z', summary: '中'.repeat(200) }];
@@ -469,7 +468,7 @@ test('the new-session pointer stays in scope, binds and reads nothing, and its t
   conversations = [];
   queries.length = 0;
   assert.equal((await beginConversation(app, task)).recent_conversation, undefined);
-  assert.equal(queries.filter(query => query.mode === 'list').length, 1);
+  assert.equal(queries.length, 1);
   // Recording off, or FULI's capture switch off: no conversation query at all.
   app.getCapturePolicy = () => ({ enabled: false });
   queries.length = 0;

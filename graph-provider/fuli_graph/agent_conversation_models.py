@@ -71,6 +71,13 @@ class ConversationWrite(ConversationScope):
         return self
 
 
+class ConversationBegin(ConversationScope):
+    """A task entry: recover this session's conversation and open this task's (rec#11 D-53)."""
+    source_application: SourceApplication
+    session_id: str = Field(min_length=1, max_length=256)
+    task_context_token: str = Field(min_length=1, max_length=160)
+
+
 class ConversationResume(ConversationScope):
     source_application: SourceApplication
     session_id: str = Field(min_length=1, max_length=256)

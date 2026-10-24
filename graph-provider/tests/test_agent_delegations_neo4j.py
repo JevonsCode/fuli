@@ -633,6 +633,12 @@ try {
   // A new native worker chat does not implicitly resume an older conversation
   // (#159). Explicit own-project/global history reads below remain available.
   assert.equal(data.conversation.recovery,null,JSON.stringify(data.conversation));
+  // The worker's entry opens its own conversation in one Provider request (rec#11 D-53). Nothing
+  // later continues a worker's begin (no hook transcript import), so the contract is saved, never deferred.
+  assert.equal(data.conversation.status,'saved',JSON.stringify(data.conversation));
+  const opened = await request('/v1/agent-conversations/query', {...fixture.scope, agent_id:'specialist',
+    source_application:'codex', mode:'session', session_id:fixture.actualSession});
+  assert.equal(opened.conversation_id,data.conversation.conversation_id);
   const admitted = await request(fixture.path + '?' + new URLSearchParams(fixture.scope), null, 'GET', true);
   const context = await request('/v1/task-contexts/' + ownToken + '?' + new URLSearchParams({
     personal_space_id:fixture.scope.personal_space_id,source_application:'codex'}), null,'GET');

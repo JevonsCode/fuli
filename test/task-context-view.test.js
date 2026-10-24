@@ -70,21 +70,23 @@ test('a bound session recovers its conversation as itself; a new one gets only a
   const queries = [];
   const application = { getCapturePolicy: () => ({ enabled: true }),
     config: { personal: { spaceId: 'space' } },
+    // The Provider's begin: the bound conversation's window, or else the latest one of this scope.
     personal: { conversation: async (operation, input) => {
-      queries.push(input);
-      if (input.mode === 'session') return { conversation_id: sessions[input.session_id] ?? null };
-      if (input.mode === 'list') return { conversations: [{ id: 'c-1', summary: 'Saved result', last_activity: 't1' }] };
-      if (input.mode === 'context') return { context: { messages: [] } };
-      return { status: 'saved', conversation_id: 'c-1' };
+      queries.push({ operation, ...input });
+      const previousId = sessions[input.session_id] ?? null;
+      return { status: 'saved', conversation_id: previousId ?? 'c-2', recovered_from: previousId,
+        previous: previousId ? { context: { messages: [] } } : null,
+        recent: previousId ? null : { id: 'c-1', summary: 'Saved result', last_activity: 't1' } };
     } } };
   const task = { token: 't', projectAgentId: 'agent', personalProjectId: 'p', sourceApplication: 'codex' };
   const bound = await beginConversation(application, { ...task, sessionId: 'native-a' });
   assert.equal(bound.same_session, undefined);
   assert.equal(bound.recent_conversation, undefined);
-  assert.equal(queries.find(input => input.mode === 'context').session_id, 'native-a');
+  assert.deepEqual(bound.recovery, { messages: [] });
+  assert.deepEqual(queries.map(query => [query.operation, query.session_id]), [['begin', 'native-a']]);
   queries.length = 0;
   const fresh = await beginConversation(application, { ...task, sessionId: 'native-b' });
   assert.deepEqual(fresh.recent_conversation, { id: 'c-1', updated_at: 't1', title: 'Saved result' });
   assert.equal(fresh.recovery, null);
-  assert.equal(queries.some(input => input.mode === 'context'), false);
+  assert.deepEqual(queries.map(query => [query.operation, query.session_id]), [['begin', 'native-b']]);
 });

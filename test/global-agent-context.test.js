@@ -45,7 +45,7 @@ test('global tasks persist conversation summaries and pass transcript scope vali
       currentTaskContext: async () => ({ personal_project_id: null, project_agent_id: 'engineer', token: task.token }),
       conversation: async (operation, input) => {
         calls.push(input);
-        if (operation === 'append') return { status: 'saved', conversation_id: 'global-conversation' };
+        if (['begin', 'append'].includes(operation)) return { status: 'saved', conversation_id: 'global-conversation' };
         return { conversations: [] };
       }
     } };
@@ -55,6 +55,6 @@ test('global tasks persist conversation summaries and pass transcript scope vali
   assert.equal(checkpoint.status, 'saved');
   assert.equal(checkpoint.receipt.personal_project_id, null);
   assert.match(checkpoint.receipt.continuation.prompt, /全局 FLA/);
-  assert.ok(calls.length >= 3);
+  assert.ok(calls.length >= 2);
   assert.ok(calls.every(call => call.personal_project_id === null));
 });
