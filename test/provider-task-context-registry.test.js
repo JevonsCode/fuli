@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ProviderTaskContextRegistry, taskRecord } from '../src/mcp/provider-task-context-registry.js';
+import { GraphitiProviderClient, ProviderRequestError } from '../src/graphiti/provider-client.js';
 import { applyAgentAssignment, taskAgentAssignment } from '../src/graphiti/task-agent-assignment.js';
 
 function providerRecord(overrides = {}) {
@@ -143,6 +144,29 @@ test('Provider context and verification preserve source isolation', async () => 
 
   assert.equal(calls[0].input.source_application, 'cursor');
   assert.equal(calls[1].input.source_application, 'cursor');
+});
+
+// rec#47 F2: the session gate tells a token that is not current from a Provider that cannot answer
+// by the Provider's status, never by its message.
+test('a token that is not its session\'s current task names no session; any other Provider failure throws', async () => {
+  const answers = {
+    current: () => Response.json(providerRecord({ session_id: 'current-session' })),
+    // store_task_contexts.py answers 404 alike for a superseded, a foreign-client and an unknown token.
+    superseded: () => Response.json({ detail: 'Synthetic detail the gate must not parse' }, { status: 404 }),
+    outage: () => Response.json({ detail: 'Synthetic outage' }, { status: 503 }),
+    offline: () => { throw new TypeError('fetch failed'); }
+  };
+  const registry = token => new ProviderTaskContextRegistry(new GraphitiProviderClient({ baseUrl: 'http://127.0.0.1:9',
+    accessToken: 'synthetic-access-token', fetchImpl: async () => answers[token]() }), 'space-1');
+
+  assert.equal(await registry('current').currentTaskSession('current', 'codex'), 'current-session');
+  assert.equal(await registry('superseded').currentTaskSession('superseded', 'codex'), null);
+  for (const token of ['outage', 'offline']) {
+    await assert.rejects(registry(token).currentTaskSession(token, 'codex'), ProviderRequestError, token);
+  }
+  // A malformed record is no "not current" either.
+  await assert.rejects(new ProviderTaskContextRegistry({ getTaskContext: async () => ({ token: null }) }, 'space-1')
+    .currentTaskSession('fuli-task-provider-token', 'codex'), /durable task context/);
 });
 
 test('Provider registry rejects malformed durable task records', async () => {
