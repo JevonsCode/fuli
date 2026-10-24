@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { MAX_LIST_EPISODES, readTurnReceipt } from '../src/agents/turn-receipt.js';
+import { entryBudget, noteEntryTask, partialEntryText, runWithEntryBudget } from '../src/conversations/entry-budget.js';
 import { entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { beginTaskFromPreferences, checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
@@ -244,6 +245,27 @@ test('a receipt that could not be read stays unread and the next entry delivers 
     `FULI Agent：负责人 X\nFULI 上轮沉淀（补发） 3 条（[本会话已记录](<${SESSION_LIST}>)）：\n- 新增`));
   assert.equal((await entry(next)).agent_receipt.markdown, delivered.agent_receipt.markdown, 'a retried entry shows the same');
   assert.deepEqual(begin().unreadTurnReceipts, [], 'a later entry never delivers it again');
+});
+
+test('an entry cut short by its hook deadline still delivers the receipt items it claimed', async () => {
+  const { app, begin, registry, state } = checkpointFixture({ readable: false });
+  await checkpointTaskKnowledge(app, checkpoint(begin()));
+  state.readable = true;
+  const budget = entryBudget(60_000);
+  const claimed = await runWithEntryBudget(budget, async () => {
+    const value = await beginTaskFromPreferences({ ...app, taskContextRegistry: { begin: async () => begin(),
+      claimUnreadTurnReceipts: (...input) => registry.claimUnreadTurnReceipts(...input) } },
+    { context: { personal_space_id: 'synthetic-space', personal_project_id: 'project-a', project_agent_id: 'project.lead' },
+      effective_preferences: [], agent_receipt: { required: true, markdown: 'FULI Agent：负责人 X' } },
+    { sessionId: 'native-session', sourceApplication: 'codex' });
+    noteEntryTask(value);
+    return value;
+  });
+  assert.match(claimed.agent_receipt.markdown, /上轮沉淀（补发） 3 条/);
+  assert.deepEqual(begin().unreadTurnReceipts, [], 'claimed by this entry: no later entry or reader shows them');
+  const partial = JSON.parse(partialEntryText(budget).split('\n')[1]);
+  assert.equal(partial.agent_receipt.markdown, claimed.agent_receipt.markdown);
+  assert.equal(partial.entry_incomplete.missing.some(step => step.parts.includes('agent_receipt')), false);
 });
 
 test('nothing is reported saved while capture is off, for retain_nothing or a duplicate turn', async () => {

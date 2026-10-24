@@ -47,13 +47,7 @@ export function compactTaskContext(value) {
     continuation: { ...value.agent_receipt.continuation,
       guidance: text(value.agent_receipt.continuation.guidance, 'continuation_guidance') } };
   if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(preferenceInstructionView);
-  if (value.project_management_context?.managers) result.project_management_context = {
-    ...value.project_management_context,
-    managers: value.project_management_context.managers.map(manager => ({ ...manager,
-      board: manager.board && { version: manager.board.version, total: manager.board.total,
-        view: 'on_demand', guidance: 'Discover and call the manager read_board tool before matching, creating or updating a work item; this entry omits board details.' }
-    }))
-  };
+  if (value.project_management_context?.managers) result.project_management_context = managementContextView(value.project_management_context);
   const continuity = value.project_agent_context;
   const management = value.project_management_context;
   const omitTeam = !value.worker_run && Object.hasOwn(value, 'project_management_context')
@@ -79,9 +73,20 @@ export function compactTaskContext(value) {
   return copyPreferenceScope(value, result);
 }
 
+// Each manager's routing, title policy and tools; the board itself is read on
+// demand through the manager's own read_board tool.
+export function managementContextView(management) {
+  return { ...management,
+    managers: management.managers.map(manager => ({ ...manager,
+      board: manager.board && { version: manager.board.version, total: manager.board.total,
+        view: 'on_demand', guidance: 'Discover and call the manager read_board tool before matching, creating or updating a work item; this entry omits board details.' }
+    }))
+  };
+}
+
 // The entry receipt only has to be copied: the markdown plus the shared rule.
 // Owner details and the hand-off prompt stay on the checkpoint receipt.
-function receiptView(receipt) {
+export function receiptView(receipt) {
   return withoutDefaults({ required: receipt.required, markdown: receipt.markdown,
     collaborators: receipt.collaborators, work_status: receipt.work_status, persistence: receipt.persistence,
     guidance: ruleTextView(receipt.guidance, 'receipt_guidance') }, { flags: true });
