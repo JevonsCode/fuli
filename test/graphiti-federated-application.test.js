@@ -131,8 +131,7 @@ test('a project capture retried after a lost reply is reported unconfirmed, poin
   assert.deepEqual(retried, {
     route: 'personal_review',
     status: 'unconfirmed',
-    message: 'The draft for this capture could not be confirmed: one under the same key already exists '
-      + 'and only the person can read it. Ask them to check the publish queue in the FULI console.',
+    message: 'Cannot confirm whether this capture was saved; check the publish queue in the FULI console.',
     reviewUrl: 'http://127.0.0.1:4545/public-projects',
     projectId: 'project-1',
     providerUrl: 'https://workspace.example'
