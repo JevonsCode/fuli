@@ -93,7 +93,11 @@ const BASELINE = Object.freeze({
   // another reader no longer sees an FLA's own knowledge: 185,077 -> 185,199 B (+122 B), measured.
   // A conflict naming an FLA's item is missing to any other reader, so resolve_deferred_preference_conflict
   // and defer_preference_conflict name the FLA too: 185,199 -> 185,483 B (+284 B), measured.
-  fullToolSchemaBytes: 185483,
+  // rec#47 F2: the 7 records a task writes as it goes or closes (capture, decision trace, workflow
+  // observation, Agent memory checkpoint, task activity, executor actual, task outcome) take the
+  // same optional bare taskContextToken, without which they were always refused while any session
+  // of the client was stopped: 185,483 -> 185,742 B (+259 B), measured. Chat is unchanged.
+  fullToolSchemaBytes: 185742,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

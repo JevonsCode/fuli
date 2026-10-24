@@ -18,7 +18,10 @@ import { isFuliProcessSession } from '../mcp/session-id.js';
 // window's port carry the session layer; a port composed without one (a test
 // double) has no paused or stopped sessions.
 //
-// scope: { sourceApplication, boundSessionId, sessionId }
+// scope: { sourceApplication, boundSessionId, sessionId, tokenUnresolved }
+// tokenUnresolved: why a task token the call carried bound it to no session
+// ('task_token_not_current' or 'policy_unavailable'). It changes no decision,
+// only the reason a call refused for want of a task says.
 
 const ALLOWED = Object.freeze({ allowed: true, reason: null, layer: null });
 // NODE_DEBUG=fuli-capture shows decisions made without a session layer.
@@ -47,11 +50,12 @@ export function sessionCaptureDecision(application, scope) {
 // FULI could not record, so a call without a task token is refused then too.
 // Calls with a task token keep one window's stop out of another (C3b-5); a
 // token's session with no durable record follows the default, so it is off.
+// A call whose token did not resolve is refused the same way, saying why.
 export function sessionUseDecision(application, scope) {
   if (!sessionsMayBeOff(application)) return ALLOWED;
   return decideSessions(application, scope, { refusal: offRefusal,
     unattributed: sourceApplication => application.hasStoppedSession(sourceApplication)
-      || !application.sessionFuliDefault().enabled ? denied('session_unattributed') : null });
+      || !application.sessionFuliDefault().enabled ? denied(scope.tokenUnresolved ?? 'session_unattributed') : null });
 }
 
 // False when FULI is on for every session, the usual case, so a caller can

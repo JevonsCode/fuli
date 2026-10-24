@@ -19,7 +19,10 @@ const REASON_NOTICES = Object.freeze({
   session_start_unsaved: 'FULI 未能保存本会话开始时的设置，本会话保持停用，输入 /fuli start 可启用',
   // The call carries no task token and its client cannot say which session it
   // is, while one of that client's sessions has FULI off (session-layer-decision.js).
-  session_unattributed: 'FULI 无法确认这次调用来自哪个会话，而本客户端有会话已停用 FULI，所以没有提供'
+  session_unattributed: 'FULI 无法确认这次调用来自哪个会话，而本客户端有会话已停用 FULI，所以没有提供',
+  // The call's task token is not its session's current task (each new prompt
+  // begins a new one), under the same condition (session-fuli-gate.js).
+  task_token_not_current: '这次调用带的任务 token 已不是会话当前的任务（每次新的提问都会换新 token），而本客户端有会话已停用 FULI，所以没有提供'
 });
 // The global and client switches, and any reason without wording of its own.
 const RECORDING_OFF = '自动记录已关闭';
