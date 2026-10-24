@@ -293,6 +293,24 @@ test('a late stop after an exited app\'s failed stop keeps the seal\'s reason, n
   assert.ok(ended.stoppedAt);
 });
 
+// rec#10 review 6379740117 item 4: the seal's normal completion keeps its reason too.
+test('an exited app whose stop failed once and whose close retry stops it records app_exited', async (t) => {
+  const { registry, host, appId } = await running(t);
+  const remaining = failingStops(host, 1);
+  host.runner.started.at(-1).onExit({ code: 1, signal: null, category: 'crashed' });
+  await settle();
+  assert.equal(remaining.count, 0, 'the exit\'s own stop failed');
+  assert.equal(instance(host, appId).state, 'sealed');
+  await host.service.close();
+
+  const next = registry.host({ pid: 202 });
+  const ended = instance(next, appId);
+  assert.deepEqual([ended.state, ended.stopReason], ['sealed', 'app_exited']);
+  assert.ok(ended.stoppedAt);
+  const stopped = next.context.store.events(appId, 1000).filter(({ action }) => action === 'stopped');
+  assert.deepEqual(stopped.map(({ detail }) => detail.reason), ['app_exited']);
+});
+
 function failingStops(host, count) {
   const remaining = { count };
   host.runner.hooks.stop = async () => {

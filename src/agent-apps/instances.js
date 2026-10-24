@@ -275,7 +275,8 @@ export function createAppInstances(context) {
         });
         throw error;
       }
-      endInstance(appId, local.lease, local, reason);
+      // A retried seal (close's host_closing) records why the instance was first sealed.
+      endInstance(appId, local.lease, local, local.sealReason);
       if (hosted.get(appId) === local) hosted.delete(appId);
       leases.release(local.lease);
     } finally {
@@ -343,8 +344,10 @@ export function createAppInstances(context) {
   // records stay for the next owner's reconcile, as after a crash; so do the
   // records of a seal whose registry write threw. Never rejects: resolves
   // { complete, startsInFlight, notStopped }, complete only when nothing is in
-  // flight and every process FULI started is confirmed stopped. Asked again,
-  // it retries the stops that failed and keeps their handles meanwhile.
+  // flight and nothing is still held, so every process FULI started is
+  // confirmed stopped; notStopped names every handle still held, a late
+  // start's among them. Asked again, it retries the stops that failed and
+  // keeps their handles meanwhile.
   async function close() {
     const first = !closing;
     closing = true;
@@ -352,18 +355,35 @@ export function createAppInstances(context) {
     await Promise.all([...hosted.entries()].map(async ([appId, local]) => {
       if (!await sealForClose(appId, local, first)) hosted.delete(appId);
     }));
-    const notStopped = [];
-    await Promise.all([...held.entries()].map(async ([handle, started]) => {
-      try {
-        await stopHandle(handle);
-      } catch (error) {
-        notStopped.push({ ...started, pid: handle.pid ?? null, code: error?.code ?? null });
-        return;
-      }
-      recordLateStop(started.appId, handle);
-    }));
+    const failures = await stopHeld();
     for (const [appId, local] of hosted) if (!held.has(local.handle)) hosted.delete(appId);
-    return { complete: inFlight.size === 0 && notStopped.length === 0, startsInFlight: inFlight.size, notStopped };
+    const notStopped = [...held].map(([handle, started]) => ({ ...started, pid: handle.pid ?? null,
+      code: failures.get(handle) ?? null }));
+    return { complete: idle(), startsInFlight: inFlight.size, notStopped };
+  }
+
+  // Tries each held handle's stop once, passing again while a late start
+  // returned a handle during the last pass. Resolves each failed stop's error code.
+  async function stopHeld() {
+    const failures = new Map();
+    for (;;) {
+      const pending = [...held].filter(([handle]) => !failures.has(handle));
+      if (pending.length === 0) return failures;
+      await Promise.all(pending.map(async ([handle, started]) => {
+        try {
+          await stopHandle(handle);
+        } catch (error) {
+          failures.set(handle, error?.code ?? null);
+          return;
+        }
+        recordLateStop(started.appId, handle);
+      }));
+    }
+  }
+
+  // Nothing hosted, held or in flight: closing has nothing to wait for.
+  function idle() {
+    return hosted.size === 0 && held.size === 0 && inFlight.size === 0;
   }
 
   // Whether this instance's seal settled within the close wait; never throws,
@@ -427,8 +447,7 @@ export function createAppInstances(context) {
   return {
     start, stop, seal, end, reconcile, assertNoInstance, admit, close, verifyToken: tokens.verifyToken,
     hosted: (appId) => hosted.get(appId) ?? null,
-    // Nothing hosted, held or in flight: closing has nothing to wait for.
-    idle: () => hosted.size === 0 && held.size === 0 && inFlight.size === 0,
+    idle,
     assertOpen
   };
 }
