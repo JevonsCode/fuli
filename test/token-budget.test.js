@@ -93,7 +93,11 @@ const BASELINE = Object.freeze({
   // person's "from now on this work goes to that project" (chat reaches it through
   // list_agent_interfaces/fuli_call): 185,077 -> 186,372 B (+1,295 B), measured. Chat,
   // instructions and entry are unchanged.
-  fullToolSchemaBytes: 186372,
+  // rec#29 F5: the same tool takes change retire|reassign|edit_terms with term, leadAgentId,
+  // addTerms and removeTerms instead of a second tool (measured: a separate correction tool
+  // would add ~1,170 B): 186,372 -> 186,914 B (+542 B), measured. Chat, instructions and entry
+  // are unchanged.
+  fullToolSchemaBytes: 186914,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

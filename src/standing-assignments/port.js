@@ -16,9 +16,10 @@ import { termOccurs, termsOverlap } from './term-match.js';
 // refused, never moved. What the person confirmed outranks what a host Agent
 // inferred: a host registration never changes a user-sourced assignment,
 // while the person's registration of a host-sourced one makes it theirs.
-// Responsibility and lead are kept as first registered; changing them is a
-// reassignment (rec#29 F5), not a registration. Global preferences are only
-// referenced by ID (D-5).
+// Responsibility and lead are kept as first registered; the person changes
+// the lead or project with a reassignment, the terms with an edit or ends the
+// assignment with a retirement (rec#29 F5), each a new revision. Global
+// preferences are only referenced by ID (D-5).
 
 const ID_LIMIT = 200;
 const MAX_TERMS = 20;
@@ -81,28 +82,82 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
       responsibility: request.responsibility, preferenceIds: request.preferenceIds };
   }
 
-  // Ends an assignment from now on; its record and history stay. Its terms
-  // are free to name another assignment afterwards.
-  function retire(assignmentId, input) {
-    const source = sourceOf(input?.source);
-    const sourceConversationId = conversationOf(input?.sourceConversationId);
+  // What a correction of an active assignment would store (rec#29 F5), or
+  // the refusal it would raise: retire ends it from now on, freeing its terms;
+  // reassign points it, terms and all, at another lead or project; edit_terms
+  // adds and removes terms. Every one keeps the record and its history. A
+  // correction whose result is already in place changes nothing (change
+  // null), so confirming it again is answered unchanged.
+  function corrected(current, correction, { source, sourceConversationId }) {
+    if (!current) {
+      throw new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'No standing assignment has this ID.', { status: 404 });
+    }
+    if (inPlace(current, correction)) return { change: null, next: current };
+    if (current.retiredAt) {
+      throw new ApplicationError('standing_assignment_retired', 'This standing assignment is already retired.', { status: 409 });
+    }
+    if (current.source === 'user' && source === 'host') throw userConfirmed(current);
+    const confirms = current.source === 'host' && source === 'user';
+    const at = now().toISOString();
+    const base = { ...current, source: confirms ? 'user' : current.source,
+      sourceConversationId: confirms ? sourceConversationId : current.sourceConversationId,
+      revision: current.revision + 1, updatedAt: at };
+    if (correction.action === 'retire') return { change: 'retired', next: { ...base, retiredAt: at } };
+    if (correction.action === 'reassign') {
+      const { projectId, leadAgentId } = correction;
+      const occupied = store.activeFor(current.personalSpaceId, projectId, leadAgentId);
+      if (occupied) {
+        throw new ApplicationError('standing_assignment_target_taken', `Project ${projectId} (lead ${leadAgentId}) `
+          + 'already has a standing assignment; add these terms to it instead. Nothing was saved.', { status: 409 });
+      }
+      return { change: 'reassigned', next: { ...base, projectId, leadAgentId } };
+    }
+    const known = new Set(current.terms.map(identityKey));
+    const absent = correction.removeTerms.find(({ key }) => !known.has(key));
+    if (absent) {
+      throw new ApplicationError('standing_assignment_term_absent', `"${absent.term}" is not a term of this standing `
+        + 'assignment. Nothing was saved.', { status: 422 });
+    }
+    const removed = new Set(correction.removeTerms.map(({ key }) => key));
+    const kept = current.terms.filter((term) => !removed.has(identityKey(term)));
+    const keptKeys = new Set(kept.map(identityKey));
+    const added = correction.addTerms.filter(({ key }) => !keptKeys.has(key));
+    for (const { term, key } of added) {
+      const owner = store.termOwner(current.personalSpaceId, key);
+      if (owner?.assignmentId !== current.assignmentId) refuseTakenTerm(owner, term);
+    }
+    const terms = [...kept, ...added.map(({ term }) => term)];
+    if (!terms.length) {
+      throw new ApplicationError('standing_assignment_terms_empty', 'A standing assignment keeps at least one term. '
+        + 'Nothing was saved; retire it to end it.', { status: 422 });
+    }
+    return { change: 'terms_edited', next: { ...base, terms } };
+  }
+
+  // Saves nothing: the change a correction would record (null when none) and the assignment it would leave.
+  function previewCorrection(assignmentId, input, meta) {
+    const correction = correctionOf(input);
+    const options = metaOf(meta);
+    return corrected(store.get(requiredString(assignmentId, 'assignmentId', ID_LIMIT)), correction, options);
+  }
+
+  // Applies a correction while the assignment is still at expectedRevision.
+  // One already in place answers unchanged at any revision: a retry of a
+  // change that was saved finds it done.
+  function correct(assignmentId, input, meta) {
+    const correction = correctionOf(input);
+    const options = metaOf(meta);
     return store.transaction(() => {
       const current = store.get(requiredString(assignmentId, 'assignmentId', ID_LIMIT));
-      if (!current) {
-        throw new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'No standing assignment has this ID.', { status: 404 });
-      }
-      if (current.retiredAt) {
-        throw new ApplicationError('standing_assignment_retired', 'This standing assignment is already retired.', { status: 409 });
-      }
-      if (current.revision !== input.expectedRevision) {
+      if (current && inPlace(current, correction)) return { status: 'unchanged', assignment: current };
+      if (current && current.revision !== meta.expectedRevision) {
         throw new ApplicationError('standing_assignment_changed',
           'This standing assignment changed since it was read. Nothing was saved; read it again.', { status: 409 });
       }
-      if (current.source === 'user' && source === 'host') throw userConfirmed(current);
-      const at = now().toISOString();
-      const next = { ...current, revision: current.revision + 1, updatedAt: at, retiredAt: at };
-      store.save(next, { change: 'retired', source, sourceConversationId, termKeys: [] });
-      return next;
+      const { change, next } = corrected(current, correction, options);
+      store.save(next, { change, source: options.source, sourceConversationId: options.sourceConversationId,
+        termKeys: next.terms.map(identityKey) });
+      return { status: change, assignment: next };
     });
   }
 
@@ -133,9 +188,22 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   return {
     register,
     preview,
-    retire,
+    previewCorrection,
+    correct,
     match,
     discover,
+    // The active assignment a term names in a space, if any.
+    named: (personalSpaceId, term) => store.termOwner(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT),
+      identityKey(requiredString(term, 'term', TERM_LIMIT))),
+    // The assignment that last held a term no active one holds now, if any,
+    // so a correction confirmed again finds the assignment it changed.
+    lastNamed(personalSpaceId, term) {
+      const key = identityKey(requiredString(term, 'term', TERM_LIMIT));
+      for (const record of store.recordsNewestFirst(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT))) {
+        if (record.terms.some((value) => identityKey(value) === key)) return store.get(record.assignmentId);
+      }
+      return null;
+    },
     list: (personalSpaceId) => store.listActive(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT)),
     // Each change in order, with the state it produced.
     history: (assignmentId) => store.revisions(requiredString(assignmentId, 'assignmentId', ID_LIMIT)),
@@ -144,18 +212,41 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
 }
 
 function registration(input) {
-  const terms = uniqueTextArray(input.terms, 'terms', MAX_TERMS).map((value, index) => {
-    const term = displayName(requiredString(value, `terms[${index}]`, TERM_LIMIT));
-    const key = identityKey(term);
-    if (!key) throw new TypeError(`terms[${index}] is required`);
-    return { term, key };
-  }).filter(({ key }, index, all) => all.findIndex((other) => other.key === key) === index);
+  const terms = termsOf(input.terms, 'terms');
   if (!terms.length) throw new TypeError('terms is required');
   return { personalSpaceId: requiredString(input.personalSpaceId, 'personalSpaceId', ID_LIMIT),
     projectId: idOrNull(input.projectId, 'projectId'), leadAgentId: idOrNull(input.leadAgentId, 'leadAgentId'), terms,
     responsibility: requiredString(input.responsibility, 'responsibility', RESPONSIBILITY_LIMIT),
     source: sourceOf(input.source), sourceConversationId: conversationOf(input.sourceConversationId),
     preferenceIds: uniqueTextArray(input.preferenceIds, 'preferenceIds', MAX_PREFERENCES) };
+}
+
+// Each term as stored (composed, spacing tidied) with its identity key, the first spelling of a key kept.
+function termsOf(value, label) {
+  return uniqueTextArray(value, label, MAX_TERMS).map((item, index) => {
+    const term = displayName(requiredString(item, `${label}[${index}]`, TERM_LIMIT));
+    const key = identityKey(term);
+    if (!key) throw new TypeError(`${label}[${index}] is required`);
+    return { term, key };
+  }).filter(({ key }, index, all) => all.findIndex((other) => other.key === key) === index);
+}
+
+function correctionOf(input) {
+  const action = input?.action;
+  if (action === 'retire') return { action };
+  if (action === 'reassign') {
+    return { action, projectId: requiredString(input.projectId, 'projectId', ID_LIMIT),
+      leadAgentId: requiredString(input.leadAgentId, 'leadAgentId', ID_LIMIT) };
+  }
+  if (action === 'edit_terms') {
+    return { action, addTerms: termsOf(input.addTerms, 'addTerms'),
+      removeTerms: termsOf(input.removeTerms, 'removeTerms') };
+  }
+  throw new TypeError('action must be retire, reassign or edit_terms');
+}
+
+function metaOf(meta) {
+  return { source: sourceOf(meta?.source), sourceConversationId: conversationOf(meta?.sourceConversationId) };
 }
 
 function sourceOf(value) {
@@ -176,6 +267,18 @@ function refuseTakenTerm(owner, term) {
   throw new ApplicationError('standing_assignment_term_taken', `"${term}" already names the standing assignment of `
     + `project ${owner.projectId} (lead ${owner.leadAgentId}). One term names one assignment; nothing was saved.`,
   { status: 409 });
+}
+
+// Whether the assignment already is as the correction would leave it.
+function inPlace(current, correction) {
+  if (correction.action === 'retire') return Boolean(current.retiredAt);
+  if (current.retiredAt) return false;
+  if (correction.action === 'reassign') {
+    return current.projectId === correction.projectId && current.leadAgentId === correction.leadAgentId;
+  }
+  const keys = new Set(current.terms.map(identityKey));
+  return correction.addTerms.every(({ key }) => keys.has(key))
+    && !correction.removeTerms.some(({ key }) => keys.has(key));
 }
 
 function userConfirmed(current) {

@@ -90,6 +90,14 @@ export class StandingAssignmentStore {
       WHERE t.personal_space_id = ? AND t.term_key = ?`).get(personalSpaceId, termKey));
   }
 
+  // Every recorded state of the space's assignments, the latest first.
+  * recordsNewestFirst(personalSpaceId) {
+    if (!this.readable) return;
+    for (const row of this.db.prepare(`SELECT r.record FROM standing_assignment_revisions r
+      JOIN standing_assignments a ON a.assignment_id = r.assignment_id WHERE a.personal_space_id = ?
+      ORDER BY r.rowid DESC`).iterate(personalSpaceId)) yield JSON.parse(row.record);
+  }
+
   listActive(personalSpaceId) {
     if (!this.readable) return [];
     return this.db.prepare(`SELECT * FROM standing_assignments WHERE personal_space_id = ? AND retired_at IS NULL
@@ -116,7 +124,8 @@ export class StandingAssignmentStore {
     this.db.prepare(`INSERT INTO standing_assignments VALUES(:assignment_id, :personal_space_id, :project_id,
         :lead_agent_id, :terms, :responsibility, :source, :source_conversation_id, :preference_ids, :revision,
         :created_at, :updated_at, :retired_at)
-      ON CONFLICT(assignment_id) DO UPDATE SET terms = excluded.terms, source = excluded.source,
+      ON CONFLICT(assignment_id) DO UPDATE SET project_id = excluded.project_id,
+        lead_agent_id = excluded.lead_agent_id, terms = excluded.terms, source = excluded.source,
         source_conversation_id = excluded.source_conversation_id, preference_ids = excluded.preference_ids,
         revision = excluded.revision, updated_at = excluded.updated_at, retired_at = excluded.retired_at`)
       .run(columns(record));
