@@ -13,6 +13,7 @@ import { ensureSessionTemporaryProject } from '../src/graphiti/temporary-project
 import { checkpointTurnReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
 import { handleKnowledgeScopeRequest } from '../src/http/knowledge-scope-api-router.js';
+import { knowledgeOwnerReads } from '../src/knowledge-owner-reads/console-port.js';
 import { knowledgeScopeConsole } from '../src/knowledge-scope/console-port.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { reachableModules } from '../test-support/module-graph.js';
@@ -39,10 +40,17 @@ function application(reply = () => ({ status: 200, body: { ok: true } })) {
     const { status, body: payload } = reply(call);
     return { ok: status < 400, status, payload };
   } });
+  // The console reads what a session holds with the review proof too (0.20.1).
+  app.ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async (path, body, { review, method }) => {
+    const call = { path, body, review, method };
+    calls.push(call);
+    const { status, body: payload } = reply(call);
+    return { ok: status < 400, status, payload };
+  } });
   return { app, calls };
 }
 
-async function api(app, method, path, body, remoteAddress = '127.0.0.1') {
+async function api(app, method, path, body, remoteAddress = '127.0.0.1', ownerReads = app.ownerReads) {
   const stream = Readable.from(body ? [Buffer.from(JSON.stringify(body))] : []);
   const request = Object.assign(stream, { method, headers: { 'content-type': 'application/json' },
     socket: { remoteAddress } });
@@ -52,7 +60,7 @@ async function api(app, method, path, body, remoteAddress = '127.0.0.1') {
   try {
     const url = new URL(`http://127.0.0.1${path}`);
     await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: app.scopeConsole })
-      || await handleGraphApiRequest({ request, response, url, app });
+      || await handleGraphApiRequest({ request, response, url, app, ownerReads });
     return sent;
   } catch (error) {
     return mapHttpError(error);
@@ -63,15 +71,22 @@ const migration = { personalSpaceId: 'personal-space', sourceApplication: 'codex
   reason: 'This session belongs to Alpha', items: [{ itemKind: 'entity', itemId: 'item-1', expectedVersion: 2 },
     { itemKind: 'relationship', itemId: 'item-2', expectedVersion: 0 }] };
 
-test('the console reads what the session holds for the project it linked to', async () => {
+test('the console reads what the session holds for the project it linked to, with the review proof', async () => {
   const { app, calls } = application(() => ({ status: 200, body: { held_count: 2, items: [] } }));
-  const result = await api(app, 'GET', `/api/knowledge/session-migration?personalSpaceId=personal-space&client=codex&sessionId=${SESSION}&projectId=alpha`);
+  const page = `/api/knowledge/session-migration?personalSpaceId=personal-space&client=codex&sessionId=${SESSION}&projectId=alpha`;
+  const result = await api(app, 'GET', page);
   assert.equal(result.status, 200);
-  assert.deepEqual(calls, [{ path: '/v1/knowledge/session-migrations/preview', body: { personal_space_id: 'personal-space',
-    source_application: 'codex', session_id: SESSION, target_project_id: 'alpha', include_items: true, offset: 0 } }]);
+  // Every FLA's held items are the person's to see: the read never leaves on the Agent's client.
+  assert.deepEqual(calls, [{ path: '/v1/knowledge/session-migrations/preview', review: true, method: 'POST',
+    body: { personal_space_id: 'personal-space', source_application: 'codex', session_id: SESSION,
+      target_project_id: 'alpha', include_items: true, offset: 0 } }]);
   const other = await api(app, 'GET', `/api/knowledge/session-migration?personalSpaceId=someone-else&client=codex&sessionId=${SESSION}&projectId=alpha`);
   assert.equal(other.status, 400);
   assert.equal(calls.length, 1, 'another space is refused before the Provider');
+  // Without a local installation there is no full read, and no partial one instead.
+  const unavailable = await api(app, 'GET', page, undefined, '127.0.0.1', null);
+  assert.equal(unavailable.status, 503);
+  assert.equal(calls.length, 1);
 });
 
 test('the person\'s chosen items move with the versions the page showed, as their own console action', async () => {
@@ -165,6 +180,11 @@ test('the session\'s first task in a formal project links the person to the migr
     `FULI 待迁移：本会话临时项目有 3 条范围待确定，迁入当前项目需你确认：${LINK}`);
   assert.deepEqual(asked, [{ personal_space_id: 'personal-space', source_application: 'claude_code', session_id: SESSION,
     target_project_id: 'alpha', include_items: false }]);
+  // An FLA's task counts as that FLA, so another FLA's held items are not in its count (0.20.1).
+  const fla = entryApp({ held_count: 1, linked_task_count: 1 });
+  await sessionMigrationOffer(fla.app, { ...task, projectAgentId: 'synthetic-fla' });
+  assert.deepEqual(fla.asked, [{ personal_space_id: 'personal-space', source_application: 'claude_code', session_id: SESSION,
+    target_project_id: 'alpha', include_items: false, reader_project_id: 'alpha', reader_agent_id: 'synthetic-fla' }]);
   // Nothing waits, a later task of the session, a temporary task, or a failed read: no line, no failed entry.
   assert.equal(await sessionMigrationOffer(entryApp({ held_count: 0, linked_task_count: 1 }).app, task), null);
   assert.equal(await sessionMigrationOffer(entryApp({ held_count: 3, linked_task_count: 2 }).app, task), null);

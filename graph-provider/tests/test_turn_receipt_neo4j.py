@@ -58,13 +58,15 @@ async def receipt(client, space_id, *episodes):
         'personal_space_id': space_id, 'episode_ids': list(episodes)}))
 
 
-async def view(client, space_id, item_id, kind='entity'):
-    return ok(await client.post('/v1/knowledge/item-views', json={
+async def view(client, space_id, item_id, kind='entity', headers=None):
+    # Without the review proof this reads as a plain session (no FLA's own
+    # items); an FLA's item is read with headers=REVIEW, as the console does.
+    return ok(await client.post('/v1/knowledge/item-views', headers=headers, json={
         'personal_space_id': space_id, 'item_kind': kind, 'item_id': item_id}))
 
 
-async def confirm(client, space_id, item_id, kind='entity'):
-    current = await view(client, space_id, item_id, kind)
+async def confirm(client, space_id, item_id, kind='entity', headers=None):
+    current = await view(client, space_id, item_id, kind, headers=headers)
     ok(await client.patch(f'/v1/knowledge/items/{item_id}', json={
         'personal_space_id': space_id, 'item_kind': kind, 'action': 'confirm', 'reason': 'Synthetic confirmation.',
         'confirmation_status': 'confirmed', 'operation_actor': 'human', 'expected_version': current['version'],
@@ -339,10 +341,10 @@ async def test_a_preference_can_belong_to_one_fla_and_then_applies_only_to_it():
         moved = await move(client, space_id, item_id, 'agent', version=version, projects=['sample-project'],
                            agent='engineer')
         assert moved.status_code == 200, moved.text
-        current = await view(client, space_id, item_id)
+        current = await view(client, space_id, item_id, headers=REVIEW)
         assert (current['scope']['kind'], current['scope']['agent_id'], current['scope']['agent_name']) == (
             'agent', 'engineer', 'Synthetic engineer')
-        await confirm(client, space_id, item_id)
+        await confirm(client, space_id, item_id, headers=REVIEW)
         for_agent = ok(await client.get('/v1/collaboration-preferences', params={
             'personal_space_id': space_id, 'personal_project_id': 'sample-project', 'project_agent_id': 'engineer'}))
         assert item_id in {item['id'] for item in for_agent['effective_preferences']}
@@ -375,7 +377,7 @@ async def test_a_confirmed_held_item_is_placed_global_or_with_one_fla_by_the_per
         to_fla, version = await held_confirmed(client, space_id, 'held-fla', 'Synthetic held reviewer habit')
         assert (await move(client, space_id, to_fla, 'agent', version=version, projects=['sample-project'],
                            agent='engineer')).status_code == 200
-        placed = await view(client, space_id, to_fla)
+        placed = await view(client, space_id, to_fla, headers=REVIEW)
         assert (placed['scope']['kind'], placed['scope']['agent_id']) == ('agent', 'engineer')
         # Once placed it is in use: widening that place again goes through review.
         widened = await move(client, space_id, to_fla, 'global', version=placed['version'])

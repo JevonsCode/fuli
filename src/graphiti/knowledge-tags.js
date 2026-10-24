@@ -15,6 +15,7 @@ const ROUTES = Object.freeze({
   create: 'create', add_alias: 'aliases', attach: 'attach', detach: 'detach'
 });
 const CHANGES = new Set(['create', 'add_alias', 'attach', 'detach']);
+const ACROSS_PROJECTS = new Set(['metrics', 'vocabulary', 'detail', 'governance_preview']);
 // What an Agent may ask the person for; the person also removes aliases and relates tags.
 const PROPOSALS = new Set(['approve', 'merge', 'split', 'retire', 'undo']);
 // revive: the person's create of a retired word that would drop something comes back as a preview.
@@ -84,6 +85,16 @@ export async function personKnowledgeTagChange(application, tagsConsole, input) 
     : result;
 }
 
+// The owner's console view across every project: vocabulary, detail, metrics
+// and a governance preview. It lists and counts the links of every FLA's own
+// knowledge, so the Provider answers it only on the human-review channel
+// tagsConsole sends on; an Agent reads its own scope (allProjects false).
+export function readTagsAcrossProjects(application, tagsConsole, operation, input) {
+  if (!ACROSS_PROJECTS.has(operation)) throw new TypeError(`Unknown knowledge tag read: ${operation}`);
+  activeSpace(application, input.personalSpaceId);
+  return tagsConsole.send(ROUTES[operation], { ...scope(input), ...BODIES[operation]({ ...input, allProjects: true }) });
+}
+
 // The person's governance, applied naming the digest of the preview they saw.
 export function applyTagGovernance(application, tagsConsole, input) {
   if (!GOVERNANCE.has(input.change)) invalid('change must be a tag governance change');
@@ -129,7 +140,7 @@ function changedBy(input) {
 
 function activeSpace(application, personalSpaceId) {
   if (personalSpaceId !== application.config.personal.spaceId) {
-    invalid('Tags are changed in the active personal space');
+    invalid('Tags are read and changed in the active personal space');
   }
 }
 

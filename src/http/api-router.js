@@ -30,6 +30,7 @@ export async function handleApiRequest({
   dataFormatMigrations = null,
   knowledgeHardDelete = null,
   knowledgeScope = null,
+  knowledgeOwnerReads = null,
   knowledgeTags = null,
   modelRoleSettings = null,
   readModelEvaluation = null,
@@ -183,7 +184,7 @@ export async function handleApiRequest({
     await handleJudgmentApiRequest({ request, response, url, app, undoConsole: judgmentUndo }) ||
     await handleStandingAssignmentRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
-    await handleGraphApiRequest({ request, response, url, app });
+    await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads });
   if (system?.withGraphRuntimeLease && (
     url.pathname.startsWith('/api/') || url.pathname.startsWith('/employee-workspaces/')
   )) {

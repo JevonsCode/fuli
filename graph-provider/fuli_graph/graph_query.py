@@ -28,6 +28,13 @@ from .project_knowledge import (
     read_personal_project_relations,
     read_project_references,
 )
+from .knowledge_visibility import (
+    fla_episode_visible_cypher,
+    fla_relationship_visible_cypher,
+    fla_visible_cypher,
+    knowledge_reader,
+    reader_parameter,
+)
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
 from .negative_feedback_block import agent_authority_suspension
 
@@ -39,11 +46,18 @@ async def read_graph(
     limit: int | None = None,
     personal_project_id: str | None = None,
     offset: int | None = None,
+    *,
+    reader_project_id: str | None = None,
+    reader_agent_id: str | None = None,
 ) -> GraphResult:
     space = await store.authorize(actor, space_id, 'reader')
     project = None
     if personal_project_id:
         project = await authorize_personal_project(store, actor, space, personal_project_id)
+    # An Agent sees no other FLA's knowledge; hidden items are cut in the
+    # queries, so a page, its edges and its evidence never reveal them.
+    reader = reader_parameter(await knowledge_reader(
+        store, actor, space, personal_project_id=reader_project_id, project_agent_id=reader_agent_id))
     bounded_limit = min(limit or store.settings.graph_limit, store.settings.graph_limit)
     paginated = offset is not None
     page_offset = offset or 0
@@ -52,6 +66,7 @@ async def read_graph(
         space_id=space_id,
         group_id=space['group_id'],
         project_id=personal_project_id,
+        reader=reader,
         limit=bounded_limit + 1,
         offset=page_offset,
         routing_='r',
@@ -71,6 +86,7 @@ async def read_graph(
         project_id=personal_project_id,
         node_ids=node_ids,
         episode_ids=episode_ids,
+        reader=reader,
         limit=bounded_limit + 1 if paginated else bounded_limit,
         offset=page_offset,
         routing_='r',
@@ -83,7 +99,14 @@ async def read_graph(
         *episode_ids,
         *(episode_id for record in edge_records for episode_id in (record.get('episodes') or [])),
     })
-    evidence = await _read_evidence(store, all_episode_ids, space['group_id'])
+    evidence = await _read_evidence(store, all_episode_ids, space['group_id'], reader)
+    if reader is not None:
+        # A visible item keeps no other FLA's episode, as evidence or as an id.
+        node_records, edge_records = (
+            [dict(record) | {'episodes': [item for item in record.get('episodes') or [] if item in evidence]}
+             for record in records]
+            for records in (node_records, edge_records)
+        )
     item_ids = node_ids + [record['id'] for record in edge_records]
     revisions = await _read_revisions(store, space_id, item_ids)
     assignments = await _read_assignments(store, space_id, item_ids)
@@ -218,6 +241,7 @@ def _node_query(project_scoped: bool, paginated: bool = False) -> str:
         '''
     pagination = 'SKIP $offset LIMIT $limit' if paginated else 'LIMIT $limit'
     return match + '''
+        WITH node, episodes WHERE ''' + fla_visible_cypher('node', 'entity') + '''
         RETURN node.uuid AS id, node.name AS name, node.group_id AS group_id,
                coalesce(node.fuli_type, 'Entity') AS type,
                coalesce(node.summary, '') AS summary,
@@ -348,6 +372,8 @@ def _edge_query(project_scoped: bool, paginated: bool = False) -> str:
         ''' if project_scoped else ''
     pagination = 'SKIP $offset LIMIT $limit' if paginated else 'LIMIT $limit'
     return match + project_filter + '''
+        WITH source, edge, target
+        WHERE ''' + fla_relationship_visible_cypher('edge', 'source', 'target') + '''
         RETURN edge.uuid AS id, source.uuid AS source, target.uuid AS target,
                source.name AS source_name, target.name AS target_name,
                edge.name AS type, edge.fact AS fact,
@@ -433,12 +459,13 @@ async def _personal_projects(store, space: dict) -> list[dict]:
     return [dict(record['project']) for record in records]
 
 
-async def _read_evidence(store, episode_ids: list[str], group_id: str) -> dict[str, GraphEvidence]:
+async def _read_evidence(store, episode_ids: list[str], group_id: str, reader=None) -> dict[str, GraphEvidence]:
     if not episode_ids:
         return {}
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (episode:Episodic {group_id: $group_id}) WHERE episode.uuid IN $episode_ids
+          AND ''' + fla_episode_visible_cypher('episode') + '''
         RETURN episode.uuid AS id, episode.name AS name,
                episode.source_description AS source_description,
                coalesce(episode.fuli_source_kind, 'unknown') AS source_kind,
@@ -454,6 +481,7 @@ async def _read_evidence(store, episode_ids: list[str], group_id: str) -> dict[s
         ''',
         episode_ids=episode_ids,
         group_id=group_id,
+        reader=reader,
         routing_='r',
     )
     return {

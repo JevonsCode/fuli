@@ -12,7 +12,7 @@ from pydantic import Field, model_serializer, model_validator
 from .knowledge_audit_models import KnowledgeChangeActor, KnowledgeItemKind, KnowledgeRevisionRecord
 from .knowledge_tag_models import KnowledgeTagReference
 from .model_base import StrictModel
-from .models import ConfirmationStatus, ContentSource, SearchRequest
+from .models import AgentReaderRef, ConfirmationStatus, ContentSource, SearchRequest
 
 # What kind of content an item holds, for its label. Derived from the item's
 # stored profile aspect or type; not a separate Rule model.
@@ -29,7 +29,7 @@ MAX_SCOPE_PROJECTS = 16
 MAX_RECEIPT_EPISODES = 3
 
 
-class KnowledgeItemRef(StrictModel):
+class KnowledgeItemRef(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     item_kind: KnowledgeItemKind
     item_id: str = Field(min_length=1, max_length=256)
@@ -174,7 +174,7 @@ class KnowledgeItemView(KnowledgeItemSummary):
     dependent_count: int = 0
 
 
-class KnowledgeTurnReceiptRead(StrictModel):
+class KnowledgeTurnReceiptRead(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     episode_ids: list[str] = Field(min_length=1, max_length=MAX_RECEIPT_EPISODES)
 

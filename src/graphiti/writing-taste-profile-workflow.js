@@ -2,14 +2,17 @@ import { buildWritingTasteProfile } from './writing-taste-profile.js';
 
 const MAX_GRAPH_PAGES = 20;
 
+// ownerReads: the console's human-review port, so the person's profile keeps
+// the preferences given to one FLA and their conflicts; without it the graph
+// and the conflicts read as an Agent.
 export async function getWritingTasteProfile(application, {
   personalSpaceId,
   personalProjectId = null,
   limit = 500
-} = {}) {
+} = {}, ownerReads = null) {
   const [graph, conflictRecords] = await Promise.all([
-    readPersonalGraph(application, { personalSpaceId, limit }),
-    readPreferenceConflicts(application, personalSpaceId)
+    readPersonalGraph(application, { personalSpaceId, limit }, ownerReads),
+    readPreferenceConflicts(application, personalSpaceId, ownerReads)
   ]);
   return buildWritingTasteProfile({
     graph,
@@ -19,11 +22,14 @@ export async function getWritingTasteProfile(application, {
   });
 }
 
-async function readPreferenceConflicts(application, personalSpaceId) {
+async function readPreferenceConflicts(application, personalSpaceId, ownerReads) {
   const records = new Map();
   const pageSize = 500;
+  const read = ownerReads
+    ? offset => ownerReads.preferenceConflicts({ personalSpaceId, status: 'ai_pending', limit: pageSize, offset })
+    : offset => application.personal.listPreferenceConflicts(personalSpaceId, 'ai_pending', pageSize, offset);
   for (let page = 0; page < MAX_GRAPH_PAGES; page++) {
-    const items = await application.personal.listPreferenceConflicts(personalSpaceId, 'ai_pending', pageSize, page * pageSize);
+    const items = await read(page * pageSize);
     if (!Array.isArray(items)) throw new Error('Invalid writing taste conflict history');
     const size = records.size;
     for (const item of items) records.set(item.id, item);
@@ -36,7 +42,7 @@ async function readPreferenceConflicts(application, personalSpaceId) {
 // Writing-taste maturity counts every durable rule, so a truncated first page
 // would understate readiness forever. Follow the provider offset cursor until
 // it stops, keeping the read bounded by MAX_GRAPH_PAGES.
-async function readPersonalGraph(application, { personalSpaceId, limit }) {
+async function readPersonalGraph(application, { personalSpaceId, limit }, ownerReads) {
   const nodes = [];
   const edges = [];
   const seenNodes = new Set();
@@ -49,7 +55,7 @@ async function readPersonalGraph(application, { personalSpaceId, limit }) {
       spaceId: personalSpaceId,
       limit,
       offset
-    });
+    }, ownerReads);
     appendUnique(nodes, seenNodes, result?.nodes);
     appendUnique(edges, seenEdges, result?.edges);
     truncated = Boolean(result?.truncated);

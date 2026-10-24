@@ -3,6 +3,7 @@ import { requiredString, uniqueTextArray } from '../validation/values.js';
 import { MAX_LIST_EPISODES, readEpisodeReceipts } from '../agents/turn-receipt.js';
 
 // One knowledge item as the console's quick edit reads and moves it (rec#20).
+// No MCP or Agent tool module calls these; the console passes its ports.
 // This host only checks and maps the request: the Provider reads the item back,
 // authorizes every project and FLA, and refuses an edit from a stale version.
 // A receipt link opens this flow; the link itself grants nothing.
@@ -11,19 +12,21 @@ const ITEM_KINDS = new Set(['entity', 'relationship']);
 const SCOPES = new Set(['global', 'projects', 'agent']);
 const MAX_SCOPE_PROJECTS = 16;
 
-export function readKnowledgeItem(application, input) {
+// ownerReads: the console's port for the person's full reads, every FLA's
+// items included (src/knowledge-owner-reads).
+export function readKnowledgeItem(application, ownerReads, input) {
   const ref = itemRef(application, input);
-  return application.personal.readKnowledgeItemView({ ...ref,
+  return ownerReads.itemView({ ...ref,
     ...(input.queryTags === undefined ? {} : { query_tags: input.queryTags }) });
 }
 
 // Everything one turn's episodes created or replaced, for the full list a
 // long receipt links to.
-export function readTurnReceiptItems(application, { personalSpaceId, episodeIds }) {
+export function readTurnReceiptItems(application, ownerReads, { personalSpaceId, episodeIds }) {
   activeSpace(application, personalSpaceId);
   const episodes = uniqueTextArray(episodeIds, 'episodeIds', MAX_LIST_EPISODES);
   if (!episodes.length) invalid('episodes names at least one saved episode');
-  return readEpisodeReceipts(application, episodes);
+  return readEpisodeReceipts(application, episodes, { read: ownerReads.turnReceipt });
 }
 
 // scopeConsole: the console port that sends it on the human-review channel (src/knowledge-scope).

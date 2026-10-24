@@ -22,6 +22,9 @@ from test_turn_receipt_neo4j import ok, space_with_projects
 
 async def new_draft(client, space_id):
     episode = StructuredEpisode.model_validate(confirmed_episode(idempotency_key=str(uuid4()))).model_dump(mode='json')
+    # Kept personally too, so the draft's plain provenance resolves and the host's Agent-token
+    # protocol may drive it (0.20.1); a draft with no local source is the console's alone.
+    ok(await client.post('/v1/knowledge/commits', json={'space_id': space_id, 'episode': episode}))
     return ok(await client.post('/v1/publication-drafts', json={'personal_space_id': space_id,
         'target_project_id': 'synthetic-public', 'provider_url': 'https://public.example', 'episode': episode}))
 

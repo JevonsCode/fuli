@@ -997,7 +997,17 @@ class CollaborationContextResult(StrictModel):
     truncated: bool = False
 
 
-class PreferenceConflictDeferCreate(StrictModel):
+class AgentReaderRef(StrictModel):
+    """The Agent reading: an FLA in its project, or neither for a plain
+    session. The person's console names no reader; it proves itself with the
+    human-review channel instead (knowledge_visibility)."""
+    reader_project_id: str | None = Field(default=None, min_length=1, max_length=128)
+    reader_agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+# A conflict's write names its reader too: one naming an item this reader may
+# not see answers as missing, before anything is written or returned (0.20.1).
+class PreferenceConflictDeferCreate(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     conflict_id: str = Field(min_length=1, max_length=1024)
     preference_key: str = Field(min_length=1, max_length=512)
@@ -1024,7 +1034,7 @@ class PreferenceConflictDeferCreate(StrictModel):
         return self
 
 
-class PreferenceConflictResolveCreate(StrictModel):
+class PreferenceConflictResolveCreate(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     resolution: PreferenceConflictResolutionAction
     reason: str = Field(min_length=1, max_length=2000)
