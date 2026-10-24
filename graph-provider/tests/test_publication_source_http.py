@@ -23,6 +23,7 @@ class DraftDriver:
         # Episodes an FLA wrote, and sources not found at all (0.20.1); every other source is
         # found and plain. The Cypher itself is in test_fla_entry_points_neo4j.py.
         self.project_agent_episodes = set()
+        self.project_agent_turns = set()
         self.unresolved_episodes = set()
 
     @asynccontextmanager
@@ -67,6 +68,14 @@ class DraftDriver:
             row.update(status=params['status'], decided_at=params['decided_at'],
                        shared_proposal_id=params['shared_proposal_id'])
             return [{'draft': row.copy()}], None, None
+        if 'MERGE (draft:' in query:
+            existed = params['id'] in self.rows
+            self.rows.setdefault(params['id'], dict(
+                id=params['id'], personal_space_id=params['personal_space_id'],
+                target_project_id=params['target_project_id'], provider_url=params['provider_url'],
+                status='pending', payload=params['payload'], source_identity=params['source_identity'],
+                created_at=params['created_at']))
+            return [{'draft': self.rows[params['id']].copy(), 'existed': existed}], None, None
         if 'FuliPublicationDraft' in query:
             rows = list(self.rows.values())
             if 'draft_id' in params:
@@ -76,7 +85,8 @@ class DraftDriver:
                 rows = [row for row in rows if row['status'] == status]
             return [{'draft': row.copy(), 'project_name': None} for row in rows], None, None
         if 'RETURN source.index AS index' in query:
-            return [{'index': source['index'], 'project_agent': source['episode_id'] in self.project_agent_episodes,
+            return [{'index': source['index'], 'project_agent': source['episode_id'] in self.project_agent_episodes
+                     or source['turn_id'] in self.project_agent_turns,
                      'found': source['episode_id'] not in self.unresolved_episodes}
                     for source in params['sources']], None, None
         raise AssertionError(query)
@@ -230,6 +240,34 @@ async def test_an_flas_work_is_never_drafted_and_an_older_draft_of_it_is_the_per
 
 
 @pytest.mark.asyncio
+async def test_a_retry_with_another_source_never_returns_an_flas_stored_draft():
+    """The draft id binds the key and target, not the session or turn: a retry that omits or alters
+    the source must be judged by the stored row, and never change it."""
+    app, driver, _, _ = setup()
+    owner = {'x-fuli-human-review-token': REVIEW_TOKEN}
+    turned = {**source_episode(), 'source_application': 'codex', 'source_turn_id': 'fla-turn'}
+    create = {'personal_space_id': 'space', 'target_project_id': 'team', 'provider_url': 'https://public.example'}
+    async with client_for(app) as client:
+        made = await client.post('/v1/publication-drafts', json={**create, 'episode': turned})
+        assert made.status_code == 200
+        draft_id = made.json()['id']
+        # That turn turns out to be an FLA's: an older draft of its work.
+        driver.project_agent_turns = {'fla-turn'}
+        stored = dict(driver.rows[draft_id])
+        for episode in ({k: v for k, v in turned.items() if k != 'source_turn_id'},
+                        {**turned, 'source_turn_id': 'another-turn'}):
+            retried = await client.post('/v1/publication-drafts', json={**create, 'episode': episode})
+            assert (retried.status_code, retried.json()['detail']) == (404, 'publication draft not found')
+            assert 'fla-turn' not in retried.text
+            assert driver.rows[draft_id] == stored, 'a retry never changes the stored row'
+        same = await client.post('/v1/publication-drafts', json={**create, 'episode': turned})
+        assert same.status_code == 422, 'naming the FLA\'s turn is refused as before'
+        own = await client.post('/v1/publication-drafts', headers=owner,
+                                json={**create, 'episode': {**turned, 'source_turn_id': 'another-turn'}})
+        assert own.status_code == 200 and own.json()['source_identity']['source_turn_id'] == 'fla-turn'
+
+
+@pytest.mark.asyncio
 async def test_a_draft_whose_source_cannot_be_found_is_the_persons_alone_and_never_taken_as_plain():
     """Erased, or never recorded here (a capture made only for a team project): fail closed."""
     app, driver, _, _ = setup()
@@ -237,10 +275,18 @@ async def test_a_draft_whose_source_cannot_be_found_is_the_persons_alone_and_nev
     driver.unresolved_episodes = {identity['episode_id']}
     owner = {'x-fuli-human-review-token': REVIEW_TOKEN}
     async with client_for(app) as client:
-        created = await client.post('/v1/publication-drafts', json={
-            'personal_space_id': 'space', 'target_project_id': 'project',
-            'provider_url': 'https://public.example', 'episode': source_episode()})
+        create = {'personal_space_id': 'space', 'target_project_id': 'project',
+                  'provider_url': 'https://public.example', 'episode': source_episode()}
+        created = await client.post('/v1/publication-drafts', json=create)
         assert created.status_code == 200, 'nothing says it is an FLA\'s, so it is made'
+        new_id = created.json()['id']
+        # A retry of the same key gets the stored draft back, judged by the stored row: unresolved,
+        # so an Agent is told nothing and nothing changes; the person's retry gets it.
+        stored = dict(driver.rows[new_id])
+        retried = await client.post('/v1/publication-drafts', json=create)
+        assert (retried.status_code, retried.json()['detail']) == (404, 'publication draft not found')
+        assert driver.rows[new_id] == stored
+        assert (await client.post('/v1/publication-drafts', headers=owner, json=create)).json()['id'] == new_id
         for params in ({'status': 'all'}, {'status': 'all', 'metadata_only': 'true'}):
             listed = await client.get('/v1/publication-drafts', params={'personal_space_id': 'space', **params})
             assert listed.json() == [], params
@@ -260,8 +306,12 @@ async def test_a_draft_whose_source_cannot_be_found_is_the_persons_alone_and_nev
     driver.unresolved_episodes = set()
     async with client_for(app) as client:
         assert (await client.get('/v1/publication-drafts/kept_personal')).status_code == 200
-        assert len((await client.get('/v1/publication-drafts', params={
-            'personal_space_id': 'space', 'status': 'all', 'metadata_only': 'true'})).json()) == 4
+        assert {draft['id'] for draft in (await client.get('/v1/publication-drafts', params={
+            'personal_space_id': 'space', 'status': 'all', 'metadata_only': 'true'})).json()} == {
+            'pending', 'submitted', 'kept_personal', 'ignored', new_id}
+        # A genuine plain retry still returns its own draft.
+        plain_retry = await client.post('/v1/publication-drafts', json=create)
+        assert plain_retry.status_code == 200 and plain_retry.json()['id'] == new_id
 
 
 @pytest.mark.asyncio

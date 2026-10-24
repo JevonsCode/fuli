@@ -258,9 +258,11 @@ async def test_session_public_only_draft_is_warned_and_scrubbed_without_a_local_
         draft = ok(await client.post('/v1/publication-drafts', json=dict(personal_space_id=space,
             provider_url='https://public.example', target_project_id='public-only-project', episode=episode)))
         endpoint = f'/v1/publication-drafts/{draft["id"]}/decision'
-        begun = ok(await client.post(endpoint, params={'personal_space_id': space}, json={'decision': 'begin_submit_public'}))
-        ok(await client.post(endpoint, params={'personal_space_id': space}, json=dict(decision='submit_public',
-            submission_id=begun['submission_id'], shared_proposal_id='existing-remote-proposal')))
+        # A team-only capture names no local source: the person's console submits it with the proof (0.20.1).
+        begun = ok(await client.post(endpoint, headers=REVIEW, params={'personal_space_id': space},
+            json={'decision': 'begin_submit_public'}))
+        ok(await client.post(endpoint, headers=REVIEW, params={'personal_space_id': space}, json=dict(
+            decision='submit_public', submission_id=begun['submission_id'], shared_proposal_id='existing-remote-proposal')))
         target = store._task_session_id(space, 'codex', episode['session_id'])
         identity = dict(source_application='codex', fuli_session_id=episode['session_id'])
         plan = ok(await source_preview(client, space, target, 'session', **identity))
@@ -269,7 +271,8 @@ async def test_session_public_only_draft_is_warned_and_scrubbed_without_a_local_
         assert plan['drafts']['submitted'] == 1
         done = ok(await source_delete(client, space, target, plan, **identity))
         assert done['deleted_item_ids'] == [target] and done['drafts_scrubbed']['submitted'] == 1
-        row = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}', params={'personal_space_id': space}))
+        row = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}', headers=REVIEW,
+                                  params={'personal_space_id': space}))
         assert row['episode'] is None and row['status'] == 'submitted'
         assert row['shared_proposal_id'] == 'existing-remote-proposal'
 

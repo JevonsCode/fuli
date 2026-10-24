@@ -91,6 +91,8 @@ class StorePublication:
             records, _, _ = await scoped.runtime.driver.execute_query(
                 '''
                 MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
+                OPTIONAL MATCH (stored:FuliPublicationDraft {id: $id})
+                WITH space, stored IS NOT NULL AS existed
                 MERGE (draft:FuliPublicationDraft {id: $id})
                 ON CREATE SET draft.personal_space_id = $personal_space_id,
                               draft.target_project_id = $target_project_id,
@@ -100,7 +102,7 @@ class StorePublication:
                               draft.source_identity = $source_identity,
                               draft.created_at = $created_at
                 MERGE (space)-[:HAS_PUBLICATION_DRAFT]->(draft)
-                RETURN draft
+                RETURN draft, existed
                 ''',
                 personal_space_id=request.personal_space_id,
                 id=draft_id,
@@ -110,7 +112,12 @@ class StorePublication:
                 source_identity=json.dumps(identity, sort_keys=True, separators=(',', ':')),
                 created_at=created_at,
             )
-        return self._publication_draft(records[0]['draft'])
+        draft = dict(records[0]['draft'])
+        # A retry of a key already drafted gets the stored draft back unchanged, so it is judged by
+        # the STORED row's provenance, not the request's: the same answer as a get.
+        if records[0]['existed'] and await self._project_agent_drafts(actor, space, [draft]):
+            raise HTTPException(status_code=404, detail='publication draft not found')
+        return self._publication_draft(draft)
 
     async def list_publication_drafts(
         self,

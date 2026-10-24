@@ -373,7 +373,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(
         request: PublicationDraftCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> PublicationDraftRecord:
         return await store.create_publication_draft(actor, request)
 
