@@ -331,7 +331,7 @@ function formatDate(value?: string) {
 
 <template>
   <section ref="scroller" class="view public-projects-view">
-    <div class="@container mx-auto flex w-full max-w-(--canvas-max) flex-col gap-4">
+    <div class="@container mx-auto flex w-full max-w-(--layout-max) flex-col gap-4">
       <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
         <p class="page-lede m-0 text-sm text-muted-foreground">{{ t('pages.publicProjects.intro') }}</p>
         <p class="public-space-stats m-0 ml-auto flex gap-4 text-sm text-muted-foreground" :aria-label="t('pages.publicProjects.overviewAria')">

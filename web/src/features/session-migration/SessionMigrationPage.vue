@@ -188,7 +188,7 @@ watch([spaceId, sessionId, client, projectId], () => {
 
 <template>
   <section class="view [scrollbar-gutter:stable]">
-    <div class="mx-auto flex w-full max-w-(--form-max) flex-col gap-4" data-session-migration>
+    <div class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-4" data-session-migration>
       <BackLink :to="sessionPath" :from="/^\/s\//" class="text-sm">{{ t('sessionMigration.back') }}</BackLink>
       <p v-if="!linkComplete" role="alert" class="m-0 text-sm text-destructive" data-migration-link-missing>
         {{ t('sessionMigration.missingLink') }}

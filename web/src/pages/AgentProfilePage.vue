@@ -299,7 +299,7 @@ onMounted(() => {
     class="view agent-profile-page"
     :aria-label="agent ? agentDisplayName(agent) : t('agentProfiles.profile')"
   >
-    <div class="@container mx-auto grid w-full max-w-(--canvas-max) gap-4">
+    <div class="@container mx-auto grid w-full max-w-(--layout-max) gap-4">
       <BackLink class="agent-profile-back" to="/project-agents" :from="openedFromDirectory">{{ t("agentProfiles.back") }}</BackLink>
 
       <GrowthLoading
@@ -391,7 +391,7 @@ onMounted(() => {
           @saved="saved"
         />
 
-        <Tabs v-model="activeTab" :unmount-on-hide="false" class="agent-profile-tabs mt-2">
+        <Tabs v-model="activeTab" :unmount-on-hide="false" class="agent-profile-tabs mt-2 min-w-0">
           <TabsList :aria-label="agentDisplayName(agent)">
             <TabsTrigger v-for="tab in profileTabs" :key="tab.id" :value="tab.id" :data-profile-tab="tab.id">
               {{ tab.label }}
@@ -660,12 +660,6 @@ onMounted(() => {
 .agent-portrait.agent-identity:has(img) {
   box-shadow: 0 0 0 2px var(--agent-identity, transparent);
 }
-/* Panels use the canvas: wide screens put related cards side by side. */
-.agent-profile-history-grid { display: grid; gap: var(--space-4); }
-@container (min-width: 960px) {
-  .agent-profile-history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
-}
-@container (min-width: 1400px) {
-  .agent-profile-primary-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
-}
+/* Panels stack in one column at every width (rec#38). */
+.agent-profile-history-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
 </style>

@@ -39,7 +39,7 @@ watch([spaceId, episodes], () => { receipt.value = null; void load() }, { immedi
 
 <template>
   <section class="view [scrollbar-gutter:stable]">
-  <div class="mx-auto flex w-full max-w-(--form-max) flex-col gap-4" data-turn-receipt>
+  <div class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-4" data-turn-receipt>
     <GrowthLoading v-if="showLoading" :label="t('knowledgeQuickEdit.loadingTurn')" />
     <div v-else-if="error" role="alert" class="grid justify-items-start gap-2">
       <p class="m-0">{{ t('knowledgeQuickEdit.turnLoadFailed', { error }) }}</p>

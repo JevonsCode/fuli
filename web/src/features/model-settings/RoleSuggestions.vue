@@ -90,41 +90,42 @@ async function toggleScoreCard(entry: RoleSuggestion) {
     {{ t('modelSettings.suggestions.loadFailed') }} {{ error }}
     <Button variant="outline" size="sm" @click="emit('retry')">{{ t('modelSettings.retry') }}</Button>
   </p>
-  <section v-else-if="entries?.length" class="role-suggestions" aria-labelledby="role-suggestions-title" data-role-suggestions>
-    <div class="role-suggestions-bar">
-      <h2 id="role-suggestions-title">{{ t('modelSettings.suggestions.title') }}</h2>
+  <section v-else-if="entries?.length" class="ui-section role-suggestions" aria-labelledby="role-suggestions-title" data-role-suggestions>
+    <div class="ui-section-label">
+      <h2 id="role-suggestions-title" class="list-title">{{ t('modelSettings.suggestions.title') }}</h2>
       <GrowthLoading v-if="loading" variant="inline" :label="t('modelSettings.suggestions.loading')" />
     </div>
     <p class="role-suggestions-note" data-role-suggestions-note>{{ t('modelSettings.suggestions.note') }}</p>
-    <ul v-if="cards.length" class="role-suggestions-grid">
+    <ul v-if="cards.length" class="role-suggestions-list">
       <li v-for="{ entry, state, text, model, evidence, action, at } in cards" :key="entry.id">
-        <article class="role-suggestion border transition-[border-color,box-shadow]"
-          :class="opened === entry.id ? 'border-border-strong shadow-md' : 'border-border'"
-          :data-role-suggestion="entry.role" :data-suggestion-state="state" :aria-labelledby="`role-suggestion-${entry.id}`">
-          <header>
-            <strong :id="`role-suggestion-${entry.id}`">{{ roleName(entry.role) }}</strong>
-            <Badge :variant="TONES[state]" data-suggestion-status>{{ t(`modelSettings.suggestions.states.${state}`) }}</Badge>
-          </header>
-          <p class="role-suggestion-text" data-suggestion-text>
-            <template v-if="entry.role === 'bole'">
-              <AgentName :space-id="entry.personalSpaceId" :agent-id="entry.subject.agentId!" :name="agentName(entry)" /> ·
-            </template>{{ text }}
-          </p>
-          <p v-if="entry.suggestion?.reason && !entry.hard_deleted" class="role-suggestion-reason">{{ entry.suggestion.reason }}</p>
-          <dl>
-            <div>
-              <dt>{{ t('modelSettings.model') }}</dt>
-              <dd :title="evidence.title"><code>{{ model ?? t('modelSettings.none') }}</code></dd>
-            </div>
-            <div>
-              <dt>{{ t('modelSettings.suggestions.time') }}</dt>
-              <dd><time :datetime="entry.at">{{ at }}</time></dd>
-            </div>
-            <div v-if="evidence.dimensions.length" class="role-suggestion-evidence" data-suggestion-evidence>
-              <dt>{{ t('modelSettings.suggestions.evidence') }}</dt>
-              <dd>{{ evidence.dimensions.join(' · ') }}</dd>
-            </div>
-          </dl>
+        <article class="role-suggestion" :class="{ 'role-suggestion-open shadow-md': opened === entry.id }" :data-role-suggestion="entry.role" :data-suggestion-state="state"
+          :aria-labelledby="`role-suggestion-${entry.id}`">
+          <div class="role-suggestion-main">
+            <header>
+              <strong :id="`role-suggestion-${entry.id}`">{{ roleName(entry.role) }}</strong>
+              <Badge :variant="TONES[state]" data-suggestion-status>{{ t(`modelSettings.suggestions.states.${state}`) }}</Badge>
+            </header>
+            <p class="role-suggestion-text" data-suggestion-text>
+              <template v-if="entry.role === 'bole'">
+                <AgentName :space-id="entry.personalSpaceId" :agent-id="entry.subject.agentId!" :name="agentName(entry)" /> ·
+              </template>{{ text }}
+            </p>
+            <p v-if="entry.suggestion?.reason && !entry.hard_deleted" class="role-suggestion-reason">{{ entry.suggestion.reason }}</p>
+            <dl>
+              <div>
+                <dt>{{ t('modelSettings.model') }}</dt>
+                <dd :title="evidence.title"><code>{{ model ?? t('modelSettings.none') }}</code></dd>
+              </div>
+              <div>
+                <dt>{{ t('modelSettings.suggestions.time') }}</dt>
+                <dd><time :datetime="entry.at">{{ at }}</time></dd>
+              </div>
+              <div v-if="evidence.dimensions.length" data-suggestion-evidence>
+                <dt>{{ t('modelSettings.suggestions.evidence') }}</dt>
+                <dd>{{ evidence.dimensions.join(' · ') }}</dd>
+              </div>
+            </dl>
+          </div>
           <footer v-if="action">
             <Button v-if="action.kind === 'link'" as-child size="sm" variant="outline">
               <RouterLink :to="action.to" data-suggestion-action>{{ action.label }}</RouterLink>
@@ -133,7 +134,7 @@ async function toggleScoreCard(entry: RoleSuggestion) {
               {{ opened === entry.id ? t('modelSettings.suggestions.closeScoreCard') : action.label }}
             </Button>
           </footer>
-          <template v-if="opened === entry.id">
+          <div v-if="opened === entry.id" class="role-suggestion-detail">
             <GrowthLoading v-if="scoreCardLoading === entry.id" variant="inline"
               :label="t('modelSettings.suggestions.scoreCardLoading', { name: agentName(entry) })" />
             <p v-else-if="scoreCardError" class="role-suggestion-failed" role="alert">{{ t('modelSettings.suggestions.scoreCardFailed') }} {{ scoreCardError }}</p>
@@ -143,11 +144,11 @@ async function toggleScoreCard(entry: RoleSuggestion) {
                 <dd>{{ scoreValue(dimension) }}</dd>
               </div>
             </dl>
-          </template>
+          </div>
         </article>
       </li>
     </ul>
-    <ul v-if="lines.length" class="role-suggestions-lines">
+    <ul v-if="lines.length" class="role-suggestions-list">
       <li v-for="{ entry, state, why, model, evidence, action, at } in lines" :key="entry.id" class="role-suggestion-line"
         :data-role-suggestion="entry.role" :data-suggestion-state="state">
         <strong>{{ roleName(entry.role) }}</strong>
@@ -167,36 +168,40 @@ async function toggleScoreCard(entry: RoleSuggestion) {
 </template>
 
 <style scoped>
-.role-suggestions { container-type: inline-size; display: grid; gap: 12px; min-width: 0; }
-.role-suggestions-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.role-suggestions h2 { margin: 0; font-size: 16px; font-weight: 600; }
-.role-suggestions-note { margin: -4px 0 0; color: var(--color-muted); font-size: 14px; }
-.role-suggestions-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 0; padding: 0; list-style: none; }
-@container (min-width: 620px) { .role-suggestions-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container (min-width: 960px) { .role-suggestions-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@container (min-width: 1400px) { .role-suggestions-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.role-suggestion { display: grid; align-content: start; gap: 10px; height: 100%; min-width: 0; padding: 16px;
+.role-suggestions { container-type: inline-size; }
+.role-suggestions-note { margin: -4px 0 0; padding-inline: 4px; color: var(--color-muted); font-size: 13px; line-height: 1.6; }
+/* One grouped list; a row whose score card is open lifts as a card. */
+.role-suggestions-list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--color-border);
   border-radius: var(--radius-card); background: var(--color-surface); }
+.role-suggestions-list > li { min-width: 0; border-radius: inherit; }
+.role-suggestions-list > li + li { border-top: 1px solid var(--color-border); }
+.role-suggestions-list > li:first-child { border-start-start-radius: inherit; border-start-end-radius: inherit; }
+.role-suggestions-list > li:last-child { border-end-start-radius: inherit; border-end-end-radius: inherit; }
+.role-suggestion-open { position: relative; z-index: 1; border-radius: var(--radius-card); outline: 1px solid var(--color-border-strong); background: var(--color-surface); }
+.role-suggestion { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; min-width: 0; padding: 14px 16px; border-radius: inherit; transition: box-shadow var(--motion-fast); }
+.role-suggestion-main { display: grid; gap: 6px; min-width: 0; }
 .role-suggestion header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.role-suggestion header strong { font-size: 15px; font-weight: 600; }
 .role-suggestion p { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
 .role-suggestion-reason { color: var(--color-muted); }
-.role-suggestion dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin: 0; }
-.role-suggestion-evidence { grid-column: 1 / -1; }
-.role-suggestion dt { color: var(--color-muted); font-size: 12px; }
-.role-suggestion dd { margin: 2px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+/* Model, time and evidence read as one quiet line of label-value pairs. */
+.role-suggestion-main dl { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; font-size: 13px; }
+.role-suggestion-main dl > div { display: flex; gap: 6px; min-width: 0; }
+.role-suggestion dt { color: var(--color-muted); }
+.role-suggestion dd { margin: 0; overflow-wrap: anywhere; }
 .role-suggestion code, .role-suggestion-line code { font-family: var(--font-mono); font-size: 12.5px; }
-.role-suggestion footer { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; border-top: 1px solid var(--color-border); }
-.role-suggestion-score { padding-top: 10px; border-top: 1px solid var(--color-border); }
+.role-suggestion footer { display: flex; align-self: start; flex-wrap: wrap; gap: 8px; }
+.role-suggestion-detail { grid-column: 1 / -1; padding-top: 12px; border-top: 1px solid var(--color-border); }
+.role-suggestion-score { display: grid; grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr); gap: 6px 20px; margin: 0; font-size: 14px; }
+.role-suggestion-score div { display: contents; }
 .role-suggestion-failed { color: var(--color-danger); }
-.role-suggestions-lines { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border: 1px solid var(--color-border);
-  border-radius: var(--radius-card); background: var(--color-surface); }
-.role-suggestion-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; padding: 8px 16px; font-size: 14px; }
-.role-suggestion-line + .role-suggestion-line { border-top: 1px solid var(--color-border); }
+.role-suggestion-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; padding: 10px 16px; font-size: 14px; }
 .role-suggestion-why { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
 .role-suggestion-meta { color: var(--color-muted); font-size: 12.5px; overflow-wrap: anywhere; }
-/* A phone-width section: its actions are at least 44px tall to tap. */
+/* A phone-width section: actions go under the text and are at least 44px tall to tap. */
 @container (max-width: 619px) {
+  .role-suggestion { grid-template-columns: minmax(0, 1fr); }
   [data-suggestion-action], [data-suggestions-show-all] { min-block-size: 44px; }
 }
-.role-suggestions-error {display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--color-danger); font-size: 14px; }
+.role-suggestions-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--color-danger); font-size: 14px; }
 </style>

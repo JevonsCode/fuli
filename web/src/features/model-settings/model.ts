@@ -116,6 +116,15 @@ export function trustStatusText(trust: RoleTrust, model: string | null): string 
   return t(`modelSettings.trust.reasons.${reason}`)
 }
 
+// A role row's one summary line: who answers, through which service, and how
+// its automatic operation runs. The model itself is shown beside it.
+export function roleSummary(view: ModelRoleView): string {
+  const answer = view.answeredBy ? t(`modelSettings.answer.${view.answeredBy}`) : t('modelSettings.none')
+  const service = view.connection ? `${t(`modelSettings.protocols.${view.connection.protocol}`)} · ${view.connection.endpointHost}` : ''
+  const trust = view.trust ? trustStatusText(view.trust, view.connection?.model ?? null) : ''
+  return [answer, service, trust].filter(Boolean).join(' · ')
+}
+
 // The one evaluation line, naming its set, day and model; it is not a general accuracy.
 export function evaluationText(evaluation: ModelEvaluation | null, locale: string): string | null {
   if (!evaluation) return null

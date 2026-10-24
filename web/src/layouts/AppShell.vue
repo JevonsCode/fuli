@@ -16,6 +16,7 @@ import { UiIconButton } from '@/ui'
 import NavRail from './NavRail.vue'
 import SectionTabs from './SectionTabs.vue'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
+import { pageLayout } from './page-layout'
 import { pageTitle } from './page-title'
 
 // The console frame: icon rail (bottom bar on narrow screens), a top bar with
@@ -39,9 +40,9 @@ const recordTitle = computed(() => pageTitle.value.path === route.path ? pageTit
 const title = computed(() => recordTitle.value || (destination.value && destination.value.sections.length > 1 && section.value && !route.meta.detail
   ? t(`shell.destinations.${destination.value.key}`)
   : routeMetaText(route.meta.title, 'routes.overview.title')))
-// Rebuilt pages share one centred work canvas (or the narrower form column);
-// the top bar lines its title up with that column.
-const layout = computed(() => route.meta.layout)
+// Rebuilt pages share one centred width: the work canvas, the content column
+// or the form column; the top bar lines its title up with it.
+const layout = computed(() => pageLayout(route))
 // A detail page names its record alone; the destination's tabs would read as
 // tabs of that record. The rail still marks where it belongs.
 const sectionTabs = computed(() => route.meta.detail ? [] : destination.value?.sections ?? [])
@@ -130,6 +131,7 @@ watchEffect(() => {
    scroll container, so the title starts exactly where the content does. A
    long record name takes at most two lines. */
 .app-main[data-layout] { --layout-max: var(--canvas-max); }
+.app-main[data-layout="column"] { --layout-max: var(--column-max); }
 .app-main[data-layout="form"] { --layout-max: var(--form-max); }
 .app-main[data-layout] :is(.app-topbar, .app-feedback-row) { overflow: hidden; scrollbar-gutter: stable; }
 .app-main[data-layout] :is(.app-topbar-inner, .feedback-message) { max-width: var(--layout-max); margin-inline: auto; }

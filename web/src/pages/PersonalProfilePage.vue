@@ -970,7 +970,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 <style scoped>
 .vue-personal-profile { padding-bottom: calc(80px + env(safe-area-inset-bottom) + 16px); min-width: 0; scrollbar-gutter: stable; }
 /* One centred work canvas (D-03); a preference opens in a quick look over it. */
-.profile-canvas { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: var(--canvas-max); margin-inline: auto; container: profile-canvas / inline-size; }
+.profile-canvas { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: var(--layout-max); margin-inline: auto; container: profile-canvas / inline-size; }
 .personal-profile-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; overflow: visible; border: 0; border-radius: 0; background: transparent; }
 @container profile-canvas (min-width: 1280px) { .personal-profile-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .personal-profile-row { min-width: 0; scroll-margin-top: 80px; }

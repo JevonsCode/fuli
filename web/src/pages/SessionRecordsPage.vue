@@ -120,7 +120,7 @@ watch([spaceId, requestedClient, sessionId], () => {
 
 <template>
   <section class="view [scrollbar-gutter:stable]">
-    <div ref="root" class="@container mx-auto flex w-full max-w-(--canvas-max) flex-col gap-6" data-session-records>
+    <div ref="root" class="@container mx-auto flex w-full max-w-(--layout-max) flex-col gap-6" data-session-records>
       <GrowthLoading v-if="showLoading" :label="t('sessionRecords.loading')" />
       <section v-else-if="sourceDeletion" class="grid gap-3" data-source-deleted-page>
         <KnowledgeHardDeletedNotice :state="sourceDeletion.state" :space-id="spaceId" :item-kind="sourceDeletion.target.item_kind" :item-id="sourceDeletion.target.item_id"

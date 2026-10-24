@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import type { PageLayoutRule } from '@/layouts/page-layout'
+
 import { updateDocumentTitle } from './meta'
 import { installNavigationRecovery } from './navigation-recovery'
 
@@ -14,29 +16,37 @@ export function legacyKnowledgeHashPath(hash: string) {
   }`
 }
 
+// rec#38: an open conversation, a project's overview and the Agents whose
+// workbench is a list read in the content column; boards, tables, graphs and
+// tile collections keep the canvas.
+const conversationLayout: PageLayoutRule = route => (route.params.threadId || route.params.chatId ? 'column' : 'canvas')
+const projectLayout: PageLayoutRule = route => (route.params.mode === 'overview' ? 'column' : 'canvas')
+const WIDE_WORKBENCHES = new Set(['jefa', 'bole'])
+const workbenchLayout: PageLayoutRule = route => (WIDE_WORKBENCHES.has(String(route.params.templateId)) ? 'canvas' : 'column')
+
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/reports/jefa', name: 'shared-jefa-report', component: () => import('@/pages/SharedJefaReportPage.vue'), meta: { publicReport: true, title: 'employees.share.title' } },
-    { path: '/roundtables/chat/:chatId', name: 'roundtable-chat', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title', layout: 'canvas' } },
-    { path: '/roundtables/:threadId?', name: 'roundtables', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title', layout: 'canvas' } },
+    { path: '/roundtables/chat/:chatId', name: 'roundtable-chat', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title', layout: conversationLayout } },
+    { path: '/roundtables/:threadId?', name: 'roundtables', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title', layout: conversationLayout } },
     {
       path: '/',
       name: 'overview',
       component: () => import('@/pages/OverviewPage.vue'),
-      meta: { title: 'routes.overview.title', layout: 'canvas' },
+      meta: { title: 'routes.overview.title', layout: 'column' },
     },
     {
       path: '/preferences',
       name: 'personal-profile',
       component: () => import('@/pages/PersonalProfilePage.vue'),
-      meta: { title: 'routes.preferences.title', layout: 'canvas' },
+      meta: { title: 'routes.preferences.title', layout: 'column' },
     },
     {
       path: '/preferences/writing',
       name: 'writing-taste',
       component: () => import('@/pages/WritingTastePage.vue'),
-      meta: { title: 'routes.writingTaste.title', layout: 'canvas' },
+      meta: { title: 'routes.writingTaste.title', layout: 'column' },
     },
     {
       path: '/personal/:spaceId/projects/:projectId/:mode/:itemKind/:itemId',
@@ -44,7 +54,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
-        layout: 'canvas',
+        layout: projectLayout,
       },
     },
     {
@@ -53,7 +63,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
-        layout: 'canvas',
+        layout: projectLayout,
         description: 'routes.personalProjects.description',
       },
     },
@@ -63,7 +73,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
-        layout: 'canvas',
+        layout: projectLayout,
         description: 'routes.personalProjects.description',
       },
     },
@@ -73,7 +83,7 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
-        layout: 'canvas',
+        layout: projectLayout,
       },
     },
     {
@@ -88,16 +98,16 @@ export const router = createRouter({
       component: () => import('@/pages/AgentsDirectoryPage.vue'),
       meta: { title: 'routes.projectAgents.title', layout: 'canvas' },
     },
-    { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { title: 'agentProfiles.profile', layout: 'canvas', detail: true } },
+    { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { title: 'agentProfiles.profile', layout: 'column', detail: true } },
     { path: '/project-agents/occupations', name: 'occupations', component: () => import('@/pages/OccupationsPage.vue'), meta: { title: 'occupations.title', layout: 'canvas' } },
     { path: '/project-agents/schedules', name: 'task-schedules', component: () => import('@/pages/TaskSchedulesPage.vue'), meta: { title: 'taskSchedules.title', layout: 'canvas' } },
     { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { title: 'shell.sections.orchestrate', layout: 'canvas' } },
-    { path: '/project-agents/manage/:spaceId/:agentId', name: 'agent-management-detail', component: () => import('@/pages/ProjectAgentDetailPage.vue'), meta: { title: 'projectAgents.pageTitle', layout: 'canvas', detail: true } },
+    { path: '/project-agents/manage/:spaceId/:agentId', name: 'agent-management-detail', component: () => import('@/pages/ProjectAgentDetailPage.vue'), meta: { title: 'projectAgents.pageTitle', layout: 'column', detail: true } },
     {
       path: '/employees/:templateId',
       name: 'employee-workbench',
       component: () => import('@/pages/EmployeeWorkbenchPage.vue'),
-      meta: { title: 'routes.employeeWorkbench.title', layout: 'canvas', detail: true },
+      meta: { title: 'routes.employeeWorkbench.title', layout: workbenchLayout, detail: true },
     },
     {
       path: '/public-projects',
@@ -106,7 +116,7 @@ export const router = createRouter({
       meta: {
         title: 'routes.publicProjects.title',
         description: 'routes.publicProjects.description',
-        layout: 'canvas',
+        layout: 'column',
       },
     },
     {
@@ -130,7 +140,7 @@ export const router = createRouter({
       path: '/s/:sessionId',
       name: 'session-records',
       component: () => import('@/pages/SessionRecordsPage.vue'),
-      meta: { title: 'routes.sessionRecords.title', layout: 'canvas', detail: true },
+      meta: { title: 'routes.sessionRecords.title', layout: 'column', detail: true },
     },
     {
       // rec#20 part 2: an Agent's link to move what the session held in its
@@ -217,7 +227,8 @@ export const router = createRouter({
       component: () => import('@/pages/ModelSettingsPage.vue'),
       meta: {
         title: 'modelSettings.title',
-        layout: 'canvas',
+        // rec#38: one centred column of grouped lists, like the other settings pages.
+        layout: 'form',
         detail: true,
       },
     },

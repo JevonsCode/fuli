@@ -71,7 +71,7 @@ const mountPage = async () => {
 describe('ModelSettingsPage', () => {
   it('shows each built-in Agent with its model, key reference and limits, never a key', async () => {
     const wrapper = await mountPage()
-    expect(wrapper.findAll('[data-model-role]').map(card => card.find('h2').text())).toEqual(['Astro', 'Bole', 'Jefa', 'Tonborg'])
+    expect(wrapper.findAll('[data-model-role]').map(card => card.get('[data-model-role-name]').text())).toEqual(['Astro', 'Bole', 'Jefa', 'Tonborg'])
     const tonborg = wrapper.get('[data-model-role="tonborg"]')
     expect(tonborg.get('[data-model-role-state]').text()).toBe('已启用')
     expect(tonborg.get('[data-model-fact="secretRef"]').text()).toContain('local-ref')
@@ -84,6 +84,9 @@ describe('ModelSettingsPage', () => {
   it('asks the person to read the warning before Tonborg\'s model executes by itself, and saves only that acknowledgement (D-36)', async () => {
     ;(rolesPayload.roles[3] as Record<string, unknown>).trust = trust({ status: 'suggestion', reason: 'warning_not_seen' })
     const wrapper = await mountPage()
+    // The row waiting for the person opens by itself; the others stay closed until asked (rec#38).
+    expect(wrapper.get('[data-model-role="tonborg"]').attributes('data-state')).toBe('open')
+    expect(wrapper.get('[data-model-role="bole"]').attributes('data-state')).toBe('closed')
     // Roles with nothing that runs by themselves show no execution row.
     for (const role of ['assistant', 'bole', 'jefa']) expect(wrapper.find(`[data-model-role="${role}"] [data-model-trust]`).exists()).toBe(false)
     const section = wrapper.get('[data-model-role="tonborg"] [data-model-trust="tonborg"]')
