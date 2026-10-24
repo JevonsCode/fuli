@@ -118,6 +118,23 @@ describe('ModelRoleHistory', () => {
     expect(lines(wrapper)).toHaveLength(2)
   })
 
+  it('drops a read still in flight when the revision changes while closed, and reads the new one on reopening', async () => {
+    const wrapper = section()
+    await toggle(wrapper)
+    await toggle(wrapper)
+    await wrapper.setProps({ revision: 'r2' })
+    await toggle(wrapper)
+    expect(api.getJson).toHaveBeenCalledTimes(2)
+    reads[0].resolve([SETTINGS])
+    await flushPromises()
+    expect(lines(wrapper)).toHaveLength(0)
+    reads[1].resolve([ENTRIES[1], SETTINGS])
+    await flushPromises()
+    expect(lines(wrapper).map(line => (line[2] as string[])[0])).toEqual(['执行方式改为「只给建议」', '模型：qwen-test → qwen-next'])
+    expect(api.getJson).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+  })
+
   it('lets only the latest read land, so an older answer cannot replace a newer one', async () => {
     const wrapper = section()
     await toggle(wrapper)

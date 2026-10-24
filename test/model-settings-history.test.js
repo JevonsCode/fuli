@@ -41,14 +41,18 @@ function stores(t, { historyPath } = {}) {
   const dir = directory();
   const configPath = join(dir, 'model-backends.json');
   const warnings = [];
+  // One second later on each read, from NOW.
+  let ticks = 0;
+  const now = () => new Date(NOW.getTime() + 1000 * ticks++);
+  let trust = null;
   const history = createModelSettingsHistory({ path: historyPath ?? join(dir, 'model-settings-history.sqlite'),
-    readConfig: () => readModelBackendConfig(configPath), now: () => NOW, warn: message => warnings.push(message) });
+    readConfig: () => readModelBackendConfig(configPath), readTrustRevision: role => trust.revision(role), now,
+    warn: message => warnings.push(message) });
   const settings = createModelRoleSettings(configPath, { history });
-  const trust = createRoleTrust({ path: join(dir, 'model-trust.sqlite'), history, now: () => NOW,
-    modelBackends: { operationSettings: () => null } });
+  trust = createRoleTrust({ path: join(dir, 'model-trust.sqlite'), history, now, modelBackends: { operationSettings: () => null } });
   // More trust stores over the same files, as other processes would open them.
   const others = [];
-  const trustStore = history => others[others.push(createRoleTrust({ path: join(dir, 'model-trust.sqlite'), history,
+  const trustStore = history => others[others.push(createRoleTrust({ path: join(dir, 'model-trust.sqlite'), history, now,
     modelBackends: { operationSettings: () => null } })) - 1];
   t.after(() => {
     for (const store of [history, trust, ...others]) store.close();
@@ -126,25 +130,47 @@ test('a save through one role records every role whose effective settings change
   assert.deepEqual(s.history.list({ role: 'jefa' }).map(entry => entry.kind), ['settings', 'settings']);
 });
 
-test('trust changes are recorded inside the trust lock, so two writers keep revision order', (t) => {
+test('a trust change whose commit fails records no history', { timeout: 30_000 }, (t) => {
   const s = stores(t);
+  s.trust.acknowledgeWarning('tonborg', WARNING_VERSION, 0);
+  // A reader holding the file shared makes the commit fail once the busy wait runs out.
+  const reader = new DatabaseSync(join(s.dir, 'model-trust.sqlite'));
+  try {
+    reader.exec('BEGIN');
+    reader.prepare('SELECT * FROM role_trust').all();
+    assert.throws(() => s.trust.setSuggestionsOnly('tonborg', true, 1), /locked|busy/i);
+  } finally {
+    reader.exec('ROLLBACK');
+    reader.close();
+  }
+  assert.equal(s.trust.revision('tonborg'), 1);
+  assert.deepEqual(s.history.list({ role: 'tonborg' }).map(entry => entry.kind), ['warning_acknowledged']);
+});
+
+test('trust rows appended out of order are listed in revision order', (t) => {
+  const s = stores(t);
+  // The first process commits revision 1 but appends its row only after another process committed and appended revision 2.
+  const appends = [];
+  const slow = s.trustStore({ recordTrust: (...args) => { appends.push(args); return 'recorded'; } });
   const other = s.trustStore(s.history);
-  const seen = [];
-  const watching = s.trustStore({ recordTrust(...args) {
-    // While the record is written the change has not committed yet: another reader still sees the old revision.
-    seen.push(other.view('tonborg', 'knowledge_review').revision);
-    return s.history.recordTrust(...args);
-  } });
-  assert.deepEqual(watching.acknowledgeWarning('tonborg', WARNING_VERSION, 0), { history: 'recorded' });
-  assert.deepEqual(seen, [0]);
-  assert.deepEqual(other.setSuggestionsOnly('tonborg', true, 1), { history: 'recorded' });
-  assert.deepEqual(watching.setSuggestionsOnly('tonborg', false, 2), { history: 'recorded' });
-  assert.deepEqual(seen, [0, 2]);
-  assert.deepEqual(recorded(s.history, 'tonborg').map(entry => entry.toRevision), ['3', '2', '1']);
-  // A record that throws neither rolls back nor blocks the change.
-  const failing = s.trustStore({ recordTrust() { throw new Error('synthetic history failure'); } });
-  assert.deepEqual(failing.setSuggestionsOnly('tonborg', true, 3), { history: 'not_recorded' });
-  assert.equal(other.view('tonborg', 'knowledge_review').revision, 4);
+  slow.acknowledgeWarning('tonborg', WARNING_VERSION, 0);
+  other.setSuggestionsOnly('tonborg', true, 1);
+  s.history.recordTrust(...appends[0]);
+  assert.deepEqual(recorded(s.history, 'tonborg').map(entry => entry.toRevision), ['2', '1']);
+  assert.ok(recorded(s.history, 'tonborg')[0].changedAt > recorded(s.history, 'tonborg')[1].changedAt);
+  assert.equal(s.history.list({ role: 'tonborg' })[0].kind, 'suggestions_only');
+});
+
+test('a trust change committed without its row shows as unrecorded changes, never as a change', (t) => {
+  const s = stores(t);
+  s.trust.acknowledgeWarning('tonborg', WARNING_VERSION, 0);
+  assert.deepEqual(s.history.list({ role: 'tonborg' }).map(entry => entry.kind), ['warning_acknowledged']);
+  // Committed, then the append failed (or the process stopped before it).
+  const lost = s.trustStore({ recordTrust() { throw new Error('synthetic history failure'); } });
+  assert.deepEqual(lost.setSuggestionsOnly('tonborg', true, 1), { history: 'not_recorded' });
+  assert.equal(s.trust.revision('tonborg'), 2);
+  assert.deepEqual(s.history.list({ role: 'tonborg' }).map(entry => entry.kind), ['unrecorded_changes', 'warning_acknowledged']);
+  assert.deepEqual(s.history.list({ role: 'bole' }), []);
 });
 
 test('recorded changes cannot be updated or deleted', (t) => {
@@ -170,7 +196,8 @@ test('a trust switch and a warning acknowledgement record their row revisions; a
     { kind: 'warning_acknowledged', fromRevision: '0', toRevision: '1',
       changes: [{ field: 'warningVersion', before: null, after: WARNING_VERSION }] }
   ]);
-  assert.deepEqual(s.trust.view('tonborg', 'knowledge_review').revision, 3);
+  // A switch to what is already set writes nothing, so the revision stays.
+  assert.deepEqual(s.trust.view('tonborg', 'knowledge_review').revision, 2);
 });
 
 test('a change whose history cannot be written stays saved and answers not_recorded', (t) => {

@@ -18,16 +18,16 @@ export function openModelBackendRuntime(paths) {
   });
 }
 
-// What changed in the model settings and when (rec#11 D-42), read against the current file.
-export function openModelSettingsHistory(paths) {
-  return createModelSettingsHistory({ path: paths.modelSettingsHistoryPath,
-    readConfig: () => readModelBackendConfig(paths.modelBackendConfigPath) });
-}
-
 // Whether each role's configured model may carry out its operations by
-// itself (rec#10 D-36), read over that port; its changes go to history.
-export function openRoleTrust(paths, port, history) {
-  return createRoleTrust({ path: paths.modelTrustPath, modelBackends: port, history });
+// itself (rec#10 D-36), read over that port, and the history of what changed
+// in it and in the model settings, and when (rec#11 D-42). The history is
+// read against the current file and trust revisions.
+export function openRoleTrustAndHistory(paths, port) {
+  let trust = null;
+  const history = createModelSettingsHistory({ path: paths.modelSettingsHistoryPath,
+    readConfig: () => readModelBackendConfig(paths.modelBackendConfigPath), readTrustRevision: role => trust.revision(role) });
+  trust = createRoleTrust({ path: paths.modelTrustPath, modelBackends: port, history });
+  return { trust, history };
 }
 
 // The session bridge over that port. resumers maps a role to the operation

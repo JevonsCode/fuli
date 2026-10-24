@@ -18,15 +18,18 @@ import { MODEL_BACKEND_ROLES, configRevision } from './config.js';
 // trust row's revisions. A key reference is recorded only as changed, never
 // by its value; keys never pass here.
 //
-// A row is appended after its change was written and before that change's
-// lock is released, so rows of one store are in the order of its changes.
-// When the append fails the change stands and answers not_recorded; a change
-// that changes nothing records nothing. When the current file is not the one
-// the newest settings row left (revisions are of the whole file, so the
-// newest row of any role is compared), a read starts with a marker that some
-// changes were not recorded, without naming a cause; a configured role
-// without any recorded save ends with one that its earlier changes were not
-// recorded.
+// A settings row is appended after the file was written, under its lock; a
+// trust row after its change committed, with the time and revision read in
+// that change's transaction. When the append fails the change stands and
+// answers not_recorded; a change that changes nothing records nothing. Rows
+// are listed by the time of their change, and trust rows of one role at one
+// time by revision, never in the order they were appended. A read starts
+// with a marker that some changes were not recorded, without naming a cause,
+// when the current file is not the one the newest settings row left
+// (revisions are of the whole file, so the newest row of any role is
+// compared) or a role's trust revision is past its newest trust row; a role
+// configured, or with trust changes, before any of them was recorded ends
+// with one that its earlier changes were not recorded.
 
 export const MODEL_SETTINGS_HISTORY_FORMAT = sqliteFormat({
   store: 'model-settings-history',
@@ -46,9 +49,11 @@ const MAX_LIST_LIMIT = 200;
 // Recorded as changed only, without its value.
 const REFERENCE_FIELDS = new Set(['connection.secretRef']);
 
-// readConfig: the current model-backends.json as config.js reads it.
+// readConfig: the current model-backends.json as config.js reads it;
+// readTrustRevision(role): the role's current trust row revision (role-trust.js).
 export function createModelSettingsHistory({
-  path = ':memory:', readConfig, now = () => new Date(), warn = message => process.stderr.write(`${message}\n`)
+  path = ':memory:', readConfig, readTrustRevision = () => 0, now = () => new Date(),
+  warn = message => process.stderr.write(`${message}\n`)
 }) {
   let database = null;
   // Opened on first change; a read of a missing file creates nothing.
@@ -58,9 +63,8 @@ export function createModelSettingsHistory({
   // Appends the rows of one change together. 'recorded', 'unchanged', or
   // 'not_recorded' when the store could not take them: the change itself
   // stands, and nothing here throws.
-  function record(kind, rows) {
+  function record(kind, rows, changedAt = now().toISOString()) {
     if (!rows.length) return 'unchanged';
-    const changedAt = now().toISOString();
     let db = null;
     try {
       db = open();
@@ -80,13 +84,23 @@ export function createModelSettingsHistory({
   }
 
   function rows(role, limit) {
-    if (!readable()) return { rows: [], newestSettings: null, roleHasSettings: false };
+    if (!readable()) return { rows: [], newestSettings: null, roleHasSettings: false, trustRevisions: new Map() };
     const db = open();
     return {
-      rows: db.prepare('SELECT * FROM settings_changes WHERE (?1 IS NULL OR role = ?1) ORDER BY rowid DESC LIMIT ?2').all(role, limit),
-      newestSettings: db.prepare('SELECT to_revision FROM settings_changes WHERE kind = \'settings\' ORDER BY rowid DESC LIMIT 1').get() ?? null,
-      roleHasSettings: Boolean(db.prepare('SELECT 1 FROM settings_changes WHERE kind = \'settings\' AND (?1 IS NULL OR role = ?1) LIMIT 1').get(role))
+      rows: db.prepare(`SELECT * FROM settings_changes WHERE (?1 IS NULL OR role = ?1)
+        ORDER BY changed_at DESC, CASE WHEN kind = 'settings' THEN NULL ELSE CAST(to_revision AS INTEGER) END DESC, role, change_id
+        LIMIT ?2`).all(role, limit),
+      newestSettings: db.prepare('SELECT to_revision FROM settings_changes WHERE kind = \'settings\' ORDER BY changed_at DESC LIMIT 1').get() ?? null,
+      roleHasSettings: Boolean(db.prepare('SELECT 1 FROM settings_changes WHERE kind = \'settings\' AND (?1 IS NULL OR role = ?1) LIMIT 1').get(role)),
+      trustRevisions: new Map(db.prepare(`SELECT role, MAX(CAST(to_revision AS INTEGER)) AS revision FROM settings_changes
+        WHERE kind <> 'settings' GROUP BY role`).all().map(row => [row.role, row.revision]))
     };
+  }
+
+  // Whether the current settings or trust state is past what the newest rows recorded.
+  function unrecorded(role, stored, loaded) {
+    if (stored.newestSettings && stored.newestSettings.to_revision !== configRevision(loaded)) return true;
+    return (role ? [role] : MODEL_BACKEND_ROLES).some(each => readTrustRevision(each) > (stored.trustRevisions.get(each) ?? 0));
   }
 
   return {
@@ -101,10 +115,10 @@ export function createModelSettingsHistory({
           via: role === editedRole ? null : editedRole }))
         .filter(row => row.changes.length));
     },
-    // A trust change from one row revision to the next; field names the changed column.
-    recordTrust(role, kind, fromRevision, { field, before, after }) {
+    // A committed trust change from one row revision to the next at changedAt; field names the changed column.
+    recordTrust(role, kind, fromRevision, { field, before, after }, changedAt) {
       return record(kind, before === after ? [] : [{ role, fromRevision: String(fromRevision), toRevision: String(fromRevision + 1),
-        changes: [{ field, before, after }] }]);
+        changes: [{ field, before, after }] }], changedAt);
     },
     // Newest first, with the markers of changes that are not recorded. role null reads every role.
     list({ role = null, limit = LIST_LIMIT } = {}) {
@@ -112,9 +126,7 @@ export function createModelSettingsHistory({
       const loaded = readConfig();
       const entries = stored.rows.map(row => ({ changeId: row.change_id, changedAt: row.changed_at, role: row.role, kind: row.kind,
         fromRevision: row.from_revision, toRevision: row.to_revision, changes: JSON.parse(row.changes), via: row.via }));
-      if (stored.newestSettings && stored.newestSettings.to_revision !== configRevision(loaded)) {
-        entries.unshift({ kind: 'unrecorded_changes', changedAt: null, role });
-      }
+      if (unrecorded(role, stored, loaded)) entries.unshift({ kind: 'unrecorded_changes', changedAt: null, role });
       const configured = loaded.state === 'ok' && (role ? Object.hasOwn(loaded.config.roles, role) : Object.keys(loaded.config.roles).length > 0);
       if (configured && !stored.roleHasSettings) entries.push({ kind: 'earlier_changes_not_recorded', changedAt: null, role });
       return entries;

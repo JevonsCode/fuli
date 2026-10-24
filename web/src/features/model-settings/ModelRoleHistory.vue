@@ -12,48 +12,66 @@ import { roleName, type ModelRoleId } from './model'
 
 // 变更记录 inside a role's row (rec#11 D-42): collapsed until the person opens
 // it, then read, and read again when the role's settings or execution mode
-// changed (revision): at once while open, on reopening otherwise. Only the
-// latest read for this role lands; a failed refresh keeps what was read.
+// changed (revision): at once while open, on reopening otherwise. Each read
+// is tagged with the role and revision it was asked for; a change aborts the
+// read in flight, and an answer for a revision that is no longer current is
+// dropped (and asked again while open). A failed refresh keeps what was read.
 // Newest first; this section only reads.
 const props = defineProps<{ role: ModelRoleId; revision: string }>()
 
+type ReadTarget = { role: ModelRoleId; revision: string }
 const open = ref(false)
 const entries = ref<HistoryEntry[] | null>(null)
 // The role and revision the shown entries were read at.
-const loadedAt = ref<{ role: ModelRoleId; revision: string } | null>(null)
+const loadedAt = ref<ReadTarget | null>(null)
 const loading = ref(false)
 const error = ref('')
 const listId = computed(() => `model-history-${props.role}`)
-const current = computed(() => loadedAt.value?.role === props.role && loadedAt.value.revision === props.revision)
-let reading: AbortController | null = null
+const isCurrent = (target: ReadTarget | null) => target?.role === props.role && target.revision === props.revision
+let reading: { request: AbortController; target: ReadTarget } | null = null
+
+function stop() {
+  reading?.request.abort()
+  reading = null
+  loading.value = false
+}
 
 async function load() {
-  reading?.abort()
-  const request = new AbortController()
-  reading = request
-  const target = { role: props.role, revision: props.revision }
+  stop()
+  const read = { request: new AbortController(), target: { role: props.role, revision: props.revision } }
+  reading = read
   loading.value = true
   error.value = ''
   try {
-    const value = await readModelSettingsHistory(target.role, request.signal)
-    if (reading === request && target.role === props.role) {
-      entries.value = value
-      loadedAt.value = target
+    const value = await readModelSettingsHistory(read.target.role, read.request.signal)
+    if (reading !== read) return
+    if (!isCurrent(read.target)) {
+      stop()
+      if (open.value) void load()
+      return
     }
+    entries.value = value
+    loadedAt.value = read.target
   } catch (cause) {
-    if (reading === request && (cause as Error)?.name !== 'AbortError') error.value = apiErrorReason(cause)
+    if (reading === read && (cause as Error)?.name !== 'AbortError') error.value = apiErrorReason(cause)
   } finally {
-    if (reading === request) loading.value = false
+    if (reading === read) {
+      reading = null
+      loading.value = false
+    }
   }
 }
 
 function toggle() {
   open.value = !open.value
-  if (open.value && !current.value && !loading.value) void load()
+  if (open.value && !isCurrent(loadedAt.value) && !isCurrent(reading?.target ?? null)) void load()
 }
 
-watch(() => props.revision, () => { if (open.value) void load() })
-onBeforeUnmount(() => reading?.abort())
+watch(() => [props.role, props.revision], () => {
+  stop()
+  if (open.value) void load()
+})
+onBeforeUnmount(stop)
 
 const views = computed(() => (entries.value ?? []).map((entry, index) => ({
   key: entry.changedAt === null ? `${entry.kind}-${index}` : entry.changeId,

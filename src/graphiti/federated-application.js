@@ -8,7 +8,7 @@ import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js'
 import { createFuliRoundtableHost } from './roundtable-host.js';
 import { attachJudgmentRuntime } from '../judgment/runtime.js';
 import { createTaskScheduleService } from '../task-schedules/service.js';
-import { openModelBackendRuntime, openModelSettingsHistory, openRoleSuggestionLog, openRoleTrust } from '../model-backends/runtime.js';
+import { openModelBackendRuntime, openRoleSuggestionLog, openRoleTrustAndHistory } from '../model-backends/runtime.js';
 import { TaskScheduleStore } from '../task-schedules/store.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
@@ -151,8 +151,7 @@ export function openFederatedGraphApplication({
       toolNames: () => listAgentTools().map(({ name }) => name), ownerKind: 'console',
       callFuliTool: (name, input) => callAgentTool(app, name, input) });
     app.modelBackends = openModelBackendRuntime(paths);
-    app.modelSettingsHistory = openModelSettingsHistory(paths);
-    app.modelTrust = openRoleTrust(paths, app.modelBackends, app.modelSettingsHistory);
+    ({ trust: app.modelTrust, history: app.modelSettingsHistory } = openRoleTrustAndHistory(paths, app.modelBackends));
     attachJudgmentRuntime(app, paths);
     app.roleSuggestions = openRoleSuggestionLog(paths, { recoveryGate: app.knowledgeRecoveryGate });
     app.taskSchedules = createTaskScheduleService({ app,
