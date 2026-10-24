@@ -229,7 +229,8 @@ test('without a matching term the entry is byte-identical to one without standin
 test('a retired assignment no longer routes', async () => {
   const { app, run } = fixture();
   const [assignment] = app.standingAssignments.list(SPACE);
-  app.standingAssignments.retire(assignment.assignmentId, { source: 'user', expectedRevision: assignment.revision });
+  app.standingAssignments.correct(assignment.assignmentId, { action: 'retire' },
+    { source: 'user', expectedRevision: assignment.revision });
   const entry = await run();
   assert.equal(entry.context.personal_project_id, 'repo-a');
   assert.equal(entry.standing_owner, undefined);

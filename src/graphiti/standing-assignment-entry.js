@@ -1,9 +1,10 @@
-import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { ApplicationError, ApplicationErrorCode, isControlledError } from '../app/application-error.js';
 import { identityKey } from '../text/name-identity.js';
 import { requiredString } from '../validation/values.js';
-import { hostInternalActivity } from './task-entry-activity-origin.js';
-import { createProjectNamed, projectByName } from './task-entry-project-mention.js';
+import { correctStandingAssignment } from './standing-assignment-correction.js';
+import { assertPreviewed, leadName, personsConversation, previewOf, projectLead, projectNamed, quoted,
+  standingAssignmentsOf } from './standing-assignment-confirmation.js';
+import { createProjectNamed } from './task-entry-project-mention.js';
 
 // "From now on, this kind of work goes to that project": the person's own
 // decision, said in a conversation (rec#29 D-41 D1). preview resolves what
@@ -16,25 +17,24 @@ import { createProjectNamed, projectByName } from './task-entry-project-mention.
 // Neither step starts or does the work itself.
 //
 // Confirming a plan that is already in place changes nothing, so a repeated
-// confirm never creates a second project or hire.
+// confirm never creates a second project or hire. Any other change is a
+// correction of an assignment (standing-assignment-correction.js).
 
+const CHANGES = new Set(['register', 'retire', 'reassign', 'edit_terms']);
 const PROJECT_NAME_LIMIT = 80;
 const USER_WORDS_LIMIT = 600;
-const DIGEST_LIMIT = 64;
-const TOKEN_LIMIT = 256;
 // A standing rule in the person's own words, with the markers Tonborg's
 // standing-rule criterion names (judgment/review-prompt.js). A request for
 // this time only is done in its task, not registered.
 const STANDING_INTENT = /(?:from now on|going forward|from here on|in (?:the )?future|always|every time|whenever|以后|今后|往后|从现在起|从今往后|从此|一律|一直|每次|长期|默认)/iu;
 const NOT_EXECUTED = 'Registered and assigned, NOT executed: no task was started or done. Later tasks that mention these terms go to this lead.';
-const ASK_ONCE = 'Nothing was saved. Ask the user once with restatement, in their language; only after a clear yes call confirm with the same input and this confirmationDigest.';
 
 export async function registerStandingAssignment(application, input = {}) {
-  if (!application.standingAssignments) {
-    throw new ApplicationError('standing_assignments_unavailable', 'Standing assignments need a local FULI installation',
-      { status: 503 });
-  }
+  standingAssignmentsOf(application);
   if (input.action !== 'preview' && input.action !== 'confirm') throw invalid('action must be preview or confirm');
+  const change = input.change ?? 'register';
+  if (!CHANGES.has(change)) throw invalid('change must be register, retire, reassign or edit_terms');
+  if (change !== 'register') return correctStandingAssignment(application, input);
   const plan = await currentPlan(application, input);
   return input.action === 'preview' ? previewResult(plan) : confirm(application, plan, input);
 }
@@ -45,20 +45,10 @@ async function currentPlan(application, input) {
     throw new ApplicationError('standing_assignment_one_off', 'The user\'s words state no standing rule (from now on, '
       + '以后, always). Do a one-off request in this task; nothing was registered.', { status: 422 });
   }
-  const task = await application.taskContextRegistry.context(
-    requiredString(input.taskContextToken, 'taskContextToken', TOKEN_LIMIT), input.sourceApplication ?? 'other');
-  if (task.activityOrigin || hostInternalActivity(application, { sessionId: task.sessionId })) {
-    throw new ApplicationError('standing_assignment_internal_activity', 'Internal Agent activity cannot register a '
-      + 'standing assignment; only the person can, in their own conversation. Nothing was saved.', { status: 403 });
-  }
+  const task = await personsConversation(application, input);
   const spaceId = application.config.personal.spaceId;
   const name = requiredString(input.projectName, 'projectName', PROJECT_NAME_LIMIT);
-  const named = await projectByName(application, name);
-  if (named?.ambiguous) {
-    throw new ApplicationError('standing_assignment_project_ambiguous', `${named.candidateCount} projects are named `
-      + `"${name}"; ask the user which one they mean. Nothing was saved.`, { status: 409 });
-  }
-  const projectId = named?.personalProjectId ?? null;
+  const projectId = await projectNamed(application, name);
   const leadAgentId = projectId ? await projectLead(application, spaceId, projectId) : null;
   const registration = application.standingAssignments.preview({ personalSpaceId: spaceId, projectId, leadAgentId,
     terms: input.terms, responsibility: input.responsibility, preferenceIds: input.preferenceIds, source: 'user',
@@ -83,8 +73,7 @@ function previewResult(plan) {
       restatement: `${quoted(plan.terms)} already go to project "${plan.project.name}" (lead "${plan.lead.name}"); `
         + 'there is nothing to register.' };
   }
-  return { status: 'preview', plan: planView(plan), restatement: restatement(plan),
-    confirmationDigest: contentHash(plan), executed: false, guidance: ASK_ONCE };
+  return previewOf(plan, planView(plan), restatement(plan));
 }
 
 // Other requests run while this one awaits the Provider, so the project's
@@ -95,11 +84,7 @@ function previewResult(plan) {
 // itself as its cause. Before any write the failure stands as it is.
 async function confirm(application, plan, input) {
   if (inPlace(plan)) return confirmed('unchanged', plan, existingState(plan), null);
-  if (requiredString(input.confirmationDigest, 'confirmationDigest', DIGEST_LIMIT) !== contentHash(plan)) {
-    throw new ApplicationError('standing_assignment_plan_changed', 'The plan is not the one previewed: it changed '
-      + 'since, or the digest belongs to other input. Nothing was saved; preview again and ask the user again.',
-    { status: 409 });
-  }
+  assertPreviewed(input, plan);
   const state = existingState(plan);
   try {
     // A term another request took since the plan was read refuses before anything is written.
@@ -232,16 +217,6 @@ function restatement(plan) {
 function planView({ project, lead, terms, responsibility, preferenceIds, assignment }) {
   return { project, lead, terms, responsibility, preferenceIds, assignment };
 }
-
-async function projectLead(application, spaceId, projectId) {
-  return (await application.personal.getProjectAgentCoordinationPolicy(spaceId, projectId))?.team_lead_agent_id ?? null;
-}
-
-async function leadName(application, spaceId, projectId, agentId) {
-  return (await application.personal.getProjectAgent(spaceId, projectId, agentId))?.profile?.name ?? agentId;
-}
-
-const quoted = terms => terms.map(term => `"${term}"`).join(', ');
 
 function invalid(message) {
   return new ApplicationError(ApplicationErrorCode.VALIDATION, message);

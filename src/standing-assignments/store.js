@@ -116,7 +116,8 @@ export class StandingAssignmentStore {
     this.db.prepare(`INSERT INTO standing_assignments VALUES(:assignment_id, :personal_space_id, :project_id,
         :lead_agent_id, :terms, :responsibility, :source, :source_conversation_id, :preference_ids, :revision,
         :created_at, :updated_at, :retired_at)
-      ON CONFLICT(assignment_id) DO UPDATE SET terms = excluded.terms, source = excluded.source,
+      ON CONFLICT(assignment_id) DO UPDATE SET project_id = excluded.project_id,
+        lead_agent_id = excluded.lead_agent_id, terms = excluded.terms, source = excluded.source,
         source_conversation_id = excluded.source_conversation_id, preference_ids = excluded.preference_ids,
         revision = excluded.revision, updated_at = excluded.updated_at, retired_at = excluded.retired_at`)
       .run(columns(record));

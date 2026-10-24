@@ -61,7 +61,7 @@ test('the person\'s own names for work find the leads of this space\'s open proj
   register('space-2', 'app', 'lead-app', ['报销'], '处理报销');
   register('space-1', 'old', 'lead-old', ['归档'], '旧工作');
   const retired = register('space-1', 'app', 'lead-app', ['周报'], '写周报');
-  standing.retire(retired.assignmentId, { source: 'user', expectedRevision: retired.revision });
+  standing.correct(retired.assignmentId, { action: 'retire' }, { source: 'user', expectedRevision: retired.revision });
   const leads = { idev: 'lead-idev', app: 'lead-app', old: 'lead-old' };
   const app = {
     config: { personal: { spaceId: 'space-1' } },

@@ -95,9 +95,10 @@ test('Latin terms match whole terms and CJK terms match inside running text', (t
 test('a retired assignment no longer matches and frees its terms, its history kept', (t) => {
   const { port } = assignments(t);
   const { assignment } = port.register(timesheet());
-  assert.throws(() => port.retire(assignment.assignmentId, { source: 'user', expectedRevision: 0 }),
+  assert.throws(() => port.correct(assignment.assignmentId, { action: 'retire' }, { source: 'user', expectedRevision: 0 }),
     { code: 'standing_assignment_changed' });
-  const retired = port.retire(assignment.assignmentId, { source: 'user', expectedRevision: 1, sourceConversationId: 'conversation-3' });
+  const retired = port.correct(assignment.assignmentId, { action: 'retire' },
+    { source: 'user', expectedRevision: 1, sourceConversationId: 'conversation-3' });
   assert.equal(retired.revision, 2);
   assert.ok(retired.retiredAt);
   assert.deepEqual(port.match(SPACE, 'fill iDev hours'), []);
@@ -114,7 +115,7 @@ test('a host registration never changes what the person confirmed; the person co
   assert.equal(port.register(timesheet({ source: 'host' })).status, 'unchanged');
   assert.throws(() => port.register(timesheet({ source: 'host', terms: ['工时'] })),
     (error) => error.code === 'standing_assignment_user_confirmed' && error.status === 409);
-  assert.throws(() => port.retire(assignment.assignmentId, { source: 'host', expectedRevision: 1 }),
+  assert.throws(() => port.correct(assignment.assignmentId, { action: 'retire' }, { source: 'host', expectedRevision: 1 }),
     { code: 'standing_assignment_user_confirmed' });
   assert.equal(port.history(assignment.assignmentId).length, 1);
 

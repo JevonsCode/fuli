@@ -234,7 +234,7 @@ test('a term taken while the lead is hired names what was written, and a new pre
     written: { project: 'created', projectId: 'timesheet', projectName: 'Timesheet', lead: 'hired',
       leadAgentId: 'lead-timesheet' } });
   const [other] = app.standingAssignments.list(SPACE);
-  app.standingAssignments.retire(other.assignmentId, { source: 'user', expectedRevision: 1 });
+  app.standingAssignments.correct(other.assignmentId, { action: 'retire' }, { source: 'user', expectedRevision: 1 });
   const again = await call(app, 'preview', timesheet());
   assert.deepEqual([again.plan.project.action, again.plan.lead.action], ['reuse', 'reuse']);
   const done = await call(app, 'confirm', { ...timesheet(), confirmationDigest: again.confirmationDigest });
