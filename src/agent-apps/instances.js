@@ -48,15 +48,16 @@ const waitFor = (ms, signal) => delay(ms, undefined, { signal }).catch(() => {})
 //   its host left; an interrupted data deletion is settled.
 // - exit: an app process that ends by itself (its entry failed to load, it
 //   crashed or it finished) is wrapped up in the app's lifecycle, bound to
-//   its instance id and generation: recorded with a short redacted summary
-//   and sealed like a stop. An exit of an earlier instance touches nothing.
+//   its instance id and generation: recorded with its exit code, signal and a
+//   fixed category message (never anything the app wrote) and sealed like a stop. An exit of an earlier instance touches nothing.
 // - close: no new start, stop, decision or call is admitted; work in flight
 //   finishes, every instance this process holds is sealed and its process
 //   stopped, and only then do the lease and the registry close. Every handle
 //   the runner returned is held in memory until its stop succeeded, so a
 //   start that returns after close began, a registration that throws or a
 //   stop that failed never leaves a process nobody holds; close reports what
-//   it could not stop instead of a clean close.
+//   it could not stop instead of a clean close, and records a stop it could
+//   confirm only on its retry while this process still owns the app.
 export function createAppInstances(context) {
   const { store, leases, gates, lifecycles, runner, now } = context;
   const wait = context.wait ?? waitFor;
@@ -186,7 +187,14 @@ export function createAppInstances(context) {
           exePath: handle.exePath ?? null, socket: handle.socket ?? null });
       });
     } catch (error) {
+      // The process is stopped first; only then does the instance end, so no
+      // running row of this owner outlives it and blocks the next start.
       await stopHandle(handle);
+      try {
+        endInstance(appId, lease, instance, 'start_failed', { sealedAt: now() });
+      } catch {
+        // The registry still fails: the record stays for the next owner's reconcile.
+      }
       throw error;
     }
     if (!recorded) {
@@ -211,6 +219,7 @@ export function createAppInstances(context) {
 
   function sealHosted(appId, local, reason) {
     const { lease } = local;
+    local.reason = reason;
     if (!local.sealed) {
       store.transaction(() => {
         leases.assertOwned(lease);
@@ -330,8 +339,9 @@ export function createAppInstances(context) {
   // (for CLOSE_WAIT_MS at most), seals and stops every instance it holds, then
   // stops every handle still held. A seal still waiting after CLOSE_WAIT_MS (a
   // write tool that never returns) has its process stopped all the same; its
-  // records stay for the next owner's reconcile, as after a crash. Resolves
-  // { complete, startsInFlight, notStopped }: complete only when nothing is in
+  // records stay for the next owner's reconcile, as after a crash; so do the
+  // records of a seal whose registry write threw. Never rejects: resolves
+  // { complete, startsInFlight, notStopped }, complete only when nothing is in
   // flight and every process FULI started is confirmed stopped. Asked again,
   // it retries the stops that failed and keeps their handles meanwhile.
   async function close() {
@@ -339,13 +349,7 @@ export function createAppInstances(context) {
     closing = true;
     if (first) await settledWithin(Promise.allSettled([...inFlight]), closeWaitMs);
     await Promise.all([...hosted.entries()].map(async ([appId, local]) => {
-      // A host whose lease another process took over records nothing more; its process still ends here.
-      const owned = first && leases.owns(local.lease);
-      if (owned) {
-        local.sealing ??= sealHosted(appId, local, 'host_closing');
-        local.sealing.catch(() => {});
-      }
-      if (!owned || !await settledWithin(local.done, closeWaitMs)) hosted.delete(appId);
+      if (!await sealForClose(appId, local, first)) hosted.delete(appId);
     }));
     const notStopped = [];
     await Promise.all([...held.entries()].map(async ([handle, started]) => {
@@ -353,10 +357,45 @@ export function createAppInstances(context) {
         await stopHandle(handle);
       } catch (error) {
         notStopped.push({ ...started, pid: handle.pid ?? null, code: error?.code ?? null });
+        return;
       }
+      recordLateStop(started.appId, handle);
     }));
     for (const [appId, local] of hosted) if (!held.has(local.handle)) hosted.delete(appId);
     return { complete: inFlight.size === 0 && notStopped.length === 0, startsInFlight: inFlight.size, notStopped };
+  }
+
+  // Whether this instance's seal settled within the close wait; never throws,
+  // so close always reaches its stops. A host whose lease another process
+  // took over records nothing more, and a seal that cannot even begin (its
+  // registry write throws) leaves the records to the next owner; either way
+  // the process still ends through its held handle.
+  async function sealForClose(appId, local, first) {
+    try {
+      if (!first || !leases.owns(local.lease)) return false;
+      local.sealing ??= sealHosted(appId, local, 'host_closing');
+      local.sealing.catch(() => {});
+      return await settledWithin(local.done, closeWaitMs);
+    } catch {
+      return false;
+    }
+  }
+
+  // A stop close confirmed after the seal's own stop failed: the sealed
+  // instance ends and its lease is released while this process still owns
+  // it (endInstance asserts that inside its transaction). Otherwise, or once
+  // the registry is closed (a retried close), it stays for the next owner's
+  // reconcile.
+  function recordLateStop(appId, handle) {
+    const local = hosted.get(appId);
+    if (local?.handle !== handle || !local.sealed) return;
+    try {
+      if (!leases.owns(local.lease)) return;
+      endInstance(appId, local.lease, local, local.reason);
+      leases.release(local.lease);
+    } catch {
+      // Left for the next owner, as after a crash.
+    }
   }
 
   // Inside the app's write gate, holding its lease.
