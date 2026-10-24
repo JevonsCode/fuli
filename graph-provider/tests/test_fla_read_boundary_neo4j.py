@@ -7,11 +7,14 @@ of it: not in the graph, an item view, its evidence or versions, a receipt or
 a session's records. Synthetic data only; public HTTP routes drive every
 write, except two direct links no route writes (noted where they are made)."""
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from neo4j import AsyncGraphDatabase
 
+from fuli_graph.knowledge_search import personal_edge_scopes
+from fuli_graph.models import SearchRequest
 from test_project_agent_memory_neo4j import provider_client, seed_agent
 from test_session_records_neo4j import Session
 from test_turn_receipt_neo4j import REVIEW, ok, reviewed_settings
@@ -62,12 +65,16 @@ class Boundary:
             entity('plain-fact', 'Releases are tagged on main'),
             entity('plain-new', 'Deploys run from the pipeline'),
             {**entity('shared-habit', 'Lead with the conclusion'), 'type': 'PersonalPreference',
-             'profile_aspect': 'taste'}])
+             'profile_aspect': 'taste'}],
+            relationships=[{'key': 'plain-link', 'source': 'plain-fact', 'target': 'plain-new', 'type': 'PRECEDES',
+                            'fact': 'Releases are tagged before the pipeline deploys'}])
         # The whole space: a project graph never holds a preference given to one FLA.
         graph = await self.graph(headers=REVIEW, project=False)
         self.ids = {node['name']: node['id'] for node in graph['nodes'] if node.get('summary')}
         self.group_id = next(node['group_id'] for node in graph['nodes'] if node['id'] == self.id('plain-fact'))
         self.fla_edge = next(edge['id'] for edge in graph['edges'] if edge['fact'] == 'G deploys through the canary lane')
+        self.plain_link = next(edge['id'] for edge in graph['edges']
+                               if edge['fact'] == 'Releases are tagged before the pipeline deploys')
         self.plain_edge = f'boundary-plain-edge-{uuid4()}'
         self.link_episode = f'boundary-link-{uuid4()}'
         # No route writes these two links today; they stand for older or
@@ -225,6 +232,28 @@ async def test_a_plain_edge_to_another_flas_entity_is_hidden_with_it_by_id_too()
             receipt = await space.receipt(space.link_episode, reader)
             assert receipt['entries'] == [], reader
             assert receipt['unchanged_count'] == owner['unchanged_count'], 'the plain fact it names stays counted'
+
+
+@pytest.mark.asyncio
+async def test_search_leaves_out_a_plain_edge_to_another_flas_entity_as_every_read_does():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space = await Boundary().build(client, settings)
+        driver = AsyncGraphDatabase.driver(settings.neo4j_uri, auth=('neo4j', settings.neo4j_password))
+        try:
+            store = SimpleNamespace(runtime=SimpleNamespace(driver=driver))
+            scopes = {PROJECT: {'scope_distance': 0, 'scope_path': [PROJECT], 'inherited': False}}
+            edges = [space.plain_edge, space.fla_edge, space.plain_link]
+            # Search names the FLA it reads as; the console's search names none, as a plain session.
+            for agent, expected in ((G, set(edges)), (H, {space.plain_link}), (None, {space.plain_link})):
+                request = SearchRequest(space_ids=[space.space_id], query='canary', personal_project_ids=[PROJECT],
+                                        active_personal_project_id=PROJECT, project_agent_id=agent,
+                                        include_pending=True)
+                allowed = await personal_edge_scopes(store, {'id': space.space_id, 'group_id': space.group_id},
+                                                     request, scopes, False, edges)
+                assert set(allowed) == expected, agent
+        finally:
+            await driver.close()
 
 
 @pytest.mark.asyncio

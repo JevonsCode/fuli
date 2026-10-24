@@ -47,7 +47,11 @@ def fla_visible(record: dict, reader: AgentReader) -> bool:
     preference_scope, preference_project_id, preference_agent_id and, from
     the item's own episodes, episode_project_ids and episode_project_agent_ids.
     A preference follows its own scope only; other knowledge any FLA's
-    episode wrote belongs to that FLA in that project."""
+    episode wrote belongs to that FLA in that project. A relationship's
+    record also carries endpoints_visible (fla_endpoints_visible_cypher): one
+    linking to an entity this reader may not see is hidden with it."""
+    if record.get('endpoints_visible') is False:
+        return False
     if record.get('profile_aspect'):
         if (record.get('preference_scope') or 'global') != 'agent':
             return True
@@ -91,9 +95,15 @@ def fla_visible_cypher(item: str, item_kind: str) -> str:
 def fla_relationship_visible_cypher(edge: str, source: str, target: str) -> str:
     """A relationship is visible only with both its endpoints: one that links
     to another FLA's entity is hidden with it, wherever it is read (graph,
-    item view, receipt, session records)."""
-    return (f"({fla_visible_cypher(edge, 'relationship')} AND {fla_visible_cypher(source, 'entity')} "
-            f"AND {fla_visible_cypher(target, 'entity')})")
+    item view, receipt, session records; search and the AI review through
+    fla_endpoints_visible_cypher and fla_visible)."""
+    return f"({fla_visible_cypher(edge, 'relationship')} AND {fla_endpoints_visible_cypher(source, target)})"
+
+
+def fla_endpoints_visible_cypher(source: str, target: str) -> str:
+    """Whether this reader may see both endpoints of a relationship. Needs
+    $group_id and $reader."""
+    return f"({fla_visible_cypher(source, 'entity')} AND {fla_visible_cypher(target, 'entity')})"
 
 
 def fla_own_work_cypher(agent: str, project: str) -> str:
@@ -128,7 +138,7 @@ _HIDDEN_QUERIES = {
           AND NOT ''' + fla_visible_cypher('item', 'entity') + '''
         RETURN item.uuid AS id''',
     'relationship': '''
-        MATCH (source:Entity)-[item:RELATES_TO {group_id: $group_id}]->(target:Entity)
+        MATCH (source)-[item:RELATES_TO {group_id: $group_id}]->(target)
         WHERE item.uuid IN $item_ids
           AND NOT ''' + fla_relationship_visible_cypher('item', 'source', 'target') + '''
         RETURN item.uuid AS id''',

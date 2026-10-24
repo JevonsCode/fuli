@@ -114,7 +114,7 @@ async def test_a_relationship_by_id_is_hidden_with_either_endpoint_as_in_the_gra
     store = SimpleNamespace(runtime=SimpleNamespace(driver=SimpleNamespace(execute_query=execute_query)))
     await visibility.hidden_refs(store, {'group_id': 'g'}, H, [('relationship', 'r')])
     rule = visibility.fla_relationship_visible_cypher('item', 'source', 'target')
-    assert rule in queries[0] and 'MATCH (source:Entity)-[item:RELATES_TO' in queries[0]
+    assert rule in queries[0] and 'MATCH (source)-[item:RELATES_TO' in queries[0]
     for part in (visibility.fla_visible_cypher('item', 'relationship'), visibility.fla_visible_cypher('source', 'entity'),
                  visibility.fla_visible_cypher('target', 'entity')):
         assert part in rule
@@ -144,6 +144,39 @@ async def test_session_turns_and_episodes_are_cut_to_the_readers_own_fla_before_
     assert episodes.index(episode_rule) < episodes.index('LIMIT $limit')
     assert all(parameters['reader'] == visibility.reader_parameter(H) for query, parameters in calls
                if query in (tasks, episodes))
+
+
+def test_a_relationship_linking_to_a_hidden_entity_is_hidden_for_every_reader_in_the_python_rule():
+    linking = {**PLAIN_FACT, 'endpoints_visible': False}
+    assert not any(fla_visible(linking, reader) for reader in (G, H, PLAIN_SESSION))
+    assert all(fla_visible({**PLAIN_FACT, 'endpoints_visible': True}, reader) for reader in (G, H, PLAIN_SESSION))
+    assert fla_visible({**FLA_FACT, 'endpoints_visible': True}, G) and not fla_visible(
+        {**FLA_FACT, 'endpoints_visible': True}, H)
+
+
+@pytest.mark.asyncio
+async def test_search_asks_the_endpoint_rule_for_the_searching_reader_and_drops_a_linking_edge():
+    from fuli_graph.knowledge_search import personal_edge_scopes
+    from fuli_graph.models import SearchRequest
+    calls = []
+
+    async def execute_query(query, **parameters):
+        calls.append((query, parameters))
+        row = {'profile_aspect': None, 'preference_scope': 'global', 'assignment_project_id': None,
+               'episode_project_ids': ['alpha'], 'episode_project_agent_ids': [], 'has_global_episode': False,
+               'reference_project_ids': [], 'inheritance_mode': 'local_only', 'inherited_project_ids': []}
+        return [{**row, 'id': 'linking', 'endpoints_visible': False},
+                {**row, 'id': 'plain', 'endpoints_visible': True}], None, None
+    store = SimpleNamespace(runtime=SimpleNamespace(driver=SimpleNamespace(execute_query=execute_query)))
+    request = SearchRequest(space_ids=['space'], query='deploy', personal_project_ids=['alpha'],
+                            active_personal_project_id='alpha')
+    scopes = {'alpha': {'scope_distance': 0, 'scope_path': ['alpha'], 'inherited': False}}
+    allowed = await personal_edge_scopes(store, {'id': 'space', 'group_id': 'g'}, request, scopes, False,
+                                         ['linking', 'plain'])
+    assert set(allowed) == {'plain'}
+    query, parameters = calls[0]
+    assert visibility.fla_endpoints_visible_cypher('source', 'target') in query
+    assert parameters['reader'] == {'personal_project_id': 'alpha', 'project_agent_id': None}
 
 
 def review_row(item_id, **fields):

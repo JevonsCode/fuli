@@ -19,7 +19,7 @@ from .knowledge_review_models import (
     KnowledgeReviewStart,
 )
 from .ai_review import ai_review_evidence_token
-from .knowledge_visibility import PLAIN_SESSION, fla_visible
+from .knowledge_visibility import PLAIN_SESSION, fla_endpoints_visible_cypher, fla_visible, reader_parameter
 from .personal_project_access import authorize_personal_project
 from .provider_values import native_datetime, stable_uuid
 from .store_transactions import query_store_transaction
@@ -159,6 +159,7 @@ async def list_knowledge_review_candidates(
         _RELATIONSHIP_CANDIDATE_QUERY,
         space_id=space['id'],
         group_id=space['group_id'],
+        reader=reader_parameter(PLAIN_SESSION),
         routing_='r',
     )
     conflict_rows, _, _ = await store.runtime.driver.execute_query(
@@ -339,6 +340,7 @@ async def _record_ai_review_progress(
             group_id=space['group_id'],
             item_id=item_id,
             project_id=run.get('personal_project_id'),
+            reader=reader_parameter(PLAIN_SESSION),
         )
         if not current_records:
             raise HTTPException(status_code=404, detail='review candidate not found')
@@ -672,6 +674,7 @@ def _normalize_item_row(row: dict[str, Any]) -> dict[str, Any]:
         'inheritance_mode': row.get('inheritance_mode') or 'local_only',
         'project_ids': project_ids,
         'episode_project_agent_ids': sorted({value for value in row.get('episode_project_agent_ids') or [] if value}),
+        'endpoints_visible': row.get('endpoints_visible'),
         'confirmation_status': row.get('confirmation_status') or 'pending',
         'confirmation_basis_json': row.get('confirmation_basis_json'),
         'current_quadrant': row.get('current_quadrant') or 'known_known',
@@ -838,9 +841,10 @@ RETURN item.uuid AS item_id,
 
 
 _RELATIONSHIP_CANDIDATE_QUERY = '''
-MATCH ()-[item:RELATES_TO {group_id: $group_id}]->()
+MATCH (source)-[item:RELATES_TO {group_id: $group_id}]->(target)
 WHERE item.invalid_at IS NULL
   AND size(coalesce(item.fuli_unresolved_bases, [])) = 0
+WITH item, ''' + fla_endpoints_visible_cypher('source', 'target') + ''' AS endpoints_visible
 OPTIONAL MATCH (episode:Episodic {group_id: $group_id})
 WHERE episode.uuid IN coalesce(item.episodes, [])
 OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
@@ -856,6 +860,7 @@ OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_KNOWLEDGE_REVISION]->
               })
 RETURN item.uuid AS item_id,
        'relationship' AS item_kind,
+       endpoints_visible,
        coalesce(item.name, 'RELATES_TO') AS title,
        coalesce(item.fact, '') AS content,
        item.fuli_profile_aspect AS profile_aspect,
@@ -1004,10 +1009,10 @@ RETURN item.uuid AS item_id,
 
 
 _AI_REVIEW_CURRENT_RELATIONSHIP_QUERY = '''
-MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()
+MATCH (source)-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->(target)
 SET item.fuli_ai_review_lock_version =
       coalesce(item.fuli_ai_review_lock_version, 0) + 1
-WITH item
+WITH item, ''' + fla_endpoints_visible_cypher('source', 'target') + ''' AS endpoints_visible
 OPTIONAL MATCH (episode:Episodic {group_id: $group_id})
 WHERE episode.uuid IN coalesce(item.episodes, [])
 OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
@@ -1017,7 +1022,7 @@ OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_KNOWLEDGE_REFERENCE]->
                (reference:FuliKnowledgeProjectReference {
                  item_kind: 'relationship', item_id: item.uuid, status: 'active'
                })
-WITH item,
+WITH item, endpoints_visible,
      collect(DISTINCT assignment.project_id) +
      collect(DISTINCT reference.project_id) +
      collect(DISTINCT episode.fuli_personal_project_id) AS project_ids,
@@ -1029,17 +1034,18 @@ WHERE (knowledge.item_id = item.uuid OR knowledge.target_item_id = item.uuid)
   AND ($project_id IS NULL
        OR knowledge.target_project_id = $project_id
        OR knowledge.source_project_id = $project_id)
-WITH item, project_ids, episode_project_agent_ids,
+WITH item, endpoints_visible, project_ids, episode_project_agent_ids,
      collect(DISTINCT knowledge.id) AS knowledge_conflicts
 OPTIONAL MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
                [:HAS_PREFERENCE_CONFLICT]->
                (preference:FuliPreferenceConflict {status: 'ai_pending'})
 WHERE (preference.left_item_id = item.uuid OR preference.right_item_id = item.uuid)
   AND ($project_id IS NULL OR preference.preference_project_id = $project_id)
-WITH item, project_ids, episode_project_agent_ids, knowledge_conflicts,
+WITH item, endpoints_visible, project_ids, episode_project_agent_ids, knowledge_conflicts,
      collect(DISTINCT preference.id) AS preference_conflicts
 RETURN item.uuid AS item_id,
        'relationship' AS item_kind,
+       endpoints_visible,
        coalesce(item.name, 'RELATES_TO') AS title,
        coalesce(item.fact, '') AS content,
        item.fuli_profile_aspect AS profile_aspect,
