@@ -185,11 +185,32 @@ async def test_an_flas_work_is_never_drafted_and_an_older_draft_of_it_is_the_per
         assert {draft['id'] for draft in owner.json()} == {'pending', 'submitted', 'kept_personal', 'ignored'}
         own = await client.get('/v1/publication-drafts/pending', headers={'x-fuli-human-review-token': REVIEW_TOKEN})
         assert own.status_code == 200 and own.json()['episode']['source_description']
-        # Once its source is erased only submission metadata is left: the protocol settles it as before.
-        driver.rows['pending'].update(payload=None, status='source_deleted', payload_scrubbed_by='deletion',
-                                      source_identity=json.dumps(identity))
-        scrubbed = await client.get('/v1/publication-drafts/pending')
-        assert scrubbed.status_code == 200 and scrubbed.json()['episode'] is None
+        # Neither an erased body nor a missing one makes its source and attempt anyone's to read:
+        # scrubbed with its source still named, or without a body and no scrub at all.
+        owner_headers = {'x-fuli-human-review-token': REVIEW_TOKEN}
+        for erased in ({'payload_scrubbed_by': 'deletion', 'status': 'source_deleted'}, {}):
+            driver.rows['pending'].update(payload=None, source_identity=json.dumps(identity),
+                                          submission_id='synthetic-attempt', **erased)
+            for params in ({'status': 'all'}, {'status': 'all', 'metadata_only': 'true'}):
+                listed = await client.get('/v1/publication-drafts', params={'personal_space_id': 'space', **params})
+                assert 'pending' not in {draft['id'] for draft in listed.json()}, (erased, params)
+                assert 'synthetic-attempt' not in listed.text
+                owner_list = await client.get('/v1/publication-drafts', headers=owner_headers,
+                                              params={'personal_space_id': 'space', **params})
+                assert 'pending' in {draft['id'] for draft in owner_list.json()}
+            hidden = await client.get('/v1/publication-drafts/pending')
+            assert hidden.status_code == 404 and 'synthetic-attempt' not in hidden.text, erased
+            assert (await client.get('/v1/publication-drafts/pending', headers=owner_headers)).json()[
+                'source_identity'] == identity
+        # The person settles it on the console's channel, but never starts publishing it.
+        driver.rows['pending'].update(status='pending', payload=json.dumps(source_episode()))
+        started = await client.post('/v1/publication-drafts/pending/decision', headers=owner_headers,
+                                    json={'decision': 'begin_submit_public'})
+        assert started.status_code == 422
+        assert started.json()['detail']['code'] == 'project_agent_knowledge_personal_only'
+        kept = await client.post('/v1/publication-drafts/pending/decision', headers=owner_headers,
+                                 json={'decision': 'ignore'})
+        assert kept.status_code == 200 and driver.rows['pending']['status'] == 'ignored'
     # A draft of plain work is listed to an Agent as before.
     driver.project_agent_episodes = set()
     async with client_for(app) as client:

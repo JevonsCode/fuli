@@ -996,7 +996,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (personalSpaceId !== this.config.personal.spaceId) {
       throw new TypeError('Personal review must use the active personal space');
     }
-    await this.reconcilePersonalSubmissions();
+    await this.reconcilePersonalSubmissions({}, ownerReads);
     const status = input.status ?? 'pending';
     return { personalSpaceId, drafts: ownerReads ? await ownerReads.publicationDrafts({ personalSpaceId, status })
       : await this.personal.listPublicationDrafts(personalSpaceId, status) };
@@ -1008,9 +1008,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.roleSuggestions.list({ personalSpaceId, limit });
   }
 
-  reconcilePersonalSubmissions(options = {}) {
-    return reconcilePublicSubmissions({ personal: this.personal, workspaceFor: url => this.#workspace(url),
-      spaceId: this.config.personal.spaceId }, options);
+  // ownerReads: the console's port, which alone lists and settles a draft of an FLA's work.
+  reconcilePersonalSubmissions(options = {}, ownerReads = null) {
+    return reconcilePublicSubmissions({ personal: ownerReads?.submissions ?? this.personal,
+      workspaceFor: url => this.#workspace(url), spaceId: this.config.personal.spaceId }, options);
   }
 
   async reviewPersonalDraft(input) {

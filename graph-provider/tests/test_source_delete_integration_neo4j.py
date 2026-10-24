@@ -129,7 +129,11 @@ async def test_source_delete_refuses_reserved_drafts_then_scrubs_expired_unknown
         rows = await query(settings, 'MATCH (c:FuliConversation {id:$id}) OPTIONAL MATCH (c)-[:HAS_EVENT]->(e) '
             'RETURN c.summary AS summary, c.digest AS digest, count(e) AS events', id=conversation['conversation_id'])
         assert rows == [dict(summary='', digest='', events=0)]
-        raw = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}', params={'personal_space_id': space}))
+        # The draft is the FLA's: an Agent token reads none of it, erased or not; the console reads its metadata.
+        hidden = await client.get(f'/v1/publication-drafts/{draft["id"]}', params={'personal_space_id': space})
+        assert hidden.status_code == 404 and session not in hidden.text
+        raw = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}', headers=REVIEW,
+                                  params={'personal_space_id': space}))
         assert raw['episode'] is None and raw['status'] == 'source_deleted' and raw['submission_outcome'] == 'unknown'
         late_episode = {**episode, 'idempotency_key': str(uuid4())}
         writes = [
@@ -145,7 +149,12 @@ async def test_source_delete_refuses_reserved_drafts_then_scrubs_expired_unknown
             (410, {'code': 'source_hard_deleted'})] * len(writes)
         later = await client.put('/v1/task-contexts', json={**begin, 'turn_id': 'turn-2', 'token': 'fuli-task-' + uuid4().hex})
         assert later.status_code == (410 if kind == 'session' else 200), later.text
-        recovered = ok(await client.post(decision_url, params={'personal_space_id': space},
+        # Settled on the console's protected channel, as the host's reconciliation sends it for the person.
+        settle = {'decision': 'reconcile_submit_public', 'submission_id': begun['submission_id'],
+                  'lookup_result': {'id': 'synthetic-public-proposal', 'status': 'pending'}}
+        unproven = await client.post(decision_url, params={'personal_space_id': space}, json=settle)
+        assert unproven.status_code == 404 and begun['submission_id'] not in unproven.text
+        recovered = ok(await client.post(decision_url, headers=REVIEW, params={'personal_space_id': space},
             json={'decision': 'reconcile_submit_public', 'submission_id': begun['submission_id'],
                   'lookup_result': {'id': 'synthetic-public-proposal', 'status': 'pending'}}))
         assert recovered['episode'] is None and recovered['status'] == 'source_deleted'

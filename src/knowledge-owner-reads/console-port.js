@@ -31,6 +31,14 @@ export function knowledgeOwnerReads(dataDir, { send = personalHumanReviewChannel
       request(preferenceConflictsPath(personalSpaceId, { status, limit, offset }), null, 'GET'),
     publicationDrafts: ({ personalSpaceId, status }) =>
       request(publicationDraftsPath(personalSpaceId, { status }), null, 'GET'),
+    // The submission ledger reconciliation settles: a draft of an FLA's work is the person's
+    // alone, its source and attempt too, so only this channel lists and settles it.
+    submissions: {
+      listPublicationDrafts: (personalSpaceId, status, { metadataOnly = false } = {}) =>
+        request(publicationDraftsPath(personalSpaceId, { status, metadataOnly }), null, 'GET'),
+      decidePublicationDraft: (personalSpaceId, draftId, body) => request(`/v1/publication-drafts/${
+        encodeURIComponent(draftId)}/decision?${new URLSearchParams({ personal_space_id: personalSpaceId })}`, body)
+    },
     deferPreferenceConflict: (body) => request('/v1/preference-conflicts/defer', body),
     completePreferenceConflict: (conflictId, body) =>
       request(`/v1/preference-conflicts/${encodeURIComponent(conflictId)}/complete`, body)

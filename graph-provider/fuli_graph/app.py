@@ -404,7 +404,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def decide_publication_draft(
         draft_id: str,
         request: PublicationSubmissionDecision,
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
     ) -> PublicationDraftRecord:
         return await store.decide_publication_draft(

@@ -36,22 +36,20 @@ def _draft_identity(space, draft) -> dict:
 
 class StorePublication:
     async def _project_agent_drafts(self, actor, space, drafts) -> set[int]:
-        """The positions among these drafts that still hold an FLA's work, for
-        a reader without the human-review proof; such a draft (made before the
-        Provider refused them) is the person's alone to read. Once its source
-        is erased only submission metadata is left, which the submission
-        protocol still settles."""
+        """The positions among these drafts that hold an FLA's work, for a
+        reader without the human-review proof. Such a draft (made before the
+        Provider refused them) is the person's alone, its body and its source
+        and submission metadata alike, erased or not: the console's port lists,
+        reads and settles it."""
         if actor.get('_human_review_verified') is True:
             return set()
-        held = [index for index, draft in enumerate(drafts) if draft.get('payload') is not None]
-        found = await project_agent_sources(self, space, [_draft_identity(space, drafts[index]) for index in held])
-        return {held[position] for position in found}
+        return await project_agent_sources(self, space, [_draft_identity(space, draft) for draft in drafts])
 
     async def decide_publication_submission(self, actor, personal_space_id, draft_id, decision):
         """Internal submission protocol; every transition serializes with erasure."""
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'maintainer')
-        await self._refuse_project_agent_draft(actor, space, draft_id)
+        await self._refuse_project_agent_draft(actor, space, draft_id, decision.decision)
         refusal = None
         async with query_store_transaction(self) as scoped:
             await lock_knowledge(scoped, space)
@@ -152,14 +150,19 @@ class StorePublication:
             raise HTTPException(status_code=404, detail='publication draft not found')
         return self._publication_draft(draft)
 
-    async def _refuse_project_agent_draft(self, actor, space, draft_id) -> None:
+    async def _refuse_project_agent_draft(self, actor, space, draft_id, decision: str) -> None:
         """A decision on a draft holding an FLA's work (one made before the
-        Provider refused them) is refused as if it did not exist: it can be
-        neither published nor kept as anyone's plain knowledge. A missing
-        draft is left to the decision's own answer."""
+        Provider refused them): to a caller without the human-review proof it
+        does not exist, so no reply carries its body, source or attempt. The
+        person's console settles it, keeps it or ignores it, but never starts
+        publishing it. A missing draft is left to the decision's own answer."""
         draft = await self._stored_draft(space, draft_id)
-        if draft is not None and await self._project_agent_drafts(actor, space, [draft]):
+        if draft is None or not await project_agent_sources(self, space, [_draft_identity(space, draft)]):
+            return
+        if actor.get('_human_review_verified') is not True:
             raise HTTPException(status_code=404, detail='publication draft not found')
+        if decision == 'begin_submit_public':
+            raise HTTPException(status_code=422, detail=_PROJECT_AGENT_KNOWLEDGE)
 
     async def _stored_draft(self, space, draft_id) -> dict | None:
         records, _, _ = await self.runtime.driver.execute_query(
@@ -186,7 +189,7 @@ class StorePublication:
             return await self.decide_publication_submission(actor, personal_space_id, draft_id, decision)
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'maintainer')
-        await self._refuse_project_agent_draft(actor, space, draft_id)
+        await self._refuse_project_agent_draft(actor, space, draft_id, decision.decision)
         records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-

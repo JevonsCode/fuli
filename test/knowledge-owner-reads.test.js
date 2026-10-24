@@ -203,8 +203,32 @@ test('publication drafts: an Agent tool reads as a plain session; the console li
   const { sent, ownerReads } = recordingPort();
   assert.equal((await consoleGet(app, `/api/personal-review?personalSpaceId=${SPACE}&status=submitted`, ownerReads)).status,
     200);
-  assert.deepEqual(sent, [{ path: '/v1/publication-drafts', method: 'GET', review: true,
-    query: { personal_space_id: SPACE, status: 'submitted' } }]);
-  assert.deepEqual(calls.map(call => call.query), [{ personal_space_id: SPACE, status: 'all', metadata_only: 'true' }],
-    'only the metadata reconciliation stays on the Agent client');
+  // Reconciliation settles the person's drafts on the same channel: an FLA's draft, even erased, is theirs alone.
+  assert.deepEqual(sent, [
+    { path: '/v1/publication-drafts', method: 'GET', review: true,
+      query: { personal_space_id: SPACE, status: 'all', metadata_only: 'true' } },
+    { path: '/v1/publication-drafts', method: 'GET', review: true,
+      query: { personal_space_id: SPACE, status: 'submitted' } }]);
+  assert.deepEqual(calls, [], 'nothing of the console\'s list or settlement leaves on the Agent client');
+});
+
+test('the console\'s settlement of an uncertain submission goes through its port with the proof', async () => {
+  const { app, calls } = application();
+  const sent = [];
+  const draft = { id: 'draft-1', status: 'submission_unknown', submission_id: 'attempt-1',
+    submission_started_at: '2026-10-24T00:00:00Z', provider_url: 'https://public.example',
+    target_project_id: 'team', source_identity: { idempotency_key: 'key-1' } };
+  const ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async (path, body, options) => {
+    sent.push({ path: path.split('?')[0], body, review: options.review, method: options.method });
+    return { ok: true, status: 200, payload: options.method === 'GET' ? [draft] : draft };
+  } });
+  const lookups = [];
+  const team = { lookupProposal: async (...args) => { lookups.push(args.slice(0, 2)); return { id: 'p-1', status: 'pending' }; } };
+  app.workspaces.set('https://public.example', { client: team });
+  await app.reconcilePersonalSubmissions({}, ownerReads);
+  assert.deepEqual(lookups, [['team', 'key-1']]);
+  assert.deepEqual(sent.map(({ path, review, method }) => [method, path, review]), [
+    ['GET', '/v1/publication-drafts', true], ['POST', '/v1/publication-drafts/draft-1/decision', true]]);
+  assert.equal(sent[1].body.decision, 'reconcile_submit_public');
+  assert.deepEqual(calls, []);
 });
