@@ -5,6 +5,14 @@ import { utf8Preview } from '../text/utf8-preview.js';
 
 export const AUTOMATIC_RECALL_BYTES = 4 * 1024;
 export const SEARCH_PAGE_BYTES = 8 * 1024;
+const QUERY_PREVIEW_BYTES = 160;
+const PROJECT_ID_LIST_BYTES = 512;
+const PROJECT_ID_LISTS = ['searchedPersonalProjectIds', 'requestedProjectIds', 'searchedProjectIds', 'failedProjectIds'];
+// What a search call derives from its scope rather than from one query's
+// results. A compound search states each once when every query shares it.
+const CALL_SCOPE_FIELDS = ['retrievalGuidance', 'noMatchSourceMarker', 'personalGlobalIncluded',
+  'personalProjectScope', 'projectAgentId', ...PROJECT_ID_LISTS, 'project_ids_omitted', 'partial',
+  'subscriptions_omitted'];
 const jsonBytes = value => Buffer.byteLength(JSON.stringify(value));
 
 function itemPreview(item, textBytes) {
@@ -85,21 +93,28 @@ export function budgetKnowledgeSearch(value, { cursor, context, consoleUrl,
     if (!Number.isSafeInteger(index) || !Number.isSafeInteger(offset) || index >= entries.length
       || offset >= Array.from(entries[index].serialized).length) throw staleCursor();
   }
-  const whole = { ...value, retrieval_budget: { limit_bytes: SEARCH_PAGE_BYTES, complete: true } };
+  const whole = { ...(compound ? sharedScope(value, value.results) : value),
+    retrieval_budget: { limit_bytes: SEARCH_PAGE_BYTES, complete: true } };
   if (!cursor && jsonBytes(whole) <= SEARCH_PAGE_BYTES) return whole;
-  const bases = groups.map(searchMetadata);
+  const top = compound ? sharedScope(searchMetadata(value), groups.map(searchMetadata)) : null;
+  const bases = compound ? top.results : [searchMetadata(value)];
   const selected = [];
   const render = (nextIndex, nextOffset = 0) => {
     const rendered = bases.map((base, group) => {
       const local = selected.filter(entry => entry.group === group);
+      const total_items = lists[group].length;
+      // A query with nothing on this page names itself and its count only;
+      // its details come with the page that carries its records.
+      if (compound && !local.length) return compactGroup(base, total_items);
       const facts = local.filter(entry => entry.kind === 'facts').map(entry => entry.view);
       const entities = local.filter(entry => entry.kind === 'entities').map(entry => entry.view);
-      return { ...base, facts, entities, sourceMarker: marker({ facts, entities }, consoleUrl),
-        noMatchSourceMarker: marker({}, consoleUrl) };
+      const view = { ...base, facts, entities, sourceMarker: marker({ facts, entities }, consoleUrl) };
+      return compound ? { ...view, total_items } : { ...view, noMatchSourceMarker: marker({}, consoleUrl) };
     });
     const next = nextIndex < entries.length ? encode(nextIndex, nextOffset) : null;
-    return { ...(compound ? { ...searchMetadata(value), results: rendered } : rendered[0]),
-      retrieval_budget: { limit_bytes: SEARCH_PAGE_BYTES, complete: !next, returned_items: selected.length },
+    return { ...(compound ? { ...top, noMatchSourceMarker: marker({}, consoleUrl), results: rendered } : rendered[0]),
+      retrieval_budget: { limit_bytes: SEARCH_PAGE_BYTES, complete: !next, returned_items: selected.length,
+        total_items: entries.length },
       ...(next ? { next_cursor: next, continuation_tool: 'fuli_call', continuation_tool_name: toolName,
         continuation_guidance: 'Repeat the same search and scope with next_cursor as cursor through fuli_call; do not widen scope.' } : {}) };
   };
@@ -142,12 +157,45 @@ function identityPreview(item) {
     .filter(key => item[key] !== undefined).map(key => [key, item[key]]));
 }
 
+// Fields every query group shares move to the top level once; a field that
+// differs between queries stays on each group.
+function sharedScope(top, groups) {
+  const shared = CALL_SCOPE_FIELDS.filter(key => groups.length && !(key in top) && key in groups[0]
+    && groups.every(group => key in group && JSON.stringify(group[key]) === JSON.stringify(groups[0][key])));
+  return { ...top, ...Object.fromEntries(shared.map(key => [key, groups[0][key]])),
+    results: groups.map(group => Object.fromEntries(Object.entries(group).filter(([key]) => !shared.includes(key)))) };
+}
+
+function compactGroup(base, total_items) {
+  return { query: base.query, total_items,
+    ...Object.fromEntries(CALL_SCOPE_FIELDS.filter(key => key in base).map(key => [key, base[key]])) };
+}
+
+// Scope lists are informational: a continuation re-runs the search from its
+// own input, so a page may name a prefix and count the rest.
+function boundedIds(ids) {
+  const kept = [];
+  for (const id of ids) {
+    if (jsonBytes([...kept, id]) > PROJECT_ID_LIST_BYTES) break;
+    kept.push(id);
+  }
+  return kept;
+}
+
 function searchMetadata(value) {
   const { facts, entities, results, sourceMarker, noMatchSourceMarker, subscriptions,
     relatedProjectSuggestions, related_project_suggestions, ...rest } = value;
   const result = { ...rest };
-  if (typeof result.query === 'string') result.query = utf8Preview(result.query, 256);
+  if (typeof result.query === 'string') result.query = utf8Preview(result.query, QUERY_PREVIEW_BYTES);
   if (subscriptions?.length) result.subscriptions_omitted = subscriptions.length;
+  for (const key of PROJECT_ID_LISTS) {
+    if (!Array.isArray(result[key])) continue;
+    const kept = boundedIds(result[key]);
+    if (kept.length < result[key].length) {
+      result.project_ids_omitted = { ...result.project_ids_omitted, [key]: result[key].length - kept.length };
+    }
+    result[key] = kept;
+  }
   for (const [key, items] of [['relatedProjectSuggestions', relatedProjectSuggestions],
     ['related_project_suggestions', related_project_suggestions]]) {
     if (!Array.isArray(items)) continue;
