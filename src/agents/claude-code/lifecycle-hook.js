@@ -27,7 +27,7 @@ import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
-import { entryBudget, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
+import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
 
 export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
@@ -93,9 +93,10 @@ export function claudeLifecycleUnavailable(event, input = null, reason = null, i
 // what is missing (entry-budget.js); otherwise the fallback says what to fetch.
 export function claudeEntryDeadlineOutput(event, input, budget) {
   const partial = event === 'UserPromptSubmit' ? partialEntryText(budget) : null;
-  return partial ? { systemMessage: 'Fuli task context is partial: the hook deadline came before it was complete.',
+  const output = partial ? { systemMessage: 'Fuli task context is partial: the hook deadline came before it was complete.',
     hookSpecificOutput: { hookEventName: event, additionalContext: partial } }
     : claudeLifecycleUnavailable(event, input, null, NO_TASK_AT_DEADLINE);
+  return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, entryNotice(budget)) : output;
 }
 
 export async function runClaudeLifecycleHook(args, dependencies = {}) {
@@ -107,6 +108,9 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
   );
   const ledger = runtimeConfigPath && typeof input?.session_id === 'string' && input.session_id.trim()
     ? transcriptCaptureLedger(runtimeConfigPath, input, 'claude_code') : null;
+  // Noted before the entry runs, so an answer at the deadline carries it too.
+  const notice = noteEntryNotice(() => outdatedMcpNotice(runtimeConfigPath,
+    { sourceApplication: 'claude_code', version: FULI_VERSION, sessionId: input?.session_id }));
   // A turn whose ownership cannot be proven is held as unresolved before
   // anything else can fail or return: whatever the read below finds, its
   // Stop neither settles the session's task nor records the turn under it.
@@ -159,8 +163,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CLAUDE_UNRESOLVED_TURNS);
       return lifecycle;
     }), request);
-    return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
-      { sourceApplication: 'claude_code', version: FULI_VERSION, sessionId: input.session_id })) : output;
+    return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, notice()) : output;
   } finally {
     await Promise.allSettled([close(leases), close(app)]);
   }

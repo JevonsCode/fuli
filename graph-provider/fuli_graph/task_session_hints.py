@@ -19,7 +19,8 @@ HINTS_KEY = 'session_hints'
 
 async def claim_session_hint(store, actor: dict, token: str, request) -> dict:
     """claimed is True for exactly one current entry of the session; a
-    superseded task (404) or an earlier claim of the operation gets nothing."""
+    superseded task (404) or an earlier claim of the operation gets nothing.
+    A peek takes nothing and says whether a claim would still win."""
     store._require_personal()
     await store.authorize(actor, request.personal_space_id, 'maintainer')
     async with query_store_transaction(store) as scoped:
@@ -34,8 +35,11 @@ async def claim_session_hint(store, actor: dict, token: str, request) -> dict:
             WHERE task.record_json CONTAINS $key
             RETURN task.record_json AS record_json
             ''', space_id=request.personal_space_id, token=token, key=f'"{HINTS_KEY}"')
-        if any(hint.get('operation') == request.operation
-               for row in rows for hint in json.loads(row['record_json']).get(HINTS_KEY) or []):
+        used = any(hint.get('operation') == request.operation
+                   for row in rows for hint in json.loads(row['record_json']).get(HINTS_KEY) or [])
+        if request.peek:
+            return {'claimed': False, 'available': not used}
+        if used:
             return {'claimed': False}
         record[HINTS_KEY] = [*(record.get(HINTS_KEY) or []),
                              {'operation': request.operation, 'at': now_utc().isoformat()}]

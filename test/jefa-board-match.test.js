@@ -91,6 +91,11 @@ function taskContexts() {
         session.hints.push({ operation, at: new Date().toISOString() });
         return true;
       },
+      sessionHintAvailable: async (token, operation) => {
+        calls.push({ peek: token, operation });
+        const session = sessionOf(token);
+        return session?.current === token && !session.hints.some(hint => hint.operation === operation);
+      },
       ...Object.fromEntries(['adoptAgent', 'bindCoordinationTask', 'prepare', 'checkpoint'].map(name =>
         [name, async () => { calls.push({ write: name }); throw new Error(`${name} must not run`); }]))
     },
@@ -321,12 +326,26 @@ test('with under 4 s of the hook\'s time left Jefa is skipped and recorded: no c
   const low = await begin(3000);
   assert.deepEqual(jefaOf(low).suggested_match, { status: 'skipped', reason: 'entry_time_low' });
   assert.deepEqual(run.modelCalls, []);
-  assert.deepEqual(run.contexts.calls, [], 'no claim');
+  assert.deepEqual(run.contexts.calls.filter(call => call.claim), [], 'no claim');
   assert.equal(run.reads(), 1, 'only the entry\'s own board read');
   assert.deepEqual(run.suggestions(), []);
   const ample = await begin(15_000);
   assert.equal(jefaOf(ample).suggested_match.status, 'suggested');
   assert.equal(run.modelCalls.length, 1);
+  run.assertNoWrites();
+});
+
+test('with little time left nothing is shown once the session used its hint, not a skip', async () => {
+  const run = harness({ roles: { jefa: jefaRole() }, replies: [answer()] });
+  const begin = (budgetMs, sessionId = 'synthetic-session-a') => runWithEntryBudget(entryBudget(budgetMs), () => run.app.beginTaskContext({
+    projectPath: GARDEN_PATH, sourceApplication: 'codex', sessionId, taskPrompt: PROMPT }));
+  assert.equal(jefaOf(await begin(15_000)).suggested_match.status, 'suggested');
+  const after = await begin(3000);
+  assert.equal(jefaOf(after).suggested_match, undefined, 'the session already used its hint');
+  assert.equal(run.contexts.calls.filter(call => call.claim).length, 1);
+  assert.equal(run.modelCalls.length, 1);
+  // Another session still gets the skip: its hint is unused.
+  assert.deepEqual(jefaOf(await begin(3000, 'synthetic-session-b')).suggested_match, { status: 'skipped', reason: 'entry_time_low' });
   run.assertNoWrites();
 });
 

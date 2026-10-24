@@ -50,13 +50,15 @@ describe('localized route metadata', () => {
     expect(router.resolve('/settings').meta.saveBar).toBe(true)
   })
 
-  it('puts 职业, the Jefa board and the Bole team on the work canvas, and the list workbenches in the content column', () => {
+  it('puts 职业, the Jefa board and the Bole team on the work canvas, the known list workbenches in the content column and installed ones on the canvas', () => {
     expect(router.resolve('/project-agents/occupations').meta.layout).toBe('canvas')
     expect(router.resolve('/project-agents/occupations').meta.detail).toBeUndefined()
     const workbench = router.resolve('/employees/jefa')
     expect(workbench.name).toBe('employee-workbench')
     expect(pageLayout(workbench)).toBe('canvas')
     expect(['/employees/bole', '/employees/assistant', '/employees/tonborg'].map(layoutOf)).toEqual(['canvas', 'column', 'column'])
+    // An installed employee's workbench may be a board or a table: the canvas.
+    expect(layoutOf('/employees/synthetic-installed')).toBe('canvas')
     expect(workbench.meta.detail).toBe(true)
   })
 

@@ -277,6 +277,22 @@ function failingRegistry(host) {
 }
 
 // The runner's stop fails this many times, then works.
+test('a late stop after an exited app\'s failed stop keeps the seal\'s reason, not the close that retried it', async (t) => {
+  const { registry, host, appId } = await running(t);
+  // The exit's own stop and the close's retry fail; close's last stop succeeds.
+  const remaining = failingStops(host, 2);
+  host.runner.started.at(-1).onExit({ code: 1, signal: null, category: 'crashed' });
+  await settle();
+  assert.equal(instance(host, appId).state, 'sealed');
+  assert.ok(events(host, appId).includes('stop_failed'));
+  await host.service.close();
+  assert.equal(remaining.count, 0);
+
+  const ended = instance(registry.host({ pid: 202 }), appId);
+  assert.deepEqual([ended.state, ended.stopReason], ['sealed', 'app_exited']);
+  assert.ok(ended.stoppedAt);
+});
+
 function failingStops(host, count) {
   const remaining = { count };
   host.runner.hooks.stop = async () => {

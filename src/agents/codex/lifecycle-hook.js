@@ -24,7 +24,7 @@ import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
-import { entryBudget, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
+import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
 
 // Task entry gets longer: a warm entry already takes 2–4 s on a Mac and a cold
 // first one ran past 5 s, which costs the model two fallback requests. Both
@@ -95,6 +95,9 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
   );
   const ledger = runtimeConfigPath && typeof input?.session_id === 'string' && input.session_id.trim()
     ? transcriptCaptureLedger(runtimeConfigPath, input, 'codex') : null;
+  // Noted before the entry runs, so an answer at the deadline carries it too.
+  const notice = noteEntryNotice(() => outdatedMcpNotice(runtimeConfigPath,
+    { sourceApplication: 'codex', version: FULI_VERSION, sessionId: input?.session_id }));
   // A turn whose ownership cannot be proven is held as unresolved before
   // anything else can fail or return: whatever the read below finds, its
   // Stop neither settles the session's task nor records the turn under it.
@@ -149,8 +152,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CODEX_UNRESOLVED_TURNS);
       return lifecycle;
     }, { signal: dependencies.signal });
-    const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
-      { sourceApplication: 'codex', version: FULI_VERSION, sessionId: input?.session_id })) : output;
+    const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, notice()) : output;
     write(`${JSON.stringify(delivered)}\n`);
     return delivered;
   } finally {
@@ -254,9 +256,10 @@ function codexLifecycleUnavailable(event, input, cause, incomplete = '') {
 // what is missing (entry-budget.js); otherwise the fallback says what to fetch.
 function codexEntryDeadlineOutput(event, input, budget, cause) {
   const partial = event === 'UserPromptSubmit' && !isCodexReviewCommand(input?.prompt) ? partialEntryText(budget) : null;
-  return partial ? { systemMessage: `Fuli task context is partial (${cause}).`,
+  const output = partial ? { systemMessage: `Fuli task context is partial (${cause}).`,
     hookSpecificOutput: { hookEventName: event, additionalContext: partial } }
     : codexLifecycleUnavailable(event, input, cause, NO_TASK_AT_DEADLINE);
+  return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, entryNotice(budget)) : output;
 }
 
 export async function runCodexLifecycleCommand(args, dependencies = {}) {

@@ -73,6 +73,11 @@ function taskContexts() {
         session.hints.push({ operation, at: new Date().toISOString() });
         return true;
       },
+      sessionHintAvailable: async (token, operation) => {
+        calls.push({ peek: token, operation });
+        const session = sessionOf(token);
+        return session?.current === token && !session.hints.some(hint => hint.operation === operation);
+      },
       ...Object.fromEntries(['adoptAgent', 'bindCoordinationTask', 'prepare', 'checkpoint'].map(name =>
         [name, async () => { calls.push({ write: name }); throw new Error(`${name} must not run`); }]))
     },
@@ -269,6 +274,20 @@ test('with under 4 s of the hook\'s time left Astro is skipped and recorded: no 
   const ample = await runWithEntryBudget(entryBudget(15_000), () => run.entry());
   assert.equal(ample.project_candidate.status, 'suggested');
   assert.equal(run.modelCalls.length, 1);
+});
+
+test('with little time left the skip is shown only where a hint could be: none once the session used it or with no approved candidate', async () => {
+  const used = harness({ role: astroRole(), replies: [answer()], faithfulCurrent: false });
+  assert.equal((await runWithEntryBudget(entryBudget(15_000), () => used.entry())).project_candidate.status, 'suggested');
+  const after = await runWithEntryBudget(entryBudget(3000), () => used.entry({ taskPrompt: '再看看花园浇水提醒' }));
+  assert.equal(after.project_candidate, undefined, 'the session already used its hint: nothing, not skipped');
+  assert.equal(used.contexts.hintClaims().length, 1);
+  assert.equal(used.modelCalls.length, 1);
+  const unapproved = harness({ role: astroRole({ egress: { approvedProjects: [], allowUnassigned: true } }), replies: [answer()] });
+  const none = await runWithEntryBudget(entryBudget(3000), () => unapproved.entry());
+  assert.equal(none.project_candidate, undefined, 'no approved candidate: nothing, not skipped');
+  assert.deepEqual(unapproved.contexts.calls, [], 'no claim and no peek');
+  assert.deepEqual(unapproved.modelCalls, []);
 });
 
 test('the prompt without a project needs allowUnassigned; none shows nothing', async () => {

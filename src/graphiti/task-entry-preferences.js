@@ -31,8 +31,7 @@ export function beginTaskEntry(application, input) {
     const entry = await beginTaskContext(application, input);
     // Its task and opening writes are done: a hook deadline from here on
     // delivers the token instead of nothing (entry-budget.js).
-    noteEntryTask({ token: entry.task_context_token, projectAgentId: entry.context?.project_agent_id ?? null,
-      checkpointRequired: entry.checkpoint_required, checkpointGuidance: entry.checkpoint_guidance ?? null });
+    noteEntryTask(entry);
     return withEntryHint(application, entry, input);
   });
 }

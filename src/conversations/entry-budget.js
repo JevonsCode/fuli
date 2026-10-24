@@ -14,7 +14,7 @@ const HINT_MIN_REMAINING_MS = 4000;
 const HINT_SKIPPED = Object.freeze({ status: 'skipped', reason: 'entry_time_low' });
 
 export function entryBudget(timeoutMs, { now = Date.now } = {}) {
-  return { deadline: now() + timeoutMs, now, task: null };
+  return { deadline: now() + timeoutMs, now, task: null, notice: null };
 }
 
 export function runWithEntryBudget(budget, operation) {
@@ -27,33 +27,59 @@ export function entryHintSkipped() {
   return budget && budget.deadline - budget.now() < HINT_MIN_REMAINING_MS ? HINT_SKIPPED : null;
 }
 
+// What an entry already holds once its task is written and is cheap to carry:
+// delivered as it is at the deadline, so a partial entry still says how to
+// checkpoint, and that the person asked to keep something.
+const DELIVERED_AT_DEADLINE = Object.freeze(['checkpoint_required', 'checkpoint_guidance', 'remember_guidance',
+  'previous_checkpoint_missing', 'project_scope']);
+
 // The task this entry wrote, with its opening writes done in time. One noted
 // after the deadline was cut short and is never delivered.
-export function noteEntryTask({ token, projectAgentId, checkpointRequired, checkpointGuidance = null }) {
+export function noteEntryTask(entry) {
   const budget = budgets.getStore();
-  if (budget && budget.now() < budget.deadline) budget.task = { token, projectAgentId, checkpointRequired, checkpointGuidance };
+  if (!budget || budget.now() >= budget.deadline) return;
+  budget.task = { token: entry.task_context_token, projectAgentId: entry.context?.project_agent_id ?? null,
+    delivered: Object.fromEntries(DELIVERED_AT_DEADLINE.filter(field => entry[field] !== undefined && entry[field] !== null)
+      .map(field => [field, entry[field]])) };
+}
+
+// A notice the hook adds to its prompt answer (an outdated MCP process) that
+// its deadline answer carries too. Noted before the entry runs and read at
+// most once, by whichever answer comes first, since it is shown once.
+export function noteEntryNotice(read) {
+  let notice;
+  const once = () => (notice ??= { text: read() }).text;
+  const budget = budgets.getStore();
+  if (budget) budget.notice = once;
+  return once;
+}
+
+// The notice noted for this entry, or null.
+export function entryNotice(budget) {
+  return budget?.notice?.() ?? null;
 }
 
 const PARTIAL_ENTRY_LABEL = 'Fuli task context is partial: the hook deadline came before the entry was complete. '
   + 'Fetch each part listed in entry_incomplete with its tool before relying on it. Pass taskContextToken to every FULI call.';
 
 // What a hook delivers at its deadline once its entry wrote the task: the
-// token and what is missing, each with the existing tool that fetches it,
-// instead of nothing. Before the task is written, or for a task its reader
-// cannot recover (no Agent), null: the hook keeps its fallback, a new entry
-// through get_collaboration_preferences that supersedes a task written late.
+// token, what the entry already held, and what is missing, each with the
+// existing tool that fetches it, instead of nothing. Before the task is
+// written, or for a task its reader cannot recover (no Agent), null: the hook
+// keeps its fallback, a new entry through get_collaboration_preferences that
+// supersedes a task written late.
 export function partialEntryText(budget) {
   const task = budget?.task;
   if (!task?.projectAgentId) return null;
   return `${PARTIAL_ENTRY_LABEL}\n${JSON.stringify({
     taskContextToken: task.token,
-    checkpoint_required: task.checkpointRequired,
-    ...(task.checkpointGuidance ? { checkpoint_guidance: task.checkpointGuidance } : {}),
+    ...task.delivered,
     entry_incomplete: { reason: 'entry_deadline', missing: [
-      { parts: ['effective_preferences', 'project_agent_context', 'judgment_context', 'agent_receipt'],
+      { parts: ['effective_preferences', 'project_agent_context', 'task_guidance', 'judgment_context', 'agent_receipt'],
         tool: 'read_task_preferences', arguments: { taskContextToken: task.token } },
       { parts: ['project_management_context'], tool: 'list_employee_tools' },
-      { parts: ['task_knowledge_recall'], tool: 'search_current_project_knowledge' }
+      { parts: ['task_knowledge_recall'], tool: 'search_current_project_knowledge' },
+      { parts: ['agent_messages', 'attention_replies'], tool: 'read_agent_messages', arguments: { taskContextToken: task.token } }
     ], transcript_capture: 'unverified' }
   })}`;
 }
