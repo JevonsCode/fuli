@@ -5,13 +5,14 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { callAgentTool } from '../src/agent-tools.js';
+import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 import { claudeEntryDeadlineOutput } from '../src/agents/claude-code/lifecycle-hook.js';
 import { runCodexLifecycleCommand, runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { entryBudget, noteEntryNotice, noteEntryTask, partialEntryText, runWithEntryBudget } from '../src/conversations/entry-budget.js';
 import { openFederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
 import { withSharedProjectList } from '../src/graphiti/shared-project-list.js';
+import { createToolInputValidator } from '../src/mcp/tool-input-budget.js';
 
 // Task entry latency (rec#39 D-40): parallel Provider reads, and what a hook
 // delivers at its deadline. A synthetic data directory and an in-memory
@@ -60,6 +61,16 @@ function fakeProvider({ latencyMs, hold = null, together = [] }) {
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   return { requests, stats, fetchImpl };
+}
+
+// Every recovery step a partial entry lists is a call its tool accepts as given.
+async function assertExecutable(missing) {
+  const tools = new Map(listAgentTools().map(definition => [definition.name, definition]));
+  for (const step of missing) {
+    assert.ok(tools.has(step.tool), `${step.tool} is a FULI tool`);
+    const parsed = await createToolInputValidator(tools.get(step.tool).inputSchema).parse(step.arguments ?? {});
+    assert.equal(parsed.success, true, `${step.tool} accepts ${JSON.stringify(step.arguments)}`);
+  }
 }
 
 async function syntheticHost(t) {
@@ -133,9 +144,11 @@ test('at the deadline an entry that wrote its task delivers the token and names 
   assert.equal(context.taskContextToken, token);
   assert.equal(context.checkpoint_required, false);
   assert.match(context.checkpoint_guidance, /Stop hook closes the task/);
-  assert.deepEqual(context.entry_incomplete.missing.map(item => item.tool),
-    ['read_task_preferences', 'list_employee_tools', 'search_current_project_knowledge', 'read_agent_messages']);
+  // The receipt the entry built is delivered; only what this answer leaves out is listed, each as a valid call.
+  assert.match(context.agent_receipt.markdown, /^FULI Agent：/);
+  assert.deepEqual(context.entry_incomplete.missing.map(item => item.tool), ['read_task_preferences']);
   assert.deepEqual(context.entry_incomplete.missing[0].arguments, { taskContextToken: token });
+  await assertExecutable(context.entry_incomplete.missing);
   assert.ok(context.entry_incomplete.missing[0].parts.includes('effective_preferences'));
   assert.equal(context.entry_incomplete.transcript_capture, 'unverified');
   assert.doesNotMatch(writes[0], /Synthetic scheduled check|fuli-entry-latency/);
@@ -189,13 +202,13 @@ test('Claude Code at its deadline delivers the same partial entry, or its fallba
   assert.equal(claudeEntryDeadlineOutput('Stop', input, budget).hookSpecificOutput, undefined);
 });
 
-test('a partial entry carries what the entry already held and names every part it omits with its tool', () => {
+test('a partial entry carries what the entry already held and names every part it omits with its tool', async () => {
   const budget = entryBudget(1000);
   const scope = { type: 'temporary', personal_project_id: 'synthetic-temporary' };
   runWithEntryBudget(budget, () => noteEntryTask({ task_context_token: 'fuli-task-synthetic-3', context: { project_agent_id: 'project.lead' },
     checkpoint_required: true, checkpoint_guidance: null, remember_guidance: 'Synthetic remember guidance.',
     previous_checkpoint_missing: true, project_scope: scope, task_guidance: { checkpoint: 'Synthetic.' },
-    effective_preferences: [{ id: 'synthetic-preference' }] }));
+    effective_preferences: [{ id: 'synthetic-preference' }], agent_messages: [{ message_id: 'synthetic-message' }] }));
   const context = JSON.parse(partialEntryText(budget).split('\n')[1]);
   // Checkpointing is still guided, and the person's request to keep something is not lost.
   assert.equal(context.remember_guidance, 'Synthetic remember guidance.');
@@ -209,7 +222,50 @@ test('a partial entry carries what the entry already held and names every part i
   assert.equal(missing.task_guidance, 'read_task_preferences');
   assert.equal(missing.effective_preferences, 'read_task_preferences');
   assert.equal(missing.agent_messages, 'read_agent_messages');
-  assert.equal(missing.attention_replies, 'read_agent_messages');
+  assert.equal('attention_replies' in missing, false, 'none were waiting');
+  await assertExecutable(context.entry_incomplete.missing);
+});
+
+test('a partial entry keeps the built receipt and management context, and lists only real recovery calls', async () => {
+  const budget = entryBudget(1000);
+  const receipt = { required: true, markdown: 'FULI Agent：Lead\nFULI 上轮沉淀（补发） 1 条：\n- 新增 事实「Synthetic fact」',
+    owner: { agent_id: 'project.lead' }, guidance: 'Synthetic receipt guidance.' };
+  const manager = { template_id: 'employee.synthetic-manager', agent_id: 'employee.synthetic-manager', name: 'Synthetic manager',
+    personal_project_id: 'synthetic-project', scope_mode: 'all', title_mode: 'suggest', title_style: 'text',
+    board: { version: 'v1', total: 1, truncated: false, items: [{ id: 'item-1', title: 'Synthetic item', status: 'todo' }] },
+    tools: { discover: 'list_employee_tools', call: 'call_employee_tool', read_board: 'read_board', prepare_title: null },
+    guidance: 'Synthetic manager routing.' };
+  const memory = { revision: 2, current: { memory: { summary: 'Synthetic notes' } } };
+  runWithEntryBudget(budget, () => noteEntryTask({ task_context_token: 'fuli-task-synthetic-5',
+    context: { personal_space_id: 'synthetic-space', personal_project_id: 'synthetic-project', project_agent_id: 'project.lead' },
+    checkpoint_required: true, agent_receipt: receipt, effective_preferences: [], task_guidance: {},
+    project_management_context: { status: 'ready', managers: [manager], worker_started: false },
+    project_agent_context: { status: 'ready', memory, global_memory: memory }, judgment_context: { agentId: 'employee.tonborg' },
+    task_knowledge_recall: { status: 'not_needed', facts: [], entities: [] } }));
+  const context = JSON.parse(partialEntryText(budget).split('\n')[1]);
+  // Claimed earlier turns' items are shown here or nowhere.
+  assert.equal(context.agent_receipt.markdown, receipt.markdown);
+  // Routing and title policy as the entry built them; the board is read on demand by its own tool.
+  const delivered = context.project_management_context.managers[0];
+  assert.equal(delivered.guidance, 'Synthetic manager routing.');
+  assert.equal(delivered.title_mode, 'suggest');
+  assert.deepEqual(delivered.board, { version: 'v1', total: 1, view: 'on_demand', guidance: delivered.board.guidance });
+  await assertExecutable([{ tool: delivered.tools.discover,
+    arguments: { templateId: delivered.template_id, personalProjectId: delivered.personal_project_id } }]);
+  assert.deepEqual(context.task_knowledge_recall, { status: 'not_needed', facts: [], entities: [] });
+  const { missing } = context.entry_incomplete;
+  const parts = missing.flatMap(item => item.parts);
+  for (const part of ['agent_receipt', 'project_management_context', 'task_knowledge_recall', 'agent_messages']) {
+    assert.equal(parts.includes(part), false, `${part} is not listed as missing`);
+  }
+  assert.deepEqual(missing.map(item => item.tool), ['read_task_preferences', 'get_project_agent_memory', 'get_project_agent_memory']);
+  assert.deepEqual(missing[0].parts, ['effective_preferences', 'task_guidance', 'project_agent_context', 'judgment_context']);
+  assert.match(missing[0].note, /not working memory/);
+  assert.match(missing[0].note, /copy this entry's agent_receipt/);
+  assert.deepEqual(missing.slice(1).map(({ parts: [part], arguments: args }) => [part, args.personalProjectId]),
+    [['project_agent_context.memory', 'synthetic-project'], ['project_agent_context.global_memory', null]]);
+  await assertExecutable(missing);
+  await assert.rejects(assertExecutable([{ tool: 'list_employee_tools' }]), 'a call without its required templateId is refused');
 });
 
 test('the outdated-MCP notice reaches the deadline answer, and is read only once', () => {

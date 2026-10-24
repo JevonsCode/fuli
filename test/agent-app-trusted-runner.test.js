@@ -57,12 +57,12 @@ function trustedRunner(t) {
       }
     }
   });
-  // What each start was asked for, the token among it. hooks.start and
-  // hooks.stop, when set, run first (and may wait or throw).
+  // What each start was asked for, the token among it. hooks.start(spec) and
+  // hooks.stop(handle), when set, run first (and may wait or throw).
   const hooks = {};
   const runner = { ...trusted,
-    start: async (spec) => { started.push(spec); await hooks.start?.(); return trusted.start(spec); },
-    stop: async (handle) => { await hooks.stop?.(); return trusted.stop(handle); } };
+    start: async (spec) => { started.push(spec); await hooks.start?.(spec); return trusted.start(spec); },
+    stop: async (handle) => { await hooks.stop?.(handle); return trusted.stop(handle); } };
   return { runner, children, started, hooks };
 }
 
@@ -282,6 +282,60 @@ test('a close whose stops fail reports the app not stopped, keeps its handle and
 
   await host.service.close();
   assert.equal(alive(child), false);
+  assert.equal(host.context.instances.idle(), true);
+});
+
+// rec#10 review 6379740117 item 1: a start that returns while close is
+// stopping another app, and whose stop fails, keeps close incomplete.
+test('a late start whose stop fails while close stops another app is reported, and the next close stops it', async (t) => {
+  const { host, children, hooks } = await trustedHost(t, { closeWaitMs: 50 });
+  const runtime = { apiVersion: 1, entry: 'service/main.js' };
+  const first = await verifiedApp(host, { runtime }, FILES);
+  const second = await verifiedApp(host, { name: 'dispatch-log-b', title: 'Dispatch log B', runtime }, FILES);
+  await host.service.start({ appId: first.appId });
+  const childA = childOf(host, first.appId);
+  const entered = latch();
+  const resume = latch();
+  hooks.start = async ({ appId }) => {
+    if (appId !== second.appId) return;
+    entered.open();
+    await resume.promise;
+  };
+  const late = host.service.start({ appId: second.appId });
+  await entered.promise;
+  // A stops slowly (the seal's stop, then close's stop of its held handle); B's stops fail until allowed.
+  let stopsOfA = 0;
+  const releaseA = latch();
+  let failB = true;
+  hooks.stop = async (handle) => {
+    if (handle.child === childA) {
+      stopsOfA += 1;
+      await releaseA.promise;
+      return;
+    }
+    if (failB) throw Object.assign(new Error('synthetic stop failure'), { code: 'ESYNTH' });
+  };
+
+  const closing = host.service.close();
+  await until(() => stopsOfA === 2, 'close stopping A through its held handle');
+  resume.open();
+  await assert.rejects(late, { code: 'ESYNTH' });
+  const childB = [...children.values()].find((child) => child !== childA);
+  assert.equal(alive(childB), true, 'the late start spawned B and its stop failed');
+  releaseA.open();
+
+  await assert.rejects(closing, (error) => error.code === 'close_incomplete' && error.detail.complete === false
+    && error.detail.startsInFlight === 0 && error.detail.notStopped.length === 1
+    && error.detail.notStopped[0].appId === second.appId && error.detail.notStopped[0].pid === childB.pid
+    && error.detail.notStopped[0].code === 'ESYNTH');
+  assert.equal(alive(childA), false);
+  assert.equal(alive(childB), true, 'never reported as closed while it runs');
+  assert.equal(host.context.instances.idle(), false, 'B\'s handle is still held');
+
+  failB = false;
+  await host.service.close();
+  assert.equal(children.size, 2);
+  for (const child of children.values()) assert.equal(alive(child), false, 'no app process outlives the close');
   assert.equal(host.context.instances.idle(), true);
 });
 
