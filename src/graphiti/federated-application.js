@@ -104,6 +104,7 @@ import { createSessionPreferenceDelivery } from '../conversations/preference-ses
 import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import { providerReaderFields, taskKnowledgeReader } from './knowledge-reader.js';
+import { queuePublicationDraft } from './publication-draft-capture.js';
 import { knowledgeTags } from './knowledge-tags.js';
 import { withSharedProjectList } from './shared-project-list.js';
 
@@ -267,20 +268,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       const result = await this.personal.commit(commit);
       return { route: 'personal', ...result };
     }
-    const draft = await this.personal.createPublicationDraft({
-      personal_space_id: this.config.personal.spaceId,
-      target_project_id: input.spaceId,
-      provider_url: workspace.providerUrl,
-      episode
-    });
-    // A retry may find it made and unreadable to this caller: only already_exists + draft_id, a success.
-    return {
-      route: 'personal_review',
-      status: draft.status,
-      draftId: draft.id ?? draft.draft_id,
-      projectId: input.spaceId,
-      providerUrl: workspace.providerUrl
-    };
+    return queuePublicationDraft(this, { input, workspace, episode });
   }
 
   async recordWorkflowTransitionObservation(input) {

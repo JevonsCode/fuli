@@ -101,7 +101,6 @@ from .models import (
     ProjectDeleteResult,
     ProjectReleaseRecord,
     PublicationDraftCreate,
-    PublicationDraftExists,
     PublicationDraftRecord,
     ProposalCreate,
     ProposalDecision,
@@ -371,11 +370,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_knowledge_hard_delete_routes(application, store, HumanReviewer)
     register_knowledge_deletion_watermark_route(application, store, Actor)
 
-    @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord | PublicationDraftExists)
+    @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(
         request: PublicationDraftCreate,
         actor: ReviewAwareActor,
-    ) -> PublicationDraftRecord | PublicationDraftExists:
+    ) -> PublicationDraftRecord:
         return await store.create_publication_draft(actor, request)
 
     @application.get('/v1/publication-drafts', response_model=list[PublicationDraftRecord])

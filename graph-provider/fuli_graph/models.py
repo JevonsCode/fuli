@@ -727,14 +727,6 @@ class PublicationDraftRecord(StrictModel):
     submission_outcome: Literal['unknown'] | None = None
 
 
-class PublicationDraftExists(StrictModel):
-    """A create whose draft already exists but is not this caller's to read
-    (0.20.1): only that it exists, under the id the caller's own key, target
-    and provider already name; nothing of its body, source or attempt."""
-    status: Literal['already_exists'] = 'already_exists'
-    draft_id: str
-
-
 class PublicationDraftDecision(StrictModel):
     decision: Literal['submit_public', 'keep_personal', 'ignore']
     shared_proposal_id: str | None = Field(default=None, max_length=128)

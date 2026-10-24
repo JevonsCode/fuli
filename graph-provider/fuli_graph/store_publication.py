@@ -9,7 +9,6 @@ from .models import (
     ProposalDecision,
     ProposalRecord,
     PublicationDraftCreate,
-    PublicationDraftExists,
     PublicationDraftRecord,
     SubscriptionCreate,
     SubscriptionDeleteResult,
@@ -70,7 +69,7 @@ class StorePublication:
         self,
         actor: dict,
         request: PublicationDraftCreate,
-    ) -> PublicationDraftRecord | PublicationDraftExists:
+    ) -> PublicationDraftRecord:
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         draft_id = stable_uuid(
@@ -115,13 +114,10 @@ class StorePublication:
             )
         draft = dict(records[0]['draft'])
         # A retry of a key already drafted gets the stored draft back unchanged, so it is judged by
-        # the STORED row's provenance, not the request's. One this caller may not read: the very same
-        # create re-sent (its whole source identity equal to the stored one) learns only that it was
-        # made, so a capture whose first reply was lost still succeeds; any other request is answered
-        # exactly as a draft that does not exist.
+        # the STORED row's provenance, not the request's. One this caller may not read is answered
+        # exactly as a draft that does not exist, whatever the request claims about its source: a
+        # self-reported identity is no proof that it is the same create (0.20.1).
         if records[0]['existed'] and await self._project_agent_drafts(actor, space, [draft]):
-            if identity == _draft_identity(space, draft):
-                return PublicationDraftExists(draft_id=draft_id)
             raise HTTPException(status_code=404, detail='publication draft not found')
         return self._publication_draft(draft)
 

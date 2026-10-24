@@ -284,13 +284,14 @@ async def test_a_draft_whose_source_cannot_be_found_is_the_persons_alone_and_nev
         created = await client.post('/v1/publication-drafts', json=create)
         assert created.status_code == 200, 'nothing says it is an FLA\'s, so it is made'
         new_id = created.json()['id']
-        # A retry of the same key is judged by the stored row: unresolved. The very same create re-sent
-        # learns only that it was made (no other key); a probe with another source learns nothing.
+        # A retry of the same key is judged by the stored row: unresolved, so hidden. Whatever the
+        # request says about itself, it learns nothing: the same create re-sent, the same identity
+        # with another body, or another source all read exactly as a draft that does not exist.
         stored = dict(driver.rows[new_id])
-        retried = await client.post('/v1/publication-drafts', json=create)
-        assert (retried.status_code, retried.json()) == (200, {'status': 'already_exists', 'draft_id': new_id})
         missing = await client.get(f'/v1/publication-drafts/no-such-draft-{uuid4()}')
-        for episode in ({**create['episode'], 'session_id': 'another-session'},
+        assert (missing.status_code, missing.json()) == (404, {'detail': 'publication draft not found'})
+        for episode in (create['episode'], {**create['episode'], 'summary': 'Another synthetic body'},
+                        {**create['episode'], 'session_id': 'another-session'},
                         {**create['episode'], 'source_application': 'codex'},
                         {**create['episode'], 'source_turn_id': 'another-turn'}):
             probe = await client.post('/v1/publication-drafts', json={**create, 'episode': episode})
