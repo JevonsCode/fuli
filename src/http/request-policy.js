@@ -22,7 +22,6 @@ export function rejectRequestOutsidePolicy({
   lanAccessToken = null
 }) {
   const origin = request.headers.origin;
-  const fetchSite = request.headers['sec-fetch-site'];
   const requestAuthority = request.headers.host;
   const lanRequest = lanAuthorities.includes(requestAuthority);
   const loopbackRequest = requestAuthority === authority;
@@ -31,7 +30,7 @@ export function rejectRequestOutsidePolicy({
     (requestAuthority !== authority && !lanRequest) ||
     (lanAuthorities.length > 0 && loopbackRequest && !isLoopbackAddress(request.socket?.remoteAddress)) ||
     (origin !== undefined && origin !== `http://${requestAuthority}`) ||
-    (typeof fetchSite === 'string' && fetchSite.toLowerCase() === 'cross-site' && !isCrossSiteNavigation(request))
+    (fetchSiteValues(request).includes('cross-site') && !isCrossSiteNavigation(request))
   ) {
     sendJson(response, 403, { error: 'Forbidden' });
     return true;
@@ -56,6 +55,12 @@ export function rejectRequestOutsidePolicy({
 // read that page and the request changes nothing, so it is not forgery; the
 // server answers it with the static console only, never an API handler
 // (rec#40 A1). Frames, scripts and fetches from another site stay refused.
+// A repeated Sec-Fetch-Site reaches Node joined by commas; any cross-site
+// value counts, so a duplicate never hides one (a browser sends it once).
+function fetchSiteValues(request) {
+  return String(request.headers['sec-fetch-site'] ?? '').split(',').map((value) => value.trim().toLowerCase());
+}
+
 export function isCrossSiteNavigation(request) {
   const header = (name) => String(request.headers[name] ?? '').toLowerCase();
   return ['GET', 'HEAD'].includes(request.method) && header('sec-fetch-site') === 'cross-site'
