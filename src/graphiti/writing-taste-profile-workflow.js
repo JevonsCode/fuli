@@ -3,7 +3,8 @@ import { buildWritingTasteProfile } from './writing-taste-profile.js';
 const MAX_GRAPH_PAGES = 20;
 
 // ownerReads: the console's human-review port, so the person's profile keeps
-// the preferences given to one FLA; without it the graph reads as an Agent.
+// the preferences given to one FLA and their conflicts; without it the graph
+// and the conflicts read as an Agent.
 export async function getWritingTasteProfile(application, {
   personalSpaceId,
   personalProjectId = null,
@@ -11,7 +12,7 @@ export async function getWritingTasteProfile(application, {
 } = {}, ownerReads = null) {
   const [graph, conflictRecords] = await Promise.all([
     readPersonalGraph(application, { personalSpaceId, limit }, ownerReads),
-    readPreferenceConflicts(application, personalSpaceId)
+    readPreferenceConflicts(application, personalSpaceId, ownerReads)
   ]);
   return buildWritingTasteProfile({
     graph,
@@ -21,11 +22,14 @@ export async function getWritingTasteProfile(application, {
   });
 }
 
-async function readPreferenceConflicts(application, personalSpaceId) {
+async function readPreferenceConflicts(application, personalSpaceId, ownerReads) {
   const records = new Map();
   const pageSize = 500;
+  const read = ownerReads
+    ? offset => ownerReads.preferenceConflicts({ personalSpaceId, status: 'ai_pending', limit: pageSize, offset })
+    : offset => application.personal.listPreferenceConflicts(personalSpaceId, 'ai_pending', pageSize, offset);
   for (let page = 0; page < MAX_GRAPH_PAGES; page++) {
-    const items = await application.personal.listPreferenceConflicts(personalSpaceId, 'ai_pending', pageSize, page * pageSize);
+    const items = await read(page * pageSize);
     if (!Array.isArray(items)) throw new Error('Invalid writing taste conflict history');
     const size = records.size;
     for (const item of items) records.set(item.id, item);

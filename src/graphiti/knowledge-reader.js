@@ -27,3 +27,20 @@ export function graphReadPath(spaceId, { limit, personalProjectId = null, offset
   for (const [key, value] of Object.entries(providerReaderFields(reader))) query.set(key, value);
   return `/v1/spaces/${encodeURIComponent(spaceId)}/graph?${query}`;
 }
+
+// The Provider's preference conflicts. An Agent's read is a plain session's and
+// leaves out every conflict naming an FLA's own item; the console's port reads all.
+export function preferenceConflictsPath(personalSpaceId, { status = null, limit = 500, offset = 0 }) {
+  const query = new URLSearchParams({ personal_space_id: personalSpaceId, limit: String(limit) });
+  if (status) query.set('status', status);
+  if (offset) query.set('offset', String(offset));
+  return `/v1/preference-conflicts?${query}`;
+}
+
+// The Provider's publication drafts. An Agent's read leaves out a draft of an
+// FLA's work, made before the Provider refused them; the console's port reads all.
+export function publicationDraftsPath(personalSpaceId, { status = 'pending', metadataOnly = false } = {}) {
+  const query = new URLSearchParams({ personal_space_id: personalSpaceId, status });
+  if (metadataOnly) query.set('metadata_only', 'true');
+  return `/v1/publication-drafts?${query}`;
+}

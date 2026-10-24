@@ -84,10 +84,22 @@ async def test_source_delete_refuses_reserved_drafts_then_scrubs_expired_unknown
         conversation = ok(await client.post('/v1/agent-conversations/append', json=journal))
         saved, episode = await capture(client, space, session, turn,
             [dict(key='erase', name='Synthetic erased item', type='ProjectFact')])
-        draft = ok(await client.post('/v1/publication-drafts', json=dict(personal_space_id=space,
-            provider_url='https://public.example', target_project_id='synthetic-public', episode=episode)))
+        # The turn is the FLA's work, so no draft is made of it any more (0.20.1) ...
+        refused_draft = await client.post('/v1/publication-drafts', json=dict(personal_space_id=space,
+            provider_url='https://public.example', target_project_id='synthetic-public', episode=episode))
+        assert refused_draft.status_code == 422
+        assert refused_draft.json()['detail']['code'] == 'project_agent_knowledge_personal_only'
+        # ... but one made before, already reserved for submission, is still erased with its source.
+        draft, begun = {'id': 'draft-' + uuid4().hex}, {'submission_id': str(uuid4())}
+        await query(settings, '''
+            MATCH (space:FuliSpace {id: $space, kind: 'personal'})
+            CREATE (space)-[:HAS_PUBLICATION_DRAFT]->(:FuliPublicationDraft {
+              id: $id, personal_space_id: $space, target_project_id: 'synthetic-public',
+              provider_url: 'https://public.example', status: 'submitting', payload: $payload,
+              created_at: $at, submission_id: $submission_id, submission_started_at: $at})
+            RETURN $id AS id''', space=space, id=draft['id'], payload=json.dumps(episode), at=now_utc(),
+            submission_id=begun['submission_id'])
         decision_url = f'/v1/publication-drafts/{draft["id"]}/decision'
-        begun = ok(await client.post(decision_url, params={'personal_space_id': space}, json={'decision': 'begin_submit_public'}))
         target = saved['episode_id'] if kind == 'episode' else store._task_session_id(space, 'codex', session)
         identity = {} if kind == 'episode' else dict(source_application='codex', fuli_session_id=session)
         plan = ok(await source_preview(client, space, target, kind, **identity))
@@ -117,7 +129,11 @@ async def test_source_delete_refuses_reserved_drafts_then_scrubs_expired_unknown
         rows = await query(settings, 'MATCH (c:FuliConversation {id:$id}) OPTIONAL MATCH (c)-[:HAS_EVENT]->(e) '
             'RETURN c.summary AS summary, c.digest AS digest, count(e) AS events', id=conversation['conversation_id'])
         assert rows == [dict(summary='', digest='', events=0)]
-        raw = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}', params={'personal_space_id': space}))
+        # The draft is the FLA's: an Agent token reads none of it, erased or not; the console reads its metadata.
+        hidden = await client.get(f'/v1/publication-drafts/{draft["id"]}', params={'personal_space_id': space})
+        assert hidden.status_code == 404 and session not in hidden.text
+        raw = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}', headers=REVIEW,
+                                  params={'personal_space_id': space}))
         assert raw['episode'] is None and raw['status'] == 'source_deleted' and raw['submission_outcome'] == 'unknown'
         late_episode = {**episode, 'idempotency_key': str(uuid4())}
         writes = [
@@ -133,7 +149,12 @@ async def test_source_delete_refuses_reserved_drafts_then_scrubs_expired_unknown
             (410, {'code': 'source_hard_deleted'})] * len(writes)
         later = await client.put('/v1/task-contexts', json={**begin, 'turn_id': 'turn-2', 'token': 'fuli-task-' + uuid4().hex})
         assert later.status_code == (410 if kind == 'session' else 200), later.text
-        recovered = ok(await client.post(decision_url, params={'personal_space_id': space},
+        # Settled on the console's protected channel, as the host's reconciliation sends it for the person.
+        settle = {'decision': 'reconcile_submit_public', 'submission_id': begun['submission_id'],
+                  'lookup_result': {'id': 'synthetic-public-proposal', 'status': 'pending'}}
+        unproven = await client.post(decision_url, params={'personal_space_id': space}, json=settle)
+        assert unproven.status_code == 404 and begun['submission_id'] not in unproven.text
+        recovered = ok(await client.post(decision_url, headers=REVIEW, params={'personal_space_id': space},
             json={'decision': 'reconcile_submit_public', 'submission_id': begun['submission_id'],
                   'lookup_result': {'id': 'synthetic-public-proposal', 'status': 'pending'}}))
         assert recovered['episode'] is None and recovered['status'] == 'source_deleted'
@@ -237,9 +258,11 @@ async def test_session_public_only_draft_is_warned_and_scrubbed_without_a_local_
         draft = ok(await client.post('/v1/publication-drafts', json=dict(personal_space_id=space,
             provider_url='https://public.example', target_project_id='public-only-project', episode=episode)))
         endpoint = f'/v1/publication-drafts/{draft["id"]}/decision'
-        begun = ok(await client.post(endpoint, params={'personal_space_id': space}, json={'decision': 'begin_submit_public'}))
-        ok(await client.post(endpoint, params={'personal_space_id': space}, json=dict(decision='submit_public',
-            submission_id=begun['submission_id'], shared_proposal_id='existing-remote-proposal')))
+        # A team-only capture names no local source: the person's console submits it with the proof (0.20.1).
+        begun = ok(await client.post(endpoint, headers=REVIEW, params={'personal_space_id': space},
+            json={'decision': 'begin_submit_public'}))
+        ok(await client.post(endpoint, headers=REVIEW, params={'personal_space_id': space}, json=dict(
+            decision='submit_public', submission_id=begun['submission_id'], shared_proposal_id='existing-remote-proposal')))
         target = store._task_session_id(space, 'codex', episode['session_id'])
         identity = dict(source_application='codex', fuli_session_id=episode['session_id'])
         plan = ok(await source_preview(client, space, target, 'session', **identity))
@@ -248,7 +271,8 @@ async def test_session_public_only_draft_is_warned_and_scrubbed_without_a_local_
         assert plan['drafts']['submitted'] == 1
         done = ok(await source_delete(client, space, target, plan, **identity))
         assert done['deleted_item_ids'] == [target] and done['drafts_scrubbed']['submitted'] == 1
-        row = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}', params={'personal_space_id': space}))
+        row = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}', headers=REVIEW,
+                                  params={'personal_space_id': space}))
         assert row['episode'] is None and row['status'] == 'submitted'
         assert row['shared_proposal_id'] == 'existing-remote-proposal'
 

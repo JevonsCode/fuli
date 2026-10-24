@@ -109,6 +109,41 @@ test('silent project capture creates a local pre-review draft before any public 
   assert.equal(calls.some(({ origin }) => origin === 'https://workspace.example'), false);
 });
 
+test('a project capture retried after a lost reply is reported unconfirmed, pointing to the console', async () => {
+  // 0.20.1: a team-only draft is the person's alone, so the Provider answers a create that meets it
+  // exactly as a missing draft. That is neither a success nor proof that nothing was saved.
+  const calls = [];
+  let created = false;
+  const app = new FederatedGraphApplication(CONFIG, { consoleUrl: 'http://127.0.0.1:4545',
+    fetchImpl: providerFetch(calls, {
+      '/v1/publication-drafts': () => {
+        if (created) {
+          return new Response(JSON.stringify({ detail: 'publication draft not found' }),
+            { status: 404, headers: { 'content-type': 'application/json' } });
+        }
+        created = true;
+        return { id: 'draft-1', status: 'pending' };
+      }
+    }) });
+  const input = { ...episodeInput('project'), spaceId: 'project-1' };
+  await app.captureSessionKnowledge(input); // its reply is lost; the host retries the same capture
+  const retried = await app.captureSessionKnowledge(input);
+  assert.deepEqual(retried, {
+    route: 'personal_review',
+    status: 'unconfirmed',
+    message: 'Cannot confirm whether this capture was saved; check the publish queue in the FULI console.',
+    reviewUrl: 'http://127.0.0.1:4545/public-projects',
+    projectId: 'project-1',
+    providerUrl: 'https://workspace.example'
+  });
+  assert.equal(calls.filter(({ path }) => path === '/v1/publication-drafts').length, 2);
+  // Any other refusal is still an error.
+  const refusing = new FederatedGraphApplication(CONFIG, { fetchImpl: providerFetch([], {
+    '/v1/publication-drafts': () => new Response(JSON.stringify({ detail: { code: 'project_agent_knowledge_personal_only' } }),
+      { status: 422, headers: { 'content-type': 'application/json' } }) }) });
+  await assert.rejects(refusing.captureSessionKnowledge(input));
+});
+
 test('restricted knowledge cannot be submitted to a team-shared queue', async () => {
   const app = new FederatedGraphApplication(CONFIG, {
     fetchImpl: providerFetch([], {})

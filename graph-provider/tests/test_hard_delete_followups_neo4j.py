@@ -101,7 +101,11 @@ async def test_public_submission_is_bound_into_preview_and_never_retracted_by_lo
         stale = await delete(client, space, item_id, initial['preview_id'])
         assert stale.status_code == 409
         ok(await delete(client, space, item_id, plan['preview_id']))
-        retained = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}',
+        # Its source is erased, so its provenance no longer resolves: an Agent token reads none of it
+        # (0.20.1); the person's console reads the metadata that survives.
+        hidden = await client.get(f'/v1/publication-drafts/{draft["id"]}', params={'personal_space_id': space})
+        assert hidden.status_code == 404
+        retained = ok(await client.get(f'/v1/publication-drafts/{draft["id"]}', headers=REVIEW,
                                       params={'personal_space_id': space}))
         # Public submission metadata survives. Do not freeze the existing
         # local payload retention bug into the contract; source deletion's

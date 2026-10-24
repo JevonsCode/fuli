@@ -10,8 +10,9 @@ const ITEM_PATH = /^\/api\/knowledge\/(entity|relationship)\/([^/]+)$/;
 // Content edits and deactivation use the existing item PATCH with the version
 // the page read; tags use the tag vocabulary routes; scope writes are the
 // person's own (knowledge-scope-api-router.js).
-// ownerReads: the console's human-review port. The item view and a turn's
-// full list show every FLA's items, so they are read only through it.
+// ownerReads: the console's human-review port. The item view, a turn's full
+// list and a session's held items show every FLA's items, so they are read
+// only through it.
 export async function handleKnowledgeItemRequest({ request, response, url, app, ownerReads = null }) {
   if (request.method !== 'GET') return false;
   if (url.pathname === '/api/knowledge/turn-receipt') {
@@ -22,8 +23,9 @@ export async function handleKnowledgeItemRequest({ request, response, url, app, 
     return true;
   }
   if (url.pathname === '/api/knowledge/session-migration') {
+    if (!ownerReads) return ownerReadsUnavailable(response);
     response.setHeader('Cache-Control', 'no-store');
-    sendJson(response, 200, await readSessionMigration(app, {
+    sendJson(response, 200, await readSessionMigration(app, ownerReads, {
       personalSpaceId: url.searchParams.get('personalSpaceId'), sourceApplication: url.searchParams.get('client'),
       sessionId: url.searchParams.get('sessionId'), projectId: url.searchParams.get('projectId'),
       offset: url.searchParams.get('offset') }));

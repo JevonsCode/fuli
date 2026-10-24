@@ -166,35 +166,63 @@ function fakeConsole() {
   return { sent, tagsConsole: { send: async (route, body) => { sent.push({ route, body }); return { ok: route }; } } };
 }
 
-test('the local console reads every project and previews governance as the owner', async () => {
+test('the local console reads every project and previews governance as the owner, on the human-review channel', async () => {
   const { app, calls } = application();
+  // The real console port with a synthetic channel: what it sends, and whether it carries the review proof.
+  const reviewed = [];
+  const tagsConsole = knowledgeTagsConsole('synthetic-data-dir', { send: async (path, body, options) => {
+    reviewed.push({ path, body, review: options.review });
+    return { ok: true, status: 200, payload: path.endsWith('/governance/preview') ? PREVIEW : { outcome: 'synthetic' } };
+  } });
+  const ports = { tagsConsole };
   assert.equal((await api(app, 'GET',
-    '/api/knowledge-tags?personalSpaceId=personal-space&personalProjectId=p1&q=%E6%88%B7%E5%A4%96&limit=4')).status, 200);
-  await api(app, 'GET', '/api/knowledge-tags/metrics?personalSpaceId=personal-space&allProjects=true&days=7');
-  await api(app, 'GET', '/api/knowledge-tags/vocabulary?personalSpaceId=personal-space&q=%E6%88%B7&status=review&namespace=project&offset=100&limit=50');
-  await api(app, 'GET', '/api/knowledge-tags/detail?personalSpaceId=personal-space&tagId=tag-a');
+    '/api/knowledge-tags?personalSpaceId=personal-space&personalProjectId=p1&q=%E6%88%B7%E5%A4%96&limit=4', null,
+    ports)).status, 200);
+  await api(app, 'GET', '/api/knowledge-tags/metrics?personalSpaceId=personal-space&allProjects=true&days=7', null, ports);
+  await api(app, 'GET', '/api/knowledge-tags/metrics?personalSpaceId=personal-space&personalProjectId=p1', null, ports);
+  await api(app, 'GET', '/api/knowledge-tags/vocabulary?personalSpaceId=personal-space&q=%E6%88%B7&status=review&namespace=project&offset=100&limit=50',
+    null, ports);
+  await api(app, 'GET', '/api/knowledge-tags/detail?personalSpaceId=personal-space&tagId=tag-a', null, ports);
   const preview = await api(app, 'POST', '/api/knowledge-tags/governance/preview', { ...space, change: 'split',
-    tagId: 'tag-a', split: { name: '野外教学', aliases: ['野外课'], links: [{ itemKind: 'entity', itemId: 'item-1' }] } });
+    tagId: 'tag-a', split: { name: '野外教学', aliases: ['野外课'], links: [{ itemKind: 'entity', itemId: 'item-1' }] } },
+  ports);
   assert.deepEqual(preview.body, PREVIEW);
-  await assert.rejects(api(app, 'GET', '/api/knowledge-tags/vocabulary?personalSpaceId=personal-space&status=deleted'),
-    /status is not one of/);
+  await assert.rejects(api(app, 'GET', '/api/knowledge-tags/vocabulary?personalSpaceId=personal-space&status=deleted',
+    null, ports), /status is not one of/);
   // Splitting a mistaken merge back names the merged tag; the Provider reads what moves from the merge.
   await api(app, 'POST', '/api/knowledge-tags/governance/preview', { ...space, change: 'split', tagId: 'tag-b',
-    split: { restoreTagId: 'tag-a', aliases: [] } });
-  assert.deepEqual(calls.pop().body.split, { restore_tag_id: 'tag-a', aliases: [] });
-  assert.deepEqual(calls.map(({ path }) => path), ['/v1/knowledge-tags/resolve', '/v1/knowledge-tags/metrics',
-    '/v1/knowledge-tags/vocabulary', '/v1/knowledge-tags/detail', '/v1/knowledge-tags/governance/preview']);
+    split: { restoreTagId: 'tag-a', aliases: [] } }, ports);
+  assert.deepEqual(reviewed.pop().body.split, { restore_tag_id: 'tag-a', aliases: [] });
+  // The view across every project counts every FLA's links: it never leaves on the Agent's client.
+  assert.deepEqual(calls.map(({ path, body }) => [path, body.include_all_projects]), [
+    ['/v1/knowledge-tags/resolve', undefined], ['/v1/knowledge-tags/metrics', false]]);
   assert.deepEqual(calls[0].body, { personal_space_id: 'personal-space', personal_project_id: 'p1',
     query: '户外', limit: 4 });
-  assert.deepEqual(calls[1].body, { personal_space_id: 'personal-space', personal_project_id: null,
+  assert.ok(reviewed.every(({ review }) => review === true));
+  assert.deepEqual(reviewed.map(({ path }) => path), ['/v1/knowledge-tags/metrics',
+    '/v1/knowledge-tags/vocabulary', '/v1/knowledge-tags/detail', '/v1/knowledge-tags/governance/preview']);
+  assert.deepEqual(reviewed[0].body, { personal_space_id: 'personal-space', personal_project_id: null,
     include_all_projects: true, days: 7 });
-  assert.deepEqual(calls[2].body, { personal_space_id: 'personal-space', personal_project_id: null,
+  assert.deepEqual(reviewed[1].body, { personal_space_id: 'personal-space', personal_project_id: null,
     include_all_projects: true, query: '户', namespace: 'project', status: 'review', limit: 50, offset: 100 });
-  assert.deepEqual(calls[3].body, { personal_space_id: 'personal-space', personal_project_id: null,
+  assert.deepEqual(reviewed[2].body, { personal_space_id: 'personal-space', personal_project_id: null,
     tag_id: 'tag-a', include_all_projects: true });
-  assert.deepEqual(calls[4].body, { personal_space_id: 'personal-space', personal_project_id: null,
+  assert.deepEqual(reviewed[3].body, { personal_space_id: 'personal-space', personal_project_id: null,
     change: 'split', tag_id: 'tag-a', include_all_projects: true, split: { name: '野外教学', description: null,
       aliases: ['野外课'], links: [{ item_kind: 'entity', item_id: 'item-1' }] } });
+});
+
+test('without a local installation the console has no view across every project', async () => {
+  const { app, calls } = application();
+  for (const [method, path, body] of [
+    ['GET', '/api/knowledge-tags/metrics?personalSpaceId=personal-space&allProjects=true'],
+    ['GET', '/api/knowledge-tags/vocabulary?personalSpaceId=personal-space'],
+    ['GET', '/api/knowledge-tags/detail?personalSpaceId=personal-space&tagId=tag-a'],
+    ['POST', '/api/knowledge-tags/governance/preview', { ...space, change: 'approve', tagId: 'tag-a' }]]) {
+    const answer = await api(app, method, path, body);
+    assert.equal(answer.status, 503, path);
+  }
+  assert.deepEqual(calls, [], 'nothing reads it as an Agent instead');
 });
 
 test('the person changes and governs tags only on this computer, on the human-review channel', async () => {

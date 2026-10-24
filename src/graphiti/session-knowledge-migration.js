@@ -1,6 +1,7 @@
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { receiptConsoleUrl } from '../agents/identity-receipt.js';
 import { requiredString } from '../validation/values.js';
+import { providerReaderFields, taskKnowledgeReader } from './knowledge-reader.js';
 import { isTemporaryProjectId } from './temporary-project-scope.js';
 
 // rec#20 part 2: what a host session saved while nobody chose where it applies
@@ -20,10 +21,12 @@ const MAX_PROJECT_ID = 128;
 const MAX_ITEMS = 100;
 
 // One page of the held items, oldest first; offset is where the page starts.
-export function readSessionMigration(application, input) {
+// ownerReads: the console's port (src/knowledge-owner-reads), so the person's
+// page lists and counts every FLA's held items.
+export function readSessionMigration(application, ownerReads, input) {
   const offset = input.offset === null || input.offset === undefined || input.offset === '' ? 0 : Number(input.offset);
   if (!Number.isInteger(offset) || offset < 0) invalid('offset must be where a page of held items starts');
-  return application.personal.previewSessionMigration({ ...target(application, input), include_items: true, offset });
+  return ownerReads.sessionMigration({ ...target(application, input), include_items: true, offset });
 }
 
 // scopeConsole: the console port that sends it on the human-review channel (src/knowledge-scope).
@@ -56,11 +59,12 @@ export function sessionMigrationLine(application, task, { heldCount = null } = {
 }
 
 // The entry's offer once a session links to a formal project; never blocks the entry.
+// It reads as the task's FLA or plain session, so another FLA's held items are not counted.
 export async function sessionMigrationOffer(application, task) {
   if (!formalTask(task)) return null;
   try {
     const pending = await application.personal.previewSessionMigration({ ...providerTarget(application, task),
-      include_items: false });
+      include_items: false, ...providerReaderFields(taskKnowledgeReader(task)) });
     if (!(pending?.held_count > 0) || pending.linked_task_count > 1) return null;
     return sessionMigrationLine(application, task, { heldCount: pending.held_count });
   } catch {

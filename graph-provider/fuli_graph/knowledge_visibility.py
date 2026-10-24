@@ -2,8 +2,9 @@
 
 Knowledge an FLA's own episodes wrote, and a preference the person gave one
 FLA, belong to that FLA in its project, and to the person. Search, the graph
-read, item views, turn receipts, session records, the human-change search and
-the AI review all decide it here.
+read, item views, turn receipts, session records, the human-change search,
+the AI review and its decisions, preference conflicts and a session's
+migration preview all decide it here.
 
 The person's console proves itself with the human-review channel and reads
 everything. Any other reader is an Agent: one FLA in one project, or a plain
@@ -116,6 +117,18 @@ def fla_own_work_cypher(agent: str, project: str) -> str:
             THEN {agent} IS NULL
             ELSE coalesce({agent} = $reader.project_agent_id
                           AND {project} = $reader.personal_project_id, false) END)'''
+
+
+def fla_visible_ids_cypher(item_ids: str) -> str:
+    """True when no entity or relationship among item_ids (a Cypher list
+    expression) is hidden from $reader: a record naming another FLA's item
+    is left out with it. Needs $group_id and $reader."""
+    return (f'''($reader IS NULL OR (
+          NOT EXISTS {{ MATCH (fla_item:Entity {{group_id: $group_id}}) WHERE fla_item.uuid IN {item_ids}
+                        AND NOT {fla_visible_cypher('fla_item', 'entity')} }}
+          AND NOT EXISTS {{ MATCH (fla_source:Entity)-[fla_item:RELATES_TO {{group_id: $group_id}}]->(fla_target:Entity)
+                            WHERE fla_item.uuid IN {item_ids}
+                            AND NOT {fla_relationship_visible_cypher('fla_item', 'fla_source', 'fla_target')} }}))''')
 
 
 def fla_episode_visible_cypher(episode: str) -> str:
