@@ -9,6 +9,7 @@ from .models import (
     ProposalDecision,
     ProposalRecord,
     PublicationDraftCreate,
+    PublicationDraftExists,
     PublicationDraftRecord,
     SubscriptionCreate,
     SubscriptionDeleteResult,
@@ -69,7 +70,7 @@ class StorePublication:
         self,
         actor: dict,
         request: PublicationDraftCreate,
-    ) -> PublicationDraftRecord:
+    ) -> PublicationDraftRecord | PublicationDraftExists:
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         draft_id = stable_uuid(
@@ -114,9 +115,10 @@ class StorePublication:
             )
         draft = dict(records[0]['draft'])
         # A retry of a key already drafted gets the stored draft back unchanged, so it is judged by
-        # the STORED row's provenance, not the request's: the same answer as a get.
+        # the STORED row's provenance, not the request's. One this caller may not read answers only
+        # that it exists, so a capture whose first reply was lost still knows it was made.
         if records[0]['existed'] and await self._project_agent_drafts(actor, space, [draft]):
-            raise HTTPException(status_code=404, detail='publication draft not found')
+            return PublicationDraftExists(draft_id=draft_id)
         return self._publication_draft(draft)
 
     async def list_publication_drafts(

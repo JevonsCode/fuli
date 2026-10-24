@@ -273,10 +273,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       provider_url: workspace.providerUrl,
       episode
     });
+    // A retry may find it made and unreadable to this caller: only already_exists + draft_id, a success.
     return {
       route: 'personal_review',
       status: draft.status,
-      draftId: draft.id,
+      draftId: draft.id ?? draft.draft_id,
       projectId: input.spaceId,
       providerUrl: workspace.providerUrl
     };

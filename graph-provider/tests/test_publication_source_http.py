@@ -257,7 +257,7 @@ async def test_a_retry_with_another_source_never_returns_an_flas_stored_draft():
         for episode in ({k: v for k, v in turned.items() if k != 'source_turn_id'},
                         {**turned, 'source_turn_id': 'another-turn'}):
             retried = await client.post('/v1/publication-drafts', json={**create, 'episode': episode})
-            assert (retried.status_code, retried.json()['detail']) == (404, 'publication draft not found')
+            assert (retried.status_code, retried.json()) == (200, {'status': 'already_exists', 'draft_id': draft_id})
             assert 'fla-turn' not in retried.text
             assert driver.rows[draft_id] == stored, 'a retry never changes the stored row'
         same = await client.post('/v1/publication-drafts', json={**create, 'episode': turned})
@@ -281,10 +281,10 @@ async def test_a_draft_whose_source_cannot_be_found_is_the_persons_alone_and_nev
         assert created.status_code == 200, 'nothing says it is an FLA\'s, so it is made'
         new_id = created.json()['id']
         # A retry of the same key gets the stored draft back, judged by the stored row: unresolved,
-        # so an Agent is told nothing and nothing changes; the person's retry gets it.
+        # so an Agent learns only that it exists (no other key) and nothing changes; the person's retry gets it.
         stored = dict(driver.rows[new_id])
         retried = await client.post('/v1/publication-drafts', json=create)
-        assert (retried.status_code, retried.json()['detail']) == (404, 'publication draft not found')
+        assert (retried.status_code, retried.json()) == (200, {'status': 'already_exists', 'draft_id': new_id})
         assert driver.rows[new_id] == stored
         assert (await client.post('/v1/publication-drafts', headers=owner, json=create)).json()['id'] == new_id
         for params in ({'status': 'all'}, {'status': 'all', 'metadata_only': 'true'}):

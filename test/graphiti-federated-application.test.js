@@ -109,6 +109,24 @@ test('silent project capture creates a local pre-review draft before any public 
   assert.equal(calls.some(({ origin }) => origin === 'https://workspace.example'), false);
 });
 
+test('a project capture retried after a lost reply succeeds when the draft already exists unreadably', async () => {
+  // 0.20.1: a team-only draft is not an Agent's to read; the Provider answers only that it exists.
+  const calls = [];
+  const app = new FederatedGraphApplication(CONFIG, {
+    fetchImpl: providerFetch(calls, {
+      '/v1/publication-drafts': { status: 'already_exists', draft_id: 'draft-1' }
+    })
+  });
+  const result = await app.captureSessionKnowledge({ ...episodeInput('project'), spaceId: 'project-1' });
+  assert.deepEqual(result, {
+    route: 'personal_review',
+    status: 'already_exists',
+    draftId: 'draft-1',
+    projectId: 'project-1',
+    providerUrl: 'https://workspace.example'
+  });
+});
+
 test('restricted knowledge cannot be submitted to a team-shared queue', async () => {
   const app = new FederatedGraphApplication(CONFIG, {
     fetchImpl: providerFetch([], {})
