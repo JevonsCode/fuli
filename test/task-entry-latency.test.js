@@ -18,18 +18,36 @@ import { openFederatedGraphApplication } from '../src/graphiti/federated-applica
 const AGENT = { agent_id: 'project.lead', personal_space_id: 'synthetic-space', personal_project_id: 'synthetic-project',
   profile: { name: 'Lead', responsibility: 'Synthetic lead', status: 'active', allowed_clients: ['codex'], capabilities: [] } };
 
-// Every request is logged with its start and end; `hold` keeps one route
-// pending until the request is cancelled.
-function fakeProvider({ latencyMs, hold = null }) {
+// Every request is logged in event order (start and end are positions in one
+// sequence, not times), with the most requests ever in flight at once.
+// `hold` keeps one route pending until the request is cancelled. `together`
+// pairs requests by route and occurrence ('GET /health#1'): each one is held
+// until its partner has started, so requests the entry issues together always
+// overlap, and a serial entry never lets the partner start (it fails, after
+// PAIR_FALLBACK_MS instead of hanging).
+const PAIR_FALLBACK_MS = 3000;
+
+function fakeProvider({ latencyMs, hold = null, together = [] }) {
   const requests = [];
-  const started = Date.now();
+  const seen = new Map();
+  const partners = new Map(together.flatMap(([a, b]) => [[a, b], [b, a]]));
+  const starts = new Map([...partners.keys()].map(key => [key, Promise.withResolvers()]));
+  let events = 0, inFlight = 0;
+  const stats = { maxInFlight: 0 };
   const fetchImpl = async (url, init = {}) => {
     const { pathname, searchParams } = new URL(url);
     const route = `${init.method ?? 'GET'} ${pathname}`;
-    const request = { route, start: Date.now() - started, end: null, body: init.body ? JSON.parse(init.body) : null };
+    seen.set(route, (seen.get(route) ?? 0) + 1);
+    const key = `${route}#${seen.get(route)}`;
+    const request = { route, key, start: ++events, end: null, body: init.body ? JSON.parse(init.body) : null };
     requests.push(request);
-    await delay(route === hold ? 5000 : latencyMs, undefined, { signal: init.signal });
-    request.end = Date.now() - started;
+    stats.maxInFlight = Math.max(stats.maxInFlight, ++inFlight);
+    try {
+      starts.get(key)?.resolve();
+      if (partners.has(key)) await Promise.race([starts.get(partners.get(key)).promise, delay(PAIR_FALLBACK_MS, undefined, { ref: false })]);
+      await delay(route === hold ? 5000 : latencyMs, undefined, { signal: init.signal });
+    } finally { inFlight -= 1; }
+    request.end = ++events;
     const body = route === 'GET /v1/personal-projects' ? [{ project_id: 'synthetic-project', profile: { name: 'Synthetic' } }]
       : route === 'GET /v1/task-context-sessions/current' ? null
       : route === 'PUT /v1/task-contexts' ? request.body
@@ -39,7 +57,7 @@ function fakeProvider({ latencyMs, hold = null }) {
       : route === 'POST /v1/project-agent-context/resolve' ? { status: 'ready', reason: 'project_lead', agent: AGENT } : {};
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   };
-  return { requests, fetchImpl };
+  return { requests, stats, fetchImpl };
 }
 
 async function syntheticHost(t) {
@@ -58,35 +76,35 @@ async function syntheticHost(t) {
   return { runtimeConfigPath, dependencies };
 }
 
-const overlaps = (requests, a, b) => requests.some(x => x.route === a && requests.some(y => y.route === b
-  && x.start < y.end && y.start < x.end));
+// The project list with the entry's own current-task lookup (the first one is
+// the transcript capture's), health with the Agent's resolution, and the
+// preferences with the Agent's continuity.
+const TOGETHER = [
+  ['GET /v1/personal-projects#1', 'GET /v1/task-context-sessions/current#2'],
+  ['GET /health#1', 'POST /v1/project-agent-context/resolve#1'],
+  ['GET /v1/collaboration-preferences#1', 'GET /v1/project-agent-tasks#1']
+];
 
 test('task entry reads independent Provider data in parallel and the project list once', async t => {
   const host = await syntheticHost(t);
-  const latencyMs = 60;
-  const provider = fakeProvider({ latencyMs });
+  const provider = fakeProvider({ latencyMs: 5, together: TOGETHER });
   const output = await runCodexLifecycleHook(['--event', 'UserPromptSubmit'], { ...host.dependencies(provider), write: () => {} });
-  const { requests } = provider;
+  const { requests, stats } = provider;
+  const find = key => requests.find(request => request.key === key);
   assert.equal(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
   // Directory resolution and the managers' project check share one read.
   assert.equal(requests.filter(request => request.route === 'GET /v1/personal-projects').length, 1);
-  // The project list runs while the session's task is looked up, health while
-  // the Agent is resolved, and the preferences with the Agent's continuity.
-  assert.ok(overlaps(requests, 'GET /v1/personal-projects', 'GET /v1/task-context-sessions/current'));
-  assert.ok(overlaps(requests, 'GET /health', 'POST /v1/project-agent-context/resolve'));
-  assert.ok(overlaps(requests, 'GET /v1/collaboration-preferences', 'GET /v1/project-agent-tasks'));
+  // Each pair was in flight together: both started before either answered.
+  for (const [a, b] of TOGETHER) {
+    assert.ok(find(a) && find(b), `${a} and ${b} were requested`);
+    assert.ok(find(a).start < find(b).end && find(b).start < find(a).end, `${a} overlaps ${b}`);
+  }
+  assert.ok(stats.maxInFlight >= 2);
   // A read that needs another's answer still waits for it, and the task is
   // written only after every read it is built from.
-  const resolve = requests.find(request => request.route === 'POST /v1/project-agent-context/resolve');
-  const preferences = requests.find(request => request.route === 'GET /v1/collaboration-preferences');
-  assert.ok(preferences.start >= resolve.end);
-  const write = requests.find(request => request.route === 'PUT /v1/task-contexts');
-  assert.ok(requests.filter(request => request.start < write.start).every(request => request.end <= write.start));
-  // Far below the same requests one after another, measured on the requests themselves.
-  const answered = requests.filter(request => request.end !== null);
-  const span = Math.max(...answered.map(request => request.end)) - Math.min(...answered.map(request => request.start));
-  const serial = answered.reduce((sum, request) => sum + request.end - request.start, 0);
-  assert.ok(span < serial * 0.75, `${span} ms span for ${serial} ms of requests`);
+  assert.ok(find('GET /v1/collaboration-preferences#1').start > find('POST /v1/project-agent-context/resolve#1').end);
+  const write = find('PUT /v1/task-contexts#1');
+  assert.ok(requests.filter(request => request.start < write.start).every(request => request.end < write.start));
 });
 
 test('at the deadline an entry that wrote its task delivers the token and names what is missing with its tool', async t => {
