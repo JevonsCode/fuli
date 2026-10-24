@@ -173,3 +173,10 @@ test('a space ID is read the same way by every call', (t) => {
   assert.equal(port.list(` ${SPACE} `).length, 1);
   assert.equal(port.match(` ${SPACE} `, 'fill iDev hours').length, 1);
 });
+
+test('a search of only invisible or space characters discovers nothing', (t) => {
+  const { port } = assignments(t);
+  port.register(timesheet());
+  assert.deepEqual(port.discover(SPACE, 'iDev').map(({ matchedTerms }) => matchedTerms), [['iDev']]);
+  for (const search of ['\u0085', '​', '\u0085\u001c']) assert.deepEqual(port.discover(SPACE, search), [], JSON.stringify(search));
+});

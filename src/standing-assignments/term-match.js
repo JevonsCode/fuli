@@ -26,3 +26,10 @@ export function termOccurs(text, term) {
   }
   return false;
 }
+
+// Whether a search names a confirmed term or the term names the search, both
+// identity keys: "工时" finds the term "iDev 工时", and "谁做工时" the term "工时".
+// An empty key (a search of only invisible or space characters) names nothing.
+export function termsOverlap(search, term) {
+  return Boolean(search && term) && (termOccurs(search, term) || termOccurs(term, search));
+}
