@@ -33,6 +33,7 @@ import { inspectJsonStore } from '../storage/json-format.js';
 import { APPLY_RECEIPTS_FORMAT } from './apply-receipts.js';
 import { FORMAT_OPERATIONS_FORMAT } from './operations-log.js';
 import { MODEL_SECRETS_FORMAT } from '../model-backends/secret-store.js';
+import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { TASK_SCHEDULE_FORMAT } from '../task-schedules/store.js';
@@ -45,6 +46,7 @@ import { TASK_SCHEDULE_FORMAT } from '../task-schedules/store.js';
 const sqliteStores = () => [
   ['judgment.sqlite', JUDGMENT_FORMAT],
   ['task-schedules.sqlite', TASK_SCHEDULE_FORMAT],
+  ['standing-assignments.sqlite', STANDING_ASSIGNMENTS_FORMAT],
   ['agent-roundtable.sqlite', ROUNDTABLE_FORMAT],
   ['model-usage.sqlite', MODEL_USAGE_FORMAT],
   ['role-work.sqlite', ROLE_WORK_FORMAT],
