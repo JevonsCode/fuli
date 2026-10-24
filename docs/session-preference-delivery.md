@@ -53,6 +53,67 @@ A single complete `read_task_preferences` result can establish that baseline
 while keeping its additional source metadata. Paginated results, including the
 last page, never establish a whole-preference baseline on their own.
 
+## Inline budget (Claude Code)
+
+Claude Code shows the model only a preview, about the first 10,000
+characters, of a hook context longer than that and saves the rest as a file
+(rec#47 F1b). The preferences past the preview are never seen, and a preview
+is no frame, so nothing is confirmed and every turn resends the whole entry.
+Its adapter therefore bounds the UserPromptSubmit task entry to 9,000
+characters, label included (`CLAUDE_ENTRY_INLINE_CHARS`, rec#11 D-54); the
+rest of the 10,000 leaves room for an appended notice. The mechanism is
+`src/conversations/entry-inline-budget.js`. Every other Agent, every entry
+that fits, and the full-frame SessionStart restore and in-place refresh are
+unchanged, byte for byte. Known limit: those two still send their whole
+frame, so one longer than the preview is not confirmed.
+
+An entry over the budget is reduced in this order, each step only while the
+frame this session would get (a delta where one applies) is still too long:
+
+1. `task_knowledge_recall` keeps its status and counts and becomes a pointer
+   (`items_omitted`, `read: { tool: 'search_current_project_knowledge' }`);
+   then the recent conversation window drops its oldest messages, marked as
+   the Provider marks its own window (`truncated`, the latest
+   `omitted_sequence`; `read_agent_conversation` reads it whole).
+2. Then preferences go. Closing fields, identity, role, authority, conflicts
+   and every field outside `effective_preferences` always stay, and so do hard
+   constraints and boundaries (`preferenceAlwaysInline`: `constraint: "hard"`,
+   or an item a scene switch never revokes). The rest rank by the task scene,
+   using the scene table in `task-scene.js`: an item whose own scene key names
+   the task's work kind first (`preferenceNamesWorkKind`), then human-confirmed
+   before agent-confirmed, then the Provider's order. The delivered set is the
+   largest ranked prefix whose *complete* frame fits with the leanest context,
+   so it depends on the preferences alone, not on the conversation or the
+   cached base: the same preferences select the same set next turn.
+3. Then as much recall and conversation as still fits comes back.
+
+What is left out is named as `preferences_omitted: { count, read: { tool:
+'read_task_preferences', arguments: { taskContextToken } } }`, and the label
+adds one sentence: read them before acting where one may apply. If the part
+that always stays is longer than the budget, it is delivered anyway: a
+complete hard rule outranks the budget, and such an entry is again only a
+preview to Claude Code.
+
+A bounded entry is still a complete, confirmable frame:
+
+- Its revision and the producer's pending snapshot hash cover exactly the set
+  it lists. An omitted preference is in no snapshot, base or cache, and is
+  never counted as delivered. A revision therefore still names one set: a
+  frame that lists S and leaves N out, and one that lists S alone, hold the
+  same set S. `preferences_omitted` belongs to the frame, not to the set: the
+  whole-frame hash binds it, every frame (a delta included) carries its own,
+  and it describes only that frame.
+- A bounded frame never names a removal and is never a scene switch: an item
+  it leaves out may still be in force, so `removed` or `replaces` would read
+  as revoked. Such a turn gets the complete bounded frame instead. A delta
+  that only adds or changes is allowed, so the next turn with the same
+  selection is a small delta on the confirmed bounded frame.
+- The entry is tried whole first: a delta on a whole base (such as a complete
+  `read_task_preferences` result the model read) that fits is sent with
+  nothing left out.
+- No stored format changes: a pending item keeps its scope, snapshot, frame
+  hash and scene.
+
 ## Same-task reader pages
 
 `read_task_preferences({ taskContextToken, cursor? })` reads current preferences
@@ -109,7 +170,8 @@ compatibility remains unchanged.
   and, by its revision, can be a preference base (rec#15 D-29.3). An older
   rollout without that provenance proves nothing, so Codex then resends in full.
 - Claude evidence requires same-session `tool_use`/non-error `tool_result`
-  pairs. Its MCP process can use the host's own UUID `CLAUDE_CODE_SESSION_ID`
+  pairs, or a UserPromptSubmit hook attachment whose rendered text holds a
+  whole frame; the task entry is bounded so that it does (inline budget above). Its MCP process can use the host's own UUID `CLAUDE_CODE_SESSION_ID`
   for same-task recovery; a caller without verified provenance cannot invent
   that identity. A trusted lifecycle adapter can inspect that chat's native file.
 - SessionStart and PreCompact command definitions invalidate prior delivery.
@@ -197,7 +259,14 @@ baseline holds only what the Provider would return.
 no turn costs more than the uncached entry except a complete frame's revision
 field (26 B) and a `recovery.withdrawn` block (128 B), no scenario costs more in
 total, the scaled scenarios that reuse context cost less, no turn needs a reread
-under the delivery rules, and every model view is whole. The
+under the delivery rules, and every model view is whole.
+`test/agents/claude-code/entry-inline-budget.test.js` checks the inline
+budget with a synthetic 60-preference entry: it fits, keeps every hard rule,
+boundary, closing field and conflict, counts what it leaves out, is confirmed
+from its Claude transcript record and is followed by a delta; an omitted
+preference is never delivered, a bounded frame never removes one still in
+force, and the part that always stays is delivered past the budget. The
+token-budget test records its two-turn size. The
 opt-in `graph-provider/tests/test_session_preference_native.py` uses a real
 Codex client, MCP stdio, HTTP Provider and a disposable loopback Neo4j. It checks
 first full delivery, a source modification/removal, same-chat delta, resume full
