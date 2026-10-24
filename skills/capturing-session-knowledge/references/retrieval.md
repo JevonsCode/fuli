@@ -33,6 +33,12 @@ identifier, and likely runbook category. Never pass the full conversational requ
 query. For example, a version-release request should search release/publish and push/commit
 runbook concepts separately instead of searching the entire sentence.
 
+Its response states `retrievalGuidance`, `noMatchSourceMarker` and the shared scope fields once
+at the top level; each entry in `results` keeps its own `query`, records and `sourceMarker`. On a
+bounded page (`next_cursor` present), a query with nothing on that page shows only `query` and
+`total_items`; its records arrive on a later page. Long project ID lists name a prefix and count
+the rest in `project_ids_omitted`.
+
 Pending knowledge is eligible for on-demand retrieval and must remain visibly marked.
 `agent_confirmed` knowledge is usable but ranks below user or authoritative-source
 confirmation.

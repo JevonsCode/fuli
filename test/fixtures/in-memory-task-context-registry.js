@@ -118,6 +118,16 @@ export class TaskContextRegistry {
     return snapshot(this.#task(token, sourceApplication));
   }
 
+  // As the Provider registry: null for a token that is not its session's current task.
+  currentTaskSession(token, sourceApplication = 'other') {
+    try {
+      return this.context(token, sourceApplication).sessionId;
+    } catch (error) {
+      if (error.code === ApplicationErrorCode.NOT_FOUND) return null;
+      throw error;
+    }
+  }
+
   #task(token, sourceApplication) {
     assertNonEmpty(token, 'taskContextToken');
     const task = this.tokens.get(token);

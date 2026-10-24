@@ -6,6 +6,7 @@ import { recallTaskKnowledge } from '../src/graphiti/task-knowledge-recall.js';
 import { searchCurrentProjectKnowledge } from '../src/graphiti/current-project-knowledge-search.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { searchFederatedKnowledge } from '../src/graphiti/federated-search.js';
+import { GRAPH_TOOL_DEFINITIONS } from '../src/agent-tools/graph-definitions.js';
 
 const bytes = value => Buffer.byteLength(JSON.stringify(value));
 const resolution = { status: 'matched', personalProjectId: 'aurora', basis: 'repository_root' };
@@ -153,7 +154,7 @@ test('multiple focused queries page every record without starving later query gr
     assert.ok(bytes(page) <= 8 * 1024);
     assert.equal(page.results.length, 4);
     if (!pages) assert.ok(page.results.every(group => group.entities.length), 'Every query gets its first relevant record');
-    for (const group of page.results) for (const item of group.entities) {
+    for (const group of page.results) for (const item of group.entities ?? []) {
       assert.equal(seen.has(item.id), false);
       assert.equal(item.details_fragment, undefined);
       seen.add(item.id);
@@ -162,6 +163,116 @@ test('multiple focused queries page every record without starving later query gr
     assert.ok(++pages < 20);
   } while (cursor);
   assert.equal(seen.size, 48);
+});
+
+// The real per-query result shape: every group carries the call's scope
+// fields, guidance and markers, as searchFederatedKnowledge returns them.
+function federatedApplication({ recordsPerQuery = 6, projectIds = [] } = {}) {
+  const app = { config: { personal: { spaceId: 'space' } }, consoleUrl: 'http://127.0.0.1:2727',
+    personal: { search: async ({ query }) => ({ facts: [], entities: Array.from({ length: recordsPerQuery }, (_, i) => ({
+      id: `${query.slice(0, 12)}-${i}`, space_id: 'space', defined_project_id: 'aurora', scope_distance: 0,
+      summary: `Synthetic fact ${i}. ` + '资料'.repeat(150) })) }),
+    listPersonalProjects: async () => projectIds.map(project_id => ({ project_id })),
+    listSubscriptions: async () => [], graph: async () => ({ nodes: [], edges: [] }) } };
+  const ports = { workspaceFor: () => assert.fail('No workspace was authorized'), recordAgentViews: async () => {} };
+  app.searchKnowledge = input => searchFederatedKnowledge(app, input, ports);
+  return { app, ports };
+}
+
+test('a broad search at the schema maximum of queries returns records on its first page', async () => {
+  const schema = GRAPH_TOOL_DEFINITIONS.find(tool => tool.name === 'search_current_project_knowledge').inputSchema;
+  const { maxItems } = schema.properties.queries;
+  const { maxLength } = schema.properties.queries.items;
+  const { app } = federatedApplication();
+  const queries = Array.from({ length: maxItems }, (_, i) => `${i}-` + '宽查询'.repeat(maxLength).slice(0, maxLength - 2));
+  const input = { queries, limitPerQuery: 12 };
+  const first = await searchCurrentProjectKnowledge(app, resolution, input);
+  assert.ok(bytes(first) <= 8 * 1024, `First page grew to ${bytes(first)} B`);
+  assert.ok(first.retrieval_budget.returned_items > 0, 'The first page carries records, not only metadata');
+  assert.equal(first.retrieval_budget.total_items, maxItems * 6);
+  assert.ok(first.next_cursor);
+  assert.equal(first.results.length, maxItems);
+  // Shared guidance and markers appear once, not once per query.
+  assert.equal(first.retrievalGuidance.markerToUseIfNoSupportingEvidence, 'noMatchSourceMarker');
+  assert.equal(first.noMatchSourceMarker.status, 'no_match');
+  assert.deepEqual(first.searchedPersonalProjectIds, ['aurora']);
+  for (const group of first.results) {
+    assert.equal(group.retrievalGuidance, undefined);
+    assert.equal(group.noMatchSourceMarker, undefined);
+    assert.equal(group.total_items, 6);
+  }
+  const compact = first.results.filter(group => !group.entities);
+  assert.ok(compact.length > 0);
+  for (const group of compact) assert.deepEqual(Object.keys(group).sort(), ['query', 'total_items']);
+  const carried = first.results.find(group => group.entities);
+  assert.match(carried.sourceMarker.leadMarkdown, /knowledge/);
+
+  // A continuation re-runs the same scoped search and still verifies it.
+  await assert.rejects(searchCurrentProjectKnowledge(app, resolution,
+    { ...input, queries: queries.slice(1), cursor: first.next_cursor }), /cursor|restart|changed/i);
+  const seen = new Set();
+  let page = first, pages = 1;
+  for (;;) {
+    for (const group of page.results) for (const item of group.entities ?? []) seen.add(item.id);
+    if (!page.next_cursor) break;
+    page = await searchCurrentProjectKnowledge(app, resolution, { ...input, cursor: page.next_cursor });
+    assert.ok(bytes(page) <= 8 * 1024, `Page grew to ${bytes(page)} B`);
+    assert.ok(++pages < 40, 'Continuation must always advance');
+  }
+  assert.equal(seen.size, maxItems * 6);
+  assert.equal(page.retrieval_budget.complete, true);
+});
+
+// Previews are bounded by their serialized size: a control character is
+// sent as six bytes (\u0001), a quote or backslash as two.
+for (const [label, padding] of [['control characters', '\u0001'], ['quotes and backslashes', '"\\'],
+  ['long Chinese text', '宽查询']]) {
+  test(`maximum-length queries and records of ${label} still fit a search page`, async () => {
+    const schema = GRAPH_TOOL_DEFINITIONS.find(tool => tool.name === 'search_current_project_knowledge').inputSchema;
+    const { maxItems } = schema.properties.queries;
+    const { maxLength } = schema.properties.queries.items;
+    const pad = length => padding.repeat(length).slice(0, length);
+    const queries = Array.from({ length: maxItems }, (_, i) => `${i}-` + pad(maxLength - 2));
+    const empty = federatedApplication({ recordsPerQuery: 0 }).app;
+    const missed = await searchCurrentProjectKnowledge(empty, resolution, { queries });
+    assert.ok(bytes(missed) <= 8 * 1024, `Empty search grew to ${bytes(missed)} B`);
+    assert.equal(missed.results.length, maxItems);
+    assert.equal(missed.retrieval_budget.total_items, 0);
+
+    const { app } = federatedApplication();
+    app.personal.search = async ({ query }) => ({ facts: [], entities: Array.from({ length: 6 }, (_, i) => ({
+      id: `${query.slice(0, 2)}-${i}`, space_id: 'space', scope: 'personal', defined_project_id: 'aurora',
+      name: pad(300), type: pad(300), summary: pad(1000), source_uris: [`https://example.test/${pad(700)}`] })) });
+    let page = await searchCurrentProjectKnowledge(app, resolution, { queries });
+    assert.ok(page.retrieval_budget.returned_items > 0, 'The first page carries records');
+    const seen = new Set();
+    for (let pages = 1; ; pages++) {
+      assert.ok(bytes(page) <= 8 * 1024, `Page grew to ${bytes(page)} B`);
+      for (const group of page.results) for (const item of group.entities ?? []) seen.add(item.id);
+      if (!page.next_cursor) break;
+      page = await searchCurrentProjectKnowledge(app, resolution, { queries, cursor: page.next_cursor });
+      assert.ok(pages < 400, 'Continuation must always advance');
+    }
+    assert.equal(seen.size, maxItems * 6);
+  });
+}
+
+test('a confirmed all-local search names a bounded prefix of its projects instead of failing', async () => {
+  const projectIds = Array.from({ length: 300 }, (_, i) => `synthetic-registered-project-${String(i).padStart(4, '0')}`);
+  const { app, ports } = federatedApplication({ projectIds });
+  const input = { personalSpaceId: 'space', personalProjectScope: 'all_local_confirmed', query: 'Aurora 发布流程',
+    agentInvocation: true };
+  const first = await searchFederatedKnowledge(app, input, ports);
+  assert.ok(bytes(first) <= 8 * 1024, `First page grew to ${bytes(first)} B`);
+  assert.ok(first.entities.length > 0);
+  assert.ok(first.searchedPersonalProjectIds.length > 0);
+  assert.equal(first.searchedPersonalProjectIds.length + first.project_ids_omitted.searchedPersonalProjectIds, 300);
+  assert.deepEqual(first.searchedPersonalProjectIds, projectIds.slice(0, first.searchedPersonalProjectIds.length));
+  assert.ok(first.next_cursor);
+  const next = await searchFederatedKnowledge(app, { ...input, cursor: first.next_cursor }, ports);
+  assert.ok(next.entities.length > 0);
+  await assert.rejects(searchFederatedKnowledge(app, { ...input, query: 'another target', cursor: first.next_cursor }, ports),
+    /cursor|restart|changed/i);
 });
 
 test('exact MCP delivery keeps more than twenty small search results', async () => {

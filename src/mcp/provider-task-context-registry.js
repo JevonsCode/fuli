@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { parseTaskAgentAssignment } from '../graphiti/task-agent-assignment.js';
 import { taskActivityOrigin } from '../graphiti/task-activity-origin.js';
+import { ProviderRequestError } from '../graphiti/provider-client.js';
 
 // The Provider is the sole source of truth. Hooks commonly use separate MCP
 // processes; a process-local cache cannot prove that a task was checkpointed.
@@ -38,6 +39,20 @@ export class ProviderTaskContextRegistry {
     return taskRecord(await this.provider.getTaskContext(token, {
       personal_space_id: this.personalSpaceId, source_application: sourceApplication
     }));
+  }
+
+  // The host session of the task a token names while it is that session's
+  // current task, or null when it is not. The Provider answers 404 alike for a
+  // task a newer one of its session superseded (every prompt begins one), a
+  // task of another client and a token it never issued, so these are not told
+  // apart. Any other failure throws.
+  async currentTaskSession(token, sourceApplication = 'other') {
+    try {
+      return (await this.context(token, sourceApplication)).sessionId;
+    } catch (error) {
+      if (error instanceof ProviderRequestError && error.status === 404) return null;
+      throw error;
+    }
   }
 
   async current(sessionId, sourceApplication = 'other') {
