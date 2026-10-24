@@ -108,6 +108,14 @@ export class ProviderTaskContextRegistry {
     return result?.claimed === true;
   }
 
+  // Whether that claim is still open, without taking it.
+  async sessionHintAvailable(token, operation, sourceApplication = 'other') {
+    const result = await this.provider.claimSessionHint(token, {
+      personal_space_id: this.personalSpaceId, source_application: sourceApplication, operation, peek: true
+    });
+    return result?.available === true;
+  }
+
   verify(sessionId, sourceApplication = 'other') {
     return this.provider.verifyTaskCheckpoint({
       personal_space_id: this.personalSpaceId, session_id: sessionId,

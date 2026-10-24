@@ -21,8 +21,9 @@ export function legacyKnowledgeHashPath(hash: string) {
 // tile collections keep the canvas.
 const conversationLayout: PageLayoutRule = route => (route.params.threadId || route.params.chatId ? 'column' : 'canvas')
 const projectLayout: PageLayoutRule = route => (route.params.mode === 'overview' ? 'column' : 'canvas')
-const WIDE_WORKBENCHES = new Set(['jefa', 'bole'])
-const workbenchLayout: PageLayoutRule = route => (WIDE_WORKBENCHES.has(String(route.params.templateId)) ? 'canvas' : 'column')
+// An installed employee's workbench is unknown here, so it keeps the canvas.
+const COLUMN_WORKBENCHES = new Set(['assistant', 'tonborg'])
+const workbenchLayout: PageLayoutRule = route => (COLUMN_WORKBENCHES.has(String(route.params.templateId)) ? 'column' : 'canvas')
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),

@@ -8,8 +8,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { callAgentTool } from '../src/agent-tools.js';
 import { claudeEntryDeadlineOutput } from '../src/agents/claude-code/lifecycle-hook.js';
 import { runCodexLifecycleCommand, runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
-import { entryBudget, noteEntryTask, partialEntryText, runWithEntryBudget } from '../src/conversations/entry-budget.js';
+import { entryBudget, noteEntryNotice, noteEntryTask, partialEntryText, runWithEntryBudget } from '../src/conversations/entry-budget.js';
 import { openFederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
+import { withSharedProjectList } from '../src/graphiti/shared-project-list.js';
 
 // Task entry latency (rec#39 D-40): parallel Provider reads, and what a hook
 // delivers at its deadline. A synthetic data directory and an in-memory
@@ -132,7 +134,7 @@ test('at the deadline an entry that wrote its task delivers the token and names 
   assert.equal(context.checkpoint_required, false);
   assert.match(context.checkpoint_guidance, /Stop hook closes the task/);
   assert.deepEqual(context.entry_incomplete.missing.map(item => item.tool),
-    ['read_task_preferences', 'list_employee_tools', 'search_current_project_knowledge']);
+    ['read_task_preferences', 'list_employee_tools', 'search_current_project_knowledge', 'read_agent_messages']);
   assert.deepEqual(context.entry_incomplete.missing[0].arguments, { taskContextToken: token });
   assert.ok(context.entry_incomplete.missing[0].parts.includes('effective_preferences'));
   assert.equal(context.entry_incomplete.transcript_capture, 'unverified');
@@ -157,14 +159,14 @@ test('a deadline before the task is written delivers no token: the fallback name
 
 test('only a task noted in time, with an Agent its reader can recover, is ever delivered at the deadline', () => {
   let now = 0;
-  const task = { token: 'fuli-task-synthetic-1', projectAgentId: 'project.lead', checkpointRequired: true };
+  const task = { task_context_token: 'fuli-task-synthetic-1', context: { project_agent_id: 'project.lead' }, checkpoint_required: true };
   const late = entryBudget(100, { now: () => now });
   now = 100;
   runWithEntryBudget(late, () => noteEntryTask(task));
   assert.equal(partialEntryText(late), null, 'noted after the deadline: cut short');
   now = 0;
   const unassigned = entryBudget(100, { now: () => now });
-  runWithEntryBudget(unassigned, () => noteEntryTask({ ...task, projectAgentId: null }));
+  runWithEntryBudget(unassigned, () => noteEntryTask({ ...task, context: { project_agent_id: null } }));
   assert.equal(partialEntryText(unassigned), null, 'read_task_preferences cannot recover a task without its Agent');
   const ready = entryBudget(100, { now: () => now });
   runWithEntryBudget(ready, () => noteEntryTask(task));
@@ -179,9 +181,81 @@ test('Claude Code at its deadline delivers the same partial entry, or its fallba
   const before = claudeEntryDeadlineOutput('UserPromptSubmit', input, budget);
   assert.match(before.hookSpecificOutput.additionalContext, /get_collaboration_preferences with sessionId="synthetic-claude-session"/);
   assert.match(before.hookSpecificOutput.additionalContext, /entry_incomplete=\{"reason":"entry_deadline"/);
-  runWithEntryBudget(budget, () => noteEntryTask({ token: 'fuli-task-synthetic-2', projectAgentId: 'project.lead', checkpointRequired: true }));
+  runWithEntryBudget(budget, () => noteEntryTask({ task_context_token: 'fuli-task-synthetic-2', context: { project_agent_id: 'project.lead' },
+    checkpoint_required: true }));
   const after = claudeEntryDeadlineOutput('UserPromptSubmit', input, budget);
   assert.equal(after.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
   assert.equal(after.hookSpecificOutput.additionalContext, partialEntryText(budget));
   assert.equal(claudeEntryDeadlineOutput('Stop', input, budget).hookSpecificOutput, undefined);
+});
+
+test('a partial entry carries what the entry already held and names every part it omits with its tool', () => {
+  const budget = entryBudget(1000);
+  const scope = { type: 'temporary', personal_project_id: 'synthetic-temporary' };
+  runWithEntryBudget(budget, () => noteEntryTask({ task_context_token: 'fuli-task-synthetic-3', context: { project_agent_id: 'project.lead' },
+    checkpoint_required: true, checkpoint_guidance: null, remember_guidance: 'Synthetic remember guidance.',
+    previous_checkpoint_missing: true, project_scope: scope, task_guidance: { checkpoint: 'Synthetic.' },
+    effective_preferences: [{ id: 'synthetic-preference' }] }));
+  const context = JSON.parse(partialEntryText(budget).split('\n')[1]);
+  // Checkpointing is still guided, and the person's request to keep something is not lost.
+  assert.equal(context.remember_guidance, 'Synthetic remember guidance.');
+  assert.equal(context.previous_checkpoint_missing, true);
+  assert.deepEqual(context.project_scope, scope);
+  assert.equal('checkpoint_guidance' in context, false, 'an absent field stays absent');
+  // Larger parts are fetched on demand, each listed with its tool.
+  assert.equal(context.task_guidance, undefined);
+  assert.equal(context.effective_preferences, undefined);
+  const missing = Object.fromEntries(context.entry_incomplete.missing.flatMap(item => item.parts.map(part => [part, item.tool])));
+  assert.equal(missing.task_guidance, 'read_task_preferences');
+  assert.equal(missing.effective_preferences, 'read_task_preferences');
+  assert.equal(missing.agent_messages, 'read_agent_messages');
+  assert.equal(missing.attention_replies, 'read_agent_messages');
+});
+
+test('the outdated-MCP notice reaches the deadline answer, and is read only once', () => {
+  const input = { session_id: 'synthetic-claude-session', cwd: '/synthetic', prompt: 'Synthetic task' };
+  const budget = entryBudget(1000);
+  let reads = 0;
+  const notice = runWithEntryBudget(budget, () => noteEntryNotice(() => { reads += 1; return 'Synthetic restart notice.'; }));
+  assert.equal(reads, 0, 'nothing is read before an answer needs it');
+  const fallback = claudeEntryDeadlineOutput('UserPromptSubmit', input, budget);
+  assert.match(fallback.systemMessage, /Synthetic restart notice\.$/);
+  assert.match(fallback.hookSpecificOutput.additionalContext, /Synthetic restart notice\.$/);
+  runWithEntryBudget(budget, () => noteEntryTask({ task_context_token: 'fuli-task-synthetic-4', context: { project_agent_id: 'project.lead' },
+    checkpoint_required: true }));
+  const partial = claudeEntryDeadlineOutput('UserPromptSubmit', input, budget);
+  assert.match(partial.hookSpecificOutput.additionalContext, /Synthetic restart notice\.$/);
+  assert.equal(notice(), 'Synthetic restart notice.');
+  assert.equal(reads, 1, 'the one-time notice is read once, whichever answer comes first');
+  assert.doesNotMatch(claudeEntryDeadlineOutput('Stop', input, budget).systemMessage, /Synthetic restart notice/);
+});
+
+test('a project registered or created during an entry is seen by the entry\'s later reads of the shared list', async () => {
+  const projects = [{ project_id: 'synthetic-project', profile: { name: 'Synthetic' } }];
+  const reads = [];
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url, init = {}) => {
+      const { pathname } = new URL(url);
+      const route = `${init.method ?? 'GET'} ${pathname}`;
+      if (route === 'GET /v1/personal-projects') reads.push(projects.map(project => project.project_id));
+      const body = route === 'GET /v1/personal-projects' ? structuredClone(projects)
+        : route === 'PUT /v1/personal-projects' ? projects.push({ project_id: 'synthetic-registered', profile: {} }) && {}
+        : route === 'POST /v1/temporary-projects/ensure' ? projects.push({ project_id: 'synthetic-temporary', profile: {} }) && {}
+        : {};
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    } });
+  const ids = list => list.map(project => project.project_id);
+  await withSharedProjectList(async () => {
+    assert.deepEqual(ids(await client.listPersonalProjects('synthetic-space')), ['synthetic-project']);
+    assert.deepEqual(ids(await client.listPersonalProjects('synthetic-space')), ['synthetic-project']);
+    assert.equal(reads.length, 1, 'one read per entry');
+    await client.upsertPersonalProject({ personal_space_id: 'synthetic-space', project_id: 'synthetic-registered' });
+    assert.deepEqual(ids(await client.listPersonalProjects('synthetic-space')), ['synthetic-project', 'synthetic-registered']);
+    await client.ensureTemporaryProject({ personal_space_id: 'synthetic-space' });
+    assert.deepEqual(ids(await client.listPersonalProjects('synthetic-space')),
+      ['synthetic-project', 'synthetic-registered', 'synthetic-temporary']);
+    assert.deepEqual(ids(await client.listPersonalProjects('synthetic-space')),
+      ['synthetic-project', 'synthetic-registered', 'synthetic-temporary']);
+  });
+  assert.equal(reads.length, 3, 'each write drops the shared list once; later reads share the new one');
 });

@@ -2,8 +2,8 @@ import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { projectApproved } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
 import { taskCaptureScope } from './capture-decision.js';
-import { entryHintSkipped } from '../conversations/entry-budget.js';
 import { readConversationTriage } from './conversation-triage.js';
+import { claimEntryHint } from './entry-hint-claim.js';
 import { prepareRoleSuggestionNote, suggestionDeletionGeneration, suggestionSessionGeneration } from './role-suggestion-note.js';
 import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
 
@@ -51,9 +51,6 @@ async function suggestProjectCandidate(application, task, entry, taskPrompt) {
   // are read on every entry, like the port: they may change between entries.
   const settings = application.modelBackends?.operationSettings(ROLE, OPERATION);
   if (!settings) return null;
-  // Too little of the hook's time left: no claim, so a later entry may still ask.
-  const skipped = entryHintSkipped();
-  if (skipped) return skipped;
   const spaceId = application.config.personal.spaceId;
   // Before the evidence is read: a permanent delete after this keeps the hint's words out of its console copy.
   const sessionGeneration = await suggestionSessionGeneration(application, spaceId, task);
@@ -61,8 +58,10 @@ async function suggestProjectCandidate(application, task, entry, taskPrompt) {
   const projects = await nameableProjects(application).catch(() => []);
   const candidates = projects.filter(project => projectApproved(settings.egress, spaceId, project.project_id)).slice(0, MAX_CANDIDATES);
   if (!candidates.length) return null;
-  // The claim comes first: a none, a stop or a failure uses it up too.
-  if (!await application.taskContextRegistry.claimSessionHint(task.token, OPERATION, task.sourceApplication).catch(() => false)) return null;
+  // The claim comes before the model: a none, a stop or a failure uses it up too.
+  // With too little time left it is a skip instead (entry-hint-claim.js).
+  const claim = await claimEntryHint(application, task, OPERATION);
+  if (claim !== true) return claim;
 
   const request = candidateRequest(task, spaceId, taskPrompt, candidates);
   const conversationId = entry.conversation?.conversation_id ?? null;

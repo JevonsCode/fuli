@@ -72,3 +72,21 @@ async def test_a_superseded_entry_cannot_claim_and_concurrent_claims_have_one_wi
 
         # Only a known hint operation can be claimed.
         assert (await claim(client, space_id, raced, 'bind_project')).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_a_peek_says_whether_the_claim_is_open_and_takes_nothing():
+    async with provider_client(fixture_settings()) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        token = f'fuli-task-{uuid4()}'
+        await begin(client, space_id, token, 'hint-session-e', 'turn-1')
+
+        async def peek():
+            return ok(await client.post(f'/v1/task-contexts/{token}/session-hints/claim', json={
+                'personal_space_id': space_id, 'source_application': 'codex', 'operation': 'project_candidate',
+                'peek': True}))
+
+        assert await peek() == {'claimed': False, 'available': True}
+        assert await peek() == {'claimed': False, 'available': True}
+        assert await claimed(client, space_id, token) is True
+        assert await peek() == {'claimed': False, 'available': False}

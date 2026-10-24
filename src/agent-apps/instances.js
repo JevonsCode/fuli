@@ -219,7 +219,6 @@ export function createAppInstances(context) {
 
   function sealHosted(appId, local, reason) {
     const { lease } = local;
-    local.reason = reason;
     if (!local.sealed) {
       store.transaction(() => {
         leases.assertOwned(lease);
@@ -262,6 +261,8 @@ export function createAppInstances(context) {
           store.recordEvent({ appId, at: now(), action: 'sealed', detail: { instanceId: local.instanceId, reason } });
         });
         local.sealed = true;
+        // Why it was sealed: a later seal (close's host_closing) retries the stop but keeps this.
+        local.sealReason = reason;
       }
       try {
         await stopHandle(local.handle);
@@ -391,7 +392,7 @@ export function createAppInstances(context) {
     if (local?.handle !== handle || !local.sealed) return;
     try {
       if (!leases.owns(local.lease)) return;
-      endInstance(appId, local.lease, local, local.reason);
+      endInstance(appId, local.lease, local, local.sealReason);
       leases.release(local.lease);
     } catch {
       // Left for the next owner, as after a crash.
