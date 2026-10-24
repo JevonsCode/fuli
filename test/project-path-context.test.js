@@ -196,7 +196,7 @@ test('a WSL drive path resolves on Windows exactly like the native drive path', 
   const native = resolvePersonalProjectPath('T:\\work\\fuli\\src', PROJECTS, host);
   assert.deepEqual(native, { status: 'matched', basis: 'repository_root', personalProjectId: 'fuli' });
   for (const wslPath of ['/mnt/t/work/fuli/src', '/mnt/T/work/fuli/src', '/mnt/t/work/fuli/src/',
-    '/mnt/t/work//fuli/src//']) {
+    '/mnt/t/work//fuli/src//', '///mnt/t/work/fuli/src', '/mnt/t/work/./tmp/../fuli/src']) {
     assert.deepEqual(resolvePersonalProjectPath(wslPath, PROJECTS, host), native, wslPath);
   }
   assert.equal(findRepositoryRoot('/mnt/t/work/fuli/src', host), 'T:\\work\\fuli');
@@ -211,17 +211,39 @@ test('a translated WSL path passes the same existence and project checks as a na
   for (const wslPath of ['/mnt/t/missing', '/mnt/t/outside/file.txt']) {
     assert.throws(() => resolvePersonalProjectPath(wslPath, PROJECTS, host), /existing absolute directory/);
   }
-  // Dot segments stay on the translated drive, as they do in the native path.
-  assert.equal(resolvePersonalProjectPath('/mnt/t/../../outside', PROJECTS, host).status, 'unmatched');
-  assert.throws(() => resolvePersonalProjectPath('/mnt/t/../../Windows', PROJECTS, host),
+  assert.equal(resolvePersonalProjectPath('/mnt/t/work/../outside', PROJECTS, host).status, 'unmatched');
+});
+
+// The POSIX path is normalized before its drive is read: .. that crosses into
+// another mount names that drive, and .. that leaves the mounts is no drive.
+test('dot segments in a WSL path keep their POSIX meaning across and out of mounts', () => {
+  const projects = [{ project_id: 'alpha' }];
+  // A same-named repository at the location a naive mapping would reach.
+  const wrong = new Set(['T:\\c\\work\\alpha', 'T:\\c\\work\\alpha\\.git', 'T:\\home\\me\\alpha',
+    'T:\\home\\me\\alpha\\.git']);
+  const host = windowsHost(wrong);
+  assert.throws(() => resolvePersonalProjectPath('/mnt/t/../c/work/alpha', projects, host),
     /existing absolute directory/);
+  assert.equal(findRepositoryRoot('/mnt/t/../c/work/alpha', host), null);
+  const crossed = windowsHost(new Set([...wrong, 'C:\\work\\alpha', 'C:\\work\\alpha\\.git']));
+  assert.deepEqual(resolvePersonalProjectPath('/mnt/t/../c/work/alpha', projects, crossed),
+    resolvePersonalProjectPath('C:\\work\\alpha', projects, crossed));
+  assert.equal(findRepositoryRoot('/mnt/t/../c/work/alpha', crossed), 'C:\\work\\alpha');
+  for (const left of ['/mnt/t/../../home/me/alpha', '/mnt/t/..', '/mnt/t/../../mnt']) {
+    assert.throws(() => resolvePersonalProjectPath(left, projects, crossed), { code: 'project_path_unsupported' });
+    assert.throws(() => findRepositoryRoot(left, crossed), { code: 'project_path_unsupported' });
+  }
 });
 
 test('a POSIX path a Windows FULI cannot open is a typed error that names the fix', () => {
   const opened = [];
   const host = windowsHost(new Set(), { fileExists: (candidate) => { opened.push(candidate); return false; } });
-  for (const unsupported of ['/home/me/fuli', '/tmp', '/', '/mnt/wsl/fuli', '/mnt', '\\\\wsl$\\Ubuntu\\home\\me',
-    '//wsl$/Ubuntu/home/me', '\\\\wsl.localhost\\Ubuntu\\home\\me', '\\\\WSL.LOCALHOST\\Ubuntu']) {
+  for (const unsupported of ['/home/me/fuli', '/tmp', '/', '/mnt/wsl/fuli', '/mnt', '///home/me',
+    '/mnt/t/a\\b', '/mnt/t/a:b',
+    '\\\\wsl$\\Ubuntu\\home\\me', '//wsl$/Ubuntu/home/me', '\\/wsl$/Ubuntu', '\\\\\\wsl$\\Ubuntu',
+    '\\\\wsl.localhost\\Ubuntu\\home\\me', '\\\\WSL.LOCALHOST\\Ubuntu', '\\\\Wsl$',
+    '\\\\?\\UNC\\wsl$\\Ubuntu\\home\\alpha', '\\\\?\\UNC\\wsl.localhost\\Ubuntu\\home\\alpha',
+    '//?/unc/WSL$/Ubuntu', '\\\\.\\UNC\\wsl$\\Ubuntu', '\\\\.\\unc\\wsl.localhost\\Ubuntu']) {
     let error;
     assert.throws(() => resolvePersonalProjectPath(unsupported, PROJECTS, host), (thrown) => {
       error = thrown;
@@ -234,9 +256,15 @@ test('a POSIX path a Windows FULI cannot open is a typed error that names the fi
     assert.throws(() => findRepositoryRoot(unsupported, host), { code: 'project_path_unsupported' });
   }
   assert.deepEqual(opened, []);
-  // Other UNC shares are ordinary Windows paths and get the ordinary checks.
-  assert.throws(() => resolvePersonalProjectPath('\\\\server\\share\\fuli', PROJECTS, host),
-    /existing absolute directory/);
+  // Other UNC shares, extended forms included, are ordinary Windows paths and get
+  // the ordinary checks. Exactly two leading slashes is implementation-defined in
+  // POSIX and UNC under Windows rules, so //mnt/t is a share, never the T: drive.
+  const shares = windowsHost(new Set(['T:\\work\\fuli', 'T:\\work\\fuli\\.git', '\\\\server\\share\\fuli',
+    '\\\\server\\share\\fuli\\.git']));
+  assert.equal(resolvePersonalProjectPath('\\\\server\\share\\fuli', PROJECTS, shares).personalProjectId, 'fuli');
+  for (const share of ['//mnt/t/work/fuli', '\\\\?\\UNC\\server\\share\\missing', '\\\\.\\UNC\\server\\missing']) {
+    assert.throws(() => resolvePersonalProjectPath(share, PROJECTS, shares), /existing absolute directory/, share);
+  }
 });
 
 test('POSIX hosts resolve /mnt and /home paths unchanged', () => {
