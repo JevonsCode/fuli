@@ -11,36 +11,45 @@ import { historyLines, readModelSettingsHistory, type HistoryEntry } from './his
 import { roleName, type ModelRoleId } from './model'
 
 // 变更记录 inside a role's row (rec#11 D-42): collapsed until the person opens
-// it, then read once, and read again while open when the role's settings or
-// execution mode change (revision). Newest first; this section only reads.
+// it, then read, and read again when the role's settings or execution mode
+// changed (revision): at once while open, on reopening otherwise. Only the
+// latest read for this role lands; a failed refresh keeps what was read.
+// Newest first; this section only reads.
 const props = defineProps<{ role: ModelRoleId; revision: string }>()
 
 const open = ref(false)
 const entries = ref<HistoryEntry[] | null>(null)
+// The role and revision the shown entries were read at.
+const loadedAt = ref<{ role: ModelRoleId; revision: string } | null>(null)
 const loading = ref(false)
 const error = ref('')
 const listId = computed(() => `model-history-${props.role}`)
+const current = computed(() => loadedAt.value?.role === props.role && loadedAt.value.revision === props.revision)
 let reading: AbortController | null = null
 
 async function load() {
   reading?.abort()
-  const current = new AbortController()
-  reading = current
+  const request = new AbortController()
+  reading = request
+  const target = { role: props.role, revision: props.revision }
   loading.value = true
   error.value = ''
   try {
-    const value = await readModelSettingsHistory(props.role, current.signal)
-    if (reading === current) entries.value = value
+    const value = await readModelSettingsHistory(target.role, request.signal)
+    if (reading === request && target.role === props.role) {
+      entries.value = value
+      loadedAt.value = target
+    }
   } catch (cause) {
-    if (reading === current && (cause as Error)?.name !== 'AbortError') error.value = apiErrorReason(cause)
+    if (reading === request && (cause as Error)?.name !== 'AbortError') error.value = apiErrorReason(cause)
   } finally {
-    if (reading === current) loading.value = false
+    if (reading === request) loading.value = false
   }
 }
 
 function toggle() {
   open.value = !open.value
-  if (open.value && !entries.value && !loading.value) void load()
+  if (open.value && !current.value && !loading.value) void load()
 }
 
 watch(() => props.revision, () => { if (open.value) void load() })
@@ -70,17 +79,24 @@ const views = computed(() => (entries.value ?? []).map((entry, index) => ({
         {{ t('modelSettings.history.loadFailed') }} {{ error }}
         <Button variant="link" size="sm" class="px-1" @click="load">{{ t('modelSettings.retry') }}</Button>
       </p>
-      <p v-else-if="entries && !entries.length" class="m-0 text-sm text-muted-foreground" data-model-history-empty>
-        {{ t('modelSettings.history.empty') }}
-      </p>
-      <ol v-else-if="entries" class="model-history-list">
-        <li v-for="view in views" :key="view.key" :data-model-history-entry="view.marker ? 'marker' : 'change'">
-          <time v-if="view.at" :datetime="view.at">{{ view.time }}</time>
-          <ul>
-            <li v-for="(line, index) in view.lines" :key="index" :class="{ 'text-muted-foreground': view.marker }">{{ line }}</li>
-          </ul>
-        </li>
-      </ol>
+      <template v-else-if="entries">
+        <!-- A failed refresh keeps the list read before. -->
+        <p v-if="error" class="m-0 mb-2 text-xs text-destructive" role="alert" data-model-history-refresh-failed>
+          {{ t('modelSettings.history.refreshFailed') }}
+          <Button variant="link" size="sm" class="h-auto px-1 text-xs" :disabled="loading" @click="load">{{ t('modelSettings.retry') }}</Button>
+        </p>
+        <p v-if="!entries.length" class="m-0 text-sm text-muted-foreground" data-model-history-empty>
+          {{ t('modelSettings.history.empty') }}
+        </p>
+        <ol v-else class="model-history-list">
+          <li v-for="view in views" :key="view.key" :data-model-history-entry="view.marker ? 'marker' : 'change'">
+            <time v-if="view.at" :datetime="view.at">{{ view.time }}</time>
+            <ul>
+              <li v-for="(line, index) in view.lines" :key="index" :class="{ 'text-muted-foreground': view.marker }">{{ line }}</li>
+            </ul>
+          </li>
+        </ol>
+      </template>
     </div>
   </section>
 </template>

@@ -46,9 +46,17 @@ function stores(t, { historyPath } = {}) {
   const settings = createModelRoleSettings(configPath, { history });
   const trust = createRoleTrust({ path: join(dir, 'model-trust.sqlite'), history, now: () => NOW,
     modelBackends: { operationSettings: () => null } });
-  t.after(() => { history.close(); trust.close(); removed(dir); if (historyPath) removed(join(historyPath, '..')); });
+  // More trust stores over the same files, as other processes would open them.
+  const others = [];
+  const trustStore = history => others[others.push(createRoleTrust({ path: join(dir, 'model-trust.sqlite'), history,
+    modelBackends: { operationSettings: () => null } })) - 1];
+  t.after(() => {
+    for (const store of [history, trust, ...others]) store.close();
+    removed(dir);
+    if (historyPath) removed(join(historyPath, '..'));
+  });
   const revision = () => configRevision(readModelBackendConfig(configPath));
-  return { dir, configPath, history, settings, trust, warnings, revision };
+  return { dir, configPath, history, settings, trust, trustStore, warnings, revision };
 }
 
 const recorded = (history, role) => history.list({ role }).filter(entry => entry.changedAt !== null);
@@ -100,6 +108,45 @@ test('a settings save records the fields it changed, a key reference only as cha
   assert.deepEqual(s.warnings, []);
 });
 
+test('a save through one role records every role whose effective settings changed with it', (t) => {
+  const s = stores(t);
+  s.settings.save('bole', edit());
+  s.settings.save('jefa', edit({ revision: s.revision() }));
+  s.settings.save('tonborg', edit({ revision: s.revision(), connectionId: 'other' }));
+  // Bole and Jefa share local-qwen; Tonborg names another connection.
+  assert.deepEqual(s.settings.save('bole', edit({ revision: s.revision(), connection: { ...edit().connection, model: 'qwen-next' } })),
+    { history: 'recorded' });
+  const [bole] = recorded(s.history, 'bole');
+  const [jefa] = recorded(s.history, 'jefa');
+  assert.deepEqual([bole.via, bole.changes], [null, [{ field: 'connection.model', before: 'qwen-test', after: 'qwen-next' }]]);
+  assert.deepEqual([jefa.via, jefa.changes], ['bole', [{ field: 'connection.model', before: 'qwen-test', after: 'qwen-next' }]]);
+  assert.equal(jefa.toRevision, s.revision());
+  assert.equal(recorded(s.history, 'tonborg').length, 1);
+  // Jefa's own list is current: no marker of unrecorded changes.
+  assert.deepEqual(s.history.list({ role: 'jefa' }).map(entry => entry.kind), ['settings', 'settings']);
+});
+
+test('trust changes are recorded inside the trust lock, so two writers keep revision order', (t) => {
+  const s = stores(t);
+  const other = s.trustStore(s.history);
+  const seen = [];
+  const watching = s.trustStore({ recordTrust(...args) {
+    // While the record is written the change has not committed yet: another reader still sees the old revision.
+    seen.push(other.view('tonborg', 'knowledge_review').revision);
+    return s.history.recordTrust(...args);
+  } });
+  assert.deepEqual(watching.acknowledgeWarning('tonborg', WARNING_VERSION, 0), { history: 'recorded' });
+  assert.deepEqual(seen, [0]);
+  assert.deepEqual(other.setSuggestionsOnly('tonborg', true, 1), { history: 'recorded' });
+  assert.deepEqual(watching.setSuggestionsOnly('tonborg', false, 2), { history: 'recorded' });
+  assert.deepEqual(seen, [0, 2]);
+  assert.deepEqual(recorded(s.history, 'tonborg').map(entry => entry.toRevision), ['3', '2', '1']);
+  // A record that throws neither rolls back nor blocks the change.
+  const failing = s.trustStore({ recordTrust() { throw new Error('synthetic history failure'); } });
+  assert.deepEqual(failing.setSuggestionsOnly('tonborg', true, 3), { history: 'not_recorded' });
+  assert.equal(other.view('tonborg', 'knowledge_review').revision, 4);
+});
+
 test('recorded changes cannot be updated or deleted', (t) => {
   const s = stores(t);
   s.settings.save('bole', edit());
@@ -138,7 +185,7 @@ test('a change whose history cannot be written stays saved and answers not_recor
   assert.match(s.warnings[0], /settings change of jefa was saved, but its change history was not recorded/);
 });
 
-test('a read marks changes made outside the console and earlier changes that were never recorded', (t) => {
+test('a read marks unrecorded changes, without naming a cause, and earlier changes that were never recorded', (t) => {
   const s = stores(t);
   // Configured before the history existed.
   writeFileSync(s.configPath, JSON.stringify({ version: 1, connections: { 'local-qwen': edit().connection },
@@ -153,7 +200,7 @@ test('a read marks changes made outside the console and earlier changes that wer
   config.connections['local-qwen'].model = 'hand-edited';
   writeFileSync(s.configPath, JSON.stringify(config));
   assert.deepEqual(s.history.list({ role: 'bole' }).map(entry => [entry.kind, entry.changedAt === null]),
-    [['changed_outside_console', true], ['settings', false]]);
+    [['unrecorded_changes', true], ['settings', false]]);
   // The next console save starts from the file as it is now.
   s.settings.save('bole', edit({ revision: s.revision() }));
   assert.deepEqual(s.history.list({ role: 'bole' }).map(entry => entry.kind), ['settings', 'settings']);

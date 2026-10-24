@@ -31,9 +31,11 @@ import { MODEL_BACKEND_ROLES } from './config.js';
 // stores its apply intent there): a task committed before the switch has
 // started and completes, like a write that finished a moment earlier.
 //
-// history (settings-history.js) records each change once it committed, with
-// the row revisions it went from and to (rec#11 D-42). A change answers
-// whether it was recorded; a failed record leaves the change as it is.
+// history (settings-history.js) records each change inside its lock, after
+// the row is written and before it commits, with the row revisions it went
+// from and to (rec#11 D-42), so the records of one role follow its
+// revisions. A change answers whether it was recorded; a failed record
+// neither rolls back nor blocks the change.
 
 export const MODEL_TRUST_FORMAT = sqliteFormat({
   store: 'model-trust',
@@ -82,8 +84,8 @@ export function createRoleTrust({ path = ':memory:', modelBackends, history = nu
     return { status: 'passed', reason: null, modelId: key.model };
   }
 
-  // Returns the state the change started from.
-  function change(role, expectedRevision, columns) {
+  // describe(current) names the changed field for the history; returns whether it was recorded.
+  function change(role, expectedRevision, columns, kind, describe) {
     if (!MODEL_BACKEND_ROLES.includes(role)) throw new TypeError(`Unknown role: ${role}`);
     return locked(open(), () => {
       const current = state(role);
@@ -98,12 +100,20 @@ export function createRoleTrust({ path = ':memory:', modelBackends, history = nu
           suggestions_only_at = excluded.suggestions_only_at, warning_version = excluded.warning_version,
           warning_seen_at = excluded.warning_seen_at, revision = excluded.revision`)
         .run({ role, ...next, revision: expectedRevision + 1 });
-      return current;
+      // Before the lock is released, so another writer's next revision is recorded after this one.
+      return { history: recorded(role, kind, expectedRevision, describe(current)) };
     });
   }
 
-  const recorded = (role, kind, expectedRevision, change) =>
-    ({ history: history ? history.recordTrust(role, kind, expectedRevision, change) : 'not_recorded' });
+  // A record that fails never rolls back or blocks the change it describes.
+  function recorded(role, kind, expectedRevision, field) {
+    if (!history) return 'not_recorded';
+    try {
+      return history.recordTrust(role, kind, expectedRevision, field);
+    } catch {
+      return 'not_recorded';
+    }
+  }
 
   return {
     // What an answer may do by itself if it were used now.
@@ -135,17 +145,16 @@ export function createRoleTrust({ path = ':memory:', modelBackends, history = nu
         status: gate.status === 'passed' ? 'automatic' : 'suggestion', reason: gate.reason };
     },
     setSuggestionsOnly(role, suggestionsOnly, expectedRevision) {
-      const before = change(role, expectedRevision, { suggestions_only: suggestionsOnly ? 1 : 0, suggestions_only_at: now().toISOString() });
-      return recorded(role, 'suggestions_only', expectedRevision,
-        { field: 'suggestionsOnly', before: before.suggestionsOnly, after: suggestionsOnly });
+      return change(role, expectedRevision, { suggestions_only: suggestionsOnly ? 1 : 0, suggestions_only_at: now().toISOString() },
+        'suggestions_only', before => ({ field: 'suggestionsOnly', before: before.suggestionsOnly, after: suggestionsOnly }));
     },
     acknowledgeWarning(role, warningVersion, expectedRevision) {
       if (warningVersion !== TRUST_WARNING_VERSION) {
         throw new ApplicationError('model_trust_warning_changed', 'The warning changed since the page showed it; read it again.', { status: 409 });
       }
-      const before = change(role, expectedRevision, { warning_version: TRUST_WARNING_VERSION, warning_seen_at: now().toISOString() });
-      return recorded(role, 'warning_acknowledged', expectedRevision,
-        { field: 'warningVersion', before: before.warningSeen ? TRUST_WARNING_VERSION : null, after: TRUST_WARNING_VERSION });
+      return change(role, expectedRevision, { warning_version: TRUST_WARNING_VERSION, warning_seen_at: now().toISOString() },
+        'warning_acknowledged', before => ({ field: 'warningVersion', before: before.warningSeen ? TRUST_WARNING_VERSION : null,
+          after: TRUST_WARNING_VERSION }));
     },
     close() { database?.close(); database = null; }
   };
