@@ -17,10 +17,19 @@ import { nameableProjects, projectDisplayName, promptNamesProject } from './task
 
 const EXPLICIT_BASES = new Set(['explicit_personal_project_id', 'explicit_agent', 'named_in_prompt',
   'created_from_prompt']);
-// A routed task's stored match basis is "standing_assignment:<assignmentId> <notice>":
-// later entries and the checkpoint receipt recognize it by the prefix and the
-// assignment ID alone, so rewording or translating the notice changes no routing.
-const BASIS = /^standing_assignment:(\S+) (.+)$/su;
+// A routed task stores its route in its Agent assignment's match basis, with
+// or without a selected Agent: "standing_assignment:<assignmentId> <notice>",
+// then the session's own state before the route, "standing_session_project:<id>"
+// or "standing_session_agent:<id>" (none when the session had neither). Later
+// entries and the checkpoint receipt recognize them by prefix and ID alone, so
+// rewording or translating the notice changes no routing.
+const ROUTE = /^standing_assignment:(\S+) (.+)$/su;
+const SESSION_PROJECT = /^standing_session_project:(\S+)$/u;
+const SESSION_AGENT = /^standing_session_agent:(\S+)$/u;
+// The Provider's bound on a stored match basis (task_context_models.py).
+const MATCH_BASIS_LIMIT = 32;
+const NO_AGENT = Object.freeze({ version: 1, selection_reason: null, match_basis: [], requested_agent_id: null,
+  reporting_lead_agent_id: null, execution_reason: null, execution_agent_id: null });
 const CLARIFY_GUIDANCE = 'Terms of several standing assignments match this task, so it stays where it was. Ask the '
   + 'user once which project this task belongs to, then begin the task again naming that project.';
 
@@ -37,7 +46,9 @@ export async function withStandingOwner(application, resolution, input) {
   const [owner] = owners;
   if (!owner || owner.projectId === resolution.personalProjectId) return resolution;
   return { status: 'matched', basis: 'standing_assignment', personalProjectId: owner.projectId,
-    standingOwner: { ...owner, sessionProjectId: resolution.personalProjectId ?? null } };
+    standingOwner: { ...owner, sessionProjectId: resolution.status === 'matched' ? resolution.personalProjectId : null,
+      sessionAgentId: resolution.status === 'global' && resolution.basis === 'host_session_context'
+        ? resolution.globalAgentId : null } };
 }
 
 // What the entry says about a standing assignment: the routed owner with its
@@ -53,25 +64,38 @@ export function standingOwnerEntry(resolution, selection) {
   const agent = selection?.agent?.agentId === owner.leadAgentId ? selection.agent : null;
   const leadName = agent?.profile?.displayName || agent?.profile?.name || null;
   const notice = `本次任务按长期职责归入项目 ${owner.projectName}（负责人 ${leadName ?? owner.leadAgentId}）`;
-  return { notice, receiptNotice: receiptText(notice), matchBasis: `standing_assignment:${owner.assignmentId} ${notice}`,
-    field: { status: 'routed', ...ownerView(owner), lead_name: leadName, session_project_id: owner.sessionProjectId,
+  return { notice, receiptNotice: receiptText(notice),
+    field: { status: 'routed', assignment_id: owner.assignmentId, ...ownerView(owner), lead_name: leadName,
+      session_project_id: owner.sessionProjectId, ...(owner.sessionAgentId ? { session_agent_id: owner.sessionAgentId } : {}),
       notice } };
 }
 
-// The stored task carries the route in its match basis; its checkpoint
-// receipt repeats the notice, and the session's later tasks do not inherit its project.
+// The Agent assignment a routed task stores: the selected Agent's, or one
+// without an Agent, with the route appended within the Provider's bound.
+export function withStandingRoute(assignment, standingOwner) {
+  if (standingOwner?.status !== 'routed') return assignment;
+  const route = [`standing_assignment:${standingOwner.assignment_id} ${standingOwner.notice}`,
+    ...(standingOwner.session_project_id ? [`standing_session_project:${standingOwner.session_project_id}`] : []),
+    ...(standingOwner.session_agent_id ? [`standing_session_agent:${standingOwner.session_agent_id}`] : [])];
+  const base = assignment ?? NO_AGENT;
+  return { ...base, match_basis: [...base.match_basis.slice(0, MATCH_BASIS_LIMIT - route.length), ...route] };
+}
+
+// What the session had before a routed task, so its later tasks continue
+// there and never inherit the routed project; any other task is its own.
+export function sessionTaskContext(task) {
+  const basis = task?.agentAssignment?.match_basis ?? [];
+  if (!basis.some(item => ROUTE.test(item))) return task;
+  const stored = pattern => basis.map(item => pattern.exec(item)?.[1]).find(Boolean) ?? null;
+  const personalProjectId = stored(SESSION_PROJECT);
+  const projectAgentId = stored(SESSION_AGENT);
+  return personalProjectId || projectAgentId ? { personalProjectId, projectAgentId, projectScope: null } : null;
+}
+
+// The checkpoint receipt repeats the notice the routed entry showed.
 export function standingReceiptNotices(task) {
-  return storedRoutes(task).map(({ notice }) => receiptText(notice));
-}
-
-export function routedByStandingAssignment(task) {
-  return storedRoutes(task).length > 0;
-}
-
-// Each stored route that names its assignment, with the notice it showed.
-function storedRoutes(task) {
-  return (task?.agentAssignment?.match_basis ?? []).map(basis => BASIS.exec(basis)).filter(Boolean)
-    .map(([, , notice]) => ({ notice }));
+  return (task?.agentAssignment?.match_basis ?? []).map(item => ROUTE.exec(item)?.[2]).filter(Boolean)
+    .map(receiptText);
 }
 
 // A store this FULI cannot read routes nothing; the entry continues as before.

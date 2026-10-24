@@ -69,12 +69,14 @@ function lead(project) {
 }
 
 test('a term from another repository\'s session scopes this task to the standing project only', async () => {
-  const { run, tasks, searches } = fixture();
+  const { app, run, tasks, searches } = fixture();
   const entry = await run();
   assert.equal(entry.context.personal_project_id, 'timesheet');
   assert.equal(entry.context.project_resolution.basis, 'standing_assignment');
   assert.equal(entry.project_agent_context.project_agent_id, 'lead-timesheet');
-  assert.deepEqual(entry.standing_owner, { status: 'routed', project_id: 'timesheet', project_name: 'Timesheet',
+  const [assignment] = app.standingAssignments.list(SPACE);
+  assert.deepEqual(entry.standing_owner, { status: 'routed', assignment_id: assignment.assignmentId,
+    project_id: 'timesheet', project_name: 'Timesheet',
     lead_agent_id: 'lead-timesheet', matched_terms: ['工时'], lead_name: 'Timesheet Lead',
     session_project_id: 'repo-a', notice: NOTICE });
   assert.match(entry.agent_receipt.markdown, new RegExp(`· ${NOTICE}$`));
@@ -118,6 +120,53 @@ test('the checkpoint receipt repeats the routed task\'s sentence', async () => {
     disposition: 'retain_nothing', reason: 'Synthetic timesheet filled' });
   assert.match(result.agent_receipt.markdown, new RegExp(`· ${NOTICE}`));
   assert.doesNotMatch(result.agent_receipt.markdown, /standing_assignment|standing-/);
+});
+
+const UNCLAIMED = { status: 'not_provided', basis: null, personalProjectId: null };
+const opsTask = { token: 'fuli-task-synthetic-ops', personalProjectId: 'ops', projectAgentId: 'lead-ops',
+  projectScope: null, agentAssignment: null };
+
+test('a session owned by another project returns there after one or more routed tasks', async () => {
+  for (const routedCount of [1, 2]) {
+    const { run, tasks } = fixture({ resolution: UNCLAIMED });
+    tasks.push(opsTask);
+    for (let index = 0; index < routedCount; index++) {
+      const routed = await run({ projectPath: null });
+      assert.equal(routed.context.personal_project_id, 'timesheet');
+      assert.equal(routed.standing_owner.session_project_id, 'ops');
+    }
+    const next = await run({ projectPath: null, taskPrompt: '部署脚本再检查一下' });
+    assert.equal(next.context.personal_project_id, 'ops', `after ${routedCount} routed task(s)`);
+    assert.equal(next.context.project_resolution.basis, 'host_session_context');
+  }
+});
+
+test('a global Agent session returns to that Agent after a routed task', async () => {
+  const { app, run, tasks } = fixture({ resolution: UNCLAIMED });
+  app.personal.getProjectAgent = async (_, project, id) => ({ ...lead(null), agent_id: id });
+  tasks.push({ token: 'fuli-task-synthetic-global', personalProjectId: null, projectAgentId: 'global-engineer',
+    projectScope: null, agentAssignment: null });
+  assert.equal((await run({ projectPath: null })).standing_owner.session_agent_id, 'global-engineer');
+  const next = await run({ projectPath: null, taskPrompt: '随便问个问题' });
+  assert.equal(next.context.personal_project_id, null);
+  assert.equal(next.agent_receipt.owner.agent_id, 'global-engineer');
+});
+
+test('the route is stored even when no Agent could be selected', async () => {
+  const { app, run, tasks } = fixture({ resolution: UNCLAIMED });
+  tasks.push(opsTask);
+  app.personal.resolveProjectAgentContext = async () => { throw new Error('Synthetic role read failure'); };
+  const routed = await run({ projectPath: null });
+  assert.equal(routed.context.personal_project_id, 'timesheet');
+  assert.equal(routed.project_agent_context.status, 'unavailable');
+  assert.equal(routed.standing_owner.lead_name, null);
+  assert.match(routed.agent_receipt.markdown, /本次任务按长期职责归入项目 Timesheet（负责人 lead-timesheet）/);
+  const stored = tasks.at(-1).agentAssignment;
+  assert.equal(stored.selection_reason, null);
+  assert.deepEqual(stored.match_basis.map(basis => basis.split(':')[0]),
+    ['standing_assignment', 'standing_session_project']);
+  // The next plain task does not inherit timesheet as an ordinary session project.
+  assert.equal((await run({ projectPath: null, taskPrompt: '部署脚本再检查一下' })).context.personal_project_id, 'ops');
 });
 
 test('a routed task is recognized by its assignment prefix, never by the notice wording', async () => {

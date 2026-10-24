@@ -16,7 +16,7 @@ import { internalCaptureSkip, legacyCaptureReceipts, normalizeTaskCaptures, task
 import { captureDisabled, taskCaptureScope } from './capture-decision.js';
 import { checkpointCaptureDecision, storedCheckpoint } from './checkpoint-capture.js';
 import { receiptNotices } from './capture-notice.js';
-import { standingReceiptNotices } from './task-entry-standing-owner.js';
+import { standingReceiptNotices, withStandingRoute } from './task-entry-standing-owner.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
@@ -100,7 +100,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     sourceSessionId,
     delegationToken: application.roundtable?.taskEntryDelegation?.({ sessionId })?.token,
     preferenceScope: taskPreferenceScope({ version: 1, work_kind: workKind, workflow }),
-    agentAssignment: taskAgentAssignment(preferences.project_agent_context),
+    agentAssignment: withStandingRoute(taskAgentAssignment(preferences.project_agent_context), preferences.standing_owner),
     memoryRevision: preferences.project_agent_context?.memory?.revision ?? null,
     workLogRequired: Boolean(preferences.project_agent_context?.memory),
     entryVia

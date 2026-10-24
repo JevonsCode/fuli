@@ -1,7 +1,7 @@
 import { TASK_ENTRY_TOOLS } from './repository-project-registration.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { projectNamedInPrompt } from './task-entry-project-mention.js';
-import { routedByStandingAssignment, withStandingOwner } from './task-entry-standing-owner.js';
+import { sessionTaskContext, withStandingOwner } from './task-entry-standing-owner.js';
 
 // The fixed assistant receives conversations no project has claimed yet.
 export const ASSISTANT_AGENT_ID = 'employee.assistant';
@@ -34,9 +34,10 @@ async function sessionEntryProject(application, resolution, input) {
   const source = input.sourceApplication ?? 'other';
   try {
     for (const sessionId of sessions) {
-      const context = await application.taskContextRegistry?.current?.(sessionId, source);
-      // A task a standing assignment routed never moves its session there.
-      if (context?.projectScope?.type === 'temporary' || routedByStandingAssignment(context)) continue;
+      // A task a standing assignment routed never moves its session there:
+      // the session continues where it was before that task.
+      const context = sessionTaskContext(await application.taskContextRegistry?.current?.(sessionId, source));
+      if (context?.projectScope?.type === 'temporary') continue;
       if (context?.personalProjectId === null && context.projectAgentId) {
         return { status: 'global', basis: 'host_session_context', personalProjectId: null,
           globalAgentId: context.projectAgentId };
