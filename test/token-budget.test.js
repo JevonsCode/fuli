@@ -116,7 +116,10 @@ const BASELINE = Object.freeze({
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.
-  projectEntryChars: 1775,
+  // An unsaved conversation names its failed step and error code; this synthetic
+  // entry has no conversation store, so it always carries them: 1,775 -> 1,820
+  // chars, measured. A saved conversation carries neither.
+  projectEntryChars: 1820,
   // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
   // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
   // other number above is unchanged; the switch adds no tool, schema or instruction text.
