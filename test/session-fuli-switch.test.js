@@ -642,24 +642,160 @@ test('the task token a call carries decides it: the stopped window stays refused
   for (const call of [searchWith, entryWith]) {
     assert.deepEqual([(await call(a.context.taskContextToken)).reason], ['session_stopped']);
   }
-  // Without a token, or with one that proves nothing, the strict rule stays.
+  // Without a token, or with one that proves nothing, the strict rule stays. A token that is not
+  // its session's current task says so: the registry answers a superseded, forged and foreign one alike.
   const claudeTask = f.app.taskContextRegistry.begin({ sessionId: SESSION_C, personalProjectId: 'novel', projectAgentId: 'lead-novel',
     sourceApplication: 'claude_code' });
-  for (const [label, token] of [['none', undefined], ['forged', 'fuli-task-synthetic-forged'],
-    ['superseded', b.context.taskContextToken], ['another client', claudeTask.token], ['oversized', `fuli-task-${'x'.repeat(300)}`]]) {
+  for (const [label, token, reason] of [['none', undefined, 'session_unattributed'],
+    ['forged', 'fuli-task-synthetic-forged', 'task_token_not_current'], ['superseded', b.context.taskContextToken, 'task_token_not_current'],
+    ['another client', claudeTask.token, 'task_token_not_current'], ['oversized', `fuli-task-${'x'.repeat(300)}`, 'session_unattributed']]) {
     for (const call of [searchWith, entryWith]) {
       const refused = await call(token);
-      assert.deepEqual([refused.status, refused.reason], ['fuli_off', 'session_unattributed'], `${label} ${call === searchWith ? 'search' : 'entry'}`);
+      assert.deepEqual([refused.status, refused.reason], ['fuli_off', reason], `${label} ${call === searchWith ? 'search' : 'entry'}`);
     }
   }
 });
 
-test('the attribution token is an optional field of the tools Agents call without a task, and only of them', () => {
+// rec#47 F2: a refusal says why the call's token did not count. A token a newer prompt replaced is
+// not "an unknown session", and a registry that cannot answer is not either. None of them is served.
+test('a superseded token or a failed registry read is refused with its own reason while a session is stopped', async (t) => {
+  const f = await fixture(t);
+  await codexEntry(f, f.dirs.novel, { session: SESSION_A });
+  const first = await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'First task.' });
+  await codexLine(f, SESSION_A, 'fuli stop');
+  const process = agentHostRequestContext(null, 'fuli-host-synthetic-codex-process', 'codex');
+  const recorded = [];
+  f.app.recordDecisionTrace = async input => { recorded.push(input); return { status: 'recorded' }; };
+  const call = (name, token) => callAgentTool(f.app, name, { personalSpaceId: 'synthetic-space', query: 'chapter',
+    ...(token === undefined ? {} : { taskContextToken: token }) }, process);
+  // "continue" after an interruption is a new prompt: it begins a new task with a new token.
+  const current = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'continue' })).context.taskContextToken;
+  assert.notEqual(current, first.context.taskContextToken);
+
+  for (const name of ['search_knowledge_graph', 'record_decision_trace']) {
+    const stale = await call(name, first.context.taskContextToken);
+    assert.deepEqual([stale.status, stale.reason], ['fuli_off', 'task_token_not_current'], name);
+    assert.match(stale.guidance, /taskContextToken from this turn's FULI context/);
+    assert.match(stale.guidance, /Do not try to checkpoint or record the earlier task/);
+    assert.doesNotMatch(stale.guidance, /could not tell which session/);
+    assert.equal(stale.notice, '这次调用带的任务 token 已不是会话当前的任务（每次新的提问都会换新 token），而本客户端有会话已停用 FULI，所以没有提供；你明确提交的修改仍会保存');
+    assert.equal((await call(name)).reason, 'session_unattributed', `${name} without a token`);
+  }
+  // The earlier task really cannot be checkpointed any more (the Provider checkpoints only a
+  // session's current task; this double follows it).
+  await assert.rejects(async () => f.app.taskContextRegistry.checkpoint(first.context.taskContextToken,
+    { disposition: 'retain_nothing', reason: 'Late close.', fingerprint: 'synthetic-late' }, 'codex'), { code: 'not_found' });
+  assert.deepEqual(recorded, [], 'nothing refused reached the tool');
+
+  // A registry that cannot answer is the fail-closed reason, not an unknown session.
+  const registry = f.app.taskContextRegistry;
+  f.app.taskContextRegistry = { currentTaskSession: async () => { throw new Error('synthetic provider outage'); } };
+  for (const name of ['search_knowledge_graph', 'record_decision_trace']) {
+    const failed = await call(name, current);
+    assert.deepEqual([failed.status, failed.reason], ['fuli_off', 'policy_unavailable'], name);
+    assert.equal(failed.notice, '记录设置读取失败，本次未自动记录；你明确提交的修改仍会保存');
+    assert.match(failed.guidance, /This is not the person stopping FULI/);
+  }
+  f.app.taskContextRegistry = registry;
+
+  // The current token is served, and the tool never sees it.
+  assert.ok(Array.isArray((await call('search_knowledge_graph', current)).facts));
+  assert.deepEqual(await call('record_decision_trace', current), { status: 'recorded' });
+  assert.equal(Object.hasOwn(recorded.at(-1), 'taskContextToken'), false);
+});
+
+// rec#47 F2 (dot's P2 on #349): the records a task writes as it goes or closes take the token too.
+// Their schemas reject unknown fields, so before this they were always refused while any session of
+// the client was stopped. The token's session then authorizes their capture decision as a task's
+// would: real handlers and the real capture gate, only the Provider is a double.
+const MEMORY_CHECKPOINT = { personalSpaceId: 'synthetic-space', personalProjectId: 'novel', agentId: 'lead-novel',
+  expectedRevision: 0, memory: { summary: 'Synthetic working summary.' } };
+const KNOWLEDGE_CAPTURE = { targetKind: 'personal', spaceId: 'synthetic-space', personalProjectId: 'novel', sourceKind: 'conversation',
+  name: 'Synthetic capture', sourceDescription: 'Synthetic session evidence', referenceTime: '2026-10-20T00:00:00.000Z',
+  sensitivity: 'normal', relationships: [], entities: [{ key: 'preference:synthetic', name: 'Synthetic preference', type: 'Preference',
+    originQuadrant: 'known_known', confirmationStatus: 'pending', confirmationBasis: { existenceReason: 'The user stated it.',
+      quadrantReason: 'The user stated it explicitly.', proposedBy: { kind: 'agent', label: 'Codex' } } }] };
+const CLOSING = ['checkpoint_project_agent_memory', 'capture_session_knowledge'];
+
+async function closingRecords(t) {
+  const f = await fixture(t);
+  const memoryWrites = [];
+  f.app.personal.writeProjectAgentMemory = async request => {
+    memoryWrites.push(request);
+    return { checkpoint_id: `synthetic-checkpoint-${memoryWrites.length}`, personal_space_id: request.personal_space_id,
+      personal_project_id: request.personal_project_id, agent_id: request.agent_id, revision: memoryWrites.length,
+      created_at: '2026-10-20T08:00:00.000Z', memory: request.memory };
+  };
+  let call = 0;
+  // Every attempt is a new write, so an idempotent retry never hides a refusal.
+  const write = (session, name, token) => mcpCall(f, { env: {}, sourceApplication: 'codex' }, name, {
+    ...(name === 'capture_session_knowledge' ? { ...KNOWLEDGE_CAPTURE, sessionId: session } : MEMORY_CHECKPOINT),
+    idempotencyKey: `synthetic-closing-${++call}`, ...(token === undefined ? {} : { taskContextToken: token }) });
+  const written = name => name === 'capture_session_knowledge' ? f.knowledge.length : memoryWrites.length;
+  return { f, write, written };
+}
+
+test('closing records with the current token are written while another session of the client is stopped', async (t) => {
+  const { f, write, written } = await closingRecords(t);
+  await codexEntry(f, f.dirs.novel, { session: SESSION_A });
+  const stale = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'First task.' })).context.taskContextToken;
+  const current = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'continue' })).context.taskContextToken;
+  await codexLine(f, SESSION_A, 'fuli stop');
+  for (const name of CLOSING) {
+    for (const [token, reason] of [[undefined, 'session_unattributed'], [stale, 'task_token_not_current']]) {
+      const refused = await write(SESSION_B, name, token);
+      assert.deepEqual([refused.status, refused.reason], ['fuli_off', reason], `${name} ${reason}`);
+    }
+    // A payload that names the stopped session is refused even with a current token.
+    if (name === 'capture_session_knowledge') assert.equal((await write(SESSION_A, name, current)).reason, 'session_stopped');
+    assert.equal(written(name), 0, `${name}: nothing refused was written`);
+    const served = await write(SESSION_B, name, current);
+    assert.ok(['checkpointed', 'committed'].includes(served.status), `${name} ${JSON.stringify(served)}`);
+    assert.equal(written(name), 1, `${name} written once`);
+  }
+
+  // The token's own session is held to its pause and its stop like a task's.
+  await callAgentTool(f.app, 'update_capture_policy', { sessionPaused: true, taskContextToken: current, sourceApplication: 'codex' });
+  for (const name of CLOSING) {
+    const paused = await write(SESSION_B, name, current);
+    assert.deepEqual([paused.status, paused.reason], ['capture_disabled', 'session_paused'], `${name} paused`);
+  }
+  await codexLine(f, SESSION_B, 'fuli stop');
+  for (const name of CLOSING) {
+    const stopped = await write(SESSION_B, name, current);
+    assert.deepEqual([stopped.status, stopped.reason], ['fuli_off', 'session_stopped'], `${name} stopped`);
+    assert.equal(written(name), 1, `${name}: nothing more was written`);
+  }
+});
+
+// No session is stopped, so the use gate does not refuse; a paused sibling still made every
+// token-less write of the client unattributable. The current token binds the write to its session.
+test('closing records with the current token are written while another session of the client is paused', async (t) => {
+  const { f, write, written } = await closingRecords(t);
+  const a = (await codexEntry(f, f.dirs.novel, { session: SESSION_A })).context.taskContextToken;
+  const stale = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'First task.' })).context.taskContextToken;
+  const current = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'continue' })).context.taskContextToken;
+  await callAgentTool(f.app, 'update_capture_policy', { sessionPaused: true, taskContextToken: a, sourceApplication: 'codex' });
+  for (const name of CLOSING) {
+    for (const [token, reason] of [[undefined, 'policy_unavailable'], [stale, 'policy_unavailable'], [a, 'session_paused']]) {
+      const refused = await write(SESSION_B, name, token);
+      assert.deepEqual([refused.status, refused.reason], ['capture_disabled', reason], `${name} ${token}`);
+    }
+    assert.equal(written(name), 0, `${name}: nothing refused was written`);
+    assert.ok(['checkpointed', 'committed'].includes((await write(SESSION_B, name, current)).status), name);
+    assert.equal(written(name), 1, name);
+  }
+});
+
+test('the attribution token is an optional field of the tools whose schema names no task, and only of them', () => {
   const byName = new Map(listAgentTools().map(tool => [tool.name, tool.inputSchema]));
   for (const name of ['get_collaboration_preferences', 'get_user_taste_skill', 'search_current_project_knowledge', 'search_knowledge_graph',
     'search_connected_knowledge', 'list_project_agents', 'get_project_agent_context', 'get_project_agent_memory',
     'list_preference_conflicts', 'resolve_deferred_preference_conflict', 'request_agent_attention', 'assess_agent_action',
-    'review_with_tonborg', 'get_agent_quality_gate', 'get_project_team', 'recommend_next_workflow_steps', 'find_agents']) {
+    'review_with_tonborg', 'get_agent_quality_gate', 'get_project_team', 'recommend_next_workflow_steps', 'find_agents',
+    'capture_session_knowledge', 'record_decision_trace', 'record_workflow_transition_observation',
+    'checkpoint_project_agent_memory', 'record_project_agent_task_activity', 'record_project_agent_executor_actual',
+    'record_project_agent_task_outcome']) {
     assert.deepEqual(byName.get(name).properties.taskContextToken, { type: 'string' }, name);
     assert.equal((byName.get(name).required ?? []).includes('taskContextToken'), false, name);
   }
