@@ -1014,16 +1014,16 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       workspaceFor: url => this.#workspace(url), spaceId: this.config.personal.spaceId }, options);
   }
 
-  async reviewPersonalDraft(input) {
+  // ownerReads: the console's port; an Agent decides only a draft of positively plain work.
+  async reviewPersonalDraft(input, ownerReads = null) {
     input = parsePersonalDraftDecision(input);
     const personalSpaceId = this.config.personal.spaceId;
+    const personal = ownerReads?.submissions ?? this.personal;
     if (input.decision !== 'submit_public') {
-      return this.personal.decidePublicationDraft(personalSpaceId, input.draftId, {
-        decision: input.decision,
-        shared_proposal_id: null
-      });
+      return personal.decidePublicationDraft(personalSpaceId, input.draftId, { decision: input.decision,
+        shared_proposal_id: null });
     }
-    return submitPersonalDraft({ personal: this.personal, workspaceFor: url => this.#workspace(url),
+    return submitPersonalDraft({ personal, workspaceFor: url => this.#workspace(url),
       spaceId: personalSpaceId, draftId: input.draftId });
   }
 

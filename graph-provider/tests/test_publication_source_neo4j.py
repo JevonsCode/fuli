@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 
 from fuli_graph.models import StructuredEpisode
-from test_knowledge_hard_delete_neo4j import delete, preview, reviewed
+from test_knowledge_hard_delete_neo4j import REVIEW, delete, preview, reviewed
 from test_models import confirmed_episode
 from test_negative_feedback_block_neo4j import query
 from test_project_agent_memory_neo4j import provider_client
@@ -42,7 +42,9 @@ async def test_all_local_draft_states_follow_the_source_and_pending_submit_is_te
                         params={'personal_space_id': space}, json={'decision': 'begin_submit_public'}))
                     decision['submission_id'] = begun['submission_id']
                     decision['shared_proposal_id'] = 'synthetic-proposal'
+                # The other key names no local episode and its turn no task: only the console decides it.
                 ok(await client.post(f'/v1/publication-drafts/{row["id"]}/decision',
+                    headers=REVIEW if status == 'ignored' else None,
                     params={'personal_space_id': space}, json=decision))
         plan = ok(await preview(client, space, saved['entity_ids'][0]))
         assert plan['drafts'] == {'pending': 0 if shared else 1, 'submitted': 0 if shared else 1,
@@ -60,12 +62,17 @@ async def test_all_local_draft_states_follow_the_source_and_pending_submit_is_te
                 assert marker not in repr(row)
                 assert row['payload_scrubbed_by'] == result['deletion_id']
                 assert json.loads(row['source_identity'])['source_turn_id'] == source['source_turn_id']
+        # A shared episode stays, so its plain provenance still resolves. An erased one no longer does:
+        # an Agent token reads none of its drafts (0.20.1), the person's console reads and decides them.
         for original, draft_id in drafts.items():
-            row = ok(await client.get(f'/v1/publication-drafts/{draft_id}', params={'personal_space_id': space}))
+            agent = await client.get(f'/v1/publication-drafts/{draft_id}', params={'personal_space_id': space})
+            assert agent.status_code == (200 if shared and original != 'ignored' else 404), original
+            row = ok(await client.get(f'/v1/publication-drafts/{draft_id}', headers=REVIEW,
+                                      params={'personal_space_id': space}))
             assert row['status'] == ('source_deleted' if original == 'pending' and not shared else original)
             assert (row['episode'] is None) == (not shared)
-        listed = ok(await client.get('/v1/publication-drafts', params={'personal_space_id': space}))
+        listed = ok(await client.get('/v1/publication-drafts', headers=REVIEW, params={'personal_space_id': space}))
         assert len(listed) == (1 if shared else 0)
-        attempted = await client.post(f'/v1/publication-drafts/{drafts["pending"]}/decision',
+        attempted = await client.post(f'/v1/publication-drafts/{drafts["pending"]}/decision', headers=REVIEW,
             params={'personal_space_id': space}, json={'decision': 'begin_submit_public'})
         assert attempted.status_code == (200 if shared else 409)

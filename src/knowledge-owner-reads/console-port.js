@@ -15,11 +15,13 @@ import { graphReadPath, preferenceConflictsPath, publicationDraftsPath } from '.
 // imports it (test/knowledge-owner-reads.test.js).
 
 export function knowledgeOwnerReads(dataDir, { send = personalHumanReviewChannel(dataDir) } = {}) {
-  const request = async (path, body, method = 'POST') => {
-    const { ok, status, payload } = await send(path, body, { review: true, method });
+  const request = async (path, body, method = 'POST', { timeoutMs } = {}) => {
+    const { ok, status, payload } = await send(path, body, { review: true, method, ...(timeoutMs ? { timeoutMs } : {}) });
     if (ok) return payload;
     throw providerRefusal(status, payload);
   };
+  const draftPath = (personalSpaceId, draftId, suffix = '') => `/v1/publication-drafts/${encodeURIComponent(draftId)}${
+    suffix}?${new URLSearchParams({ personal_space_id: personalSpaceId })}`;
   return {
     graph: ({ spaceId, limit, personalProjectId, offset }) =>
       request(graphReadPath(spaceId, { limit, personalProjectId, offset }), null, 'GET'),
@@ -31,13 +33,16 @@ export function knowledgeOwnerReads(dataDir, { send = personalHumanReviewChannel
       request(preferenceConflictsPath(personalSpaceId, { status, limit, offset }), null, 'GET'),
     publicationDrafts: ({ personalSpaceId, status }) =>
       request(publicationDraftsPath(personalSpaceId, { status }), null, 'GET'),
-    // The submission ledger reconciliation settles: a draft of an FLA's work is the person's
-    // alone, its source and attempt too, so only this channel lists and settles it.
+    // The person's drafts as their submission and its reconciliation read and decide them (the
+    // provider client's shape). A draft whose source is not positively plain work (an FLA's, erased,
+    // or never recorded here, as a capture made only for a team) is the person's alone, its source
+    // and attempt too, so only this channel reads, submits and settles it.
     submissions: {
       listPublicationDrafts: (personalSpaceId, status, { metadataOnly = false } = {}) =>
         request(publicationDraftsPath(personalSpaceId, { status, metadataOnly }), null, 'GET'),
-      decidePublicationDraft: (personalSpaceId, draftId, body) => request(`/v1/publication-drafts/${
-        encodeURIComponent(draftId)}/decision?${new URLSearchParams({ personal_space_id: personalSpaceId })}`, body)
+      getPublicationDraft: (personalSpaceId, draftId) => request(draftPath(personalSpaceId, draftId), null, 'GET'),
+      decidePublicationDraft: (personalSpaceId, draftId, body, { timeoutMs } = {}) =>
+        request(draftPath(personalSpaceId, draftId, '/decision'), body, 'POST', { timeoutMs })
     },
     deferPreferenceConflict: (body) => request('/v1/preference-conflicts/defer', body),
     completePreferenceConflict: (conflictId, body) =>

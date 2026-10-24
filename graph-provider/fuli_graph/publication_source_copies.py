@@ -21,11 +21,16 @@ def publication_source_identity(group_id, episode):
     return identity
 
 
-async def project_agent_sources(store, space, identities) -> set[int]:
-    """The positions among these draft source identities that an FLA's work
-    wrote: the personal episode it names, or the session turn it came from.
-    Such knowledge stays in the personal graph (0.20.1): no draft is made of
-    it, and an older one is read only by the person."""
+PROJECT_AGENT, PLAIN, UNRESOLVED = 'project_agent', 'plain', 'unresolved'
+
+
+async def draft_sources(store, space, identities) -> list[str]:
+    """Whose work each of these draft source identities is, from the personal
+    episode it names and the session turn it came from (0.20.1):
+    PROJECT_AGENT when either is an FLA's, PLAIN only when one of them is
+    found and neither is, and UNRESOLVED when neither is found (erased, or
+    never recorded, as for a capture made only for a team project). Nothing
+    is ever taken as plain for want of a source."""
     sources = [{'index': index, 'episode_id': identity.get('episode_id'),
                 'turn_id': identity.get('source_turn_id'),
                 'session_node': store._task_session_id(space['id'], identity['source_application'],
@@ -33,21 +38,23 @@ async def project_agent_sources(store, space, identities) -> set[int]:
                 if identity.get('source_application') and identity.get('session_id') else None}
                for index, identity in enumerate(identities)]
     if not sources:
-        return set()
+        return []
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         UNWIND $sources AS source
-        WITH source WHERE EXISTS {
-            MATCH (episode:Episodic {group_id: $group_id, uuid: source.episode_id})
-            WHERE episode.fuli_project_agent_id IS NOT NULL }
-          OR EXISTS {
-            MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_TASK_CONTEXT_SESSION]->
-                  (:FuliTaskContextSession {id: source.session_node})-[:HAS_CONTEXT]->
-                  (task:FuliTaskContext {turn_id: source.turn_id})
-            WHERE task.project_agent_id IS NOT NULL }
-        RETURN source.index AS index
+        OPTIONAL MATCH (episode:Episodic {group_id: $group_id, uuid: source.episode_id})
+        OPTIONAL MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_TASK_CONTEXT_SESSION]->
+              (:FuliTaskContextSession {id: source.session_node})-[:HAS_CONTEXT]->
+              (task:FuliTaskContext {turn_id: source.turn_id})
+        WITH source, collect(DISTINCT episode) AS episodes, collect(DISTINCT task) AS tasks
+        RETURN source.index AS index,
+               any(episode IN episodes WHERE episode.fuli_project_agent_id IS NOT NULL)
+                 OR any(task IN tasks WHERE task.project_agent_id IS NOT NULL) AS project_agent,
+               size(episodes) + size(tasks) > 0 AS found
         ''', sources=sources, group_id=space['group_id'], space_id=space['id'], routing_='r')
-    return {record['index'] for record in records}
+    found = {record['index']: (PROJECT_AGENT if record['project_agent'] else PLAIN if record['found'] else UNRESOLVED)
+             for record in records}
+    return [found.get(index, UNRESOLVED) for index in range(len(sources))]
 
 
 async def drafts_for_sources(store, space, sources, *, source_range=None):

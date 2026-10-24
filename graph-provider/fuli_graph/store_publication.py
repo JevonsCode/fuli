@@ -15,7 +15,7 @@ from .models import (
     SubscriptionRecord,
 )
 from .provider_values import json_object, native_datetime, now_utc, stable_uuid
-from .publication_source_copies import project_agent_sources, publication_source_identity
+from .publication_source_copies import PLAIN, PROJECT_AGENT, draft_sources, publication_source_identity
 from .knowledge_source_fence import require_source_available
 from .knowledge_versions import lock_knowledge
 from .store_transactions import query_store_transaction
@@ -36,14 +36,16 @@ def _draft_identity(space, draft) -> dict:
 
 class StorePublication:
     async def _project_agent_drafts(self, actor, space, drafts) -> set[int]:
-        """The positions among these drafts that hold an FLA's work, for a
-        reader without the human-review proof. Such a draft (made before the
-        Provider refused them) is the person's alone, its body and its source
-        and submission metadata alike, erased or not: the console's port lists,
-        reads and settles it."""
+        """The positions among these drafts a reader without the human-review
+        proof may not see: every one whose source is not positively plain
+        work. A draft of an FLA's work (made before the Provider refused them),
+        and one whose source is erased or was never recorded here, is the
+        person's alone, its body, source and submission metadata alike; the
+        console's port lists, reads, submits and settles it."""
         if actor.get('_human_review_verified') is True:
             return set()
-        return await project_agent_sources(self, space, [_draft_identity(space, draft) for draft in drafts])
+        owners = await draft_sources(self, space, [_draft_identity(space, draft) for draft in drafts])
+        return {index for index, owner in enumerate(owners) if owner != PLAIN}
 
     async def decide_publication_submission(self, actor, personal_space_id, draft_id, decision):
         """Internal submission protocol; every transition serializes with erasure."""
@@ -84,7 +86,7 @@ class StorePublication:
             await require_source_available(scoped, space, episode_id=identity.get('episode_id'),
                 source_application=identity.get('source_application'), session_id=identity.get('session_id'),
                 source_turn_id=identity.get('source_turn_id'))
-            if await project_agent_sources(scoped, space, [identity]):
+            if (await draft_sources(scoped, space, [identity])) == [PROJECT_AGENT]:
                 raise HTTPException(status_code=422, detail=_PROJECT_AGENT_KNOWLEDGE)
             records, _, _ = await scoped.runtime.driver.execute_query(
                 '''
@@ -151,17 +153,20 @@ class StorePublication:
         return self._publication_draft(draft)
 
     async def _refuse_project_agent_draft(self, actor, space, draft_id, decision: str) -> None:
-        """A decision on a draft holding an FLA's work (one made before the
-        Provider refused them): to a caller without the human-review proof it
-        does not exist, so no reply carries its body, source or attempt. The
-        person's console settles it, keeps it or ignores it, but never starts
-        publishing it. A missing draft is left to the decision's own answer."""
+        """A decision on a draft whose source is not positively plain work: to
+        a caller without the human-review proof it does not exist, so no reply
+        carries its body, source or attempt. The person's console decides it;
+        a draft of an FLA's work it settles, keeps or ignores, but never starts
+        publishing. A missing draft is left to the decision's own answer."""
         draft = await self._stored_draft(space, draft_id)
-        if draft is None or not await project_agent_sources(self, space, [_draft_identity(space, draft)]):
+        if draft is None:
+            return
+        [owner] = await draft_sources(self, space, [_draft_identity(space, draft)])
+        if owner == PLAIN:
             return
         if actor.get('_human_review_verified') is not True:
             raise HTTPException(status_code=404, detail='publication draft not found')
-        if decision == 'begin_submit_public':
+        if owner == PROJECT_AGENT and decision == 'begin_submit_public':
             raise HTTPException(status_code=422, detail=_PROJECT_AGENT_KNOWLEDGE)
 
     async def _stored_draft(self, space, draft_id) -> dict | None:

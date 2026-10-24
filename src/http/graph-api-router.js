@@ -656,7 +656,7 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.reviewPersonalDraft(parsePersonalDraftDecision({
       decision: body?.decision,
       draftId: decodeURIComponent(personalDecision[1])
-    })));
+    }), ownerReads));
     return true;
   }
   if (url.pathname === '/api/review' && request.method === 'GET') {

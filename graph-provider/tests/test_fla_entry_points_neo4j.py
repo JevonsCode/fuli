@@ -6,13 +6,14 @@ count or a page position; the person's console reads them with its proof.
 Synthetic data only; public HTTP routes drive every write, except the older
 records no route writes any more (noted where they are made)."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 from neo4j import AsyncGraphDatabase
 
 from fuli_graph.models import StructuredEpisode
+from fuli_graph.provider_values import now_utc
 from test_fla_read_boundary_neo4j import AS_G, AS_H, G, H, PROJECT, WRONG_PROOF, Boundary, entity
 from test_models import confirmed_episode
 from test_project_agent_memory_neo4j import provider_client, seed_agent
@@ -274,3 +275,68 @@ async def test_an_flas_work_never_becomes_a_publication_draft_and_an_older_one_i
             assert decided.status_code == 404, decision
         assert ok(await client.get(f'/v1/publication-drafts/{plain["id"]}',
                                    params={'personal_space_id': space.space_id}))['status'] == 'pending'
+
+        # A capture made only for the team names no local source: nothing says it is plain, so it is the
+        # person's (fail closed). The console reads it and starts its submission; nothing marks it an FLA's.
+        team_only = ok(await draft(public_episode(session_id=f'never-recorded-{uuid4()}')))
+        assert await drafts() == {plain['id']} and await drafts(metadata_only='true') == {plain['id']}
+        assert team_only['id'] in await drafts(REVIEW)
+        assert (await client.get(f'/v1/publication-drafts/{team_only["id"]}',
+                                 params={'personal_space_id': space.space_id})).status_code == 404
+        team_url = f'/v1/publication-drafts/{team_only["id"]}/decision'
+        assert (await client.post(team_url, params={'personal_space_id': space.space_id},
+                                  json={'decision': 'begin_submit_public'})).status_code == 404
+        assert ok(await client.post(team_url, headers=REVIEW, params={'personal_space_id': space.space_id},
+                                    json={'decision': 'begin_submit_public'}))['status'] == 'submitting'
+
+
+@pytest.mark.asyncio
+async def test_an_erased_flas_episode_leaves_its_old_draft_the_persons_alone_and_the_console_settles_it():
+    """An FLA episode with no task (a direct commit naming the FLA), erased by the person's source
+    delete: the draft keeps its source and attempt metadata but no live source, so it never reads as
+    plain. Fail closed: hidden from every Agent read and decision; the console settles it."""
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space = await Boundary().build(client, settings)
+        key = f'fla-erased-{uuid4()}'
+        saved = ok(await client.post('/v1/knowledge/commits', json={
+            'space_id': space.space_id, 'personal_project_id': PROJECT, 'project_agent_id': G,
+            'episode': {'idempotency_key': key, 'session_id': 'synthetic-erased-session', 'name': 'Synthetic G turn',
+                        'source_kind': 'task_remember', 'source_description': 'Synthetic G knowledge.',
+                        'source_application': 'codex', 'reference_time': '2026-10-24T00:00:00Z',
+                        'entities': [entity('fla-erased', 'G erased note')]}}))
+        # Made before the Provider refused them, and reserved for submission long enough ago to expire.
+        older, attempt = f'draft-erased-{uuid4()}', str(uuid4())
+        await write(settings, '''
+            MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+            CREATE (space)-[:HAS_PUBLICATION_DRAFT]->(:FuliPublicationDraft {
+              id: $id, personal_space_id: $space_id, target_project_id: 'synthetic-team-project',
+              provider_url: 'https://public.example', status: 'submitting', payload: $payload, created_at: $at,
+              submission_id: $attempt, submission_started_at: $at})
+            ''', space_id=space.space_id, id=older, attempt=attempt, at=now_utc() - timedelta(seconds=121),
+            payload=StructuredEpisode.model_validate(public_episode(
+                idempotency_key=key, session_id='synthetic-erased-session')).model_dump_json())
+        # The person's source delete of that episode, as the console sends it.
+        target = f'/v1/knowledge/items/{saved["episode_id"]}/hard-delete'
+        plan = ok(await client.post(f'{target}/preview', headers=REVIEW, json={
+            'personal_space_id': space.space_id, 'item_kind': 'episode'}))
+        assert plan['drafts']['unknown'] == 1
+        done = ok(await client.post(target, headers=REVIEW, json={
+            'personal_space_id': space.space_id, 'item_kind': 'episode', 'preview_id': plan['preview_id'],
+            'confirmation': '删除', 'operation_id': str(uuid4())}))
+        assert done['drafts_scrubbed']['unknown'] == 1
+        params = {'personal_space_id': space.space_id}
+        for listing in ({'status': 'all'}, {'status': 'all', 'metadata_only': 'true'}):
+            listed = ok(await client.get('/v1/publication-drafts', params={**params, **listing}))
+            assert older not in {row['id'] for row in listed} and attempt not in str(listed), listing
+            owned = ok(await client.get('/v1/publication-drafts', headers=REVIEW, params={**params, **listing}))
+            assert older in {row['id'] for row in owned}
+        hidden = await client.get(f'/v1/publication-drafts/{older}', params=params)
+        assert hidden.status_code == 404 and attempt not in hidden.text
+        settle = {'decision': 'reconcile_submit_public', 'submission_id': attempt,
+                  'lookup_result': {'id': 'synthetic-public-proposal', 'status': 'pending'}}
+        unproven = await client.post(f'/v1/publication-drafts/{older}/decision', params=params, json=settle)
+        assert unproven.status_code == 404 and attempt not in unproven.text
+        settled = ok(await client.post(f'/v1/publication-drafts/{older}/decision', headers=REVIEW,
+                                       params=params, json=settle))
+        assert settled['status'] == 'source_deleted' and settled['shared_proposal_id'] == 'synthetic-public-proposal'

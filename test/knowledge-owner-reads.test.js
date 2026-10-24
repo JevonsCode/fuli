@@ -212,6 +212,28 @@ test('publication drafts: an Agent tool reads as a plain session; the console li
   assert.deepEqual(calls, [], 'nothing of the console\'s list or settlement leaves on the Agent client');
 });
 
+test('the console decides and submits a draft on its port; an Agent tool on its own client', async () => {
+  const { app, calls } = application();
+  const sent = [];
+  const ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async (path, body, options) => {
+    sent.push({ path: path.split('?')[0], body, review: options.review, method: options.method });
+    return { ok: true, status: 200, payload: { id: 'draft-1', status: 'ignored' } };
+  } });
+  const response = { setHeader() {}, writeHead() {}, end() {} };
+  await handleGraphApiRequest({ request: Object.assign(Readable.from([Buffer.from(JSON.stringify({ decision: 'ignore' }))]),
+    { method: 'POST', headers: { 'content-type': 'application/json' }, socket: { remoteAddress: '127.0.0.1' } }),
+  response, url: new URL('http://127.0.0.1/api/personal-review/draft-1/decision'), app, ownerReads });
+  assert.deepEqual(sent, [{ path: '/v1/publication-drafts/draft-1/decision', method: 'POST', review: true,
+    body: { decision: 'ignore', shared_proposal_id: null } }]);
+  assert.deepEqual(calls, []);
+  // A capture made only for a team names no local source: only this channel reads it to submit.
+  await ownerReads.submissions.getPublicationDraft(SPACE, 'draft-1');
+  assert.deepEqual(sent.at(-1), { path: '/v1/publication-drafts/draft-1', method: 'GET', review: true, body: null });
+  await callAgentTool(app, 'review_personal_draft', { draftId: 'draft-1', decision: 'ignore' });
+  assert.deepEqual(calls.map(call => call.path), ['/v1/publication-drafts/draft-1/decision']);
+  assert.ok(!reviewHeader(calls[0].headers));
+});
+
 test('the console\'s settlement of an uncertain submission goes through its port with the proof', async () => {
   const { app, calls } = application();
   const sent = [];
