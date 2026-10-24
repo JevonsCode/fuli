@@ -19,6 +19,7 @@ import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { createModelSettingsHistory } from '../src/model-backends/settings-history.js';
 import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
+import { createStandingAssignments } from '../src/standing-assignments/port.js';
 import { TaskScheduleStore } from '../src/task-schedules/store.js';
 
 // rec#17 D-09: every local store and the format it declares. The graph's
@@ -47,6 +48,12 @@ const SQLITE_STORES = {
   'role-suggestions': (path) => { const store = new RoleSuggestionLog(path); void store.db; return () => store.close(); },
   roundtable: (path) => { const store = createRoundtableStore(path); return () => store.close(); },
   standalone: (path) => { const store = createStandaloneStore(path); return () => store.close(); },
+  'standing-assignments': (path) => {
+    const store = createStandingAssignments({ path });
+    store.register({ personalSpaceId: 'space', projectId: 'project', leadAgentId: 'agent', terms: ['synthetic'],
+      responsibility: 'Synthetic work', source: 'user' });
+    return () => store.close();
+  },
   'task-schedules': (path) => { const store = new TaskScheduleStore(path); return () => store.close(); }
 };
 
