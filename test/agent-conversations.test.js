@@ -68,6 +68,15 @@ test('an unsaved conversation names the failed step and the error code, never it
   const { app } = fixture();
   app.personal.conversation = async () => { throw Object.assign(new Error('x'), { status: 503 }); };
   assert.equal((await checkpointConversation(app, task, { summary: 'done', status: 'completed' })).reason, 'status_503');
+  // A code FULI does not name (a Provider may pass its own detail.code) is never echoed.
+  for (const [error, reason] of [[Object.assign(new Error('x'), { code: 'upstream_tenant_acme_42' }), 'other'],
+    [Object.assign(new Error('x'), { code: 'upstream_tenant_acme_42', status: 409 }), 'status_409'],
+    [Object.assign(new Error('x'), { status: 7 }), 'other']]) {
+    app.personal.conversation = async () => { throw error; };
+    const result = await checkpointConversation(app, task, { summary: 'done', status: 'completed' });
+    assert.equal(result.reason, reason);
+    assert.doesNotMatch(JSON.stringify(result), /acme/);
+  }
 });
 test('a Provider-disabled checkpoint never reports saved summary coverage', async () => {
   const { app } = fixture();
