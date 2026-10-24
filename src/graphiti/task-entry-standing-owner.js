@@ -8,7 +8,10 @@ import { nameableProjects, projectDisplayName, promptNamesProject } from './task
 // while the session stays where it belongs. The current local session still
 // does the work as that project's Agent; nothing is asked across projects and
 // no model is called (D2). The match is the local store's (no Provider round
-// trip); the project names come from the entry's shared project list.
+// trip); the project names come from the entry's shared project list. The
+// assignment's lead, which a correction may have pointed at an Agent other
+// than the project's lead (F5), is the Agent the selection asks for
+// (project-agent-task-entry.js), in its project or already there.
 //
 // What the person or host chose for this task outranks a standing assignment:
 // an explicit project or Agent, an @mention, or a project the prompt names.
@@ -44,7 +47,10 @@ export async function withStandingOwner(application, resolution, input) {
       matchedTerms }));
   if (owners.length > 1) return { ...resolution, standingCandidates: owners };
   const [owner] = owners;
-  if (!owner || owner.projectId === resolution.personalProjectId) return resolution;
+  if (!owner) return resolution;
+  // Already in the assignment's project: the task stays as it is, and only
+  // the Agent selection starts from the assignment's lead.
+  if (owner.projectId === resolution.personalProjectId) return { ...resolution, standingAgentId: owner.leadAgentId };
   return { status: 'matched', basis: 'standing_assignment', personalProjectId: owner.projectId,
     standingOwner: { ...owner, sessionProjectId: resolution.status === 'matched' ? resolution.personalProjectId : null,
       sessionAgentId: resolution.status === 'global' && resolution.basis === 'host_session_context'

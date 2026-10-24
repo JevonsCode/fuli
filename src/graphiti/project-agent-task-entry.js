@@ -67,6 +67,20 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
           required_action: 'Use coordinate_project_agent_task to select or recruit a qualified durable owner before implementation. AR and project managers collaborate in their own roles; do not attribute development to them by fallback.' };
       }
     }
+    // A standing assignment's Agent other than the one chosen is asked for by
+    // name, like an explicit Agent: the Provider keeps the project's lead
+    // accountable and names a member as requested_agent_id. A request it
+    // cannot serve leaves the ordinary choice; one never repeats the other.
+    const standingAgentId = resolution.standingOwner?.leadAgentId ?? resolution.standingAgentId ?? null;
+    if (implicit && !delegation && standingAgentId && value.status === 'ready'
+      && ![agent?.agentId, value.requested_agent_id].includes(standingAgentId)) {
+      const standing = await application.personal.resolveProjectAgentContext({ ...contextRequest,
+        agent_id: standingAgentId });
+      if (standing?.status === 'ready' && standing.agent) {
+        value = standing;
+        agent = projectAgentRecord(standing.agent);
+      }
+    }
     const employeeId = /^employee\.([a-z][a-z0-9-]{0,63})$/.exec(agent?.agentId ?? '')?.[1];
     if (employeeId && application.employees) {
       try { await application.employees.authorize({ templateId: employeeId, personalProjectId: resolution.personalProjectId }); }

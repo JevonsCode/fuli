@@ -33,14 +33,22 @@ function fixture({ resolution = REPO, existing = ['repo-a', 'timesheet', 'ops'],
     begin: async input => { const task = { ...input, token: `fuli-task-synthetic-${tasks.length}` };
       tasks.push(task); return task; } };
   const record = (name, read) => async (...args) => { calls.push(name); return read(...args); };
+  // The Agent each role selection asked for (null: the Provider's own choice).
+  const requested = [];
   Object.assign(app.personal, {
     getProjectAgent: record('getProjectAgent', async () => {
       throw Object.assign(new Error('Not found'), { status: 404 });
     }),
     listProjectAgentAssignments: record('listProjectAgentAssignments', async () => []),
     getPersonalProject: record('getPersonalProject', async (_, id) => projects.get(id)),
-    resolveProjectAgentContext: record('resolveProjectAgentContext', async input => ({ status: 'ready',
-      agent: lead(input.personal_project_id) })),
+    // As the Provider: the project's lead stays accountable, and a named
+    // Agent other than the lead is the requested member reporting to it.
+    resolveProjectAgentContext: record('resolveProjectAgentContext', async input => {
+      requested.push(input.agent_id);
+      const accountable = lead(input.personal_project_id);
+      return { status: 'ready', agent: accountable, ...(input.agent_id && input.agent_id !== accountable.agent_id
+        ? { reason: 'project_lead_reporting', requested_agent_id: input.agent_id } : {}) };
+    }),
     collaborationPreferences: record('collaborationPreferences', async (space, project, limit, agent) => ({
       personal_space_id: space, personal_project_id: project, project_agent_id: agent,
       effective_preferences: [], global_preferences: [], conflicts: [] })),
@@ -59,7 +67,7 @@ function fixture({ resolution = REPO, existing = ['repo-a', 'timesheet', 'ops'],
   const run = extra => app.getCollaborationPreferences({ projectPath: '/synthetic/repo-a',
     sourceApplication: 'codex', sourceSessionId: 'synthetic-host-a', sessionId: 'synthetic-session-a',
     agentInvocation: true, agentToolName: 'get_collaboration_preferences', taskPrompt: '帮我填一下今天的工时', ...extra });
-  return { app, run, calls, tasks, searches };
+  return { app, run, calls, tasks, searches, requested };
 }
 
 function lead(project) {
@@ -234,6 +242,46 @@ test('a retired assignment no longer routes', async () => {
   const entry = await run();
   assert.equal(entry.context.personal_project_id, 'repo-a');
   assert.equal(entry.standing_owner, undefined);
+});
+
+// dot P2 on #342: the Agent the assignment names is the Agent the task asks for.
+
+const reassign = (app, leadAgentId, projectId = 'timesheet') => {
+  const [assignment] = app.standingAssignments.list(SPACE);
+  app.standingAssignments.correct(assignment.assignmentId, { action: 'reassign', projectId, leadAgentId },
+    { source: 'user', expectedRevision: assignment.revision });
+};
+
+test('a routed task asks for the Agent a correction pointed the assignment at', async () => {
+  const { app, run, requested } = fixture();
+  reassign(app, 'helper-timesheet');
+  const entry = await run();
+  assert.equal(entry.context.personal_project_id, 'timesheet');
+  assert.deepEqual(requested, [null, 'helper-timesheet']);
+  // The Provider keeps the lead accountable; the assignment's Agent is the one the task asks for.
+  assert.equal(entry.project_agent_context.project_agent_id, 'lead-timesheet');
+  assert.equal(entry.project_agent_context.requested_agent_id, 'helper-timesheet');
+  assert.equal(entry.standing_owner.lead_agent_id, 'helper-timesheet');
+  // An explicit Agent still wins over the assignment.
+  const explicit = fixture();
+  reassign(explicit.app, 'helper-timesheet');
+  await explicit.run({ projectAgentId: 'lead-repo-a' });
+  assert.deepEqual(explicit.requested, ['lead-repo-a']);
+});
+
+test('in its own project an assignment changes the selection only when its Agent is not the one chosen', async () => {
+  const inProject = { status: 'matched', basis: 'repository_root', personalProjectId: 'timesheet' };
+  const same = fixture({ resolution: inProject });
+  const without = fixture({ resolution: inProject, standing: false });
+  assert.equal(JSON.stringify(await same.run()), JSON.stringify(await without.run()));
+  assert.deepEqual(same.requested, [null]);
+  const other = fixture({ resolution: inProject });
+  reassign(other.app, 'helper-timesheet');
+  const entry = await other.run();
+  assert.deepEqual(other.requested, [null, 'helper-timesheet']);
+  assert.equal(entry.project_agent_context.requested_agent_id, 'helper-timesheet');
+  assert.equal(entry.context.personal_project_id, 'timesheet');
+  assert.equal(entry.standing_owner, undefined, 'the task was not moved, so there is no routing notice');
 });
 
 test('routing adds no Provider round trip to the entry', async () => {

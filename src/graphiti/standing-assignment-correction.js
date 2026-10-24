@@ -29,6 +29,9 @@ export async function correctStandingAssignment(application, input) {
   }
   if (input.action === 'preview') return previewOf(plan, planView(plan), restatement(plan));
   assertPreviewed(input, plan);
+  // The plan was read across Provider awaits: the new Agent is read again
+  // last, with nothing awaited between it and the write.
+  if (plan.change === 'reassign') await assertStillOnTeam(application, plan.correction);
   return { ...standingAssignmentsOf(application).correct(plan.assignmentId, plan.correction,
     { source: 'user', sourceConversationId: plan.sourceConversationId, expectedRevision: plan.revision }),
   executed: false };
@@ -83,25 +86,35 @@ async function namedProjectId(application, name) {
 // one, the project's lead, active on that project either way. The person's
 // choice for this work never changes who leads the project.
 async function reassignmentTarget(application, projectId, leadAgentId) {
-  const spaceId = application.config.personal.spaceId;
   const project = (await nameableProjects(application)).find(item => item.project_id === projectId);
   if (!project) {
     throw new ApplicationError(ApplicationErrorCode.NOT_FOUND, `No project ${projectId} can take this work. Nothing `
       + 'was saved.', { status: 404 });
   }
-  const team = await loadProjectTeam(application, spaceId, projectId);
+  const team = await loadProjectTeam(application, application.config.personal.spaceId, projectId);
   const agentId = leadAgentId === undefined || leadAgentId === null ? team.lead?.agentId
     : requiredString(leadAgentId, 'leadAgentId', ID_LIMIT);
   if (!agentId) {
     throw new ApplicationError('standing_assignment_lead_unavailable', `Project ${projectId} has no active lead; name `
       + 'an Agent of it. Nothing was saved.', { status: 409 });
   }
-  const agent = [team.lead, ...team.members, ...team.collaborators].find(person => person?.agentId === agentId);
+  const agent = teamAgent(team, agentId);
   if (!agent) {
     throw new ApplicationError('standing_assignment_lead_not_in_project', `${agentId} is not an active Agent of project `
       + `${projectId}. Nothing was saved.`, { status: 422 });
   }
   return { projectId, projectName: projectDisplayName(project), leadAgentId: agentId, leadName: agent.name };
+}
+
+// The lead, a member or a collaborator of the project, active on it.
+function teamAgent(team, agentId) {
+  return [team.lead, ...team.members, ...team.collaborators].find(person => person?.agentId === agentId) ?? null;
+}
+
+async function assertStillOnTeam(application, { projectId, leadAgentId }) {
+  if (teamAgent(await loadProjectTeam(application, application.config.personal.spaceId, projectId), leadAgentId)) return;
+  throw new ApplicationError('standing_assignment_plan_changed', `${leadAgentId} left project ${projectId} while `
+    + 'confirming. Nothing was saved; preview again and ask the user again.', { status: 409 });
 }
 
 // Where the assignment sends work now, named for the person. A lead that

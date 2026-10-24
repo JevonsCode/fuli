@@ -34,7 +34,7 @@ function application(t, { activityOrigin = null, delegated = false } = {}) {
   const team = { timesheet: ['lead-timesheet', 'helper-timesheet'], ops: ['lead-ops'], 'repo-a': [] };
   const writes = [];
   const app = {
-    config: { personal: { spaceId: SPACE } }, standingAssignments, policy, writes,
+    config: { personal: { spaceId: SPACE } }, standingAssignments, policy, team, writes,
     taskContextRegistry: { context: async (token) => {
       if (token !== TOKEN) throw Object.assign(new Error('Unknown task context'), { status: 404 });
       return { token, sessionId: 'session-synthetic', activityOrigin };
@@ -45,7 +45,10 @@ function application(t, { activityOrigin = null, delegated = false } = {}) {
       listPersonalProjects: async () => projects,
       getPersonalProject: async (_, id) => projects.find(project => project.project_id === id),
       getProjectAgentCoordinationPolicy: async (_, id) => ({ team_lead_agent_id: policy.get(id) ?? null }),
-      getProjectAgent: async (_, __, agentId) => ({ agent_id: agentId, profile: { name: `${agentId} name` } }),
+      getProjectAgent: async (_, __, agentId) => {
+        await app.afterLeadRead?.();
+        return { agent_id: agentId, profile: { name: `${agentId} name` } };
+      },
       listProjectAgents: async (_, projectId) => (team[projectId] ?? []).map(agentId => ({ agent_id: agentId,
         profile: { name: `${agentId} name`, status: 'active' },
         assignments: [{ personal_project_id: projectId, status: 'active' }] })),
@@ -155,6 +158,21 @@ test('reassigning to an Agent of another project is refused; a valid lead moves 
   // Neither project's own lead changed.
   assert.deepEqual([...app.policy], [['timesheet', 'lead-timesheet'], ['ops', 'lead-ops']]);
   assert.deepEqual(app.writes, []);
+});
+
+test('a new Agent that leaves its project while the reassignment is confirmed is refused before the write', async (t) => {
+  const { app, assignment } = application(t);
+  const input = { leadAgentId: 'helper-timesheet' };
+  const { confirmationDigest } = await correct(app, 'preview', 'reassign', input);
+  // The last Provider read of the plan (the current lead's name) is when the helper leaves.
+  app.afterLeadRead = () => { app.team.timesheet = ['lead-timesheet']; };
+  await assert.rejects(correct(app, 'confirm', 'reassign', { ...input, confirmationDigest }), {
+    code: 'standing_assignment_plan_changed', status: 409,
+    message: 'helper-timesheet left project timesheet while confirming. Nothing was saved; preview again and ask the '
+      + 'user again.' });
+  assert.deepEqual(app.standingAssignments.list(SPACE), [assignment]);
+  assert.equal(app.standingAssignments.history(assignment.assignmentId).length, 1);
+  await assert.rejects(correct(app, 'preview', 'reassign', input), { code: 'standing_assignment_lead_not_in_project' });
 });
 
 test('editing terms adds and removes them under the one-term-one-assignment rule', async (t) => {
