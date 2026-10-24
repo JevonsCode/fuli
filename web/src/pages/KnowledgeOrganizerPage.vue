@@ -649,11 +649,20 @@ async function openReplacement(item: KnowledgeItem) {
 
 }
 
-/* A phone: the three columns share the width, so the list never scrolls sideways (rec#38). */
+/* A phone: the three columns share the width, so the list never scrolls sideways (rec#38).
+   Chip columns stay fixed so every row's badges line up; a long label truncates in place. */
 @media (max-width: 560px) {
   .organizer-table-head,
   .organizer-row {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) 78px 100px;
+    gap: 8px;
+  }
+
+  .quadrant-chip,
+  .review-chip {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .organizer-directory {
