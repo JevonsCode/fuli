@@ -27,6 +27,7 @@ import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
+import { entryBudget, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
 
 export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
@@ -75,17 +76,26 @@ const UNCONFIRMED_TURN = Object.freeze({
     + 'FULI: this turn is a host system delivery, but its task ownership is not confirmed; no task was created or switched.'
 });
 
-export function claudeLifecycleUnavailable(event, input = null, reason = null) {
+export function claudeLifecycleUnavailable(event, input = null, reason = null, incomplete = '') {
   const warning = reason ?? 'Fuli context is unavailable; memory recovery and task checkpoint are not verified. '
     + 'Continue with the user request and use Fuli MCP when it becomes available.';
   const sessionId = input?.session_id;
   const fallback = event === 'UserPromptSubmit' && inPlaceRefreshBasis(input) ? ` ${START_NEW_WORK}`
     : typeof sessionId === 'string' && sessionId.trim() && sessionId.length <= 256
-    ? ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Follow checkpoint_required and checkpoint_guidance; use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog when there is something to record. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.`
+    ? ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Follow checkpoint_required and checkpoint_guidance; use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog when there is something to record. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.${incomplete}`
     : '';
   return event === 'UserPromptSubmit'
     ? { systemMessage: warning, hookSpecificOutput: { hookEventName: event, additionalContext: warning + fallback } }
     : { systemMessage: warning };
+}
+
+// At the deadline an entry that already wrote its task delivers its token and
+// what is missing (entry-budget.js); otherwise the fallback says what to fetch.
+export function claudeEntryDeadlineOutput(event, input, budget) {
+  const partial = event === 'UserPromptSubmit' ? partialEntryText(budget) : null;
+  return partial ? { systemMessage: 'Fuli task context is partial: the hook deadline came before it was complete.',
+    hookSpecificOutput: { hookEventName: event, additionalContext: partial } }
+    : claudeLifecycleUnavailable(event, input, null, NO_TASK_AT_DEADLINE);
 }
 
 export async function runClaudeLifecycleHook(args, dependencies = {}) {
@@ -201,18 +211,21 @@ async function main() {
   };
   // Finish before the host timeout, even if a dependency ignores cancellation.
   // No prompt, transcript, path or raw exception is written to diagnostics.
+  // The entry's own time ends where its requests are cancelled.
+  const abortAfterMs = Math.max(1, timeoutMs - 1500);
+  const budget = entryBudget(abortAfterMs);
   const deadline = setTimeout(() => {
     controller.abort();
-    emit(claudeLifecycleUnavailable(event, input), () => process.exit(0));
+    emit(claudeEntryDeadlineOutput(event, input, budget), () => process.exit(0));
   }, timeoutMs);
-  const abort = setTimeout(() => controller.abort(), Math.max(1, timeoutMs - 1500));
+  const abort = setTimeout(() => controller.abort(), abortAfterMs);
   try {
-    const output = await runClaudeLifecycleHook(args, { signal: controller.signal,
+    const output = await runWithEntryBudget(budget, () => runClaudeLifecycleHook(args, { signal: controller.signal,
       captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
-      readInput: async () => { input = await readHookInput(); return input; } });
+      readInput: async () => { input = await readHookInput(); return input; } }));
     emit(output);
   } catch {
-    emit(claudeLifecycleUnavailable(event, input));
+    emit(controller.signal.aborted ? claudeEntryDeadlineOutput(event, input, budget) : claudeLifecycleUnavailable(event, input));
   } finally {
     clearTimeout(abort);
     clearTimeout(deadline);

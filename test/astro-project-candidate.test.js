@@ -13,6 +13,7 @@ import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { reachableModules } from '../test-support/module-graph.js';
+import { entryBudget, runWithEntryBudget } from '../src/conversations/entry-budget.js';
 import { openAiStream } from './fixtures/model-transport.js';
 
 // Astro's project_candidate hint at task entry (rec#8, rec#10 D-26). Synthetic
@@ -253,6 +254,21 @@ test('Astro suggests one approved project as a hint; candidates are evidence wit
   const all = harness({ role: astroRole({ egress: { approvedProjects: Object.keys(PROJECTS).map(id => ({ personalSpaceId: SPACE, personalProjectId: id })),
     allowUnassigned: true } }), replies: [answer()] });
   assert.equal((await all.entry()).project_candidate.hint, '可能属于「Garden Planner」，需你确认');
+});
+
+test('with under 4 s of the hook\'s time left Astro is skipped and recorded: no claim, no call, a later entry still asks', async () => {
+  // Unfaithful current task: the next entry of the session resolves pending_assignment again, so only a used claim would stop it.
+  const run = harness({ role: astroRole(), replies: [answer()], faithfulCurrent: false });
+  const low = await runWithEntryBudget(entryBudget(3000), () => run.entry());
+  assert.deepEqual(low.project_candidate, { status: 'skipped', reason: 'entry_time_low' });
+  assert.deepEqual(run.modelCalls, []);
+  assert.deepEqual(run.contexts.hintClaims(), [], 'the session\'s one hint is not used up');
+  assert.deepEqual(run.attempts(), []);
+  assert.deepEqual(run.suggestions(), []);
+  run.assertNoAttribution(low);
+  const ample = await runWithEntryBudget(entryBudget(15_000), () => run.entry());
+  assert.equal(ample.project_candidate.status, 'suggested');
+  assert.equal(run.modelCalls.length, 1);
 });
 
 test('the prompt without a project needs allowUnassigned; none shows nothing', async () => {

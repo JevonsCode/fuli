@@ -3,6 +3,7 @@ import { TASK_ENTRY_BOARD_LIMIT } from '../employees/task-entry.js';
 import { projectApproved } from '../model-backends/egress.js';
 import { compactReceipt } from '../model-backends/receipt.js';
 import { singleLine } from '../text/single-line.js';
+import { entryHintSkipped } from '../conversations/entry-budget.js';
 import { taskCaptureScope } from './capture-decision.js';
 import { prepareRoleSuggestionNote, suggestionDeletionGeneration, suggestionSessionGeneration } from './role-suggestion-note.js';
 
@@ -61,6 +62,9 @@ async function suggestBoardMatch(application, task, manager, taskPrompt) {
   const settings = application.modelBackends?.operationSettings(ROLE, OPERATION);
   const spaceId = application.config.personal.spaceId;
   if (!settings || !projectApproved(settings.egress, spaceId, task.project)) return null;
+  // Too little of the hook's time left: no claim, so a later entry may still ask.
+  const skipped = entryHintSkipped();
+  if (skipped) return skipped;
   // The claim comes first: a none, a stop or a failure uses it up too.
   if (!await application.taskContextRegistry.claimSessionHint(task.token, OPERATION, task.sourceApplication).catch(() => false)) return null;
   // Before the evidence is read: a permanent delete after this keeps the hint's words out of its console copy.

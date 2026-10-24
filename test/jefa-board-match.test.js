@@ -16,6 +16,7 @@ import { hardDeleteLedger } from '../src/knowledge-hard-delete/delete-ledger.js'
 import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { reachableModules } from '../test-support/module-graph.js';
+import { entryBudget, runWithEntryBudget } from '../src/conversations/entry-budget.js';
 import { openAiStream } from './fixtures/model-transport.js';
 
 // Jefa's board_match hint at task entry (rec#8, rec#10 D-26). Synthetic
@@ -311,6 +312,22 @@ test('Jefa suggests one listed board task as a hint; board tasks are evidence of
   const view = jefaOf(compactTaskContext(result));
   assert.equal(view.board.view, 'on_demand');
   assert.deepEqual(view.suggested_match, match);
+});
+
+test('with under 4 s of the hook\'s time left Jefa is skipped and recorded: no claim, no call, a later entry still asks', async () => {
+  const run = harness({ roles: { jefa: jefaRole() }, replies: [answer()] });
+  const begin = budgetMs => runWithEntryBudget(entryBudget(budgetMs), () => run.app.beginTaskContext({ projectPath: GARDEN_PATH,
+    sourceApplication: 'codex', sessionId: 'synthetic-session-a', taskPrompt: PROMPT }));
+  const low = await begin(3000);
+  assert.deepEqual(jefaOf(low).suggested_match, { status: 'skipped', reason: 'entry_time_low' });
+  assert.deepEqual(run.modelCalls, []);
+  assert.deepEqual(run.contexts.calls, [], 'no claim');
+  assert.equal(run.reads(), 1, 'only the entry\'s own board read');
+  assert.deepEqual(run.suggestions(), []);
+  const ample = await begin(15_000);
+  assert.equal(jefaOf(ample).suggested_match.status, 'suggested');
+  assert.equal(run.modelCalls.length, 1);
+  run.assertNoWrites();
 });
 
 test('none shows nothing; the hint is no permission for board.write', async () => {
