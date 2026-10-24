@@ -21,6 +21,35 @@ def publication_source_identity(group_id, episode):
     return identity
 
 
+async def project_agent_sources(store, space, identities) -> set[int]:
+    """The positions among these draft source identities that an FLA's work
+    wrote: the personal episode it names, or the session turn it came from.
+    Such knowledge stays in the personal graph (0.20.1): no draft is made of
+    it, and an older one is read only by the person."""
+    sources = [{'index': index, 'episode_id': identity.get('episode_id'),
+                'turn_id': identity.get('source_turn_id'),
+                'session_node': store._task_session_id(space['id'], identity['source_application'],
+                                                       identity['session_id'])
+                if identity.get('source_application') and identity.get('session_id') else None}
+               for index, identity in enumerate(identities)]
+    if not sources:
+        return set()
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        UNWIND $sources AS source
+        WITH source WHERE EXISTS {
+            MATCH (episode:Episodic {group_id: $group_id, uuid: source.episode_id})
+            WHERE episode.fuli_project_agent_id IS NOT NULL }
+          OR EXISTS {
+            MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_TASK_CONTEXT_SESSION]->
+                  (:FuliTaskContextSession {id: source.session_node})-[:HAS_CONTEXT]->
+                  (task:FuliTaskContext {turn_id: source.turn_id})
+            WHERE task.project_agent_id IS NOT NULL }
+        RETURN source.index AS index
+        ''', sources=sources, group_id=space['group_id'], space_id=space['id'], routing_='r')
+    return {record['index'] for record in records}
+
+
 async def drafts_for_sources(store, space, sources, *, source_range=None):
     """Read copies by exact source identity; all statuses participate in erasure.
     Legacy drafts derive their identity from payload until first scrubbed.

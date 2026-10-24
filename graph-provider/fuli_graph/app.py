@@ -379,7 +379,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.get('/v1/publication-drafts', response_model=list[PublicationDraftRecord])
     async def list_publication_drafts(
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
         draft_status: Annotated[str, Query(alias='status')] = 'pending',
         metadata_only: bool = False,
@@ -392,7 +392,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def get_publication_draft(
         draft_id: str,
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
     ) -> PublicationDraftRecord:
         return await store.get_publication_draft(actor, personal_space_id, draft_id)

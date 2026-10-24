@@ -1,6 +1,6 @@
 """The FLA read boundary on the remaining entry points (0.20.1), against an
-explicitly disposable Neo4j: preference conflicts, a review decision and a
-session's migration preview. FLA G's own items, and
+explicitly disposable Neo4j: preference conflicts, a review decision, a
+session's migration preview and publication drafts. FLA G's own items, and
 anything naming them, reach neither FLA H nor a plain session, not even as a
 count or a page position; the person's console reads them with its proof.
 Synthetic data only; public HTTP routes drive every write, except the older
@@ -12,9 +12,12 @@ from uuid import uuid4
 import pytest
 from neo4j import AsyncGraphDatabase
 
-from test_fla_read_boundary_neo4j import G, H, PROJECT, WRONG_PROOF, Boundary
+from fuli_graph.models import StructuredEpisode
+from test_fla_read_boundary_neo4j import G, H, PROJECT, WRONG_PROOF, Boundary, entity
+from test_models import confirmed_episode
 from test_project_agent_memory_neo4j import provider_client, seed_agent
 from test_session_migration_neo4j import held_session, link_task
+from test_session_records_neo4j import Session
 from test_turn_receipt_neo4j import REVIEW, commit, ok, reviewed_settings, space_with_projects
 
 AT = datetime(2026, 10, 25, tzinfo=timezone.utc)
@@ -135,3 +138,68 @@ async def test_a_sessions_migration_offer_neither_counts_nor_lists_an_flas_held_
         assert (await client.post('/v1/knowledge/session-migrations/preview', headers=WRONG_PROOF, json={
             'personal_space_id': space_id, 'source_application': 'codex', 'session_id': 'synthetic-migration-session',
             'target_project_id': 'alpha'})).status_code == 403
+
+
+def public_episode(**fields):
+    return StructuredEpisode.model_validate(confirmed_episode(**{
+        'idempotency_key': f'draft-{uuid4()}', 'source_application': 'codex', **fields})).model_dump(mode='json')
+
+
+@pytest.mark.asyncio
+async def test_an_flas_work_never_becomes_a_publication_draft_and_an_older_one_is_the_persons_alone():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space = await Boundary().build(client, settings)
+
+        async def draft(episode):
+            return await client.post('/v1/publication-drafts', json={
+                'personal_space_id': space.space_id, 'target_project_id': 'synthetic-team-project',
+                'provider_url': 'https://public.example', 'episode': episode})
+
+        # The same episode G saved personally.
+        key = f'fla-episode-{uuid4()}'
+        ok(await client.post('/v1/knowledge/commits', json={
+            'space_id': space.space_id, 'personal_project_id': PROJECT, 'project_agent_id': G,
+            'episode': {'idempotency_key': key, 'session_id': 'synthetic-draft-session', 'name': 'Synthetic G turn',
+                        'source_kind': 'task_remember', 'source_description': 'Synthetic G knowledge.',
+                        'source_application': 'codex', 'reference_time': '2026-10-24T00:00:00Z',
+                        'entities': [entity('fla-draft', 'G drafts the rollout plan')]}}))
+        refused = await draft(public_episode(idempotency_key=key, session_id='synthetic-draft-session'))
+        assert refused.status_code == 422, refused.text
+        assert refused.json()['detail']['code'] == 'project_agent_knowledge_personal_only'
+        # A capture from G's turn of a session, and one from a plain turn of the same session.
+        session = Session(client, space.space_id, f'native-{uuid4()}')
+        await session.begin(PROJECT, G)
+        from_g = await draft(public_episode(session_id=session.session_id, source_turn_id=f'{session.session_id}-turn-1'))
+        assert from_g.status_code == 422, from_g.text
+        await session.begin(PROJECT, None)
+        plain = ok(await draft(public_episode(session_id=session.session_id,
+                                              source_turn_id=f'{session.session_id}-turn-2')))
+        # A draft of G's episode made before the Provider refused them.
+        older = f'draft-older-{uuid4()}'
+        await write(settings, '''
+            MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+            CREATE (space)-[:HAS_PUBLICATION_DRAFT]->(:FuliPublicationDraft {
+              id: $id, personal_space_id: $space_id, target_project_id: 'synthetic-team-project',
+              provider_url: 'https://public.example', status: 'pending', payload: $payload, created_at: $at})
+            ''', space_id=space.space_id, id=older, at=AT,
+            payload=StructuredEpisode.model_validate(public_episode(
+                idempotency_key=key, session_id='synthetic-draft-session')).model_dump_json())
+
+        async def drafts(headers=None, **params):
+            return {row['id'] for row in ok(await client.get('/v1/publication-drafts', headers=headers, params={
+                'personal_space_id': space.space_id, 'status': 'all', **params}))}
+
+        assert await drafts(REVIEW) == {plain['id'], older}
+        assert await drafts() == {plain['id']}
+        assert await drafts(metadata_only='true') == {plain['id']}
+        hidden = await client.get(f'/v1/publication-drafts/{older}', params={'personal_space_id': space.space_id})
+        assert hidden.status_code == 404
+        assert ok(await client.get(f'/v1/publication-drafts/{older}', headers=REVIEW,
+                                   params={'personal_space_id': space.space_id}))['id'] == older
+        for decision in ('keep_personal', 'begin_submit_public'):
+            decided = await client.post(f'/v1/publication-drafts/{older}/decision',
+                                        params={'personal_space_id': space.space_id}, json={'decision': decision})
+            assert decided.status_code == 404, decision
+        assert ok(await client.get(f'/v1/publication-drafts/{plain["id"]}',
+                                   params={'personal_space_id': space.space_id}))['status'] == 'pending'

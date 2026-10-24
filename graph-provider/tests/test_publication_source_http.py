@@ -8,7 +8,7 @@ import pytest
 
 from fuli_graph.models import StructuredEpisode
 from fuli_graph.publication_source_copies import drafts_for_sources, scrub_publication_drafts, publication_source_identity
-from test_knowledge_hard_delete_http import application
+from test_knowledge_hard_delete_http import REVIEW_TOKEN, application
 from test_models import confirmed_episode
 
 
@@ -20,6 +20,8 @@ class DraftDriver:
         self.locked = False
         self.queries = []
         self.delete_on_lock = False
+        # Episodes an FLA wrote (0.20.1); the Cypher itself is in test_fla_entry_points_neo4j.py.
+        self.project_agent_episodes = set()
 
     @asynccontextmanager
     async def transaction(self):
@@ -71,6 +73,9 @@ class DraftDriver:
             if status and status != 'all':
                 rows = [row for row in rows if row['status'] == status]
             return [{'draft': row.copy(), 'project_name': None} for row in rows], None, None
+        if 'RETURN source.index AS index' in query:
+            return [{'index': source['index']} for source in params['sources']
+                    if source['episode_id'] in self.project_agent_episodes], None, None
         raise AssertionError(query)
 
 
@@ -146,6 +151,45 @@ async def test_late_draft_creation_checks_tombstone_inside_final_write_transacti
     assert refused.status_code == 410
     assert refused.json()['detail'] == {'code': 'source_hard_deleted'}
     assert not any('MERGE (draft:' in query for query in driver.queries)
+
+
+@pytest.mark.asyncio
+async def test_an_flas_work_is_never_drafted_and_an_older_draft_of_it_is_the_persons_alone():
+    app, driver, _, _ = setup()
+    identity = publication_source_identity('group', source_episode())
+    driver.project_agent_episodes = {identity['episode_id']}
+    async with client_for(app) as client:
+        refused = await client.post('/v1/publication-drafts', json={
+            'personal_space_id': 'space', 'target_project_id': 'project',
+            'provider_url': 'https://public.example', 'episode': source_episode()})
+        assert refused.status_code == 422
+        assert refused.json()['detail']['code'] == 'project_agent_knowledge_personal_only'
+        assert not any('MERGE (draft:' in query for query in driver.queries)
+        # Drafts made before this check: no Agent lists, counts, reads or decides them.
+        for params in ({'status': 'all'}, {'status': 'all', 'metadata_only': 'true'}, {'status': 'pending'}):
+            listed = await client.get('/v1/publication-drafts', params={'personal_space_id': 'space', **params})
+            assert listed.status_code == 200 and listed.json() == [], params
+        hidden = await client.get('/v1/publication-drafts/pending')
+        assert (hidden.status_code, hidden.json()['detail']) == (404, 'publication draft not found')
+        assert source_episode()['source_description'] not in hidden.text
+        for decision in ('keep_personal', 'ignore', 'begin_submit_public'):
+            decided = await client.post('/v1/publication-drafts/pending/decision', json={'decision': decision})
+            assert decided.status_code == 404, decision
+        assert driver.rows['pending']['status'] == 'pending'
+        wrong = await client.get('/v1/publication-drafts', headers={
+            'x-fuli-human-review-token': 'synthetic-wrong-review-token-0123456789'})
+        assert wrong.status_code == 403
+        # The person's console reads them all with its proof.
+        owner = await client.get('/v1/publication-drafts', params={'personal_space_id': 'space', 'status': 'all'},
+                                 headers={'x-fuli-human-review-token': REVIEW_TOKEN})
+        assert {draft['id'] for draft in owner.json()} == {'pending', 'submitted', 'kept_personal', 'ignored'}
+        own = await client.get('/v1/publication-drafts/pending', headers={'x-fuli-human-review-token': REVIEW_TOKEN})
+        assert own.status_code == 200 and own.json()['episode']['source_description']
+    # A draft of plain work is listed to an Agent as before.
+    driver.project_agent_episodes = set()
+    async with client_for(app) as client:
+        assert len((await client.get('/v1/publication-drafts', params={
+            'personal_space_id': 'space', 'status': 'all'})).json()) == 4
 
 
 @pytest.mark.asyncio
