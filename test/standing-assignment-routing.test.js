@@ -262,11 +262,34 @@ test('a routed task asks for the Agent a correction pointed the assignment at', 
   assert.equal(entry.project_agent_context.project_agent_id, 'lead-timesheet');
   assert.equal(entry.project_agent_context.requested_agent_id, 'helper-timesheet');
   assert.equal(entry.standing_owner.lead_agent_id, 'helper-timesheet');
+  const held = '本次任务按长期职责归入项目 Timesheet，由负责人 Timesheet Lead 持有，请求 helper-timesheet 处理';
+  assert.equal(entry.standing_owner.notice, held);
+  assert.match(entry.agent_receipt.markdown, new RegExp(`· ${held}$`));
+  assert.equal(entry.standing_owner.owner_resolved, undefined);
   // An explicit Agent still wins over the assignment.
   const explicit = fixture();
   reassign(explicit.app, 'helper-timesheet');
   await explicit.run({ projectAgentId: 'lead-repo-a' });
   assert.deepEqual(explicit.requested, ['lead-repo-a']);
+});
+
+test('an assignment Agent that cannot be reached keeps the first selection and the notice says so', async () => {
+  const { app, run, requested } = fixture();
+  reassign(app, 'helper-timesheet');
+  const resolve = app.personal.resolveProjectAgentContext;
+  app.personal.resolveProjectAgentContext = async input => {
+    const value = await resolve(input);
+    if (input.agent_id) throw new Error('Synthetic Provider timeout');
+    return value;
+  };
+  const entry = await run();
+  assert.deepEqual(requested, [null, 'helper-timesheet']);
+  assert.equal(entry.project_agent_context.status, 'ready');
+  assert.equal(entry.project_agent_context.project_agent_id, 'lead-timesheet');
+  assert.equal(entry.project_agent_context.requested_agent_id, undefined);
+  const notice = '本次任务按长期职责归入项目 Timesheet，职责 Agent helper-timesheet 暂时联系不上，由 Timesheet Lead 处理';
+  assert.deepEqual([entry.standing_owner.notice, entry.standing_owner.owner_resolved], [notice, false]);
+  assert.match(entry.agent_receipt.markdown, new RegExp(`· ${notice}$`));
 });
 
 test('in its own project an assignment changes the selection only when its Agent is not the one chosen', async () => {

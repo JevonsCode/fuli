@@ -70,13 +70,16 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     // A standing assignment's Agent other than the one chosen is asked for by
     // name, like an explicit Agent: the Provider keeps the project's lead
     // accountable and names a member as requested_agent_id. A request it
-    // cannot serve leaves the ordinary choice; one never repeats the other.
+    // cannot serve or answer keeps the ordinary choice, marked unreached so
+    // the routing notice does not claim the switch; one never repeats the other.
     const standingAgentId = resolution.standingOwner?.leadAgentId ?? resolution.standingAgentId ?? null;
+    let standingAgentUnreached = false;
     if (implicit && !delegation && standingAgentId && value.status === 'ready'
       && ![agent?.agentId, value.requested_agent_id].includes(standingAgentId)) {
       const standing = await application.personal.resolveProjectAgentContext({ ...contextRequest,
-        agent_id: standingAgentId });
-      if (standing?.status === 'ready' && standing.agent) {
+        agent_id: standingAgentId }).catch(() => null);
+      standingAgentUnreached = !(standing?.status === 'ready' && standing.agent);
+      if (!standingAgentUnreached) {
         value = standing;
         agent = projectAgentRecord(standing.agent);
       }
@@ -90,7 +93,7 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       !(agent.profile.allowedClients ?? []).includes(input.sourceApplication ?? 'other'))) {
       return { status: 'agent_unavailable', worker_started: false };
     }
-    return { ...value, agent, worker_started: false };
+    return { ...value, agent, worker_started: false, ...(standingAgentUnreached ? { standingAgentUnreached } : {}) };
   } catch {
     // Preferences remain useful during an older/offline Provider upgrade, but
     // never claim that a role or its private memory was successfully restored.

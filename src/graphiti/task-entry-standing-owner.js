@@ -67,11 +67,21 @@ export function standingOwnerEntry(resolution, selection) {
   }
   const owner = resolution.standingOwner;
   if (!owner) return null;
-  const agent = selection?.agent?.agentId === owner.leadAgentId ? selection.agent : null;
-  const leadName = agent?.profile?.displayName || agent?.profile?.name || null;
-  const notice = `本次任务按长期职责归入项目 ${owner.projectName}（负责人 ${leadName ?? owner.leadAgentId}）`;
+  const selected = selection?.agent ?? null;
+  const agent = selected?.agentId === owner.leadAgentId ? selected : null;
+  const leadName = agentName(agent);
+  const selectedName = agentName(selected) ?? selected?.agentId;
+  const unreached = Boolean(selection?.standingAgentUnreached);
+  const project = `本次任务按长期职责归入项目 ${owner.projectName}`;
+  // The assignment's Agent is the selected lead, a member the lead holds the
+  // task for, or could not be reached, so the task stays with the selected one.
+  const notice = unreached ? `${project}，职责 Agent ${owner.leadAgentId} 暂时联系不上，由 ${selectedName} 处理`
+    : selected && selection.requested_agent_id === owner.leadAgentId
+      ? `${project}，由负责人 ${selectedName} 持有，请求 ${owner.leadAgentId} 处理`
+      : `${project}（负责人 ${leadName ?? owner.leadAgentId}）`;
   return { notice, receiptNotice: receiptText(notice),
     field: { status: 'routed', assignment_id: owner.assignmentId, ...ownerView(owner), lead_name: leadName,
+      ...(unreached ? { owner_resolved: false } : {}),
       session_project_id: owner.sessionProjectId, ...(owner.sessionAgentId ? { session_agent_id: owner.sessionAgentId } : {}),
       notice } };
 }
@@ -119,6 +129,10 @@ function routable(resolution, input) {
     || EXPLICIT_BASES.has(resolution.basis)) return false;
   if (resolution.status === 'matched' || resolution.status === 'global') return true;
   return resolution.status === 'ambiguous' && resolution.basis === 'host_session_assignment';
+}
+
+function agentName(agent) {
+  return agent?.profile?.displayName || agent?.profile?.name || null;
 }
 
 function ownerView(owner) {
