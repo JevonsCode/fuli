@@ -85,6 +85,7 @@ class Boundary:
                 MATCH (plain:Entity {uuid: $plain}), (fla:Entity {uuid: $fla}),
                       (old:Entity {uuid: $old}), (new:Entity {uuid: $new}), (habit:Entity {uuid: $habit})
                 CREATE (link:Episodic {uuid: $link_episode, group_id: $group_id, created_at: datetime(),
+                        name: 'boundary link', source_description: 'synthetic boundary fixture',
                         fuli_personal_project_id: $project, entity_edges: [$edge]})
                 CREATE (link)-[:MENTIONS {uuid: $link_episode + '-mention', group_id: $group_id}]->(plain)
                 CREATE (plain)-[:RELATES_TO {uuid: $edge, group_id: $group_id, name: 'LINKS',
@@ -93,6 +94,7 @@ class Boundary:
                 SET old.fuli_replaced_by_item_id = new.uuid, old.fuli_replaced_by_item_kind = 'entity',
                     old.fuli_invalid_at = datetime()
                 CREATE (words:Episodic {uuid: $words_episode, group_id: $group_id, created_at: datetime(),
+                        name: 'boundary words', source_description: 'synthetic boundary fixture',
                         fuli_project_agent_id: $agent, fuli_personal_project_id: $project,
                         fuli_source_excerpt: 'G words about leading with the conclusion'})
                 CREATE (words)-[:MENTIONS {uuid: $words_episode + '-mention', group_id: $group_id}]->(habit)
@@ -347,7 +349,7 @@ async def test_the_ai_review_never_reviews_an_flas_own_knowledge():
             'personal_space_id': space.space_id, 'scope': 'project', 'personal_project_id': PROJECT,
             'reviewer': 'tonborg'}))
         page = ok(await client.post('/v1/knowledge/reviews/candidates', json={
-            'personal_space_id': space.space_id, 'review_id': run['review_id'], 'limit': 100}))
+            'personal_space_id': space.space_id, 'review_id': run['review_id'], 'limit': 50}))
         candidates = {candidate['item_id'] for candidate in page['candidates']}
         assert space.id('plain-fact') in candidates
         assert not candidates & (space.fla_ids() | {space.fla_edge})
