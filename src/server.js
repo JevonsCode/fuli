@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
 import { handleApiRequest } from './http/api-router.js';
 import { mapHttpError } from './http/error-mapping.js';
-import { localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
+import { isCrossSiteNavigation, localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
 import { sendJson } from './http/response.js';
 import { closeTaskEventStreams } from './http/task-events-api-router.js';
 import { serveStatic } from './http/static-handler.js';
@@ -302,6 +302,11 @@ async function handleRequest({
     lanAuthorities,
     lanAccessToken
   })) return;
+  // A page opened from another site's link reaches the static console only.
+  if (isCrossSiteNavigation(request)) {
+    serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
+    return;
+  }
   if (await handleApiRequest({
     request,
     response,
