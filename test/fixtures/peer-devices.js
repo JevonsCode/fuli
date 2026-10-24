@@ -1,9 +1,11 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { rmSync } from 'node:fs';
+import { cp, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js';
+import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
+import { createPeerPort, peerDirectory } from '../../packages/roundtable/src/peer/peer-port.js';
 import { createPeerRuntime } from '../../packages/roundtable/src/peer/peer-runtime.js';
 import { canonicalJson, sha256Hex } from '../../packages/roundtable/src/peer/protocol.js';
 import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
@@ -17,13 +19,33 @@ export function signingAuthority() {
   return { keyId: sha256Hex(Buffer.from(publicKey, 'base64url')).slice(0, 32), publicKey, privateKey: key.privateKey };
 }
 
+// Every device of every test used to generate its own certificate, and no test
+// depends on a fresh one. Each label's identity is made once per process and
+// copied in, as on a device that already has one.
+const identities = new Map();
+let identityRoot = null;
+
+function identityDirectory(label) {
+  if (!identities.has(label)) identities.set(label, (async () => {
+    identityRoot ??= mkdtemp(join(tmpdir(), 'fuli-peer-identities-')).then((root) => {
+      process.once('exit', () => rmSync(root, { recursive: true, force: true }));
+      return root;
+    });
+    const directory = join(await identityRoot, label);
+    await loadDeviceIdentity(directory);
+    return directory;
+  })());
+  return identities.get(label);
+}
+
 export async function device(label, { tamper = null, wake = null } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), `fuli-peer-${label}-`));
+  await cp(await identityDirectory(label), peerDirectory(dataDir), { recursive: true });
   const spaceId = `${label}-space`;
   const projectId = `${label}-project`;
   const leadId = `${label}-lead`;
   const authority = signingAuthority();
-  const calls = { grants: [], wakes: [], origins: [] };
+  const calls = { grants: [], wakes: [], origins: [], snapshots: [], settled: [] };
   const memberId = `${label}-member`;
   const actorId = token => token?.includes('member-task') ? memberId : leadId;
   const personal = {
@@ -63,6 +85,7 @@ export async function device(label, { tamper = null, wake = null } = {}) {
       sourceApplication: 'codex', sessionId: `${label}-session` }) },
   };
   app.peer = createPeerPort({ dataDir, host: createFuliRoundtableHost(app), statusPollMs: 50 });
+  const until = recordSteps(app.peer, calls, { chatWakeSnapshot: 'snapshots', waitFor: 'settled' });
   app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
     wake: async (input) => { calls.wakes.push(input);
       return wake ? wake(input) : { body: `${label} answers`, sessionId: `${label}-woken` }; } });
@@ -70,9 +93,35 @@ export async function device(label, { tamper = null, wake = null } = {}) {
   app.projectPathResolver = (path) => path === folder
     ? { status: 'matched', personalProjectId: projectId } : { status: 'unmatched', personalProjectId: null };
   const runtime = createPeerRuntime({ host: createFuliRoundtableHost(app), roundtable: app.roundtable, port: app.peer, allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}) });
-  return { app, runtime, calls, projectId, folder, close: async () => {
+  return { app, runtime, calls, until, projectId, folder, close: async () => {
     await runtime.close(); await app.roundtable.close(); app.peer.close(); await rm(dataDir, { recursive: true, force: true });
   } };
+}
+
+// Records what the named peer port calls returned, so a test awaits the step it
+// depends on instead of sleeping. A chat wake loop reads a snapshot before each
+// wake and waits for that wake to settle, so these are its observable steps.
+function recordSteps(port, calls, methods) {
+  const waiting = [];
+  for (const [method, kind] of Object.entries(methods)) {
+    const original = port[method];
+    port[method] = async (...args) => {
+      const value = await original(...args);
+      calls[kind].push(value);
+      for (const waiter of waiting.filter((entry) => entry.kind === kind && entry.matches(value))) {
+        waiting.splice(waiting.indexOf(waiter), 1);
+        waiter.resolve(value);
+      }
+      return value;
+    };
+  }
+  return (kind, matches) => {
+    const index = calls[kind].findIndex(matches);
+    if (index >= 0) return Promise.resolve(calls[kind][index]);
+    const waiter = { kind, matches, ...Promise.withResolvers() };
+    waiting.push(waiter);
+    return waiter.promise;
+  };
 }
 
 export async function pair(coordinator, member, { folder = true } = {}) {
