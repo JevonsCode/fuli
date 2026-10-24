@@ -4,7 +4,12 @@ import { captureSettingsVersion } from '../graphiti/capture-decision.js';
 
 const budgets = new AsyncLocalStorage();
 const DEFAULT_CAPTURE_MS = 750;
-export const withCaptureBudget = (timeoutMs, operation) => budgets.run(timeoutMs, operation);
+// continued: the next hook of this session finishes what this run's capture
+// leaves undone (transcript-lifecycle.js), so a write cut short is deferred,
+// not lost. Only a hook that recorded this entry in its transcript guard says so.
+export const withCaptureBudget = (timeoutMs, operation, { continued = false } = {}) =>
+  budgets.run({ timeoutMs, continued }, operation);
+export const captureContinued = () => budgets.getStore()?.continued === true;
 
 // Capture/recovery must leave time for preference entry. Revoking this port
 // prevents late continuations (even broken ports ignoring AbortSignal) from
@@ -15,7 +20,7 @@ export const withCaptureBudget = (timeoutMs, operation) => budgets.run(timeoutMs
 // sessionId: a conversation write is refused once it changed, so a capture
 // that started before a pause or a switch never writes after it.
 export async function captureWindow(application, guard, operation, {
-  timeoutMs = budgets.getStore() ?? DEFAULT_CAPTURE_MS, signal = activeAgentRequestSignal(),
+  timeoutMs = budgets.getStore()?.timeoutMs ?? DEFAULT_CAPTURE_MS, signal = activeAgentRequestSignal(),
   settings = undefined, sessionId = null
 } = {}) {
   const controller = new AbortController();
@@ -39,7 +44,7 @@ export async function captureWindow(application, guard, operation, {
       currentTaskContext: (query, current) => { check(); return application.personal.currentTaskContext(query, options(current)); },
       conversation: (action, query, current) => {
         check();
-        if (action === 'append') unchanged();
+        if (['append', 'begin'].includes(action)) unchanged();
         return application.personal.conversation(action, query, options(current));
       }
     } };

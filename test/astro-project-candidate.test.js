@@ -112,7 +112,7 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
     collaborationPreferences: async (space, project, limit, agent) => ({ personal_space_id: space, personal_project_id: project,
       project_agent_id: agent, effective_preferences: [], global_preferences: [], conflicts: [] }),
     listPreferenceConflicts: async () => [],
-    conversation: async operation => operation === 'append' ? { status: 'saved', conversation_id: CONVERSATION } : {},
+    conversation: async operation => ['begin', 'append'].includes(operation) ? { status: 'saved', conversation_id: CONVERSATION } : {},
     // The Provider's triage store: a label per conversation, its labeled_at the version.
     conversationTriage: async (operation, input) => {
       // Open topics and forming a topic into a project, as the triage store does:
