@@ -49,11 +49,14 @@ export function preferenceAuthorityView(value) {
   return { ...present(value, [...PREFERENCE_FIELDS, ...REQUIRED_ENTRY_FIELDS, ...IDENTITY_FIELDS]), ...entryIdentity(value) };
 }
 
-// Static rule references and canonically ordered instructions precede changing
-// task IDs. This only reorders existing fields; the required byte budget stays.
-export function stablePreferencePrefix(value) {
+// The token, checkpoint requirement and receipt lead, so a host that keeps
+// only a preview of a long entry still shows how to close the task (rec#47
+// F1); static rule references and canonically ordered instructions follow.
+// This only reorders existing fields; the required byte budget stays.
+export function entryFieldOrder(value) {
   if (!value || typeof value !== 'object') return value;
-  const fields = ['task_guidance', 'application_guidance', 'effective_preferences', 'preference_updates', 'preference_delivery'];
+  const fields = [...REQUIRED_ENTRY_FIELDS, 'task_guidance', 'application_guidance', 'effective_preferences',
+    'preference_updates', 'preference_delivery'];
   return { ...present(value, fields), ...Object.fromEntries(Object.entries(value).filter(([key]) => !fields.includes(key))) };
 }
 

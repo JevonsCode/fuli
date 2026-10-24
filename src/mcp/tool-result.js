@@ -1,6 +1,6 @@
 import { ApplicationError, isControlledError } from '../app/application-error.js';
 import { BLOCKED_PREFERENCE_LABEL, blockedPreferenceDelivery, completeBlockedPreferenceDelivery,
-  preferenceDeliveryReason, stablePreferencePrefix, TASK_PREFERENCE_RESULT_LIMIT_BYTES } from './preference-delivery.js';
+  preferenceDeliveryReason, entryFieldOrder, TASK_PREFERENCE_RESULT_LIMIT_BYTES } from './preference-delivery.js';
 
 const OMITTED_KEYS = new Set([
   'store',
@@ -50,7 +50,7 @@ export function completePreferenceToolResult(value, limitBytes = TASK_PREFERENCE
   else if (Object.keys(value ?? {}).some(key => !allowed.has(key)) || unsafe(value)) {
     candidate = blockedPreferenceDelivery(value, 'unsafe_projection');
   }
-  let result = envelope(stablePreferencePrefix(candidate));
+  let result = envelope(entryFieldOrder(candidate));
   if (jsonBytes(result) > limitBytes) {
     result = envelope(blockedPreferenceDelivery(value, 'delivery_budget'));
     if (jsonBytes(result) > limitBytes) throw new ApplicationError('validation', 'Cannot deliver the complete blocked preference recovery');
@@ -101,7 +101,7 @@ export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, item
   );
   const reason = preferenceContext && preferenceDeliveryReason(value, structuredContent);
   if (reason) return blockedResult(reason);
-  const delivered = preferenceContext ? stablePreferencePrefix(structuredContent) : structuredContent;
+  const delivered = preferenceContext ? entryFieldOrder(structuredContent) : structuredContent;
   return { content: [{ type: 'text', text: JSON.stringify(delivered) }], structuredContent: delivered };
 }
 

@@ -6,8 +6,10 @@ complete model-facing native tool result has been observed in the same context
 generation. Hook stdout, writing a result, a saved file and model cache hits do
 not establish delivery.
 
-The full entry keeps existing fields. Static rule references precede dynamic
-task identifiers, and instruction units have a canonical order. A complete
+The full entry keeps existing fields. The task token, checkpoint requirement
+and receipt come first, so a host that keeps only a preview of a long entry
+still shows how to close the task (rec#47 F1); static rule references follow,
+and instruction units have a canonical order. A complete
 frame with at least one preference, in a session whose generation can be read,
 adds one field, `"revision":"<12 hex>"` (26 bytes): the first 12 hex digits of
 its snapshot hash, so a later frame can name it (rec#15 D-29.3). An empty set,
