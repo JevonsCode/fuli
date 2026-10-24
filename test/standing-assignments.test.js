@@ -154,6 +154,19 @@ test('reads create no file, and the store is registered with the data directory'
   assert.deepEqual([store.store, store.state, store.version], ['standing-assignments', 'current', 1]);
 });
 
+test('a preview answers as register would, saving nothing and creating no file', (t) => {
+  const { port, path } = assignments(t);
+  assert.deepEqual(port.preview(timesheet({ projectId: null, leadAgentId: null, terms: [' iDev '] })), { status: 'created',
+    assignment: null, terms: ['iDev'], responsibility: 'Fill iDev timesheet hours', preferenceIds: [] });
+  assert.equal(existsSync(path), false);
+  assert.throws(() => port.register(timesheet({ leadAgentId: null })), /leadAgentId is required/);
+  const { assignment } = port.register(timesheet());
+  assert.equal(port.preview(timesheet()).status, 'unchanged');
+  assert.equal(port.preview(timesheet({ terms: ['工时'] })).assignment.assignmentId, assignment.assignmentId);
+  assert.throws(() => port.preview(timesheet({ projectId: null, leadAgentId: null })), { code: 'standing_assignment_term_taken' });
+  assert.equal(port.history(assignment.assignmentId).length, 1);
+});
+
 test('a space ID is read the same way by every call', (t) => {
   const { port } = assignments(t);
   port.register(timesheet());

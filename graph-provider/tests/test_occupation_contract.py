@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from fuli_graph.project_agent_occupation_models import ProjectAgentOccupationUpdate
 from fuli_graph.project_agent_recruitment_occupation import recruitment_occupation
-from fuli_graph.default_project_lead import default_lead_profile
+from fuli_graph.default_project_lead import DefaultProjectLeadRequest, default_lead_profile
 from fuli_graph.store_project_agent_occupation import occupation_from_agent_node
 from fuli_graph.store_project_agents import StoreProjectAgents
 from fuli_graph.project_agent_models import ProjectAgentAssignmentCreate, ProjectAgentUpsert
@@ -35,6 +35,14 @@ def test_default_lead_delegates_instead_of_claiming_implementation_skills():
     assert 'implementation' not in profile.work_kinds
     assert '代码实现' not in profile.capabilities
     assert {'planning', 'delegation', 'integration', 'reporting'} <= set(profile.work_kinds)
+
+
+def test_default_lead_leads_with_the_confirmed_responsibility():
+    confirmed = default_lead_profile('Synthetic', ' Fill the synthetic timesheet ').responsibility
+    assert confirmed.startswith('Fill the synthetic timesheet\n统筹 Synthetic')
+    assert default_lead_profile('Synthetic').responsibility.startswith('统筹 Synthetic')
+    with pytest.raises(ValidationError):
+        DefaultProjectLeadRequest(personal_space_id='space', personal_project_id='project', responsibility='')
 
 
 @pytest.mark.asyncio

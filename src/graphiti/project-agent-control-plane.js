@@ -7,6 +7,7 @@ import { planAgentCollaboration, agentLoan, agentVerification } from './agent-co
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
 import { recordUserTriage } from './conversation-triage.js';
 import { acceptTopicProposal, declineTopicProposal, listTopicProposals } from './topic-proposals.js';
+import { registerStandingAssignment } from './standing-assignment-entry.js';
 import { agentProjectResolution } from './agent-knowledge-workflows.js';
 import { listAgentAttention, getAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
@@ -94,6 +95,10 @@ export class ProjectAgentControlPlaneApplication {
     if (operation === 'list') return listTopicProposals(this);
     if (operation === 'accept') return acceptTopicProposal(this, { topic: input.topic });
     return declineTopicProposal(this, { topic: input.topic });
+  }
+  // The person's "from now on this work goes to that project" (rec#29 F2).
+  async registerStandingAssignment(input) {
+    return registerStandingAssignment(this, input);
   }
   async queryAgentConversations(input) {
     this.#assertSpace(input.personalSpaceId);

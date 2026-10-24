@@ -77,12 +77,14 @@ export class StandingAssignmentStore {
   }
 
   activeFor(personalSpaceId, projectId, leadAgentId) {
+    if (!this.readable) return null;
     return view(this.db.prepare(`SELECT * FROM standing_assignments WHERE personal_space_id = ? AND project_id = ?
       AND lead_agent_id = ? AND retired_at IS NULL`).get(personalSpaceId, projectId, leadAgentId));
   }
 
   // The active assignment a term key names in a space, if any.
   termOwner(personalSpaceId, termKey) {
+    if (!this.readable) return null;
     return view(this.db.prepare(`SELECT a.* FROM standing_assignment_terms t
       JOIN standing_assignments a ON a.assignment_id = t.assignment_id
       WHERE t.personal_space_id = ? AND t.term_key = ?`).get(personalSpaceId, termKey));
