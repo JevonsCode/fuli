@@ -4,7 +4,7 @@ import { ApplicationError, ApplicationErrorCode } from '../app/application-error
 import { displayName, identityKey } from '../text/name-identity.js';
 import { requiredString, uniqueTextArray } from '../validation/values.js';
 import { StandingAssignmentStore } from './store.js';
-import { termOccurs } from './term-match.js';
+import { termOccurs, termsOverlap } from './term-match.js';
 
 // The standing assignments of a personal space (rec#29 D-41, D-41.1): the
 // person's confirmed names for a kind of work, each pointing at one project
@@ -119,11 +119,23 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
         .filter((term) => matched.get(assignment.assignmentId).includes(identityKey(term))) }));
   }
 
+  // Every active assignment whose terms or responsibility a search for who
+  // does some work names (find_agents, rec#29 F4), with the terms it named.
+  function discover(personalSpaceId, search) {
+    const key = identityKey(requiredString(search, 'search'));
+    const space = requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT);
+    return store.listActive(space).map((assignment) => ({ assignment,
+      matchedTerms: assignment.terms.filter((term) => termsOverlap(key, identityKey(term))) }))
+      .filter(({ assignment, matchedTerms }) => matchedTerms.length
+        || termsOverlap(key, identityKey(assignment.responsibility)));
+  }
+
   return {
     register,
     preview,
     retire,
     match,
+    discover,
     list: (personalSpaceId) => store.listActive(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT)),
     // Each change in order, with the state it produced.
     history: (assignmentId) => store.revisions(requiredString(assignmentId, 'assignmentId', ID_LIMIT)),

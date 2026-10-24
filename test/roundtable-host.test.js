@@ -5,6 +5,7 @@ import { assertRoundtableHost, ROUNDTABLE_HOST_METHODS } from '../packages/round
 import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
+import { createStandingAssignments } from '../src/standing-assignments/port.js';
 
 test('Roundtable refuses a host that is missing part of the port', () => {
   const partial = Object.fromEntries(ROUNDTABLE_HOST_METHODS.slice(1).map(name => [name, () => null]));
@@ -49,4 +50,45 @@ test('FULI hosts Roundtable with its Provider records in the port shapes', async
     bindingId: 'chat', expiresAt: 'e', purpose: 'chat' });
   assert.equal(calls.at(-1)[1].purpose, 'chat');
   assert.deepEqual(await host.recordMemoryUsage({}), { recorded: false, reason: 'usage_port_unavailable' });
+});
+
+test('the person\'s own names for work find the leads of this space\'s open projects', async t => {
+  const standing = createStandingAssignments();
+  t.after(() => standing.close());
+  const register = (personalSpaceId, projectId, leadAgentId, terms, responsibility) => standing.register({
+    personalSpaceId, projectId, leadAgentId, terms, responsibility, source: 'user' }).assignment;
+  register('space-1', 'idev', 'lead-idev', ['iDev timesheet', '工时'], '每天填写 iDev 工时');
+  register('space-2', 'app', 'lead-app', ['报销'], '处理报销');
+  register('space-1', 'old', 'lead-old', ['归档'], '旧工作');
+  const retired = register('space-1', 'app', 'lead-app', ['周报'], '写周报');
+  standing.retire(retired.assignmentId, { source: 'user', expectedRevision: retired.revision });
+  const leads = { idev: 'lead-idev', app: 'lead-app', old: 'lead-old' };
+  const app = {
+    config: { personal: { spaceId: 'space-1' } },
+    standingAssignments: standing,
+    listProjectAgents: async () => Object.values(leads).map(agentId => ({ agentId,
+      profile: { name: agentId, responsibility: '项目负责人', allowedClients: ['codex'], status: 'active' } })),
+    personal: {
+      listPersonalProjects: async () => [{ project_id: 'idev', profile: { name: 'iDev 工时' } },
+        { project_id: 'app', profile: { name: 'App' } }, { project_id: 'old', profile: { name: 'Old 工时', lifecycle: 'archived' } },
+        { project_id: 'scratch', scope_type: 'temporary', profile: { name: 'App scratch' } }],
+      getProjectAgentCoordinationPolicy: async (_space, projectId) => ({ team_lead_agent_id: leads[projectId] ?? null }),
+      recentAgentSessions: async () => []
+    }
+  };
+  const host = createFuliRoundtableHost(app);
+  const idev = { agentId: 'lead-idev', projectId: 'idev', project: 'iDev 工时', responsibility: '每天填写 iDev 工时' };
+  assert.deepEqual(await host.matchWork('工时'), [{ ...idev, matchedTerms: ['工时'] }], 'term; archived project excluded');
+  assert.deepEqual(await host.matchWork('谁做 Timesheet？'), [], 'a term is matched whole');
+  assert.deepEqual(await host.matchWork('TIMESHEET'), [{ ...idev, matchedTerms: ['iDev timesheet'] }]);
+  assert.deepEqual(await host.matchWork('填写'), [{ ...idev, matchedTerms: [] }], 'responsibility');
+  assert.deepEqual(await host.matchWork('ａｐｐ'), [{ agentId: 'lead-app', projectId: 'app', project: 'App' }], 'project name');
+  assert.deepEqual(await host.matchWork('报销'), [], 'another space');
+  assert.deepEqual(await host.matchWork('周报'), [], 'retired');
+  assert.deepEqual(await host.matchWork('idevelop'), [], 'word edges');
+
+  const roundtable = createAgentRoundtable({ host, openStore: () => createRoundtableStore() });
+  const [found] = (await roundtable.findAgents({ query: '工时' })).agents;
+  assert.deepEqual([found.agentId, found.matchedWork], ['lead-idev', [{ projectId: 'idev', project: 'iDev 工时',
+    responsibility: '每天填写 iDev 工时', matchedTerms: ['工时'] }]]);
 });

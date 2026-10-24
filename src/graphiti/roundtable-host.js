@@ -2,6 +2,8 @@ import { assertRoundtableHost } from '../../packages/roundtable/src/host.js';
 import { loadProjectTeam } from './project-team-view.js';
 import { recordProjectMemoryUsage } from './project-memory-usage.js';
 import { activeAgentRequestSignal, activeSealedWorkerRequest } from '../app/agent-request-context.js';
+import { termsOverlap } from '../standing-assignments/term-match.js';
+import { identityKey } from '../text/name-identity.js';
 
 // FULI as the Roundtable host: Agents, projects, task identity and wake
 // authority all come from the Provider of this device's personal space.
@@ -14,6 +16,8 @@ export function createFuliRoundtableHost(app) {
     const value = await app.personal.listPersonalProjects(spaceId());
     return Array.isArray(value) ? value : value?.projects ?? [];
   };
+  const projectLeadId = async projectId =>
+    (await app.personal.getProjectAgentCoordinationPolicy(spaceId(), projectId)).team_lead_agent_id ?? null;
   return assertRoundtableHost({
     spaceId,
     listAgents: () => app.listProjectAgents({ personalSpaceId: spaceId() }),
@@ -26,14 +30,29 @@ export function createFuliRoundtableHost(app) {
     taskContext: (token, client) => app.taskContextRegistry.context(token, client),
     listProjects: async () => (await projects()).map(projectView),
     getProject: async projectId => projectView(await app.personal.getPersonalProject(spaceId(), projectId)),
-    projectLeadId: async projectId =>
-      (await app.personal.getProjectAgentCoordinationPolicy(spaceId(), projectId)).team_lead_agent_id ?? null,
+    projectLeadId,
     staffProjectLead: ({ projectId, client }) => app.personal.staffDefaultProjectLead({ personal_space_id: spaceId(),
       personal_project_id: projectId, source_application: client }),
     async projectTeam(projectId) {
       const team = await loadProjectTeam(app, spaceId(), projectId);
       return { lead: team.lead ?? null,
         people: [team.lead, ...team.members, ...team.collaborators, ...team.peers].filter(Boolean) };
+    },
+    // The person's own names for work (rec#29 F4): an open formal project the
+    // query names finds its lead, and an active standing assignment of this
+    // space whose terms or responsibility it names finds the lead it routes to.
+    async matchWork(query) {
+      const open = new Map((await projects()).map(projectView).filter(project => !project.temporary && !project.archived)
+        .map(project => [project.projectId, project.name]));
+      const standing = app.standingAssignments.discover(spaceId(), query)
+        .filter(({ assignment }) => open.has(assignment.projectId))
+        .map(({ assignment, matchedTerms }) => ({ agentId: assignment.leadAgentId, projectId: assignment.projectId,
+          project: open.get(assignment.projectId), responsibility: assignment.responsibility, matchedTerms }));
+      const key = identityKey(query);
+      const named = await Promise.all([...open].filter(([projectId, name]) => name
+        && !standing.some(match => match.projectId === projectId) && termsOverlap(key, identityKey(name)))
+        .map(async ([projectId, project]) => ({ agentId: await projectLeadId(projectId), projectId, project })));
+      return [...standing, ...named.filter(match => match.agentId)];
     },
     async projectForPath(path) {
       if (!path || !app.projectPathResolver) return null;

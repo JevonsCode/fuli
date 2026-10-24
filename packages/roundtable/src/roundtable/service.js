@@ -82,15 +82,36 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     return sessions.filter((session) => WAKE_CLIENTS.includes(session.client));
   }
 
+  // A host that knows the person's own names for work (project names, standing
+  // assignments) matches the query against them; Roundtable only places the
+  // leads it names. Asked for one project, only that project's work counts.
+  async function workMatches(query, personalProjectId) {
+    const byAgent = new Map();
+    if (!query || !host.matchWork) return byAgent;
+    for (const { agentId, ...match } of await host.matchWork(query)) {
+      if (personalProjectId && match.projectId !== personalProjectId) continue;
+      byAgent.set(agentId, [...(byAgent.get(agentId) ?? []), match]);
+    }
+    return byAgent;
+  }
+
   async function findAgents({ query = null, personalProjectId = null, occupation = null, capability = null, projectId = null } = {}) {
     const project = personalProjectId ? await resolveProjectLead(host, personalProjectId) : null;
     const needle = query?.trim().toLowerCase();
-    const matches = (project ? (project.agent ? [project.agent] : []) : await agents()).filter((agent) => matchesAgentDiscovery(agentDiscoveryProfile(agent), { occupation, capability, projectId }) && (!needle || [agent.agentId,
-      agent.employeeNumber ? `FLA ${agent.employeeNumber}` : null, agent.profile.displayName,
-      agent.profile.name, agent.profile.responsibility, ...(agent.profile.capabilities ?? [])]
-      .some((value) => value?.toLowerCase().includes(needle))));
+    const work = await workMatches(query?.trim(), personalProjectId);
+    const names = (agent) => [agent.agentId, agent.employeeNumber ? `FLA ${agent.employeeNumber}` : null,
+      agent.profile.displayName, agent.profile.name];
+    const matches = (project ? (project.agent ? [project.agent] : []) : await agents()).filter((agent) => matchesAgentDiscovery(agentDiscoveryProfile(agent), { occupation, capability, projectId })
+      && (!needle || work.has(agent.agentId) || [...names(agent), agent.profile.responsibility, ...(agent.profile.capabilities ?? [])]
+        .some((value) => value?.toLowerCase().includes(needle))));
+    // An exact name still comes first, then the leads the person's work names;
+    // without work matches the directory's order stays as it is.
+    const rank = (agent) => [...names(agent), agent.employeeNumber].some((name) => name?.toLowerCase() === needle) ? 0
+      : work.has(agent.agentId) ? 1 : 2;
+    if (work.size) matches.sort((a, b) => rank(a) - rank(b));
     const local = await Promise.all(matches.slice(0, 20).map(async (agent) => ({
       agentId: agent.agentId, employeeNumber: agent.employeeNumber, name: label(agent), responsibility: agent.profile.responsibility,
+      ...(work.has(agent.agentId) ? { matchedWork: work.get(agent.agentId) } : {}),
       ...agentDiscoveryProfile(agent),
       clients: (agent.profile.allowedClients ?? []).filter((client) => WAKE_CLIENTS.includes(client)),
       recentConversations: await conversations(agent, personalProjectId)

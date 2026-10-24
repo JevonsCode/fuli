@@ -6,6 +6,7 @@ import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/ser
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { parseFinalAnswer, sessionWorkingDirectory, wakeArguments, wakeAgent } from '../packages/roundtable/src/roundtable/wake.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
+import { createStandingAssignments } from '../src/standing-assignments/port.js';
 
 const agent = (agentId, name, allowedClients = ['claude_code', 'codex']) => ({ agentId,
   employeeNumber: agentId === 'lead-1' ? '000001' : '000002',
@@ -28,7 +29,9 @@ function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = (
       if (tasks[token] && client && client !== tasks[token].sourceApplication) throw new Error('Task context not found for this client');
       return tasks[token];
     } },
+    standingAssignments: createStandingAssignments(),
     personal: { recentAgentSessions: async ({ agentId }) => sessions[agentId] ?? [],
+      listPersonalProjects: async () => [],
       issueAgentDelegation: async input => { grants.push(input); return { token: `synthetic-grant-${grants.length}` }; },
       verifyAgentDelegation: async input => { verified.push(input); return { redeemed }; },
       revokeAgentDelegation: async input => { revoked.push(input); }
