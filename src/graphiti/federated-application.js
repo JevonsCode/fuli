@@ -1,17 +1,5 @@
-import { dirname, join } from 'node:path';
-import { createEmployeeService } from '../employees/service.js';
-import { agentAppRoot, createAgentAppService } from '../agent-apps/service.js';
-import { callAgentTool, listAgentTools } from '../agent-tools.js';
-import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
-import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
-import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js';
-import { createFuliRoundtableHost } from './roundtable-host.js';
-import { attachJudgmentRuntime } from '../judgment/runtime.js';
-import { createTaskScheduleService } from '../task-schedules/service.js';
-import { openModelBackendRuntime, openRoleSuggestionLog, openRoleTrustAndHistory } from '../model-backends/runtime.js';
-import { TaskScheduleStore } from '../task-schedules/store.js';
-import { createStandingAssignments } from '../standing-assignments/port.js';
-import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
+import { dirname } from 'node:path';
+import { closeLocalRuntimes, openLocalRuntimes } from './local-runtimes.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
 import { searchFederatedKnowledge } from './federated-search.js';
 import { preflightTaskCaptures } from './task-knowledge-routing.js';
@@ -25,7 +13,8 @@ import {
   createWorkspaceProvider
 } from './workspace-provider-client.js';
 import {
-  canonicalProviderUrl, personalTokenRefresher,
+  canonicalProviderUrl,
+  personalTokenRefresher,
   readGraphRuntimeConfig
 } from './runtime-config.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
@@ -52,7 +41,6 @@ import { resolvePersonalProjectPath } from './project-path-context.js';
 import { mergeExternalKnowledgeProjection } from '../external-knowledge/graph-projection.js';
 import { ProviderTaskContextRegistry } from '../mcp/provider-task-context-registry.js';
 import { readTaskPreferences } from './task-preference-reader.js';
-import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createNeedsPersonNotifier } from '../notifications/needs-person.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
@@ -70,7 +58,9 @@ import {
   previewPersonalGlobalPreferenceDecision as
     previewPersonalGlobalPreferenceDecisionWorkflow
 } from './agent-knowledge-workflows.js';
-import { searchCurrentProjectKnowledge as searchCurrentProjectKnowledgeWorkflow } from './current-project-knowledge-search.js';
+import {
+  searchCurrentProjectKnowledge as searchCurrentProjectKnowledgeWorkflow
+} from './current-project-knowledge-search.js';
 import {
   assertPublicKnowledgeEligible,
   providerConfirmationActor,
@@ -98,10 +88,13 @@ import {
   providerWorkflowTransitionObservation
 } from './workflow-observation.js';
 import { buildUserTasteSkill } from './user-taste-skill.js';
-import { beginTaskEntry, taskEntryPreferences, finishTaskEntryPreferences } from './task-entry-preferences.js';
+import {
+  beginTaskEntry,
+  taskEntryPreferences,
+  finishTaskEntryPreferences
+} from './task-entry-preferences.js';
 import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
 import { resolveTaskEntryProject } from './task-entry-project-scope.js';
-import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
 import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import { knowledgeTags } from './knowledge-tags.js';
@@ -136,29 +129,8 @@ export function openFederatedGraphApplication({
     refreshPersonalToken: personalTokenRefresher(runtimeConfigPath, resolved.personal)
   });
   if (typeof runtimeConfigPath === 'string' && runtimeConfigPath) {
-    app.preferenceDelivery = createSessionPreferenceDelivery({
-      directory: join(dirname(runtimeConfigPath), 'preference-delivery'), env });
     const paths = resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) });
-    attachExternalKnowledgeRuntime(app, { paths, env, fetchImpl });
-    app.agentSnapshots = createAgentDirectorySnapshots({ root: paths.agentDirectoryRoot,
-      providerIdentity: resolved.personal.providerUrl });
-    app.employees = createEmployeeService({ app, runtimeConfigPath });
-    app.agentApps = createAgentAppService({ root: agentAppRoot(runtimeConfigPath),
-      providerIdentity: resolved.personal.providerUrl, resolveOwner: (owner) => app.getProjectAgent(owner),
-      toolNames: () => listAgentTools().map(({ name }) => name), ownerKind: 'console',
-      callFuliTool: (name, input) => callAgentTool(app, name, input) });
-    app.modelBackends = openModelBackendRuntime(paths);
-    ({ trust: app.modelTrust, history: app.modelSettingsHistory } = openRoleTrustAndHistory(paths, app.modelBackends));
-    attachJudgmentRuntime(app, paths);
-    app.roleSuggestions = openRoleSuggestionLog(paths, { recoveryGate: app.knowledgeRecoveryGate });
-    app.taskSchedules = createTaskScheduleService({ app,
-      openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
-    // Opens its file on the first registration; reads before that find none.
-    app.standingAssignments = createStandingAssignments({ path: paths.standingAssignmentsPath });
-    app.roundtableHost = createFuliRoundtableHost(app);
-    app.peer = createPeerPort({ dataDir: dirname(runtimeConfigPath), host: app.roundtableHost });
-    app.roundtable = createAgentRoundtable({ host: app.roundtableHost, peer: app.peer, env,
-      openStore: () => createRoundtableStore(join(dirname(runtimeConfigPath), 'agent-roundtable.sqlite')) });
+    openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImpl });
     // Read per call so a saved settings change applies without a restart.
     app.needsPerson = createNeedsPersonNotifier({ fetchImpl, consoleUrl: app.consoleUrl,
       readUrl: () => readRuntimeSettings(paths.runtimeSettingsPath).notifications.needsPersonUrl });
@@ -191,7 +163,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     projectPathResolver = resolvePersonalProjectPath,
     taskContextRegistry = null,
     providerRequestTimeoutMs = undefined,
-    tokenUsageResolver = undefined, refreshPersonalToken = null,
+    tokenUsageResolver = undefined,
+    refreshPersonalToken = null,
     // The runtime directory whose transcript ledgers this application's hooks
     // keep; none for an application that only lives in memory.
     runtimeConfigPath = null
@@ -217,7 +190,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       accessToken: config.personal.accessToken,
       workflowObservationToken: config.personal.workflowObservationToken ?? null,
       fetchImpl,
-      requestTimeoutMs: providerRequestTimeoutMs, refreshAccessToken: refreshPersonalToken
+      requestTimeoutMs: providerRequestTimeoutMs,
+      refreshAccessToken: refreshPersonalToken
     });
     this.taskContextRegistry = taskContextRegistry ?? new ProviderTaskContextRegistry(
       this.personal, config.personal.spaceId
@@ -293,7 +267,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   // A task entry reads the project list once (shared-project-list.js).
-  getCollaborationPreferences(input) { return withSharedProjectList(() => this.#collaborationPreferences(input)); }
+  getCollaborationPreferences(input) {
+    return withSharedProjectList(() => this.#collaborationPreferences(input));
+  }
 
   async #collaborationPreferences({
     personalProjectId = null,
@@ -333,7 +309,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       sessionId, sourceApplication, sourceSessionId, taskPrompt, workKind, workflow });
   }
 
-  readTaskPreferences(input) { return readTaskPreferences(this, input); }
+  readTaskPreferences(input) {
+    return readTaskPreferences(this, input);
+  }
 
   async getUserTasteSkill({
     personalProjectId = null,
@@ -590,7 +568,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       reason: input.reason,
       name: input.name ?? null,
       summary: input.summary ?? null,
-      fact: input.fact ?? null, basis_meaning: input.basisMeaning ?? null, // D-20.7, a person's choice only
+      fact: input.fact ?? null,
+      basis_meaning: input.basisMeaning ?? null, // D-20.7, a person's choice only
       operation_actor: input.operationActor ?? 'agent',
       // The version the editor read (rec#20); the Provider refuses a stale one.
       ...(input.expectedVersion !== undefined ? { expected_version: input.expectedVersion } : {})
@@ -1176,7 +1155,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.judgment?.close(); this.taskSchedules?.close(); this.standingAssignments?.close(); this.roleWork?.close(); this.roleSuggestions?.close(); this.modelTrust?.close(); this.modelSettingsHistory?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); return Promise.all([this.agentApps?.close(), this.employees?.close()]); }
+  close() {
+    return closeLocalRuntimes(this);
+  }
 
   // View records rank knowledge by what a session looked at: a behavior trace
   // that stops with automatic recording. Reading itself needs none (rec#11 D-01).
