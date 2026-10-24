@@ -36,12 +36,16 @@ def _draft_identity(space, draft) -> dict:
 
 class StorePublication:
     async def _project_agent_drafts(self, actor, space, drafts) -> set[int]:
-        """The positions among these drafts that hold an FLA's work, for a
-        reader without the human-review proof; such a draft (made before the
-        Provider refused them) is the person's alone to read."""
+        """The positions among these drafts that still hold an FLA's work, for
+        a reader without the human-review proof; such a draft (made before the
+        Provider refused them) is the person's alone to read. Once its source
+        is erased only submission metadata is left, which the submission
+        protocol still settles."""
         if actor.get('_human_review_verified') is True:
             return set()
-        return await project_agent_sources(self, space, [_draft_identity(space, draft) for draft in drafts])
+        held = [index for index, draft in enumerate(drafts) if draft.get('payload') is not None]
+        found = await project_agent_sources(self, space, [_draft_identity(space, drafts[index]) for index in held])
+        return {held[position] for position in found}
 
     async def decide_publication_submission(self, actor, personal_space_id, draft_id, decision):
         """Internal submission protocol; every transition serializes with erasure."""

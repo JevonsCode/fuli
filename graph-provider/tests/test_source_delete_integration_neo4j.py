@@ -84,10 +84,22 @@ async def test_source_delete_refuses_reserved_drafts_then_scrubs_expired_unknown
         conversation = ok(await client.post('/v1/agent-conversations/append', json=journal))
         saved, episode = await capture(client, space, session, turn,
             [dict(key='erase', name='Synthetic erased item', type='ProjectFact')])
-        draft = ok(await client.post('/v1/publication-drafts', json=dict(personal_space_id=space,
-            provider_url='https://public.example', target_project_id='synthetic-public', episode=episode)))
+        # The turn is the FLA's work, so no draft is made of it any more (0.20.1) ...
+        refused_draft = await client.post('/v1/publication-drafts', json=dict(personal_space_id=space,
+            provider_url='https://public.example', target_project_id='synthetic-public', episode=episode))
+        assert refused_draft.status_code == 422
+        assert refused_draft.json()['detail']['code'] == 'project_agent_knowledge_personal_only'
+        # ... but one made before, already reserved for submission, is still erased with its source.
+        draft, begun = {'id': 'draft-' + uuid4().hex}, {'submission_id': str(uuid4())}
+        await query(settings, '''
+            MATCH (space:FuliSpace {id: $space, kind: 'personal'})
+            CREATE (space)-[:HAS_PUBLICATION_DRAFT]->(:FuliPublicationDraft {
+              id: $id, personal_space_id: $space, target_project_id: 'synthetic-public',
+              provider_url: 'https://public.example', status: 'submitting', payload: $payload,
+              created_at: $at, submission_id: $submission_id, submission_started_at: $at})
+            RETURN $id AS id''', space=space, id=draft['id'], payload=json.dumps(episode), at=now_utc(),
+            submission_id=begun['submission_id'])
         decision_url = f'/v1/publication-drafts/{draft["id"]}/decision'
-        begun = ok(await client.post(decision_url, params={'personal_space_id': space}, json={'decision': 'begin_submit_public'}))
         target = saved['episode_id'] if kind == 'episode' else store._task_session_id(space, 'codex', session)
         identity = {} if kind == 'episode' else dict(source_application='codex', fuli_session_id=session)
         plan = ok(await source_preview(client, space, target, kind, **identity))

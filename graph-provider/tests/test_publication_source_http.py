@@ -185,6 +185,11 @@ async def test_an_flas_work_is_never_drafted_and_an_older_draft_of_it_is_the_per
         assert {draft['id'] for draft in owner.json()} == {'pending', 'submitted', 'kept_personal', 'ignored'}
         own = await client.get('/v1/publication-drafts/pending', headers={'x-fuli-human-review-token': REVIEW_TOKEN})
         assert own.status_code == 200 and own.json()['episode']['source_description']
+        # Once its source is erased only submission metadata is left: the protocol settles it as before.
+        driver.rows['pending'].update(payload=None, status='source_deleted', payload_scrubbed_by='deletion',
+                                      source_identity=json.dumps(identity))
+        scrubbed = await client.get('/v1/publication-drafts/pending')
+        assert scrubbed.status_code == 200 and scrubbed.json()['episode'] is None
     # A draft of plain work is listed to an Agent as before.
     driver.project_agent_episodes = set()
     async with client_for(app) as client:
