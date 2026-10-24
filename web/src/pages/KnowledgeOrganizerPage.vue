@@ -649,4 +649,16 @@ async function openReplacement(item: KnowledgeItem) {
 
 }
 
+/* A phone: the three columns share the width, so the list never scrolls sideways (rec#38). */
+@media (max-width: 560px) {
+  .organizer-table-head,
+  .organizer-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .organizer-directory {
+    --organizer-list-min-width: 0px;
+  }
+}
+
 </style>
