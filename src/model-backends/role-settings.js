@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ApplicationError } from '../app/application-error.js';
+import { writeJsonFileAtomic } from '../storage/json-file.js';
 import { updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import {
   MODEL_BACKEND_CONFIG_FORMAT, MODEL_BACKEND_ROLES, configRevision, normalizeConfig, readModelBackendConfig
@@ -12,6 +13,9 @@ import {
 // the saved configuration it started from: a file changed since then, or one
 // that does not validate, is refused and left as it is.
 // Keys never pass here; a connection names its key by secretRef only.
+// history (settings-history.js) records what the save changed, after the file
+// is written and under the same lock (rec#11 D-42). The save answers whether
+// it was recorded; a failed record leaves the saved settings as they are.
 
 const EDIT = z.object({
   revision: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
@@ -20,7 +24,7 @@ const EDIT = z.object({
   settings: z.record(z.string(), z.unknown())
 }).strict();
 
-export function createModelRoleSettings(configPath) {
+export function createModelRoleSettings(configPath, { history = null } = {}) {
   return {
     save(role, input) {
       if (!MODEL_BACKEND_ROLES.includes(role)) throw new TypeError(`Unknown role: ${role}`);
@@ -30,10 +34,28 @@ export function createModelRoleSettings(configPath) {
         throw new TypeError(`Invalid model settings: ${parsed.error.issues.map(issue => issue.path.join('.') || 'input').join(', ')}`);
       }
       const edit = parsed.data;
-      updateVersionedJsonFileAtomic(configPath, MODEL_BACKEND_CONFIG_FORMAT,
-        () => nextConfig(readModelBackendConfig(configPath), role, edit), { read: () => null });
+      let before = null;
+      let recorded = 'not_recorded';
+      updateVersionedJsonFileAtomic(configPath, MODEL_BACKEND_CONFIG_FORMAT, () => {
+        before = readModelBackendConfig(configPath);
+        return nextConfig(before, role, edit);
+      }, { read: () => null, write(path, next) {
+        writeJsonFileAtomic(path, next);
+        recorded = record(history, role, before, next);
+      } });
+      return { history: recorded };
     }
   };
+}
+
+// After the file was written nothing may throw: a record that fails is not_recorded.
+function record(history, role, before, next) {
+  if (!history) return 'not_recorded';
+  try {
+    return history.recordSettings(role, before, next);
+  } catch {
+    return 'not_recorded';
+  }
 }
 
 function nextConfig(loaded, role, { revision, connectionId, connection, settings }) {

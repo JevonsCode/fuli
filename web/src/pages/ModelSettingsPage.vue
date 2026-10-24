@@ -8,6 +8,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
+import ModelRoleHistory from '@/features/model-settings/ModelRoleHistory.vue'
 import ModelRoleTrust from '@/features/model-settings/ModelRoleTrust.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
@@ -21,7 +22,7 @@ import { useConsoleStore } from '@/stores/console'
 
 // 模型与用量 (rec#8, rec#38): one centred column of grouped lists. Each
 // built-in Agent is one row (name, state, model, one summary line) that opens
-// its settings in place at full row width; editing is a centred form. Then
+// its settings and change history in place at full row width; editing is a centred form. Then
 // what Astro, Bole and Jefa suggested with their model, and their usage. A
 // save is accepted only at the local process boundary (a loopback request).
 const store = useConsoleStore()
@@ -40,6 +41,7 @@ const openedFromSettings = /^\/settings(?:[?#]|$)/
 const projects = computed(() => store.state?.personalProjects ?? [])
 const locale = computed(() => currentLocale())
 
+// Whether the settings were read.
 async function load() {
   reading?.abort()
   reading = new AbortController()
@@ -47,8 +49,10 @@ async function load() {
   loadError.value = ''
   try {
     payload.value = await readModelRoles(reading.signal)
+    return true
   } catch (cause) {
     if ((cause as Error)?.name !== 'AbortError') loadError.value = apiErrorReason(cause)
+    return false
   } finally {
     loading.value = false
   }
@@ -60,10 +64,23 @@ function edit(role: ModelRoleId) {
   editing.value = role
 }
 
+// A save whose change could not be written to the change history says so (rec#11 D-42).
+const historyNote = (next: ModelRolesPayload) => (next.history === 'not_recorded' ? t('modelSettings.history.notRecorded') : '')
+// Bumped whenever the page has the settings after a change, so an open change history reads again.
+const historyVersion = ref(0)
+
+// The settings or a role's execution mode changed: saved here (next), or
+// elsewhere and read again. Every change path ends here.
+async function settingsChanged(next?: ModelRolesPayload) {
+  if (next) payload.value = next
+  else if (!await load()) return
+  historyVersion.value += 1
+}
+
 function saved(next: ModelRolesPayload) {
-  notice.value = t('modelSettings.saved', { name: roleName(editing.value!) })
-  payload.value = next
+  notice.value = [t('modelSettings.saved', { name: roleName(editing.value!) }), historyNote(next)].filter(Boolean).join(' ')
   editing.value = null
+  void settingsChanged(next)
 }
 
 // A changed file closes the form; one that stopped validating keeps it open,
@@ -73,7 +90,7 @@ async function conflict(code: ConfigConflict) {
     editing.value = null
     stale.value = true
   }
-  await load()
+  await settingsChanged()
 }
 
 const count = (value: number) => formatCount(value, locale.value)
@@ -120,7 +137,8 @@ function trustFact(view: ModelRoleView): Fact[] {
 }
 
 function trustSaved(next: ModelRolesPayload) {
-  payload.value = next
+  notice.value = historyNote(next)
+  void settingsChanged(next)
 }
 
 // Rows open on demand; a role that waits for the person (a warning not yet
@@ -197,7 +215,8 @@ onBeforeUnmount(() => {
                   </div>
                 </dl>
                 <ModelRoleTrust v-if="view.trust && showsTrust(view)" :role="view.role" :trust="view.trust"
-                  :model="view.connection?.model ?? null" @saved="trustSaved" @changed="load" />
+                  :model="view.connection?.model ?? null" @saved="trustSaved" @changed="settingsChanged()" />
+                <ModelRoleHistory :role="view.role" :version="historyVersion" />
                 <footer class="model-role-actions">
                   <Button variant="outline" size="sm" :disabled="payload.state === 'invalid'" data-model-role-edit
                     :aria-label="`${t('modelSettings.edit')} ${roleName(view.role)}`" @click="edit(view.role)">
