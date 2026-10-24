@@ -342,7 +342,8 @@ function hasDetails(record: JudgmentDecisionRecord) {
         {{ judgmentText('workbench.review') }}
       </Button>
     </div>
-    <div v-else class="judgment-record-list grid grid-cols-1 gap-3 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4">
+    <!-- One column (rec#38): decisions differ in length, so they never sit side by side. -->
+    <div v-else class="judgment-record-list grid grid-cols-1 gap-3">
       <article v-for="record in visibleRecords" :key="record.id" data-decision-card class="judgment-record-card" :class="{ 'is-human-needed': isHumanNeeded(record) }">
         <header class="judgment-record-heading">
           <div>

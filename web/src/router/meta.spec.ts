@@ -37,6 +37,7 @@ describe('localized route metadata', () => {
       .map(path => router.resolve(path).meta.layout))
       .toEqual(['canvas', 'canvas', 'canvas', 'canvas', 'canvas', 'canvas'])
     expect(router.resolve('/settings').meta.layout).toBe('form')
+    expect(router.resolve('/settings/models').meta.layout).toBe('form')
     // An Agent's profile and its 编排 page are detail pages; settings keeps a sticky save bar.
     expect(router.resolve('/agents/space/agent').meta.detail).toBe(true)
     expect(router.resolve('/project-agents/manage/space/agent').name).toBe('agent-management-detail')

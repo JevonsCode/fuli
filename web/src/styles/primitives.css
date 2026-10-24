@@ -72,6 +72,12 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 .list-title { display: inline-flex; align-items: baseline; gap: 8px; margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 650; }
 .list-title span { color: var(--color-faint); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
 
+/* A page section (rec#38): a small label, then one list or card at the
+   column's full width. Sections stack in one column; never side by side. */
+.ui-section { display: grid; align-content: start; gap: 10px; min-width: 0; }
+.ui-section-label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 28px; padding-inline: 4px; }
+.ui-section-label > .list-title { margin-inline-end: auto; }
+
 /* Hidden by an in-page filter (settings search); wins over component display rules. */
 [data-search-hidden] { display: none !important; }
 

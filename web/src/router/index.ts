@@ -217,7 +217,8 @@ export const router = createRouter({
       component: () => import('@/pages/ModelSettingsPage.vue'),
       meta: {
         title: 'modelSettings.title',
-        layout: 'canvas',
+        // rec#38: one centred column of grouped lists, like the other settings pages.
+        layout: 'form',
         detail: true,
       },
     },
