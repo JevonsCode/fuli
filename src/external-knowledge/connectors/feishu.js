@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises';
+
 import { nonEmptyText, requiredString, uniqueTextArray } from '../../validation/values.js';
 import { onlineUrl, timeoutMilliseconds } from './response-values.js';
 
@@ -10,7 +12,7 @@ const API_ROOTS = Object.freeze({
 
 export function createFeishuConnector({
   fetchImpl = globalThis.fetch,
-  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+  sleep = delay
 } = {}) {
   const tokenCache = new Map();
   let nextRawRequestAt = 0;
