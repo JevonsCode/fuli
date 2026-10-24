@@ -10,6 +10,7 @@ import { attachJudgmentRuntime } from '../judgment/runtime.js';
 import { createTaskScheduleService } from '../task-schedules/service.js';
 import { openModelBackendRuntime, openRoleSuggestionLog, openRoleTrust } from '../model-backends/runtime.js';
 import { TaskScheduleStore } from '../task-schedules/store.js';
+import { createStandingAssignments } from '../standing-assignments/port.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
 import { searchFederatedKnowledge } from './federated-search.js';
@@ -138,11 +139,7 @@ export function openFederatedGraphApplication({
     app.preferenceDelivery = createSessionPreferenceDelivery({
       directory: join(dirname(runtimeConfigPath), 'preference-delivery'), env });
     const paths = resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) });
-    attachExternalKnowledgeRuntime(app, {
-      paths,
-      env,
-      fetchImpl
-    });
+    attachExternalKnowledgeRuntime(app, { paths, env, fetchImpl });
     app.agentSnapshots = createAgentDirectorySnapshots({ root: paths.agentDirectoryRoot,
       providerIdentity: resolved.personal.providerUrl });
     app.employees = createEmployeeService({ app, runtimeConfigPath });
@@ -156,6 +153,8 @@ export function openFederatedGraphApplication({
     app.roleSuggestions = openRoleSuggestionLog(paths, { recoveryGate: app.knowledgeRecoveryGate });
     app.taskSchedules = createTaskScheduleService({ app,
       openStore: () => new TaskScheduleStore(join(dirname(runtimeConfigPath), 'task-schedules.sqlite')) });
+    // Opens its file on the first registration; reads before that find none.
+    app.standingAssignments = createStandingAssignments({ path: paths.standingAssignmentsPath });
     app.roundtableHost = createFuliRoundtableHost(app);
     app.peer = createPeerPort({ dataDir: dirname(runtimeConfigPath), host: app.roundtableHost });
     app.roundtable = createAgentRoundtable({ host: app.roundtableHost, peer: app.peer, env,
@@ -1177,7 +1176,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     };
   }
 
-  close() { this.judgment?.close(); this.taskSchedules?.close(); this.roleWork?.close(); this.roleSuggestions?.close(); this.modelTrust?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); return Promise.all([this.agentApps?.close(), this.employees?.close()]); }
+  close() { this.judgment?.close(); this.taskSchedules?.close(); this.standingAssignments?.close(); this.roleWork?.close(); this.roleSuggestions?.close(); this.modelTrust?.close(); this.modelBackends?.close(); this.roundtable?.close(); this.peer?.close(); return Promise.all([this.agentApps?.close(), this.employees?.close()]); }
 
   // View records rank knowledge by what a session looked at: a behavior trace
   // that stops with automatic recording. Reading itself needs none (rec#11 D-01).

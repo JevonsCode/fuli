@@ -21,6 +21,7 @@ const HANDLERS = Object.freeze({
   get_model_usage: (app, input) => modelBackends(app).usage(input),
   role_work: (app, { action, ...input }) => roleWork(app)[action === 'submit' ? 'submit' : 'claim'](input),
   manage_project_agent_schedule: (app, input) => app.taskSchedules.manage(input),
+  register_standing_assignment: (app, input) => app.registerStandingAssignment(input),
   control_project_agent_task_run: (app, input) => app.controlProjectAgentTaskRun({ ...input, agentInvocation: true }),
   list_judgments: (app, input) => app.judgment.records(input),
   review_with_tonborg: (app, input) => app.judgment.review(input),

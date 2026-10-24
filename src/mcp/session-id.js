@@ -34,6 +34,8 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'export_project_agent_memory',
   'checkpoint_project_agent_memory',
   'dismiss_project_agent',
+  // The task token is resolved for this client; its session is the conversation recorded.
+  'register_standing_assignment',
   'record_project_agent_task_activity',
   'preflight_executor',
   'report_executor_health',

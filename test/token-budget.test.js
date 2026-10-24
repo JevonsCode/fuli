@@ -89,7 +89,11 @@ const BASELINE = Object.freeze({
   // rec#15 D-27.8 (dot P2 on #291): remember takes the user's stated constraint (hard|soft),
   // workKind and tasteDomain, checked against the versioned scene table server-side so the
   // schema lists no table: 184,935 -> 185,077 B (+142 B), measured.
-  fullToolSchemaBytes: 185077,
+  // rec#29 F2: one full-profile tool, register_standing_assignment, previews and confirms the
+  // person's "from now on this work goes to that project" (chat reaches it through
+  // list_agent_interfaces/fuli_call): 185,077 -> 186,372 B (+1,295 B), measured. Chat,
+  // instructions and entry are unchanged.
+  fullToolSchemaBytes: 186372,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

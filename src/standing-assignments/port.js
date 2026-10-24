@@ -31,17 +31,29 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   newId = () => `standing-${randomUUID()}` } = {}) {
   const store = new StandingAssignmentStore(path);
 
+  // What a registration would change, or the refusal it would raise. A
+  // project or lead that does not exist yet (null) has no assignment, so only
+  // its terms can be refused.
+  function decide(request) {
+    const current = request.projectId && request.leadAgentId
+      ? store.activeFor(request.personalSpaceId, request.projectId, request.leadAgentId) : null;
+    const known = new Set(current?.terms.map(identityKey));
+    const added = request.terms.filter(({ key }) => !known.has(key));
+    for (const { term, key } of added) refuseTakenTerm(store.termOwner(request.personalSpaceId, key), term);
+    const preferenceIds = request.preferenceIds.filter((id) => !current?.preferenceIds.includes(id));
+    const confirms = current?.source === 'host' && request.source === 'user';
+    if (current && !added.length && !preferenceIds.length && !confirms) return { status: 'unchanged', current };
+    if (current?.source === 'user' && request.source === 'host') throw userConfirmed(current);
+    return { status: current ? 'updated' : 'created', current, added, preferenceIds, confirms };
+  }
+
   function register(input) {
     const request = registration(input);
+    requiredString(request.projectId, 'projectId');
+    requiredString(request.leadAgentId, 'leadAgentId');
     return store.transaction(() => {
-      const current = store.activeFor(request.personalSpaceId, request.projectId, request.leadAgentId);
-      const known = new Set(current?.terms.map(identityKey));
-      const added = request.terms.filter(({ key }) => !known.has(key));
-      for (const { term, key } of added) refuseTakenTerm(store.termOwner(request.personalSpaceId, key), term);
-      const preferenceIds = request.preferenceIds.filter((id) => !current?.preferenceIds.includes(id));
-      const confirms = current?.source === 'host' && request.source === 'user';
-      if (current && !added.length && !preferenceIds.length && !confirms) return { status: 'unchanged', assignment: current };
-      if (current?.source === 'user' && request.source === 'host') throw userConfirmed(current);
+      const { status, current, added, preferenceIds, confirms } = decide(request);
+      if (status === 'unchanged') return { status, assignment: current };
       const at = now().toISOString();
       const next = current
         ? { ...current, terms: [...current.terms, ...added.map(({ term }) => term)],
@@ -55,8 +67,18 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
           createdAt: at, updatedAt: at, retiredAt: null };
       store.save(next, { change: current ? (confirms ? 'confirmed' : 'extended') : 'registered', source: request.source,
         sourceConversationId: request.sourceConversationId, termKeys: next.terms.map(identityKey) });
-      return { status: current ? 'updated' : 'created', assignment: next };
+      return { status, assignment: next };
     });
+  }
+
+  // Saves nothing and never creates the store file: the status register
+  // would return now, the active assignment it would change (null when it
+  // would create one) and the registration as it would be stored.
+  function preview(input) {
+    const request = registration(input);
+    const { status, current } = decide(request);
+    return { status, assignment: current, terms: request.terms.map(({ term }) => term),
+      responsibility: request.responsibility, preferenceIds: request.preferenceIds };
   }
 
   // Ends an assignment from now on; its record and history stay. Its terms
@@ -99,6 +121,7 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
 
   return {
     register,
+    preview,
     retire,
     match,
     list: (personalSpaceId) => store.listActive(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT)),
@@ -117,8 +140,7 @@ function registration(input) {
   }).filter(({ key }, index, all) => all.findIndex((other) => other.key === key) === index);
   if (!terms.length) throw new TypeError('terms is required');
   return { personalSpaceId: requiredString(input.personalSpaceId, 'personalSpaceId', ID_LIMIT),
-    projectId: requiredString(input.projectId, 'projectId', ID_LIMIT),
-    leadAgentId: requiredString(input.leadAgentId, 'leadAgentId', ID_LIMIT), terms,
+    projectId: idOrNull(input.projectId, 'projectId'), leadAgentId: idOrNull(input.leadAgentId, 'leadAgentId'), terms,
     responsibility: requiredString(input.responsibility, 'responsibility', RESPONSIBILITY_LIMIT),
     source: sourceOf(input.source), sourceConversationId: conversationOf(input.sourceConversationId),
     preferenceIds: uniqueTextArray(input.preferenceIds, 'preferenceIds', MAX_PREFERENCES) };
@@ -129,8 +151,12 @@ function sourceOf(value) {
   return value;
 }
 
+function idOrNull(value, label) {
+  return value === undefined || value === null ? null : requiredString(value, label, ID_LIMIT);
+}
+
 function conversationOf(value) {
-  return value === undefined || value === null ? null : requiredString(value, 'sourceConversationId', ID_LIMIT);
+  return idOrNull(value, 'sourceConversationId');
 }
 
 function refuseTakenTerm(owner, term) {
