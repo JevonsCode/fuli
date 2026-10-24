@@ -22,6 +22,7 @@ const SPACE = 'personal-space';
 const CONFIG = { version: 1, workspaces: [], personal: { providerUrl: 'http://127.0.0.1:8787',
   accessToken: 'synthetic-token', principalId: 'synthetic-owner', spaceId: SPACE } };
 const GRAPH = { space_id: SPACE, nodes: [], edges: [], truncated: false };
+const LISTS = new Set(['/v1/preference-conflicts', '/v1/publication-drafts']);
 
 function application() {
   const calls = [];
@@ -29,7 +30,8 @@ function application() {
     const url = new URL(rawUrl);
     calls.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), headers: options.headers ?? {},
       body: options.body ? JSON.parse(options.body) : null });
-    const payload = url.pathname.endsWith('/graph') ? GRAPH : { entries: [], unchanged_count: 0 };
+    const payload = url.pathname.endsWith('/graph') ? GRAPH : LISTS.has(url.pathname) ? []
+      : { entries: [], unchanged_count: 0 };
     return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } });
   } });
   return { app, calls };
@@ -89,10 +91,17 @@ test('every console full read carries the review proof on its own route', async 
   await ownerReads.itemView({ personal_space_id: SPACE });
   await ownerReads.turnReceipt({ personal_space_id: SPACE });
   await ownerReads.sessionRecords({ personal_space_id: SPACE });
+  await ownerReads.sessionMigration({ personal_space_id: SPACE });
+  await ownerReads.preferenceConflicts({ personalSpaceId: SPACE, status: 'ai_pending', limit: 50, offset: 100 });
+  await ownerReads.publicationDrafts({ personalSpaceId: SPACE, status: 'all' });
   assert.deepEqual(sent, [
     { path: '/v1/knowledge/item-views', method: 'POST', review: true },
     { path: '/v1/knowledge/turn-receipts', method: 'POST', review: true },
-    { path: '/v1/session-records', method: 'POST', review: true }]);
+    { path: '/v1/session-records', method: 'POST', review: true },
+    { path: '/v1/knowledge/session-migrations/preview', method: 'POST', review: true },
+    { path: `/v1/preference-conflicts?personal_space_id=${SPACE}&limit=50&status=ai_pending&offset=100`, method: 'GET',
+      review: true },
+    { path: `/v1/publication-drafts?personal_space_id=${SPACE}&status=all`, method: 'GET', review: true }]);
   const refused = knowledgeOwnerReads('synthetic-data-dir', { send: async () => ({ ok: false, status: 403,
     payload: { detail: 'independent human review proof required' } }) });
   await assert.rejects(refused.itemView({}), { status: 403 });
@@ -107,4 +116,61 @@ test('a turn\'s receipt is read as its task\'s FLA, or as a plain session', asyn
     { personal_space_id: SPACE, episode_ids: ['episode-1'], reader_project_id: 'alpha', reader_agent_id: 'g' },
     { personal_space_id: SPACE, episode_ids: ['episode-1'] }]);
   assert.ok(calls.every(call => !reviewHeader(call.headers)));
+});
+
+// The console's GET on the graph routes, through its port or (none) as an Agent.
+async function consoleGet(app, path, ownerReads) {
+  const sent = {};
+  const response = { setHeader() {}, writeHead(status) { sent.status = status; },
+    end(text) { sent.body = text ? JSON.parse(text) : null; } };
+  await handleGraphApiRequest({ request: Object.assign(Readable.from([]), { method: 'GET', headers: {} }), response,
+    url: new URL(`http://127.0.0.1${path}`), app, ownerReads });
+  return sent;
+}
+
+function recordingPort() {
+  const sent = [];
+  const ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async (path, body, options) => {
+    sent.push({ path: path.split('?')[0], query: Object.fromEntries(new URL(path, 'http://p').searchParams),
+      review: options.review, method: options.method });
+    return { ok: true, status: 200, payload: path.includes('/graph') ? GRAPH : [] };
+  } });
+  return { sent, ownerReads };
+}
+
+test('preference conflicts: an Agent tool reads as a plain session; the console lists them all through its port', async () => {
+  const { app, calls } = application();
+  await callAgentTool(app, 'list_preference_conflicts', { personalSpaceId: SPACE, status: 'ai_pending' });
+  assert.deepEqual(calls.map(call => [call.path, call.query]), [
+    ['/v1/preference-conflicts', { personal_space_id: SPACE, limit: '500', status: 'ai_pending' }]]);
+  assert.ok(!reviewHeader(calls[0].headers), 'no proof: no conflict naming an FLA\'s own item');
+  const { sent, ownerReads } = recordingPort();
+  const listed = await consoleGet(app, `/api/preference-conflicts?personalSpaceId=${SPACE}&status=ai_pending`, ownerReads);
+  assert.equal(listed.status, 200);
+  assert.deepEqual(sent, [{ path: '/v1/preference-conflicts', method: 'GET', review: true,
+    query: { personal_space_id: SPACE, limit: '500', status: 'ai_pending' } }]);
+  // The writing-taste profile counts the person's conflicts the same way, with the graph.
+  sent.length = 0;
+  await consoleGet(app, `/api/writing-taste-profile?personalSpaceId=${SPACE}`, ownerReads);
+  assert.deepEqual(sent.map(({ path, review }) => [path, review]).sort(), [
+    ['/v1/preference-conflicts', true], [`/v1/spaces/${SPACE}/graph`, true]]);
+  assert.equal(calls.length, 1, 'the console\'s reads never leave on the Agent client');
+});
+
+test('publication drafts: an Agent tool reads as a plain session; the console lists them all through its port', async () => {
+  const { app, calls } = application();
+  await callAgentTool(app, 'list_personal_review_queue', { personalSpaceId: SPACE });
+  const drafts = calls.filter(call => call.path === '/v1/publication-drafts');
+  // Reconciling submissions reads metadata only; then the Agent's list.
+  assert.deepEqual(drafts.map(call => call.query), [
+    { personal_space_id: SPACE, status: 'all', metadata_only: 'true' }, { personal_space_id: SPACE, status: 'pending' }]);
+  assert.ok(drafts.every(call => !reviewHeader(call.headers)), 'no proof: no draft of an FLA\'s work');
+  calls.length = 0;
+  const { sent, ownerReads } = recordingPort();
+  assert.equal((await consoleGet(app, `/api/personal-review?personalSpaceId=${SPACE}&status=submitted`, ownerReads)).status,
+    200);
+  assert.deepEqual(sent, [{ path: '/v1/publication-drafts', method: 'GET', review: true,
+    query: { personal_space_id: SPACE, status: 'submitted' } }]);
+  assert.deepEqual(calls.map(call => call.query), [{ personal_space_id: SPACE, status: 'all', metadata_only: 'true' }],
+    'only the metadata reconciliation stays on the Agent client');
 });

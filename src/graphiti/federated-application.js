@@ -638,17 +638,13 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return knowledgeTags(this, operation, input);
   }
 
-  async listPreferenceConflicts({
-    personalSpaceId,
-    status = null,
-    limit = 500
-  }) {
+  // An Agent reads as a plain session: no conflict naming an FLA's own item (an FLA meets those in its
+  // task context). Only the console passes ownerReads (src/knowledge-owner-reads) for the full list.
+  async listPreferenceConflicts({ personalSpaceId, status = null, limit = 500 }, ownerReads = null) {
     this.#assertActivePersonalSpace(personalSpaceId);
-    return this.personal.listPreferenceConflicts(
-      personalSpaceId,
-      status,
-      limit
-    );
+    return ownerReads
+      ? ownerReads.preferenceConflicts({ personalSpaceId, status, limit })
+      : this.personal.listPreferenceConflicts(personalSpaceId, status, limit);
   }
 
   async deferPreferenceConflict(input) {
@@ -989,19 +985,17 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     );
   }
 
-  async listPersonalReviewQueue(input = {}) {
+  // An Agent's list leaves out a draft of an FLA's work (made before the Provider refused them);
+  // only the console passes ownerReads (src/knowledge-owner-reads) for the person's full list.
+  async listPersonalReviewQueue(input = {}, ownerReads = null) {
     const personalSpaceId = input.personalSpaceId ?? this.config.personal.spaceId;
     if (personalSpaceId !== this.config.personal.spaceId) {
       throw new TypeError('Personal review must use the active personal space');
     }
     await this.reconcilePersonalSubmissions();
-    return {
-      personalSpaceId,
-      drafts: await this.personal.listPublicationDrafts(
-        personalSpaceId,
-        input.status ?? 'pending'
-      )
-    };
+    const status = input.status ?? 'pending';
+    return { personalSpaceId, drafts: ownerReads ? await ownerReads.publicationDrafts({ personalSpaceId, status })
+      : await this.personal.listPublicationDrafts(personalSpaceId, status) };
   }
 
   async readRoleSuggestions({ limit } = {}) {

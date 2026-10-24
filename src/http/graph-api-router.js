@@ -112,7 +112,7 @@ export async function handleGraphApiRequest({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       status: url.searchParams.get('status'),
       limit: numberParam(url, 'limit', 500)
-    }));
+    }, ownerReads));
     return true;
   }
   if (
@@ -647,7 +647,7 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.listPersonalReviewQueue({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       status: url.searchParams.get('status') ?? 'pending'
-    }));
+    }, ownerReads));
     return true;
   }
   const personalDecision = url.pathname.match(/^\/api\/personal-review\/([^/]+)\/decision$/);
