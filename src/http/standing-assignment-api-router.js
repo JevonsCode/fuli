@@ -9,7 +9,8 @@ const ACTIONS = Object.freeze({ retire: 'retire', reassign: 'reassign', terms: '
 
 // The person's standing assignments in the local console (rec#29 F5): the
 // active ones, and ending, reassigning or editing the terms of the one the
-// page shows, at the revision it showed (409 when it changed since). Only on
+// page shows, at the revision it showed (409 when it changed since; a change
+// already in place, such as a retry, answers unchanged). Only on
 // this computer; an Agent asks the person through register_standing_assignment
 // instead, which previews and needs the person's yes in the conversation.
 export async function handleStandingAssignmentRequest({ request, response, url, app }) {
@@ -27,9 +28,8 @@ export async function handleStandingAssignmentRequest({ request, response, url, 
     return true;
   }
   const body = await readJson(request);
-  const assignment = await correctStandingAssignmentInConsole(app, { ...body,
+  sendJson(response, 200, await correctStandingAssignmentInConsole(app, { ...body,
     assignmentId: decodeURIComponent(change[1]), action: ACTIONS[change[2]],
-    expectedRevision: positiveInteger(body.expectedRevision, 'expectedRevision', Number.MAX_SAFE_INTEGER) });
-  sendJson(response, 200, { assignment });
+    expectedRevision: positiveInteger(body.expectedRevision, 'expectedRevision', Number.MAX_SAFE_INTEGER) }));
   return true;
 }

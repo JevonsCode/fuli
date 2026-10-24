@@ -85,11 +85,14 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   // What a correction of an active assignment would store (rec#29 F5), or
   // the refusal it would raise: retire ends it from now on, freeing its terms;
   // reassign points it, terms and all, at another lead or project; edit_terms
-  // adds and removes terms. Every one keeps the record and its history.
+  // adds and removes terms. Every one keeps the record and its history. A
+  // correction whose result is already in place changes nothing (change
+  // null), so confirming it again is answered unchanged.
   function corrected(current, correction, { source, sourceConversationId }) {
     if (!current) {
       throw new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'No standing assignment has this ID.', { status: 404 });
     }
+    if (inPlace(current, correction)) return { change: null, next: current };
     if (current.retiredAt) {
       throw new ApplicationError('standing_assignment_retired', 'This standing assignment is already retired.', { status: 409 });
     }
@@ -102,7 +105,6 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
     if (correction.action === 'retire') return { change: 'retired', next: { ...base, retiredAt: at } };
     if (correction.action === 'reassign') {
       const { projectId, leadAgentId } = correction;
-      if (projectId === current.projectId && leadAgentId === current.leadAgentId) throw unchanged();
       const occupied = store.activeFor(current.personalSpaceId, projectId, leadAgentId);
       if (occupied) {
         throw new ApplicationError('standing_assignment_target_taken', `Project ${projectId} (lead ${leadAgentId}) `
@@ -129,11 +131,10 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
       throw new ApplicationError('standing_assignment_terms_empty', 'A standing assignment keeps at least one term. '
         + 'Nothing was saved; retire it to end it.', { status: 422 });
     }
-    if (!removed.size && !added.length) throw unchanged();
     return { change: 'terms_edited', next: { ...base, terms } };
   }
 
-  // Saves nothing: the change a correction would record and the assignment it would leave.
+  // Saves nothing: the change a correction would record (null when none) and the assignment it would leave.
   function previewCorrection(assignmentId, input, meta) {
     const correction = correctionOf(input);
     const options = metaOf(meta);
@@ -141,11 +142,14 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   }
 
   // Applies a correction while the assignment is still at expectedRevision.
+  // One already in place answers unchanged at any revision: a retry of a
+  // change that was saved finds it done.
   function correct(assignmentId, input, meta) {
     const correction = correctionOf(input);
     const options = metaOf(meta);
     return store.transaction(() => {
       const current = store.get(requiredString(assignmentId, 'assignmentId', ID_LIMIT));
+      if (current && inPlace(current, correction)) return { status: 'unchanged', assignment: current };
       if (current && current.revision !== meta.expectedRevision) {
         throw new ApplicationError('standing_assignment_changed',
           'This standing assignment changed since it was read. Nothing was saved; read it again.', { status: 409 });
@@ -153,7 +157,7 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
       const { change, next } = corrected(current, correction, options);
       store.save(next, { change, source: options.source, sourceConversationId: options.sourceConversationId,
         termKeys: next.terms.map(identityKey) });
-      return next;
+      return { status: change, assignment: next };
     });
   }
 
@@ -191,6 +195,15 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
     // The active assignment a term names in a space, if any.
     named: (personalSpaceId, term) => store.termOwner(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT),
       identityKey(requiredString(term, 'term', TERM_LIMIT))),
+    // The assignment that last held a term no active one holds now, if any,
+    // so a correction confirmed again finds the assignment it changed.
+    lastNamed(personalSpaceId, term) {
+      const key = identityKey(requiredString(term, 'term', TERM_LIMIT));
+      for (const record of store.recordsNewestFirst(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT))) {
+        if (record.terms.some((value) => identityKey(value) === key)) return store.get(record.assignmentId);
+      }
+      return null;
+    },
     list: (personalSpaceId) => store.listActive(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT)),
     // Each change in order, with the state it produced.
     history: (assignmentId) => store.revisions(requiredString(assignmentId, 'assignmentId', ID_LIMIT)),
@@ -256,9 +269,16 @@ function refuseTakenTerm(owner, term) {
   { status: 409 });
 }
 
-function unchanged() {
-  return new ApplicationError('standing_assignment_unchanged', 'This correction changes nothing. Nothing was saved.',
-    { status: 422 });
+// Whether the assignment already is as the correction would leave it.
+function inPlace(current, correction) {
+  if (correction.action === 'retire') return Boolean(current.retiredAt);
+  if (current.retiredAt) return false;
+  if (correction.action === 'reassign') {
+    return current.projectId === correction.projectId && current.leadAgentId === correction.leadAgentId;
+  }
+  const keys = new Set(current.terms.map(identityKey));
+  return correction.addTerms.every(({ key }) => keys.has(key))
+    && !correction.removeTerms.some(({ key }) => keys.has(key));
 }
 
 function userConfirmed(current) {

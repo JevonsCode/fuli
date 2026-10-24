@@ -106,7 +106,9 @@ test('retiring frees the terms, keeps the history and stops routing and find_age
   // The freed term can name another assignment.
   assert.equal(app.standingAssignments.register({ personalSpaceId: SPACE, projectId: 'ops', leadAgentId: 'lead-ops',
     terms: ['工时'], responsibility: 'Synthetic ops work', source: 'user' }).status, 'created');
-  await assert.rejects(correct(app, 'preview', 'retire', { term: 'iDev' }), { status: 404 });
+  // The other term still leads to the retired assignment: retiring it again changes nothing.
+  assert.equal((await correct(app, 'preview', 'retire', { term: 'iDev' })).status, 'unchanged');
+  await assert.rejects(correct(app, 'preview', 'retire', { term: '报工' }), { status: 404 });
 });
 
 test('a stale or foreign digest is refused and nothing is written', async (t) => {
@@ -130,7 +132,7 @@ test('reassigning to an Agent of another project is refused; a valid lead moves 
   await assert.rejects(correct(app, 'preview', 'reassign', { projectName: 'ops', leadAgentId: 'helper-timesheet' }),
     { code: 'standing_assignment_lead_not_in_project', status: 422 });
   await assert.rejects(correct(app, 'preview', 'reassign', { projectName: 'nowhere' }), { status: 404 });
-  await assert.rejects(correct(app, 'preview', 'reassign', {}), { code: 'standing_assignment_unchanged' });
+  assert.equal((await correct(app, 'preview', 'reassign', {})).status, 'unchanged', 'already with the project lead');
 
   // Another Agent of the same project.
   const helper = await confirmed(app, 'reassign', { leadAgentId: 'helper-timesheet' });
@@ -163,10 +165,13 @@ test('editing terms adds and removes them under the one-term-one-assignment rule
     { code: 'standing_assignment_term_taken', message: /"部署" already names the standing assignment of project ops/ });
   await assert.rejects(correct(app, 'preview', 'edit_terms', { removeTerms: ['iDev', '工时'] }),
     { code: 'standing_assignment_terms_empty', message: /retire it/ });
-  await assert.rejects(correct(app, 'preview', 'edit_terms', { removeTerms: ['报工'] }),
+  await assert.rejects(correct(app, 'preview', 'edit_terms', { addTerms: ['加班'], removeTerms: ['报工'] }),
     { code: 'standing_assignment_term_absent' });
-  await assert.rejects(correct(app, 'preview', 'edit_terms', { addTerms: ['IDEV'] }),
-    { code: 'standing_assignment_unchanged' });
+  // Terms already as asked: nothing to confirm.
+  for (const input of [{ addTerms: ['IDEV'] }, { removeTerms: ['报工'] }]) {
+    const already = await correct(app, 'preview', 'edit_terms', input);
+    assert.deepEqual([already.status, already.confirmationDigest, already.assignment.revision], ['unchanged', undefined, 1]);
+  }
 
   const preview = await correct(app, 'preview', 'edit_terms', { addTerms: ['报工'], removeTerms: ['idev'] });
   assert.equal(preview.restatement, 'FULI will send later tasks that mention "工时", "报工" to project "Timesheet" '
@@ -195,6 +200,27 @@ test('internal Agent activity cannot correct or end an assignment', async (t) =>
   }
   const { app } = application(t);
   await assert.rejects(correct(app, 'preview', 'rename'), /change must be register, retire, reassign or edit_terms/);
+});
+
+test('confirming the same correction again answers unchanged and records no second revision', async (t) => {
+  for (const [change, input, status] of [['retire', {}, 'retired'], ['reassign', { projectName: 'ops' }, 'reassigned'],
+    ['edit_terms', { addTerms: ['报工'] }, 'terms_edited'],
+    // The term naming the assignment is the one removed: the retry still finds it.
+    ['edit_terms', { removeTerms: ['工时'] }, 'terms_edited']]) {
+    const { app, assignment } = application(t);
+    const { confirmationDigest } = await correct(app, 'preview', change, input);
+    const first = await correct(app, 'confirm', change, { ...input, confirmationDigest });
+    const again = await correct(app, 'confirm', change, { ...input, confirmationDigest });
+    assert.equal(first.status, status, change);
+    assert.deepEqual(again, { status: 'unchanged', executed: false, assignment: first.assignment,
+      restatement: 'The standing assignment already is as asked; there is nothing to change.' }, change);
+    assert.equal((await correct(app, 'preview', change, input)).status, 'unchanged', change);
+    assert.equal(app.standingAssignments.history(assignment.assignmentId).length, 2, change);
+  }
+  // A retired assignment is not reassigned or edited by a term it no longer holds.
+  const { app } = application(t);
+  await confirmed(app, 'retire');
+  await assert.rejects(correct(app, 'preview', 'edit_terms', { addTerms: ['报工'] }), { status: 404 });
 });
 
 function request(method, body, remoteAddress) {
@@ -235,13 +261,23 @@ test('the console lists and changes assignments on this computer only, at the re
   assert.deepEqual([foreign.status, foreign.body.code], [422, 'standing_assignment_lead_not_in_project']);
   assert.equal((await api(app, 'POST', `${base}/terms`, {})).status, 400);
 
-  const moved = await api(app, 'POST', `${base}/reassign`, { expectedRevision: 1, projectId: 'ops' });
-  assert.deepEqual([moved.status, moved.body.assignment.leadAgentId], [200, 'lead-ops']);
+  // Each change, then its retry at the revision the page read before it: the retry finds it done.
+  const sent = async (path, body) => {
+    const done = await api(app, 'POST', `${base}/${path}`, body);
+    const retry = await api(app, 'POST', `${base}/${path}`, body);
+    assert.deepEqual([retry.status, retry.body], [200, { status: 'unchanged', assignment: done.body.assignment }], path);
+    return done;
+  };
+  const moved = await sent('reassign', { expectedRevision: 1, projectId: 'ops' });
+  assert.deepEqual([moved.status, moved.body.status, moved.body.assignment.leadAgentId], [200, 'reassigned', 'lead-ops']);
   assert.equal(await routedProject(app), 'ops');
-  const edited = await api(app, 'POST', `${base}/terms`, { expectedRevision: 2, removeTerms: ['iDev'] });
-  assert.deepEqual(edited.body.assignment.terms, ['工时']);
-  const retired = await api(app, 'POST', `${base}/retire`, { expectedRevision: 3 });
+  const edited = await sent('terms', { expectedRevision: 2, removeTerms: ['iDev'] });
+  assert.deepEqual([edited.body.status, edited.body.assignment.terms], ['terms_edited', ['工时']]);
+  const retired = await sent('retire', { expectedRevision: 3 });
   assert.ok(retired.body.assignment.retiredAt);
+  // What was moved, edited and ended is not changed again by an older page.
+  const older = await api(app, 'POST', `${base}/terms`, { expectedRevision: 2, addTerms: ['报工'] });
+  assert.equal(older.status, 409);
   assert.deepEqual(changes(app, assignment.assignmentId), [['registered', 'user', 'session-register'],
     ['reassigned', 'user', null], ['terms_edited', 'user', null], ['retired', 'user', null]]);
   assert.equal(await routedProject(app), 'repo-a');

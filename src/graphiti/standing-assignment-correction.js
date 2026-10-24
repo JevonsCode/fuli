@@ -14,20 +14,24 @@ import { nameableProjects, projectDisplayName } from './task-entry-project-menti
 // read, so its revision stands in for the digest. Either way the change is
 // the person's (source user), recorded as a new revision. The project's own
 // lead never changes, and routing and find_agents read the store, so they
-// follow at once.
+// follow at once. A change already in place, such as a confirm sent again
+// after it was saved, is answered unchanged before any digest or revision.
 
 const TERM_LIMIT = 80;
 const PROJECT_NAME_LIMIT = 80;
 const ID_LIMIT = 200;
-const CONFIRMED = Object.freeze({ retire: 'retired', reassign: 'reassigned', edit_terms: 'terms_edited' });
+const NOTHING_TO_CHANGE = 'The standing assignment already is as asked; there is nothing to change.';
 
 export async function correctStandingAssignment(application, input) {
   const plan = await correctionPlan(application, input);
+  if (plan.inPlace) {
+    return { status: 'unchanged', executed: false, assignment: plan.assignment, restatement: NOTHING_TO_CHANGE };
+  }
   if (input.action === 'preview') return previewOf(plan, planView(plan), restatement(plan));
   assertPreviewed(input, plan);
-  const assignment = standingAssignmentsOf(application).correct(plan.assignmentId, plan.correction,
-    { source: 'user', sourceConversationId: plan.sourceConversationId, expectedRevision: plan.revision });
-  return { status: CONFIRMED[plan.change], executed: false, assignment };
+  return { ...standingAssignmentsOf(application).correct(plan.assignmentId, plan.correction,
+    { source: 'user', sourceConversationId: plan.sourceConversationId, expectedRevision: plan.revision }),
+  executed: false };
 }
 
 // The console's change of the assignment it shows, at the revision it showed.
@@ -45,21 +49,27 @@ async function correctionPlan(application, input) {
   const task = await personsConversation(application, input);
   const spaceId = application.config.personal.spaceId;
   const term = requiredString(input.term, 'term', TERM_LIMIT);
-  const current = port.named(spaceId, term);
-  if (!current) {
-    throw new ApplicationError(ApplicationErrorCode.NOT_FOUND, `No active standing assignment has the term "${term}". `
-      + 'Nothing was saved.', { status: 404 });
-  }
+  // A term no active assignment holds may name the one a correction already changed.
+  const held = port.named(spaceId, term);
+  const current = held ?? port.lastNamed(spaceId, term);
+  if (!current || (!held && current.retiredAt && input.change !== 'retire')) throw unnamed(term);
   const target = input.change === 'reassign' ? await reassignmentTarget(application, input.projectName === undefined
     ? current.projectId : await namedProjectId(application, input.projectName), input.leadAgentId) : null;
   const correction = target ? { action: 'reassign', projectId: target.projectId, leadAgentId: target.leadAgentId }
     : input.change === 'retire' ? { action: 'retire' }
       : { action: 'edit_terms', addTerms: input.addTerms ?? [], removeTerms: input.removeTerms ?? [] };
-  const { next } = port.previewCorrection(current.assignmentId, correction,
+  const { change, next } = port.previewCorrection(current.assignmentId, correction,
     { source: 'user', sourceConversationId: task.sessionId });
+  if (!change) return { inPlace: true, assignment: current };
+  if (!held) throw unnamed(term);
   return { personalSpaceId: spaceId, sourceConversationId: task.sessionId, assignmentId: current.assignmentId,
     revision: current.revision, change: input.change, correction, from: await ownerOf(application, current),
     to: target ?? null, terms: next.terms, termsBefore: current.terms };
+}
+
+function unnamed(term) {
+  return new ApplicationError(ApplicationErrorCode.NOT_FOUND, `No active standing assignment has the term "${term}". `
+    + 'Nothing was saved.', { status: 404 });
 }
 
 async function namedProjectId(application, name) {

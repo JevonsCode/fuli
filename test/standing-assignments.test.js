@@ -99,8 +99,8 @@ test('a retired assignment no longer matches and frees its terms, its history ke
     { code: 'standing_assignment_changed' });
   const retired = port.correct(assignment.assignmentId, { action: 'retire' },
     { source: 'user', expectedRevision: 1, sourceConversationId: 'conversation-3' });
-  assert.equal(retired.revision, 2);
-  assert.ok(retired.retiredAt);
+  assert.deepEqual([retired.status, retired.assignment.revision], ['retired', 2]);
+  assert.ok(retired.assignment.retiredAt);
   assert.deepEqual(port.match(SPACE, 'fill iDev hours'), []);
   assert.deepEqual(port.list(SPACE), []);
   assert.deepEqual(port.history(assignment.assignmentId).map(({ change }) => change), ['registered', 'retired']);

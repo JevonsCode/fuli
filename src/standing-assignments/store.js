@@ -90,6 +90,14 @@ export class StandingAssignmentStore {
       WHERE t.personal_space_id = ? AND t.term_key = ?`).get(personalSpaceId, termKey));
   }
 
+  // Every recorded state of the space's assignments, the latest first.
+  * recordsNewestFirst(personalSpaceId) {
+    if (!this.readable) return;
+    for (const row of this.db.prepare(`SELECT r.record FROM standing_assignment_revisions r
+      JOIN standing_assignments a ON a.assignment_id = r.assignment_id WHERE a.personal_space_id = ?
+      ORDER BY r.rowid DESC`).iterate(personalSpaceId)) yield JSON.parse(row.record);
+  }
+
   listActive(personalSpaceId) {
     if (!this.readable) return [];
     return this.db.prepare(`SELECT * FROM standing_assignments WHERE personal_space_id = ? AND retired_at IS NULL
