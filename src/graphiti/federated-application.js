@@ -103,6 +103,7 @@ import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
 import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
+import { providerReaderFields, taskKnowledgeReader } from './knowledge-reader.js';
 import { knowledgeTags } from './knowledge-tags.js';
 import { withSharedProjectList } from './shared-project-list.js';
 
@@ -647,9 +648,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       : this.personal.listPreferenceConflicts(personalSpaceId, status, limit);
   }
 
-  async deferPreferenceConflict(input) {
+  // A conflict naming an item its reader may not see answers as missing: an Agent names its FLA
+  // (projectAgentId) or reads as a plain session; the console's defer and completion pass ownerReads.
+  async deferPreferenceConflict(input, ownerReads = null) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
-    return this.personal.deferPreferenceConflict({
+    const body = {
       personal_space_id: input.personalSpaceId,
       conflict_id: input.conflictId,
       preference_key: input.preferenceKey,
@@ -661,13 +664,16 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       right_item_kind: input.rightItemKind,
       reason: input.reason,
       operation_actor: input.operationActor ?? 'human'
-    });
+    };
+    return ownerReads ? ownerReads.deferPreferenceConflict(body)
+      : this.personal.deferPreferenceConflict({ ...body, ...providerReaderFields(taskKnowledgeReader(input)) });
   }
 
   async resolveDeferredPreferenceConflict(input) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return this.personal.resolvePreferenceConflict(input.conflictId, {
+      ...providerReaderFields(taskKnowledgeReader(input)),
       personal_space_id: input.personalSpaceId,
       resolution: input.resolution,
       reason: input.reason,
@@ -679,14 +685,12 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     });
   }
 
-  async completePreferenceConflict(input) {
+  async completePreferenceConflict(input, ownerReads = null) {
     this.#assertActivePersonalSpace(input.personalSpaceId);
-    return this.personal.completePreferenceConflict(input.conflictId, {
-      personal_space_id: input.personalSpaceId,
-      resolution: input.resolution,
-      reason: input.reason,
-      operation_actor: input.operationActor ?? 'human'
-    });
+    const body = { personal_space_id: input.personalSpaceId, resolution: input.resolution, reason: input.reason,
+      operation_actor: input.operationActor ?? 'human' };
+    return ownerReads ? ownerReads.completePreferenceConflict(input.conflictId, body)
+      : this.personal.completePreferenceConflict(input.conflictId, body);
   }
 
   async confirmKnowledgeBatch(input) {

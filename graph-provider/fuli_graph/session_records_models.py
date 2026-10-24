@@ -10,9 +10,9 @@ from typing import Literal
 
 from pydantic import Field
 
-from .knowledge_item_view_models import AgentReaderRef, KnowledgeItemSummary, KnowledgeScopeProject
+from .knowledge_item_view_models import KnowledgeItemSummary, KnowledgeScopeProject
 from .model_base import StrictModel
-from .models import SourceApplication
+from .models import AgentReaderRef, SourceApplication
 
 # 'evidence': the episode only cited an existing preference again, so its words
 # became evidence for it without changing it.

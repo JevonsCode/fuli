@@ -8,9 +8,9 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from .knowledge_audit_models import KnowledgeItemKind
-from .knowledge_item_view_models import AgentReaderRef, KnowledgeItemSummary, KnowledgeScopeProject
+from .knowledge_item_view_models import KnowledgeItemSummary, KnowledgeScopeProject
 from .model_base import StrictModel
-from .models import SourceApplication
+from .models import AgentReaderRef, SourceApplication
 
 # One page of the prompt lists at most this many held items, and one move
 # takes at most this many; what can be chosen is not limited (dot P2-3).

@@ -809,7 +809,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def defer_conflict(
         request: PreferenceConflictDeferCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> PreferenceConflictRecord:
         return await defer_preference_conflict(store, actor, request)
 
@@ -856,7 +856,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def complete_conflict(
         conflict_id: str,
         request: PreferenceConflictCompleteCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> PreferenceConflictRecord:
         return await complete_preference_conflict(
             store,

@@ -122,7 +122,7 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.deferPreferenceConflict({
       ...(await readJson(request)),
       operationActor: 'agent'
-    }));
+    }, ownerReads));
     return true;
   }
   const completedPreferenceConflict = url.pathname.match(
@@ -133,7 +133,7 @@ export async function handleGraphApiRequest({
       ...(await readJson(request)),
       conflictId: decodeURIComponent(completedPreferenceConflict[1]),
       operationActor: 'human'
-    }));
+    }, ownerReads));
     return true;
   }
   const assignment = url.pathname.match(

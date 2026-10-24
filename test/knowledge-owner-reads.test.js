@@ -157,6 +157,40 @@ test('preference conflicts: an Agent tool reads as a plain session; the console 
   assert.equal(calls.length, 1, 'the console\'s reads never leave on the Agent client');
 });
 
+test('a conflict\'s defer and resolve name the Agent\'s FLA; the console defers and completes with its proof', async () => {
+  const { app, calls } = application();
+  const pair = { personalSpaceId: SPACE, conflictId: 'conflict-1', preferenceKey: 'synthetic', preferenceScope: 'global',
+    leftItemId: 'left', leftItemKind: 'entity', rightItemId: 'right', rightItemKind: 'entity', reason: 'Synthetic.' };
+  const fla = { personalProjectId: 'alpha', projectAgentId: 'g' };
+  await callAgentTool(app, 'defer_preference_conflict', { ...pair, ...fla });
+  await callAgentTool(app, 'defer_preference_conflict', pair);
+  await callAgentTool(app, 'resolve_deferred_preference_conflict', { personalSpaceId: SPACE, conflictId: 'conflict-1',
+    resolution: 'keep_left', reason: 'Synthetic.', ...fla });
+  const readers = calls.map(call => [call.path, call.body.reader_project_id, call.body.reader_agent_id]);
+  assert.deepEqual(readers, [['/v1/preference-conflicts/defer', 'alpha', 'g'],
+    ['/v1/preference-conflicts/defer', undefined, undefined],
+    ['/v1/preference-conflicts/conflict-1/resolve', 'alpha', 'g']]);
+  assert.ok(calls.every(call => !reviewHeader(call.headers)));
+  calls.length = 0;
+  const sent = [];
+  const ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async (path, body, options) => {
+    sent.push({ path, review: options.review, reader: body.reader_agent_id });
+    return { ok: true, status: 200, payload: {} };
+  } });
+  const post = async (path, body) => {
+    const response = { setHeader() {}, writeHead() {}, end() {} };
+    await handleGraphApiRequest({ request: Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]),
+      { method: 'POST', headers: { 'content-type': 'application/json' }, socket: { remoteAddress: '127.0.0.1' } }),
+    response, url: new URL(`http://127.0.0.1${path}`), app, ownerReads });
+  };
+  await post('/api/preference-conflicts/defer', pair);
+  await post('/api/preference-conflicts/conflict-1/complete', { personalSpaceId: SPACE, resolution: 'merge',
+    reason: 'Synthetic.' });
+  assert.deepEqual(sent, [{ path: '/v1/preference-conflicts/defer', review: true, reader: undefined },
+    { path: '/v1/preference-conflicts/conflict-1/complete', review: true, reader: undefined }]);
+  assert.equal(calls.length, 0, 'the person\'s decision never leaves on the Agent client');
+});
+
 test('publication drafts: an Agent tool reads as a plain session; the console lists them all through its port', async () => {
   const { app, calls } = application();
   await callAgentTool(app, 'list_personal_review_queue', { personalSpaceId: SPACE });

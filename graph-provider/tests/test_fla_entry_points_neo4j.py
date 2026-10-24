@@ -13,7 +13,7 @@ import pytest
 from neo4j import AsyncGraphDatabase
 
 from fuli_graph.models import StructuredEpisode
-from test_fla_read_boundary_neo4j import G, H, PROJECT, WRONG_PROOF, Boundary, entity
+from test_fla_read_boundary_neo4j import AS_G, AS_H, G, H, PROJECT, WRONG_PROOF, Boundary, entity
 from test_models import confirmed_episode
 from test_project_agent_memory_neo4j import provider_client, seed_agent
 from test_session_migration_neo4j import held_session, link_task
@@ -64,6 +64,67 @@ async def test_preference_conflicts_naming_an_flas_item_are_the_persons_alone_be
         assert await listed(limit=1, offset=1) == []
         assert (await client.get('/v1/preference-conflicts', headers=WRONG_PROOF,
                                  params={'personal_space_id': space.space_id})).status_code == 403
+
+
+async def stored_conflict(settings, conflict_id):
+    driver = AsyncGraphDatabase.driver(settings.neo4j_uri, auth=('neo4j', settings.neo4j_password))
+    try:
+        records, _, _ = await driver.execute_query(
+            'MATCH (conflict:FuliPreferenceConflict {id: $id}) RETURN conflict', id=conflict_id)
+        return dict(records[0]['conflict']) if records else None
+    finally:
+        await driver.close()
+
+
+@pytest.mark.asyncio
+async def test_a_conflict_naming_an_flas_item_is_missing_to_another_agents_resolve_defer_and_complete():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space = await Boundary().build(client, settings)
+        resolved, pending = f'conflict-resolved-{uuid4()}', f'conflict-pending-{uuid4()}'
+        for conflict_id in (resolved, pending):
+            await conflict(settings, space, conflict_id, space.id('fla-habit'), space.id('shared-habit'), AT)
+        await write(settings, "MATCH (c:FuliPreferenceConflict {id: $id}) SET c.status = 'resolved', "
+                    "c.resolution = 'keep_left', c.resolved_by = 'agent', c.resolution_reason = 'Synthetic.', "
+                    "c.resolved_at = $at", id=resolved, at=AT)
+        before = {conflict_id: await stored_conflict(settings, conflict_id) for conflict_id in (resolved, pending)}
+
+        async def resolve(conflict_id, reader=None):
+            return await client.post(f'/v1/preference-conflicts/{conflict_id}/resolve', json={
+                'personal_space_id': space.space_id, 'resolution': 'keep_right', 'reason': 'Synthetic retry.',
+                **(reader or {})})
+
+        def defer(reader=None, conflict_id=None, left='fla-habit', headers=None):
+            return client.post('/v1/preference-conflicts/defer', headers=headers, json={
+                'personal_space_id': space.space_id, 'conflict_id': conflict_id or f'conflict-new-{uuid4()}',
+                'preference_key': 'synthetic-habit', 'preference_scope': 'global', 'left_item_id': space.id(left),
+                'left_item_kind': 'entity', 'right_item_id': space.id('shared-habit'), 'right_item_kind': 'entity',
+                'reason': 'Synthetic defer.', 'operation_actor': 'agent', **(reader or {})})
+
+        def complete(conflict_id, headers=None):
+            return client.post(f'/v1/preference-conflicts/{conflict_id}/complete', headers=headers, json={
+                'personal_space_id': space.space_id, 'resolution': 'keep_left', 'reason': 'Synthetic.',
+                'operation_actor': 'human'})
+
+        missing = (404, 'preference conflict not found')
+        for reader in (AS_H, None):
+            # The resolved retry wrote nothing before either; it no longer returns the record.
+            answer = await resolve(resolved, reader)
+            assert (answer.status_code, answer.json()['detail']) == missing, reader
+            assert 'Synthetic.' not in answer.text
+            assert (await resolve(pending, reader)).status_code == 404, reader
+            # A new conflict naming G's item, or G's conflict's id reused with visible items.
+            new_id = f'conflict-new-{uuid4()}'
+            assert (await defer(reader, new_id)).status_code == 404
+            assert await stored_conflict(settings, new_id) is None, 'nothing was written'
+            assert (await defer(reader, pending, left='plain-fact')).status_code == 404
+        assert (await complete(pending)).status_code == 404, 'no proof: read as a plain session'
+        for conflict_id, stored in before.items():
+            assert await stored_conflict(settings, conflict_id) == stored, 'nothing changed'
+        # G reads its own conflict's retry; the person completes it with the console's proof.
+        assert ok(await resolve(resolved, AS_G))['id'] == resolved
+        assert ok(await complete(pending, REVIEW))['status'] == 'resolved'
+        assert (await complete(resolved, WRONG_PROOF)).status_code == 403
 
 
 @pytest.mark.asyncio
