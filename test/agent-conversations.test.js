@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { beginConversation, checkpointConversation, resumeConversation } from '../src/graphiti/agent-conversations.js';
+import { withCaptureBudget } from '../src/conversations/capture-window.js';
 
 const task = { token: 'fuli-task-example', sessionId: 'native-session', personalProjectId: 'sample', projectAgentId: 'engineer', sourceApplication: 'codex' };
 function fixture() {
@@ -50,6 +51,43 @@ test('checkpoint receipt is not saved when provider fails', async () => {
   const result = await checkpointConversation(app, task, { summary: 'done', status: 'completed' });
   assert.equal(result.status, 'unsaved');
   assert.equal(result.conversation_id, undefined);
+});
+test('an unsaved conversation names the failed step and the error code, never its message', async () => {
+  for (const [failing, step] of [['session', 'session'], ['context', 'context'], ['append', 'append']]) {
+    const { app } = fixture();
+    const original = app.personal.conversation;
+    app.personal.conversation = async (action, input) => {
+      if ((action === 'append' ? 'append' : input.mode) === failing) {
+        throw Object.assign(new Error('C:/private/path secret detail'), { code: 'provider_unavailable' });
+      }
+      return original(action, input);
+    };
+    const result = await beginConversation(app, task, 'new task');
+    assert.deepEqual([result.status, result.step, result.reason], ['unsaved', step, 'provider_unavailable'], failing);
+    assert.doesNotMatch(JSON.stringify(result), /private|secret/);
+  }
+  const { app } = fixture();
+  app.personal.conversation = async () => { throw Object.assign(new Error('x'), { status: 503 }); };
+  assert.equal((await checkpointConversation(app, task, { summary: 'done', status: 'completed' })).reason, 'status_503');
+  // A code FULI does not name (a Provider may pass its own detail.code) is never echoed.
+  for (const [error, reason] of [[Object.assign(new Error('x'), { code: 'upstream_tenant_acme_42' }), 'other'],
+    [Object.assign(new Error('x'), { code: 'upstream_tenant_acme_42', status: 409 }), 'status_409'],
+    [Object.assign(new Error('x'), { status: 7 }), 'other']]) {
+    app.personal.conversation = async () => { throw error; };
+    const result = await checkpointConversation(app, task, { summary: 'done', status: 'completed' });
+    assert.equal(result.reason, reason);
+    assert.doesNotMatch(JSON.stringify(result), /acme/);
+  }
+});
+test('an entry whose capture budget runs out says so, so a timeout is told apart from a failure', async () => {
+  const { app } = fixture();
+  const original = app.personal.conversation;
+  // The session read outlasts a 5 ms capture budget.
+  app.personal.conversation = async (action, input) => input.mode === 'session'
+    ? new Promise((resolve) => setTimeout(() => resolve(original(action, input)), 200))
+    : original(action, input);
+  const result = await withCaptureBudget(5, () => beginConversation(app, task, 'new task'));
+  assert.deepEqual([result.status, result.step, result.reason], ['unsaved', 'session', 'transcript_capture_timeout']);
 });
 test('a Provider-disabled checkpoint never reports saved summary coverage', async () => {
   const { app } = fixture();
