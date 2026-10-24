@@ -259,3 +259,81 @@ test('scope violations are counted per instance: a new instance starts at zero',
   await settle();
   assert.equal(instance(host, appId).state, 'running');
 });
+
+// fuli#312 review follow-ups: registry failures around a start and a close.
+// armed counts the next registry transactions that throw, as a SQLite error would.
+function failingRegistry(host) {
+  const { store } = host.context;
+  const transaction = store.transaction.bind(store);
+  const failure = { armed: 0 };
+  store.transaction = (operation) => {
+    if (failure.armed > 0) {
+      failure.armed -= 1;
+      throw Object.assign(new Error('synthetic registry failure'), { code: 'ERR_SQLITE_ERROR' });
+    }
+    return transaction(operation);
+  };
+  return failure;
+}
+
+// The runner's stop fails this many times, then works.
+function failingStops(host, count) {
+  const remaining = { count };
+  host.runner.hooks.stop = async () => {
+    if (remaining.count === 0) return;
+    remaining.count -= 1;
+    throw Object.assign(new Error('synthetic stop failure'), { code: 'ESYNTH' });
+  };
+  return remaining;
+}
+
+const stops = (host) => host.runner.calls.filter(([kind]) => kind === 'stop').length;
+
+test('a registration that throws stops the process and ends the instance, so the next start runs', async (t) => {
+  const registry = appRegistry(t, { tools: TOOLS });
+  const host = registry.host({ pid: 101 });
+  const app = await verifiedApp(host, { permissions: PERMISSIONS });
+  const failure = failingRegistry(host);
+  // The first transaction after the runner started the process is its registration.
+  host.runner.hooks.start = async () => { failure.armed = 1; };
+  await assert.rejects(host.service.start({ appId: app.appId }), { code: 'ERR_SQLITE_ERROR' });
+  assert.equal(stops(host), 1);
+  const ended = instance(host, app.appId);
+  assert.equal(ended.stopReason, 'start_failed');
+  assert.ok(ended.stoppedAt && ended.sealedAt);
+  assert.equal(host.context.store.owner(app.appId).ownerId, null);
+  assert.equal(host.context.instances.idle(), true);
+
+  host.runner.hooks.start = null;
+  const restarted = await host.service.start({ appId: app.appId });
+  assert.deepEqual([restarted.status, restarted.generation], ['running', 2]);
+});
+
+test('a close whose seal write throws still stops the process, reports what it could not stop and retries', async (t) => {
+  const { host, appId } = await running(t);
+  failingRegistry(host).armed = 1;
+  failingStops(host, 1);
+  await assert.rejects(host.service.close(), (error) => error.code === 'close_incomplete'
+    && error.detail.notStopped.length === 1 && error.detail.notStopped[0].appId === appId);
+  assert.equal(host.context.instances.idle(), false, 'the handle is still held');
+
+  await host.service.close();
+  assert.equal(stops(host), 1);
+  assert.equal(host.context.instances.idle(), true);
+});
+
+test('a stop close confirms after the seal\'s own stop failed is recorded and the lease released', async (t) => {
+  const { registry, host, appId } = await running(t);
+  const remaining = failingStops(host, 1);
+  await host.service.close();
+  assert.equal(remaining.count, 0, 'the seal\'s own stop failed');
+
+  const next = registry.host({ pid: 202 });
+  const ended = instance(next, appId);
+  assert.deepEqual([ended.state, ended.stopReason], ['sealed', 'host_closing']);
+  assert.ok(ended.stoppedAt);
+  assert.equal(next.context.store.owner(appId).ownerId, null);
+  const restarted = await next.service.start({ appId });
+  assert.deepEqual([restarted.status, restarted.generation], ['running', 2]);
+  assert.equal(next.runner.calls.filter(([kind]) => kind === 'stopOrphan').length, 0, 'nothing left to clean up');
+});

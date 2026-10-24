@@ -99,6 +99,11 @@ categories with a fixed message: `load_failed` (it ended before its entry finish
 an error after that) or `exited` (it finished with code 0). FULI does not read or keep anything the app writes to its
 output. It can then be started again.
 
+An entry has finished loading once its module, including any top-level `await`, has settled. An entry whose top-level
+`await` never settles (a server loop awaited at the top level, for example) never counts as loaded, so a later crash is
+labelled `load_failed`. Finish top-level initialization promptly and keep long-running work in callbacks, timers or
+servers that keep the process alive.
+
 `fl app stop <app-id>` seals the instance (no new call verifies; a write tool in progress finishes first), stops the
 app process through the handle FULI holds and ends its tokens. `--force` is not supported on any platform in this
 version: when another FULI process holds the app, stop that FULI process first. FULI never ends a process by PID; if
