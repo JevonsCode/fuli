@@ -14,18 +14,21 @@ const CALL_SCOPE_FIELDS = ['retrievalGuidance', 'noMatchSourceMarker', 'personal
   'personalProjectScope', 'projectAgentId', ...PROJECT_ID_LISTS, 'project_ids_omitted', 'partial',
   'subscriptions_omitted'];
 const jsonBytes = value => Buffer.byteLength(JSON.stringify(value));
+// Bounded by the bytes a page sends: JSON escaping turns a control character
+// into six bytes and a quote or backslash into two.
+const jsonPreview = (text, limit) => utf8Preview(text, limit, jsonBytes);
 
 function itemPreview(item, textBytes) {
   const result = { ...item };
   delete result.attributes;
   for (const key of ['name', 'type', 'source_entity', 'target_entity', 'relationship', 'fact', 'summary']) {
     if (typeof result[key] !== 'string') continue;
-    const limited = utf8Preview(result[key], ['fact', 'summary'].includes(key) ? textBytes : 160);
+    const limited = jsonPreview(result[key], ['fact', 'summary'].includes(key) ? textBytes : 160);
     if (limited !== result[key]) result.text_truncated = true;
     result[key] = limited;
   }
   const sources = Array.isArray(item.source_uris) ? item.source_uris : [];
-  result.source_uris = sources.filter(uri => typeof uri === 'string' && Buffer.byteLength(uri) <= 768).slice(0, 2);
+  result.source_uris = sources.filter(uri => typeof uri === 'string' && jsonBytes(uri) <= 768).slice(0, 2);
   if (sources.length > result.source_uris.length) result.source_uris_omitted = sources.length - result.source_uris.length;
   return result;
 }
@@ -186,7 +189,7 @@ function searchMetadata(value) {
   const { facts, entities, results, sourceMarker, noMatchSourceMarker, subscriptions,
     relatedProjectSuggestions, related_project_suggestions, ...rest } = value;
   const result = { ...rest };
-  if (typeof result.query === 'string') result.query = utf8Preview(result.query, QUERY_PREVIEW_BYTES);
+  if (typeof result.query === 'string') result.query = jsonPreview(result.query, QUERY_PREVIEW_BYTES);
   if (subscriptions?.length) result.subscriptions_omitted = subscriptions.length;
   for (const key of PROJECT_ID_LISTS) {
     if (!Array.isArray(result[key])) continue;
@@ -200,14 +203,14 @@ function searchMetadata(value) {
     ['related_project_suggestions', related_project_suggestions]]) {
     if (!Array.isArray(items)) continue;
     result[key] = items.slice(0, 3).map(item => ({ ...item,
-      project_name: typeof item.project_name === 'string' ? utf8Preview(item.project_name, 160) : item.project_name,
-      reason: typeof item.reason === 'string' ? utf8Preview(item.reason, 256) : item.reason }));
+      project_name: typeof item.project_name === 'string' ? jsonPreview(item.project_name, 160) : item.project_name,
+      reason: typeof item.reason === 'string' ? jsonPreview(item.reason, 256) : item.reason }));
     if (items.length > 3) result.related_suggestions_omitted = items.length - 3;
   }
   // Detailed suggestions remain available on focused queries. Permission flags
   // and exact confirmed_search targets above are retained, never inferred.
   for (const key of ['relatedProjectGuidance', 'related_project_guidance']) {
-    if (typeof result[key] === 'string') result[key] = utf8Preview(result[key], 512);
+    if (typeof result[key] === 'string') result[key] = jsonPreview(result[key], 512);
   }
   return result;
 }

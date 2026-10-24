@@ -223,6 +223,40 @@ test('a broad search at the schema maximum of queries returns records on its fir
   assert.equal(page.retrieval_budget.complete, true);
 });
 
+// Previews are bounded by their serialized size: a control character is
+// sent as six bytes (\u0001), a quote or backslash as two.
+for (const [label, padding] of [['control characters', '\u0001'], ['quotes and backslashes', '"\\'],
+  ['long Chinese text', '宽查询']]) {
+  test(`maximum-length queries and records of ${label} still fit a search page`, async () => {
+    const schema = GRAPH_TOOL_DEFINITIONS.find(tool => tool.name === 'search_current_project_knowledge').inputSchema;
+    const { maxItems } = schema.properties.queries;
+    const { maxLength } = schema.properties.queries.items;
+    const pad = length => padding.repeat(length).slice(0, length);
+    const queries = Array.from({ length: maxItems }, (_, i) => `${i}-` + pad(maxLength - 2));
+    const empty = federatedApplication({ recordsPerQuery: 0 }).app;
+    const missed = await searchCurrentProjectKnowledge(empty, resolution, { queries });
+    assert.ok(bytes(missed) <= 8 * 1024, `Empty search grew to ${bytes(missed)} B`);
+    assert.equal(missed.results.length, maxItems);
+    assert.equal(missed.retrieval_budget.total_items, 0);
+
+    const { app } = federatedApplication();
+    app.personal.search = async ({ query }) => ({ facts: [], entities: Array.from({ length: 6 }, (_, i) => ({
+      id: `${query.slice(0, 2)}-${i}`, space_id: 'space', scope: 'personal', defined_project_id: 'aurora',
+      name: pad(300), type: pad(300), summary: pad(1000), source_uris: [`https://example.test/${pad(700)}`] })) });
+    let page = await searchCurrentProjectKnowledge(app, resolution, { queries });
+    assert.ok(page.retrieval_budget.returned_items > 0, 'The first page carries records');
+    const seen = new Set();
+    for (let pages = 1; ; pages++) {
+      assert.ok(bytes(page) <= 8 * 1024, `Page grew to ${bytes(page)} B`);
+      for (const group of page.results) for (const item of group.entities ?? []) seen.add(item.id);
+      if (!page.next_cursor) break;
+      page = await searchCurrentProjectKnowledge(app, resolution, { queries, cursor: page.next_cursor });
+      assert.ok(pages < 400, 'Continuation must always advance');
+    }
+    assert.equal(seen.size, maxItems * 6);
+  });
+}
+
 test('a confirmed all-local search names a bounded prefix of its projects instead of failing', async () => {
   const projectIds = Array.from({ length: 300 }, (_, i) => `synthetic-registered-project-${String(i).padStart(4, '0')}`);
   const { app, ports } = federatedApplication({ projectIds });
