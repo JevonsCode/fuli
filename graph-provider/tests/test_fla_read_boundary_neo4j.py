@@ -257,6 +257,28 @@ async def test_search_leaves_out_a_plain_edge_to_another_flas_entity_as_every_re
 
 
 @pytest.mark.asyncio
+async def test_human_change_search_leaves_out_a_plain_edge_to_another_flas_entity():
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space = await Boundary().build(client, settings)
+        driver = AsyncGraphDatabase.driver(settings.neo4j_uri, auth=('neo4j', settings.neo4j_password))
+        try:
+            # As if the person had edited all three: only the plain-to-plain link may come back.
+            await driver.execute_query('''
+                MATCH ()-[edge:RELATES_TO]->() WHERE edge.uuid IN $edges
+                SET edge.fuli_human_edited = true, edge.fuli_human_change_status = 'human_changed',
+                    edge.fuli_last_human_changed_at = datetime()
+            ''', edges=[space.plain_edge, space.fla_edge, space.plain_link])
+        finally:
+            await driver.close()
+        found = ok(await client.post('/v1/knowledge/human-changes/search', json={
+            'personal_space_id': space.space_id, 'limit': 200}))
+        edges = {item['item_id'] for item in found['items'] if item['item_kind'] == 'relationship'}
+        assert space.plain_link in edges
+        assert space.plain_edge not in edges and space.fla_edge not in edges
+
+
+@pytest.mark.asyncio
 async def test_a_receipt_lists_and_counts_nothing_of_another_flas_turn():
     settings = reviewed_settings()
     async with provider_client(settings) as (client, _):

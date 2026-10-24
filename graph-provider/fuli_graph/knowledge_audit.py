@@ -28,7 +28,9 @@ from .negative_feedback_block import (
     agent_authority_suspension,
     negative_feedback_block_json,
 )
-from .knowledge_visibility import PLAIN_SESSION, fla_visible_cypher, reader_parameter
+from .knowledge_visibility import (
+    PLAIN_SESSION, fla_relationship_visible_cypher, fla_visible_cypher, reader_parameter,
+)
 from .provider_values import json_object, native_datetime, stable_uuid
 from .store_transactions import query_store_transaction
 
@@ -1016,7 +1018,7 @@ LIMIT $limit
 
 
 _HUMAN_RELATIONSHIP_SEARCH = '''
-MATCH ()-[item:RELATES_TO {group_id: $group_id}]->()
+MATCH (item_source)-[item:RELATES_TO {group_id: $group_id}]->(item_target)
 WHERE item.fuli_human_edited = true
   AND (
     $status IN ['all', 'human_changed']
@@ -1034,7 +1036,7 @@ WHERE item.fuli_human_edited = true
       WHERE toLower(coalesce(audit.reason, '')) CONTAINS $search_query
     }
   )
-  AND ''' + fla_visible_cypher('item', 'relationship') + '''
+  AND ''' + fla_relationship_visible_cypher('item', 'item_source', 'item_target') + '''
 RETURN item.uuid AS item_id,
        item.name AS title,
        coalesce(item.fact, '') AS body,
