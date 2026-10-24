@@ -18,11 +18,14 @@ const TOOLS = ['record_decision_trace'];
 const PERMISSIONS = TOOLS.map((name) => `fuli.${name}`);
 // The synthetic app: reports what it was started with beside the registry,
 // then stays alive until it is stopped.
-const APP_SCRIPT = `import { writeFileSync } from 'node:fs';
+// The report appears whole (written aside, then renamed): the test waits for
+// the file to exist and reads it at once.
+const APP_SCRIPT = `import { renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const keys = Object.keys(process.env).filter((key) => key.startsWith('FULI')).sort();
 const report = join(process.cwd(), '..', '..', '..', '..', 'started-' + process.env.FULI_APP_INSTANCE + '.json');
-writeFileSync(report, JSON.stringify({ pid: process.pid, keys, cwd: process.cwd(), path: Boolean(process.env.PATH) }));
+writeFileSync(report + '.partial', JSON.stringify({ pid: process.pid, keys, cwd: process.cwd(), path: Boolean(process.env.PATH) }));
+renameSync(report + '.partial', report);
 setInterval(() => {}, 1000);
 `;
 const FILES = [{ path: 'service/main.js', content: APP_SCRIPT }];
