@@ -92,7 +92,8 @@ test('a new session with no project takes the standing project and does not inhe
   assert.equal(entry.context.personal_project_id, 'timesheet');
   assert.equal(entry.standing_owner.session_project_id, null);
   assert.deepEqual(entry.standing_owner.matched_terms, ['iDev', '工时']);
-  assert.ok(tasks[0].agentAssignment.match_basis.includes(NOTICE));
+  assert.ok(tasks[0].agentAssignment.match_basis.some(basis => /^standing_assignment:standing-\S+ /.test(basis)
+    && basis.endsWith(` ${NOTICE}`)));
   // The routed task is the session's latest, yet the session itself was never moved there.
   const next = await run({ projectPath: null, taskPrompt: '随便问个问题' });
   assert.equal(next.context.personal_project_id, null);
@@ -116,6 +117,20 @@ test('the checkpoint receipt repeats the routed task\'s sentence', async () => {
   const result = await checkpointTaskKnowledge(app, { taskContextToken: begun.token, sourceApplication: 'codex',
     disposition: 'retain_nothing', reason: 'Synthetic timesheet filled' });
   assert.match(result.agent_receipt.markdown, new RegExp(`· ${NOTICE}`));
+  assert.doesNotMatch(result.agent_receipt.markdown, /standing_assignment|standing-/);
+});
+
+test('a routed task is recognized by its assignment prefix, never by the notice wording', async () => {
+  const { run, tasks } = fixture({ resolution: { status: 'not_provided', basis: null, personalProjectId: null } });
+  await run({ projectPath: null });
+  const routed = tasks[0].agentAssignment.match_basis.find(basis => basis.startsWith('standing_assignment:'));
+  const reworded = routed.replace(NOTICE, 'This task follows your standing assignment to project Timesheet');
+  // The same task, its notice reworded or translated: the session still does not inherit it.
+  tasks.push({ ...tasks[0], agentAssignment: { ...tasks[0].agentAssignment, match_basis: [reworded] } });
+  assert.equal((await run({ projectPath: null, taskPrompt: '随便问个问题' })).context.personal_project_id, null);
+  // The human sentence alone, without the prefix, is an ordinary basis: the session continues there.
+  tasks.push({ ...tasks[0], agentAssignment: { ...tasks[0].agentAssignment, match_basis: [NOTICE] } });
+  assert.equal((await run({ projectPath: null, taskPrompt: '随便问个问题' })).context.personal_project_id, 'timesheet');
 });
 
 test('terms of several assignments ask instead of switching', async () => {

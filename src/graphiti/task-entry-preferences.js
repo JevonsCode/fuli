@@ -104,7 +104,7 @@ async function entryPreferences(application, projectResolution, {
       selection?.agent ? loadProjectAgentContinuity(application, {
         projectId: projectResolution.personalProjectId, agent: selection.agent,
         sourceApplication, taskPrompt, selectionReason: selection.reason,
-        matchBasis: standing?.notice ? [...(selection.match_basis ?? []), standing.notice] : selection.match_basis,
+        matchBasis: standing?.matchBasis ? [...(selection.match_basis ?? []), standing.matchBasis] : selection.match_basis,
         includeTeam
       }) : selection,
       includeTeam ? taskJudgmentContext(application, projectResolution.personalProjectId) : null

@@ -17,9 +17,10 @@ import { nameableProjects, projectDisplayName, promptNamesProject } from './task
 
 const EXPLICIT_BASES = new Set(['explicit_personal_project_id', 'explicit_agent', 'named_in_prompt',
   'created_from_prompt']);
-// The notice opens every routed task's stored match basis, so later entries
-// and the checkpoint receipt recognize the task without another store.
-const NOTICE_OPENING = '本次任务按长期职责归入项目';
+// A routed task's stored match basis is "standing_assignment:<assignmentId> <notice>":
+// later entries and the checkpoint receipt recognize it by the prefix and the
+// assignment ID alone, so rewording or translating the notice changes no routing.
+const BASIS = /^standing_assignment:(\S+) (.+)$/su;
 const CLARIFY_GUIDANCE = 'Terms of several standing assignments match this task, so it stays where it was. Ask the '
   + 'user once which project this task belongs to, then begin the task again naming that project.';
 
@@ -51,23 +52,26 @@ export function standingOwnerEntry(resolution, selection) {
   if (!owner) return null;
   const agent = selection?.agent?.agentId === owner.leadAgentId ? selection.agent : null;
   const leadName = agent?.profile?.displayName || agent?.profile?.name || null;
-  const notice = `${NOTICE_OPENING} ${owner.projectName}（负责人 ${leadName ?? owner.leadAgentId}）`;
-  return { notice, receiptNotice: receiptText(notice), field: { status: 'routed', ...ownerView(owner),
-    lead_name: leadName, session_project_id: owner.sessionProjectId, notice } };
+  const notice = `本次任务按长期职责归入项目 ${owner.projectName}（负责人 ${leadName ?? owner.leadAgentId}）`;
+  return { notice, receiptNotice: receiptText(notice), matchBasis: `standing_assignment:${owner.assignmentId} ${notice}`,
+    field: { status: 'routed', ...ownerView(owner), lead_name: leadName, session_project_id: owner.sessionProjectId,
+      notice } };
 }
 
-// The stored task carries the notice in its match basis; its checkpoint
-// receipt repeats it, and the session's later tasks do not inherit its project.
+// The stored task carries the route in its match basis; its checkpoint
+// receipt repeats the notice, and the session's later tasks do not inherit its project.
 export function standingReceiptNotices(task) {
-  return storedNotices(task).map(receiptText);
+  return storedRoutes(task).map(({ notice }) => receiptText(notice));
 }
 
 export function routedByStandingAssignment(task) {
-  return storedNotices(task).length > 0;
+  return storedRoutes(task).length > 0;
 }
 
-function storedNotices(task) {
-  return (task?.agentAssignment?.match_basis ?? []).filter(basis => basis.startsWith(NOTICE_OPENING));
+// Each stored route that names its assignment, with the notice it showed.
+function storedRoutes(task) {
+  return (task?.agentAssignment?.match_basis ?? []).map(basis => BASIS.exec(basis)).filter(Boolean)
+    .map(([, , notice]) => ({ notice }));
 }
 
 // A store this FULI cannot read routes nothing; the entry continues as before.
