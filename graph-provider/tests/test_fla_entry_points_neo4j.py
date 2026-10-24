@@ -176,6 +176,11 @@ async def test_a_sessions_migration_offer_neither_counts_nor_lists_an_flas_held_
         await write(settings, 'MATCH (episode:Episodic {uuid: $episode}) SET episode.fuli_project_agent_id = $agent',
                     episode=fla['episode_id'], agent=G)
         await link_task(client, space_id, 'alpha')
+        # G's later task of the same session in the project: it is G's, not the plain session's.
+        ok(await client.put('/v1/task-contexts', json={
+            'personal_space_id': space_id, 'personal_project_id': 'alpha', 'project_agent_id': G,
+            'session_id': 'synthetic-migration-session', 'source_application': 'codex',
+            'token': f'fuli-task-{uuid4()}', 'turn_id': f'turn-{uuid4()}'}))
 
         async def preview(reader=None, headers=None, **fields):
             return ok(await client.post('/v1/knowledge/session-migrations/preview', headers=headers, json={
@@ -186,6 +191,11 @@ async def test_a_sessions_migration_offer_neither_counts_nor_lists_an_flas_held_
         owner = await preview(headers=REVIEW)
         assert owner['held_count'] == 2
         assert {item['item_id'] for item in owner['items']} == {fla['entity_ids'][0], plain['entity_ids'][0]}
+        # Each reader counts its own tasks: another FLA's task never makes this one look like a later one.
+        assert owner['linked_task_count'] == 2
+        for reader, linked in (({**as_alpha, 'reader_agent_id': G}, 1), ({**as_alpha, 'reader_agent_id': H}, 0),
+                               (None, 1)):
+            assert (await preview(reader, include_items=False))['linked_task_count'] == linked, reader
         for reader in ({**as_alpha, 'reader_agent_id': H}, {**as_alpha, 'reader_agent_id': G}, None):
             # G's knowledge belongs to G in the project it was saved in, the temporary one.
             offer = await preview(reader)

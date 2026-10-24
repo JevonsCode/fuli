@@ -22,7 +22,7 @@ from .knowledge_item_view_models import KnowledgeScopeChange
 from .knowledge_management import _read_item
 from .knowledge_scope_edit import apply_scope_change, scope_editor_space
 from .knowledge_versions import lock_knowledge
-from .knowledge_visibility import hidden_refs, request_reader
+from .knowledge_visibility import fla_own_work_cypher, hidden_refs, reader_parameter, request_reader
 from .knowledge_session_migration_models import (
     SessionMigrationApply,
     SessionMigrationMoved,
@@ -53,7 +53,7 @@ async def preview_session_migration(store, actor: dict, request: SessionMigratio
             items.append(await item_summary(store, space, item_kind, item_id, current, source_ids=source_ids))
     return SessionMigrationPreview(
         temporary_project_id=temporary_id, target_project=target, held_count=len(held),
-        linked_task_count=await _linked_task_count(store, space, request), items=items,
+        linked_task_count=await _linked_task_count(store, space, request, reader), items=items,
         next_offset=end if request.include_items and end < len(held) else None)
 
 
@@ -131,13 +131,17 @@ async def _target_project(store, actor, space, project_id):
     return (await scope_projects(store, space, [project_id]))[0]
 
 
-async def _linked_task_count(store, space, request) -> int:
+async def _linked_task_count(store, space, request, reader) -> int:
+    """This session's tasks in the project that the reader's own work holds:
+    an FLA counts its own, a plain session those under no FLA, the person all."""
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_TASK_CONTEXT_SESSION]->
               (:FuliTaskContextSession {id: $session_node})-[:HAS_CONTEXT]->
               (task:FuliTaskContext {personal_project_id: $project_id})
+        WHERE ''' + fla_own_work_cypher('task.project_agent_id', 'task.personal_project_id') + '''
         RETURN count(task) AS linked
-        ''', space_id=space['id'], project_id=request.target_project_id, routing_='r',
+        ''', space_id=space['id'], project_id=request.target_project_id, reader=reader_parameter(reader),
+        routing_='r',
         session_node=store._task_session_id(space['id'], request.source_application, request.session_id))
     return int(records[0]['linked']) if records else 0
