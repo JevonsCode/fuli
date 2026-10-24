@@ -4,6 +4,7 @@ import { createRoleTrust } from './role-trust.js';
 import { createRoleWorkBridge } from './role-work.js';
 import { RoleWorkStore } from './role-work-store.js';
 import { createModelSecretStore } from './secret-store.js';
+import { createModelSettingsHistory } from './settings-history.js';
 import { RoleSuggestionLog } from './suggestion-log.js';
 import { ModelUsageLedger } from './usage-ledger.js';
 
@@ -18,9 +19,15 @@ export function openModelBackendRuntime(paths) {
 }
 
 // Whether each role's configured model may carry out its operations by
-// itself (rec#10 D-36), read over that port.
-export function openRoleTrust(paths, port) {
-  return createRoleTrust({ path: paths.modelTrustPath, modelBackends: port });
+// itself (rec#10 D-36), read over that port, and the history of what changed
+// in it and in the model settings, and when (rec#11 D-42). The history is
+// read against the current file and trust revisions.
+export function openRoleTrustAndHistory(paths, port) {
+  let trust = null;
+  const history = createModelSettingsHistory({ path: paths.modelSettingsHistoryPath,
+    readConfig: () => readModelBackendConfig(paths.modelBackendConfigPath), readTrustRevision: role => trust.revision(role) });
+  trust = createRoleTrust({ path: paths.modelTrustPath, modelBackends: port, history });
+  return { trust, history };
 }
 
 // The session bridge over that port. resumers maps a role to the operation

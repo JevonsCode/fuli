@@ -27,6 +27,7 @@ import { MODEL_BACKEND_CONFIG_FORMAT } from '../model-backends/config.js';
 import { MODEL_EVALUATIONS_FORMAT } from '../model-backends/evaluation-record.js';
 import { MODEL_TRUST_FORMAT } from '../model-backends/role-trust.js';
 import { ROLE_WORK_FORMAT } from '../model-backends/role-work-store.js';
+import { MODEL_SETTINGS_HISTORY_FORMAT } from '../model-backends/settings-history.js';
 import { ROLE_SUGGESTIONS_FORMAT } from '../model-backends/suggestion-log.js';
 import { MODEL_USAGE_FORMAT } from '../model-backends/usage-ledger.js';
 import { inspectJsonStore } from '../storage/json-format.js';
@@ -54,6 +55,8 @@ const sqliteStores = () => [
   ['role-suggestions.sqlite', ROLE_SUGGESTIONS_FORMAT],
   // Each role's 「只给建议」 choice and trust-warning acknowledgement (rec#10 D-36); absent until the first change.
   ['model-trust.sqlite', MODEL_TRUST_FORMAT],
+  // What changed in the model settings and execution modes, and when (rec#11 D-42); never pruned.
+  ['model-settings-history.sqlite', MODEL_SETTINGS_HISTORY_FORMAT],
   ['agent-apps/registry.sqlite', AGENT_APP_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
   ['peer/node.sqlite', NODE_FORMAT],

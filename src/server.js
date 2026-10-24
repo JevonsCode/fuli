@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
 import { handleApiRequest } from './http/api-router.js';
 import { mapHttpError } from './http/error-mapping.js';
-import { localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
+import { isCrossSiteNavigation, localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
 import { sendJson } from './http/response.js';
 import { closeTaskEventStreams } from './http/task-events-api-router.js';
 import { serveStatic } from './http/static-handler.js';
@@ -104,9 +104,10 @@ export async function createServer(options = {}) {
   // The person's own tag changes and tag governance (rec#11 D-07 part 2), console only.
   const knowledgeTags = options.knowledgeTags ?? (localOptions.runtimeConfigPath
     ? createKnowledgeTagsConsole(dirname(localOptions.runtimeConfigPath)) : null);
-  // Saves a built-in Agent's model settings; reached only by the loopback route.
+  // Saves a built-in Agent's model settings, recording what changed; reached only by the loopback route.
   const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
-    ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath) : null);
+    ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath,
+      { history: application.modelSettingsHistory }) : null);
   // The latest local evaluation of a role's model, as the model settings page shows it (rec#10 D-36.6).
   const readModelEvaluation = options.readModelEvaluation ?? (localOptions.runtimeConfigPath
     ? key => latestEvaluation(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelEvaluationsPath, key) : null);
@@ -302,6 +303,11 @@ async function handleRequest({
     lanAuthorities,
     lanAccessToken
   })) return;
+  // A page opened from another site's link reaches the static console only.
+  if (isCrossSiteNavigation(request)) {
+    serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
+    return;
+  }
   if (await handleApiRequest({
     request,
     response,

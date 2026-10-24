@@ -58,7 +58,8 @@ beforeEach(() => {
   api.getJson.mockReset()
   api.putJson.mockReset()
   api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage()
-    : url.startsWith('/api/model-backends/suggestions') ? { suggestions: [] } : rolesPayload))
+    : url.startsWith('/api/model-backends/suggestions') ? { suggestions: [] }
+      : url.startsWith('/api/model-backends/history') ? { entries: [] } : rolesPayload))
 })
 
 const mountPage = async () => {
@@ -121,6 +122,22 @@ describe('ModelSettingsPage', () => {
     expect(api.putJson).toHaveBeenCalledWith('/api/model-backends/roles/tonborg/trust', { expectedRevision: 3, suggestionsOnly: true })
     expect(wrapper.get('[data-model-trust]').text()).toContain('正在保存 Tonborg 的执行方式…')
     expect(wrapper.get('[data-model-trust] [role="switch"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('reads an open change history again after a trust switch found the mode changed elsewhere and the page read it again', async () => {
+    ;(rolesPayload.roles[3] as Record<string, unknown>).trust = trust({ warningSeen: true, revision: 3 })
+    const wrapper = await mountPage()
+    const historyReads = () => api.getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/model-backends/history')).length
+    const roleReads = () => api.getJson.mock.calls.filter(([url]) => url === '/api/model-backends/roles').length
+    await wrapper.get('[data-model-role="tonborg"] [data-model-history-toggle]').trigger('click')
+    await flushPromises()
+    expect(historyReads()).toBe(1)
+    const before = roleReads()
+    api.putJson.mockRejectedValueOnce(new ApiError('changed', 409, JSON.stringify({ error: 'changed', code: 'model_trust_changed' })))
+    await wrapper.get('[data-model-trust] [role="switch"]').trigger('click')
+    await flushPromises()
+    expect(roleReads()).toBe(before + 1)
+    expect(historyReads()).toBe(2)
   })
 
   it('shows a role its model does not answer as suggestions only, with no switch', async () => {

@@ -30,6 +30,14 @@ import { MODEL_BACKEND_ROLES } from './config.js';
 // refuses) or after it. The caller's write is its commit point (Tonborg
 // stores its apply intent there): a task committed before the switch has
 // started and completes, like a write that finished a moment earlier.
+//
+// history (settings-history.js) records each change after it committed,
+// with the time and row revisions read inside its transaction (rec#11
+// D-42), so a change that did not commit is never recorded and the records
+// of a role sort by its revisions whatever order they were appended in. A
+// change answers whether it was recorded; a record that failed after the
+// commit shows as a gap when the history is read. A change that changes
+// nothing writes nothing and keeps the revision.
 
 export const MODEL_TRUST_FORMAT = sqliteFormat({
   store: 'model-trust',
@@ -45,7 +53,7 @@ const DEFAULT_STATE = Object.freeze({ suggestionsOnly: false, suggestionsOnlyAt:
   warningSeenAt: null, revision: 0 });
 
 // modelBackends: the model port (port.js), read on every check.
-export function createRoleTrust({ path = ':memory:', modelBackends, now = () => new Date() }) {
+export function createRoleTrust({ path = ':memory:', modelBackends, history = null, now = () => new Date() }) {
   let database = null;
   // Opened on first change; a missing file is the default state, never created by a read.
   const open = () => (database ??= openFormattedDatabase(path, MODEL_TRUST_FORMAT));
@@ -78,22 +86,42 @@ export function createRoleTrust({ path = ':memory:', modelBackends, now = () => 
     return { status: 'passed', reason: null, modelId: key.model };
   }
 
-  function change(role, expectedRevision, columns) {
+  // columns(at): the stored columns of the change made at `at`. describe(current)
+  // names the changed field; a change that changes nothing writes nothing and
+  // keeps the revision. Returns whether the history recorded it.
+  function change(role, expectedRevision, columns, kind, describe) {
     if (!MODEL_BACKEND_ROLES.includes(role)) throw new TypeError(`Unknown role: ${role}`);
-    return locked(open(), () => {
+    const committed = locked(open(), () => {
       const current = state(role);
       if (current.revision !== expectedRevision) {
         throw new ApplicationError('model_trust_changed',
           'This role\'s execution mode changed since the page read it. Nothing was saved; read it again.', { status: 409 });
       }
+      const field = describe(current);
+      if (field.before === field.after) return null;
+      // The time and revision the history names are those of the committed row.
+      const changedAt = now().toISOString();
       const next = { suggestions_only: current.suggestionsOnly ? 1 : 0, suggestions_only_at: current.suggestionsOnlyAt,
-        warning_version: current.warningSeen ? TRUST_WARNING_VERSION : null, warning_seen_at: current.warningSeenAt, ...columns };
+        warning_version: current.warningSeen ? TRUST_WARNING_VERSION : null, warning_seen_at: current.warningSeenAt, ...columns(changedAt) };
       open().prepare(`INSERT INTO role_trust VALUES(:role, :suggestions_only, :suggestions_only_at, :warning_version,
           :warning_seen_at, :revision) ON CONFLICT(role) DO UPDATE SET suggestions_only = excluded.suggestions_only,
           suggestions_only_at = excluded.suggestions_only_at, warning_version = excluded.warning_version,
           warning_seen_at = excluded.warning_seen_at, revision = excluded.revision`)
         .run({ role, ...next, revision: expectedRevision + 1 });
+      return { field, changedAt };
     });
+    // Only after the commit, so no record describes a change that did not happen.
+    return { history: committed ? recorded(role, kind, expectedRevision, committed) : 'unchanged' };
+  }
+
+  // A record that fails leaves the committed change as it is; a read shows the gap.
+  function recorded(role, kind, expectedRevision, { field, changedAt }) {
+    if (!history) return 'not_recorded';
+    try {
+      return history.recordTrust(role, kind, expectedRevision, field, changedAt);
+    } catch {
+      return 'not_recorded';
+    }
   }
 
   return {
@@ -125,14 +153,19 @@ export function createRoleTrust({ path = ':memory:', modelBackends, now = () => 
         warningSeenAt: current.warningSeenAt, warningVersion: TRUST_WARNING_VERSION, revision: current.revision,
         status: gate.status === 'passed' ? 'automatic' : 'suggestion', reason: gate.reason };
     },
+    // The role's current row revision, for the history's gap check.
+    revision: role => state(role).revision,
     setSuggestionsOnly(role, suggestionsOnly, expectedRevision) {
-      change(role, expectedRevision, { suggestions_only: suggestionsOnly ? 1 : 0, suggestions_only_at: now().toISOString() });
+      return change(role, expectedRevision, at => ({ suggestions_only: suggestionsOnly ? 1 : 0, suggestions_only_at: at }),
+        'suggestions_only', before => ({ field: 'suggestionsOnly', before: before.suggestionsOnly, after: suggestionsOnly }));
     },
     acknowledgeWarning(role, warningVersion, expectedRevision) {
       if (warningVersion !== TRUST_WARNING_VERSION) {
         throw new ApplicationError('model_trust_warning_changed', 'The warning changed since the page showed it; read it again.', { status: 409 });
       }
-      change(role, expectedRevision, { warning_version: TRUST_WARNING_VERSION, warning_seen_at: now().toISOString() });
+      return change(role, expectedRevision, at => ({ warning_version: TRUST_WARNING_VERSION, warning_seen_at: at }),
+        'warning_acknowledged', before => ({ field: 'warningVersion', before: before.warningSeen ? TRUST_WARNING_VERSION : null,
+          after: TRUST_WARNING_VERSION }));
     },
     close() { database?.close(); database = null; }
   };
