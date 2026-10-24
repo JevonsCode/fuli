@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FULI_PACKAGE_NAME, FULI_VERSION } from '../package-metadata.js';
 import { platformPath } from '../system/platform-path.js';
+import { quoteShellArgument } from './shell-argument.js';
 
 export function updateEnvironment(env, nodePath, platform = process.platform) {
   const path = platformPath(platform);
@@ -30,7 +31,7 @@ export function inspectUpdateInstallation({ env = process.env, platform = proces
           if (manifest.name === FULI_PACKAGE_NAME) version = manifest.version;
         }
       } catch { /* Broken or unreadable candidates remain visible with an unknown version. */ }
-      launchers.push({ path: launcher, target, version });
+      launchers.push({ path: launcher, target, version, executable: isExecutable(launcher, platform) });
     }
   }
   return { cliPath: fileURLToPath(new URL('../cli.js', import.meta.url)), launchers };
@@ -47,7 +48,7 @@ export function formatShadowedLaunchers(installation, { target = installation.cl
   const own = installation.launchers.find((launcher) => launcher.target === realTarget);
   const shadowing = [];
   for (const command of ['fl', 'fuli']) {
-    const first = installation.launchers.find((launcher) =>
+    const first = installation.launchers.find((launcher) => launcher.executable !== false &&
       path.basename(launcher.path).replace(/\.cmd$/i, '') === command);
     // Only a recognized Fuli installation is reported; an unknown wrapper is never guessed at.
     if (first?.version && first.target !== realTarget) shadowing.push({ command, ...first });
@@ -57,7 +58,7 @@ export function formatShadowedLaunchers(installation, { target = installation.cl
   const nodeModules = path.dirname(path.dirname(path.dirname(shadowing[0].target)));
   const lib = path.dirname(nodeModules);
   const fix = path.basename(nodeModules) === 'node_modules' && path.basename(lib) === 'lib'
-    ? `npm uninstall --global ${FULI_PACKAGE_NAME} --prefix ${path.dirname(lib)}`
+    ? `npm uninstall --global ${FULI_PACKAGE_NAME} --prefix ${quoteShellArgument(path.dirname(lib), platform)}`
     : 'remove that installation';
   return [
     ...shadowing.map(({ command, path: launcher, version, target: other }) =>
@@ -65,6 +66,17 @@ export function formatShadowedLaunchers(installation, { target = installation.cl
     'Shells that run the bare command get that version; client hooks and MCP use absolute paths and are not affected.',
     `To fix: ${fix}${own ? `, or put ${path.dirname(own.path)} first in PATH` : ''}.`
   ].join('\n');
+}
+
+// A shell skips a launcher it cannot execute, so only runnable ones can shadow another.
+function isExecutable(launcher, platform) {
+  if (platform === 'win32') return true;
+  try {
+    accessSync(launcher, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function formatUpdateInstallation(installation, { nodePath, npmCommand }) {

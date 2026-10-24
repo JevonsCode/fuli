@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import {
@@ -9,6 +9,7 @@ import {
   inspectUpdateInstallation,
   updateEnvironment
 } from '../src/cli/update-installation.js';
+import { quoteShellArgument } from '../src/cli/shell-argument.js';
 import { requiresSymlinks } from '../test-support/platform-capabilities.js';
 
 test('update identifies duplicate PATH launchers without executing them', requiresSymlinks, () => {
@@ -51,27 +52,33 @@ test('setup and update name an older installation that shadows the bare command 
       mkdirSync(join(root, 'src'), { recursive: true });
       mkdirSync(join(dir, prefix, 'bin'), { recursive: true });
       writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'fuli-context', version }));
-      writeFileSync(join(root, 'src/cli.js'), 'throw new Error("must not execute");');
+      writeFileSync(join(root, 'src/cli.js'), 'throw new Error("must not execute");', { mode: 0o755 });
       for (const name of ['fl', 'fuli']) symlinkSync(join(root, 'src/cli.js'), join(dir, prefix, 'bin', name));
       return { bin: join(dir, prefix, 'bin'), cli: join(root, 'src/cli.js') };
     };
-    const old = install('old', '0.12.4');
+    // A prefix with a space and a quote must stay one argument in the printed command.
+    const old = install("old prefix's", '0.12.4');
     const current = install('current', '0.20.0-beta.10');
     const shadowed = formatShadowedLaunchers(
       inspectUpdateInstallation({ env: { PATH: [old.bin, current.bin].join(delimiter) } }), { target: current.cli });
     assert.match(shadowed, /`fl` on PATH is another Fuli installation: .*-> 0\.12\.4/);
     assert.match(shadowed, /`fuli` on PATH is another Fuli installation/);
     assert.match(shadowed, /client hooks and MCP use absolute paths/);
-    assert.ok(shadowed.includes(`npm uninstall --global fuli-context --prefix ${join(dir, 'old')}`));
+    assert.ok(shadowed.includes(`npm uninstall --global fuli-context --prefix ${quoteShellArgument(join(dir, "old prefix's"))}`));
     assert.ok(shadowed.includes(`put ${current.bin} first in PATH`));
 
     assert.equal(formatShadowedLaunchers(
       inspectUpdateInstallation({ env: { PATH: [current.bin, old.bin].join(delimiter) } }), { target: current.cli }), null);
 
+    // A shell skips a launcher it cannot execute, so a non-executable old CLI shadows nothing.
+    chmodSync(old.cli, 0o644);
+    assert.equal(formatShadowedLaunchers(
+      inspectUpdateInstallation({ env: { PATH: [old.bin, current.bin].join(delimiter) } }), { target: current.cli }), null);
+
     // A wrapper that is not a recognized Fuli entry point is never guessed at.
     const other = join(dir, 'other');
     mkdirSync(other);
-    writeFileSync(join(other, 'fl'), '#!/bin/sh\nexit 99\n');
+    writeFileSync(join(other, 'fl'), '#!/bin/sh\nexit 99\n', { mode: 0o755 });
     assert.equal(formatShadowedLaunchers(
       inspectUpdateInstallation({ env: { PATH: [other, current.bin].join(delimiter) } }), { target: current.cli }), null);
   } finally {

@@ -54,11 +54,17 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
   const inspectInstallation = dependencies.inspectInstallation ?? inspectUpdateInstallation;
   const installation = inspectInstallation({ env: originalEnv, platform });
   write(formatUpdateInstallation(installation, { nodePath, npmCommand }));
+  // Judged on the person's own PATH, not the update's, which puts this Node first.
+  const writeShadowed = (inspected, target = inspected.cliPath) => {
+    const shadowed = formatShadowedLaunchers(inspected, { target, platform });
+    if (shadowed) write(shadowed);
+  };
   const latestVersion = resolveLatestVersion();
   const comparison = compareSemanticVersions(latestVersion, FULI_VERSION);
   if (comparison === 0) {
     const result = { status: 'current', previousVersion: FULI_VERSION, version: FULI_VERSION };
     write(formatUpdateResult(result));
+    writeShadowed(installation);
     return result;
   }
   if (comparison < 0) {
@@ -69,6 +75,7 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
       latestVersion
     };
     write(formatUpdateResult(result));
+    writeShadowed(installation);
     return result;
   }
 
@@ -154,9 +161,7 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
     version
   };
   write(formatUpdateResult(result));
-  // Judge the person's own PATH, not the update's, which puts this Node first.
-  const shadowed = formatShadowedLaunchers(inspectInstallation({ env: originalEnv, platform }), { target: cliPath, platform });
-  if (shadowed) write(shadowed);
+  writeShadowed(inspectInstallation({ env: originalEnv, platform }), cliPath);
   if (options.skipAgents) {
     write('Existing conversations may still use the previous MCP process. Reconnect Fuli in your client or restart the client, then open a new task. Running conversations were not restarted automatically.');
   }

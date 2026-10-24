@@ -368,5 +368,19 @@ test('update warns when an older installation shadows the bare command on the pe
   assert.deepEqual(inspected, ['/test/bin', '/test/bin']);
   const text = output.join('\n');
   assert.match(text, /`fl` on PATH is another Fuli installation: \/old\/bin\/fl -> 0\.12\.4/);
-  assert.match(text, /npm uninstall --global fuli-context --prefix \/old/);
+  assert.match(text, /npm uninstall --global fuli-context --prefix '\/old'/);
+});
+
+test('an already-current update still names an installation that shadows the bare command', async () => {
+  const output = [];
+  await runUpdateCommand([], {
+    platform: 'linux',
+    inspectInstallation: () => ({
+      cliPath: '/test/package/src/cli.js',
+      launchers: [{ path: '/old/bin/fl', target: '/old/lib/node_modules/fuli-context/src/cli.js', version: '0.12.4' }]
+    }),
+    resolveLatestVersion: () => FULI_VERSION,
+    write: (line) => output.push(line)
+  });
+  assert.match(output.join('\n'), /`fl` on PATH is another Fuli installation: \/old\/bin\/fl -> 0\.12\.4/);
 });
