@@ -241,6 +241,18 @@ test('a first save whose record was lost leaves its earlier changes marked as no
   assert.deepEqual(s.history.list({ role: 'bole' }).map(entry => entry.kind), ['settings', 'earlier_changes_not_recorded']);
 });
 
+test('a role created while recording has no earlier changes, whatever existed before for other roles', (t) => {
+  const s = stores(t);
+  // Bole was configured before recording began; the first record is a change of Bole.
+  writeFileSync(s.configPath, JSON.stringify({ version: 1, connections: { 'local-qwen': edit().connection },
+    roles: { bole: { ...edit().settings, connection: 'local-qwen' } } }));
+  s.settings.save('bole', edit({ revision: s.revision(), settings: { ...edit().settings, fallbackToSession: true } }));
+  // Jefa is created later, recorded from the start, on its own connection.
+  s.settings.save('jefa', edit({ revision: s.revision(), connectionId: 'jefa-local' }));
+  assert.deepEqual(s.history.list({ role: 'jefa' }).map(entry => entry.kind), ['settings']);
+  assert.deepEqual(s.history.list({ role: 'bole' }).map(entry => entry.kind), ['settings', 'earlier_changes_not_recorded']);
+});
+
 test('a save whose record failed shows as a break between the records around it', (t) => {
   const s = stores(t);
   s.settings.save('bole', edit());

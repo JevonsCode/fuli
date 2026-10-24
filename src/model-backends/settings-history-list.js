@@ -12,8 +12,9 @@ import { configRevision } from './config.js';
 // baseline). Where a chain breaks, an unrecorded_gap marker sits between the
 // two records; when the current file or a role's trust revision is past the
 // latest record, an unrecorded_changes marker is on top. A role whose
-// settings existed before the first recorded save, or whose trust changed
-// before the store began, ends with earlier_changes_not_recorded.
+// settings existed before its own earliest record, or whose trust changed
+// before the store began, ends with earlier_changes_not_recorded; a role
+// created while recording does not.
 //
 // Order: one total order, whatever order the rows come in. By the time of
 // the change; at one time, by rowid (settings rows are appended under the
@@ -37,13 +38,20 @@ export function historyEntries({ stored, roles, role, baseline, loaded, limit, r
   const ahead = (settings.latest !== undefined && settings.latest !== configRevision(loaded))
     || roles.some((each, index) => readTrustRevision(each) > trust[index].latest);
   if (ahead) entries.unshift({ kind: 'unrecorded_changes', changedAt: null, role });
-  const configured = loaded.state === 'ok' && roles.some(each => Object.hasOwn(loaded.config.roles, each));
-  const hasSettings = rows.some(row => row.kind === 'settings' && roles.includes(row.role));
-  const earlierSettings = (configured || hasSettings) && (!hasSettings || settings.first !== null);
-  if (earlierSettings || trust.some(chain => chain.earlier)) {
+  if (roles.some(each => earlierSettings(rows, each, loaded)) || trust.some(chain => chain.earlier)) {
     entries.push({ kind: 'earlier_changes_not_recorded', changedAt: null, role });
   }
   return entries.filter((entry, index) => entry !== gap || entries[index - 1] !== gap);
+}
+
+// Whether a role's settings changed before any of its changes was recorded:
+// it is configured with no settings row, or its earliest row shows it
+// already existed (a role is created with settings.enabled, which every
+// existing role has, so a created role's row has it from null).
+function earlierSettings(rows, role, loaded) {
+  const earliest = rows.find(row => row.kind === 'settings' && row.role === role);
+  if (!earliest) return loaded.state === 'ok' && Object.hasOwn(loaded.config.roles, role);
+  return !JSON.parse(earliest.changes).some(change => change.field === 'settings.enabled' && change.before === null);
 }
 
 // A settings row sorts at its save's place, the saved role's row first.
@@ -58,9 +66,8 @@ function rowItem(row, placeOf) {
 
 // The recorded saves in order (the rows of one save are appended together
 // and share its time and revisions): each row's save and place in the order
-// (within half a rowid above its save's first, the saved role first), where
-// the first save started from, what the latest left, and where one does not
-// start from what the one before it left.
+// (within half a rowid above its save's first, the saved role first), what
+// the latest left, and where one does not start from what the one before it left.
 function settingsChain(rows) {
   const saves = [];
   for (const row of rows.filter(each => each.kind === 'settings')) {
@@ -71,7 +78,7 @@ function settingsChain(rows) {
   const placeOf = new Map(saves.flatMap((save, index) => [...save.rows]
     .sort((a, b) => (a.via === null) - (b.via === null) || b.seq - a.seq)
     .map((row, rank) => [row.seq, { save: index, seq: save.seq + (rank + 1) / (2 * (save.rows.length + 1)) }])));
-  return { placeOf, first: saves[0]?.from ?? null, latest: saves.at(-1)?.to,
+  return { placeOf, latest: saves.at(-1)?.to,
     breaks: saves.slice(1).filter((save, index) => save.from !== saves[index].to)
       .map(save => ({ at: save.at, seq: save.seq - 0.5, role: null, revision: null })) };
 }

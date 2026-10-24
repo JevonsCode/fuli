@@ -41,6 +41,7 @@ const openedFromSettings = /^\/settings(?:[?#]|$)/
 const projects = computed(() => store.state?.personalProjects ?? [])
 const locale = computed(() => currentLocale())
 
+// Whether the settings were read.
 async function load() {
   reading?.abort()
   reading = new AbortController()
@@ -48,8 +49,10 @@ async function load() {
   loadError.value = ''
   try {
     payload.value = await readModelRoles(reading.signal)
+    return true
   } catch (cause) {
     if ((cause as Error)?.name !== 'AbortError') loadError.value = apiErrorReason(cause)
+    return false
   } finally {
     loading.value = false
   }
@@ -63,25 +66,31 @@ function edit(role: ModelRoleId) {
 
 // A save whose change could not be written to the change history says so (rec#11 D-42).
 const historyNote = (next: ModelRolesPayload) => (next.history === 'not_recorded' ? t('modelSettings.history.notRecorded') : '')
-// Bumped by every change this page saves, so an open change history reads again.
+// Bumped whenever the page has the settings after a change, so an open change history reads again.
 const historyVersion = ref(0)
 
-function saved(next: ModelRolesPayload) {
+// The settings or a role's execution mode changed: saved here (next), or
+// elsewhere and read again. Every change path ends here.
+async function settingsChanged(next?: ModelRolesPayload) {
+  if (next) payload.value = next
+  else if (!await load()) return
   historyVersion.value += 1
+}
+
+function saved(next: ModelRolesPayload) {
   notice.value = [t('modelSettings.saved', { name: roleName(editing.value!) }), historyNote(next)].filter(Boolean).join(' ')
-  payload.value = next
   editing.value = null
+  void settingsChanged(next)
 }
 
 // A changed file closes the form; one that stopped validating keeps it open,
 // read again and locked, until the file is repaired.
 async function conflict(code: ConfigConflict) {
-  historyVersion.value += 1
   if (code === 'model_config_changed') {
     editing.value = null
     stale.value = true
   }
-  await load()
+  await settingsChanged()
 }
 
 const count = (value: number) => formatCount(value, locale.value)
@@ -128,9 +137,8 @@ function trustFact(view: ModelRoleView): Fact[] {
 }
 
 function trustSaved(next: ModelRolesPayload) {
-  historyVersion.value += 1
   notice.value = historyNote(next)
-  payload.value = next
+  void settingsChanged(next)
 }
 
 // Rows open on demand; a role that waits for the person (a warning not yet
@@ -207,7 +215,7 @@ onBeforeUnmount(() => {
                   </div>
                 </dl>
                 <ModelRoleTrust v-if="view.trust && showsTrust(view)" :role="view.role" :trust="view.trust"
-                  :model="view.connection?.model ?? null" @saved="trustSaved" @changed="load" />
+                  :model="view.connection?.model ?? null" @saved="trustSaved" @changed="settingsChanged()" />
                 <ModelRoleHistory :role="view.role" :version="historyVersion" />
                 <footer class="model-role-actions">
                   <Button variant="outline" size="sm" :disabled="payload.state === 'invalid'" data-model-role-edit
