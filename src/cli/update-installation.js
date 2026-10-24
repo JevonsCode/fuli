@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, readFileSync, realpathSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FULI_PACKAGE_NAME, FULI_VERSION } from '../package-metadata.js';
 import { platformPath } from '../system/platform-path.js';
@@ -69,11 +69,12 @@ export function formatShadowedLaunchers(installation, { target = installation.cl
 }
 
 // A shell skips a launcher it cannot execute, so only runnable ones can shadow another.
+// Directories carry the execute bit too, so the (followed) target must be a file.
 function isExecutable(launcher, platform) {
   if (platform === 'win32') return true;
   try {
     accessSync(launcher, constants.X_OK);
-    return true;
+    return statSync(launcher).isFile();
   } catch {
     return false;
   }
