@@ -277,3 +277,24 @@ test('a missing binding FULI supplies itself stays internal_error, never invalid
     assert.equal(errorToolResult(thrown).structuredContent.error.code, 'internal_error', name);
   }
 });
+
+// dot's review of fuli#365: a registration's project and lead are bindings in
+// every bad form, not only when absent; a preview's are the caller's input.
+test('a registration\'s bad project or lead binding is internal_error; a preview\'s bad input stays invalid_input', async (t) => {
+  const assignments = createStandingAssignments();
+  t.after(() => assignments.close());
+  const request = { personalSpaceId: 'space', projectId: 'project', leadAgentId: 'lead', terms: ['synthetic term'],
+    responsibility: 'synthetic work', source: 'user' };
+  const code = (call) => {
+    try { call(); } catch (error) { return errorToolResult(error).structuredContent.error.code; }
+    return 'no error';
+  };
+  for (const field of ['projectId', 'leadAgentId']) {
+    for (const [form, value] of [['empty', ''], ['whitespace', '   '], ['wrong type', 42], ['too long', 'x'.repeat(201)]]) {
+      assert.equal(code(() => assignments.register({ ...request, [field]: value })), 'internal_error', `${field} ${form}`);
+    }
+    assert.equal(code(() => assignments.preview({ ...request, [field]: '   ' })), 'invalid_input', `preview ${field}`);
+    assert.equal(code(() => assignments.preview({ ...request, [field]: null })), 'no error', `preview without ${field}`);
+  }
+  assert.equal(code(() => assignments.preview({ ...request, terms: [''] })), 'invalid_input', 'preview terms');
+});

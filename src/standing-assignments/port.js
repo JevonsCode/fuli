@@ -50,10 +50,12 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   }
 
   function register(input) {
+    // The project and lead the confirmation found or just created, not the
+    // caller's: checked as bindings before registration() reads them as the
+    // nullable input a preview takes, so no form of a bad one is invalid_input.
+    requiredBinding(input?.projectId, 'projectId', ID_LIMIT);
+    requiredBinding(input?.leadAgentId, 'leadAgentId', ID_LIMIT);
     const request = registration(input);
-    // The project and lead the confirmation found or just created, not the caller's.
-    requiredBinding(request.projectId, 'projectId');
-    requiredBinding(request.leadAgentId, 'leadAgentId');
     return store.transaction(() => {
       const { status, current, added, preferenceIds, confirms } = decide(request);
       if (status === 'unchanged') return { status, assignment: current };
