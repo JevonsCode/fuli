@@ -55,7 +55,7 @@ export const TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE = Object.freeze({
   scope:
     'Search only the exact active personal project, its explicitly inheritable knowledge, and the bounded personal-global profile.',
   candidate_selection:
-    'Treat automatic matches as candidates. Cite only items that materially support the task; if all are irrelevant, use noMatchSourceMarker.'
+    'Treat automatic matches as candidates. Cite only items that materially support the task; if all are irrelevant, use noMatchSourceMarker. A recall without markers ran no search: show no marker.'
 });
 
 export function planTaskKnowledgeRecall(taskPrompt) {

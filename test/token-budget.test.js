@@ -124,11 +124,15 @@ const BASELINE = Object.freeze({
   // rec#15 D-27.8: the same remember constraint/workKind/tasteDomain, 8,311 -> 8,426 B
   // (+115 B), measured bytes from the real tools/list.
   chatToolSchemaBytes: 8426,
-  instructionsBytes: 2041,
+  // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
+  // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
+  // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.
+  instructionsBytes: 2048,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
   // P6: keep the new chat instructions conditional, 1,251 -> 1,238 B.
-  chatInstructionsBytes: 1238,
+  // rec#51: the same " if searched", 1,238 -> 1,250 B (+12 B), measured.
+  chatInstructionsBytes: 1250,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.
