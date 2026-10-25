@@ -61,6 +61,18 @@ test('negated delivery instructions do not recall a release runbook', () => {
     .trigger_categories.includes('release_delivery'));
 });
 
+test('comma-separated negated actions and relative where do not trigger recall', () => {
+  for (const prompt of ['Do not commit, push, or create branches',
+    'WSL Ubuntu, where `node` is installed']) {
+    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories, [], prompt);
+  }
+  for (const prompt of ['Where is the deploy runbook?', 'Can you find where config.json is loaded?']) {
+    assert.ok(planTaskKnowledgeRecall(prompt).trigger_categories.includes('artifact_location'), prompt);
+  }
+  assert.ok(planTaskKnowledgeRecall('push this to production')
+    .trigger_categories.includes('release_delivery'));
+});
+
 test('self-contained workflow optimization does not trigger generic runbook recall', () => {
   const prompt = '分析并优化 Analytics Dashboard Builder 的搭建、局部修改与询问速度和流程，测试 model-k3 可行性；禁止提交代码。';
   const plan = planTaskKnowledgeRecall(prompt);
