@@ -5,16 +5,20 @@ import { join } from 'node:path';
 // own Bun process through the file FULI setup writes into OpenCode's plugins
 // directory (plugin-file.js), so this module imports Node built-ins only.
 // Each event starts FULI's lifecycle hook (lifecycle-hook.js) with FULI's
-// Node, as the Claude Code and Codex hooks are started:
-// - `prompt` (session.hook "prompt", at prompt admission) begins the task and
-//   keeps its entry; the person's prompt text is never changed;
-// - `context` (before each model request of that turn, not persisted) adds the
-//   entry as system text;
-// - the turn's close, as a Stop hook: on `session.execution.succeeded`, or
-//   when OpenCode unloads the plugin with the turn still open and the session
-//   recorded a successful execution since the prompt. A failed or interrupted
-//   execution closes nothing, as an interrupted Claude Code or Codex turn runs
-//   no Stop hook; its task stays open for the next entry. Each turn closes once.
+// Node, as the Claude Code and Codex hooks are started. A turn is one prompt
+// of the person:
+// - `prompt` (session.hook "prompt", at prompt admission) begins its task and
+//   keeps its entry; the person's prompt text is never changed. A prompt
+//   queued behind a running turn (delivery "queue") begins only when OpenCode
+//   delivers it (session.inbox.delivered), after the turn before it closed;
+// - `context` (before each model request, not persisted) adds the entry of
+//   the session's current turn as system text;
+// - the turn's close, as a Stop hook: on `session.execution.succeeded`, when
+//   the next prompt of its session is delivered, or when OpenCode unloads the
+//   plugin with the turn still open and the session recorded a successful
+//   execution since the prompt. A failed or interrupted execution closes
+//   nothing, as an interrupted Claude Code or Codex turn runs no Stop hook; its
+//   task stays open for the next entry. Each turn closes once.
 // Every path fails open: FULI slow, down or broken never blocks or crashes
 // OpenCode, and adds at most one line for that turn.
 //
@@ -24,7 +28,7 @@ import { join } from 'node:path';
 // plugin scope runs this plugin's cleanup (plugin/src/promise/adapter.ts),
 // and its own children are stopped with it (SIGTERM, then a kill after 3 s).
 // So a close runs detached from OpenCode's process group, holds nothing open,
-// and unload only waits until its input is handed over.
+// and unload only waits until each close's input is handed over.
 
 export const OPENCODE_LIFECYCLE_MARKER = '--fuli-opencode-lifecycle';
 const OPENCODE_PLUGIN_ID = 'fuli';
@@ -34,8 +38,11 @@ const OPENCODE_PLUGIN_ID = 'fuli';
 const KILL_GRACE_MS = 1500;
 // A close is short work; the next prompt of the session waits for it.
 const STOP_TIMEOUT_MS = 5_000;
-// What unload may spend: reading a session's outcome, handing a close its input.
-const UNLOAD_LOOKUP_MS = 300;
+// Below this, an entry cannot finish and is not started.
+const MIN_ENTRY_MS = 1_000;
+// Reading a session (child or not, its directory, its outcome) is bounded so
+// admission stays inside the pack's timeout and unload stays short.
+const SESSION_LOOKUP_MS = 300;
 const UNLOAD_HANDOFF_MS = 1_000;
 // Session idle times come from OpenCode's clock in this same process; this
 // absorbs rounding to the millisecond it records.
@@ -45,11 +52,11 @@ const MAX_ANSWER_BYTES = 512 * 1024;
 const MAX_PROMPT_CHARS = 8192;
 const TERMINAL_EVENTS = Object.freeze(['session.execution.succeeded', 'session.execution.failed',
   'session.execution.interrupted']);
+const DELIVERED_EVENT = 'session.inbox.delivered';
 
 export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, events, timeoutMs },
   { runHook = spawnHook, now = Date.now } = {}) {
   const wanted = new Set(events);
-  const stopLimitMs = Math.min(timeoutMs, STOP_TIMEOUT_MS);
   const run = (event, input, limitMs, extra = {}) => runHook({ command: nodePath, input, killAfterMs: limitMs + KILL_GRACE_MS,
     args: [hookPath, OPENCODE_LIFECYCLE_MARKER, '--runtime-config', runtimeConfigPath, '--event', event,
       '--timeout-ms', String(limitMs)], ...extra });
@@ -58,68 +65,125 @@ export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, even
     async setup(ctx) {
       // An OpenCode without the V2 session hooks gets nothing, not a crash.
       if (typeof ctx?.session?.hook !== 'function') return undefined;
-      const entries = new Map();
-      // The open turn of each session: its message and when it was admitted.
-      const open = new Map();
+      // Per session: the turn whose requests run now, and prompts queued behind it.
+      const sessions = new Map();
+      const handoffs = new Set();
       const queue = sessionQueue();
-      // Takes the session's open turn, so no later path can close it again.
-      const closeTurn = (sessionID, { onSent } = {}) => {
-        if (!open.delete(sessionID)) return null;
-        if (!wanted.has('execution.succeeded')) return null;
-        return queue(sessionID, () => run('stop', { session_id: sessionID }, stopLimitMs, { detached: true, onSent }))
-          .catch(() => {});
+      const stateOf = (sessionID) => {
+        if (!sessions.has(sessionID)) sessions.set(sessionID, { active: null, waiting: [] });
+        return sessions.get(sessionID);
       };
-      if (wanted.has('prompt')) {
-        await ctx.session.hook('prompt', async (event) => {
-          try {
-            const sessionID = event?.sessionID;
-            const text = event?.prompt?.text;
-            if (typeof sessionID !== 'string' || typeof text !== 'string') return;
-            const session = await sessionInfo(ctx, sessionID);
-            // A subagent's child session belongs to its parent's task.
-            if (session?.parentID) return;
-            entries.delete(sessionID);
-            open.set(sessionID, { messageID: event.messageID, admittedAt: now() });
-            const answer = await queue(sessionID, () => run('prompt', { session_id: sessionID,
-              message_id: event.messageID, cwd: workingDirectory(session, ctx), prompt: text.slice(0, MAX_PROMPT_CHARS) },
-            timeoutMs));
-            entries.set(sessionID, typeof answer?.context === 'string' && answer.context.trim()
-              ? answer.context : unavailableNotice(answer?.cause));
-          } catch {
-            // Never block or crash OpenCode; this turn runs without FULI.
-          }
+
+      // Starts the turn's entry behind anything the session's hooks still run,
+      // within what is left of the time since its admission.
+      const begin = (sessionID, turn) => {
+        sessions.get(sessionID).active = turn;
+        turn.entry = queue(sessionID, async () => {
+          const limitMs = timeoutMs - (now() - turn.admittedAt);
+          if (limitMs < MIN_ENTRY_MS) return { cause: `no answer within ${timeoutMs} ms` };
+          return run('prompt', { session_id: sessionID, message_id: turn.messageID, cwd: turn.cwd,
+            prompt: turn.text }, limitMs);
+        }).then((answer) => typeof answer?.context === 'string' && answer.context.trim()
+          ? answer.context : unavailableNotice(answer?.cause), () => unavailableNotice());
+        return turn.entry;
+      };
+      // Each turn closes once, after its own entry and before the next one.
+      const close = (sessionID, turn) => {
+        if (turn.closed) return;
+        turn.closed = true;
+        if (!wanted.has('execution.succeeded')) return;
+        const handoff = new Promise((resolve) => {
+          queue(sessionID, () => run('stop', { session_id: sessionID }, Math.min(timeoutMs, STOP_TIMEOUT_MS),
+            { detached: true, onSent: resolve })).catch(() => {}).finally(resolve);
         });
-      }
-      await ctx.session.hook('context', (event) => {
-        const text = entries.get(event?.sessionID);
-        if (text && Array.isArray(event.system)) event.system.push({ type: 'text', text });
-      });
+        handoffs.add(handoff);
+        void handoff.finally(() => handoffs.delete(handoff));
+      };
+      // The session's next turn: the prompt OpenCode delivered (or the oldest
+      // queued one), which ends the turn before it.
+      const deliver = (sessionID, messageID) => {
+        const state = sessions.get(sessionID);
+        const index = messageID === undefined ? 0 : state?.waiting.findIndex((turn) => turn.messageID === messageID);
+        if (!state || index < 0 || index >= state.waiting.length) return null;
+        const [turn] = state.waiting.splice(index, 1);
+        // Its time runs from now, not from when it was queued.
+        turn.admittedAt = now();
+        if (state.active) close(sessionID, state.active);
+        return begin(sessionID, turn);
+      };
+
+      const registrations = [];
       const controller = new AbortController();
-      void (async () => {
-        for await (const item of ctx.event.subscribe({ signal: controller.signal })) {
-          const sessionID = item?.data?.sessionID;
-          if (!TERMINAL_EVENTS.includes(item?.type)) continue;
-          entries.delete(sessionID);
-          if (item.type === 'session.execution.succeeded') closeTurn(sessionID);
-          else open.delete(sessionID);
+      try {
+        if (wanted.has('prompt')) {
+          registrations.push(await ctx.session.hook('prompt', async (event) => {
+            try {
+              const sessionID = event?.sessionID;
+              const text = event?.prompt?.text;
+              if (typeof sessionID !== 'string' || typeof text !== 'string') return;
+              const admittedAt = now();
+              const session = await bounded(sessionInfo(ctx, sessionID), SESSION_LOOKUP_MS);
+              // A subagent's child session belongs to its parent's task.
+              if (session?.parentID) return;
+              const state = stateOf(sessionID);
+              const turn = { messageID: event.messageID, admittedAt, cwd: workingDirectory(session, ctx),
+                text: text.slice(0, MAX_PROMPT_CHARS), entry: null, closed: false };
+              // Queued behind the running turn: it begins when OpenCode delivers it.
+              if (state.active && !state.active.closed && event.delivery === 'queue') {
+                state.waiting.push(turn);
+                return;
+              }
+              if (state.active) close(sessionID, state.active);
+              await begin(sessionID, turn);
+            } catch {
+              // Never block or crash OpenCode; this turn runs without FULI.
+            }
+          }));
         }
-      })().catch(() => {
-        // Without the event stream a turn closes at unload; the next entry reports others.
-      });
+        registrations.push(await ctx.session.hook('context', async (event) => {
+          try {
+            const state = sessions.get(event?.sessionID);
+            if (!state || !Array.isArray(event.system)) return;
+            // No delivery seen for a queued prompt: the next execution is its turn.
+            if (!state.active && state.waiting.length) deliver(event.sessionID);
+            const text = await state.active?.entry;
+            if (text) event.system.push({ type: 'text', text });
+          } catch {
+            // The request goes out without FULI's entry.
+          }
+        }));
+        const stream = ctx.event.subscribe({ signal: controller.signal });
+        void (async () => {
+          for await (const item of stream) {
+            const sessionID = item?.data?.sessionID;
+            const state = sessions.get(sessionID);
+            if (!state) continue;
+            if (item.type === DELIVERED_EVENT) deliver(sessionID, item.data.inboxID);
+            if (!TERMINAL_EVENTS.includes(item.type) || !state.active) continue;
+            if (item.type === 'session.execution.succeeded') close(sessionID, state.active);
+            state.active = null;
+          }
+        })().catch(() => {
+          // Without the event stream a turn closes at unload; the next entry reports others.
+        });
+      } catch {
+        // A hook OpenCode refused leaves the plugin inactive, not OpenCode broken.
+        controller.abort();
+        await Promise.allSettled(registrations.map((registration) => registration?.dispose?.()));
+        return undefined;
+      }
       return async () => {
         controller.abort();
         // A turn still open at unload closes when its session went idle after
         // a successful execution since the prompt, or when OpenCode can no
         // longer say: it is over either way, as with a Stop hook at exit.
-        const turns = [...open];
-        const closing = await Promise.all(turns.map(async ([sessionID, turn]) => {
-          const session = await bounded(sessionInfo(ctx, sessionID), UNLOAD_LOOKUP_MS);
-          if (session && !succeededSince(session, turn.admittedAt)) return null;
-          return new Promise((resolve) => {
-            if (!closeTurn(sessionID, { onSent: resolve })) resolve();
-          });
+        await Promise.all([...sessions].map(async ([sessionID, { active }]) => {
+          if (!active || active.closed) return;
+          const session = await bounded(sessionInfo(ctx, sessionID), SESSION_LOOKUP_MS);
+          if (!session || succeededSince(session, active.admittedAt)) close(sessionID, active);
         }));
-        await bounded(Promise.all(closing), UNLOAD_HANDOFF_MS);
+        // Closes handed off by a success event and by unload alike.
+        await bounded(Promise.all([...handoffs]), UNLOAD_HANDOFF_MS);
       };
     }
   };
