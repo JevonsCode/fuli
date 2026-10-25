@@ -2,15 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
 
-import { ApplicationError } from '../src/app/application-error.js';
+import { ApplicationError, InvalidInputError } from '../src/app/application-error.js';
 import {
   beginTaskContext,
   checkpointTaskKnowledge
 } from '../src/graphiti/agent-knowledge-workflows.js';
 import { ProviderRequestError } from '../src/graphiti/provider-client.js';
 import { resolvePersonalProjectPath } from '../src/graphiti/project-path-context.js';
+import { setSessionCapturePause } from '../src/graphiti/session-capture-pause-request.js';
+import { switchSessionFuli } from '../src/graphiti/session-fuli-switch.js';
+import { readOwnSessionRecords } from '../src/graphiti/session-records.js';
 import { errorToolResult } from '../src/mcp/tool-result.js';
-import { assertJsonObject, positiveInteger, requiredString, uniqueTextArray } from '../src/validation/values.js';
+import { createStandingAssignments } from '../src/standing-assignments/port.js';
+import { assertJsonObject, positiveInteger, requiredBinding, requiredString, uniqueTextArray } from '../src/validation/values.js';
 import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
 
 // Issue source: WZ.
@@ -196,16 +200,19 @@ test('checkpoint continuation mismatches are controlled validation errors', asyn
 // rec#48: a caller's wrong argument reaches the Agent as a typed code with what
 // to pass, so it can correct the call; a genuine failure stays opaque.
 test('a missing native projectPath reports invalid_input with guidance and no path', () => {
-  const missing = 'C:\Users\synthetic-person\missing-project';
+  const missing = 'C:\\Users\\synthetic-person\\missing-project';
+  assert.ok(path.win32.isAbsolute(missing), 'the path is absolute, so only its existence can fail');
+  const probed = [];
   let thrown;
   try {
     resolvePersonalProjectPath(missing, [{ project_id: 'fuli' }], {
-      fileExists: () => false, isDirectory: () => false, realPath: (candidate) => candidate,
-      readText: () => '', pathApi: path.win32
+      fileExists: (candidate) => { probed.push(candidate); return false; }, isDirectory: () => false,
+      realPath: (candidate) => candidate, readText: () => '', pathApi: path.win32
     });
   } catch (error) {
     thrown = error;
   }
+  assert.deepEqual(probed, [missing], 'the directory-does-not-exist check is what refused it');
   assert.ok(thrown instanceof TypeError, 'callers that catch TypeError keep working');
   const result = errorToolResult(thrown);
   assert.equal(result.isError, true);
@@ -240,4 +247,54 @@ test('a genuine internal TypeError stays internal_error', () => {
     assert.equal(result.structuredContent.error.code, 'internal_error');
     assert.equal(result.structuredContent.error.message, 'Tool execution failed');
   }
+});
+
+// dot's review of fuli#363: a value FULI binds itself (its personal space, the
+// host session of a hook or MCP process, a task's stored session, the project
+// and lead a confirmation created) is no argument the caller could correct.
+// Missing, it is FULI's fault: internal_error, never invalid_input.
+test('a missing binding FULI supplies itself stays internal_error, never invalid_input', async (t) => {
+  const assignments = createStandingAssignments();
+  t.after(() => assignments.close());
+  const unbound = [
+    ['requiredBinding', () => requiredBinding(undefined, 'personalSpaceId')],
+    ['a task without its stored host session', () => setSessionCapturePause({ taskContextRegistry: {
+      context: async () => ({ token: 'fuli-task-synthetic', sessionId: null, sourceApplication: 'codex' }) } },
+    { taskContextToken: 'fuli-task-synthetic', sessionPaused: true })],
+    ['session records without the MCP process client', () => readOwnSessionRecords({ taskContextRegistry: {
+      context: async () => assert.fail('nothing is read without the client binding') } }, { taskContextToken: 'fuli-task-synthetic' })],
+    ['a session switch without the host session', () => switchSessionFuli({}, { sessionId: null, sourceApplication: 'codex',
+      action: 'status' })],
+    ['standing assignments without FULI\'s personal space', () => assignments.list(undefined)],
+    ['a registration without the lead its confirmation hired', () => assignments.register({ personalSpaceId: 'space',
+      projectId: 'project', leadAgentId: null, terms: ['synthetic term'], responsibility: 'synthetic work', source: 'user' })]
+  ];
+  for (const [name, call] of unbound) {
+    let thrown;
+    try { await call(); } catch (error) { thrown = error; }
+    assert.ok(thrown instanceof TypeError, name);
+    assert.equal(thrown instanceof InvalidInputError, false, `${name} is not the caller's input`);
+    assert.equal(errorToolResult(thrown).structuredContent.error.code, 'internal_error', name);
+  }
+});
+
+// dot's review of fuli#365: a registration's project and lead are bindings in
+// every bad form, not only when absent; a preview's are the caller's input.
+test('a registration\'s bad project or lead binding is internal_error; a preview\'s bad input stays invalid_input', async (t) => {
+  const assignments = createStandingAssignments();
+  t.after(() => assignments.close());
+  const request = { personalSpaceId: 'space', projectId: 'project', leadAgentId: 'lead', terms: ['synthetic term'],
+    responsibility: 'synthetic work', source: 'user' };
+  const code = (call) => {
+    try { call(); } catch (error) { return errorToolResult(error).structuredContent.error.code; }
+    return 'no error';
+  };
+  for (const field of ['projectId', 'leadAgentId']) {
+    for (const [form, value] of [['empty', ''], ['whitespace', '   '], ['wrong type', 42], ['too long', 'x'.repeat(201)]]) {
+      assert.equal(code(() => assignments.register({ ...request, [field]: value })), 'internal_error', `${field} ${form}`);
+    }
+    assert.equal(code(() => assignments.preview({ ...request, [field]: '   ' })), 'invalid_input', `preview ${field}`);
+    assert.equal(code(() => assignments.preview({ ...request, [field]: null })), 'no error', `preview without ${field}`);
+  }
+  assert.equal(code(() => assignments.preview({ ...request, terms: [''] })), 'invalid_input', 'preview terms');
 });

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { displayName, identityKey } from '../text/name-identity.js';
-import { requiredString, uniqueTextArray } from '../validation/values.js';
+import { requiredBinding, requiredString, uniqueTextArray } from '../validation/values.js';
 import { StandingAssignmentStore } from './store.js';
 import { termOccurs, termsOverlap } from './term-match.js';
 
@@ -19,7 +19,8 @@ import { termOccurs, termsOverlap } from './term-match.js';
 // Responsibility and lead are kept as first registered; the person changes
 // the lead or project with a reassignment, the terms with an edit or ends the
 // assignment with a retirement (rec#29 F5), each a new revision. Global
-// preferences are only referenced by ID (D-5).
+// preferences are only referenced by ID (D-5). The personal space is always
+// FULI's own (config), never an argument a caller sent.
 
 const ID_LIMIT = 200;
 const MAX_TERMS = 20;
@@ -49,9 +50,12 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   }
 
   function register(input) {
+    // The project and lead the confirmation found or just created, not the
+    // caller's: checked as bindings before registration() reads them as the
+    // nullable input a preview takes, so no form of a bad one is invalid_input.
+    requiredBinding(input?.projectId, 'projectId', ID_LIMIT);
+    requiredBinding(input?.leadAgentId, 'leadAgentId', ID_LIMIT);
     const request = registration(input);
-    requiredString(request.projectId, 'projectId');
-    requiredString(request.leadAgentId, 'leadAgentId');
     return store.transaction(() => {
       const { status, current, added, preferenceIds, confirms } = decide(request);
       if (status === 'unchanged') return { status, assignment: current };
@@ -164,7 +168,7 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   // Every active assignment whose terms occur in the text, with the terms that did.
   function match(personalSpaceId, text) {
     const prompt = identityKey(requiredString(text, 'text'));
-    const space = requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT);
+    const space = requiredBinding(personalSpaceId, 'personalSpaceId', ID_LIMIT);
     const matched = new Map();
     for (const { termKey, assignmentId } of store.activeTerms(space)) {
       if (termOccurs(prompt, termKey)) matched.set(assignmentId, [...(matched.get(assignmentId) ?? []), termKey]);
@@ -178,7 +182,7 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   // does some work names (find_agents, rec#29 F4), with the terms it named.
   function discover(personalSpaceId, search) {
     const key = identityKey(requiredString(search, 'search'));
-    const space = requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT);
+    const space = requiredBinding(personalSpaceId, 'personalSpaceId', ID_LIMIT);
     return store.listActive(space).map((assignment) => ({ assignment,
       matchedTerms: assignment.terms.filter((term) => termsOverlap(key, identityKey(term))) }))
       .filter(({ assignment, matchedTerms }) => matchedTerms.length
@@ -193,18 +197,18 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
     match,
     discover,
     // The active assignment a term names in a space, if any.
-    named: (personalSpaceId, term) => store.termOwner(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT),
+    named: (personalSpaceId, term) => store.termOwner(requiredBinding(personalSpaceId, 'personalSpaceId', ID_LIMIT),
       identityKey(requiredString(term, 'term', TERM_LIMIT))),
     // The assignment that last held a term no active one holds now, if any,
     // so a correction confirmed again finds the assignment it changed.
     lastNamed(personalSpaceId, term) {
       const key = identityKey(requiredString(term, 'term', TERM_LIMIT));
-      for (const record of store.recordsNewestFirst(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT))) {
+      for (const record of store.recordsNewestFirst(requiredBinding(personalSpaceId, 'personalSpaceId', ID_LIMIT))) {
         if (record.terms.some((value) => identityKey(value) === key)) return store.get(record.assignmentId);
       }
       return null;
     },
-    list: (personalSpaceId) => store.listActive(requiredString(personalSpaceId, 'personalSpaceId', ID_LIMIT)),
+    list: (personalSpaceId) => store.listActive(requiredBinding(personalSpaceId, 'personalSpaceId', ID_LIMIT)),
     // Each change in order, with the state it produced.
     history: (assignmentId) => store.revisions(requiredString(assignmentId, 'assignmentId', ID_LIMIT)),
     close: () => store.close()
@@ -214,7 +218,7 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
 function registration(input) {
   const terms = termsOf(input.terms, 'terms');
   if (!terms.length) throw new TypeError('terms is required');
-  return { personalSpaceId: requiredString(input.personalSpaceId, 'personalSpaceId', ID_LIMIT),
+  return { personalSpaceId: requiredBinding(input.personalSpaceId, 'personalSpaceId', ID_LIMIT),
     projectId: idOrNull(input.projectId, 'projectId'), leadAgentId: idOrNull(input.leadAgentId, 'leadAgentId'), terms,
     responsibility: requiredString(input.responsibility, 'responsibility', RESPONSIBILITY_LIMIT),
     source: sourceOf(input.source), sourceConversationId: conversationOf(input.sourceConversationId),

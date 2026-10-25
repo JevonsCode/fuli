@@ -1,5 +1,5 @@
 import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
-import { requiredString } from '../validation/values.js';
+import { requiredBinding, requiredString } from '../validation/values.js';
 import { taskAgentIdentity } from './agent-conversations.js';
 import { captureDecision, captureSettingsVersion, taskCaptureScope } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
@@ -22,7 +22,8 @@ export async function setSessionCapturePause(application, { taskContextToken, se
   if (typeof sessionPaused !== 'boolean') throw new TypeError('sessionPaused must be a boolean');
   const task = await application.taskContextRegistry.context(requiredString(taskContextToken, 'taskContextToken'),
     sourceApplication);
-  const sessionId = requiredString(task.sessionId, 'Task host session');
+  // The task's stored host session, not the caller's argument.
+  const sessionId = requiredBinding(task.sessionId, 'Task host session');
   const state = await keptInSessionLedger(application, task.sourceApplication, sessionId, 'session_paused')
     ? savedPause(application, sessionId, { paused: sessionPaused, sourceApplication: task.sourceApplication }) : null;
   // A resumed session may still be off by another layer; the receipt says so.
