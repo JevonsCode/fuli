@@ -21,6 +21,10 @@ import { writeJsonFileAtomic } from '../src/storage/json-file.js';
 import { createSessionPreferenceDelivery } from '../src/conversations/preference-session.js';
 import { requestSessionFuliDefault } from '../src/graphiti/session-fuli-switch.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
+import { createToolInputValidator } from '../src/mcp/tool-input-budget.js';
+import { GRAPH_TOOL_DEFINITIONS } from '../src/agent-tools/graph-definitions.js';
+import { ROUNDTABLE_TOOL_DEFINITIONS } from '../src/agent-roundtable/tools.js';
+import { fuliHostTools } from '../src/agent-apps/host-tools/fuli-tools.js';
 import { claudeEntry, codexEntry, codexStop, finishTask, fixture, PRIVATE, transcriptRow } from './fixtures/capture-project-fixture.js';
 
 const STOPPED_AT = '2026-10-21T01:31:00.000Z';
@@ -43,8 +47,8 @@ async function codexLine(f, session, line) {
 const host = session => ({ env: { CODEX_THREAD_ID: session }, sourceApplication: 'codex' });
 const record = f => f.sessionPauses.state.bind(f.sessionPauses);
 
-async function mcpCall(f, { env = {}, sourceApplication }, name, args) {
-  const server = createMcpServer(f.app, { env, sourceApplication, registerResources: false });
+async function mcpCall(f, { env = {}, sourceApplication, toolProfile = 'full' }, name, args) {
+  const server = createMcpServer(f.app, { env, sourceApplication, toolProfile, registerResources: false });
   const client = new Client({ name: 'synthetic-session-switch', version: '1' });
   const [a, b] = InMemoryTransport.createLinkedPair();
   try {
@@ -702,6 +706,93 @@ test('a superseded token or a failed registry read is refused with its own reaso
   assert.ok(Array.isArray((await call('search_knowledge_graph', current)).facts));
   assert.deepEqual(await call('record_decision_trace', current), { status: 'recorded' });
   assert.equal(Object.hasOwn(recorded.at(-1), 'taskContextToken'), false);
+});
+
+// rec#11 D-62: no list decides which tools take the token. Every gated tool lists it, through every
+// path a model reads a schema from (the MCP list, list_agent_interfaces, the schema fuli_call validates
+// against), while an open tool and a tool naming its own task token are listed exactly as defined.
+test('every gated tool lists the task token and accepts a call carrying it; open and own-token tools are unchanged', async (t) => {
+  const f = await fixture(t);
+  const defined = new Map([...GRAPH_TOOL_DEFINITIONS, ...ROUNDTABLE_TOOL_DEFINITIONS].map(item => [item.name, item]));
+  const ownToken = ({ inputSchema }) => ['taskContextToken', 'task_context_token'].some(field => Object.hasOwn(inputSchema.properties, field));
+  const server = createMcpServer(f.app, { env: { FULI_ENABLE_TEST_TOOLS: '1' }, sourceApplication: 'codex', registerResources: false });
+  const client = new Client({ name: 'synthetic-session-schemas', version: '1' });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(b);
+  await client.connect(a);
+  t.after(() => Promise.all([client.close(), server.close()]));
+  const mcpListed = new Map((await client.listTools()).tools.map(item => [item.name, item.inputSchema]));
+  const catalog = async name => JSON.parse((await client.callTool({ name: 'list_agent_interfaces', arguments: { toolName: name } }))
+    .content[0].text).tools[0].inputSchema;
+
+  const gated = listAgentTools().filter(({ name }) => !OPEN_WHILE_OFF.has(name));
+  assert.ok(gated.length > 140, String(gated.length));
+  for (const definition of gated) {
+    const { name, inputSchema } = definition;
+    const own = ownToken(defined.get(name));
+    // A tool that names its own token keeps that field, its limits and whether it is required.
+    assert.deepEqual(inputSchema, own ? defined.get(name).inputSchema : { ...defined.get(name).inputSchema,
+      properties: { ...defined.get(name).inputSchema.properties, taskContextToken: { type: 'string' } } }, name);
+    assert.ok(Object.hasOwn(mcpListed.get(name).properties, 'taskContextToken'), `${name} in tools/list`);
+    assert.deepEqual(await catalog(name), inputSchema, `${name} in list_agent_interfaces`);
+    const parsed = await createToolInputValidator(inputSchema).parse({ taskContextToken: 'fuli-task-synthetic' });
+    assert.deepEqual((parsed.error?.issues ?? []).filter(issue => issue.code === 'unrecognized_keys'), [], name);
+  }
+  for (const name of OPEN_WHILE_OFF) {
+    assert.deepEqual(listAgentTools().find(item => item.name === name).inputSchema, defined.get(name).inputSchema, name);
+  }
+});
+
+// The macOS tester's 0.20.1 run (rec#47): list_judgments, reached through fuli_call in the chat
+// profile, had no field for the token, so it was always refused while a sibling session was stopped.
+test('list_judgments through fuli_call is served with the current token while another session is stopped', async (t) => {
+  const f = await fixture(t);
+  const seen = [];
+  f.app.judgment = { agent: { records: async input => { seen.push(input); return { records: [] }; } } };
+  await codexEntry(f, f.dirs.novel, { session: SESSION_A });
+  const stale = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'First task.' })).context.taskContextToken;
+  const current = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'continue' })).context.taskContextToken;
+  await codexLine(f, SESSION_A, 'fuli stop');
+  const judgments = token => mcpCall(f, { env: {}, sourceApplication: 'codex', toolProfile: 'chat' }, 'fuli_call',
+    { toolName: 'list_judgments', input: { personalSpaceId: 'synthetic-space', limit: 1,
+      ...(token === undefined ? {} : { taskContextToken: token }) } });
+
+  assert.deepEqual(await judgments(current), { records: [] });
+  assert.deepEqual(seen, [{ personalSpaceId: 'synthetic-space', limit: 1 }], 'the tool never sees the token');
+  for (const [token, reason] of [[undefined, 'session_unattributed'], [stale, 'task_token_not_current'],
+    ['fuli-task-synthetic-forged', 'task_token_not_current']]) {
+    const refused = await judgments(token);
+    assert.deepEqual([refused.status, refused.reason], ['fuli_off', reason], String(token));
+  }
+  // The stopped session stays refused with its own token.
+  const own = (await codexEntry(f, f.dirs.novel, { session: SESSION_B, prompt: 'Again.' })).context.taskContextToken;
+  await codexLine(f, SESSION_B, 'fuli stop');
+  assert.equal((await judgments(own)).reason, 'session_stopped');
+  assert.equal(seen.length, 1, 'nothing refused reached the tool');
+});
+
+// Only the token the gate added is removed: a tool that names its own token receives it, and an app's
+// granted FULI tool (agent-apps host tools) passes the token through the same gate.
+test('the gate removes only the token it added, for Agent and app calls alike', async (t) => {
+  const f = await fixture(t);
+  const seen = [];
+  const stopped = (await codexEntry(f, f.dirs.novel, { session: SESSION_A })).context.taskContextToken;
+  const current = (await codexEntry(f, f.dirs.novel, { session: SESSION_B })).context.taskContextToken;
+  f.app.planAgentCollaboration = async input => { seen.push(['plan', input]); return { plan: [] }; };
+  await callAgentTool(f.app, 'plan_agent_collaboration', { taskContextToken: current, sourceApplication: 'codex' });
+  assert.deepEqual(seen.pop(), ['plan', { taskContextToken: current, sourceApplication: 'codex' }]);
+
+  await codexLine(f, SESSION_A, 'fuli stop');
+  f.app.listPersonalProjects = async input => { seen.push(['projects', input]); return { projects: [] }; };
+  const hostTools = fuliHostTools({ toolNames: () => listAgentTools().map(({ name }) => name),
+    callFuliTool: (name, input) => callAgentTool(f.app, name, input) });
+  const projects = hostTools.get('list_personal_projects');
+  assert.deepEqual(await projects.run({ personalSpaceId: 'synthetic-space', taskContextToken: current, sourceApplication: 'codex' }),
+    { projects: [] });
+  assert.deepEqual(seen.pop(), ['projects', { personalSpaceId: 'synthetic-space', sourceApplication: 'codex' }]);
+  const refused = await projects.run({ personalSpaceId: 'synthetic-space', taskContextToken: stopped, sourceApplication: 'codex' });
+  assert.deepEqual([refused.status, refused.reason], ['fuli_off', 'session_stopped']);
+  assert.deepEqual(seen, []);
 });
 
 // rec#47 F2 (dot's P2 on #349): the records a task writes as it goes or closes take the token too.
