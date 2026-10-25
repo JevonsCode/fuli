@@ -111,9 +111,12 @@ export function planTaskKnowledgeRecall(taskPrompt) {
       queries: []
     };
   }
-  const matched = RECALL_INTENTS.filter(({ category, pattern }) => pattern.test(
-    category === 'release_delivery' ? positiveDeliveryClauses(prompt) : prompt
-  ));
+  const intentPrompt = {
+    release_delivery: positiveDeliveryClauses(prompt),
+    artifact_location: withoutRelativeWhere(prompt)
+  };
+  const matched = RECALL_INTENTS.filter(({ category, pattern }) =>
+    pattern.test(intentPrompt[category] ?? prompt));
   if (!matched.length) {
     return { status: 'not_needed', trigger_categories: [], queries: [] };
   }
@@ -133,10 +136,30 @@ export function planTaskKnowledgeRecall(taskPrompt) {
 function positiveDeliveryClauses(prompt) {
   const action = '(?:提交|发布|发版|上线|部署|推送|再推|release|publish|push|deploy|ship|rollout|commit)';
   const target = '(?:\\s*(?:代码|变更|code|changes?|this change|(?:到|to\\s+)\\s*GitHub))?';
+  // An English list goes on after a comma only while it is a run of actions
+  // that a ", or" closes ("commit, push, or create branches"); otherwise the
+  // comma starts a new instruction ("Don't push, deploy to staging or
+  // production"), and ", and" opens a positive clause. Chinese commas never
+  // join a negated list.
+  const listed = `(?=(?:${action}${target}\\s*,?\\s*)+or\\b)`;
+  const join = `(?:\\s*,\\s*${listed}(?:\\bor\\b\\s*)?|\\s*(?:和|或|以及|并|、|\\band\\b|\\bor\\b)\\s*)`;
   const negated = new RegExp('(?:不要|不用|不必|无需|不得|禁止|暂不|别|不|\\bdo\\s+not\\b|\\bdon\'t\\b|\\bnever\\b|\\bno\\b)'
     + '(?:\\s|再次|再|需要|执行|进行|要|会|自动|直接)*' + action + target
-    + '(?:\\s*(?:和|或|以及|并|、|\\band\\b|\\bor\\b)\\s*' + action + target + ')*', 'giu');
+    + '(?:' + join + action + target + ')*', 'giu');
   return prompt.replace(negated, ' ');
+}
+
+// A relative "where" right after a comma ("WSL Ubuntu, where `node` is
+// installed") describes a place inside a statement; every other "where" may
+// ask for one, with or without a question mark ("Find where config.json is
+// loaded"). A question keeps even a relative one. A sentence ends at
+// punctuation followed by a space, so a file name such as config.json stays whole.
+function withoutRelativeWhere(prompt) {
+  return prompt.split(/(?<=[.!?])\s+|(?<=[。！？])/u).map((sentence) => (
+    /[?？]\s*$/u.test(sentence) ? sentence
+      // "Tell me, where is the config file" still asks, question mark or not.
+      : sentence.replace(/,\s*where\b(?!\s+(?:is|are|was|were|do|does|did|should|can|could|would|will|to)\b)/giu, ',')
+  )).join(' ');
 }
 
 export async function recallTaskKnowledge(application, resolution, taskPrompt, { sourceApplication = null, sessionId = null } = {}) {
