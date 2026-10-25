@@ -117,7 +117,7 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
     const bridge = createRoleWorkBridge({ port, store: new RoleWorkStore(join(dir, 'role-work.sqlite'), { recoveryGate: { state: () => ({ state: 'open' }) } }),
       verifySession: roleWorkSessions(app), resumers: { tonborg: work => app.judgment.resumeWork(work) },
       views: { tonborg: (result, session) => app.judgment.agent.workResult(result, session) },
-      packageViews: { tonborg: (evidence, work, session) => tonborgSessionEvidence(app.personal, evidence, work, session) }, now });
+      packageViews: { tonborg: (evidence, work, session) => tonborgSessionEvidence(app, evidence, work, session) }, now });
     const legacy = async input => {
       legacyRuns.push(input);
       return { client: 'codex', model: 'cli-model', body: JSON.stringify({ decisions: [verdict()] }) };
@@ -527,12 +527,25 @@ function withHistory(h) {
   store.feedback('s', old.id, 'down', SECRET.feedback, 0);
   h.visibility.private.set('entity:secret', 'fla-a');
   h.app.inspectProjectAgentMemory = async () => ({ current: { memory: SECRET.memory }, revision: 3 });
-  const rule = (key, instruction, scope) => ({ id: key, item_kind: 'entity', preference_key: key, title: key, instruction,
-    preference_scope: scope, confirmation_status: 'confirmed' });
-  h.app.getCollaborationPreferences = async () => completePreferences({ effective: [rule('shared-rule', 'Synthetic rule for everyone', 'global'),
-    rule('tonborg-rule', SECRET.rule, 'agent')] });
+  // The preference delivery as the Provider gives it to each reader: a rule
+  // with an owner is that FLA's (scope agent) and reaches it alone.
+  h.preferences = { failing: false, rules: [
+    { key: 'shared-rule', instruction: SHARED_RULE, owner: null },
+    { key: 'other-shared-rule', instruction: OTHER_SHARED_RULE, owner: null },
+    { key: 'tonborg-rule', instruction: SECRET.rule, owner: 'employee.tonborg' }] };
+  h.app.getCollaborationPreferences = async ({ projectAgentId = null }) => {
+    if (h.preferences.failing) throw Object.assign(new Error('synthetic preference read failed'), { code: 'synthetic_unavailable' });
+    return completePreferences({ effective: h.preferences.rules.filter(({ owner }) => !owner || owner === projectAgentId)
+      .map(({ key, instruction, owner }) => ({ id: key, item_kind: 'entity', preference_key: key, title: key, instruction,
+        preference_scope: owner ? 'agent' : 'global', confirmation_status: 'confirmed' })) });
+  };
   return h;
 }
+const SHARED_RULE = 'Synthetic rule for everyone';
+const OTHER_SHARED_RULE = 'Synthetic second rule for everyone';
+const preferencesOf = workPackage => JSON.parse(workPackage.evidence.find(item => item.id === 'preferences').text);
+// A shared rule the person gives FLA-A after the package was made.
+const makeOwn = (h, key, owner) => { h.preferences.rules.find(item => item.key === key).owner = owner; };
 
 const leaks = value => Object.values(SECRET).filter(text => JSON.stringify(value).includes(text))
   .concat(JSON.stringify(value).includes('entity:secret') ? ['entity:secret'] : []);
@@ -548,11 +561,12 @@ test('D-58: a session claiming Tonborg\'s review gets the candidate, shared rule
     const candidates = JSON.parse(workPackage.evidence.find(item => item.id === 'candidates').text);
     assert.deepEqual(candidates.map(candidate => [candidate.candidate_key, candidate.title, candidate.content]),
       [['entity:one', 'Build command', 'npm test']]);
-    const preferences = JSON.parse(workPackage.evidence.find(item => item.id === 'preferences').text);
-    assert.deepEqual(preferences.selected.map(item => item.key), ['shared-rule']);
+    const preferences = preferencesOf(workPackage);
+    assert.deepEqual(preferences.selected.map(item => item.key), ['shared-rule', 'other-shared-rule']);
     // The receipt says a part was withheld, so its rules make the session escalate if it matters.
     assert.equal(preferences.status, 'partial');
-    assert.ok(preferences.omitted.truncated.includes('tonborg_scope'));
+    assert.equal(preferences.context_changed, true);
+    assert.ok(preferences.omitted.truncated.includes('context_changed'));
     assert.match(workPackage.instructions, /Tonborg/);
     // The review still works with the minimal package.
     assert.equal(result.status, 'completed');
@@ -577,6 +591,48 @@ test('D-58: a candidate the claiming session may not see now is not handed over;
   const { workPackage } = await h.work('claim', { taskContextToken: 'token-fla-a' });
   assert.equal(JSON.parse(workPackage.evidence.find(item => item.id === 'candidates').text)[0].candidate_key, 'entity:one');
   assert.deepEqual(leaks(workPackage).filter(text => text !== 'entity:secret'), []);
+});
+
+test('D-58: a stored rule reaches a claiming session only while that session may read the same rule now', async t => {
+  // A global rule made FLA-A's after the package was made never reaches a plain session or FLA-B; a still-global one does.
+  for (const token of ['token-plain', 'token-fla-b']) {
+    const h = withHistory(harness(t));
+    await h.app.judgment.review(reviewInput);
+    makeOwn(h, 'shared-rule', 'fla-a');
+    const { workPackage } = await h.work('claim', { taskContextToken: token });
+    const preferences = preferencesOf(workPackage);
+    assert.ok(!JSON.stringify(workPackage).includes(SHARED_RULE), token);
+    assert.deepEqual(preferences.selected.map(item => [item.key, item.rule]), [['other-shared-rule', OTHER_SHARED_RULE]], token);
+    assert.deepEqual([preferences.status, preferences.context_changed], ['partial', true]);
+    assert.deepEqual(leaks(workPackage), [], token);
+  }
+  // FLA-A owns the rule now: its claim keeps the stored rule, still marked changed (its scope moved).
+  const own = withHistory(harness(t));
+  await own.app.judgment.review(reviewInput);
+  makeOwn(own, 'shared-rule', 'fla-a');
+  const preferences = preferencesOf((await own.work('claim', { taskContextToken: 'token-fla-a' })).workPackage);
+  assert.deepEqual(preferences.selected.map(item => [item.key, item.scope, item.rule]),
+    [['shared-rule', 'global', SHARED_RULE], ['other-shared-rule', 'global', OTHER_SHARED_RULE]]);
+  assert.equal(preferences.context_changed, true);
+  assert.ok(!JSON.stringify(preferences).includes(SECRET.rule), 'never Tonborg\'s own rule');
+});
+
+test('D-58: a preference delivery that cannot be read at claim time withholds every stored rule; the candidate is still reviewed', async t => {
+  const h = withHistory(harness(t));
+  await h.app.judgment.review(reviewInput);
+  h.preferences.failing = true;
+  const { workPackage } = await h.work('claim', { taskContextToken: 'token-plain' });
+  const preferences = preferencesOf(workPackage);
+  assert.deepEqual([preferences.selected, preferences.conflicts, preferences.scope_unknown], [[], [], []]);
+  assert.deepEqual([preferences.status, preferences.context_changed], ['partial', true]);
+  assert.ok(preferences.omitted.truncated.includes('context_changed'));
+  for (const text of [SHARED_RULE, OTHER_SHARED_RULE, SECRET.rule]) assert.ok(!JSON.stringify(workPackage).includes(text), text);
+  assert.equal(JSON.parse(workPackage.evidence.find(item => item.id === 'candidates').text)[0].candidate_key, 'entity:one');
+  // The session answers from the candidate; the rerun reads Tonborg's own context again and uses it.
+  h.preferences.failing = false;
+  const result = await submitAgain(h, 'token-plain', workPackage);
+  assert.equal(result.status, 'completed');
+  assert.equal(result.result.records.find(record => record.target === 'entity:one').aiReview.modelOutcome, 'approve');
 });
 
 test('D-58: Tonborg\'s own model still judges with its full context', async t => {
