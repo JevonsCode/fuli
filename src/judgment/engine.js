@@ -14,6 +14,7 @@ import { jsonSchemaToZod } from '../mcp/tool-schema.js';
 import { PREFERENCE_RECEIPT_VERSION, preferenceDeliveryRecord, preferenceHold,
   readJudgmentPreferences } from './preference-receipt.js';
 import { REVIEW_EXAMPLE, reviewInstructions } from './review-prompt.js';
+import { injectionSignals } from './review-injection-precheck.js';
 import { automaticWriteDecision } from '../graphiti/capture-decision.js';
 
 const id = z.string().min(1).max(256);
@@ -130,7 +131,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
           if (store.forgets(decision.target, space)) continue;
           const protectedItem = Boolean(candidate.requires_attention || candidate.negative_evidence_count > 0
             || candidate.reasons?.includes('conflict_or_attention'));
-          const aiReview = reviewDisposition(decision, { protectedItem, gate, policy });
+          const aiReview = reviewDisposition(decision, { protectedItem, injection: injectionSignals(candidate), gate, policy });
           const outcome = aiReview.interceptions.some(reason => reason !== 'manual_policy') ? 'escalate' : decision.outcome;
           let record = store.record(space, { personalProjectId: project || null, kind: 'review', target: decision.target,
             title: candidate.title, summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
@@ -278,13 +279,16 @@ function reviewTrustKey(answer, scope) {
 // decides. A manual policy keeps the approval as the outcome it shows but
 // still applies nothing. gate_not_passed keeps its D-24 name (the evaluation
 // harness scores by it); since D-36 it means the role trust gate refused, and
-// gate.reason says why.
-function reviewDisposition(decision, { protectedItem, gate, policy }) {
+// gate.reason says why. injection: the host pre-check's signals for the
+// candidate (rec#26); the person sees them whatever the model answered.
+function reviewDisposition(decision, { protectedItem, injection, gate, policy }) {
   const interceptions = decision.outcome !== 'approve' ? [] : [
     ...(protectedItem ? ['needs_attention'] : []),
+    ...(injection.length ? ['injection_suspected'] : []),
     ...(decision.confidence < REVIEW_CONFIDENCE_FLOOR ? ['below_confidence'] : []),
     ...(gate.status !== 'passed' ? ['gate_not_passed'] : []),
     ...(policy.mode === 'manual' ? ['manual_policy'] : [])];
   const applies = decision.outcome === 'approve' && !interceptions.length;
-  return { state: applies ? 'ai_reviewed' : 'ai_suggested', modelOutcome: decision.outcome, interceptions, gate };
+  return { state: applies ? 'ai_reviewed' : 'ai_suggested', modelOutcome: decision.outcome, interceptions, gate,
+    ...(injection.length ? { injectionSignals: injection } : {}) };
 }
