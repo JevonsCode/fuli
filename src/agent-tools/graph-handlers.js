@@ -3,7 +3,7 @@ import { assertTestToolsEnabled } from '../app/test-tools.js';
 import { activeTestToolsEnabled } from '../app/agent-request-context.js';
 import { agentInterfaceCatalog } from './interface-catalog.js';
 import { captureDecision, captureDisabled, describeCapture } from '../graphiti/capture-decision.js';
-import { captureNotice } from '../graphiti/capture-notice.js';
+import { refusedAgentWriteNotice } from '../graphiti/capture-notice.js';
 import { isTagGovernanceProposal, knowledgeTagChange, proposeTagGovernance } from '../graphiti/knowledge-tags.js';
 import { prepareKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
 
@@ -163,6 +163,9 @@ const HANDLERS = Object.freeze({
   }),
   review_human_knowledge_change: (app, input) => app.reviewHumanChange(input),
   list_knowledge_spaces: (app) => app.listKnowledgeSpaces(),
+  // Agents register projects on their own (capture.md) and FULI cannot verify a
+  // person asked, so this stops with recording; the person's explicit paths are
+  // the console and a "新项目：" task line (rec#11 D-01).
   upsert_personal_project: (app, input) => captureGuard(app, { sourceApplication: input?.sourceApplication },
     () => app.upsertPersonalProject(input)),
   list_personal_projects: (app, input) => app.listPersonalProjects(input),
@@ -348,7 +351,7 @@ export function dispatchGraphTool(app, name, input) {
 async function captureGuard(app, scope, operation) {
   const capture = await captureDecision(app, scope);
   return capture.allowed ? operation() : { route: 'disabled', ...captureDisabled(capture),
-    notice: captureNotice(capture.reason, capture.since), guidance: CAPTURE_OFF_GUIDANCE };
+    notice: refusedAgentWriteNotice(capture.reason, capture.since), guidance: CAPTURE_OFF_GUIDANCE };
 }
 
 const CAPTURE_OFF_GUIDANCE = 'Automatic recording is off, so nothing from this call was saved. Do not retry or describe it as saved; the user can still make explicit changes in the FULI console.';
