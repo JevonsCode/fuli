@@ -8,6 +8,8 @@ import {
   stopGraphProviders
 } from '../setup/graph-runtime.js';
 import { beginFirstRunCapture } from '../setup/first-run-capture.js';
+import { SIGN_IN_PATH } from '../console-session/http.js';
+import { consoleSignInUrl } from '../console-session/sign-in-link.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { readAdaptiveRuntimeState } from '../adaptive-runtime/state.js';
@@ -49,10 +51,11 @@ export async function startLocalRuntime(input, dependencies = {}) {
     onProgress: input.onProgress
   });
 
-  if (input.open === true) await deps.openExternal(runtime.url);
+  const signIn = input.open === true ? await openSignedIn(runtime.url, input, deps) : null;
   return {
     ...runtime,
-    managesDevelopmentWorkspace
+    managesDevelopmentWorkspace,
+    ...(signIn ? { signIn } : {})
   };
 }
 
@@ -172,8 +175,25 @@ export async function openLocalConsole(input, dependencies = {}) {
       !await deps.consoleHealth(state.url, state.pid, state.version)) {
     throw new Error('The local UI is not running. Run fl start first.');
   }
-  await deps.openExternal(state.url);
-  return { status: 'opened', url: state.url };
+  const signIn = await openSignedIn(state.url, input, deps);
+  return { status: 'opened', url: state.url, signIn };
+}
+
+// Opens the console signed in with a one-time code (rec#11 D-61), landing on
+// input.next. A console that cannot issue a code (an older console still
+// running, no human-review channel) is opened without a session, and the
+// reason is returned so the command can say so. The sign-in URL holds the
+// code: it goes to the browser only and is never returned or printed.
+async function openSignedIn(consoleUrl, input, deps) {
+  let target = consoleUrl;
+  let signIn = { status: 'signed_in' };
+  try {
+    target = await deps.consoleSignIn({ consoleUrl, dataDir: input.paths.dataDir, next: input.next ?? null });
+  } catch (error) {
+    signIn = { status: 'unavailable', reason: error?.message ?? String(error) };
+  }
+  await deps.openExternal(target);
+  return signIn;
 }
 
 async function stopRecordedConsole(state, paths, deps) {
@@ -221,6 +241,7 @@ function lifecycleDependencies(overrides) {
       if (existsSync(path)) unlinkSync(path);
     },
     openExternal,
+    consoleSignIn: consoleSignInUrl,
     ...overrides
   };
 }
@@ -266,7 +287,7 @@ async function openExternal(url) {
 }
 
 export function externalOpenInvocation(url, platform = process.platform) {
-  if (!isLoopbackConsoleUrl(url)) throw new TypeError('Only the local Fuli console can be opened');
+  if (!isLoopbackConsoleUrl(url) && !isConsoleSignInUrl(url)) throw new TypeError('Only the local Fuli console can be opened');
   if (platform === 'darwin') return { command: 'open', args: [url] };
   if (platform === 'win32') return { command: 'cmd', args: ['/c', 'start', '', url] };
   return { command: 'xdg-open', args: [url] };
@@ -296,6 +317,18 @@ function isLoopbackConsoleUrl(value) {
       ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname) &&
       url.username === '' && url.password === '' &&
       (url.pathname === '/' || url.pathname === '') && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
+// The console's one-time sign-in URL: the code alone, in characters no shell
+// or `start` command line reads specially.
+function isConsoleSignInUrl(value) {
+  try {
+    const url = new URL(value);
+    return isLoopbackConsoleUrl(url.origin) && !url.username && !url.password && url.pathname === SIGN_IN_PATH && !url.hash
+      && [...url.searchParams.keys()].join() === 'code' && /^[A-Za-z0-9_-]{16,128}$/.test(url.searchParams.get('code'));
   } catch {
     return false;
   }

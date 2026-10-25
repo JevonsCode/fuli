@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   externalOpenInvocation,
   inspectLocalRuntime,
+  openLocalConsole,
   restartLocalRuntime,
   startLocalRuntime,
   stopLocalRuntime
@@ -293,6 +294,44 @@ test('console opening only targets a loopback Fuli URL', () => {
     () => externalOpenInvocation('https://example.com', 'darwin'),
     /Only the local Fuli console/
   );
+  // The one-time sign-in URL carries its code alone (rec#11 D-61).
+  const code = 'A'.repeat(43);
+  assert.deepEqual(externalOpenInvocation(`http://127.0.0.1:2727/auth/console?code=${code}`, 'win32'), {
+    command: 'cmd', args: ['/c', 'start', '', `http://127.0.0.1:2727/auth/console?code=${code}`]
+  });
+  for (const url of [`http://127.0.0.1:2727/auth/console?code=${code}&next=/x`, `http://127.0.0.1:2727/auth/console?code=a%26b`,
+    `http://127.0.0.1:2727/knowledge?code=${code}`, `https://example.com/auth/console?code=${code}`]) {
+    assert.throws(() => externalOpenInvocation(url, 'win32'), /Only the local Fuli console/, url);
+  }
+});
+
+const RUNNING = Object.freeze({ readState: () => ({ version: 4, pid: 27, url: 'http://127.0.0.1:2727' }),
+  isProcessAlive: () => true, consoleHealth: async () => true });
+
+test('fl open opens the console signed in at the asked page, and never returns the sign-in URL (rec#11 D-61)', async () => {
+  const opened = [];
+  const asked = [];
+  const result = await openLocalConsole(input({ next: '/knowledge?item=s/entity:e1', paths: { ...PATHS, dataDir: 'C:/Fuli' } }), {
+    ...RUNNING,
+    consoleSignIn: async (request) => { asked.push(request); return 'http://127.0.0.1:2727/auth/console?code=synthetic-one-time-code'; },
+    openExternal: async (url) => { opened.push(url); }
+  });
+  assert.deepEqual(asked, [{ consoleUrl: 'http://127.0.0.1:2727', dataDir: 'C:/Fuli', next: '/knowledge?item=s/entity:e1' }]);
+  assert.deepEqual(opened, ['http://127.0.0.1:2727/auth/console?code=synthetic-one-time-code']);
+  assert.deepEqual(result, { status: 'opened', url: 'http://127.0.0.1:2727', signIn: { status: 'signed_in' } });
+  assert.equal(JSON.stringify(result).includes('synthetic-one-time-code'), false);
+});
+
+test('fl open and fl start --open open the console without a session when it cannot issue a code', async () => {
+  const opened = [];
+  const unavailable = { consoleSignIn: async () => { throw new Error('the console answered HTTP 404'); },
+    openExternal: async (url) => { opened.push(url); } };
+  const result = await openLocalConsole(input(), { ...RUNNING, ...unavailable });
+  assert.deepEqual(result.signIn, { status: 'unavailable', reason: 'the console answered HTTP 404' });
+  const started = await startLocalRuntime(input({ open: true }), { ...unavailable, readConfig: () => null, fileExists: () => true,
+    ensureRuntime: async () => ({ status: 'running', url: 'http://127.0.0.1:2727', pid: 27 }) });
+  assert.equal(started.signIn.status, 'unavailable');
+  assert.deepEqual(opened, ['http://127.0.0.1:2727', 'http://127.0.0.1:2727']);
 });
 
 function input(overrides = {}) {
