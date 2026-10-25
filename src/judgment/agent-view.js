@@ -1,5 +1,5 @@
-import { providerReaderFields } from '../graphiti/knowledge-reader.js';
 import { judgmentHumanInteraction } from './conversation.js';
+import { KNOWLEDGE_KEY, visibleKnowledgeKeys } from './visible-items.js';
 
 // What an Agent reads of Tonborg's local records (rec#50). A record keeps what
 // was decided and what ran, never its words: the summary, evidence, reasons,
@@ -12,9 +12,6 @@ import { judgmentHumanInteraction } from './conversation.js';
 // later stays out until someone decides it is structure. The person's console
 // reads the full records (judgment/http.js); this view is for Agent tools.
 
-const KNOWLEDGE_TARGET = /^(entity|relationship):(.+)$/;
-// The Provider's visible-items limit per read.
-const VISIBILITY_BATCH = 100;
 // Receipt reasons are the host's own fixed sentences or error codes, never a model's words.
 const RECEIPT = ['status', 'outcome', 'reason', 'reviewId', 'taskId', 'revision', 'decisionId', 'recovered'];
 const FEEDBACK = ['revision', 'vote', 'createdAt'];
@@ -40,7 +37,8 @@ const PLAIN_TARGETS = Object.freeze({ routing: () => true, acceptance: () => tru
 export async function agentJudgmentView(personal, result, { personalSpaceId, reader = null }) {
   const listed = Array.isArray(result?.records);
   const records = listed ? result.records : [result];
-  const targets = await visibleTargets(personal, { personalSpaceId, reader }, records);
+  const targets = await visibleKnowledgeKeys(personal, { personalSpaceId, reader },
+    records.filter(record => record.kind === 'review').map(record => record.target));
   const shown = records.map(record => agentRecord(record, targets));
   if (!listed) return shown[0];
   // The question is asked again from what this reader may see.
@@ -49,33 +47,11 @@ export async function agentJudgmentView(personal, result, { personalSpaceId, rea
   return { ...rest, ...judgmentHumanInteraction(shown, personalSpaceId), records: shown };
 }
 
-// The knowledge targets among these records this reader may see now, one
-// Provider read per batch. A read that fails leaves the rest unknown.
-async function visibleTargets(personal, { personalSpaceId, reader }, records) {
-  const keys = [...new Set(records.filter(record => record.kind === 'review').map(record => record.target)
-    .filter(target => KNOWLEDGE_TARGET.test(target ?? '')))];
-  const visible = new Set();
-  try {
-    for (let start = 0; start < keys.length; start += VISIBILITY_BATCH) {
-      const items = keys.slice(start, start + VISIBILITY_BATCH).map(key => {
-        const [, item_kind, item_id] = KNOWLEDGE_TARGET.exec(key);
-        return { item_kind, item_id };
-      });
-      const answer = await personal.readVisibleKnowledgeItems({ personal_space_id: personalSpaceId, items,
-        ...providerReaderFields(reader) });
-      for (const item of answer?.items ?? []) visible.add(`${item.item_kind}:${item.item_id}`);
-    }
-    return { visible, unavailable: false };
-  } catch {
-    return { visible, unavailable: true };
-  }
-}
-
 function agentRecord(record, targets) {
   const withheld = new Set();
   const { target, title, ...rest } = record;
   const shown = project(rest, KEPT, '', withheld);
-  const knowledge = record.kind === 'review' && KNOWLEDGE_TARGET.test(target ?? '');
+  const knowledge = record.kind === 'review' && KNOWLEDGE_KEY.test(target ?? '');
   if (knowledge ? targets.visible.has(target) : PLAIN_TARGETS[record.kind]?.(target)) {
     shown.target = target;
     // A review's title is its candidate's own name (engine.js); any other title is withheld.

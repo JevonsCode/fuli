@@ -32,8 +32,11 @@ const APPLYING_GUIDANCE = 'The answer was accepted and is being applied once. Su
 // (result, session) => shown. The store keeps the role's full result; every
 // reply that carries one, a cached replay too, is shown through its role's
 // view under the session's permissions now. A role without a view shows no
-// result (rec#50).
-export function createRoleWorkBridge({ port, store, verifySession, resumers, views = {}, prepareStore = async () => {}, now = () => new Date() }) {
+// result (rec#50). packageViews: per role, the evidence a claiming session
+// receives (evidence, work, session) => evidence, or a refusal; the stored
+// request stays whole (rec#11 D-58).
+export function createRoleWorkBridge({ port, store, verifySession, resumers, views = {}, packageViews = {},
+  prepareStore = async () => {}, now = () => new Date() }) {
   // execution: the token the bridge handed the role's resumer. Only the
   // execution holding a package may use its answer; an execution that lost
   // it (it was slow and another took over) stops here instead of asking
@@ -84,11 +87,21 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, vie
     const found = input.packageId ? existing(input.packageId) : store.nextClaimable(session, at);
     if (!found) return { workPackage: null };
     assertHolder(found, session);
+    // Decided before the lease: a session refused this work does not hold it.
+    const evidence = await packageEvidence(found, session);
     const claimed = store.claim(found.packageId, session,
       { leaseToken: randomUUID(), leaseExpiresAt: new Date(at.getTime() + LEASE_MS), at });
     if (claimed.conflict === 'busy') throw new ApplicationError('role_work_busy', 'Another session holds this work package.', { status: 409 });
     if (claimed.conflict) throw new ApplicationError('role_work_closed', `This work package is ${found.status}.`, { status: 409 });
-    return { workPackage: claimView(claimed.workPackage) };
+    return { workPackage: claimView(claimed.workPackage, evidence) };
+  }
+
+  // The evidence this session may receive: the role's package view decides,
+  // or refuses the claim; a role without one hands over its evidence as asked.
+  async function packageEvidence(work, session) {
+    const evidence = work.request.evidence.map(({ id: evidenceId, text }) => ({ id: evidenceId, text }));
+    const view = packageViews[work.role];
+    return view ? view(evidence, work, session) : evidence;
   }
 
   // Every exit of a submission, the recorded result of a retry included,
@@ -253,11 +266,11 @@ function summary(work) {
 }
 
 // What the session needs to answer, and no more: the bounded instructions,
-// the evidence, the exact answer schema and the lease.
-function claimView(work) {
+// the evidence its role's package view allows, the exact answer schema and the lease.
+function claimView(work, evidence) {
   const { request } = work;
   return { ...summary(work), scope: work.scope, versions: work.versions, instructions: request.instructions,
-    evidence: request.evidence.map(({ id: evidenceId, text }) => ({ id: evidenceId, text })),
+    evidence,
     answerSchema: decisionContract(request).providerSchema, budget: request.budget,
     lease: { token: work.lease.token, expiresAt: work.lease.expiresAt } };
 }
