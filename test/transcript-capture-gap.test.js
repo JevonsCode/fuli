@@ -13,7 +13,7 @@ import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { CapturePolicyStore, capturePolicyPathForRuntime } from '../src/graphiti/capture-policy.js';
 import { notRecordedEvent, notRecordedReason, transcriptCaptureLedger, TURN_UNRESOLVED, UNATTRIBUTABLE }
   from '../src/conversations/transcript-capture-gap.js';
-import { transcriptDigest } from '../src/conversations/transcript-guard.js';
+import { transcriptDigest, TRANSCRIPT_PAGES_PER_HOOK } from '../src/conversations/transcript-guard.js';
 
 const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' } }) + '\n';
 const row = (role, text) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role,
@@ -41,6 +41,8 @@ async function session(t, { saved = true, newTaskPerEntry = false } = {}) {
   // Each saved event keeps the task token it was written under.
   const appended = [];
   const tasks = { current: newTaskPerEntry ? 'task-0' : 'task', entered: 0 };
+  // entry.during runs inside each task entry, before the entry returns its task.
+  const entry = { during: null };
   // The whole Provider can be unreachable: project lookups, task lookups and
   // conversation writes then all fail with a network error.
   // A held request answers only when the test releases it (see holdNext()).
@@ -93,6 +95,7 @@ async function session(t, { saved = true, newTaskPerEntry = false } = {}) {
     callTool: async (_app, name) => {
       if (name !== 'begin_task_context') return {};
       if (newTaskPerEntry) tasks.current = `task-${++tasks.entered}`;
+      await entry.during?.();
       return { taskContextToken: tasks.current };
     } })
     .then(output => { if (output?.systemMessage) notices.push(output.systemMessage); return output; });
@@ -113,8 +116,8 @@ async function session(t, { saved = true, newTaskPerEntry = false } = {}) {
     provider.hold = { matches, reached, settle, released: new Promise(resolve => { release = resolve; }) };
     return { wasReached, release, settled };
   };
-  return { store, policyPath, runtimeConfigPath, directory, transcriptPath: transcript, appended, turn, hook, holdNext,
-    notices, provider, tasks,
+  return { app, store, policyPath, runtimeConfigPath, directory, transcriptPath: transcript, appended, turn, hook, holdNext,
+    notices, provider, tasks, entry,
     contents: () => appended.map(event => event.content),
     markers: () => appended.filter(event => event.event_id.endsWith(':not_recorded')) };
 }
@@ -434,11 +437,9 @@ test('an expired handoff marks the old task\'s unflushed tail omitted and import
   assert.equal(s.appended.some(event => event.content.includes('answer before')), false, 'the late page writes nothing');
 });
 
-test('an entry whose window expires mid-scan leaves the scan to the entered task\'s Stop', async (t) => {
-  const s = await session(t, { newTaskPerEntry: true });
-  await s.turn('on before', 'answer before');
-  await appendFile(s.transcriptPath, row('user', 'on after'));
-  // The deadline fires when the scan opens the native transcript for its first page.
+// The entry hook for `prompt`, with its deadline fired when the scan opens the
+// native transcript for its first page, before it reads any byte of it.
+async function entryCutInScan(t, s, prompt) {
   const deadline = new AbortController();
   const promises = (await import('node:fs/promises')).default;
   const open = promises.open;
@@ -449,12 +450,20 @@ test('an entry whose window expires mid-scan leaves the scan to the entered task
   });
   syncBuiltinESMExports();
   try {
-    await s.hook('UserPromptSubmit', 'on after', { signal: deadline.signal });
+    await s.hook('UserPromptSubmit', prompt, { signal: deadline.signal });
   } finally {
     t.mock.restoreAll();
     syncBuiltinESMExports();
   }
   assert.equal(armed, false, 'the deadline fired inside the scan');
+  assert.ok(s.notices.at(-1).includes('Native transcript import was deferred'), hookNotices(s));
+}
+
+test('an entry whose window expires mid-scan leaves the scan to the entered task\'s Stop', async (t) => {
+  const s = await session(t, { newTaskPerEntry: true });
+  await s.turn('on before', 'answer before');
+  await appendFile(s.transcriptPath, row('user', 'on after'));
+  await entryCutInScan(t, s, 'on after');
   const kept = await guardState(s);
   assert.equal(kept.phase, 'scan', 'the prompt was not found before the deadline');
   assert.equal(kept.nextOwner, transcriptDigest('task-2'));
@@ -464,6 +473,84 @@ test('an entry whose window expires mid-scan leaves the scan to the entered task
     [['on after', 'task-2'], ['answer after', 'task-2']], hookNotices(s));
   assert.equal(s.markers().length, 0);
   assert.equal(await guardState(s), null);
+});
+
+// dot's follow-up to fuli#278: Codex runs the prompt hook before it writes the
+// prompt to the transcript, so the cut scan never sees the prompt. entryEnd is
+// the native EOF the hook measures after task entry returns and before it
+// returns itself, not a snapshot from when its capture started: the prompt
+// lies after it when Codex writes it once the hook returned, and before it
+// when Codex writes it while the task entry still runs. Either way the
+// entered task's Stop imports the whole turn and marks nothing.
+for (const { when, duringEntry } of [
+  { when: 'after the hook returns', duringEntry: false },
+  { when: 'while the task entry runs', duringEntry: true }
+]) {
+  test(`Codex order: a scan cut before the prompt is on disk is continued when the prompt is written ${when}`, async (t) => {
+    const s = await session(t, { newTaskPerEntry: true });
+    await s.turn('on before', 'answer before');
+    const promptStart = (await stat(s.transcriptPath)).size;
+    const prompt = row('user', 'on after');
+    const writePrompt = () => appendFile(s.transcriptPath, prompt);
+    if (duringEntry) s.entry.during = writePrompt;
+    await entryCutInScan(t, s, 'on after');
+    s.entry.during = null;
+    const kept = await guardState(s);
+    assert.equal(kept.phase, 'scan', 'the scan was cut before it read a byte');
+    assert.equal(kept.scanCursor, promptStart);
+    assert.equal(kept.nextOwner, transcriptDigest('task-2'));
+    assert.equal(kept.entryEnd, duringEntry ? promptStart + Buffer.byteLength(prompt) : promptStart,
+      'entryEnd is the EOF once task entry returned');
+    if (!duringEntry) await writePrompt();
+    await appendFile(s.transcriptPath, row('assistant', 'answer after'));
+    await s.hook('Stop');
+    assert.deepEqual(visible(s).map(event => [event.content, event.token]), [['on before', 'task-1'], ['answer before', 'task-1'],
+      ['on after', 'task-2'], ['answer after', 'task-2']], hookNotices(s));
+    assert.equal(s.appended.length, visible(s).length, 'nothing is omitted or marked');
+    assert.equal(await guardState(s), null, 'the handoff is finished');
+  });
+}
+
+// Events per native transcript page (readTranscriptBatch in transcript-reader.js).
+const PAGE_EVENTS = 50;
+const assistantRows = (count, prefix) => Array.from({ length: count }, (_, index) => row('assistant', `${prefix} ${index}`));
+
+// Both sides of an expired handoff need more pages than one hook reads: the
+// old task's unflushed tail the scan crosses, then the entered task's turn.
+// Each hook continues from the progress the guard and the cursor saved.
+test('an expired handoff whose scan and import each span more than one hook\'s pages is finished across hooks', async (t) => {
+  const s = await session(t, { newTaskPerEntry: true });
+  const longer = TRANSCRIPT_PAGES_PER_HOOK * PAGE_EVENTS + 10;
+  await appendFile(s.transcriptPath, row('user', 'on before'));
+  await s.hook('UserPromptSubmit', 'on before');
+  // The old task's turn is never synced by its own Stop.
+  await appendFile(s.transcriptPath, assistantRows(longer, 'old answer').join(''));
+  await appendFile(s.transcriptPath, row('user', 'on after'));
+  await entryCutInScan(t, s, 'on after');
+  const reply = assistantRows(longer, 'new answer');
+  await appendFile(s.transcriptPath, reply.join(''));
+
+  await s.hook('Stop');
+  const scanning = await guardState(s);
+  assert.equal(scanning.phase, 'scan', 'one hook\'s pages do not reach the prompt');
+  assert.equal(scanning.scanPages, TRANSCRIPT_PAGES_PER_HOOK);
+  assert.deepEqual(s.appended, [], 'nothing is written while the boundary is unknown');
+
+  await s.hook('Stop');
+  assert.equal(await guardState(s), null, 'the next hook found the prompt and finished the handoff');
+  const omitted = s.appended.filter(event => event.event_id.endsWith(':fallback'));
+  assert.equal(omitted.length, 1, 'the old tail is one content-free omission');
+  assert.equal(visible(s).length, TRANSCRIPT_PAGES_PER_HOOK * PAGE_EVENTS, 'one hook imports at most its pages');
+
+  await s.hook('Stop');
+  const expected = ['on after', ...reply.map((_, index) => `new answer ${index}`)];
+  assert.deepEqual(visible(s).map(event => event.content), expected, hookNotices(s));
+  assert.ok(visible(s).every(event => event.token === 'task-2'), 'the whole turn is the entered task\'s');
+  assert.equal(s.contents().some(text => text.includes('old answer')), false, 'no old-task text is imported');
+  assert.equal(s.markers().length, 0);
+  const settled = s.appended.length;
+  await s.hook('Stop');
+  assert.equal(s.appended.length, settled, 'a repeated Stop adds nothing');
 });
 
 test('the next entry finishes an expired handoff first, then hands off its own prompt', async (t) => {
@@ -540,6 +627,40 @@ test('an expired Stop whose settings changed meanwhile marks its bytes unconfirm
   assert.deepEqual(ranges[0], { from: ranges[0].from, to: onEnd, reason: UNATTRIBUTABLE, token: 'task-2' }, hookNotices(s));
   assert.ok(ranges.slice(1).every(range => range.reason === 'global_off' && range.from >= onEnd));
 });
+
+// dot's follow-up to fuli#278: a settings generation that cannot be read is
+// null, and null proves no decision, not even when it equals the null an
+// expired Stop decided under. Its bytes are marked unconfirmed, never imported
+// and never called off. The generation fails to read only around that Stop.
+const unreadableGeneration = s => { s.app.getCapturePolicyVersion = () => { throw new Error('synthetic unreadable generation'); }; };
+const readableGeneration = s => { s.app.getCapturePolicyVersion = () => s.store.version(); };
+for (const { when, decided, kept } of [
+  { when: 'when the Stop decided and when it kept its bytes', decided: unreadableGeneration, kept: () => {} },
+  { when: 'only when the Stop decided', decided: unreadableGeneration, kept: readableGeneration },
+  { when: 'only when the Stop kept its bytes', decided: () => {}, kept: unreadableGeneration }
+]) {
+  test(`an expired Stop whose generation could not be read ${when} marks its bytes unconfirmed`, async (t) => {
+    const s = await session(t, { newTaskPerEntry: true });
+    await s.turn('on before', 'answer before');
+    await appendFile(s.transcriptPath, row('user', 'on after'));
+    await s.hook('UserPromptSubmit', 'on after');
+    await appendFile(s.transcriptPath, row('assistant', 'answer after'));
+    const onEnd = (await stat(s.transcriptPath)).size;
+    decided(s);
+    const hold = await stopExpiredBefore(s, { meanwhile: () => kept(s) });
+    readableGeneration(s);
+    hold.release();
+    await hold.settled;
+    s.store.update({ enabled: false, disabledSources: [] });
+    await s.turn('private one', 'private answer one');
+    assert.equal(s.contents().some(text => text.includes('answer after') || text.includes('private')), false,
+      'nothing it cannot prove is imported');
+    const ranges = notRecordedRanges(s);
+    assert.deepEqual(ranges[0], { from: ranges[0].from, to: onEnd, reason: UNATTRIBUTABLE, token: 'task-2' }, hookNotices(s));
+    assert.ok(ranges.length > 1 && ranges.slice(1).every(range => range.reason === 'global_off' && range.from >= onEnd),
+      'only the bytes written after it are marked off');
+  });
+}
 
 test('an expired Stop\'s bytes are never imported under a task entered after it', async (t) => {
   const s = await session(t, { newTaskPerEntry: true });
