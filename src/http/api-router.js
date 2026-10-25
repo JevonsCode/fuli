@@ -38,10 +38,13 @@ export async function handleApiRequest({
   readModelEvaluation = null,
   judgmentUndo = null,
   // Whether the request carries this launch's console session (rec#11 D-61).
-  consoleSignedIn = false
+  consoleSignedIn = false,
+  // A LAN roundtable change: the console session or `fuli peer` with the
+  // data directory's human-review token.
+  peerChangeAllowed = false
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
-  if (await handlePeerApiRequest({ request, response, url, peer })) return true;
+  if (await handlePeerApiRequest({ request, response, url, peer, ownerChangeAllowed: peerChangeAllowed })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,

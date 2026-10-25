@@ -38,7 +38,7 @@ import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-
 import { createModelRoleSettings } from './model-backends/role-settings.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
 import { createConsoleSession } from './console-session/session.js';
-import { discardUrlCode, handleConsoleSessionRequest, hasConsoleSession } from './console-session/http.js';
+import { discardUrlCode, handleConsoleSessionRequest, hasConsoleSession, hasSignInToken } from './console-session/http.js';
 import { createSignInLaunchers } from './console-session/launcher-file.js';
 import { sessionBoundPorts } from './console-session/session-ports.js';
 import { humanReviewToken } from './graphiti/human-review-channel.js';
@@ -350,6 +350,7 @@ async function handleRequest({
     dataFormatMigrations,
     ...reviewPorts,
     consoleSignedIn,
+    peerChangeAllowed: consoleSignedIn || hasSignInToken(request, signIn),
     modelRoleSettings,
     readModelEvaluation
   })) return;
