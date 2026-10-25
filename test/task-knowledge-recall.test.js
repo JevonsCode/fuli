@@ -62,18 +62,20 @@ test('negated delivery instructions do not recall a release runbook', () => {
 });
 
 test('comma-separated negated actions and relative where do not trigger recall', () => {
-  for (const prompt of ['Do not commit, push, or create branches',
+  for (const prompt of ['Do not commit, push, or create branches', 'Do not commit, push or deploy',
     'WSL Ubuntu, where `node` is installed']) {
     assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories, [], prompt);
   }
   for (const prompt of ['Where is the deploy runbook?', 'Can you find where config.json is loaded?',
     'Find where config.json is loaded', 'Show me where the API handler is defined.',
-    "I'm not sure where the backup files are stored.", 'ok where is the config file']) {
+    "I'm not sure where the backup files are stored.", 'ok where is the config file',
+    'Tell me, where is the config file', 'In WSL, where should node be installed']) {
     assert.ok(planTaskKnowledgeRecall(prompt).trigger_categories.includes('artifact_location'), prompt);
   }
   for (const prompt of ['push this to production', "Don't push, deploy to staging instead",
     'Never commit, ship it after review', 'Do not push to GitHub, and deploy to staging',
-    '不要推送, 部署到测试环境', '不要提交,发布到 npm']) {
+    '不要推送, 部署到测试环境', '不要提交,发布到 npm', "Don't push, deploy to staging or production",
+    "Don't commit, push it when ready, or ask me first"]) {
     assert.ok(planTaskKnowledgeRecall(prompt).trigger_categories.includes('release_delivery'), prompt);
   }
 });

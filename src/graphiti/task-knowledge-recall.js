@@ -136,11 +136,13 @@ export function planTaskKnowledgeRecall(taskPrompt) {
 function positiveDeliveryClauses(prompt) {
   const action = '(?:提交|发布|发版|上线|部署|推送|再推|release|publish|push|deploy|ship|rollout|commit)';
   const target = '(?:\\s*(?:代码|变更|code|changes?|this change|(?:到|to\\s+)\\s*GitHub))?';
-  // An English list goes on after a comma only when an "or" closes it later in
-  // the clause ("commit, push, or create branches"); without one the comma
-  // starts a new instruction ("Don't push, deploy to staging instead"), and
-  // ", and" opens a positive clause. Chinese commas never join a negated list.
-  const join = '(?:\\s*,\\s*(?=[^.!?;。！？；]*\\bor\\b)(?:\\bor\\b\\s*)?|\\s*(?:和|或|以及|并|、|\\band\\b|\\bor\\b)\\s*)';
+  // An English list goes on after a comma only while it is a run of actions
+  // that a ", or" closes ("commit, push, or create branches"); otherwise the
+  // comma starts a new instruction ("Don't push, deploy to staging or
+  // production"), and ", and" opens a positive clause. Chinese commas never
+  // join a negated list.
+  const listed = `(?=(?:${action}${target}\\s*,?\\s*)+or\\b)`;
+  const join = `(?:\\s*,\\s*${listed}(?:\\bor\\b\\s*)?|\\s*(?:和|或|以及|并|、|\\band\\b|\\bor\\b)\\s*)`;
   const negated = new RegExp('(?:不要|不用|不必|无需|不得|禁止|暂不|别|不|\\bdo\\s+not\\b|\\bdon\'t\\b|\\bnever\\b|\\bno\\b)'
     + '(?:\\s|再次|再|需要|执行|进行|要|会|自动|直接)*' + action + target
     + '(?:' + join + action + target + ')*', 'giu');
@@ -154,7 +156,9 @@ function positiveDeliveryClauses(prompt) {
 // punctuation followed by a space, so a file name such as config.json stays whole.
 function withoutRelativeWhere(prompt) {
   return prompt.split(/(?<=[.!?])\s+|(?<=[。！？])/u).map((sentence) => (
-    /[?？]\s*$/u.test(sentence) ? sentence : sentence.replace(/,\s*where\b/giu, ',')
+    /[?？]\s*$/u.test(sentence) ? sentence
+      // "Tell me, where is the config file" still asks, question mark or not.
+      : sentence.replace(/,\s*where\b(?!\s+(?:is|are|was|were|do|does|did|should|can|could|would|will|to)\b)/giu, ',')
   )).join(' ');
 }
 
