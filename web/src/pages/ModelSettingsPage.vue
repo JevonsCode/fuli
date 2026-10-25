@@ -34,7 +34,8 @@ const editing = ref<ModelRoleId | null>(null)
 const notice = ref('')
 const stale = ref(false)
 let reading: AbortController | null = null
-// Read together with the role settings, so the section never appears and then goes.
+// Read together with the role settings, so the section never appears and then goes;
+// Tonborg's read follows the active space (useRoleSuggestions).
 const activeSpace = computed(() => store.activePersonalSpace?.id ?? '')
 const suggestions = useRoleSuggestions(activeSpace)
 const { entries: suggestionEntries, loading: suggestionsLoading, error: suggestionsError, reviews, reviewsLoading, reviewsError } = suggestions
@@ -164,8 +165,6 @@ onMounted(() => {
 })
 // The top bar's refresh reads the console again; the suggestions with it.
 watch(() => store.runtimeStatus, (status) => { if (status === 'loading' && !suggestionsLoading.value) void suggestions.load() })
-// Tonborg's suggestions belong to the active space, which the console may learn after the page opened.
-watch(activeSpace, (space) => { if (space) void suggestions.load() })
 onBeforeUnmount(() => {
   reading?.abort()
   suggestions.stop()
