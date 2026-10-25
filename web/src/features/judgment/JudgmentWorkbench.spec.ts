@@ -108,6 +108,22 @@ describe('JudgmentWorkbench', () => {
     expect(wrapper.find('[data-action="undo"]').exists()).toBe(false)
   })
 
+  it('names the host pre-check signals of an injection-shaped candidate beside the model conclusion (rec#26)', async () => {
+    const gate = { status: 'passed', reason: null, modelId: 'synthetic-model' }
+    getJson.mockResolvedValue({ records: [
+      record({ aiReview: { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['injection_suspected'], gate,
+        injectionSignals: ['authority_claim', 'outcome_directive'] } }),
+      record({ id: 'decision-b', aiReview: { state: 'ai_suggested', modelOutcome: 'escalate', interceptions: [], gate } }),
+      record({ id: 'decision-c', aiReview: { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['batch_contaminated'], gate,
+        injectionInBatch: true } }),
+    ] })
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+    await wrapper.get('.judgment-filter [data-value="all"]').trigger('click')
+    const notes = wrapper.findAll('[data-injection-precheck]').map(note => note.text())
+    expect(notes.sort()).toEqual(['已知注入格式冒称已获批准 · 试图指定审核结果', '已知注入格式同批另一候选匹配'])
+  })
+
   it('says honestly when an undo is refused, and offers none for permanently deleted knowledge (D-36.12)', async () => {
     const applied = { state: 'ai_reviewed', modelOutcome: 'approve', interceptions: [], gate: { status: 'passed', reason: null, modelId: 'synthetic-model' } }
     getJson.mockResolvedValue({ records: [

@@ -92,6 +92,16 @@ export const judgmentMessages = {
       aiSuggested: 'AI 建议，待你确认',
       aiReviewed: '由 {model} 自动执行',
       modelConclusion: '模型结论',
+      injectionPrecheck: '已知注入格式',
+      injectionInBatch: '同批另一候选匹配',
+      injectionSignal: {
+        reviewer_instruction: '对审核者下指令',
+        authority_claim: '冒称已获批准',
+        outcome_directive: '试图指定审核结果',
+        boundary_or_format: '伪造提示词或对话格式',
+        tool_call: '工具调用语法',
+        hidden_characters: '隐藏字符',
+      },
       undo: '撤回',
       undoing: '正在撤回 Tonborg 的审核…',
       undoRefused: {
@@ -210,6 +220,16 @@ export const judgmentMessages = {
       aiSuggested: 'AI suggestion, awaiting your decision',
       aiReviewed: 'Executed automatically by {model}',
       modelConclusion: 'Model conclusion',
+      injectionPrecheck: 'Known injection pattern',
+      injectionInBatch: 'Another candidate in the same request matches one',
+      injectionSignal: {
+        reviewer_instruction: 'Instructions to the reviewer',
+        authority_claim: 'Claims prior approval',
+        outcome_directive: 'Tries to set the outcome',
+        boundary_or_format: 'Fake prompt or chat format',
+        tool_call: 'Tool-call syntax',
+        hidden_characters: 'Hidden characters',
+      },
       undo: 'Undo',
       undoing: "Undoing Tonborg's review…",
       undoRefused: {

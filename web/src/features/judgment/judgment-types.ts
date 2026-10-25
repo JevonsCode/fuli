@@ -49,6 +49,10 @@ export interface JudgmentAiReview {
   modelOutcome: 'approve' | 'escalate'
   interceptions: string[]
   gate: { status: 'passed' | 'not_passed', reason: string | null, modelId: string | null }
+  // rec#26: the host pre-check found injection-shaped text in the candidate; present only then.
+  injectionSignals?: string[]
+  // rec#26: another candidate of the same model request had signals; present only then.
+  injectionInBatch?: true
 }
 
 export interface JudgmentDecisionRecord {

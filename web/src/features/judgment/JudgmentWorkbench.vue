@@ -11,7 +11,7 @@ import UiSegmented from '@/ui/UiSegmented.vue'
 
 import { judgmentText } from './judgment-copy'
 import { loadJudgmentRecords, requestJudgmentReview, submitJudgmentFeedback, undoJudgmentReview } from './judgment-api'
-import { isHumanNeeded, type JudgmentDecisionRecord, type JudgmentFeedbackVote } from './judgment-types'
+import { isHumanNeeded, type JudgmentAiReview, type JudgmentDecisionRecord, type JudgmentFeedbackVote } from './judgment-types'
 
 const props = defineProps<{ personalSpaceId: string }>()
 
@@ -240,6 +240,12 @@ function outcomeLabel(value: JudgmentDecisionRecord['outcome']) {
   return judgmentText(`workbench.outcome.${value}`)
 }
 
+// rec#26: why the host escalated a candidate whatever the model concluded.
+function injectionLabel(review: JudgmentAiReview) {
+  if (!review.injectionSignals?.length) return judgmentText('workbench.injectionInBatch')
+  return review.injectionSignals.map(signal => judgmentText(`workbench.injectionSignal.${signal}`)).join(' · ')
+}
+
 // A review verdict a model may not apply is a suggestion; an applied one names the model that executed it (rec#10 D-36.6).
 function verdictLabel(record: JudgmentDecisionRecord) {
   if (record.aiReview?.state === 'ai_suggested') return judgmentText('workbench.aiSuggested')
@@ -359,6 +365,9 @@ function hasDetails(record: JudgmentDecisionRecord) {
         </p>
         <dl class="judgment-record-meta">
           <div v-if="record.aiReview"><dt>{{ judgmentText('workbench.modelConclusion') }}</dt><dd>{{ outcomeLabel(record.aiReview.modelOutcome) }}</dd></div>
+          <div v-if="record.aiReview?.injectionSignals?.length || record.aiReview?.injectionInBatch" data-injection-precheck>
+            <dt>{{ judgmentText('workbench.injectionPrecheck') }}</dt><dd>{{ injectionLabel(record.aiReview) }}</dd>
+          </div>
           <div><dt>{{ judgmentText('workbench.execution') }}</dt><dd>{{ executionLabel(record.execution.status) }}</dd></div>
           <div><dt>{{ judgmentText('workbench.policy') }}</dt><dd>{{ policyLabel(record) }}</dd></div>
           <div v-if="record.client || record.model"><dt>{{ judgmentText('workbench.source') }}</dt><dd>{{ sourceLabel(record) }}</dd></div>
