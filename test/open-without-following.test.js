@@ -55,6 +55,22 @@ test('the platform helper refuses a real symbolic link', requiresSymlinks, async
   await file.close();
 });
 
+test('the bearer token reader tells apart file IDs that round to the same Number (rec#49)', () => {
+  // Two Windows file IDs one apart above 2^53: equal as Numbers, distinct as BigInt.
+  const [before, after] = [9007199254740993n, 9007199254740992n];
+  assert.equal(Number(before), Number(after));
+  const stat = (ino, bigint) => ({ dev: bigint ? 7n : 7, ino: bigint ? ino : Number(ino), size: 40, mode: 0o600,
+    isSymbolicLink: () => false, isFile: () => true });
+  assert.throws(() => readBearerToken('/synthetic/token', {
+    constants: { O_RDONLY: 0, O_NONBLOCK: 0 },
+    lstatSync: (_path, options) => stat(before, options?.bigint),
+    openSync: () => 3,
+    fstatSync: (_descriptor, options) => stat(after, options?.bigint),
+    readFileSync: () => { throw new Error('must not read a replaced file'); },
+    closeSync: () => {}
+  }), /symbolic link/);
+});
+
 test('the bearer token reader refuses a link where O_NOFOLLOW does not exist', () => {
   assert.throws(() => readBearerToken('/synthetic/token', {
     constants: { O_RDONLY: 0, O_NONBLOCK: 0 },
