@@ -14,8 +14,9 @@ export function attachJudgmentRuntime(app, paths) {
     readWatermark: input => app.personal.readHardDeletionWatermark(input) });
   app.knowledgeRecoveryGate = recoveryGate;
   app.roleWork = openRoleWorkRuntime(paths, { port: app.modelBackends, verifySession: roleWorkSessions(app), recoveryGate,
-    // The session that answered reads the result as an Agent does (rec#50).
-    resumers: { tonborg: work => app.judgment.agent.resumeWork(work) } });
+    resumers: { tonborg: work => app.judgment.resumeWork(work) },
+    // The full result is stored; the session reads it, each time, as an Agent does (rec#50).
+    views: { tonborg: (result, session) => app.judgment.agent.workResult(result, session) } });
   app.judgment = createJudgmentService({ app, prepareStore: spaceId => recoveryGate.refresh(spaceId),
     openStore: () => new JudgmentStore(join(paths.dataDir, 'judgment.sqlite'), { recoveryGate }),
     engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge: app.roleWork }), trust: app.modelTrust }) });

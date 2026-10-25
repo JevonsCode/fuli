@@ -15,7 +15,8 @@ import { judgmentHumanInteraction } from './conversation.js';
 const KNOWLEDGE_TARGET = /^(entity|relationship):(.+)$/;
 // The Provider's visible-items limit per read.
 const VISIBILITY_BATCH = 100;
-const RECEIPT = ['status', 'outcome', 'reason', 'reviewId', 'taskId', 'revision'];
+// Receipt reasons are the host's own fixed sentences or error codes, never a model's words.
+const RECEIPT = ['status', 'outcome', 'reason', 'reviewId', 'taskId', 'revision', 'decisionId', 'recovered'];
 const FEEDBACK = ['revision', 'vote', 'createdAt'];
 const EXECUTION = { status: true, createdAt: true, receipt: RECEIPT };
 const KEPT = Object.freeze({

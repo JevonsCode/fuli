@@ -76,6 +76,8 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
     getCollaborationPreferences: async () => completePreferences(),
     inspectProjectAgentMemory: async () => ({ current: null, revision: 0 }),
     employees: { authorize: async () => ({}) },
+    // Every synthetic item stays visible to the session reading Tonborg's result (rec#50).
+    personal: { readVisibleKnowledgeItems: async ({ items }) => ({ items }) },
     startKnowledgeReview: async () => ({ review_id: 'review' }),
     finishKnowledgeReview: async () => ({}),
     listKnowledgeReviewCandidates: async () => ({ candidates, total_candidate_count: candidates.length }),
@@ -100,7 +102,8 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
   const roleTrust = trust(port);
   const open = () => {
     const bridge = createRoleWorkBridge({ port, store: new RoleWorkStore(join(dir, 'role-work.sqlite'), { recoveryGate: { state: () => ({ state: 'open' }) } }),
-      verifySession: roleWorkSessions(app), resumers: { tonborg: work => app.judgment.resumeWork(work) }, now });
+      verifySession: roleWorkSessions(app), resumers: { tonborg: work => app.judgment.resumeWork(work) },
+      views: { tonborg: (result, session) => app.judgment.agent.workResult(result, session) }, now });
     const legacy = async input => {
       legacyRuns.push(input);
       return { client: 'codex', model: 'cli-model', body: JSON.stringify({ decisions: [verdict()] }) };

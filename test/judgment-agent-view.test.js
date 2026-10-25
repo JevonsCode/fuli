@@ -6,6 +6,10 @@ import { dispatchGraphTool } from '../src/agent-tools/graph-handlers.js';
 import { checkpointHumanInteraction } from '../src/graphiti/checkpoint-human-interaction.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
 import { MODEL_ANSWER, trustedTonborg } from './fixtures/model-trust.js';
+import { createModelBackendPort } from '../src/model-backends/port.js';
+import { createRoleWorkBridge } from '../src/model-backends/role-work.js';
+import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 
 // rec#50: Tonborg's local records as an Agent reads them. A review recorded
 // while its item was plain keeps its decision for every reader, but its words
@@ -204,16 +208,10 @@ test('Tonborg\'s other Agent answers carry decisions without words', async t => 
   assert.equal(f.personal.calls.length, 1, 'routing and acceptance name no knowledge to look up');
 });
 
-test('a session resuming Tonborg\'s work and a checkpoint\'s question read as their reader', async t => {
+test('a checkpoint\'s question reads as its task\'s reader', async t => {
   const f = await reviewed(t);
   f.items['entity:one'] = { agentId: 'fla-a', projectId: PROJECT };
   f.items['entity:two'] = { agentId: 'fla-a', projectId: PROJECT };
-  const stored = await f.service.records({ personalSpaceId: SPACE, personalProjectId: PROJECT });
-  f.service.resumeWork = async () => stored;
-  const resumed = await f.service.agent.resumeWork({ input: { personalSpaceId: SPACE } });
-  assert.ok(resumed.records.every(record => record.target_withheld === 'not_visible'));
-  assertNoWords(resumed);
-
   const app = { config: f.app.config, judgment: f.service, listAgentAttention: async () => ({}) };
   const own = await checkpointHumanInteraction(app, { personalProjectId: PROJECT, projectAgentId: 'fla-a' });
   assert.ok([f.one.id, f.two.id].includes(own.human_interaction.source.id));
@@ -221,4 +219,84 @@ test('a session resuming Tonborg\'s work and a checkpoint\'s question read as th
   assertNoWords(own);
   const other = await checkpointHumanInteraction(app, { personalProjectId: PROJECT, projectAgentId: 'fla-b' });
   assert.deepEqual(other, {}, 'no question about another FLA\'s items');
+});
+
+// A Tonborg work package answered by a session, through the real bridge and
+// its tonborg view (judgment/runtime.js wires the same two). The resumed
+// operation returns the full stored records; the bridge keeps them as they are.
+function tonborgWork(t, f, session) {
+  const at = new Date('2026-10-25T00:00:00.000Z');
+  const port = createModelBackendPort({ readConfig: () => ({ state: 'absent' }), secrets: { read: async () => null },
+    ledger: new ModelUsageLedger(), now: () => at, fetchImpl: async () => assert.fail('no model call') });
+  const request = { role: 'tonborg', operation: 'knowledge_review', requestId: 'synthetic-work',
+    scope: { personalSpaceId: SPACE, personalProjectId: PROJECT, sessionRef: null },
+    versions: { evidence: 'evidence-1', policy: 'policy-1' }, instructions: 'Synthetic review instructions.',
+    evidence: [{ id: 'candidate', personalProjectId: PROJECT, text: 'Synthetic candidate.' }],
+    output: { type: 'choice', options: [{ id: 'approve', description: 'Approve' }, { id: 'escalate', description: 'Escalate' }] } };
+  const store = new RoleWorkStore();
+  let resumes = 0;
+  const bridge = createRoleWorkBridge({ port, store, now: () => at, verifySession: async () => session,
+    resumers: { tonborg: async ({ execution }) => {
+      resumes++;
+      await bridge.decide(request, { execution });
+      return f.service.records({ personalSpaceId: SPACE, personalProjectId: PROJECT });
+    } },
+    views: { tonborg: (result, caller) => f.service.agent.workResult(result, caller) } });
+  t.after(() => bridge.close());
+  return { store, resumes: () => resumes, async answered() {
+    await bridge.decide(request, { resume: { personalSpaceId: SPACE } });
+    const { workPackage } = await bridge.claim({ taskContextToken: 'synthetic-task' });
+    const submit = () => bridge.submit({ taskContextToken: 'synthetic-task', packageId: workPackage.packageId,
+      leaseToken: workPackage.lease.token, answer: { decision: 'propose', payload: { choice: 'approve' },
+        reason: 'Synthetic.', evidenceIds: ['candidate'], uncertainty: null } });
+    return { workPackage, submit };
+  } };
+}
+
+const SESSION = { sessionRef: 'synthetic-session', personalSpaceId: SPACE, personalProjectId: PROJECT,
+  projectAgentId: null, sourceApplication: 'codex' };
+
+test('role_work keeps the full result but every reply, a cached replay too, shows it as the session may read it now', async t => {
+  const f = await reviewed(t);
+  const w = tonborgWork(t, f, SESSION);
+  const { workPackage, submit } = await w.answered();
+  const first = await submit();
+  assert.equal(first.status, 'completed');
+  // Visible the first time: both items named, no words.
+  assert.deepEqual(first.result.records.map(record => record.target).sort(), ['entity:one', 'entity:two']);
+  assertNoWords(first);
+  // The stored result is the role's full history, as an old raw package's is.
+  const stored = w.store.get(workPackage.packageId).result;
+  assert.equal(stored.records.find(record => record.id === f.one.id).summary, SUMMARY);
+
+  // The item becomes FLA-A's; a retry with the same session and lease replays the cache.
+  f.items['entity:one'] = { agentId: 'fla-a', projectId: PROJECT };
+  const replay = await submit();
+  assert.equal(replay.replayed, true);
+  assert.equal(w.resumes(), 1, 'the replay reran nothing');
+  const one = byId(replay.result, f.one);
+  assert.equal(one.target, undefined);
+  assert.equal(one.title, undefined);
+  assert.equal(one.target_withheld, 'not_visible');
+  assert.equal(byId(replay.result, f.two).target, 'entity:two');
+  assertNoWords(replay);
+  assert.ok(!JSON.stringify(replay).includes('Synthetic preference'));
+
+  // The Provider is unavailable on a later retry: every reviewed item fails closed.
+  f.personal.state.available = false;
+  const offline = await submit();
+  assert.ok(offline.result.records.every(record => record.target_withheld === 'visibility_unavailable'));
+  assertNoWords(offline);
+});
+
+test('role_work shows FLA-A its own item on a replay, as its task names it', async t => {
+  const f = await reviewed(t);
+  const w = tonborgWork(t, f, { ...SESSION, projectAgentId: 'fla-a' });
+  const { submit } = await w.answered();
+  await submit();
+  f.items['entity:one'] = { agentId: 'fla-a', projectId: PROJECT };
+  const replay = await submit();
+  assert.equal(byId(replay.result, f.one).target, 'entity:one');
+  assert.equal(f.personal.calls.at(-1).reader_agent_id, 'fla-a');
+  assertNoWords(replay);
 });

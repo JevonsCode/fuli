@@ -28,7 +28,12 @@ const GUIDANCE = 'Not run yet. The current session may complete it with role_wor
   + 'A session answer is its own assessment, never an independent verification.';
 const APPLYING_GUIDANCE = 'The answer was accepted and is being applied once. Submit again later for the result.';
 
-export function createRoleWorkBridge({ port, store, verifySession, resumers, prepareStore = async () => {}, now = () => new Date() }) {
+// views: per role, what the submitting session may read of a result
+// (result, session) => shown. The store keeps the role's full result; every
+// reply that carries one, a cached replay too, is shown through its role's
+// view under the session's permissions now. A role without a view shows no
+// result (rec#50).
+export function createRoleWorkBridge({ port, store, verifySession, resumers, views = {}, prepareStore = async () => {}, now = () => new Date() }) {
   // execution: the token the bridge handed the role's resumer. Only the
   // execution holding a package may use its answer; an execution that lost
   // it (it was slow and another took over) stops here instead of asking
@@ -86,9 +91,22 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, pre
     return { workPackage: claimView(claimed.workPackage) };
   }
 
+  // Every exit of a submission, the recorded result of a retry included,
+  // reaches the session through shown().
   async function submit(raw) {
     const input = parseRoleWorkSubmission(raw);
     const session = await verifySession(input);
+    return shown(await answer(input, session), input.packageId, session);
+  }
+
+  async function shown(reply, packageId, session) {
+    if (reply.result === undefined) return reply;
+    const view = views[store.get(packageId)?.role];
+    if (!view) return { ...reply, result: null, result_withheld: 'no_agent_view' };
+    return { ...reply, result: await view(reply.result, session) };
+  }
+
+  async function answer(input, session) {
     await prepareStore(session.personalSpaceId);
     const at = now();
     const work = existing(input.packageId);

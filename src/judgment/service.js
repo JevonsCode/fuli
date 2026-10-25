@@ -103,7 +103,9 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       review: async input => agentView(await service.review(input), input.personalSpaceId),
       assess: async input => agentView(await service.assess(input), input.personalSpaceId),
       accept: async input => agentView(await service.accept(input), input.personalSpaceId),
-      resumeWork: async work => agentView(await service.resumeWork(work), work.input?.personalSpaceId)
+      // A stored role_work result, fresh or replayed, as the submitting
+      // session reads it now: its task's FLA, else a plain session.
+      workResult: (result, session) => agentView(result, session.personalSpaceId, taskKnowledgeReader(session))
     },
     close() { database?.close(); }
   };
