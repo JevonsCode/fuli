@@ -25,6 +25,8 @@ from .knowledge_item_view_models import (
     KnowledgeScopeProject,
     KnowledgeTurnReceipt,
     KnowledgeTurnReceiptRead,
+    KnowledgeVisibleItems,
+    KnowledgeVisibleItemsRead,
     KnowledgeWeightBasis,
 )
 from .knowledge_management import _read_item
@@ -38,6 +40,7 @@ from .knowledge_visibility import (
     reader_parameter,
     request_reader,
     visible_episode_ids,
+    visible_refs,
 )
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
 from .provider_values import json_object, native_datetime
@@ -118,6 +121,15 @@ async def read_turn_receipt(store, actor: dict, request: KnowledgeTurnReceiptRea
     deletions = await hard_deletions_in_episodes(store, space, episode_ids)
     return KnowledgeTurnReceipt(entries=entries, unchanged_count=unchanged, deleted_count=len(deletions),
                                 deletion_ids=deletions)
+
+
+async def read_visible_items(store, actor: dict, request: KnowledgeVisibleItemsRead) -> KnowledgeVisibleItems:
+    """The asked items that exist and this reader may see now, by the one FLA
+    rule (knowledge_visibility). Read-only; it returns keys, never content."""
+    space = await personal_reader_space(store, actor, request.personal_space_id)
+    reader = await request_reader(store, actor, space, request)
+    visible = await visible_refs(store, space, reader, [(item.item_kind, item.item_id) for item in request.items])
+    return KnowledgeVisibleItems(items=[item for item in request.items if (item.item_kind, item.item_id) in visible])
 
 
 async def item_summary(store, space, item_kind, item_id, current, *, source_ids,
