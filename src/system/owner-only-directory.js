@@ -39,7 +39,10 @@ export function restrictToOwner(directory, { platform = process.platform, env = 
   const allowed = [...new Set(actual.rules.filter(rule => rule.allow).map(rule => rule.sid))].sort();
   if (actual.owner !== sid || actual.protected !== true || actual.rules.some(rule => !rule.allow)
     || JSON.stringify(allowed) !== JSON.stringify(expected)) {
-    throw new Error('The directory is not owned by this account with access for it and SYSTEM only');
+    // SIDs only, never a path's contents, so the reason can be acted on.
+    const found = actual.rules.map(rule => `${rule.sid}:${rule.allow ? 'allow' : 'deny'}`).join(', ') || 'none';
+    throw new Error(`The directory is not owned by this account with access for it and SYSTEM only (expected owner ${sid}; `
+      + `found owner ${actual.owner ?? 'unknown'}, inheritance ${actual.protected ? 'off' : 'on'}, rules ${found})`);
   }
 }
 
