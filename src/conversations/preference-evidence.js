@@ -17,9 +17,13 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
   let file;
   try {
     file = await openWithoutFollowing(path, constants.O_RDONLY);
-    const stat = await file.stat();
+    // Exact file identity: a Windows file ID is a 64-bit number (MFT record and
+    // sequence) that a Number rounds above 2^53, so a replaced file whose new ID
+    // is next to the old one could read as the same file and keep confirming
+    // what only the old one held (recent-context.test.js, PR #356 CI).
+    const stat = await file.stat({ bigint: true });
     if (!stat.isFile() || !stat.size || stat.size > MAX_BYTES) return { known: false };
-    const bytes = Buffer.alloc(stat.size);
+    const bytes = Buffer.alloc(Number(stat.size));
     const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
     if (bytesRead !== bytes.length || bytes.at(-1) !== 10) return { known: false };
     const calls = new Map();
