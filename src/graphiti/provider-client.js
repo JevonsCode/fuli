@@ -643,6 +643,10 @@ export class GraphitiProviderClient {
   readTurnReceipt(input) {
     return this.#request('/v1/knowledge/turn-receipts', { method: 'POST', body: input });
   }
+  // rec#50: which of these items exist and an Agent reader may see now (keys only).
+  readVisibleKnowledgeItems(input) {
+    return this.#request('/v1/knowledge/visible-items', { method: 'POST', body: input });
+  }
   // rec#5 C6: everything one host session recorded.
   readSessionRecords(input) {
     return this.#request('/v1/session-records', { method: 'POST', body: input });

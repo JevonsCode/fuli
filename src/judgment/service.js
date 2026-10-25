@@ -2,7 +2,9 @@ import { z } from 'zod';
 import { JudgmentStore } from './store.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
+import { agentJudgmentView } from './agent-view.js';
 import { acceptanceReviewVerdicts } from './review-verdicts.js';
+import { taskKnowledgeReader } from '../graphiti/knowledge-reader.js';
 
 const id = z.string().trim().min(1).max(256);
 // client: the client Tonborg is enabled for and the CLI an opted-in legacy
@@ -35,6 +37,16 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       }
     }
   }
+  // The scope's own records and the global ones, newest first.
+  async function questionRecords(input) {
+    const parsed = parse(scopeSchema.strict(), input); await scope(parsed);
+    const records = store().records(parsed.personalSpaceId, { personalProjectId: parsed.personalProjectId ?? null });
+    if (parsed.personalProjectId) records.push(...store().records(parsed.personalSpaceId, { personalProjectId: null }));
+    return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  // An Agent tool's answer: the records as this reader may read them (agent-view.js).
+  const agentView = (result, personalSpaceId, reader = null) =>
+    agentJudgmentView(app.personal, result, { personalSpaceId, reader });
   const service = {
     store, scope,
     async pins(input) { space(input); return store().pins(input.personalSpaceId); },
@@ -59,13 +71,6 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       const records = store().records(parsed.personalSpaceId, parsed);
       return { ...judgmentHumanInteraction(records, parsed.personalSpaceId), records };
     },
-    async conversationQuestions(input) {
-      const parsed = parse(scopeSchema.strict(), input); await scope(parsed);
-      const records = store().records(parsed.personalSpaceId, { personalProjectId: parsed.personalProjectId ?? null });
-      if (parsed.personalProjectId) records.push(...store().records(parsed.personalSpaceId, { personalProjectId: null }));
-      records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      return judgmentHumanInteraction(records, parsed.personalSpaceId);
-    },
     // Reads the local ledger only; no judgment client runs.
     async reviewVerdicts(input) {
       const parsed = parse(reviewVerdictSchema, input); space(parsed);
@@ -81,9 +86,36 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
     async accept(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.accept(service, input); },
     // A session answered a work package Tonborg handed off.
     async resumeWork(work) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.resume(service, work); },
+    // What Agent tools and the session answering Tonborg's work read: the same
+    // operations, without the records' words (rec#50). An FLA names itself as
+    // search does (projectAgentId in its personalProjectId); else the reader
+    // is a plain session. The console reads the full answers above.
+    agent: {
+      async records({ projectAgentId = null, ...input } = {}) {
+        const reader = agentReader(input, projectAgentId);
+        return agentView(await service.records(input), input.personalSpaceId, reader);
+      },
+      async conversationQuestions({ projectAgentId = null, ...input }) {
+        const reader = agentReader(input, projectAgentId);
+        const { human_interaction } = await agentView({ records: await questionRecords(input) }, input.personalSpaceId, reader);
+        return human_interaction ? { human_interaction } : {};
+      },
+      review: async input => agentView(await service.review(input), input.personalSpaceId),
+      assess: async input => agentView(await service.assess(input), input.personalSpaceId),
+      accept: async input => agentView(await service.accept(input), input.personalSpaceId),
+      resumeWork: async work => agentView(await service.resumeWork(work), work.input?.personalSpaceId)
+    },
     close() { database?.close(); }
   };
   return service;
+}
+
+const agentReaderSchema = z.object({ personalProjectId: id, projectAgentId: id }).strict();
+
+// The FLA an Agent names, in the one project it reads; null for a plain session.
+function agentReader(input, projectAgentId) {
+  if (projectAgentId === null) return null;
+  return taskKnowledgeReader(parse(agentReaderSchema, { personalProjectId: input.personalProjectId, projectAgentId }));
 }
 
 export function parse(schema, input) {
