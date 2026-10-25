@@ -3,6 +3,7 @@ import test from 'node:test';
 import path from 'node:path';
 
 import { ApplicationError, InvalidInputError } from '../src/app/application-error.js';
+import { createRetrievalApiConnector } from '../src/external-knowledge/connectors/retrieval-api.js';
 import {
   beginTaskContext,
   checkpointTaskKnowledge
@@ -238,6 +239,39 @@ test('shared input checks report invalid_input naming the argument, never its va
     assert.match(result.structuredContent.error.message, /^(connection|limit|projectIds|policy) /);
     assert.doesNotMatch(result.content[0].text, /sk-synthetic/);
   }
+});
+
+// rec#48: a value missing from a remote response is not the caller's argument.
+// It gets connector_response_invalid, while the caller's own query stays invalid_input.
+test('a malformed remote connector response reports connector_response_invalid, not invalid_input', async () => {
+  const connector = createRetrievalApiConnector({
+    fetchImpl: async () => new Response(JSON.stringify({ records: [{ title: 'Incomplete record' }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    })
+  });
+  const context = {
+    config: { url: 'https://knowledge.example.test/retrieval' },
+    source: { knowledgeIds: ['kb-a'] },
+    env: {},
+    limit: 5
+  };
+  const errorOf = async (query) => {
+    try {
+      await connector.retrieve({ ...context, query });
+    } catch (error) {
+      return errorToolResult(error).structuredContent.error;
+    }
+    return null;
+  };
+
+  const malformed = await errorOf('release process');
+  assert.equal(malformed.code, 'connector_response_invalid');
+  assert.match(malformed.message, /Retrieval record content/);
+
+  const badQuery = await errorOf('   ');
+  assert.equal(badQuery.code, 'invalid_input');
+  assert.match(badQuery.message, /Retrieval query is required/);
 });
 
 test('a genuine internal TypeError stays internal_error', () => {

@@ -1,8 +1,9 @@
-import { InvalidInputError } from '../app/application-error.js';
+import { ConnectorResponseError, InvalidInputError } from '../app/application-error.js';
 
-// Shared checks for untrusted input values. Each throws InvalidInputError (a
-// TypeError with code invalid_input) naming the caller's label, never the value.
-// A label is a constant field name (test/validation-labels.test.js).
+// Shared checks for untrusted input values. The caller-input checks throw
+// InvalidInputError (a TypeError with code invalid_input) naming the caller's
+// label, never the value. A label is a constant field name
+// (test/validation-labels.test.js).
 
 export function requiredString(value, label, maximum = Infinity) {
   return checkedText(value, label, maximum, InvalidInputError);
@@ -14,6 +15,13 @@ export function requiredString(value, label, maximum = Infinity) {
 // TypeError (internal_error), never invalid_input the caller cannot fix.
 export function requiredBinding(value, label, maximum = Infinity) {
   return checkedText(value, label, maximum, TypeError);
+}
+
+// The same check for a value a remote external-knowledge source returned: a
+// missing field is the source's fault, not the caller's argument, so it gets
+// connector_response_invalid instead of invalid_input.
+export function requiredResponseString(value, label, maximum = Infinity) {
+  return checkedText(value, label, maximum, ConnectorResponseError);
 }
 
 function checkedText(value, label, maximum, Failure) {

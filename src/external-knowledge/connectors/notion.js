@@ -1,4 +1,4 @@
-import { requiredString, uniqueTextArray } from '../../validation/values.js';
+import { requiredResponseString, requiredString, uniqueTextArray } from '../../validation/values.js';
 import { dateTimeOrNull, jsonObject, onlineUrl, timeoutMilliseconds } from './response-values.js';
 
 const NOTION_API_ROOT = 'https://api.notion.com';
@@ -141,7 +141,7 @@ function notionRequester(fetchImpl) {
 }
 
 async function notionPageDocument(context, request, page) {
-  const id = requiredString(page.id, 'Notion page id');
+  const id = requiredResponseString(page.id, 'Notion page id');
   const markdown = await request(
     context,
     'GET',

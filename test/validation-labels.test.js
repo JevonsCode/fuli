@@ -1,5 +1,6 @@
 // rec#48: the shared input checks put the caller's label into the message an
-// Agent or a person reads (invalid_input). A label is a constant field name;
+// Agent or a person reads (invalid_input, or connector_response_invalid for a
+// remote response). A label is a constant field name;
 // a value interpolated into it would echo what the caller sent, which may be a
 // secret or a user path. This scans every call site in the product source.
 import assert from 'node:assert/strict';
@@ -12,7 +13,7 @@ import ts from 'typescript';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const VALUES_MODULE = '/validation/values.js';
 const SOURCES = ['src', ...readdirSync(join(ROOT, 'packages')).map(name => join('packages', name, 'src'))];
-const CHECKS = new Set(['requiredString', 'requiredBinding', 'positiveInteger', 'uniqueTextArray', 'assertJsonObject']);
+const CHECKS = new Set(['requiredString', 'requiredBinding', 'requiredResponseString', 'positiveInteger', 'uniqueTextArray', 'assertJsonObject']);
 // What a template label may interpolate: a label the caller passed down, the
 // item label built from one, and an array position. A bare identifier label
 // may only be a forwarded `label` parameter.
