@@ -65,7 +65,7 @@ test('a transport interrupted while reading a response is unavailable', async ()
 });
 test('trusted overrides of every code adapter return the reserved application error', t => {
   const { pack } = fixture(t);
-  for (const id of ['claude-desktop', 'gemini', 'opencode', 'qwen-code', 'kiro']) {
+  for (const id of ['claude-desktop', 'gemini', 'qwen-code', 'kiro']) {
     const candidate = { ...pack, id }; candidate.digest = descriptorDigest(candidate);
     assert.throws(() => loadClientDescriptorPacks({ trustedOverrides: [candidate] }),
       error => error.code === 'client_pack_reserved' && error.status === 409);

@@ -10,6 +10,7 @@ import { readPinnedClientManifest } from '../setup/agents/client-manifest.js';
 import { installedClientPacks, readClientPackState } from '../setup/agents/client-pack-store.js';
 import { clientDescriptorPacks, clientPackTarget, agentAdapter } from '../setup/agents/registry.js';
 import { changeClientPack, recoverClientPack } from '../setup/agents/client-pack-change.js';
+import { parseMcpJson } from '../setup/agents/json-mcp.js';
 import { compareSemanticVersions } from '../semantic-version.js';
 import { platformPath } from '../system/platform-path.js';
 
@@ -89,6 +90,6 @@ export async function runClientsCommand(args, { env = process.env, write = conso
   const agent = adapter.detect(environment);
   const readText = path => path && existsSync(path) ? readFileSync(path, 'utf8') : '';
   const context = { nodePath: process.execPath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath: runtimePath };
-  const connected = adapter.status(agent, context, { readText, readJson: path => { const value = readText(path); return value ? JSON.parse(value) : {}; }, bootstrapCurrent: () => false }).registration.present;
+  const connected = adapter.status(agent, context, { readText, readJson: (path, options) => { const value = readText(path); return value ? parseMcpJson(value, options) : {}; }, bootstrapCurrent: () => false }).registration.present;
   return changeClientPack({ dataDir: paths.dataDir, pack, rollback: action === 'rollback', agent: connected ? clientPackTarget(pack, environment) : null, context, confirm, write, writeFile });
 }

@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "id": "opencode",
+  "version": "1.0.0",
+  "digest": "sha256:ae40eb04c6acd07fb4400be1969b414263763895294546d507f1857fee7c9d8f",
+  "label": "OpenCode",
+  "command": "opencode",
+  "detection": {
+    "clientHome": {
+      "from": "homeDir",
+      "path": [
+        ".config",
+        "opencode"
+      ],
+      "envBase": "XDG_CONFIG_HOME"
+    },
+    "files": {
+      "configPath": {
+        "from": "clientHome",
+        "path": [
+          "opencode.json"
+        ]
+      },
+      "pluginPath": {
+        "from": "clientHome",
+        "path": [
+          "plugins",
+          "fuli",
+          "index.js"
+        ]
+      }
+    },
+    "skillsRoot": {
+      "from": "clientHome",
+      "path": [
+        "skills"
+      ]
+    },
+    "availableWhen": [
+      {
+        "probe": "commandOnPath"
+      },
+      {
+        "probe": "pathExists",
+        "target": "configPath"
+      }
+    ]
+  },
+  "commandSkills": {
+    "review": {
+      "userCommand": "fuli review",
+      "nativeInvocation": "the flreview skill"
+    },
+    "sessionCommand": false
+  },
+  "configWriter": "opencode-plugin",
+  "mcpServer": {
+    "command": "{nodePath}",
+    "args": [
+      "{mcpServerPath}",
+      "--runtime-config",
+      "{runtimeConfigPath}",
+      "--source-application",
+      "other",
+      "{toolProfileArgs}"
+    ]
+  },
+  "lifecycleHooks": {
+    "timeoutSec": 12,
+    "events": [
+      {
+        "event": "prompt"
+      },
+      {
+        "event": "execution.succeeded"
+      }
+    ]
+  }
+}

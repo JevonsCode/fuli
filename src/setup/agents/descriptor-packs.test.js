@@ -19,8 +19,8 @@ function variant(change, base = cursor) {
 }
 const load = (external) => loadClientDescriptorPacks({ external: [external] });
 
-test('built-in packs are the three lifecycle clients, each with a known config writer and a matching digest', () => {
-  assert.deepEqual(builtIn.map(({ id }) => id), ['codex', 'claude-code', 'cursor']);
+test('built-in packs are the four lifecycle clients, each with a known config writer and a matching digest', () => {
+  assert.deepEqual(builtIn.map(({ id }) => id), ['codex', 'claude-code', 'cursor', 'opencode']);
   for (const pack of builtIn) {
     assert.equal(pack.schemaVersion, 1);
     assert.equal(pack.digest, descriptorDigest(pack));
@@ -30,7 +30,7 @@ test('built-in packs are the three lifecycle clients, each with a known config w
 });
 
 test('an external pack can never claim a built-in or code-adapter id', () => {
-  for (const id of ['cursor', 'codex', 'claude-code']) {
+  for (const id of ['cursor', 'codex', 'claude-code', 'opencode']) {
     assert.throws(() => load(variant((pack) => { pack.id = id; })), { code: 'client_pack_reserved' });
   }
   for (const id of agentAdapters.map((adapter) => adapter.id).filter((id) => !builtIn.some((pack) => pack.id === id))) {
@@ -38,7 +38,7 @@ test('an external pack can never claim a built-in or code-adapter id', () => {
       { code: 'client_pack_reserved' }, id);
   }
   const other = variant((pack) => { pack.id = 'cursor-nightly'; pack.label = 'Cursor Nightly'; });
-  assert.deepEqual(load(other).map(({ id }) => id), ['codex', 'claude-code', 'cursor', 'cursor-nightly']);
+  assert.deepEqual(load(other).map(({ id }) => id), ['codex', 'claude-code', 'cursor', 'opencode', 'cursor-nightly']);
   assert.throws(() => loadClientDescriptorPacks({ external: [other, other] }), { code: 'client_pack_reserved' });
 });
 
@@ -81,6 +81,7 @@ test('a pack cannot carry commands, scripts, free paths, secrets or a writer out
     'path traversal': (pack) => { pack.detection.files.configPath.path = ['..', '..', 'etc', 'passwd']; },
     'absolute path segment': (pack) => { pack.detection.files.configPath.path = ['/etc/passwd']; },
     'undocumented environment variable': (pack) => { pack.detection.clientHome.envOverride = 'AWS_SECRET_ACCESS_KEY'; },
+    'XDG base for a home outside .config': (pack) => { pack.detection.clientHome.envBase = 'XDG_CONFIG_HOME'; },
     'probe outside the built-in set': (pack) => { pack.detection.availableWhen.push({ probe: 'runVersionCommand', command: 'cursor --version' }); },
     'probe of an undeclared file': (pack) => { pack.detection.availableWhen.push({ probe: 'pathExists', target: 'settingsPath' }); },
     'writer outside the fixed set': (pack) => { pack.configWriter = 'shell-script'; },

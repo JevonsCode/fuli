@@ -3,7 +3,7 @@ import { ApplicationError } from '../../app/application-error.js';
 import { compareSemanticVersions } from '../../semantic-version.js';
 import { parseClientDescriptor } from './descriptor-schema.js';
 
-const BUILT_IN_PACKS = Object.freeze(['codex', 'claude-code', 'cursor']);
+const BUILT_IN_PACKS = Object.freeze(['codex', 'claude-code', 'cursor', 'opencode']);
 function builtInPack(id) {
   const pack = parseClientDescriptor(JSON.parse(readFileSync(new URL(`./${id}/descriptor.json`, import.meta.url), 'utf8')));
   if (pack.id !== id) throw new TypeError(`Client descriptor pack ${id} names another client: ${pack.id}`);

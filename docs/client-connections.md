@@ -130,9 +130,9 @@ files or native client tool state.
 | Capability | Generic MCP | Current dedicated adapters |
 | --- | --- | --- |
 | Tools, authorized preferences and working memory | Available through tool calls | Shared behavior |
-| Automatic configuration and bundled instructions | Merge generated configuration | Codex, Claude Code, Cursor; Claude Desktop (configuration only, chat profile) |
-| Task entry and completion hooks | Agent follows instructions; no guaranteed hook | Host-specific adapters; Cursor has a limited completion reminder |
-| Automatic visible conversation capture | No | Supported Codex and Claude Code transcript formats |
+| Automatic configuration and bundled instructions | Merge generated configuration | Codex, Claude Code, Cursor, OpenCode 2.x; Claude Desktop (configuration only, chat profile) |
+| Task entry and completion hooks | Agent follows instructions; no guaranteed hook | Host-specific adapters; Cursor has a limited completion reminder; OpenCode 2.x through a FULI plugin (entry as system text each turn, close after a successful execution) |
+| Automatic visible conversation capture | No | Supported Codex and Claude Code transcript formats (not OpenCode yet: it keeps no transcript file) |
 | Roundtable wake/resume | Messages can wait for the recipient's next task | Codex and Claude Code CLIs |
 
 VS Code/Copilot, Gemini CLI and Cline document compatible local MCP transports. They are
@@ -185,7 +185,9 @@ service. See the [remote connector setup](../README.md#remote-claude--cowork-con
 | OpenCode | `~/.config/opencode/opencode.json` 或 `.jsonc`（支持 `XDG_CONFIG_HOME`） | [`mcp`，type=local，command 数组](https://opencode.ai/docs/mcp-servers/) |
 | Kiro | `~/.kiro/settings/mcp.json` | [`mcpServers`，command + args](https://kiro.dev/docs/mcp/configuration/) |
 
-新接入使用 chat 工具配置，已有显式 profile 会保留。一键接入 Cursor 也会补上 chat；旧 CLI Cursor 配置仍兼容。现有 Codex、Claude Code、Cursor 的生命周期/技能安装和 Claude Desktop 的 MCP 接入继续复用原流程。新增四客户端仅安装 MCP，不导入聊天历史、不安装采集 Hook、不替用户批准工具信任。
+新接入使用 chat 工具配置，已有显式 profile 会保留。一键接入 Cursor 也会补上 chat；旧 CLI Cursor 配置仍兼容。现有 Codex、Claude Code、Cursor 的生命周期/技能安装和 Claude Desktop 的 MCP 接入继续复用原流程。Gemini CLI、Qwen Code、Kiro 仅安装 MCP，不导入聊天历史、不安装采集 Hook、不替用户批准工具信任。
+
+OpenCode 2.x 另装一个 FULI 插件（`<配置目录>/plugins/fuli/index.js`，随 `fuli clients update|rollback` 的客户端包更新）：每轮提问时调用 FULI 的任务入口，把入口内容作为本轮的 system 文本交给模型，不改用户原文；执行成功结束时像 Stop hook 一样收尾，失败或中断不收尾。FULI 慢或不可用时提问照常进行，最多多一行提示。OpenCode 1.x 的插件 API 不兼容，检测到时只接入 MCP 并给出提示；读不到版本（`opencode --version`）时不新装插件。OpenCode 的会话原文只能通过 API 或 `opencode session export` 读取，目前还不自动采集。FULI 在 Windows 上看不到 WSL 里的 OpenCode；WSL 里的 OpenCode 请在 WSL 里运行 `fuli setup`。
 
 OpenCode 的 [配置分层](https://opencode.ai/docs/config/) 可覆盖全局配置；同时存在全局 JSON/JSONC，或设置了配置覆盖环境变量时，界面提供官方手动接入指引，不自动写入。其他项目级配置也可能覆盖全局项。Kiro CLI 的 agent 配置或 `includeMcpJson` 设置可能覆盖/禁用全局 MCP，需按官方说明检查。格式不合法时自动接入会失败并保留原文件。
 

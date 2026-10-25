@@ -226,6 +226,7 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/setup/claude-code-config.js', 'Claude Code configuration, owned by the client'],
   ['src/setup/claude-desktop-config.js', 'Claude Desktop configuration, owned by the client'],
   ['src/setup/cursor-config.js', 'Cursor configuration, owned by the client'],
+  ['src/setup/agents/opencode/config-writer.js', 'OpenCode configuration and FULI\'s plugin file, owned by the client'],
   ['src/setup/codex-config.js', 'Codex configuration and hooks, owned by the client'],
   ['src/setup/codex-bootstrap.js', 'Codex configuration, owned by the client'],
   ['src/desktop/windows-installation-switch.js', 'installation record and shortcuts, checked by content before each replace'],

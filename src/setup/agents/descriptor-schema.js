@@ -21,12 +21,16 @@ const pathSegment = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/)
 const segments = z.array(pathSegment).min(1).max(6);
 
 export const CLIENT_FILE_KEYS = Object.freeze(['configPath', 'settingsPath', 'hooksPath',
-  'globalInstructionsPath', 'globalInstructionsOverridePath']);
+  'globalInstructionsPath', 'globalInstructionsOverridePath', 'pluginPath']);
 const pathRef = z.object({ from: z.enum(['homeDir', 'clientHome']), path: segments }).strict();
 
 const detection = z.object({
   // Only client-documented home variables; a pack cannot read any other environment value.
-  clientHome: z.object({ from: z.literal('homeDir'), path: segments, envOverride: z.enum(['CODEX_HOME']).optional() }).strict(),
+  clientHome: z.object({ from: z.literal('homeDir'), path: segments, envOverride: z.enum(['CODEX_HOME']).optional(),
+    // XDG_CONFIG_HOME stands for the home's .config directory, the path's first segment.
+    envBase: z.enum(['XDG_CONFIG_HOME']).optional() }).strict()
+    .refine((home) => !home.envBase || (home.path[0] === '.config' && home.path.length > 1 && !home.envOverride),
+      'XDG_CONFIG_HOME replaces only a leading .config segment'),
   files: z.object(Object.fromEntries(CLIENT_FILE_KEYS.map((key) =>
     [key, key === 'configPath' ? pathRef : pathRef.optional()]))).strict(),
   skillsRoot: pathRef,
@@ -87,7 +91,11 @@ const clientDescriptorSchema = z.discriminatedUnion('configWriter', [
       'Instructions cannot contain the managed block markers')).min(1).max(40) }).strict() }).strict(),
   z.object({ ...base, configWriter: z.literal('cursor-hooks'),
     lifecycleHooks: hooks(z.enum(['sessionStart', 'beforeSubmitPrompt', 'stop']), {
-      loopLimit: z.number().int().min(1).max(10).optional() }) }).strict()
+      loopLimit: z.number().int().min(1).max(10).optional() }) }).strict(),
+  // OpenCode V2 runs lifecycle code as a plugin, not as hook commands: the
+  // events name which hooks of the packaged plugin run (rec#11 D-63).
+  z.object({ ...base, configWriter: z.literal('opencode-plugin'),
+    lifecycleHooks: hooks(z.enum(['prompt', 'execution.succeeded'])) }).strict()
 ]);
 
 export function descriptorDigest(value) {
