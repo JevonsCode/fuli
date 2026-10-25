@@ -113,7 +113,13 @@ const BASELINE = Object.freeze({
   // and shows a reviewed item only to a reader who may see it now, so it takes projectAgentId as the
   // other FLA reads do and says so (+133 B on release): 187,579 -> 187,712 B, measured on main after
   // the merge. Chat is unchanged.
-  fullToolSchemaBytes: 187712,
+  // rec#11 D-62: every gated tool (all but the open ones) takes the optional bare taskContextToken
+  // instead of a list of 24, since a read like list_judgments was always refused while any session
+  // of the client was stopped and the model could not pass the token its schema rejected. 102 more
+  // tools list the field; those that name a task token keep their own: 187,712 -> 191,482 B
+  // (+3,770 B, about 37 B a tool), measured. Chat is unchanged: its listed tools already took it or are
+  // open, and fuli_call reads one schema on demand.
+  fullToolSchemaBytes: 191482,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

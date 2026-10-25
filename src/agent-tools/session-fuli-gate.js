@@ -19,35 +19,37 @@ const OPEN_TOOLS = new Set([
   'acquire_runtime_lease', 'refresh_runtime_lease', 'release_runtime_lease'
 ]);
 export const SESSION_FULI_OFF = 'fuli_off';
-// Tools whose own schema names no task: those an Agent calls without a task of
-// their own (entry, recall, team and judgment reads) and the records a task
-// writes as it goes or closes. They take the current taskContextToken only to
-// say which session they are for: without it, a call is refused while any
-// session of its client is off, since no host session shows the current one
-// (option Y, #251). The token is used here and never reaches the tool.
-const ATTRIBUTED_TOOLS = new Set([
-  'get_collaboration_preferences', 'get_user_taste_skill', 'search_current_project_knowledge', 'search_knowledge_graph',
-  'search_connected_knowledge', 'list_project_agents', 'get_project_agent_context', 'get_project_agent_memory',
-  'list_preference_conflicts', 'resolve_deferred_preference_conflict', 'request_agent_attention', 'assess_agent_action',
-  'review_with_tonborg', 'get_agent_quality_gate', 'get_project_team', 'recommend_next_workflow_steps', 'find_agents',
-  'capture_session_knowledge', 'record_decision_trace', 'record_workflow_transition_observation',
-  'checkpoint_project_agent_memory', 'record_project_agent_task_activity', 'record_project_agent_executor_actual',
-  'record_project_agent_task_outcome'
-]);
+// Every other tool is attributed unless its own schema names a task token
+// (rec#11 D-62): entry, recall, team and judgment reads an Agent calls without
+// a task of its own and the records a task writes as it goes or closes alike.
+// It takes the current taskContextToken only to say which session it is for:
+// without it, a call is refused while any session of its client is off, since
+// no host session shows the current one (option Y, #251). The token is used
+// here and never reaches the tool. A tool that names a task token keeps its
+// own field and receives it. There is no list to keep: a new tool is
+// attributed unless it is open or names its own token.
+const OWN_TOKEN_FIELDS = Object.freeze(['taskContextToken', 'task_context_token']);
 // Bare: a value that is not a current task token only leaves the call without a session.
 const TOKEN_FIELD = Object.freeze({ type: 'string' });
 
-// A tool definition as Agents see it: an attributed tool lists the token.
-export function withSessionAttribution(definition) {
-  return ATTRIBUTED_TOOLS.has(definition.name) ? { ...definition, inputSchema: { ...definition.inputSchema,
-    properties: { ...definition.inputSchema.properties, taskContextToken: TOKEN_FIELD } } } : definition;
-}
-
-// The input a tool itself receives.
-export function withoutSessionAttribution(name, input) {
-  if (!ATTRIBUTED_TOOLS.has(name) || !input || typeof input !== 'object' || !Object.hasOwn(input, 'taskContextToken')) return input;
-  const { taskContextToken: _attribution, ...rest } = input;
-  return rest;
+// The session gate over the Agent tool definitions: what Agents see of them,
+// the input each tool itself receives and how a call runs.
+export function createSessionGate(definitions) {
+  const attributed = new Set(definitions.filter(({ name, inputSchema }) => !OPEN_TOOLS.has(name)
+    && !OWN_TOKEN_FIELDS.some(field => Object.hasOwn(inputSchema.properties ?? {}, field))).map(({ name }) => name));
+  return Object.freeze({
+    // An attributed tool lists the token.
+    definitions: definitions.map(definition => attributed.has(definition.name) ? { ...definition, inputSchema: {
+      ...definition.inputSchema, properties: { ...definition.inputSchema.properties, taskContextToken: TOKEN_FIELD } } }
+      : definition),
+    // The input a tool itself receives.
+    toolInput(name, input) {
+      if (!attributed.has(name) || !input || typeof input !== 'object' || !Object.hasOwn(input, 'taskContextToken')) return input;
+      const { taskContextToken: _attribution, ...rest } = input;
+      return rest;
+    },
+    run: (app, name, input, dispatch) => runSessionGated(app, { name, attributed: attributed.has(name) }, input, dispatch)
+  });
 }
 const GUIDANCE = 'FULI is off for this session, so nothing was read, injected, recorded or started. Do not call FULI tools for this session or add an agent_receipt; only the person can turn it on (/fuli start).';
 // The refusals that are not the person turning FULI off here.
@@ -66,20 +68,20 @@ const REASON_GUIDANCE = Object.freeze({
 // capture decisions of its writes count that session as their task's, with
 // its pause and stop, while another session of the client records nothing.
 // A call that needs neither runs as before, synchronously.
-export function runSessionGated(app, name, input, dispatch) {
+function runSessionGated(app, { name, attributed }, input, dispatch) {
   const checked = !OPEN_TOOLS.has(name) && sessionsMayBeOff(app);
-  if (!checked && !ATTRIBUTED_TOOLS.has(name)) return dispatch();
+  if (!checked && !attributed) return dispatch();
   // The client the call's process was started for decides, whatever the payload names or omits.
   const sourceApplication = activeAgentHostClient() ?? input?.sourceApplication ?? 'other';
   if (!checked && !sessionsMayBeWithoutCapture(app, sourceApplication)) return dispatch();
-  return gatedCall(app, name, input, dispatch, { checked, sourceApplication });
+  return gatedCall(app, input, dispatch, { attributed, checked, sourceApplication });
 }
 
-async function gatedCall(app, name, input, dispatch, { checked, sourceApplication }) {
+async function gatedCall(app, input, dispatch, { attributed, checked, sourceApplication }) {
   const binding = await tokenBinding(app, input, sourceApplication);
   const refusal = checked ? sessionFuliRefusal(app, input, sourceApplication, binding) : null;
   if (refusal) return refusal;
-  return ATTRIBUTED_TOOLS.has(name) && binding.boundSessionId
+  return attributed && binding.boundSessionId
     ? runWithTaskBoundSession(binding.boundSessionId, dispatch) : dispatch();
 }
 

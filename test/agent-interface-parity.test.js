@@ -207,8 +207,10 @@ test('Agent memory export is a read workflow beside the console memory route', (
   assert.match(memory.guidance, /never imported/);
   const tool = listAgentTools().find(({ name }) => name === 'export_project_agent_memory');
   assert.equal(annotationsFor(tool.name).readOnlyHint, true);
-  // No file path, and the source client is injected by the trusted host only.
-  assert.deepEqual(Object.keys(tool.inputSchema.properties).sort(), ['agentId', 'personalProjectId', 'personalSpaceId']);
+  // No file path, and the source client is injected by the trusted host only. The task token only
+  // tells the session gate which session the call is for (rec#11 D-62); the tool never receives it.
+  assert.deepEqual(Object.keys(tool.inputSchema.properties).sort(), ['agentId', 'personalProjectId', 'personalSpaceId',
+    'taskContextToken']);
   assert.equal(normalizeAgentSessionInput(tool.name, { agentId: 'a', personalSpaceId: 's', sourceApplication: 'codex' },
     null, 'fuli-host-synthetic', undefined, 'cursor').sourceApplication, 'cursor');
 });
