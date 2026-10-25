@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "opencode",
   "version": "1.0.0",
-  "digest": "sha256:46583a34884f0910be60ed13c429eae40db3a04a53afd4e7b44dd3c0cd77ca4e",
+  "digest": "sha256:d76499a886b301d29cb481feeef7a8e1bd6b61e482cd9fc517b98ffc760ece45",
   "label": "OpenCode",
   "command": "opencode",
   "detection": {
@@ -66,7 +66,7 @@
     ]
   },
   "lifecycleHooks": {
-    "timeoutSec": 12,
+    "timeoutSec": 17,
     "events": [
       {
         "event": "prompt"

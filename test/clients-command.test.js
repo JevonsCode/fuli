@@ -284,10 +284,10 @@ test('an OpenCode pack update applies without touching files when OpenCode is no
 });
 test('an OpenCode pack update rewrites the installed plugin with the new hook timeout', async t => {
   const f = fixture(t, 'opencode');
-  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 10000/);
+  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 15000/);
   await f.run(['trust', f.source, '--sha256', f.sha256]);
   assert.equal((await f.run(['update', '--apply', 'opencode@99.0.0'])).status, 'applied');
-  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 11000/);
+  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 16000/);
   assert.equal((await f.run(['rollback', 'opencode'])).status, 'applied');
-  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 10000/);
+  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 15000/);
 });

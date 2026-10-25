@@ -51,7 +51,7 @@ test('OpenCode 2.x: setup writes the MCP entry and the plugin, keeps JSONC comme
   assert.ok(plugin.includes(JSON.stringify(path.join(packaged, 'lifecycle-hook.js'))));
   assert.ok(plugin.includes(JSON.stringify(CONTEXT.runtimeConfigPath)));
   assert.match(plugin, /"events": \[\s*"prompt",\s*"execution\.succeeded"\s*\]/);
-  assert.match(plugin, /"timeoutMs": 10000/, 'the hook deadline leaves room inside the pack timeout');
+  assert.match(plugin, /"timeoutMs": 15000/, 'the hook deadline leaves room inside the pack timeout');
   assert.deepEqual({ mcp: lifecycle(agent).mcp, lifecycleHooks: lifecycle(agent).lifecycleHooks },
     { mcp: 'current', lifecycleHooks: 'current' });
   assert.equal(adapter.connect(agent, CONTEXT).restartRequired, false, 'a second connect writes nothing');

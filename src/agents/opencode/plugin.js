@@ -12,13 +12,16 @@ import { join } from 'node:path';
 //   queued behind a running turn (delivery "queue") begins only when OpenCode
 //   delivers it (session.inbox.delivered), after the turn before it closed;
 // - `context` (before each model request, not persisted) adds the entry of
-//   the session's current turn as system text;
-// - the turn's close, as a Stop hook: on `session.execution.succeeded`, when
-//   the next prompt of its session is delivered, or when OpenCode unloads the
-//   plugin with the turn still open and the session recorded a successful
-//   execution since the prompt. A failed or interrupted execution closes
-//   nothing, as an interrupted Claude Code or Codex turn runs no Stop hook; its
-//   task stays open for the next entry. Each turn closes once.
+//   the turn OpenCode delivered (the one whose requests these are);
+// - the turn's close, as a Stop hook: on the `session.execution.succeeded` of
+//   the execution that ran it (events follow OpenCode's run reducer: they
+//   belong to the delivered turn, never to a prompt still being admitted),
+//   when a newer prompt begins its task (FULI keeps one current task per
+//   session), when it is cancelled after its task began, or when OpenCode
+//   unloads the plugin with the turn still open and the session recorded a
+//   successful execution since it ran. A failed or interrupted execution
+//   closes nothing, as an interrupted Claude Code or Codex turn runs no Stop
+//   hook; its task stays open for the next entry. Each turn closes once.
 // Every path fails open: FULI slow, down or broken never blocks or crashes
 // OpenCode, and adds at most one line for that turn.
 //
@@ -38,8 +41,6 @@ const OPENCODE_PLUGIN_ID = 'fuli';
 const KILL_GRACE_MS = 1500;
 // A close is short work; the next prompt of the session waits for it.
 const STOP_TIMEOUT_MS = 5_000;
-// Below this, an entry cannot finish and is not started.
-const MIN_ENTRY_MS = 1_000;
 // Reading a session (child or not, its directory, its outcome) is bounded so
 // admission stays inside the pack's timeout and unload stays short.
 const SESSION_LOOKUP_MS = 300;
@@ -53,6 +54,7 @@ const MAX_PROMPT_CHARS = 8192;
 const TERMINAL_EVENTS = Object.freeze(['session.execution.succeeded', 'session.execution.failed',
   'session.execution.interrupted']);
 const DELIVERED_EVENT = 'session.inbox.delivered';
+const CANCELLED_EVENT = 'session.inbox.cancelled';
 
 export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, events, timeoutMs },
   { runHook = spawnHook, now = Date.now } = {}) {
@@ -65,26 +67,26 @@ export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, even
     async setup(ctx) {
       // An OpenCode without the V2 session hooks gets nothing, not a crash.
       if (typeof ctx?.session?.hook !== 'function') return undefined;
-      // Per session: the turn whose requests run now, and prompts queued behind it.
+      // Per session, as OpenCode's own run reducer sees it: `running` is the
+      // turn OpenCode delivered, which execution events belong to; `pending`
+      // are prompts admitted but not yet delivered. A steer prompt's task
+      // begins at admission (OpenCode awaits this hook before it enters the
+      // inbox), a queued one's when it is delivered.
       const sessions = new Map();
       const handoffs = new Set();
       const queue = sessionQueue();
       const stateOf = (sessionID) => {
-        if (!sessions.has(sessionID)) sessions.set(sessionID, { active: null, waiting: [] });
+        if (!sessions.has(sessionID)) sessions.set(sessionID, { running: null, pending: [] });
         return sessions.get(sessionID);
       };
 
-      // Starts the turn's entry behind anything the session's hooks still run,
-      // within what is left of the time since its admission.
+      // Starts the turn's entry behind anything the session's hooks still run;
+      // its deadline counts from when its own hook starts.
       const begin = (sessionID, turn) => {
-        sessions.get(sessionID).active = turn;
-        turn.entry = queue(sessionID, async () => {
-          const limitMs = timeoutMs - (now() - turn.admittedAt);
-          if (limitMs < MIN_ENTRY_MS) return { cause: `no answer within ${timeoutMs} ms` };
-          return run('prompt', { session_id: sessionID, message_id: turn.messageID, cwd: turn.cwd,
-            prompt: turn.text }, limitMs);
-        }).then((answer) => typeof answer?.context === 'string' && answer.context.trim()
-          ? answer.context : unavailableNotice(answer?.cause), () => unavailableNotice());
+        turn.entry = queue(sessionID, () => run('prompt', { session_id: sessionID, message_id: turn.messageID,
+          cwd: turn.cwd, prompt: turn.text }, timeoutMs))
+          .then((answer) => typeof answer?.context === 'string' && answer.context.trim()
+            ? answer.context : unavailableNotice(answer?.cause), () => unavailableNotice());
         return turn.entry;
       };
       // Each turn closes once, after its own entry and before the next one.
@@ -99,17 +101,42 @@ export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, even
         handoffs.add(handoff);
         void handoff.finally(() => handoffs.delete(handoff));
       };
-      // The session's next turn: the prompt OpenCode delivered (or the oldest
-      // queued one), which ends the turn before it.
+      // The pending turn at `index` becomes the running turn: the one OpenCode
+      // delivered, or, where the session shows no deliveries, the one its
+      // execution evidently runs. The running turn and earlier prompts are over.
+      const runTurn = (sessionID, index) => {
+        const state = sessions.get(sessionID);
+        if (!state || index < 0 || index >= state.pending.length) return;
+        const earlier = state.pending.splice(0, index + 1);
+        const turn = earlier.pop();
+        for (const over of [state.running, ...earlier]) if (over?.entry) close(sessionID, over);
+        state.running = turn;
+        // It runs from now: an outcome before this is another turn's.
+        turn.since = now();
+        if (!turn.entry && !turn.closed) begin(sessionID, turn);
+      };
       const deliver = (sessionID, messageID) => {
         const state = sessions.get(sessionID);
-        const index = messageID === undefined ? 0 : state?.waiting.findIndex((turn) => turn.messageID === messageID);
-        if (!state || index < 0 || index >= state.waiting.length) return null;
-        const [turn] = state.waiting.splice(index, 1);
-        // Its time runs from now, not from when it was queued.
-        turn.admittedAt = now();
-        if (state.active) close(sessionID, state.active);
-        return begin(sessionID, turn);
+        if (!state) return;
+        state.deliveries = true;
+        runTurn(sessionID, state.pending.findIndex((turn) => turn.messageID === messageID));
+      };
+      // Without delivery events, an execution's end is the oldest admitted
+      // prompt's, and a request runs the oldest one still open; a request
+      // after a newer prompt began (the running turn closed for it) is the
+      // newer prompt's.
+      const assumeRunning = (sessionID, { open }) => {
+        const state = sessions.get(sessionID);
+        if (!state || state.deliveries || (state.running && !(open && state.running.closed))) return;
+        runTurn(sessionID, open ? state.pending.findIndex((turn) => !turn.closed) : 0);
+      };
+      // A pending prompt the person withdrew never runs; a task it began is closed.
+      const cancel = (sessionID, messageID) => {
+        const state = sessions.get(sessionID);
+        const index = state?.pending.findIndex((turn) => turn.messageID === messageID) ?? -1;
+        if (index < 0) return;
+        const [turn] = state.pending.splice(index, 1);
+        if (turn.entry) close(sessionID, turn);
       };
 
       const registrations = [];
@@ -121,19 +148,19 @@ export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, even
               const sessionID = event?.sessionID;
               const text = event?.prompt?.text;
               if (typeof sessionID !== 'string' || typeof text !== 'string') return;
-              const admittedAt = now();
               const session = await bounded(sessionInfo(ctx, sessionID), SESSION_LOOKUP_MS);
               // A subagent's child session belongs to its parent's task.
               if (session?.parentID) return;
               const state = stateOf(sessionID);
-              const turn = { messageID: event.messageID, admittedAt, cwd: workingDirectory(session, ctx),
+              const turn = { messageID: event.messageID, since: now(), cwd: workingDirectory(session, ctx),
                 text: text.slice(0, MAX_PROMPT_CHARS), entry: null, closed: false };
-              // Queued behind the running turn: it begins when OpenCode delivers it.
-              if (state.active && !state.active.closed && event.delivery === 'queue') {
-                state.waiting.push(turn);
-                return;
-              }
-              if (state.active) close(sessionID, state.active);
+              state.pending.push(turn);
+              const begun = [state.running, ...state.pending].filter((other) => other?.entry && !other.closed);
+              // Queued behind a running turn: its task begins when OpenCode delivers it.
+              if (event.delivery === 'queue' && (state.running || begun.length)) return;
+              // FULI keeps one current task per session, and its stop closes the
+              // current one: every begun turn closes before this one begins.
+              for (const other of begun) close(sessionID, other);
               await begin(sessionID, turn);
             } catch {
               // Never block or crash OpenCode; this turn runs without FULI.
@@ -144,9 +171,11 @@ export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, even
           try {
             const state = sessions.get(event?.sessionID);
             if (!state || !Array.isArray(event.system)) return;
-            // No delivery seen for a queued prompt: the next execution is its turn.
-            if (!state.active && state.waiting.length) deliver(event.sessionID);
-            const text = await state.active?.entry;
+            // A request with no turn running: a queued prompt's next execution,
+            // or a session whose deliveries were not seen.
+            if (state.deliveries && !state.running) runTurn(event.sessionID, state.pending.findIndex((turn) => !turn.closed));
+            else assumeRunning(event.sessionID, { open: true });
+            const text = await state.running?.entry;
             if (text) event.system.push({ type: 'text', text });
           } catch {
             // The request goes out without FULI's entry.
@@ -159,9 +188,13 @@ export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, even
             const state = sessions.get(sessionID);
             if (!state) continue;
             if (item.type === DELIVERED_EVENT) deliver(sessionID, item.data.inboxID);
-            if (!TERMINAL_EVENTS.includes(item.type) || !state.active) continue;
-            if (item.type === 'session.execution.succeeded') close(sessionID, state.active);
-            state.active = null;
+            if (item.type === CANCELLED_EVENT) cancel(sessionID, item.data.inboxID);
+            if (!TERMINAL_EVENTS.includes(item.type)) continue;
+            // An execution's end belongs to the turn it ran, never to one still pending.
+            assumeRunning(sessionID, { open: false });
+            if (!state.running) continue;
+            if (item.type === 'session.execution.succeeded') close(sessionID, state.running);
+            state.running = null;
           }
         })().catch(() => {
           // Without the event stream a turn closes at unload; the next entry reports others.
@@ -177,10 +210,11 @@ export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, even
         // A turn still open at unload closes when its session went idle after
         // a successful execution since the prompt, or when OpenCode can no
         // longer say: it is over either way, as with a Stop hook at exit.
-        await Promise.all([...sessions].map(async ([sessionID, { active }]) => {
-          if (!active || active.closed) return;
+        await Promise.all([...sessions].map(async ([sessionID, state]) => {
+          const running = state.running ?? (state.deliveries ? null : state.pending[0]);
+          if (!running?.entry || running.closed) return;
           const session = await bounded(sessionInfo(ctx, sessionID), SESSION_LOOKUP_MS);
-          if (!session || succeededSince(session, active.admittedAt)) close(sessionID, active);
+          if (!session || succeededSince(session, running.since)) close(sessionID, running);
         }));
         // Closes handed off by a success event and by unload alike.
         await bounded(Promise.all([...handoffs]), UNLOAD_HANDOFF_MS);
@@ -202,10 +236,10 @@ async function sessionInfo(ctx, sessionID) {
 }
 
 // OpenCode records the last execution's outcome at `time.idle` (schema/src/session.ts).
-function succeededSince(session, admittedAt) {
+function succeededSince(session, since) {
   const idle = session?.time?.idle;
   const idleAt = typeof idle === 'number' ? idle : Date.parse(idle);
-  return session.outcome === 'succeeded' && Number.isFinite(idleAt) && idleAt >= admittedAt - IDLE_TOLERANCE_MS;
+  return session.outcome === 'succeeded' && Number.isFinite(idleAt) && idleAt >= since - IDLE_TOLERANCE_MS;
 }
 
 function bounded(promise, ms) {

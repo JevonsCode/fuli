@@ -252,16 +252,25 @@ test('a hook process that never answers is killed at the timeout and the prompt 
   assert.match((await host.request('ses-1'))[1].text, /^Fuli context is unavailable \(no answer within 2[56]\d\d ms\)\./);
 });
 
-test('admission spends no more than its budget: a lookup that hangs is cut short, and too little time left starts no entry', async (t) => {
-  const hook = recordingHook({ prompt: { context: 'entry' } });
-  let clock = 0;
-  const host = openCode({ getSession: () => { clock += 9_500; return new Promise(() => {}); } });
-  t.after(await fuliOpenCodePlugin(CONFIG, { ...hook, now: () => clock }).setup(host.ctx));
+test('admission bounds a session lookup that hangs, and an entry waiting behind a close keeps its whole deadline', async (t) => {
+  let releaseStop;
+  const hook = recordingHook({ prompt: { context: 'entry' },
+    stop: () => new Promise((resolve) => { releaseStop = () => resolve({}); }) });
+  let hang = false;
+  const host = openCode({ getSession: ({ sessionID }) => hang ? new Promise(() => {}) : Promise.resolve({ id: sessionID }) });
+  t.after(await fuliOpenCodePlugin(CONFIG, hook).setup(host.ctx));
+  await host.prompt('ses-1', 'A');
+  await host.request('ses-1');
+  await host.emit('session.execution.succeeded', 'ses-1');
+  hang = true;
   const started = Date.now();
-  await host.prompt('ses-1', 'go');
-  assert.ok(Date.now() - started < 1_000, 'the session lookup is bounded');
-  assert.equal(hook.runs.length, 0, 'half a second left of the 10 s entry budget starts no hook');
-  assert.match((await host.request('ses-1'))[1].text, /^Fuli context is unavailable \(no answer within 10000 ms\)\./);
+  const next = host.prompt('ses-1', 'B');
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.ok(Date.now() - started < 1_000);
+  releaseStop();
+  await next;
+  const entry = hook.runs.at(-1);
+  assert.deepEqual([entry.args[5], entry.args.at(-1)], ['prompt', '10000'], 'the wait behind the close is not charged to the entry');
 });
 
 test('a queued prompt begins when delivered, after the running turn closed, and each turn keeps its own entry', async (t) => {
@@ -309,6 +318,47 @@ test('without a delivery event, the queued prompt\'s turn begins with the next e
   await host.hooks.prompt({ sessionID: 'ses-1', messageID: 'msg-B', prompt: { text: 'B' }, delivery: 'queue' });
   await host.emit('session.execution.succeeded', 'ses-1');
   assert.equal((await host.request('ses-1')).at(-1).text, 'msg-B');
+});
+
+// OpenCode awaits the prompt hook before a steer prompt enters the inbox, so
+// the running turn's execution can end while the next prompt's entry runs.
+test('a steer prompt\'s entry outlasting the running turn\'s success keeps its own entry and close', async (t) => {
+  for (const ending of ['session.execution.succeeded', 'session.execution.interrupted']) {
+    let releaseB;
+    const hook = recordingHook({ prompt: (call) => call.input.message_id === 'B'
+      ? new Promise((resolve) => { releaseB = () => resolve({ context: 'entry B' }); }) : { context: 'entry A' } });
+    const host = openCode();
+    const cleanup = await fuliOpenCodePlugin(CONFIG, hook).setup(host.ctx);
+    await host.hooks.prompt({ sessionID: 's', messageID: 'A', prompt: { text: 'A' }, delivery: 'steer' });
+    await host.emitData('session.inbox.delivered', { sessionID: 's', inboxID: 'A' });
+    const b = host.hooks.prompt({ sessionID: 's', messageID: 'B', prompt: { text: 'B' }, delivery: 'steer' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // A's execution ends (or is superseded) while B's entry still runs: it is A's, not B's.
+    await host.emitData(ending, { sessionID: 's', ...(ending.endsWith('interrupted') ? { reason: 'superseded' } : {}) });
+    releaseB();
+    await b;
+    await host.emitData('session.inbox.delivered', { sessionID: 's', inboxID: 'B' });
+    const system = [];
+    await host.hooks.context({ sessionID: 's', system });
+    assert.deepEqual(system, [{ type: 'text', text: 'entry B' }], ending);
+    await host.emit('session.execution.succeeded', 's');
+    assert.deepEqual(hook.runs.map((run) => [run.args[5], run.input.message_id]),
+      [['prompt', 'A'], ['stop', undefined], ['prompt', 'B'], ['stop', undefined]], ending);
+    await cleanup();
+  }
+});
+
+test('a queued prompt the person cancels never begins, and a later execution is not its turn', async (t) => {
+  const hook = recordingHook({ prompt: (call) => ({ context: `entry ${call.input.message_id}` }) });
+  const host = openCode();
+  t.after(await fuliOpenCodePlugin(CONFIG, hook).setup(host.ctx));
+  await host.prompt('ses-1', 'A');
+  await host.request('ses-1');
+  await host.hooks.prompt({ sessionID: 'ses-1', messageID: 'msg-B', prompt: { text: 'B' }, delivery: 'queue' });
+  await host.emitData('session.inbox.cancelled', { sessionID: 'ses-1', inboxID: 'msg-B' });
+  await host.emit('session.execution.succeeded', 'ses-1');
+  assert.equal((await host.request('ses-1')).length, 1, 'no entry comes back for the withdrawn prompt');
+  assert.deepEqual(hook.runs.map((run) => [run.args[5], run.input.message_id]), [['prompt', 'msg-ses-1'], ['stop', undefined]]);
 });
 
 test('unload waits, within its bound, for a close a success event already handed off', async () => {

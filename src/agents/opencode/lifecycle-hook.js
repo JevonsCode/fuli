@@ -25,7 +25,8 @@ const OPENCODE_EVENTS = Object.freeze(['prompt', 'stop']);
 // namespace that no other `other` client shares.
 const SOURCE_APPLICATION = 'opencode';
 const STOP_TIMEOUT_MS = 5_000;
-const DEFAULT_PROMPT_TIMEOUT_MS = 10_000;
+// As Codex's entry (codex/lifecycle-hook.js): a cold first entry runs past 5 s.
+const DEFAULT_PROMPT_TIMEOUT_MS = 15_000;
 
 const ENTRY_LABEL = 'Fuli task context (OpenCode plugin). Apply effective_preferences. ';
 
