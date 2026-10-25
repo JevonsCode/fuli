@@ -121,6 +121,10 @@ test('task entry reads independent Provider data in parallel and the project lis
 });
 
 test('at the deadline an entry that wrote its task delivers the token and names what is missing with its tool', async t => {
+  // The hook's deadline timer and its entry budget's clock (Date.now) are
+  // mocked: the deadline comes only when the test ticks it, after the entry
+  // answered its task write, so a slow host cannot reach it first.
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const host = await syntheticHost(t);
   const provider = fakeProvider({ latencyMs: 5 });
   const writes = [];
@@ -129,7 +133,12 @@ test('at the deadline an entry that wrote its task delivers the token and names 
     // The entry is built and its task written; what follows answers only after the deadline.
     callTool: async (app, name, parameters, options) => {
       const value = await callAgentTool(app, name, parameters, options);
-      if (name === 'begin_task_context') await new Promise(resolve => options.signal.addEventListener('abort', resolve));
+      if (name !== 'begin_task_context') return value;
+      const aborted = new Promise(resolve => options.signal.addEventListener('abort', resolve));
+      const taskWrite = provider.requests.find(request => request.route === 'PUT /v1/task-contexts');
+      assert.ok(taskWrite?.end, 'the deadline is held until the task write has been answered');
+      t.mock.timers.tick(1500);
+      await aborted;
       return value;
     }
   });
