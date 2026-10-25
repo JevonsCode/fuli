@@ -15,6 +15,8 @@ import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { readTurnReceipt } from '../src/agents/turn-receipt.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
+import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
+import { claudeEntrySession, syntheticLargeEntry, syntheticPreferences } from '../test-support/synthetic-large-entry.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -150,6 +152,16 @@ const BASELINE = Object.freeze({
   // turn's label grows by about 190 chars, about 50 tokens; a longer token or agent name adds
   // its own length.
   entryClosingChars: 326,
+  // rec#47 F1b, rec#11 D-54: Claude Code keeps only a preview of a hook context over about
+  // 10,000 chars, so its entry is bounded to 9,000 and stays a confirmable frame. Measured on the
+  // synthetic 60-preference entry (test-support/synthetic-large-entry.js, about 430 chars each,
+  // 7 hard or boundary): turn 1 was 37,509 chars, every turn, and is now one complete frame of
+  // 11 preferences plus the omitted count; turn 2 was again 37,509 and is now a delta. A frame
+  // that leaves preferences out adds one label sentence (with its space). Entries that fit, and
+  // every other Agent, are unchanged.
+  claudeBoundedEntryChars: 8775,
+  claudeBoundedNextTurnChars: 2191,
+  omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that
   // saved items adds one heading (14 chars) and one line per item (152 chars for a short
@@ -228,6 +240,17 @@ async function projectEntryChars() {
     entryClosingChars: taskClosingInstruction(entry).length };
 }
 
+// Two turns of the synthetic 60-preference entry through the real Claude Code
+// hook and session cache, the first recorded as the host records it.
+function claudeBoundedEntryChars() {
+  return claudeEntrySession(async session => {
+    const items = syntheticPreferences(60);
+    const [first, next] = [await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' })),
+      await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-2' }))];
+    return { claudeBoundedEntryChars: first.text.length, claudeBoundedNextTurnChars: next.text.length };
+  });
+}
+
 // What a chat client actually receives from tools/list, dispatcher included.
 async function listedChatBytes() {
   const server = createMcpServer({}, { env: {}, toolProfile: 'chat', registerResources: false });
@@ -247,7 +270,8 @@ async function measure() {
     chatToolSchemaBytes: await listedChatBytes(),
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
-    ...await projectEntryChars(),
+    ...await projectEntryChars(), ...await claudeBoundedEntryChars(),
+    omittedPreferencesLabelChars: 1 + OMITTED_PREFERENCES_LABEL.length,
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,

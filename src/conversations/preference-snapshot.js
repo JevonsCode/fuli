@@ -39,6 +39,11 @@ export function framePreferenceSnapshot(value, frame, scene) {
     preference_scope: { version: 1, work_kind: scene.work_kind, workflow: scene.workflow } })) : null;
 }
 
+// The work kind the producer persisted for this task, or null.
+export function entryWorkKind(value) {
+  return value?.[SCOPE]?.preference_scope?.work_kind ?? null;
+}
+
 // The scene a pending record keeps for the frame it was produced as.
 export function pendingScene(snapshot) {
   return { work_kind: snapshot.scene.work_kind ?? null, workflow: snapshot.scene.workflow ?? null, table: TASK_SCENE_VERSION };
@@ -105,12 +110,17 @@ export function projectPreferenceDelta(value, baseline, shown) {
   const full = withRevision(plain, snapshot, shown);
   const revision = full.revision;
   if (!revision || !baseline?.revision || baseline.authorityHash !== snapshot.authorityHash) return full;
+  // A frame bounded to an inline budget (entry-inline-budget.js, D-54) lists
+  // only the set it delivers; what it leaves out may still be in force. So it
+  // never names a removal or takes back a scene's items: it is a delta that
+  // only adds or changes, or a complete frame.
+  const bounded = Object.hasOwn(value, 'preferences_omitted');
   // Same space, project, Agent, client and session in another scene: only the
   // scene-replaceable set is listed and replaced (D-27.8). Boundaries and hard
   // constraints stay as delivered; if one of them changed too, a complete
   // frame is sent instead.
   if (baseline.scopeHash !== snapshot.scopeHash) {
-    if (contentHash(boundaryUnits(baseline.units)) !== contentHash(boundaryUnits(snapshot.units))) return full;
+    if (bounded || contentHash(boundaryUnits(baseline.units)) !== contentHash(boundaryUnits(snapshot.units))) return full;
     return smaller(withPreferenceScope({ ...plain,
       effective_preferences: snapshot.preferences.filter(item => snapshot.units[unitId(item)].scene),
       preference_delivery: { status: 'scene_switch', supersedes: baseline.revision, revision, scene: sceneName(snapshot.scene),
@@ -119,6 +129,7 @@ export function projectPreferenceDelta(value, baseline, shown) {
   const updates = snapshot.preferences.filter(item => baseline.units[unitId(item)]?.hash !== snapshot.units[unitId(item)].hash);
   const removed = Object.entries(baseline.units).filter(([id]) => !Object.hasOwn(snapshot.units,id))
     .map(([,unit]) => unit.identity);
+  if (bounded && removed.length) return full;
   // A delta stays in its base's scene, so it does not repeat it.
   const { effective_preferences, ...current } = plain;
   return smaller({ ...current, preference_updates: updates, preference_delivery: {
