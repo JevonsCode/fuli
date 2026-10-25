@@ -2,24 +2,34 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 
 // The console session of one console launch (rec#11 D-61). The launch keeps a
 // random secret in memory only; it is never written, logged or put in a URL.
-// `fuli open` asks for a one-time code (http.js), the browser redeems it once
-// within CODE_TTL_MS, and the answer is a cookie derived from the secret. Only
-// a request carrying that cookie gets the console's human-review reads and
-// changes (session-ports.js). A new launch has a new secret, so a cookie from
-// an earlier launch no longer counts.
+// `fuli open` asks for a one-time code (http.js), the console page redeems it
+// once within CODE_TTL_MS, and gets two credentials derived from the secret:
+// an HttpOnly cookie and a token the page keeps in its origin's storage and
+// sends as a header. A cookie reaches every port of the host, so the cookie
+// alone is not enough; the token stays with this console's origin. Only a
+// request carrying both gets the console's protected reads and changes
+// (session-ports.js). A new launch has a new secret, so neither credential
+// of an earlier launch counts.
 
 const SECRET_BYTES = 32;
 const CODE_BYTES = 32;
 export const CODE_TTL_MS = 60_000;
 // More codes than this waiting at once drops the oldest; a person opens one at a time.
 const MAX_PENDING_CODES = 8;
-const COOKIE_LABEL = 'fuli-console-session';
 
 const digest = (text) => createHash('sha256').update(text).digest();
 
+function sameValue(offered, expected) {
+  if (typeof offered !== 'string') return false;
+  const left = Buffer.from(offered);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
 export function createConsoleSession({ random = randomBytes, now = Date.now, codeTtlMs = CODE_TTL_MS } = {}) {
   const secret = random(SECRET_BYTES);
-  const cookieValue = createHmac('sha256', secret).update(COOKIE_LABEL).digest('base64url');
+  const derive = (label) => createHmac('sha256', secret).update(label).digest('base64url');
+  const credentials = Object.freeze({ cookie: derive('fuli-console-session-cookie'), token: derive('fuli-console-session-token') });
   // Each entry keeps the code's digest, so every comparison is between equal-length values.
   let pending = [];
   const dropExpired = () => { pending = pending.filter(entry => entry.expiresAt > now()); };
@@ -45,18 +55,18 @@ export function createConsoleSession({ random = randomBytes, now = Date.now, cod
       pending = pending.filter(entry => entry !== match);
       return { next: match.next };
     },
-    // Burns a code without signing in (a redemption that came from another site).
+    // Burns a code without signing in (a code that reached a URL).
     discard(code) {
       if (typeof code !== 'string' || !code) return;
       const offered = digest(code);
       pending = pending.filter(entry => !timingSafeEqual(entry.digest, offered));
     },
-    cookieValue: () => cookieValue,
-    isValid(value) {
-      if (typeof value !== 'string') return false;
-      const offered = Buffer.from(value);
-      const expected = Buffer.from(cookieValue);
-      return offered.length === expected.length && timingSafeEqual(offered, expected);
+    credentials: () => credentials,
+    // Both credentials of this launch, each compared in constant time.
+    isSignedIn({ cookie, token }) {
+      const cookieMatches = sameValue(cookie, credentials.cookie);
+      const tokenMatches = sameValue(token, credentials.token);
+      return cookieMatches && tokenMatches;
     }
   };
 }

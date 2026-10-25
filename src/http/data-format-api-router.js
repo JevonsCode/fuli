@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { requireConsoleSession } from '../console-session/session-ports.js';
 import { refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 
@@ -9,7 +10,8 @@ import { readJson, sendJson } from './response.js';
 // and the repeated digest do not show that a person decided (any process of
 // this OS account can call them), so FULI records entrypoint http with
 // presence unverified. A whole-store restore is not offered here: it runs
-// only from `fuli migrate restore` with FULI stopped.
+// only from `fuli migrate restore` with FULI stopped. Apply and undo also
+// need the console session `fuli open` starts (rec#11 D-61).
 
 const LOCAL_CONSOLE = Object.freeze({ entrypoint: 'http' });
 const BODIES = Object.freeze({
@@ -17,7 +19,7 @@ const BODIES = Object.freeze({
   rollback: z.object({ label: z.string().min(1).max(128), migrationId: z.string().min(1).max(128) }).strict()
 });
 
-export async function handleDataFormatApiRequest({ request, response, url, migrations }) {
+export async function handleDataFormatApiRequest({ request, response, url, migrations, consoleSignedIn = false }) {
   if (!url.pathname.startsWith('/api/data-format')) return false;
   if (!migrations) {
     sendJson(response, 503, { error: 'Data format migrations need a local FULI installation' });
@@ -34,6 +36,7 @@ export async function handleDataFormatApiRequest({ request, response, url, migra
     return true;
   }
   if (refuseRemoteDecision(request, response, 'Data format migrations are confirmed only on this computer')) return true;
+  requireConsoleSession(consoleSignedIn);
   const parsed = BODIES[action].safeParse(await readJson(request));
   if (!parsed.success) throw new TypeError('Invalid data format request');
   const body = parsed.data;

@@ -11,6 +11,7 @@ import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
 import { handleCaptureOnboardingRequest } from './capture-onboarding-api-router.js';
 import { parsePersonalDraftDecision } from '../graphiti/publication-draft-input.js';
+import { requireConsoleSession } from '../console-session/session-ports.js';
 
 export async function handleGraphApiRequest({
   request,
@@ -19,7 +20,10 @@ export async function handleGraphApiRequest({
   app,
   // The console's human-review port for the person's full knowledge reads
   // (src/knowledge-owner-reads); without it these routes read as an Agent.
-  ownerReads = null
+  ownerReads = null,
+  // Whether the request carries the console session (rec#11 D-61); the
+  // owner's inspection of conversations and of Agents' working memory needs it.
+  consoleSignedIn = false
 }) {
   if (await handleAgentAttentionRequest({ request, response, url, app })) return true;
   if (await handleTaskEventsRequest({ request, response, url, app })) return true;
@@ -32,6 +36,7 @@ export async function handleGraphApiRequest({
   if (await handleCaptureChangeRequest({ request, response, url, app })) return true;
   if (await handleCaptureOnboardingRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
+    requireConsoleSession(consoleSignedIn);
     sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
     return true;
   }
@@ -40,6 +45,7 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/agent-conversations/policy' && request.method === 'PUT') {
+    requireConsoleSession(consoleSignedIn);
     sendJson(response, 200, await app.updateAgentConversationPolicy({ ...(await readJson(request)), ownerInspection: true }));
     return true;
   }
@@ -274,6 +280,7 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (agentMemoryExportPath && request.method === 'GET') {
+    requireConsoleSession(consoleSignedIn);
     sendJson(response, 200, await app.exportInspectedProjectAgentMemory({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       personalProjectId: url.searchParams.get('personalProjectId'),
@@ -282,6 +289,7 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (agentMemoryPath && request.method === 'GET') {
+    requireConsoleSession(consoleSignedIn);
     sendJson(response, 200, await app.inspectProjectAgentMemory({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       personalProjectId: url.searchParams.get('personalProjectId'),

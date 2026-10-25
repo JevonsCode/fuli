@@ -5,77 +5,87 @@ import { readJson, sendJson } from '../http/response.js';
 import { CODE_TTL_MS } from './session.js';
 import { consoleNextPath } from './next-path.js';
 
-export const SIGN_IN_PATH = '/auth/console';
+export const SIGN_IN_PAGE_PATH = '/auth/console';
 export const CODES_PATH = '/api/console-session/codes';
+const REDEEM_PATH = '/api/console-session/sign-in';
 export const SIGN_IN_TOKEN_HEADER = 'x-fuli-console-sign-in';
+export const SESSION_HEADER = 'x-fuli-console-session';
 
-// The two routes of a console sign-in (rec#11 D-61).
+// The routes of a console sign-in (rec#11 D-61). signIn: { session
+// (session.js), launchers (launcher-file.js), readToken: the data directory's
+// human-review token }.
 //
 // POST /api/console-session/codes: `fuli open` asks the running console for a
-// one-time code, with the data directory's human-review token in a header
-// (never a URL). Loopback only. The token shows the caller can read the data
-// directory, which is the same-account limit the console already has; a
-// caller without it gets 403 and no code. The landing path (`next`) is
-// checked here and kept with the code, so the sign-in URL carries the code
-// alone and no URL can choose where a sign-in lands.
+// sign-in, with the data directory's human-review token in a header (never a
+// URL). Loopback only. The token shows the caller can read the data directory,
+// which is the same-account limit the console already has; a caller without it
+// gets 403. The landing path (`next`) is checked here and kept with the code.
+// The answer is the path of an owner-only launcher file holding the code;
+// the code itself is never answered, printed or put on a command line.
 //
-// GET /auth/console?code=…: the browser redeems the code once. A redemption
-// that comes from another site, or from another site on this computer
-// (Sec-Fetch-Site cross-site or same-site), is refused and the code is
-// burned: a code that reached a page is treated as leaked, and nobody can sign a
-// person's browser in from a link. A browser opened by `fuli open` sends
-// "none". Success sets an HttpOnly, SameSite=Strict, Path=/ cookie and
-// answers 303 to the kept path, with no-store and no referrer, so the code
-// leaves the address bar and the history entry. Neither the code nor the
-// cookie is ever logged.
-export async function handleConsoleSessionRequest({ request, response, session, readSignInToken, authority }) {
+// The launcher sends the browser to /auth/console#code=…, the console's own
+// sign-in page (the web console). The fragment never reaches a server.
+//
+// POST /api/console-session/sign-in: that page redeems the code once with a
+// same-origin request; another origin's request is refused by the request
+// policy before this route, and a cross-site or same-site one here. The answer
+// sets an HttpOnly, SameSite=Strict, Path=/ cookie and returns the landing
+// path and the session token, which the page keeps in its origin's storage
+// and sends as x-fuli-console-session. A cookie reaches every port of the
+// host; the token does not leave this origin. Gated routes need both. Neither
+// the code, the cookie nor the token is ever logged.
+//
+// A code in a URL's query is not how a sign-in works: any request naming one
+// burns it first (discardUrlCode), before the request policy, so a code that
+// reached a link or a subresource cannot be used afterwards.
+export async function handleConsoleSessionRequest({ request, response, signIn, authority }) {
   const url = new URL(request.url, 'http://127.0.0.1');
-  if (url.pathname === CODES_PATH) return issueCode({ request, response, session, readSignInToken });
-  if (url.pathname !== SIGN_IN_PATH) return false;
-  response.setHeader('Cache-Control', 'no-store');
-  response.setHeader('Referrer-Policy', 'no-referrer');
-  if (request.method !== 'GET') return refusePage(response, 405, 'method');
-  if (!session) return refusePage(response, 503, 'unavailable');
-  if (refuseRemoteDecision(request, response, 'The console is signed in to only on this computer')) return true;
-  const code = url.searchParams.get('code');
-  if (!['', 'none', 'same-origin'].includes(fetchSite(request))) {
-    session.discard(code);
-    return refusePage(response, 403, 'crossSite');
+  if (url.pathname === CODES_PATH) return issueSignIn({ request, response, signIn, authority });
+  if (url.pathname === REDEEM_PATH) return redeem({ request, response, signIn, authority });
+  if (url.pathname === SIGN_IN_PAGE_PATH && url.searchParams.has('code')) {
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+    response.end(URL_CODE_REFUSED);
+    return true;
   }
-  const redeemed = session.redeem(code);
-  if (!redeemed) return refusePage(response, 401, 'invalid');
-  response.writeHead(303, {
-    location: redeemed.next,
-    'set-cookie': `${consoleCookieName(authority)}=${session.cookieValue()}; HttpOnly; SameSite=Strict; Path=/`,
-    'content-type': 'text/plain; charset=utf-8'
-  });
-  response.end();
-  return true;
+  return false;
 }
 
-// Whether this request carries the console session of this launch.
+// Burns a code named in a URL, whatever else happens to the request.
+export function discardUrlCode(request, signIn) {
+  const url = new URL(request.url, 'http://127.0.0.1');
+  if (url.pathname !== SIGN_IN_PAGE_PATH || !signIn?.session) return;
+  for (const code of url.searchParams.getAll('code')) {
+    signIn.session.discard(code);
+    signIn.launchers?.remove(code);
+  }
+}
+
+// Whether this request carries both credentials of this launch's session.
 export function hasConsoleSession(request, session, authority) {
   if (!session) return false;
   const name = consoleCookieName(authority);
-  const values = String(request.headers.cookie ?? '').split(';').map(part => part.trim())
+  const cookies = String(request.headers.cookie ?? '').split(';').map(part => part.trim())
     .filter(part => part.startsWith(`${name}=`)).map(part => part.slice(name.length + 1));
-  return values.some(value => session.isValid(value));
+  const token = request.headers[SESSION_HEADER];
+  return cookies.some(cookie => session.isSignedIn({ cookie, token }));
 }
 
-// Cookies are shared by every port of a host, so each console port has its own.
+// Cookies are shared by every port of a host, so each console port has its own name.
 function consoleCookieName(authority) {
   const port = String(authority ?? '').split(':')[1] ?? '80';
   return `fuli_console_${port}`;
 }
 
-async function issueCode({ request, response, session, readSignInToken }) {
+async function issueSignIn({ request, response, signIn, authority }) {
   response.setHeader('Cache-Control', 'no-store');
   if (request.method !== 'POST') {
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;
   }
   if (refuseRemoteDecision(request, response, 'A console sign-in is requested only on this computer')) return true;
-  const expected = session ? signInToken(readSignInToken) : null;
+  const expected = signIn?.session && signIn.launchers ? signInToken(signIn.readToken) : null;
   if (!expected) {
     sendJson(response, 503, { error: 'Signing in to the console needs a local FULI installation with its human-review channel' });
     return true;
@@ -85,14 +95,44 @@ async function issueCode({ request, response, session, readSignInToken }) {
     return true;
   }
   const body = await readJson(request);
-  const next = consoleNextPath(body?.next);
-  sendJson(response, 200, { code: session.issueCode(next), expiresInMs: CODE_TTL_MS });
+  const code = signIn.session.issueCode(consoleNextPath(body?.next));
+  sendJson(response, 200, { launcherPath: signIn.launchers.write(code, `http://${authority}`), expiresInMs: CODE_TTL_MS });
   return true;
 }
 
-function signInToken(readSignInToken) {
+async function redeem({ request, response, signIn, authority }) {
+  response.setHeader('Cache-Control', 'no-store');
+  if (request.method !== 'POST') {
+    sendJson(response, 405, { error: 'Method not allowed' });
+    return true;
+  }
+  if (refuseRemoteDecision(request, response, 'The console is signed in to only on the computer running FULI')) return true;
+  if (!signIn?.session) {
+    sendJson(response, 503, { error: 'Signing in to the console needs a local FULI installation' });
+    return true;
+  }
+  const code = (await readJson(request))?.code;
+  if (!['', 'same-origin'].includes(fetchSite(request))) {
+    signIn.session.discard(code);
+    signIn.launchers?.remove(code);
+    sendJson(response, 403, { error: 'A console sign-in is accepted only from the console\'s own page', code: 'console_sign_in_refused' });
+    return true;
+  }
+  const redeemed = signIn.session.redeem(code);
+  signIn.launchers?.remove(code);
+  if (!redeemed) {
+    sendJson(response, 401, { error: 'This sign-in is used up or expired. Run fuli open again.', code: 'console_sign_in_expired' });
+    return true;
+  }
+  const { cookie, token } = signIn.session.credentials();
+  response.setHeader('set-cookie', `${consoleCookieName(authority)}=${cookie}; HttpOnly; SameSite=Strict; Path=/`);
+  sendJson(response, 200, { next: redeemed.next, token });
+  return true;
+}
+
+function signInToken(readToken) {
   try {
-    return readSignInToken?.() || null;
+    return readToken?.() || null;
   } catch {
     return null;
   }
@@ -108,15 +148,5 @@ function fetchSite(request) {
   return String(request.headers['sec-fetch-site'] ?? '').trim().toLowerCase();
 }
 
-const REFUSALS = {
-  method: 'Method not allowed.',
-  unavailable: 'This console cannot sign in: it needs a local FULI installation.\n此控制台无法登录：需要本机安装的 FULI。',
-  crossSite: 'This sign-in link was opened from another site, so it was discarded. Run fuli open in a terminal on this computer.\n这个登录链接是从其他网站打开的，已作废。请在这台电脑的终端运行 fuli open。',
-  invalid: 'This sign-in link is used up or expired. Run fuli open in a terminal on this computer.\n这个登录链接已用过或已过期。请在这台电脑的终端运行 fuli open。'
-};
-
-function refusePage(response, status, reason) {
-  response.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' });
-  response.end(REFUSALS[reason]);
-  return true;
-}
+const URL_CODE_REFUSED = 'A sign-in code in a link is not accepted, and this one is now discarded. Run fuli open in a terminal on the computer running FULI.\n'
+  + '链接里的登录码不会被接受，这个已作废。请在运行 FULI 的电脑上，在终端运行 fuli open。';

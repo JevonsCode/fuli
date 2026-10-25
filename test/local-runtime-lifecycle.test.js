@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 
 import {
   externalOpenInvocation,
@@ -294,32 +296,30 @@ test('console opening only targets a loopback Fuli URL', () => {
     () => externalOpenInvocation('https://example.com', 'darwin'),
     /Only the local Fuli console/
   );
-  // The one-time sign-in URL carries its code alone (rec#11 D-61).
-  const code = 'A'.repeat(43);
-  assert.deepEqual(externalOpenInvocation(`http://127.0.0.1:2727/auth/console?code=${code}`, 'win32'), {
-    command: 'cmd', args: ['/c', 'start', '', `http://127.0.0.1:2727/auth/console?code=${code}`]
-  });
-  for (const url of [`http://127.0.0.1:2727/auth/console?code=${code}&next=/x`, `http://127.0.0.1:2727/auth/console?code=a%26b`,
-    `http://127.0.0.1:2727/knowledge?code=${code}`, `https://example.com/auth/console?code=${code}`]) {
-    assert.throws(() => externalOpenInvocation(url, 'win32'), /Only the local Fuli console/, url);
+  // A sign-in opens the console's owner-only launcher file, never a URL with a code (rec#11 D-61).
+  const launcher = join(tmpdir(), 'fuli-console-AbC123', 'sign-in-00000000-0000-4000-8000-000000000000.html');
+  assert.deepEqual(externalOpenInvocation(launcher, 'win32'), { command: 'cmd', args: ['/c', 'start', '', launcher] });
+  assert.deepEqual(externalOpenInvocation(launcher, 'linux'), { command: 'xdg-open', args: [launcher] });
+  for (const target of [`http://127.0.0.1:2727/auth/console?code=${'A'.repeat(43)}`, 'http://127.0.0.1:2727/auth/console#code=x',
+    join(tmpdir(), 'elsewhere', basename(launcher)), join(tmpdir(), 'fuli-console-a&b', basename(launcher))]) {
+    assert.throws(() => externalOpenInvocation(target, 'win32'), /Only the local Fuli console/, target);
   }
 });
 
 const RUNNING = Object.freeze({ readState: () => ({ version: 4, pid: 27, url: 'http://127.0.0.1:2727' }),
   isProcessAlive: () => true, consoleHealth: async () => true });
 
-test('fl open opens the console signed in at the asked page, and never returns the sign-in URL (rec#11 D-61)', async () => {
+test('fl open opens the console\'s sign-in file for the asked page, and returns only the console address (rec#11 D-61)', async () => {
   const opened = [];
   const asked = [];
   const result = await openLocalConsole(input({ next: '/knowledge?item=s/entity:e1', paths: { ...PATHS, dataDir: 'C:/Fuli' } }), {
     ...RUNNING,
-    consoleSignIn: async (request) => { asked.push(request); return 'http://127.0.0.1:2727/auth/console?code=synthetic-one-time-code'; },
+    consoleSignIn: async (request) => { asked.push(request); return 'C:/Temp/fuli-console-x/sign-in-synthetic.html'; },
     openExternal: async (url) => { opened.push(url); }
   });
   assert.deepEqual(asked, [{ consoleUrl: 'http://127.0.0.1:2727', dataDir: 'C:/Fuli', next: '/knowledge?item=s/entity:e1' }]);
-  assert.deepEqual(opened, ['http://127.0.0.1:2727/auth/console?code=synthetic-one-time-code']);
+  assert.deepEqual(opened, ['C:/Temp/fuli-console-x/sign-in-synthetic.html']);
   assert.deepEqual(result, { status: 'opened', url: 'http://127.0.0.1:2727', signIn: { status: 'signed_in' } });
-  assert.equal(JSON.stringify(result).includes('synthetic-one-time-code'), false);
 });
 
 test('fl open and fl start --open open the console without a session when it cannot issue a code', async () => {

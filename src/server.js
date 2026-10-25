@@ -38,7 +38,8 @@ import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-
 import { createModelRoleSettings } from './model-backends/role-settings.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
 import { createConsoleSession } from './console-session/session.js';
-import { handleConsoleSessionRequest, hasConsoleSession } from './console-session/http.js';
+import { discardUrlCode, handleConsoleSessionRequest, hasConsoleSession } from './console-session/http.js';
+import { createSignInLaunchers } from './console-session/launcher-file.js';
 import { sessionBoundPorts } from './console-session/session-ports.js';
 import { humanReviewToken } from './graphiti/human-review-channel.js';
 
@@ -120,11 +121,14 @@ export async function createServer(options = {}) {
   const readModelEvaluation = options.readModelEvaluation ?? (localOptions.runtimeConfigPath
     ? key => latestEvaluation(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelEvaluationsPath, key) : null);
   // This launch's console session (rec#11 D-61): its secret lives in memory
-  // only, and `fuli open` shows it may sign in with the data directory's
-  // human-review token.
-  const consoleSession = options.consoleSession ?? createConsoleSession();
-  const readSignInToken = options.readSignInToken ?? (localOptions.runtimeConfigPath
-    ? () => humanReviewToken(dirname(localOptions.runtimeConfigPath)) : null);
+  // only, `fuli open` shows it may sign in with the data directory's
+  // human-review token, and the code reaches the browser in an owner-only file.
+  const signIn = {
+    session: options.consoleSession ?? createConsoleSession(),
+    launchers: options.signInLaunchers ?? createSignInLaunchers(),
+    readToken: options.readSignInToken ?? (localOptions.runtimeConfigPath
+      ? () => humanReviewToken(dirname(localOptions.runtimeConfigPath)) : null)
+  };
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
   // is settled from its recorded operation, and graph deletions the record
   // lost are taken in again; what the graph cannot answer yet stays open for
@@ -144,7 +148,7 @@ export async function createServer(options = {}) {
     resourcesClosing ??= (async () => {
       const failures = [];
       for (const close of [() => stopJudgment(), () => stopTaskSchedules(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close(),
-        () => releaseDataDirectory()]) {
+        () => signIn.launchers.close(), () => releaseDataDirectory()]) {
         try {
           const pending = close();
           if (pending?.then) await pending;
@@ -214,8 +218,7 @@ export async function createServer(options = {}) {
       modelRoleSettings,
       readModelEvaluation,
       judgmentUndo,
-      consoleSession,
-      readSignInToken,
+      signIn,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -310,12 +313,13 @@ async function handleRequest({
   modelRoleSettings,
   readModelEvaluation,
   judgmentUndo,
-  consoleSession,
-  readSignInToken,
+  signIn,
   authority,
   lanAuthorities,
   lanAccessToken
 }) {
+  // A sign-in code in a URL is burned whatever the policy answers.
+  discardUrlCode(request, signIn);
   if (rejectRequestOutsidePolicy({
     request,
     response,
@@ -324,15 +328,16 @@ async function handleRequest({
     lanAccessToken
   })) return;
   // The sign-in routes answer a navigation from another site themselves: they refuse it.
-  if (await handleConsoleSessionRequest({ request, response, session: consoleSession, readSignInToken, authority })) return;
+  if (await handleConsoleSessionRequest({ request, response, signIn, authority })) return;
   // A page opened from another site's link reaches the static console only.
   if (isCrossSiteNavigation(request)) {
     serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
     return;
   }
-  // The human-review ports serve only the console session (rec#11 D-61).
+  // Protected reads and changes serve only the console session (rec#11 D-61).
+  const consoleSignedIn = hasConsoleSession(request, signIn.session, authority);
   const reviewPorts = sessionBoundPorts({ knowledgeOwnerReads, knowledgeHardDelete, knowledgeScope, knowledgeTags, judgmentUndo },
-    hasConsoleSession(request, consoleSession, authority));
+    consoleSignedIn);
   if (await handleApiRequest({
     request,
     response,
@@ -344,6 +349,7 @@ async function handleRequest({
     dataFormats,
     dataFormatMigrations,
     ...reviewPorts,
+    consoleSignedIn,
     modelRoleSettings,
     readModelEvaluation
   })) return;

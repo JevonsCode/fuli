@@ -246,7 +246,8 @@ test('the owner console route exports under inspection authority without the cli
     let status; let body;
     const response = { writeHead(code) { status = code; }, end(text) { body = JSON.parse(text); } };
     const url = new URL(`http://127.0.0.1/api/project-agents/engineer/memory/export?personalSpaceId=${SPACE}&personalProjectId=sample-project`);
-    assert.equal(await handleGraphApiRequest({ request: { method: 'GET' }, response, url, app: application }), true);
+    // The signed-in console (rec#11 D-61; refusals in test/console-session.test.js).
+    assert.equal(await handleGraphApiRequest({ request: { method: 'GET' }, response, url, app: application, consoleSignedIn: true }), true);
     assert.equal(status, 200);
     assert.match(body.markdown, /Owner export\./);
     assert.equal(body.filename, 'fuli-engineer-project-sample-project-memory-r5.md');

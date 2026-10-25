@@ -1,31 +1,46 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { syncBuiltinESMExports } from 'node:module';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import { handleConsoleSessionRequest } from '../src/console-session/http.js';
+import { createSignInLaunchers } from '../src/console-session/launcher-file.js';
 import { createConsoleSession, CODE_TTL_MS } from '../src/console-session/session.js';
 import { sessionBoundPorts } from '../src/console-session/session-ports.js';
-import { consoleSignInUrl } from '../src/console-session/sign-in-link.js';
+import { consoleSignInLauncher, isSignInLauncher } from '../src/console-session/sign-in-launcher.js';
 import { handleApiRequest } from '../src/http/api-router.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { knowledgeOwnerReads } from '../src/knowledge-owner-reads/console-port.js';
+import { externalOpenInvocation } from '../src/local-runtime/lifecycle.js';
 import { createServer } from '../src/server.js';
 import { closeServer } from '../test-support/server.js';
 
-// rec#11 D-61: the console's human-review reads and changes serve only the
-// browser session `fuli open` started with a one-time code. Synthetic codes,
-// tokens, judgment records and Provider answers only; no real data directory.
+// rec#11 D-61: the console's protected reads and changes serve only the
+// browser session `fuli open` started with a one-time code, carrying both its
+// HttpOnly cookie and the session token the console page keeps in its
+// origin's storage. Synthetic codes, tokens, judgment records and Provider
+// answers only; launcher files go to a test temporary directory; no real data
+// directory.
 
 const SIGN_IN_TOKEN = 'synthetic-human-review-token';
 const SECRET = 'SYNTHETIC_PRIVATE_SUMMARY';
+const SESSION_HEADER = 'x-fuli-console-session';
 
 function clock(start = 1_000_000) {
   let current = start;
   return { now: () => current, advance: ms => { current += ms; } };
+}
+
+function temporaryRoot(t) {
+  const root = mkdtempSync(join(tmpdir(), 'p61-console-session-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  return root;
 }
 
 test('a code is issued for a landing path, redeemed once, and expires after its time', () => {
@@ -47,7 +62,7 @@ test('a code is issued for a landing path, redeemed once, and expires after its 
   assert.deepEqual(session.redeem(kept), { next: '/' }, 'wrong guesses do not use up the real code');
 });
 
-test('codes and cookies are compared in constant time, every waiting code each time', t => {
+test('codes and both credentials are compared in constant time, every waiting code each time', t => {
   const session = createConsoleSession();
   const codes = [session.issueCode('/'), session.issueCode('/a'), session.issueCode('/b')];
   const compared = [];
@@ -62,20 +77,44 @@ test('codes and cookies are compared in constant time, every waiting code each t
   assert.equal(session.redeem('not-a-code'), null);
   assert.deepEqual(compared, [[32, 32], [32, 32]]);
   compared.length = 0;
-  assert.equal(session.isValid(session.cookieValue()), true);
-  assert.equal(compared.length, 1);
+  const { cookie, token } = session.credentials();
+  assert.equal(session.isSignedIn({ cookie, token: `${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}` }), false);
+  assert.equal(compared.length, 2, 'the cookie is compared even when the token decides');
 });
 
-test('a cookie of an earlier launch is not a session of this one', () => {
+test('a session needs both credentials of this launch; an earlier launch\'s count for nothing', () => {
   const earlier = createConsoleSession();
   const now = createConsoleSession();
-  assert.equal(now.isValid(now.cookieValue()), true);
-  assert.equal(now.isValid(earlier.cookieValue()), false);
-  assert.equal(now.isValid(''), false);
-  assert.equal(now.isValid(undefined), false);
+  const current = now.credentials();
+  assert.equal(now.isSignedIn(current), true);
+  assert.notEqual(current.cookie, current.token);
+  assert.equal(now.isSignedIn({ cookie: current.cookie }), false, 'the cookie alone');
+  assert.equal(now.isSignedIn({ token: current.token }), false, 'the token alone');
+  assert.equal(now.isSignedIn(earlier.credentials()), false, 'an earlier launch');
+  assert.equal(now.isSignedIn({ cookie: current.cookie, token: earlier.credentials().token }), false, 'an earlier launch\'s token');
+  assert.equal(now.isSignedIn({ cookie: '', token: '' }), false);
 });
 
-// Raw requests, so a test sets Sec-Fetch-Site and Cookie itself.
+test('a landing path is a console path on this origin, checked again after normalizing', async t => {
+  const server = await console_(t);
+  const codes = `${server.url}/api/console-session/codes`;
+  const token = { 'x-fuli-console-sign-in': SIGN_IN_TOKEN };
+  for (const next of ['https://attacker.example/', '//attacker.example/x', '/\\attacker.example', 'http:/x', 'knowledge', '/a\nb',
+    '/..//evil.example/', '/%2e%2e//evil.example', '/a/../..//evil.example', '/./%2E%2E//evil.example',
+    '/api/judgment/records', '/auth/console', '/auth/console?code=x']) {
+    const refused = await call(codes, { method: 'POST', headers: token, body: { next } });
+    assert.equal(refused.status, 400, next);
+    assert.match(refused.json.error, /next must be a console path/);
+  }
+  for (const [next, kept] of [['/knowledge?item=s/entity:e1#top', '/knowledge?item=s/entity:e1#top'], ['/a/../inbox', '/inbox'],
+    ['/%2F%2Fevil', '/%2F%2Fevil']]) {
+    const issued = await call(codes, { method: 'POST', headers: token, body: { next } });
+    const answer = await redeemCode(server, launcherCode(issued.json.launcherPath));
+    assert.equal(answer.json.next, kept, next);
+  }
+});
+
+// Raw requests, so a test sets Origin, Sec-Fetch-Site and Cookie itself.
 function call(url, { method = 'GET', headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -86,7 +125,7 @@ function call(url, { method = 'GET', headers = {}, body } = {}) {
       response.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
         let json = null;
-        try { json = JSON.parse(text); } catch { /* a sign-in page answers in plain text */ }
+        try { json = JSON.parse(text); } catch { /* a refusal page answers in plain text */ }
         resolve({ status: response.statusCode, headers: response.headers, text, json });
       });
     });
@@ -97,106 +136,161 @@ function call(url, { method = 'GET', headers = {}, body } = {}) {
 
 async function console_(t, options = {}) {
   const session = options.consoleSession ?? createConsoleSession();
+  const root = temporaryRoot(t);
   const runtime = await createServer({ port: 0, app: options.app ?? { config: { personal: { spaceId: 's' } } },
-    consoleSession: session, readSignInToken: () => SIGN_IN_TOKEN, ...options });
+    consoleSession: session, signInLaunchers: createSignInLaunchers({ temporaryRoot: () => root }),
+    readSignInToken: () => SIGN_IN_TOKEN, ...options });
   t.after(() => closeServer(runtime.server));
   const cookieName = `fuli_console_${new URL(runtime.url).port}`;
-  return { ...runtime, session, cookieName };
+  return { ...runtime, session, cookieName, root };
 }
 
-async function signIn(server, headers = {}) {
-  const code = server.session.issueCode('/');
-  const answer = await call(`${server.url}/auth/console?code=${code}`, { headers: { 'sec-fetch-site': 'none', ...headers } });
-  return answer.headers['set-cookie']?.[0]?.split(';')[0];
+function launcherCode(path) {
+  return /#code=([A-Za-z0-9_-]+)/.exec(readFileSync(path, 'utf8'))[1];
 }
 
-test('fuli open gets a code only with the data directory\'s token, and only for a console path', async t => {
+// What the console's sign-in page sends: a same-origin POST.
+function redeemCode(server, code, headers = { origin: server.url, 'sec-fetch-site': 'same-origin' }) {
+  return call(`${server.url}/api/console-session/sign-in`, { method: 'POST', headers, body: { code } });
+}
+
+async function signIn(server) {
+  const answer = await redeemCode(server, server.session.issueCode('/'));
+  return { cookie: answer.headers['set-cookie'][0].split(';')[0], token: answer.json.token };
+}
+
+test('fuli open gets a sign-in only with the data directory\'s token; the code is only inside an owner-only file', async t => {
+  const output = [];
+  for (const name of ['log', 'info', 'warn', 'error']) t.mock.method(console, name, (...args) => output.push(args.join(' ')));
   const server = await console_(t);
   const codes = `${server.url}/api/console-session/codes`;
   for (const headers of [{}, { 'x-fuli-console-sign-in': 'another-token' }]) {
     const refused = await call(codes, { method: 'POST', headers, body: {} });
-    assert.deepEqual([refused.status, refused.json.code], [403, 'console_sign_in_refused'], 'no code is issued');
+    assert.deepEqual([refused.status, refused.json.code], [403, 'console_sign_in_refused'], 'no sign-in is issued');
   }
-  const token = { 'x-fuli-console-sign-in': SIGN_IN_TOKEN };
-  for (const next of ['https://attacker.example/', '//attacker.example/x', '/\\attacker.example', 'http:/x',
-    '/api/judgment/records', '/auth/console?code=x', 'knowledge', '/a\nb']) {
-    const refused = await call(codes, { method: 'POST', headers: token, body: { next } });
-    assert.equal(refused.status, 400, next);
-    assert.match(refused.json.error, /next must be a console path/);
-  }
-  const issued = await call(codes, { method: 'POST', headers: token, body: { next: '/knowledge?item=s/entity:e1#top' } });
+  const issued = await call(codes, { method: 'POST', headers: { 'x-fuli-console-sign-in': SIGN_IN_TOKEN }, body: { next: '/inbox' } });
   assert.equal(issued.status, 200);
   assert.equal(issued.headers['cache-control'], 'no-store');
-  assert.equal(issued.json.expiresInMs, CODE_TTL_MS);
-  const landed = await call(`${server.url}/auth/console?code=${issued.json.code}`, { headers: { 'sec-fetch-site': 'none' } });
-  assert.equal(landed.status, 303);
-  assert.equal(landed.headers.location, '/knowledge?item=s/entity:e1#top');
+  assert.deepEqual(Object.keys(issued.json).sort(), ['expiresInMs', 'launcherPath'], 'the answer holds no code');
+  const { launcherPath } = issued.json;
+  assert.equal(isSignInLauncher(launcherPath, server.root), true);
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(launcherPath).mode & 0o777, 0o600, 'the file is the owner\'s alone');
+    assert.equal(statSync(dirname(launcherPath)).mode & 0o777, 0o700, 'so is its directory');
+  }
+  const page = readFileSync(launcherPath, 'utf8');
+  const code = launcherCode(launcherPath);
+  assert.match(page, new RegExp(`location\\.replace\\("${server.url.replace(/[.]/g, '\\.')}/auth/console#code=${code}"\\)`));
+  assert.match(page, /<meta name="referrer" content="no-referrer">/);
+
+  const answer = await redeemCode(server, code);
+  assert.equal(answer.status, 200);
+  assert.equal(answer.json.next, '/inbox');
+  assert.equal(existsSync(launcherPath), false, 'the file goes once its code is redeemed');
+  const { cookie, token } = server.session.credentials();
+  assert.equal(output.some(line => [code, cookie, token].some(secret => line.includes(secret))), false, 'never logged');
 
   const unavailable = await console_(t, { readSignInToken: () => { throw new TypeError('no human-review channel'); } });
-  const none = await call(`${unavailable.url}/api/console-session/codes`, { method: 'POST', headers: token, body: {} });
+  const none = await call(`${unavailable.url}/api/console-session/codes`, { method: 'POST',
+    headers: { 'x-fuli-console-sign-in': SIGN_IN_TOKEN }, body: {} });
   assert.equal(none.status, 503);
 });
 
-test('fuli open\'s sign-in URL carries the code alone; the token goes in a header', async t => {
-  const server = await console_(t);
+test('fuli open opens the launcher file: its token goes in a header and no command line holds the code', async t => {
+  // The console's own launchers, in the system temporary directory; stopping the console removes them.
+  const server = await console_(t, { signInLaunchers: createSignInLaunchers() });
   const requests = [];
   const fetchImpl = (url, init) => { requests.push({ url: String(url), init }); return fetch(url, init); };
-  const signInUrl = await consoleSignInUrl({ consoleUrl: server.url, dataDir: 'synthetic-data-dir', next: '/inbox',
+  const launcher = await consoleSignInLauncher({ consoleUrl: server.url, dataDir: 'synthetic-data-dir', next: '/inbox',
     readToken: () => SIGN_IN_TOKEN, fetchImpl });
-  const url = new URL(signInUrl);
-  assert.equal(url.pathname, '/auth/console');
-  assert.deepEqual([...url.searchParams.keys()], ['code']);
-  assert.equal(signInUrl.includes(SIGN_IN_TOKEN), false);
   assert.equal(requests[0].url.includes(SIGN_IN_TOKEN), false);
   assert.equal(requests[0].init.headers['x-fuli-console-sign-in'], SIGN_IN_TOKEN);
-  const landed = await call(signInUrl, { headers: { 'sec-fetch-site': 'none' } });
-  assert.deepEqual([landed.status, landed.headers.location], [303, '/inbox']);
-
-  await assert.rejects(consoleSignInUrl({ consoleUrl: server.url, dataDir: 'synthetic-data-dir', readToken: () => 'another-token' }),
-    /Only fuli open on this computer can sign in/);
+  const code = launcherCode(launcher);
+  for (const platform of ['win32', 'darwin', 'linux']) {
+    const invocation = externalOpenInvocation(launcher, platform);
+    assert.equal(invocation.args.at(-1), launcher, platform);
+    assert.equal(JSON.stringify(invocation).includes(code), false, `${platform}: the code is not in argv`);
+  }
+  assert.equal(isSignInLauncher(launcher), true);
+  assert.equal(isSignInLauncher(launcher, server.root), false, 'under another temporary root it is not a launcher');
+  for (const path of [join(server.root, 'fuli-console-x', 'other.html'), join(server.root, 'elsewhere', basename(launcher)),
+    join(server.root, 'fuli-console-x&calc', basename(launcher)), 'sign-in.html']) {
+    assert.equal(isSignInLauncher(path, server.root), false, path);
+  }
+  await assert.rejects(consoleSignInLauncher({ consoleUrl: server.url, dataDir: 'synthetic-data-dir', readToken: () => 'another-token',
+    temporaryRoot: () => server.root }), /Only fuli open on this computer can sign in/);
 });
 
-test('a redeemed code answers 303 with an HttpOnly, SameSite=Strict, Path=/ cookie, no-store and no referrer', async t => {
-  const output = [];
-  for (const name of ['log', 'info', 'warn', 'error']) t.mock.method(console, name, (...args) => output.push(args.join(' ')));
+test('a launcher file is deleted when its code expires, and the directory when the console stops', t => {
+  const root = temporaryRoot(t);
+  const timers = [];
+  const launchers = createSignInLaunchers({ temporaryRoot: () => root, setTimer: (run, ms) => { timers.push({ run, ms }); return {}; },
+    clearTimer: () => {} });
+  const expiring = launchers.write('synthetic-code-one', 'http://127.0.0.1:2727');
+  const kept = launchers.write('synthetic-code-two', 'http://127.0.0.1:2727');
+  assert.equal(timers[0].ms, CODE_TTL_MS);
+  timers[0].run();
+  assert.equal(existsSync(expiring), false);
+  assert.equal(existsSync(kept), true);
+  launchers.close();
+  assert.equal(existsSync(dirname(kept)), false);
+});
+
+test('a redeemed code sets an HttpOnly, SameSite=Strict, Path=/ cookie and returns the session token, once', async t => {
   const server = await console_(t);
   const code = server.session.issueCode('/inbox');
-  const answer = await call(`${server.url}/auth/console?code=${code}`, { headers: { 'sec-fetch-site': 'none' } });
-  assert.equal(answer.status, 303);
-  assert.equal(answer.headers.location, '/inbox');
+  const answer = await redeemCode(server, code);
+  assert.equal(answer.status, 200);
   assert.equal(answer.headers['cache-control'], 'no-store');
-  assert.equal(answer.headers['referrer-policy'], 'no-referrer');
-  const [cookie] = answer.headers['set-cookie'];
-  const [pair, ...attributes] = cookie.split(';').map(part => part.trim());
-  assert.equal(pair, `${server.cookieName}=${server.session.cookieValue()}`);
+  const { cookie, token } = server.session.credentials();
+  assert.deepEqual(answer.json, { next: '/inbox', token });
+  const [setCookie] = answer.headers['set-cookie'];
+  const [pair, ...attributes] = setCookie.split(';').map(part => part.trim());
+  assert.equal(pair, `${server.cookieName}=${cookie}`);
   assert.deepEqual(attributes.sort(), ['HttpOnly', 'Path=/', 'SameSite=Strict']);
-  assert.equal(cookie.includes(code), false, 'the cookie is not the code');
 
-  const again = await call(`${server.url}/auth/console?code=${code}`, { headers: { 'sec-fetch-site': 'none' } });
-  assert.equal(again.status, 401);
+  const again = await redeemCode(server, code);
+  assert.deepEqual([again.status, again.json.code], [401, 'console_sign_in_expired']);
   assert.equal(again.headers['set-cookie'], undefined);
-  assert.match(again.text, /fuli open/);
-  assert.equal(output.some(line => line.includes(code) || line.includes(server.session.cookieValue())), false, 'never logged');
 });
 
-test('a code redeemed from another site, or another site on this computer, is refused and burned', async t => {
+test('only the console\'s own page redeems a code; any code in a URL is burned', async t => {
   const server = await console_(t);
-  for (const site of ['cross-site', 'same-site']) {
+  // Another site, another port of this host, or no page of the console at all.
+  for (const [label, headers] of [['cross-site', { 'sec-fetch-site': 'cross-site', origin: 'https://attacker.example' }],
+    ['another origin', { origin: 'http://127.0.0.1:47272' }],
+    ['same-site, another port', { 'sec-fetch-site': 'same-site' }]]) {
     const code = server.session.issueCode('/');
-    const navigation = { 'sec-fetch-site': site, 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' };
-    const refused = await call(`${server.url}/auth/console?code=${code}`, { headers: navigation });
-    assert.equal(refused.status, 403, site);
-    assert.equal(refused.headers['set-cookie'], undefined, site);
-    assert.equal(refused.headers['cache-control'], 'no-store');
-    assert.match(refused.text, /another site/);
-    const later = await call(`${server.url}/auth/console?code=${code}`, { headers: { 'sec-fetch-site': 'none' } });
-    assert.equal(later.status, 401, `${site}: the code was burned`);
+    const refused = await redeemCode(server, code, headers);
+    assert.equal(refused.status, 403, label);
+    assert.equal(refused.headers['set-cookie'], undefined, label);
+    assert.equal(refused.headers['access-control-allow-origin'], undefined, label);
   }
-  // A browser without Fetch Metadata, and a same-origin navigation, redeem as usual.
-  for (const headers of [{}, { 'sec-fetch-site': 'same-origin' }]) {
+  const sameSite = server.session.issueCode('/');
+  await redeemCode(server, sameSite, { 'sec-fetch-site': 'same-site' });
+  assert.equal((await redeemCode(server, sameSite)).status, 401, 'a same-site attempt burned its code');
+
+  // A code in a link or a subresource URL, from anywhere, is burned before the request policy answers.
+  for (const headers of [{ 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' },
+    { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'image' }, { 'sec-fetch-site': 'none' }]) {
     const code = server.session.issueCode('/');
-    assert.equal((await call(`${server.url}/auth/console?code=${code}`, { headers })).status, 303);
+    const linked = await call(`${server.url}/auth/console?code=${code}`, { headers });
+    assert.ok([400, 403].includes(linked.status), JSON.stringify(headers));
+    assert.equal(linked.headers['set-cookie'], undefined);
+    assert.equal((await redeemCode(server, code)).status, 401, `${headers['sec-fetch-dest'] ?? 'none'}: burned`);
   }
+  // The sign-in page itself is the static console, from anywhere.
+  const page = await call(`${server.url}/auth/console`, { headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate',
+    'sec-fetch-dest': 'document' } });
+  assert.notEqual(page.status, 403);
+});
+
+test('another origin\'s preflight gets no CORS permission for the session header', async t => {
+  const server = await console_(t);
+  const preflight = await call(`${server.url}/api/judgment/records`, { method: 'OPTIONS', headers: { origin: 'http://127.0.0.1:47272',
+    'access-control-request-method': 'GET', 'access-control-request-headers': SESSION_HEADER } });
+  assert.equal(preflight.status, 403);
+  assert.equal(Object.keys(preflight.headers).some(name => name.startsWith('access-control-')), false);
 });
 
 function lanRequest(method, path, body = null) {
@@ -212,13 +306,14 @@ function recorder() {
     end(text) { sent.body = text; } } };
 }
 
-test('another device can neither ask for a code nor redeem one', async () => {
+test('another device can neither ask for a sign-in nor redeem one', async t => {
   const session = createConsoleSession();
+  const launchers = createSignInLaunchers({ temporaryRoot: () => temporaryRoot(t) });
   const code = session.issueCode('/');
-  for (const incoming of [lanRequest('POST', '/api/console-session/codes', {}), lanRequest('GET', `/auth/console?code=${code}`)]) {
+  for (const incoming of [lanRequest('POST', '/api/console-session/codes', {}), lanRequest('POST', '/api/console-session/sign-in', { code })]) {
     const { sent, response } = recorder();
-    assert.equal(await handleConsoleSessionRequest({ request: incoming, response, session, readSignInToken: () => SIGN_IN_TOKEN,
-      authority: '127.0.0.1:4317' }), true);
+    assert.equal(await handleConsoleSessionRequest({ request: incoming, response,
+      signIn: { session, launchers, readToken: () => SIGN_IN_TOKEN }, authority: '127.0.0.1:4317' }), true);
     assert.deepEqual([sent.status, JSON.parse(sent.body).code], [403, 'local_user_only']);
   }
   assert.deepEqual(session.redeem(code), { next: '/' }, 'the refused request did not redeem it');
@@ -258,10 +353,15 @@ function judgmentWithAppliedReview(t, app) {
 }
 
 function protectedConsole(t) {
+  const appCalls = [];
+  const called = (name, value = {}) => async () => { appCalls.push(name); return value; };
   const app = {
     config: { personal: { spaceId: 's' } },
     listPersonalProjects: async () => [{ project_id: 'p' }],
-    modelBackends: {}, roleSuggestions: {}, readRoleSuggestions: async () => [],
+    roleSuggestions: {}, readRoleSuggestions: async () => [],
+    modelBackends: { roles: () => ({ roles: [], connections: {} }), localBuild: () => null, usage: () => ({}) },
+    modelTrust: { setSuggestionsOnly: (...args) => { appCalls.push('trust'); return { history: null, args }; },
+      acknowledgeWarning: () => ({ history: null }) },
     // The application passes the console's port on, as FederatedApplication does.
     getKnowledgeGraph: (input, ownerReads) => ownerReads.graph({ spaceId: 's', limit: 1 }),
     getWritingTasteProfile: (input, ownerReads) => ownerReads.graph({ spaceId: 's', limit: 1 }),
@@ -269,7 +369,12 @@ function protectedConsole(t) {
     deferPreferenceConflict: (input, ownerReads) => ownerReads.deferPreferenceConflict({}),
     completePreferenceConflict: (input, ownerReads) => ownerReads.completePreferenceConflict(input.conflictId, {}),
     listPersonalReviewQueue: (input, ownerReads) => ownerReads.publicationDrafts({ personalSpaceId: 's' }),
-    reviewPersonalDraft: (input, ownerReads) => ownerReads.submissions.decidePublicationDraft('s', input.draftId, {})
+    reviewPersonalDraft: (input, ownerReads) => ownerReads.submissions.decidePublicationDraft('s', input.draftId, {}),
+    // The owner's inspection, read with the application's own authority.
+    queryAgentConversations: called('queryAgentConversations', { conversations: [] }),
+    updateAgentConversationPolicy: called('updateAgentConversationPolicy'),
+    inspectProjectAgentMemory: called('inspectProjectAgentMemory', { memory: [] }),
+    exportInspectedProjectAgentMemory: called('exportInspectedProjectAgentMemory', { files: [] })
   };
   const { judgment, record, runs } = judgmentWithAppliedReview(t, app);
   app.judgment = judgment;
@@ -278,10 +383,15 @@ function protectedConsole(t) {
   const scope = recordingPort(['changeScope', 'applySessionMigration']);
   const tags = recordingPort(['send']);
   const undo = recordingPort(['withdrawAiReview'], { decision_id: 'decision-1' });
+  const migrations = recordingPort(['preview', 'apply', 'rollback']);
+  migrations.port.prune = () => [];
+  const roleSettings = recordingPort(['save'], { history: null });
   const touched = () => [ownerReads.sent.length, hardDelete.calls.length, scope.calls.length, tags.calls.length, undo.calls.length,
-    runs.length, judgment.store().get('s', record.id).feedback.revision, judgment.store().get('s', record.id).execution.status];
+    migrations.calls.length, roleSettings.calls.length, appCalls.length, runs.length,
+    judgment.store().get('s', record.id).feedback.revision, judgment.store().get('s', record.id).execution.status];
   return { app, record, touched, ports: { knowledgeOwnerReads: ownerReads.port, knowledgeHardDelete: hardDelete.port,
-    knowledgeScope: scope.port, knowledgeTags: tags.port, judgmentUndo: undo.port } };
+    knowledgeScope: scope.port, knowledgeTags: tags.port, judgmentUndo: undo.port, dataFormatMigrations: migrations.port,
+    modelRoleSettings: roleSettings.port } };
 }
 
 const PROTECTED_ROUTES = [
@@ -309,27 +419,46 @@ const PROTECTED_ROUTES = [
   ['POST', '/api/knowledge/entity/e1/hard-delete/preview', () => ({ personalSpaceId: 's' })],
   ['POST', '/api/knowledge/entity/e1/scope', () => ({ personalSpaceId: 's', scope: 'global', expectedVersion: 0, reason: 'synthetic' })],
   ['GET', '/api/knowledge-tags/detail?personalSpaceId=s&tagId=t1'],
-  ['POST', '/api/judgment/undo', id => ({ personalSpaceId: 's', decisionId: id })]
+  ['POST', '/api/judgment/undo', id => ({ personalSpaceId: 's', decisionId: id })],
+  // The owner's inspection of every client's conversations and of an Agent's private working memory.
+  ['POST', '/api/agent-conversations/query', () => ({ personalSpaceId: 's', mode: 'events' })],
+  ['PUT', '/api/agent-conversations/policy', () => ({ personalSpaceId: 's' })],
+  ['GET', '/api/project-agents/agent-a/memory?personalSpaceId=s'],
+  ['GET', '/api/project-agents/agent-a/memory/export?personalSpaceId=s'],
+  // Writes that change real data or where a built-in Agent's model calls go.
+  ['POST', '/api/data-format/apply', () => ({ digest: 'a'.repeat(64) })],
+  ['POST', '/api/data-format/rollback', () => ({ label: 'synthetic-store', migrationId: 'm1' })],
+  ['PUT', '/api/model-backends/roles/tonborg', () => ({ synthetic: true })],
+  ['PUT', '/api/model-backends/roles/tonborg/trust', () => ({ expectedRevision: 0, suggestionsOnly: true })]
 ];
 
 for (const [method, path, body] of PROTECTED_ROUTES) {
-  test(`${method} ${path.split('?')[0]}: no cookie, a wrong cookie and an earlier launch's cookie get 401 and nothing; the session passes`, async t => {
+  test(`${method} ${path.split('?')[0]}: anything short of this launch's cookie and token gets 401 and nothing; the session passes`, async t => {
     const { app, record, touched, ports } = protectedConsole(t);
     const server = await console_(t, { app, ...ports });
     const input = body?.(record.id);
     const before = touched();
-    const earlier = createConsoleSession();
-    for (const [label, cookie] of [['no cookie', null], ['wrong cookie', `${server.cookieName}=forged`],
-      ['earlier launch', `${server.cookieName}=${earlier.cookieValue()}`], ['another port\'s cookie', `fuli_console_1=${server.session.cookieValue()}`]]) {
-      const refused = await call(`${server.url}${path}`, { method, body: input, headers: cookie ? { cookie } : {} });
+    const { cookie, token } = await signIn(server);
+    const earlier = createConsoleSession().credentials();
+    const cookieValue = cookie.split('=')[1];
+    for (const [label, headers] of [
+      ['nothing', {}],
+      ['the cookie alone', { cookie }],
+      ['the token alone', { [SESSION_HEADER]: token }],
+      ['a wrong cookie', { cookie: `${server.cookieName}=forged`, [SESSION_HEADER]: token }],
+      ['a wrong token', { cookie, [SESSION_HEADER]: 'forged' }],
+      ['an earlier launch\'s token', { cookie, [SESSION_HEADER]: earlier.token }],
+      ['an earlier launch\'s credentials', { cookie: `${server.cookieName}=${earlier.cookie}`, [SESSION_HEADER]: earlier.token }],
+      ['another port\'s cookie name', { cookie: `fuli_console_1=${cookieValue}`, [SESSION_HEADER]: token }]]) {
+      const refused = await call(`${server.url}${path}`, { method, body: input, headers });
       assert.equal(refused.status, 401, label);
       assert.equal(refused.json.code, 'console_session_required', label);
       assert.match(refused.json.error, /fuli open/, label);
       assert.equal(refused.text.includes(SECRET), false, label);
       assert.deepEqual(touched(), before, `${label}: nothing was sent, read, run or written`);
     }
-    const cookie = await signIn(server);
-    const passed = await call(`${server.url}${path}`, { method, body: input, headers: { cookie: `other=1; ${cookie}` } });
+    const passed = await call(`${server.url}${path}`, { method, body: input,
+      headers: { cookie: `other=1; ${cookie}`, [SESSION_HEADER]: token } });
     assert.equal(passed.status, 200, `${passed.status} ${passed.text}`);
     assert.notDeepEqual(touched(), before, 'the session reached the port');
   });
@@ -340,7 +469,8 @@ test('a signed-in request from another device is still refused for Tonborg\'s re
   const { sent, response } = recorder();
   const reviewPorts = sessionBoundPorts({ knowledgeOwnerReads: ports.knowledgeOwnerReads }, true);
   try {
-    await handleApiRequest({ request: lanRequest('GET', '/api/judgment/records?personalSpaceId=s'), response, app, ...reviewPorts });
+    await handleApiRequest({ request: lanRequest('GET', '/api/judgment/records?personalSpaceId=s'), response, app, ...reviewPorts,
+      consoleSignedIn: true });
   } catch (error) {
     const mapped = mapHttpError(error);
     sent.status = mapped.status;
@@ -350,12 +480,14 @@ test('a signed-in request from another device is still refused for Tonborg\'s re
 });
 
 test('reads that hold no protected history answer without a session', async t => {
-  const app = { config: { personal: { spaceId: 's' } }, state: async () => ({ spaces: [] }),
-    getCapturePolicy: () => ({ enabled: true }), getRecallPolicy: () => ({ enabled: true }),
-    judgment: { pins: async () => ({ pins: [] }), policy: async () => ({ autonomy: 'suggest' }) } };
-  const server = await console_(t, { app, knowledgeOwnerReads: ownerReadsPort().port });
+  const { app, ports } = protectedConsole(t);
+  Object.assign(app, { state: async () => ({ spaces: [] }), getCapturePolicy: () => ({ enabled: true }),
+    getRecallPolicy: () => ({ enabled: true }) });
+  app.judgment.pins = async () => ({ pins: [] });
+  app.judgment.policy = async () => ({ autonomy: 'suggest' });
+  const server = await console_(t, { app, ...ports });
   for (const path of ['/api/health', '/api/state', '/api/capture-policy', '/api/recall-policy', '/api/agent-pins?personalSpaceId=s',
-    '/api/judgment/policy?personalSpaceId=s']) {
+    '/api/judgment/policy?personalSpaceId=s', '/api/model-backends/roles', '/api/data-format']) {
     assert.equal((await call(`${server.url}${path}`)).status, 200, path);
   }
 });
