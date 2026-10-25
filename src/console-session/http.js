@@ -96,8 +96,27 @@ async function issueSignIn({ request, response, signIn, authority }) {
   }
   const body = await readJson(request);
   const code = signIn.session.issueCode(consoleNextPath(body?.next));
-  sendJson(response, 200, { launcherPath: signIn.launchers.write(code, `http://${authority}`), expiresInMs: CODE_TTL_MS });
+  let launcherPath;
+  try {
+    launcherPath = signIn.launchers.write(code, `http://${authority}`);
+  } catch (error) {
+    // Fails closed: a code that could not be kept private is never usable.
+    signIn.session.discard(code);
+    sendJson(response, 503, { error: error.message, code: 'console_sign_in_unavailable' });
+    return true;
+  }
+  sendJson(response, 200, { launcherPath, expiresInMs: CODE_TTL_MS });
   return true;
+}
+
+// Whether a request carries the data directory's human-review token, as
+// `fuli open` does to ask for a sign-in and `fuli peer` to change the LAN
+// roundtable (rec#11 D-61). Like a sign-in it needs read access to the data
+// directory, so it stands in for the console session only where a command
+// line has no browser.
+export function hasSignInToken(request, signIn) {
+  const expected = signIn?.session ? signInToken(signIn.readToken) : null;
+  return Boolean(expected) && sameToken(request.headers[SIGN_IN_TOKEN_HEADER], expected);
 }
 
 async function redeem({ request, response, signIn, authority }) {

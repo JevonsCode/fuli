@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -8,7 +8,7 @@ import { basename, dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 
-import { handleConsoleSessionRequest } from '../src/console-session/http.js';
+import { handleConsoleSessionRequest, hasSignInToken } from '../src/console-session/http.js';
 import { createSignInLaunchers } from '../src/console-session/launcher-file.js';
 import { createConsoleSession, CODE_TTL_MS } from '../src/console-session/session.js';
 import { sessionBoundPorts } from '../src/console-session/session-ports.js';
@@ -219,6 +219,32 @@ test('fuli open opens the launcher file: its token goes in a header and no comma
   }
   await assert.rejects(consoleSignInLauncher({ consoleUrl: server.url, dataDir: 'synthetic-data-dir', readToken: () => 'another-token',
     temporaryRoot: () => server.root }), /Only fuli open on this computer can sign in/);
+});
+
+test('a sign-in fails closed when its file cannot be made owner-only; fuli open says why', async t => {
+  const root = temporaryRoot(t);
+  const issued = [];
+  const session = createConsoleSession();
+  const issueCode = session.issueCode;
+  session.issueCode = (next) => { const code = issueCode(next); issued.push(code); return code; };
+  const server = await console_(t, { consoleSession: session,
+    signInLaunchers: createSignInLaunchers({ temporaryRoot: () => root, ownerOnly: () => { throw new Error('icacls failed'); } }) });
+  const refused = await call(`${server.url}/api/console-session/codes`, { method: 'POST',
+    headers: { 'x-fuli-console-sign-in': SIGN_IN_TOKEN }, body: {} });
+  assert.deepEqual([refused.status, refused.json.code], [503, 'console_sign_in_unavailable']);
+  assert.equal(refused.json.launcherPath, undefined);
+  assert.deepEqual(readdirSync(root), [], 'nothing was written');
+  assert.equal((await redeemCode(server, issued[0])).status, 401, 'the code it made is not usable');
+  await assert.rejects(consoleSignInLauncher({ consoleUrl: server.url, dataDir: 'synthetic-data-dir', readToken: () => SIGN_IN_TOKEN,
+    temporaryRoot: () => root }), /Could not make the sign-in file private to this account/);
+});
+
+test('the data directory\'s token stands in for the session only where it is asked for', () => {
+  const signIn = { session: createConsoleSession(), readToken: () => SIGN_IN_TOKEN };
+  const withHeader = (value) => ({ headers: value === undefined ? {} : { 'x-fuli-console-sign-in': value } });
+  assert.equal(hasSignInToken(withHeader(SIGN_IN_TOKEN), signIn), true);
+  for (const value of [undefined, '', 'another-token', `${SIGN_IN_TOKEN}x`]) assert.equal(hasSignInToken(withHeader(value), signIn), false);
+  assert.equal(hasSignInToken(withHeader(SIGN_IN_TOKEN), { ...signIn, readToken: () => { throw new Error('no env'); } }), false);
 });
 
 test('a launcher file is deleted when its code expires, and the directory when the console stops', t => {
