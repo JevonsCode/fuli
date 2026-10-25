@@ -18,6 +18,8 @@ import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { JEFA_OPERATION } from '../graphiti/jefa-board-match.js';
 import { FULI_VERSION } from '../package-metadata.js';
 
+const MODEL_SUGGESTIONS_PATH = '/api/model-backends/suggestions';
+
 export async function handleApiRequest({
   request,
   response,
@@ -40,11 +42,17 @@ export async function handleApiRequest({
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
-  if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
+  const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
     readRoleSuggestions: app.roleSuggestions ? input => app.readRoleSuggestions(input) : null,
     roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS) },
     automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
-    settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation })) return true;
+    settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation,
+    ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null });
+  // The suggestion log's owner proof is confirmed with the Provider, so that
+  // read wakes an adaptive runtime like any graph request (rec#11 D-60).
+  if (system?.withGraphRuntimeLease && url.pathname === MODEL_SUGGESTIONS_PATH
+    ? await system.withGraphRuntimeLease(`http:${request.method}:${url.pathname}`, modelBackendRequest)
+    : await modelBackendRequest()) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {
     sendJson(response, 200, {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { refuseRemoteDecision } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
+import { confirmConsoleOwner } from '../knowledge-owner-reads/owner-proof.js';
 import { positiveInteger } from '../validation/values.js';
 import { MODEL_BACKEND_ROLES } from './config.js';
 import { MAX_HISTORY_LIMIT } from './settings-history.js';
@@ -24,7 +25,13 @@ import { RETENTION } from './suggestion-log.js';
 // its latest answer (rec#10 D-32), read-only: an observation, never proof.
 // suggestions lists what Astro, Bole and Jefa showed after asking their own
 // model (suggestion-log.js), newest first, a limit clamped to RETENTION.rows, with
-// its retention; it is a read only, and no route writes it. history lists
+// its retention; it is a read only, and no route writes it. Its rows hold the
+// models' reasons and the names they showed, so it is the person's owner read
+// (rec#11 D-60): loopback only, a LAN device with its LAN code included, and
+// only after ownerReads confirmed the console's human-review proof for
+// personalSpaceId, the active space the log is read in
+// (src/knowledge-owner-reads/owner-proof.js); otherwise 403 and no data.
+// Agents have no tool that reads it. history lists
 // what changed in a role's settings and execution mode and when
 // (settings-history.js, rec#11 D-42), newest first, read only; each save and
 // trust change answers whether its change was recorded there.
@@ -41,7 +48,8 @@ const TRUST_EDIT = z.union([
 
 export async function handleModelBackendApiRequest({
   request, response, url, modelBackends, roleWork = null, readRoleSuggestions = null, roleSettings = null, operations = {},
-  automaticOperations = {}, modelTrust = null, settingsHistory = null, readEvaluation = null
+  automaticOperations = {}, modelTrust = null, settingsHistory = null, readEvaluation = null, ownerReads = null,
+  personalSpaceId = null
 }) {
   const roleEdit = ROLE_ROUTE.exec(url.pathname)?.[1] ?? null;
   const trustEdit = TRUST_ROUTE.exec(url.pathname)?.[1] ?? null;
@@ -59,6 +67,8 @@ export async function handleModelBackendApiRequest({
   }
   response.setHeader('Cache-Control', 'no-store');
   if (suggestions) {
+    if (refuseRemoteDecision(request, response, 'Built-in Agents\' suggestions are read only on this computer')) return true;
+    await confirmConsoleOwner(ownerReads, personalSpaceId, 'Built-in Agents\' suggestions');
     const limit = url.searchParams.get('limit');
     sendJson(response, 200, { suggestions: await readRoleSuggestions(limit === null ? {} : { limit: positiveInteger(Number(limit), 'limit', Number.MAX_SAFE_INTEGER) }),
       retention: RETENTION });

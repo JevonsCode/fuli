@@ -12,6 +12,7 @@ import { knowledgeReferences } from '../src/knowledge-hard-delete/forget-referen
 import { handleModelBackendApiRequest } from '../src/model-backends/http.js';
 import { RETENTION, RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { listenFetchableServer } from '../src/server/listen.js';
+import { ownerProofPort } from '../test-support/owner-proof-port.js';
 
 // Synthetic suggestions only, shaped as the three roles write them: no model,
 // no data directory but a temporary one.
@@ -248,7 +249,8 @@ test('the console reads suggestions over a GET-only route that never writes', as
   const serve = (roleSuggestions) => async (request, response) => {
     try {
       if (!await handleModelBackendApiRequest({ request, response, url: new URL(request.url, 'http://local'),
-        modelBackends: { roles: () => ({}) }, readRoleSuggestions: roleSuggestions ? input => roleSuggestions.list(input) : null })) response.writeHead(404).end();
+        modelBackends: { roles: () => ({}) }, readRoleSuggestions: roleSuggestions ? input => roleSuggestions.list(input) : null,
+        ownerReads: ownerProofPort().port, personalSpaceId: SPACE })) response.writeHead(404).end();
     } catch (error) {
       const mapped = mapHttpError(error);
       response.writeHead(mapped.status, { 'content-type': 'application/json' }).end(JSON.stringify(mapped.body));
