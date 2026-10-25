@@ -214,7 +214,10 @@ export function readBearerToken(path, fileSystem = {}) {
   const constants = fileSystem.constants ?? fsConstants;
   const absolute = resolve(path);
   // Windows has no O_NOFOLLOW: refuse a link up front and check the opened file is that entry.
-  const entry = constants.O_NOFOLLOW === undefined ? (fileSystem.lstatSync ?? lstatSync)(absolute) : null;
+  // The identity is compared as BigInt: a Windows file ID above 2^53 rounds as a Number, so a
+  // replacement with a neighbouring ID would compare equal (rec#49).
+  const entry = constants.O_NOFOLLOW === undefined
+    ? (fileSystem.lstatSync ?? lstatSync)(absolute, { bigint: true }) : null;
   if (entry?.isSymbolicLink()) throw new TypeError('Remote MCP bearer token path must not be a symbolic link');
   let descriptor;
   try {
@@ -232,7 +235,8 @@ export function readBearerToken(path, fileSystem = {}) {
   }
   try {
     const metadata = fstat(descriptor);
-    if (entry && (entry.ino !== metadata.ino || entry.dev !== metadata.dev)) {
+    const opened = entry && fstat(descriptor, { bigint: true });
+    if (entry && (entry.ino !== opened.ino || entry.dev !== opened.dev)) {
       throw new TypeError('Remote MCP bearer token path must not be a symbolic link');
     }
     if (!metadata.isFile()) throw new TypeError('Remote MCP bearer token path must be a regular file');
