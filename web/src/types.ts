@@ -721,7 +721,12 @@ export type ConversationSourceApplication =
   | 'cursor'
   | 'gemini_cli'
   | 'kiro'
+  | 'opencode'
   | 'other'
+
+// Applications the console can open a conversation in. OpenCode has no
+// launcher yet: the stored runtime settings keep exactly these keys.
+export type ConversationLauncherApplication = Exclude<ConversationSourceApplication, 'opencode'>
 
 export type ConversationIdFormat = 'any' | 'uuid'
 
@@ -733,7 +738,7 @@ export interface ConversationLauncherRule {
 }
 
 export type ConversationLauncherConfiguration = Record<
-  ConversationSourceApplication,
+  ConversationLauncherApplication,
   ConversationLauncherRule
 >
 

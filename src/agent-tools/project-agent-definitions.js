@@ -8,6 +8,7 @@ import {
   objectSchema,
   stringSchema
 } from './schema.js';
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 const id = boundedString(256);
 const shortText = boundedString(2048);
@@ -15,7 +16,7 @@ const idempotencyKey = { ...boundedString(256), minLength: 8 };
 const dateTime = { ...boundedString(64), format: 'date-time' };
 const sourceApplication = {
   type: ['string', 'null'],
-  enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other', null]
+  enum: [...SOURCE_APPLICATIONS, null]
 };
 const nullableTokenCount = {
   ...integerSchema({ minimum: 0 }),
@@ -31,7 +32,7 @@ export const projectAgentTokenUsage = objectSchema({
   reasoningOutputTokens: nullableTokenCount
 }, ['source', 'totalTokens']);
 export const projectAgentWorkerRuntime = objectSchema({
-  application: enumSchema(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other']),
+  application: enumSchema([...SOURCE_APPLICATIONS]),
   sessionId: { ...nullableStringSchema(), minLength: 1, maxLength: 256 },
   sessionUrl: { ...nullableStringSchema(), maxLength: 2048 }
 }, ['application']);
@@ -76,8 +77,8 @@ export const projectAgentProfile = objectSchema({
   defaultModelStrategy: projectAgentModelStrategy,
   executorPolicy: projectAgentExecutorPolicy,
   allowedClients: arraySchema(
-    enumSchema(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other']),
-    { maxItems: 6 }
+    enumSchema([...SOURCE_APPLICATIONS]),
+    { maxItems: SOURCE_APPLICATIONS.length }
   ),
   testSource: nullableStringSchema(),
   cleanupEligible: booleanSchema(),

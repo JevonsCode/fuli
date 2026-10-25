@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WORKFLOW_OBSERVATION_TOOL = 'record_workflow_transition_observation';
@@ -160,7 +161,7 @@ export function normalizeAgentSessionInput(
 }
 
 export function normalizeMcpSourceApplication(value) {
-  if (!['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other'].includes(value)) {
+  if (!SOURCE_APPLICATIONS.includes(value)) {
     throw new TypeError('Unsupported MCP source application');
   }
   return value;

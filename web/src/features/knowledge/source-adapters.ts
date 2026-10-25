@@ -1,11 +1,13 @@
 import { t } from '@/i18n'
 import type {
+  ConversationLauncherApplication,
   ConversationLauncherConfiguration,
+  ConversationLauncherRule,
   ConversationSourceApplication,
   EvidenceRecord,
 } from '@/types'
 
-export const CONVERSATION_SOURCE_APPLICATIONS: readonly ConversationSourceApplication[] = [
+export const CONVERSATION_SOURCE_APPLICATIONS: readonly ConversationLauncherApplication[] = [
   'codex',
   'claude',
   'claude_code',
@@ -22,6 +24,7 @@ const APPLICATION_LABELS: Record<ConversationSourceApplication, string> = {
   cursor: 'Cursor',
   gemini_cli: 'Gemini CLI',
   kiro: 'Kiro',
+  opencode: 'OpenCode',
   other: 'Other Agent',
 }
 
@@ -95,6 +98,7 @@ export function sourceApplication(
   if (text.includes('cursor')) return 'cursor'
   if (text.includes('gemini')) return 'gemini_cli'
   if (text.includes('kiro')) return 'kiro'
+  if (text.includes('opencode')) return 'opencode'
   if (text.includes('codex')) return 'codex'
   return 'other'
 }
@@ -115,7 +119,7 @@ export function sourceLinkForEvidence(
   configuration: ConversationLauncherConfiguration = DEFAULT_CONVERSATION_LAUNCHERS,
 ) {
   if (sourceLauncherStatus(evidence, configuration) !== 'available') return null
-  const rule = configuration[sourceApplication(evidence)]!
+  const rule = launcherRule(configuration, evidence)!
   const sessionId = evidence.session_id!.trim()
   return rule.urlTemplate.replace('{id}', encodeURIComponent(sessionId))
 }
@@ -124,7 +128,7 @@ export function sourceLauncherStatus(
   evidence: EvidenceRecord = {},
   configuration: ConversationLauncherConfiguration = DEFAULT_CONVERSATION_LAUNCHERS,
 ): SourceLauncherStatus {
-  const rule = configuration[sourceApplication(evidence)]
+  const rule = launcherRule(configuration, evidence)
   if (!rule?.enabled) return 'disabled'
   const sessionId = evidence.session_id?.trim() ?? ''
   if (!safeSessionId(sessionId, rule.idFormat)) return 'invalid_id'
@@ -136,8 +140,14 @@ export function sourceLauncherAppName(
   evidence: EvidenceRecord = {},
   configuration: ConversationLauncherConfiguration = DEFAULT_CONVERSATION_LAUNCHERS,
 ) {
-  const rule = configuration[sourceApplication(evidence)]
+  const rule = launcherRule(configuration, evidence)
   return rule?.enabled && rule.appName.trim() ? rule.appName.trim() : null
+}
+
+// The launcher of the evidence's application, or undefined when it has none (OpenCode).
+function launcherRule(configuration: ConversationLauncherConfiguration, evidence: EvidenceRecord): ConversationLauncherRule | undefined {
+  const application = sourceApplication(evidence)
+  return application === 'opencode' ? undefined : configuration[application]
 }
 
 export async function copySourceSession(

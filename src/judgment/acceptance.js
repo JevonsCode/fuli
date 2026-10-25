@@ -8,11 +8,12 @@ import { objectSchema } from '../agent-tools/schema.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
 import { failureProvenance, judgmentProvenance, pendingRecord, TONBORG_OPERATIONS } from './backend.js';
 import { PREFERENCE_RECEIPT_RULES, preferenceDeliveryRecord, preferenceHold } from './preference-receipt.js';
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 const id = z.string().min(1).max(256);
 const request = z.object({ personalSpaceId: id, personalProjectId: id, requestId: id,
   taskId: id, taskContextToken: id, artifactRevision: id.max(160), expectedRevision: z.number().int().min(0),
-  sourceApplication: z.enum(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other']),
+  sourceApplication: z.enum(SOURCE_APPLICATIONS),
   sourceSessionId: id.optional(), sourceSessionVerified: z.boolean().optional() }).strict();
 const verdictSchema = objectSchema(verdictProperties, VERDICT_FIELDS);
 const VERDICT_EXAMPLE = '{"outcome":"approve|escalate","summary":"concise reason","evidence":["specific evidence"],"confidence":0.0}';

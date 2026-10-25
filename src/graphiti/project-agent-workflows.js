@@ -36,6 +36,7 @@ import {
   providerProjectAgentProfile,
   routingLearningRecord
 } from './project-agent-mapping.js';
+import { coversClient } from '../agents/source-applications.js';
 
 export async function upsertProjectAgent(application, input) {
   if (input.profile?.status === 'archived') {
@@ -612,7 +613,7 @@ export async function getProjectAgentContext(
       required_action: 'Choose an active project Agent or reactivate this Agent before use.'
     };
   }
-  if (!(agent.profile.allowedClients ?? []).includes(sourceApplication)) {
+  if (!coversClient(agent.profile.allowedClients, sourceApplication)) {
     return {
       status: 'client_not_allowed',
       personal_space_id: application.config.personal.spaceId,

@@ -7,6 +7,7 @@ import { assertJsonFormatWritable, jsonFormat, updateVersionedJsonFileAtomic, wr
   from '../storage/json-format.js';
 import { DEFAULT_PROJECT_SETTINGS, PROJECT_CHANGE_KEYS, storedProjectSettings, updatedProjectSettings,
   usesProjectModes } from './capture-project-mode.js';
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 // Capturing a client's sessions is separate from that client using FULI tools:
 // a disabled source still queries existing memory, it just adds nothing new.
@@ -14,7 +15,7 @@ import { DEFAULT_PROJECT_SETTINGS, PROJECT_CHANGE_KEYS, storedProjectSettings, u
 // Version 2 only when per-project modes are in use (rec#5 C2).
 export const CAPTURE_POLICY_FORMAT = jsonFormat({ store: 'capture-policy', versions: [1, 2] });
 const CAPTURE_GENERATION_FORMAT = jsonFormat({ store: 'capture-policy-generation', versions: [1] });
-export const CAPTURE_SOURCES = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other']);
+export const CAPTURE_SOURCES = SOURCE_APPLICATIONS;
 
 const DEFAULT_POLICY = Object.freeze({
   enabled: true,

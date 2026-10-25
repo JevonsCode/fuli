@@ -16,6 +16,7 @@ import { PREFERENCE_RECEIPT_VERSION, preferenceDeliveryRecord, preferenceHold,
 import { REVIEW_EXAMPLE, reviewInstructions } from './review-prompt.js';
 import { injectionSignals } from './review-injection-precheck.js';
 import { automaticWriteDecision } from '../graphiti/capture-decision.js';
+import { coversClient } from '../agents/source-applications.js';
 
 const id = z.string().min(1).max(256);
 const reviewInput = z.object({ personalSpaceId: id, personalProjectId: id.nullable().optional(), requestId: id,
@@ -53,7 +54,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     if (tonborg?.profile.status !== 'active' || !tonborg.profile.capabilities?.includes('fuli.employee:tonborg')) {
       throw new EmployeeError('Tonborg is unavailable', 403, 'judgment_agent_unavailable');
     }
-    if (!tonborg.profile.allowedClients?.includes(policy.client)) {
+    if (!coversClient(tonborg.profile.allowedClients, policy.client)) {
       throw new EmployeeError('Tonborg is not enabled for the selected judgment client', 403, 'judgment_client_forbidden');
     }
     if (input.personalProjectId && app.employees) await app.employees.authorize({ templateId: 'tonborg', ...input, sourceApplication: policy.client, ensureAssignment });

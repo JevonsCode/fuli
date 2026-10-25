@@ -16,6 +16,7 @@ import ClientConnectionSettings from '@/features/settings/ClientConnectionSettin
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import CaptureProjectSettings from '@/features/capture/CaptureProjectSettings.vue'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
+import { captureSourceOff, withCaptureSource } from '@/features/capture/capture-sources'
 import { fieldErrorMessage } from '@/features/settings/settings-field-error'
 import { matchingSections, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
 import {
@@ -264,8 +265,7 @@ function stopPolling() {
 }
 
 function toggleClientCapture(source: string, capture: boolean) {
-  const others = disabledCaptureSources.value.filter(value => value !== source)
-  void store.updateCapturePolicy(captureEnabled.value, capture ? others : [...others, source])
+  void store.updateCapturePolicy(captureEnabled.value, withCaptureSource(disabledCaptureSources.value, source, capture))
 }
 
 function toggleCapture(enabled: boolean) {
@@ -424,7 +424,7 @@ async function submitSettings(event: Event) {
                     <p class="setting-note">{{ t('settings.behavior.captureClientsMeta') }}</p>
                     <label v-for="[source, label] in CAPTURE_CLIENTS" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
                       <span><strong>{{ label }}</strong></span>
-                      <UiToggle :model-value="!disabledCaptureSources.includes(source)" :label="label" @update:model-value="toggleClientCapture(source, $event)" />
+                      <UiToggle :model-value="!captureSourceOff(disabledCaptureSources, source)" :label="label" @update:model-value="toggleClientCapture(source, $event)" />
                     </label>
                   </template>
                   <label class="setting-row" data-recall-answer-from-confirmed>

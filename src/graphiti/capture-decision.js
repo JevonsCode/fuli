@@ -3,6 +3,7 @@ import { projectCaptureReason, projectOffSince, storedProjectSettings, usesProje
 import { isTemporaryProjectId } from './temporary-project-scope.js';
 import { captureNotice } from './capture-notice.js';
 import { sessionCaptureDecision, sessionFuliState } from './session-layer-decision.js';
+import { coversClient } from '../agents/source-applications.js';
 
 // The one place that decides whether a write may capture (rec#5 C1). Every
 // write path asks here: raw transcript, Agent conversation, task checkpoint,
@@ -122,7 +123,7 @@ async function decide(application, scope) {
   if (!policy.enabled) return { policy, decision: denied('global_off', 'global') };
   // A write that names no client comes from an unknown client, as at every
   // other FULI boundary. Settings saved before per-client capture list none.
-  if ((policy.disabledSources ?? []).includes(scope.sourceApplication ?? 'other')) {
+  if (coversClient(policy.disabledSources, scope.sourceApplication ?? 'other')) {
     return { policy, decision: denied('client_off', 'client') };
   }
   let project = null;

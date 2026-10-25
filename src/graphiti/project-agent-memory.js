@@ -3,6 +3,7 @@ import { scrubbedMemoryGuidance } from '../agents/memory-state.js';
 import { renderAgentMemoryExport } from '../agents/directory-snapshots.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { captureDecision, captureDisabled } from './capture-decision.js';
+import { coversClient } from '../agents/source-applications.js';
 
 export function agentMemoryRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
@@ -232,7 +233,7 @@ async function requireAgentMemoryAccess(application, input) {
   if (agent.profile.status !== 'active' || agent.memoryScope !== 'reviewed_agent') {
     throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'An active durable Agent is required for working memory');
   }
-  if (!(agent.profile.allowedClients ?? []).includes(input.sourceApplication ?? 'other')) {
+  if (!coversClient(agent.profile.allowedClients, input.sourceApplication ?? 'other')) {
     throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'This client is not allowed to load the Agent memory');
   }
   return agent;

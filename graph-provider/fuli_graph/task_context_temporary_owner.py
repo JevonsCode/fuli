@@ -1,6 +1,7 @@
 """Recover only the task-only employee already bound to this host lifecycle."""
 
 from .project_agent_context_models import ProjectAgentContextResolution
+from .client_coverage import covers_client
 
 
 async def temporary_task_owner(store, actor, request):
@@ -19,7 +20,7 @@ async def temporary_task_owner(store, actor, request):
     if (agent.profile.agent_type != 'temporary'
             or agent.temporary_task_id != context.get('coordination_task_id')
             or agent.profile.status != 'active'
-            or request.source_application not in agent.profile.allowed_clients):
+            or not covers_client(agent.profile.allowed_clients, request.source_application)):
         return ProjectAgentContextResolution(status='agent_unavailable', reason='agent_unavailable')
     return ProjectAgentContextResolution(status='ready', agent=agent, reason='active_task_owner',
         candidate_count=1, match_basis=['temporary employee bound to this exact host task'], worker_started=False)

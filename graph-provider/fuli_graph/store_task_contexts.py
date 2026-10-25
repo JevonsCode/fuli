@@ -25,6 +25,7 @@ from .task_activity_origin import context_activity_origin
 from .task_turn_receipts import mark_turn_receipt_unread, unread_session_turn_receipts
 from .knowledge_versions import lock_knowledge
 from .knowledge_source_fence import require_source_available
+from .client_coverage import covers_client
 
 
 class StoreTaskContexts:
@@ -89,7 +90,7 @@ class StoreTaskContexts:
                 request.project_agent_id, require_active=True, allow_global=True,
             )
             allowed_clients = json.loads(agent['profile_json']).get('allowed_clients', [])
-            if request.source_application not in allowed_clients:
+            if not covers_client(allowed_clients, request.source_application):
                 raise HTTPException(status_code=403, detail='Agent is not allowed in this client')
         record = request.model_dump(mode='json')
         origin = await context_activity_origin(self, actor, request, worker_run_id=worker_run_id)
@@ -251,7 +252,7 @@ class StoreTaskContexts:
             space = await self.authorize(actor, request.personal_space_id, 'reader')
             agent = await authorize_project_agent(self, actor, space, record.get('personal_project_id'),
                                                   record['project_agent_id'], require_active=True, allow_global=True)
-            if request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
+            if not covers_client(json.loads(agent['profile_json']).get('allowed_clients', []), request.source_application):
                 raise HTTPException(403, 'Agent is not allowed in this client')
         # All applicability dimensions come from the durable task, never the reader.
         preferences = await read_collaboration_context(

@@ -6,6 +6,7 @@ from .project_agent_access import authorize_project_agent
 from .project_agent_models import ProjectAgentModelStrategy
 from .provider_values import now_utc, stable_uuid
 from .store_transactions import query_store_transaction
+from .client_coverage import covers_client
 
 
 class StoreAgentVerification:
@@ -71,7 +72,7 @@ class StoreAgentVerification:
             space = await store.authorize(actor, request.personal_space_id, 'maintainer')
             verifier = await authorize_project_agent(store, actor, space, request.personal_project_id,
                 context['project_agent_id'], require_active=True)
-            if request.source_application not in json.loads(verifier['profile_json']).get('allowed_clients', []):
+            if not covers_client(json.loads(verifier['profile_json']).get('allowed_clients', []), request.source_application):
                 raise HTTPException(403, 'Verifier is not allowed in this client')
             await store.runtime.driver.execute_query(
                 'MATCH (t:FuliProjectAgentTask {task_id:$task, personal_space_id:$space}) '

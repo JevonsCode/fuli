@@ -7,6 +7,7 @@ import { isPeerRoleAgent } from './project-team-view.js';
 import { resolveTaskAgentMention } from './project-agent-mention.js';
 import { dismissalLessonHint } from './project-agent-dismissal.js';
 import { taskWorkKind } from './task-scene.js';
+import { coversClient } from '../agents/source-applications.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -90,7 +91,7 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       catch { return { status: 'agent_unavailable', worker_started: false }; }
     }
     if (agent && (agent.profile.status !== 'active' ||
-      !(agent.profile.allowedClients ?? []).includes(input.sourceApplication ?? 'other'))) {
+      !coversClient(agent.profile.allowedClients, input.sourceApplication ?? 'other'))) {
       return { status: 'agent_unavailable', worker_started: false };
     }
     return { ...value, agent, worker_started: false, ...(standingAgentUnreached ? { standingAgentUnreached } : {}) };
@@ -113,7 +114,7 @@ async function resolveGlobalAgent(application, resolution, input) {
     const value = await application.personal.getProjectAgent(application.config.personal.spaceId, null, id);
     const agent = projectAgentRecord(value);
     if (agent.profile.status !== 'active'
-      || !(agent.profile.allowedClients ?? []).includes(input.sourceApplication ?? 'other')) {
+      || !coversClient(agent.profile.allowedClients, input.sourceApplication ?? 'other')) {
       return { status: 'agent_unavailable', worker_started: false };
     }
     return { status: 'ready', reason: 'global_agent', agent, worker_started: false };

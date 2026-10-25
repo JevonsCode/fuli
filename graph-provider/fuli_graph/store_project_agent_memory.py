@@ -21,6 +21,7 @@ from .system_hr_identity import LEGACY_HR_AGENT_ID, SYSTEM_HR_AGENT_ID, resolve_
 from .knowledge_versions import lock_knowledge
 from .knowledge_source_fence import require_source_available
 from .store_transactions import query_store_transaction
+from .client_coverage import covers_client
 
 
 class StoreProjectAgentMemory:
@@ -81,7 +82,7 @@ class StoreProjectAgentMemory:
             require_active=True, require_memory=True, allow_global=True,
         )
         allowed_clients = json.loads(agent['profile_json']).get('allowed_clients', [])
-        if request.source_application not in allowed_clients:
+        if not covers_client(allowed_clients, request.source_application):
             raise HTTPException(status_code=403, detail='Agent is not allowed in this client')
         if request.task_id:
             if request.personal_project_id is None:
