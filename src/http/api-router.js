@@ -36,10 +36,15 @@ export async function handleApiRequest({
   knowledgeTags = null,
   modelRoleSettings = null,
   readModelEvaluation = null,
-  judgmentUndo = null
+  judgmentUndo = null,
+  // Whether the request carries this launch's console session (rec#11 D-61).
+  consoleSignedIn = false,
+  // A LAN roundtable change: the console session or `fuli peer` with the
+  // data directory's human-review token.
+  peerChangeAllowed = () => false
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
-  if (await handlePeerApiRequest({ request, response, url, peer })) return true;
+  if (await handlePeerApiRequest({ request, response, url, peer, ownerChangeAllowed: peerChangeAllowed })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
@@ -47,7 +52,7 @@ export async function handleApiRequest({
     roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS) },
     automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
     settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation,
-    ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null });
+    ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null, consoleSignedIn });
   // The suggestion log's owner proof is confirmed with the Provider, so that
   // read wakes an adaptive runtime like any graph request (rec#11 D-60).
   if (system?.withGraphRuntimeLease && url.pathname === MODEL_SUGGESTIONS_PATH
@@ -185,14 +190,14 @@ export async function handleApiRequest({
   // request: an adaptive runtime wakes the provider for a preview and keeps
   // it up through a long apply or undo.
   const graphRequest = async () =>
-    await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations }) ||
+    await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations, consoleSignedIn }) ||
     await handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete: knowledgeHardDelete }) ||
     await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope }) ||
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||
     await handleJudgmentApiRequest({ request, response, url, app, undoConsole: judgmentUndo, ownerReads: knowledgeOwnerReads }) ||
     await handleStandingAssignmentRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
-    await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads });
+    await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads, consoleSignedIn });
   if (system?.withGraphRuntimeLease && (
     url.pathname.startsWith('/api/') || url.pathname.startsWith('/employee-workspaces/')
   )) {

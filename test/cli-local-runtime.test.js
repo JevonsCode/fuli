@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
+import { formatLocalRuntimeResult, runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
 import { parseLocalRuntimeOptions } from '../src/cli/local-runtime-options.js';
 import { DEFAULT_CONVERSATION_LAUNCHERS } from '../src/system/runtime-settings.js';
 
@@ -11,6 +11,7 @@ test('local runtime options leave persisted port and LAN defaults unresolved', (
     personalSpaceName: 'Personal',
     port: null,
     open: true,
+    next: null,
     rebuild: false,
     lan: null,
     json: false,
@@ -27,6 +28,22 @@ test('local runtime options leave persisted port and LAN defaults unresolved', (
     /cannot be combined/
   );
   assert.throws(() => parseLocalRuntimeOptions('stop', ['--lan']), /Unknown stop option/);
+});
+
+test('fl open --next takes only a console path on this computer (rec#11 D-61)', () => {
+  assert.equal(parseLocalRuntimeOptions('open', ['--next', '/knowledge?item=s/entity:e1']).next, '/knowledge?item=s/entity:e1');
+  for (const next of ['https://attacker.example/', '//attacker.example', '/\\attacker.example', 'knowledge', '/api/state', '/auth/console']) {
+    assert.throws(() => parseLocalRuntimeOptions('open', ['--next', next]), /next must be a console path/, next);
+  }
+  assert.throws(() => parseLocalRuntimeOptions('start', ['--next', '/knowledge']), /Unknown start option/);
+});
+
+test('fl open prints the console address, never the sign-in URL, and says when it could not sign in', () => {
+  assert.equal(formatLocalRuntimeResult('open', { url: 'http://127.0.0.1:2727', signIn: { status: 'signed_in' } }),
+    'Opened: http://127.0.0.1:2727');
+  const unsigned = formatLocalRuntimeResult('open', { url: 'http://127.0.0.1:2727',
+    signIn: { status: 'unavailable', reason: 'the console answered HTTP 404' } });
+  assert.match(unsigned, /^Opened: http:\/\/127\.0\.0\.1:2727\nNot signed in \(the console answered HTTP 404\)/);
 });
 
 test('fl status has a machine-readable view without secrets', async () => {

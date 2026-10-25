@@ -97,7 +97,7 @@ budget (512 KiB) holds the largest valid identity plus one memory layer; a resul
 still be truncated fails explicitly instead of returning a partial file. Memory reads,
 checkpoints and task entry report directory status in the public `directorySnapshot` field;
 the generic MCP omission of internal `snapshot` keys is unchanged.
-The console route `GET /api/project-agents/:agentId/memory/export` uses owner inspection authority.
+The console route `GET /api/project-agents/:agentId/memory/export` uses owner inspection authority, so from 0.22 it needs the console session `fuli open` starts (rec#11 D-61, docs/judgment-and-autonomy.md).
 
 ## Human-only boundaries
 

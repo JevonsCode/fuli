@@ -402,7 +402,8 @@ async function call(h, method, pathname, body = null, address = '127.0.0.1', ext
   const sent = {};
   const response = { setHeader() {}, writeHead(status) { sent.status = status; }, end(text) { sent.body = JSON.parse(text); } };
   await handleModelBackendApiRequest({ request, response, url: new URL(`http://127.0.0.1${pathname}`), modelBackends: h.port,
-    operations: { tonborg: ['knowledge_review'] }, automaticOperations: { tonborg: 'knowledge_review' }, modelTrust: h.trust, ...extra });
+    operations: { tonborg: ['knowledge_review'] }, automaticOperations: { tonborg: 'knowledge_review' }, modelTrust: h.trust,
+    consoleSignedIn: true, ...extra });
   return sent;
 }
 

@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 
 import {
   externalOpenInvocation,
   inspectLocalRuntime,
+  openLocalConsole,
   restartLocalRuntime,
   startLocalRuntime,
   stopLocalRuntime
@@ -293,6 +296,43 @@ test('console opening only targets a loopback Fuli URL', () => {
     () => externalOpenInvocation('https://example.com', 'darwin'),
     /Only the local Fuli console/
   );
+  // A sign-in opens the console's owner-only launcher file, never a URL with a code (rec#11 D-61).
+  const launcher = join(tmpdir(), 'Fuli', 'console-session', 'fuli-console-AbC123', 'sign-in-00000000-0000-4000-8000-000000000000.html');
+  assert.deepEqual(externalOpenInvocation(launcher, 'win32'), { command: 'cmd', args: ['/c', 'start', '', launcher] });
+  assert.deepEqual(externalOpenInvocation(launcher, 'linux'), { command: 'xdg-open', args: [launcher] });
+  for (const target of [`http://127.0.0.1:2727/auth/console?code=${'A'.repeat(43)}`, 'http://127.0.0.1:2727/auth/console#code=x',
+    join(tmpdir(), 'elsewhere', basename(launcher)), join(tmpdir(), 'fuli-console-AbC123', basename(launcher)),
+    join(tmpdir(), 'console-session', 'fuli-console-a&b', basename(launcher))]) {
+    assert.throws(() => externalOpenInvocation(target, 'win32'), /Only the local Fuli console/, target);
+  }
+});
+
+const RUNNING = Object.freeze({ readState: () => ({ version: 4, pid: 27, url: 'http://127.0.0.1:2727' }),
+  isProcessAlive: () => true, consoleHealth: async () => true });
+
+test('fl open opens the console\'s sign-in file for the asked page, and returns only the console address (rec#11 D-61)', async () => {
+  const opened = [];
+  const asked = [];
+  const result = await openLocalConsole(input({ next: '/knowledge?item=s/entity:e1', paths: { ...PATHS, dataDir: 'C:/Fuli' } }), {
+    ...RUNNING,
+    consoleSignIn: async (request) => { asked.push(request); return 'C:/Temp/fuli-console-x/sign-in-synthetic.html'; },
+    openExternal: async (url) => { opened.push(url); }
+  });
+  assert.deepEqual(asked, [{ consoleUrl: 'http://127.0.0.1:2727', dataDir: 'C:/Fuli', next: '/knowledge?item=s/entity:e1' }]);
+  assert.deepEqual(opened, ['C:/Temp/fuli-console-x/sign-in-synthetic.html']);
+  assert.deepEqual(result, { status: 'opened', url: 'http://127.0.0.1:2727', signIn: { status: 'signed_in' } });
+});
+
+test('fl open and fl start --open open the console without a session when it cannot issue a code', async () => {
+  const opened = [];
+  const unavailable = { consoleSignIn: async () => { throw new Error('the console answered HTTP 404'); },
+    openExternal: async (url) => { opened.push(url); } };
+  const result = await openLocalConsole(input(), { ...RUNNING, ...unavailable });
+  assert.deepEqual(result.signIn, { status: 'unavailable', reason: 'the console answered HTTP 404' });
+  const started = await startLocalRuntime(input({ open: true }), { ...unavailable, readConfig: () => null, fileExists: () => true,
+    ensureRuntime: async () => ({ status: 'running', url: 'http://127.0.0.1:2727', pid: 27 }) });
+  assert.equal(started.signIn.status, 'unavailable');
+  assert.deepEqual(opened, ['http://127.0.0.1:2727', 'http://127.0.0.1:2727']);
 });
 
 function input(overrides = {}) {

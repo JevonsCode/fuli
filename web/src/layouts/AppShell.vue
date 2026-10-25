@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, watch, watchEffect } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
+import { consoleOpenCommand, consoleSessionRequired, isLocalConsoleHost } from '@/api/console-session'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
@@ -51,6 +52,13 @@ const sectionTabs = computed(() => route.meta.detail ? [] : destination.value?.s
 const showsDesignLab = computed(() => route.name !== 'overview' && route.path !== '/preferences'
   && !route.path.startsWith('/roundtables') && route.meta.saveBar !== true)
 
+// A full read refused without the console session (rec#11 D-61): on the
+// computer running FULI, the command that signs in and comes back here; on a
+// LAN device, that full records are not shown there.
+const consoleSessionNotice = computed(() => isLocalConsoleHost(window.location.hostname)
+  ? t('common.errors.consoleSessionGuide', { command: consoleOpenCommand(route.fullPath) })
+  : t('common.errors.consoleSessionLan'))
+
 // Pins are shared by the rail, Agent cards and profiles.
 provide(AGENT_PINS_KEY, useAgentPins(activeSpaceId))
 
@@ -100,6 +108,12 @@ watchEffect(() => {
         </div>
       </header>
       <NavigationRecovery />
+      <!-- A full read refused without the console session (rec#11 D-61): one notice with the command, no redirect. -->
+      <div v-if="consoleSessionRequired" class="app-feedback-row" data-console-session-notice>
+        <div class="feedback feedback-message" role="status" aria-live="polite">
+          <span>{{ consoleSessionNotice }}</span>
+        </div>
+      </div>
       <div v-if="store.feedback" class="app-feedback-row">
         <div class="feedback feedback-message" :class="{ success: store.feedback.tone === 'success' }"
           :role="store.feedback.tone === 'error' ? 'alert' : 'status'" :aria-live="store.feedback.tone === 'error' ? 'assertive' : 'polite'">

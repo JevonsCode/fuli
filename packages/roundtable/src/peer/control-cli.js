@@ -15,13 +15,15 @@ export function peerUsage(command) {
 
 // The owner's LAN roundtable controls through the host's local service, so the
 // CLI and any settings page share one runtime and one set of local-only checks.
-export async function runPeerControlCommand(args, { baseUrl, command, notRunning, fetchImpl = fetch, write = console.log }) {
+// ownerHeaders(): what the host's service needs to accept the owner's changes.
+export async function runPeerControlCommand(args, { baseUrl, command, notRunning, fetchImpl = fetch, write = console.log,
+  ownerHeaders = () => ({}) }) {
   const [action, ...rest] = args;
   if (!action || action === '--help' || action === '-h') { write(peerUsage(command)); return; }
   const call = async (method, path, body) => {
     let response;
     try {
-      response = await fetchImpl(`${baseUrl()}${path}`, { method, headers: { 'content-type': 'application/json' },
+      response = await fetchImpl(`${baseUrl()}${path}`, { method, headers: { 'content-type': 'application/json', ...ownerHeaders() },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     } catch {
       throw new Error(notRunning);

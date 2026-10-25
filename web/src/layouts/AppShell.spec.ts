@@ -5,6 +5,7 @@ import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getJson } from '@/api/client'
+import { noteConsoleSession } from '@/api/console-session'
 import { useConsoleStore } from '@/stores/console'
 import AppShell from './AppShell.vue'
 import { usePageTitle } from './page-title'
@@ -228,6 +229,35 @@ describe('AppShell', () => {
     await router.push('/')
     await flushPromises()
     expect(wrapper.get('.app-main').attributes('data-layout')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('shows how to sign in once while a full read waits for the console session (rec#11 D-61)', async () => {
+    const { wrapper } = await setup('/knowledge?item=s/entity:e1')
+    expect(wrapper.find('[data-console-session-notice]').exists()).toBe(false)
+    noteConsoleSession('/api/knowledge/entity/e1?personalSpaceId=s', true)
+    noteConsoleSession('/api/session-records?personalSpaceId=s', true)
+    await flushPromises()
+    const notices = wrapper.findAll('[data-console-session-notice]')
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.text()).toContain('fuli open --next "/knowledge?item=s/entity:e1"')
+    noteConsoleSession('/api/knowledge/entity/e1', false)
+    noteConsoleSession('/api/session-records', false)
+    await flushPromises()
+    expect(wrapper.find('[data-console-session-notice]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('tells a LAN device that full records stay on the computer running FULI, not to run a command there', async () => {
+    const hostname = vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, hostname: '192.168.1.5' } as Location)
+    const { wrapper } = await setup('/knowledge')
+    noteConsoleSession('/api/graph', true)
+    await flushPromises()
+    const text = wrapper.get('[data-console-session-notice]').text()
+    expect(text).toBe('完整记录只在运行 FULI 的那台电脑上、用 fuli open 打开的控制台里显示，局域网设备上看不到。')
+    expect(text).not.toContain('这台电脑的终端')
+    noteConsoleSession('/api/graph', false)
+    hostname.mockRestore()
     wrapper.unmount()
   })
 
