@@ -167,6 +167,95 @@ test('a plain item that is still plain stays named for every reader; its words s
   assert.match(full.human_interaction.question, new RegExp(SUMMARY));
 });
 
+test('an injection-flagged review keeps its signal names, never a later aiReview field, and asks only a reader who sees it', async t => {
+  const f = await reviewed(t);
+  const MODEL_REASON = 'Synthetic model reason a later aiReview field could carry';
+  // Stored last, so it is the first question candidate of the list.
+  const flagged = f.service.store().record(SPACE, { personalProjectId: PROJECT, kind: 'review', target: 'entity:one',
+    title: 'Synthetic preference', summary: SUMMARY, evidence: [EVIDENCE], confidence: 0.95, outcome: 'escalate',
+    aiReview: { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['injection_suspected', 'batch_contaminated'],
+      gate: { status: 'passed', reason: null, modelId: 'synthetic-model' },
+      injectionSignals: ['reviewer_instruction', 'hidden_characters', MODEL_REASON], injectionInBatch: true,
+      modelReason: MODEL_REASON } }, 'synthetic-flagged');
+  const structure = { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['injection_suspected', 'batch_contaminated'],
+    gate: { status: 'passed', reason: null, modelId: 'synthetic-model' },
+    injectionSignals: ['reviewer_instruction', 'hidden_characters'], injectionInBatch: true };
+  f.items['entity:one'] = { agentId: 'fla-a', projectId: PROJECT };
+  for (const reader of [FLA_A, FLA_B]) {
+    const result = await f.list(reader);
+    const shown = byId(result, flagged);
+    assert.deepEqual(shown.aiReview, structure);
+    assert.equal(shown.summary, undefined);
+    for (const field of ['aiReview.injectionSignals', 'aiReview.modelReason', 'evidence', 'summary']) {
+      assert.ok(shown.content_withheld.includes(field), field);
+    }
+    assertNoWords(result);
+    assert.ok(!JSON.stringify(result).includes(MODEL_REASON), 'neither as a field nor as a signal name');
+  }
+  // FLA-A sees the item: it is asked, with the known signals only.
+  const own = await f.list(FLA_A);
+  assert.equal(own.human_interaction.source.id, flagged.id);
+  assert.match(own.human_interaction.question, /\(reviewer_instruction, hidden_characters\)\. /);
+  // FLA-B may not see it: no question about it, and its target stays out.
+  const other = await f.list(FLA_B);
+  const hidden = byId(other, flagged);
+  assert.equal(hidden.target, undefined);
+  assert.equal(hidden.target_withheld, 'not_visible');
+  assert.ok(hidden.content_withheld.includes('target') && hidden.content_withheld.includes('title'));
+  assert.notEqual(other.human_interaction.source.id, flagged.id);
+  assert.equal(other.human_interaction.source.id, f.two.id);
+});
+
+test('fields named like Object.prototype members are withheld at every level, and the view pollutes no prototype', async t => {
+  const f = await reviewed(t);
+  const PROTO_TEXT = 'Synthetic text under a prototype-named key';
+  // JSON.parse keeps __proto__ as an own key, as a stored record's body does.
+  const named = `"constructor":"${PROTO_TEXT}","toString":"${PROTO_TEXT}","__proto__":{"polluted":"${PROTO_TEXT}"}`;
+  const body = JSON.parse(`{"personalProjectId":"${PROJECT}","kind":"review","target":"entity:two","title":"Synthetic plain fact",
+    "outcome":"escalate","confidence":0.5,
+    "aiReview":{"state":"ai_suggested","modelOutcome":"escalate","interceptions":[],${named}},
+    "preferenceDelivery":{"version":1,"status":"delivered",${named}},${named}}`);
+  assert.ok(Object.hasOwn(body, '__proto__') && Object.hasOwn(body.aiReview, '__proto__'), 'the fixture has own __proto__ keys');
+  const record = f.service.store().record(SPACE, body, 'synthetic-prototype-names');
+  // A kind named like a prototype member names no plain target either.
+  const kinds = ['constructor', 'toString'].map(kind => f.service.store().record(SPACE, { personalProjectId: PROJECT, kind,
+    target: PROTO_TEXT, outcome: 'recommend' }, `synthetic-kind-${kind}`));
+
+  const result = await f.list({});
+  const shown = byId(result, record);
+  assert.deepEqual(shown.aiReview, { state: 'ai_suggested', modelOutcome: 'escalate', interceptions: [] });
+  assert.deepEqual(shown.preferenceDelivery, { version: 1, status: 'delivered' });
+  for (const prefix of ['', 'aiReview.', 'preferenceDelivery.']) {
+    for (const key of ['__proto__', 'constructor', 'toString']) {
+      assert.ok(shown.content_withheld.includes(`${prefix}${key}`), `${prefix}${key}`);
+    }
+  }
+  for (const value of [shown, shown.aiReview, shown.preferenceDelivery]) {
+    assert.equal(Object.getPrototypeOf(value), Object.prototype);
+    for (const key of ['__proto__', 'constructor', 'toString']) assert.ok(!Object.hasOwn(value, key), key);
+  }
+  assert.equal(Object.prototype.polluted, undefined);
+  assert.equal(shown.target, 'entity:two');
+  for (const kindRecord of kinds) {
+    const kindShown = byId(result, kindRecord);
+    assert.equal(kindShown.target, undefined);
+    assert.equal(kindShown.target_withheld, 'not_visible');
+    assert.deepEqual(kindShown.content_withheld, ['target']);
+  }
+  assert.ok(!JSON.stringify(result).includes(PROTO_TEXT));
+});
+
+test('a list or map rule never keeps a bare value in place of its object', async t => {
+  const f = await reviewed(t);
+  const record = f.service.store().record(SPACE, { personalProjectId: PROJECT, kind: 'review', target: 'entity:two',
+    outcome: 'escalate', aiReview: 'Synthetic free text where aiReview\'s object belongs',
+    preferenceDelivery: 'Synthetic free text where the delivery receipt belongs' }, 'synthetic-bare-values');
+  const shown = byId(await f.list({}), record);
+  assert.equal(shown.aiReview, undefined);
+  assert.equal(shown.preferenceDelivery, undefined);
+  assert.ok(shown.content_withheld.includes('aiReview') && shown.content_withheld.includes('preferenceDelivery'));
+});
+
 test('an FLA reader names one project, and the Provider decides whether it is that project\'s FLA', async t => {
   const f = await reviewed(t);
   await assert.rejects(dispatchGraphTool(f.app, 'list_judgments', { personalSpaceId: SPACE, projectAgentId: 'fla-a' }), TypeError);

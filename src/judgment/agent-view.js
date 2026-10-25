@@ -1,4 +1,5 @@
 import { judgmentHumanInteraction } from './conversation.js';
+import { INJECTION_SIGNALS } from './review-injection-precheck.js';
 import { KNOWLEDGE_KEY, visibleKnowledgeKeys } from './visible-items.js';
 
 // What an Agent reads of Tonborg's local records (rec#50). A record keeps what
@@ -16,9 +17,16 @@ import { KNOWLEDGE_KEY, visibleKnowledgeKeys } from './visible-items.js';
 const RECEIPT = ['status', 'outcome', 'reason', 'reviewId', 'taskId', 'revision', 'decisionId', 'recovered'];
 const FEEDBACK = ['revision', 'vote', 'createdAt'];
 const EXECUTION = { status: true, createdAt: true, receipt: RECEIPT };
+// What the host did with a review verdict (engine.js reviewDisposition): the
+// model's schema-checked outcome, the host's fixed interception and gate
+// codes, and the pre-check's signal names, only those the detector reports.
+const AI_REVIEW = {
+  state: true, modelOutcome: true, interceptions: true, gate: ['status', 'reason', 'modelId'],
+  injectionSignals: new Set(INJECTION_SIGNALS), injectionInBatch: true
+};
 const KEPT = Object.freeze({
   id: true, kind: true, personalProjectId: true, createdAt: true, outcome: true, proposedOutcome: true,
-  confidence: true, aiReview: true, disposition: true, selection: true, conversationId: true,
+  confidence: true, aiReview: AI_REVIEW, disposition: true, selection: true, conversationId: true,
   executionRequired: true, agentId: true, workKind: true, taskRevision: true, artifactRevision: true,
   evaluationId: true, requestFingerprint: true, evidenceFingerprint: true, policy: true, policyVersion: true,
   memoryRevision: true, client: true, model: true, sessionId: true, judgedBy: true, modelReceipt: true,
@@ -52,7 +60,8 @@ function agentRecord(record, targets) {
   const { target, title, ...rest } = record;
   const shown = project(rest, KEPT, '', withheld);
   const knowledge = record.kind === 'review' && KNOWLEDGE_KEY.test(target ?? '');
-  if (knowledge ? targets.visible.has(target) : PLAIN_TARGETS[record.kind]?.(target)) {
+  const plain = Object.hasOwn(PLAIN_TARGETS, record.kind) && PLAIN_TARGETS[record.kind](target);
+  if (knowledge ? targets.visible.has(target) : plain) {
     shown.target = target;
     // A review's title is its candidate's own name (engine.js); any other title is withheld.
     if (knowledge && title !== undefined) shown.title = title;
@@ -66,18 +75,31 @@ function agentRecord(record, targets) {
 }
 
 // rule: true keeps a value as it is; a list keeps those keys of an object; a
-// map keeps its keys by their own rules. Arrays take the rule per element.
+// map keeps its keys by their own rules; a Set keeps only its own values, of
+// a list too. Arrays take the rule per element. Only a rule's own keys name
+// fields, so `constructor`, `toString` or `__proto__` in a record is withheld
+// like any other unnamed field, and a list or map rule never keeps a bare value.
 function project(value, rule, path, withheld) {
-  if (rule === true || value === null || typeof value !== 'object') return value;
+  if (rule instanceof Set) return knownValues(value, rule, path, withheld);
+  if (rule === true || value === null) return value;
   if (Array.isArray(value)) return value.map(item => project(item, rule, path, withheld));
+  if (typeof value !== 'object') { if (present(value)) withheld.add(path); return undefined; }
   const kept = {};
   for (const [key, field] of Object.entries(value)) {
     const name = path ? `${path}.${key}` : key;
-    const fieldRule = Array.isArray(rule) ? rule.includes(key) : rule[key];
-    if (fieldRule) kept[key] = project(field, fieldRule, name, withheld);
-    else if (present(field)) withheld.add(name);
+    const fieldRule = Array.isArray(rule) ? rule.includes(key) : Object.hasOwn(rule, key) && rule[key];
+    if (!fieldRule) { if (present(field)) withheld.add(name); continue; }
+    const shown = project(field, fieldRule, name, withheld);
+    if (shown !== undefined) Object.defineProperty(kept, key, { value: shown, enumerable: true, writable: true, configurable: true });
   }
   return kept;
+}
+
+function knownValues(value, known, path, withheld) {
+  const values = Array.isArray(value) ? value : [value];
+  const kept = values.filter(item => known.has(item));
+  if (kept.length < values.length) withheld.add(path);
+  return Array.isArray(value) ? kept : kept[0];
 }
 
 function present(value) {
