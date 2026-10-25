@@ -249,3 +249,56 @@ test('two devices may use the same message ID without colliding', async () => {
     assert.equal(service.status(other.fingerprint, { messageId: second.messageId }).status, 'claimed');
   } finally { store.close(); }
 });
+
+test('authenticated requests record last-seen at most once per 15 seconds', async () => {
+  const start = Date.parse('2026-10-11T00:00:00.000Z');
+  let now = start;
+  const { target, store, service } = await coordinatorWithTarget({ clock: () => now });
+  const lastSeen = () => store.node(target.fingerprint).last_seen_at;
+  try {
+    assert.equal(lastSeen(), null);
+    service.authenticate(target.fingerprint);
+    assert.equal(lastSeen(), new Date(start).toISOString());
+    // Claim-poll ticks every 400 ms within the interval leave the stored time alone.
+    for (now = start + 400; now < start + 15_000; now += 400) service.authenticate(target.fingerprint);
+    now = start + 14_999;
+    service.authenticate(target.fingerprint);
+    assert.equal(lastSeen(), new Date(start).toISOString());
+    now = start + 15_000;
+    service.authenticate(target.fingerprint);
+    assert.equal(lastSeen(), new Date(start + 15_000).toISOString());
+  } finally { store.close(); }
+});
+
+test('presence stays correct within the last-seen interval and revocation is still immediate', async () => {
+  const start = Date.parse('2026-10-11T00:00:00.000Z');
+  let now = start;
+  const { coordinator, target, store, service } = await coordinatorWithTarget({ clock: () => now });
+  const online = () => {
+    const listed = service.directory(coordinator.fingerprint).devices.find((device) => device.nodeId === target.fingerprint).online;
+    assert.equal(service.devices().find((device) => device.nodeId === target.fingerprint).online, listed);
+    return listed;
+  };
+  try {
+    assert.equal(online(), false);
+    service.authenticate(target.fingerprint);
+    now = start + 14_999;
+    service.authenticate(target.fingerprint);
+    // The last request was at +14.999 s but +0 s was recorded, so the device shows offline 75.001 s after it.
+    now = start + 89_999;
+    assert.equal(online(), true);
+    now = start + 90_000;
+    assert.equal(online(), false);
+
+    // A device that speaks once a minute (its directory publish) never shows offline.
+    for (let minute = 1; minute <= 5; minute += 1) {
+      now = start + 90_000 + minute * 60_000;
+      service.authenticate(target.fingerprint);
+      now += 59_999;
+      assert.equal(online(), true);
+    }
+
+    service.revoke(target.fingerprint);
+    assert.throws(() => service.authenticate(target.fingerprint), { code: 'device_not_trusted' });
+  } finally { store.close(); }
+});

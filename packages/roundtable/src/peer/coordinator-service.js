@@ -9,6 +9,13 @@ import {
 } from './protocol.js';
 
 const ONLINE_MS = 90_000;
+// last_seen_at only feeds the "online" flag of directory() and devices(); no trust,
+// revocation or claim decision reads it. A connected device re-authenticates on every
+// claim-poll tick (400 ms) and status poll, so the coordinator records last-seen at most
+// once per this interval instead of making a durable commit per request. The stored value
+// then lags the last request by less than this interval: a device shows offline 75-90 s
+// after it last spoke, and a connected device (it publishes at least once a minute) stays online.
+const LAST_SEEN_WRITE_MS = 15_000;
 const PAIRING_FAILURE_WINDOW_MS = 10 * 60_000;
 const PAIRING_FAILURE_LIMIT = 10;
 
@@ -57,7 +64,8 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   function authenticate(nodeId) {
     const node = store.node(nodeId);
     if (!node || node.status !== 'active') throw new PeerError('device_not_trusted', 'This device is not paired or was revoked', 403);
-    store.touchNode(nodeId, iso());
+    const now = clock();
+    if (!seenWithin(node, now, LAST_SEEN_WRITE_MS)) store.touchNode(nodeId, new Date(now).toISOString());
     return node;
   }
 
@@ -72,7 +80,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     const now = clock();
     return { devices: store.nodes().filter((node) => node.status === 'active' && node.id !== nodeId).map((node) => ({
       nodeId: node.id, name: node.name,
-      online: Boolean(node.last_seen_at) && now - Date.parse(node.last_seen_at) < ONLINE_MS,
+      online: seenWithin(node, now, ONLINE_MS),
       agents: JSON.parse(node.directory_json),
     })) };
   }
@@ -250,13 +258,17 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     const now = clock();
     return store.nodes().map((node) => ({ nodeId: node.id, name: node.name, status: node.status,
       self: node.id === identity.fingerprint, pairedAt: node.paired_at, revokedAt: node.revoked_at,
-      online: node.id === identity.fingerprint || (Boolean(node.last_seen_at) && now - Date.parse(node.last_seen_at) < ONLINE_MS),
+      online: node.id === identity.fingerprint || seenWithin(node, now, ONLINE_MS),
       sharedAgents: JSON.parse(node.directory_json).length }));
   }
 
   return { chat: chat.execute, chatOwner: chat.ownerRead, chatUpdates: chat.ownerUpdates, createInvitation, pair, authenticate, publishDirectory, directory, submit, claim, renew, result,
     status, cancel, revoke, sweep, devices, trustedCertificates: () => store.activeCertificates(),
     openInvitations: () => store.openInvitations(iso()).length };
+}
+
+function seenWithin(node, now, windowMs) {
+  return Boolean(node.last_seen_at) && now - Date.parse(node.last_seen_at) < windowMs;
 }
 
 // Message IDs are chosen by senders, so the coordinator keys them per sending device.
