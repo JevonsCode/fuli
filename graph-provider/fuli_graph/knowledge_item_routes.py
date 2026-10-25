@@ -7,17 +7,21 @@ it takes the human-review channel the local console holds (as a hard delete
 does); an Agent's access token alone is refused (rec#11 D-22, dot P1-1).
 An item view, a receipt, a session's records and its migration preview are
 read in full only with that proof; without it the reader is an Agent and sees
-no other FLA's knowledge, and a wrong proof is refused (knowledge_visibility)."""
+no other FLA's knowledge, and a wrong proof is refused (knowledge_visibility).
+Which items a reader may see now is a key-only read by the same rule, for
+local records that name items (rec#50)."""
 
 from typing import Any
 
-from .knowledge_item_view import read_knowledge_item_view, read_turn_receipt
+from .knowledge_item_view import read_knowledge_item_view, read_turn_receipt, read_visible_items
 from .knowledge_item_view_models import (
     KnowledgeItemRef,
     KnowledgeItemView,
     KnowledgeScopeChange,
     KnowledgeTurnReceipt,
     KnowledgeTurnReceiptRead,
+    KnowledgeVisibleItems,
+    KnowledgeVisibleItemsRead,
 )
 from .knowledge_scope_edit import change_knowledge_scope
 from .knowledge_session_migration import apply_session_migration, preview_session_migration
@@ -40,6 +44,10 @@ def register_knowledge_item_routes(application, store, Actor: Any, ReviewAwareAc
     @application.post('/v1/knowledge/turn-receipts', response_model=KnowledgeTurnReceipt)
     async def turn_receipt(request: KnowledgeTurnReceiptRead, actor: ReviewAwareActor):
         return await read_turn_receipt(store, actor, request)
+
+    @application.post('/v1/knowledge/visible-items', response_model=KnowledgeVisibleItems)
+    async def visible_items(request: KnowledgeVisibleItemsRead, actor: ReviewAwareActor):
+        return await read_visible_items(store, actor, request)
 
     @application.post('/v1/knowledge/items/{item_id}/scope')
     async def item_scope(item_id: str, request: KnowledgeScopeChange, actor: HumanReviewer):

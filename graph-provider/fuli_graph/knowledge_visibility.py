@@ -3,8 +3,9 @@
 Knowledge an FLA's own episodes wrote, and a preference the person gave one
 FLA, belong to that FLA in its project, and to the person. Search, the graph
 read, item views, turn receipts, session records, the human-change search,
-the AI review and its decisions, preference conflicts and a session's
-migration preview all decide it here.
+the AI review and its decisions, preference conflicts, a session's
+migration preview and the key-only visible-items read (which local judgment
+records ask, rec#50) all decide it here.
 
 The person's console proves itself with the human-review channel and reads
 everything. Any other reader is an Agent: one FLA in one project, or a plain
@@ -156,28 +157,36 @@ _HIDDEN_QUERIES = {
           AND NOT ''' + fla_relationship_visible_cypher('item', 'source', 'target') + '''
         RETURN item.uuid AS id''',
 }
+# The same lookups the other way round: the ids that exist and pass the rule.
+_VISIBLE_QUERIES = {item_kind: query.replace('AND NOT ', 'AND ', 1) for item_kind, query in _HIDDEN_QUERIES.items()}
 
 
-async def _hidden_items(store, space: dict, reader: AgentReader | None, item_kind: str,
-                       item_ids) -> set[str]:
-    """The ids among these that this reader may not see."""
-    item_ids = list(dict.fromkeys(item_ids))
-    if reader is None or not item_ids:
-        return set()
-    records, _, _ = await store.runtime.driver.execute_query(
-        _HIDDEN_QUERIES[item_kind], group_id=space['group_id'], item_ids=item_ids,
-        reader=reader_parameter(reader), routing_='r')
-    return {record['id'] for record in records}
+async def _matching_refs(store, space: dict, reader: AgentReader | None, queries: dict,
+                         refs) -> set[tuple[str, str]]:
+    refs = list(refs)
+    found = set()
+    for item_kind, query in queries.items():
+        ids = list(dict.fromkeys(item_id for kind, item_id in refs if kind == item_kind))
+        if not ids:
+            continue
+        records, _, _ = await store.runtime.driver.execute_query(
+            query, group_id=space['group_id'], item_ids=ids, reader=reader_parameter(reader), routing_='r')
+        found |= {(item_kind, record['id']) for record in records}
+    return found
 
 
 async def hidden_refs(store, space: dict, reader: AgentReader | None, refs) -> set[tuple[str, str]]:
     """The (item_kind, item_id) pairs among these that this reader may not see."""
-    refs = list(refs)
-    hidden = set()
-    for item_kind in _HIDDEN_QUERIES:
-        ids = [item_id for kind, item_id in refs if kind == item_kind]
-        hidden |= {(item_kind, item_id) for item_id in await _hidden_items(store, space, reader, item_kind, ids)}
-    return hidden
+    if reader is None:
+        return set()
+    return await _matching_refs(store, space, reader, _HIDDEN_QUERIES, refs)
+
+
+async def visible_refs(store, space: dict, reader: AgentReader | None, refs) -> set[tuple[str, str]]:
+    """The (item_kind, item_id) pairs among these that exist and this reader may
+    see (the person, None: every one that exists). A deleted or unknown id is
+    not among them, so a caller that needs a yes treats it as hidden."""
+    return await _matching_refs(store, space, reader, _VISIBLE_QUERIES, refs)
 
 
 async def visible_episode_ids(store, space: dict, reader: AgentReader | None, episode_ids) -> list[str]:

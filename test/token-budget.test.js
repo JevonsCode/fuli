@@ -97,7 +97,10 @@ const BASELINE = Object.freeze({
   // observation, Agent memory checkpoint, task activity, executor actual, task outcome) take the
   // same optional bare taskContextToken, without which they were always refused while any session
   // of the client was stopped: 185,483 -> 185,742 B (+259 B), measured. Chat is unchanged.
-  fullToolSchemaBytes: 185742,
+  // rec#50: list_judgments returns decisions without their words and shows a reviewed item only
+  // to a reader who may see it now, so it takes projectAgentId as the other FLA reads do and says
+  // so: 185,742 -> 185,875 B (+133 B), measured. Chat is unchanged.
+  fullToolSchemaBytes: 185875,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
