@@ -1,28 +1,20 @@
 import { dirname } from 'node:path';
 import { closeLocalRuntimes, openLocalRuntimes } from './local-runtimes.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
-import { searchFederatedKnowledge } from './federated-search.js';
-import { preflightTaskCaptures } from './task-knowledge-routing.js';
-import { submitPersonalDraft } from './public-submission.js';
-import { reconcilePublicSubmissions } from './public-submission-reconciliation.js';
-import { parsePersonalDraftDecision } from './publication-draft-input.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
 import {
   aggregatePublicCapabilities,
-  configuredWorkspace,
   createWorkspaceProvider
 } from './workspace-provider-client.js';
 import {
   personalTokenRefresher,
   readGraphRuntimeConfig
 } from './runtime-config.js';
-import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import {
   CapturePolicyStore,
   capturePolicyPathForRuntime
 } from './capture-policy.js';
-import { captureDecision, captureDisabled } from './capture-decision.js';
 import { createCaptureChanges } from './capture-change-confirmation.js';
 import { createCaptureOnboarding } from './capture-onboarding.js';
 import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';
@@ -37,7 +29,6 @@ import {
   sourceConsoleUrl
 } from './source-marker.js';
 import { resolvePersonalProjectPath } from './project-path-context.js';
-import { mergeExternalKnowledgeProjection } from '../external-knowledge/graph-projection.js';
 import { ProviderTaskContextRegistry } from '../mcp/provider-task-context-registry.js';
 import { readTaskPreferences } from './task-preference-reader.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -51,23 +42,11 @@ import {
     discoverPersonalGlobalPreferenceCandidatesWorkflow,
   applyPersonalGlobalPreferenceDecision as
     applyPersonalGlobalPreferenceDecisionWorkflow,
-  providerCommonKnowledgePromotion,
   recordDecisionTrace as recordDecisionTraceWorkflow,
   recordKnowledgeFeedback as recordKnowledgeFeedbackWorkflow,
   previewPersonalGlobalPreferenceDecision as
     previewPersonalGlobalPreferenceDecisionWorkflow
 } from './agent-knowledge-workflows.js';
-import {
-  searchCurrentProjectKnowledge as searchCurrentProjectKnowledgeWorkflow
-} from './current-project-knowledge-search.js';
-import {
-  assertPublicKnowledgeEligible,
-  providerConfirmationActor,
-  providerConfirmationBasis,
-  providerEpisode,
-  providerPersonalCommit
-} from './knowledge-provider-mapping.js';
-import { providerProjectProfile } from './project-profile-mapping.js';
 import {
   ProjectAgentControlPlaneApplication,
   projectAgentControlPlaneHooks
@@ -79,31 +58,72 @@ import {
   recordKnowledgeReviewProgress as recordKnowledgeReviewProgressWorkflow,
   startKnowledgeReview as startKnowledgeReviewWorkflow
 } from './knowledge-review.js';
-import {
-  providerWorkflowCandidateSearch,
-  workflowCandidatePage
-} from './workflow-candidate-mapping.js';
-import {
-  providerWorkflowTransitionObservation
-} from './workflow-observation.js';
-import { buildUserTasteSkill } from './user-taste-skill.js';
-import {
-  beginTaskEntry,
-  taskEntryPreferences,
-  finishTaskEntryPreferences
-} from './task-entry-preferences.js';
-import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
-import { resolveTaskEntryProject } from './task-entry-project-scope.js';
+import { beginTaskEntry } from './task-entry-preferences.js';
 import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
 import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
-import { providerReaderFields, taskKnowledgeReader } from './knowledge-reader.js';
-import { queuePublicationDraft } from './publication-draft-capture.js';
 import { knowledgeTags } from './knowledge-tags.js';
-import { withSharedProjectList } from './shared-project-list.js';
 import { assertActivePersonalSpace } from './active-personal-space.js';
-import { recordAgentViews } from './agent-view-records.js';
 import { resolvePreferenceProject } from './preference-project-resolution.js';
-import { assertNoCredentials, assertSafeKnowledgeMutation } from './knowledge-credential-guard.js';
+import { assertSafeKnowledgeMutation } from './knowledge-credential-guard.js';
+import {
+  captureSessionKnowledge,
+  preflightPersonalKnowledgeCaptures,
+  validateCaptureSessionKnowledge
+} from './session-knowledge-capture.js';
+import {
+  listWorkflowCandidates,
+  recommendNextWorkflowSteps,
+  recordWorkflowTransitionObservation
+} from './workflow-learning.js';
+import { collaborationPreferencesAtEntry, getUserTasteSkill } from './collaboration-preference-entry.js';
+import {
+  getKnowledgeGraph,
+  searchCurrentProjectKnowledge,
+  searchKnowledge
+} from './knowledge-graph-reads.js';
+import {
+  applyCommonKnowledgePromotion,
+  applyKnowledgeProjectAction,
+  confirmKnowledgeBatch,
+  previewCommonKnowledgePromotion,
+  previewKnowledgeProjectAction,
+  reassignKnowledgeItem,
+  recordKnowledgeUsage,
+  reviseKnowledgeItem,
+  setPersonalPreferenceScope
+} from './knowledge-curation.js';
+import {
+  completePreferenceConflict,
+  deferPreferenceConflict,
+  listPreferenceConflicts,
+  resolveDeferredPreferenceConflict
+} from './preference-conflict-requests.js';
+import { reviewHumanChange, searchHumanChanges } from './human-knowledge-changes.js';
+import {
+  deletePublicProject,
+  listKnowledgeSpaces,
+  listProjectReleases,
+  publishPersonalProject,
+  subscribePublicProject,
+  unsubscribePublicProject
+} from './public-projects.js';
+import {
+  createProjectRelation,
+  listProjectRelations,
+  reviewProjectRelation
+} from './public-project-relations.js';
+import {
+  listPersonalProjects,
+  listProjectRelationWeights,
+  upsertPersonalProject
+} from './personal-projects.js';
+import {
+  listPersonalReviewQueue,
+  listReviewQueue,
+  reconcilePersonalSubmissions,
+  reviewPersonalDraft,
+  reviewProposal
+} from './publication-review-queues.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -157,6 +177,8 @@ function providerRequestTimeoutFromEnv(env) {
   return parsed;
 }
 
+// The application's public methods. Each capability lives in its own module;
+// a method here only wires the request to that module or to a workflow.
 export class FederatedGraphApplication extends ProjectAgentControlPlaneApplication {
   constructor(config, {
     fetchImpl = globalThis.fetch,
@@ -226,119 +248,32 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return recordDecisionTraceWorkflow(this, input);
   }
 
-  // captureScope: the write's own scope when it differs from the target, as for
-  // a task checkpoint whose global preference was learned in the task's project.
-  async validateCaptureSessionKnowledge(input, { captureScope = knowledgeCaptureScope(input) } = {}) {
-    if ((await captureDecision(this, captureScope)).allowed) this.#prepareKnowledgeCapture(input);
+  async validateCaptureSessionKnowledge(input, options) {
+    return validateCaptureSessionKnowledge(this, input, options);
   }
 
   async preflightPersonalKnowledgeCaptures(inputs) {
-    return preflightTaskCaptures(this.personal, inputs, input => this.#prepareKnowledgeCapture(input));
+    return preflightPersonalKnowledgeCaptures(this, inputs);
   }
 
-  async captureSessionKnowledge(input, { captureScope = knowledgeCaptureScope(input) } = {}) {
-    const capture = await captureDecision(this, captureScope);
-    if (!capture.allowed) return { route: 'disabled', ...captureDisabled(capture) };
-    const { episode, workspace, commit } = this.#prepareKnowledgeCapture(input);
-    if (input.targetKind === 'personal') {
-      const result = await this.personal.commit(commit);
-      return { route: 'personal', ...result };
-    }
-    return queuePublicationDraft(this, { input, workspace, episode });
+  async captureSessionKnowledge(input, options) {
+    return captureSessionKnowledge(this, input, options);
   }
 
   async recordWorkflowTransitionObservation(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    const capture = await captureDecision(this, { sourceApplication: input.sourceApplication,
-      personalProjectId: input.personalProjectId ?? null, sessionId: input.hostSessionId ?? null });
-    if (!capture.allowed) return { route: 'disabled', ...captureDisabled(capture) };
-    assertNoCredentials(input);
-    const result = await this.personal.recordWorkflowObservation(
-      providerWorkflowTransitionObservation(input)
-    );
-    return { route: 'personal', ...result };
+    return recordWorkflowTransitionObservation(this, input);
   }
 
-  // A task entry reads the project list once (shared-project-list.js).
   getCollaborationPreferences(input) {
-    return withSharedProjectList(() => this.#collaborationPreferences(input));
-  }
-
-  async #collaborationPreferences({
-    personalProjectId = null,
-    projectAgentId = null,
-    projectPath = null,
-    taskPrompt = null,
-    sourceApplication = 'other',
-    sourceSessionId = null,
-    sessionId = null,
-    turnId = null,
-    workKind = null,
-    workflow = null,
-    requiredCapabilities = [],
-    limit = 100,
-    agentInvocation = false,
-    agentToolName = 'get_collaboration_preferences'
-  } = {}) {
-    let projectResolution = await resolvePreferenceProject(this, { personalProjectId, projectPath });
-    if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
-      && (await captureDecision(this, { sourceApplication, projectPath, sessionId,
-        personalProjectId: projectResolution.repositoryProjectId })).allowed) {
-      // Every task gets a FULI Agent, so a task in an unregistered repository
-      // registers it, unless neither the folder nor the project it would
-      // become is recorded.
-      projectResolution = await registerRepositoryProject(this, projectResolution, { sessionId, projectPath });
-    }
-    projectResolution = await resolveTaskEntryProject(this, projectResolution, {
-      sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt
-    });
-    const preferences = await taskEntryPreferences(this, projectResolution, {
-      personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
-      sourceSessionId, sessionId, turnId, workKind, workflow, requiredCapabilities,
-      limit, agentInvocation, agentToolName
-    }, (items, toolName) => recordAgentViews(this, items, toolName, { sourceApplication, projectPath,
-      personalProjectId: projectResolution.personalProjectId, sessionId: sessionId ?? sourceSessionId }));
-    return finishTaskEntryPreferences(this, preferences, { agentInvocation, agentToolName,
-      sessionId, sourceApplication, sourceSessionId, taskPrompt, workKind, workflow });
+    return collaborationPreferencesAtEntry(this, input);
   }
 
   readTaskPreferences(input) {
     return readTaskPreferences(this, input);
   }
 
-  async getUserTasteSkill({
-    personalProjectId = null,
-    projectPath = null,
-    taskPrompt = null,
-    limit = 100,
-    sourceApplication = 'other'
-  } = {}) {
-    const context = await this.getCollaborationPreferences({
-      personalProjectId,
-      projectPath,
-      taskPrompt,
-      limit,
-      sourceApplication,
-      agentInvocation: true,
-      agentToolName: 'get_user_taste_skill'
-    });
-    const skill = buildUserTasteSkill({
-      preferences: context.effective_preferences,
-      taskPrompt,
-      personalSpaceId: context.context.personal_space_id,
-      personalProjectId: context.context.personal_project_id
-    });
-    return {
-      status: 'generated',
-      ...skill,
-      agent_receipt: context.agent_receipt,
-      ...(context.task_knowledge_recall
-        ? { task_knowledge_recall: context.task_knowledge_recall }
-        : {}),
-      application_guidance: context.application_guidance,
-      deferred_conflicts: context.deferred_conflicts,
-      context: context.context
-    };
+  async getUserTasteSkill(input) {
+    return getUserTasteSkill(this, input);
   }
 
   async getWritingTasteProfile(input = {}, ownerReads = null) {
@@ -353,20 +288,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   searchKnowledge(input) {
-    return searchFederatedKnowledge(this, input, {
-      workspaceFor: providerUrl => configuredWorkspace(this.workspaces, providerUrl),
-      recordAgentViews: (items, toolName) => recordAgentViews(this, items, toolName, {
-        sourceApplication: input.sourceApplication, personalProjectId: input.personalProjectId ?? null,
-        sessionId: input.sourceSessionId ?? null })
-    });
+    return searchKnowledge(this, input);
   }
 
   async searchCurrentProjectKnowledge(input) {
-    const resolution = await resolvePreferenceProject(this, {
-      personalProjectId: input.personalProjectId ?? null,
-      projectPath: input.projectPath
-    });
-    return searchCurrentProjectKnowledgeWorkflow(this, resolution, input);
+    return searchCurrentProjectKnowledge(this, input);
   }
 
   async discoverCommonKnowledgeCandidates(input) {
@@ -392,57 +318,15 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async previewCommonKnowledgePromotion(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return this.personal.previewCommonKnowledgePromotion(
-      providerCommonKnowledgePromotion(input)
-    );
+    return previewCommonKnowledgePromotion(this, input);
   }
 
   async applyCommonKnowledgePromotion(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return this.personal.applyCommonKnowledgePromotion({
-      ...providerCommonKnowledgePromotion(input),
-      operation_actor: input.operationActor ?? 'agent'
-    });
+    return applyCommonKnowledgePromotion(this, input);
   }
 
-  // An Agent reads as its FLA (projectAgentId) or a plain session: no other FLA's knowledge. Only the
-  // console passes ownerReads (src/knowledge-owner-reads) for the person's full read; an MCP call cannot.
-  async getKnowledgeGraph({
-    spaceId,
-    providerUrl = null,
-    personalProjectId = null,
-    projectAgentId = null,
-    limit = 500,
-    offset = null,
-    agentInvocation = false,
-    agentToolName = 'get_knowledge_graph',
-    sourceApplication = null
-  }, ownerReads = null) {
-    if (!providerUrl) {
-      if (spaceId !== this.config.personal.spaceId) {
-        throw new TypeError('A configured providerUrl is required for a team-shared project graph');
-      }
-      const result = ownerReads
-        ? await ownerReads.graph({ spaceId, limit, personalProjectId, offset })
-        : await this.personal.graph(spaceId, limit, personalProjectId, offset,
-          projectAgentId ? { personalProjectId, projectAgentId } : null);
-      if (agentInvocation) {
-        await recordAgentViews(this, [
-          ...result.nodes.map(({ id }) => ({ item_id: id, item_kind: 'entity' })),
-          ...result.edges.map(({ id }) => ({ item_id: id, item_kind: 'relationship' }))
-        ], agentToolName, { sourceApplication, personalProjectId });
-      }
-      return mergeExternalKnowledgeProjection(
-        this.externalKnowledge, result, spaceId, personalProjectId
-      );
-    }
-    if (personalProjectId) {
-      throw new TypeError('Personal project scope cannot be used with a team-shared provider');
-    }
-    return configuredWorkspace(this.workspaces, providerUrl).client.graph(spaceId, limit, null, offset);
+  async getKnowledgeGraph(input, ownerReads) {
+    return getKnowledgeGraph(this, input, ownerReads);
   }
 
   async startKnowledgeReview(input) {
@@ -466,40 +350,15 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async listWorkflowCandidates(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    const result = await this.personal.searchWorkflowCandidates(
-      providerWorkflowCandidateSearch(input)
-    );
-    return workflowCandidatePage(result);
+    return listWorkflowCandidates(this, input);
   }
 
   async recommendNextWorkflowSteps(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    const result = await this.personal.recommendWorkflowCandidates(
-      providerWorkflowCandidateSearch(input)
-    );
-    return workflowCandidatePage(result);
+    return recommendNextWorkflowSteps(this, input);
   }
 
-  async recordKnowledgeUsage({
-    personalSpaceId,
-    taskId,
-    sessionId = null,
-    toolName = null,
-    items
-  }) {
-    assertActivePersonalSpace(this, personalSpaceId);
-    return this.personal.recordKnowledgeUsage({
-      personal_space_id: personalSpaceId,
-      task_id: taskId,
-      session_id: sessionId,
-      tool_name: toolName,
-      items: items.map((item) => ({
-        item_id: item.itemId,
-        item_kind: item.itemKind,
-        use_kind: item.useKind
-      }))
-    });
+  async recordKnowledgeUsage(input) {
+    return recordKnowledgeUsage(this, input);
   }
 
   async recordKnowledgeFeedback(input) {
@@ -514,56 +373,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async reviseKnowledgeItem(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    const body = {
-      personal_space_id: input.personalSpaceId,
-      personal_project_id: input.personalProjectId ?? null,
-      item_kind: input.itemKind,
-      action: input.action,
-      reason: input.reason,
-      name: input.name ?? null,
-      summary: input.summary ?? null,
-      fact: input.fact ?? null,
-      basis_meaning: input.basisMeaning ?? null, // D-20.7, a person's choice only
-      operation_actor: input.operationActor ?? 'agent',
-      // The version the editor read (rec#20); the Provider refuses a stale one.
-      ...(input.expectedVersion !== undefined ? { expected_version: input.expectedVersion } : {})
-    };
-    if (input.currentQuadrant !== undefined) {
-      body.current_quadrant = input.currentQuadrant;
-    }
-    if (input.originQuadrant !== undefined) {
-      body.origin_quadrant = input.originQuadrant;
-    }
-    if (input.epistemicStatus !== undefined) {
-      body.epistemic_status = input.epistemicStatus;
-    }
-    if (input.confirmationStatus !== undefined) {
-      body.confirmation_status = input.confirmationStatus;
-    }
-    if (input.confirmationBasis !== undefined) {
-      body.confirmation_basis = providerConfirmationBasis(input.confirmationBasis);
-    }
-    if (input.reasoningSummary !== undefined) {
-      body.reasoning_summary = input.reasoningSummary;
-    }
-    if (input.profileAspect !== undefined) {
-      body.profile_aspect = input.profileAspect;
-    }
-    if (input.inheritanceMode !== undefined) {
-      body.inheritance_mode = input.inheritanceMode;
-    }
-    if (input.inheritedProjectIds !== undefined) {
-      body.inherited_project_ids = input.inheritedProjectIds;
-    }
-    if (input.replacementItemId !== undefined) {
-      body.replacement_item_id = input.replacementItemId;
-    }
-    if (input.replacementItemKind !== undefined) {
-      body.replacement_item_kind = input.replacementItemKind;
-    }
-    return this.personal.reviseKnowledgeItem(input.itemId, body);
+    return reviseKnowledgeItem(this, input);
   }
 
   async knowledgeTags(operation, input) {
@@ -571,367 +381,100 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return knowledgeTags(this, operation, input);
   }
 
-  // An Agent reads as a plain session: no conflict naming an FLA's own item (an FLA meets those in its
-  // task context). Only the console passes ownerReads (src/knowledge-owner-reads) for the full list.
-  async listPreferenceConflicts({ personalSpaceId, status = null, limit = 500 }, ownerReads = null) {
-    assertActivePersonalSpace(this, personalSpaceId);
-    return ownerReads
-      ? ownerReads.preferenceConflicts({ personalSpaceId, status, limit })
-      : this.personal.listPreferenceConflicts(personalSpaceId, status, limit);
+  async listPreferenceConflicts(input, ownerReads) {
+    return listPreferenceConflicts(this, input, ownerReads);
   }
 
-  // A conflict naming an item its reader may not see answers as missing: an Agent names its FLA
-  // (projectAgentId) or reads as a plain session; the console's defer and completion pass ownerReads.
-  async deferPreferenceConflict(input, ownerReads = null) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    const body = {
-      personal_space_id: input.personalSpaceId,
-      conflict_id: input.conflictId,
-      preference_key: input.preferenceKey,
-      preference_scope: input.preferenceScope,
-      preference_project_id: input.preferenceProjectId ?? null,
-      left_item_id: input.leftItemId,
-      left_item_kind: input.leftItemKind,
-      right_item_id: input.rightItemId,
-      right_item_kind: input.rightItemKind,
-      reason: input.reason,
-      operation_actor: input.operationActor ?? 'human'
-    };
-    return ownerReads ? ownerReads.deferPreferenceConflict(body)
-      : this.personal.deferPreferenceConflict({ ...body, ...providerReaderFields(taskKnowledgeReader(input)) });
+  async deferPreferenceConflict(input, ownerReads) {
+    return deferPreferenceConflict(this, input, ownerReads);
   }
 
   async resolveDeferredPreferenceConflict(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return this.personal.resolvePreferenceConflict(input.conflictId, {
-      ...providerReaderFields(taskKnowledgeReader(input)),
-      personal_space_id: input.personalSpaceId,
-      resolution: input.resolution,
-      reason: input.reason,
-      canonical_item_id: input.canonicalItemId ?? null,
-      merged_instruction: input.mergedInstruction ?? null,
-      split_item_id: input.splitItemId ?? null,
-      split_project_id: input.splitProjectId ?? null,
-      operation_actor: input.operationActor ?? 'agent'
-    });
+    return resolveDeferredPreferenceConflict(this, input);
   }
 
-  async completePreferenceConflict(input, ownerReads = null) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    const body = { personal_space_id: input.personalSpaceId, resolution: input.resolution, reason: input.reason,
-      operation_actor: input.operationActor ?? 'human' };
-    return ownerReads ? ownerReads.completePreferenceConflict(input.conflictId, body)
-      : this.personal.completePreferenceConflict(input.conflictId, body);
+  async completePreferenceConflict(input, ownerReads) {
+    return completePreferenceConflict(this, input, ownerReads);
   }
 
   async confirmKnowledgeBatch(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return this.personal.confirmKnowledgeBatch({
-      personal_space_id: input.personalSpaceId,
-      group_kind: input.groupKind,
-      group_value: input.groupValue,
-      reason: input.reason,
-      confirmer: providerConfirmationActor(input.confirmer),
-      operation_actor: input.operationActor ?? 'agent',
-      items: input.items.map((item) => ({
-        item_id: item.itemId,
-        item_kind: item.itemKind,
-        existence_reason: item.existenceReason,
-        quadrant_reason: item.quadrantReason,
-        proposed_by: providerConfirmationActor(item.proposedBy)
-      }))
-    });
+    return confirmKnowledgeBatch(this, input);
   }
 
   async reassignKnowledgeItem(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    return this.personal.reassignKnowledgeItem(input.itemId, {
-      personal_space_id: input.personalSpaceId,
-      item_kind: input.itemKind,
-      target_project_id: input.targetProjectId,
-      reason: input.reason,
-      operation_actor: input.operationActor ?? 'agent'
-    });
+    return reassignKnowledgeItem(this, input);
   }
 
   async setPersonalPreferenceScope(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return this.personal.setPreferenceScope(input.itemId, {
-      personal_space_id: input.personalSpaceId,
-      item_kind: input.itemKind,
-      scope: input.scope,
-      project_id: input.scope === 'project' ? input.projectId : null,
-      reason: input.reason,
-      operation_actor: input.operationActor ?? 'agent'
-    });
+    return setPersonalPreferenceScope(this, input);
   }
 
   async previewKnowledgeProjectAction(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    return this.personal.previewKnowledgeProjectAction(input.itemId, {
-      personal_space_id: input.personalSpaceId,
-      item_kind: input.itemKind,
-      mode: input.mode ?? 'existing',
-      target_project_id: input.targetProjectId ?? null,
-      new_project_id: input.newProjectId ?? null,
-      new_project_name: input.newProjectName ?? null,
-      new_project_purpose: input.newProjectPurpose ?? null,
-      keep_source_relation: input.keepSourceRelation ?? true,
-      relation_type: input.relationType ?? 'RELATED_TO',
-      conflict_resolution: input.conflictResolution ?? 'defer',
-      reason: input.reason ?? null
-    });
+    return previewKnowledgeProjectAction(this, input);
   }
 
   async applyKnowledgeProjectAction(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return this.personal.applyKnowledgeProjectAction(input.itemId, {
-      personal_space_id: input.personalSpaceId,
-      item_kind: input.itemKind,
-      mode: input.mode,
-      target_project_id: input.targetProjectId ?? null,
-      new_project_id: input.newProjectId ?? null,
-      new_project_name: input.newProjectName ?? null,
-      new_project_purpose: input.newProjectPurpose ?? null,
-      keep_source_relation: input.keepSourceRelation ?? true,
-      relation_type: input.relationType ?? 'RELATED_TO',
-      conflict_resolution: input.conflictResolution ?? 'defer',
-      reason: input.reason,
-      operation_actor: input.operationActor ?? 'agent'
-    });
+    return applyKnowledgeProjectAction(this, input);
   }
 
-  async searchHumanChanges({
-    personalSpaceId,
-    query = '',
-    status = 'all',
-    limit = 50,
-    agentInvocation = false,
-    agentToolName = 'search_human_knowledge_changes',
-    sourceApplication = null
-  }) {
-    assertActivePersonalSpace(this, personalSpaceId);
-    const result = await this.personal.searchHumanChanges({
-      personal_space_id: personalSpaceId,
-      query,
-      status,
-      limit
-    });
-    if (agentInvocation) {
-      await recordAgentViews(this,
-        result.items.map(({ item_id: itemId, item_kind: itemKind }) => ({
-          item_id: itemId,
-          item_kind: itemKind
-        })),
-        agentToolName,
-        { sourceApplication }
-      );
-    }
-    return result;
+  async searchHumanChanges(input) {
+    return searchHumanChanges(this, input);
   }
 
   async reviewHumanChange(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return this.personal.reviewHumanChange(input.itemId, {
-      personal_space_id: input.personalSpaceId,
-      item_kind: input.itemKind,
-      human_change_version: input.humanChangeVersion,
-      conflict_check: input.conflictCheck,
-      classification_check: input.classificationCheck,
-      note: input.note
-    });
+    return reviewHumanChange(this, input);
   }
 
   async listKnowledgeSpaces() {
-    const [availablePersonalSpaces, personalProjects, subscriptions, ...workspaceSpaces] = await Promise.all([
-      this.personal.listSpaces(),
-      this.personal.listPersonalProjects(this.config.personal.spaceId),
-      this.personal.listSubscriptions(this.config.personal.spaceId),
-      ...[...this.workspaces.values()].map(async (workspace) => ({
-        providerUrl: workspace.providerUrl,
-        principalId: workspace.principalId,
-        spaces: await safely(() => workspace.client.listSpaces(), [])
-      }))
-    ]);
-    const personalSpaces = availablePersonalSpaces.filter(({ id }) => id === this.config.personal.spaceId);
-    return {
-      activePersonalSpaceId: this.config.personal.spaceId,
-      personalSpaces,
-      personalProjects,
-      projects: workspaceSpaces.flatMap(({ providerUrl, principalId, spaces }) =>
-        spaces.map((space) => ({
-          ...space,
-          providerUrl,
-          isOwner: space.owner_id === principalId
-        }))
-      ),
-      subscriptions
-    };
+    return listKnowledgeSpaces(this);
   }
 
   async subscribePublicProject(input) {
-    if (input.personalSpaceId !== this.config.personal.spaceId) {
-      throw new TypeError('Subscription must belong to the active personal space');
-    }
-    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
-    const accessible = await workspace.client.listSpaces();
-    if (!accessible.some(({ id }) => id === input.projectId)) {
-      throw new TypeError('Public project is not accessible with the configured identity');
-    }
-    return this.personal.subscribe({
-      personal_space_id: input.personalSpaceId,
-      project_id: input.projectId,
-      provider_url: workspace.providerUrl,
-      project_name: input.projectName
-    });
+    return subscribePublicProject(this, input);
   }
 
   async unsubscribePublicProject(input) {
-    if (input.personalSpaceId !== this.config.personal.spaceId) {
-      throw new TypeError('Subscription must belong to the active personal space');
-    }
-    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
-    return this.personal.unsubscribe(
-      input.personalSpaceId,
-      input.projectId,
-      workspace.providerUrl
-    );
+    return unsubscribePublicProject(this, input);
   }
 
   async publishPersonalProject(input) {
-    if (input.personalSpaceId !== this.config.personal.spaceId) {
-      throw new TypeError('Published project must belong to the active personal space');
-    }
-    const localProjectId = String(input.localProjectId ?? '').trim();
-    if (!localProjectId) throw new TypeError('Local project ID is required');
-    const releaseVersion = String(input.releaseVersion ?? '').trim();
-    const updateSummary = String(input.updateSummary ?? '').trim();
-    if (!/^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/.test(releaseVersion)) {
-      throw new TypeError('Release version must use letters, numbers, dots, underscores, or hyphens');
-    }
-    if (!updateSummary || updateSummary.length > 4096) {
-      throw new TypeError('Release update summary is required and must be at most 4096 characters');
-    }
-    const localProject = await this.personal.getPersonalProject(
-      input.personalSpaceId,
-      localProjectId
-    );
-    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
-    const project = await workspace.client.createSpace({
-      name: localProject.profile.name,
-      kind: 'project',
-      description: localProject.profile.purpose?.slice(0, 2000) ?? null,
-      publication_key: localProject.publication_key,
-      profile: providerProjectProfile(localProject.profile),
-      release: {
-        version: releaseVersion,
-        summary: updateSummary
-      }
-    });
-    const subscription = await this.personal.subscribe({
-      personal_space_id: input.personalSpaceId,
-      project_id: project.id,
-      provider_url: workspace.providerUrl,
-      project_name: project.name
-    });
-    return { project: { ...project, providerUrl: workspace.providerUrl }, subscription };
+    return publishPersonalProject(this, input);
   }
 
   async listProjectReleases(input) {
-    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
-    return {
-      projectId: input.projectId,
-      providerUrl: workspace.providerUrl,
-      releases: await workspace.client.listProjectReleases(input.projectId)
-    };
+    return listProjectReleases(this, input);
   }
 
   async deletePublicProject(input) {
-    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
-    const result = await workspace.client.deleteProject(input.projectId);
-    await this.personal.unsubscribe(
-      this.config.personal.spaceId,
-      input.projectId,
-      workspace.providerUrl
-    );
-    return { ...result, providerUrl: workspace.providerUrl };
+    return deletePublicProject(this, input);
   }
 
   async upsertPersonalProject(input) {
-    if (input.personalSpaceId !== this.config.personal.spaceId) {
-      throw new TypeError('Personal project must belong to the active personal space');
-    }
-    return this.personal.upsertPersonalProject({
-      personal_space_id: input.personalSpaceId,
-      project_id: input.projectId,
-      profile: providerProjectProfile(input.profile),
-      ...(input.createOnly === true ? { create_only: true } : {})
-    });
+    return upsertPersonalProject(this, input);
   }
 
-  async listPersonalProjects(input = {}) {
-    const personalSpaceId = input.personalSpaceId ?? this.config.personal.spaceId;
-    if (personalSpaceId !== this.config.personal.spaceId) {
-      throw new TypeError('Personal projects must use the active personal space');
-    }
-    return this.personal.listPersonalProjects(personalSpaceId);
+  async listPersonalProjects(input) {
+    return listPersonalProjects(this, input);
   }
 
-  async listProjectRelationWeights(input = {}) {
-    const personalSpaceId = input.personalSpaceId ?? this.config.personal.spaceId;
-    if (personalSpaceId !== this.config.personal.spaceId) {
-      throw new TypeError('Project relation weights must use the active personal space');
-    }
-    // The authenticated observation reader filters temporary/archived projects
-    // and applies the same directional thresholds as the graph projection.
-    const observations = await this.personal.readProjectMemoryUsage(personalSpaceId);
-    return observations.map(row => ({ fromProjectId: row.source_project_id, toProjectId: row.target_project_id,
-      tier: row.statistics.tier, recent30dCount: row.statistics.recent30dCount }));
+  async listProjectRelationWeights(input) {
+    return listProjectRelationWeights(this, input);
   }
 
   async createProjectRelation(input) {
-    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
-    return workspace.client.createProjectRelation(input.sourceProjectId, {
-      target_project_id: input.targetProjectId,
-      relation_type: input.relationType,
-      note: input.note ?? null
-    });
+    return createProjectRelation(this, input);
   }
 
   async listProjectRelations(input) {
-    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
-    return {
-      projectId: input.projectId,
-      providerUrl: workspace.providerUrl,
-      relations: await workspace.client.listProjectRelations(input.projectId)
-    };
+    return listProjectRelations(this, input);
   }
 
   async reviewProjectRelation(input) {
-    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
-    return workspace.client.decideProjectRelation(
-      input.targetProjectId,
-      input.relationId,
-      { decision: input.decision, note: input.note ?? null }
-    );
+    return reviewProjectRelation(this, input);
   }
 
-  // An Agent's list leaves out a draft of an FLA's work (made before the Provider refused them);
-  // only the console passes ownerReads (src/knowledge-owner-reads) for the person's full list.
-  async listPersonalReviewQueue(input = {}, ownerReads = null) {
-    const personalSpaceId = input.personalSpaceId ?? this.config.personal.spaceId;
-    if (personalSpaceId !== this.config.personal.spaceId) {
-      throw new TypeError('Personal review must use the active personal space');
-    }
-    await this.reconcilePersonalSubmissions({}, ownerReads);
-    const status = input.status ?? 'pending';
-    return { personalSpaceId, drafts: ownerReads ? await ownerReads.publicationDrafts({ personalSpaceId, status })
-      : await this.personal.listPublicationDrafts(personalSpaceId, status) };
+  async listPersonalReviewQueue(input, ownerReads) {
+    return listPersonalReviewQueue(this, input, ownerReads);
   }
 
   async readRoleSuggestions({ limit } = {}) {
@@ -940,37 +483,20 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return this.roleSuggestions.list({ personalSpaceId, limit });
   }
 
-  // ownerReads: the console's port, which alone lists and settles a draft of an FLA's work.
-  reconcilePersonalSubmissions(options = {}, ownerReads = null) {
-    return reconcilePublicSubmissions({ personal: ownerReads?.submissions ?? this.personal,
-      workspaceFor: url => configuredWorkspace(this.workspaces, url), spaceId: this.config.personal.spaceId }, options);
+  reconcilePersonalSubmissions(options, ownerReads) {
+    return reconcilePersonalSubmissions(this, options, ownerReads);
   }
 
-  // ownerReads: the console's port; an Agent decides only a draft of positively plain work.
-  async reviewPersonalDraft(input, ownerReads = null) {
-    input = parsePersonalDraftDecision(input);
-    const personalSpaceId = this.config.personal.spaceId;
-    const personal = ownerReads?.submissions ?? this.personal;
-    if (input.decision !== 'submit_public') {
-      return personal.decidePublicationDraft(personalSpaceId, input.draftId, { decision: input.decision,
-        shared_proposal_id: null });
-    }
-    return submitPersonalDraft({ personal, workspaceFor: url => configuredWorkspace(this.workspaces, url),
-      spaceId: personalSpaceId, draftId: input.draftId });
+  async reviewPersonalDraft(input, ownerReads) {
+    return reviewPersonalDraft(this, input, ownerReads);
   }
 
-  async listReviewQueue({ projectId, providerUrl, status = 'pending' }) {
-    const workspace = configuredWorkspace(this.workspaces, providerUrl);
-    return {
-      projectId,
-      providerUrl: workspace.providerUrl,
-      proposals: await workspace.client.listProposals(projectId, status)
-    };
+  async listReviewQueue(input) {
+    return listReviewQueue(this, input);
   }
 
-  async reviewProposal({ projectId, providerUrl, proposalId, decision, note = null }) {
-    const workspace = configuredWorkspace(this.workspaces, providerUrl);
-    return workspace.client.decideProposal(projectId, proposalId, { decision, note });
+  async reviewProposal(input) {
+    return reviewProposal(this, input);
   }
 
   async getGraphitiStatus() {
@@ -1121,38 +647,4 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return resolvePreferenceProject(this, input);
   }
 
-  #prepareKnowledgeCapture(input) {
-    assertNoCredentials(input);
-    const episode = providerEpisode(input);
-    if (input.targetKind === 'personal') {
-      return { episode, commit: providerPersonalCommit(input, episode, this.config.personal.spaceId) };
-    }
-    if (input.projectAgentId) {
-      throw new ApplicationError(
-        ApplicationErrorCode.VALIDATION,
-        'Project Agent knowledge can only be captured in the personal graph'
-      );
-    }
-    if (episode.sensitivity !== 'normal') {
-      throw new ApplicationError(
-        ApplicationErrorCode.VALIDATION,
-        'Private or restricted knowledge cannot enter a team-shared project queue. Use targetKind "personal" with personalProjectId to keep it in the personal graph'
-      );
-    }
-    assertPublicKnowledgeEligible(episode);
-    return { episode, workspace: configuredWorkspace(this.workspaces, input.providerUrl) };
-  }
-}
-
-function knowledgeCaptureScope(input) {
-  return { sourceApplication: input?.sourceApplication, personalProjectId: input?.personalProjectId ?? null,
-    sessionId: input?.sessionId ?? null };
-}
-
-async function safely(operation, fallback) {
-  try {
-    return await operation();
-  } catch {
-    return fallback;
-  }
 }
