@@ -39,7 +39,7 @@ import { createModelRoleSettings } from './model-backends/role-settings.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
 import { createConsoleSession } from './console-session/session.js';
 import { discardUrlCode, handleConsoleSessionRequest, hasConsoleSession, hasSignInToken } from './console-session/http.js';
-import { createSignInLaunchers } from './console-session/launcher-file.js';
+import { createSignInLaunchers, launcherParent } from './console-session/launcher-file.js';
 import { sessionBoundPorts } from './console-session/session-ports.js';
 import { humanReviewToken } from './graphiti/human-review-channel.js';
 
@@ -125,7 +125,8 @@ export async function createServer(options = {}) {
   // human-review token, and the code reaches the browser in an owner-only file.
   const signIn = {
     session: options.consoleSession ?? createConsoleSession(),
-    launchers: options.signInLaunchers ?? createSignInLaunchers(),
+    launchers: options.signInLaunchers ?? createSignInLaunchers({ parent: () => localOptions.runtimeConfigPath
+      ? launcherParent(dirname(localOptions.runtimeConfigPath)) : null }),
     readToken: options.readSignInToken ?? (localOptions.runtimeConfigPath
       ? () => humanReviewToken(dirname(localOptions.runtimeConfigPath)) : null)
   };
@@ -350,7 +351,8 @@ async function handleRequest({
     dataFormatMigrations,
     ...reviewPorts,
     consoleSignedIn,
-    peerChangeAllowed: consoleSignedIn || hasSignInToken(request, signIn),
+    // Asked only when a peer change is made, so no other request reads the token.
+    peerChangeAllowed: () => consoleSignedIn || hasSignInToken(request, signIn),
     modelRoleSettings,
     readModelEvaluation
   })) return;

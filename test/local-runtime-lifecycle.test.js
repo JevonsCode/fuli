@@ -297,11 +297,12 @@ test('console opening only targets a loopback Fuli URL', () => {
     /Only the local Fuli console/
   );
   // A sign-in opens the console's owner-only launcher file, never a URL with a code (rec#11 D-61).
-  const launcher = join(tmpdir(), 'fuli-console-AbC123', 'sign-in-00000000-0000-4000-8000-000000000000.html');
+  const launcher = join(tmpdir(), 'Fuli', 'console-session', 'fuli-console-AbC123', 'sign-in-00000000-0000-4000-8000-000000000000.html');
   assert.deepEqual(externalOpenInvocation(launcher, 'win32'), { command: 'cmd', args: ['/c', 'start', '', launcher] });
   assert.deepEqual(externalOpenInvocation(launcher, 'linux'), { command: 'xdg-open', args: [launcher] });
   for (const target of [`http://127.0.0.1:2727/auth/console?code=${'A'.repeat(43)}`, 'http://127.0.0.1:2727/auth/console#code=x',
-    join(tmpdir(), 'elsewhere', basename(launcher)), join(tmpdir(), 'fuli-console-a&b', basename(launcher))]) {
+    join(tmpdir(), 'elsewhere', basename(launcher)), join(tmpdir(), 'fuli-console-AbC123', basename(launcher)),
+    join(tmpdir(), 'console-session', 'fuli-console-a&b', basename(launcher))]) {
     assert.throws(() => externalOpenInvocation(target, 'win32'), /Only the local Fuli console/, target);
   }
 });

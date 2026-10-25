@@ -9,7 +9,7 @@ import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import { handleConsoleSessionRequest, hasSignInToken } from '../src/console-session/http.js';
-import { createSignInLaunchers } from '../src/console-session/launcher-file.js';
+import { createSignInLaunchers, launcherParent } from '../src/console-session/launcher-file.js';
 import { createConsoleSession, CODE_TTL_MS } from '../src/console-session/session.js';
 import { sessionBoundPorts } from '../src/console-session/session-ports.js';
 import { consoleSignInLauncher, isSignInLauncher } from '../src/console-session/sign-in-launcher.js';
@@ -136,13 +136,15 @@ function call(url, { method = 'GET', headers = {}, body } = {}) {
 
 async function console_(t, options = {}) {
   const session = options.consoleSession ?? createConsoleSession();
-  const root = temporaryRoot(t);
+  // A synthetic data directory; its console-session folder holds the launchers.
+  const dataDir = temporaryRoot(t);
+  const root = launcherParent(dataDir);
   const runtime = await createServer({ port: 0, app: options.app ?? { config: { personal: { spaceId: 's' } } },
-    consoleSession: session, signInLaunchers: createSignInLaunchers({ temporaryRoot: () => root }),
+    consoleSession: session, signInLaunchers: createSignInLaunchers({ parent: () => root }),
     readSignInToken: () => SIGN_IN_TOKEN, ...options });
   t.after(() => closeServer(runtime.server));
   const cookieName = `fuli_console_${new URL(runtime.url).port}`;
-  return { ...runtime, session, cookieName, root };
+  return { ...runtime, session, cookieName, root, dataDir };
 }
 
 function launcherCode(path) {
@@ -197,11 +199,10 @@ test('fuli open gets a sign-in only with the data directory\'s token; the code i
 });
 
 test('fuli open opens the launcher file: its token goes in a header and no command line holds the code', async t => {
-  // The console's own launchers, in the system temporary directory; stopping the console removes them.
-  const server = await console_(t, { signInLaunchers: createSignInLaunchers() });
+  const server = await console_(t);
   const requests = [];
   const fetchImpl = (url, init) => { requests.push({ url: String(url), init }); return fetch(url, init); };
-  const launcher = await consoleSignInLauncher({ consoleUrl: server.url, dataDir: 'synthetic-data-dir', next: '/inbox',
+  const launcher = await consoleSignInLauncher({ consoleUrl: server.url, dataDir: server.dataDir, next: '/inbox',
     readToken: () => SIGN_IN_TOKEN, fetchImpl });
   assert.equal(requests[0].url.includes(SIGN_IN_TOKEN), false);
   assert.equal(requests[0].init.headers['x-fuli-console-sign-in'], SIGN_IN_TOKEN);
@@ -212,13 +213,16 @@ test('fuli open opens the launcher file: its token goes in a header and no comma
     assert.equal(JSON.stringify(invocation).includes(code), false, `${platform}: the code is not in argv`);
   }
   assert.equal(isSignInLauncher(launcher), true);
-  assert.equal(isSignInLauncher(launcher, server.root), false, 'under another temporary root it is not a launcher');
+  assert.equal(isSignInLauncher(launcher, server.root), true);
+  assert.equal(isSignInLauncher(launcher, launcherParent(join(server.dataDir, 'other'))), false, 'another data directory\'s is not');
+  await assert.rejects(consoleSignInLauncher({ consoleUrl: server.url, dataDir: join(server.dataDir, 'other'),
+    readToken: () => SIGN_IN_TOKEN }), /answered no sign-in file/);
   for (const path of [join(server.root, 'fuli-console-x', 'other.html'), join(server.root, 'elsewhere', basename(launcher)),
     join(server.root, 'fuli-console-x&calc', basename(launcher)), 'sign-in.html']) {
     assert.equal(isSignInLauncher(path, server.root), false, path);
   }
-  await assert.rejects(consoleSignInLauncher({ consoleUrl: server.url, dataDir: 'synthetic-data-dir', readToken: () => 'another-token',
-    temporaryRoot: () => server.root }), /Only fuli open on this computer can sign in/);
+  await assert.rejects(consoleSignInLauncher({ consoleUrl: server.url, dataDir: server.dataDir, readToken: () => 'another-token' }),
+    /Only fuli open on this computer can sign in/);
 });
 
 test('a sign-in fails closed when its file cannot be made owner-only; fuli open says why', async t => {
@@ -228,20 +232,36 @@ test('a sign-in fails closed when its file cannot be made owner-only; fuli open 
   const issueCode = session.issueCode;
   session.issueCode = (next) => { const code = issueCode(next); issued.push(code); return code; };
   const server = await console_(t, { consoleSession: session,
-    signInLaunchers: createSignInLaunchers({ temporaryRoot: () => root, ownerOnly: () => { throw new Error('icacls failed'); } }) });
+    signInLaunchers: createSignInLaunchers({ parent: () => root, ownerOnly: () => { throw new Error('icacls failed'); } }) });
   const refused = await call(`${server.url}/api/console-session/codes`, { method: 'POST',
     headers: { 'x-fuli-console-sign-in': SIGN_IN_TOKEN }, body: {} });
   assert.deepEqual([refused.status, refused.json.code], [503, 'console_sign_in_unavailable']);
   assert.equal(refused.json.launcherPath, undefined);
   assert.deepEqual(readdirSync(root), [], 'nothing was written');
   assert.equal((await redeemCode(server, issued[0])).status, 401, 'the code it made is not usable');
-  await assert.rejects(consoleSignInLauncher({ consoleUrl: server.url, dataDir: 'synthetic-data-dir', readToken: () => SIGN_IN_TOKEN,
-    temporaryRoot: () => root }), /Could not make the sign-in file private to this account/);
+  await assert.rejects(consoleSignInLauncher({ consoleUrl: server.url, dataDir: server.dataDir, readToken: () => SIGN_IN_TOKEN }),
+    /Could not make the sign-in file private to this account/);
+});
+
+test('no request reads the data directory\'s token unless it names one', async t => {
+  let reads = 0;
+  const server = await console_(t, { readSignInToken: () => { reads += 1; return SIGN_IN_TOKEN; } });
+  const { cookie, token } = await signIn(server);
+  for (const [method, path, headers] of [['GET', '/'], ['GET', '/api/health'], ['GET', '/assets/missing.js'], ['GET', '/api/peer'],
+    ['POST', '/api/peer/shares', {}], ['GET', '/api/state', { cookie, [SESSION_HEADER]: token }]]) {
+    await call(`${server.url}${path}`, { method, headers, ...(method === 'POST' ? { body: {} } : {}) });
+  }
+  assert.equal(reads, 0);
+  await call(`${server.url}/api/console-session/codes`, { method: 'POST', headers: { 'x-fuli-console-sign-in': SIGN_IN_TOKEN }, body: {} });
+  assert.equal(reads, 1, 'a sign-in that names one reads it once');
 });
 
 test('the data directory\'s token stands in for the session only where it is asked for', () => {
   const signIn = { session: createConsoleSession(), readToken: () => SIGN_IN_TOKEN };
   const withHeader = (value) => ({ headers: value === undefined ? {} : { 'x-fuli-console-sign-in': value } });
+  let reads = 0;
+  assert.equal(hasSignInToken(withHeader(undefined), { ...signIn, readToken: () => { reads += 1; return SIGN_IN_TOKEN; } }), false);
+  assert.equal(reads, 0, 'no header, no read');
   assert.equal(hasSignInToken(withHeader(SIGN_IN_TOKEN), signIn), true);
   for (const value of [undefined, '', 'another-token', `${SIGN_IN_TOKEN}x`]) assert.equal(hasSignInToken(withHeader(value), signIn), false);
   assert.equal(hasSignInToken(withHeader(SIGN_IN_TOKEN), { ...signIn, readToken: () => { throw new Error('no env'); } }), false);
@@ -250,7 +270,7 @@ test('the data directory\'s token stands in for the session only where it is ask
 test('a launcher file is deleted when its code expires, and the directory when the console stops', t => {
   const root = temporaryRoot(t);
   const timers = [];
-  const launchers = createSignInLaunchers({ temporaryRoot: () => root, setTimer: (run, ms) => { timers.push({ run, ms }); return {}; },
+  const launchers = createSignInLaunchers({ parent: () => root, setTimer: (run, ms) => { timers.push({ run, ms }); return {}; },
     clearTimer: () => {} });
   const expiring = launchers.write('synthetic-code-one', 'http://127.0.0.1:2727');
   const kept = launchers.write('synthetic-code-two', 'http://127.0.0.1:2727');
@@ -334,7 +354,7 @@ function recorder() {
 
 test('another device can neither ask for a sign-in nor redeem one', async t => {
   const session = createConsoleSession();
-  const launchers = createSignInLaunchers({ temporaryRoot: () => temporaryRoot(t) });
+  const launchers = createSignInLaunchers({ parent: () => temporaryRoot(t) });
   const code = session.issueCode('/');
   for (const incoming of [lanRequest('POST', '/api/console-session/codes', {}), lanRequest('POST', '/api/console-session/sign-in', { code })]) {
     const { sent, response } = recorder();

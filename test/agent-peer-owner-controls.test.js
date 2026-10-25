@@ -28,7 +28,7 @@ async function call(peer, { ownerChangeAllowed = false, ...options } = {}) {
   const res = response();
   try {
     const handled = await handlePeerApiRequest({ request: req, response: res, url: new URL(req.url, 'http://127.0.0.1'), peer,
-      ownerChangeAllowed });
+      ownerChangeAllowed: () => ownerChangeAllowed });
     return { handled, status: res.statusCode, body: res.body, unread: req.readableLength > 0 || !req.readableEnded };
   } catch (error) {
     const mapped = mapHttpError(error);

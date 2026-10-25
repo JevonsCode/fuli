@@ -41,7 +41,7 @@ export async function handleApiRequest({
   consoleSignedIn = false,
   // A LAN roundtable change: the console session or `fuli peer` with the
   // data directory's human-review token.
-  peerChangeAllowed = false
+  peerChangeAllowed = () => false
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer, ownerChangeAllowed: peerChangeAllowed })) return true;

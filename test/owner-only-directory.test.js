@@ -17,27 +17,54 @@ function temporaryRoot(t) {
   return root;
 }
 
-test('on Windows the directory gets a protected DACL for the current user\'s SID and SYSTEM, by absolute tool paths', () => {
+const USER = 'S-1-5-21-1-2-3-1001';
+// A synthetic Windows: whoami names USER, icacls succeeds, and Get-Acl answers acl.
+function windows(acl) {
   const calls = [];
   const run = (file, args) => {
     calls.push([file, args]);
-    return file.endsWith('whoami.exe') ? '"host\\person","S-1-5-21-1-2-3-1001"\r\n' : '';
+    if (file.endsWith('whoami.exe')) return `"host\\person","${USER}"\r\n`;
+    if (file.endsWith('powershell.exe')) return JSON.stringify(acl);
+    return '';
   };
+  return { calls, run };
+}
+const OWNER_ONLY = { owner: USER, protected: true, rules: [{ sid: USER, allow: true }, { sid: 'S-1-5-18', allow: true }] };
+
+test('on Windows the directory is owned by the current user, then given a protected DACL for it and SYSTEM, and read back', () => {
+  const { calls, run } = windows(OWNER_ONLY);
   restrictToOwner('C:\\Temp\\fuli-console-x', { platform: 'win32', env: { SystemRoot: 'C:\\Windows' }, run });
-  assert.deepEqual(calls, [
+  assert.deepEqual(calls.map(([file, args]) => [file, args.slice(0, 5)]), [
     ['C:\\Windows\\System32\\whoami.exe', ['/user', '/fo', 'csv', '/nh']],
+    ['C:\\Windows\\System32\\icacls.exe', ['C:\\Temp\\fuli-console-x', '/setowner', `*${USER}`]],
     ['C:\\Windows\\System32\\icacls.exe', ['C:\\Temp\\fuli-console-x', '/inheritance:r', '/grant:r',
-      '*S-1-5-21-1-2-3-1001:(OI)(CI)F', '*S-1-5-18:(OI)(CI)F']]
+      `*${USER}:(OI)(CI)F`, '*S-1-5-18:(OI)(CI)F']],
+    ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      calls[3][1][3]]]
   ]);
+  assert.match(calls[3][1][3], /Get-Acl -LiteralPath 'C:\\Temp\\fuli-console-x'/);
+});
+
+test('on Windows anything but exactly this owner and {user, SYSTEM} fails closed', () => {
+  for (const [label, acl] of [
+    ['another owner', { ...OWNER_ONLY, owner: 'S-1-5-21-9-9-9-666' }],
+    ['inheritance left on', { ...OWNER_ONLY, protected: false }],
+    ['a sandbox group', { ...OWNER_ONLY, rules: [...OWNER_ONLY.rules, { sid: 'S-1-5-21-1-2-3-3001', allow: true }] }],
+    ['an AppContainer capability', { ...OWNER_ONLY, rules: [...OWNER_ONLY.rules, { sid: 'S-1-15-3-1', allow: true }] }],
+    ['SYSTEM missing', { ...OWNER_ONLY, rules: [{ sid: USER, allow: true }] }],
+    ['a deny rule', { ...OWNER_ONLY, rules: [...OWNER_ONLY.rules, { sid: 'S-1-1-0', allow: false }] }]]) {
+    assert.throws(() => restrictToOwner('C:\\Temp\\x', { platform: 'win32', env: {}, run: windows(acl).run }),
+      /not owned by this account with access for it and SYSTEM only/, label);
+  }
   assert.throws(() => restrictToOwner('C:\\Temp\\x', { platform: 'win32', env: {}, run: () => 'no sid here' }),
     /could not be identified/);
   assert.throws(() => restrictToOwner('C:\\Temp\\x', { platform: 'win32', env: {},
-    run: (file) => { if (file.endsWith('icacls.exe')) throw new Error('Access is denied'); return '"a","S-1-5-21-9"'; } }), /Access is denied/);
+    run: (file) => { if (file.endsWith('icacls.exe')) throw new Error('Access is denied'); return `"a","${USER}"`; } }), /Access is denied/);
 });
 
 test('a sign-in file is not written when its directory cannot be made owner-only', t => {
   const root = temporaryRoot(t);
-  const launchers = createSignInLaunchers({ temporaryRoot: () => root, ownerOnly: () => { throw new Error('icacls failed'); } });
+  const launchers = createSignInLaunchers({ parent: () => root, ownerOnly: () => { throw new Error('icacls failed'); } });
   assert.throws(() => launchers.write('synthetic-code', 'http://127.0.0.1:2727'),
     /Could not make the sign-in file private to this account, so no sign-in was written/);
   assert.deepEqual(readdirSync(root), [], 'neither the directory nor a file is left');
@@ -46,7 +73,7 @@ test('a sign-in file is not written when its directory cannot be made owner-only
 test('the sign-in directory is readable only by its owner on this OS', { skip: process.platform === 'win32' && !existsSync(
   join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'icacls.exe')) }, t => {
   const root = temporaryRoot(t);
-  const launchers = createSignInLaunchers({ temporaryRoot: () => root });
+  const launchers = createSignInLaunchers({ parent: () => root });
   t.after(() => launchers.close());
   const file = launchers.write('synthetic-code', 'http://127.0.0.1:2727');
   const directory = join(file, '..');
@@ -58,14 +85,16 @@ test('the sign-in directory is readable only by its owner on this OS', { skip: p
   const system32 = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
   const user = /"(S-1-[0-9-]+)"\s*$/m.exec(execFileSync(join(system32, 'whoami.exe'), ['/user', '/fo', 'csv', '/nh'],
     { encoding: 'utf8' }))[1];
-  // The effective ACL as SIDs, so unresolved and localized names compare too.
+  // The owner and the effective ACL as SIDs, so unresolved and localized names compare too.
   const acl = (path) => JSON.parse(execFileSync(join(system32, 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command',
     `$acl = Get-Acl -LiteralPath '${path.replace(/'/g, "''")}'; ConvertTo-Json -Compress @{ protected = $acl.AreAccessRulesProtected; `
+    + `owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value; `
     + `rules = @($acl.Access | ForEach-Object { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value `
     + `+ '|' + $_.AccessControlType }) }`], { encoding: 'utf8', windowsHide: true }));
   const expected = [`${user}|Allow`, 'S-1-5-18|Allow'].sort();
   const forDirectory = acl(directory);
-  assert.equal(forDirectory.protected, true, 'nothing is inherited from %TEMP%');
+  assert.equal(forDirectory.owner, user, 'the directory is this account\'s');
+  assert.equal(forDirectory.protected, true, 'nothing is inherited from its parent');
   assert.deepEqual([...new Set(forDirectory.rules)].sort(), expected);
   assert.deepEqual([...new Set(acl(file).rules)].sort(), expected, 'the file has only what the directory passes on');
 });

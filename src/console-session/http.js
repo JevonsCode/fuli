@@ -113,10 +113,12 @@ async function issueSignIn({ request, response, signIn, authority }) {
 // `fuli open` does to ask for a sign-in and `fuli peer` to change the LAN
 // roundtable (rec#11 D-61). Like a sign-in it needs read access to the data
 // directory, so it stands in for the console session only where a command
-// line has no browser.
+// line has no browser. A request without the header reads nothing.
 export function hasSignInToken(request, signIn) {
-  const expected = signIn?.session ? signInToken(signIn.readToken) : null;
-  return Boolean(expected) && sameToken(request.headers[SIGN_IN_TOKEN_HEADER], expected);
+  const offered = request.headers[SIGN_IN_TOKEN_HEADER];
+  if (typeof offered !== 'string' || !offered || !signIn?.session) return false;
+  const expected = signInToken(signIn.readToken);
+  return Boolean(expected) && sameToken(offered, expected);
 }
 
 async function redeem({ request, response, signIn, authority }) {

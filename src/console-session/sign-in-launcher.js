@@ -1,9 +1,8 @@
 import { basename, dirname, isAbsolute, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
 
 import { humanReviewToken } from '../graphiti/human-review-channel.js';
 import { CODES_PATH, SIGN_IN_TOKEN_HEADER } from './http.js';
-import { LAUNCHER_DIRECTORY_PREFIX, LAUNCHER_FILE } from './launcher-file.js';
+import { LAUNCHER_DIRECTORY_PREFIX, LAUNCHER_FILE, launcherParent } from './launcher-file.js';
 
 const CODE_REQUEST_TIMEOUT_MS = 5_000;
 // Characters cmd's `start` (or a shell) would read in an unquoted path.
@@ -17,7 +16,7 @@ const COMMAND_LINE_SPECIAL = /["&|<>^%!`$;]/;
 // Throws when the console cannot sign in (an older console, no human-review
 // channel, a refusal) or answers a path that is not such a launcher.
 export async function consoleSignInLauncher({ consoleUrl, dataDir, next = null, fetchImpl = fetch,
-  readToken = humanReviewToken, temporaryRoot = tmpdir }) {
+  readToken = humanReviewToken }) {
   const response = await fetchImpl(new URL(CODES_PATH, consoleUrl), {
     method: 'POST',
     headers: { 'content-type': 'application/json', [SIGN_IN_TOKEN_HEADER]: readToken(dataDir) },
@@ -28,15 +27,18 @@ export async function consoleSignInLauncher({ consoleUrl, dataDir, next = null, 
   if (!response.ok) {
     throw new Error(typeof payload?.error === 'string' ? payload.error : `the console answered HTTP ${response.status}`);
   }
-  if (!isSignInLauncher(payload?.launcherPath, temporaryRoot())) throw new Error('the console answered no sign-in file');
+  if (!isSignInLauncher(payload?.launcherPath, launcherParent(dataDir))) throw new Error('the console answered no sign-in file');
   return payload.launcherPath;
 }
 
-// A launcher the console wrote: <temporary directory>/fuli-console-*/sign-in-<uuid>.html,
-// with nothing a command line would read specially.
-export function isSignInLauncher(path, temporaryRoot = tmpdir()) {
+// A launcher the console wrote: <data directory>/console-session/fuli-console-*/sign-in-<uuid>.html,
+// with nothing a command line would read specially. parent: the data
+// directory's console-session folder when the caller knows it; without it,
+// only the shape is checked.
+export function isSignInLauncher(path, parent = null) {
   if (typeof path !== 'string' || !isAbsolute(path) || COMMAND_LINE_SPECIAL.test(path)) return false;
   const directory = dirname(path);
+  const root = dirname(directory);
   return LAUNCHER_FILE.test(basename(path)) && basename(directory).startsWith(LAUNCHER_DIRECTORY_PREFIX)
-    && resolve(dirname(directory)) === resolve(temporaryRoot);
+    && (parent ? resolve(root) === resolve(parent) : basename(root) === basename(launcherParent('/')));
 }
