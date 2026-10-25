@@ -136,6 +136,18 @@ const BASELINE = Object.freeze({
   // entry has no conversation store, so it always carries them: 1,775 -> 1,820
   // chars, measured. A saved conversation carries neither.
   projectEntryChars: 1820,
+  // rec#51 D-59: a coding task (a change request naming a distinctive term) whose exact project
+  // holds matching knowledge gets a title-only knowledge_index in its recall: [id, title] pairs, the
+  // count that one bounded search kept and one read line, never a body. Measured over the same
+  // entry for a task that searches nothing, with UUID ids and synthetic titles of 22-45 bytes (cut
+  // at 40): no match adds nothing at all (the recall is byte for byte the not_needed one); one
+  // match +226 chars, five +529 (about 130 tokens), of which the read line is 108. #368 review:
+  // the count is named matched_in_search and the line says the titles come from one bounded
+  // search, not the project's total (+27 chars from 199/502). A task with recall intent, and
+  // every other task, is unchanged.
+  knowledgeIndexNoneChars: 0,
+  knowledgeIndexOneChars: 226,
+  knowledgeIndexFiveChars: 529,
   // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
   // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
   // other number above is unchanged; the switch adds no tool, schema or instruction text.
@@ -200,7 +212,7 @@ const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name,
 
 // Synthetic project entry through the real preference workflow, compacted as
 // the hook delivers it; no live Provider.
-async function projectEntry() {
+async function projectEntry({ taskPrompt = 'Synthetic task', found = { facts: [], entities: [] } } = {}) {
   const project = { project_id: 'sample', scope_type: 'registered', profile: { name: 'Sample' } };
   const lead = { agent_id: 'lead-sample', personal_space_id: 'space', personal_project_id: 'sample',
     profile: { name: 'Synthetic lead', status: 'active', allowed_clients: ['claude_code'],
@@ -223,21 +235,41 @@ async function projectEntry() {
     listPreferenceConflicts: async () => [], getProjectAgentCoordinationPolicy: async () => ({}),
     listProjectAgents: async () => [], listProjectAgentTasks: async () => []
   });
-  app.searchKnowledge = async () => ({ facts: [], entities: [] });
+  // `found` answers the index search alone: the lead's continuity search is not what is measured.
+  app.searchKnowledge = async ({ agentToolName }) => agentToolName === 'automatic_task_knowledge_index'
+    ? found : { facts: [], entities: [] };
   const entry = await app.getCollaborationPreferences({ projectPath: '/synthetic/sample',
     sourceApplication: 'claude_code', sourceSessionId: 'synthetic-host', sessionId: 'synthetic-session',
-    taskPrompt: 'Synthetic task', agentInvocation: true, agentToolName: 'get_collaboration_preferences' });
+    taskPrompt, agentInvocation: true, agentToolName: 'get_collaboration_preferences' });
   return compactTaskContext(entry);
 }
+
+const deliveredChars = entry => JSON.parse(hookAdditionalContextToolResult(entry, { hookEventName: 'UserPromptSubmit',
+  label: 'Synthetic budget entry', limitBytes: 128 * 1024, itemLimit: 1000 }).content[0].text)
+  .hookSpecificOutput.additionalContext.length;
 
 // The entry through the Claude Code hook delivery path, and the closing line
 // its real label adds.
 async function projectEntryChars() {
   const entry = await projectEntry();
-  const delivered = hookAdditionalContextToolResult(entry, { hookEventName: 'UserPromptSubmit',
-    label: 'Synthetic budget entry', limitBytes: 128 * 1024, itemLimit: 1000 });
-  return { projectEntryChars: JSON.parse(delivered.content[0].text).hookSpecificOutput.additionalContext.length,
-    entryClosingChars: taskClosingInstruction(entry).length };
+  return { projectEntryChars: deliveredChars(entry), entryClosingChars: taskClosingInstruction(entry).length };
+}
+
+// rec#51 D-59: what a coding task's entry adds for 0, 1 and 5 matching items of
+// its project, over the same entry for a task that searches nothing. UUID ids
+// and synthetic titles of 22 to 45 bytes, as stored names run.
+const INDEX_TITLES = ['find_agents term matching', 'find_agents matches terms in both directions',
+  'Roundtable boundary for find_agents', 'find_agents warning wording', 'find_agents result order rule',
+  'find_agents never imports FULI'];
+async function knowledgeIndexChars() {
+  const base = deliveredChars(await projectEntry());
+  const added = async count => deliveredChars(await projectEntry({ taskPrompt: 'Fix find_agents so terms match as whole words',
+    found: { facts: [], entities: INDEX_TITLES.slice(0, count).map((name, index) => ({
+      id: `0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b${String(index).padStart(2, '0')}`, space_id: 'space', scope: 'personal',
+      name, type: 'Rule', summary: `SYNTHETIC body ${index}: a rule about find_agents.`, defined_project_id: 'sample',
+      scope_distance: 0, confirmation_status: 'confirmed', score: 1 })) } })) - base;
+  return { knowledgeIndexNoneChars: await added(0), knowledgeIndexOneChars: await added(1),
+    knowledgeIndexFiveChars: await added(5) };
 }
 
 // Two turns of the synthetic 60-preference entry through the real Claude Code
@@ -270,7 +302,7 @@ async function measure() {
     chatToolSchemaBytes: await listedChatBytes(),
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
-    ...await projectEntryChars(), ...await claudeBoundedEntryChars(),
+    ...await projectEntryChars(), ...await knowledgeIndexChars(), ...await claudeBoundedEntryChars(),
     omittedPreferencesLabelChars: 1 + OMITTED_PREFERENCES_LABEL.length,
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),

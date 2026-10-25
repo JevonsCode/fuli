@@ -97,7 +97,7 @@ function contextLevels(value) {
   const levels = [value];
   let current = value;
   const recall = value.task_knowledge_recall;
-  if (recall?.facts?.length || recall?.entities?.length) {
+  if (recall?.facts?.length || recall?.entities?.length || recall?.knowledge_index) {
     current = copyPreferenceScope(value, { ...value, task_knowledge_recall: recallPointer(recall) });
     levels.push(current);
   }
@@ -113,8 +113,11 @@ function contextLevels(value) {
 
 // The recall without its items: what it matched, how many, and the search
 // that reads them (task_knowledge_recall's own guidance says how to query).
+// A title-only knowledge_index (rec#51 D-59) is per task like the recall, so
+// it goes with the recall, before any preference.
 function recallPointer(recall) {
-  const { facts = [], entities = [], sourceMarker: _marker, noMatchSourceMarker: _none, pending_fallback: _pending,
-    confirmed_use: _confirmed, retrieval_budget: _budget, ...summary } = recall;
-  return { ...summary, items_omitted: facts.length + entities.length, read: { tool: 'search_current_project_knowledge' } };
+  const { facts = [], entities = [], knowledge_index: index, sourceMarker: _marker, noMatchSourceMarker: _none,
+    pending_fallback: _pending, confirmed_use: _confirmed, retrieval_budget: _budget, ...summary } = recall;
+  return { ...summary, items_omitted: facts.length + entities.length + (index?.items.length ?? 0),
+    read: { tool: 'search_current_project_knowledge' } };
 }

@@ -1,12 +1,5 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
-
+import { entryBudgets as budgets, entryTimeBelow } from './entry-time.js';
 import { managementContextView, receiptView } from './task-context-view.js';
-
-// The time one lifecycle hook's task entry has left (rec#39 D-40). A hook runs
-// its entry inside a budget that ends at its own deadline; an entry without
-// one (an Agent's own begin_task_context or get_collaboration_preferences
-// call) has no deadline here, as before.
-const budgets = new AsyncLocalStorage();
 
 // A built-in Agent's model hint (Astro, Jefa) may take its 3 s model decision
 // plus a few Provider reads; with less than this left the entry goes without.
@@ -25,8 +18,7 @@ export function runWithEntryBudget(budget, operation) {
 
 // HINT_SKIPPED when too little of the entry's time is left for a model hint.
 export function entryHintSkipped() {
-  const budget = budgets.getStore();
-  return budget && budget.deadline - budget.now() < HINT_MIN_REMAINING_MS ? HINT_SKIPPED : null;
+  return entryTimeBelow(HINT_MIN_REMAINING_MS) ? HINT_SKIPPED : null;
 }
 
 // What an entry already holds once its task is written and is cheap to carry:
