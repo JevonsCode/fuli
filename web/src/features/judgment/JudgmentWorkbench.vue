@@ -240,6 +240,11 @@ function outcomeLabel(value: JudgmentDecisionRecord['outcome']) {
   return judgmentText(`workbench.outcome.${value}`)
 }
 
+// rec#26: why the host escalated a candidate whatever the model concluded.
+function injectionLabel(signals: string[]) {
+  return signals.map(signal => judgmentText(`workbench.injectionSignal.${signal}`)).join(' · ')
+}
+
 // A review verdict a model may not apply is a suggestion; an applied one names the model that executed it (rec#10 D-36.6).
 function verdictLabel(record: JudgmentDecisionRecord) {
   if (record.aiReview?.state === 'ai_suggested') return judgmentText('workbench.aiSuggested')
@@ -359,6 +364,9 @@ function hasDetails(record: JudgmentDecisionRecord) {
         </p>
         <dl class="judgment-record-meta">
           <div v-if="record.aiReview"><dt>{{ judgmentText('workbench.modelConclusion') }}</dt><dd>{{ outcomeLabel(record.aiReview.modelOutcome) }}</dd></div>
+          <div v-if="record.aiReview?.injectionSignals?.length" data-injection-precheck>
+            <dt>{{ judgmentText('workbench.injectionPrecheck') }}</dt><dd>{{ injectionLabel(record.aiReview.injectionSignals) }}</dd>
+          </div>
           <div><dt>{{ judgmentText('workbench.execution') }}</dt><dd>{{ executionLabel(record.execution.status) }}</dd></div>
           <div><dt>{{ judgmentText('workbench.policy') }}</dt><dd>{{ policyLabel(record) }}</dd></div>
           <div v-if="record.client || record.model"><dt>{{ judgmentText('workbench.source') }}</dt><dd>{{ sourceLabel(record) }}</dd></div>
