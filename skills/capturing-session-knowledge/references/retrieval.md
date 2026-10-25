@@ -159,6 +159,9 @@ For the chosen marker, the final answer must begin with its `leadMarkdown` uncha
 before any heading or prose, and append its `markdown` unchanged after the answer. If
 any search supports the answer, choose `sourceMarker` from one supporting search. If
 none do, choose `noMatchSourceMarker`. Never show either marker when no search was
-called. For a no-match search, `noMatchSourceMarker.markdown` is intentionally empty:
+called: `noMatchSourceMarker` reads "searched, no match" (已检索，未命中), so it belongs only
+to a search that ran in this task. A `task_knowledge_recall` without markers ran no search
+(for example `not_needed` or `project_unresolved`); do not reuse a marker from an earlier
+task. For a no-match search, `noMatchSourceMarker.markdown` is intentionally empty:
 show only its `leadMarkdown` and do not synthesize a footer. Never fabricate, rewrite,
 omit, or wrap markers in HTML. A capture or write result is not a read citation.

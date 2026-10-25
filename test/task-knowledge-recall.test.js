@@ -98,6 +98,26 @@ test('synthetic credential fixtures suppress automatic prompt recall', async () 
   assert.equal(JSON.stringify(recall).includes(syntheticCredential), false);
 });
 
+test('a recall that ran no search carries no marker, and only a searched miss says 已检索，未命中', async () => {
+  let calls = 0;
+  const application = {
+    config: { personal: { spaceId: 'personal-space' } },
+    consoleUrl: 'http://127.0.0.1:2727',
+    async searchKnowledge() { calls += 1; return { facts: [], entities: [] }; }
+  };
+  const notSearched = await recallTaskKnowledge(application, { personalProjectId: 'fuli' }, 'Rename the parser variable.');
+  assert.equal(notSearched.status, 'not_needed');
+  assert.equal(calls, 0);
+  assert.equal('sourceMarker' in notSearched, false);
+  assert.equal('noMatchSourceMarker' in notSearched, false);
+  assert.match(notSearched.guidance.candidate_selection, /without markers ran no search: show no marker/);
+
+  const missed = await recallTaskKnowledge(application, { personalProjectId: 'fuli' }, 'Use the release method we decided previously.');
+  assert.equal(missed.status, 'no_match');
+  assert.ok(calls > 0);
+  assert.match(missed.noMatchSourceMarker.leadMarkdown, /已检索，未命中/);
+});
+
 test('automatic recall returns a compact exact-project runbook without echoing the prompt',
   async () => {
     const calls = [];

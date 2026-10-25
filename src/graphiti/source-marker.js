@@ -139,6 +139,9 @@ function uniqueCitations(citations) {
   });
 }
 
+// Markers are built only for a search that ran (a search tool or the entry's
+// automatic recall), so "已检索，未命中" is true when shown. A task with no search
+// has no marker at all; the MCP instructions tell the Agent to show none.
 function sourceLeadMarkdown({ consoleUrl, citations }) {
   if (!citations.length) {
     const origin = safeLoopbackOrigin(consoleUrl) ?? DEFAULT_CONSOLE_URL;
