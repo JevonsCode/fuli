@@ -57,8 +57,11 @@ export {
   selectDockerEnvironment
 } from './container-runtime.js';
 import { isProcessAlive, stopProcess } from '../local-runtime/processes.js';
-import { isManagedWorkspace, waitForProviderHealth } from '../local-runtime/provider-readiness.js';
+import { isManagedWorkspace, waitForProviderHealth, waitUntilReady } from '../local-runtime/provider-readiness.js';
 import { parseProviderEnv } from './provider-env.js';
+
+const CONSOLE_READY_TIMEOUT_MS = 60_000;
+const CONSOLE_READY_INTERVAL_MS = 250;
 
 export async function ensureGraphRuntime(input, dependencies = {}) {
   const deps = graphDependencies(dependencies);
@@ -219,9 +222,14 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     env: input.env ?? process.env
   });
   const url = `http://127.0.0.1:${runtimeSettings.ports.console}`;
-  if (!Number.isInteger(child.pid) || !await waitForWeb(url, child.pid, deps)) {
+  const consoleStart = Number.isInteger(child.pid) ? await waitForWeb(url, child.pid, deps) : 'abandoned';
+  if (consoleStart !== 'ready') {
     if (Number.isInteger(child.pid)) deps.stopProcess(child.pid);
-    throw new Error('Fuli Graphiti console could not start');
+    throw new Error(consoleStartFailure(consoleStart, {
+      url,
+      providerUrls: input.personalOnly ? [urls.personal] : [urls.personal, urls.workspace],
+      logPath: input.paths.logPath
+    }));
   }
   const state = {
     version: 4,
@@ -468,13 +476,26 @@ async function findOrCreateSpace(baseUrl, { token, name, kind, fetchImpl }) {
   });
 }
 
-async function waitForWeb(url, pid, deps) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (!deps.isProcessAlive(pid)) return false;
-    if (await deps.webHealth(url, pid, 4)) return true;
-    await delay(100);
-  }
-  return false;
+// The console loads the whole server before it listens; on a slow file system
+// (WSL reading the package from /mnt) that took 16 s, so 10 s was not enough.
+function waitForWeb(url, pid, deps) {
+  return waitUntilReady(() => deps.webHealth(url, pid, 4), {
+    attempts: CONSOLE_READY_TIMEOUT_MS / CONSOLE_READY_INTERVAL_MS,
+    intervalMs: CONSOLE_READY_INTERVAL_MS,
+    wait: deps.wait,
+    abandon: () => !deps.isProcessAlive(pid)
+  });
+}
+
+// By now Neo4j and the Provider run and the graph is set up; only the console
+// failed. Say so, so a person neither assumes nothing started nor loses track of it.
+function consoleStartFailure(outcome, { url, providerUrls, logPath }) {
+  const problem = outcome === 'timed_out'
+    ? `The Fuli console did not answer at ${url} within ${CONSOLE_READY_TIMEOUT_MS / 1000} s, so it was stopped.`
+    : 'The Fuli console exited while starting.';
+  return `${problem} Neo4j and the graph Provider are already running (${providerUrls.join(', ')}) ` +
+    `and your data is kept. The console's output is in ${logPath}. ` +
+    'Run the same command again to retry, or run `fuli stop` to stop the graph services.';
 }
 
 export function startGraphProviders(paths, envPath, options = {}) {
@@ -566,6 +587,7 @@ function graphDependencies(overrides) {
     discoverLanAddresses,
     createLanAccessToken: secret,
     waitForExit: waitForProcessExit,
+    wait: delay,
     ...overrides
   };
 }

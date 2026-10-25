@@ -15,6 +15,7 @@ const PATHS = Object.freeze({
   graphComposePath: 'C:/Package/compose.graphiti.yml',
   graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json',
   graphRuntimeStatePath: 'C:/Fuli/graph-runtime-state.json',
+  logPath: 'C:/Fuli/logs/runtime.log',
   runtimeSettingsPath: 'C:/Fuli/runtime-settings.json',
   containerGraphConfigProfilePath: 'C:/Fuli/runtime-configs/container.json',
   nativeGraphConfigProfilePath: 'C:/Fuli/runtime-configs/native.json'
@@ -647,6 +648,63 @@ test('setup replaces a console left running by an older install', async () => {
     assert.deepEqual(stopped, [2727]);
     assert.equal(spawned, 1);
   }
+});
+
+// The console's wait runs on a fake clock: `wait` advances it instead of sleeping.
+function consoleStartCase({ answersAfterMs = Infinity, exitsAfterMs = Infinity } = {}) {
+  let elapsedMs = 0;
+  const stopped = [];
+  let writtenState = null;
+  const run = ensureGraphRuntime({
+    paths: PATHS,
+    personalSpaceName: '我',
+    personalOnly: false,
+    port: 2727,
+    noStart: false
+  }, dependencies({
+    readConfig: configuredGraph,
+    async fetch(url) {
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
+      throw new Error(`Unexpected Provider request: ${url}`);
+    },
+    spawnWebRuntime: () => ({ pid: 2727 }),
+    isProcessAlive: () => elapsedMs < exitsAfterMs,
+    async webHealth() { return elapsedMs >= answersAfterMs; },
+    async wait(ms) { elapsedMs += ms; },
+    stopProcess(pid) { stopped.push(pid); },
+    writeState(_path, state) { writtenState = state; }
+  }));
+  return { run, stopped, elapsed: () => elapsedMs, state: () => writtenState };
+}
+
+test('setup waits for a console that needs 16 s to come up on a slow file system', async () => {
+  const { run, stopped, state } = consoleStartCase({ answersAfterMs: 16_000 });
+  assert.equal((await run).status, 'started');
+  assert.deepEqual(stopped, []);
+  assert.equal(state().pid, 2727);
+});
+
+test('a console that never answers is stopped after 60 s, saying what still runs and how to retry or stop', async () => {
+  const { run, stopped, elapsed, state } = consoleStartCase();
+  await assert.rejects(run, (error) => {
+    assert.match(error.message, /did not answer at http:\/\/127\.0\.0\.1:2727 within 60 s/);
+    assert.match(error.message,
+      /Neo4j and the graph Provider are already running \(http:\/\/127\.0\.0\.1:8787, http:\/\/127\.0\.0\.1:8788\)/);
+    assert.match(error.message, /C:\/Fuli\/logs\/runtime\.log/);
+    assert.match(error.message, /Run the same command again to retry, or run `fuli stop`/);
+    return true;
+  });
+  assert.equal(elapsed(), 60_000 - 250, 'no trailing pause after the last attempt');
+  assert.deepEqual(stopped, [2727]);
+  assert.equal(state(), null, 'a console that did not start leaves no runtime state');
+});
+
+test('a console that exits while starting is reported at once, not after the full wait', async () => {
+  const { run, elapsed } = consoleStartCase({ exitsAfterMs: 1000 });
+  await assert.rejects(run,
+    /The Fuli console exited while starting\. Neo4j and the graph Provider are already running/);
+  assert.equal(elapsed(), 1000);
 });
 
 function dependencies(overrides = {}) {
