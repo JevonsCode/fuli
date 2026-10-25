@@ -1,4 +1,5 @@
 import { t } from '@/i18n'
+import { isConsoleSessionRefusal, noteConsoleSession } from './console-session'
 
 export class ApiError extends Error {
   readonly status: number
@@ -19,16 +20,25 @@ export function isKnowledgeRecoveryPending(error: unknown): boolean {
   try { return JSON.parse(error.detail)?.code === 'knowledge_recovery_pending' } catch { return false }
 }
 
+// The page's own line; the shell's notice (ConsoleSessionNotice.vue) gives the command.
+function consoleSessionMessage(): string {
+  return t('common.errors.consoleSessionRequired')
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
     const detail = (await response.text()).trim()
-    const message = isKnowledgeRecoveryPending({ status: response.status, detail })
+    const sessionRefused = isConsoleSessionRefusal(response.status, detail)
+    if (sessionRefused) noteConsoleSession(url, true)
+    const message = sessionRefused ? consoleSessionMessage()
+      : isKnowledgeRecoveryPending({ status: response.status, detail })
       ? t('common.errors.knowledgeRecoveryPending') : response.status >= 500
       ? t('common.errors.serviceUnavailable', { status: response.status })
       : detail || t('common.errors.requestFailed', { status: response.status })
     throw new ApiError(message, response.status, detail)
   }
+  noteConsoleSession(url, false)
   return response.json() as Promise<T>
 }
 
@@ -47,6 +57,7 @@ export function apiErrorCode(error: unknown): string | null {
 // request it refused, otherwise the error's message.
 export function apiErrorReason(error: unknown, fallback = t('common.errors.operationFailed')): string {
   if (isKnowledgeRecoveryPending(error)) return t('common.errors.knowledgeRecoveryPending')
+  if (error instanceof ApiError && isConsoleSessionRefusal(error.status, error.detail)) return consoleSessionMessage()
   if (error instanceof ApiError && error.status < 500 && error.detail) {
     try {
       const reason = (JSON.parse(error.detail) as { error?: unknown })?.error

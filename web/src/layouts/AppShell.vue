@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, watch, watchEffect } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
+import { consoleOpenCommand, consoleSessionRequired } from '@/api/console-session'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
@@ -100,6 +101,12 @@ watchEffect(() => {
         </div>
       </header>
       <NavigationRecovery />
+      <!-- A full read refused without the console session (rec#11 D-61): one notice with the command, no redirect. -->
+      <div v-if="consoleSessionRequired" class="app-feedback-row" data-console-session-notice>
+        <div class="feedback feedback-message" role="status" aria-live="polite">
+          <span>{{ t('common.errors.consoleSessionGuide', { command: consoleOpenCommand(route.fullPath) }) }}</span>
+        </div>
+      </div>
       <div v-if="store.feedback" class="app-feedback-row">
         <div class="feedback feedback-message" :class="{ success: store.feedback.tone === 'success' }"
           :role="store.feedback.tone === 'error' ? 'alert' : 'status'" :aria-live="store.feedback.tone === 'error' ? 'assertive' : 'polite'">

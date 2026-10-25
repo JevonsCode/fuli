@@ -27,6 +27,8 @@ export const commonMessages = {
     errors: {
       loadFailed: '读取失败，请重试。',
       knowledgeRecoveryPending: '正在等待图谱确认删除记录，这部分内容暂时读不到。请稍后重试；如果一直这样，运行 fuli migrate reconcile-knowledge。',
+      consoleSessionRequired: '这部分需要用 fuli open 打开的控制台。',
+      consoleSessionGuide: '完整记录只在用 fuli open 打开的控制台里显示。请在这台电脑的终端运行 {command}，再在它打开的页面里继续。',
       serviceUnavailable: '服务暂时无法响应，请稍后重试。({status})',
       pageNotFound: '找不到这个页面',
       pageNotFoundCopy: '链接可能已失效。',
@@ -81,6 +83,8 @@ export const commonMessages = {
     },
     errors: {
       knowledgeRecoveryPending: 'Waiting for the graph to confirm deletion records; this content cannot be read yet. Try again later; if it stays this way, run fuli migrate reconcile-knowledge.',
+      consoleSessionRequired: 'This needs a console opened with fuli open.',
+      consoleSessionGuide: 'Full records show only in a console opened with fuli open. Run {command} in a terminal on this computer, then continue in the page it opens.',
       loadFailed: 'Could not load. Please retry.',
       serviceUnavailable: 'The service is temporarily unavailable. Try again shortly. ({status})',
       pageNotFound: 'Page not found',

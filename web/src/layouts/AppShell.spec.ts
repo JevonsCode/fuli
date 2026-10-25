@@ -5,6 +5,7 @@ import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getJson } from '@/api/client'
+import { noteConsoleSession } from '@/api/console-session'
 import { useConsoleStore } from '@/stores/console'
 import AppShell from './AppShell.vue'
 import { usePageTitle } from './page-title'
@@ -228,6 +229,22 @@ describe('AppShell', () => {
     await router.push('/')
     await flushPromises()
     expect(wrapper.get('.app-main').attributes('data-layout')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('shows how to sign in once while a full read waits for the console session (rec#11 D-61)', async () => {
+    const { wrapper } = await setup('/knowledge?item=s/entity:e1')
+    expect(wrapper.find('[data-console-session-notice]').exists()).toBe(false)
+    noteConsoleSession('/api/knowledge/entity/e1?personalSpaceId=s', true)
+    noteConsoleSession('/api/session-records?personalSpaceId=s', true)
+    await flushPromises()
+    const notices = wrapper.findAll('[data-console-session-notice]')
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.text()).toContain('fuli open --next "/knowledge?item=s/entity:e1"')
+    noteConsoleSession('/api/knowledge/entity/e1', false)
+    noteConsoleSession('/api/session-records', false)
+    await flushPromises()
+    expect(wrapper.find('[data-console-session-notice]').exists()).toBe(false)
     wrapper.unmount()
   })
 

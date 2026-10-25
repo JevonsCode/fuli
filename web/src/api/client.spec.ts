@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setLocale } from '@/i18n'
-import { ApiError, getJson, postJson } from './client'
+import { ApiError, apiErrorReason, getJson, postJson } from './client'
+import { consoleOpenCommand, consoleSessionRequired } from './console-session'
 
 describe('API client errors', () => {
   beforeEach(() => {
@@ -59,4 +60,33 @@ it.each(['zh-CN', 'en-US'] as const)('gives code-specific recovery guidance on r
   await expect(postJson('/api/role-work/requests', { synthetic: true })).rejects.toMatchObject({ message, status: 503 })
   expect(fetch).toHaveBeenCalledTimes(2)
   vi.unstubAllGlobals()
+})
+
+// rec#11 D-61: a full read without the console session `fuli open` starts.
+it.each(['zh-CN', 'en-US'] as const)('says a full read needs fuli open in %s, once, without redirecting or retrying', async locale => {
+  setLocale(locale, { persist: false })
+  const answers = [
+    new Response(JSON.stringify({ code: 'console_session_required', error: 'internal wording' }), { status: 401 }),
+    new Response(JSON.stringify({ records: [] }), { status: 200 }),
+  ]
+  const fetch = vi.fn().mockImplementation(() => Promise.resolve(answers.shift()))
+  vi.stubGlobal('fetch', fetch)
+  const href = window.location.href
+  const message = locale === 'zh-CN' ? '这部分需要用 fuli open 打开的控制台。' : 'This needs a console opened with fuli open.'
+  const refused = await getJson('/api/judgment/records?personalSpaceId=s').catch(error => error)
+  expect(refused).toMatchObject({ message, status: 401 })
+  expect(apiErrorReason(refused)).toBe(message)
+  expect(consoleSessionRequired.value).toBe(true)
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(window.location.href).toBe(href)
+  // The person ran fuli open: the same read succeeds and the notice goes.
+  await getJson('/api/judgment/records?personalSpaceId=s')
+  expect(consoleSessionRequired.value).toBe(false)
+  vi.unstubAllGlobals()
+})
+
+it('names the command that signs in and comes back to the page', () => {
+  expect(consoleOpenCommand('http://127.0.0.1:2727/')).toBe('fuli open')
+  expect(consoleOpenCommand('http://127.0.0.1:2727/knowledge?item=s/entity:e1')).toBe('fuli open --next "/knowledge?item=s/entity:e1"')
+  expect(consoleOpenCommand('/x?q=a"b$c`d')).toBe('fuli open --next "/x?q=a%22b%24c%60d"')
 })
