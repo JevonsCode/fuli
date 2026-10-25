@@ -12,10 +12,17 @@ export function parseMcpJson(text, { jsonc = false } = {}) {
   return value;
 }
 
+// Null when the client has no configuration file yet.
+function readConfigText(path) {
+  return existsSync(path) ? readFileSync(path, 'utf8') : null;
+}
+
 // The client owns its schema. This shared port only changes the FULI entry.
-export function jsonMcpPort({ key = 'mcpServers', jsonc = false, source = 'other', server, argsOf, obsoleteKeys = [] }) {
-  function read(agent) {
-    const text = existsSync(agent.configPath) ? readFileSync(agent.configPath, 'utf8') : '{}';
+// `entryArgs` renders a descriptor pack's arguments in place of the fixed ones.
+export function jsonMcpPort({ key = 'mcpServers', jsonc = false, source = 'other', server, argsOf, obsoleteKeys = [],
+  entryArgs }) {
+  function read(agent, readText = readConfigText) {
+    const text = readText(agent.configPath) ?? '{}';
     return { text, config: validate(parseMcpJson(text, { jsonc })) };
   }
   function validate(config) {
@@ -26,23 +33,24 @@ export function jsonMcpPort({ key = 'mcpServers', jsonc = false, source = 'other
   }
   function expected(context, current) {
     const profile = installedToolProfile(argsOf(current), context.toolProfile);
-    const args = [context.mcpServerPath, '--runtime-config', context.runtimeConfigPath,
+    const args = entryArgs ? entryArgs(context, profile) : [context.mcpServerPath, '--runtime-config', context.runtimeConfigPath,
       '--source-application', source, '--tool-profile', profile];
     const retained = Object.fromEntries(Object.entries(current ?? {}).filter(([key]) => !obsoleteKeys.includes(key)));
     return { ...retained, ...server(context.nodePath, args) };
   }
-  function write(agent, text, value) {
-    writeTextFileAtomic(agent.configPath, applyEdits(text, modify(text, [key, 'fuli'], value,
+  function write(agent, text, value, writeText = writeTextFileAtomic) {
+    writeText(agent.configPath, applyEdits(text, modify(text, [key, 'fuli'], value,
       { formattingOptions: { insertSpaces: true, tabSize: 2 } })));
   }
   return {
-    connect(agent, context) {
+    // `readText` (null for an absent file) and `writeText` let a preview capture the write.
+    connect(agent, context, { readText, writeText } = {}) {
       if (agent.manualOnly) throw new TypeError('This client configuration requires manual connection');
-      const { text, config } = read(agent);
+      const { text, config } = read(agent, readText);
       const current = config[key]?.fuli;
       const next = expected(context, current);
       const changed = JSON.stringify(current) !== JSON.stringify(next);
-      if (changed) write(agent, text, next);
+      if (changed) write(agent, text, next, writeText);
       return { id: agent.id, label: agent.label, status: 'connected', restartRequired: changed };
     },
     disconnect(agent) {

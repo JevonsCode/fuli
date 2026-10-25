@@ -10,6 +10,7 @@ import { callAgentTool } from '../../src/agent-tools.js';
 import { runClaudeLifecycleHook } from '../../src/agents/claude-code/lifecycle-hook.js';
 import { runCodexLifecycleHook } from '../../src/agents/codex/lifecycle-hook.js';
 import { runCursorLifecycleHook } from '../../src/agents/cursor/lifecycle-hook.js';
+import { runOpenCodeLifecycleHook } from '../../src/agents/opencode/lifecycle-hook.js';
 import { CapturePolicyStore, capturePolicyPathForRuntime } from '../../src/graphiti/capture-policy.js';
 import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from '../../src/graphiti/capture-session-pause.js';
 import { FederatedGraphApplication } from '../../src/graphiti/federated-application.js';
@@ -159,6 +160,23 @@ export async function cursorEntry(f, cwd, { session = 'synthetic-cursor-session'
   });
   const context = await callAgentTool(f.app, 'get_collaboration_preferences', { projectPath: cwd, taskPrompt: prompt,
     sessionId: session, sourceApplication: 'cursor', sourceSessionId: session });
+  return { output, context };
+}
+
+// An OpenCode prompt through its lifecycle hook (what the plugin starts) and
+// the real begin_task_context tool; the entry text goes to the model as system text.
+export async function openCodeEntry(f, cwd, { session = 'synthetic-opencode-session', prompt = `Plan ${PRIVATE}.` } = {}) {
+  let context;
+  const output = await runOpenCodeLifecycleHook(['--event', 'prompt'], {
+    readInput: async () => ({ session_id: session, message_id: 'synthetic-message', cwd, prompt }),
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: f.runtimeConfigPath }), openApplication: () => f.app,
+    createLeases: leases,
+    callTool: async (app, name, input, request) => {
+      const result = await callAgentTool(app, name, input, request);
+      if (name === 'begin_task_context') context = result;
+      return result;
+    }
+  });
   return { output, context };
 }
 

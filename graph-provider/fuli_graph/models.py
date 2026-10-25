@@ -126,7 +126,7 @@ PreferenceConflictResolutionAction = Literal[
     'split_scope',
 ]
 SourceApplication = Literal[
-    'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'
+    'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other'
 ]
 
 

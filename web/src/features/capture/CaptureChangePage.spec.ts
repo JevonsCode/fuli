@@ -80,6 +80,19 @@ describe('CaptureChangePage (rec#5 C4-2, rec#11 D-16)', () => {
     expect(page.store.state?.capturePolicy?.excludedProjectIds).toEqual(['job-hunt'])
   })
 
+  it('shows an explicit client capture override in the change and current settings', async () => {
+    const preview: CaptureChangePreview = { ...PREVIEW,
+      current: { ...PREVIEW.current, disabledSources: ['other'], capturedSources: ['opencode'] },
+      changes: [{ setting: 'capturedSources', before: [], after: ['opencode'] }],
+    }
+    const wrapper = await mountPage(() => Response.json(preview)).mount()
+    const row = wrapper.get('[data-capture-change-setting="capturedSources"]')
+    expect(row.text()).toContain('明确开启记录的客户端')
+    expect(row.text()).toContain('OpenCode')
+    expect(wrapper.text()).toContain('当前设置')
+    wrapper.unmount()
+  })
+
   it('says to ask again and writes nothing when the settings changed meanwhile', async () => {
     const page = mountPage(() => Response.json(PREVIEW),
       () => Response.json({ error: '设置已变化，请重新发起', code: 'preview_stale' }, { status: 409 }))

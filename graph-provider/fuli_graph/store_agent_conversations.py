@@ -16,6 +16,7 @@ from .store_transactions import query_store_transaction
 from .store_transcript_recovery import recover_fallback_boundary
 from .knowledge_versions import lock_knowledge
 from .knowledge_source_fence import require_source_available
+from .client_coverage import covers_client
 
 CONTEXT_PAGE_EVENTS = 50
 CONTEXT_SCAN_EVENTS = 1000
@@ -40,7 +41,7 @@ class StoreAgentConversations:
         journal_only = request.personal_project_id is None and request.agent_id == ASSISTANT_AGENT_ID
         agent = await authorize_project_agent(self, actor, space, request.personal_project_id,
             request.agent_id, require_active=write, require_memory=not journal_only, allow_global=True)
-        if request.source_application is not None and request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
+        if request.source_application is not None and not covers_client(json.loads(agent['profile_json']).get('allowed_clients', []), request.source_application):
             raise HTTPException(403, 'Agent is not allowed in this client')
         return conversation_scope_id(space['id'], request.personal_project_id, agent['agent_id'])
 

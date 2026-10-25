@@ -19,7 +19,9 @@ export function descriptorAdapter(pack) {
   if (!writer) throw new TypeError(`Unknown client config writer: ${pack.configWriter}`);
   return Object.freeze({
     id: pack.id,
-    detect: (environment) => detectClient(pack, environment),
+    // A writer whose client format picks between files or needs its version refines discovery.
+    detect: (environment) => writer.detect
+      ? writer.detect(pack, detectClient(pack, environment), environment) : detectClient(pack, environment),
     connect(agent, context, { connectConfig = (target, settings) => writer.connect(pack, target, settings) } = {}) {
       return connectConfig(agent, context);
     },
@@ -33,7 +35,10 @@ export function descriptorAdapter(pack) {
 function detectClient(pack, { env, homeDir, pathApi, fileExists, commandExists }) {
   const { clientHome: home, files, skillsRoot, availableWhen } = pack.detection;
   const override = home.envOverride ? env[home.envOverride] : undefined;
-  const clientHome = typeof override === 'string' && override.trim() ? override : pathApi.join(homeDir, ...home.path);
+  const base = home.envBase ? env[home.envBase] : undefined;
+  const clientHome = typeof override === 'string' && override.trim() ? override
+    : typeof base === 'string' && base.trim() ? pathApi.join(base, ...home.path.slice(1))
+      : pathApi.join(homeDir, ...home.path);
   const bases = { homeDir, clientHome };
   const resolve = ({ from, path }) => pathApi.join(bases[from], ...path);
   const paths = Object.fromEntries(CLIENT_FILE_KEYS.filter((key) => files[key]).map((key) => [key, resolve(files[key])]));

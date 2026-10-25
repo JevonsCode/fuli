@@ -43,7 +43,7 @@ const projectNames = computed(() => new Map((store.state?.personalProjects ?? []
   .map(project => [project.project_id, projectDisplayName(project)])))
 const projectName = (id: string) => projectNames.value.get(id) ?? id
 const value = (setting: CaptureChangeSetting, raw: unknown) => settingValue(setting, raw, projectName)
-const CURRENT_SETTINGS: CaptureChangeSetting[] = ['enabled', 'disabledSources', 'projectMode', 'unregisteredDirectories']
+const CURRENT_SETTINGS: CaptureChangeSetting[] = ['enabled', 'disabledSources', 'capturedSources', 'projectMode', 'unregisteredDirectories']
 const projectList = (policy: CapturePolicy) => policy.projectMode === 'selected'
   ? { setting: 'selectedProjectIds' as const, ids: policy.selectedProjectIds ?? [] }
   : policy.projectMode === 'all_except' ? { setting: 'excludedProjectIds' as const, ids: policy.excludedProjectIds ?? [] } : null

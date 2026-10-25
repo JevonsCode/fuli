@@ -486,6 +486,7 @@ function sessionLabel(evidence: EvidenceRecord) {
     claude_code: 'Claude Code',
     cursor: 'Cursor',
     kiro: 'Kiro',
+    opencode: 'OpenCode',
     other: t('knowledge.domain.confirmation.otherSource'),
   }[evidence.source_application ?? '']
   return application
@@ -500,6 +501,7 @@ function proposedByFromEvidence(evidence?: EvidenceRecord) {
     claude_code: 'Claude Code',
     cursor: 'Cursor',
     kiro: 'Kiro',
+    opencode: 'OpenCode',
     other: t('knowledge.domain.actors.otherAgent'),
   }[evidence?.source_application ?? '']
   return application

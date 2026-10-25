@@ -10,6 +10,7 @@ from .project_agent_task_models import ProjectAgentParallelPlan
 from .store_project_agents import SYSTEM_HR_AGENT_ID
 from .system_hr_identity import LEGACY_HR_AGENT_ID
 from .project_agent_hierarchy import reporting_parent, direct_reports
+from .client_coverage import covers_client
 
 
 IMPLICIT_PEER_AGENT_IDS = frozenset({
@@ -968,7 +969,7 @@ class StoreProjectAgentTaskStaffing:
     def _agent_client_allowed(candidate, source_application):
         profile = candidate.get('profile') if isinstance(candidate, dict) else candidate
         allowed_clients = set(profile.allowed_clients)
-        return (source_application or 'other') in allowed_clients
+        return covers_client(allowed_clients, source_application or 'other')
 
     @classmethod
     def _require_agent_client_allowed(cls, candidate, source_application):

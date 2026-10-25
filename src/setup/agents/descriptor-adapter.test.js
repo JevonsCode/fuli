@@ -20,10 +20,12 @@ const PERSONAL = Object.freeze({
     '.codex/hooks.json': '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo stop"}]}]}}',
     '.codex/AGENTS.md': '# Personal rules\n' },
   cursor: { '.cursor/mcp.json': '{"mcpServers":{"other":{"command":"other"}}}',
-    '.cursor/hooks.json': '{"version":1,"hooks":{"stop":[{"command":"echo stop"}]}}' }
+    '.cursor/hooks.json': '{"version":1,"hooks":{"stop":[{"command":"echo stop"}]}}' },
+  opencode: { '.config/opencode/opencode.json': '{"theme":"dark","mcp":{"other":{"type":"local","command":["other"]}}}',
+    '.config/opencode/plugins/other/index.js': 'export default { id: "other", setup() {} };\n' }
 });
 const MALFORMED = Object.freeze({ 'claude-code': ['.claude.json', '{broken'], codex: ['.codex/hooks.json', '{"hooks":[]}'],
-  cursor: ['.cursor/mcp.json', '[]'] });
+  cursor: ['.cursor/mcp.json', '[]'], opencode: ['.config/opencode/opencode.json', '{"mcp":[]}'] });
 
 function home(t, files) {
   const homeDir = mkdtempSync(path.join(tmpdir(), 'fuli-descriptor-contract-'));
@@ -43,6 +45,7 @@ function snapshot(homeDir) {
     statSync(path.join(homeDir, file)).mtimeMs]]));
 }
 const client = (id, homeDir) => discoverAgents({ homeDir, env: {}, includeUnavailable: true, commandExists: () => true,
+  commandVersion: (command) => (command === 'opencode' ? '2.1.4' : null),
   fileExists: () => false }).find((agent) => agent.id === id);
 const current = (agent) => inspectAgentInstallations([agent], CONTEXT, { skillCurrent: () => true })[0].integrationDetails;
 
@@ -59,7 +62,8 @@ for (const { id } of loadClientDescriptorPacks()) {
     const agent = client(id, homeDir);
     agentAdapter(id).connect(agent, CONTEXT);
     const connected = snapshot(homeDir);
-    assert.equal(agentAdapter(id).connect(agent, CONTEXT).newTaskRequired, false);
+    const again = agentAdapter(id).connect(agent, CONTEXT);
+    assert.equal(again.newTaskRequired ?? again.restartRequired, false);
     assert.deepEqual(snapshot(homeDir), connected, 'a second connect writes nothing');
     assert.equal(current(agent).mcp, 'current');
     assert.equal(current(agent).lifecycleHooks, 'current');

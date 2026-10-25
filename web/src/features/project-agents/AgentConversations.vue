@@ -178,7 +178,7 @@ function entryKind(value: string) {
   return t(`projectAgents.conversations.kinds.${['request', 'decision', 'correction', 'open', 'method'].includes(value) ? value : 'request'}`)
 }
 function client(value?: string) {
-  return t(`projectAgents.clients.${['codex', 'claude', 'claude_code', 'cursor', 'gemini_cli', 'kiro'].includes(value ?? '') ? value : 'other'}`)
+  return t(`projectAgents.clients.${['codex', 'claude', 'claude_code', 'cursor', 'gemini_cli', 'kiro', 'opencode'].includes(value ?? '') ? value : 'other'}`)
 }
 async function copyContinuation(conversation: Conversation) {
   const prompt = conversation.continuation_prompt

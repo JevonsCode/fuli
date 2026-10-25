@@ -215,6 +215,29 @@ test('an older adapter that names only its client still gets that client decisio
   assert.deepEqual(f.writes().map(call => call.path), ['/v1/knowledge/commits']);
 });
 
+// rec#11 D-64: OpenCode was recorded as `other` before it had its own name.
+test('a policy that turned `other` off before OpenCode had its own source keeps OpenCode off, without a rewrite', async (t) => {
+  const f = await fixture(t, policyFile({ enabled: true, disabledSources: ['other'] }));
+  assert.deepEqual(await captureDecision(f.app, { sourceApplication: 'opencode' }),
+    { allowed: false, reason: 'client_off', layer: 'client' });
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'codex' })).allowed, true);
+  assert.deepEqual(f.app.getCapturePolicy().disabledSources, ['other'], 'the stored list is not rewritten');
+  const named = await fixture(t, policyFile({ enabled: true, disabledSources: ['opencode'] }));
+  assert.equal((await captureDecision(named.app, { sourceApplication: 'opencode' })).reason, 'client_off');
+  assert.equal((await captureDecision(named.app, { sourceApplication: 'other' })).allowed, true, 'the alias never widens `other`');
+});
+
+test('explicit OpenCode capture lifts only the legacy alias, and an explicit off still wins', async (t) => {
+  const f = await fixture(t, policyFile({ disabledSources: ['other'], capturedSources: ['opencode'] }));
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'opencode' })).allowed, true);
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'other' })).reason, 'client_off');
+  // Even a hand-written file containing both lists must keep the named client off.
+  const both = await fixture(t, path => writeFile(path, JSON.stringify({ version: 1, enabled: true,
+    disabledSources: ['other', 'opencode'], capturedSources: ['opencode'], updatedAt: null })));
+  assert.equal((await captureDecision(both.app, { sourceApplication: 'opencode' })).reason, 'client_off');
+  assert.equal(both.app.getCapturePolicy().capturedSources, undefined);
+});
+
 // A retry resends the same input; a fixed capture keeps its fingerprint stable.
 const privateCheckpoint = f => ({ taskContextToken: f.task.token, sourceApplication: 'codex',
   disposition: 'capture_candidates', reason: `Finished ${PRIVATE}.`,

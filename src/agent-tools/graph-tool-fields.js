@@ -1,4 +1,5 @@
 import { boundedString, enumSchema, nullableStringSchema, objectSchema } from './schema.js';
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 // Field schemas more than one graph tool domain shares.
 export const id = boundedString(256);
@@ -39,5 +40,5 @@ export const profileAspect = {
 };
 export const sourceApplication = {
   type: ['string', 'null'],
-  enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other', null]
+  enum: [...SOURCE_APPLICATIONS, null]
 };

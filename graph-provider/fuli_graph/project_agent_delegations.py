@@ -10,6 +10,7 @@ from .models import SourceApplication, StrictModel
 from .personal_project_access import authorize_personal_project
 from .project_agent_context_models import ProjectAgentContextRequest
 from .project_agent_hierarchy import direct_reporting_link
+from .client_coverage import covers_client
 
 
 class AgentDelegationIssue(StrictModel):
@@ -122,7 +123,7 @@ class StoreAgentDelegations:
         sender_profile_updated_at = None
         if getattr(policy, 'sub_teams', []):
             source = await self.get_project_agent(actor, request.personal_space_id, project_id, sender)
-            if (source.profile.status != 'active' or request.source_application not in source.profile.allowed_clients
+            if (source.profile.status != 'active' or not covers_client(source.profile.allowed_clients, request.source_application)
                     or not any(a.status == 'active' and a.personal_project_id == project_id for a in source.assignments)):
                 raise HTTPException(403, 'The sending Agent no longer has an active project assignment')
             sender_profile_updated_at = getattr(source, 'updated_at', None)
@@ -139,7 +140,7 @@ class StoreAgentDelegations:
                 raise HTTPException(403, 'Cross-project requests can only address the target lead')
         target = await self.get_project_agent(actor, request.personal_space_id, target_project_id, request.agent_id)
         if (target.profile.status != 'active'
-                or request.target_application not in target.profile.allowed_clients):
+                or not covers_client(target.profile.allowed_clients, request.target_application)):
             raise HTTPException(403, 'The receiving Agent is unavailable in this client')
         token = token_urlsafe(32)
         # Only hashes are stored. A crash leaves a bounded lifetime, never a
@@ -179,7 +180,7 @@ class StoreAgentDelegations:
         target = await self.get_project_agent(
             actor, request.personal_space_id, request.personal_project_id, request.agent_id)
         if (target.profile.status != 'active'
-                or request.target_application not in target.profile.allowed_clients):
+                or not covers_client(target.profile.allowed_clients, request.target_application)):
             raise HTTPException(403, 'The receiving Agent is unavailable in this client')
         token = token_urlsafe(32)
         await self.runtime.driver.execute_query(

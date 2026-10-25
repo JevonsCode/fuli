@@ -110,6 +110,7 @@ export const captureMessages = {
       settings: {
         enabled: '自动记录',
         disabledSources: '不记录的客户端',
+        capturedSources: '明确开启记录的客户端',
         projectMode: '记录哪些项目',
         excludedProjectIds: '不记录的项目',
         selectedProjectIds: '记录的项目',
@@ -228,6 +229,7 @@ export const captureMessages = {
       settings: {
         enabled: 'Automatic recording',
         disabledSources: 'Clients not recorded',
+        capturedSources: 'Clients explicitly recorded',
         projectMode: 'Which projects to record',
         excludedProjectIds: 'Projects not recorded',
         selectedProjectIds: 'Projects recorded',

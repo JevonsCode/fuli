@@ -5,6 +5,7 @@ import json
 from fastapi import HTTPException
 from .project_agent_access import authorize_project_agent
 from .task_context_coordination import task_context_json
+from .client_coverage import covers_client
 
 
 async def adopt_task_agent(store, actor, token, request):
@@ -21,7 +22,7 @@ async def adopt_task_agent(store, actor, token, request):
     before = task_context_json(record)
     agent = await authorize_project_agent(store, actor, space, request.personal_project_id,
                                           request.agent_id, require_active=True)
-    if request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
+    if not covers_client(json.loads(agent['profile_json']).get('allowed_clients', []), request.source_application):
         raise HTTPException(403, 'Agent is not allowed in this client')
     task_only = agent.get('memory_scope') == 'task_only'
     if task_only and agent.get('temporary_task_id') != request.task_id:

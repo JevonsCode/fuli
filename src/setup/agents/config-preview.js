@@ -18,7 +18,9 @@ export function previewClientConfiguration(pack, agent, context) {
   const writers = {
     'codex-toml': () => previewCodexConfiguration(pack, agent, context, io),
     'claude-code-settings': () => CONFIG_WRITERS['claude-code-settings'].connect(pack, agent, context, { readConfig: io.readJson, writeConfig: io.writeJson }),
-    'cursor-hooks': () => CONFIG_WRITERS['cursor-hooks'].connect(pack, agent, context, { readConfig: io.readJson, writeConfig: io.writeJson })
+    'cursor-hooks': () => CONFIG_WRITERS['cursor-hooks'].connect(pack, agent, context, { readConfig: io.readJson, writeConfig: io.writeJson }),
+    // A previewed target carries no OpenCode version, so its plugin is only kept current, never removed.
+    'opencode-plugin': () => CONFIG_WRITERS['opencode-plugin'].connect(pack, agent, context, { readText: io.readText, writeText: io.writeText })
   };
   writers[pack.configWriter]();
   return [...after].filter(([path, text]) => text !== before.get(path)).map(([path, text]) => ({ path, before: before.get(path), after: text }));

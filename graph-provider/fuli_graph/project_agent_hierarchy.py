@@ -1,3 +1,4 @@
+from .client_coverage import covers_client
 """Project-local reporting only; it grants no data, client or execution access."""
 
 
@@ -41,7 +42,7 @@ async def bind_task_coordinator(store, actor, request, policy):
     if not sender:
         raise HTTPException(403, 'Grouped staffing requires the actual task owner')
     source = await store.get_project_agent(actor, request.personal_space_id, request.personal_project_id, sender)
-    if (source.profile.status != 'active' or request.source_application not in source.profile.allowed_clients
+    if (source.profile.status != 'active' or not covers_client(source.profile.allowed_clients, request.source_application)
             or not any(assignment.status == 'active' and assignment.personal_project_id == request.personal_project_id
                        for assignment in source.assignments)):
         raise HTTPException(403, 'The task owner must have a current assignment and source client authorization')

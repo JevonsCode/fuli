@@ -71,6 +71,34 @@ test('one client can stop being captured while every client keeps using FULI', a
   assert.throws(() => store.update({ enabled: true, disabledSources: ['codex', 'codex'] }), /distinct supported clients/);
 });
 
+test('explicitly captured clients round-trip without lifting other clients, and turning off removes the override', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-capture-explicit-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'capture-policy.json');
+  const store = new CapturePolicyStore(path);
+  const on = store.update({ disabledSources: ['other'], capturedSources: ['opencode'] });
+  assert.deepEqual(on.disabledSources, ['other']);
+  assert.deepEqual(new CapturePolicyStore(path).read(), on);
+  assert.equal(JSON.parse(readFileSync(path, 'utf8')).version, 1);
+  assert.deepEqual(store.update({ enabled: false }).capturedSources, ['opencode']);
+  assert.equal(store.update({ disabledSources: ['other', 'opencode'] }).capturedSources, undefined);
+  assert.equal(new CapturePolicyStore(path).read().capturedSources, undefined);
+  assert.equal(store.update({ capturedSources: ['opencode'] }).capturedSources, undefined, 'explicit off wins');
+  assert.deepEqual(store.update({ disabledSources: ['other'], capturedSources: ['opencode'] }).capturedSources, ['opencode']);
+  assert.equal(store.update({ capturedSources: [] }).capturedSources, undefined);
+});
+
+test('explicitly captured clients are validated on update and on disk', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-capture-explicit-invalid-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'capture-policy.json');
+  for (const capturedSources of [null, {}, false, '', ['unknown'], ['opencode', 'opencode']]) {
+    assert.throws(() => new CapturePolicyStore().update({ capturedSources }), /capturedSources must list distinct supported clients/);
+    writeFileSync(path, JSON.stringify({ version: 1, enabled: true, updatedAt: null, capturedSources }));
+    assert.throws(() => new CapturePolicyStore(path).read(), /capturedSources must list distinct supported clients/);
+  }
+});
+
 test('policies saved before per-client capture still capture every client', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-capture-legacy-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));

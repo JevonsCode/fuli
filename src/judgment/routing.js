@@ -5,6 +5,7 @@ import { arraySchema, boundedString, enumSchema, nullableStringSchema, objectSch
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
 import { failureProvenance, judgmentProvenance, pendingRecord, TONBORG_OPERATIONS } from './backend.js';
 import { PREFERENCE_RECEIPT_RULES, preferenceDeliveryRecord, preferenceHold } from './preference-receipt.js';
+import { coversClient } from '../agents/source-applications.js';
 
 const inputSchema = z.object({ personalSpaceId: z.string().min(1).max(256), personalProjectId: z.string().min(1).max(256),
   requestId: z.string().min(1).max(256), objective: z.string().min(1).max(8000),
@@ -61,13 +62,13 @@ export async function assessRouting({ app, decide, context, service, input: raw 
       && required.every(value => (e.capabilities ?? []).some(capability => capability.toLowerCase() === value))
       && (!allowed || allowed.includes(e.executorId))).map(e => ({ executorId: e.executorId, name: e.displayName,
         client: e.executorKind, models: (e.availableModels ?? []).map(m => ({ ...m, sourceApplication: m.sourceApplication ?? e.executorKind }))
-          .filter(m => m.available && m.sourceApplication && agent.profile.allowedClients?.includes(m.sourceApplication)
+          .filter(m => m.available && m.sourceApplication && coversClient(agent.profile.allowedClients, m.sourceApplication)
             && (!m.strategyModes?.length || strategy.mode === 'adaptive' || m.strategyModes.includes(strategy.mode))
             && (strategy.reasoningEffort !== 'max' || (Array.isArray(m.reasoningEfforts) && m.reasoningEfforts.includes('max')))
             && (!m.reasoningEfforts?.length || !strategy.reasoningEffort || strategy.reasoningEffort === 'default' || m.reasoningEfforts.includes(strategy.reasoningEffort))
             && (strategy.capabilityHints ?? []).every(hint => m.capabilities?.some(value => value.toLowerCase() === hint.toLowerCase()))) })).filter(e => e.models.length);
     let conversations = [];
-    if (app.queryAgentConversations && eligible.length && !hold && agent.profile.allowedClients?.includes(policy.client)) {
+    if (app.queryAgentConversations && eligible.length && !hold && coversClient(agent.profile.allowedClients, policy.client)) {
       const list = await app.queryAgentConversations({ personalSpaceId: input.personalSpaceId,
         personalProjectId: input.personalProjectId, agentId: input.agentId,
         sourceApplication: policy.client, mode: 'list', limit: 10 });

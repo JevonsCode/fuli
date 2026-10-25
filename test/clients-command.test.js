@@ -12,7 +12,7 @@ import { discoverAgents } from '../src/setup/agents.js';
 import { writeTextFileAtomic } from '../src/storage/json-file.js';
 import { readClientPackState, writeClientPackState } from '../src/setup/agents/client-pack-store.js';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-function fixture(t, id = 'codex') {
+function fixture(t, id = 'codex', { connect = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'fuli-clients-e2e-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const dataDir = join(root, 'data'); mkdirSync(dataDir);
@@ -26,8 +26,9 @@ function fixture(t, id = 'codex') {
   const env = { FULI_DATA_DIR: dataDir }; const output = [];
   const options = { env, homeDir, confirm: async () => true, write: text => output.push(text) };
   const run = (args, overrides = {}) => runClientsCommand(args, { ...options, ...overrides });
-  const agent = discoverAgents({ homeDir, env, commandExists: () => false }).find(value => value.id === id);
-  agentAdapter(id).connect(agent, { nodePath: process.execPath, mcpServerPath: join(root, 'fake-server.js'), runtimeConfigPath: join(dataDir, 'graph-runtime.json') });
+  const agent = discoverAgents({ homeDir, env, commandExists: command => command === 'opencode', includeUnavailable: true,
+    commandVersion: () => '2.1.4' }).find(value => value.id === id);
+  if (connect) agentAdapter(id).connect(agent, { nodePath: process.execPath, mcpServerPath: join(root, 'fake-server.js'), runtimeConfigPath: join(dataDir, 'graph-runtime.json') });
   return { root, dataDir, homeDir, source, sha256: hash(manifest), run, agent, env, output };
 }
 function snapshot(root) {
@@ -165,7 +166,7 @@ for (const caller of ['install', 'observe', 'uninstall', 'start']) {
     await f.run(['update', '--apply', 'codex@99.0.0']);
     const paths = resolveSetupPaths({ dataDir: f.dataDir, env: {}, homeDir: f.homeDir });
     const discover = options => discoverAgents({ ...options,
-      env: { FULI_DATA_DIR: join(f.root, 'different-default') }, homeDir: f.homeDir, commandExists: () => true });
+      env: { FULI_DATA_DIR: join(f.root, 'different-default') }, homeDir: f.homeDir, commandExists: () => true, commandVersion: () => null });
     const check = agent => {
       assert.equal(agent.configPath, join(f.homeDir, '.codex-custom', 'config.toml'));
       assert.ok(agent.skillPath.startsWith(join(f.homeDir, '.codex-custom')));
@@ -272,3 +273,21 @@ for (const phase of ['failure restoration', 'explicit recovery']) {
     assert.equal(status.version, '1.0.0'); assert.equal(status.recoveryRequired, true);
   });
 }
+test('an OpenCode pack update applies without touching files when OpenCode is not configured', async t => {
+  const f = fixture(t, 'opencode', { connect: false });
+  await f.run(['trust', f.source, '--sha256', f.sha256]);
+  const before = snapshot(f.homeDir);
+  const applied = await f.run(['update', '--apply', 'opencode@99.0.0']);
+  assert.deepEqual([applied.status, applied.files], ['applied', 0]);
+  assert.deepEqual(snapshot(f.homeDir), before);
+  assert.equal((await f.run(['rollback', 'opencode'])).status, 'applied');
+});
+test('an OpenCode pack update rewrites the installed plugin with the new hook timeout', async t => {
+  const f = fixture(t, 'opencode');
+  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 15000/);
+  await f.run(['trust', f.source, '--sha256', f.sha256]);
+  assert.equal((await f.run(['update', '--apply', 'opencode@99.0.0'])).status, 'applied');
+  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 16000/);
+  assert.equal((await f.run(['rollback', 'opencode'])).status, 'applied');
+  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 15000/);
+});
