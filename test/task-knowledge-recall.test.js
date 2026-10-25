@@ -66,11 +66,16 @@ test('comma-separated negated actions and relative where do not trigger recall',
     'WSL Ubuntu, where `node` is installed']) {
     assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories, [], prompt);
   }
-  for (const prompt of ['Where is the deploy runbook?', 'Can you find where config.json is loaded?']) {
+  for (const prompt of ['Where is the deploy runbook?', 'Can you find where config.json is loaded?',
+    'Find where config.json is loaded', 'Show me where the API handler is defined.',
+    "I'm not sure where the backup files are stored.", 'ok where is the config file']) {
     assert.ok(planTaskKnowledgeRecall(prompt).trigger_categories.includes('artifact_location'), prompt);
   }
-  assert.ok(planTaskKnowledgeRecall('push this to production')
-    .trigger_categories.includes('release_delivery'));
+  for (const prompt of ['push this to production', "Don't push, deploy to staging instead",
+    'Never commit, ship it after review', 'Do not push to GitHub, and deploy to staging',
+    '不要推送, 部署到测试环境', '不要提交,发布到 npm']) {
+    assert.ok(planTaskKnowledgeRecall(prompt).trigger_categories.includes('release_delivery'), prompt);
+  }
 });
 
 test('self-contained workflow optimization does not trigger generic runbook recall', () => {

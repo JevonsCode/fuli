@@ -136,24 +136,25 @@ export function planTaskKnowledgeRecall(taskPrompt) {
 function positiveDeliveryClauses(prompt) {
   const action = '(?:提交|发布|发版|上线|部署|推送|再推|release|publish|push|deploy|ship|rollout|commit)';
   const target = '(?:\\s*(?:代码|变更|code|changes?|this change|(?:到|to\\s+)\\s*GitHub))?';
-  // A list can continue after a comma with or without a conjunction ("commit,
-  // push, or ..."), so the comma itself joins the negated actions.
-  const join = '(?:\\s*(?:,\\s*(?:(?:\\band\\b|\\bor\\b)\\s*)?|(?:和|或|以及|并|、|\\band\\b|\\bor\\b)\\s*))';
+  // An English list goes on after a comma only when an "or" closes it later in
+  // the clause ("commit, push, or create branches"); without one the comma
+  // starts a new instruction ("Don't push, deploy to staging instead"), and
+  // ", and" opens a positive clause. Chinese commas never join a negated list.
+  const join = '(?:\\s*,\\s*(?=[^.!?;。！？；]*\\bor\\b)(?:\\bor\\b\\s*)?|\\s*(?:和|或|以及|并|、|\\band\\b|\\bor\\b)\\s*)';
   const negated = new RegExp('(?:不要|不用|不必|无需|不得|禁止|暂不|别|不|\\bdo\\s+not\\b|\\bdon\'t\\b|\\bnever\\b|\\bno\\b)'
     + '(?:\\s|再次|再|需要|执行|进行|要|会|自动|直接)*' + action + target
     + '(?:' + join + action + target + ')*', 'giu');
   return prompt.replace(negated, ' ');
 }
 
-// A relative "where" ("WSL Ubuntu, where `node` is installed") identifies a
-// place inside a statement; only a sentence that ends with "?" or opens with
-// "where" asks where something is. A sentence ends at punctuation followed by
-// a space, so a file name such as config.json stays whole.
+// A relative "where" right after a comma ("WSL Ubuntu, where `node` is
+// installed") describes a place inside a statement; every other "where" may
+// ask for one, with or without a question mark ("Find where config.json is
+// loaded"). A question keeps even a relative one. A sentence ends at
+// punctuation followed by a space, so a file name such as config.json stays whole.
 function withoutRelativeWhere(prompt) {
   return prompt.split(/(?<=[.!?])\s+|(?<=[。！？])/u).map((sentence) => (
-    /\bwhere\b/iu.test(sentence) && !/^\s*where\b/iu.test(sentence) && !/[?？]\s*$/u.test(sentence)
-      ? sentence.replace(/\bwhere\b/giu, ' ')
-      : sentence
+    /[?？]\s*$/u.test(sentence) ? sentence : sentence.replace(/,\s*where\b/giu, ',')
   )).join(' ');
 }
 
