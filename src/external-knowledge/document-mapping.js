@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { detectSensitiveContent } from '../security/sensitive-content.js';
-import { requiredString } from '../validation/values.js';
+import { requiredResponseString } from '../validation/values.js';
 
 const MAX_CHUNK_LENGTH = 6_000;
 const MAX_EXCERPT_LENGTH = 2_048;
@@ -10,9 +10,9 @@ export function normalizeExternalDocument(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError('Connector items must be objects');
   }
-  const id = requiredString(value.id, 'Connector item id', 512);
-  const title = requiredString(value.title ?? value.name ?? id, 'Connector item title', 512);
-  const content = requiredString(value.content, 'Connector item content', 1_000_000);
+  const id = requiredResponseString(value.id, 'Connector item id', 512);
+  const title = requiredResponseString(value.title ?? value.name ?? id, 'Connector item title', 512);
+  const content = requiredResponseString(value.content, 'Connector item content', 1_000_000);
   const url = optionalOnlineUrl(value.url);
   const updatedAt = optionalDateTime(value.updatedAt, 'Connector item updatedAt');
   const metadata = plainJsonObject(value.metadata ?? {}, 'Connector item metadata');

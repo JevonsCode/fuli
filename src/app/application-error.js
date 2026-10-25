@@ -2,6 +2,7 @@ import { RoundtableError } from '../../packages/roundtable/src/errors.js';
 
 export const ApplicationErrorCode = Object.freeze({
   AGENT_ACCESS_DISABLED: 'agent_access_disabled',
+  CONNECTOR_RESPONSE_INVALID: 'connector_response_invalid',
   INVALID_INPUT: 'invalid_input',
   NOT_FOUND: 'not_found',
   VALIDATION: 'validation'
@@ -34,9 +35,22 @@ export class InvalidInputError extends TypeError {
   }
 }
 
+// A remote external-knowledge source returned data FULI cannot use (rec#48).
+// Like InvalidInputError it stays a TypeError, so connector parsing and HTTP
+// keep working, but its own code tells the Agent the bad value came from the
+// source instead of its own arguments. The message names the field, never the
+// value.
+export class ConnectorResponseError extends TypeError {
+  constructor(message) {
+    super(message);
+    this.code = ApplicationErrorCode.CONNECTOR_RESPONSE_INVALID;
+  }
+}
+
 // Errors whose code and message are written for the caller: FULI's own, a
-// caller's invalid input and those raised inside the Roundtable package it hosts.
+// caller's invalid input, a remote source's malformed response and those raised
+// inside the Roundtable package it hosts.
 export function isControlledError(error) {
   return error instanceof ApplicationError || error instanceof InvalidInputError
-    || error instanceof RoundtableError;
+    || error instanceof ConnectorResponseError || error instanceof RoundtableError;
 }
