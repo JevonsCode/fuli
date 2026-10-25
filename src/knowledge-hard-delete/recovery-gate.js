@@ -1,7 +1,7 @@
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { ApplicationError } from '../app/application-error.js';
-import { HARD_DELETE_LEDGER_FILE, readHardDeleteProof } from './delete-ledger.js';
+import { HARD_DELETE_LEDGER_FILE, ledgerStamp, readHardDeleteProof } from './delete-ledger.js';
 
 const WAIT = '等待图谱确认删除记录；请启动控制台或运行 fuli migrate reconcile-knowledge。 '
   + 'Waiting for deletion recovery; start the console or run fuli migrate reconcile-knowledge.';
@@ -22,15 +22,15 @@ export async function prepareKnowledgeRecovery(gate, spaceId, storeName) {
 // One process's proof of the current graph watermark, never a recovery writer.
 // No timer opens a gate. A stale/mutated proof closes synchronously; a successful
 // ordinary-token aggregate read must establish it again before any body access.
-export function createKnowledgeRecoveryGate({ dataDir, readWatermark, now = () => performance.now(), maxAgeMs = 60_000 }) {
+export function createKnowledgeRecoveryGate({ dataDir, readWatermark, now = () => performance.now(), maxAgeMs = 60_000,
+  statFile = statSync }) {
   if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0 || maxAgeMs > 60_000) throw new TypeError('Recovery proof lasts at most 60 seconds');
   const proofs = new Map();
   const pending = new Map();
   const file = join(dataDir, HARD_DELETE_LEDGER_FILE);
   function snapshot() {
     try {
-      const stat = statSync(file);
-      const stamp = `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}:${stat.ino}`;
+      const stamp = ledgerStamp(file, statFile);
       return { stamp, document: readHardDeleteProof(dataDir) };
     } catch (error) {
       if (error.code === 'ENOENT') return { stamp: 'missing', document: null };

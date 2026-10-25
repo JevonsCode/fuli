@@ -5,8 +5,12 @@ import {
   statSync
 } from 'node:fs';
 import path from 'node:path';
-import { ApplicationError } from '../app/application-error.js';
+import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { hostPathOfCallerPath } from '../system/platform-path.js';
+
+// Says what to pass, never the path the caller sent.
+const INVALID_PATH_MESSAGE = 'projectPath must be an existing absolute directory. '
+  + 'Pass the absolute path of the current working directory.';
 
 const UNSUPPORTED_PATH_MESSAGE = 'projectPath is a WSL or POSIX path this Windows FULI cannot open. '
   + 'Pass the Windows path of the current working directory, such as C:\\Users\\name\\project; '
@@ -31,16 +35,16 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     return unresolved('not_provided');
   }
   if (typeof projectPath !== 'string' || !projectPath.trim()) {
-    throw new TypeError('projectPath must be an existing absolute directory');
+    throw new InvalidInputError(INVALID_PATH_MESSAGE);
   }
   const hostPath = hostProjectPath(projectPath, pathApi);
   if (!pathApi.isAbsolute(hostPath)) {
-    throw new TypeError('projectPath must be an existing absolute directory');
+    throw new InvalidInputError(INVALID_PATH_MESSAGE);
   }
 
   const currentPath = realPath(pathApi.resolve(hostPath));
   if (!fileExists(currentPath) || !isDirectory(currentPath)) {
-    throw new TypeError('projectPath must be an existing absolute directory');
+    throw new InvalidInputError(INVALID_PATH_MESSAGE);
   }
 
   const projectIds = new Set(

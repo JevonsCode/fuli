@@ -3,6 +3,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
+import { fileIdentity } from '../system/file-identity.js';
 import { jsonFormat, requireJsonFormatVersion, updateVersionedJsonFileAtomic, withJsonFormatDirectory } from '../storage/json-format.js';
 import { knowledgeReferences } from './forget-references.js';
 import { hardDeleteLedgerSchema, HARD_DELETE_LEDGER_FINGERPRINT, ledgerDocument } from './ledger-format.js';
@@ -91,9 +92,18 @@ export function hardDeleteLedger(dataDir, { now = () => new Date() } = {}) {
   };
 }
 
+// What says the ledger file changed since it was last read: its exact
+// identity (rec#49), size and nanosecond times. A stamp lives only in process
+// memory and is never written, so no stamp of an older format is compared
+// with it; any difference reads the ledger again.
+export function ledgerStamp(path, statFile = statSync) {
+  const stat = statFile(path, { bigint: true });
+  return `${fileIdentity(stat)}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+}
+
 // The fence for a store file in a data directory, read again whenever the
 // ledger beside it changes. A store in memory has none.
-export function deletedKnowledgeBeside(storePath) {
+export function deletedKnowledgeBeside(storePath, { statFile = statSync } = {}) {
   if (!storePath || storePath === ':memory:') return () => knowledgeReferences({});
   const path = join(dirname(storePath), HARD_DELETE_LEDGER_FILE);
   let seen = null;
@@ -102,8 +112,7 @@ export function deletedKnowledgeBeside(storePath) {
   return (spaceId = undefined) => {
     let stamp;
     try {
-      const stat = statSync(path);
-      stamp = `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}:${stat.ino}`;
+      stamp = ledgerStamp(path, statFile);
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error;
       stamp = 'missing';

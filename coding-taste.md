@@ -36,12 +36,14 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Behavior | Home | Notes |
 | --- | --- | --- |
 | Canonical JSON for hashing and signing | `packages/roundtable/src/canonical-json.js` | One canonical form for the whole product. Hashes and signatures must not depend on which module computed them. |
-| Input value checks (`requiredString`, `nonEmptyText`, `positiveInteger`, `uniqueTextArray`, `assertJsonObject`) | `src/validation/values.js` | Throw `TypeError` with the caller's label. Shared by connectors, MCP argument parsing and HTTP routes. |
+| Input value checks (`requiredString`, `nonEmptyText`, `positiveInteger`, `uniqueTextArray`, `assertJsonObject`) | `src/validation/values.js` | Throw `InvalidInputError` with the caller's label. Shared by connectors, MCP argument parsing and HTTP routes. |
+| A caller's argument FULI cannot use | `src/app/application-error.js` (`InvalidInputError`, code `invalid_input`) | A `TypeError`, so HTTP still answers 400; MCP shows its code and message instead of `internal_error`. The message names the argument and what to pass, never the value. Internal invariants stay plain `TypeError`. |
 | Deep freeze of config defaults | `src/validation/values.js` | |
 | SHA-256 of text, bytes and files | `src/security/digest.js` (`sha256Bytes`, `sha256File`) | One place that decides encoding (`hex`) and streaming for files. |
 | Graph Provider readiness wait, managed-workspace detection, process liveness | `src/local-runtime/provider-readiness.js`, `src/local-runtime/processes.js` | Setup, native runtime, adaptive runtime and backup restore all call the same wait with their own timeout and error text. |
 | Promise-based sleep | `node:timers/promises` (`setTimeout as delay`) | Do not hand-roll `new Promise((resolve) => setTimeout(resolve, ms))`. |
 | Atomic text and JSON file writes | `src/storage/json-file.js` (`writeTextFileAtomic`, `writeJsonFileAtomic`) | Keeps the existing file mode; new files are private. `durable` flushes before the replace. A rename Windows refuses while a reader has the file open is retried for a bounded time. No module renames a temporary file into place by hand. |
+| A file's exact identity (`dev:ino`) | `src/system/file-identity.js` (`fileIdentity`) | Takes a stat read with `{ bigint: true }` and refuses a Number stat: Windows file IDs exceed 2^53 (rec#49). |
 | One-line display text | `src/text/single-line.js` | |
 | A UTF-8 byte-bounded text prefix (whole code points plus …) | `src/text/utf8-preview.js` (`utf8Preview`) | Pass `measure` to bound the serialized bytes actually sent. |
 | A SQLite store's data format: version, migrations, ledger, backup, version guard | `packages/roundtable/src/storage/database-format.js` (`sqliteFormat`, `openFormattedDatabase`) | A store declares its schema and migrations there and opens its file only through it; no `new DatabaseSync` or DDL anywhere else (rec#17 D-09). |

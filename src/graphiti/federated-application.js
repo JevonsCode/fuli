@@ -17,7 +17,7 @@ import {
   personalTokenRefresher,
   readGraphRuntimeConfig
 } from './runtime-config.js';
-import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { ApplicationError, ApplicationErrorCode, InvalidInputError } from '../app/application-error.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import {
   CapturePolicyStore,
@@ -354,7 +354,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
         && resolution.personalProjectId
         && personalProjectId !== resolution.personalProjectId
       ) {
-        throw new TypeError(
+        throw new InvalidInputError(
           'personalProjectId conflicts with the exact projectPath match'
         );
       }
