@@ -167,6 +167,45 @@ test('a plain item that is still plain stays named for every reader; its words s
   assert.match(full.human_interaction.question, new RegExp(SUMMARY));
 });
 
+test('an injection-flagged review keeps its signal names, never a later aiReview field, and asks only a reader who sees it', async t => {
+  const f = await reviewed(t);
+  const MODEL_REASON = 'Synthetic model reason a later aiReview field could carry';
+  // Stored last, so it is the first question candidate of the list.
+  const flagged = f.service.store().record(SPACE, { personalProjectId: PROJECT, kind: 'review', target: 'entity:one',
+    title: 'Synthetic preference', summary: SUMMARY, evidence: [EVIDENCE], confidence: 0.95, outcome: 'escalate',
+    aiReview: { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['injection_suspected', 'batch_contaminated'],
+      gate: { status: 'passed', reason: null, modelId: 'synthetic-model' },
+      injectionSignals: ['reviewer_instruction', 'hidden_characters', MODEL_REASON], injectionInBatch: true,
+      modelReason: MODEL_REASON } }, 'synthetic-flagged');
+  const structure = { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['injection_suspected', 'batch_contaminated'],
+    gate: { status: 'passed', reason: null, modelId: 'synthetic-model' },
+    injectionSignals: ['reviewer_instruction', 'hidden_characters'], injectionInBatch: true };
+  f.items['entity:one'] = { agentId: 'fla-a', projectId: PROJECT };
+  for (const reader of [FLA_A, FLA_B]) {
+    const result = await f.list(reader);
+    const shown = byId(result, flagged);
+    assert.deepEqual(shown.aiReview, structure);
+    assert.equal(shown.summary, undefined);
+    for (const field of ['aiReview.injectionSignals', 'aiReview.modelReason', 'evidence', 'summary']) {
+      assert.ok(shown.content_withheld.includes(field), field);
+    }
+    assertNoWords(result);
+    assert.ok(!JSON.stringify(result).includes(MODEL_REASON), 'neither as a field nor as a signal name');
+  }
+  // FLA-A sees the item: it is asked, with the known signals only.
+  const own = await f.list(FLA_A);
+  assert.equal(own.human_interaction.source.id, flagged.id);
+  assert.match(own.human_interaction.question, /\(reviewer_instruction, hidden_characters\)\. /);
+  // FLA-B may not see it: no question about it, and its target stays out.
+  const other = await f.list(FLA_B);
+  const hidden = byId(other, flagged);
+  assert.equal(hidden.target, undefined);
+  assert.equal(hidden.target_withheld, 'not_visible');
+  assert.ok(hidden.content_withheld.includes('target') && hidden.content_withheld.includes('title'));
+  assert.notEqual(other.human_interaction.source.id, flagged.id);
+  assert.equal(other.human_interaction.source.id, f.two.id);
+});
+
 test('an FLA reader names one project, and the Provider decides whether it is that project\'s FLA', async t => {
   const f = await reviewed(t);
   await assert.rejects(dispatchGraphTool(f.app, 'list_judgments', { personalSpaceId: SPACE, projectAgentId: 'fla-a' }), TypeError);

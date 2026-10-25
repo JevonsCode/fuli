@@ -69,6 +69,9 @@ const PATTERNS = Object.freeze({
 // (the emoji joiner U+200D is ordinary), word joiners, byte order marks,
 // bidirectional controls and Unicode tag characters.
 const HIDDEN = /[​‌⁠-⁤﻿‪-‮⁦-⁩]|[\u{E0000}-\u{E007F}]/u;
+
+// Every signal name injectionSignals can report; an Agent view keeps no other (agent-view.js).
+export const INJECTION_SIGNALS = Object.freeze([...Object.keys(PATTERNS), 'hidden_characters']);
 const INVISIBLE = /[­​-‏‪-‮⁠-⁤⁦-⁩﻿]|[\u{E0000}-\u{E007F}]/gu;
 
 // The text a reader sees: invisible characters removed and full-width forms
