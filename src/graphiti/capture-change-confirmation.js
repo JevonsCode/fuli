@@ -6,6 +6,7 @@ import { ApplicationError } from '../app/application-error.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { projectOff } from './capture-project-mode.js';
+import { coversClient, SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 // An Agent never completes a long-term capture change (rec#5 C4-2, rec#11
 // D-16). Anything an Agent relays (a token, a "yes", a turn) is unverifiable,
@@ -23,7 +24,7 @@ const PREVIEW_TTL_MS = 30 * 60 * 1000;
 const MAX_PENDING_PREVIEWS = 20;
 const ID_BYTES = 18;
 const MAX_SNAPSHOT_ATTEMPTS = 5;
-const COMPARED_SETTINGS = Object.freeze(['enabled', 'disabledSources', 'projectMode', 'excludedProjectIds',
+const COMPARED_SETTINGS = Object.freeze(['enabled', 'disabledSources', 'capturedSources', 'projectMode', 'excludedProjectIds',
   'selectedProjectIds', 'unregisteredDirectories']);
 const CLIENT_LABELS = Object.freeze({ codex: 'Codex', claude: 'Claude', claude_code: 'Claude Code', cursor: 'Cursor',
   kiro: 'Kiro', opencode: 'OpenCode', other: '其他客户端' });
@@ -161,8 +162,8 @@ function readCaptureChange({ store, previews }, previewId) {
   return { status: preview.settingsVersion === store.version() ? 'pending' : 'stale', preview: preview.preview,
     sourceApplication: preview.sourceApplication, sessionId: preview.sessionId, createdAt: preview.createdAt,
     expiresAt: new Date(preview.expiresAt).toISOString(), current: store.read(),
-    changes: COMPARED_SETTINGS.filter(key => canonicalJson(current[key]) !== canonicalJson(next[key]))
-      .map(key => ({ setting: key, before: current[key], after: next[key] })) };
+    changes: COMPARED_SETTINGS.filter(key => canonicalJson(current[key] ?? []) !== canonicalJson(next[key] ?? []))
+      .map(key => ({ setting: key, before: current[key] ?? [], after: next[key] ?? [] })) };
 }
 
 function confirmCaptureChange({ store, previews }, previewId) {
@@ -188,7 +189,8 @@ function stale() {
 }
 
 function intentOf(settings) {
-  return canonicalJson(Object.fromEntries(COMPARED_SETTINGS.map(key => [key, settings[key]])));
+  // Optional client lists compare as empty lists, never undefined canonical JSON.
+  return canonicalJson(Object.fromEntries(COMPARED_SETTINGS.map(key => [key, settings[key] ?? []])));
 }
 
 function sameSettings(current, next) {
@@ -203,9 +205,11 @@ function describeCaptureChange(current, next, names) {
   if (current.enabled !== next.enabled) {
     changes.push(next.enabled ? '打开自动记录' : '关闭自动记录，所有客户端和项目都不再记录');
   }
-  const clients = (from, to) => to.filter(source => !from.includes(source)).map(source => CLIENT_LABELS[source]);
-  const stoppedClients = clients(current.disabledSources, next.disabledSources);
-  const resumedClients = clients(next.disabledSources, current.disabledSources);
+  const off = (policy, source) => coversClient(policy.disabledSources, source, { explicit: policy.capturedSources ?? [] });
+  const clients = (from, to) => SOURCE_APPLICATIONS.filter(source => !off(from, source) && off(to, source))
+    .map(source => CLIENT_LABELS[source]);
+  const stoppedClients = clients(current, next);
+  const resumedClients = clients(next, current);
   if (stoppedClients.length) changes.push(`不再记录 ${stoppedClients.join('、')} 的会话`);
   if (resumedClients.length) changes.push(`恢复记录 ${resumedClients.join('、')} 的会话`);
   changes.push(...projectChanges(current, next, name));
@@ -215,7 +219,12 @@ function describeCaptureChange(current, next, names) {
   }
   // A mode switch that leaves every project as it was (all to all_except with
   // nobody excluded yet) still changes what later switches mean.
-  if (!changes.length) changes.push('调整项目的记录方式，目前哪些项目被记录不变');
+  if (!changes.length) {
+    const clientsChanged = current.disabledSources.join(',') !== next.disabledSources.join(',')
+      || current.capturedSources?.join(',') !== next.capturedSources?.join(',');
+    changes.push(clientsChanged ? '调整客户端的记录方式，目前哪些客户端被记录不变'
+      : '调整项目的记录方式，目前哪些项目被记录不变');
+  }
   return `将${changes.join('；')}，已有记录保留。确认吗？`;
 }
 

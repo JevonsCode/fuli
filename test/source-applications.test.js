@@ -14,6 +14,9 @@ test('a list naming `other` covers OpenCode until it names OpenCode itself, and 
   assert.equal(coversClient(undefined, 'opencode'), false);
   assert.equal(coversClient(['other'], 'codex'), false);
   assert.equal(coversClient(['opencode'], 'other'), false);
+  assert.equal(coversClient(['other'], 'opencode', { explicit: ['opencode'] }), false);
+  assert.equal(coversClient(['other', 'opencode'], 'opencode', { explicit: ['opencode'] }), true);
+  assert.equal(coversClient(['other'], 'other', { explicit: ['opencode'] }), true);
 });
 
 test('an existing Agent that allowed `other` loads its memory in OpenCode, with its stored profile unchanged', async () => {
@@ -41,6 +44,7 @@ test('every client list in the tool schemas can hold every source', () => {
   };
   for (const tool of listAgentTools()) walk(tool.name, tool.inputSchema, '');
   assert.ok(lists.some(([name]) => name === 'update_capture_policy.disabledSources'));
+  assert.ok(lists.some(([name]) => name === 'update_capture_policy.capturedSources'));
   assert.ok(lists.some(([name]) => name === 'upsert_project_agent.profile.allowedClients'));
   for (const [name, schema] of lists) {
     assert.deepEqual(schema.items.enum, [...SOURCE_APPLICATIONS], name);

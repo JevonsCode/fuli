@@ -121,7 +121,7 @@ const conversationIdFormatOptions = computed(() => [
 const captureEnabled = computed(() => store.state?.capturePolicy?.enabled !== false)
 // Capture is per client; a client that is off still reads memory through its tools.
 const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor'], ['opencode', 'OpenCode']] as const
-const disabledCaptureSources = computed(() => store.state?.capturePolicy?.disabledSources ?? [])
+const captureSources = computed(() => store.state?.capturePolicy ?? {})
 const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFromConfirmed !== false)
 const agentAccessEnabled = computed(() =>
   store.state?.agentAccessPolicy?.enabled !== false,
@@ -265,7 +265,7 @@ function stopPolling() {
 }
 
 function toggleClientCapture(source: string, capture: boolean) {
-  void store.updateCapturePolicy(captureEnabled.value, withCaptureSource(disabledCaptureSources.value, source, capture))
+  void store.updateCapturePolicy(captureEnabled.value, withCaptureSource(captureSources.value, source, capture))
 }
 
 function toggleCapture(enabled: boolean) {
@@ -424,7 +424,7 @@ async function submitSettings(event: Event) {
                     <p class="setting-note">{{ t('settings.behavior.captureClientsMeta') }}</p>
                     <label v-for="[source, label] in CAPTURE_CLIENTS" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
                       <span><strong>{{ label }}</strong></span>
-                      <UiToggle :model-value="!captureSourceOff(disabledCaptureSources, source)" :label="label" @update:model-value="toggleClientCapture(source, $event)" />
+                      <UiToggle :model-value="!captureSourceOff(captureSources, source)" :label="label" @update:model-value="toggleClientCapture(source, $event)" />
                     </label>
                   </template>
                   <label class="setting-row" data-recall-answer-from-confirmed>

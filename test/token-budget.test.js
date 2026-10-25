@@ -122,7 +122,10 @@ const BASELINE = Object.freeze({
   // rec#11 D-64: OpenCode's own source application, so its hook tasks, capture switch and allowed
   // clients stop being shared with every `other` client: "opencode" joins each source enum the full
   // profile lists (about 11 B each): 191,482 -> 191,691 B (+209 B), measured. Chat is unchanged.
-  fullToolSchemaBytes: 191691,
+  // D-64 capture isolation: optional capturedSources lets OpenCode override only
+  // the legacy other alias without enabling generic clients: +262 B, measured.
+  // Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 191953,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

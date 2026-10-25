@@ -221,7 +221,7 @@ test('the Agent can read and ask to change project modes; the person confirms in
   const update = listAgentTools().find(tool => tool.name === 'update_capture_policy');
   assert.match(update.description, /never saved by this tool/);
   assert.match(update.description, /confirm or cancel in the FULI console/);
-  assert.deepEqual(Object.keys(update.inputSchema.properties).sort(), ['disabledSources', 'enabled',
+  assert.deepEqual(Object.keys(update.inputSchema.properties).sort(), ['capturedSources', 'disabledSources', 'enabled',
     'excludedProjectIds', 'projectMode', 'recordProjects', 'selectedProjectIds', 'sessionPaused',
     'taskContextToken', 'unregisteredDirectories']);
   assert.equal(update.inputSchema.required, undefined, 'a project change does not resend the global switch');

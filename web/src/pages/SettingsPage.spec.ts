@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { useConsoleStore } from '@/stores/console'
+import type { ConsoleState } from '@/types'
 import { DEFAULT_CONVERSATION_LAUNCHERS } from '@/features/knowledge/source-adapters'
 import SettingsPage from './SettingsPage.vue'
 
@@ -467,9 +468,20 @@ describe('SettingsPage', () => {
     expect(codex.attributes('aria-checked')).toBe('false')
     expect(claude.attributes('aria-checked')).toBe('true')
     await claude.trigger('click')
-    expect(update).toHaveBeenLastCalledWith(true, ['codex', 'claude_code'])
+    expect(update).toHaveBeenLastCalledWith(true, { disabledSources: ['codex', 'claude_code'], capturedSources: [] })
     await codex.trigger('click')
-    expect(update).toHaveBeenLastCalledWith(true, [])
+    expect(update).toHaveBeenLastCalledWith(true, { disabledSources: [], capturedSources: ['codex'] })
+    store.state = { ...(store.state as ConsoleState), capturePolicy: { enabled: true, disabledSources: ['other'] } }
+    await flushPromises()
+    const opencode = wrapper.get('[data-capture-source="opencode"] [role="switch"]')
+    expect(opencode.attributes('aria-checked')).toBe('false')
+    await opencode.trigger('click')
+    expect(update).toHaveBeenLastCalledWith(true, { disabledSources: ['other'], capturedSources: ['opencode'] })
+    store.state = { ...store.state!, capturePolicy: { enabled: true, disabledSources: ['other'], capturedSources: ['opencode'] } }
+    await flushPromises()
+    expect(opencode.attributes('aria-checked')).toBe('true')
+    await opencode.trigger('click')
+    expect(update).toHaveBeenLastCalledWith(true, { disabledSources: ['other', 'opencode'], capturedSources: [] })
     wrapper.unmount()
   })
 

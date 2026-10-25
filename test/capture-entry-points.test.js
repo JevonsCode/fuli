@@ -52,6 +52,39 @@ async function api(f, method, body) {
   return sent;
 }
 
+test('the console accepts and validates explicit client capture beside disabledSources', async (t) => {
+  const f = await fixture(t);
+  const change = { disabledSources: ['other'], capturedSources: ['opencode'] };
+  const saved = await api(f, 'PATCH', change);
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body.capturedSources, ['opencode']);
+  assert.deepEqual((await api(f, 'GET')).body.disabledSources, ['other']);
+  assert.equal((await api(f, 'PATCH', { capturedSources: ['unknown'] })).status, 400);
+  assert.equal((await api(f, 'PATCH', { capturedSources: null })).status, 400);
+});
+
+test('an Agent preview names the client resumed through an explicit override and the console confirms it', async (t) => {
+  const f = await fixture(t);
+  f.store.update({ disabledSources: ['other'] });
+  const change = { capturedSources: ['opencode'] };
+  const asked = await callAgentTool(f.app, 'update_capture_policy', change);
+  assert.equal(asked.preview, '将恢复记录 OpenCode 的会话，已有记录保留。确认吗？');
+  assert.equal(f.store.read().capturedSources, undefined);
+  const preview = await consoleChange(f, 'GET', previewIdOf(asked));
+  assert.deepEqual(preview.body.changes, [{ setting: 'capturedSources', before: [], after: ['opencode'] }]);
+  const confirmed = await consoleChange(f, 'POST', previewIdOf(asked), 'confirm');
+  assert.deepEqual(confirmed.body.disabledSources, ['other']);
+  assert.deepEqual(confirmed.body.capturedSources, ['opencode']);
+  const stop = await callAgentTool(f.app, 'update_capture_policy', { capturedSources: [] });
+  assert.equal(stop.preview, '将不再记录 OpenCode 的会话，已有记录保留。确认吗？');
+  f.store.update({ disabledSources: [], capturedSources: [] });
+  const alreadyOn = await callAgentTool(f.app, 'update_capture_policy', change);
+  assert.equal(alreadyOn.preview, '将调整客户端的记录方式，目前哪些客户端被记录不变，已有记录保留。确认吗？');
+  f.store.update({ disabledSources: ['other'] });
+  const alreadyOff = await callAgentTool(f.app, 'update_capture_policy', { disabledSources: ['other', 'opencode'] });
+  assert.equal(alreadyOff.preview, '将调整客户端的记录方式，目前哪些客户端被记录不变，已有记录保留。确认吗？');
+});
+
 test('C4-1 one project switch is applied to the settings it is saved with', async (t) => {
   const f = await fixture(t);
   // Every project recorded, stray folders skipped: switching one project off keeps the folder choice.

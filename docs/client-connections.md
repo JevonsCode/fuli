@@ -142,6 +142,8 @@ extension interface cannot connect directly.
 
 Capture can be turned off per client (`disabledSources` in the capture policy, or the per-client switches in Settings). A client that is off keeps its tools and can still read existing memory; it only stops adding new conversations, knowledge candidates and working memory. The global switch still turns capture off for every client.
 
+For compatibility (rec#11 D-64), a stored list containing `other` also covers `opencode`, which previously used that source. Turning OpenCode capture on keeps `other` in `disabledSources` and adds `opencode` to the optional `capturedSources` list: this overrides the legacy alias for OpenCode alone, leaving Gemini CLI, Qwen Code and generic MCP clients off. Turning OpenCode off removes that override and lists it in `disabledSources`; an explicit disabled entry always wins. Allowed-client profiles use the same legacy coverage rule. Capture policy files remain at format version 1 (or 2 for project modes): older readers build the policy field by field and ignore unknown fields, so they ignore `capturedSources` and keep the legacy capture restriction.
+
 New dedicated adapters belong behind the shared client ports. They should add only host-specific
 configuration, hooks, transcript parsing, or execution, never a second version of Fuli's knowledge
 and role rules. Missing enhancements must remain explicit; a generic connection must not claim

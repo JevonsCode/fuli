@@ -123,7 +123,7 @@ async function decide(application, scope) {
   if (!policy.enabled) return { policy, decision: denied('global_off', 'global') };
   // A write that names no client comes from an unknown client, as at every
   // other FULI boundary. Settings saved before per-client capture list none.
-  if (coversClient(policy.disabledSources, scope.sourceApplication ?? 'other')) {
+  if (coversClient(policy.disabledSources, scope.sourceApplication ?? 'other', { explicit: policy.capturedSources ?? [] })) {
     return { policy, decision: denied('client_off', 'client') };
   }
   let project = null;
@@ -146,7 +146,8 @@ async function decide(application, scope) {
 
 function understoodSettings(policy) {
   if (typeof policy?.enabled !== 'boolean'
-    || (policy.disabledSources !== undefined && !Array.isArray(policy.disabledSources))) return null;
+    || (policy.disabledSources !== undefined && !Array.isArray(policy.disabledSources))
+    || (policy.capturedSources !== undefined && !Array.isArray(policy.capturedSources))) return null;
   try {
     return storedProjectSettings(policy, TypeError);
   } catch {
