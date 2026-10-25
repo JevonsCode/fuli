@@ -3,7 +3,7 @@
 // real-process cases start only FULI's own Node with synthetic scripts in a
 // temporary directory; no OpenCode, FULI data directory or Provider is used.
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -17,7 +17,7 @@ const CONFIG = Object.freeze({ nodePath: '/runtime/node', hookPath: '/pkg/src/ag
   runtimeConfigPath: '/data/graph-runtime.json', events: ['prompt', 'execution.succeeded'], timeoutMs: 10_000 });
 
 // A fake OpenCode V2 plugin context: session hooks, session lookup and an event stream.
-function openCode({ sessions = {} } = {}) {
+function openCode({ sessions = {}, getSession } = {}) {
   const hooks = {};
   const queued = [];
   let wake = null;
@@ -26,7 +26,7 @@ function openCode({ sessions = {} } = {}) {
     location: { directory: '/synthetic/project' },
     session: {
       hook: async (name, callback) => { hooks[name] = callback; return { dispose: async () => {} }; },
-      get: async ({ sessionID }) => sessions[sessionID] ?? { id: sessionID, location: { directory: '/synthetic/project' } }
+      get: getSession ?? (async ({ sessionID }) => sessions[sessionID] ?? { id: sessionID, location: { directory: '/synthetic/project' } })
     },
     event: {
       subscribe: ({ signal }) => ({
@@ -61,6 +61,7 @@ function recordingHook(answers = {}) {
   const runs = [];
   return { runs, runHook: async (call) => {
     runs.push(call);
+    call.onSent?.();
     const event = call.args[call.args.indexOf('--event') + 1];
     return typeof answers[event] === 'function' ? answers[event](call) : answers[event] ?? {};
   } };
@@ -111,6 +112,90 @@ test('a successful execution runs the stop; a failed or interrupted one closes n
   }
   await host.emit('session.execution.succeeded', 'ses-unknown');
   assert.equal(hook.runs.at(-1).args[5], 'prompt', 'a session the plugin never entered is not stopped');
+});
+
+const stops = (hook) => hook.runs.filter((run) => run.args[5] === 'stop');
+
+// `opencode run` exits on the succeeded event and its server unloads plugins
+// right after, so the close must also come from unload, and still only once.
+test('unload closes an open turn that succeeded once, and a later succeeded event does not close it again', async () => {
+  const sessions = {};
+  const hook = recordingHook({ prompt: { context: 'entry' } });
+  const host = openCode({ sessions });
+  const cleanup = await fuliOpenCodePlugin(CONFIG, { ...hook, now: () => 1_000_000 }).setup(host.ctx);
+  await host.prompt('ses-1', 'one');
+  sessions['ses-1'] = { id: 'ses-1', outcome: 'succeeded', time: { idle: 1_002_000 } };
+  await cleanup();
+  assert.deepEqual(stops(hook).map((run) => [run.input, run.detached, run.args.slice(-2)]),
+    [[{ session_id: 'ses-1' }, true, ['--timeout-ms', '5000']]], 'a detached close with the short deadline');
+  await host.emit('session.execution.succeeded', 'ses-1');
+  assert.equal(stops(hook).length, 1);
+});
+
+test('a succeeded event closes the turn once, and unload after it closes nothing more', async () => {
+  const hook = recordingHook({ prompt: { context: 'entry' } });
+  const host = openCode();
+  const cleanup = await fuliOpenCodePlugin(CONFIG, hook).setup(host.ctx);
+  await host.prompt('ses-1', 'one');
+  await host.emit('session.execution.succeeded', 'ses-1');
+  await host.emit('session.execution.succeeded', 'ses-1');
+  await cleanup();
+  assert.equal(stops(hook).length, 1);
+  assert.equal(stops(hook)[0].detached, true);
+});
+
+test('unload leaves a failed, interrupted or still running turn open, and closes one OpenCode can no longer describe', async () => {
+  for (const [session, expected] of [
+    [{ outcome: 'failed', time: { idle: 1_002_000 } }, 0],
+    [{ outcome: 'interrupted', time: { idle: 1_002_000 } }, 0],
+    [{ outcome: 'succeeded', time: { idle: 900_000 } }, 0],
+    [{ time: {} }, 0]
+  ]) {
+    const sessions = {};
+    const hook = recordingHook({ prompt: { context: 'entry' } });
+    const host = openCode({ sessions });
+    const cleanup = await fuliOpenCodePlugin(CONFIG, { ...hook, now: () => 1_000_000 }).setup(host.ctx);
+    await host.prompt('ses-1', 'one');
+    sessions['ses-1'] = { id: 'ses-1', ...session };
+    await cleanup();
+    assert.equal(stops(hook).length, expected, JSON.stringify(session));
+  }
+  let shuttingDown = false;
+  const hook = recordingHook({ prompt: { context: 'entry' } });
+  const host = openCode({ getSession: async ({ sessionID }) => {
+    if (shuttingDown) throw new Error('server closing');
+    return { id: sessionID };
+  } });
+  const cleanup = await fuliOpenCodePlugin(CONFIG, hook).setup(host.ctx);
+  await host.prompt('ses-1', 'one');
+  shuttingDown = true;
+  await cleanup();
+  assert.equal(stops(hook).length, 1);
+});
+
+test('unload hands a real close its input and returns without waiting for it to finish', async (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'p63-opencode-hook-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const marker = path.join(directory, 'stop.json');
+  const hookPath = path.join(directory, 'hook.js');
+  writeFileSync(hookPath, `const { writeFileSync } = require('node:fs');
+let input = '';
+process.stdin.on('data', (chunk) => { input += chunk; });
+process.stdin.on('end', () => {
+  const event = process.argv[process.argv.indexOf('--event') + 1];
+  if (event === 'prompt') return process.stdout.write(JSON.stringify({ context: 'entry' }) + '\\n');
+  setTimeout(() => writeFileSync(${JSON.stringify(marker)}, input), 300);
+});
+`);
+  const host = openCode({ getSession: async () => null });
+  const cleanup = await fuliOpenCodePlugin({ ...CONFIG, nodePath: process.execPath, hookPath }).setup(host.ctx);
+  await host.prompt('ses-1', 'one');
+  const started = Date.now();
+  await cleanup();
+  assert.ok(Date.now() - started < 1_000, 'unload waits only for the handoff');
+  const deadline = Date.now() + 5_000;
+  while (!existsSync(marker) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual(JSON.parse(readFileSync(marker, 'utf8')), { session_id: 'ses-1' });
 });
 
 test('a stop and the next prompt of a session never overlap', async (t) => {
