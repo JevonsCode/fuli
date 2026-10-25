@@ -171,7 +171,7 @@ test('fuli open gets a sign-in only with the data directory\'s token; the code i
     assert.deepEqual([refused.status, refused.json.code], [403, 'console_sign_in_refused'], 'no sign-in is issued');
   }
   const issued = await call(codes, { method: 'POST', headers: { 'x-fuli-console-sign-in': SIGN_IN_TOKEN }, body: { next: '/inbox' } });
-  assert.equal(issued.status, 200);
+  assert.equal(issued.status, 200, JSON.stringify(issued.json));
   assert.equal(issued.headers['cache-control'], 'no-store');
   assert.deepEqual(Object.keys(issued.json).sort(), ['expiresInMs', 'launcherPath'], 'the answer holds no code');
   const { launcherPath } = issued.json;
