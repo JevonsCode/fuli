@@ -12,7 +12,7 @@ import { PREFERENCE_RECEIPT_RULES, preferenceDeliveryRecord, preferenceHold } fr
 const id = z.string().min(1).max(256);
 const request = z.object({ personalSpaceId: id, personalProjectId: id, requestId: id,
   taskId: id, taskContextToken: id, artifactRevision: id.max(160), expectedRevision: z.number().int().min(0),
-  sourceApplication: z.enum(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other']),
+  sourceApplication: z.enum(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other']),
   sourceSessionId: id.optional(), sourceSessionVerified: z.boolean().optional() }).strict();
 const verdictSchema = objectSchema(verdictProperties, VERDICT_FIELDS);
 const VERDICT_EXAMPLE = '{"outcome":"approve|escalate","summary":"concise reason","evidence":["specific evidence"],"confidence":0.0}';

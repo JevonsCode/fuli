@@ -26,7 +26,7 @@ const MAX_SNAPSHOT_ATTEMPTS = 5;
 const COMPARED_SETTINGS = Object.freeze(['enabled', 'disabledSources', 'projectMode', 'excludedProjectIds',
   'selectedProjectIds', 'unregisteredDirectories']);
 const CLIENT_LABELS = Object.freeze({ codex: 'Codex', claude: 'Claude', claude_code: 'Claude Code', cursor: 'Cursor',
-  kiro: 'Kiro', other: '其他客户端' });
+  kiro: 'Kiro', opencode: 'OpenCode', other: '其他客户端' });
 const CONSOLE_GUIDANCE = 'Nothing changed. Show preview and confirmUrl to the user word for word; they confirm or cancel in the FULI console. You cannot complete this change.';
 const NO_CONSOLE_GUIDANCE = 'Nothing changed. Show preview to the user word for word; they can make this change in the FULI console settings. You cannot complete this change.';
 // What the console says for a preview it can no longer apply: unknown, used,

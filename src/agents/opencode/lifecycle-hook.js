@@ -18,13 +18,12 @@ import { readHookInput } from '../lifecycle-input.js';
 // Node for each event, as the Claude Code and Codex hooks are started. Input
 // is the plugin's JSON on stdin; the answer is one JSON line: `{ context }`
 // for a prompt (system text for that turn's model requests), `{}` for a stop.
-const OPENCODE_EVENTS =Object.freeze(['prompt', 'stop']);
+const OPENCODE_EVENTS = Object.freeze(['prompt', 'stop']);
 
-// OpenCode has no source application of its own in FULI yet; its MCP entry
-// runs as `other` too, so a hook task and the model's MCP calls share one
-// session namespace. A dedicated value needs every source enum (JS and the
-// graph Provider) to learn it first.
-const SOURCE_APPLICATION = 'other';
+// OpenCode's own source application (rec#11 D-64); its MCP entry runs as
+// `opencode` too, so a hook task and the model's MCP calls share one session
+// namespace that no other `other` client shares.
+const SOURCE_APPLICATION = 'opencode';
 const STOP_TIMEOUT_MS = 5_000;
 const DEFAULT_PROMPT_TIMEOUT_MS = 10_000;
 
@@ -156,7 +155,9 @@ async function closeQuietly(resource) {
   }
 }
 
+// The answer is the process's whole job: it exits once the line is flushed,
+// so a detached close never lingers on an open handle.
 if (isMainModule(import.meta.url)) {
-  const result = await runOpenCodeLifecycleCommand(process.argv.slice(2));
-  if (result.timedOut) process.exit(0);
+  await runOpenCodeLifecycleCommand(process.argv.slice(2));
+  process.stdout.write('', () => process.exit(0));
 }

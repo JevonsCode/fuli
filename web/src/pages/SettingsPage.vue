@@ -119,7 +119,7 @@ const conversationIdFormatOptions = computed(() => [
 ])
 const captureEnabled = computed(() => store.state?.capturePolicy?.enabled !== false)
 // Capture is per client; a client that is off still reads memory through its tools.
-const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor']] as const
+const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor'], ['opencode', 'OpenCode']] as const
 const disabledCaptureSources = computed(() => store.state?.capturePolicy?.disabledSources ?? [])
 const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFromConfirmed !== false)
 const agentAccessEnabled = computed(() =>

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "opencode",
   "version": "1.0.0",
-  "digest": "sha256:ae40eb04c6acd07fb4400be1969b414263763895294546d507f1857fee7c9d8f",
+  "digest": "sha256:46583a34884f0910be60ed13c429eae40db3a04a53afd4e7b44dd3c0cd77ca4e",
   "label": "OpenCode",
   "command": "opencode",
   "detection": {
@@ -61,7 +61,7 @@
       "--runtime-config",
       "{runtimeConfigPath}",
       "--source-application",
-      "other",
+      "opencode",
       "{toolProfileArgs}"
     ]
   },

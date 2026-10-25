@@ -44,7 +44,7 @@ test('OpenCode 2.x: setup writes the MCP entry and the plugin, keeps JSONC comme
   const config = readFileSync(configPath, 'utf8');
   assert.ok(config.includes('// user theme'));
   assert.match(config, /"other"/);
-  assert.match(config, /"--source-application",\s*"other"/);
+  assert.match(config, /"--source-application",\s*"opencode"/);
   const plugin = readFileSync(agent.pluginPath, 'utf8');
   const packaged = path.join(path.dirname(CONTEXT.mcpServerPath), 'agents', 'opencode');
   assert.ok(plugin.includes(JSON.stringify(pathToFileURL(path.join(packaged, 'plugin.js')).href)), 'imports the packaged plugin');
@@ -63,6 +63,29 @@ test('OpenCode 2.x: setup writes the MCP entry and the plugin, keeps JSONC comme
   assert.ok(remaining.includes('// user theme'));
   assert.doesNotMatch(remaining, /"fuli"/);
   assert.equal(adapter.disconnect(agent).status, 'not_connected');
+});
+
+test('an OpenCode MCP entry FULI wrote as `other` is reported outdated and rewritten as `opencode`, keeping its profile', (t) => {
+  const homeDir = home(t);
+  const agent = detect(homeDir);
+  mkdirSync(path.dirname(agent.configPath), { recursive: true });
+  writeFileSync(agent.configPath, JSON.stringify({ mcp: { fuli: { type: 'local', command: [CONTEXT.nodePath, CONTEXT.mcpServerPath,
+    '--runtime-config', CONTEXT.runtimeConfigPath, '--source-application', 'other', '--tool-profile', 'full'], enabled: true } } }));
+  assert.equal(lifecycle(agent).mcp, 'outdated');
+  adapter.connect(agent, CONTEXT);
+  const { command } = JSON.parse(readFileSync(agent.configPath, 'utf8')).mcp.fuli;
+  assert.deepEqual(command.slice(-4), ['--source-application', 'opencode', '--tool-profile', 'full']);
+  assert.equal(lifecycle(agent).mcp, 'current');
+});
+
+test('uninstall removes the plugin even when the OpenCode configuration cannot be parsed', (t) => {
+  const homeDir = home(t);
+  const agent = detect(homeDir);
+  adapter.connect(agent, CONTEXT);
+  writeFileSync(agent.configPath, '{ "mcp": [ }');
+  assert.throws(() => adapter.disconnect(agent));
+  assert.equal(existsSync(agent.pluginPath), false, 'no FULI code keeps loading into OpenCode');
+  assert.equal(readFileSync(agent.configPath, 'utf8'), '{ "mcp": [ }', 'the unparseable file is left as it was');
 });
 
 test('OpenCode 1.x is detected and refused: the MCP entry is connected, the V2 plugin is not installed', (t) => {

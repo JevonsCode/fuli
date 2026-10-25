@@ -73,7 +73,7 @@ export const AGENT_INTERFACE_DEFINITIONS = [
       recordProjects: { type: 'object', additionalProperties: { type: 'boolean' },
         description: '{personalProjectId: false} stops recording that project ("这个项目以后别记了"), true records it.' },
       disabledSources: { type: 'array', uniqueItems: true, maxItems: 6,
-        items: { enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'] },
+        items: { enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other'] },
         description: 'Clients whose sessions are not captured; they still use FULI tools.' },
       projectMode: { enum: ['all', 'all_except', 'selected'],
         description: 'all_except skips excludedProjectIds; selected records only selectedProjectIds.' },

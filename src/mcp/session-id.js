@@ -160,7 +160,7 @@ export function normalizeAgentSessionInput(
 }
 
 export function normalizeMcpSourceApplication(value) {
-  if (!['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'].includes(value)) {
+  if (!['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other'].includes(value)) {
     throw new TypeError('Unsupported MCP source application');
   }
   return value;

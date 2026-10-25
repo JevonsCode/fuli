@@ -3,6 +3,11 @@
 // temporary directories and a recording Provider double. No FULI data
 // directory, port-2727 service, OpenCode configuration or client is used.
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { callAgentTool } from '../../../src/agent-tools.js';
@@ -23,7 +28,7 @@ function hook(f, event, input, calls = []) {
     } });
 }
 
-test('a prompt begins the task as `other` with the OpenCode session and returns its entry as system text', async (t) => {
+test('a prompt begins the task as `opencode` with the OpenCode session and returns its entry as system text', async (t) => {
   const f = await fixture(t);
   const calls = [];
   const output = await hook(f, 'prompt', { session_id: SESSION, message_id: 'synthetic-message', cwd: f.dirs.novel,
@@ -32,10 +37,10 @@ test('a prompt begins the task as `other` with the OpenCode session and returns 
   const [[name, entry]] = calls;
   assert.equal(name, 'begin_task_context');
   assert.deepEqual({ ...entry }, { sessionId: SESSION, turnId: 'synthetic-message', projectPath: f.dirs.novel,
-    taskPrompt: 'Outline chapter four.', sourceApplication: 'other', sourceSessionId: SESSION, ...entry.workKind ? { workKind: entry.workKind } : {} });
+    taskPrompt: 'Outline chapter four.', sourceApplication: 'opencode', sourceSessionId: SESSION, ...entry.workKind ? { workKind: entry.workKind } : {} });
   const token = /"taskContextToken":"(fuli-task-[^"]+)"/.exec(output.context)?.[1];
   assert.ok(token, 'the entry carries its task token');
-  const task = f.app.taskContextRegistry.context(token, 'other');
+  const task = f.app.taskContextRegistry.context(token, 'opencode');
   assert.equal(task.sessionId, SESSION);
   assert.equal(task.turnId, 'synthetic-message', 'the OpenCode message id is the turn');
 });
@@ -57,7 +62,7 @@ test('a successful execution closes the hook-delivered task honestly, as a Stop 
   });
   assert.deepEqual(output, {});
   assert.deepEqual(calls.map(([name]) => name), ['verify_task_checkpoint', 'checkpoint_task_knowledge']);
-  assert.deepEqual(calls[0][1], { sessionId: SESSION, sourceApplication: 'other', sourceSessionId: SESSION });
+  assert.deepEqual(calls[0][1], { sessionId: SESSION, sourceApplication: 'opencode', sourceSessionId: SESSION });
   assert.equal(calls[1][1].taskContextToken, 'fuli-task-synthetic');
   assert.equal(calls[1][1].disposition, 'retain_nothing');
   assert.deepEqual(calls[1][1].workLog, { status: 'reported', summary: AUTO_CLOSE_SUMMARY });
@@ -66,7 +71,7 @@ test('a successful execution closes the hook-delivered task honestly, as a Stop 
 test('the stop of a session with a checkpointed task writes nothing', async (t) => {
   const f = await fixture(t);
   const entry = await openCodeEntry(f, f.dirs.novel, { session: SESSION });
-  await finishTask(f, entry.context, 'other');
+  await finishTask(f, entry.context, 'opencode');
   const calls = [];
   assert.deepEqual(await hook(f, 'stop', { session_id: SESSION }, calls), {});
   assert.deepEqual(calls.map(([name]) => name), ['verify_task_checkpoint']);
@@ -103,6 +108,18 @@ test('the process entry fails open within its deadline with one line and no task
   const { context } = JSON.parse(lines[0]);
   assert.match(context, /^Fuli context is unavailable \(no answer within 200 ms\)\. Continue with the user request;/);
   assert.match(context, /entry_incomplete=/);
+});
+
+test('the hook process exits right after its answer, so a detached close never lingers', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'p63-opencode-runtime-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const started = Date.now();
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL('../../../src/agents/opencode/lifecycle-hook.js', import.meta.url)),
+    '--fuli-opencode-lifecycle', '--runtime-config', join(directory, 'missing-graph-runtime.json'), '--event', 'stop',
+    '--timeout-ms', '5000'], { input: JSON.stringify({ session_id: SESSION }), encoding: 'utf8', timeout: 20_000 });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, '{}\n');
+  assert.ok(Date.now() - started < 15_000);
 });
 
 test('a broken hook answers the prompt with one line and the stop with nothing', async () => {

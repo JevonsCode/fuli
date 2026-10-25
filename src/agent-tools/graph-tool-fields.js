@@ -39,5 +39,5 @@ export const profileAspect = {
 };
 export const sourceApplication = {
   type: ['string', 'null'],
-  enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other', null]
+  enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other', null]
 };

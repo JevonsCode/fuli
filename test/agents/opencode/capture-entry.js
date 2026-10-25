@@ -4,4 +4,4 @@ import { openCodeEntry } from '../../fixtures/capture-project-fixture.js';
 
 // OpenCode's plugin shows the person no line at entry: the entry goes to the
 // model as system text, and the person reads the receipt in its reply.
-export const captureClient = Object.freeze({ sourceApplication: 'other', entry: openCodeEntry, entryMessage: false });
+export const captureClient = Object.freeze({ sourceApplication: 'opencode', entry: openCodeEntry, entryMessage: false });

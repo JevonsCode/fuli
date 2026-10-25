@@ -88,10 +88,13 @@ export function openCodeStatus(pack, agent, context, readers) {
   return { registration, ...(expected ? { lifecycleHooks: existing === openCodePluginSource(context, pack.lifecycleHooks) } : {}) };
 }
 
+// The plugin goes first: a configuration file FULI cannot parse keeps its MCP
+// entry (and reports why), but never keeps FULI code loading into OpenCode.
 export function disconnectOpenCode(agent, { readText = readExisting, removeFile = removePlugin } = {}) {
-  const removed = !agent.manualOnly && Boolean(agent.pluginPath) && isFuliOpenCodePlugin(readText(agent.pluginPath));
-  const disconnected = mcpPort().disconnect(agent);
+  if (agent.manualOnly) throw new TypeError('This client configuration requires manual connection');
+  const removed = Boolean(agent.pluginPath) && isFuliOpenCodePlugin(readText(agent.pluginPath));
   if (removed) removeFile(agent.pluginPath);
+  const disconnected = mcpPort().disconnect(agent);
   return removed ? { ...disconnected, status: 'disconnected' } : disconnected;
 }
 

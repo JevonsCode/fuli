@@ -15,7 +15,7 @@ const idempotencyKey = { ...boundedString(256), minLength: 8 };
 const dateTime = { ...boundedString(64), format: 'date-time' };
 const sourceApplication = {
   type: ['string', 'null'],
-  enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other', null]
+  enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other', null]
 };
 const nullableTokenCount = {
   ...integerSchema({ minimum: 0 }),
@@ -31,7 +31,7 @@ export const projectAgentTokenUsage = objectSchema({
   reasoningOutputTokens: nullableTokenCount
 }, ['source', 'totalTokens']);
 export const projectAgentWorkerRuntime = objectSchema({
-  application: enumSchema(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other']),
+  application: enumSchema(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other']),
   sessionId: { ...nullableStringSchema(), minLength: 1, maxLength: 256 },
   sessionUrl: { ...nullableStringSchema(), maxLength: 2048 }
 }, ['application']);
@@ -76,7 +76,7 @@ export const projectAgentProfile = objectSchema({
   defaultModelStrategy: projectAgentModelStrategy,
   executorPolicy: projectAgentExecutorPolicy,
   allowedClients: arraySchema(
-    enumSchema(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other']),
+    enumSchema(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other']),
     { maxItems: 6 }
   ),
   testSource: nullableStringSchema(),

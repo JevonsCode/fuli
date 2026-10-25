@@ -14,7 +14,7 @@ import { DEFAULT_PROJECT_SETTINGS, PROJECT_CHANGE_KEYS, storedProjectSettings, u
 // Version 2 only when per-project modes are in use (rec#5 C2).
 export const CAPTURE_POLICY_FORMAT = jsonFormat({ store: 'capture-policy', versions: [1, 2] });
 const CAPTURE_GENERATION_FORMAT = jsonFormat({ store: 'capture-policy-generation', versions: [1] });
-export const CAPTURE_SOURCES = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other']);
+export const CAPTURE_SOURCES = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other']);
 
 const DEFAULT_POLICY = Object.freeze({
   enabled: true,

@@ -31,7 +31,7 @@ export function createWorkerTaskContext(application, descriptor) {
       located = application.personal.getProjectAgentWorkerRun(runId, scope, { capability, signal })
         .then(run => {
           if (!['sealed', 'admitted'].includes(run?.state) || !run.actual_session_id || !run.agent_id || !run.task_id ||
-              !['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'].includes(run.target_application)) {
+              !['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other'].includes(run.target_application)) {
             throw denied('Worker session is not sealed and ready');
           }
           checkRun(run, scope, runId);
