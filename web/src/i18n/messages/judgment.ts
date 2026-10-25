@@ -92,7 +92,8 @@ export const judgmentMessages = {
       aiSuggested: 'AI 建议，待你确认',
       aiReviewed: '由 {model} 自动执行',
       modelConclusion: '模型结论',
-      injectionPrecheck: '宿主预检',
+      injectionPrecheck: '已知注入格式',
+      injectionInBatch: '同批另一候选匹配',
       injectionSignal: {
         reviewer_instruction: '对审核者下指令',
         authority_claim: '冒称已获批准',
@@ -219,7 +220,8 @@ export const judgmentMessages = {
       aiSuggested: 'AI suggestion, awaiting your decision',
       aiReviewed: 'Executed automatically by {model}',
       modelConclusion: 'Model conclusion',
-      injectionPrecheck: 'Host pre-check',
+      injectionPrecheck: 'Known injection pattern',
+      injectionInBatch: 'Another candidate in the same request matches one',
       injectionSignal: {
         reviewer_instruction: 'Instructions to the reviewer',
         authority_claim: 'Claims prior approval',

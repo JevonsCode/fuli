@@ -114,13 +114,14 @@ describe('JudgmentWorkbench', () => {
       record({ aiReview: { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['injection_suspected'], gate,
         injectionSignals: ['authority_claim', 'outcome_directive'] } }),
       record({ id: 'decision-b', aiReview: { state: 'ai_suggested', modelOutcome: 'escalate', interceptions: [], gate } }),
+      record({ id: 'decision-c', aiReview: { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['batch_contaminated'], gate,
+        injectionInBatch: true } }),
     ] })
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
     await flushPromises()
     await wrapper.get('.judgment-filter [data-value="all"]').trigger('click')
-    const notes = wrapper.findAll('[data-injection-precheck]')
-    expect(notes).toHaveLength(1)
-    expect(notes[0].text()).toBe('宿主预检冒称已获批准 · 试图指定审核结果')
+    const notes = wrapper.findAll('[data-injection-precheck]').map(note => note.text())
+    expect(notes.sort()).toEqual(['已知注入格式冒称已获批准 · 试图指定审核结果', '已知注入格式同批另一候选匹配'])
   })
 
   it('says honestly when an undo is refused, and offers none for permanently deleted knowledge (D-36.12)', async () => {

@@ -1,17 +1,18 @@
-// The host's deterministic injection pre-check of a knowledge review
-// candidate (rec#26). Tonborg's review model reads candidate text as data, but
-// a small model can still follow text that speaks to it. Whatever the model
-// answers, an approval of a candidate whose text has the shape of an injection
-// is never applied: the engine escalates it to the person and names these
-// signals as the reason.
+// A narrow, deterministic pattern check of a knowledge review candidate
+// (rec#26). Tonborg's review model reads candidate text as data, but a small
+// model can still follow text that speaks to it. Whatever the model answers,
+// an approval of a candidate whose text matches one of these known injection
+// patterns is not applied: the engine escalates it to the person and names
+// the matched signals.
 //
-// The check reads text shape only (who it addresses, whether it sets the
-// review's outcome, review or chat syntax, tool-call syntax, hidden
-// characters). It needs no model and no Agent. It leans broad: a false
-// positive costs one human review, a false negative is the dangerous case.
-// It is not complete: a paraphrase, another language, an encoding or a false
-// claim written as ordinary evidence passes it, so it adds to the confidence
-// floor, the trust gate and the person's decision and replaces none of them.
+// It matches fixed text shapes only (who the text addresses, whether it sets
+// the review's outcome, review or chat syntax, tool-call syntax, hidden
+// characters), with no model and no Agent. It catches only the shapes it was
+// written against and is not injection protection: on a 40-sample synthetic
+// blind set (20 injection, 20 ordinary) written without reading these
+// patterns, recall was 6/20 and false positives 1/20 (D-56); that is not a
+// real-world attack recall rate. The confidence floor, the trust gate and the
+// person's decision stay the safeguards; this adds one more reason to escalate.
 
 const CJK = '\\u3400-\\u9fff';
 

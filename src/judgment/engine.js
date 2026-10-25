@@ -125,13 +125,17 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
         }
         const trustKey = answer.pending ? null : reviewTrustKey(answer, { personalSpaceId: space, personalProjectId: project || null });
         const gate = trustKey && gateOf(trustKey);
+        // rec#26: one model request judges the whole batch, so injected text in
+        // any candidate may have steered every verdict of that answer.
+        const signals = new Map(candidates.map(c => [c.candidate_key, injectionSignals(c)]));
+        const batchInjected = [...signals.values()].some(found => found.length);
         for (const decision of answer.pending ? [] : reviewDecisions(answer.value, schema, candidates)) {
           const candidate = candidates.find(c => c.candidate_key === decision.target);
           // The person may have permanently deleted it while the model answered (rec#5 C9).
           if (store.forgets(decision.target, space)) continue;
           const protectedItem = Boolean(candidate.requires_attention || candidate.negative_evidence_count > 0
             || candidate.reasons?.includes('conflict_or_attention'));
-          const aiReview = reviewDisposition(decision, { protectedItem, injection: injectionSignals(candidate), gate, policy });
+          const aiReview = reviewDisposition(decision, { protectedItem, injection: signals.get(decision.target), batchInjected, gate, policy });
           const outcome = aiReview.interceptions.some(reason => reason !== 'manual_policy') ? 'escalate' : decision.outcome;
           let record = store.record(space, { personalProjectId: project || null, kind: 'review', target: decision.target,
             title: candidate.title, summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
@@ -280,15 +284,19 @@ function reviewTrustKey(answer, scope) {
 // still applies nothing. gate_not_passed keeps its D-24 name (the evaluation
 // harness scores by it); since D-36 it means the role trust gate refused, and
 // gate.reason says why. injection: the host pre-check's signals for the
-// candidate (rec#26); the person sees them whatever the model answered.
-function reviewDisposition(decision, { protectedItem, injection, gate, policy }) {
+// candidate (rec#26); batchInjected: some candidate of the same model request
+// had signals, so no approval of that answer applies (batch_contaminated for
+// a candidate without its own). The person sees both whatever the model answered.
+function reviewDisposition(decision, { protectedItem, injection, batchInjected, gate, policy }) {
+  const contaminated = batchInjected && !injection.length;
   const interceptions = decision.outcome !== 'approve' ? [] : [
     ...(protectedItem ? ['needs_attention'] : []),
     ...(injection.length ? ['injection_suspected'] : []),
+    ...(contaminated ? ['batch_contaminated'] : []),
     ...(decision.confidence < REVIEW_CONFIDENCE_FLOOR ? ['below_confidence'] : []),
     ...(gate.status !== 'passed' ? ['gate_not_passed'] : []),
     ...(policy.mode === 'manual' ? ['manual_policy'] : [])];
   const applies = decision.outcome === 'approve' && !interceptions.length;
   return { state: applies ? 'ai_reviewed' : 'ai_suggested', modelOutcome: decision.outcome, interceptions, gate,
-    ...(injection.length ? { injectionSignals: injection } : {}) };
+    ...(injection.length ? { injectionSignals: injection } : {}), ...(contaminated ? { injectionInBatch: true } : {}) };
 }
