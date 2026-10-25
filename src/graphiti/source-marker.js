@@ -55,8 +55,7 @@ function factCitation(fact) {
     scopeDistance: fact.scope_distance,
     score: fact.score,
     role: knowledgeItemRole(fact),
-    title: [fact.source_entity, fact.target_entity].filter(Boolean).join(' → ') ||
-      fact.fact || '关系知识'
+    title: knowledgeItemTitle(fact, 'relationship')
   });
 }
 
@@ -70,8 +69,16 @@ function entityCitation(entity) {
     scopeDistance: entity.scope_distance,
     score: entity.score,
     role: knowledgeItemRole(entity),
-    title: entity.name || entity.summary || '实体知识'
+    title: knowledgeItemTitle(entity, 'entity')
   });
+}
+
+// What a person sees as a knowledge item's name: its endpoints for a
+// relationship, its name for an entity.
+export function knowledgeItemTitle(item, itemKind) {
+  return itemKind === 'relationship'
+    ? [item.source_entity, item.target_entity].filter(Boolean).join(' → ') || item.fact || '关系知识'
+    : item.name || item.summary || '实体知识';
 }
 
 function citation({
