@@ -45,9 +45,32 @@ test('on Windows the directory is owned by the current user, then given a protec
     ['C:\\Windows\\System32\\icacls.exe', ['C:\\Temp\\fuli-console-x', '/inheritance:r', '/grant:r',
       `*${USER}:(OI)(CI)F`, '*S-1-5-18:(OI)(CI)F']],
     ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      calls[3][1][3]]],
+    ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
       calls[3][1][3]]]
   ]);
   assert.ok(calls[3][1][3].includes("[System.IO.DirectoryInfo]::new('C:\\Temp\\fuli-console-x').GetAccessControl()"));
+});
+
+// A GitHub Windows runner creates the directory with an explicit administrators
+// rule that /grant:r leaves in place; it is removed by SID, then checked again.
+test('on Windows an explicit rule for any other account is removed before the check', () => {
+  const ADMINISTRATORS = 'S-1-5-32-544';
+  const reads = [{ ...OWNER_ONLY, rules: [...OWNER_ONLY.rules, { sid: ADMINISTRATORS, allow: true }] }, OWNER_ONLY];
+  const calls = [];
+  const run = (file, args) => {
+    calls.push([file, args]);
+    if (file.endsWith('whoami.exe')) return `"host\\person","${USER}"\r\n`;
+    if (file.endsWith('powershell.exe')) {
+      const acl = reads.shift();
+      return [`owner=${acl.owner}`, `protected=${acl.protected ? 'True' : 'False'}`,
+        ...acl.rules.map(rule => `rule=${rule.sid}|${rule.allow ? 'Allow' : 'Deny'}`)].join('\r\n');
+    }
+    return '';
+  };
+  restrictToOwner('C:\\Temp\\fuli-console-x', { platform: 'win32', env: { SystemRoot: 'C:\\Windows' }, run });
+  assert.deepEqual(calls.filter(([file]) => file.endsWith('icacls.exe')).map(([, args]) => args.slice(1)).at(-1),
+    ['/remove', `*${ADMINISTRATORS}`]);
 });
 
 test('on Windows anything but exactly this owner and {user, SYSTEM} fails closed', () => {

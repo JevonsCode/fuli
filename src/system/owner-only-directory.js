@@ -34,8 +34,13 @@ export function restrictToOwner(directory, { platform = process.platform, env = 
   if (!sid) throw new Error('The current Windows account could not be identified');
   tool('icacls.exe', [directory, '/setowner', `*${sid}`]);
   tool('icacls.exe', [directory, '/inheritance:r', '/grant:r', `*${sid}:(OI)(CI)F`, `*${LOCAL_SYSTEM_SID}:(OI)(CI)F`]);
-  const actual = readWindowsAcl(directory, tool, env);
   const expected = [sid, LOCAL_SYSTEM_SID].sort();
+  // /grant:r replaces only the named accounts' rules; a rule the directory was
+  // created with explicitly (an administrators group on a CI runner) stays.
+  const others = [...new Set(readWindowsAcl(directory, tool, env).rules.map(rule => rule.sid))]
+    .filter(other => !expected.includes(other) && /^S-1-[0-9-]+$/.test(other));
+  if (others.length) tool('icacls.exe', [directory, '/remove', ...others.map(other => `*${other}`)]);
+  const actual = readWindowsAcl(directory, tool, env);
   const allowed = [...new Set(actual.rules.filter(rule => rule.allow).map(rule => rule.sid))].sort();
   if (actual.owner !== sid || actual.protected !== true || actual.rules.some(rule => !rule.allow)
     || JSON.stringify(allowed) !== JSON.stringify(expected)) {
