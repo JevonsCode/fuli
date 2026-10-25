@@ -17,10 +17,11 @@ import { ProviderRequestError } from '../graphiti/provider-client.js';
 // human_review_proof_required.
 //
 // The HTTP caller does not supply the proof: the server reads the token from
-// its provider env and attaches it itself, trusting every local HTTP caller.
-// So any local process, an Agent with a shell included, can still read these
-// routes over loopback without reading any token. Authenticating the caller
-// with a console session is a separate change (rec#11 D-61).
+// its provider env and attaches it itself, but only for a request of the
+// console session that `fuli open` started (rec#11 D-61). Without one the
+// port refuses every call with 401 console_session_required
+// (src/console-session/session-ports.js), which passes on as it is, before
+// any proof is sent.
 // what: what the route shows, for the refusal's message.
 export async function confirmConsoleOwner(ownerReads, personalSpaceId, what) {
   const proofRequired = () => new ApplicationError('human_review_proof_required',
@@ -29,7 +30,7 @@ export async function confirmConsoleOwner(ownerReads, personalSpaceId, what) {
   try {
     await ownerReads.confirmOwner(personalSpaceId);
   } catch (error) {
-    if (error instanceof ProviderRequestError) throw error;
+    if (error instanceof ProviderRequestError || error instanceof ApplicationError) throw error;
     throw proofRequired();
   }
 }

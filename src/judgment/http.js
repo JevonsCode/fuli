@@ -17,9 +17,9 @@ const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/records
 // full reads, each is loopback only, a LAN device with its LAN code included,
 // and answers only after the console server confirmed its own human-review
 // proof (owner-proof.js), before anything is read, run or written. A refused
-// request gets 403 and no data. The server attaches that proof itself and
-// trusts local HTTP callers, so a local process can still read these routes
-// over loopback; caller authentication is rec#11 D-61.
+// request gets 403 and no data. The server attaches that proof itself, and
+// only for a request of the console session `fuli open` started (rec#11
+// D-61); any other local request gets 401 console_session_required.
 // Agents read and ask Tonborg through their MCP tools (list_judgments,
 // review_with_tonborg, assess_agent_action, assess_task_completion); no MCP
 // or Agent tool module imports this one (test/judgment-console-owner.test.js).

@@ -37,6 +37,10 @@ import { reviewUndoConsole } from './judgment/review-undo.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
 import { createModelRoleSettings } from './model-backends/role-settings.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
+import { createConsoleSession } from './console-session/session.js';
+import { handleConsoleSessionRequest, hasConsoleSession } from './console-session/http.js';
+import { sessionBoundPorts } from './console-session/session-ports.js';
+import { humanReviewToken } from './graphiti/human-review-channel.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -115,6 +119,12 @@ export async function createServer(options = {}) {
   // The latest local evaluation of a role's model, as the model settings page shows it (rec#10 D-36.6).
   const readModelEvaluation = options.readModelEvaluation ?? (localOptions.runtimeConfigPath
     ? key => latestEvaluation(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelEvaluationsPath, key) : null);
+  // This launch's console session (rec#11 D-61): its secret lives in memory
+  // only, and `fuli open` shows it may sign in with the data directory's
+  // human-review token.
+  const consoleSession = options.consoleSession ?? createConsoleSession();
+  const readSignInToken = options.readSignInToken ?? (localOptions.runtimeConfigPath
+    ? () => humanReviewToken(dirname(localOptions.runtimeConfigPath)) : null);
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
   // is settled from its recorded operation, and graph deletions the record
   // lost are taken in again; what the graph cannot answer yet stays open for
@@ -204,6 +214,8 @@ export async function createServer(options = {}) {
       modelRoleSettings,
       readModelEvaluation,
       judgmentUndo,
+      consoleSession,
+      readSignInToken,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -298,6 +310,8 @@ async function handleRequest({
   modelRoleSettings,
   readModelEvaluation,
   judgmentUndo,
+  consoleSession,
+  readSignInToken,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -309,11 +323,16 @@ async function handleRequest({
     lanAuthorities,
     lanAccessToken
   })) return;
+  // The sign-in routes answer a navigation from another site themselves: they refuse it.
+  if (await handleConsoleSessionRequest({ request, response, session: consoleSession, readSignInToken, authority })) return;
   // A page opened from another site's link reaches the static console only.
   if (isCrossSiteNavigation(request)) {
     serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
     return;
   }
+  // The human-review ports serve only the console session (rec#11 D-61).
+  const reviewPorts = sessionBoundPorts({ knowledgeOwnerReads, knowledgeHardDelete, knowledgeScope, knowledgeTags, judgmentUndo },
+    hasConsoleSession(request, consoleSession, authority));
   if (await handleApiRequest({
     request,
     response,
@@ -324,13 +343,9 @@ async function handleRequest({
     peer,
     dataFormats,
     dataFormatMigrations,
-    knowledgeHardDelete,
-    knowledgeScope,
-    knowledgeOwnerReads,
-    knowledgeTags,
+    ...reviewPorts,
     modelRoleSettings,
-    readModelEvaluation,
-    judgmentUndo
+    readModelEvaluation
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }

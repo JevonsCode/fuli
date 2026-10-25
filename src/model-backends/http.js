@@ -31,9 +31,9 @@ import { RETENTION } from './suggestion-log.js';
 // included, and answers only after ownerReads confirmed the console server's
 // own human-review proof for personalSpaceId, the active space the log is
 // read in (src/knowledge-owner-reads/owner-proof.js); otherwise 403 and no
-// data. The server attaches that proof itself and trusts local HTTP callers,
-// so a local process can still read it over loopback; caller authentication
-// is rec#11 D-61. Agents have no tool that reads it. history lists
+// data. The server attaches that proof itself, and only for a request of the
+// console session `fuli open` started (rec#11 D-61); any other local request
+// gets 401 console_session_required. Agents have no tool that reads it. history lists
 // what changed in a role's settings and execution mode and when
 // (settings-history.js, rec#11 D-42), newest first, read only; each save and
 // trust change answers whether its change was recorded there.
