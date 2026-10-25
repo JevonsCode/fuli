@@ -10,15 +10,14 @@ import { parsePersonalDraftDecision } from './publication-draft-input.js';
 import { GraphitiProviderClient } from './provider-client.js';
 import {
   aggregatePublicCapabilities,
+  configuredWorkspace,
   createWorkspaceProvider
 } from './workspace-provider-client.js';
 import {
-  canonicalProviderUrl,
   personalTokenRefresher,
   readGraphRuntimeConfig
 } from './runtime-config.js';
-import { ApplicationError, ApplicationErrorCode, InvalidInputError } from '../app/application-error.js';
-import { detectSensitiveContent } from '../security/sensitive-content.js';
+import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import {
   CapturePolicyStore,
   capturePolicyPathForRuntime
@@ -101,6 +100,10 @@ import { providerReaderFields, taskKnowledgeReader } from './knowledge-reader.js
 import { queuePublicationDraft } from './publication-draft-capture.js';
 import { knowledgeTags } from './knowledge-tags.js';
 import { withSharedProjectList } from './shared-project-list.js';
+import { assertActivePersonalSpace } from './active-personal-space.js';
+import { recordAgentViews } from './agent-view-records.js';
+import { resolvePreferenceProject } from './preference-project-resolution.js';
+import { assertNoCredentials, assertSafeKnowledgeMutation } from './knowledge-credential-guard.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -219,7 +222,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async recordDecisionTrace(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     return recordDecisionTraceWorkflow(this, input);
   }
 
@@ -245,7 +248,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async recordWorkflowTransitionObservation(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     const capture = await captureDecision(this, { sourceApplication: input.sourceApplication,
       personalProjectId: input.personalProjectId ?? null, sessionId: input.hostSessionId ?? null });
     if (!capture.allowed) return { route: 'disabled', ...captureDisabled(capture) };
@@ -277,7 +280,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     agentInvocation = false,
     agentToolName = 'get_collaboration_preferences'
   } = {}) {
-    let projectResolution = await this.#resolvePreferenceProject({ personalProjectId, projectPath });
+    let projectResolution = await resolvePreferenceProject(this, { personalProjectId, projectPath });
     if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
       && (await captureDecision(this, { sourceApplication, projectPath, sessionId,
         personalProjectId: projectResolution.repositoryProjectId })).allowed) {
@@ -293,7 +296,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
       sourceSessionId, sessionId, turnId, workKind, workflow, requiredCapabilities,
       limit, agentInvocation, agentToolName
-    }, (items, toolName) => this.#recordAgentViews(items, toolName, { sourceApplication, projectPath,
+    }, (items, toolName) => recordAgentViews(this, items, toolName, { sourceApplication, projectPath,
       personalProjectId: projectResolution.personalProjectId, sessionId: sessionId ?? sourceSessionId }));
     return finishTaskEntryPreferences(this, preferences, { agentInvocation, agentToolName,
       sessionId, sourceApplication, sourceSessionId, taskPrompt, workKind, workflow });
@@ -339,65 +342,27 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async getWritingTasteProfile(input = {}, ownerReads = null) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     return getWritingTasteProfileWorkflow(this, input, ownerReads);
-  }
-
-  async #resolvePreferenceProject({ personalProjectId, projectPath }) {
-    if (projectPath !== undefined && projectPath !== null) {
-      const projects = await this.personal.listPersonalProjects(
-        this.config.personal.spaceId
-      );
-      const resolution = this.projectPathResolver(projectPath, projects);
-      if (
-        personalProjectId
-        && resolution.personalProjectId
-        && personalProjectId !== resolution.personalProjectId
-      ) {
-        throw new InvalidInputError(
-          'personalProjectId conflicts with the exact projectPath match'
-        );
-      }
-      if (personalProjectId) {
-        return {
-          status: 'matched',
-          basis: 'explicit_personal_project_id',
-          personalProjectId
-        };
-      }
-      return resolution;
-    }
-    if (personalProjectId) {
-      return {
-        status: 'matched',
-        basis: 'explicit_personal_project_id',
-        personalProjectId
-      };
-    }
-    return {
-      status: 'not_provided',
-      basis: null,
-      personalProjectId: null
-    };
   }
 
   // FULI's project for a directory, by the rules task entry uses: a
   // repository root, or the original repository of a worktree.
   resolveProjectPath(projectPath) {
-    return this.#resolvePreferenceProject({ personalProjectId: null, projectPath });
+    return resolvePreferenceProject(this, { personalProjectId: null, projectPath });
   }
 
   searchKnowledge(input) {
     return searchFederatedKnowledge(this, input, {
-      workspaceFor: providerUrl => this.#workspace(providerUrl),
-      recordAgentViews: (items, toolName) => this.#recordAgentViews(items, toolName, {
+      workspaceFor: providerUrl => configuredWorkspace(this.workspaces, providerUrl),
+      recordAgentViews: (items, toolName) => recordAgentViews(this, items, toolName, {
         sourceApplication: input.sourceApplication, personalProjectId: input.personalProjectId ?? null,
         sessionId: input.sourceSessionId ?? null })
     });
   }
 
   async searchCurrentProjectKnowledge(input) {
-    const resolution = await this.#resolvePreferenceProject({
+    const resolution = await resolvePreferenceProject(this, {
       personalProjectId: input.personalProjectId ?? null,
       projectPath: input.projectPath
     });
@@ -405,29 +370,29 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async discoverCommonKnowledgeCandidates(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     return discoverCommonKnowledgeCandidatesWorkflow(this, input);
   }
 
   async discoverPersonalGlobalPreferenceCandidates(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     return discoverPersonalGlobalPreferenceCandidatesWorkflow(this, input);
   }
 
   async previewPersonalGlobalPreferenceDecision(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return previewPersonalGlobalPreferenceDecisionWorkflow(this, input);
   }
 
   async applyPersonalGlobalPreferenceDecision(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return applyPersonalGlobalPreferenceDecisionWorkflow(this, input);
   }
 
   async previewCommonKnowledgePromotion(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return this.personal.previewCommonKnowledgePromotion(
       providerCommonKnowledgePromotion(input)
@@ -435,7 +400,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async applyCommonKnowledgePromotion(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return this.personal.applyCommonKnowledgePromotion({
       ...providerCommonKnowledgePromotion(input),
@@ -465,7 +430,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
         : await this.personal.graph(spaceId, limit, personalProjectId, offset,
           projectAgentId ? { personalProjectId, projectAgentId } : null);
       if (agentInvocation) {
-        await this.#recordAgentViews([
+        await recordAgentViews(this, [
           ...result.nodes.map(({ id }) => ({ item_id: id, item_kind: 'entity' })),
           ...result.edges.map(({ id }) => ({ item_id: id, item_kind: 'relationship' }))
         ], agentToolName, { sourceApplication, personalProjectId });
@@ -477,7 +442,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (personalProjectId) {
       throw new TypeError('Personal project scope cannot be used with a team-shared provider');
     }
-    return this.#workspace(providerUrl).client.graph(spaceId, limit, null, offset);
+    return configuredWorkspace(this.workspaces, providerUrl).client.graph(spaceId, limit, null, offset);
   }
 
   async startKnowledgeReview(input) {
@@ -501,7 +466,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async listWorkflowCandidates(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     const result = await this.personal.searchWorkflowCandidates(
       providerWorkflowCandidateSearch(input)
     );
@@ -509,7 +474,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async recommendNextWorkflowSteps(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     const result = await this.personal.recommendWorkflowCandidates(
       providerWorkflowCandidateSearch(input)
     );
@@ -523,7 +488,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     toolName = null,
     items
   }) {
-    this.#assertActivePersonalSpace(personalSpaceId);
+    assertActivePersonalSpace(this, personalSpaceId);
     return this.personal.recordKnowledgeUsage({
       personal_space_id: personalSpaceId,
       task_id: taskId,
@@ -538,7 +503,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async recordKnowledgeFeedback(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation({
       items: input.items.map((item) => ({
         existenceReason: item.reason,
@@ -549,7 +514,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async reviseKnowledgeItem(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     const body = {
       personal_space_id: input.personalSpaceId,
@@ -602,14 +567,14 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async knowledgeTags(operation, input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     return knowledgeTags(this, operation, input);
   }
 
   // An Agent reads as a plain session: no conflict naming an FLA's own item (an FLA meets those in its
   // task context). Only the console passes ownerReads (src/knowledge-owner-reads) for the full list.
   async listPreferenceConflicts({ personalSpaceId, status = null, limit = 500 }, ownerReads = null) {
-    this.#assertActivePersonalSpace(personalSpaceId);
+    assertActivePersonalSpace(this, personalSpaceId);
     return ownerReads
       ? ownerReads.preferenceConflicts({ personalSpaceId, status, limit })
       : this.personal.listPreferenceConflicts(personalSpaceId, status, limit);
@@ -618,7 +583,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   // A conflict naming an item its reader may not see answers as missing: an Agent names its FLA
   // (projectAgentId) or reads as a plain session; the console's defer and completion pass ownerReads.
   async deferPreferenceConflict(input, ownerReads = null) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     const body = {
       personal_space_id: input.personalSpaceId,
       conflict_id: input.conflictId,
@@ -637,7 +602,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async resolveDeferredPreferenceConflict(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return this.personal.resolvePreferenceConflict(input.conflictId, {
       ...providerReaderFields(taskKnowledgeReader(input)),
@@ -653,7 +618,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async completePreferenceConflict(input, ownerReads = null) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     const body = { personal_space_id: input.personalSpaceId, resolution: input.resolution, reason: input.reason,
       operation_actor: input.operationActor ?? 'human' };
     return ownerReads ? ownerReads.completePreferenceConflict(input.conflictId, body)
@@ -661,7 +626,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async confirmKnowledgeBatch(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return this.personal.confirmKnowledgeBatch({
       personal_space_id: input.personalSpaceId,
@@ -681,7 +646,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async reassignKnowledgeItem(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     return this.personal.reassignKnowledgeItem(input.itemId, {
       personal_space_id: input.personalSpaceId,
       item_kind: input.itemKind,
@@ -692,7 +657,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async setPersonalPreferenceScope(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return this.personal.setPreferenceScope(input.itemId, {
       personal_space_id: input.personalSpaceId,
@@ -705,7 +670,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async previewKnowledgeProjectAction(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     return this.personal.previewKnowledgeProjectAction(input.itemId, {
       personal_space_id: input.personalSpaceId,
       item_kind: input.itemKind,
@@ -722,7 +687,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async applyKnowledgeProjectAction(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return this.personal.applyKnowledgeProjectAction(input.itemId, {
       personal_space_id: input.personalSpaceId,
@@ -749,7 +714,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     agentToolName = 'search_human_knowledge_changes',
     sourceApplication = null
   }) {
-    this.#assertActivePersonalSpace(personalSpaceId);
+    assertActivePersonalSpace(this, personalSpaceId);
     const result = await this.personal.searchHumanChanges({
       personal_space_id: personalSpaceId,
       query,
@@ -757,7 +722,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       limit
     });
     if (agentInvocation) {
-      await this.#recordAgentViews(
+      await recordAgentViews(this,
         result.items.map(({ item_id: itemId, item_kind: itemKind }) => ({
           item_id: itemId,
           item_kind: itemKind
@@ -770,7 +735,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async reviewHumanChange(input) {
-    this.#assertActivePersonalSpace(input.personalSpaceId);
+    assertActivePersonalSpace(this, input.personalSpaceId);
     assertSafeKnowledgeMutation(input);
     return this.personal.reviewHumanChange(input.itemId, {
       personal_space_id: input.personalSpaceId,
@@ -813,7 +778,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (input.personalSpaceId !== this.config.personal.spaceId) {
       throw new TypeError('Subscription must belong to the active personal space');
     }
-    const workspace = this.#workspace(input.providerUrl);
+    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
     const accessible = await workspace.client.listSpaces();
     if (!accessible.some(({ id }) => id === input.projectId)) {
       throw new TypeError('Public project is not accessible with the configured identity');
@@ -830,7 +795,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     if (input.personalSpaceId !== this.config.personal.spaceId) {
       throw new TypeError('Subscription must belong to the active personal space');
     }
-    const workspace = this.#workspace(input.providerUrl);
+    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
     return this.personal.unsubscribe(
       input.personalSpaceId,
       input.projectId,
@@ -856,7 +821,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       input.personalSpaceId,
       localProjectId
     );
-    const workspace = this.#workspace(input.providerUrl);
+    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
     const project = await workspace.client.createSpace({
       name: localProject.profile.name,
       kind: 'project',
@@ -878,7 +843,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async listProjectReleases(input) {
-    const workspace = this.#workspace(input.providerUrl);
+    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
     return {
       projectId: input.projectId,
       providerUrl: workspace.providerUrl,
@@ -887,7 +852,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async deletePublicProject(input) {
-    const workspace = this.#workspace(input.providerUrl);
+    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
     const result = await workspace.client.deleteProject(input.projectId);
     await this.personal.unsubscribe(
       this.config.personal.spaceId,
@@ -930,7 +895,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async createProjectRelation(input) {
-    const workspace = this.#workspace(input.providerUrl);
+    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
     return workspace.client.createProjectRelation(input.sourceProjectId, {
       target_project_id: input.targetProjectId,
       relation_type: input.relationType,
@@ -939,7 +904,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async listProjectRelations(input) {
-    const workspace = this.#workspace(input.providerUrl);
+    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
     return {
       projectId: input.projectId,
       providerUrl: workspace.providerUrl,
@@ -948,7 +913,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async reviewProjectRelation(input) {
-    const workspace = this.#workspace(input.providerUrl);
+    const workspace = configuredWorkspace(this.workspaces, input.providerUrl);
     return workspace.client.decideProjectRelation(
       input.targetProjectId,
       input.relationId,
@@ -978,7 +943,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   // ownerReads: the console's port, which alone lists and settles a draft of an FLA's work.
   reconcilePersonalSubmissions(options = {}, ownerReads = null) {
     return reconcilePublicSubmissions({ personal: ownerReads?.submissions ?? this.personal,
-      workspaceFor: url => this.#workspace(url), spaceId: this.config.personal.spaceId }, options);
+      workspaceFor: url => configuredWorkspace(this.workspaces, url), spaceId: this.config.personal.spaceId }, options);
   }
 
   // ownerReads: the console's port; an Agent decides only a draft of positively plain work.
@@ -990,12 +955,12 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       return personal.decidePublicationDraft(personalSpaceId, input.draftId, { decision: input.decision,
         shared_proposal_id: null });
     }
-    return submitPersonalDraft({ personal, workspaceFor: url => this.#workspace(url),
+    return submitPersonalDraft({ personal, workspaceFor: url => configuredWorkspace(this.workspaces, url),
       spaceId: personalSpaceId, draftId: input.draftId });
   }
 
   async listReviewQueue({ projectId, providerUrl, status = 'pending' }) {
-    const workspace = this.#workspace(providerUrl);
+    const workspace = configuredWorkspace(this.workspaces, providerUrl);
     return {
       projectId,
       providerUrl: workspace.providerUrl,
@@ -1004,7 +969,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
   async reviewProposal({ projectId, providerUrl, proposalId, decision, note = null }) {
-    const workspace = this.#workspace(providerUrl);
+    const workspace = configuredWorkspace(this.workspaces, providerUrl);
     return workspace.client.decideProposal(projectId, proposalId, { decision, note });
   }
 
@@ -1148,36 +1113,12 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return closeLocalRuntimes(this);
   }
 
-  // View records rank knowledge by what a session looked at: a behavior trace
-  // that stops with automatic recording. Reading itself needs none (rec#11 D-01).
-  async #recordAgentViews(items, toolName, scope) {
-    if (!items.length || !(await captureDecision(this, scope)).allowed) return;
-    const unique = new Map(items.map((item) => [
-      `${item.item_kind}:${item.item_id}`,
-      item
-    ]));
-    const values = [...unique.values()];
-    for (let index = 0; index < values.length; index += 200) {
-      await this.personal.recordAgentViews({
-        personal_space_id: this.config.personal.spaceId,
-        tool_name: toolName,
-        items: values.slice(index, index + 200)
-      });
-    }
-  }
-
-  #assertActivePersonalSpace(personalSpaceId) {
-    if (personalSpaceId !== this.config.personal.spaceId) {
-      throw new TypeError('Knowledge changes must use the active personal space');
-    }
-  }
-
   [projectAgentControlPlaneHooks.assertActivePersonalSpace](personalSpaceId) {
-    this.#assertActivePersonalSpace(personalSpaceId);
+    assertActivePersonalSpace(this, personalSpaceId);
   }
 
   async [projectAgentControlPlaneHooks.resolvePreferenceProject](input) {
-    return this.#resolvePreferenceProject(input);
+    return resolvePreferenceProject(this, input);
   }
 
   #prepareKnowledgeCapture(input) {
@@ -1199,63 +1140,13 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       );
     }
     assertPublicKnowledgeEligible(episode);
-    return { episode, workspace: this.#workspace(input.providerUrl) };
-  }
-
-  #workspace(providerUrl) {
-    const requested = providerUrl
-      ? canonicalProviderUrl(providerUrl)
-      : (this.workspaces.size === 1 ? [...this.workspaces.keys()][0] : null);
-    const workspace = requested ? this.workspaces.get(requested) : null;
-    if (!workspace) throw new TypeError('Public project provider is not configured');
-    return { ...workspace, providerUrl: requested };
+    return { episode, workspace: configuredWorkspace(this.workspaces, input.providerUrl) };
   }
 }
 
 function knowledgeCaptureScope(input) {
   return { sourceApplication: input?.sourceApplication, personalProjectId: input?.personalProjectId ?? null,
     sessionId: input?.sessionId ?? null };
-}
-
-function assertNoCredentials(input) {
-  const content = JSON.stringify({
-    name: input.name,
-    sourceDescription: input.sourceDescription,
-    sourceUri: input.sourceUri,
-    sourceExcerpt: input.sourceExcerpt,
-    summary: input.summary,
-    entities: input.entities,
-    relationships: input.relationships
-  });
-  if (detectSensitiveContent(content).restricted) {
-    throw new ApplicationError(
-      'validation',
-      'Structured knowledge contains credentials and cannot be stored'
-    );
-  }
-}
-
-function assertSafeKnowledgeMutation(input) {
-  const content = JSON.stringify({
-    reason: input.reason,
-    name: input.name,
-    summary: input.summary,
-    fact: input.fact,
-    note: input.note,
-    newProjectName: input.newProjectName,
-    newProjectPurpose: input.newProjectPurpose,
-    humanConfirmationReason: input.humanConfirmationReason,
-    batchItems: input.items?.map((item) => ({
-      existenceReason: item.existenceReason,
-      quadrantReason: item.quadrantReason
-    }))
-  });
-  if (detectSensitiveContent(content).restricted) {
-    throw new ApplicationError(
-      'validation',
-      'Knowledge revision contains credentials and cannot be stored'
-    );
-  }
 }
 
 async function safely(operation, fallback) {
