@@ -31,9 +31,12 @@ export function openRoleTrustAndHistory(paths, port) {
 }
 
 // The session bridge over that port. resumers maps a role to the operation
-// that uses a submitted answer; verifySession resolves the calling session.
-export function openRoleWorkRuntime(paths, { port, verifySession, resumers, recoveryGate }) {
-  return createRoleWorkBridge({ port, store: new RoleWorkStore(paths.roleWorkPath, { recoveryGate }), verifySession, resumers,
+// that uses a submitted answer, views to what a session may read of its
+// result, packageViews to what it receives of the work; verifySession
+// resolves the calling session.
+export function openRoleWorkRuntime(paths, { port, verifySession, resumers, views, packageViews, recoveryGate }) {
+  return createRoleWorkBridge({ port, store: new RoleWorkStore(paths.roleWorkPath, { recoveryGate }), verifySession,
+    resumers, views, packageViews,
     prepareStore: spaceId => recoveryGate?.refresh(spaceId) });
 }
 

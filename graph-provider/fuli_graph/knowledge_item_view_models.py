@@ -27,6 +27,7 @@ KnowledgeVersionStatus = Literal['current', 'superseded', 'outdated', 'basis_out
 KnowledgeBasisStatus = KnowledgeVersionStatus | Literal['deleted']
 MAX_SCOPE_PROJECTS = 16
 MAX_RECEIPT_EPISODES = 3
+MAX_VISIBLE_ITEMS = 100
 
 
 class KnowledgeItemRef(AgentReaderRef):
@@ -177,6 +178,23 @@ class KnowledgeItemView(KnowledgeItemSummary):
 class KnowledgeTurnReceiptRead(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     episode_ids: list[str] = Field(min_length=1, max_length=MAX_RECEIPT_EPISODES)
+
+
+class KnowledgeItemKey(StrictModel):
+    item_kind: KnowledgeItemKind
+    item_id: str = Field(min_length=1, max_length=256)
+
+
+class KnowledgeVisibleItemsRead(AgentReaderRef):
+    """Which of these items exist and this reader may see now (rec#50): a
+    local record that names one shows it only while it does."""
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    items: list[KnowledgeItemKey] = Field(min_length=1, max_length=MAX_VISIBLE_ITEMS)
+
+
+class KnowledgeVisibleItems(StrictModel):
+    # In the order asked, without the ones this reader may not see or that are gone.
+    items: list[KnowledgeItemKey] = Field(default_factory=list)
 
 
 class KnowledgeReceiptEntry(KnowledgeItemSummary):

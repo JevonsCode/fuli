@@ -334,7 +334,9 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
 test('Agent surface dispatches every tool through the Graphiti facade', async () => {
   const calls = [];
   const app = {
-    judgment: Object.fromEntries(['policy', 'records', 'review', 'assess', 'accept', 'pins', 'pin'].map(name => [name, async input => calls.push([`judgment-${name}`, input])])),
+    judgment: { ...Object.fromEntries(['policy', 'pins', 'pin'].map(name => [name, async input => calls.push([`judgment-${name}`, input])])),
+      // Records and Tonborg's answers reach Agents through the Agent view only (rec#50).
+      agent: Object.fromEntries(['records', 'review', 'assess', 'accept'].map(name => [name, async input => calls.push([`judgment-${name}`, input])])) },
     modelBackends: { usage: input => calls.push(['model-usage', input]) },
     roleWork: { claim: input => calls.push(['role-work-claim', input]), submit: input => calls.push(['role-work-submit', input]) },
     taskSchedules: { manage: async input => calls.push(['task-schedules', input]) },

@@ -17,7 +17,7 @@ from fuli_graph.knowledge_search import personal_edge_scopes
 from fuli_graph.models import SearchRequest
 from test_project_agent_memory_neo4j import provider_client, seed_agent
 from test_session_records_neo4j import Session
-from test_turn_receipt_neo4j import REVIEW, ok, reviewed_settings
+from test_turn_receipt_neo4j import REVIEW, move, ok, reviewed_settings
 
 PROJECT = 'sample-project'
 G, H = 'engineer', 'reviewer'
@@ -360,3 +360,39 @@ async def test_the_ai_review_never_reviews_an_flas_own_knowledge():
             'ai_assessment': {'outcome': 'approve', 'summary': 'Synthetic.', 'evidence': ['Synthetic.'],
                               'confidence': 0.9, 'client': 'codex', 'model': 'synthetic-review-model'}})
         assert progress.status_code == 404, progress.text
+
+
+@pytest.mark.asyncio
+async def test_visible_items_follow_an_items_current_scope_for_each_reader():
+    """Local judgment records ask which items they may still show (rec#50):
+    the same rule, now, so a preference made one FLA's leaves the others."""
+    settings = reviewed_settings()
+    async with provider_client(settings) as (client, _):
+        space = await Boundary().build(client, settings)
+        keys = [('entity', space.id('plain-fact')), ('entity', space.id('fla-fact')),
+                ('entity', space.id('shared-habit')), ('relationship', space.plain_edge),
+                ('relationship', space.plain_link), ('entity', f'boundary-missing-{uuid4()}')]
+
+        async def visible(reader=None, headers=None):
+            response = await client.post('/v1/knowledge/visible-items', headers=headers, json={
+                'personal_space_id': space.space_id, **(reader or {}),
+                'items': [{'item_kind': kind, 'item_id': item_id} for kind, item_id in keys]})
+            return [item['item_id'] for item in ok(response)['items']]
+        everything = [item_id for _, item_id in keys[:5]]
+        plain = [space.id('plain-fact'), space.id('shared-habit'), space.plain_link]
+        assert await visible(headers=REVIEW) == everything, 'the person: every item that exists'
+        assert await visible(AS_G) == everything
+        for reader in (AS_H, {}):
+            assert await visible(reader) == plain, reader
+        refused = await client.post('/v1/knowledge/visible-items', headers=WRONG_PROOF, json={
+            'personal_space_id': space.space_id, 'items': [{'item_kind': 'entity', 'item_id': space.id('fla-fact')}]})
+        assert refused.status_code == 403, refused.text
+
+        # The person makes the shared preference G's own: at once no other reader sees it.
+        version = ok(await space.view('shared-habit', headers=REVIEW))['version']
+        ok(await move(client, space.space_id, space.id('shared-habit'), 'agent', version=version,
+                      projects=[PROJECT], agent=G))
+        assert space.id('shared-habit') in await visible(AS_G)
+        assert space.id('shared-habit') in await visible(headers=REVIEW)
+        for reader in (AS_H, {}):
+            assert space.id('shared-habit') not in await visible(reader), reader

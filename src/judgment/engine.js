@@ -61,6 +61,8 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
   // taskScope carries only the work kind, session and workflow the caller actually knows.
   const readPreferences = (project, taskScope = {}) => readJudgmentPreferences(app, { personalProjectId: project,
     projectAgentId: project ? 'employee.tonborg' : null, taskScope });
+  // memory, memoryRevision and feedback are Tonborg's own: its model reads
+  // them, a session's work package leaves them out (session-package.js, D-58).
   async function context(service, input, policy = service.store().policy(input.personalSpaceId, input.personalProjectId ?? ''), taskScope = {}) {
     const project = input.personalProjectId ?? null;
     await authorize(input, policy, { ensureAssignment: true });
