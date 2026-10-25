@@ -1,4 +1,4 @@
-import { agentProjectResolution } from './agent-knowledge-workflows.js';
+import { agentProjectResolution } from './agent-project-resolution.js';
 import { budgetKnowledgeSearch } from './knowledge-result-budget.js';
 import {
   relatedProjectGuidance,

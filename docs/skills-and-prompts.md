@@ -25,7 +25,7 @@ prompt list. Tool schemas also describe each operation's scope and constraints.
 | --- | --- | --- |
 | Client bootstrap and lifecycle hooks | Task entry, exact project/session scope, preferences, and task checkpointing. | [bootstrap](../src/setup/codex-bootstrap.js), [client adapters](../src/agents/) |
 | MCP server and tool contracts | Required entry/receipt behavior, authorization boundaries, and operation-specific inputs. | [instructions](../src/mcp/instructions.js), [tool definitions](../src/agent-tools/) |
-| Task knowledge workflow | Retrieval, durable capture, human attention, and checkpoint decisions. | [workflows](../src/graphiti/agent-knowledge-workflows.js) |
+| Task knowledge workflow | Retrieval, durable capture, human attention, and checkpoint decisions. | [guidance](../src/graphiti/task-knowledge-guidance.js) |
 | Collaboration preferences | Applicable scope, confirmation authority, inheritance, and unresolved conflicts. | [preference workflow](../src/graphiti/collaboration-preference-workflow.js) |
 | Agent and team context | Responsibility, configured character, private memory, reporting lead, and scoped worker instructions. | [task entry](../src/graphiti/project-agent-task-entry.js), [team context](../src/graphiti/project-agent-team-context.js), [Agent workflows](../src/graphiti/project-agent-workflows.js) |
 | Roundtable delivery | Recipient, sender, question, reply instructions, and thread continuation. Session authorization uses Provider capabilities, not prompt text. | [roundtable](../src/agent-roundtable/service.js) |

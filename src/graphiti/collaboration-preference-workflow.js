@@ -1,6 +1,6 @@
 import {
   agentProjectResolution
-} from './agent-knowledge-workflows.js';
+} from './agent-project-resolution.js';
 import {
   activePreferenceConflicts,
   agentCollaborationPreference,
