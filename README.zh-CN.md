@@ -518,8 +518,8 @@ MCP。默认只连接个人 Provider，不会模拟团队共享服务。
 fuli open
 ```
 
-管理界面默认位于 `http://127.0.0.1:2727`。`fuli open` 会用一次性链接让这个浏览器登录。知识详情、会话记录和
-Tonborg 的判断记录只在这样打开的控制台里显示；控制台每次重启后，需要再运行一次 `fuli open`
+管理界面默认位于 `http://127.0.0.1:2727`。`fuli open` 会用一次性登录让这个浏览器登录。知识详情、会话记录、
+Tonborg 的判断记录、Agent 对话和工作记忆只在这样打开的控制台里显示；控制台每次重启后，需要再运行一次 `fuli open`
 （见 docs/judgment-and-autonomy.md 的 “Console trust boundary”）。
 
 “设置”页集中管理 Fuli 使用的 7 个本机端口、图数据库运行方式、局域网访问、自动沉淀、
@@ -545,7 +545,7 @@ CLI 的帮助、交互提示、状态和错误信息固定使用英文，不跟�
 | `fuli stop [--data-dir DIR]` | 停止服务并保留数据 |
 | `fuli restart [选项]` | 使用与 `start` 相同的运行参数重启本机服务 |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | 查看管理界面、个人图谱和公共服务状态；`--json` 输出机器可读结果 |
-| `fuli open [--next PATH] [--data-dir DIR]` | 在默认浏览器中打开当前管理界面，并用一次性链接登录，才能看到完整记录（`--next` 登录后打开某个控制台页面，例如 `/knowledge`） |
+| `fuli open [--next PATH] [--data-dir DIR]` | 在默认浏览器中打开当前管理界面，并用一次性登录让浏览器登录，才能看到完整记录（`--next` 登录后打开某个控制台页面，例如 `/knowledge`） |
 | `fuli graph export --output DIR [--mode container\|native]` | 把当前图数据导出为可校验、可复制的离线备份包 |
 | `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | 校验备份并替换目标图数据；导入前自动保留回滚包 |
 | `fuli graph migrate --to native [--yes]` | 把容器图谱迁移到原生模式；节点和关系数量完全一致才算成功 |

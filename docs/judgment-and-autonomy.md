@@ -95,23 +95,55 @@ Agents keep their own tools (`list_judgments`, `review_with_tonborg`, `assess_ag
 
 #### Console session (0.22, rec#11 D-61)
 
-Because the server attaches the proof itself, it sends on the human-review channel only for a browser that `fuli open` signed in. Before 0.22 any local process, an Agent with a shell included, could read the full history over loopback HTTP without reading any token.
+The server attaches the proof itself, so before 0.22 any local process could read the full history over loopback HTTP without reading any token, an Agent with a shell included. From 0.22 everything that returns full history or private content, or changes real data or where it goes, serves only a browser that `fuli open` signed in. That covers reads beyond what an Agent reaches with its own token and tools, whether on the human-review channel or under the owner's own authority.
 
-- **Per launch.** Each console start makes a random secret (`crypto.randomBytes`) that stays in the server's memory. It is never written to disk, logged or put in a URL. The next launch has a new one.
-- **Sign-in.** `fuli open` (and `fuli start --open`, `fuli restart --open`) asks the running console for a one-time code at `POST /api/console-session/codes`. The request is loopback only and sends the data directory's human-review token in a header. It then opens `/auth/console?code=…` in the browser. The code is 32 random bytes, works once, expires after 60 seconds, and is compared in constant time against every waiting code. The server answers with an `HttpOnly; SameSite=Strict; Path=/` cookie named `fuli_console_<port>`, derived from the secret, and a `303` to the page, with `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. This takes the code out of the address bar and the page's history entry; a browser that also records the redirect keeps only a used-up code. `fuli open` prints only the console address, never the sign-in URL.
-- **Landing page.** `fuli open --next /knowledge?item=…` lands on that page after sign-in. The path is checked when the code is issued, and only a same-origin console path is accepted. A scheme, `//host`, `/\host`, control characters, `/api/…` and `/auth/…` are all refused (`src/console-session/next-path.js`). The landing path is kept with the code, so the sign-in URL carries only the code and no link can choose where a sign-in lands.
-- **Another site.** A redemption whose `Sec-Fetch-Site` is `cross-site` or `same-site` is refused with 403, and its code is discarded. A browser opened from the terminal sends `none`. This blocks login CSRF: no page can sign a person's browser in with a code that leaked to it. A forced sign-in would give that page nothing anyway: there is one person per console, the cookie is HttpOnly, and other sites' requests already fail the console's Origin and Fetch Metadata checks. A console page opened from another site's link still loads as the static console (rec#40 A1). Its own API requests are same-site, so they carry the cookie once this browser is signed in.
-- **What needs it.** These ports serve a request only when it carries this launch's cookie (`src/console-session/session-ports.js`):
-  - the full reads through `src/knowledge-owner-reads/console-port.js`, which include the owner proof of every route listed above, the graph, an item's view, a turn's full receipt, session records and what a session holds for a migration, the writing-taste profile, preference conflicts with their defer and completion, and the personal publication review with its decisions;
-  - a permanent delete (preview, confirm, status);
-  - where knowledge applies (one item, a session's batch);
-  - tag changes and the tag reads across projects;
-  - the undo of Tonborg's automatic review.
+- **Per launch.** Each console start makes a random secret (`crypto.randomBytes`) that stays in the server's memory. It is never written to disk, logged or put in a URL. Two credentials are derived from it, and the next launch has new ones:
+  - an `HttpOnly; SameSite=Strict; Path=/` cookie named `fuli_console_<port>`;
+  - a session token.
+- **Why two.** A cookie is not isolated by port: the browser also sends it to any other port on `127.0.0.1`, where a local process could collect it. The token is kept in the console page's `localStorage`. That storage belongs to this origin (scheme, host and port), so another port cannot read it. Every console request sends the token as `x-fuli-console-session`, and protected requests need both credentials, each compared in constant time. A custom header from another origin needs a CORS preflight. The console never grants one: another origin's preflight gets 403 with no `Access-Control-*` headers.
+- **Sign-in.** `fuli open` (and `fuli start --open`, `fuli restart --open`) asks the running console for a sign-in at `POST /api/console-session/codes`.
+  - The request is loopback only and sends the data directory's human-review token in a header.
+  - The console makes a one-time code: 32 random bytes, works once, expires after 60 seconds, and is compared in constant time against every waiting code.
+  - It writes the code into an owner-only launcher file (`0600`, in a `0700` directory under the system temporary directory) and answers only that file's path. `fuli open` opens the file, as Jupyter does, so the code is never on a command line, where other processes (on Linux, other accounts too) could read it.
+  - The file sends the browser to `/auth/console#code=…`. A browser never sends a fragment to a server or in a Referer.
+  - That page takes the code out of the address bar at once and redeems it with a same-origin `POST /api/console-session/sign-in`. The answer sets the cookie and returns the token and the landing path. The page stores the token and replaces itself with the landing page.
+  - The console deletes the launcher file once its code is redeemed or expires, and its directory when it stops. Neither the code, the cookie nor the token is ever logged, and `fuli open` prints only the console address.
+- **Landing page.** `fuli open --next /knowledge?item=…` lands on that page after sign-in.
+  - The path is checked when the code is issued, then checked again after normalizing: `/..//host` and `/%2e%2e//host` normalize to `//host`.
+  - Only a same-origin console path is accepted. A scheme, `//host`, `/\host`, control characters, `/api/…` and `/auth/…` are refused (`src/console-session/next-path.js`).
+  - The path is kept with the code, so no link can choose where a sign-in lands. The page also refuses an answer that would leave the origin.
+- **Another site.**
+  - **Redeeming:** only the console's own page can redeem a code. A request from another origin, or with `Sec-Fetch-Site` `cross-site`, is refused by the request policy before its body is read. A `same-site` request (another port of this host without an `Origin`) is refused with 403 and its code is burned.
+  - **Codes in URLs:** a code in a URL's query is not how a sign-in works. Any request naming one, a link or a subresource from anywhere, burns it before the request policy answers.
+  - **Login CSRF:** the code reaches a page only through the owner-only file, so a page of another site cannot hold one unless a local process of this account gave it away. Even then a forced sign-in would give that page nothing: there is one person per console, the cookie is HttpOnly, and the token stays in this origin's storage.
+  - **Links from other sites:** a console page opened from another site's link still loads as the static console (rec#40 A1). Its own requests are same-origin and carry both credentials once this browser is signed in.
+- **What needs it.** A request without both credentials of this launch gets 401 `console_session_required` (`src/console-session/session-ports.js`). That includes no cookie, a wrong one, another port's, one of an earlier launch, or the cookie without the token. Nothing is sent, read, run or written.
+  - **Human-review ports:**
+    - the full reads through `src/knowledge-owner-reads/console-port.js`: the owner proof of every route listed above, the graph, an item's view, a turn's full receipt, session records and what a session holds for a migration, the writing-taste profile, preference conflicts with their defer and completion, and the personal publication review with its decisions;
+    - a permanent delete (preview, confirm, status);
+    - where knowledge applies (one item, a session's batch);
+    - tag changes and the tag reads across projects;
+    - the undo of Tonborg's automatic review.
+  - **Owner-authority routes:**
+    - `POST /api/agent-conversations/query`, which reads every client's conversations, full messages included, and `PUT /api/agent-conversations/policy`;
+    - an Agent's private working memory, `GET /api/project-agents/:agentId/memory`, and its export, `GET /api/project-agents/:agentId/memory/export`.
+  - **Writes:**
+    - confirmed data-format migrations and their undo, `POST /api/data-format/apply` and `POST /api/data-format/rollback`;
+    - a built-in Agent's model settings and its 「只给建议」 switch, `PUT /api/model-backends/roles/:role` and `PUT /api/model-backends/roles/:role/trust`. These decide where its model calls, and the content in them, go.
+  - The LAN refusal above still comes first, and the Provider still checks the proof. Another device never gets a session, because sign-ins are issued and redeemed only over loopback. On a LAN device the page says that full records show only in the console on the computer running FULI; it does not tell that device to run a command.
+- **The page.** A refused read shows a one-line reason where it was asked. The top bar shows one notice with the command to run, for example `fuli open --next "/knowledge?item=…"`. The notice clears when the same read succeeds. If this origin's storage cannot be used, the sign-in page says so, and protected reads keep showing the notice. The page never redirects or retries by itself.
 
-  A request with no cookie, a wrong one, another port's, or one from an earlier launch gets 401 `console_session_required`. Nothing is sent, read, run or written. The LAN refusal above still comes first, and the Provider still checks the proof. Another device never gets a session, because codes are issued and redeemed only over loopback. So a LAN console shows what it shows without these reads.
-- **The page.** A refused read shows a one-line reason where it was asked. The top bar shows one notice with the command to run, for example `fuli open --next "/knowledge?item=…"`. The notice clears when the same read succeeds. The page never redirects or retries by itself.
+Unchanged, without a session (none of these returns protected history):
 
-Unchanged, without a session: `/api/health`, `/api/state`, settings, capture and recall policy, `/api/agent-pins`, `/api/judgment/policy`, model settings and usage, Agents, tasks, the roundtable, agent conversations (read with the Provider's Agent access token, as an Agent with that token could read them, not on the human-review channel), data-format status and migrations, and every static page.
+- `/api/health`, `/api/state`, system settings and runtime leases;
+- capture, recall and Agent access policy;
+- `/api/agent-pins`, `/api/judgment/policy`;
+- model roles, usage and settings history;
+- Agents' profiles, tasks and schedules, the roundtable;
+- data-format status and preview;
+- every static page.
+
+These answer what an Agent with the Provider's Agent access token could also read.
 
 Every way of opening the console signs in this way, or lands on a page that says to run `fuli open`:
 
@@ -121,6 +153,10 @@ Every way of opening the console signs in this way, or lands on a page that says
 - **The end of `fuli setup`:** it prints `Open: run fuli open (console at …)`.
 - **Receipt links, issue links, notification links and settings links:** they are plain console pages. They show their full content once this browser is signed in in this launch; before that, they show the notice.
 
-A console restart, including a settings change that restarts it, starts a new launch. Run `fuli open` again after it. If a console is too old to issue codes, or has no human-review channel, `fuli open` still opens it without a session and says why.
+A console restart, including a settings change that restarts it, starts a new launch. Run `fuli open` again after it. If a console is too old to sign in, or has no human-review channel, `fuli open` still opens it without a session and says why.
 
-**Known limit: same OS account.** This raises the bar; it does not isolate. Signing in needs what the human-review channel needs: read access to the data directory's provider env. Any process of the same OS account can read that file (and the rest of the data directory, graph files included), and can drive a browser or watch command lines. True isolation needs the operating system: a different account or a sandbox. What the session does close is the path that needed no token at all: a plain loopback HTTP request with only a `Host` header (`test/console-session.test.js`).
+**Known limit: same OS account.** This raises the bar; it does not isolate. Signing in needs what the human-review channel needs: read access to the data directory's provider env. Any process of the same OS account can read that file, the launcher files and the rest of the data directory (graph files included), and can drive a browser. True isolation needs the operating system: a different account or a sandbox. What the session closes:
+
+- the path that needed no token at all: a plain loopback HTTP request with only a `Host` header;
+- collecting the session cookie on another local port;
+- reading a sign-in code from a command line (`test/console-session.test.js`).

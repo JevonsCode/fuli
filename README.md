@@ -623,9 +623,9 @@ Open the management UI after setup:
 fuli open
 ```
 
-The default URL is `http://127.0.0.1:2727`. `fuli open` signs this browser in with a one-time link: knowledge
-details, session records and Tonborg's records show only in a console opened this way, and again after each
-console restart (docs/judgment-and-autonomy.md, "Console trust boundary").
+The default URL is `http://127.0.0.1:2727`. `fuli open` signs this browser in with a one-time sign-in: knowledge
+details, session records, Tonborg's records, Agent conversations and working memory show only in a console opened
+this way; run `fuli open` again after each console restart (docs/judgment-and-autonomy.md, "Console trust boundary").
 
 The Settings page manages all seven local Fuli ports, graph runtime mode, LAN access, automatic capture,
 Agent access, UI language, and the resource refresh interval. Run `fuli restart` after saving port,
@@ -651,7 +651,7 @@ system locale. User data such as paths and space names is displayed unchanged.
 | `fuli stop [--data-dir DIR]` | Stop services without deleting data |
 | `fuli restart [options]` | Restart local services using the same runtime options as `start` |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | Show UI, personal graph, and shared-service status; `--json` emits machine-readable output |
-| `fuli open [--next PATH] [--data-dir DIR]` | Open the current management UI in the default browser, signed in for its full history (one-time link; `--next` lands on a console page such as `/knowledge`) |
+| `fuli open [--next PATH] [--data-dir DIR]` | Open the current management UI in the default browser, signed in for its full history (one-time sign-in; `--next` lands on a console page such as `/knowledge`) |
 | `fuli graph export --output DIR [--mode container\|native]` | Export graph data as a checksummed, copyable offline bundle |
 | `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | Verify and replace target graph data, preserving an automatic pre-import rollback bundle |
 | `fuli graph migrate --to native [--yes]` | Move a container graph to native mode, accepted only when node and relationship counts match |
