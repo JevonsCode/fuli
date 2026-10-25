@@ -8,7 +8,7 @@ import { queryConversations, resumeConversation, updateConversationPolicy } from
 import { recordUserTriage } from './conversation-triage.js';
 import { acceptTopicProposal, declineTopicProposal, listTopicProposals } from './topic-proposals.js';
 import { registerStandingAssignment } from './standing-assignment-entry.js';
-import { agentProjectResolution } from './agent-knowledge-workflows.js';
+import { agentProjectResolution } from './agent-project-resolution.js';
 import { listAgentAttention, getAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
 import { dismissProjectAgent, getAgentHandoff, listAgentDismissalLessons } from './project-agent-dismissal.js';

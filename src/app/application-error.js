@@ -18,6 +18,10 @@ export class ApplicationError extends Error {
   }
 }
 
+export function validationError(message) {
+  return new ApplicationError(ApplicationErrorCode.VALIDATION, message);
+}
+
 // A caller's argument has a value FULI cannot use (rec#48). It stays a TypeError,
 // so code that treats a TypeError as bad input (HTTP 400, connector parsing)
 // keeps working, and it is controlled, so an Agent sees invalid_input and the
