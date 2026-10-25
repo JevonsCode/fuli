@@ -85,6 +85,21 @@ it.each(['zh-CN', 'en-US'] as const)('says a full read needs fuli open in %s, on
   vi.unstubAllGlobals()
 })
 
+it('sends the console session token on every request once this origin holds one, and nothing without it', async () => {
+  window.localStorage.clear()
+  const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}', { status: 200 })))
+  vi.stubGlobal('fetch', fetch)
+  await getJson('/api/state')
+  expect(fetch.mock.calls[0]![1]?.headers).toBeUndefined()
+  window.localStorage.setItem('fuli.consoleSession', 'synthetic-session-token')
+  await getJson('/api/graph?spaceId=s')
+  await postJson('/api/judgment/review', { personalSpaceId: 's' })
+  expect(fetch.mock.calls[1]![1].headers).toEqual({ 'x-fuli-console-session': 'synthetic-session-token' })
+  expect(fetch.mock.calls[2]![1].headers).toEqual({ 'content-type': 'application/json', 'x-fuli-console-session': 'synthetic-session-token' })
+  window.localStorage.clear()
+  vi.unstubAllGlobals()
+})
+
 it('names the command that signs in and comes back to the page', () => {
   expect(consoleOpenCommand('http://127.0.0.1:2727/')).toBe('fuli open')
   expect(consoleOpenCommand('http://127.0.0.1:2727/knowledge?item=s/entity:e1')).toBe('fuli open --next "/knowledge?item=s/entity:e1"')

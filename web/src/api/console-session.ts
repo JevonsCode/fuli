@@ -28,6 +28,33 @@ export function isConsoleSessionRefusal(status: number, detail: string): boolean
   try { return JSON.parse(detail)?.code === CONSOLE_SESSION_REQUIRED } catch { return false }
 }
 
+// The session token the sign-in page received (rec#11 D-61). It lives in this
+// origin's storage, which another port of the host cannot read, unlike the
+// session cookie; every request sends it as a header. When storage cannot be
+// used there is no token, the protected reads are refused and the shell shows
+// the sign-in notice.
+const TOKEN_KEY = 'fuli.consoleSession'
+export const CONSOLE_SESSION_HEADER = 'x-fuli-console-session'
+
+export function consoleSessionToken(): string | null {
+  try { return window.localStorage.getItem(TOKEN_KEY) } catch { return null }
+}
+
+export function storeConsoleSessionToken(token: string): boolean {
+  try {
+    window.localStorage.setItem(TOKEN_KEY, token)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Only the console on the computer running FULI can be signed in; a LAN
+// device is never told to run a command "on this computer".
+export function isLocalConsoleHost(hostname: string): boolean {
+  return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(hostname)
+}
+
 // The command that signs this browser in and comes back to this page.
 // Double quotes work in cmd, PowerShell and POSIX shells alike; the
 // characters a shell reads inside them stay percent-encoded.

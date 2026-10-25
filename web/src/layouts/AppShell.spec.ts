@@ -248,6 +248,19 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
+  it('tells a LAN device that full records stay on the computer running FULI, not to run a command there', async () => {
+    const hostname = vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, hostname: '192.168.1.5' } as Location)
+    const { wrapper } = await setup('/knowledge')
+    noteConsoleSession('/api/graph', true)
+    await flushPromises()
+    const text = wrapper.get('[data-console-session-notice]').text()
+    expect(text).toBe('完整记录只在运行 FULI 的那台电脑上、用 fuli open 打开的控制台里显示，局域网设备上看不到。')
+    expect(text).not.toContain('这台电脑的终端')
+    noteConsoleSession('/api/graph', false)
+    hostname.mockRestore()
+    wrapper.unmount()
+  })
+
   it('renders feedback and dismisses it from the close button', async () => {
     const { wrapper, store } = await setup('/')
     store.reportError(new Error('读取失败，请重试。'))

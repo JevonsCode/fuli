@@ -1,5 +1,5 @@
 import { t } from '@/i18n'
-import { isConsoleSessionRefusal, noteConsoleSession } from './console-session'
+import { CONSOLE_SESSION_HEADER, consoleSessionToken, isConsoleSessionRefusal, noteConsoleSession } from './console-session'
 
 export class ApiError extends Error {
   readonly status: number
@@ -20,13 +20,21 @@ export function isKnowledgeRecoveryPending(error: unknown): boolean {
   try { return JSON.parse(error.detail)?.code === 'knowledge_recovery_pending' } catch { return false }
 }
 
-// The page's own line; the shell's notice (ConsoleSessionNotice.vue) gives the command.
+// The page's own line; the shell's notice (AppShell.vue) says what to do.
 function consoleSessionMessage(): string {
   return t('common.errors.consoleSessionRequired')
 }
 
+// Every request carries the console session token when this origin holds one
+// (rec#11 D-61); a same-origin header needs no CORS.
+function withConsoleSession(init?: RequestInit): RequestInit | undefined {
+  const token = consoleSessionToken()
+  if (!token) return init
+  return { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), [CONSOLE_SESSION_HEADER]: token } }
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init)
+  const response = await fetch(url, withConsoleSession(init))
   if (!response.ok) {
     const detail = (await response.text()).trim()
     const sessionRefused = isConsoleSessionRefusal(response.status, detail)
