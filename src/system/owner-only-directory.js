@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { chmodSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { win32 } from 'node:path';
 
 const LOCAL_SYSTEM_SID = 'S-1-5-18';
 
@@ -26,13 +26,15 @@ export function restrictToOwner(directory, { platform = process.platform, env = 
     if (stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o700) throw new Error('The directory is not this account\'s alone');
     return;
   }
-  const system32 = join(env.SystemRoot ?? 'C:\\Windows', 'System32');
-  const tool = (name, args) => String(run(join(system32, name), args, { encoding: 'utf8', windowsHide: true }));
+  // Windows paths whatever this process runs on, so an injected platform composes them the same way.
+  const system32 = win32.join(env.SystemRoot ?? 'C:\\Windows', 'System32');
+  const tool = (name, args, options = {}) => String(run(win32.join(system32, name), args,
+    { encoding: 'utf8', windowsHide: true, ...options }));
   const sid = /"(S-1-[0-9-]+)"\s*$/m.exec(tool('whoami.exe', ['/user', '/fo', 'csv', '/nh']))?.[1];
   if (!sid) throw new Error('The current Windows account could not be identified');
   tool('icacls.exe', [directory, '/setowner', `*${sid}`]);
   tool('icacls.exe', [directory, '/inheritance:r', '/grant:r', `*${sid}:(OI)(CI)F`, `*${LOCAL_SYSTEM_SID}:(OI)(CI)F`]);
-  const actual = readWindowsAcl(directory, tool);
+  const actual = readWindowsAcl(directory, tool, env);
   const expected = [sid, LOCAL_SYSTEM_SID].sort();
   const allowed = [...new Set(actual.rules.filter(rule => rule.allow).map(rule => rule.sid))].sort();
   if (actual.owner !== sid || actual.protected !== true || actual.rules.some(rule => !rule.allow)
@@ -42,12 +44,23 @@ export function restrictToOwner(directory, { platform = process.platform, env = 
 }
 
 // The owner, whether inheritance is off, and every access rule, as SIDs, so
-// localized and unresolved names compare too.
-function readWindowsAcl(directory, tool) {
+// localized and unresolved names compare too. Only .NET and the language
+// itself, no cmdlet, and without PSModulePath: a Windows PowerShell started
+// from PowerShell 7 (a CI runner, a pwsh terminal) inherits a module path it
+// cannot load Get-Acl's module from.
+function readWindowsAcl(directory, tool, env) {
   const literal = directory.replace(/'/g, "''");
-  const script = `$acl = Get-Acl -LiteralPath '${literal}'; $sid = [System.Security.Principal.SecurityIdentifier]; `
-    + `ConvertTo-Json -Compress @{ owner = $acl.GetOwner($sid).Value; protected = $acl.AreAccessRulesProtected; `
-    + `rules = @($acl.GetAccessRules($true, $true, $sid) | ForEach-Object { @{ sid = $_.IdentityReference.Value; `
-    + `allow = ($_.AccessControlType -eq 'Allow') } }) }`;
-  return JSON.parse(tool(join('WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', script]));
+  const script = `$acl = [System.IO.DirectoryInfo]::new('${literal}').GetAccessControl(); `
+    + `$sid = [System.Security.Principal.SecurityIdentifier]; `
+    + `'owner=' + $acl.GetOwner($sid).Value; 'protected=' + $acl.AreAccessRulesProtected; `
+    + `foreach ($rule in $acl.GetAccessRules($true, $true, $sid)) { 'rule=' + $rule.IdentityReference.Value + '|' + $rule.AccessControlType }`;
+  const withoutModulePath = Object.fromEntries(Object.entries(env).filter(([name]) => name.toLowerCase() !== 'psmodulepath'));
+  const lines = tool(win32.join('WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', script],
+    { env: withoutModulePath }).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const value = (key) => lines.find(line => line.startsWith(`${key}=`))?.slice(key.length + 1) ?? null;
+  return { owner: value('owner'), protected: value('protected') === 'True',
+    rules: lines.filter(line => line.startsWith('rule=')).map(line => {
+      const [sid, type] = line.slice('rule='.length).split('|');
+      return { sid, allow: type === 'Allow' };
+    }) };
 }
