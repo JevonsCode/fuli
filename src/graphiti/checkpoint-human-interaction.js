@@ -8,8 +8,9 @@ export async function checkpointHumanInteraction(application, task) {
         personalProjectId: task.personalProjectId, agentId: task.projectAgentId, status: 'open', limit: 1 });
       if (human_interaction) return { human_interaction };
     }
-    return await application.judgment?.conversationQuestions?.({ personalSpaceId,
-      personalProjectId: task.personalProjectId ?? null }) ?? {};
+    // Tonborg's question as this task's reader may read it (rec#50).
+    return await application.judgment?.agent?.conversationQuestions?.({ personalSpaceId,
+      personalProjectId: task.personalProjectId ?? null, projectAgentId: task.projectAgentId ?? null }) ?? {};
   } catch {
     return { human_question_delivery: { status: 'unavailable', retry: 'list_agent_attention or list_judgments' } };
   }

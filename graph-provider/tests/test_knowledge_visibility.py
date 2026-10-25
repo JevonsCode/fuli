@@ -1,14 +1,17 @@
 """The FLA read boundary without a graph: who may read FLA-scoped knowledge,
 and that every read path asks the same rule. Synthetic records only."""
 from types import SimpleNamespace
+from typing import Annotated
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
-from fastapi import HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 
 from fuli_graph import knowledge_visibility as visibility
 from fuli_graph import knowledge_item_view as views
 from fuli_graph.graph_query import _edge_query, _node_query
+from fuli_graph.knowledge_item_routes import register_knowledge_item_routes
 from fuli_graph.knowledge_item_view_models import KnowledgeItemRef, KnowledgeTurnReceiptRead
 from fuli_graph.knowledge_review import build_review_candidates
 from fuli_graph.knowledge_visibility import PLAIN_SESSION, AgentReader, fla_visible
@@ -245,3 +248,65 @@ async def test_a_receipt_leaves_out_other_flas_episodes_and_items_and_does_not_c
     assert (receipt.entries, receipt.unchanged_count) == ([], 1)
     changes.assert_awaited_once_with(SimpleNamespace(), {'id': 'space', 'group_id': 'g'}, ['plain-episode'])
     assert deletions.await_args.args[2] == ['plain-episode']
+
+
+@pytest.mark.asyncio
+async def test_visible_refs_asks_the_same_rule_and_leaves_out_hidden_and_missing_ids():
+    queries = []
+    stored = {'entity': {'plain': True, 'fla': False}, 'relationship': {'edge': False}}
+
+    async def execute_query(query, **parameters):
+        queries.append((query, parameters['reader']))
+        kind = 'entity' if 'MATCH (item:Entity' in query else 'relationship'
+        return [{'id': item} for item in parameters['item_ids'] if item in stored[kind]
+                and (parameters['reader'] is None or stored[kind][item])], None, None
+    store = SimpleNamespace(runtime=SimpleNamespace(driver=SimpleNamespace(execute_query=execute_query)))
+    space = {'group_id': 'g'}
+    refs = [('entity', 'plain'), ('entity', 'fla'), ('entity', 'gone'), ('relationship', 'edge')]
+    assert await visibility.visible_refs(store, space, H, refs) == {('entity', 'plain')}
+    # The hidden lookups' own rule, asked for the items that pass it.
+    assert visibility.fla_visible_cypher('item', 'entity') in queries[0][0]
+    assert visibility.fla_relationship_visible_cypher('item', 'source', 'target') in queries[1][0]
+    assert all('AND NOT ' not in query for query, _ in queries)
+    assert all(query.count('AND NOT ') == 1 for query in visibility._HIDDEN_QUERIES.values())
+    # The person reads every item that exists, still by query: a missing id is never visible.
+    queries.clear()
+    assert await visibility.visible_refs(store, space, None, refs) == {
+        ('entity', 'plain'), ('entity', 'fla'), ('relationship', 'edge')}
+    assert [reader for _, reader in queries] == [None, None]
+    assert await visibility.visible_refs(store, space, H, []) == set()
+
+
+@pytest.mark.asyncio
+async def test_the_visible_items_route_returns_keys_in_order_for_the_reader_it_authorizes(monkeypatch):
+    authorize = AsyncMock(return_value={'agent_id': 'agent-g'})
+    monkeypatch.setattr(visibility, 'authorize_project_agent', authorize)
+    readers = []
+
+    async def visible(store, space, reader, refs):
+        readers.append(reader)
+        return {ref for ref in refs if ref[1] != 'private'}
+    monkeypatch.setattr(views, 'visible_refs', visible)
+    store = SimpleNamespace(_require_personal=lambda: None,
+                            authorize=AsyncMock(return_value={'id': 'space', 'kind': 'personal', 'group_id': 'g'}))
+    application = FastAPI()
+
+    async def actor():
+        return {'id': 'synthetic-agent'}
+    agent = Annotated[dict, Depends(actor)]
+    register_knowledge_item_routes(application, store, agent, agent, agent)
+    items = [{'item_kind': 'relationship', 'item_id': 'edge'}, {'item_kind': 'entity', 'item_id': 'private'},
+             {'item_kind': 'entity', 'item_id': 'plain'}]
+    transport = httpx.ASGITransport(app=application)
+    async with httpx.AsyncClient(transport=transport, base_url='http://synthetic.test') as client:
+        plain = await client.post('/v1/knowledge/visible-items', json={'personal_space_id': 'space', 'items': items})
+        assert (plain.status_code, plain.json()) == (200, {'items': [items[0], items[2]]})
+        fla = await client.post('/v1/knowledge/visible-items', json={
+            'personal_space_id': 'space', 'items': items[:1], 'reader_project_id': 'alpha',
+            'reader_agent_id': 'agent-g'})
+        assert fla.json() == {'items': items[:1]}
+        too_many = await client.post('/v1/knowledge/visible-items', json={
+            'personal_space_id': 'space', 'items': items * 34})
+        assert too_many.status_code == 422
+    assert readers == [PLAIN_SESSION, G]
+    store.authorize.assert_awaited_with({'id': 'synthetic-agent'}, 'space', 'reader')
