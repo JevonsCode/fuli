@@ -206,6 +206,56 @@ test('an injection-flagged review keeps its signal names, never a later aiReview
   assert.equal(other.human_interaction.source.id, f.two.id);
 });
 
+test('fields named like Object.prototype members are withheld at every level, and the view pollutes no prototype', async t => {
+  const f = await reviewed(t);
+  const PROTO_TEXT = 'Synthetic text under a prototype-named key';
+  // JSON.parse keeps __proto__ as an own key, as a stored record's body does.
+  const named = `"constructor":"${PROTO_TEXT}","toString":"${PROTO_TEXT}","__proto__":{"polluted":"${PROTO_TEXT}"}`;
+  const body = JSON.parse(`{"personalProjectId":"${PROJECT}","kind":"review","target":"entity:two","title":"Synthetic plain fact",
+    "outcome":"escalate","confidence":0.5,
+    "aiReview":{"state":"ai_suggested","modelOutcome":"escalate","interceptions":[],${named}},
+    "preferenceDelivery":{"version":1,"status":"delivered",${named}},${named}}`);
+  assert.ok(Object.hasOwn(body, '__proto__') && Object.hasOwn(body.aiReview, '__proto__'), 'the fixture has own __proto__ keys');
+  const record = f.service.store().record(SPACE, body, 'synthetic-prototype-names');
+  // A kind named like a prototype member names no plain target either.
+  const kinds = ['constructor', 'toString'].map(kind => f.service.store().record(SPACE, { personalProjectId: PROJECT, kind,
+    target: PROTO_TEXT, outcome: 'recommend' }, `synthetic-kind-${kind}`));
+
+  const result = await f.list({});
+  const shown = byId(result, record);
+  assert.deepEqual(shown.aiReview, { state: 'ai_suggested', modelOutcome: 'escalate', interceptions: [] });
+  assert.deepEqual(shown.preferenceDelivery, { version: 1, status: 'delivered' });
+  for (const prefix of ['', 'aiReview.', 'preferenceDelivery.']) {
+    for (const key of ['__proto__', 'constructor', 'toString']) {
+      assert.ok(shown.content_withheld.includes(`${prefix}${key}`), `${prefix}${key}`);
+    }
+  }
+  for (const value of [shown, shown.aiReview, shown.preferenceDelivery]) {
+    assert.equal(Object.getPrototypeOf(value), Object.prototype);
+    for (const key of ['__proto__', 'constructor', 'toString']) assert.ok(!Object.hasOwn(value, key), key);
+  }
+  assert.equal(Object.prototype.polluted, undefined);
+  assert.equal(shown.target, 'entity:two');
+  for (const kindRecord of kinds) {
+    const kindShown = byId(result, kindRecord);
+    assert.equal(kindShown.target, undefined);
+    assert.equal(kindShown.target_withheld, 'not_visible');
+    assert.deepEqual(kindShown.content_withheld, ['target']);
+  }
+  assert.ok(!JSON.stringify(result).includes(PROTO_TEXT));
+});
+
+test('a list or map rule never keeps a bare value in place of its object', async t => {
+  const f = await reviewed(t);
+  const record = f.service.store().record(SPACE, { personalProjectId: PROJECT, kind: 'review', target: 'entity:two',
+    outcome: 'escalate', aiReview: 'Synthetic free text where aiReview\'s object belongs',
+    preferenceDelivery: 'Synthetic free text where the delivery receipt belongs' }, 'synthetic-bare-values');
+  const shown = byId(await f.list({}), record);
+  assert.equal(shown.aiReview, undefined);
+  assert.equal(shown.preferenceDelivery, undefined);
+  assert.ok(shown.content_withheld.includes('aiReview') && shown.content_withheld.includes('preferenceDelivery'));
+});
+
 test('an FLA reader names one project, and the Provider decides whether it is that project\'s FLA', async t => {
   const f = await reviewed(t);
   await assert.rejects(dispatchGraphTool(f.app, 'list_judgments', { personalSpaceId: SPACE, projectAgentId: 'fla-a' }), TypeError);

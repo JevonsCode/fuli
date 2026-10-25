@@ -60,7 +60,8 @@ function agentRecord(record, targets) {
   const { target, title, ...rest } = record;
   const shown = project(rest, KEPT, '', withheld);
   const knowledge = record.kind === 'review' && KNOWLEDGE_KEY.test(target ?? '');
-  if (knowledge ? targets.visible.has(target) : PLAIN_TARGETS[record.kind]?.(target)) {
+  const plain = Object.hasOwn(PLAIN_TARGETS, record.kind) && PLAIN_TARGETS[record.kind](target);
+  if (knowledge ? targets.visible.has(target) : plain) {
     shown.target = target;
     // A review's title is its candidate's own name (engine.js); any other title is withheld.
     if (knowledge && title !== undefined) shown.title = title;
@@ -75,18 +76,21 @@ function agentRecord(record, targets) {
 
 // rule: true keeps a value as it is; a list keeps those keys of an object; a
 // map keeps its keys by their own rules; a Set keeps only its own values, of
-// a list too. Arrays take the rule per element.
+// a list too. Arrays take the rule per element. Only a rule's own keys name
+// fields, so `constructor`, `toString` or `__proto__` in a record is withheld
+// like any other unnamed field, and a list or map rule never keeps a bare value.
 function project(value, rule, path, withheld) {
   if (rule instanceof Set) return knownValues(value, rule, path, withheld);
-  if (rule === true || value === null || typeof value !== 'object') return value;
+  if (rule === true || value === null) return value;
   if (Array.isArray(value)) return value.map(item => project(item, rule, path, withheld));
+  if (typeof value !== 'object') { if (present(value)) withheld.add(path); return undefined; }
   const kept = {};
   for (const [key, field] of Object.entries(value)) {
     const name = path ? `${path}.${key}` : key;
-    const fieldRule = Array.isArray(rule) ? rule.includes(key) : rule[key];
+    const fieldRule = Array.isArray(rule) ? rule.includes(key) : Object.hasOwn(rule, key) && rule[key];
     if (!fieldRule) { if (present(field)) withheld.add(name); continue; }
     const shown = project(field, fieldRule, name, withheld);
-    if (shown !== undefined) kept[key] = shown;
+    if (shown !== undefined) Object.defineProperty(kept, key, { value: shown, enumerable: true, writable: true, configurable: true });
   }
   return kept;
 }
