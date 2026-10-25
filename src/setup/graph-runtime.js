@@ -62,6 +62,7 @@ import { parseProviderEnv } from './provider-env.js';
 
 const CONSOLE_READY_TIMEOUT_MS = 60_000;
 const CONSOLE_READY_INTERVAL_MS = 250;
+const CONSOLE_HEALTH_TIMEOUT_MS = 2500;
 
 export async function ensureGraphRuntime(input, dependencies = {}) {
   const deps = graphDependencies(dependencies);
@@ -478,11 +479,14 @@ async function findOrCreateSpace(baseUrl, { token, name, kind, fetchImpl }) {
 
 // The console loads the whole server before it listens; on a slow file system
 // (WSL reading the package from /mnt) that took 16 s, so 10 s was not enough.
+// The budget is wall-clock time: a slow health answer counts against it.
 function waitForWeb(url, pid, deps) {
-  return waitUntilReady(() => deps.webHealth(url, pid, 4), {
-    attempts: CONSOLE_READY_TIMEOUT_MS / CONSOLE_READY_INTERVAL_MS,
+  return waitUntilReady((budgetMs) => deps.webHealth(url, pid, 4, budgetMs), {
+    timeoutMs: CONSOLE_READY_TIMEOUT_MS,
     intervalMs: CONSOLE_READY_INTERVAL_MS,
+    probeTimeoutMs: CONSOLE_HEALTH_TIMEOUT_MS,
     wait: deps.wait,
+    now: deps.now,
     abandon: () => !deps.isProcessAlive(pid)
   });
 }
@@ -588,6 +592,7 @@ function graphDependencies(overrides) {
     createLanAccessToken: secret,
     waitForExit: waitForProcessExit,
     wait: delay,
+    now: Date.now,
     ...overrides
   };
 }
@@ -626,11 +631,11 @@ export async function readLocalConsoleVersion(url) {
   }
 }
 
-export async function checkLocalConsoleHealth(url, expectedPid, stateVersion = 3) {
+// timeoutMs bounds the whole check, including the legacy state fallback.
+export async function checkLocalConsoleHealth(url, expectedPid, stateVersion = 3, timeoutMs = CONSOLE_HEALTH_TIMEOUT_MS) {
+  const signal = AbortSignal.timeout(timeoutMs);
   try {
-    const response = await fetch(`${url}/api/health`, {
-      signal: AbortSignal.timeout(2500)
-    });
+    const response = await fetch(`${url}/api/health`, { signal });
     if (response.ok) {
       const body = await response.json();
       return body?.service === 'fuli-local-console' &&
@@ -642,7 +647,7 @@ export async function checkLocalConsoleHealth(url, expectedPid, stateVersion = 3
   }
 
   try {
-    return (await fetch(`${url}/api/state`, { signal: AbortSignal.timeout(2500) })).ok;
+    return (await fetch(`${url}/api/state`, { signal })).ok;
   } catch {
     return false;
   }

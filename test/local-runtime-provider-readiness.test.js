@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { isProcessAlive } from '../src/local-runtime/processes.js';
-import { isManagedWorkspace, waitForProviderHealth } from '../src/local-runtime/provider-readiness.js';
+import { isManagedWorkspace, waitForProviderHealth, waitUntilReady } from '../src/local-runtime/provider-readiness.js';
 
 test('Provider readiness retries until health answers', async () => {
   const requested = [];
@@ -22,15 +22,41 @@ test('Provider readiness retries until health answers', async () => {
   assert.deepEqual(waits, [1000, 1000]);
 });
 
-test('Provider readiness reports the caller failure after the last attempt without a trailing wait', async () => {
+test('Provider readiness reports the caller failure at its wall-clock deadline', async () => {
+  let clockMs = 0;
   const waits = [];
   await assert.rejects(waitForProviderHealth('http://127.0.0.1:8788', {
     fetchImpl: async () => ({ ok: false }),
-    wait: async (ms) => { waits.push(ms); },
-    attempts: 2,
+    wait: async (ms) => { waits.push(ms); clockMs += ms; },
+    now: () => clockMs,
+    timeoutMs: 2500,
     failureMessage: 'The imported graph Provider did not become ready'
   }), /The imported graph Provider did not become ready/);
-  assert.equal(waits.length, 1);
+  assert.deepEqual(waits, [1000, 1000, 500], 'the last pause ends at the deadline');
+});
+
+test('readiness probes that use their whole budget still end at the deadline', async () => {
+  let clockMs = 0;
+  const budgets = [];
+  const outcome = await waitUntilReady(async (budgetMs) => {
+    budgets.push(budgetMs);
+    clockMs += budgetMs; // a stalled health route answers only when its budget aborts it
+    return false;
+  }, { timeoutMs: 9000, intervalMs: 1000, probeTimeoutMs: 2500,
+    wait: async (ms) => { clockMs += ms; }, now: () => clockMs });
+  assert.equal(outcome, 'timed_out');
+  assert.equal(clockMs, 9000);
+  assert.deepEqual(budgets, [2500, 2500, 2000], 'the third probe is capped by the 2 s left');
+});
+
+test('readiness stops at the next check after the awaited process exits', async () => {
+  let clockMs = 0;
+  let probes = 0;
+  const outcome = await waitUntilReady(async () => { probes += 1; return false; }, {
+    timeoutMs: 60_000, intervalMs: 250, probeTimeoutMs: 2500,
+    wait: async (ms) => { clockMs += ms; }, now: () => clockMs, abandon: () => clockMs >= 500 });
+  assert.equal(outcome, 'abandoned');
+  assert.equal(probes, 2);
 });
 
 test('managed workspaces are flagged or use the local development Provider port', () => {
