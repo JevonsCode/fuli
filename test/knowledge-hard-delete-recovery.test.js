@@ -171,19 +171,28 @@ test('an abort that wins proves nothing was deleted, and a delete that arrives a
   const dataDir = dataDirectory(t);
   rememberWords(dataDir);
   const graph = syntheticGraph();
-  // The delete is stuck on its way for 500 ms; the console gave up after 50.
-  graph.arriveAfterMs = 500;
-  const port = () => knowledgeHardDelete(dataDir, { send: graph.send, deleteTimeoutMs: 50, abortAfterMs: 150 });
+  // The delete is stuck on its way; the test lets it arrive only after the
+  // console has given up on it.
+  let letDeleteArrive;
+  graph.arriveWhen = new Promise((resolve) => { letDeleteArrive = resolve; });
+  // The console's clock is injected, so the abort window opens when the test
+  // says so rather than after real time.
+  const clock = { at: Date.parse('2026-10-22T01:02:03Z') };
+  const port = () => knowledgeHardDelete(dataDir, { send: graph.send, now: () => new Date(clock.at),
+    deleteTimeoutMs: 0, abortAfterMs: 150 });
   assert.equal((await port().confirm(CONFIRM)).outcome, 'unknown');
   assert.equal(fenced(dataDir), true);
-  await delay(200);
   const operation = hardDeleteLedger(dataDir).find(SPACE, 'item-2');
+  // Past the abort window, the graph's abort wins because the delete has not
+  // reached its lock.
+  clock.at = Date.parse(operation.createdAt) + 151;
   const settled = await port().status(CONFIRM);
   assert.equal(settled.outcome, 'not_deleted');
   assert.equal(graph.operations.get(operation.id).state, 'aborted');
   assert.equal(fenced(dataDir), false, 'only a confirmed outcome releases the fence');
   // The late delete arrives, finds the abort under the same lock and is refused.
-  await delay(450);
+  letDeleteArrive();
+  await graph.deletes[0];
   assert.equal(graph.deleted, false);
   assert.equal(graph.operations.get(operation.id).state, 'aborted');
 });
