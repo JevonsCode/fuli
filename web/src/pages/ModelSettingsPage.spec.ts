@@ -50,7 +50,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   const store = useConsoleStore()
   store.runtimeStatus = 'ready'
-  store.state = { personalProjects: [
+  store.state = { personalSpaces: [{ id: 'space-1' }], activePersonalSpaceId: 'space-1', personalProjects: [
     { project_id: 'alpha', personal_space_id: 'space-1', scope_type: 'registered', profile: { name: 'Alpha 项目' } },
     { project_id: 'beta', personal_space_id: 'space-1', scope_type: 'registered', profile: { name: 'Beta 项目' } },
   ] } as never
@@ -58,7 +58,7 @@ beforeEach(() => {
   api.getJson.mockReset()
   api.putJson.mockReset()
   api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage()
-    : url.startsWith('/api/model-backends/suggestions') ? { suggestions: [] }
+    : url.startsWith('/api/model-backends/suggestions') || url.startsWith('/api/judgment/suggestions') ? { suggestions: [] }
       : url.startsWith('/api/model-backends/history') ? { entries: [] } : rolesPayload))
 })
 
@@ -287,6 +287,29 @@ describe('ModelSettingsPage', () => {
     useConsoleStore().runtimeStatus = 'loading'
     await flushPromises()
     expect(reads().filter(url => url === '/api/model-backends/suggestions')).toHaveLength(2)
+  })
+
+  it('reads Tonborg\'s suggestions of the active space into the same section, also when the space arrives later', async () => {
+    const store = useConsoleStore()
+    const state = store.state
+    store.state = null
+    const review = { id: 'judgment-1', createdAt: '2026-10-24T08:00:00.000Z', personalSpaceId: 'space-1', personalProjectId: 'alpha',
+      target: 'entity:seed-rule', title: 'Seed rule', summary: 'Supported by two sessions.', confidence: 0.7,
+      aiReview: { state: 'ai_suggested', modelOutcome: 'approve', interceptions: ['gate_not_passed'], gate: { status: 'not_passed', reason: 'suggestions_only', modelId: 'qwen-test' } },
+      model: 'qwen-test', client: null, judgedBy: { mode: 'model_api', independent: true } }
+    api.getJson.mockImplementation(async (url: string) => url.startsWith('/api/judgment/suggestions') ? { suggestions: [review] }
+      : url.startsWith('/api/model-backends/suggestions') ? { suggestions: [] }
+        : url.startsWith('/api/model-backends/usage') ? usage() : url.startsWith('/api/model-backends/history') ? { entries: [] } : rolesPayload)
+    const wrapper = await mountPage()
+    const reviewReads = () => api.getJson.mock.calls.map(([url]) => String(url)).filter(url => url.startsWith('/api/judgment/suggestions'))
+    expect(reviewReads()).toEqual([])
+    expect(wrapper.find('[data-role-suggestions]').exists()).toBe(false)
+    store.state = state
+    await flushPromises()
+    expect(reviewReads()).toEqual(['/api/judgment/suggestions?personalSpaceId=space-1'])
+    const card = wrapper.get('[data-role-suggestions] article[data-role-suggestion="tonborg"]')
+    expect(card.get('[data-suggestion-text]').text()).toBe('Seed rule · 模型认为可以通过审核')
+    expect(card.get('[data-suggestion-held]').text()).toBe('留给你你选了「只给建议」')
   })
 
   it('names its pending reads with GrowthLoading', async () => {

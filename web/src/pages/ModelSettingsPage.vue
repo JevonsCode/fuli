@@ -23,7 +23,8 @@ import { useConsoleStore } from '@/stores/console'
 // 模型与用量 (rec#8, rec#38): one centred column of grouped lists. Each
 // built-in Agent is one row (name, state, model, one summary line) that opens
 // its settings and change history in place at full row width; editing is a centred form. Then
-// what Astro, Bole and Jefa suggested with their model, and their usage. A
+// what Astro, Bole and Jefa suggested with their model and what Tonborg left
+// to the person, and their usage. A
 // save is accepted only at the local process boundary (a loopback request).
 const store = useConsoleStore()
 const payload = ref<ModelRolesPayload | null>(null)
@@ -34,8 +35,9 @@ const notice = ref('')
 const stale = ref(false)
 let reading: AbortController | null = null
 // Read together with the role settings, so the section never appears and then goes.
-const suggestions = useRoleSuggestions()
-const { entries: suggestionEntries, loading: suggestionsLoading, error: suggestionsError } = suggestions
+const activeSpace = computed(() => store.activePersonalSpace?.id ?? '')
+const suggestions = useRoleSuggestions(activeSpace)
+const { entries: suggestionEntries, loading: suggestionsLoading, error: suggestionsError, reviews, reviewsLoading, reviewsError } = suggestions
 const openedFromSettings = /^\/settings(?:[?#]|$)/
 
 const projects = computed(() => store.state?.personalProjects ?? [])
@@ -162,6 +164,8 @@ onMounted(() => {
 })
 // The top bar's refresh reads the console again; the suggestions with it.
 watch(() => store.runtimeStatus, (status) => { if (status === 'loading' && !suggestionsLoading.value) void suggestions.load() })
+// Tonborg's suggestions belong to the active space, which the console may learn after the page opened.
+watch(activeSpace, (space) => { if (space) void suggestions.load() })
 onBeforeUnmount(() => {
   reading?.abort()
   suggestions.stop()
@@ -228,7 +232,8 @@ onBeforeUnmount(() => {
           </Accordion>
         </section>
 
-        <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError" @retry="suggestions.load" @recovery-pending="suggestions.blockForRecovery" />
+        <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError"
+          :reviews="reviews" :reviews-loading="reviewsLoading" :reviews-error="reviewsError" @retry="suggestions.load" @recovery-pending="suggestions.blockForRecovery" />
 
         <ModelUsage />
 
