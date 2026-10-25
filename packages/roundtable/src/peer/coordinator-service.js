@@ -15,6 +15,7 @@ const ONLINE_MS = 90_000;
 // once per this interval instead of making a durable commit per request. The stored value
 // then lags the last request by less than this interval: a device shows offline 75-90 s
 // after it last spoke, and a connected device (it publishes at least once a minute) stays online.
+// A stored time ahead of the clock is never "within" either window (see seenWithin).
 const LAST_SEEN_WRITE_MS = 15_000;
 const PAIRING_FAILURE_WINDOW_MS = 10 * 60_000;
 const PAIRING_FAILURE_LIMIT = 10;
@@ -267,8 +268,12 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     openInvitations: () => store.openInvitations(iso()).length };
 }
 
+// A last-seen time ahead of the clock (the clock was set back) proves nothing about
+// now: it neither counts as online nor skips the next write, which records the current time.
 function seenWithin(node, now, windowMs) {
-  return Boolean(node.last_seen_at) && now - Date.parse(node.last_seen_at) < windowMs;
+  if (!node.last_seen_at) return false;
+  const age = now - Date.parse(node.last_seen_at);
+  return age >= 0 && age < windowMs;
 }
 
 // Message IDs are chosen by senders, so the coordinator keys them per sending device.

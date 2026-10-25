@@ -302,3 +302,25 @@ test('presence stays correct within the last-seen interval and revocation is sti
     assert.throws(() => service.authenticate(target.fingerprint), { code: 'device_not_trusted' });
   } finally { store.close(); }
 });
+
+test('after the clock is set back, a request records the current time and silence still goes offline', async () => {
+  const stored = Date.parse('2026-10-11T10:00:00.000Z');
+  let now = stored;
+  const { coordinator, target, store, service } = await coordinatorWithTarget({ clock: () => now });
+  const online = () => {
+    const listed = service.directory(coordinator.fingerprint).devices.find((device) => device.nodeId === target.fingerprint).online;
+    assert.equal(service.devices().find((device) => device.nodeId === target.fingerprint).online, listed);
+    return listed;
+  };
+  try {
+    service.authenticate(target.fingerprint);
+    now = Date.parse('2026-10-11T09:00:00.000Z');
+    // A last-seen time in the future says nothing about now.
+    assert.equal(online(), false);
+    service.authenticate(target.fingerprint);
+    assert.equal(store.node(target.fingerprint).last_seen_at, new Date(now).toISOString());
+    assert.equal(online(), true);
+    now += 91_000;
+    assert.equal(online(), false);
+  } finally { store.close(); }
+});
