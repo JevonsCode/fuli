@@ -2,11 +2,24 @@ import { InvalidInputError } from '../app/application-error.js';
 
 // Shared checks for untrusted input values. Each throws InvalidInputError (a
 // TypeError with code invalid_input) naming the caller's label, never the value.
+// A label is a constant field name (test/validation-labels.test.js).
 
 export function requiredString(value, label, maximum = Infinity) {
-  if (typeof value !== 'string' || !value.trim()) throw new InvalidInputError(`${label} is required`);
+  return checkedText(value, label, maximum, InvalidInputError);
+}
+
+// The same check for a value FULI supplies itself, never the caller: its own
+// personal space, the host session a hook or the MCP process is bound to, a
+// task's stored session. A missing one is FULI's fault, so it stays a plain
+// TypeError (internal_error), never invalid_input the caller cannot fix.
+export function requiredBinding(value, label, maximum = Infinity) {
+  return checkedText(value, label, maximum, TypeError);
+}
+
+function checkedText(value, label, maximum, Failure) {
+  if (typeof value !== 'string' || !value.trim()) throw new Failure(`${label} is required`);
   const normalized = value.trim();
-  if (normalized.length > maximum) throw new InvalidInputError(`${label} is too long`);
+  if (normalized.length > maximum) throw new Failure(`${label} is too long`);
   return normalized;
 }
 

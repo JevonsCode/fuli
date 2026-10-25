@@ -36,7 +36,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Behavior | Home | Notes |
 | --- | --- | --- |
 | Canonical JSON for hashing and signing | `packages/roundtable/src/canonical-json.js` | One canonical form for the whole product. Hashes and signatures must not depend on which module computed them. |
-| Input value checks (`requiredString`, `nonEmptyText`, `positiveInteger`, `uniqueTextArray`, `assertJsonObject`) | `src/validation/values.js` | Throw `InvalidInputError` with the caller's label. Shared by connectors, MCP argument parsing and HTTP routes. |
+| Input value checks (`requiredString`, `nonEmptyText`, `positiveInteger`, `uniqueTextArray`, `assertJsonObject`) | `src/validation/values.js` | Throw `InvalidInputError` with the caller's label, a constant field name (`test/validation-labels.test.js`). Shared by connectors, MCP argument parsing and HTTP routes. A value FULI binds itself (its personal space, a hook's or MCP process's host session, a task's stored session) uses `requiredBinding`: a plain `TypeError`, so `internal_error`. |
 | A caller's argument FULI cannot use | `src/app/application-error.js` (`InvalidInputError`, code `invalid_input`) | A `TypeError`, so HTTP still answers 400; MCP shows its code and message instead of `internal_error`. The message names the argument and what to pass, never the value. Internal invariants stay plain `TypeError`. |
 | Deep freeze of config defaults | `src/validation/values.js` | |
 | SHA-256 of text, bytes and files | `src/security/digest.js` (`sha256Bytes`, `sha256File`) | One place that decides encoding (`hex`) and streaming for files. |

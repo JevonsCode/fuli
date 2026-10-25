@@ -1,4 +1,4 @@
-import { requiredString } from '../validation/values.js';
+import { requiredBinding } from '../validation/values.js';
 import { captureDecision } from './capture-decision.js';
 import { captureNotice, sinceNotice } from './capture-notice.js';
 import { keptInSessionLedger } from './session-capture-pause-request.js';
@@ -23,8 +23,9 @@ const LEDGER_REASON = 'session_stopped';
 
 export async function switchSessionFuli(application, { sessionId, sourceApplication, action, projectPath = null }) {
   if (!SESSION_FULI_ACTIONS.includes(action)) throw new TypeError(`Unknown FULI session action: ${action}`);
-  requiredString(sessionId, 'Host session');
-  requiredString(sourceApplication, 'Client');
+  // The hook's or the CLI's own host session, never one a caller names.
+  requiredBinding(sessionId, 'Host session');
+  requiredBinding(sourceApplication, 'Client');
   const before = readState(application, sessionId);
   if (!before) return answer('unavailable', action, null);
   const scope = { sessionId, sourceApplication, projectPath };

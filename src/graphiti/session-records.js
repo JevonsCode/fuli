@@ -4,7 +4,7 @@ import { CATEGORY, CONFIRMATION } from '../agents/turn-receipt.js';
 import { notRecordedReason } from '../conversations/transcript-capture-gap.js';
 import { localClockTime } from '../text/clock-time.js';
 import { providerReaderFields, taskKnowledgeReader } from './knowledge-reader.js';
-import { requiredString } from '../validation/values.js';
+import { requiredBinding, requiredString } from '../validation/values.js';
 
 // "本会话记了什么" (rec#5 C6): one host session's records in three groups,
 // numbered once here so the console page and the Agent's answer list the same
@@ -39,10 +39,11 @@ export async function readSessionRecords(application, ownerReads, { personalSpac
 
 // The caller's own session, as the Agent tool reads it: entries of the turns
 // it worked in this same project, renumbered, with no content of the others,
-// as the numbered lines the Agent repeats.
+// as the numbered lines the Agent repeats. Its client is the MCP process's own
+// (normalizeAgentSessionInput), never an argument the caller could correct.
 export async function readOwnSessionRecords(application, { taskContextToken, sourceApplication }) {
   const task = await application.taskContextRegistry.context(requiredString(taskContextToken, 'taskContextToken', 160),
-    client(sourceApplication));
+    requiredBinding(sourceApplication, 'sourceApplication', MAX_CLIENT));
   const session = { sourceApplication: task.sourceApplication, sessionId: task.sessionId };
   const reader = providerReaderFields(taskKnowledgeReader(task));
   const read = await providerRead(application, session,
