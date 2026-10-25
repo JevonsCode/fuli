@@ -59,7 +59,7 @@ async function fakeOllama(t, { tags = LISTED, replies = [REPLY], chatModel = MOD
     reads: () => seen.filter(hit => hit.url === '/api/tags').length };
 }
 
-function portFor(endpoint, { fetchImpl = globalThis.fetch, protocol = 'openai_chat', timeoutMs = 30_000, now } = {}) {
+function portFor(endpoint, { fetchImpl = globalThis.fetch, protocol = 'openai_chat', timeoutMs = 30_000, now, timeoutSignal } = {}) {
   const config = {
     version: 1,
     connections: { local: { protocol, endpoint, model: MODEL, secretRef: protocol === 'openai_chat' ? null : 'synthetic' } },
@@ -70,7 +70,8 @@ function portFor(endpoint, { fetchImpl = globalThis.fetch, protocol = 'openai_ch
   };
   const ledger = new ModelUsageLedger(':memory:');
   const port = createModelBackendPort({ readConfig: () => readModelBackendConfig('model-backends.json', { read: () => config }),
-    secrets: { read: async () => 'synthetic-key' }, ledger, fetchImpl, wait: async () => {}, ...(now ? { now } : {}) });
+    secrets: { read: async () => 'synthetic-key' }, ledger, fetchImpl, wait: async () => {},
+    ...(now ? { now } : {}), ...(timeoutSignal ? { timeoutSignal } : {}) });
   const localBuild = () => port.localBuild('tonborg', 'local', config.connections.local);
   return { port, ledger, localBuild };
 }
@@ -121,20 +122,33 @@ for (const [name, { reads = 1, ...ollamaOptions }] of Object.entries(NOT_OBSERVE
 }
 
 test('a 1 s deadline with a tags route that never answers: the answer succeeds within the deadline, nothing observed', async t => {
-  const ollama = await fakeOllama(t, { tags: () => null });
-  // A clock that stands still, so the port's own 1 s minimum per attempt holds;
-  // the real attempt deadline is the abort signal started with the attempt.
+  const tagsRead = Promise.withResolvers();
+  const ollama = await fakeOllama(t, { tags: () => { tagsRead.resolve(); return null; } });
+  // A clock that stands still keeps the attempt at the port's 1 s minimum; the
+  // deadline itself is a signal this test controls, so the tags read is
+  // cancelled by that deadline rather than by elapsed wall time.
   const frozen = new Date('2026-10-24T08:00:00.000Z');
-  const { port, ledger } = portFor(ollama.endpoint, { timeoutMs: 1000, now: () => frozen });
-  const started = performance.now();
-  const { envelope, modelReceipt } = await port.decide(request());
-  const elapsed = performance.now() - started;
+  const deadline = new AbortController();
+  const localBuildDeadline = new AbortController();
+  let signals = 0;
+  const timeoutSignal = () => (++signals === 1 ? deadline.signal : localBuildDeadline.signal);
+  let tagsSignal = null;
+  const fetchImpl = async (url, init) => {
+    if (new URL(url).pathname === '/api/tags') tagsSignal = init.signal;
+    return globalThis.fetch(url, init);
+  };
+  const { port, ledger } = portFor(ollama.endpoint, { timeoutMs: 1000, now: () => frozen, fetchImpl, timeoutSignal });
+  const decision = port.decide(request());
+  await tagsRead.promise;
+  assert.equal(tagsSignal.aborted, false);
+  deadline.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+  const { envelope, modelReceipt } = await decision;
   assert.equal(modelReceipt.status, 'completed');
   assert.deepEqual(envelope.payload, { choice: 'ada' });
   assert.deepEqual(observations(ledger), [{ digest: null, outcome: 'succeeded' }]);
   assert.equal(ollama.reads(), 1);
-  // The read ends with the attempt's 1 s deadline (plus timer granularity), never later.
-  assert.ok(elapsed < 1250, `took ${elapsed} ms`);
+  // The read ended with the attempt's deadline, not with a later timer.
+  assert.equal(tagsSignal.reason, deadline.signal.reason);
 });
 
 test('with too little of the deadline left after the answer the build is not read at all', async t => {

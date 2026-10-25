@@ -36,7 +36,8 @@ const USAGE_NOTES = 'One record per actual model API attempt; requests count dis
   + 'cachedInput, cacheWriteInput and reasoning are subsets of input or output as each provider defines them and are never added to totals. '
   + 'Costs are estimates from configured unit prices only; without prices the cost is unknown.';
 
-export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = globalThis.fetch, wait = delay, now = () => new Date() }) {
+export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = globalThis.fetch, wait = delay,
+  now = () => new Date(), timeoutSignal = ms => AbortSignal.timeout(ms) }) {
   // Endpoints that rejected json_schema output, for this process.
   const promptOnly = new Set();
 
@@ -126,7 +127,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       if (blocked) return stop('budget_exhausted', blocked);
 
       let result;
-      const attemptSignal = AbortSignal.timeout(remainingMs);
+      const attemptSignal = timeoutSignal(remainingMs);
       try {
         result = await adapter.call({ connection: target, secret, request, mode, signal: attemptSignal,
           prompt: outgoing, maxOutputTokens: limits.maxOutputTokens, fetchImpl });
@@ -183,7 +184,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
   async function localBuildAfter(adapter, target, attemptSignal, remainingMs) {
     if (remainingMs < LOCAL_BUILD_MIN_MS || attemptSignal.aborted) return null;
     return adapter.observeLocalBuild({ connection: target, fetchImpl,
-      signal: AbortSignal.any([attemptSignal, AbortSignal.timeout(Math.min(remainingMs, LOCAL_BUILD_MAX_MS))]) });
+      signal: AbortSignal.any([attemptSignal, timeoutSignal(Math.min(remainingMs, LOCAL_BUILD_MAX_MS))]) });
   }
 
   async function decide(input) {
