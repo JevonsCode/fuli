@@ -5,12 +5,14 @@ import { undoAutomaticReview } from './review-undo.js';
 import { tonborgReviewSuggestions } from './review-suggestions.js';
 
 const UNDO_PATH = '/api/judgment/undo';
-// The console's read of Tonborg's knowledge review suggestions (review-suggestions.js); GET only.
+// The console's owner read of Tonborg's knowledge review suggestions (review-suggestions.js); GET only, loopback only.
 const SUGGESTIONS_PATH = '/api/judgment/suggestions';
 
 // undoConsole: the human-review channel the person's undo is sent on
-// (review-undo.js); null without a local installation.
-export async function handleJudgmentApiRequest({ request, response, url, app, undoConsole = null }) {
+// (review-undo.js); ownerReads: the console's human-review read port
+// (src/knowledge-owner-reads), which the suggestions list reads each item
+// through again. Both are null without a local installation.
+export async function handleJudgmentApiRequest({ request, response, url, app, undoConsole = null, ownerReads = null }) {
   if (!['/api/agent-pins', '/api/judgment/policy', '/api/judgment/records', '/api/judgment/feedback', '/api/judgment/review', '/api/judgment/assess', '/api/judgment/accept', UNDO_PATH, SUGGESTIONS_PATH].includes(url.pathname)) return false;
   if (!app.judgment) throw new EmployeeError('Judgment runtime unavailable', 503);
   if (url.pathname === UNDO_PATH && request.method === 'POST') {
@@ -23,8 +25,10 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
   if (url.pathname === SUGGESTIONS_PATH) {
     response.setHeader('Cache-Control', 'no-store');
     if (request.method !== 'GET') sendJson(response, 405, { error: 'Method not allowed' });
-    else sendJson(response, 200, { suggestions: await tonborgReviewSuggestions({ judgment: app.judgment,
-      input: { personalSpaceId: url.searchParams.get('personalSpaceId') } }) });
+    else if (!refuseRemoteDecision(request, response, 'Tonborg suggestions are read only on this computer')) {
+      sendJson(response, 200, { suggestions: await tonborgReviewSuggestions({ judgment: app.judgment, ownerReads,
+        input: { personalSpaceId: url.searchParams.get('personalSpaceId') } }) });
+    }
     return true;
   }
   const query = { personalSpaceId: url.searchParams.get('personalSpaceId'),
