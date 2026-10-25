@@ -138,14 +138,16 @@ const BASELINE = Object.freeze({
   projectEntryChars: 1820,
   // rec#51 D-59: a coding task (a change request naming a distinctive term) whose exact project
   // holds matching knowledge gets a title-only knowledge_index in its recall: [id, title] pairs, the
-  // match count and one read line, never a body. Measured over the same entry for a task that
-  // searches nothing, with UUID ids and synthetic titles of 22-45 bytes (cut at 40): no match adds
-  // nothing at all (the recall is byte for byte the not_needed one); one match +199 chars, five
-  // +502 (about 125 tokens), of which the read line is 91. A task with recall intent, and every
-  // other task, is unchanged.
+  // count that one bounded search kept and one read line, never a body. Measured over the same
+  // entry for a task that searches nothing, with UUID ids and synthetic titles of 22-45 bytes (cut
+  // at 40): no match adds nothing at all (the recall is byte for byte the not_needed one); one
+  // match +226 chars, five +529 (about 130 tokens), of which the read line is 108. #368 review:
+  // the count is named matched_in_search and the line says the titles come from one bounded
+  // search, not the project's total (+27 chars from 199/502). A task with recall intent, and
+  // every other task, is unchanged.
   knowledgeIndexNoneChars: 0,
-  knowledgeIndexOneChars: 199,
-  knowledgeIndexFiveChars: 502,
+  knowledgeIndexOneChars: 226,
+  knowledgeIndexFiveChars: 529,
   // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
   // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
   // other number above is unchanged; the switch adds no tool, schema or instruction text.

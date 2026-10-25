@@ -30,7 +30,8 @@ claim that every returned candidate supports the task. If it misses or its candi
 irrelevant while durable context may still matter, call `search_current_project_knowledge`
 yourself. A coding task without such a trigger may instead get `status: indexed` with a
 `knowledge_index`: up to five `[id, title]` pairs of matching items in the exact current project and
-their `matched` count, never their bodies. A title is only a pointer: read the item with
+`matched_in_search`, how many items that one bounded search kept, never their bodies. It is not the
+project's total: more may match a search of your own. A title is only a pointer: read the item with
 `search_current_project_knowledge` (query its title) before relying on it, and cite only what you
 read. Derive one to four focused queries from the action, artifact, target system, distinctive
 identifier, and likely runbook category. Never pass the full conversational request as the sole

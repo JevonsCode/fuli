@@ -122,6 +122,37 @@ A bounded entry is still a complete, confirmable frame:
 - No stored format changes: a pending item keeps its scope, snapshot, frame
   hash and scene.
 
+## Coding-task knowledge index
+
+A task prompt that matches no recall intent gets `task_knowledge_recall`
+`not_needed`. When it is a change request in a resolved project, the entry
+first makes one search of the prompt's distinctive terms (rec#51 D-59), read
+as the recall reads: no FLA reader, no preferences, confirmed first, and a
+sensitive prompt is suppressed before any search. Only items the exact
+project defines (not inherited or global) and that name one of those terms
+count. With one, the recall is `status: "indexed"` with a `knowledge_index`:
+at most five `[id, title]` pairs (titles cut at 40 bytes), `matched_in_search`
+and one line to read an item with `search_current_project_knowledge` before
+relying on it. No body and no source marker.
+
+- `matched_in_search` counts what that one bounded search returned and kept
+  (the Provider caps each kind at 12; pending items drop out when a confirmed
+  one matched). It is not the project's total.
+- "Change request" is a heuristic, not intent classification: a clause that
+  opens with an imperative change verb, after at most a few polite or
+  sequencing words (`please`, `can you`, `then`, 请, 帮我, a 把/给 phrase). A
+  clause that asks (a question word, a trailing `?`, 吗 or 呢, unless it is a
+  "can you" request), opens with a negation, or uses the word as a noun
+  ("tests for") never counts.
+- 2 s is a threshold for *starting* the search, not a timeout of its own:
+  with less of the hook's entry time left the entry goes without it, as it
+  goes without a model hint. A search already running is cut short like every
+  other entry read: the hook's abort signal reaches the Provider request,
+  which combines it with its own request timeout (`AbortSignal.any`), and a
+  failed search leaves the recall `not_needed`.
+- No match, no resolved project, a failed or skipped search: the recall is
+  the `not_needed` one, byte for byte.
+
 ## Same-task reader pages
 
 `read_task_preferences({ taskContextToken, cursor? })` reads current preferences
