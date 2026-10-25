@@ -1,9 +1,12 @@
-// Shared checks for untrusted input values. Each throws TypeError with the caller's label.
+import { InvalidInputError } from '../app/application-error.js';
+
+// Shared checks for untrusted input values. Each throws InvalidInputError (a
+// TypeError with code invalid_input) naming the caller's label, never the value.
 
 export function requiredString(value, label, maximum = Infinity) {
-  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} is required`);
+  if (typeof value !== 'string' || !value.trim()) throw new InvalidInputError(`${label} is required`);
   const normalized = value.trim();
-  if (normalized.length > maximum) throw new TypeError(`${label} is too long`);
+  if (normalized.length > maximum) throw new InvalidInputError(`${label} is too long`);
   return normalized;
 }
 
@@ -14,7 +17,7 @@ export function nonEmptyText(value) {
 
 export function positiveInteger(value, label, maximum) {
   if (!Number.isInteger(value) || value <= 0 || value > maximum) {
-    throw new TypeError(`${label} must be a positive integer no greater than ${maximum}`);
+    throw new InvalidInputError(`${label} must be a positive integer no greater than ${maximum}`);
   }
   return value;
 }
@@ -25,7 +28,7 @@ export function uniqueTextArray(value, label, maximum = Infinity) {
   if (!Array.isArray(value) || value.length > maximum ||
       value.some((item) => typeof item !== 'string' || !item.trim())) {
     const bound = Number.isFinite(maximum) ? `at most ${maximum} ` : '';
-    throw new TypeError(`${label} must be an array of ${bound}nonempty strings`);
+    throw new InvalidInputError(`${label} must be an array of ${bound}nonempty strings`);
   }
   return [...new Set(value.map((item) => item.trim()))];
 }
@@ -39,6 +42,6 @@ export function deepFreeze(value) {
 
 export function assertJsonObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(`${label} must be a JSON object`);
+    throw new InvalidInputError(`${label} must be a JSON object`);
   }
 }

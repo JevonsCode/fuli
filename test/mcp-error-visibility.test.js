@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import path from 'node:path';
 
 import { ApplicationError } from '../src/app/application-error.js';
 import {
@@ -7,7 +8,9 @@ import {
   checkpointTaskKnowledge
 } from '../src/graphiti/agent-knowledge-workflows.js';
 import { ProviderRequestError } from '../src/graphiti/provider-client.js';
+import { resolvePersonalProjectPath } from '../src/graphiti/project-path-context.js';
 import { errorToolResult } from '../src/mcp/tool-result.js';
+import { assertJsonObject, positiveInteger, requiredString, uniqueTextArray } from '../src/validation/values.js';
 import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
 
 // Issue source: WZ.
@@ -187,5 +190,54 @@ test('checkpoint continuation mismatches are controlled validation errors', asyn
       beginTaskContext(application, common),
       (error) => error instanceof ApplicationError && error.code === 'validation'
     );
+  }
+});
+
+// rec#48: a caller's wrong argument reaches the Agent as a typed code with what
+// to pass, so it can correct the call; a genuine failure stays opaque.
+test('a missing native projectPath reports invalid_input with guidance and no path', () => {
+  const missing = 'C:\Users\synthetic-person\missing-project';
+  let thrown;
+  try {
+    resolvePersonalProjectPath(missing, [{ project_id: 'fuli' }], {
+      fileExists: () => false, isDirectory: () => false, realPath: (candidate) => candidate,
+      readText: () => '', pathApi: path.win32
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.ok(thrown instanceof TypeError, 'callers that catch TypeError keep working');
+  const result = errorToolResult(thrown);
+  assert.equal(result.isError, true);
+  assert.equal(result.structuredContent.error.code, 'invalid_input');
+  assert.match(result.structuredContent.error.message, /existing absolute directory/);
+  assert.match(result.structuredContent.error.message, /Pass the absolute path of the current working directory/);
+  assert.doesNotMatch(result.content[0].text, /synthetic-person|missing-project/);
+});
+
+test('shared input checks report invalid_input naming the argument, never its value', () => {
+  const secret = 'sk-synthetic-secret-value';
+  for (const check of [
+    () => requiredString(secret, 'connection', 4),
+    () => positiveInteger(secret, 'limit', 100),
+    () => uniqueTextArray([secret, ''], 'projectIds'),
+    () => assertJsonObject(secret, 'policy')
+  ]) {
+    assert.throws(check, TypeError);
+    let thrown;
+    try { check(); } catch (error) { thrown = error; }
+    const result = errorToolResult(thrown);
+    assert.equal(result.structuredContent.error.code, 'invalid_input');
+    assert.match(result.structuredContent.error.message, /^(connection|limit|projectIds|policy) /);
+    assert.doesNotMatch(result.content[0].text, /sk-synthetic/);
+  }
+});
+
+test('a genuine internal TypeError stays internal_error', () => {
+  for (const error of [new TypeError("Cannot read properties of undefined (reading 'spaceId')"),
+    new TypeError('Provider did not return a durable task context')]) {
+    const result = errorToolResult(error);
+    assert.equal(result.structuredContent.error.code, 'internal_error');
+    assert.equal(result.structuredContent.error.message, 'Tool execution failed');
   }
 });
