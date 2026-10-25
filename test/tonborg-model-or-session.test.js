@@ -529,7 +529,8 @@ function withHistory(h) {
   h.app.inspectProjectAgentMemory = async () => ({ current: { memory: SECRET.memory }, revision: 3 });
   // The preference delivery as the Provider gives it to each reader: a rule
   // with an owner is that FLA's (scope agent) and reaches it alone.
-  h.preferences = { failing: false, rules: [
+  // extra: more of the Provider's answer (a cut source window, scope_unknown keys).
+  h.preferences = { failing: false, extra: {}, rules: [
     { key: 'shared-rule', instruction: SHARED_RULE, owner: null },
     { key: 'other-shared-rule', instruction: OTHER_SHARED_RULE, owner: null },
     { key: 'tonborg-rule', instruction: SECRET.rule, owner: 'employee.tonborg' }] };
@@ -537,7 +538,7 @@ function withHistory(h) {
     if (h.preferences.failing) throw Object.assign(new Error('synthetic preference read failed'), { code: 'synthetic_unavailable' });
     return completePreferences({ effective: h.preferences.rules.filter(({ owner }) => !owner || owner === projectAgentId)
       .map(({ key, instruction, owner }) => ({ id: key, item_kind: 'entity', preference_key: key, title: key, instruction,
-        preference_scope: owner ? 'agent' : 'global', confirmation_status: 'confirmed' })) });
+        preference_scope: owner ? 'agent' : 'global', confirmation_status: 'confirmed' })), ...h.preferences.extra });
   };
   return h;
 }
@@ -615,6 +616,35 @@ test('D-58: a stored rule reaches a claiming session only while that session may
     [['shared-rule', 'global', SHARED_RULE], ['other-shared-rule', 'global', OTHER_SHARED_RULE]]);
   assert.equal(preferences.context_changed, true);
   assert.ok(!JSON.stringify(preferences).includes(SECRET.rule), 'never Tonborg\'s own rule');
+});
+
+test('D-58: the same rules from a delivery now less complete, or with a new scope_unknown key, mark the context changed and name nothing new', async t => {
+  // The FLA's claim reads the same two shared rules it is given now, and no Tonborg rule was stored for a global review.
+  const claim = async (extra, check) => {
+    const h = withHistory(harness(t));
+    makeOwn(h, 'tonborg-rule', 'nobody');
+    await h.app.judgment.review(reviewInput);
+    const stored = preferencesOf((await h.work('claim', { taskContextToken: 'token-plain' })).workPackage);
+    assert.deepEqual([stored.status, stored.context_changed], ['complete', undefined], 'unchanged before');
+    const again = withHistory(harness(t));
+    makeOwn(again, 'tonborg-rule', 'nobody');
+    await again.app.judgment.review(reviewInput);
+    again.preferences.extra = extra;
+    const { workPackage } = await again.work('claim', { taskContextToken: 'token-plain' });
+    const preferences = preferencesOf(workPackage);
+    assert.deepEqual(preferences.selected.map(item => item.rule), [SHARED_RULE, OTHER_SHARED_RULE]);
+    assert.deepEqual([preferences.status, preferences.context_changed], ['partial', true]);
+    assert.deepEqual(preferences.omitted.truncated, ['context_changed']);
+    check(workPackage, preferences);
+  };
+  // A source window cut since the package was made.
+  await claim({ truncated: true, source_windows: { candidates_truncated: true, project_ancestors_truncated: false,
+    queued_conflicts_truncated: false } }, () => {});
+  // A rule limited to a task dimension appears: its key, and how many there are, stay out.
+  await claim({ scope_unknown: ['synthetic-private-new-key'] }, (workPackage, preferences) => {
+    assert.ok(!JSON.stringify(workPackage).includes('synthetic-private-new-key'));
+    assert.deepEqual(preferences.scope_unknown, []);
+  });
 });
 
 test('D-58: a preference delivery that cannot be read at claim time withholds every stored rule; the candidate is still reviewed', async t => {

@@ -39,7 +39,8 @@ export async function tonborgSessionEvidence(app, evidence, work, session) {
 // while the reader's own preference delivery still delivers the same rule
 // (key and text; the receipt keeps no item ID). The current rules are
 // never swapped in, since the review was asked with the stored ones; any rule
-// withheld, or any current rule the receipt lacks, marks the context changed.
+// withheld, any current rule or scope_unknown key the receipt lacks, or a
+// delivery now less complete than the receipt marks the context changed.
 // A delivery that cannot be read withholds every rule.
 async function readablePreferences(app, receipt, work, reader) {
   if (receipt.status === 'unavailable') return receipt;
@@ -59,7 +60,15 @@ async function readablePreferences(app, receipt, work, reader) {
   const selected = readable(receipt.selected, now.selected, rule);
   const conflicts = readable(receipt.conflicts, now.conflicts, conflict);
   const scopeUnknown = receipt.scope_unknown.filter(key => now.scope_unknown.includes(key));
-  if (scopeUnknown.length < receipt.scope_unknown.length) changed = true;
+  if (scopeUnknown.length < receipt.scope_unknown.length || now.scope_unknown.length > scopeUnknown.length) changed = true;
+  // The delivery itself got worse than the receipt (a source window cut since,
+  // say) with the same rules: the session is told only that its context changed,
+  // never which keys or windows are new.
+  if (current.status !== 'unavailable') {
+    const worse = receipt.status === 'complete' && current.status !== 'complete';
+    const newlyCut = current.omitted.truncated.some(window => !receipt.omitted.truncated.includes(window));
+    if (worse || newlyCut) changed = true;
+  }
   if (!changed) return receipt;
   return { ...receipt, status: 'partial', context_changed: true, selected, conflicts, scope_unknown: scopeUnknown,
     omitted: { ...receipt.omitted, truncated: [...new Set([...receipt.omitted.truncated, CONTEXT_CHANGED])] } };
