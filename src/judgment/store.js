@@ -107,6 +107,14 @@ export class JudgmentStore {
       : this.db.prepare('SELECT id FROM judgment_records WHERE space=? AND project=? ORDER BY rowid DESC LIMIT ?').all(space, personalProjectId ?? '', limit);
     return rows.map(({ id }) => this.get(space, id));
   }
+  // Knowledge review verdicts the host left to the person (ai_suggested,
+  // rec#10 D-24, D-36), newest first, in every project of the space.
+  reviewSuggestions(space, limit) {
+    this.#assertRecovery(space);
+    return this.db.prepare(`SELECT id FROM judgment_records WHERE space=? AND json_extract(body,'$.kind')='review'
+      AND json_extract(body,'$.aiReview.state')='ai_suggested' ORDER BY rowid DESC LIMIT ?`)
+      .all(space, limit).map(({ id }) => this.get(space, id));
+  }
   acceptances(space, agentId, personalProjectId = null) {
     this.#assertRecovery(space);
     return this.db.prepare(`SELECT id FROM judgment_records WHERE space=? AND json_extract(body,'$.kind')='acceptance'
