@@ -10,7 +10,7 @@ import { compactTaskContext } from '../../../src/conversations/task-context-view
 import { preferenceHookOutput } from '../../../src/conversations/preference-lifecycle.js';
 import { OMITTED_PREFERENCES_LABEL } from '../../../src/conversations/entry-inline-budget.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
-import { claudeEntrySession, hookFrame, syntheticLargeEntry, syntheticPreferences, syntheticRecall,
+import { claudeEntrySession, hookFrame, syntheticIndexRecall, syntheticLargeEntry, syntheticPreferences, syntheticRecall,
   syntheticRecovery } from '../../../test-support/synthetic-large-entry.js';
 
 const INLINE_CHARS = 9000;
@@ -60,6 +60,35 @@ test('recall and the conversation window shrink before any preference is left ou
   assert.ok(recovery.messages.length > 0 && recovery.messages.length < 10);
   assert.equal(recovery.truncated, true);
   assert.equal(recovery.omitted_sequence, recovery.messages[0].sequence - 1, 'the newest messages stay');
+});
+
+test('a coding task\'s knowledge index is reduced to a pointer before any preference is left out (rec#51 D-59)', async () => {
+  // The smallest synthetic entry that is over the limit with its index and
+  // fits once the index is a pointer.
+  let found = null;
+  for (let count = 8; count <= 24 && !found; count++) {
+    for (let length = 300; length <= 440 && !found; length += 5) {
+      const items = syntheticPreferences(count, { length });
+      const whole = await claudeEntry(syntheticLargeEntry({ items, sessionId: SESSION, recall: syntheticIndexRecall(5) }));
+      const frame = hookFrame(whole);
+      if (frame.task_knowledge_recall.knowledge_index === undefined && frame.preferences_omitted === undefined) found = { items, frame, whole };
+    }
+  }
+  assert.ok(found, 'some synthetic entry is over the limit only with its index');
+  const { items, frame, whole } = found;
+  assert.ok(whole.length <= INLINE_CHARS);
+  assert.deepEqual(keys(frame.effective_preferences), keys(items), 'every preference stays');
+  assert.equal(frame.task_knowledge_recall.status, 'indexed');
+  assert.equal(frame.task_knowledge_recall.items_omitted, 5);
+  assert.equal(frame.task_knowledge_recall.read.tool, 'search_current_project_knowledge');
+  assert.equal(JSON.stringify(frame).includes('SYNTHETIC indexed rule'), false);
+
+  // With many preferences the bounded selection is the same with or without an index.
+  const many = syntheticPreferences(60);
+  const withIndex = hookFrame(await claudeEntry(syntheticLargeEntry({ items: many, sessionId: SESSION, recall: syntheticIndexRecall(5) })));
+  const without = hookFrame(await claudeEntry(syntheticLargeEntry({ items: many, sessionId: SESSION })));
+  assert.deepEqual(keys(withIndex.effective_preferences), keys(without.effective_preferences));
+  assert.equal(withIndex.task_knowledge_recall.knowledge_index, undefined);
 });
 
 test('an entry that fits is the same as without an inline budget, and other Agents are unchanged', async () => {

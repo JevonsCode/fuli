@@ -76,6 +76,10 @@ delivered as blocked.
 
 1. `task_knowledge_recall` keeps its status and counts and becomes a pointer
    (`items_omitted`, `read: { tool: 'search_current_project_knowledge' }`);
+   a coding task's title-only `knowledge_index` (rec#51 D-59) is part of the
+   recall, so it goes the same way and its pairs count as `items_omitted`.
+   Like the recall it is per task and outside the preference frame: no
+   revision, snapshot or delta covers it;
    then the recent conversation window drops its oldest messages, marked as
    the Provider marks its own window (`truncated`, the latest
    `omitted_sequence`; `read_agent_conversation` reads it whole).

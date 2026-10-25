@@ -1,7 +1,9 @@
-import { createFuliSourceMarker, sourceConsoleUrl } from './source-marker.js';
+import { createFuliSourceMarker, knowledgeItemTitle, sourceConsoleUrl } from './source-marker.js';
 import { knowledgeItemRole } from './knowledge-item-role.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { budgetAutomaticRecall } from './knowledge-result-budget.js';
+import { entryTimeBelow } from '../conversations/entry-time.js';
+import { utf8Preview } from '../text/utf8-preview.js';
 
 const MAX_QUERIES = 4;
 const MAX_ITEMS_PER_KIND = 3;
@@ -46,6 +48,24 @@ const RECALL_INTENTS = Object.freeze([
     queries: ['先前 方法 规则 决策 runbook previous method decision']
   }
 ]);
+
+// rec#51 D-59: an implementation or change request that signals no recall
+// intent gets a title-only index of what matches it in its exact project. The
+// model reads an item on demand; with nothing relevant the recall is as before.
+const CHANGE_REQUEST = new RegExp('(?:修复|修改|修一下|修好|改成|改为|改一下|改动|实现|添加|增加|新增|加上|补上|补充|补齐|补测试|重构|优化|删除|去掉|移除|支持|迁移|调整|编写|写测试|测试|'
+  + '\\b(?:fix(?:es|ed|ing)?|add(?:s|ed|ing)?|implement\\w*|chang(?:e|es|ed|ing)|updat(?:e|es|ed|ing)|refactor\\w*|renam\\w*|'
+  + 'remov(?:e|es|ed|ing)|delet\\w*|support\\w*|migrat\\w*|rewrit\\w*|replac\\w*|tests?|testing|debug\\w*|bugs?|'
+  + 'build|creat(?:e|es|ing)|improv\\w*|optimi[sz]\\w*|extend\\w*|wire|handle)\\b)', 'iu');
+const MAX_INDEX_ITEMS = 5;
+const INDEX_SEARCH_LIMIT = 12;
+// Each item is an [id, title] pair: five of them with UUIDs and every title
+// cut at this size are 433 bytes with their count, 65 fewer than as objects;
+// the read line adds 91.
+const INDEX_TITLE_BYTES = 40;
+// One Provider search; with less of the entry's time left the entry goes
+// without it, as it goes without a model hint.
+const INDEX_MIN_REMAINING_MS = 2000;
+const INDEX_READ = 'Titles only: read one with search_current_project_knowledge before relying on it.';
 
 export const TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE = Object.freeze({
   before_reasking:
@@ -100,6 +120,10 @@ function positiveDeliveryClauses(prompt) {
 
 export async function recallTaskKnowledge(application, resolution, taskPrompt, { sourceApplication = null, sessionId = null } = {}) {
   const plan = planTaskKnowledgeRecall(taskPrompt);
+  if (plan.status === 'not_needed') {
+    return await knowledgeIndexRecall(application, resolution, taskPrompt, { sourceApplication, sessionId })
+      ?? recallWithoutSearch(plan.status, plan);
+  }
   if (plan.status !== 'planned') return recallWithoutSearch(plan.status, plan);
   if (!resolution.personalProjectId) {
     return {
@@ -179,6 +203,60 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
   return facts.length || entities.length ? budgetAutomaticRecall(result, {
     consoleUrl: application.consoleUrl, compare: compareRecallItems
   }) : result;
+}
+
+// The index tier: one search of the prompt's distinctive terms, read as the
+// recall reads (the same reader, no preferences, confirmed first), keeping
+// only items the exact project defines that name one of those terms. Null,
+// so the entry carries the unchanged not_needed recall, for anything but a
+// change request in a resolved project with such a match in time.
+async function knowledgeIndexRecall(application, { personalProjectId }, taskPrompt, { sourceApplication, sessionId }) {
+  const prompt = singleLine(taskPrompt).slice(0, 8192);
+  const focusTerms = distinctivePromptTerms(prompt);
+  const focusTokens = recallFocusTokens(focusTerms);
+  if (!personalProjectId || !focusTokens.length || !CHANGE_REQUEST.test(prompt)
+    || entryTimeBelow(INDEX_MIN_REMAINING_MS)) return null;
+  let found;
+  try {
+    found = await application.searchKnowledge({
+      personalSpaceId: application.config.personal.spaceId,
+      personalProjectId,
+      query: focusTerms.join(' ').slice(0, 180),
+      limit: INDEX_SEARCH_LIMIT,
+      includeHistorical: false,
+      includePending: true,
+      sourceApplication, sourceSessionId: sessionId,
+      agentInvocation: true,
+      agentToolName: 'automatic_task_knowledge_index'
+    });
+  } catch {
+    return null;
+  }
+  const exact = (items, itemKind) => withoutPreferences(items)
+    .filter(item => item.defined_project_id === personalProjectId && !item.inherited_from_project_id
+      && recallItemMatchesFocus(item, focusTokens))
+    .map(item => ({ ...item, title: knowledgeItemTitle(item, itemKind) }));
+  const matches = confirmedFirst([...exact(found?.facts, 'relationship'), ...exact(found?.entities, 'entity')])
+    .sort(compareRecallItems);
+  if (!matches.length) return null;
+  return {
+    status: 'indexed',
+    trigger_categories: [],
+    query_count: 1,
+    guidance: taskKnowledgeRetrievalGuidance(),
+    knowledge_index: {
+      matched: matches.length,
+      items: matches.slice(0, MAX_INDEX_ITEMS).map(({ id, title }) => [id, indexTitle(title)]),
+      read: INDEX_READ
+    },
+    facts: [],
+    entities: []
+  };
+}
+
+// Bounded by the bytes the entry sends, as a JSON string.
+function indexTitle(title) {
+  return utf8Preview(singleLine(title), INDEX_TITLE_BYTES, text => Buffer.byteLength(JSON.stringify(text)));
 }
 
 // An answer can rest on the recovered conversation instead of searched knowledge.

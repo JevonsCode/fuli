@@ -56,6 +56,16 @@ export function syntheticRecall(count, { length = 700 } = {}) {
     entities: [] };
 }
 
+// A coding task's title-only knowledge index (rec#51 D-59) with `count`
+// synthetic [id, title] pairs, each title at the 40-byte limit.
+export function syntheticIndexRecall(count) {
+  return { status: 'indexed', trigger_categories: [], query_count: 1,
+    knowledge_index: { matched: count, items: Array.from({ length: count }, (_, index) =>
+      [`00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`, `SYNTHETIC indexed rule ${index + 1} title…`.padEnd(37, '.')]),
+    read: 'Titles only: read one with search_current_project_knowledge before relying on it.' },
+    facts: [], entities: [] };
+}
+
 // begin_task_context as the Provider-backed producer returns it, before the
 // hook compacts it: preferences filtered for the scene, the task token,
 // receipt, one active conflict and the private scope the delivery cache binds.
