@@ -12,23 +12,28 @@ import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { roleName } from './model'
 import {
-  VISIBLE_SUGGESTIONS, isSuggestion, orderSuggestions, readScoreCard, scoreValue, suggestionAction, suggestionEvidence, suggestionModel,
-  suggestionState, suggestionText, suggestionWhy, type RoleSuggestion, type ScoreCard, type SuggestionState,
+  VISIBLE_SUGGESTIONS, isSuggestion, logSuggestionView, orderSuggestions, readScoreCard, scoreValue,
+  type RoleSuggestion, type ScoreCard, type SuggestionState, type SuggestionView,
 } from './suggestions'
+import { tonborgSuggestionView, type TonborgSuggestion } from './tonborg-suggestions'
 
 // 建议记录: what Astro, Bole and Jefa showed after asking their own model, as
-// recorded then (rec#10 D-30), never a to-do. The page reads them with the
-// role settings; until they arrive nothing but an inline wait shows, and with
-// none the section is not there. An action opens the page where the person
-// decides. This section only reads.
-const props = defineProps<{ entries: RoleSuggestion[] | null; loading: boolean; error: string }>()
+// recorded then (rec#10 D-30), and the knowledge reviews Tonborg left to the
+// person (rec#8), never a to-do. The page reads both with the role settings;
+// until something arrives nothing but an inline wait shows, and with none the
+// section is not there. An action opens the page where the person decides.
+// This section only reads.
+const props = withDefaults(defineProps<{
+  entries: RoleSuggestion[] | null; loading: boolean; error: string
+  reviews?: TonborgSuggestion[] | null; reviewsLoading?: boolean; reviewsError?: string
+}>(), { reviews: null, reviewsLoading: false, reviewsError: '' })
 const emit = defineEmits<{ retry: []; recoveryPending: [cause: unknown] }>()
 
 const showAll = ref(false)
-const opened = ref<number | null>(null)
-const scoreCards = ref<Record<number, ScoreCard>>({})
+const opened = ref<string | null>(null)
+const scoreCards = ref<Record<string, ScoreCard>>({})
 const scoreCardError = ref('')
-const scoreCardLoading = ref<number | null>(null)
+const scoreCardLoading = ref<string | null>(null)
 let scoreCardRequest = 0
 function clearScoreCards() {
   ++scoreCardRequest
@@ -51,33 +56,48 @@ const agentName = (entry: RoleSuggestion) => agents.value[entry.subject.agentId!
 const TONES: Record<SuggestionState, 'default' | 'secondary' | 'warning' | 'outline'> = {
   suggested: 'default', newer: 'secondary', superseded: 'secondary', fallback: 'outline', stopped: 'warning',
 }
-const ordered = computed(() => orderSuggestions(props.entries ?? []))
-const views = computed(() => ordered.value.slice(0, showAll.value ? undefined : VISIBLE_SUGGESTIONS).map(entry => ({
-  entry, state: suggestionState(entry), text: suggestionText(entry), why: suggestionWhy(entry), model: suggestionModel(entry),
-  evidence: suggestionEvidence(entry), action: suggestionAction(entry),
-  at: formatDateTime(entry.at, currentLocale(), DATE_TIME_MINUTE, { missing: '' }),
+const ordered = computed(() => orderSuggestions([...(props.entries ?? []).map(logSuggestionView), ...(props.reviews ?? []).map(tonborgSuggestionView)]))
+const views = computed(() => ordered.value.slice(0, showAll.value ? undefined : VISIBLE_SUGGESTIONS).map(view => ({
+  ...view, time: formatDateTime(view.at, currentLocale(), DATE_TIME_MINUTE, { missing: '' }),
 })))
 // Suggestions are cards; the rest say why in one line each.
 const cards = computed(() => views.value.filter(view => isSuggestion(view.state)))
 const lines = computed(() => views.value.filter(view => !isSuggestion(view.state)))
 
-async function toggleScoreCard(entry: RoleSuggestion) {
+// The label names what is still being read; the first wait shows only while nothing is there to show.
+const pendingLabel = computed(() => {
+  if (props.loading && props.reviewsLoading) return t('modelSettings.suggestions.loadingAll')
+  if (props.loading) return t('modelSettings.suggestions.loading')
+  return props.reviewsLoading ? t('modelSettings.suggestions.loadingTonborg') : ''
+})
+const waiting = computed(() => !ordered.value.length && ((props.loading && !props.entries) || (props.reviewsLoading && !props.reviews)))
+// A read that failed with nothing of it shown says so; the same cause for both is said once.
+const failure = computed(() => {
+  const log = props.error && !props.entries ? props.error : ''
+  const tonborg = props.reviewsError && !props.reviews ? props.reviewsError : ''
+  if (log && log === tonborg) return `${t('modelSettings.suggestions.loadFailedAll')} ${log}`
+  return [log && `${t('modelSettings.suggestions.loadFailed')} ${log}`,
+    tonborg && `${t('modelSettings.suggestions.tonborgLoadFailed')} ${tonborg}`].filter(Boolean).join(' ')
+})
+
+async function toggleScoreCard(view: SuggestionView) {
+  const entry = view.bole!
   const current = ++scoreCardRequest
   scoreCardError.value = ''
-  if (opened.value === entry.id) {
+  if (opened.value === view.key) {
     opened.value = null
     return
   }
-  opened.value = entry.id
-  if (scoreCards.value[entry.id]) return
-  scoreCardLoading.value = entry.id
+  opened.value = view.key
+  if (scoreCards.value[view.key]) return
+  scoreCardLoading.value = view.key
   try {
     const value = await readScoreCard(entry)
-    if (current === scoreCardRequest) scoreCards.value = { ...scoreCards.value, [entry.id]: value }
+    if (current === scoreCardRequest) scoreCards.value = { ...scoreCards.value, [view.key]: value }
   } catch (cause) {
     if (current !== scoreCardRequest) return
     if (isKnowledgeRecoveryPending(cause)) { clearScoreCards(); emit('recoveryPending', cause) }
-    else if (opened.value === entry.id) scoreCardError.value = apiErrorReason(cause)
+    else if (opened.value === view.key) scoreCardError.value = apiErrorReason(cause)
   } finally {
     if (current === scoreCardRequest) scoreCardLoading.value = null
   }
@@ -85,61 +105,65 @@ async function toggleScoreCard(entry: RoleSuggestion) {
 </script>
 
 <template>
-  <GrowthLoading v-if="loading && !entries" variant="inline" :label="t('modelSettings.suggestions.loading')" />
-  <p v-else-if="error && !entries" class="role-suggestions-error" role="alert">
-    {{ t('modelSettings.suggestions.loadFailed') }} {{ error }}
-    <Button variant="outline" size="sm" @click="emit('retry')">{{ t('modelSettings.retry') }}</Button>
-  </p>
-  <section v-else-if="entries?.length" class="ui-section role-suggestions" aria-labelledby="role-suggestions-title" data-role-suggestions>
+  <GrowthLoading v-if="waiting" variant="inline" :label="pendingLabel" />
+  <section v-else-if="ordered.length" class="ui-section role-suggestions" aria-labelledby="role-suggestions-title" data-role-suggestions>
     <div class="ui-section-label">
       <h2 id="role-suggestions-title" class="list-title">{{ t('modelSettings.suggestions.title') }}</h2>
-      <GrowthLoading v-if="loading" variant="inline" :label="t('modelSettings.suggestions.loading')" />
+      <GrowthLoading v-if="pendingLabel" variant="inline" :label="pendingLabel" />
     </div>
     <p class="role-suggestions-note" data-role-suggestions-note>{{ t('modelSettings.suggestions.note') }}</p>
+    <p v-if="failure" class="role-suggestions-error" role="alert">
+      {{ failure }}
+      <Button variant="outline" size="sm" @click="emit('retry')">{{ t('modelSettings.retry') }}</Button>
+    </p>
     <ul v-if="cards.length" class="role-suggestions-list">
-      <li v-for="{ entry, state, text, model, evidence, action, at } in cards" :key="entry.id">
-        <article class="role-suggestion" :class="{ 'role-suggestion-open shadow-md': opened === entry.id }" :data-role-suggestion="entry.role" :data-suggestion-state="state"
-          :aria-labelledby="`role-suggestion-${entry.id}`">
+      <li v-for="view in cards" :key="view.key">
+        <article class="role-suggestion" :class="{ 'role-suggestion-open shadow-md': opened === view.key }" :data-role-suggestion="view.role" :data-suggestion-state="view.state"
+          :aria-labelledby="`role-suggestion-${view.key}`">
           <div class="role-suggestion-main">
             <header>
-              <strong :id="`role-suggestion-${entry.id}`">{{ roleName(entry.role) }}</strong>
-              <Badge :variant="TONES[state]" data-suggestion-status>{{ t(`modelSettings.suggestions.states.${state}`) }}</Badge>
+              <strong :id="`role-suggestion-${view.key}`">{{ roleName(view.role) }}</strong>
+              <Badge :variant="TONES[view.state]" data-suggestion-status>{{ t(`modelSettings.suggestions.states.${view.state}`) }}</Badge>
             </header>
             <p class="role-suggestion-text" data-suggestion-text>
-              <template v-if="entry.role === 'bole'">
-                <AgentName :space-id="entry.personalSpaceId" :agent-id="entry.subject.agentId!" :name="agentName(entry)" /> ·
-              </template>{{ text }}
+              <template v-if="view.bole">
+                <AgentName :space-id="view.bole.personalSpaceId" :agent-id="view.bole.subject.agentId!" :name="agentName(view.bole)" /> ·
+              </template>{{ view.text }}
             </p>
-            <p v-if="entry.suggestion?.reason && !entry.hard_deleted" class="role-suggestion-reason">{{ entry.suggestion.reason }}</p>
+            <p v-if="view.reason" class="role-suggestion-reason">{{ view.reason }}</p>
             <dl>
               <div>
                 <dt>{{ t('modelSettings.model') }}</dt>
-                <dd :title="evidence.title"><code>{{ model ?? t('modelSettings.none') }}</code></dd>
+                <dd :title="view.evidence.title"><code>{{ view.model ?? t('modelSettings.none') }}</code></dd>
               </div>
               <div>
                 <dt>{{ t('modelSettings.suggestions.time') }}</dt>
-                <dd><time :datetime="entry.at">{{ at }}</time></dd>
+                <dd><time :datetime="view.at">{{ view.time }}</time></dd>
               </div>
-              <div v-if="evidence.dimensions.length" data-suggestion-evidence>
+              <div v-if="view.evidence.dimensions.length" data-suggestion-evidence>
                 <dt>{{ t('modelSettings.suggestions.evidence') }}</dt>
-                <dd>{{ evidence.dimensions.join(' · ') }}</dd>
+                <dd>{{ view.evidence.dimensions.join(' · ') }}</dd>
+              </div>
+              <div v-if="view.heldBy" data-suggestion-held>
+                <dt>{{ t('modelSettings.suggestions.heldBy') }}</dt>
+                <dd>{{ view.heldBy }}</dd>
               </div>
             </dl>
           </div>
-          <footer v-if="action">
-            <Button v-if="action.kind === 'link'" as-child size="sm" variant="outline">
-              <RouterLink :to="action.to" data-suggestion-action>{{ action.label }}</RouterLink>
+          <footer v-if="view.action">
+            <Button v-if="view.action.kind === 'link'" as-child size="sm" variant="outline">
+              <RouterLink :to="view.action.to" data-suggestion-action>{{ view.action.label }}</RouterLink>
             </Button>
-            <Button v-else size="sm" variant="outline" :aria-expanded="opened === entry.id" data-suggestion-action @click="toggleScoreCard(entry)">
-              {{ opened === entry.id ? t('modelSettings.suggestions.closeScoreCard') : action.label }}
+            <Button v-else size="sm" variant="outline" :aria-expanded="opened === view.key" data-suggestion-action @click="toggleScoreCard(view)">
+              {{ opened === view.key ? t('modelSettings.suggestions.closeScoreCard') : view.action.label }}
             </Button>
           </footer>
-          <div v-if="opened === entry.id" class="role-suggestion-detail">
-            <GrowthLoading v-if="scoreCardLoading === entry.id" variant="inline"
-              :label="t('modelSettings.suggestions.scoreCardLoading', { name: agentName(entry) })" />
+          <div v-if="opened === view.key && view.bole" class="role-suggestion-detail">
+            <GrowthLoading v-if="scoreCardLoading === view.key" variant="inline"
+              :label="t('modelSettings.suggestions.scoreCardLoading', { name: agentName(view.bole) })" />
             <p v-else-if="scoreCardError" class="role-suggestion-failed" role="alert">{{ t('modelSettings.suggestions.scoreCardFailed') }} {{ scoreCardError }}</p>
-            <dl v-else-if="scoreCards[entry.id]" class="role-suggestion-score" data-suggestion-score-card>
-              <div v-for="(dimension, name) in scoreCards[entry.id].dimensions" :key="name">
+            <dl v-else-if="scoreCards[view.key]" class="role-suggestion-score" data-suggestion-score-card>
+              <div v-for="(dimension, name) in scoreCards[view.key]!.dimensions" :key="name">
                 <dt>{{ t(`modelSettings.suggestions.dimensions.${name}`) }}</dt>
                 <dd>{{ scoreValue(dimension) }}</dd>
               </div>
@@ -149,22 +173,26 @@ async function toggleScoreCard(entry: RoleSuggestion) {
       </li>
     </ul>
     <ul v-if="lines.length" class="role-suggestions-list">
-      <li v-for="{ entry, state, why, model, evidence, action, at } in lines" :key="entry.id" class="role-suggestion-line"
-        :data-role-suggestion="entry.role" :data-suggestion-state="state">
-        <strong>{{ roleName(entry.role) }}</strong>
-        <Badge :variant="TONES[state]" data-suggestion-status>{{ t(`modelSettings.suggestions.states.${state}`) }}</Badge>
-        <span class="role-suggestion-why" data-suggestion-why>{{ why }}</span>
-        <span class="role-suggestion-meta"><code :title="evidence.title">{{ model ?? t('modelSettings.none') }}</code> · {{ t('modelSettings.suggestions.time') }} <time :datetime="entry.at">{{ at }}</time></span>
-        <Button v-if="action?.kind === 'link'" as-child size="sm" variant="ghost">
-          <RouterLink :to="action.to" data-suggestion-action>{{ action.label }}</RouterLink>
+      <li v-for="view in lines" :key="view.key" class="role-suggestion-line"
+        :data-role-suggestion="view.role" :data-suggestion-state="view.state">
+        <strong>{{ roleName(view.role) }}</strong>
+        <Badge :variant="TONES[view.state]" data-suggestion-status>{{ t(`modelSettings.suggestions.states.${view.state}`) }}</Badge>
+        <span class="role-suggestion-why" data-suggestion-why>{{ view.why }}</span>
+        <span class="role-suggestion-meta"><code :title="view.evidence.title">{{ view.model ?? t('modelSettings.none') }}</code> · {{ t('modelSettings.suggestions.time') }} <time :datetime="view.at">{{ view.time }}</time></span>
+        <Button v-if="view.action?.kind === 'link'" as-child size="sm" variant="ghost">
+          <RouterLink :to="view.action.to" data-suggestion-action>{{ view.action.label }}</RouterLink>
         </Button>
       </li>
     </ul>
-    <Button v-if="!showAll && entries.length > VISIBLE_SUGGESTIONS" class="justify-self-start" size="sm" variant="outline"
+    <Button v-if="!showAll && ordered.length > VISIBLE_SUGGESTIONS" class="justify-self-start" size="sm" variant="outline"
       data-suggestions-show-all @click="showAll = true">
-      {{ t('modelSettings.suggestions.showAll', { count: entries.length }) }}
+      {{ t('modelSettings.suggestions.showAll', { count: ordered.length }) }}
     </Button>
   </section>
+  <p v-else-if="failure" class="role-suggestions-error" role="alert">
+    {{ failure }}
+    <Button variant="outline" size="sm" @click="emit('retry')">{{ t('modelSettings.retry') }}</Button>
+  </p>
 </template>
 
 <style scoped>
@@ -187,7 +215,7 @@ async function toggleScoreCard(entry: RoleSuggestion) {
 /* Model, time and evidence read as one quiet line of label-value pairs. */
 .role-suggestion-main dl { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; font-size: 13px; }
 .role-suggestion-main dl > div { display: flex; gap: 6px; min-width: 0; }
-.role-suggestion dt { color: var(--color-muted); }
+.role-suggestion dt { flex: none; color: var(--color-muted); }
 .role-suggestion dd { margin: 0; overflow-wrap: anywhere; }
 .role-suggestion code, .role-suggestion-line code { font-family: var(--font-mono); font-size: 12.5px; }
 .role-suggestion footer { display: flex; align-self: start; flex-wrap: wrap; gap: 8px; }

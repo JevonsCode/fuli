@@ -9,6 +9,8 @@ import RoleSuggestions from './RoleSuggestions.vue'
 import sectionSource from './RoleSuggestions.vue?raw'
 import modelSource from './suggestions.ts?raw'
 import readSource from './useRoleSuggestions.ts?raw'
+import tonborgSource from './tonborg-suggestions.ts?raw'
+import type { TonborgSuggestion } from './tonborg-suggestions'
 import type { RoleSuggestion } from './suggestions'
 
 // Synthetic suggestions only, one per role and state; no real model, Agent or board.
@@ -40,6 +42,20 @@ const SUGGESTIONS = [
     subject: { agentId: 'engineer-x' }, status: 'failed', reason: 'timeout', ...receipt('bole', 'performance_review'),
     modelReceipt: { requestedModel: 'qwen-test', actualModel: null, fallbackReason: null } },
 ] as RoleSuggestion[]
+// Tonborg's knowledge reviews it left to the person, newest first as the route lists them.
+const verdict = (modelOutcome: 'approve' | 'escalate', interceptions: string[], reason: string | null) =>
+  ({ state: 'ai_suggested' as const, modelOutcome, interceptions, gate: { status: 'not_passed' as const, reason, modelId: 'qwen-test-actual' } })
+const REVIEWS: TonborgSuggestion[] = [
+  { id: 'judgment-3', createdAt: '2026-10-23T09:00:00.000Z', personalSpaceId: 'space-1', personalProjectId: 'garden', target: 'entity:seed-rule',
+    title: 'Seed rule', summary: 'Stated twice by the person.', confidence: 0.6, aiReview: verdict('approve', ['below_confidence', 'gate_not_passed'], 'suggestions_only'),
+    model: 'qwen-test-actual', client: null, judgedBy: { mode: 'model_api', independent: true } },
+  { id: 'judgment-2', createdAt: '2026-10-23T06:45:00.000Z', personalSpaceId: 'space-1', personalProjectId: null, target: 'entity:watering',
+    title: 'Watering rule', summary: 'Only said for today.', confidence: 0.9, aiReview: verdict('escalate', [], 'session_answer'),
+    model: null, client: 'claude_code', judgedBy: { mode: 'current_session', independent: false } },
+  { id: 'judgment-1', createdAt: '2026-10-23T05:30:00.000Z', personalSpaceId: 'space-1', personalProjectId: 'garden', target: 'entity:seed-rule',
+    title: 'Seed rule', summary: 'Earlier look.', confidence: 0.5, aiReview: verdict('approve', ['gate_not_passed'], 'not_configured'),
+    model: 'qwen-test-actual', client: null, judgedBy: { mode: 'model_api', independent: true }, stale: 'newer' },
+]
 const SCORE_CARD = { dimensions: {
   completion: { status: 'scored', sample: 8, passed: 2, rate: 0.25 }, firstPass: { status: 'insufficient_data', sample: 1, label: '数据不足' } } }
 
@@ -52,7 +68,8 @@ beforeEach(() => {
   })
 })
 
-const mountSection = async (props: { entries: RoleSuggestion[] | null; loading?: boolean; error?: string }) => {
+const mountSection = async (props: { entries: RoleSuggestion[] | null; loading?: boolean; error?: string
+  reviews?: TonborgSuggestion[] | null; reviewsLoading?: boolean; reviewsError?: string }) => {
   const wrapper = mount(RoleSuggestions, { attachTo: document.body, props: { loading: false, error: '', ...props },
     global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="JSON.stringify(to)"><slot /></a>' } } } })
   await flushPromises()
@@ -156,8 +173,59 @@ describe('RoleSuggestions', () => {
     expect(empty.html()).toBe('<!--v-if-->')
   })
 
+  it('lists Tonborg\'s knowledge reviews among the others, with why each was left to the person and the item to open', async () => {
+    const wrapper = await mountSection({ entries: SUGGESTIONS, reviews: REVIEWS })
+    expect(wrapper.findAll('article[data-role-suggestion]').map(card => [card.attributes('data-role-suggestion'), card.get('[data-suggestion-status]').text()]))
+      .toEqual([['tonborg', '当时建议'], ['jefa', '当时建议'], ['assistant', '当时建议'], ['bole', '当时建议'], ['tonborg', '当时建议'],
+        ['jefa', '已有更新'], ['tonborg', '已有更新']])
+    const [newest, sessionAnswer, older] = wrapper.findAll('article[data-role-suggestion="tonborg"]')
+    expect(newest!.get('strong').text()).toBe('Tonborg')
+    expect(newest!.get('[data-suggestion-text]').text()).toBe('Seed rule · 模型认为可以通过审核')
+    expect(newest!.get('.role-suggestion-reason').text()).toBe('Stated twice by the person.')
+    expect(newest!.get('[data-suggestion-held]').text()).toBe('留给你模型把握不足 · 你选了「只给建议」')
+    expect(newest!.get('code').text()).toBe('qwen-test-actual')
+    expect(newest!.get('dd[title]').attributes('title')).toBe('judgment-3')
+    expect(newest!.get('[data-suggestion-action]').text()).toBe('查看知识条目')
+    expect(href(newest!.get('[data-suggestion-action]'))).toEqual({ path: '/organize', query: { item: 'space-1/entity%3Aseed-rule' } })
+    expect(sessionAnswer!.get('[data-suggestion-text]').text()).toBe('Watering rule · 模型请你看一下')
+    expect(sessionAnswer!.find('[data-suggestion-held]').exists()).toBe(false)
+    expect(sessionAnswer!.get('code').text()).toBe('当前会话')
+    expect(older!.attributes('data-suggestion-state')).toBe('newer')
+    expect(wrapper.get('[data-role-suggestions-note]').text()).toContain('Tonborg')
+  })
+
+  it('shows Tonborg\'s suggestions alone, and a permanently deleted item without its words or a link', async () => {
+    const cleared = { ...REVIEWS[0]!, title: null, summary: null, hard_deleted: true as const }
+    const wrapper = await mountSection({ entries: [], reviews: [cleared] })
+    const card = wrapper.get('article[data-role-suggestion="tonborg"]')
+    expect(card.get('[data-suggestion-text]').text()).toBe('内容已因彻底删除清除')
+    expect(card.find('.role-suggestion-reason').exists()).toBe(false)
+    expect(card.find('[data-suggestion-action]').exists()).toBe(false)
+  })
+
+  it('names each pending read, and says which read failed while the other is shown', async () => {
+    const both = await mountSection({ entries: null, loading: true, reviews: null, reviewsLoading: true })
+    expect(both.get('[role="status"]').attributes('aria-label')).toBe('正在读取 Astro、Bole、Jefa 和 Tonborg 的建议…')
+    const tonborg = await mountSection({ entries: [], reviews: null, reviewsLoading: true })
+    expect(tonborg.get('[role="status"]').attributes('aria-label')).toBe('正在读取 Tonborg 的知识审核建议…')
+    expect(tonborg.find('h2').exists()).toBe(false)
+    // A refresh keeps the shown section and names the read in its header.
+    const refresh = await mountSection({ entries: SUGGESTIONS, reviews: REVIEWS, reviewsLoading: true })
+    expect(refresh.findAll('[role="status"]').map(status => status.attributes('aria-label'))).toEqual(['正在读取 Tonborg 的知识审核建议…'])
+
+    const failed = await mountSection({ entries: SUGGESTIONS, reviews: null, reviewsError: 'HTTP 503' })
+    expect(failed.get('[data-role-suggestions] [role="alert"]').text()).toContain('Tonborg 的知识审核建议没有读取成功。 HTTP 503')
+    await failed.get('[data-role-suggestions] [role="alert"] button').trigger('click')
+    expect(failed.emitted('retry')).toHaveLength(1)
+    const alone = await mountSection({ entries: null, error: 'HTTP 500', reviews: [] })
+    expect(alone.find('[data-role-suggestions]').exists()).toBe(false)
+    expect(alone.get('[role="alert"]').text()).toContain('Astro、Bole 和 Jefa 的建议没有读取成功。 HTTP 500')
+    const same = await mountSection({ entries: null, error: 'waiting', reviews: null, reviewsError: 'waiting' })
+    expect(same.get('[role="alert"]').text()).toMatch(/^建议没有读取成功。 waiting/)
+  })
+
   it('reaches no write path: every control only reads or navigates', async () => {
-    const wrapper = await mountSection({ entries: SUGGESTIONS })
+    const wrapper = await mountSection({ entries: SUGGESTIONS, reviews: REVIEWS })
     for (const control of wrapper.findAll('button, a')) {
       await control.trigger('click')
       await flushPromises()
@@ -166,7 +234,7 @@ describe('RoleSuggestions', () => {
     expect([...new Set(api.getJson.mock.calls.map(([url]) => String(url).split('?')[0]))].sort())
       .toEqual(['/api/project-agents/engineer-x', '/api/project-agents/engineer-x/score-card'])
     // The section, its model and its read import no write helper at all.
-    for (const source of [sectionSource, modelSource, readSource]) {
+    for (const source of [sectionSource, modelSource, readSource, tonborgSource]) {
       expect(source).not.toMatch(/\b(postJson|putJson|patchJson|deleteJson|fetch\()/)
     }
   })

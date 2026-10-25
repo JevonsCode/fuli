@@ -25,6 +25,13 @@ export function knowledgeOwnerReads(dataDir, { send = personalHumanReviewChannel
   return {
     graph: ({ spaceId, limit, personalProjectId, offset }) =>
       request(graphReadPath(spaceId, { limit, personalProjectId, offset }), null, 'GET'),
+    // Confirms the console's proof with the Provider before a local store shows
+    // text that may name any FLA's knowledge (Tonborg's suggestions,
+    // src/judgment/review-suggestions.js): one bounded read whose answer is
+    // not used. A refused proof throws the Provider's refusal.
+    confirmOwner: async (personalSpaceId) => {
+      await request(graphReadPath(personalSpaceId, { limit: 1 }), null, 'GET');
+    },
     itemView: (body) => request('/v1/knowledge/item-views', body),
     turnReceipt: (body) => request('/v1/knowledge/turn-receipts', body),
     sessionRecords: (body) => request('/v1/session-records', body),

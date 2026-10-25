@@ -4,10 +4,12 @@ import { getJson } from '@/api/client'
 import { peekItemValue } from '@/composables/useRoutePeek'
 import { boardTaskPeekId } from '@/features/employees/board-task-peek'
 import { i18n, t } from '@/i18n'
+import type { ModelRoleId } from './model'
 
 // The 建议记录 section of the model settings page (rec#8, rec#10 D-30): what
 // Astro, Bole and Jefa showed after asking their own model, as recorded at
-// that moment (src/model-backends/suggestion-log.js). A record, never a
+// that moment (src/model-backends/suggestion-log.js), beside Tonborg's
+// knowledge review suggestions (tonborg-suggestions.ts). A record, never a
 // to-do: a person decides on the page that owns that decision.
 
 export type SuggestionRole = 'assistant' | 'bole' | 'jefa'
@@ -59,7 +61,7 @@ export const readScoreCard = (entry: RoleSuggestion, signal?: AbortSignal) => ge
 // session answering instead: Astro and Jefa record it as inline, Bole as its
 // model's failure with the fallback in the receipt. Any other stop, pause or
 // failure showed nothing.
-export function suggestionState(entry: RoleSuggestion): SuggestionState {
+function suggestionState(entry: RoleSuggestion): SuggestionState {
   if (entry.status === 'suggested') return entry.stale === 'newer' ? 'newer' : 'suggested'
   if (entry.status === 'superseded') return 'superseded'
   return entry.status === 'inline' || entry.modelReceipt.fallbackReason ? 'fallback' : 'stopped'
@@ -68,12 +70,12 @@ export function suggestionState(entry: RoleSuggestion): SuggestionState {
 // A suggestion as recorded, whether or not a newer one followed.
 export const isSuggestion = (state: SuggestionState) => state === 'suggested' || state === 'newer'
 
-export const suggestionModel = (entry: RoleSuggestion) =>
+const suggestionModel = (entry: RoleSuggestion) =>
   entry.suggestedBy?.model ?? entry.modelReceipt.actualModel ?? entry.modelReceipt.requestedModel ?? null
 
 // What was suggested, in one line; empty when nothing was. A permanent
 // delete of knowledge cleared the words of a record (D-30.9): it says so.
-export function suggestionText(entry: RoleSuggestion) {
+function suggestionText(entry: RoleSuggestion) {
   if (!isSuggestion(suggestionState(entry))) return ''
   if (entry.hard_deleted) return t('modelSettings.suggestions.cleared')
   if (entry.role === 'bole') return t(`modelSettings.suggestions.boleActions.${entry.suggestion?.action}`)
@@ -81,7 +83,7 @@ export function suggestionText(entry: RoleSuggestion) {
 }
 
 // Why nothing was shown, in plain words; empty for a suggestion.
-export function suggestionWhy(entry: RoleSuggestion) {
+function suggestionWhy(entry: RoleSuggestion) {
   if (isSuggestion(suggestionState(entry))) return ''
   const key = `modelSettings.suggestions.reasons.${entry.reason}`
   return entry.reason && i18n.global.te(key) ? t(key) : t('modelSettings.suggestions.reasons.other', { reason: entry.reason ?? '—' })
@@ -89,7 +91,7 @@ export function suggestionWhy(entry: RoleSuggestion) {
 
 // What a person can read of the evidence (Bole's cited dimensions); the
 // evidence version and request id are only for a title.
-export function suggestionEvidence(entry: RoleSuggestion) {
+function suggestionEvidence(entry: RoleSuggestion) {
   const dimensions = (entry.suggestion?.evidenceIds ?? []).map(id => t(`modelSettings.suggestions.dimensions.${id}`))
   return { dimensions, title: `${entry.evidenceVersion}\n${entry.requestId}` }
 }
@@ -97,12 +99,38 @@ export function suggestionEvidence(entry: RoleSuggestion) {
 // How many the section shows before 显示全部.
 export const VISIBLE_SUGGESTIONS = 8
 
+// One row of the section, from the role log or from Tonborg's verdicts
+// (tonborg-suggestions.ts). reason: the model's own words; heldBy: why the
+// host left it to the person; why: why nothing was shown. seq orders rows of
+// the same time as their source listed them.
+export interface SuggestionView {
+  key: string
+  role: ModelRoleId
+  state: SuggestionState
+  at: string
+  seq: number
+  text: string
+  reason: string
+  heldBy: string
+  why: string
+  model: string | null
+  evidence: { dimensions: string[]; title: string }
+  action: SuggestionAction | null
+  // Bole's record, whose Agent the row names and whose score card it opens.
+  bole?: RoleSuggestion
+}
+
+export const logSuggestionView = (entry: RoleSuggestion): SuggestionView => ({
+  key: `log:${entry.id}`, role: entry.role, state: suggestionState(entry), at: entry.at, seq: entry.id, text: suggestionText(entry),
+  reason: entry.hard_deleted ? '' : entry.suggestion?.reason ?? '', heldBy: '', why: suggestionWhy(entry), model: suggestionModel(entry),
+  evidence: suggestionEvidence(entry), action: suggestionAction(entry), ...(entry.role === 'bole' && entry.subject.agentId ? { bole: entry } : {}),
+})
+
 // Suggestions first (those with nothing newer before those with), then the
 // rest; each newest first.
 const RANK: Record<SuggestionState, number> = { suggested: 2, newer: 1, superseded: 0, fallback: 0, stopped: 0 }
-export function orderSuggestions(entries: RoleSuggestion[]) {
-  const rank = (entry: RoleSuggestion) => RANK[suggestionState(entry)]
-  return [...entries].sort((a, b) => rank(b) - rank(a) || b.at.localeCompare(a.at) || b.id - a.id)
+export function orderSuggestions(views: SuggestionView[]) {
+  return [...views].sort((a, b) => RANK[b.state] - RANK[a.state] || b.at.localeCompare(a.at) || b.seq - a.seq)
 }
 
 
@@ -112,7 +140,7 @@ export type SuggestionAction = { kind: 'link'; label: string; to: RouteLocationR
 // conversation in the unclaimed triage, Jefa's task (or, without one, the
 // project's board) and Bole's score card here. Opening it applies nothing. A
 // stop or a fallback has none.
-export function suggestionAction(entry: RoleSuggestion): SuggestionAction | null {
+function suggestionAction(entry: RoleSuggestion): SuggestionAction | null {
   const state = suggestionState(entry)
   if (!isSuggestion(state) && state !== 'superseded') return null
   if (entry.role === 'assistant' && entry.subject.conversationId) {
