@@ -14,10 +14,12 @@ import { reachableModules } from '../test-support/module-graph.js';
 import { OWNER_PROOF_TOKEN, ownerProofPort } from '../test-support/owner-proof-port.js';
 
 // rec#11 D-60: every console route that answers with Tonborg's full records,
-// its suggestions or the built-in Agents' suggestion log is the person's owner
-// read. It answers only a loopback request, LAN code or not, and only after
-// the console's human-review proof was confirmed with the Provider. Synthetic
-// judgment records, a synthetic Provider and synthetic model words only.
+// its suggestions or the built-in Agents' suggestion log is consistent with
+// the console's other full reads. It answers only a loopback request, LAN code
+// or not, and only after the console server confirmed its own human-review
+// proof with the Provider. The server attaches that proof itself, so these
+// tests do not show that a local HTTP caller is refused; that is rec#11 D-61.
+// Synthetic judgment records, a synthetic Provider and synthetic model words only.
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const SECRET = 'SYNTHETIC_PRIVATE_SUMMARY';

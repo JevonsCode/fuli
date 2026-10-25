@@ -15,8 +15,8 @@ import { parse } from './service.js';
 // have become one FLA's own since, and the summary may quote any of that. So
 // this list is the person's owner read and nothing less, like every full
 // judgment read (rec#11 D-60): its console route answers only a loopback
-// request, after the console's human-review proof was confirmed with the
-// Provider (src/judgment/http.js, src/knowledge-owner-reads/owner-proof.js).
+// request, after the console server confirmed its own human-review proof with
+// the Provider (src/judgment/http.js, src/knowledge-owner-reads/owner-proof.js).
 // There is no filtered view for anyone else. Only that route uses this
 // module; no MCP or Agent tool module imports it
 // (test/tonborg-review-suggestions.test.js). Agents get Tonborg's verdicts

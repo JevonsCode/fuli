@@ -13,10 +13,13 @@ const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/records
 // receipts, feedback reasons) or its suggestions (rec#11 D-60): a judgment
 // keeps an item's title and key from when Tonborg read it, the item may be
 // one FLA's own since, and the model's words were written with Tonborg's
-// scoped preferences, memory and earlier feedback. Each is the person's owner
-// read: loopback only, a LAN device with its LAN code included, and only after
-// the console's human-review proof is confirmed (owner-proof.js), before
-// anything is read, run or written. A refused request gets 403 and no data.
+// scoped preferences, memory and earlier feedback. Like the console's other
+// full reads, each is loopback only, a LAN device with its LAN code included,
+// and answers only after the console server confirmed its own human-review
+// proof (owner-proof.js), before anything is read, run or written. A refused
+// request gets 403 and no data. The server attaches that proof itself and
+// trusts local HTTP callers, so a local process can still read these routes
+// over loopback; caller authentication is rec#11 D-61.
 // Agents read and ask Tonborg through their MCP tools (list_judgments,
 // review_with_tonborg, assess_agent_action, assess_task_completion); no MCP
 // or Agent tool module imports this one (test/judgment-console-owner.test.js).

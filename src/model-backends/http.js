@@ -26,12 +26,14 @@ import { RETENTION } from './suggestion-log.js';
 // suggestions lists what Astro, Bole and Jefa showed after asking their own
 // model (suggestion-log.js), newest first, a limit clamped to RETENTION.rows, with
 // its retention; it is a read only, and no route writes it. Its rows hold the
-// models' reasons and the names they showed, so it is the person's owner read
-// (rec#11 D-60): loopback only, a LAN device with its LAN code included, and
-// only after ownerReads confirmed the console's human-review proof for
-// personalSpaceId, the active space the log is read in
-// (src/knowledge-owner-reads/owner-proof.js); otherwise 403 and no data.
-// Agents have no tool that reads it. history lists
+// models' reasons and the names they showed, so like the console's other full
+// reads (rec#11 D-60) it is loopback only, a LAN device with its LAN code
+// included, and answers only after ownerReads confirmed the console server's
+// own human-review proof for personalSpaceId, the active space the log is
+// read in (src/knowledge-owner-reads/owner-proof.js); otherwise 403 and no
+// data. The server attaches that proof itself and trusts local HTTP callers,
+// so a local process can still read it over loopback; caller authentication
+// is rec#11 D-61. Agents have no tool that reads it. history lists
 // what changed in a role's settings and execution mode and when
 // (settings-history.js, rec#11 D-42), newest first, read only; each save and
 // trust change answers whether its change was recorded there.
