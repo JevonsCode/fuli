@@ -13,6 +13,7 @@ import { listenFetchableServer } from '../src/server/listen.js';
 import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { hardDeleteLedger } from '../src/knowledge-hard-delete/delete-ledger.js';
 import { knowledgeReferences } from '../src/knowledge-hard-delete/forget-references.js';
+import { ownerProofPort } from '../test-support/owner-proof-port.js';
 
 const openGate = { state: () => ({ state: 'open' }) };
 const source = { sourceApplication: 'codex', sessionId: 'synthetic-session' };
@@ -169,7 +170,7 @@ test('actual suggestions HTTP prepares only the configured space and returns no 
   { fetchImpl: () => { throw Error('no network'); } });
   app.roleSuggestions = f.open({ recoveryGate: gate }); app.knowledgeRecoveryGate = gate; app.modelBackends = {};
   const server = createServer(async (request, response) => {
-    try { await handleApiRequest({ request, response, app }); }
+    try { await handleApiRequest({ request, response, app, knowledgeOwnerReads: ownerProofPort().port }); }
     catch (error) { const mapped = mapHttpError(error); response.writeHead(mapped.status, { 'content-type': 'application/json' }).end(JSON.stringify(mapped.body)); }
   });
   await listenFetchableServer(server, 0);
