@@ -8,9 +8,11 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import {
-  applyMigrationPlan, moreRecords, pruneAuditError, pruneUnverified, readMigrationPlan, refusalCode, refusalMessage, sampleChips, shortDigest,
-  undoMigration, type ApplyOutcome, type MigrationPlan, type MigrationResult, type UndoableMigration,
+  applyMigrationPlan, moreRecords, pruneAgain, pruneAuditError, pruneCheckOutcome, pruneUnverified, readMigrationPlan, refusalCode,
+  refusalMessage, sampleChips, shortDigest, undoMigration, type ApplyOutcome, type MigrationPlan, type MigrationResult,
+  type UndoableMigration,
 } from '@/features/data-format/model'
+import StoreRestore from '@/features/data-format/StoreRestore.vue'
 import { t } from '@/i18n'
 import { UiEmpty } from '@/ui'
 
@@ -18,7 +20,8 @@ import { UiEmpty } from '@/ui'
 // a person is a card with its step, versions, record count and sample IDs;
 // one confirmation applies exactly the plan whose digest is shown. The server
 // checks it again under each store's lock: a changed plan is read again and
-// confirmed again. Undo is per migration; a whole-store restore is CLI only.
+// confirmed again. Undo is per migration; a whole-store restore restarts FULI
+// around it (StoreRestore). An unverified graph prune is checked by pruning again.
 const plan = ref<MigrationPlan | null>(null)
 const loading = ref(true)
 const loadError = ref('')
@@ -35,6 +38,9 @@ const undoError = ref('')
 const pruneUnknown = ref(false)
 // The local operations log could not record that prune; its result stands.
 const auditFailure = ref('')
+const checkingPrune = ref(false)
+const pruneCheck = ref<{ kind: 'unreached' | 'checked'; count: number } | null>(null)
+const pruneCheckError = ref('')
 let reading: AbortController | null = null
 const openedFromSettings = /^\/settings(?:[?#]|$)/
 
@@ -114,6 +120,23 @@ async function confirmUndo(entry: UndoableMigration) {
   }
 }
 
+async function checkPrune() {
+  checkingPrune.value = true
+  pruneCheck.value = null
+  pruneCheckError.value = ''
+  try {
+    const { pruned } = await pruneAgain()
+    const checked = pruneCheckOutcome(pruned)
+    pruneUnknown.value = checked.kind === 'unverified'
+    pruneCheck.value = checked.kind === 'unverified' ? null : { kind: checked.kind, count: checked.count }
+    auditFailure.value = pruneAuditError(pruned)
+  } catch (cause) {
+    pruneCheckError.value = refusalMessage(cause)
+  } finally {
+    checkingPrune.value = false
+  }
+}
+
 onMounted(load)
 onBeforeUnmount(() => reading?.abort())
 </script>
@@ -143,9 +166,17 @@ onBeforeUnmount(() => reading?.abort())
           </p>
         </section>
 
-        <p v-if="pruneUnknown" class="data-format-error" role="alert" data-prune-unverified>
-          {{ t('dataFormat.pruneUnverified') }}
+        <div v-if="pruneUnknown" class="data-format-prune" data-prune-unverified>
+          <p class="data-format-error" role="alert">{{ t('dataFormat.pruneUnverified') }}</p>
+          <Button variant="outline" data-prune-check :loading="checkingPrune" :loading-label="t('dataFormat.pruneChecking')"
+            @click="checkPrune">
+            {{ t('dataFormat.pruneCheck') }}
+          </Button>
+        </div>
+        <p v-if="pruneCheck" role="status" data-prune-checked>
+          {{ pruneCheck.kind === 'checked' ? t('dataFormat.pruneChecked', { count: pruneCheck.count }) : t('dataFormat.pruneUnreached') }}
         </p>
+        <p v-if="pruneCheckError" class="data-format-error" role="alert">{{ pruneCheckError }}</p>
         <p v-if="auditFailure" class="data-format-error" role="alert" data-audit-failed>
           {{ t('dataFormat.auditFailed', { message: auditFailure }) }}
         </p>
@@ -252,7 +283,7 @@ onBeforeUnmount(() => reading?.abort())
         <p v-if="retention" class="data-format-restore" data-retention>
           {{ t('dataFormat.retention', retention) }}
         </p>
-        <p class="data-format-restore">{{ t('dataFormat.restoreNote') }}</p>
+        <StoreRestore @restored="load" />
       </template>
     </div>
   </section>
@@ -372,6 +403,13 @@ code {
   display: flex;
   align-items: flex-start;
   gap: 10px;
+}
+
+.data-format-prune {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
 }
 
 .data-format-actions {

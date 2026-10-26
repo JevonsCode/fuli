@@ -201,7 +201,7 @@ test('undo is refused, changing nothing, once a migrated row changed afterwards'
   const before = readFileSync(path);
 
   assert.throws(() => rollbackSqliteMigration(path, notesFormat(), { migrationId: 'notes/3-checked', actor: CLI }),
-    { code: 'data_format_changed_since', message: /changed after migration notes\/3-checked.*Nothing was changed.*fuli migrate restore/ });
+    { code: 'data_format_changed_since', message: /changed after migration notes\/3-checked.*Nothing was changed.*a whole-store restore/ });
   assert.deepEqual(readFileSync(path), before);
   assert.equal(backups(directory).length, 1);
   assert.throws(() => rollbackSqliteMigration(path, notesFormat(), { migrationId: 'notes/2-tags', actor: CLI }),
@@ -342,7 +342,7 @@ test('the version check and the write share one write lock, so no undo fits betw
     competitor = child.stdout;
   } });
   try {
-    // An autocommit write, like TaskScheduleStore.insert.
+    // An autocommit write, like a store's single INSERT outside a transaction.
     open.prepare("INSERT INTO notes(id, body, checked) VALUES('n3', 'autocommit write', 'yes')").run();
   } finally { open.close(); }
 

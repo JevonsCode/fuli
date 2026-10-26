@@ -502,25 +502,6 @@ class StoreProjectAgentTasks(
             raise HTTPException(status_code=404, detail='project Agent task not found')
         return task
 
-    async def find_project_agent_task_by_idempotency_key(
-        self,
-        actor: dict,
-        personal_space_id: str,
-        personal_project_id: str,
-        idempotency_key: str,
-    ) -> ProjectAgentTaskRecord | None:
-        """The task a submit with this key created; None is evidence it created none.
-
-        A client whose submit answer was lost reads this before deciding to
-        submit again, so the same key never becomes a second task.
-        """
-        return await self._read_authorized_task(
-            actor,
-            personal_space_id,
-            self._submitted_task_id(personal_space_id, idempotency_key),
-            personal_project_id,
-        )
-
     def _submitted_task_id(self, personal_space_id, idempotency_key):
         return stable_uuid(
             self.settings.provider_id,

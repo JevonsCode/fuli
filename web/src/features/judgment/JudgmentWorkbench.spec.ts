@@ -4,9 +4,16 @@ import { defineComponent, h, ref } from 'vue'
 
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', async original => ({ ...(await original<typeof import('@/api/client')>()), getJson, postJson }))
+// The per-project policy list has its own spec; here it only has to be in the workbench.
+vi.mock('./JudgmentProjectOverrides.vue', async () => {
+  const { defineComponent, h } = await import('vue')
+  return { default: defineComponent({ props: { personalSpaceId: String, projects: Array },
+    setup: props => () => h('div', { 'data-judgment-overrides': props.personalSpaceId }) }) }
+})
 
 import { ApiError } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { t } from '@/i18n'
 import JudgmentWorkbench from './JudgmentWorkbench.vue'
 import { provideWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
 
@@ -69,6 +76,19 @@ describe('JudgmentWorkbench', () => {
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(1)
     expect(wrapper.text()).toContain('release checklist')
     expect(wrapper.get('[data-decision-card] h3').text()).toBe('release checklist')
+    // A manual policy explains itself: no reason line.
+    expect(wrapper.find('[data-escalation-reason]').exists()).toBe(false)
+    // Each project's own Tonborg judgment is set from the workbench too.
+    expect(wrapper.get('[data-judgment-overrides]').attributes('data-judgment-overrides')).toBe('space-a')
+  })
+
+  it('says in one line why an autonomous record still needs confirmation (2026-10-27)', async () => {
+    getJson.mockResolvedValue({ records: [record({ title: 'Install a debug APK over adb on a phone', confidence: 0.5,
+      policy: { mode: 'autonomous', quality: 'quality', client: 'claude_code' },
+      evidence: ['Single session, confidence_score 0.5, no negative evidence'] })] })
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+    expect(wrapper.get('[data-escalation-reason]').text()).toMatch(/^(Tonborg 把握不足（0\.5），交给你确认|Tonborg is not sure enough \(0\.5\), so it is yours to confirm)$/)
   })
 
   it('requests a bounded review with a fresh request ID and shows the result', async () => {
@@ -364,7 +384,7 @@ describe('knowledge recovery fence in the workbench', () => {
       await wrapper.get('.judgment-workbench-actions button').trigger('click')
     } else await wrapper.get(operation === 'review' ? '[data-action="review"]' : operation === 'feedback' ? '[data-feedback="up"]' : '[data-action="undo"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('fuli migrate reconcile-knowledge')
+    expect(wrapper.text()).toContain(t('common.errors.knowledgeRecoveryPending'))
     expect(wrapper.text()).not.toContain('SYNTHETIC RECEIPT BODY')
     expect(wrapper.find('[data-decision-card]').exists()).toBe(false)
     const pending = deferred<{ records: unknown[] }>()
@@ -372,7 +392,7 @@ describe('knowledge recovery fence in the workbench', () => {
     await wrapper.get('.judgment-workbench-error button').trigger('click')
     expect(wrapper.getComponent(GrowthLoading).props('variant')).toBe('inline')
     pending.resolve({ records: [] }); await flushPromises()
-    expect(wrapper.text()).not.toContain('fuli migrate reconcile-knowledge')
+    expect(wrapper.text()).not.toContain(t('common.errors.knowledgeRecoveryPending'))
     expect(postJson).toHaveBeenCalledTimes(operation === 'read' ? 0 : 1)
     wrapper.unmount()
   })
@@ -393,7 +413,7 @@ it('never restores receipt bodies from an older feedback response after a recove
   await flushPromises()
   expect(wrapper.text()).not.toContain('LATE SYNTHETIC BODY')
   expect(wrapper.find('[data-decision-card]').exists()).toBe(false)
-  expect(wrapper.text()).toContain('fuli migrate reconcile-knowledge')
+  expect(wrapper.text()).toContain(t('common.errors.knowledgeRecoveryPending'))
   wrapper.unmount()
 })
 

@@ -7,13 +7,11 @@ import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/
 import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js';
 import { createFuliRoundtableHost } from './roundtable-host.js';
 import { attachJudgmentRuntime } from '../judgment/runtime.js';
-import { createTaskScheduleService } from '../task-schedules/service.js';
 import {
   openModelBackendRuntime,
   openRoleSuggestionLog,
   openRoleTrustAndHistory
 } from '../model-backends/runtime.js';
-import { TaskScheduleStore } from '../task-schedules/store.js';
 import { createStandingAssignments } from '../standing-assignments/port.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
@@ -46,10 +44,6 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   ({ trust: app.modelTrust, history: app.modelSettingsHistory } = openRoleTrustAndHistory(paths, app.modelBackends));
   attachJudgmentRuntime(app, paths);
   app.roleSuggestions = openRoleSuggestionLog(paths, { recoveryGate: app.knowledgeRecoveryGate });
-  app.taskSchedules = createTaskScheduleService({
-    app,
-    openStore: () => new TaskScheduleStore(join(dataDir, 'task-schedules.sqlite'))
-  });
   // Opens its file on the first registration; reads before that find none.
   app.standingAssignments = createStandingAssignments({ path: paths.standingAssignmentsPath });
   app.roundtableHost = createFuliRoundtableHost(app);
@@ -65,7 +59,6 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
 // An application that only lives in memory opened none of them.
 export function closeLocalRuntimes(app) {
   app.judgment?.close();
-  app.taskSchedules?.close();
   app.standingAssignments?.close();
   app.roleWork?.close();
   app.roleSuggestions?.close();

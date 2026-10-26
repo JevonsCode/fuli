@@ -84,6 +84,12 @@ export class JudgmentStore {
     return { ...(own.value ?? global.value ?? DEFAULT_POLICY), revision: own.revision,
       globalRevision: global.revision, inherited: Boolean(project && !own.value), personalProjectId: project || null };
   }
+  // Every project's own policy, as policy() reports it; a removed override is not one.
+  policyOverrides(space) {
+    this.#assertRecovery(space);
+    return this.db.prepare(`SELECT substr(key, ${'policy:'.length + 1}) AS project FROM judgment_settings
+      WHERE space=? AND key LIKE 'policy:_%' AND value <> 'null' ORDER BY key`).all(space).map(({ project }) => this.policy(space, project));
+  }
   setPolicy(space, project, value, expectedRevision) {
     this.writeSetting(space, `policy:${project}`, value, expectedRevision);
     return this.policy(space, project);

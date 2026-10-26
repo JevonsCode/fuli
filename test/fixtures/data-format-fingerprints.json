@@ -55,10 +55,6 @@
     "standing-assignments": {
       "version": 1,
       "fingerprint": "c1d340c787a83a27babba7dfdea1de69ddb873aa6da9c57298e41a82e7cdeccc"
-    },
-    "task-schedules": {
-      "version": 3,
-      "fingerprint": "86e188c99ddadb1e96caa77f033d5875f22b5c6cbbf31a55c247997677f99ff9"
     }
   }
 }

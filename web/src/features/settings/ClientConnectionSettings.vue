@@ -8,7 +8,8 @@ import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 
-import type { Format, ClientStatus, ClientObservation, ConnectionStatus, ConnectionResult } from './client-connection-model'
+import { connectActionKey, type Format, type ClientStatus, type ClientObservation, type ConnectionStatus,
+  type ConnectionResult } from './client-connection-model'
 // Re-read configuration this often while the card is open and the page visible.
 const RECHECK_MS = 15_000
 
@@ -170,7 +171,7 @@ async function copy() {
             <p>{{ explanation(client) }}</p>
             <Button v-if="client.detected && !client.manualOnly && client.status !== 'unknown' && client.status !== 'connected'"
               variant="outline" :data-connect-client="client.id" :disabled="Boolean(connecting)" @click="connect(client)">
-              {{ t('settings.connection.clients.connect') }}
+              {{ t(`settings.connection.clients.${connectActionKey(client.status)}`) }}
             </Button>
             <GrowthLoading v-if="connecting === client.id" variant="compact" :label="t('settings.connection.clients.connecting', { client: client.label })" />
             <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'connectError' ? 'alert' : 'status'">
