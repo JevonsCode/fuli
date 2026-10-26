@@ -1,4 +1,5 @@
-import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
+import { captureSettingsUrl, receiptText, taskAgentReceipt } from '../agents/identity-receipt.js';
+import { FLA_ROUTE, namedFlaEntry } from './task-entry-named-fla.js';
 import { beginTaskContext, beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { getCollaborationPreferences as getCollaborationPreferencesWorkflow } from './collaboration-preference-workflow.js';
 import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
@@ -6,7 +7,7 @@ import { applyAgentAssignment } from './task-agent-assignment.js';
 import { triageCandidates } from './conversation-triage.js';
 import { withProjectCandidate } from './assistant-project-candidate.js';
 import { withBoardMatch } from './jefa-board-match.js';
-import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
+import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { ATTENTION_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/attention-inbox.js';
 import { captureDecision } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
@@ -91,7 +92,12 @@ function agentIndependentReads(application, projectResolution, { sourceApplicati
 async function entryPreferences(application, projectResolution, {
   projectAgentId, taskPrompt, sourceApplication, sourceSessionId, sessionId,
   workKind, workflow, limit, agentInvocation, agentToolName
-}, selection, recordAgentViews, reads, { includeManagement = true, includeMessages = true } = {}) {
+}, selected, recordAgentViews, reads, { includeManagement = true, includeMessages = true } = {}) {
+  // A named FLA's entry, said before anything of an Agent is loaded: when no
+  // FLA may work this turn, no Agent is selected at all.
+  const fla = projectResolution.fla
+    ? await namedFlaEntry(application, projectResolution.fla, selected, sourceApplication) : null;
+  const selection = fla?.selection ?? selected;
   // A rejected explicit role must not leak its private preferences via fallback.
   const selectedAgentId = selection ? selection.agent?.agentId ?? null : projectAgentId;
   const standing = standingOwnerEntry(projectResolution, selection);
@@ -143,11 +149,14 @@ async function entryPreferences(application, projectResolution, {
   // Answers a person gave to this Agent's own requests while it was away.
   const answered = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.attentionReplies
     ? application.roundtable.attentionReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];
-  const notices = [...(standing?.notice ? [standing.receiptNotice] : []), ...receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
-    { settingsUrl: captureSettingsUrl(application) }), ...formatNotices];
+  const notices = [...(fla?.notice ? [receiptText(fla.notice)] : []), ...(standing?.notice ? [standing.receiptNotice] : []),
+    ...receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
+      { settingsUrl: captureSettingsUrl(application) }), ...formatNotices];
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),
     ...(standing ? { standing_owner: standing.field } : {}),
+    ...(fla?.view ? { fla: fla.view } : {}), ...(fla?.interaction ? { human_interaction: fla.interaction } : {}),
+    ...(fla?.markers.length ? { [FLA_ROUTE]: fla.markers } : {}),
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),
     ...(waiting.length ? { agent_messages: waiting,
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),

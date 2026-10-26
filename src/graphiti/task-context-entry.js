@@ -1,4 +1,5 @@
-import { taskAgentAssignment } from './task-agent-assignment.js';
+import { taskAgentAssignment, withRouteMarkers } from './task-agent-assignment.js';
+import { FLA_ROUTE } from './task-entry-named-fla.js';
 import { beginConversation } from './agent-conversations.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
@@ -24,8 +25,8 @@ export async function beginTaskContext(application, {
   requiredCapabilities = []
 }) {
   const continuationToken = /^FULI_CHECKPOINT_REQUIRED: (fuli-task-[a-zA-Z0-9-]{8,128})\b/.exec(taskPrompt ?? '')?.[1];
-  const current = !continuationToken && turnId && application.taskContextRegistry.current
-    ? await application.taskContextRegistry.current(sessionId, sourceApplication) : null;
+  const readsCurrent = Boolean(!continuationToken && turnId && application.taskContextRegistry.current);
+  const current = readsCurrent ? await application.taskContextRegistry.current(sessionId, sourceApplication) : null;
   const resumed = continuationToken
     ? await application.taskContextRegistry.context(continuationToken, sourceApplication) : null;
   const scopeRetry = current?.turnId === turnId
@@ -57,7 +58,9 @@ export async function beginTaskContext(application, {
     workflow: preferenceScope.workflow,
     requiredCapabilities,
     agentInvocation: true,
-    agentToolName: 'begin_task_context'
+    agentToolName: 'begin_task_context',
+    // Read above for a same-turn retry; the entry reuses it for the session's FLA binding.
+    ...(readsCurrent ? { sessionTask: current } : {})
   });
   if (resumed && resumed.personalProjectId !== preferences.context.personal_project_id) {
     throw validationError('Checkpoint continuation belongs to another project');
@@ -84,7 +87,8 @@ export async function beginTaskFromPreferences(application, preferences, {
     sourceSessionId,
     delegationToken: application.roundtable?.taskEntryDelegation?.({ sessionId })?.token,
     preferenceScope: taskPreferenceScope({ version: 1, work_kind: workKind, workflow }),
-    agentAssignment: withStandingRoute(taskAgentAssignment(preferences.project_agent_context), preferences.standing_owner),
+    agentAssignment: withRouteMarkers(withStandingRoute(taskAgentAssignment(preferences.project_agent_context),
+      preferences.standing_owner), preferences[FLA_ROUTE]),
     memoryRevision: preferences.project_agent_context?.memory?.revision ?? null,
     workLogRequired: Boolean(preferences.project_agent_context?.memory),
     entryVia

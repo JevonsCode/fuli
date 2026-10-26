@@ -1,5 +1,5 @@
 import { projectByName, projectNames } from './task-entry-project-mention.js';
-import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
+import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { PROPOSAL_MIN_CONVERSATIONS, proposalForTopic } from './topic-proposals.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 

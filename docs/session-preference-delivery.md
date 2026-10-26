@@ -85,22 +85,39 @@ delivered as blocked.
    `omitted_sequence`; `read_agent_conversation` reads it whole).
 2. Then preferences go. Closing fields, identity, role, authority, conflicts
    and every field outside `effective_preferences` always stay, and so do hard
-   constraints and boundaries (`preferenceAlwaysInline`: `constraint: "hard"`,
-   or an item a scene switch never revokes). The rest rank by the task scene,
-   using the scene table in `task-scene.js`: an item whose own scene key names
-   the task's work kind first (`preferenceNamesWorkKind`), then human-confirmed
+   rules. The rest rank by kind and task scene, using the scene table in
+   `task-scene.js`: a boundary first (an item a scene switch never revokes,
+   `preferenceSceneReplaceable` false), then an item whose own scene key names
+   the task's work kind (`preferenceNamesWorkKind`), then human-confirmed
    before agent-confirmed, then the Provider's order. The delivered set is the
    largest ranked prefix whose *complete* frame fits with the leanest context,
    so it depends on the preferences alone, not on the conversation or the
    cached base: the same preferences select the same set next turn.
 3. Then as much recall and conversation as still fits comes back.
 
+What is left out last (`preferenceAlwaysInline` in
+`src/graphiti/preference-task-scope.js`, rec#11 D-69) is a rule a person
+marked `constraint: "hard"`, in any aspect. FULI has no separate boundary
+marker: a boundary is the scene table's default for a `judgment_preference`
+without a scene key and without `constraint: "soft"`, which keeps it out of a
+scene switch's replaceable set but says nothing about it never being left out.
+Before D-69 every such item always stayed, and in rec#47 26 of 31 preferences
+did, more than the preview alone; now a boundary ranks first among the rest.
+
 What is left out is named as `preferences_omitted: { count, read: { tool:
 'read_task_preferences', arguments: { taskContextToken } } }`, and the label
-adds one sentence: read them before acting where one may apply. If the part
-that always stays is longer than the budget, it is delivered anyway: a
-complete hard rule outranks the budget, and such an entry is again only a
-preview to Claude Code.
+adds one sentence: read them before acting where one may apply. If the hard
+rules alone are longer than the budget (D-69, revising D-54), they are bounded
+the same way: the largest prefix whose complete frame fits, with nothing
+ranked after them. That prefix keeps the most specific rules first (Agent,
+then project, then global scope, each in the Provider's order): a more
+specific rule overrides a broader one, so it is the one the model can least
+infer. Past Claude Code's preview a hard rule was never seen anyway, and the
+preview confirmed nothing; now the omission is explicit. `preferences_omitted`
+then also says `includes_always_inline: true`, and the label adds a second
+sentence: if they are not already in this conversation, read the omitted ones
+once with `read_task_preferences` before acting; they stay in force. A delta
+repeats the label every turn, so it asks for one read, not one per turn.
 
 A bounded entry is still a complete, confirmable frame:
 
@@ -218,6 +235,33 @@ compatibility remains unchanged.
   without creating another task or selecting another owner. Clear/startup do
   not import the previous task. Native compaction, execution/window changes,
   changed scope/rules and unavailable evidence also cause full delivery.
+- Except a Claude Code resume (rec#11 D-69, rec#47): Claude Code resumes a
+  session (`--resume`, `/resume`, and every `claude -p --resume <id>` process)
+  by replaying the same transcript into the model's context, so the frames
+  delivered before are taken as still seen. Its `SessionStart` with
+  `source: "resume"` keeps the delivery state (pending frames and the
+  generation start) and restores nothing; the next entry is a delta on the
+  replayed frame. That Claude Code replays its earlier hook attachments is an
+  assumption the macOS check of rec#47 verifies. The Claude adapter passes
+  this as `replayedSources: ['resume']` to the shared
+  `preferenceLifecycleOutput`; Codex passes none, so its resume is unchanged.
+  A compaction Claude records in that transcript still starts a new
+  generation. A resume into a new session ID (a fork) has no delivery state
+  of its own, so its first entry is complete.
+- Claude Code records form a tree: each names the one before it as
+  `parentUuid`, and a rewind continues from an earlier record, leaving the
+  turns after it in the file as an abandoned branch. A resume replays only the
+  chain that ends at the latest record. So Claude evidence counts only frames
+  and own messages on that chain (`link` in
+  `src/agents/claude-code/preference-evidence.js`, walked by the shared
+  reader): a frame on an abandoned branch confirms nothing, and the next entry
+  is a delta on the last frame the chain still holds, or complete. A sidechain
+  record or one without a `parentUuid` field is not on the chain; a transcript
+  with no linked record at all is read in file order, as before. The chain is
+  walked from the latest linked record in file order, which is the leaf
+  Claude Code itself resumes; if the host has not yet written the new
+  prompt's record when the hook reads, that leaf is the same one the replay
+  starts from.
 
 ## Recent conversation context
 
@@ -261,7 +305,8 @@ version that comes back is delivered again. The
 Provider currently has no delete marker for conversation events and never
 replaces one in place, so this path is defensive.
 
-Compaction, clear, resume, fork, a new MCP process, an execution/window change
+Compaction, clear, resume (except Claude Code's, which replays the same
+transcript, see above), fork, a new MCP process, an execution/window change
 or a replaced transcript starts a new generation, which receives the window in
 full. So does a client without a readable transcript. A failed, truncated or
 unrecorded delivery is resent. A transcript is identified by its exact device
@@ -305,10 +350,15 @@ total, the scaled scenarios that reuse context cost less, no turn needs a reread
 under the delivery rules, and every model view is whole.
 `test/agents/claude-code/entry-inline-budget.test.js` checks the inline
 budget with a synthetic 60-preference entry: it fits, keeps every hard rule,
-boundary, closing field and conflict, counts what it leaves out, is confirmed
-from its Claude transcript record and is followed by a delta; an omitted
-preference is never delivered, a bounded frame never removes one still in
-force, and the part that always stays is delivered past the budget. The
+closing field and conflict, ranks boundaries first, counts what it leaves out,
+is confirmed from its Claude transcript record and is followed by a delta; an
+omitted preference is never delivered, a bounded frame never removes one still
+in force, and hard rules alone over the budget are bounded too, with
+`includes_always_inline`. `test/agents/claude-code/resume-delta.test.js`
+reproduces rec#47 (D-69): the second turn is a delta after a `SessionStart`
+resume between turns, with 26 hard rules and 5 general items, and with 26
+unmarked judgment boundaries; a fork gets the complete frame, and after a
+rewind and a resume the abandoned turn's frame is no base. The
 token-budget test records its two-turn size. The
 opt-in `graph-provider/tests/test_session_preference_native.py` uses a real
 Codex client, MCP stdio, HTTP Provider and a disposable loopback Neo4j. It checks
