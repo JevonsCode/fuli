@@ -37,6 +37,10 @@ import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partial
 // label included (entry-inline-budget.js, rec#11 D-54); the rest of the 10,000
 // is room for a notice appended after it (withOutdatedMcpNotice).
 const CLAUDE_ENTRY_INLINE_CHARS = 9000;
+// Claude Code resumes a session (`--resume`, `/resume`) by replaying the same
+// transcript into the model's context, so the frames delivered before are
+// still seen and a resume keeps the delivery base (rec#47, rec#11 D-69).
+export const CLAUDE_REPLAYED_SOURCES = Object.freeze(['resume']);
 
 export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
@@ -46,7 +50,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
   }
   const source = { sourceApplication: 'claude_code', sourceSessionId: sessionId };
   if (PREFERENCE_RESET_EVENTS.includes(event)) return preferenceLifecycleOutput(event, input,
-    { sourceApplication: 'claude_code', delivery, currentTask, invoke });
+    { sourceApplication: 'claude_code', delivery, currentTask, invoke, replayedSources: CLAUDE_REPLAYED_SOURCES });
   if (event === 'UserPromptSubmit') {
     if (typeof input.cwd !== 'string' || !input.cwd.trim() || typeof input.prompt !== 'string') {
       throw new TypeError('Claude task entry requires cwd and prompt');

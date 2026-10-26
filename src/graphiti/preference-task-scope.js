@@ -48,10 +48,14 @@ export function preferenceSceneReplaceable(item) {
     || generalItemReplaceable(qualifiers, item.profile_aspect);
 }
 
-// What an inline entry budget never leaves out (rec#11 D-54): a hard
-// constraint, and a boundary that a scene switch never revokes either.
+// What an inline entry budget leaves out last (rec#11 D-54, D-69): a rule a
+// person marked constraint: "hard". A boundary in the scene sense (an
+// unmarked judgment_preference without a scene key, task-scene.js) is only the
+// scene table's default, so a scene switch never revokes it; it carries no
+// marker that it must never be left out, so the budget ranks it first among
+// the rest instead (entry-inline-budget.js).
 export function preferenceAlwaysInline(item) {
-  return itemQualifiers(item).constraint === 'hard' || !preferenceSceneReplaceable(item);
+  return itemQualifiers(item).constraint === 'hard';
 }
 
 // Whether the item's own scene key (a workKind qualifier or a tasteDomain)
