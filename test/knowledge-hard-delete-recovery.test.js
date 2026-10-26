@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
-import { setTimeout as delay } from 'node:timers/promises';
+import { setImmediate as turn } from 'node:timers/promises';
 
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { createJudgmentEngine } from '../src/judgment/engine.js';
@@ -143,24 +143,36 @@ test('a delete held past the window, then committed, stays unknown with the fenc
   const dataDir = dataDirectory(t);
   rememberWords(dataDir);
   const graph = syntheticGraph();
-  // Real time: the console stops waiting after 50 ms and may abort after
-  // 150 ms; the graph holds the delete's transaction for 600 ms, then commits.
-  graph.holdMs = 600;
-  const port = () => knowledgeHardDelete(dataDir, { send: graph.send, deleteTimeoutMs: 50, abortAfterMs: 150 });
-  const started = Date.now();
+  // The graph holds the delete's transaction until the test commits it, and
+  // the console's clock is injected: neither the hold nor the abort window
+  // depends on how long the machine takes.
+  let commit;
+  graph.commitWhen = new Promise((resolve) => { commit = resolve; });
+  const clock = { at: Date.parse('2026-10-22T01:02:03Z') };
+  const port = () => knowledgeHardDelete(dataDir, { send: graph.send, now: () => new Date(clock.at),
+    deleteTimeoutMs: 0, abortAfterMs: 150 });
+  const aborts = () => graph.calls.filter((call) => call.path.endsWith('/abort')).length;
   assert.equal((await port().confirm(CONFIRM)).outcome, 'unknown');
   assert.equal(ledgerState(dataDir), 'pending');
   assert.equal(fenced(dataDir), true, 'unknown keeps the fence');
+  const operation = hardDeleteLedger(dataDir).find(SPACE, 'item-2');
   assert.equal((await port().status(CONFIRM)).outcome, 'unknown');
   assert.equal(fenced(dataDir), true);
-  await delay(200);
-  assert.ok(Date.now() - started > 150, 'past the window');
+  // Inside the window the console only asks; it never aborts.
+  assert.equal(aborts(), 0);
   assert.equal(graph.deleted, false, 'the delete still runs');
   // Past the window the console asks the graph to abort: the abort waits for
   // the running delete, which commits, so the answer is committed.
-  const settled = await port().status(CONFIRM);
+  clock.at = Date.parse(operation.createdAt) + 151;
+  let answered = false;
+  const settling = port().status(CONFIRM).finally(() => { answered = true; });
+  while (aborts() === 0) await turn();
+  await turn();
+  assert.equal(answered, false, 'the abort waits for the delete that still runs');
+  assert.equal(graph.deleted, false);
+  commit();
+  const settled = await settling;
   assert.equal(settled.outcome, 'complete');
-  assert.ok(Date.now() - started >= 600, 'the answer came only after the commit');
   assert.equal(graph.deleted, true);
   assert.equal(ledgerState(dataDir), 'complete');
   assert.equal(fenced(dataDir), true, 'a deleted item stays fenced');
