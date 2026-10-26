@@ -50,6 +50,7 @@ const templateId = computed(() => String(route.params.templateId ?? ''))
 const isJefa = computed(() => templateId.value === 'jefa')
 const jefaRead = reactive(useJefaBoardLoad({
   enabled: isJefa, spaceId: personalSpaceId, boards: projectBoards, scopeValid: () => !projectFilter.invalidScope.value,
+  selectedIds: () => projectFilter.selection.value,
   consoleError: computed(() => !store.state && store.runtimeStatus === 'error' ? store.feedback?.message || t('employees.loadError') : ''),
   projectNames: computed(() => new Map((store.state?.personalProjects ?? []).filter(p => p.personal_space_id === personalSpaceId.value).map(p => [p.project_id, p.profile.name]))),
 }))
@@ -179,6 +180,8 @@ watch(managedProjectSignature, (signature, previous) => {
 watch(projectFilter.invalidScope, (invalid, previous) => {
   if (isJefa.value && previous && !invalid) jefaRead.scopeChanged()
 })
+// Jefa reads only the selected projects' boards, so a filter change reads the new scope.
+watch(projectFilter.selection, () => { if (isJefa.value) jefaRead.selectionChanged() })
 watch([employeeTemplates, employeeCatalogLoading, employeeCatalogError], ([templates, catalogLoading, catalogError]) => {
   if (!isJefa.value || !jefaRead.template || catalogLoading || catalogError) return
   const candidate = templates.find(t => t.id === 'jefa')
@@ -393,7 +396,7 @@ async function projectsSaved() {
     <JefaReadStatus v-if="isJefa && !projectFilter.invalidScope.value"
       :loading="jefaRead.loading" :long-wait="jefaRead.longWait" :stage="jefaRead.stage"
       :timed-out="jefaRead.timedOut" :failure="jefaRead.failure" :failures="jefaRead.failures"
-      :total="jefaRead.projects.length" :loaded="jefaRead.loadedIds.length" :pending="jefaRead.pendingIds.length"
+      :total="jefaRead.scopeIds.length" :loaded="jefaRead.loadedIds.length" :pending="jefaRead.pendingIds.length"
       :has-content="jefaRead.hasContent" :stale="jefaRead.stale" :updated-at="jefaRead.updatedAt" @reload="retry"
     />
     <GrowthLoading v-if="pageLoading && !isJefa" :label="pageLoadingLabel" />

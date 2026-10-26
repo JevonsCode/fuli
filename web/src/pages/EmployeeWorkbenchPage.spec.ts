@@ -887,3 +887,216 @@ describe('Jefa bounded progressive reads', () => {
     expect(wrapper.text()).not.toContain('移除后晚到的正文')
   })
 })
+
+// rec#56: a large synthetic catalog with a small selection reads only the selection.
+describe('Jefa reads only the selected projects', () => {
+  const CATALOG_SIZE = 285
+  const ids = Array.from({ length: CATALOG_SIZE }, (_, index) => `synthetic-${String(index + 1).padStart(3, '0')}`)
+  const pick = (...indexes: number[]) => indexes.map(index => ids[index]!)
+  type Wrapper = Awaited<ReturnType<typeof setup>>
+  type BoardCall = { id: string; signal?: AbortSignal; resolve: (value: unknown) => void; reject: (cause: unknown) => void }
+  beforeEach(() => {
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      const result = await original(url)
+      if (url.startsWith('/api/employee-templates?')) result.templates[0].managedProjects = ids.map((id, index) => ({ id, name: `合成项目 ${index + 1}` }))
+      return result
+    })
+  })
+  function saveFilter(projectIds: string[]) {
+    localStorage.setItem(projectBoardFilterKey('space-a'), JSON.stringify({ version: 1, projectIds }))
+  }
+  const deepLink = (projectIds: string[]) => `/employees/jefa?${projectIds.map(id => `project=${id}`).join('&')}`
+  function boardOf(id: string, title = `任务 ${id}`, truncated = false) {
+    return { items: [{ id: `t-${id}`, projectId: id, title, status: 'planned' }], total: truncated ? 200 : 1, truncated }
+  }
+  function answerBoards(answer: (id: string) => unknown = id => boardOf(id)) {
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string }) => answer(body.personalProjectId))
+  }
+  function heldBoards() {
+    const calls: BoardCall[] = []
+    postJson.mockImplementation((_url: string, body: { personalProjectId: string }, init?: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
+      calls.push({ id: body.personalProjectId, signal: init?.signal, resolve, reject })
+    }))
+    return calls
+  }
+  const boardReads = () => postJson.mock.calls.filter(([, body]) => body.tool === 'read_board').map(([, body]) => body.personalProjectId as string)
+  const status = (wrapper: Wrapper) => wrapper.get('.jefa-read-status').text()
+  const board = (wrapper: Wrapper) => wrapper.getComponent(EmployeeTaskBoard)
+  async function selectProjects(wrapper: Wrapper, projectIds: string[]) {
+    board(wrapper).vm.$emit('update:visible-project-ids', projectIds)
+    await flushPromises()
+  }
+  async function refresh(wrapper: Wrapper) {
+    board(wrapper).vm.$emit('retry')
+    await flushPromises()
+  }
+
+  it('reads only a saved filter selection, not the whole catalog', async () => {
+    const selected = pick(3, 100, 200)
+    saveFilter(selected)
+    answerBoards()
+    const wrapper = await setup('/employees/jefa')
+    expect(boardReads()).toEqual(selected)
+    expect(wrapper.get('.project-scope-trigger').text()).toContain(`已选 3 / 共 ${CATALOG_SIZE} 个项目`)
+    for (const id of selected) expect(wrapper.text()).toContain(`任务 ${id}`)
+    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+  })
+
+  it('reads a deep link with several projects four at a time, counting only that scope', async () => {
+    const selected = pick(10, 20, 30, 40, 50, 60)
+    const calls = heldBoards()
+    const wrapper = await setup(deepLink(selected))
+    expect(wrapper.vm.$route.query.project).toEqual(selected)
+    expect(calls.map(call => call.id)).toEqual(selected.slice(0, 4))
+    expect(status(wrapper)).toContain('已显示 0/6 个项目；6 个仍在读取，0 个读取失败')
+    calls[0]!.resolve(boardOf(selected[0]!)); await flushPromises()
+    expect(calls.map(call => call.id)).toEqual(selected.slice(0, 5))
+    expect(status(wrapper)).toContain('已显示 1/6 个项目；5 个仍在读取')
+    for (const call of calls.slice(1)) call.resolve(boardOf(call.id))
+    await flushPromises()
+    for (const call of calls.slice(5)) call.resolve(boardOf(call.id))
+    await flushPromises()
+    expect(boardReads()).toEqual(selected)
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+    for (const id of selected) expect(wrapper.text()).toContain(`任务 ${id}`)
+  })
+
+  it('keeps queued projects unsent and pending while four reads are in flight', async () => {
+    const selected = pick(0, 1, 2, 3, 4, 5, 6, 7, 8)
+    const calls = heldBoards()
+    const wrapper = await setup(deepLink(selected))
+    expect(calls.map(call => call.id)).toEqual(selected.slice(0, 4))
+    calls[1]!.reject(new ApiError('unavailable', 503)); await flushPromises()
+    expect(calls.map(call => call.id)).toEqual(selected.slice(0, 5))
+    expect(status(wrapper)).toContain('已显示 0/9 个项目；8 个仍在读取，1 个读取失败')
+    expect(wrapper.find('.growth-loading').exists()).toBe(true)
+  })
+
+  it('sends no board request for an empty selection, ends loading and keeps the filter', async () => {
+    saveFilter([])
+    answerBoards()
+    const wrapper = await setup('/employees/jefa')
+    expect(boardReads()).toEqual([])
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+    expect(wrapper.get('.project-scope-trigger').text()).toContain(`已选 0 / 共 ${CATALOG_SIZE} 个项目`)
+    expect(wrapper.text()).toContain('没有显示任何项目')
+    expect(wrapper.vm.$route.query.empty).toBe('1')
+  })
+
+  it('cancels the old queue on a filter switch and sends nothing more for it', async () => {
+    const before = pick(0, 1, 2, 3, 4, 5, 6, 7)
+    const after = pick(200, 201)
+    const calls = heldBoards()
+    const wrapper = await setup(deepLink(before))
+    calls[0]!.resolve(boardOf(before[0]!)); await flushPromises()
+    expect(calls).toHaveLength(5)
+    await selectProjects(wrapper, after)
+    const old = calls.slice(1, 5)
+    expect(old.every(call => call.signal?.aborted)).toBe(true)
+    expect(calls.slice(5).map(call => call.id)).toEqual(after)
+    for (const call of old) call.resolve(boardOf(call.id))
+    await flushPromises()
+    expect(boardReads()).toEqual([...before.slice(0, 5), ...after])
+    expect(status(wrapper)).toContain('已显示 0/2 个项目；2 个仍在读取')
+    for (const call of calls.slice(5)) call.resolve(boardOf(call.id))
+    await flushPromises()
+    expect(boardReads()).toEqual([...before.slice(0, 5), ...after])
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+    expect(board(wrapper).props('canMoveTasks')).toBe(true)
+  })
+
+  it('does not let a late response from the old scope finish or feed the new one, and reuses finished boards', async () => {
+    const [first, second, third] = pick(7, 70, 170) as [string, string, string]
+    const calls = heldBoards()
+    const call = (id: string) => calls.find(entry => entry.id === id)!
+    const wrapper = await setup(deepLink([first, second]))
+    call(second).resolve(boardOf(second)); await flushPromises()
+    await selectProjects(wrapper, [second, third])
+    expect(calls.map(entry => entry.id)).toEqual([first, second, third])
+    call(first).resolve(boardOf(first, '旧范围晚到任务')); await flushPromises()
+    expect(wrapper.find('.growth-loading').exists()).toBe(true)
+    expect(status(wrapper)).toContain('已显示 1/2 个项目；1 个仍在读取')
+    call(third).resolve(boardOf(third)); await flushPromises()
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+    await selectProjects(wrapper, [first, second, third])
+    // The late answer was never accepted, so only that project is read again.
+    expect(calls.map(entry => entry.id)).toEqual([first, second, third, first])
+  })
+
+  it('reports a partial failure only while the failed project is in scope', async () => {
+    const [ok, failing, other] = pick(5, 50, 150) as [string, string, string]
+    answerBoards(id => id === failing ? Promise.reject(new ApiError('unavailable', 503)) : boardOf(id))
+    const wrapper = await setup(deepLink([ok, failing, other]))
+    expect(boardReads()).toEqual([ok, failing, other])
+    expect(wrapper.get('[role="alert"]').text()).toContain('部分项目暂不可用')
+    expect(status(wrapper)).toContain('已显示 2/3 个项目；0 个仍在读取，1 个读取失败')
+    expect(wrapper.text()).toContain(`任务 ${ok}`)
+    await selectProjects(wrapper, [ok, other])
+    expect(boardReads()).toEqual([ok, failing, other])
+    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+    expect(board(wrapper).props('incomplete')).toBe(false)
+  })
+
+  it('keeps stale and read-only state to the current scope', async () => {
+    const [kept, flaky] = pick(9, 99) as [string, string]
+    answerBoards()
+    const wrapper = await setup(deepLink([kept, flaky]))
+    answerBoards(id => id === flaky ? Promise.reject(new ApiError('unavailable', 503)) : boardOf(id))
+    await refresh(wrapper)
+    expect(boardReads()).toEqual([kept, flaky, kept, flaky])
+    expect(board(wrapper).props('readOnly')).toBe(true)
+    await selectProjects(wrapper, [kept])
+    expect(boardReads()).toHaveLength(4)
+    expect(board(wrapper).props('readOnly')).toBe(false)
+    expect(board(wrapper).props('canMoveTasks')).toBe(true)
+  })
+
+  it('times out only the selected scope and sends no queued request after the budget', async () => {
+    vi.useFakeTimers()
+    const selected = pick(1, 11, 21, 31, 41, 51)
+    heldBoards()
+    const wrapper = await setup(deepLink(selected))
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+    expect(status(wrapper)).toContain('已显示 0/6 个项目；0 个仍在读取，6 个读取失败')
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(boardReads()).toEqual(selected.slice(0, 4))
+  })
+
+  it('reads the complete list only for a selected truncated board, and a refresh re-reads only the selection', async () => {
+    const [truncated, plain] = pick(12, 120) as [string, string]
+    answerBoards(id => boardOf(id, `任务 ${id}`, id === truncated))
+    const snapshotUrl = `/employee-workspaces/jefa/${truncated}/api/snapshot`
+    const original = getJson.getMockImplementation()!
+    let snapshotAvailable = false
+    getJson.mockImplementation((url: string) => !url.endsWith('/api/snapshot') ? original(url)
+      : snapshotAvailable && url === snapshotUrl
+        ? Promise.resolve({ snapshot: { workItems: [{ id: 'full', projectId: truncated, title: '完整列表任务', status: 'planned' }] } })
+        : Promise.reject(new ApiError('unavailable', 503)))
+    const snapshots = () => getJson.mock.calls.map(([url]) => String(url)).filter(url => url.endsWith('/api/snapshot'))
+    const wrapper = await setup(deepLink([truncated, plain]))
+    expect(snapshots()).toEqual([snapshotUrl])
+    expect(wrapper.get('[role="alert"]').text()).toContain('部分项目暂不可用')
+    snapshotAvailable = true
+    await wrapper.get('.jefa-read-actions button').trigger('click'); await flushPromises()
+    expect(boardReads()).toEqual([truncated, plain, truncated, plain])
+    expect(snapshots()).toEqual([snapshotUrl, snapshotUrl])
+    expect(wrapper.text()).toContain('完整列表任务')
+    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+  })
+
+  it('drops a selected project whose access is revoked on refresh, without reading unselected ones', async () => {
+    const [kept, revoked, other] = pick(2, 22, 222) as [string, string, string]
+    answerBoards(id => boardOf(id, id === revoked ? '将撤权的合成任务' : `任务 ${id}`))
+    const wrapper = await setup(deepLink([kept, revoked, other]))
+    expect(wrapper.text()).toContain('将撤权的合成任务')
+    answerBoards(id => id === revoked ? Promise.reject(new ApiError('forbidden', 403)) : boardOf(id))
+    await refresh(wrapper)
+    expect(boardReads()).toEqual([kept, revoked, other, kept, revoked, other])
+    expect(wrapper.text()).not.toContain('将撤权的合成任务')
+    expect(wrapper.text()).toContain(`任务 ${kept}`)
+    expect(board(wrapper).props('readOnly')).toBe(false)
+  })
+})
