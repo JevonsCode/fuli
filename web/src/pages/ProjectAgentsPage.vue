@@ -26,6 +26,7 @@ import ProjectAgentAutomationPolicyPanel from '@/features/project-agents/Project
 import ProjectAgentCard from '@/features/project-agents/ProjectAgentCard.vue'
 import ProjectAgentFirstTask from '@/features/project-agents/ProjectAgentFirstTask.vue'
 import { useProjectAgentRoster } from '@/features/project-agents/useProjectAgentRoster'
+import { useOccupationCatalog } from '@/features/occupations/occupation-catalog'
 import ProjectAgentDialog from '@/features/projects/ProjectAgentDialog.vue'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -38,6 +39,8 @@ const store = useConsoleStore()
 const route = useRoute()
 const router = useRouter()
 const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
+// The quick look names occupations as the space catalog does.
+useOccupationCatalog(spaceId)
 const roster = useProjectAgentRoster(spaceId)
 const agents = roster.agents
 const projects = computed(() => store.state?.personalProjects ?? [])

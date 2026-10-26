@@ -61,4 +61,4 @@ async def test_builtin_occupation_backfill_preserves_human_role_and_assistant_is
         assert changed.json()['detail']['code'] == 'occupation_locked'
         await client.post('/v1/project-agents/system-hr', params=params)
         bole = await client.get('/v1/project-agents/employee.bole', params=params)
-        assert bole.json()['occupation']['role'] == 'management'
+        assert bole.json()['occupation']['role'] == 'hr'

@@ -136,6 +136,10 @@ NODE_FIELDS = {
         'after_degree': 'integer?', 'after_hash': 'string?', 'apply_id': 'string',
         'b_agent_id': 'string?', 'b_agent_type': 'string?', 'b_aggregate_id': 'string?',
         'b_confirmation_authority': 'string?', 'b_decision_revision': 'integer?',
+        # graph/12-builtin-occupations
+        'b_description_en': 'string?', 'b_description_zh': 'string?', 'b_name_en': 'string?',
+        'b_name_zh': 'string?', 'b_occupation_role': 'string?', 'b_occupation_updated_at': 'datetime?',
+        'b_revision': 'integer?',
         'b_fuli_ai_review_lock_version': 'integer?', 'b_fuli_confidence_score': 'float?',
         'b_fuli_distinct_task_count': 'integer?', 'b_fuli_inheritance_mode': 'string?',
         'b_fuli_inherited_project_ids': 'string[]?', 'b_fuli_qualified_use_count': 'integer?',

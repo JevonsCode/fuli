@@ -205,3 +205,21 @@ async def test_catalog_does_not_backfill_an_old_agent_and_new_default_lead_is_ex
         assert hired.status_code == 200, hired.text
         assert hired.json()['agent']['occupation']['role'] == 'lead'
         assert hired.json()['agent']['agent_id'] != 'engineer'
+
+
+@pytest.mark.asyncio
+async def test_builtin_agents_count_toward_their_shipped_occupations():
+    async with provider_client(fixture_settings(), raise_app_exceptions=False) as (client, _):
+        space = await create_space(client)
+        params = {'personal_space_id': space}
+        ensured = await client.post('/v1/project-agents/system-hr', params=params)
+        assert ensured.status_code == 200, ensured.text
+        bole = (await client.get('/v1/project-agents/employee.bole', params=params)).json()
+        assert (bole['occupation']['role'], bole['occupation']['tags']) == ('hr', [])
+        entries = {entry['key']: entry for entry in
+                   (await client.get('/v1/occupations', params=params)).json()}
+        # Bole is AR: Agent resources, not management.
+        assert (entries['hr']['name_zh'], entries['hr']['name_en']) == ('Agent 资源', 'Agent resources')
+        assert entries['hr']['agent_count'] == 1
+        assert entries['management']['agent_count'] == 2
+        assert entries['assistant']['agent_count'] == 1

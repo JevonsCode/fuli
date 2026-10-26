@@ -40,7 +40,7 @@ const emit = defineEmits<{ edit: []; archive: []; restore: []; remove: []; retry
       <DialogTitle class="pr-8 text-xl leading-tight [overflow-wrap:anywhere]">{{ occupationName(state.entry) }}</DialogTitle>
       <DialogDescription class="flex flex-wrap items-center gap-2">
         <Badge v-if="state.entry.builtin" variant="secondary">{{ t('occupations.builtin') }}</Badge>
-        <Badge v-if="state.entry.status === 'archived'" variant="warning">{{ t('occupations.archived') }}</Badge>
+        <Badge v-if="state.entry.status === 'archived'" variant="warning">{{ t('occupations.stats.archived') }}</Badge>
         <span>{{ t('occupations.agentCount', { count: state.entry.agent_count }) }}</span>
       </DialogDescription>
     </DialogHeader>
@@ -50,15 +50,16 @@ const emit = defineEmits<{ edit: []; archive: []; restore: []; remove: []; retry
         {{ occupationDescription(state.entry) || t('occupations.noDescription') }}
       </p>
     </section>
+    <p v-if="state.entry.status === 'active'" class="m-0 text-sm text-muted-foreground" data-occupation-archive-hint>{{ t('occupations.archiveHint') }}</p>
     <p v-if="actionError" class="m-0 text-sm text-destructive" role="alert">{{ actionError }}</p>
     <DialogFooter class="border-t pt-4">
       <Button v-if="!state.entry.builtin" variant="destructive" :disabled="Boolean(busy) || state.entry.agent_count > 0"
         :title="state.entry.agent_count > 0 ? t('occupations.inUse') : undefined" :loading="busy === 'remove'" :loading-label="t('occupations.removing')"
         class="sm:mr-auto" data-peek-remove @click="emit('remove')">{{ t('occupations.remove') }}</Button>
       <Button v-if="state.entry.status === 'active'" variant="outline" :disabled="Boolean(busy)" :loading="busy === 'archive'"
-        :loading-label="t('occupations.archiving')" data-peek-archive @click="emit('archive')">{{ t('occupations.archive') }}</Button>
+        :loading-label="t('occupations.archiving')" data-term="occupation.archived" data-peek-archive @click="emit('archive')">{{ t('occupations.archive') }}</Button>
       <Button v-else variant="outline" :disabled="Boolean(busy)" :loading="busy === 'restore'" :loading-label="t('occupations.restoring')"
-        data-peek-restore @click="emit('restore')">{{ t('occupations.restore') }}</Button>
+        data-term="occupation.archived" data-peek-restore @click="emit('restore')">{{ t('occupations.restore') }}</Button>
       <Button :disabled="Boolean(busy)" data-peek-edit @click="emit('edit')">{{ t('occupations.edit') }}</Button>
     </DialogFooter>
   </template>

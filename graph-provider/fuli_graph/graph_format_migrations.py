@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from . import graph_format_backfills as backfills
+from . import graph_format_builtin_occupations as builtin_occupations
 from .graph_format_journal import RecordJournal
 from .graph_format_schema import (
     BASELINE_LABELS,
@@ -124,8 +125,16 @@ GRAPH_MIGRATIONS = (
         'source deletion audit kinds and publication copies without source bodies',
         rules=SOURCE_DELETE_RULES,
     ),
+    _records(
+        'graph/12-builtin-occupations', 12, 'rewrite',
+        "Bole's built-in occupation becomes Agent resources (hr), and hr's shipped name and "
+        'duties are reworded for Agents; values a person changed stay',
+        builtin_occupations.pending_builtin_occupations,
+        builtin_occupations.apply_builtin_occupations,
+        builtin_occupations.BUILTIN_OCCUPATION_JOURNAL,
+    ),
     GraphMigration(
-        'graph/12-task-blocker-clear', 12, 'schema',
+        'graph/13-task-blocker-clear', 13, 'schema',
         'why a task block ended on its event, and the session lookup that ends it',
         rules=TASK_BLOCKER_RULES,
     ),

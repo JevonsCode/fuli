@@ -9,6 +9,8 @@ export interface UiStat {
   tone?: 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
   pressed?: boolean
   ariaLabel?: string
+  /** A glossary term id (data-term) for this count. */
+  term?: string
 }
 defineProps<{ items: readonly UiStat[]; label: string }>()
 defineEmits<{ select: [key: string] }>()
@@ -18,10 +20,10 @@ defineEmits<{ select: [key: string] }>()
   <div class="ui-stat-row" role="group" :aria-label="label">
     <template v-for="item in items" :key="item.key">
       <button v-if="item.pressed !== undefined" type="button" class="ui-stat" :class="`is-${item.tone ?? 'neutral'}`"
-        :aria-pressed="item.pressed" :aria-label="item.ariaLabel" :data-stat="item.key" @click="$emit('select', item.key)">
+        :aria-pressed="item.pressed" :aria-label="item.ariaLabel" :data-stat="item.key" :data-term="item.term" @click="$emit('select', item.key)">
         <i aria-hidden="true" />{{ item.label }}<strong>{{ item.value }}</strong>
       </button>
-      <span v-else class="ui-stat" :class="`is-${item.tone ?? 'neutral'}`" :aria-label="item.ariaLabel" :data-stat="item.key">
+      <span v-else class="ui-stat" :class="`is-${item.tone ?? 'neutral'}`" :aria-label="item.ariaLabel" :data-stat="item.key" :data-term="item.term">
         <i aria-hidden="true" />{{ item.label }}<strong>{{ item.value }}</strong>
       </span>
     </template>

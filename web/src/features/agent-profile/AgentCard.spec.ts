@@ -1,7 +1,20 @@
 import { mount, RouterLinkStub } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+
+const { getJson } = vi.hoisted(() => ({ getJson: vi.fn() }))
+vi.mock('@/api/client', () => ({ getJson, postJson: vi.fn(), putJson: vi.fn(), deleteJson: vi.fn() }))
+
 import AgentCard from './AgentCard.vue'
+import { useOccupationCatalog } from '@/features/occupations/occupation-catalog'
+import { SYNTHETIC_OCCUPATIONS } from '@/test-support/occupation-fixtures'
 import type { ProjectAgentRecord } from '@/types'
+
+// Occupation names come from the space catalog.
+beforeAll(async () => {
+  getJson.mockResolvedValue(SYNTHETIC_OCCUPATIONS)
+  await useOccupationCatalog(ref('space-a')).load()
+})
 
 const agent = {
   agentId: 'employee.jefa', personalSpaceId: 'space-a', assignments: [],
@@ -98,7 +111,7 @@ describe('AgentCard projects', () => {
       },
     })
     expect(wrapper.get('.agent-directory-name').text()).toContain('Rowan')
-    expect(wrapper.get('[data-occupation]').text()).toBe('组长 · 开发')
+    expect(wrapper.get('[data-occupation]').text()).toBe('负责人 · 工程')
     expect(wrapper.get('[data-agent-summary]').text()).toBe('负责拆活、派活、整合，对用户汇报。')
     expect(wrapper.get('[data-current-task]').text()).toContain('收口 R-06 项目视图改造')
   })
