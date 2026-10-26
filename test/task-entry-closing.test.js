@@ -27,17 +27,20 @@ function hookEntry(overrides = {}) {
     task_guidance: taskKnowledgeGuidance(), ...overrides };
 }
 
+// Claude Code's entry is bounded to its inline limit (rec#11 D-54); these
+// preferences carry no hard constraint, so none of them always stays (D-69).
 const AGENTS = [
   ['Claude Code', entry => claudeLifecycleOutput('UserPromptSubmit', { session_id: 'synthetic-claude-session',
-    cwd: '/synthetic/project', prompt: 'Synthetic task.' }, async () => entry)],
+    cwd: '/synthetic/project', prompt: 'Synthetic task.' }, async () => entry), 9000],
   ['Codex', entry => codexLifecycleOutput('UserPromptSubmit', { session_id: 'synthetic-codex-session', turn_id: 'synthetic-turn',
-    cwd: '/synthetic/project', prompt: 'Synthetic task.' }, async () => entry)]
+    cwd: '/synthetic/project', prompt: 'Synthetic task.' }, async () => entry), null]
 ];
 
-for (const [agent, enter] of AGENTS) {
+for (const [agent, enter, inlineChars] of AGENTS) {
   test(`${agent}: the closing step and its fields lead an entry with large preferences`, async () => {
     const context = (await enter(hookEntry())).hookSpecificOutput.additionalContext;
-    assert.ok(context.length > 30_000, 'the synthetic entry is far beyond the inline limit');
+    if (inlineChars) assert.ok(context.length <= inlineChars, `${context.length} chars, bounded to the inline limit`);
+    else assert.ok(context.length > 30_000, 'the synthetic entry is far beyond the inline limit');
     const preview = context.slice(0, PREVIEW_CHARS);
     const [label] = context.split('\n');
     assert.ok(label.length < PREVIEW_CHARS);
@@ -49,7 +52,9 @@ for (const [agent, enter] of AGENTS) {
     }
     const delivered = JSON.parse(context.split('\n').at(-1));
     assert.deepEqual(Object.keys(delivered).slice(0, 4), ['taskContextToken', 'task_context_token', 'checkpoint_required', 'agent_receipt']);
-    assert.equal(delivered.effective_preferences.length, 60, 'no preference is dropped to make room');
+    const omitted = delivered.preferences_omitted?.count ?? 0;
+    assert.equal(delivered.effective_preferences.length + omitted, 60, 'every preference is listed or counted');
+    if (!inlineChars) assert.equal(omitted, 0, 'no preference is dropped to make room');
   });
 
   test(`${agent}: a required checkpoint is asked for, not left to the Stop hook`, async () => {
