@@ -1,12 +1,9 @@
-import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
 import { localRuntimeControl } from '../cli/local-runtime-control.js';
-import { isProcessAlive } from '../local-runtime/processes.js';
-import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
+import { claimDetachedJob, detachedJob } from '../system/detached-job.js';
 import { acquireMaintenance } from './maintenance-lock.js';
 import { describeRestore, restoreStore } from './migration-operations.js';
 import { localStoresWithEngines } from './migration-plan.js';
@@ -15,32 +12,23 @@ import { localStoresWithEngines } from './migration-plan.js';
 // same restore `fuli migrate restore` runs. The store must be unused, and the
 // console holds the data directory's maintenance lock shared while it runs,
 // so the console cannot restore in its own process. It journals the confirmed
-// restore here and starts a detached worker that stops FULI, takes the lock
-// exclusively, restores exactly what the person saw (the store's digest is
-// checked again inside its lock; the store as it is is backed up first) and
-// starts FULI again, as the settings page's restart does. The page reads the
-// outcome from this journal once the console answers again. Local stores
-// only: the graph is restored from a graph export, offline.
+// restore and starts a detached worker (detached-job.js) that stops FULI,
+// takes the lock exclusively, restores exactly what the person saw (the
+// store's digest is checked again inside its lock; the store as it is is
+// backed up first) and starts FULI again, as the settings page's restart
+// does. Local stores only: the graph is restored from a graph export, offline.
 
 const JOURNAL = 'format-restore.json';
+const WORKER = fileURLToPath(new URL('./console-restore-worker.js', import.meta.url));
 const CONSOLE_ACTOR = Object.freeze({ entrypoint: 'http' });
-// A worker that is gone this long after the start without an outcome was interrupted.
-const INTERRUPTED_AFTER_MS = 10_000;
 const RUNNING = new Set(['stopping', 'restoring', 'starting']);
 
-const journalPath = (dataDir) => join(dataDir, JOURNAL);
-const save = (dataDir, job) => writeJsonFileAtomic(journalPath(dataDir), job);
-
-export function consoleRestore(dataDir, { stores = () => localStoresWithEngines(dataDir), spawnWorker = spawn,
-  now = Date.now } = {}) {
+export function consoleRestore(dataDir, { stores = () => localStoresWithEngines(dataDir), spawnWorker, now } = {}) {
+  const job = detachedJob(join(dataDir, JOURNAL), { worker: WORKER, running: RUNNING, spawnWorker, now });
   function status() {
-    const job = readJsonFile(journalPath(dataDir), null);
-    if (!job) return null;
-    const interrupted = RUNNING.has(job.status) && now() - job.startedAt > INTERRUPTED_AFTER_MS
-      && !isProcessAlive(job.workerPid);
-    return { id: job.id, label: job.label, backupRef: job.backupRef, status: interrupted ? 'failed' : job.status,
-      safetyBackupRef: job.safetyBackupRef ?? null, started: job.started ?? null,
-      error: interrupted ? 'The restore was interrupted before it reported an outcome.' : job.error ?? null };
+    const current = job.read();
+    return current && { id: current.id, label: current.label, backupRef: current.backupRef, status: current.status,
+      safetyBackupRef: current.safetyBackupRef ?? null, started: current.started ?? null, error: current.error ?? null };
   }
   function localLabel(label) {
     if (!stores().some((store) => store.label === label)) throw new TypeError('Choose one of the local stores listed');
@@ -59,20 +47,8 @@ export function consoleRestore(dataDir, { stores = () => localStoresWithEngines(
         throw new DataFormatError(impact.store, 'data_format_stale_preview', `FULI store "${impact.store}" changed `
           + 'after you saw what the restore discards. Nothing was changed; look at it again before restoring.');
       }
-      const job = { id: randomUUID(), status: 'stopping', label, backupRef, impact, startedAt: now() };
-      save(dataDir, job);
-      const fail = () => save(dataDir, { ...job, status: 'failed', started: true,
-        error: 'The restore could not start. Nothing was changed.' });
-      try {
-        const child = spawnWorker(process.execPath, [fileURLToPath(new URL('./console-restore-worker.js', import.meta.url)),
-          dataDir, job.id], { detached: true, windowsHide: true, stdio: 'ignore' });
-        child.once('error', fail);
-        if (!Number.isInteger(child.pid)) fail();
-        else {
-          save(dataDir, { ...job, workerPid: child.pid });
-          child.unref();
-        }
-      } catch { fail(); }
+      job.start(dataDir, { status: 'stopping', label, backupRef, impact },
+        'The restore could not start. Nothing was changed.');
       return status();
     }
   };
@@ -82,9 +58,9 @@ export function consoleRestore(dataDir, { stores = () => localStoresWithEngines(
 // Every step is journaled, and FULI is started again whatever happened.
 export async function runConsoleRestore(paths, id, { control = localRuntimeControl(paths, process.env, () => {}),
   acquire = acquireMaintenance, restore = restoreStore } = {}) {
-  const job = readJsonFile(journalPath(paths.dataDir), null);
-  if (job?.id !== id || job.status !== 'stopping') return;
-  const record = (fields) => save(paths.dataDir, Object.assign(job, fields));
+  const claimed = claimDetachedJob(join(paths.dataDir, JOURNAL), id, 'stopping');
+  if (!claimed) return;
+  const { job, record } = claimed;
   try {
     const stopped = await control.stop();
     if (stopped.status === 'partial') throw new Error('FULI could not be stopped safely. Nothing was changed.');

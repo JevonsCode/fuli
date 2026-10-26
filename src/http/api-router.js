@@ -1,4 +1,4 @@
-import { isLoopbackAddress } from './request-policy.js';
+import { isLoopbackAddress, refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-router.js';
 import { handleGraphApiRequest } from './graph-api-router.js';
@@ -135,6 +135,18 @@ export async function handleApiRequest({
 
   if (system && url.pathname === '/api/system/version' && request.method === 'GET') {
     sendJson(response, 200, await system.versionStatus());
+    return true;
+  }
+
+  // The console's own update (src/system/console-update.js): its state, and
+  // the start, which only a request from this computer may make.
+  if (system?.startUpdate && url.pathname === '/api/system/update') {
+    response.setHeader('Cache-Control', 'no-store');
+    if (request.method === 'GET') sendJson(response, 200, { update: system.updateStatus() });
+    else if (request.method !== 'POST') sendJson(response, 405, { error: 'Method not allowed' });
+    else if (!refuseRemoteDecision(request, response, 'FULI is updated only on this computer')) {
+      sendJson(response, 200, system.startUpdate());
+    }
     return true;
   }
 

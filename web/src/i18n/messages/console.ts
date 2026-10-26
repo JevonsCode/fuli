@@ -6,7 +6,13 @@ export const consoleMessages = {
     update: {
       aria: '发现新版本 {version}，查看更新方法',
       title: '新版本 v{version} 可用',
-      copy: '在终端运行：',
+      copy: '更新时 FULI 会先停止，装好新版本后自动重新启动，期间页面会断开一会儿，完成后自动刷新。知识数据不会被删除。',
+      action: '更新到 v{version}',
+      running: '正在更新到 v{version}，FULI 重新启动后页面会自动刷新…',
+      unchanged: '没有需要安装的新版本，FULI 没有停止。',
+      failed: '没有更新完成：{reason}',
+      notBack: 'FULI 还没有重新应答，请稍后刷新这个页面。',
+      installer: '这个安装由 FULI 托盘的安装程序更新，打开新版本安装包即可。',
       npmLink: '在 npm 查看版本详情',
     },
     agentAccess: {
@@ -29,7 +35,13 @@ export const consoleMessages = {
     update: {
       aria: 'Version {version} is available. View update instructions',
       title: 'Version v{version} is available',
-      copy: 'Run in a terminal:',
+      copy: 'FULI stops while it updates, installs the new version and starts again by itself; this page disconnects for a moment and reloads when it is done. Your knowledge data is not deleted.',
+      action: 'Update to v{version}',
+      running: 'Updating to v{version}; this page reloads once FULI has started again…',
+      unchanged: 'There was no newer version to install; FULI was not stopped.',
+      failed: 'The update did not finish: {reason}',
+      notBack: 'FULI has not answered again yet. Reload this page in a moment.',
+      installer: 'This installation is updated by the FULI tray installer: open the new version\'s installer package.',
       npmLink: 'View version details on npm',
     },
     agentAccess: {

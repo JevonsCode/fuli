@@ -5,7 +5,7 @@ import BrandEasterEgg from './BrandEasterEgg.vue'
 
 const { getJsonMock } = vi.hoisted(() => ({ getJsonMock: vi.fn() }))
 
-vi.mock('@/api/client', () => ({ getJson: getJsonMock }))
+vi.mock('@/api/client', () => ({ getJson: getJsonMock, postJson: vi.fn(), apiErrorReason: (error: Error) => error.message }))
 
 describe('BrandEasterEgg', () => {
   beforeEach(() => {
@@ -56,7 +56,7 @@ describe('BrandEasterEgg', () => {
     wrapper.unmount()
   })
 
-  it('marks a newer version and reveals safe update instructions', async () => {
+  it('marks a newer version and offers a one-click update, never a command', async () => {
     getJsonMock.mockResolvedValue({
       status: 'ready',
       currentVersion: '0.7.8',
@@ -77,7 +77,8 @@ describe('BrandEasterEgg', () => {
 
     await versionButton.trigger('click')
     expect(versionButton.attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('.brand-update-popover').text()).toContain('fuli update --yes')
+    expect(wrapper.get('.brand-update-popover').text()).not.toMatch(/fuli [a-z]|终端|terminal/)
+    expect(wrapper.get('[data-console-update-start]').text()).toBe('更新到 v0.8.0')
     expect(wrapper.get('.brand-update-popover a').attributes('href'))
       .toBe('https://www.npmjs.com/package/fuli-context')
 
