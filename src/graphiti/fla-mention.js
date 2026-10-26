@@ -31,9 +31,12 @@ const DECORATORS = new Set(['Override', 'Deprecated', 'SuppressWarnings', 'Funct
   'Nullable', 'NonNull', 'Transactional', 'dataclass', 'property', 'staticmethod', 'classmethod',
   'abstractmethod', 'override', 'cached_property']);
 const ADDRESS_LIMIT = 2048;
+const STABLE = /^\{([^{}\s]+)\}(?=$|[\s,，:：])/u;
 
-// null, { release: true }, { choice: n }, or { explicit, query }: the text
-// after the keyword or `@`, which may name an FLA and continue with the task.
+// null, { release: true }, { choice: n }, { handoff: agentId } for the
+// portable `@{agentId}` form (a hand-off's continuation prompt), or
+// { explicit, query }: the text after the keyword or `@`, which may name an
+// FLA and continue with the task.
 export function parseFlaMention(prompt) {
   const text = typeof prompt === 'string' ? prompt.trimStart() : '';
   const keyword = KEYWORD.exec(text) ?? HASH_KEYWORD.exec(text);
@@ -45,8 +48,19 @@ export function parseFlaMention(prompt) {
     return { explicit: true, query: rest };
   }
   const address = leadingAgentAddress(text);
+  if (address === null) return null;
   // `@{agentId}` is the portable form, resolved in its project's scope.
-  return address === null || address.startsWith('{') ? null : { explicit: false, query: address };
+  const stable = stableAddress(address);
+  if (stable) return stable.agentId ? { handoff: stable.agentId } : null;
+  return address.startsWith('{') ? null : { explicit: false, query: address };
+}
+
+// The portable `{agentId}` form (percent-encoded) an address opens with:
+// null when it does not, { agentId: null } when it is malformed.
+export function stableAddress(address) {
+  const stable = STABLE.exec(address);
+  if (!stable) return null;
+  try { return { agentId: decodeURIComponent(stable[1]) }; } catch { return { agentId: null }; }
 }
 
 // A reply that is only a number, which answers a picker the session showed.

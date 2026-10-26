@@ -25,7 +25,8 @@ const EXPLICIT_BASES = new Set(['explicit_personal_project_id', 'explicit_agent'
 // A routed task stores its route in its Agent assignment's match basis, with
 // or without a selected Agent: "standing_assignment:<assignmentId> <notice>",
 // then the session's own state before the route, "standing_session_project:<id>"
-// or "standing_session_agent:<id>" (none when the session had neither). Later
+// or "standing_session_agent:<id>" (none when the session had neither;
+// sessionMarkers). Later
 // entries and the checkpoint receipt recognize them by prefix and ID alone, so
 // rewording or translating the notice changes no routing.
 const ROUTE = /^standing_assignment:(\S+) (.+)$/su;
@@ -89,15 +90,23 @@ export function standingOwnerEntry(resolution, selection) {
 export function withStandingRoute(assignment, standingOwner) {
   if (standingOwner?.status !== 'routed') return assignment;
   return withRouteMarkers(assignment, [`standing_assignment:${standingOwner.assignment_id} ${standingOwner.notice}`,
-    ...(standingOwner.session_project_id ? [`standing_session_project:${standingOwner.session_project_id}`] : []),
-    ...(standingOwner.session_agent_id ? [`standing_session_agent:${standingOwner.session_agent_id}`] : [])]);
+    ...sessionMarkers({ personalProjectId: standingOwner.session_project_id,
+      projectAgentId: standingOwner.session_agent_id })]);
 }
 
-// What the session had before a routed task, so its later tasks continue
+// The session's own state stored on a task that does not keep the session
+// where it was: a routed task, or a named FLA's choice or refusal turn
+// (task-entry-named-fla.js), which runs with no project or Agent.
+export function sessionMarkers({ personalProjectId = null, projectAgentId = null } = {}) {
+  return [...(personalProjectId ? [`standing_session_project:${personalProjectId}`] : []),
+    ...(projectAgentId ? [`standing_session_agent:${projectAgentId}`] : [])];
+}
+
+// What the session had before such a task, so its later tasks continue
 // there and never inherit the routed project; any other task is its own.
 export function sessionTaskContext(task) {
   const basis = task?.agentAssignment?.match_basis ?? [];
-  if (!basis.some(item => ROUTE.test(item))) return task;
+  if (!basis.some(item => ROUTE.test(item) || SESSION_PROJECT.test(item) || SESSION_AGENT.test(item))) return task;
   const stored = pattern => basis.map(item => pattern.exec(item)?.[1]).find(Boolean) ?? null;
   const personalProjectId = stored(SESSION_PROJECT);
   const projectAgentId = stored(SESSION_AGENT);

@@ -4,9 +4,7 @@ import { projectNamedInPrompt } from './task-entry-project-mention.js';
 import { sessionTaskContext, withStandingOwner } from './task-entry-standing-owner.js';
 import { namedFlaRequest, namedFlaResolution, namedFlaTask } from './task-entry-named-fla.js';
 import { leadingAgentAddress } from './fla-mention.js';
-
-// The fixed assistant receives conversations no project has claimed yet.
-export const ASSISTANT_AGENT_ID = 'employee.assistant';
+import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 
 // Restore only exact session provenance; a normal folder name is not a role binding.
 // An unclaimed conversation never creates a project or hires a lead: it stays
@@ -25,10 +23,11 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   return fla ? { ...routed, fla } : routed;
 }
 
-// The session's current task, read at most once per entry.
+// The session's current task, read at most once per entry, and not at all
+// when the caller already read it (sessionTask).
 function sessionTaskReader(application, input) {
   const identity = input.sessionId ?? input.sourceSessionId;
-  let read = null;
+  let read = input.sessionTask !== undefined ? Promise.resolve(input.sessionTask) : null;
   return () => {
     if (typeof identity !== 'string' || !identity.trim()) return Promise.resolve(null);
     read ??= Promise.resolve(application.taskContextRegistry?.current?.(identity, input.sourceApplication ?? 'other'));

@@ -1,9 +1,9 @@
-import { coversClient } from '../agents/source-applications.js';
 import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
 import { identityKey } from '../text/name-identity.js';
+import { agentUnavailableReason } from './agent-availability.js';
+import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { isPeerRoleAgent } from './project-team-view.js';
 import { projectDisplayName } from './task-entry-project-mention.js';
-import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
 
 // The person's FLAs as choices (rec#54): one candidate per FLA and project it
 // works in, so the same name in two projects is two choices. Matching a typed
@@ -19,10 +19,10 @@ const GLOBAL_PROJECT = '全局';
 // Management peers, AR and the assistant are FULI's own roles, and temporary
 // Agents belong to one task: none is an FLA a person continues by name.
 const NOT_PICKABLE_TYPES = new Set(['hr', 'temporary']);
-// After a name: the end, a space or punctuation. A name ending in a CJK
-// character may run straight into the request (`@小林继续`).
+// A name ends at the end, a space or punctuation, or where the script changes
+// (`Jamie Ash继续`). Two CJK runs never split: `@小林子` is not "小林".
 const NAME_END = /^(?:$|[\s,，:：;；!?！？.。、(（])/u;
-const CJK_END = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]$/u;
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const PARTIAL_LIMIT = 64;
 const FUZZY = 2;
 
@@ -52,25 +52,23 @@ function candidate(agent, { project, assignment }) {
   return { agentId: agent.agent_id, projectId: project === undefined ? undefined : project?.project_id ?? null,
     name, project: project ? projectDisplayName(project) : project === null ? GLOBAL_PROJECT : null,
     occupation: profile.display_name && profile.name !== name ? profile.name : '',
-    status: profile.status ?? 'active', clients: profile.allowed_clients ?? [],
+    status: profile.status ?? 'active', allowedClients: profile.allowed_clients ?? [],
     recency: Math.max(0, ...[assignment?.updated_at, agent.current_task_running_since, agent.updated_at]
       .map(value => Date.parse(value ?? '')).filter(Number.isFinite)) };
 }
 
 // Whether this client may continue the candidate now, or why not.
 export function unavailableReason(candidate, sourceApplication) {
-  if (candidate.status === 'archived') return 'dismissed';
-  if (candidate.status !== 'active') return 'inactive';
-  if (candidate.projectId === undefined) return 'no_project';
-  return coversClient(candidate.clients, sourceApplication) ? null : 'client_not_allowed';
+  return agentUnavailableReason(candidate, sourceApplication)
+    ?? (candidate.projectId === undefined ? 'no_project' : null);
 }
 
-// Most recently used first (this session's own FLA, then the roster's latest
-// activity), then the current project's, then by name.
+// This session's own FLA first, then the current project's FLAs, then the
+// roster's latest activity, then by name.
 export function rankCandidates(candidates, { currentProjectId = null, recentAgentId = null } = {}) {
   return [...candidates].sort((a, b) => (b.agentId === recentAgentId) - (a.agentId === recentAgentId)
-    || b.recency - a.recency
     || (b.projectId === currentProjectId) - (a.projectId === currentProjectId)
+    || b.recency - a.recency
     || a.name.localeCompare(b.name));
 }
 
@@ -79,24 +77,29 @@ export function rankCandidates(candidates, { currentProjectId = null, recentAgen
 export function namedAtOpening(query, candidates) {
   const text = identityKey(query);
   const matches = candidates.map(item => ({ item, key: identityKey(item.name) }))
-    .filter(({ key }) => key && text.startsWith(key)
-      && (NAME_END.test(text.slice(key.length)) || CJK_END.test(key)));
+    .filter(({ key }) => key && text.startsWith(key) && nameEnds(key, text.slice(key.length)));
   const longest = Math.max(0, ...matches.map(({ key }) => key.length));
   return matches.filter(({ key }) => key.length === longest).map(({ item }) => item);
 }
 
-// The candidates a partial name (the query's first word) fits: names that
-// start with it, or have a word that does; only when none does, names whose
-// letters it follows in order (`@jsh` fits "Jamie Ash"). Closest fit first,
-// in ranking order within a fit.
+// The candidates one of whose name's words is exactly the query's first word
+// (`@Jamie` for "Jamie Ash").
+export function namedByWord(query, candidates) {
+  const word = firstWord(query);
+  return word ? candidates.filter(item => identityKey(item.name).split(' ').includes(word)) : [];
+}
+
+// The candidates a partial name (the query's first word) fits, closest fit
+// first: names that start with it, or have a word that does (close fits);
+// only when there is none, names whose letters it follows in order (`@jsh`
+// fits "Jamie Ash"), which only narrow a picker. Ranking order within a fit.
 export function narrowedByPartial(query, candidates) {
-  const partial = identityKey(query).split(' ')[0].slice(0, PARTIAL_LIMIT);
-  if (!partial) return [];
-  const fits = candidates.map(item => ({ item, fit: partialFit(partial, identityKey(item.name)) }))
-    .filter(({ fit }) => fit !== null);
-  const closest = Math.min(...fits.map(({ fit }) => fit), FUZZY);
-  return fits.filter(({ fit }) => fit < FUZZY || closest === FUZZY).sort((a, b) => a.fit - b.fit)
-    .map(({ item }) => item);
+  const partial = firstWord(query);
+  const fits = partial ? candidates.map(item => ({ item, fit: partialFit(partial, identityKey(item.name)) }))
+    .filter(({ fit }) => fit !== null) : [];
+  const close = fits.some(({ fit }) => fit < FUZZY);
+  return { close, items: fits.filter(({ fit }) => fit < FUZZY || !close).sort((a, b) => a.fit - b.fit)
+    .map(({ item }) => item) };
 }
 
 function partialFit(partial, name) {
@@ -108,14 +111,27 @@ function partialFit(partial, name) {
   return at === partial.length ? FUZZY : null;
 }
 
+// The query's first word, cut where punctuation or the script changes.
+function firstWord(query) {
+  const characters = [...identityKey(query).split(' ')[0]];
+  const end = characters.findIndex((character, index) => index > 0
+    && (NAME_END.test(character) || CJK.test(character) !== CJK.test(characters[index - 1])));
+  return characters.slice(0, end < 0 ? PARTIAL_LIMIT : Math.min(end, PARTIAL_LIMIT)).join('');
+}
+
+function nameEnds(name, rest) {
+  if (NAME_END.test(rest)) return true;
+  return CJK.test([...name].at(-1)) !== CJK.test([...rest][0]);
+}
+
 // The native single choice over the first PICKER_OPTIONS candidates, each
 // "n. name — project — occupation"; the question says how many more a longer
-// name would reach. No internal ID is shown.
-export function flaChoice(candidates, { title, question }) {
+// name would reach. No internal ID is shown. guidance: what a pick leads to.
+export function flaChoice(candidates, { title, question, guidance }) {
   const shown = candidates.slice(0, PICKER_OPTIONS);
   const more = candidates.length - shown.length;
   const options = shown.map((item, index) => `${index + 1}. ${[item.name, item.project, item.occupation]
     .filter(Boolean).join(' — ')}`);
-  return { shown, more, interaction: nativeChoiceInteraction({ source: { kind: 'fla_picker' }, title,
+  return { shown, more, interaction: nativeChoiceInteraction({ source: { kind: 'fla_picker' }, title, guidance,
     question: `${question}（姓名 — 项目 — 职业）${more ? `还有 ${more} 位，输入更多名字可缩小范围。` : ''}`, options }) };
 }

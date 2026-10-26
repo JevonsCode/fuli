@@ -7,7 +7,7 @@ import { isPeerRoleAgent } from './project-team-view.js';
 import { resolveTaskAgentMention } from './project-agent-mention.js';
 import { dismissalLessonHint } from './project-agent-dismissal.js';
 import { taskWorkKind } from './task-scene.js';
-import { coversClient } from '../agents/source-applications.js';
+import { agentUnavailableReason } from './agent-availability.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -92,7 +92,7 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       try { await application.employees.authorize({ templateId: employeeId, personalProjectId: resolution.personalProjectId }); }
       catch { return { status: 'agent_unavailable', worker_started: false }; }
     }
-    const refused = agent && unavailableAgentReason(agent, input.sourceApplication);
+    const refused = agent && agentUnavailableReason(agent.profile, input.sourceApplication);
     if (refused) return { status: 'agent_unavailable', reason: refused, worker_started: false };
     return { ...value, agent, worker_started: false, ...(standingAgentUnreached ? { standingAgentUnreached } : {}) };
   } catch {
@@ -114,7 +114,7 @@ async function resolveGlobalAgent(application, resolution, input) {
     if (!id) return { status: 'unassigned', worker_started: false };
     const value = await application.personal.getProjectAgent(application.config.personal.spaceId, null, id);
     const agent = projectAgentRecord(value);
-    const refused = unavailableAgentReason(agent, input.sourceApplication);
+    const refused = agentUnavailableReason(agent.profile, input.sourceApplication);
     if (refused) return { status: 'agent_unavailable', reason: refused, worker_started: false };
     return { status: 'ready', reason: 'global_agent', agent, worker_started: false };
   } catch (error) {
@@ -124,12 +124,6 @@ async function resolveGlobalAgent(application, resolution, input) {
     }
     return { status: 'unavailable', worker_started: false };
   }
-}
-
-// Why a selected Agent may not work in this client now, or null.
-function unavailableAgentReason(agent, sourceApplication) {
-  if (agent.profile.status !== 'active') return 'agent_inactive';
-  return coversClient(agent.profile.allowedClients, sourceApplication ?? 'other') ? null : 'client_not_allowed';
 }
 
 export async function loadProjectAgentContinuity(application, {

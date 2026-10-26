@@ -113,9 +113,10 @@ test('parsing: leading @name, #FLA anywhere, release and choice; emails, decorat
   assert.deepEqual(parseFlaMention('@FLA'), { explicit: true, query: '' });
   assert.deepEqual(parseFlaMention('#fla 2'), { choice: 2 });
   for (const release of ['@FLA 结束', '#FLA end', '@fla release。']) assert.deepEqual(parseFlaMention(release), { release: true });
+  assert.deepEqual(parseFlaMention('@{Team%20%2F%20x} 请接手'), { handoff: 'Team / x' });
   for (const text of ['jamie@example.com 发邮件', '@jamie@example.com', '@scope/pkg 升级', '@Override 是什么意思',
     '@Component(selector) 报错', '@app.route 怎么写', '@README.md 看看', '@FLG 讨论一下', '请让 @Jamie Ash 继续',
-    '`@Jamie Ash`', '@{jamie} 继续', '#FLAG 不是关键词']) {
+    '`@Jamie Ash`', '#FLAG 不是关键词']) {
     assert.equal(parseFlaMention(text), null, text);
   }
 });
@@ -154,10 +155,17 @@ test('a unique name continues that FLA in its own project from another project\'
 test('#FLA, case-insensitive names, Chinese names and the longest name match the same way', async () => {
   const roster = [ADA, JAMIE, fla('lin', '小林', '运营', 'project-b'), fla('lin-qa', '小林 测试', '测试', 'project-c')];
   for (const [prompt, expected] of [['#FLA jAmIe aSh continue', ['project-b', 'jamie']],
-    ['@小林 测试 跑一下回归', ['project-c', 'lin-qa']], ['@小林继续写周报', ['project-b', 'lin']],
+    ['@小林 测试 跑一下回归', ['project-c', 'lin-qa']], ['@小林 继续写周报', ['project-b', 'lin']],
     ['帮我 #FLA 小林 看下数据', ['project-b', 'lin']]]) {
     assert.deepEqual(owner(await fixture({ roster }).run(prompt)), expected, prompt);
   }
+  // A Latin name may run into Chinese text; the longer name still wins over "Jamie".
+  const jamies = [ADA, JAMIE, fla('jamie-s', 'Jamie', '运维', 'project-c')];
+  assert.deepEqual(owner(await fixture({ roster: jamies }).run('@Jamie Ash继续')), ['project-b', 'jamie']);
+  // Two Chinese runs never split: "小林子" is not "小林".
+  const other = await fixture({ roster }).run('@小林子 帮我看下');
+  assert.equal(other.context.project_resolution.basis, 'repository_root');
+  assert.equal(other.fla, undefined);
 });
 
 test('a bare @FLA offers the person\'s FLAs as a native choice, recent first, without loading any of them', async () => {
@@ -168,7 +176,9 @@ test('a bare @FLA offers the person\'s FLAs as a native choice, recent first, wi
   // Jefa (a FULI management role) and the temporary Agent are not FLAs a person continues.
   assert.deepEqual(entry.human_interaction.options, ['1. Ada Lead — Alpha — 负责人', '2. Jamie Ash — Beta — 开发',
     '3. Jade Lin — Gamma — 设计']);
-  assert.match(entry.fla.guidance, /#FLA N/);
+  assert.match(entry.human_interaction.guidance, /#FLA N/);
+  assert.match(entry.human_interaction.guidance, /do no task work as any FLA/);
+  assert.doesNotMatch(entry.human_interaction.guidance, /Continue unrelated work/);
   assert.equal(entry.context.project_agent_id, null);
   assert.equal(entry.agent_receipt.owner, null);
   assert.match(entry.agent_receipt.markdown, /分配待确认.*等待选择 FLA/);
@@ -176,15 +186,56 @@ test('a bare @FLA offers the person\'s FLAs as a native choice, recent first, wi
   assert.doesNotMatch(JSON.stringify(entry.human_interaction), /jamie"|project-b|jade"/, 'no internal ID is shown');
 });
 
-test('a partial name narrows the choice, and a single fit continues directly', async () => {
+test('#FLA with part of a name narrows the choice, and a single close fit continues directly', async () => {
   const { run } = fixture({ roster: [ADA, JAMIE, JADE, fla('jo', 'Joan Wu', '运维', 'project-c')] });
-  const narrowed = await run('@Ja 继续');
+  const narrowed = await run('#FLA Ja 继续');
   assert.deepEqual(narrowed.human_interaction.options, ['1. Jamie Ash — Beta — 开发', '2. Jade Lin — Gamma — 设计']);
   assert.equal(narrowed.fla.reason, 'partial');
-  const single = fixture();
-  assert.deepEqual(owner(await single.run('@Jad 看下设计稿')), ['project-c', 'jade']);
-  // Letters in order fit too.
-  assert.deepEqual(owner(await fixture().run('@jsh 继续')), ['project-b', 'jamie']);
+  assert.deepEqual(owner(await fixture().run('#FLA Jad 看下设计稿')), ['project-c', 'jade']);
+  assert.deepEqual(owner(await fixture().run('@FLA Ash 继续')), ['project-b', 'jamie']);
+  // Letters in order only narrow the picker; they never continue.
+  const fuzzy = await fixture().run('#FLA jsh 继续');
+  assert.deepEqual(fuzzy.human_interaction.options, ['1. Jamie Ash — Beta — 开发']);
+  assert.equal(fuzzy.context.project_agent_id, null);
+});
+
+test('a bare @word continues only an exact name or name word of exactly one FLA (D-68)', async () => {
+  assert.deepEqual(owner(await fixture().run('@Jamie 继续')), ['project-b', 'jamie']);
+  assert.deepEqual(owner(await fixture().run('@ash 继续')), ['project-b', 'jamie']);
+  // "Jamie" is a word of two FLAs: no guess, no picker, ordinary routing.
+  const two = await fixture({ roster: [ADA, JAMIE, fla('jamie-l', 'Jamie Lee', '测试', 'project-c')] }).run('@Jamie 继续');
+  assert.equal(two.context.project_resolution.basis, 'repository_root');
+  assert.equal(two.human_interaction, undefined);
+  // Part of a name: ordinary routing with one line on how to choose.
+  const partial = await fixture().run('@Ja 继续');
+  assert.equal(partial.context.project_resolution.basis, 'repository_root');
+  assert.equal(partial.human_interaction, undefined);
+  assert.deepEqual(partial.fla, { status: 'hint', hint: '想找 FLA？用 #FLA Ja 选择' });
+});
+
+test('ordinary prompts that start with @ never bind the session (review of #385)', async () => {
+  for (const [agent, prompt] of [[fla('sarah', 'Sarah Chen', '开发', 'project-b'), '@src 里的代码有问题'],
+    [fla('dana', 'Dana Tao', '开发', 'project-c'), '@Data 注解报错'],
+    [fla('mei', 'Mei Lin', '开发', 'project-c'), '@me 看下这个报错'],
+    [fla('ivy', 'Ivy Wu', '开发', 'project-b'), '@I think this is wrong']]) {
+    const { run, tasks, memoryReads } = fixture({ roster: [ADA, agent] });
+    const entry = await run(prompt);
+    assert.deepEqual([entry.context.personal_project_id, entry.context.project_resolution.basis],
+      ['project-a', 'repository_root'], prompt);
+    assert.equal(entry.human_interaction, undefined, prompt);
+    assert.ok(!memoryReads().some(read => read.startsWith(`${agent.agent_id}@`)), prompt);
+    assert.ok(!tasks.some(task => task.agentAssignment?.match_basis?.some(item => item.startsWith('fla_'))), prompt);
+    assert.deepEqual(owner(await run('继续')), ['project-a', 'ada'], prompt);
+  }
+});
+
+test('a roster outage leaves a bare @word to ordinary routing; #FLA says the picker is unavailable', async () => {
+  const { app, run } = fixture();
+  app.personal.listProjectAgents = async () => { throw new Error('Synthetic outage'); };
+  const bare = await run('@Makefile 看下');
+  assert.equal(bare.context.project_resolution.basis, 'repository_root');
+  assert.equal(bare.fla, undefined);
+  assert.equal((await run('#FLA Jamie')).fla.status, 'unavailable');
 });
 
 test('picking by number binds the choice, by reply or by the host calling #FLA N', async () => {
@@ -235,13 +286,71 @@ test('the binding holds for later turns, in hooks and MCP alike, until another F
   assert.deepEqual(owner(await hook('继续')), ['project-a', 'ada']);
 });
 
-test('an @name that is no FLA of the person leaves this turn to ordinary routing and keeps the binding', async () => {
+test('while bound, an @word that is no FLA stays with the bound FLA', async () => {
   const { run } = fixture();
   await run('@Jamie Ash 继续');
-  const other = await run('@Nobody 你好');
-  assert.equal(other.context.project_resolution.basis, 'repository_root');
-  assert.notEqual(other.context.project_agent_id, 'jamie');
+  assert.deepEqual(owner(await run('@src 里的代码有问题')), ['project-b', 'jamie']);
   assert.deepEqual(owner(await run('继续')), ['project-b', 'jamie']);
+});
+
+test('a hand-off\'s @{agentId} goes to that Agent and ends the binding; the bound one\'s own keeps it', async () => {
+  const { run } = fixture();
+  await run('@Jamie Ash 继续');
+  assert.deepEqual(owner(await run('@{jamie} 继续')), ['project-b', 'jamie']);
+  const handoff = await run('@{ada} 请接手');
+  assert.deepEqual(owner(handoff), ['project-a', 'ada']);
+  assert.match(handoff.agent_receipt.markdown, /已结束本会话与 Jamie Ash 的绑定/);
+  assert.deepEqual(owner(await run('继续')), ['project-a', 'ada']);
+});
+
+test('a roundtable wake in a bound session carries the binding unchanged', async () => {
+  const { app, hook, tasks } = fixture();
+  await hook('@Jamie Ash 继续');
+  let waking = true;
+  app.roundtable = { pending: () => [], attentionReplies: () => [],
+    taskEntryDelegation: ({ sessionId }) => (waking && sessionId === 'synthetic-hook-session'
+      ? { token: 'synthetic-delegation', sessionId } : null) };
+  await hook('@{ada} [FULI 圆桌 · synthetic-thread]\n请看一下');
+  assert.ok(tasks.at(-1).agentAssignment.match_basis.some(item => item.startsWith('fla_binding:jamie project-b ')));
+  waking = false;
+  assert.deepEqual(owner(await hook('继续')), ['project-b', 'jamie']);
+});
+
+test('an abandoned picker or refusal keeps the session where it was', async () => {
+  for (const asking of ['@FLA', '#FLA Nobody', '@Jamie Ash 继续']) {
+    const roster = asking.startsWith('@Jamie') ? [ADA, JADE, { ...JAMIE, profile: { ...JAMIE.profile, status: 'archived' } }]
+      : undefined;
+    const { app, hook } = fixture(roster ? { roster } : {});
+    app.projectPathResolver = () => ({ status: 'not_provided', basis: null, personalProjectId: null });
+    await hook('继续', { projectPath: null, personalProjectId: 'project-c' });
+    assert.deepEqual(owner(await hook('继续', { projectPath: null })), ['project-c', 'jade']);
+    assert.equal((await hook(asking, { projectPath: null })).context.project_agent_id, null, asking);
+    const after = await hook('算了，接着刚才的', { projectPath: null });
+    assert.deepEqual(owner(after), ['project-c', 'jade'], asking);
+    assert.equal(after.context.project_resolution.basis, 'host_session_context');
+  }
+});
+
+test('ranking: this session\'s FLA, then the current project, then recent activity', async () => {
+  const roster = [ADA, JAMIE, JADE, fla('ann', 'Ann Alpha', '测试', 'project-a', { updated: '2026-09-01T00:00:00Z' })];
+  const { run } = fixture({ roster });
+  assert.deepEqual((await run('@FLA')).human_interaction.options.map(option => option.split(' — ')[0]),
+    ['1. Ada Lead', '2. Ann Alpha', '3. Jamie Ash', '4. Jade Lin']);
+  await run('@Jade Lin 继续');
+  assert.deepEqual((await run('@FLA')).human_interaction.options.map(option => option.split(' — ')[0]),
+    ['1. Jade Lin', '2. Ada Lead', '3. Ann Alpha', '4. Jamie Ash']);
+});
+
+test('an entry that already read the session\'s task does not read it again', async () => {
+  const { app, hook } = fixture();
+  let reads = 0;
+  const current = app.taskContextRegistry.current;
+  app.taskContextRegistry.current = async (...args) => { reads++; return current(...args); };
+  await hook('继续看一下', { turnId: 'turn-1' });
+  assert.equal(reads, 1);
+  reads = 0;
+  await hook('继续看一下');
+  assert.equal(reads, 1);
 });
 
 test('a release outside any project does not leave the session in the FLA\'s project', async () => {

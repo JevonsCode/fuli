@@ -1,4 +1,4 @@
-import { leadingAgentAddress } from './fla-mention.js';
+import { leadingAgentAddress, stableAddress } from './fla-mention.js';
 
 // Only an explicit leading mention selects a role. Matching uses the current scope's
 // directory, never fuzzy search or another Agent's memory. Provider authorization
@@ -13,10 +13,8 @@ export async function resolveTaskAgentMention(application, projectId, input) {
     application.config.personal.spaceId, projectId);
   const agents = Array.isArray(directory) ? directory : directory.agents ?? directory.items ?? [];
   const text = normalize(raw);
-  const stable = /^\{([^{}\s]+)\}(?=$|[\s,，:：])/u.exec(raw);
-  let stableId;
-  try { stableId = stable ? decodeURIComponent(stable[1]) : null; }
-  catch { stableId = null; }
+  const stable = stableAddress(raw);
+  const stableId = stable?.agentId ?? null;
   const matches = agents.flatMap(agent => {
     const aliases = stable ? [agent.agent_id] : [agent.profile?.display_name, agent.profile?.name, agent.agent_id];
     const lengths = aliases.filter(Boolean).map(name => stable ? name : normalize(name)).filter(name => stable

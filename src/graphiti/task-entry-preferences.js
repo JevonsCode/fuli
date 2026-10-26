@@ -7,7 +7,7 @@ import { applyAgentAssignment } from './task-agent-assignment.js';
 import { triageCandidates } from './conversation-triage.js';
 import { withProjectCandidate } from './assistant-project-candidate.js';
 import { withBoardMatch } from './jefa-board-match.js';
-import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
+import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { ATTENTION_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/attention-inbox.js';
 import { captureDecision } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
