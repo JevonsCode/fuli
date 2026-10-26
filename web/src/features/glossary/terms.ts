@@ -4,7 +4,7 @@ import { messages, SUPPORTED_LOCALES } from '@/i18n'
 // already show, so a click on visible text finds its term in either language.
 // A tagged term is found only through its element's data-term: its label is a
 // common word (全部, 我的, 知识) that also appears where it means something else.
-export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'destination' | 'section' | 'memory'
+export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'destination' | 'section' | 'memory' | 'occupation' | 'tonborg'
 export interface GlossaryTerm { id: string; group: GlossaryGroup; labelKey: string; bodyKey: string; tagged?: true }
 
 const term = (group: GlossaryGroup, key: string, labelKey: string, bodyKey: string): GlossaryTerm =>
@@ -34,6 +34,17 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     taggedTerm('section', key, `shell.sections.${key}`, `glossary.section.${key}`)),
   ...['preferenceCount'].map(key =>
     taggedTerm('memory', key, `glossary.memory.${key}.label`, `glossary.memory.${key}.body`)),
+  taggedTerm('memory', 'current', 'common.status.current', 'glossary.memory.current'),
+  taggedTerm('memory', 'history', 'knowledge.workspace.workspace.view.history', 'glossary.memory.history'),
+  taggedTerm('memory', 'all', 'common.status.all', 'glossary.memory.all'),
+  // Ids other pages tag with data-term (occupations, the Tonborg policy).
+  taggedTerm('occupation', 'catalog', 'shell.sections.occupations', 'glossary.occupation.catalog'),
+  taggedTerm('occupation', 'archived', 'occupations.archived', 'glossary.occupation.archived'),
+  taggedTerm('occupation', 'active', 'occupations.stats.active', 'glossary.occupation.active'),
+  taggedTerm('occupation', 'agentCount', 'glossary.occupation.agentCountLabel', 'glossary.occupation.agentCount'),
+  ...['manual', 'shared', 'autonomous'].map(key =>
+    taggedTerm('tonborg', key, `judgment.mode.${key}`, `glossary.tonborg.${key}`)),
+  taggedTerm('tonborg', 'escalate', 'judgment.workbench.outcome.escalate', 'glossary.tonborg.escalate'),
 ]
 
 const byId = new Map(GLOSSARY_TERMS.map(entry => [entry.id, entry]))

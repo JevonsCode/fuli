@@ -202,7 +202,7 @@ const stats = computed<UiStat[]>(() => [
   { key: 'pending', label: t('preferences.profile.summary.pending'), value: observedCount.value, tone: 'warning',
     pressed: !conflictsOnly.value && activeReviewState.value === 'pending',
     ariaLabel: t('preferences.profile.summary.pendingAria', { count: observedCount.value }) },
-  { key: 'historical', label: t('preferences.profile.summary.history'), value: historicalCount.value,
+  { key: 'historical', label: t('preferences.profile.summary.history'), value: historicalCount.value, term: 'memory.history',
     pressed: !conflictsOnly.value && activeReviewState.value === 'historical',
     ariaLabel: t('preferences.profile.summary.historyAria', { count: historicalCount.value }) },
   { key: 'conflict', label: t('preferences.profile.summary.conflicts'), value: conflicts.value.length,

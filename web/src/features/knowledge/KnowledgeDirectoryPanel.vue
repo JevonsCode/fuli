@@ -42,9 +42,9 @@ const props = defineProps<{
 // The same stat row as every memory page: each validity count is its filter.
 // Items that are no longer current form the 历史 group; each says why (rec#5 C8-1).
 const statusStats = computed<UiStat[]>(() => [
-  { key: 'current', label: t('common.status.current'), value: props.currentItemCount, tone: 'success', pressed: props.contentStatus === 'current' },
-  { key: 'historical', label: t('knowledge.workspace.workspace.view.history'), value: props.historicalItemCount, pressed: props.contentStatus === 'historical' },
-  { key: 'all', label: t('common.status.all'), value: props.allItems.length, pressed: props.contentStatus === 'all' },
+  { key: 'current', label: t('common.status.current'), value: props.currentItemCount, tone: 'success', pressed: props.contentStatus === 'current', term: 'memory.current' },
+  { key: 'historical', label: t('knowledge.workspace.workspace.view.history'), value: props.historicalItemCount, pressed: props.contentStatus === 'historical', term: 'memory.history' },
+  { key: 'all', label: t('common.status.all'), value: props.allItems.length, pressed: props.contentStatus === 'all', term: 'memory.all' },
 ])
 
 const emit = defineEmits<{

@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import pageStyles from '../../../styles.css?raw'
 import primitives from '@/styles/primitives.css?raw'
+import { findTerm } from '@/features/glossary/terms'
 import KnowledgeDirectoryPanel from './KnowledgeDirectoryPanel.vue'
 
 const rule = (css: string, selector: string) => {
@@ -22,6 +23,9 @@ describe('KnowledgeDirectoryPanel', () => {
     const heading = wrapper.get('.directory-section-heading')
     expect(heading.text()).toContain('当前有效')
     expect(heading.text()).not.toMatch(/\d+\s*条/)
+    // 「?」 mode explains each validity chip.
+    expect(['current', 'historical', 'all'].map(key => findTerm(heading.get(`[data-stat="${key}"]`).element)?.term.id))
+      .toEqual(['memory.current', 'memory.history', 'memory.all'])
   })
 
   it('sets the toolbar, filters and table apart with spacing instead of divider lines', () => {

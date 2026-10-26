@@ -47,6 +47,16 @@ describe('glossary terms', () => {
     expect(findTerm(host.querySelector('b'))).toBeUndefined()
   })
 
+  it('keeps the term ids other pages tag with data-term', () => {
+    const ids = new Set(GLOSSARY_TERMS.map(term => term.id))
+    for (const id of ['occupation.catalog', 'occupation.archived', 'occupation.active', 'occupation.agentCount',
+      'memory.current', 'memory.history', 'memory.all', 'memory.preferenceCount',
+      'tonborg.escalate', 'tonborg.autonomous', 'tonborg.shared', 'tonborg.manual',
+      'work.blocked', 'section.orchestrate', 'section.roundtables', 'section.askedYou']) expect(ids.has(id), id).toBe(true)
+    // 阻塞 is explained wherever it shows, tagged or not.
+    expect(findTerm(html('<span>阻塞</span>').querySelector('span'))?.term.id).toBe('work.blocked')
+  })
+
   it('outlines a hovered term inside its own box, so a scrolling parent cannot clip it', () => {
     const rule = layerSource.slice(layerSource.indexOf('[data-glossary-hit] {'))
     const declarations = rule.slice(0, rule.indexOf('}'))
