@@ -1,8 +1,5 @@
-import { consoleNextPath } from '../console-session/next-path.js';
-
 const VALUE_OPTIONS = Object.freeze({
   '--data-dir': 'dataDir',
-  '--next': 'next',
   '--personal-space': 'personalSpaceName',
   '--port': 'port'
 });
@@ -23,7 +20,7 @@ const ALLOWED_BY_COMMAND = Object.freeze({
     '--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan', '--no-lan'
   ]),
   status: new Set(['--data-dir', '--port', '--json']),
-  open: new Set(['--data-dir', '--next'])
+  open: new Set(['--data-dir'])
 });
 
 export function parseLocalRuntimeOptions(command, args = []) {
@@ -34,7 +31,6 @@ export function parseLocalRuntimeOptions(command, args = []) {
     personalSpaceName: 'Personal',
     port: null,
     open: false,
-    next: null,
     rebuild: false,
     lan: null,
     json: false,
@@ -65,7 +61,7 @@ export function parseLocalRuntimeOptions(command, args = []) {
     if (!valueKey || typeof value !== 'string' || !value.trim() || value.startsWith('--')) {
       throw new TypeError(`Missing value for ${flag}`);
     }
-    result[valueKey] = valueKey === 'port' ? parsePort(value) : valueKey === 'next' ? consoleNextPath(value.trim()) : value.trim();
+    result[valueKey] = valueKey === 'port' ? parsePort(value) : value.trim();
     index += 1;
   }
   return result;

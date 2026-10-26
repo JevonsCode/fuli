@@ -10,8 +10,6 @@ import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { handleModelBackendApiRequest } from '../src/model-backends/http.js';
-import { createConsoleSession } from '../src/console-session/session.js';
-import { consoleSessionHeaders } from '../test-support/console-session.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { createModelRoleSettings } from '../src/model-backends/role-settings.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
@@ -55,7 +53,7 @@ async function console_(t, { ledger = new ModelUsageLedger(':memory:') } = {}) {
     try {
       if (!await handleModelBackendApiRequest({ request, response, url: new URL(request.url, 'http://local'),
         modelBackends: port, roleSettings, operations: { tonborg: ['knowledge_review'] },
-        automaticOperations: { tonborg: 'knowledge_review' }, modelTrust: trust, consoleSignedIn: true })) response.writeHead(404).end();
+        automaticOperations: { tonborg: 'knowledge_review' }, modelTrust: trust })) response.writeHead(404).end();
     } catch (error) {
       const mapped = mapHttpError(error);
       response.writeHead(mapped.status, { 'content-type': 'application/json' }).end(JSON.stringify(mapped.body));
@@ -141,16 +139,14 @@ test('a file that does not validate is left as it is for repair', async (t) => {
 // reach loopback HTTP on this computer can call the route.
 test('the real console refuses a save from outside the local process boundary and keeps the file', async (t) => {
   const page = await console_(t);
-  const consoleSession = createConsoleSession();
-  const runtime = await createServer({ port: 0, dataFormatNotices: () => [], modelRoleSettings: page.roleSettings, consoleSession,
+  const runtime = await createServer({ port: 0, dataFormatNotices: () => [], modelRoleSettings: page.roleSettings,
     app: { graphiti: true, modelBackends: page.port, modelTrust: page.trust, async state() { throw new Error('not queried'); }, close() {} } });
   t.after(() => new Promise(done => runtime.server.close(done)));
   const { port } = runtime.server.address();
   const body = JSON.stringify(edit());
   const put = ({ headers = {}, localAddress } = {}) => new Promise((resolve, reject) => {
     const request = httpRequest({ host: '127.0.0.1', port, method: 'PUT', path: '/api/model-backends/roles/bole', localAddress,
-      headers: { host: `127.0.0.1:${port}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body),
-        ...consoleSessionHeaders(consoleSession, runtime.url), ...headers } },
+      headers: { host: `127.0.0.1:${port}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), ...headers } },
     (response) => {
       let text = '';
       response.on('data', chunk => { text += chunk; });
