@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
 import { getJson } from '@/api/client'
+import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
 import { t } from '@/i18n'
 import { FULI_VERSION } from '@/version'
 
@@ -13,6 +14,8 @@ interface PackageVersionStatus {
   updateAvailable: boolean
   packageUrl: string
   checkedAt: string
+  // Whether the console can run the update itself (src/system/console-update.js).
+  selfUpdate?: boolean
 }
 
 // compact: the icon rail shows only the mark; the mark only pops and the effect ends on a short timer,
@@ -24,6 +27,8 @@ const effectRun = ref(0)
 const isPlaying = ref(false)
 const isKeyboardFocused = ref(false)
 const isUpdateOpen = ref(false)
+// While an update runs, its notice stays open to show the progress.
+const updating = ref(false)
 const versionStatus = ref<PackageVersionStatus | null>(null)
 const updateAvailable = computed(() => (
   versionStatus.value?.status === 'ready'
@@ -51,20 +56,20 @@ function finishEffect() {
 }
 
 function toggleUpdateDetails() {
-  if (updateAvailable.value) isUpdateOpen.value = !isUpdateOpen.value
+  if (updateAvailable.value && !updating.value) isUpdateOpen.value = !isUpdateOpen.value
 }
 
 function handleGlobalPointerDown(event: PointerEvent) {
   lastInputWasKeyboard = false
   isKeyboardFocused.value = false
-  if (isUpdateOpen.value && !root.value?.contains(event.target as Node)) {
+  if (isUpdateOpen.value && !updating.value && !root.value?.contains(event.target as Node)) {
     isUpdateOpen.value = false
   }
 }
 
 function handleGlobalKeyDown(event: KeyboardEvent) {
   if (event.key === 'Tab') lastInputWasKeyboard = true
-  if (event.key === 'Escape' && isUpdateOpen.value) {
+  if (event.key === 'Escape' && isUpdateOpen.value && !updating.value) {
     event.preventDefault()
     isUpdateOpen.value = false
     void nextTick(() => versionButton.value?.focus())
@@ -169,8 +174,7 @@ onBeforeUnmount(() => {
       :aria-label="t('console.update.title', { version: latestVersion })"
     >
       <strong>{{ t('console.update.title', { version: latestVersion }) }}</strong>
-      <p>{{ t('console.update.copy') }}</p>
-      <code>fuli update --yes</code>
+      <ConsoleUpdate :version="latestVersion" :offered="versionStatus?.selfUpdate !== false" @busy="updating = $event" />
       <a :href="packageUrl" target="_blank" rel="noopener noreferrer">
         {{ t('console.update.npmLink') }}
       </a>
@@ -382,26 +386,6 @@ onBeforeUnmount(() => {
   display: block;
   font-size: 12px;
   line-height: 1.45;
-}
-
-.brand-update-popover p {
-  margin: 5px 0 9px;
-  color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.brand-update-popover code {
-  display: block;
-  padding: 7px 8px;
-  border-radius: var(--radius-control);
-  color: var(--color-ink);
-  background: var(--color-surface-subtle);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  user-select: all;
 }
 
 .brand-update-popover a {

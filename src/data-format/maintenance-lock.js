@@ -35,7 +35,7 @@ function open(dataDir) {
 
 function busy(error) {
   if (error?.errcode !== 5 && error?.errcode !== 6) return null;
-  return new DataFormatError('data-format', 'data_format_maintenance', 'A whole-store restore (fuli migrate restore) '
+  return new DataFormatError('data-format', 'data_format_maintenance', 'A whole-store restore '
     + 'is working on this FULI data, or FULI is running while one was asked for. Nothing was changed; try again '
     + 'once it has finished, or stop FULI first.');
 }

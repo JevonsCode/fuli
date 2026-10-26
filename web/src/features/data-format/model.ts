@@ -91,6 +91,54 @@ export const applyMigrationPlan = (digest: string) => postJson<ApplyOutcome>('/a
 export const undoMigration = (label: string, migrationId: string) =>
   postJson<{ status: string; version: number; pruned?: PruneEntry[] }>('/api/data-format/rollback', { label, migrationId })
 
+// The person's check of a graph prune whose answer never came: the same prune again.
+export const pruneAgain = () => postJson<{ pruned: PruneEntry[] }>('/api/data-format/prune', {})
+
+// What a check of the prune found: still unverified, the graph out of reach, or checked.
+export function pruneCheckOutcome(pruned: PruneEntry[]): { kind: 'unverified' | 'unreached' | 'checked'; count: number } {
+  const count = pruned.filter(entry => entry.kind === 'pruned').length
+  if (pruneUnverified(pruned)) return { kind: 'unverified', count }
+  if (pruned.some(entry => entry.kind === 'prune_failed')) return { kind: 'unreached', count }
+  return { kind: 'checked', count }
+}
+
+// A whole-store restore (src/data-format/console-restore.js): local stores
+// with format backups, what one backup discards, and the restore the console
+// runs by restarting FULI around it.
+export interface FormatBackup { ref: string; version: number | null; takenAt: string | null }
+export interface RestorableStore { label: string; store: string; kind: 'sqlite' | 'json'; backups: FormatBackup[] }
+export interface RestoreImpact {
+  store: string
+  backupRef: string
+  takenAt: string | null
+  currentVersion: number | null
+  backupVersion: number | null
+  tables?: { table: string; current: number; backup: number }[]
+  laterMigrations: { migrationId: string; status: string }[]
+  currentDigest: string | null
+}
+export interface RestoreStatus {
+  id: string
+  label: string
+  backupRef: string
+  status: 'stopping' | 'restoring' | 'starting' | 'restored' | 'failed'
+  safetyBackupRef: string | null
+  started: boolean | null
+  error: string | null
+}
+
+export const readRestoreChoices = () =>
+  getJson<{ stores: RestorableStore[]; restore: RestoreStatus | null }>('/api/data-format/restore')
+export const describeRestore = (label: string, backupRef: string) => getJson<{ impact: RestoreImpact }>(
+  `/api/data-format/restore?${new URLSearchParams({ label, backup: backupRef })}`)
+export const startRestore = (label: string, backupRef: string, currentDigest: string | null) =>
+  postJson<RestoreStatus>('/api/data-format/restore', { label, backupRef, currentDigest })
+export const readRestoreStatus = () => getJson<{ restore: RestoreStatus | null }>('/api/data-format/restore/status')
+
+export function restoreFinished(status: RestoreStatus | null, id: string): boolean {
+  return status?.id === id && (status.status === 'restored' || status.status === 'failed')
+}
+
 export interface SampleChip { id: string; text: string; cut: boolean }
 
 // Sample IDs as chips: a unique prefix with … for a cut, the full ID kept for a title.

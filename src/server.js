@@ -29,12 +29,15 @@ import { dataFormatNoticeLine, dataFormatNotices } from './data-format/format-no
 import { personalGraphFormat } from './data-format/graph-format-client.js';
 import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
+import { consoleRestore } from './data-format/console-restore.js';
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
+import { createKnowledgeRecoveryCheck } from './knowledge-hard-delete/recovery-check.js';
 import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
 import { knowledgeOwnerReads as createKnowledgeOwnerReads } from './knowledge-owner-reads/console-port.js';
 import { reviewUndoConsole } from './judgment/review-undo.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
 import { createModelRoleSettings } from './model-backends/role-settings.js';
+import { createModelSecretStore } from './model-backends/secret-store.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -85,7 +88,8 @@ export async function createServer(options = {}) {
   // A person's confirmed migrations, the same operations as `fuli migrate`.
   const dataFormatMigrations = options.dataFormatMigrations ?? (localOptions.runtimeConfigPath
     ? createDataFormatMigrations(dirname(localOptions.runtimeConfigPath),
-      { graph: personalGraphFormat(dirname(localOptions.runtimeConfigPath)) }) : null);
+      { graph: personalGraphFormat(dirname(localOptions.runtimeConfigPath)),
+        restore: consoleRestore(dirname(localOptions.runtimeConfigPath)) }) : null);
   for (const pruned of dataFormatMigrations?.prune() ?? []) {
     if (pruned.kind === 'prune_failed') console.warn(`Format backups were not pruned: ${pruned.reason}`);
   }
@@ -111,6 +115,10 @@ export async function createServer(options = {}) {
   const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
     ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath,
       { history: application.modelSettingsHistory }) : null);
+  // The model keys the settings page saves, where `fuli models set-key` saves them; reached only by the loopback route.
+  const modelSecrets = options.modelSecrets ?? (localOptions.runtimeConfigPath
+    ? createModelSecretStore({ path: resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelSecretStorePath })
+    : null);
   // The latest local evaluation of a role's model, as the model settings page shows it (rec#10 D-36.6).
   const readModelEvaluation = options.readModelEvaluation ?? (localOptions.runtimeConfigPath
     ? key => latestEvaluation(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelEvaluationsPath, key) : null);
@@ -182,6 +190,13 @@ export async function createServer(options = {}) {
     // construction or configuration validation fails, even without a listener.
     await failStartup(error);
   }
+  // A request that finds deletion recovery pending starts the console's own
+  // re-check, the same reconciliation it ran when it started.
+  const knowledgeRecovery = knowledgeHardDelete && application.knowledgeRecoveryGate
+    ? createKnowledgeRecoveryCheck({ reconcile: () => knowledgeHardDelete.reconcile(),
+      gate: application.knowledgeRecoveryGate, spaceId: () => application.config?.personal?.spaceId ?? null,
+      ...(system?.withGraphRuntimeLease ? { run: (work) => system.withGraphRuntimeLease('knowledge-recovery', work) } : {}) })
+    : null;
   let authority = null;
   let allowedLanAuthorities = [];
   const server = createHttpServer((request, response) => {
@@ -200,6 +215,7 @@ export async function createServer(options = {}) {
       knowledgeOwnerReads,
       knowledgeTags,
       modelRoleSettings,
+      modelSecrets,
       readModelEvaluation,
       judgmentUndo,
       authority,
@@ -213,6 +229,7 @@ export async function createServer(options = {}) {
         return;
       }
       const mapped = mapHttpError(error);
+      if (mapped.body.code === 'knowledge_recovery_pending') void knowledgeRecovery?.check();
       sendJson(response, mapped.status, mapped.body);
     });
   });
@@ -292,6 +309,7 @@ async function handleRequest({
   knowledgeOwnerReads,
   knowledgeTags,
   modelRoleSettings,
+  modelSecrets,
   readModelEvaluation,
   judgmentUndo,
   authority,
@@ -325,6 +343,7 @@ async function handleRequest({
     knowledgeOwnerReads,
     knowledgeTags,
     modelRoleSettings,
+    modelSecrets,
     readModelEvaluation,
     judgmentUndo
   })) return;
