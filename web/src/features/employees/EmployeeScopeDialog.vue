@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// Edits which projects a built-in Agent manages, and Jefa's session titles.
+// Every Agent is built in, so the console has no hiring flow; a custom
+// package is recruited through the recruit_employee Agent tool.
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { postJson } from '@/api/client'
@@ -21,11 +24,9 @@ const props = defineProps<{
   open: boolean
   personalSpaceId: string
   projects: PersonalProject[]
-  defaultProjectId?: string
-  defaultProjectIds?: string[]
-  templateId?: string
+  templateId: string
 }>()
-const emit = defineEmits<{ close: []; recruited: [result: EmployeeRecruitmentResult] }>()
+const emit = defineEmits<{ close: []; saved: [result: EmployeeRecruitmentResult] }>()
 const projectIds = ref<string[]>([])
 const baselineProjectIds = ref<string[]>([])
 const scopeMode = ref<'all' | 'selected'>('selected')
@@ -36,19 +37,13 @@ const baselinePolicy = ref('')
 const expectedVersion = ref('')
 const selectionLoading = ref(false)
 const requiresReload = ref(false)
-const templateId = ref('')
 const busy = ref(false)
 const error = ref('')
 const success = ref<EmployeeRecruitmentResult | null>(null)
 const catalogTemplates = ref<EmployeeTemplate[]>([])
 const catalogError = ref('')
-const templates = computed(() => props.templateId ? catalogTemplates.value : catalogTemplates.value.filter((entry) => !entry.fixed))
-const selected = computed(() => props.templateId
-  ? templates.value.find((entry) => entry.id === props.templateId)
-  : templates.value.find((entry) => entry.id === templateId.value) ?? templates.value[0])
-const templateChoice = computed({ get: () => selected.value?.id ?? '', set: (id: string) => { templateId.value = id } })
-const title = computed(() => selected.value?.agentId
-  ? t('employees.manageProjectsTitle', { name: selected.value.name }) : t('employees.recruit'))
+const selected = computed(() => catalogTemplates.value.find((entry) => entry.id === props.templateId))
+const title = computed(() => t('employees.manageProjectsTitle', { name: selected.value?.name ?? '' }))
 const projectOptions = computed(() => pickerOrder(props.projects.filter((project) => project.profile.lifecycle !== 'archived'))
   .map((project) => ({ id: project.project_id, name: projectDisplayName(project) })))
 const supportsPolicy = computed(() => selected.value?.management !== undefined)
@@ -71,18 +66,11 @@ const titleModeOptions = computed(() => ['auto', 'suggest', 'off'].map(value => 
 const titleStyleOptions = computed(() => ['emoji', 'text'].map(value => ({ value, label: t(`employees.titles.${value}`) })))
 const assignedIds = computed(() => new Set(baselineProjectIds.value))
 const removals = computed(() => [...assignedIds.value].filter((id) => !selectionIds.value.includes(id)))
-const reactivating = computed(() => Boolean(selected.value?.agentStatus && selected.value.agentStatus !== 'active'))
 const noChange = computed(() => selected.value?.agentStatus === 'active' && (supportsPolicy.value
   ? JSON.stringify(draftPolicy.value) === baselinePolicy.value && (scopeMode.value === 'all'
     || (projectIds.value.length === assignedIds.value.size && projectIds.value.every(id => assignedIds.value.has(id))))
   : projectIds.value.length === assignedIds.value.size && projectIds.value.every((id) => assignedIds.value.has(id))))
-const actionLabel = computed(() => {
-  if (busy.value) return t('employees.recruiting')
-  if (reactivating.value) return t('employees.rehire', { name: selected.value?.name ?? '' })
-  if (noChange.value) return t('employees.assign')
-  if (selected.value?.agentId) return t('employees.assign')
-  return t('employees.recruitName', { name: selected.value?.name ?? '' })
-})
+const actionLabel = computed(() => t(busy.value ? 'employees.recruiting' : 'employees.assign'))
 const workbenchLink = computed(() => selected.value && selectionIds.value.length
   ? `/employees/${encodeURIComponent(selected.value.id)}?project=${encodeURIComponent(selectionIds.value[0]!)}` : '')
 
@@ -90,20 +78,16 @@ let loadVersion = 0
 watch([() => props.open, () => props.personalSpaceId, () => props.templateId], ([open]) => {
   loadVersion += 1
   if (!open) return
-  void reloadSelection(true)
+  void reloadSelection()
 }, { immediate: true })
-watch(templateId, () => { if (props.open && !selectionLoading.value) initializeSelection(true) })
 watch(draftPolicy, () => { error.value = requiresReload.value ? error.value : ''; success.value = null }, { flush: 'sync' })
 
-function initializeSelection(includeDefault = false) {
+function initializeSelection() {
   const available = new Set(projectOptions.value.map((project) => project.id))
   baselineProjectIds.value = [...new Set((selected.value?.assignments ?? [])
     .filter((entry) => entry.status === 'active' && available.has(entry.personalProjectId))
     .map((entry) => entry.personalProjectId))]
-  // Viewing a project filter must never silently extend an existing employee's permissions.
-  const defaults = includeDefault && !selected.value?.agentId
-    ? props.defaultProjectIds ?? (props.defaultProjectId ? [props.defaultProjectId] : []) : []
-  projectIds.value = [...new Set([...baselineProjectIds.value, ...defaults.filter((id) => available.has(id))])]
+  projectIds.value = [...baselineProjectIds.value]
   const management = selected.value?.management
   scopeMode.value = management?.mode ?? 'selected'
   excludedIds.value = [...(management?.excludedProjectIds ?? [])]
@@ -118,7 +102,7 @@ function initializeSelection(includeDefault = false) {
   success.value = null
 }
 
-async function reloadSelection(includeDefault = false) {
+async function reloadSelection() {
   const current = ++loadVersion
   selectionLoading.value = true
   catalogTemplates.value = []
@@ -127,7 +111,7 @@ async function reloadSelection(includeDefault = false) {
     const nextTemplates = await fetchEmployeeCatalog(props.personalSpaceId)
     if (current !== loadVersion || !props.open) return
     catalogTemplates.value = nextTemplates
-    initializeSelection(includeDefault)
+    initializeSelection()
   } catch (cause) {
     if (current === loadVersion && props.open) {
       catalogTemplates.value = []
@@ -139,7 +123,7 @@ async function reloadSelection(includeDefault = false) {
 }
 
 function close() { if (!busy.value) emit('close') }
-async function recruit() {
+async function save() {
   if (!selected.value || selected.value.identityConflict || !props.personalSpaceId
     || busy.value || selectionLoading.value || requiresReload.value || !expectedVersion.value || noChange.value) return
   busy.value = true
@@ -151,13 +135,12 @@ async function recruit() {
       ...(supportsPolicy.value ? { management: draftPolicy.value } : { personalProjectIds: [...projectIds.value] }),
       replaceAssignments: true,
       expectedAssignmentsVersion: expectedVersion.value,
-      ...(reactivating.value ? { reactivate: true } : {}),
     })
     await refreshEmployeeCatalog(props.personalSpaceId)
     catalogTemplates.value = [...employeeTemplates.value]
     initializeSelection()
     success.value = result
-    emit('recruited', result)
+    emit('saved', result)
   } catch (cause) {
     error.value = employeeErrorMessage(cause)
     try {
@@ -183,15 +166,14 @@ function scopeKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <UiDialog :open="open" class="employee-recruit-dialog" :title="title" :busy="busy" form @close="close" @submit="recruit">
-    <GrowthLoading v-if="selectionLoading && !templates.length" variant="compact" :label="t('employees.loading')" />
+  <UiDialog :open="open" class="employee-scope-dialog" :title="title" :busy="busy" form @close="close" @submit="save">
+    <GrowthLoading v-if="selectionLoading && !catalogTemplates.length" variant="compact" :label="t('employees.loading')" />
     <div v-else-if="catalogError" role="alert" class="ui-dialog__error employee-message">
       <p>{{ catalogError }}</p>
-      <Button variant="outline" size="sm" @click="reloadSelection(true)">{{ t('employees.retry') }}</Button>
+      <Button variant="outline" size="sm" @click="reloadSelection()">{{ t('employees.retry') }}</Button>
     </div>
     <p v-else-if="!selected" class="ui-muted">{{ t('employees.noTemplates') }}</p>
     <template v-else>
-      <UiSelect v-if="templates.length > 1 && !props.templateId" v-model="templateChoice" field control-id="employee-template" :label="t('employees.choose')" :options="templates.map((entry) => ({ value: entry.id, label: entry.name, meta: entry.role }))" :disabled="busy || selectionLoading" />
       <div class="employee-profile">
         <span class="employee-avatar" aria-hidden="true">
           <img v-if="employeeAvatarUrl(selected.id)" :src="employeeAvatarUrl(selected.id)" alt="" />
@@ -228,9 +210,7 @@ function scopeKeydown(event: KeyboardEvent) {
       <section class="employee-permissions" :aria-label="t('employees.permissions')">
         <strong>{{ t('employees.permissions') }}</strong>
         <ul><li v-for="permission in selected.permissions" :key="permission">{{ permission === 'board.read' ? t('employees.boardRead') : permission === 'board.write' ? t('employees.boardWrite') : permission === 'session.title' ? t('employees.titles.heading') : permission }}</li></ul>
-        <p class="ui-meta">{{ t('employees.noExecutor') }}</p>
       </section>
-      <p v-if="selected.runtime" class="employee-runtime" :class="{ 'is-warning': selected.runtimeStatus !== 'ready' }">{{ selected.runtimeStatus === 'ready' ? t('employees.hostReady') : t('employees.installRequired') }}</p>
       <p v-if="error || selected.identityConflict" class="ui-dialog__error" role="alert">{{ error || t('employees.errors.identity_conflict') }}</p>
       <Button variant="outline" v-if="requiresReload" size="sm" :disabled="selectionLoading" @click="reloadSelection()">{{ t('employees.reloadScope') }}</Button>
       <div v-if="success" class="employee-success" role="status">
@@ -263,8 +243,6 @@ function scopeKeydown(event: KeyboardEvent) {
 .employee-permissions { font-size: 12px; }
 .employee-permissions strong { font-weight: 600; }
 .employee-permissions ul { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 6px 0; padding-left: 16px; }
-.employee-runtime { margin: 0; font-size: 12px; }
-.employee-runtime.is-warning { color: var(--color-warning); }
 .employee-success { color: var(--color-success); }
 .employee-success p { margin: 0; }
 .employee-message { display: grid; gap: 10px; justify-items: start; }

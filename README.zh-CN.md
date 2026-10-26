@@ -629,8 +629,9 @@ Kubernetes 或整台容器虚拟机；原生模式会直接停止对应 Provider
 
 Jefa（项目经理）、Bole（AR，Agent Resources）和 Tonborg（决策员）是每个空间自带的角色，
 不需要招募。Bole 的工作台可查看人员安排、当前工作与招募历史；Tonborg 的工作台可查看判断与反馈。
-“Agents → 聘请 Agent”提供其他可复用的员工模板。招募复用持久身份，
-按项目单独任职；安装员工包后，侧栏工作台与 API/A2A 共用 FULI 端口，已有 FULI MCP 可发现和调用员工工具。
+Jefa 的任务看板随 FULI 内置，无需安装；在角色卡片或工作台的“管理负责项目”里设置它负责哪些项目。
+控制台不再有聘请步骤：自定义员工包通过 Agent 工具 `recruit_employee` 招募，招募复用持久身份，
+按项目单独任职；安装员工包后，侧栏工作台与 API 共用 FULI 端口，已有 FULI MCP 可发现和调用员工工具。
 招募不等于启动模型，也不改写已有客户端配置。详见[员工包安装与扩展协议](docs/employee-agents.md)。
 Agent 还可以自己做小的 [Agent 应用](docs/agent-apps.md)；本版本没有沙箱，经你在终端用 `fl app approve` 确认后，应用以你的账户权限运行。
 

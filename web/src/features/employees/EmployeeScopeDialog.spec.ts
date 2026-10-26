@@ -7,7 +7,7 @@ import { setLocale } from '@/i18n'
 
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, postJson }))
-import EmployeeRecruitDialog from './EmployeeRecruitDialog.vue'
+import EmployeeScopeDialog from './EmployeeScopeDialog.vue'
 import EmployeeWorkbenchLinks from './EmployeeWorkbenchLinks.vue'
 import { employeeCatalogLoading, employeeTemplates, refreshEmployeeCatalog, type EmployeeTemplate } from './catalog'
 
@@ -41,13 +41,13 @@ beforeEach(async () => {
 })
 afterEach(() => { for (const wrapper of mounted.splice(0)) wrapper.unmount() })
 
-async function setup(projectsList = projects, props: { defaultProjectIds?: string[]; templateId?: string } = {}) {
+async function setup(projectsList = projects, props: { templateId?: string } = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
   ] })
   await router.push('/project-agents')
-  const wrapper = mount(EmployeeRecruitDialog, {
-    attachTo: document.body, props: { open: true, personalSpaceId: 'space-a', projects: projectsList, ...props },
+  const wrapper = mount(EmployeeScopeDialog, {
+    attachTo: document.body, props: { open: true, personalSpaceId: 'space-a', projects: projectsList, templateId: 'jefa', ...props },
     global: { plugins: [router] },
   })
   mounted.push(wrapper)
@@ -55,7 +55,15 @@ async function setup(projectsList = projects, props: { defaultProjectIds?: strin
   return { wrapper, router }
 }
 
-describe('employee recruitment', () => {
+describe('employee project scope', () => {
+  it('edits one named role and offers no hiring step', async () => {
+    const { wrapper } = await setup()
+    expect(wrapper.get('h2').text()).toBe('管理 Jefa 的项目')
+    expect(wrapper.find('[data-control-id="employee-template"], #employee-template').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/聘请|恢复/)
+    expect(wrapper.get('button[type="submit"]').text()).toBe('保存负责范围')
+  })
+
   it('lists people-made projects before fallback session projects, which are named by last use', async () => {
     const fallback: PersonalProject = {
       project_id: `conversation-${'f'.repeat(64)}`, personal_space_id: 'space-a', updated_at: '2026-10-17T07:20:00Z',
@@ -130,7 +138,7 @@ describe('employee recruitment', () => {
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
   })
 
-  it('uses a custom project picker, recruits into the exact project, then exposes the workbench and sidebar entry', async () => {
+  it('uses a custom project picker, saves the exact project, then exposes the workbench and sidebar entry', async () => {
     const { wrapper, router } = await setup()
     expect(wrapper.find('select').exists()).toBe(false)
     expect(wrapper.find('.project-scope-trigger').exists()).toBe(false)
@@ -145,7 +153,7 @@ describe('employee recruitment', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/employee-templates/jefa/recruit', { personalSpaceId: 'space-a', personalProjectIds: ['project-a'], replaceAssignments: true, expectedAssignmentsVersion: 'version-0' })
-    expect(wrapper.emitted('recruited')).toHaveLength(1)
+    expect(wrapper.emitted('saved')).toHaveLength(1)
     expect(wrapper.text()).toContain('负责范围已保存')
     expect(wrapper.get('footer a').attributes('href')).toBe('/employees/jefa?project=project-a')
     await wrapper.get('form').trigger('submit')
@@ -157,18 +165,17 @@ describe('employee recruitment', () => {
     expect(links.text()).toContain('Jefa')
   })
 
-  it('does not create a project or invent a running executor when recruiting without a project', async () => {
+  it('saves an empty scope without creating a project', async () => {
     const { wrapper } = await setup([])
     postJson.mockResolvedValue({ templateId: 'jefa', agent: { agentId: 'employee.jefa' }, assignment: null, idempotent: false })
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/employee-templates/jefa/recruit', { personalSpaceId: 'space-a', personalProjectIds: [], replaceAssignments: true, expectedAssignmentsVersion: 'version-0' })
-    expect(wrapper.text()).toContain('不会启动模型')
     expect(wrapper.find('footer a').exists()).toBe(false)
     expect(wrapper.text()).toContain('创建项目')
   })
 
-  it('surfaces recruitment failure and supports retry without closing the dialog', async () => {
+  it('surfaces a failed save and supports retry without closing the dialog', async () => {
     const { wrapper } = await setup()
     postJson.mockRejectedValueOnce(new Error(JSON.stringify({ code: 'identity_conflict' })))
     await wrapper.get('form').trigger('submit')
@@ -176,20 +183,6 @@ describe('employee recruitment', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('标识')
     expect(wrapper.emitted('close')).toBeUndefined()
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
-  })
-
-  it('supports employees without a workbench and asks explicitly to reactivate an archived identity', async () => {
-    entry.runtime = null
-    entry.runtimeStatus = 'not_required'
-    entry.agentId = 'employee.jefa'
-    entry.agentStatus = 'archived'
-    const { wrapper } = await setup()
-    expect(wrapper.find('.employee-runtime').exists()).toBe(false)
-    expect(wrapper.get('button[type="submit"]').text()).toContain('恢复')
-    postJson.mockResolvedValue({ templateId: 'jefa', agent: { agentId: 'employee.jefa' }, assignment: null, idempotent: false })
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(postJson).toHaveBeenCalledWith('/api/employee-templates/jefa/recruit', { personalSpaceId: 'space-a', personalProjectIds: [], replaceAssignments: true, expectedAssignmentsVersion: 'version-0', reactivate: true })
   })
 
   it('selects all available projects, excludes individually, and never submits archived projects', async () => {
@@ -236,24 +229,15 @@ describe('employee recruitment', () => {
     expect(postJson.mock.calls[1]![1]).toMatchObject({ personalProjectIds: ['project-a'], expectedAssignmentsVersion: 'version-2' })
   })
 
-  it('does not apply list-filter defaults to an existing employee or mistake ended assignments for current scope', async () => {
+  it('does not mistake ended assignments for current scope', async () => {
     entry.agentId = 'employee.jefa'
     entry.agentStatus = 'active'
     entry.assignments = [{ assignmentId: 'ended', personalProjectId: 'project-b', agentId: 'employee.jefa', personalSpaceId: 'space-a', status: 'ended', responsibility: '管理', assignedAt: '', updatedAt: '' }]
-    const { wrapper } = await setup(projects, { defaultProjectIds: ['project-a', 'project-b'], templateId: 'jefa' })
+    const { wrapper } = await setup(projects)
     expect(wrapper.get('h2').text()).toBe('管理 Jefa 的项目')
     expect(wrapper.get('.project-scope-count').text()).toContain('0 / 共 2')
     expect(wrapper.findAll('.project-scope-list input').every((input) => !(input.element as HTMLInputElement).checked)).toBe(true)
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
-  })
-
-  it('uses explicit multi-project defaults only for a new identity', async () => {
-    const { wrapper } = await setup(projects, { defaultProjectIds: ['project-a', 'project-b', 'archived', 'project-a'] })
-    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 共 2')
-    postJson.mockRejectedValue(new Error('Synthetic failure'))
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(postJson.mock.calls[0]![1]).toMatchObject({ personalProjectIds: ['project-a', 'project-b'] })
   })
 
   it('keeps the last-read baseline when another consumer refreshes the employee catalog', async () => {

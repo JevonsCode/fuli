@@ -10,7 +10,7 @@ import EmployeeWorkbenchPage from './EmployeeWorkbenchPage.vue'
 import { useConsoleStore } from '@/stores/console'
 import { refreshEmployeeCatalog } from '@/features/employees/catalog'
 import EmployeeTaskBoard from '@/features/employees/EmployeeTaskBoard.vue'
-import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
+import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
 import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
@@ -454,7 +454,7 @@ describe('employee workbench', () => {
     const boardCallsBefore = postJson.mock.calls.filter(([, body]) => body.tool === 'read_board').length
     await wrapper.get('.employee-workbench-actions button.employee-manage-projects').trigger('click')
     await flushPromises()
-    const dialog = wrapper.getComponent(EmployeeRecruitDialog)
+    const dialog = wrapper.getComponent(EmployeeScopeDialog)
     expect(dialog.props('templateId')).toBe('jefa')
     expect(dialog.find('.project-scope-trigger').exists()).toBe(false)
     expect((dialog.get('input[value="project-a"]').element as HTMLInputElement).checked).toBe(true)
@@ -486,7 +486,7 @@ describe('employee workbench', () => {
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.get('.employee-workbench-state h2').text()).toBe('先选择要负责的项目')
     await wrapper.get('.employee-workbench-state button').trigger('click')
-    expect(wrapper.getComponent(EmployeeRecruitDialog).props('open')).toBe(true)
+    expect(wrapper.getComponent(EmployeeScopeDialog).props('open')).toBe(true)
   })
 
   it('does not invent project assignments for an unknown Agent', async () => {
@@ -513,7 +513,7 @@ describe('employee workbench', () => {
 
     expect(wrapper.getComponent(BolePeoplePanel).props('personalSpaceId')).toBe('space-a')
     expect(wrapper.find('iframe').exists()).toBe(false)
-    expect(wrapper.findComponent(EmployeeRecruitDialog).exists()).toBe(false)
+    expect(wrapper.findComponent(EmployeeScopeDialog).exists()).toBe(false)
     expect(wrapper.find('.employee-manage-projects').exists()).toBe(false)
     expect(wrapper.vm.$route.query.project).toBeUndefined()
     expect(getJson.mock.calls.some(([url]) => String(url).includes('/workspace?'))).toBe(false)
@@ -558,7 +558,7 @@ describe('employee workbench', () => {
     expect(wrapper.get('.employee-workbench-mark img').attributes('src')).toContain('tonborg-avatar.webp')
     expect(wrapper.findComponent(JudgmentWorkbench).props('personalSpaceId')).toBe('space-a')
     expect(wrapper.find('iframe').exists()).toBe(false)
-    expect(wrapper.findComponent(EmployeeRecruitDialog).exists()).toBe(false)
+    expect(wrapper.findComponent(EmployeeScopeDialog).exists()).toBe(false)
     expect(wrapper.get('.employee-native-link').attributes('href')).toBe('/agents/space-a/employee.tonborg')
     // 主页 sits beside the role like Jefa's share icon; Tonborg's actions join the same toolbar row.
     expect(wrapper.find('.employee-workbench-identity .employee-native-link').exists()).toBe(true)
