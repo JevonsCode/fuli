@@ -6,8 +6,7 @@ export const employeeMessages = {
     boardRead: '读取所选项目的看板', boardWrite: '创建、修改任务与状态',
     noExecutor: '聘请不会启动模型或外部执行器。',
     hostReady: '工作台已就绪 · 随 FULI 运行',
-    installRequired: '工作台尚未安装；聘请只创建 Agent 身份。',
-    installHelp: '构建 Agent 包后运行 fl employee install <目录>。',
+    installRequired: '这个 Agent 的工作台没有安装，目前只能作为 Agent 身份使用。',
     recruitName: '聘请 {name}', rehire: '恢复 {name}',
     assign: '保存负责范围', recruited: '已聘请', recruiting: '正在保存负责范围…',
     read: {
@@ -107,8 +106,7 @@ export const employeeMessages = {
     boardRead: 'Read the selected project board', boardWrite: 'Create and update tasks and status',
     noExecutor: 'Hiring does not start a model or external executor.',
     hostReady: 'Workbench ready · hosted by FULI',
-    installRequired: 'Workspace not installed; hiring creates the Agent identity only.',
-    installHelp: 'Build the Agent package, then run fl employee install <directory>.',
+    installRequired: 'The workspace of this Agent is not installed, so it works as an Agent identity only.',
     recruitName: 'Hire {name}', rehire: 'Reactivate {name}',
     assign: 'Save project selection', recruited: 'Hired', recruiting: 'Saving project scope…',
     read: {

@@ -13,6 +13,7 @@ import { createStandaloneStore } from '../packages/roundtable/src/standalone/sto
 import { AgentAppStore } from '../src/agent-apps/store.js';
 import { localStoreFiles } from '../src/data-format/local-stores.js';
 import { EmployeeManagementStore } from '../src/employees/management-policy.js';
+import { JefaBoardStore } from '../src/employees/builtin/jefa/board-store.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { createRoleTrust } from '../src/model-backends/role-trust.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
@@ -32,6 +33,7 @@ const SQLITE_STORES = {
   'employee-management': (path) => {
     const store = new EmployeeManagementStore(path); store.read('space', 'template'); return () => store.close();
   },
+  'jefa-board': (path) => { const store = new JefaBoardStore(path); void store.database; return () => store.close(); },
   judgment: (path) => { const store = new JudgmentStore(path); return () => store.close(); },
   'model-trust': (path) => {
     const store = createRoleTrust({ path, modelBackends: {} }); store.setSuggestionsOnly('tonborg', false, 0); return () => store.close();

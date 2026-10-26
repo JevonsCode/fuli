@@ -17,6 +17,7 @@ import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
 import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedConversationsPanel.vue'
 import { projectBoardFilterKey } from '@/features/employees/project-board-filter'
 import { pageTitle } from '@/layouts/page-title'
+import { employeeMessages } from '@/i18n/messages/employees'
 
 const mounted: Array<{ unmount: () => void }> = []
 function defaultConsoleState(): ConsoleState {
@@ -402,6 +403,29 @@ describe('employee workbench', () => {
     expect(getJson.mock.calls.some(([url]) => String(url).includes('/workspace?'))).toBe(true)
     expect(wrapper.get('iframe').attributes('src')).toBe('/employee-workspaces/reviewer/project-a/')
     expect(wrapper.get('iframe').attributes('title')).toBe('Reviewer · 验收项目')
+  })
+  it('says plainly that a custom workspace is not installed, without a terminal command', async () => {
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?')) return { templates: [{
+        id: 'reviewer', name: 'Reviewer', role: '审阅员', runtime: { apiVersion: 1 }, runtimeStatus: 'install_required',
+        capabilities: ['审阅'], permissions: ['board.read'], agentId: 'employee.reviewer', agentStatus: 'active', assignmentsVersion: 'version-reviewer',
+        assignments: [{ personalProjectId: 'project-a', status: 'active' }],
+      }] }
+      if (url.includes('/workspace?')) return { templateId: 'reviewer', name: 'Reviewer', role: '审阅员', project: { id: 'project-a', name: '验收项目' }, runtimeStatus: 'install_required', workbenchUrl: '/employee-workspaces/reviewer/project-a/' }
+      throw new Error(`unexpected URL: ${url}`)
+    })
+    const wrapper = await setup('/employees/reviewer?project=project-a')
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await wrapper.vm.$nextTick()
+      await flushPromises()
+    }
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    expect(wrapper.get('.employee-workbench-state').text()).toBe('这个 Agent 的工作台没有安装，目前只能作为 Agent 身份使用。')
+  })
+  it('never sends the person to a terminal from an employee page, in either language', () => {
+    for (const messages of Object.values(employeeMessages)) {
+      expect(JSON.stringify(messages)).not.toMatch(/\bfl\s|\bfuli\s+[a-z]|\bnpm\s|\bnode\s|<目录>|<directory>|终端|terminal/i)
+    }
   })
   it('rejects a workbench descriptor pointing to an external page', async () => {
     getJson.mockImplementation(async (url: string) => {

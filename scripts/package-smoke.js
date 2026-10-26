@@ -65,6 +65,7 @@ try {
     'src/cli/update-command.js',
     'src/cli/employee-command.js',
     'src/employees/catalog/jefa.json',
+    'src/employees/builtin/jefa/runtime.js',
     'src/employees/catalog/bole.json',
     'src/employees/catalog/tonborg.json',
     'src/judgment/service.js',

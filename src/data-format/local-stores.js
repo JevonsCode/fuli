@@ -10,6 +10,7 @@ import { ADAPTIVE_RUNTIME_SETTINGS_FORMAT } from '../adaptive-runtime/settings.j
 import { ADAPTIVE_RUNTIME_STATE_FORMAT } from '../adaptive-runtime/state.js';
 import { AGENT_APP_FORMAT } from '../agent-apps/store.js';
 import { EMPLOYEE_MANAGEMENT_FORMAT } from '../employees/management-policy.js';
+import { JEFA_BOARD_FORMAT } from '../employees/builtin/jefa/board-store.js';
 import { PREFERENCE_SESSION_FORMAT } from '../conversations/preference-session.js';
 import { TRANSCRIPT_CAPTURE_FORMAT, TRANSCRIPT_TURN_HOLD_FORMAT } from '../conversations/transcript-capture-gap.js';
 import { CONFLICT_POLICY_FORMAT } from '../external-knowledge/conflict-policy.js';
@@ -59,6 +60,8 @@ const sqliteStores = () => [
   ['model-settings-history.sqlite', MODEL_SETTINGS_HISTORY_FORMAT],
   ['agent-apps/registry.sqlite', AGENT_APP_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
+  // Jefa's built-in task board: tasks, their revisions, sharing and session titles.
+  ['employees/data/jefa/board.sqlite', JEFA_BOARD_FORMAT],
   ['peer/node.sqlite', NODE_FORMAT],
   ['peer/coordinator.sqlite', COORDINATOR_FORMAT]
 ];
