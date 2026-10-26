@@ -126,9 +126,9 @@ const BASELINE = Object.freeze({
   // the legacy other alias without enabling generic clients: +262 B, measured.
   // Chat, instructions and entry are unchanged.
   // rec#55 @FLG: one new roundtable tool, group_discussion, which the moderating Agent calls only
-  // after the person confirms members: 191,953 -> 193,078 B (+1,125 B), measured. Chat, instructions
+  // after the person confirms members: 191,953 -> 193,098 B (+1,145 B), measured. Chat, instructions
   // and an ordinary entry are unchanged.
-  fullToolSchemaBytes: 193078,
+  fullToolSchemaBytes: 193098,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

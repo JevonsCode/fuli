@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
-import { wakeArguments } from '../packages/roundtable/src/roundtable/wake.js';
+import { DataFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 import { callRoundtableTool } from '../src/agent-roundtable/tools.js';
 
@@ -109,14 +109,6 @@ test('every member is woken in a fresh read-only session and replies for itself;
   assert.deepEqual((await memberPosts(roundtable, started.chatId)).map(message => message.from).sort(),
     ['local:dev', 'local:dev', 'local:qa', 'local:qa']);
   assert.deepEqual(done.summary.not_counted, []);
-});
-
-test('a discussion wake runs Claude Code in plan mode; Codex stays in its read-only sandbox', () => {
-  const claude = wakeArguments('claude_code', { readOnly: true });
-  assert.equal(claude[claude.indexOf('--permission-mode') + 1], 'plan');
-  const ordinary = wakeArguments('claude_code', {});
-  assert.equal(ordinary[ordinary.indexOf('--permission-mode') + 1], 'dontAsk');
-  assert.ok(wakeArguments('codex', { cwd: '/synthetic', readOnly: true }).includes('read-only'));
 });
 
 test('the response rounds stop at the cap of two', async t => {
@@ -307,7 +299,6 @@ test('a late answer to a turn already failed elsewhere is not posted; a live run
   assert.ok(seen.turns.every(turn => turn.reason === 'interrupted'));
   answers.dev.resolve('迟到的观点');
   answers.qa.resolve('也迟到了');
-  await until(() => runner.roundtable && true);
   await delay(50);
   assert.deepEqual(await memberPosts(runner.roundtable, chatId), []);
   assert.deepEqual(latest(await reader.call('status', { chatId })), { dev: 'failed', qa: 'failed' });
@@ -327,6 +318,67 @@ test('a member woken elsewhere at the moment is shown as busy; a long reply is b
   assert.ok(post.body.length <= 16_000);
   assert.doesNotMatch(post.body, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
   assert.match(post.body, /…（已截断）$/u);
+});
+
+test('a heartbeat that cannot be written never crashes: a busy file beats again, a moved store ends the run as interrupted', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const store = createRoundtableStore();
+  const cancelled = [];
+  const runner = fixture({ store, answer: (member, input) => new Promise((_, reject) => {
+    input.signal.addEventListener('abort', () => { cancelled.push(member);
+      reject(Object.assign(new Error('cancelled'), { code: 'cancelled' })); }, { once: true });
+  }) });
+  t.after(() => runner.roundtable.close());
+  const { chatId } = await runner.start('flg-beat', ['dev', 'qa']);
+  await until(() => runner.woken.length === 2);
+  const heartbeat = store.discussions.heartbeat;
+  store.discussions.heartbeat = () => { throw Object.assign(new Error('database is locked'), { code: 'ERR_SQLITE_ERROR', errcode: 5 }); };
+  t.mock.timers.tick(20_000);
+  await delay(20);
+  assert.deepEqual(cancelled, []);
+  store.discussions.heartbeat = () => {
+    throw new DataFormatError('roundtable', 'data_format_changed_underneath', 'Synthetic store moved underneath');
+  };
+  t.mock.timers.tick(20_000);
+  await until(() => cancelled.length === 2);
+  store.discussions.heartbeat = heartbeat;
+  await delay(20);
+  const done = await runner.call('status', { chatId });
+  assert.deepEqual(latest(done), { dev: 'failed', qa: 'failed' });
+  assert.ok(done.turns.every(turn => turn.reason === 'interrupted'));
+  assert.equal(done.status, 'concluded');
+});
+
+test('a start refused for good ends the person\'s choice; an unstarted choice expires after ten minutes', async t => {
+  let offset = 0;
+  const none = fixture({ clientAvailable: () => false, now: () => Date.now() + offset });
+  t.after(() => none.roundtable.close());
+  await assert.rejects(none.start('flg-dead', ['dev', 'qa']), error => error.code === 'flg_no_executor');
+  assert.equal(none.roundtable.groupDiscussionStatus({ requestId: 'flg-dead' }).status, 'ended');
+  none.confirm('flg-old', ['dev', 'qa']);
+  assert.equal(none.roundtable.groupDiscussionStatus({ requestId: 'flg-old' }).status, 'confirmed');
+  offset = 11 * 60_000;
+  assert.equal(none.roundtable.groupDiscussionStatus({ requestId: 'flg-old' }).status, 'ended');
+  await assert.rejects(none.call('start', { requestId: 'flg-old' }), error => error.code === 'flg_ended');
+});
+
+test('a follow-up whose post fails waits again for the next call', async t => {
+  const store = createRoundtableStore();
+  const { roundtable, woken, start, call, ask, settle } = fixture({ store });
+  t.after(() => roundtable.close());
+  const { chatId } = await start('flg-retry', ['dev', 'qa'], { responseRounds: 0 });
+  await settle(chatId);
+  ask('flg-retry', '再看看');
+  const append = store.chat.append;
+  store.chat.append = () => { throw new Error('Synthetic send failure'); };
+  await assert.rejects(call('follow_up', { chatId }), /Synthetic send failure/u);
+  store.chat.append = append;
+  assert.equal((await call('status', { chatId })).followUps, 0);
+  assert.equal(woken.length, 2);
+  // The same follow-up is carried out on the next call, once.
+  await call('follow_up', { chatId });
+  assert.equal((await settle(chatId)).followUps, 1);
+  assert.equal(woken.length, 4);
 });
 
 test('the MCP tool reaches the same discussion and names its error codes', async t => {

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PeerError } from '../peer/protocol.js';
+import { DataFormatError } from '../storage/data-format-error.js';
 import { waitForChatChange } from './chat-wait.js';
 import { WAKE_CLIENTS } from './wake.js';
 
@@ -11,7 +12,7 @@ import { WAKE_CLIENTS } from './wake.js';
 // from that confirmation, never from the chat's current membership.
 //
 // Every member turn is a messageAgent wake in a fresh session of the member's
-// own client, read-only (Claude Code in plan mode, Codex in its read-only
+// own client, read-only (Claude Code with file edits and the shell denied, Codex in its read-only
 // sandbox), with the question, its own role line and short excerpts of the
 // other members only; its own FULI entry restores its preferences and memory.
 // Only an answer from a verified wake is posted, as that member, and only
@@ -37,6 +38,8 @@ const TURN_SECONDS = 300;
 const TURN_DEADLINE_MS = (WAKE_CLIENTS.length * TURN_SECONDS + 60) * 1000;
 const HEARTBEAT_MS = 20_000;
 const STALE_HEARTBEAT_MS = 60_000;
+// A confirmation the moderator never started stops counting as in progress.
+const CONFIRMATION_TTL_MS = 10 * 60_000;
 const EXCERPT_UNITS = 800;
 // Within the chat's 16,000-unit message bound (chat-contract.js), with room for the mark.
 const REPLY_UNITS = 15_000;
@@ -119,16 +122,24 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
       refuse('flg_not_moderator', 'This member choice was confirmed for another Agent or project', 403);
     }
     if (confirmed.chat_id) return view(await owned({ ...input, chatId: confirmed.chat_id }), input);
-    if (confirmed.status === 'ended') refuse('flg_ended', 'The person stopped this discussion before it started');
+    if (expire(confirmed).status === 'ended') {
+      refuse('flg_ended', confirmed.status === 'ended' ? 'The person stopped this discussion before it started'
+        : 'This member choice expired before it was started; the person can start a new @FLG');
+    }
     const members = JSON.parse(confirmed.members);
+    // A start refused for good ends the person's choice, so it holds nothing open.
+    const unstartable = (code, message, status) => {
+      store.discussions.update(scope(), input.requestId, { status: 'ended', endReason: code });
+      refuse(code, message, status);
+    };
     if (members.includes(confirmed.owner.slice('local:'.length))) {
-      refuse('flg_moderator_member', 'The moderator is this session\'s own Agent and cannot also be woken as a member', 422);
+      unstartable('flg_moderator_member', 'The moderator is this session\'s own Agent and cannot also be woken as a member', 422);
     }
     const directory = await agents();
     const present = members.filter(id => directory.some(agent => agent.agentId === id));
     const wakeable = present.filter(id => canWake(directory.find(agent => agent.agentId === id)));
     if (!wakeable.length) {
-      refuse(present.length ? 'flg_no_executor' : 'flg_member_unavailable', present.length
+      unstartable(present.length ? 'flg_no_executor' : 'flg_member_unavailable', present.length
         ? 'None of these members can be woken on this computer: no Claude Code or Codex they may use is installed. '
           + 'Nothing was started.' : 'None of the confirmed members is an active FLA any more. Nothing was started.');
     }
@@ -168,7 +179,14 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
     const controller = new AbortController();
     runs.get(chatId)?.abort();
     runs.set(chatId, controller);
-    const beat = setInterval(() => store.discussions.heartbeat(...key(discussion), now()), HEARTBEAT_MS);
+    const beat = setInterval(() => {
+      try { store.discussions.heartbeat(...key(discussion), now()); }
+      catch (error) {
+        // A store moved underneath (an undo or a restore) ends this run: its
+        // turns end as interrupted. Anything else (a busy file) beats again next tick.
+        if (error instanceof DataFormatError) controller.abort();
+      }
+    }, HEARTBEAT_MS);
     beat.unref?.();
     // A stop from another process (the person's @FLG 结束 at task entry) ends the wakes running here.
     const watching = new AbortController();
@@ -177,18 +195,31 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
     const context = { taskContextToken: input.taskContextToken, sourceApplication: input.sourceApplication ?? 'other' };
     const work = runRound(discussion, round, kind, targets.filter(id => !settled[id]), prompt, context,
       AbortSignal.any([controller.signal, closing.signal]))
-      .catch(() => {
-        for (const turn of store.discussions.turns(chatId).filter(turn => UNSETTLED.has(turn.status))) {
-          store.discussions.settle(chatId, turn.round, turn.agent_id, { status: 'failed', reason: 'internal_error' });
-        }
-        if (fresh(discussion)?.status === 'running') store.discussions.update(...key(discussion), { status: 'concluded' });
-      })
+      .catch(error => abandon(discussion, error instanceof DataFormatError || controller.signal.aborted
+        ? 'interrupted' : 'internal_error'))
       .finally(() => {
         clearInterval(beat);
         watching.abort();
         if (runs.get(chatId) === controller) runs.delete(chatId);
       });
     controller.work = work;
+  }
+
+  // A run that cannot go on settles what it still can; when the store itself
+  // is gone, nothing more is written here and other processes reconcile.
+  function abandon(discussion, reason) {
+    try {
+      for (const turn of store.discussions.turns(discussion.chat_id).filter(turn => UNSETTLED.has(turn.status))) {
+        store.discussions.settle(discussion.chat_id, turn.round, turn.agent_id, { status: 'failed', reason });
+      }
+      if (fresh(discussion)?.status === 'running') store.discussions.update(...key(discussion), { status: 'concluded' });
+    } catch { /* the store moved underneath; its owner reconciles on the next read */ }
+  }
+
+  // An unstarted confirmation older than CONFIRMATION_TTL_MS ends as expired.
+  function expire(discussion) {
+    if (discussion.status !== 'confirmed' || Date.parse(discussion.created_at) > now() - CONFIRMATION_TTL_MS) return discussion;
+    return store.discussions.update(...key(discussion), { status: 'ended', endReason: 'expired' });
   }
 
   async function runRound(discussion, round, kind, members, prompt, context, signal) {
@@ -290,9 +321,16 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
     const taken = store.discussions.takeFollowUp(...key(current), FOLLOW_UP_LIMIT);
     if (!taken) refuse('flg_follow_up_not_requested', 'The person\'s follow-up was already carried out');
     const labels = labelsOf(directory);
-    const latest = await latestReplies(current);
-    const posted = await say(input, { action: 'send', chatId: current.chat_id,
-      requestId: `${current.request_id}:follow-up:${taken.number}`, body: `【用户追问】${taken.body}` });
+    let latest, posted;
+    try {
+      latest = await latestReplies(current);
+      posted = await say(input, { action: 'send', chatId: current.chat_id,
+        requestId: `${current.request_id}:follow-up:${taken.number}`, body: `【用户追问】${taken.body}` });
+    } catch (error) {
+      // Not posted: the person's follow-up waits again for the next call.
+      store.discussions.restoreFollowUp(...key(current), taken);
+      throw error;
+    }
     launch(current, { round: current.round + 1, kind: 'follow_up', input, targets,
       settled: settledReasons(targets, present, wakeable),
       prompt: agentId => followUpPrompt(current.question, taken.body, agentId, latest.filter(item => item.agentId !== agentId),
@@ -311,12 +349,14 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
   // Ends the discussion: no further turn starts, unsettled turns end as not
   // replied, and an answer that still arrives is not posted.
   function end(discussion) {
-    store.discussions.update(...key(discussion), { status: 'ended' });
-    for (const turn of discussion.chat_id ? store.discussions.turns(discussion.chat_id) : []) {
-      if (UNSETTLED.has(turn.status)) {
-        store.discussions.settle(discussion.chat_id, turn.round, turn.agent_id, { status: 'ended', reason: 'stopped' });
+    store.transaction(() => {
+      store.discussions.update(...key(discussion), { status: 'ended', endReason: 'stopped' });
+      for (const turn of discussion.chat_id ? store.discussions.turns(discussion.chat_id) : []) {
+        if (UNSETTLED.has(turn.status)) {
+          store.discussions.settle(discussion.chat_id, turn.round, turn.agent_id, { status: 'ended', reason: 'stopped' });
+        }
       }
-    }
+    });
     if (discussion.chat_id) runs.get(discussion.chat_id)?.abort();
   }
 
@@ -386,7 +426,8 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
       : labelOf(names, address.slice(6));
     const members = JSON.parse(current.members);
     const finished = !ACTIVE.has(current.status);
-    return { chatId: current.chat_id, requestId: current.request_id, status: current.status, question: current.question,
+    return { chatId: current.chat_id, requestId: current.request_id, status: current.status,
+      ...(current.end_reason ? { endReason: current.end_reason } : {}), question: current.question,
       round: current.round, responseRounds: current.response_rounds, maxResponseRounds: RESPONSE_ROUND_LIMIT,
       followUps: current.follow_ups, maxFollowUps: FOLLOW_UP_LIMIT, moderator: labelOf(names, current.owner.slice(6)),
       members: members.map(agentId => ({ agentId, name: labelOf(names, agentId),
@@ -434,7 +475,8 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
         members });
     },
     ownerStatus({ requestId }) {
-      const discussion = store.discussions.get(scope(), requestId);
+      const found = store.discussions.get(scope(), requestId);
+      const discussion = found && expire(found);
       return discussion ? { status: discussion.status, followUps: discussion.follow_ups, maxFollowUps: FOLLOW_UP_LIMIT }
         : null;
     },

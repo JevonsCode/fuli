@@ -11,7 +11,7 @@ export const GROUP_DISCUSSION_TABLES = `
       scope TEXT NOT NULL, request_id TEXT NOT NULL, chat_id TEXT UNIQUE, owner TEXT NOT NULL,
       project_id TEXT NOT NULL, question TEXT NOT NULL, members TEXT NOT NULL, status TEXT NOT NULL,
       response_rounds INTEGER NOT NULL, round INTEGER NOT NULL, follow_ups INTEGER NOT NULL,
-      pending_follow_up TEXT, pending_to TEXT, summary_seq INTEGER, heartbeat_at INTEGER,
+      pending_follow_up TEXT, pending_to TEXT, summary_seq INTEGER, heartbeat_at INTEGER, end_reason TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(scope, request_id));
     CREATE TABLE IF NOT EXISTS group_discussion_turns (
       chat_id TEXT NOT NULL, round INTEGER NOT NULL, agent_id TEXT NOT NULL, kind TEXT NOT NULL,
@@ -54,10 +54,10 @@ export function createGroupDiscussionStore(db, chat) {
       return changed(get(scope, requestId));
     },
     // status: confirmed | running | concluded | ended. A round number only grows.
-    update(scope, requestId, { status = null, round = null, summarySeq = null }) {
+    update(scope, requestId, { status = null, round = null, summarySeq = null, endReason = null }) {
       db.prepare(`UPDATE group_discussions SET status=coalesce(?, status), round=max(round, coalesce(?, round)),
-        summary_seq=coalesce(?, summary_seq), updated_at=? WHERE scope=? AND request_id=?`)
-        .run(status, round, summarySeq, now(), scope, requestId);
+        summary_seq=coalesce(?, summary_seq), end_reason=coalesce(?, end_reason), updated_at=? WHERE scope=? AND request_id=?`)
+        .run(status, round, summarySeq, endReason, now(), scope, requestId);
       return changed(get(scope, requestId));
     },
     // The runner of the rounds is alive (ms since epoch).
@@ -78,6 +78,13 @@ export function createGroupDiscussionStore(db, chat) {
         follow_ups=follow_ups+1, updated_at=? WHERE scope=? AND request_id=? AND pending_follow_up=? AND follow_ups=?`)
         .run(now(), scope, requestId, row.pending_follow_up, row.follow_ups).changes === 1;
       return taken ? changed({ body: row.pending_follow_up, to: row.pending_to, number: row.follow_ups + 1 }) : null;
+    },
+    // A taken follow-up whose post failed waits again, unless the person wrote a newer one.
+    restoreFollowUp(scope, requestId, { body, to, number }) {
+      db.prepare(`UPDATE group_discussions SET pending_follow_up=?, pending_to=?, follow_ups=follow_ups-1, updated_at=?
+        WHERE scope=? AND request_id=? AND follow_ups=? AND pending_follow_up IS NULL`)
+        .run(body, to, now(), scope, requestId, number);
+      return changed(get(scope, requestId));
     },
     // Each member's turn starts invited (or failed with its reason); deadline (ms) bounds its wait.
     invite(chatId, round, kind, agentIds, deadline, settled = {}) {

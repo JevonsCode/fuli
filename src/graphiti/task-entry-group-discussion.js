@@ -41,6 +41,8 @@ const QUESTION_LIMIT = 1500;
 const MORE = /推荐|再找|再加|再请|再邀|补充|还要|recommend|suggest|more/iu;
 const COUNT = /([1-4一二两三四])\s*(?:位|个|名)/u;
 const NUMBERS = Object.freeze({ 一: 1, 二: 2, 两: 2, 三: 3, 四: 4 });
+// Words that sound like a yes but are not the choice's confirmation (`@FLG 开始`).
+const LOOSE_YES = /^(?:好|好的|好吧|行|可以|嗯|对|是|ok|okay|yes|yep|sure)\s*[。.!！~～]?\s*$/iu;
 // A discussion in progress keeps its session where it is.
 const ACTIVE = new Set(['confirmed', 'running']);
 
@@ -50,7 +52,7 @@ const CHOOSE_GUIDANCE = 'Ask this now with the host native multi-select UI, the 
   + 'answer, call begin_task_context with projectPath=current directory and taskPrompt "@FLG <the chosen numbers>" '
   + '(or "@FLG 开始") and follow its flg.guidance. A choice is not a permission grant.';
 const START_GUIDANCE = 'The person confirmed these members. Call group_discussion with action start, this entry\'s '
-  + 'taskContextToken and start.requestId. Each member is woken read-only in its own client and answers for itself: '
+  + 'taskContextToken and start.requestId. Each member is woken in its own client without file edits or shell and answers for itself: '
   + 'never write or guess a member\'s view. Then call group_discussion wait and follow its guidance until it '
   + 'concludes. The discussion authorizes no edits or publishing.';
 const FOLLOW_UP_GUIDANCE = 'The person asked this follow-up of the same members; do not choose members again. Call '
@@ -90,6 +92,10 @@ export function groupDiscussionRequest(application, input, task) {
   const reply = mention && (mention.choices || mention.confirm) ? mention
     : !mention && stored.choices.length ? groupChoiceReply(input.taskPrompt) : null;
   if (reply) return { state: stored.choices.length ? 'confirm' : 'no_choice', reply, stored, holdsProject: true };
+  // `@FLG 好` / `@FLG ok` while a choice waits is an unclear answer to it, not a new question.
+  if (mention?.query && stored.choices.length && LOOSE_YES.test(mention.query)) {
+    return { state: 'unclear', stored, holdsProject: true };
+  }
   if (!mention) return carried;
   if (mention.release) return { state: 'stop', stored, holdsProject: true };
   return { state: 'ask', query: mention.query, stored, status, holdsProject: true };
@@ -117,6 +123,7 @@ export async function groupDiscussionEntry(application, request, selection, pers
   const moderator = selection?.status === 'ready' && personalProjectId ? selection.agent?.agentId ?? null : null;
   if (!moderator) return said('unavailable', 'project_required', kept);
   if (request.state === 'confirm') return confirmed(application, request, moderator, personalProjectId);
+  if (request.state === 'unclear') return chooseAgain(request.stored, '请回复编号，或用「@FLG 开始」确认已勾选的');
   if (!request.query) return said('unavailable', 'question_required', kept);
   if (request.status?.followUps >= request.status?.maxFollowUps) return said('unavailable', 'follow_up_limit', []);
   const current = request.stored.started ? await startedDiscussion(application, request.stored.started) : null;
@@ -167,6 +174,15 @@ async function memberChoice(application, query, { moderator, personalProjectId }
     selection: noAgent(), markers: [`flg_question:${text}`, ...shown.map(choiceMarker)] };
 }
 
+// The same member choice again, saying why the last answer did not confirm it.
+function chooseAgain({ choices, question }, reason) {
+  const { interaction } = flaGroupChoice(choices, { title: '选择 @FLG 讨论成员',
+    question: `${reason}，要邀请哪几位一起讨论？`, guidance: CHOOSE_GUIDANCE });
+  const notice = `等待确认 @FLG 讨论成员：${reason}`;
+  return { view: { status: 'choose', question, notice }, interaction, notice,
+    selection: noAgent(), markers: [`flg_question:${question}`, ...choices.map(choiceMarker)] };
+}
+
 function confirmed(application, request, moderator, personalProjectId) {
   const { choices, question } = request.stored;
   const picked = request.reply.confirm ? choices.filter(item => item.preselected)
@@ -177,13 +193,8 @@ function confirmed(application, request, moderator, personalProjectId) {
   const members = [...new Map(picked.filter(Boolean).filter(item => item.agentId !== moderator)
     .map(item => [item.agentId, item])).values()];
   if (unknown.length || members.length < MEMBER_MINIMUM) {
-    const reason = [unknown.length ? `没有编号 ${unknown.join('、')}` : '至少选两位',
-      ...(moderating ? [`${moderating.name} ${REASONS.moderator}`] : [])].join('；');
-    const { interaction } = flaGroupChoice(choices, { title: '选择 @FLG 讨论成员',
-      question: `${reason}，要邀请哪几位一起讨论？`, guidance: CHOOSE_GUIDANCE });
-    const notice = `等待确认 @FLG 讨论成员：${reason}`;
-    return { view: { status: 'choose', question, notice }, interaction, notice,
-      selection: noAgent(), markers: [`flg_question:${question}`, ...choices.map(choiceMarker)] };
+    return chooseAgain(request.stored, [unknown.length ? `没有编号 ${unknown.join('、')}` : '至少选两位',
+      ...(moderating ? [`${moderating.name} ${REASONS.moderator}`] : [])].join('；'));
   }
   const requestId = `flg-${randomUUID()}`;
   // What the person confirmed is recorded where start checks it.

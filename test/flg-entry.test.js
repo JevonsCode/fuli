@@ -4,6 +4,9 @@ import test from 'node:test';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { groupChoiceReply, parseFlaMention } from '../src/graphiti/fla-mention.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 // rec#55 @FLG at task entry: members are recommended, named or both, chosen
 // with a native multi-select (a numbered list elsewhere), confirmed, then
@@ -283,6 +286,46 @@ test('after five follow-ups the person starts a new @FLG', async () => {
   const capped = await hook('@FLG 再问一次');
   assert.equal(capped.flg.reason, 'follow_up_limit');
   assert.equal((await hook('@FLG 换个问题')).flg.status, 'choose');
+});
+
+test('@FLG 好 while a choice waits shows the same choice again instead of a new question', async () => {
+  const { hook, calls } = fixture();
+  const first = await hook('@FLG 讨论这个方案的产品体验和技术风险');
+  for (const unclear of ['@FLG 好', '@FLG ok']) {
+    const again = await hook(unclear);
+    assert.equal(again.flg.status, 'choose');
+    assert.match(again.flg.notice, /@FLG 开始/u);
+    assert.deepEqual(options(again), options(first));
+    assert.equal(again.flg.question, first.flg.question);
+  }
+  assert.equal(calls.filter(([kind]) => kind === 'confirm').length, 0);
+  assert.equal((await hook('@FLG 开始')).flg.status, 'confirmed');
+});
+
+test('a start refused for lack of executors ends the choice: routing returns and @FLG opens a new choice', async () => {
+  const { app, hook } = fixture();
+  app.standingAssignments = { match: (_, text) => text.includes('部署') ? [{ matchedTerms: ['部署'],
+    assignment: { assignmentId: 'sa-1', projectId: 'project-b', leadAgentId: 'ops', responsibility: '部署' } }] : [] };
+  // The real roundtable keeps what the entry records; its synthetic host knows the moderator's task.
+  const roundtable = createAgentRoundtable({ openStore: () => createRoundtableStore(), env: {}, clientAvailable: () => false,
+    host: createFuliRoundtableHost({ config: { personal: { spaceId: SPACE } },
+      listProjectAgents: async () => ROSTER.map(agent => ({ agentId: agent.agent_id,
+        profile: { name: agent.profile.name, displayName: agent.profile.display_name, status: agent.profile.status,
+          allowedClients: agent.profile.allowed_clients } })),
+      taskContextRegistry: { context: async () => ({ projectAgentId: 'ada', personalProjectId: 'project-a',
+        sourceApplication: 'claude_code' }) },
+      personal: { recentAgentSessions: async () => [], listPersonalProjects: async () => [] } }) });
+  Object.assign(app.roundtable, { recordGroupChoice: roundtable.recordGroupChoice,
+    groupDiscussionStatus: roundtable.groupDiscussionStatus, ownerGroupDiscussion: roundtable.ownerGroupDiscussion,
+    requestGroupFollowUp: roundtable.requestGroupFollowUp, ownerStopGroupDiscussion: roundtable.ownerStopGroupDiscussion });
+  await hook('@FLG 讨论上线风险 Nova Lane Pia Mo');
+  const requestId = (await hook('@FLG 开始')).flg.start.requestId;
+  assert.equal((await hook('部署脚本怎么写')).context.personal_project_id, 'project-a');
+  await assert.rejects(roundtable.discuss({ taskContextToken: 'synthetic', sourceApplication: 'claude_code',
+    action: 'start', requestId }), error => error.code === 'flg_no_executor');
+  assert.equal((await hook('部署脚本怎么写')).context.personal_project_id, 'project-b');
+  assert.equal((await hook('@FLG 新的问题')).flg.status, 'choose');
+  await roundtable.close();
 });
 
 test('standing routing is bypassed only on @FLG turns and while the discussion is in progress', async () => {
