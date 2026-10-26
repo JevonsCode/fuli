@@ -693,7 +693,9 @@ describe('Jefa bounded progressive reads', () => {
     postJson.mockRejectedValue(new ApiError('forbidden', 403))
     await wrapper.get('.jefa-read-actions button').trigger('click'); await flushPromises()
     expect(wrapper.text()).not.toContain('将撤权的任务')
-    expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(false)
+    // The catalog still lists the projects, so the board keeps its filter but shows no revoked data.
+    expect(wrapper.getComponent(EmployeeTaskBoard).props('boards')).toEqual([])
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取失败')
   })
   it('invalidates pending board work on unmount and changing personal space', async () => {
     let oldResponse!: (value: unknown) => void
@@ -774,7 +776,9 @@ describe('Jefa bounded progressive reads', () => {
     })
     await refreshEmployeeCatalog('space-a'); await flushPromises()
     expect(wrapper.text()).not.toContain('目录已撤销任务')
-    expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(false)
+    // The last authoritative catalog keeps the board and its filter, without the removed project.
+    expect(wrapper.getComponent(EmployeeTaskBoard).props('boards')).toEqual([])
+    expect(wrapper.getComponent(EmployeeTaskBoard).props('projects')).toEqual([{ id: 'project-b', name: '项目 B' }])
   })
 
   it('shows an explicit permission failure instead of a blank ready workbench', async () => {
@@ -1023,6 +1027,168 @@ describe('Jefa reads only the selected projects', () => {
     await selectProjects(wrapper, [first, second, third])
     // The late answer was never accepted, so only that project is read again.
     expect(calls.map(entry => entry.id)).toEqual([first, second, third, first])
+    expect(wrapper.text()).not.toContain('旧范围晚到任务')
+    calls[3]!.resolve(boardOf(first)); await flushPromises()
+    expect(wrapper.text()).toContain(`任务 ${first}`)
+    expect(wrapper.text()).not.toContain('旧范围晚到任务')
+  })
+
+  it('keeps reads still selected when the filter widens, and shows the filter before any board loads', async () => {
+    const selected = pick(0, 1, 2, 3, 4)
+    const calls = heldBoards()
+    const wrapper = await setup(deepLink(selected))
+    expect(board(wrapper).props('boards')).toEqual([])
+    expect(wrapper.get('.project-scope-trigger').text()).toContain(`已选 5 / 共 ${CATALOG_SIZE} 个项目`)
+    await selectProjects(wrapper, [...selected, ids[5]!])
+    expect(boardReads()).toEqual(selected.slice(0, 4))
+    expect(calls.some(call => call.signal?.aborted)).toBe(false)
+    expect(status(wrapper)).toContain('已显示 0/6 个项目；6 个仍在读取')
+    while (calls.length) {
+      for (const call of calls.splice(0)) call.resolve(boardOf(call.id))
+      await flushPromises()
+    }
+    expect(boardReads()).toEqual([...selected, ids[5]])
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+  })
+
+  it('drops queued projects unchecked one at a time without re-sending reads still selected', async () => {
+    const selected = pick(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+    const calls = heldBoards()
+    const wrapper = await setup(deepLink(selected))
+    let remaining = [...selected]
+    for (const unchecked of selected.slice(4, 8)) {
+      remaining = remaining.filter(id => id !== unchecked)
+      await selectProjects(wrapper, remaining)
+    }
+    expect(boardReads()).toHaveLength(4)
+    expect(calls.some(call => call.signal?.aborted)).toBe(false)
+    expect(status(wrapper)).toContain('已显示 0/8 个项目；8 个仍在读取')
+    while (calls.length) {
+      for (const call of calls.splice(0)) call.resolve(boardOf(call.id))
+      await flushPromises()
+    }
+    expect(boardReads()).toEqual([...selected.slice(0, 4), ...selected.slice(8)])
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+  })
+
+  it('keeps the board and its filter when every selected board fails, so the scope can change', async () => {
+    const [broken, working] = pick(30, 31) as [string, string]
+    answerBoards(id => id === broken ? Promise.reject(new ApiError('unavailable', 503)) : boardOf(id))
+    const wrapper = await setup(deepLink([broken]))
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取失败')
+    expect(wrapper.get('[role="alert"]').text()).toContain('合成项目 31')
+    expect(wrapper.get('.project-scope-trigger').text()).toContain(`已选 1 / 共 ${CATALOG_SIZE} 个项目`)
+    expect(board(wrapper).props('incomplete')).toBe(true)
+    await selectProjects(wrapper, [working])
+    expect(boardReads()).toEqual([broken, working])
+    expect(wrapper.text()).toContain(`任务 ${working}`)
+    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+  })
+
+  it('keeps a saved empty selection and its filter on screen while the catalog re-reads and after it fails', async () => {
+    saveFilter([])
+    answerBoards()
+    const wrapper = await setup('/employees/jefa')
+    const original = getJson.getMockImplementation()!
+    let failCatalog!: (cause: unknown) => void
+    getJson.mockImplementation((url: string) => url.startsWith('/api/employee-templates?')
+      ? new Promise((_resolve, reject) => { failCatalog = reject }) : original(url))
+    await refresh(wrapper)
+    expect(wrapper.get('.project-scope-trigger').text()).toContain(`已选 0 / 共 ${CATALOG_SIZE} 个项目`)
+    failCatalog(new ApiError('down', 500)); await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    expect(wrapper.get('.project-scope-trigger').text()).toContain(`已选 0 / 共 ${CATALOG_SIZE} 个项目`)
+    expect(wrapper.find('.jefa-read-clear-filter').exists()).toBe(false)
+    expect(boardReads()).toEqual([])
+  })
+
+  it('offers to clear a saved filter when the catalog has never loaded', async () => {
+    saveFilter(pick(4))
+    answerBoards()
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?')) throw new ApiError('down', 500)
+      return original(url)
+    })
+    const wrapper = await setup('/employees/jefa')
+    expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(false)
+    await wrapper.get('[role="alert"] .jefa-read-clear-filter').trigger('click'); await flushPromises()
+    expect(localStorage.getItem(projectBoardFilterKey('space-a'))).toBeNull()
+    expect(wrapper.vm.$route.query.project).toBe('all')
+    expect(wrapper.find('.jefa-read-clear-filter').exists()).toBe(false)
+  })
+
+  it('keeps a truncated board in its slot while its complete list loads', async () => {
+    const selected = pick(0, 1, 2, 3, 4, 5)
+    answerBoards(id => boardOf(id, `任务 ${id}`, true))
+    const original = getJson.getMockImplementation()!
+    const snapshots: Array<(value: unknown) => void> = []
+    getJson.mockImplementation((url: string) => url.endsWith('/api/snapshot')
+      ? new Promise(resolve => { snapshots.push(resolve) }) : original(url))
+    const wrapper = await setup(deepLink(selected))
+    // Four boards answered and four complete lists in flight: the slots stay full.
+    expect(boardReads()).toEqual(selected.slice(0, 4))
+    expect(snapshots).toHaveLength(4)
+    expect(status(wrapper)).toContain('已显示 0/6 个项目；6 个仍在读取')
+    snapshots[0]!({ snapshot: { workItems: [] } }); await flushPromises()
+    expect(boardReads()).toEqual(selected.slice(0, 5))
+  })
+
+  it('removes only the refused board on a 401 and keeps the others', async () => {
+    const [kept, refused] = pick(40, 41) as [string, string]
+    answerBoards(id => id === refused ? Promise.reject(new ApiError('unauthorized', 401)) : boardOf(id))
+    const wrapper = await setup(deepLink([kept, refused]))
+    expect(board(wrapper).props('boards').map(entry => entry.project.id)).toEqual([kept])
+    expect(wrapper.get('[role="alert"]').text()).toContain('部分项目暂不可用')
+    expect(wrapper.get('.jefa-read-details').text()).toContain('HTTP 401')
+  })
+
+  it('reads every project on select-all, finishing a slow but steady catalog without a timeout', async () => {
+    vi.useFakeTimers()
+    let open = 0
+    let most = 0
+    postJson.mockImplementation((_url: string, body: { personalProjectId: string }) => {
+      most = Math.max(most, ++open)
+      return new Promise(resolve => setTimeout(() => { open--; resolve(boardOf(body.personalProjectId)) }, 500))
+    })
+    const wrapper = await setup('/employees/jefa')
+    await vi.advanceTimersByTimeAsync(Math.ceil(CATALOG_SIZE / 4) * 500 + 1000)
+    expect(boardReads()).toHaveLength(CATALOG_SIZE)
+    expect(new Set(boardReads()).size).toBe(CATALOG_SIZE)
+    expect(most).toBe(4)
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(board(wrapper).props('readOnly')).toBe(false)
+  })
+
+  it('gives projects added by a switch the whole idle budget', async () => {
+    vi.useFakeTimers()
+    const [first, second] = pick(60, 61) as [string, string]
+    heldBoards()
+    const wrapper = await setup(deepLink([first]))
+    await vi.advanceTimersByTimeAsync(20000)
+    await selectProjects(wrapper, [second])
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(wrapper.find('.growth-loading').exists()).toBe(true)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+    expect(status(wrapper)).toContain('已显示 0/1 个项目；0 个仍在读取，1 个读取失败')
+    expect(boardReads()).toEqual([first, second])
+  })
+
+  it('reads the board of a linked task outside the selection, and closes it when access is refused', async () => {
+    const [selected, linked] = pick(70, 71) as [string, string]
+    saveFilter([selected])
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string; tool: string; arguments?: { workItemId?: string } }) => {
+      if (body.tool === 'get_task') return { item: { id: body.arguments?.workItemId, projectId: body.personalProjectId, title: '链接任务', summary: '合成详情', status: 'planned', updatedAt: '2026-10-18T17:00:00Z' } }
+      if (body.personalProjectId === linked) throw new ApiError('forbidden', 403)
+      return boardOf(body.personalProjectId)
+    })
+    const wrapper = await setup(`/employees/jefa?item=space-a%2F${linked}%253At1`)
+    expect(boardReads()).toEqual([selected, linked])
+    expect(wrapper.getComponent(EmployeeTaskDialog).props('open')).toBe(false)
+    expect(wrapper.vm.$route.query.item).toBeUndefined()
   })
 
   it('reports a partial failure only while the failed project is in scope', async () => {

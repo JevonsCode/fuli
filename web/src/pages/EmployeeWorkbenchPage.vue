@@ -50,7 +50,8 @@ const templateId = computed(() => String(route.params.templateId ?? ''))
 const isJefa = computed(() => templateId.value === 'jefa')
 const jefaRead = reactive(useJefaBoardLoad({
   enabled: isJefa, spaceId: personalSpaceId, boards: projectBoards, scopeValid: () => !projectFilter.invalidScope.value,
-  selectedIds: () => projectFilter.selection.value,
+  // An open task's project is read too, so its access and staleness stay authoritative.
+  scopeProjectIds: () => [...projectFilter.selection.value, ...(openTaskRef.value ? [openTaskRef.value.projectId] : [])],
   consoleError: computed(() => !store.state && store.runtimeStatus === 'error' ? store.feedback?.message || t('employees.loadError') : ''),
   projectNames: computed(() => new Map((store.state?.personalProjects ?? []).filter(p => p.personal_space_id === personalSpaceId.value).map(p => [p.project_id, p.profile.name]))),
 }))
@@ -180,8 +181,6 @@ watch(managedProjectSignature, (signature, previous) => {
 watch(projectFilter.invalidScope, (invalid, previous) => {
   if (isJefa.value && previous && !invalid) jefaRead.scopeChanged()
 })
-// Jefa reads only the selected projects' boards, so a filter change reads the new scope.
-watch(projectFilter.selection, () => { if (isJefa.value) jefaRead.selectionChanged() })
 watch([employeeTemplates, employeeCatalogLoading, employeeCatalogError], ([templates, catalogLoading, catalogError]) => {
   if (!isJefa.value || !jefaRead.template || catalogLoading || catalogError) return
   const candidate = templates.find(t => t.id === 'jefa')
@@ -198,6 +197,8 @@ const openTaskRevoked = computed(() => Boolean(openTaskRef.value) && boardTaskAc
 watch(openTaskRevoked, (revoked) => { if (revoked) void peek.close() }, { immediate: true })
 // A revoked task leaves the dialog at once (ending its read in flight), before the URL catches up.
 const shownTaskRef = computed(() => (openTaskRevoked.value ? null : openTaskRef.value))
+// Jefa reads only the selected projects' boards (and an open task's), so a change reads the new scope.
+watch([projectFilter.selection, () => openTaskRef.value?.projectId], () => { if (isJefa.value) jefaRead.selectionChanged() })
 const pageRoot = ref<HTMLElement | null>(null)
 // Bole and Tonborg put their actions in this row instead of a title row of their own.
 const toolbarActions = ref<HTMLElement | null>(null)
@@ -397,7 +398,9 @@ async function projectsSaved() {
       :loading="jefaRead.loading" :long-wait="jefaRead.longWait" :stage="jefaRead.stage"
       :timed-out="jefaRead.timedOut" :failure="jefaRead.failure" :failures="jefaRead.failures"
       :total="jefaRead.scopeIds.length" :loaded="jefaRead.loadedIds.length" :pending="jefaRead.pendingIds.length"
-      :has-content="jefaRead.hasContent" :stale="jefaRead.stale" :updated-at="jefaRead.updatedAt" @reload="retry"
+      :has-content="jefaRead.hasContent" :stale="jefaRead.stale" :updated-at="jefaRead.updatedAt" :projects="jefaRead.projects"
+      :blocking="!supportsAllProjects" :can-clear-filter="!supportsAllProjects && projectFilter.active.value"
+      @reload="retry" @clear-filter="projectFilter.reset"
     />
     <GrowthLoading v-if="pageLoading && !isJefa" :label="pageLoadingLabel" />
     <div v-else-if="visibleError" class="employee-workbench-state" role="alert"><p>{{ visibleError }}</p><Button size="sm" variant="ghost" @click="retry">{{ t('employees.retry') }}</Button></div>
@@ -408,7 +411,7 @@ async function projectsSaved() {
     <div v-else-if="isJefa && template && !jefaRead.loading && template.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
     <div v-else-if="!projectId && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><Button size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</Button></div>
     <EmployeeTaskBoard
-      v-else-if="projectId === ALL_PROJECTS && supportsAllProjects && (!isJefa || jefaRead.hasContent)"
+      v-else-if="projectId === ALL_PROJECTS && supportsAllProjects"
       v-model:visible-project-ids="visibleProjectIds"
       :boards="visibleProjectBoards"
       :projects="managedProjectOptions.map((project) => ({ id: project.value, name: project.label }))"
