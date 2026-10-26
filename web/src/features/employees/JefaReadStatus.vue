@@ -6,17 +6,24 @@ import { t, currentLocale } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import type { JefaReadFailure, JefaReadStage } from './useJefaBoardLoad'
 
-defineProps<{
+const props = defineProps<{
   loading: boolean; longWait: boolean; stage: JefaReadStage; timedOut: boolean
   failure: string; failures: JefaReadFailure[]; total: number; loaded: number; pending: number
+  /** Some selected project's board is shown. */
   hasContent: boolean; stale: boolean; updatedAt: string
+  /** No board (and so no filter) is under this status. */
+  blocking: boolean
+  /** Offer to clear a filter the user cannot otherwise reach. */
+  canClearFilter: boolean
+  projects: readonly { id: string; name: string }[]
 }>()
-defineEmits<{ reload: [] }>()
+defineEmits<{ reload: []; 'clear-filter': [] }>()
+const projectName = (projectId: string) => props.projects.find(project => project.id === projectId)?.name ?? projectId
 </script>
 
 <template>
-  <div v-if="loading || timedOut || failure || failures.length || stale" class="jefa-read-status" :class="{ 'is-blocking': !hasContent }" :role="!loading && (timedOut || failure || failures.length) ? 'alert' : undefined">
-    <GrowthLoading v-if="loading" :variant="hasContent ? 'compact' : 'page'" :label="t(hasContent && stale ? 'employees.read.updating' : `employees.read.${stage}`)" />
+  <div v-if="loading || timedOut || failure || failures.length || stale" class="jefa-read-status" :class="{ 'is-blocking': blocking }" :role="!loading && (timedOut || failure || failures.length) ? 'alert' : undefined">
+    <GrowthLoading v-if="loading" :variant="blocking ? 'page' : 'compact'" :label="t(hasContent && stale ? 'employees.read.updating' : `employees.read.${stage}`)" />
     <div v-if="!loading && (timedOut || failure || failures.length)" class="jefa-read-error">
       <h2>{{ t(hasContent ? 'employees.read.partialTitle' : timedOut ? 'employees.read.timeoutTitle' : 'employees.read.failedTitle') }}</h2>
       <p v-if="failure">{{ failure }}</p>
@@ -27,12 +34,13 @@ defineEmits<{ reload: [] }>()
     <p v-if="stale">{{ t('employees.read.readOnly') }} <span v-if="updatedAt">{{ t('employees.read.lastRead', { time: formatDateTime(updatedAt, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }) }}</span></p>
     <div v-if="!loading" class="jefa-read-actions">
       <Button @click="$emit('reload')">{{ t('employees.read.reload') }}</Button>
+      <Button v-if="canClearFilter" variant="outline" class="jefa-read-clear-filter" @click="$emit('clear-filter')">{{ t('employees.read.clearFilter') }}</Button>
       <Button as-child variant="outline"><RouterLink to="/project-agents">{{ t('employees.backToAgents') }}</RouterLink></Button>
       <span v-if="hasContent">{{ t('employees.read.reloadHint') }}</span>
     </div>
     <details v-if="!loading && failures.length" class="jefa-read-details">
       <summary>{{ t('employees.read.details') }}</summary>
-      <p v-for="(item, index) in failures" :key="index">{{ t(`employees.read.${item.stage}`) }} · {{ item.category }} · {{ formatDateTime(item.at, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }}</p>
+      <p v-for="(item, index) in failures" :key="index"><template v-if="item.projectId">{{ projectName(item.projectId) }} · </template>{{ t(`employees.read.${item.stage}`) }} · {{ item.category }} · {{ formatDateTime(item.at, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }}</p>
     </details>
   </div>
 </template>
