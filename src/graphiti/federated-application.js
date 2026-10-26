@@ -60,7 +60,6 @@ import {
 } from './knowledge-review.js';
 import { beginTaskEntry } from './task-entry-preferences.js';
 import { transcriptCaptureLedger } from '../conversations/transcript-capture-gap.js';
-import { getWritingTasteProfile as getWritingTasteProfileWorkflow } from './writing-taste-profile-workflow.js';
 import { knowledgeTags } from './knowledge-tags.js';
 import { assertActivePersonalSpace } from './active-personal-space.js';
 import { resolvePreferenceProject } from './preference-project-resolution.js';
@@ -274,11 +273,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async getUserTasteSkill(input) {
     return getUserTasteSkill(this, input);
-  }
-
-  async getWritingTasteProfile(input = {}, ownerReads = null) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    return getWritingTasteProfileWorkflow(this, input, ownerReads);
   }
 
   // FULI's project for a directory, by the rules task entry uses: a

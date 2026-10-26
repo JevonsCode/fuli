@@ -31,7 +31,6 @@ const graphCanvas = readFileSync(
 const inspector = ['KnowledgeInspector.vue', 'KnowledgeRecords.vue']
   .map(file => readFileSync(`web/src/features/knowledge/${file}`, 'utf8')).join('\n');
 const profile = readFileSync('web/src/pages/PersonalProfilePage.vue', 'utf8');
-const writingTaste = readFileSync('web/src/pages/WritingTastePage.vue', 'utf8');
 const publicProjects = readFileSync('web/src/pages/PublicProjectsPage.vue', 'utf8');
 const review = readFileSync('web/src/features/publishing/PublishQueue.vue', 'utf8');
 const connections = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
@@ -64,7 +63,6 @@ test('the console boots from one Vue 3 application entry', () => {
 test('Vue Router owns primary navigation and addressable knowledge state', () => {
   for (const path of [
     "'/preferences'",
-    "'/preferences/writing'",
     "'/personal/:spaceId/projects/:mode'",
     "'/personal/:spaceId/projects/:projectId/:mode'",
     "'/public-projects'",
@@ -156,17 +154,6 @@ test('all existing workspace areas have Vue pages and API actions', () => {
   assert.match(pageMessages, /publicTitle: '别人提交的内容'/);
   assert.match(pageMessages, /unsubscribe: '取消订阅'/);
   assert.match(pageMessages, /unsubscribe: '取消订阅'/);
-});
-
-test('writing taste stays evidence-backed and separates review from Agent use', () => {
-  // Writing taste is its own memory tab; the preferences page no longer embeds it.
-  assert.doesNotMatch(profile, /writing-taste-profile/);
-  assert.match(writingTaste, /\/api\/writing-taste-profile/);
-  assert.match(writingTaste, /readiness\.criteria/);
-  assert.match(writingTaste, /Working hypothesis/);
-  assert.match(writingTaste, /profile\.agent_markdown/);
-  assert.match(writingTaste, /KnowledgeConfirmDialog/);
-  assert.match(writingTaste, /KnowledgeEditDialog/);
 });
 
 test('connection forms use the shared custom controls', () => {

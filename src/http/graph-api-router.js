@@ -99,14 +99,6 @@ export async function handleGraphApiRequest({
     }, ownerReads));
     return true;
   }
-  if (url.pathname === '/api/writing-taste-profile' && request.method === 'GET') {
-    sendJson(response, 200, await app.getWritingTasteProfile({
-      personalSpaceId: url.searchParams.get('personalSpaceId'),
-      personalProjectId: url.searchParams.get('personalProjectId'),
-      limit: numberParam(url, 'limit', 500)
-    }, ownerReads));
-    return true;
-  }
   if (url.pathname === '/api/preference-conflicts' && request.method === 'GET') {
     sendJson(response, 200, await app.listPreferenceConflicts({
       personalSpaceId: url.searchParams.get('personalSpaceId'),

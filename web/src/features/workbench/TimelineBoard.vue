@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { currentLocale, t } from '@/i18n'
+import { taskStatusChipTone } from '@/features/project-agents/task-labels'
 import { UiAvatar, UiChip } from '@/ui'
 import type { WorkbenchBoard } from './workbench-board'
 import { laneOf, timelineHours } from './workbench-model'
@@ -9,10 +10,6 @@ import { laneOf, timelineHours } from './workbench-model'
 // 时间线: the last day, hour by hour: who did what, where, and how it ended.
 const props = defineProps<{ board: WorkbenchBoard }>()
 const hours = computed(() => timelineHours(props.board.tasks, Date.now(), currentLocale()))
-const tone = (status: string) => {
-  const lane = laneOf({ status } as never)
-  return lane === 'stuck' ? 'danger' : lane === 'waiting' ? 'warning' : lane === 'running' ? 'accent' : 'neutral'
-}
 const lead = (task: { leadAgentId?: string | null; ownerAgentId?: string | null }) => props.board.agentFace(task.leadAgentId ?? task.ownerAgentId)
 </script>
 
@@ -30,7 +27,7 @@ const lead = (task: { leadAgentId?: string | null; ownerAgentId?: string | null 
               <span><b>{{ lead(task).name }}</b> · {{ board.projectName(task.personalProjectId) }}</span>
               <strong>{{ task.title }}</strong>
             </span>
-            <UiChip :tone="tone(task.status)">{{ board.statusLabel(task.status) }}</UiChip>
+            <UiChip :tone="taskStatusChipTone(task.status)">{{ board.statusLabel(task.status) }}</UiChip>
           </RouterLink>
         </li>
       </ul>

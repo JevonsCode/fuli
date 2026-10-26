@@ -32,7 +32,6 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
     { key: 'memory', icon: 'memory', to: knowledge, owns: ['/knowledge', '/preferences', '/organize', '/tags'], sections: [
       { key: 'knowledge', to: knowledge, owns: ['/knowledge'] },
       { key: 'preferences', to: '/preferences', owns: ['/preferences'] },
-      { key: 'writing', to: '/preferences/writing', owns: ['/preferences/writing'] },
       { key: 'organize', to: '/organize', owns: ['/organize'] },
       { key: 'tags', to: '/tags', owns: ['/tags'] },
     ] },
@@ -52,7 +51,7 @@ export function activeDestination(destinations: readonly NavDestination[], path:
   return destinations.find(destination => owns(destination.owns, path, destination.exact))
 }
 
-// The longest owning prefix wins, so /preferences/writing selects 品味, not 偏好.
+// The longest owning prefix wins, so /project-agents/manage selects 编排, not 全部.
 export function activeSection(destination: NavDestination | undefined, path: string): NavSection | undefined {
   return destination?.sections
     .filter(section => owns(section.owns, path))

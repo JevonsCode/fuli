@@ -44,12 +44,6 @@ export const router = createRouter({
       meta: { title: 'routes.preferences.title', layout: 'column' },
     },
     {
-      path: '/preferences/writing',
-      name: 'writing-taste',
-      component: () => import('@/pages/WritingTastePage.vue'),
-      meta: { title: 'routes.writingTaste.title', layout: 'column' },
-    },
-    {
       path: '/personal/:spaceId/projects/:projectId/:mode/:itemKind/:itemId',
       name: 'personal-project-item',
       component: () => import('@/pages/PersonalProjectsPage.vue'),
