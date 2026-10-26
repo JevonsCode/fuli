@@ -31,9 +31,6 @@ const seats = computed(() => props.room.members.map(member => ({
 const sender = (address: string) => byAddress.value.get(address)
 const senderName = (address: string) => sender(address)?.name ?? t('roundtable.unknownAgent')
 const initial = (address: string) => senderName(address).trim().slice(0, 1).toUpperCase()
-const record = (value: unknown) => JSON.stringify(value, null, 2)
-// The full record as returned, without repeating the messages shown below it.
-const roomRecord = computed(() => { const { messages: _messages, ...rest } = props.room; return record(rest) })
 
 const body = ref<HTMLElement | null>(null)
 const unseen = ref<{ id: string; count: number } | null>(null)
@@ -87,10 +84,6 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
         <summary>{{ t('roundtable.participants', { count: seats.length }) }}</summary>
         <RoundtableSeats :seats="seats" />
       </details>
-      <details class="roundtable-chat-fold" data-roundtable-record>
-        <summary>{{ t('roundtable.recordDetails') }}</summary>
-        <pre tabindex="0">{{ roomRecord }}</pre>
-      </details>
     </header>
     <div ref="body" class="ui-conversation-detail-body">
       <ol v-if="room.messages.length" class="roundtable-chat-messages">
@@ -103,7 +96,6 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
               <time class="ui-meta" :datetime="message.createdAt">{{ time(message.createdAt) }}</time>
             </p>
             <p class="roundtable-chat-body">{{ message.body }}</p>
-            <details class="roundtable-chat-fold"><summary>{{ t('roundtable.recordDetails') }}</summary><pre tabindex="0">{{ record(message) }}</pre></details>
           </div>
         </li>
       </ol>
@@ -123,7 +115,6 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
 <style scoped>
 .roundtable-chat-title { overflow-wrap: anywhere; }
 .roundtable-chat-fold summary { cursor: pointer; color: var(--color-muted); font-size: 12px; }
-.roundtable-chat-fold pre { overflow: auto; max-height: 240px; margin: 4px 0 0; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .roundtable-chat-messages { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
 .roundtable-chat-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; max-width: 760px; }
 .roundtable-chat-avatar { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); font-size: 12px; font-weight: 650; }

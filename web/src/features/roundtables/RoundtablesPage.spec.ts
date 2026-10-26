@@ -4,12 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const config = vi.hoisted(() => ({ space: null as { id: string } | null }))
 const getJson = vi.fn()
+const postJson = vi.fn()
+const putJson = vi.fn()
 vi.mock('@/stores/console', async () => {
   const { reactive } = await import('vue')
   const store = reactive({ activePersonalSpace: null as { id: string } | null })
   return { useConsoleStore: () => { store.activePersonalSpace = config.space; return store } }
 })
-vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson: (url: string) => getJson(url) }))
+vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(),
+  getJson: (url: string) => getJson(url), postJson: (url: string, body: unknown) => postJson(url, body),
+  putJson: (url: string, body: unknown) => putJson(url, body) }))
 
 import { setLocale } from '@/i18n'
 import RoundtablesPage from './RoundtablesPage.vue'
@@ -38,7 +42,7 @@ async function mountAt(path: string) {
 }
 
 describe('RoundtablesPage', () => {
-  beforeEach(() => { setLocale('zh-CN', { persist: false }); getJson.mockReset() })
+  beforeEach(() => { setLocale('zh-CN', { persist: false }); getJson.mockReset(); postJson.mockReset(); putJson.mockReset() })
 
   it('gives each participant one stable identity colour across the participant chips and timeline', async () => {
     getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] } : detail)
@@ -62,13 +66,13 @@ describe('RoundtablesPage', () => {
     expect(wrapper.get('[data-roundtable-back]').attributes('href')).toBe('/roundtables')
     const timeline = wrapper.get('[data-testid="roundtable-timeline"]')
     expect(timeline.text()).toContain('Claude Code')
-    expect(timeline.text()).toContain('发给 Nova Lane')
+    expect(timeline.text()).toContain('Nova Lane 已回复')
     expect(timeline.text()).toContain('评审过了')
     expect(timeline.text()).toContain('唤醒原会话回答')
     wrapper.unmount()
   })
 
-  it('keeps one-way requests apart from the conversation and says who and why it waits', async () => {
+  it('shows one-way requests in the chat and says who and why it waits', async () => {
     const waiting = { ...thread, waiting: true, waitingFor: ['Cora Fenn'] }
     const pendingDetail = { ...detail, messages: [
       ...detail.messages,
@@ -82,17 +86,15 @@ describe('RoundtablesPage', () => {
     expect(wrapper.get('[data-roundtable-waiting]').text()).toBe('等待 Cora Fenn')
     await wrapper.vm.$router.push('/roundtables/thread-1')
     await flushPromises()
-    const exchanges = wrapper.get('[data-roundtable-exchanges]')
-    expect(exchanges.text()).toContain('评审过了')
-    expect(exchanges.text()).not.toContain('能看一下部署吗？')
-    const requests = wrapper.findAll('[data-roundtable-request]')
-    expect(requests.map(request => request.text())).toEqual([
-      expect.stringContaining('等待 Cora Fenn'),
-      expect.stringContaining('已发给 Remote Lead'),
+    // One chat: every message in order, each with where it stands for its recipient.
+    const bubbles = wrapper.findAll('[data-roundtable-bubble]')
+    expect(bubbles.map(bubble => bubble.text())).toEqual([
+      expect.stringContaining('登录重构评审过了吗？'), expect.stringContaining('评审过了'),
+      expect.stringContaining('能看一下部署吗？'), expect.stringContaining('远端可以接吗？'),
     ])
-    expect(requests[0]!.text()).toContain('对方没有可唤醒的客户端会话')
-    expect(requests[1]!.text()).toContain('未送达')
-    expect(requests[1]!.text()).toContain('发送到对方设备失败')
+    expect(bubbles[2]!.text()).toContain('没能立即叫醒 Cora Fenn：对方没有这台电脑上能叫醒的客户端')
+    expect(bubbles[3]!.text()).toContain('没有送到 Remote Lead：发送到对方设备失败')
+    expect(wrapper.find('[data-roundtable-record]').exists()).toBe(false)
     const seats = wrapper.findAll('[data-roundtable-seat]')
     expect(seats.map(seat => seat.text())).toEqual([
       expect.stringContaining('Milo Reed'), expect.stringContaining('Nova Lane'),
@@ -148,12 +150,12 @@ describe('RoundtablesPage', () => {
     wrapper.unmount()
   })
 
-  it('explains that Agents start conversations themselves when there are none', async () => {
+  it('offers a new conversation when there are none and says where Agent conversations come from', async () => {
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/roundtable/chats?') ? { chats: [], hasMore: false } : { threads: [] })
     const wrapper = await mountAt('/roundtables')
-    expect(wrapper.text()).toContain('还没有 Agent 之间的对话')
+    expect(wrapper.text()).toContain('还没有对话')
     expect(wrapper.text()).toContain('message_agent')
-    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.get('[data-roundtable-start]').text()).toBe('新对话')
     wrapper.unmount()
   })
 })
