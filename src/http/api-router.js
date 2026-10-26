@@ -13,6 +13,7 @@ import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
 import { handleModelBackendApiRequest } from '../model-backends/http.js';
+import { handleModelKeyRequest } from '../model-backends/keys-http.js';
 import { TONBORG_OPERATIONS } from '../judgment/backend.js';
 import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { JEFA_OPERATION } from '../graphiti/jefa-board-match.js';
@@ -35,11 +36,13 @@ export async function handleApiRequest({
   knowledgeOwnerReads = null,
   knowledgeTags = null,
   modelRoleSettings = null,
+  modelSecrets = null,
   readModelEvaluation = null,
   judgmentUndo = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
+  if (await handleModelKeyRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,

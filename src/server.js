@@ -38,6 +38,7 @@ import { knowledgeOwnerReads as createKnowledgeOwnerReads } from './knowledge-ow
 import { reviewUndoConsole } from './judgment/review-undo.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
 import { createModelRoleSettings } from './model-backends/role-settings.js';
+import { createModelSecretStore } from './model-backends/secret-store.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -115,6 +116,10 @@ export async function createServer(options = {}) {
   const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
     ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath,
       { history: application.modelSettingsHistory }) : null);
+  // The model keys the settings page saves, where `fuli models set-key` saves them; reached only by the loopback route.
+  const modelSecrets = options.modelSecrets ?? (localOptions.runtimeConfigPath
+    ? createModelSecretStore({ path: resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelSecretStorePath })
+    : null);
   // The latest local evaluation of a role's model, as the model settings page shows it (rec#10 D-36.6).
   const readModelEvaluation = options.readModelEvaluation ?? (localOptions.runtimeConfigPath
     ? key => latestEvaluation(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelEvaluationsPath, key) : null);
@@ -212,6 +217,7 @@ export async function createServer(options = {}) {
       knowledgeOwnerReads,
       knowledgeTags,
       modelRoleSettings,
+      modelSecrets,
       readModelEvaluation,
       judgmentUndo,
       authority,
@@ -307,6 +313,7 @@ async function handleRequest({
   knowledgeOwnerReads,
   knowledgeTags,
   modelRoleSettings,
+  modelSecrets,
   readModelEvaluation,
   judgmentUndo,
   authority,
@@ -340,6 +347,7 @@ async function handleRequest({
     knowledgeOwnerReads,
     knowledgeTags,
     modelRoleSettings,
+    modelSecrets,
     readModelEvaluation,
     judgmentUndo
   })) return;
