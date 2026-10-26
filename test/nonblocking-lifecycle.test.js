@@ -4,6 +4,7 @@ import { codexHookTimeoutMs, codexStopLifecycleOutput, runCodexLifecycleCommand 
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
 import { cursorLifecycleOutput } from '../src/agents/cursor/lifecycle-hook.js';
 import { spawn, spawnSync } from 'node:child_process';
+import { CHILD_HANG_GUARD_MS } from '../test-support/child-process-guard.js';
 
 for (const [host, run] of [
   ['Codex', (input, invoke) => codexStopLifecycleOutput(input, invoke)],
@@ -29,7 +30,7 @@ test('Codex command deadline permits submission even if input never finishes', a
   let stdout = '', stderr = '';
   child.stdout.on('data', chunk => { stdout += chunk; });
   child.stderr.on('data', chunk => { stderr += chunk; });
-  const timeout = setTimeout(() => child.kill('SIGKILL'), 3000);
+  const timeout = setTimeout(() => child.kill('SIGKILL'), CHILD_HANG_GUARD_MS);
   const code = await new Promise((resolve, reject) => {
     child.once('error', reject); child.once('close', resolve);
   });
@@ -62,7 +63,7 @@ test('Codex command failure preserves a known native session for checkpointable 
     '--event', 'UserPromptSubmit', '--runtime-config', '/synthetic/private-missing.json'], {
     input: JSON.stringify({ session_id: 'synthetic-native-session', cwd: '/synthetic/private-project',
       prompt: 'PRIVATE_PROMPT', transcript_path: 'PRIVATE_TRANSCRIPT' }),
-    encoding: 'utf8', timeout: 5000
+    encoding: 'utf8', timeout: CHILD_HANG_GUARD_MS
   });
   assert.equal(result.status, 0);
   assert.equal(result.stderr, '');
