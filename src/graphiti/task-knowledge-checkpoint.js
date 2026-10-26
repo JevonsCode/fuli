@@ -14,6 +14,7 @@ import { captureDisabled, taskCaptureScope } from './capture-decision.js';
 import { checkpointCaptureDecision, storedCheckpoint } from './checkpoint-capture.js';
 import { receiptNotices } from './capture-notice.js';
 import { standingReceiptNotices } from './task-entry-standing-owner.js';
+import { namedFlaReceiptNotices } from './task-entry-named-fla.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
@@ -99,7 +100,7 @@ export async function checkpointTaskKnowledge(application, {
         agentId: task.projectAgentId ?? null, name: team.name, role: team.role, sourceApplication: task.sourceApplication,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
         persistence: conversation?.status ?? null, collaborators: team.collaborators,
-        notices: [...standingReceiptNotices(task), ...receiptNotices(captureCheck, [], { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application)],
+        notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...receiptNotices(captureCheck, [], { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application)],
         turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
