@@ -14,6 +14,7 @@ import type { ProjectAgentRecord } from "@/types";
 import { agentIdentityStyle } from "./agent-identity-color";
 import { occupationLabels } from "./agent-occupation";
 import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
+import { statusTone } from "@/features/project-agents/task-labels";
 import { agentPinsText } from "./agent-pins";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentDisplayName, agentResponsibility, profileProjectIds } from "./profile-model";
@@ -92,7 +93,7 @@ const pinLabel = computed(() =>
       <div class="grid gap-1">
         <dt class="text-xs font-semibold text-muted-foreground">{{ t("agentProfiles.working") }}</dt>
         <dd class="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span class="agent-card-work-status" :class="`is-${workStatus}`" :data-work-status="workStatus">
+          <span class="agent-card-work-status" :class="`is-${workStatus}`" :data-work-status="workStatus" :data-tone="statusTone(workStatus)">
             <span class="agent-card-work-status-text">{{ workStatusLabel }}</span>
           </span>
           <RouterLink v-if="entry?.taskId" class="min-w-0 font-semibold text-foreground no-underline [overflow-wrap:anywhere] hover:text-primary hover:underline"

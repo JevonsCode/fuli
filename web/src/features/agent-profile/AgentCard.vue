@@ -23,6 +23,7 @@ import { agentIdentityStyle } from "./agent-identity-color";
 import { loopPhaseDelay } from "@/lib/motion-phase";
 import { occupationLabels } from "./agent-occupation";
 import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
+import { statusTone } from "@/features/project-agents/task-labels";
 import type { ProjectAgentRecord } from "@/types";
 
 const WORKING_RING_MS = 2400;
@@ -80,6 +81,7 @@ const taskLink = computed(() => ({
 const statusDetail = computed(() => workbenchStatusDetail(props.entry));
 const occupation = computed(() => occupationLabels(props.agent.occupation));
 const workStatusClass = computed(() => `is-${workStatus.value}`);
+const workTone = computed(() => statusTone(workStatus.value));
 // Jefa and Bole are fixed roles every space has.
 const fixedRole = computed(() => ({ coordinator: t("agentProfiles.roles.projectManager"), hr: t("agentProfiles.roles.hr") })[props.agent.profile.agentType as string] ?? "");
 function localized(
@@ -182,6 +184,7 @@ function surfaceClick(event: MouseEvent) {
             class="agent-card-work-status"
             :class="workStatusClass"
             :data-work-status="workStatus"
+            :data-tone="workTone"
             :aria-label="`${t('agentRedesign.workStatus.label')} · ${workStatusLabel}`"
           >
             <span class="agent-card-work-status-text">{{ workStatusLabel }}</span>
@@ -228,7 +231,7 @@ function surfaceClick(event: MouseEvent) {
         {{ lastUpdate ? t("agentRedesign.workbench.lastUpdate", { time: lastUpdate }) : t("agentRedesign.workbench.lastUpdateUnknown") }}
       </span>
     </p>
-    <p v-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
+    <p v-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :data-tone="workTone" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
     <p class="agent-card-responsibility" data-agent-summary :title="agentResponsibility(agent)">{{ agentResponsibility(agent) }}</p>
     <div v-if="capabilities.length" class="agent-inline-skills">
       <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>
