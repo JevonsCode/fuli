@@ -10,7 +10,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { claudeLifecycleOutput } from '../../src/agents/claude-code/lifecycle-hook.js';
+import { CLAUDE_REPLAYED_SOURCES, claudeLifecycleOutput } from '../../src/agents/claude-code/lifecycle-hook.js';
 import { codexLifecycleOutput } from '../../src/agents/codex/lifecycle-hook.js';
 import { codexPreferenceEvidence } from '../../src/agents/codex/preference-evidence.js';
 import { claudePreferenceEvidence } from '../../src/agents/claude-code/preference-evidence.js';
@@ -25,6 +25,11 @@ const SPACE = 'synthetic-space';
 const PROJECT = 'project';
 const AGENT = 'lead';
 const HOOKS = { codex: codexLifecycleOutput, claude_code: claudeLifecycleOutput };
+// The SessionStart sources after which the host replays the same transcript
+// into the model's context, so the model keeps what it saw: Claude Code's
+// resume (rec#11 D-69), the adapter's own list so the two cannot drift. Every
+// other source starts a new model view.
+const REPLAYED_SESSION_STARTS = { codex: [], claude_code: CLAUDE_REPLAYED_SOURCES };
 const bytes = text => Buffer.byteLength(text, 'utf8');
 const sha = text => createHash('sha256').update(text).digest('hex');
 const frameOf = text => JSON.parse(text.split('\n').at(-1));
@@ -151,6 +156,7 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
     };
     session.sessionStart = async source => {
       await resetHook('SessionStart', { source });
+      if (REPLAYED_SESSION_STARTS[client].includes(source)) return;
       view = model();
       session.generation++;
     };
