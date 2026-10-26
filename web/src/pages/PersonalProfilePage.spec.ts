@@ -366,6 +366,12 @@ describe('PersonalProfilePage', () => {
     await finishProfileLoading()
 
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(3)
+    // The count names the filter and the total, so it never reads as a cap.
+    const count = wrapper.get('[data-profile-count]')
+    expect(count.text()).toBe('3 条个人理解')
+    expect(count.attributes('data-term')).toBe('memory.preferenceCount')
+    await wrapper.get('[data-profile-aspects] button:nth-child(3)').trigger('click')
+    expect(wrapper.get('[data-profile-count]').text()).toBe('个性 1 条 · 共 3 条')
   })
 
   it('filters collaboration preferences by global or one exact personal project', async () => {

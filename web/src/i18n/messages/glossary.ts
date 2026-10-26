@@ -13,6 +13,10 @@ export const glossaryMessages = {
       weight: '权重',
       destination: '导航',
       section: '页面',
+      memory: '记忆',
+    },
+    memory: {
+      preferenceCount: { label: '偏好条数', body: '前一个数是按当前维度和范围列出的条数，后一个是全部偏好的总数（含历史）。偏好的条数没有上限。' },
     },
     destination: {
       constellation: '打开 FULI 的第一页：待你处理的事、当前工作、最近项目和服务状态。',
@@ -87,6 +91,10 @@ export const glossaryMessages = {
       weight: 'Weight',
       destination: 'Navigation',
       section: 'Page',
+      memory: 'Memory',
+    },
+    memory: {
+      preferenceCount: { label: 'Preference count', body: 'The first number is how many preferences the chosen aspect and scope list; the second is how many there are in all, history included. There is no limit on how many preferences FULI keeps.' },
     },
     destination: {
       constellation: 'The first page of FULI: what needs you, current work, recent projects and service status.',

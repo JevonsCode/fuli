@@ -211,6 +211,12 @@ const stats = computed<UiStat[]>(() => [
       : t('preferences.profile.summary.noConflictsAria') },
 ])
 const aspectSegments = computed(() => aspectOptions.value.map(([value, label]) => ({ value, label })))
+// The filters that narrow the list, by the names their controls show; without
+// one, the list differs from the total only by leaving history out.
+const filterName = computed(() => [
+  activeAspect.value === 'all' ? '' : aspectOptions.value.find(([value]) => value === activeAspect.value)?.[1],
+  activeScope.value === 'all' ? '' : scopeOptions.value.find(({ value }) => value === activeScope.value)?.label,
+].filter(Boolean).join(' / ') || t('common.status.current'))
 const countText = computed(() => {
   if (conflictsOnly.value) return t('preferences.profile.filters.conflictsCount', { visible: visibleConflicts.value.length, total: conflicts.value.length })
   if (activeReviewState.value !== 'all') return t('preferences.profile.filters.reviewCount', { count: visibleItems.value.length,
@@ -220,7 +226,7 @@ const countText = computed(() => {
           : t('preferences.profile.summary.confirmed') })
   return visibleItems.value.length === items.value.length
     ? t('preferences.profile.filters.personalUnderstanding', { count: items.value.length })
-    : t('preferences.profile.filters.visibleCount', { visible: visibleItems.value.length, total: items.value.length })
+    : t('preferences.profile.filters.visibleCount', { filter: filterName.value, visible: visibleItems.value.length, total: items.value.length })
 })
 function selectStat(key: string) {
   if (key === 'conflict') toggleConflictWorkbench()
@@ -544,7 +550,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
         :options="scopeOptions"
       />
       <template #end>
-        <span v-if="graph" data-profile-count>{{ countText }}</span>
+        <span v-if="graph" data-profile-count data-term="memory.preferenceCount">{{ countText }}</span>
         <UiIconButton icon="refresh" size="sm" :label="t('common.actions.refresh')" :disabled="loading" @click="load()" />
       </template>
     </UiToolbar>

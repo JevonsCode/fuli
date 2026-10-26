@@ -4,7 +4,7 @@ import { messages, SUPPORTED_LOCALES } from '@/i18n'
 // already show, so a click on visible text finds its term in either language.
 // A tagged term is found only through its element's data-term: its label is a
 // common word (全部, 我的, 知识) that also appears where it means something else.
-export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'destination' | 'section'
+export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'destination' | 'section' | 'memory'
 export interface GlossaryTerm { id: string; group: GlossaryGroup; labelKey: string; bodyKey: string; tagged?: true }
 
 const term = (group: GlossaryGroup, key: string, labelKey: string, bodyKey: string): GlossaryTerm =>
@@ -32,6 +32,8 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     taggedTerm('destination', key, `shell.destinations.${key}`, `glossary.destination.${key}`)),
   ...Object.keys(sections).map(key =>
     taggedTerm('section', key, `shell.sections.${key}`, `glossary.section.${key}`)),
+  ...['preferenceCount'].map(key =>
+    taggedTerm('memory', key, `glossary.memory.${key}.label`, `glossary.memory.${key}.body`)),
 ]
 
 const byId = new Map(GLOSSARY_TERMS.map(entry => [entry.id, entry]))
