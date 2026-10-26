@@ -20,7 +20,7 @@ import { createModelSettingsHistory } from '../src/model-backends/settings-histo
 import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { createStandingAssignments } from '../src/standing-assignments/port.js';
-import { TaskScheduleStore } from '../src/task-schedules/store.js';
+import { AGENT_APPS_FIRST_RELEASE } from './fixtures/agent-apps-first-release.js';
 
 // rec#17 D-09: every local store and the format it declares. The graph's
 // counterpart is graph-provider/tests/test_graph_format.py.
@@ -53,35 +53,14 @@ const SQLITE_STORES = {
     store.register({ personalSpaceId: 'space', projectId: 'project', leadAgentId: 'agent', terms: ['synthetic'],
       responsibility: 'Synthetic work', source: 'user' });
     return () => store.close();
-  },
-  'task-schedules': (path) => { const store = new TaskScheduleStore(path); return () => store.close(); }
+  }
 };
 
 // The first shipped schema of each store that has migrations, as an earlier
 // FULI left it: no version, no ledger, none of the later columns or tables.
 const FIRST_RELEASES = {
   // rec#7 part 1, before presence checks: an approval with presence only.
-  'agent-apps': `CREATE TABLE agent_apps (app_id TEXT PRIMARY KEY, provider TEXT NOT NULL, personal_space_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL,
-      active_version TEXT, data_format INTEGER, deletion_ticket TEXT, deletion_expires_at TEXT,
-      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_used_at TEXT);
-    CREATE TABLE agent_app_versions (app_id TEXT NOT NULL, version TEXT NOT NULL, state TEXT NOT NULL, digest TEXT NOT NULL,
-      manifest TEXT NOT NULL, files INTEGER NOT NULL, bytes INTEGER NOT NULL, submitted_at TEXT NOT NULL,
-      PRIMARY KEY (app_id, version));
-    CREATE TABLE agent_app_approvals (app_id TEXT NOT NULL, version TEXT NOT NULL, digest TEXT NOT NULL, permissions TEXT NOT NULL,
-      data TEXT NOT NULL, resident INTEGER NOT NULL, approved_by TEXT NOT NULL,
-      entrypoint TEXT NOT NULL CHECK (entrypoint IN ('cli', 'http')),
-      presence TEXT NOT NULL CHECK (presence IN ('unverified', 'hello', 'touchid', 'polkit')),
-      approved_at TEXT NOT NULL, PRIMARY KEY (app_id, version));
-    CREATE TABLE agent_app_tokens (token_hash TEXT PRIMARY KEY, app_id TEXT NOT NULL, version TEXT NOT NULL, digest TEXT NOT NULL,
-      permissions TEXT NOT NULL, issued_at TEXT NOT NULL, revoked_at TEXT, revoked_reason TEXT);
-    CREATE TABLE agent_app_events (id INTEGER PRIMARY KEY AUTOINCREMENT, app_id TEXT NOT NULL, at TEXT NOT NULL,
-      action TEXT NOT NULL, version TEXT, actor TEXT, detail TEXT);`,
-  'task-schedules': `CREATE TABLE task_schedules(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL,
-      revision INTEGER NOT NULL, enabled INTEGER NOT NULL, body TEXT NOT NULL, next_run_at TEXT NOT NULL,
-      paused_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE task_schedule_runs(schedule TEXT NOT NULL, slot TEXT NOT NULL, task_id TEXT,
-      status TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(schedule, slot));`,
+  'agent-apps': AGENT_APPS_FIRST_RELEASE,
   roundtable: `CREATE TABLE threads (id TEXT PRIMARY KEY, space_id TEXT NOT NULL, project_id TEXT, subject TEXT NOT NULL,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE messages (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES threads(id), seq INTEGER NOT NULL,

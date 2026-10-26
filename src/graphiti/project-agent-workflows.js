@@ -359,12 +359,6 @@ export async function viewProjectAgentTask(application, input) {
   return projectAgentTaskRecord(value.task ?? value);
 }
 
-// Null is the Provider's answer that no submit with this key created a task.
-export async function findProjectAgentTaskByIdempotencyKey(application, input) {
-  const value = await application.personal.findProjectAgentTaskByIdempotencyKey(input);
-  return value?.task ? projectAgentTaskRecord(value.task) : null;
-}
-
 export async function recordProjectAgentTaskActivity(application, input) {
   const activity = await enrichProjectAgentTaskActivity(
     input,

@@ -38,7 +38,7 @@ describe('localized route metadata', () => {
   it('puts collections on the work canvas, single-column pages in the content column and settings in the form column', () => {
     // rec#38: a profile, a detail page or a list of rows stays readable on a wide screen.
     expect(['/', '/agents/space/agent', '/project-agents/manage/space/agent'].map(layoutOf)).toEqual(['column', 'column', 'column'])
-    expect(['/project-agents', '/project-agents/schedules', '/project-agents/manage'].map(layoutOf)).toEqual(['canvas', 'canvas', 'canvas'])
+    expect(['/project-agents', '/project-agents/occupations', '/project-agents/manage'].map(layoutOf)).toEqual(['canvas', 'canvas', 'canvas'])
     expect(router.resolve('/settings').meta.layout).toBe('form')
     expect(layoutOf('/settings/models')).toBe('form')
     // An Agent's profile and its 编排 page are detail pages; settings keeps a sticky save bar.

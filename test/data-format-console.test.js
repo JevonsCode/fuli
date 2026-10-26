@@ -39,13 +39,13 @@ test('the console previews, applies with the digest and undoes, as entrypoint ht
   await withServer(migrations(calls), async (url) => {
     assert.deepEqual(await (await fetch(`${url}/api/data-format`)).json(), PLAN);
     assert.equal((await post(`${url}/api/data-format/apply`, { digest: PLAN.digest })).status, 200);
-    assert.equal((await post(`${url}/api/data-format/rollback`, { label: 'task-schedules.sqlite',
-      migrationId: 'task-schedules/3-run-recovery' })).status, 200);
+    assert.equal((await post(`${url}/api/data-format/rollback`, { label: 'agent-apps/registry.sqlite',
+      migrationId: 'agent-apps/7-identity-keys' })).status, 200);
     assert.equal((await post(`${url}/api/data-format/apply`, { digest: 'not-a-digest' })).status, 400);
     assert.equal((await post(`${url}/api/data-format/apply`, { digest: PLAN.digest, yes: true })).status, 400);
   });
   assert.deepEqual(calls, [['apply', { digest: PLAN.digest, actor: { entrypoint: 'http' } }],
-    ['rollback', { label: 'task-schedules.sqlite', migrationId: 'task-schedules/3-run-recovery',
+    ['rollback', { label: 'agent-apps/registry.sqlite', migrationId: 'agent-apps/7-identity-keys',
       actor: { entrypoint: 'http' } }]]);
 });
 

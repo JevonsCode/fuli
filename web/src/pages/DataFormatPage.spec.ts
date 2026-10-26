@@ -13,9 +13,9 @@ const DIGEST = 'a'.repeat(64)
 const plan = (digest = DIGEST) => ({
   digest,
   stores: [{
-    label: 'task-schedules.sqlite', store: 'task-schedules', kind: 'sqlite', action: 'apply', automatic: [],
-    step: { id: 'task-schedules/3-run-recovery', summary: 'recoverable claims', kind: 'backfill', fromVersion: 2,
-      toVersion: 3, count: 12, sampleIds: ['schedule-alpha-0001#1', 's2#2'], scopeDigest: 'b'.repeat(64) },
+    label: 'agent-apps/registry.sqlite', store: 'agent-apps', kind: 'sqlite', action: 'apply', automatic: [],
+    step: { id: 'agent-apps/7-identity-keys', summary: 'identity keys', kind: 'backfill', fromVersion: 6,
+      toVersion: 7, count: 12, sampleIds: ['schedule-alpha-0001#1', 's2#2'], scopeDigest: 'b'.repeat(64) },
     undo: 'available', digest: 'c'.repeat(64),
   }, {
     label: 'graph (personal)', store: 'graph', kind: 'neo4j', action: 'apply', automatic: [],
@@ -84,7 +84,7 @@ describe('DataFormatPage', () => {
     expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
     api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [{ label: 'graph (personal)',
       status: 'applied', migrationId: 'graph/9-group-id-separators' }],
-    pruned: [{ kind: 'pruned', store: 'task-schedules' }, { kind: 'prune_unverified', store: 'graph' }] })
+    pruned: [{ kind: 'pruned', store: 'agent-apps' }, { kind: 'prune_unverified', store: 'graph' }] })
     await wrapper.get('#data-format-reviewed').trigger('click')
     await wrapper.get('[data-apply]').trigger('click')
     await flushPromises()
@@ -120,8 +120,8 @@ describe('DataFormatPage', () => {
     const wrapper = await mountPage()
     const cards = wrapper.findAll('[data-store-plan]')
     expect(cards).toHaveLength(2)
-    expect(cards[0].text()).toContain('task-schedules/3-run-recovery')
-    expect(cards[0].text()).toContain('2 → 3')
+    expect(cards[0].text()).toContain('agent-apps/7-identity-keys')
+    expect(cards[0].text()).toContain('6 → 7')
     expect(cards[0].text()).toContain('12 条')
     expect(cards[0].text()).toContain('另 10 条')
     expect(cards[0].find('[title="schedule-alpha-0001#1"]').exists()).toBe(true)
@@ -135,14 +135,14 @@ describe('DataFormatPage', () => {
     expect(apply.attributes('disabled')).toBeUndefined()
 
     api.postJson.mockResolvedValue({ status: 'applied', skipped: [], results: [
-      { label: 'task-schedules.sqlite', status: 'applied', migrationId: 'task-schedules/3-run-recovery', count: 12 },
+      { label: 'agent-apps/registry.sqlite', status: 'applied', migrationId: 'agent-apps/7-identity-keys', count: 12 },
       { label: 'graph (personal)', status: 'already_applied', migrationId: 'graph/9-group-id-separators' }] })
     api.getJson.mockResolvedValue({ digest: null, stores: [], blocked: [], undoable: [] })
     await apply.trigger('click')
     await flushPromises()
 
     expect(api.postJson).toHaveBeenCalledWith('/api/data-format/apply', { digest: DIGEST })
-    expect(wrapper.text()).toContain('已应用 task-schedules/3-run-recovery')
+    expect(wrapper.text()).toContain('已应用 agent-apps/7-identity-keys')
     expect(wrapper.text()).toContain('已由另一次确认应用 graph/9-group-id-separators')
     expect(wrapper.text()).toContain('没有等待确认的数据格式迁移')
   })

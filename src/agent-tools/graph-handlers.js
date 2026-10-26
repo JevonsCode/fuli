@@ -20,7 +20,6 @@ const HANDLERS = Object.freeze({
   get_judgment_policy: (app, input) => app.judgment.policy(input),
   get_model_usage: (app, input) => modelBackends(app).usage(input),
   role_work: (app, { action, ...input }) => roleWork(app)[action === 'submit' ? 'submit' : 'claim'](input),
-  manage_project_agent_schedule: (app, input) => app.taskSchedules.manage(input),
   register_standing_assignment: (app, input) => app.registerStandingAssignment(input),
   control_project_agent_task_run: (app, input) => app.controlProjectAgentTaskRun({ ...input, agentInvocation: true }),
   // An Agent reads Tonborg's records without their words (rec#50, judgment/agent-view.js).
