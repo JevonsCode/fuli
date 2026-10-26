@@ -613,7 +613,7 @@ describe('Jefa bounded progressive reads', () => {
     expect(wrapper.text()).toContain('部分项目暂不可用')
     expect(wrapper.find('.growth-loading').exists()).toBe(false)
   })
-  it('uses the same budget for catalog and board instead of restarting at the board', async () => {
+  it('counts the catalog answer as progress, then times out a hung board one idle budget later', async () => {
     vi.useFakeTimers()
     const original = getJson.getMockImplementation()!
     getJson.mockImplementation(async (url: string) => {
@@ -624,8 +624,24 @@ describe('Jefa bounded progressive reads', () => {
     const wrapper = await setup('/employees/jefa')
     await vi.advanceTimersByTimeAsync(20000)
     await vi.advanceTimersByTimeAsync(10000)
+    expect(wrapper.find('.growth-loading').exists()).toBe(true)
+    await vi.advanceTimersByTimeAsync(20000)
     expect(wrapper.find('.growth-loading').exists()).toBe(false)
     expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+  })
+  it('does not time out a slow catalog followed by a slower board', async () => {
+    vi.useFakeTimers()
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?')) await new Promise(resolve => setTimeout(resolve, 25000))
+      return original(url)
+    })
+    postJson.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve({ items: [{ id: 'a1', projectId: 'project-a', title: '慢速读取的任务', status: 'planned' }], total: 1, truncated: false }), 8000)))
+    const wrapper = await setup('/employees/jefa')
+    await vi.advanceTimersByTimeAsync(34000)
+    expect(wrapper.text()).toContain('慢速读取的任务')
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
   it('times out a hanging catalog and aborts its request without accepting late catalog data', async () => {
     vi.useFakeTimers()
@@ -1118,6 +1134,30 @@ describe('Jefa reads only the selected projects', () => {
     expect(wrapper.find('.jefa-read-clear-filter').exists()).toBe(false)
   })
 
+  it('offers to clear a saved filter after a catalog timeout too', async () => {
+    vi.useFakeTimers()
+    saveFilter(pick(4))
+    getJson.mockImplementation(() => new Promise(() => {}))
+    const wrapper = await setup('/employees/jefa')
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+    expect(wrapper.find('[role="alert"] .jefa-read-clear-filter').exists()).toBe(true)
+  })
+
+  it('does not offer to clear a saved filter when access is refused', async () => {
+    saveFilter(pick(4))
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      const result = await original(url)
+      if (url.startsWith('/api/employee-templates?')) result.templates[0].permissions = []
+      return result
+    })
+    const wrapper = await setup('/employees/jefa')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    expect(wrapper.find('.jefa-read-clear-filter').exists()).toBe(false)
+    expect(boardReads()).toEqual([])
+  })
+
   it('keeps a truncated board in its slot while its complete list loads', async () => {
     const selected = pick(0, 1, 2, 3, 4, 5)
     answerBoards(id => boardOf(id, `任务 ${id}`, true))
@@ -1189,6 +1229,35 @@ describe('Jefa reads only the selected projects', () => {
     expect(boardReads()).toEqual([selected, linked])
     expect(wrapper.getComponent(EmployeeTaskDialog).props('open')).toBe(false)
     expect(wrapper.vm.$route.query.item).toBeUndefined()
+  })
+
+  it('keeps a linked task project out of the selection status, gating only its own dialog', async () => {
+    const [selected, linked] = pick(80, 81) as [string, string]
+    saveFilter([selected])
+    let linkedBoard: () => Promise<unknown> = async () => boardOf(linked)
+    let holdLinked!: (value: unknown) => void
+    postJson.mockImplementation(async (_url: string, body: { personalProjectId: string; tool: string; arguments?: { workItemId?: string } }) => {
+      if (body.tool === 'get_task') return { item: { id: body.arguments?.workItemId, projectId: body.personalProjectId, title: '链接任务', summary: '合成详情', status: 'planned', updatedAt: '2026-10-18T17:00:00Z' } }
+      return body.personalProjectId === linked ? linkedBoard() : boardOf(body.personalProjectId)
+    })
+    const dialog = (wrapper: Wrapper) => wrapper.getComponent(EmployeeTaskDialog)
+    linkedBoard = () => new Promise(resolve => { holdLinked = resolve })
+    const wrapper = await setup(`/employees/jefa?item=space-a%2F${linked}%253At1`)
+    expect(boardReads()).toEqual([selected, linked])
+    // Waiting for the linked board shows nothing in the selection's status and keeps the board editable.
+    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+    expect(board(wrapper).props('canMoveTasks')).toBe(true)
+    expect(dialog(wrapper).props('canWrite')).toBe(false)
+    holdLinked(boardOf(linked)); await flushPromises()
+    expect(dialog(wrapper).props('canWrite')).toBe(true)
+    // A failed refresh of the linked board makes only its own dialog read-only.
+    linkedBoard = () => Promise.reject(new ApiError('unavailable', 503))
+    await refresh(wrapper)
+    expect(boardReads()).toEqual([selected, linked, selected, linked])
+    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+    expect(board(wrapper).props('readOnly')).toBe(false)
+    expect(dialog(wrapper).props('open')).toBe(true)
+    expect(dialog(wrapper).props('canWrite')).toBe(false)
   })
 
   it('reports a partial failure only while the failed project is in scope', async () => {

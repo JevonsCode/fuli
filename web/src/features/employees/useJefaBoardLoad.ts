@@ -26,25 +26,30 @@ export function useJefaBoardLoad(input: {
   consoleError: Ref<string>
   boards: Ref<EmployeeProjectBoard[]>
   scopeValid: () => boolean
-  /** The effectively selected project IDs, plus an open task's project: only their boards are read. */
-  scopeProjectIds: () => string[]
+  /** The effectively selected project IDs: only their boards are read and counted. */
+  selectedIds: () => string[]
+  /** An open task's project: its board is read too, for the task's own access and staleness, but not counted. */
+  linkedProjectId: () => string | undefined
   projectNames: Ref<Map<string, string>>
 }) {
   const template = ref<EmployeeTemplate | null>(null)
   // True once a catalog read finished for this space, so a null template means
   // "read in full and Jefa is absent" rather than "not read yet".
   const catalogRead = ref(false)
-  const loading = ref(false)
+  // A load (catalog or boards) is running; `loading` is what the selection still waits for.
+  const running = ref(false)
   const longWait = ref(false)
   const stage = ref<JefaReadStage>('console')
   const failure = ref('')
   const projects = ref<ManagedProject[]>([])
-  // The projects the board read covers: progress, failures, content and staleness count only these.
+  // The selected projects: progress, failures, content and staleness count only these.
   const scopeIds = ref<string[]>([])
+  // The projects whose boards are read: the selection plus a linked task's project.
+  let readScopeIds: string[] = []
   // True once this load's catalog allows board reads, so a filter change reads its new scope.
   const scopeReadable = ref(false)
   // In flight first, then queued.
-  const pendingIds = ref<string[]>([])
+  const inProgressIds = ref<string[]>([])
   // Boards read in full during this load, kept when the filter changes. Failures cover every project of this load.
   const readIds = ref<string[]>([])
   const readFailures = ref<JefaReadFailure[]>([])
@@ -65,10 +70,19 @@ export function useJefaBoardLoad(input: {
   const loadedIds = computed(() => readIds.value.filter(id => inScope.value.has(id)))
   const stale = computed(() => staleIds.value.some(id => inScope.value.has(id)))
   const hasContent = computed(() => input.boards.value.some(b => inScope.value.has(b.project.id)))
+  const pendingIds = computed(() => inProgressIds.value.filter(id => inScope.value.has(id)))
+  const loading = computed(() => running.value && (!scopeReadable.value || pendingIds.value.length > 0))
   const readOnly = computed(() => loading.value || stale.value)
+  // A catalog that could not be read (not a refusal): the board and its filter cannot show.
+  const catalogFailed = computed(() => !running.value && readFailures.value.some(f => !f.projectId && f.stage === 'catalog'
+    && !DENIED_STATUSES.some(status => f.category === `HTTP ${status}`)))
+  // Whether one task's project may be written to: a task outside the selection waits only for its own board.
+  function taskReadOnly(projectId: string) {
+    return inScope.value.has(projectId) ? readOnly.value : inProgressIds.value.includes(projectId) || staleIds.value.includes(projectId)
+  }
 
   function clearTimers() { clearTimeout(slowTimer); clearTimeout(idleTimer) }
-  function syncPending() { pendingIds.value = [...inFlight.keys(), ...queue] }
+  function syncPending() { inProgressIds.value = [...inFlight.keys(), ...queue] }
   function dropRead(projectId: string) {
     const read = inFlight.get(projectId)
     read?.controller.abort()
@@ -87,9 +101,9 @@ export function useJefaBoardLoad(input: {
     controller?.abort()
     dropReads()
     readingCatalog = false
-    loading.value = false
+    running.value = false
   }
-  function current(version: number) { return loading.value && version === generation }
+  function current(version: number) { return running.value && version === generation }
   function addFailure(projectId: string, atStage: JefaReadStage, cause: unknown) {
     readFailures.value = [...readFailures.value.filter(f => f.projectId !== projectId), {
       projectId, stage: atStage,
@@ -99,7 +113,7 @@ export function useJefaBoardLoad(input: {
   }
   function finish() {
     clearTimers()
-    loading.value = false
+    running.value = false
     readingCatalog = false
     if (!failures.value.length) updatedAt.value = new Date().toISOString()
   }
@@ -121,8 +135,8 @@ export function useJefaBoardLoad(input: {
     idleTimer = setTimeout(() => {
       if (!current(version)) return
       timedOut.value = true
-      for (const id of pendingIds.value) addFailure(id, snapshotIds.has(id) ? 'snapshot' : 'board', timeoutError())
-      if (!pendingIds.value.length) addFailure('', stage.value, timeoutError())
+      for (const id of inProgressIds.value) addFailure(id, snapshotIds.has(id) ? 'snapshot' : 'board', timeoutError())
+      if (!inProgressIds.value.length) addFailure('', stage.value, timeoutError())
       dropReads()
       finish()
       ++generation // Even transports that ignore abort must not publish late results.
@@ -133,7 +147,7 @@ export function useJefaBoardLoad(input: {
     cancel()
     timedOut.value = false; longWait.value = false
     controller = new AbortController()
-    loading.value = true
+    running.value = true
     const version = generation
     slowTimer = setTimeout(() => { if (current(version)) longWait.value = true }, LONG_WAIT_MS)
     armIdleBudget(version)
@@ -141,7 +155,7 @@ export function useJefaBoardLoad(input: {
   }
   function begin(preserve: boolean) {
     const version = start()
-    failure.value = ''; readFailures.value = []; readIds.value = []; scopeReadable.value = false
+    failure.value = ''; readFailures.value = []; readIds.value = []; readScopeIds = []; scopeReadable.value = false
     if (!preserve) { input.boards.value = []; template.value = null; projects.value = []; scopeIds.value = []; updatedAt.value = ''; catalogRead.value = false }
     staleIds.value = input.boards.value.map(b => b.project.id)
     stage.value = input.spaceId.value ? 'catalog' : 'console'
@@ -156,7 +170,7 @@ export function useJefaBoardLoad(input: {
     dropRead(projectId)
     syncPending()
     stage.value = snapshotIds.size ? 'snapshot' : 'board'
-    if (!pendingIds.value.length) finish()
+    if (!inProgressIds.value.length) finish()
     else pump(version, spaceId)
   }
   async function readProject(project: ManagedProject, read: BoardRead, version: number, spaceId: string) {
@@ -210,11 +224,19 @@ export function useJefaBoardLoad(input: {
   }
   // Moves the read to the current scope: reads of projects no longer in it stop,
   // reads still in it continue, and newly added projects join the queue. Returns how many joined.
+  function wantedScope() {
+    const selected = new Set(input.selectedIds())
+    const linked = input.linkedProjectId()
+    return {
+      selected: projects.value.filter(p => selected.has(p.id)).map(p => p.id),
+      read: projects.value.filter(p => selected.has(p.id) || p.id === linked).map(p => p.id),
+    }
+  }
   function readScope(version: number, spaceId: string, previous: ReadonlySet<string>) {
-    const wanted = new Set(input.scopeProjectIds())
-    const scope = projects.value.filter(p => wanted.has(p.id)).map(p => p.id)
+    const { selected, read: scope } = wantedScope()
     const next = new Set(scope)
-    scopeIds.value = scope
+    scopeIds.value = selected
+    readScopeIds = scope
     for (const id of [...inFlight.keys()]) if (!next.has(id)) dropRead(id)
     queue = queue.filter(id => next.has(id))
     const added = scope.filter(id => !previous.has(id) && !readIds.value.includes(id) && !inFlight.has(id) && !queue.includes(id))
@@ -222,7 +244,7 @@ export function useJefaBoardLoad(input: {
     queue.push(...added)
     syncPending()
     stage.value = snapshotIds.size ? 'snapshot' : 'board'
-    if (!pendingIds.value.length) finish()
+    if (!inProgressIds.value.length) finish()
     else pump(version, spaceId)
     return added.length
   }
@@ -243,6 +265,7 @@ export function useJefaBoardLoad(input: {
     try {
       const templates = await fetchEmployeeCatalog(spaceId, { signal })
       if (!current(version)) return
+      armIdleBudget(version) // The catalog's answer is progress: the boards get the whole idle budget.
       applyCatalog(templates.find(t => t.id === 'jefa') ?? null)
       const value = template.value
       readingCatalog = false
@@ -259,7 +282,7 @@ export function useJefaBoardLoad(input: {
       readScope(version, spaceId, new Set())
     } catch (cause) { if (current(version)) fail(cause) }
   }
-  function reload() { if (!loading.value) begin(true) }
+  function reload() { if (!running.value) begin(true) }
   function scopeChanged(catalog?: EmployeeTemplate | null) {
     // An already successful authority read wins even if the next network read fails.
     if (catalog !== undefined) applyCatalog(catalog)
@@ -268,10 +291,11 @@ export function useJefaBoardLoad(input: {
   // A filter change keeps reads still selected, stops the others and queues the new ones.
   function selectionChanged() {
     if (!input.enabled.value || !scopeReadable.value || !input.spaceId.value) return
-    const wanted = new Set(input.scopeProjectIds())
-    const previous = new Set(scopeIds.value)
-    if (projects.value.filter(p => wanted.has(p.id)).length === previous.size && [...previous].every(id => wanted.has(id))) return
-    const continuing = loading.value
+    const wanted = wantedScope()
+    const same = (a: string[], b: string[]) => a.length === b.length && a.every((id, index) => id === b[index])
+    if (same(wanted.selected, scopeIds.value) && same(wanted.read, readScopeIds)) return
+    const previous = new Set(readScopeIds)
+    const continuing = running.value
     const version = continuing ? generation : start()
     // Projects the user just added get the whole idle budget, not what the old scope left.
     if (readScope(version, input.spaceId.value, previous) && continuing && current(version)) armIdleBudget(version)
@@ -280,15 +304,20 @@ export function useJefaBoardLoad(input: {
     if (!enabled) { cancel(); return }
     if (previous?.[0] && !previous[1] && spaceId) {
       currentSpace = spaceId
-      if (loading.value && stage.value === 'console') void readCatalog(generation)
+      if (running.value && stage.value === 'console') void readCatalog(generation)
       // A late bootstrap cannot silently replace an expired/failed read. Reload is explicit.
-      if (loading.value || timedOut.value || failure.value) return
+      if (running.value || timedOut.value || failure.value) return
     }
     const preserve = Boolean(previous?.[0] && spaceId && currentSpace === spaceId)
     currentSpace = spaceId
     begin(preserve)
   }, { immediate: true })
-  watch(input.consoleError, error => { if (input.enabled.value && error && loading.value && stage.value === 'console') fail(new Error(error)) }, { immediate: true })
+  watch(input.consoleError, error => { if (input.enabled.value && error && running.value && stage.value === 'console') fail(new Error(error)) }, { immediate: true })
   onBeforeUnmount(cancel)
-  return { template, catalogRead, loading, longWait, stage, failure, failures, projects, scopeIds, pendingIds, loadedIds, stale, readOnly, updatedAt, timedOut, hasContent, reload, scopeChanged, selectionChanged }
+  return {
+    template, catalogRead, loading, longWait, stage, failure, failures, projects, scopeIds, pendingIds, loadedIds, stale, readOnly,
+    updatedAt, timedOut, hasContent, catalogFailed,
+    // A linked task's access is decided by every refusal of this load, including its own project's.
+    accessFailures: readFailures, taskReadOnly, reload, scopeChanged, selectionChanged,
+  }
 }

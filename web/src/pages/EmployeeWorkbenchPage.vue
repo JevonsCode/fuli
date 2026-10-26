@@ -50,8 +50,9 @@ const templateId = computed(() => String(route.params.templateId ?? ''))
 const isJefa = computed(() => templateId.value === 'jefa')
 const jefaRead = reactive(useJefaBoardLoad({
   enabled: isJefa, spaceId: personalSpaceId, boards: projectBoards, scopeValid: () => !projectFilter.invalidScope.value,
+  selectedIds: () => projectFilter.selection.value,
   // An open task's project is read too, so its access and staleness stay authoritative.
-  scopeProjectIds: () => [...projectFilter.selection.value, ...(openTaskRef.value ? [openTaskRef.value.projectId] : [])],
+  linkedProjectId: () => openTaskRef.value?.projectId,
   consoleError: computed(() => !store.state && store.runtimeStatus === 'error' ? store.feedback?.message || t('employees.loadError') : ''),
   projectNames: computed(() => new Map((store.state?.personalProjects ?? []).filter(p => p.personal_space_id === personalSpaceId.value).map(p => [p.project_id, p.profile.name]))),
 }))
@@ -193,7 +194,9 @@ const peek = useRoutePeek()
 const openTaskRef = computed(() => isJefa.value && peek.item.value && peek.item.value.spaceId === personalSpaceId.value
   ? readBoardTaskPeekId(peek.item.value.id) : null)
 // Only an authoritative answer closes it; a pending or failed read keeps the link.
-const openTaskRevoked = computed(() => Boolean(openTaskRef.value) && boardTaskAccessRevoked(openTaskRef.value!, jefaRead))
+const openTaskRevoked = computed(() => Boolean(openTaskRef.value) && boardTaskAccessRevoked(openTaskRef.value!, {
+  template: jefaRead.template, catalogRead: jefaRead.catalogRead, projects: jefaRead.projects, failures: jefaRead.accessFailures,
+}))
 watch(openTaskRevoked, (revoked) => { if (revoked) void peek.close() }, { immediate: true })
 // A revoked task leaves the dialog at once (ending its read in flight), before the URL catches up.
 const shownTaskRef = computed(() => (openTaskRevoked.value ? null : openTaskRef.value))
@@ -392,14 +395,14 @@ async function projectsSaved() {
       </div>
     </header>
     <EmployeeRecruitDialog v-if="!isNativeWorkbench" :open="manageProjectsOpen" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" :template-id="templateId" @close="manageProjectsOpen = false" @recruited="projectsSaved" />
-    <EmployeeTaskDialog v-if="isJefa" :open="createTaskOpen || Boolean(shownTaskRef)" :item="shownTaskRef" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="!jefaRead.readOnly && (template?.permissions.includes('board.write') ?? false)" @close="closeTaskDialog" @saved="loadWorkspace" />
+    <EmployeeTaskDialog v-if="isJefa" :open="createTaskOpen || Boolean(shownTaskRef)" :item="shownTaskRef" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="!(shownTaskRef ? jefaRead.taskReadOnly(shownTaskRef.projectId) : jefaRead.readOnly) && (template?.permissions.includes('board.write') ?? false)" @close="closeTaskDialog" @saved="loadWorkspace" />
     <EmployeeShareDialog v-if="isJefa" :open="shareOpen" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" @close="shareOpen = false" />
     <JefaReadStatus v-if="isJefa && !projectFilter.invalidScope.value"
       :loading="jefaRead.loading" :long-wait="jefaRead.longWait" :stage="jefaRead.stage"
       :timed-out="jefaRead.timedOut" :failure="jefaRead.failure" :failures="jefaRead.failures"
       :total="jefaRead.scopeIds.length" :loaded="jefaRead.loadedIds.length" :pending="jefaRead.pendingIds.length"
       :has-content="jefaRead.hasContent" :stale="jefaRead.stale" :updated-at="jefaRead.updatedAt" :projects="jefaRead.projects"
-      :blocking="!supportsAllProjects" :can-clear-filter="!supportsAllProjects && projectFilter.active.value"
+      :blocking="!supportsAllProjects" :can-clear-filter="!supportsAllProjects && projectFilter.active.value && jefaRead.catalogFailed"
       @reload="retry" @clear-filter="projectFilter.reset"
     />
     <GrowthLoading v-if="pageLoading && !isJefa" :label="pageLoadingLabel" />
