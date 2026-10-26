@@ -586,6 +586,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     messageStatus, cancelMessage, answerRemote,
     discuss: discussions.discuss,
     ownerGroupDiscussion: discussions.ownerView,
+    ownerStopGroupDiscussion: discussions.ownerStop,
     ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
