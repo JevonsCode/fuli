@@ -16,8 +16,10 @@ export const claudeCodeWake = Object.freeze({
   // delegated wake names the (forked) session up front and binds it first.
   plansSession: true,
 
-  args({ sessionId, plannedSessionId = null }) {
-    return ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
+  // readOnly (a group discussion turn) runs in plan mode: Claude Code reads
+  // and answers but edits no file and runs no command.
+  args({ sessionId, plannedSessionId = null, readOnly = false }) {
+    return ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', readOnly ? 'plan' : 'dontAsk',
       ...(sessionId ? ['--resume', sessionId, '--fork-session'] : []),
       ...(plannedSessionId ? ['--session-id', plannedSessionId] : [])];
   },
