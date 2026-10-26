@@ -7,7 +7,7 @@ import { isPeerRoleAgent } from './project-team-view.js';
 import { resolveTaskAgentMention } from './project-agent-mention.js';
 import { dismissalLessonHint } from './project-agent-dismissal.js';
 import { taskWorkKind } from './task-scene.js';
-import { coversClient } from '../agents/source-applications.js';
+import { agentUnavailableReason } from './agent-availability.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -20,7 +20,9 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     worker_started: false
   };
   try {
-    const mention = await resolveTaskAgentMention(application, resolution.personalProjectId, input);
+    // An FLA the person named (task-entry-named-fla.js) is the explicit Agent.
+    const named = resolution.explicitAgentId ?? null;
+    const mention = named ? null : await resolveTaskAgentMention(application, resolution.personalProjectId, input);
     if (mention?.status) return mention;
     // Selection falls back to project history; preference filtering never does.
     const workKind = input.workKind ?? taskWorkKind(input.taskPrompt) ?? 'project_context';
@@ -31,7 +33,7 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     };
     const contextRequest = {
       ...scope,
-      agent_id: mention?.agentId ?? input.projectAgentId ?? null,
+      agent_id: named ?? mention?.agentId ?? input.projectAgentId ?? null,
       session_id: input.sessionId ?? null,
       turn_id: input.turnId ?? null,
       work_kind: workKind,
@@ -54,7 +56,7 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     }
     if (!value?.status) throw new Error('Role resolution is unavailable');
     let agent = value.agent ? projectAgentRecord(value.agent) : null;
-    const implicit = !mention?.agentId && !input.projectAgentId;
+    const implicit = !named && !mention?.agentId && !input.projectAgentId;
     const peerOnly = agent && implicit && unrelatedPeer(agent, workKind, input.requiredCapabilities);
     if (implicit && !delegation && value.reason !== 'project_lead_required'
       && (peerOnly || value.status === 'unassigned')) {
@@ -90,10 +92,8 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       try { await application.employees.authorize({ templateId: employeeId, personalProjectId: resolution.personalProjectId }); }
       catch { return { status: 'agent_unavailable', worker_started: false }; }
     }
-    if (agent && (agent.profile.status !== 'active' ||
-      !coversClient(agent.profile.allowedClients, input.sourceApplication ?? 'other'))) {
-      return { status: 'agent_unavailable', worker_started: false };
-    }
+    const refused = agent && agentUnavailableReason(agent.profile, input.sourceApplication);
+    if (refused) return { status: 'agent_unavailable', reason: refused, worker_started: false };
     return { ...value, agent, worker_started: false, ...(standingAgentUnreached ? { standingAgentUnreached } : {}) };
   } catch {
     // Preferences remain useful during an older/offline Provider upgrade, but
@@ -107,16 +107,15 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
 // model is fabricated. A project-resolved request never enters this path.
 async function resolveGlobalAgent(application, resolution, input) {
   try {
-    const mention = await resolveTaskAgentMention(application, null, input);
+    const named = resolution.explicitAgentId ?? null;
+    const mention = named ? null : await resolveTaskAgentMention(application, null, input);
     if (mention?.status) return mention;
-    const id = mention?.agentId ?? input.projectAgentId ?? resolution.globalAgentId;
+    const id = named ?? mention?.agentId ?? input.projectAgentId ?? resolution.globalAgentId;
     if (!id) return { status: 'unassigned', worker_started: false };
     const value = await application.personal.getProjectAgent(application.config.personal.spaceId, null, id);
     const agent = projectAgentRecord(value);
-    if (agent.profile.status !== 'active'
-      || !coversClient(agent.profile.allowedClients, input.sourceApplication ?? 'other')) {
-      return { status: 'agent_unavailable', worker_started: false };
-    }
+    const refused = agentUnavailableReason(agent.profile, input.sourceApplication);
+    if (refused) return { status: 'agent_unavailable', reason: refused, worker_started: false };
     return { status: 'ready', reason: 'global_agent', agent, worker_started: false };
   } catch (error) {
     // Before the assistant identity exists, a pending conversation simply has no owner yet.

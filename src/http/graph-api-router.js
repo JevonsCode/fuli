@@ -2,7 +2,6 @@ import { readJson, sendJson } from './response.js';
 import { testToolsEnabled } from '../app/test-tools.js';
 import { handleAgentAttentionRequest } from './agent-attention-api-router.js';
 import { handleTaskEventsRequest } from './task-events-api-router.js';
-import { handleTaskSchedulesRequest } from './task-schedules-api-router.js';
 import { handleOccupationRequest } from './occupation-api-router.js';
 import { handleTopicProposalsRequest } from './topic-proposals-api-router.js';
 import { handleAgentScoreCardRequest } from './agent-score-card-api-router.js';
@@ -23,7 +22,6 @@ export async function handleGraphApiRequest({
 }) {
   if (await handleAgentAttentionRequest({ request, response, url, app })) return true;
   if (await handleTaskEventsRequest({ request, response, url, app })) return true;
-  if (await handleTaskSchedulesRequest({ request, response, url, app })) return true;
   if (await handleOccupationRequest({ request, response, url, app })) return true;
   if (await handleTopicProposalsRequest({ request, response, url, app })) return true;
   if (await handleAgentScoreCardRequest({ request, response, url, app })) return true;

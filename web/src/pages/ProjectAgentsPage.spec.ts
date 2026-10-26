@@ -51,6 +51,9 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     expect(wrapper.find('[data-detail-section]').exists()).toBe(false)
     expect(getJson.mock.calls.some(([url]) => String(url).includes('agentId='))).toBe(false)
     expect(wrapper.get('.project-agents-header-meta').text()).toContain('2 个分配')
+    // Every Agent is built in: the page offers no hiring step.
+    expect(wrapper.findAll('button').map((button) => button.text())).not.toContain('聘请 Agent')
+    expect(wrapper.text()).not.toContain('聘请')
   })
 
   it('explains how to start the first task while no project exists', async () => {

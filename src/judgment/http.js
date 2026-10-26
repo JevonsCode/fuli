@@ -7,7 +7,7 @@ import { tonborgReviewSuggestions } from './review-suggestions.js';
 
 const UNDO_PATH = '/api/judgment/undo';
 const SUGGESTIONS_PATH = '/api/judgment/suggestions';
-const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/records', '/api/judgment/feedback',
+const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/policies', '/api/judgment/records', '/api/judgment/feedback',
   '/api/judgment/review', '/api/judgment/assess', '/api/judgment/accept', UNDO_PATH, SUGGESTIONS_PATH];
 // The routes that answer with Tonborg's full records (summary, evidence,
 // receipts, feedback reasons) or its suggestions (rec#11 D-60): a judgment
@@ -54,7 +54,8 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
     'PUT /api/agent-pins': async () => app.judgment.pin(await readJson(request)),
     'GET /api/judgment/policy': () => app.judgment.policy(query),
     'PUT /api/judgment/policy': async () => app.judgment.setPolicy(await readJson(request)),
-    'GET /api/judgment/records': () => app.judgment.records(query),
+    'GET /api/judgment/policies': () => app.judgment.policyOverrides({ personalSpaceId: query.personalSpaceId }),
+    'GET /api/judgment/records': () => app.judgment.records({ ...query, ...recordPage(url.searchParams) }),
     'POST /api/judgment/feedback': async () => app.judgment.feedback(await readJson(request)),
     'POST /api/judgment/review': async () => app.judgment.review(await readJson(request)),
     'POST /api/judgment/assess': async () => app.judgment.assess(await readJson(request)),
@@ -66,4 +67,12 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
   if (!action) sendJson(response, 405, { error: 'Method not allowed' });
   else sendJson(response, 200, await action());
   return true;
+}
+
+// The console's page of records: its size, the cursor after the previous
+// page, the searched text and the 全部 / 需要人工 view.
+function recordPage(params) {
+  const page = params.has('limit') ? { limit: Number(params.get('limit')) } : {};
+  for (const key of ['after', 'search', 'filter']) if (params.get(key)) page[key] = params.get(key);
+  return page;
 }

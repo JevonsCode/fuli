@@ -31,8 +31,6 @@
 @source "../../features/agent-profile/AgentPeek.vue";
 @source "../../pages/AgentProfilePage.vue";
 @source "../../pages/SettingsPage.vue";
-@source "../../pages/TaskSchedulesPage.vue";
-@source "../../features/task-schedules/SchedulePeek.vue";
 /* Memory pages on the D-03 canvas: the knowledge quick look. */
 @source "../../features/knowledge/KnowledgePeek.vue";
 /* rec#20: a turn receipt's item quick edit and full list, on the form column. */

@@ -10,6 +10,7 @@ import { ADAPTIVE_RUNTIME_SETTINGS_FORMAT } from '../adaptive-runtime/settings.j
 import { ADAPTIVE_RUNTIME_STATE_FORMAT } from '../adaptive-runtime/state.js';
 import { AGENT_APP_FORMAT } from '../agent-apps/store.js';
 import { EMPLOYEE_MANAGEMENT_FORMAT } from '../employees/management-policy.js';
+import { JEFA_BOARD_FORMAT } from '../employees/builtin/jefa/board-store.js';
 import { PREFERENCE_SESSION_FORMAT } from '../conversations/preference-session.js';
 import { TRANSCRIPT_CAPTURE_FORMAT, TRANSCRIPT_TURN_HOLD_FORMAT } from '../conversations/transcript-capture-gap.js';
 import { CONFLICT_POLICY_FORMAT } from '../external-knowledge/conflict-policy.js';
@@ -37,7 +38,6 @@ import { MODEL_SECRETS_FORMAT } from '../model-backends/secret-store.js';
 import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
-import { TASK_SCHEDULE_FORMAT } from '../task-schedules/store.js';
 
 // Every FULI store kept in one data directory, by the path its owner opens
 // (rec#17 D-09). Labels are relative to the data directory, so a report names
@@ -46,7 +46,6 @@ import { TASK_SCHEDULE_FORMAT } from '../task-schedules/store.js';
 // formats, so the lists may not be read while those are still loading.
 const sqliteStores = () => [
   ['judgment.sqlite', JUDGMENT_FORMAT],
-  ['task-schedules.sqlite', TASK_SCHEDULE_FORMAT],
   ['standing-assignments.sqlite', STANDING_ASSIGNMENTS_FORMAT],
   ['agent-roundtable.sqlite', ROUNDTABLE_FORMAT],
   ['model-usage.sqlite', MODEL_USAGE_FORMAT],
@@ -59,6 +58,8 @@ const sqliteStores = () => [
   ['model-settings-history.sqlite', MODEL_SETTINGS_HISTORY_FORMAT],
   ['agent-apps/registry.sqlite', AGENT_APP_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
+  // Jefa's built-in task board: tasks, their revisions, sharing and session titles.
+  ['employees/data/jefa/board.sqlite', JEFA_BOARD_FORMAT],
   ['peer/node.sqlite', NODE_FORMAT],
   ['peer/coordinator.sqlite', COORDINATOR_FORMAT]
 ];

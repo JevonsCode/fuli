@@ -125,7 +125,9 @@ const BASELINE = Object.freeze({
   // D-64 capture isolation: optional capturedSources lets OpenCode override only
   // the legacy other alias without enabling generic clients: +262 B, measured.
   // Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 191953,
+  // Task schedules removed (owner's decision, 2026-10-27): manage_project_agent_schedule leaves
+  // the full profile: 191,953 -> 190,325 B (-1,628 B), measured. Chat is unchanged.
+  fullToolSchemaBytes: 190325,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
@@ -187,7 +189,8 @@ const BASELINE = Object.freeze({
   // rec#47 F1b, rec#11 D-54: Claude Code keeps only a preview of a hook context over about
   // 10,000 chars, so its entry is bounded to 9,000 and stays a confirmable frame. Measured on the
   // synthetic 60-preference entry (test-support/synthetic-large-entry.js, about 430 chars each,
-  // 7 hard or boundary): turn 1 was 37,509 chars, every turn, and is now one complete frame of
+  // 5 hard rules that always stay and 2 boundaries ranked first, D-69): turn 1 was 37,509
+  // chars, every turn, and is now one complete frame of
   // 11 preferences plus the omitted count; turn 2 was again 37,509 and is now a delta. A frame
   // that leaves preferences out adds one label sentence (with its space). Entries that fit, and
   // every other Agent, are unchanged.
@@ -213,10 +216,11 @@ const BASELINE = Object.freeze({
   codexReviewGuidanceBytes: 101,
   // rec#17 part 2: the receipt's data format notice, with its separator. Nothing waits and nothing
   // was applied in the last day: no bytes at all. One step waiting for a person, or one migration
-  // applied: one short line naming the step (and the read-only preview command).
+  // applied: one short line naming the step (and the read-only preview command). The sample step
+  // is agent-apps/7-identity-keys since task schedules were removed (3 characters shorter).
   migrationReceiptNoneChars: 0,
-  migrationReceiptPendingChars: 62,
-  migrationReceiptAppliedChars: 40,
+  migrationReceiptPendingChars: 59,
+  migrationReceiptAppliedChars: 37,
   // rec#20 part 2: the link to a session's batch migration, with its separator. Nothing waits, or
   // the session already worked in this project: no bytes. The session's first task in a formal
   // project while its temporary project holds items: one line with the count (152 chars with a
@@ -361,9 +365,9 @@ async function migrationReceiptChars() {
     const receipt = taskAgentReceipt(app, { ...owner, notices: notice ? [notice] : [] });
     return receipt.markdown.length - plain.length;
   };
-  const step = 'task-schedules/3-run-recovery';
+  const step = 'agent-apps/7-identity-keys';
   return { migrationReceiptNoneChars: await added([], []),
-    migrationReceiptPendingChars: await added([{ store: 'task-schedules', label: 'task-schedules.sqlite',
+    migrationReceiptPendingChars: await added([{ store: 'agent-apps', label: 'agent-apps/registry.sqlite',
       state: 'pending_confirmation', steps: [step] }], []),
     migrationReceiptAppliedChars: await added([], [{ kind: 'applied', migrationId: step, at: '2026-10-20T12:00:00Z' }]) };
 }

@@ -40,3 +40,20 @@ test('conversation questions exclude other projects and require the active autho
   await assert.rejects(service.agent.conversationQuestions({personalSpaceId:'foreign',personalProjectId:'p'}), {status:403});
   await assert.rejects(service.agent.conversationQuestions({personalSpaceId:'s',personalProjectId:'other'}), {status:404});
 });
+
+test('policy overrides list the default and each active project\'s own policy; a removed or archived one is not listed', async t => {
+  const app = { config: { personal: { spaceId: 's' } }, listPersonalProjects: async () => [{ project_id: 'p' }, { project_id: 'q' },
+    { project_id: 'old', profile: { lifecycle: 'archived' } }] };
+  const service = createJudgmentService({ app }); t.after(() => service.close());
+  const policy = mode => ({ mode, quality: 'quality', client: 'claude_code' });
+  await service.setPolicy({ personalSpaceId: 's', policy: policy('shared'), expectedRevision: 0 });
+  await service.setPolicy({ personalSpaceId: 's', personalProjectId: 'p', policy: policy('autonomous'), expectedRevision: 0 });
+  await service.setPolicy({ personalSpaceId: 's', personalProjectId: 'q', policy: policy('manual'), expectedRevision: 0 });
+  service.store().setPolicy('s', 'old', policy('autonomous'), 0);
+  await service.setPolicy({ personalSpaceId: 's', personalProjectId: 'q', policy: null, expectedRevision: 1 });
+  const listed = await service.policyOverrides({ personalSpaceId: 's' });
+  assert.deepEqual([listed.default.mode, listed.default.personalProjectId], ['shared', null]);
+  assert.deepEqual(listed.overrides.map(({ personalProjectId, mode, inherited, revision }) => ({ personalProjectId, mode, inherited, revision })),
+    [{ personalProjectId: 'p', mode: 'autonomous', inherited: false, revision: 1 }]);
+  await assert.rejects(service.policyOverrides({ personalSpaceId: 'another' }), { status: 403 });
+});

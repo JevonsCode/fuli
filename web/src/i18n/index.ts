@@ -29,7 +29,6 @@ import { glossaryMessages } from './messages/glossary'
 import { roundtableMessages } from './messages/roundtable'
 import { agentPinsMessages } from './messages/agent-pins'
 import { judgmentMessages } from './messages/judgment'
-import { taskScheduleMessages } from './messages/task-schedules'
 import { taskRunMessages } from './messages/task-runs'
 import { knowledgeQuickEditMessages } from './messages/knowledge-quick-edit'
 import { knowledgeHardDeleteMessages } from './messages/knowledge-hard-delete'
@@ -99,7 +98,6 @@ export const messages = {
     workbench: workbenchMessages['zh-CN'],
     glossary: glossaryMessages['zh-CN'],
     roundtable: roundtableMessages['zh-CN'],
-    taskSchedules: taskScheduleMessages['zh-CN'],
     taskRuns: taskRunMessages['zh-CN'],
     knowledgeQuickEdit: knowledgeQuickEditMessages['zh-CN'],
     knowledgeHardDelete: knowledgeHardDeleteMessages['zh-CN'],
@@ -140,7 +138,6 @@ export const messages = {
     workbench: workbenchMessages['en-US'],
     glossary: glossaryMessages['en-US'],
     roundtable: roundtableMessages['en-US'],
-    taskSchedules: taskScheduleMessages['en-US'],
     taskRuns: taskRunMessages['en-US'],
     knowledgeQuickEdit: knowledgeQuickEditMessages['en-US'],
     knowledgeHardDelete: knowledgeHardDeleteMessages['en-US'],

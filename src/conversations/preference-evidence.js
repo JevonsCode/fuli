@@ -28,6 +28,7 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
     if (bytesRead !== bytes.length || bytes.at(-1) !== 10) return { known: false };
     const calls = new Map();
     const records = new Map();
+    const tree = { parents: new Map(), ids: new Map(), leaf: null };
     let frames = [], offset = 0, generation = null, since = 0;
     for (const line of bytes.toString('utf8').split('\n').slice(0, -1)) {
       const end = offset + Buffer.byteLength(line) + 1;
@@ -36,6 +37,8 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
         if (!adapter.verify(record, sessionId)) return { known: false };
         generation = contentHash(line);
       }
+      const link = adapter.link?.(record, sessionId);
+      if (link) { tree.parents.set(link.id, link.parent); tree.ids.set(offset, link.id); tree.leaf = link.id; }
       if (recordOffsets.has(offset)) records.set(offset, record);
       for (const event of adapter.events(record, sessionId)) {
         if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); since = end; }
@@ -59,9 +62,25 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
       }
       offset = end;
     }
+    const active = activeChain(tree);
+    if (active) {
+      frames = frames.filter(frame => active.has(tree.ids.get(frame.offset)));
+      for (const at of records.keys()) if (!active.has(tree.ids.get(at))) records.delete(at);
+    }
     return { known: true, fileId: `${stat.dev}:${stat.ino}`, size: bytes.length, generation, since, frames, records };
   } catch { return { known: false }; }
   finally { await file?.close(); }
+}
+
+// For a host whose records form a tree (an adapter with `link`), only the
+// chain that ends at the latest linked record is the model's context: what a
+// rewind left behind proves nothing. Null for a transcript without links,
+// which is read in file order as before.
+function activeChain({ parents, leaf }) {
+  if (leaf === null) return null;
+  const chain = new Set();
+  for (let id = leaf; id !== null && parents.has(id) && !chain.has(id); id = parents.get(id)) chain.add(id);
+  return chain;
 }
 
 function evidenceToolName(event) {

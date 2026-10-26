@@ -3,6 +3,7 @@ import { GraphitiProviderClient } from '../graphiti/provider-client.js';
 import { personalHumanReviewChannel } from '../graphiti/human-review-channel.js';
 import { knowledgeHardDelete } from './console-port.js';
 import { createKnowledgeRecoveryGate } from './recovery-gate.js';
+import { reconcileAndVerify } from './recovery-check.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 
 // Setup and the maintenance CLI resume the same already-confirmed deletions
@@ -22,14 +23,9 @@ export async function reconcileLocalKnowledge(paths, {
       agentSnapshots: createAgentDirectorySnapshots({ root: paths.agentDirectoryRoot, providerIdentity: personal.providerUrl }),
       personalSpaceId: () => personal.spaceId
     });
-    await reconcile.reconcile();
-    // A reconciler result alone is not proof: verify the graph's current
-    // watermark with the ordinary credential before reporting readiness.
     const gate = createGate({ dataDir: paths.dataDir,
       readWatermark: (request) => provider.readHardDeletionWatermark(request) });
-    const state = await gate.refresh(personal.spaceId, { force: true });
-    return state.state === 'open' ? { status: 'ready' }
-      : { status: 'pending', reason: state.reason };
+    return await reconcileAndVerify({ reconcile: () => reconcile.reconcile(), gate, spaceId: personal.spaceId });
   } catch {
     // Provider/config errors can contain secrets or item details. Keep the
     // maintenance result content-free, and never turn a failed run into ready.

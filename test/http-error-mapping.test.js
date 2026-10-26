@@ -60,7 +60,7 @@ test('HTTP error mapping answers a store this version cannot use with its reason
   const blocked = newerFormatError('judgment', 4, 1);
   assert.deepEqual(mapHttpError(blocked), { status: 503,
     body: { error: blocked.message, code: 'data_format_blocked', store: 'judgment', steps: [] } });
-  const pending = pendingMigrationError('task-schedules', { id: 'task-schedules/3-run-recovery', summary: 'runs' }, '1 row');
-  assert.deepEqual(mapHttpError(pending).body.steps, ['task-schedules/3-run-recovery']);
-  assert.equal(mapHttpError(pending).body.store, 'task-schedules');
+  const pending = pendingMigrationError('agent-apps', { id: 'agent-apps/7-identity-keys', summary: 'identity keys' }, '1 row');
+  assert.deepEqual(mapHttpError(pending).body.steps, ['agent-apps/7-identity-keys']);
+  assert.equal(mapHttpError(pending).body.store, 'agent-apps');
 });

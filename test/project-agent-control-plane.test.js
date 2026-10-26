@@ -30,7 +30,6 @@ import {
 } from '../src/agent-tools/project-agent-definitions.js';
 import { jsonSchemaToZod } from '../src/mcp/tool-schema.js';
 import {
-  findProjectAgentTaskByIdempotencyKey,
   listExecutors,
   listProjectAgentRoutingLearning,
   resetProjectAgentRoutingLearning,
@@ -950,22 +949,6 @@ function providerClient(calls, routes) {
     }
   });
 }
-
-test('a task is found again by the idempotency key of its submit, and a miss is null', async () => {
-  const calls = [];
-  const input = { personalSpaceId: 'space-1', personalProjectId: 'project-1',
-    idempotencyKey: 'schedule:s-1:2026-10-18T00:00:00.000Z' };
-  const missing = await findProjectAgentTaskByIdempotencyKey(
-    { personal: providerClient(calls, { '/v1/project-agent-task-lookup': { task: null } }) }, input);
-  const found = await findProjectAgentTaskByIdempotencyKey({ personal: providerClient(calls, {
-    '/v1/project-agent-task-lookup': { task: { task_id: 'task-1', status: 'queued' } } }) }, input);
-
-  assert.equal(missing, null);
-  assert.deepEqual([found.taskId, found.status], ['task-1', 'queued']);
-  assert.deepEqual(calls.map(({ path, query }) => [path, query]), Array(2).fill(['/v1/project-agent-task-lookup', {
-    personal_space_id: 'space-1', personal_project_id: 'project-1', idempotency_key: 'schedule:s-1:2026-10-18T00:00:00.000Z'
-  }]));
-});
 
 test('start:false reaches the Provider so a task is assigned to the backlog without starting', () => {
   const base = { personalSpaceId: 'space', personalProjectId: 'project', idempotencyKey: 'backlog-request',

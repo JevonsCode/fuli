@@ -100,6 +100,7 @@
     "@atlaskit/pragmatic-drag-and-drop-auto-scroll": "3.2.1",
     "@atlaskit/pragmatic-drag-and-drop-hitbox": "3.0.0",
     "@tailwindcss/vite": "4.3.3",
+    "@tanstack/vue-virtual": "3.13.47",
     "@types/d3": "^7.4.3",
     "@types/node": "^24.13.3",
     "@types/three": "0.169.0",

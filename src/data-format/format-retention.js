@@ -80,16 +80,21 @@ function withAudit(graphResult, write) {
 
 // What FULI says when the graph's delete was sent but its answer never came,
 // in `fuli migrate prune`, after an apply or undo, and in the console
-// (web/src/i18n/messages/data-format.ts carries the same two strings).
+// (web/src/i18n/messages/data-format.ts carries the same two strings; the
+// console offers its own 「重新核对」 instead of the command).
 export const GRAPH_PRUNE_UNVERIFIED_NOTICE = Object.freeze({
-  zh: '图谱撤销日志的清理结果未经确认：删除请求已发出但没有收到答复，Provider 可能已经删除了部分日志。'
-    + '请运行 fuli migrate status，或再运行一次 fuli migrate prune 核对。',
+  zh: '图谱撤销日志的清理结果未经确认：删除请求已发出但没有收到答复，Provider 可能已经删除了部分日志。',
   en: 'Graph undo journal prune result unverified: the delete request was sent but no answer came back, so the '
-    + 'provider may already have deleted some journals. Run fuli migrate status, or fuli migrate prune again, to check.'
+    + 'provider may already have deleted some journals.'
+});
+const CLI_PRUNE_CHECK = Object.freeze({
+  zh: '请运行 fuli migrate status，或再运行一次 fuli migrate prune 核对。',
+  en: 'Run fuli migrate status, or fuli migrate prune again, to check.'
 });
 
 export function graphPruneUnverifiedLines() {
-  return [GRAPH_PRUNE_UNVERIFIED_NOTICE.zh, GRAPH_PRUNE_UNVERIFIED_NOTICE.en];
+  return [`${GRAPH_PRUNE_UNVERIFIED_NOTICE.zh}${CLI_PRUNE_CHECK.zh}`,
+    `${GRAPH_PRUNE_UNVERIFIED_NOTICE.en} ${CLI_PRUNE_CHECK.en}`];
 }
 
 // What FULI says next to a graph prune result when its audit entry could not

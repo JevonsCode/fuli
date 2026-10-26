@@ -9,8 +9,7 @@ import { focusReturnTarget, useFocusReturn } from '@/composables/useFocusReturn'
 import { useRoutePeek } from '@/composables/useRoutePeek'
 import { useScrollRestoration } from '@/composables/useScrollRestoration'
 import AgentPeek from '@/features/agent-profile/AgentPeek.vue'
-import { employeeTemplateIdForAgent, employeeTemplates, type EmployeeRecruitmentResult } from '@/features/employees/catalog'
-import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
+import { employeeTemplateIdForAgent, employeeTemplates } from '@/features/employees/catalog'
 import ProjectScopePicker from '@/features/employees/ProjectScopePicker.vue'
 import { currentAssignmentsFor, currentWorkEntry } from '@/features/project-agents/agent-roster-records'
 import { linkedTaskOwner } from '@/features/project-agents/linked-task-owner'
@@ -230,7 +229,6 @@ function openFullPage() {
 
 const dialogOpen = ref(false)
 const editingAgent = ref<ProjectAgentRecord | null>(null)
-const recruitDialogOpen = ref(false)
 const dialogDefaultProjectId = computed(() => singleFilterProjectId.value
   || editingAgent.value?.assignments?.find(({ status }) => status === 'active')?.personalProjectId
   || editingAgent.value?.personalProjectId
@@ -244,10 +242,6 @@ function recordSaved(record: ProjectAgentRecord) {
   const saved = roster.put(record)
   store.notify(t('projectAgents.saved'))
   if (created) void router.push(agentManagementPath(spaceId.value, saved.agentId))
-}
-async function employeeRecruited(result: EmployeeRecruitmentResult) {
-  recruitDialogOpen.value = false
-  await router.push(agentManagementPath(spaceId.value, result.agent.agentId))
 }
 </script>
 
@@ -272,7 +266,6 @@ async function employeeRecruited(result: EmployeeRecruitmentResult) {
             <strong>{{ t('projectAgents.stats.active', { count: activeCount }) }}</strong> · {{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}<span class="project-agents-header-note">{{ t('projectAgents.stats.noOnlineClaim') }}</span>
           </p>
           <Button class="project-agents-actions-start" size="sm" variant="ghost" :disabled="!spaceId" @click="openCreate">{{ t('projectAgents.add') }}</Button>
-          <Button size="sm" :disabled="!spaceId" @click="recruitDialogOpen = true">{{ t('employees.recruit') }}</Button>
         </div>
       </div>
 
@@ -340,7 +333,6 @@ async function employeeRecruited(result: EmployeeRecruitmentResult) {
       </DialogContent>
     </Dialog>
 
-    <EmployeeRecruitDialog :open="recruitDialogOpen" :personal-space-id="spaceId" :projects="projects" template-id="" :default-project-ids="projectFilter ?? []" @close="recruitDialogOpen = false" @recruited="employeeRecruited" />
     <ProjectAgentDialog :open="dialogOpen" :agent="editingAgent" :projects="projects" :default-project-id="dialogDefaultProjectId" :personal-space-id="spaceId" @close="closeDialog" @saved="recordSaved" />
   </section>
 </template>
