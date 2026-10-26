@@ -62,7 +62,7 @@ const READ_TOOLS = new Set([
 ]);
 
 const WRITE_TOOLS = new Set([
-  'agent_chat',
+  'agent_chat', 'group_discussion',
   'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'pin_agent', 'role_work',
   'manage_project_agent_schedule', 'control_project_agent_task_run', 'register_standing_assignment',
   'message_agent', 'reply_agent_message', 'cancel_agent_message',
@@ -192,7 +192,7 @@ export function annotationsFor(name) {
       name === 'checkpoint_task_knowledge' ||
       name === 'checkpoint_project_agent_memory' ||
       name === 'register_standing_assignment',
-    openWorldHint: name === 'agent_chat' || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'capture_session_knowledge' ||
+    openWorldHint: name === 'agent_chat' || name === 'group_discussion' || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'capture_session_knowledge' ||
       name === 'discover_external_knowledge_sources' ||
       name === 'create_external_knowledge_binding' ||
       name === 'check_external_knowledge_binding' ||

@@ -16,6 +16,14 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
       remove: arraySchema(text(300), { maxItems: 32 }), owner: text(300) }, ['taskContextToken','action'])
   },
   {
+    name: 'group_discussion', title: 'ROUNDTABLE · Group discussion (@FLG)',
+    description: 'Moderate an @FLG discussion as the current task Agent; each member is woken in its own client and answers itself, so never write a member\'s view. start: requestId,question,members (from the entry\'s flg.start); status: chatId; wait: chatId,after?,timeoutSeconds?. Grants no edits or publishing.',
+    inputSchema: objectSchema({ taskContextToken: text(160), action: enumSchema(['start','status','wait']),
+      chatId: text(160), requestId: text(128), question: text(4000), members: arraySchema(text(128), { minItems: 2, maxItems: 4 }),
+      after: integerSchema({ minimum: 0 }), timeoutSeconds: integerSchema({ minimum: 1, maximum: 300 }) },
+    ['taskContextToken', 'action'])
+  },
+  {
     name: 'find_agents',
     title: 'ROUNDTABLE · Find Agents to talk to',
     description: 'Find active local or explicitly shared peer Agents by query, occupation, capability or projectId. personalProjectId selects its lead. Discovery never hires.',
@@ -76,6 +84,9 @@ export function callRoundtableTool(roundtable, name, input) {
   switch (name) {
     case 'agent_chat': return roundtable.chat(input).catch(error => {
       throw new ApplicationError(error.code ?? 'chat_unavailable', error.message);
+    });
+    case 'group_discussion': return roundtable.discuss(input).catch(error => {
+      throw new ApplicationError(error.code ?? 'group_discussion_unavailable', error.message);
     });
     case 'find_agents': return roundtable.findAgents(input);
     case 'message_agent': return roundtable.messageAgent(input);

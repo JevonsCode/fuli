@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { projectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
 import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
 import { createAgentChat } from './chat.js';
+import { createGroupDiscussion } from './group-discussion.js';
 import { ATTENTION_REPLIES_GUIDANCE, createAttentionInbox } from './attention-inbox.js';
 import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 
@@ -568,15 +569,23 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
   const attentionInbox = createAttentionInbox({ store, spaceId });
-  const chat = createAgentChat({ host, peer, store, agents, idFactory, messageAgent, attentionInbox,
+  const canWake = agent => (agent.profile.allowedClients ?? []).some(client => WAKE_CLIENTS.includes(client) && clientAvailable(client));
+  const { memberChat, ...chat } = createAgentChat({ host, peer, store, agents, idFactory, messageAgent, attentionInbox,
     waitUntilIdle: async (agentId, signal) => {
       const state = await waitForChatChange(() => store.executionState(spaceId(), agentId),
         { store: store.chat, signal, ready: state => state.held || !state.busy });
       return !state.held;
-    },
-    canWake: agent => (agent.profile.allowedClients ?? []).some(client => WAKE_CLIENTS.includes(client) && clientAvailable(client)) });
+    }, canWake });
+  // A discussion member that did not answer keeps no ask in its inbox.
+  const withdraw = messageId => {
+    const ask = store.getMessage(messageId);
+    if (ask?.status === 'queued') store.updateMessage(ask.id, { status: 'cancelled', error: ask.error ?? 'cancelled' });
+  };
+  const discussions = createGroupDiscussion({ host, store, agents, chat: chat.chat, memberChat, messageAgent, withdraw, canWake });
   return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote,
+    discuss: discussions.discuss,
+    ownerGroupDiscussion: discussions.ownerView,
     ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
@@ -585,8 +594,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     deliverAttentionReply: attentionInbox.deliver,
     attentionReplies: attentionInbox.taskEntry,
     close: () => {
-      const pending = chat.closeChatWakes();
-      return pending ? pending.then(() => opened?.close()) : opened?.close();
+      const pending = [chat.closeChatWakes(), discussions.close()].filter(Boolean);
+      return pending.length ? Promise.all(pending).then(() => opened?.close()) : opened?.close();
     } };
 }
 

@@ -12,6 +12,10 @@ export function createAgentChat({ host, peer = null, store, agents, idFactory, m
   const wakes = createChatWake({ store: new Proxy({}, { get: (_, key) => store.chat[key] }), scope, messageAgent, waitUntilIdle, transaction: work => store.transaction(work) });
   return {
     closeChatWakes: wakes.close,
+    // The local chat for one given member, without a task: only the group
+    // discussion uses it, to post a woken member's own answer as that member
+    // and to read as the owner. Never exposed to MCP or HTTP.
+    memberChat: local,
     subscribeChatUpdates(listener) {
       let known = new Map(store.chat.heads(scope).map(head => [head.chatId, `${head.revision}:${head.seq}`]));
       const stopPeer = peer?.configured() ? peer.subscribeChatUpdates?.(listener) : null;

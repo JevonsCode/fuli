@@ -125,7 +125,10 @@ const BASELINE = Object.freeze({
   // D-64 capture isolation: optional capturedSources lets OpenCode override only
   // the legacy other alias without enabling generic clients: +262 B, measured.
   // Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 191953,
+  // rec#55 @FLG: one new roundtable tool, group_discussion, which the moderating Agent calls only
+  // after the person confirms members: 191,953 -> 193,259 B (+1,306 B), measured. Chat, instructions
+  // and an ordinary entry are unchanged.
+  fullToolSchemaBytes: 193259,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
