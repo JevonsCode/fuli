@@ -6,6 +6,7 @@ import type { ItemKind, VersionStatus } from '@/features/knowledge-quick-edit/mo
 // page make from them; the components only compose.
 
 export type HardDeleteRole = 'item' | 'version' | 'relationship'
+export type HardDeleteKind = ItemKind | 'episode' | 'session'
 
 export interface HardDeleteItem {
   item_kind: ItemKind
@@ -39,7 +40,37 @@ export type RecordCount = typeof RECORD_COUNTS[number]
 export type HardDeleteCounts = Record<RecordCount | 'items' | 'versions' | 'relationships' | 'episodes'
   | 'kept_episodes' | 'dependents', number>
 
+export interface HardDeletePublication {
+  draft_id: string
+  project_id: string
+  project_name?: string | null
+  provider_url: string
+  proposal_id: string
+  source_episode_ids: string[]
+  // Temporary contract until public withdrawal exists; submission is not acceptance.
+  status: 'submitted'
+  local_delete_retracts: false
+  withdrawal_status: 'unavailable'
+  withdrawal_url: null
+}
+
+export interface SourceMemoryScope {
+  agent_id: string
+  agent_name?: string | null
+  project_name?: string | null
+  personal_project_id: string | null
+  revisions: number[]
+  current_revision: number
+}
+export interface SourceMemoryPreview {
+  scrubbed: (SourceMemoryScope & { current: boolean })[]
+  later: (SourceMemoryScope & { key: string; from_revision: number; selected: boolean })[]
+}
+
 export interface HardDeletePreview {
+  agent_memory?: SourceMemoryPreview
+  publications?: HardDeletePublication[]
+  drafts?: { pending: number; submitted: number; submitting: number; unknown: number }
   preview_id: string
   item_kind: ItemKind
   item_id: string
@@ -60,7 +91,7 @@ export type HardDeleteOutcome = 'complete' | 'local_pending' | 'unknown' | 'not_
 export interface HardDeleteResult {
   outcome: HardDeleteOutcome
   deletion_id?: string
-  item_kind: ItemKind
+  item_kind: HardDeleteKind
   item_id: string
   deleted_at?: string | null
   counts?: HardDeleteCounts
@@ -105,10 +136,11 @@ function apiCode(error: unknown): { code?: string; deletedAt?: string; error?: s
 }
 
 /** A read or write answered that the item was permanently deleted (410). */
-export function hardDeletedFrom(error: unknown): HardDeletedState | null {
+export function hardDeletedFrom(error: unknown, itemKind?: HardDeleteKind): HardDeletedState | null {
   if (!(error instanceof ApiError) || error.status !== 410) return null
   const body = apiCode(error)
-  return body?.code === 'hard_deleted' ? { outcome: 'gone', deletedAt: body.deletedAt ?? null } : null
+  const gone = body?.code === 'hard_deleted' || (body?.code === 'source_hard_deleted' && (itemKind === 'episode' || itemKind === 'session'))
+  return gone ? { outcome: 'gone', deletedAt: body?.deletedAt ?? null } : null
 }
 
 /** The graph itself refused the delete (a 4xx with its code): only this proves nothing was deleted.
@@ -120,4 +152,10 @@ export function refusedByGraph(error: unknown) {
 /** The delete was refused because what it removes changed since the preview (409). */
 export function stalePreview(error: unknown) {
   return error instanceof ApiError && error.status === 409 && apiCode(error)?.code === 'hard_delete_preview_stale'
+}
+
+
+/** A public draft entered submission after this delete preview was shown. */
+export function draftSubmissionStarted(error: unknown) {
+  return error instanceof ApiError && error.status === 409 && apiCode(error)?.code === 'hard_delete_draft_submitting'
 }

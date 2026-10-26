@@ -79,9 +79,10 @@ export async function withTranscriptGuard(runtimeConfigPath, input, source, enab
 
 // A handoff whose prompt already entered its task (nextOwner, that task's
 // token digest): the entry recorded its claim ('claim'), or its capture window
-// expired before the old task's tail was flushed and it kept the native end it
-// had seen (entryEnd), so that a later hook finishes the handoff as the entry
-// would have (rec#16).
+// expired before the old task's tail was flushed and its hook kept entryEnd,
+// the native EOF measured after task entry returned and before the hook
+// returned (not a snapshot from when the capture started), so that a later
+// hook finishes the handoff as the entry would have (rec#16).
 export function enteredHandoff(value) {
   return value?.phase === 'claim' || (['scan', 'ready'].includes(value?.phase)
     && Number.isSafeInteger(value.entryEnd) && typeof value.nextOwner === 'string');

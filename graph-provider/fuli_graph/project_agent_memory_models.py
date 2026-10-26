@@ -8,7 +8,7 @@ from datetime import datetime
 import json
 from typing import Annotated, Literal
 
-from pydantic import Field, StringConstraints, model_validator
+from pydantic import Field, StringConstraints, model_serializer, model_validator
 
 from .model_validation import reject_credentials
 from .models import SourceApplication, StrictModel
@@ -58,11 +58,30 @@ class ProjectAgentMemoryRecord(StrictModel):
     personal_project_id: str | None
     agent_id: str
     revision: int = Field(ge=1)
-    memory: ProjectAgentWorkingMemory
-    source_application: SourceApplication
+    memory: ProjectAgentWorkingMemory | None
+    memory_state: Literal['present', 'scrubbed'] = 'present'
+    scrubbed_by: str | None = None
+    source_application: SourceApplication | None = None
     source_session_id: str | None = None
     task_id: str | None = None
     created_at: datetime
+
+    @model_validator(mode='after')
+    def memory_matches_state(self):
+        if self.memory_state == 'scrubbed':
+            if self.memory is not None or not self.scrubbed_by or any((self.source_application, self.source_session_id, self.task_id)):
+                raise ValueError('scrubbed memory must be content-free and have a deletion identity')
+        elif self.memory is None or self.source_application is None or self.scrubbed_by:
+            raise ValueError('present memory requires its body and source application')
+        return self
+
+    @model_serializer(mode='wrap')
+    def serialize_memory(self, handler):
+        record = handler(self)
+        if self.memory_state == 'scrubbed':
+            for key in ('source_application', 'source_session_id', 'task_id'):
+                record.pop(key, None)
+        return record
 
 
 class EmployeeWorkLogRecord(StrictModel):

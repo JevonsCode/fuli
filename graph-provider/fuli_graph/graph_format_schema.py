@@ -166,6 +166,13 @@ KNOWLEDGE_TAG_RULES = (
 )
 KNOWLEDGE_TAG_LABELS = frozenset({'FuliKnowledgeTag', 'FuliKnowledgeTagRevision', 'FuliKnowledgeTagLink'})
 
+# Source erasure adds audit kinds and body-free draft records. These lookups
+# accompany that field-contract version; existing records need no rewrite.
+SOURCE_DELETE_RULES = (
+    _node_index('fuli_knowledge_hard_delete_space', 'FuliKnowledgeAudit', 'space_id', 'action'),
+    _node_index('fuli_publication_source_copy', 'FuliPublicationDraft', 'personal_space_id', 'payload_scrubbed_by'),
+)
+
 # Every Fuli label in the code when the format registry was introduced.
 BASELINE_LABELS = frozenset({
     'FuliAgentAttention',

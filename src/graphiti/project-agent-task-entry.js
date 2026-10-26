@@ -6,6 +6,8 @@ import { loadProjectTeamContext } from './project-agent-team-context.js';
 import { isPeerRoleAgent } from './project-team-view.js';
 import { resolveTaskAgentMention } from './project-agent-mention.js';
 import { dismissalLessonHint } from './project-agent-dismissal.js';
+import { taskWorkKind } from './task-scene.js';
+import { agentUnavailableReason } from './agent-availability.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -18,9 +20,12 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     worker_started: false
   };
   try {
-    const mention = await resolveTaskAgentMention(application, resolution.personalProjectId, input);
+    // An FLA the person named (task-entry-named-fla.js) is the explicit Agent.
+    const named = resolution.explicitAgentId ?? null;
+    const mention = named ? null : await resolveTaskAgentMention(application, resolution.personalProjectId, input);
     if (mention?.status) return mention;
-    const workKind = input.workKind ?? taskWorkKind(input.taskPrompt);
+    // Selection falls back to project history; preference filtering never does.
+    const workKind = input.workKind ?? taskWorkKind(input.taskPrompt) ?? 'project_context';
     const scope = {
       personal_space_id: application.config.personal.spaceId,
       personal_project_id: resolution.personalProjectId,
@@ -28,7 +33,7 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     };
     const contextRequest = {
       ...scope,
-      agent_id: mention?.agentId ?? input.projectAgentId ?? null,
+      agent_id: named ?? mention?.agentId ?? input.projectAgentId ?? null,
       session_id: input.sessionId ?? null,
       turn_id: input.turnId ?? null,
       work_kind: workKind,
@@ -51,7 +56,7 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     }
     if (!value?.status) throw new Error('Role resolution is unavailable');
     let agent = value.agent ? projectAgentRecord(value.agent) : null;
-    const implicit = !mention?.agentId && !input.projectAgentId;
+    const implicit = !named && !mention?.agentId && !input.projectAgentId;
     const peerOnly = agent && implicit && unrelatedPeer(agent, workKind, input.requiredCapabilities);
     if (implicit && !delegation && value.reason !== 'project_lead_required'
       && (peerOnly || value.status === 'unassigned')) {
@@ -65,16 +70,31 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
           required_action: 'Use coordinate_project_agent_task to select or recruit a qualified durable owner before implementation. AR and project managers collaborate in their own roles; do not attribute development to them by fallback.' };
       }
     }
+    // A standing assignment's Agent other than the one chosen is asked for by
+    // name, like an explicit Agent: the Provider keeps the project's lead
+    // accountable and names a member as requested_agent_id. A request it
+    // cannot serve or answer keeps the ordinary choice, marked unreached so
+    // the routing notice does not claim the switch; one never repeats the other.
+    const standingAgentId = resolution.standingOwner?.leadAgentId ?? resolution.standingAgentId ?? null;
+    let standingAgentUnreached = false;
+    if (implicit && !delegation && standingAgentId && value.status === 'ready'
+      && ![agent?.agentId, value.requested_agent_id].includes(standingAgentId)) {
+      const standing = await application.personal.resolveProjectAgentContext({ ...contextRequest,
+        agent_id: standingAgentId }).catch(() => null);
+      standingAgentUnreached = !(standing?.status === 'ready' && standing.agent);
+      if (!standingAgentUnreached) {
+        value = standing;
+        agent = projectAgentRecord(standing.agent);
+      }
+    }
     const employeeId = /^employee\.([a-z][a-z0-9-]{0,63})$/.exec(agent?.agentId ?? '')?.[1];
     if (employeeId && application.employees) {
       try { await application.employees.authorize({ templateId: employeeId, personalProjectId: resolution.personalProjectId }); }
       catch { return { status: 'agent_unavailable', worker_started: false }; }
     }
-    if (agent && (agent.profile.status !== 'active' ||
-      !(agent.profile.allowedClients ?? []).includes(input.sourceApplication ?? 'other'))) {
-      return { status: 'agent_unavailable', worker_started: false };
-    }
-    return { ...value, agent, worker_started: false };
+    const refused = agent && agentUnavailableReason(agent.profile, input.sourceApplication);
+    if (refused) return { status: 'agent_unavailable', reason: refused, worker_started: false };
+    return { ...value, agent, worker_started: false, ...(standingAgentUnreached ? { standingAgentUnreached } : {}) };
   } catch {
     // Preferences remain useful during an older/offline Provider upgrade, but
     // never claim that a role or its private memory was successfully restored.
@@ -87,16 +107,15 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
 // model is fabricated. A project-resolved request never enters this path.
 async function resolveGlobalAgent(application, resolution, input) {
   try {
-    const mention = await resolveTaskAgentMention(application, null, input);
+    const named = resolution.explicitAgentId ?? null;
+    const mention = named ? null : await resolveTaskAgentMention(application, null, input);
     if (mention?.status) return mention;
-    const id = mention?.agentId ?? input.projectAgentId ?? resolution.globalAgentId;
+    const id = named ?? mention?.agentId ?? input.projectAgentId ?? resolution.globalAgentId;
     if (!id) return { status: 'unassigned', worker_started: false };
     const value = await application.personal.getProjectAgent(application.config.personal.spaceId, null, id);
     const agent = projectAgentRecord(value);
-    if (agent.profile.status !== 'active'
-      || !(agent.profile.allowedClients ?? []).includes(input.sourceApplication ?? 'other')) {
-      return { status: 'agent_unavailable', worker_started: false };
-    }
+    const refused = agentUnavailableReason(agent.profile, input.sourceApplication);
+    if (refused) return { status: 'agent_unavailable', reason: refused, worker_started: false };
     return { status: 'ready', reason: 'global_agent', agent, worker_started: false };
   } catch (error) {
     // Before the assistant identity exists, a pending conversation simply has no owner yet.
@@ -233,24 +252,14 @@ function unrelatedPeer(agent, workKind, required = []) {
     && !(required.length && required.every(value => capabilities.includes(value.toLowerCase())));
 }
 
+// A personal preference reaches a task only through its scoped
+// effective_preferences, never as context knowledge (rec#15 D-27.7).
 function scopedItems(items, agentId) {
-  return (items ?? []).filter(item => !item.project_agent_id || item.project_agent_id === agentId)
+  return (items ?? []).filter(item => !item.profile_aspect && (!item.project_agent_id || item.project_agent_id === agentId))
     .slice(0, 4).map(item => ({
       id: item.id, name: item.name, fact: item.fact, summary: item.summary,
       confirmation_status: item.confirmation_status,
       defined_project_id: item.defined_project_id,
       project_agent_id: item.project_agent_id ?? null
     }));
-}
-
-// Conservative intent hints, not a claim of semantic understanding. Explicit
-// workKind/capabilities take precedence; unmatched requests use project history.
-function taskWorkKind(prompt) {
-  const text = typeof prompt === 'string' ? prompt.slice(0, 8192) : '';
-  if (/代码审查|代码评审|code review|review code/iu.test(text)) return 'code_review';
-  if (/架构|\barchitecture\b/iu.test(text)) return 'architecture';
-  if (/修复|实现|开发|编写代码|优化|改为|接入|\b(?:implement|fix|bug|coding)\b/iu.test(text)) return 'implementation';
-  if (/测试|验证|\b(?:test|verify|validation)\b/iu.test(text)) return 'test_validation';
-  if (/看板|排期|规划|\bplanning\b/iu.test(text)) return 'project_management';
-  return 'project_context';
 }

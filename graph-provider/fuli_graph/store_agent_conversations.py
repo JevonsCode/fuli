@@ -4,9 +4,9 @@ import gzip
 import hashlib
 import json
 from fastapi import HTTPException
-from .agent_conversation_models import ConversationPolicy
+from .agent_conversation_models import ConversationPolicy, ConversationWrite
 from .conversation_context import (
-    DIGEST_VERSION, add_task_result, fold_messages, message_bytes, pack_context, refold_digest, render_digest,
+    DIGEST_VERSION, add_delivery_proofs, add_task_result, fold_messages, message_bytes, pack_context, refold_digest, render_digest,
 )
 from .project_agent_access import authorize_project_agent
 from .conversation_scope import conversation_binding_id, conversation_scope_id, started_conversation_id
@@ -14,6 +14,9 @@ from .provider_values import now_utc, stable_uuid
 from .store_conversation_triage import ASSISTANT_AGENT_ID, StoreConversationTriage
 from .store_transactions import query_store_transaction
 from .store_transcript_recovery import recover_fallback_boundary
+from .knowledge_versions import lock_knowledge
+from .knowledge_source_fence import require_source_available
+from .client_coverage import covers_client
 
 CONTEXT_PAGE_EVENTS = 50
 CONTEXT_SCAN_EVENTS = 1000
@@ -38,7 +41,7 @@ class StoreAgentConversations:
         journal_only = request.personal_project_id is None and request.agent_id == ASSISTANT_AGENT_ID
         agent = await authorize_project_agent(self, actor, space, request.personal_project_id,
             request.agent_id, require_active=write, require_memory=not journal_only, allow_global=True)
-        if request.source_application is not None and request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
+        if request.source_application is not None and not covers_client(json.loads(agent['profile_json']).get('allowed_clients', []), request.source_application):
             raise HTTPException(403, 'Agent is not allowed in this client')
         return conversation_scope_id(space['id'], request.personal_project_id, agent['agent_id'])
 
@@ -71,56 +74,95 @@ class StoreAgentConversations:
         if request.mode == 'policy':
             return policy.model_dump()
         if request.mode == 'session':
-            rows, _, _ = await self.runtime.driver.execute_query(
-                'OPTIONAL MATCH (b:FuliConversationBinding {id: $id}) '
-                'OPTIONAL MATCH (s:FuliTranscriptCursor {id: $stream}) '
-                'RETURN b.conversation_id AS conversation_id, coalesce(s.cursor,0) AS cursor, '
-                'coalesce(s.initialized, s.cursor > 0, false) AS initialized',
-                stream=stable_uuid(request.personal_space_id, request.source_application, request.session_id or ''),
-                id=conversation_binding_id(scope, request.source_application, request.session_id or ''))
-            return dict(rows[0]) if rows else {'conversation_id': None, 'cursor': 0, 'initialized': False}
+            return await self._session_binding(scope, request)
         if request.mode == 'list':
-            # Jefa's triage label travels with each conversation so a list can
-            # show what is still unclaimed without a second read per row.
-            rows, _, _ = await self.runtime.driver.execute_query(
-                'MATCH (c:FuliConversation {scope: $scope}) '
-                'OPTIONAL MATCH (t:FuliConversationTriage {id: c.id}) '
-                'RETURN c, t ORDER BY c.last_activity DESC, c.id LIMIT $limit',
-                scope=scope, limit=request.limit)
-            return {'conversations': [{**self._conversation_view(dict(r['c']), policy),
-                'triage': StoreConversationTriage._triage_view(dict(r.get('t'))) if r.get('t') else None} for r in rows]}
-        rows, _, _ = await self.runtime.driver.execute_query(
-            'MATCH (c:FuliConversation {scope: $scope, id: $id}) RETURN c', scope=scope, id=request.conversation_id)
-        if not rows:
-            raise HTTPException(404, 'Conversation not found in this Agent and project')
-        record = dict(rows[0]['c'])
-        view = self._conversation_view(record, policy)
+            return {'conversations': await self._latest_conversations(scope, policy, request.limit)}
+        record = await self._scoped_conversation(scope, request.conversation_id)
         if request.mode == 'context':
-            decoded, omitted, scan_truncated = await self._context_events(record, request.after)
-            checkpoint = {'status': record.get('status') or 'reported', 'summary': record.get('summary')}
-            return {**view, 'context': pack_context('', decoded, policy.context_budget, checkpoint,
-                conversation_id=record['id'], revision=record['revision'],
-                omitted_sequence=omitted, scan_truncated=scan_truncated)}
+            return await self._recovery_context(record, policy, request, after=request.after)
+        view = self._conversation_view(record, policy)
         events, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
             'WHERE e.sequence > $after AND e.sequence <= $revision '
             'RETURN e.payload AS payload, e.sequence AS sequence '
             'ORDER BY e.sequence ASC LIMIT $limit', id=record['id'], after=request.after,
-            revision=record['revision'], limit=request.limit)
+            revision=record['revision'], limit=request.limit + 1)
         decoded = []
         total = 0
-        for event in events:
+        for event in events[:request.limit]:
             value = decode_event(event)
             total += len(json.dumps(value, ensure_ascii=False).encode())
             if total > 512 * 1024 and decoded:
                 break
             decoded.append(value)
         cursor = decoded[-1]['sequence'] if decoded else request.after
-        page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': cursor < record['revision']}
+        # Deletion leaves gaps and advances revision without adding an event.
+        # Only a retained event beyond this page proves there is another page.
+        page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': len(events) > len(decoded)}
         if request.after == 0:
             # The first history page shows what compaction extracted and where it came from.
             page['digest'] = await self._current_digest(record)
         return page
+
+    async def begin_conversation(self, actor, request):
+        """A task entry's conversation in one request and one transaction (rec#11 D-53).
+
+        The three steps a host used to send one by one, in the same order: the
+        session's bound conversation; then its recovery window with this
+        session's delivery proofs, or else the latest conversation of this
+        Agent's scope; then the empty append that opens this task's
+        conversation. The reads keep the query route's checks and the append
+        all of append_conversation's; a refused append rolls the request back,
+        so no read leaves the Provider without the write."""
+        async with query_store_transaction(self) as store:
+            scope = await store._conversation_scope(actor, request)
+            policy = await store._conversation_policy(scope)
+            previous_id = (await store._session_binding(scope, request))['conversation_id']
+            previous = await store._recovery_context(await store._scoped_conversation(scope, previous_id),
+                policy, request) if previous_id else None
+            recent = None if previous_id else next(iter(await store._latest_conversations(scope, policy, 1)), None)
+            saved = await store.append_conversation(actor, ConversationWrite(**request.model_dump()))
+            return {**saved, 'recovered_from': previous_id, 'previous': previous, 'recent': recent}
+
+    async def _session_binding(self, scope, request):
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'OPTIONAL MATCH (b:FuliConversationBinding {id: $id}) '
+            'OPTIONAL MATCH (s:FuliTranscriptCursor {id: $stream}) '
+            'RETURN b.conversation_id AS conversation_id, coalesce(s.cursor,0) AS cursor, '
+            'coalesce(s.initialized, s.cursor > 0, false) AS initialized',
+            stream=stable_uuid(request.personal_space_id, request.source_application, request.session_id or ''),
+            id=conversation_binding_id(scope, request.source_application, request.session_id or ''))
+        return dict(rows[0]) if rows else {'conversation_id': None, 'cursor': 0, 'initialized': False}
+
+    async def _latest_conversations(self, scope, policy, limit):
+        # Jefa's triage label travels with each conversation so a list can
+        # show what is still unclaimed without a second read per row.
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {scope: $scope}) '
+            'OPTIONAL MATCH (t:FuliConversationTriage {id: c.id}) '
+            'RETURN c, t ORDER BY c.last_activity DESC, c.id LIMIT $limit',
+            scope=scope, limit=limit)
+        return [{**self._conversation_view(dict(r['c']), policy),
+            'triage': StoreConversationTriage._triage_view(dict(r.get('t'))) if r.get('t') else None} for r in rows]
+
+    async def _scoped_conversation(self, scope, conversation_id):
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {scope: $scope, id: $id}) RETURN c', scope=scope, id=conversation_id)
+        if not rows:
+            raise HTTPException(404, 'Conversation not found in this Agent and project')
+        return dict(rows[0]['c'])
+
+    async def _recovery_context(self, record, policy, request, *, after=0):
+        decoded, omitted, scan_truncated = await self._context_events(record, after)
+        checkpoint = {'status': record.get('status') or 'reported', 'summary': record.get('summary')}
+        context = pack_context('', decoded, policy.context_budget, checkpoint,
+            conversation_id=record['id'], revision=record['revision'],
+            omitted_sequence=omitted, scan_truncated=scan_truncated)
+        # A session's task entry asks with its own ID; the host strips these
+        # proofs once it knows what that session has already seen.
+        if request.session_id is not None and request.source_application is not None:
+            add_delivery_proofs(context, decoded, request.source_application, request.session_id)
+        return {**self._conversation_view(record, policy), 'context': context}
 
     async def _current_digest(self, record):
         """The stored digest, rebuilt once from raw events when older folding rules made it."""
@@ -153,7 +195,8 @@ class StoreAgentConversations:
             rows, _, _ = await self.runtime.driver.execute_query(
                 'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
                 'WHERE e.sequence > $after AND e.sequence <= $revision AND e.sequence < $before '
-                'RETURN e.payload AS payload, e.sequence AS sequence '
+                'RETURN e.payload AS payload, e.sequence AS sequence, '
+                'e.session_id AS session_id, e.source_application AS source_application '
                 'ORDER BY e.sequence DESC LIMIT $limit', id=record['id'], after=after,
                 revision=record['revision'], before=before,
                 limit=min(CONTEXT_PAGE_EVENTS, CONTEXT_SCAN_EVENTS - scanned))
@@ -162,6 +205,7 @@ class StoreAgentConversations:
             for row in rows:
                 value = decode_event(row)
                 total += len(json.dumps(value, ensure_ascii=False).encode())
+                value.update(session_id=row.get('session_id'), source_application=row.get('source_application'))
                 if total > CONTEXT_DECODE_BYTES:
                     return list(reversed(decoded)), row['sequence'], True
                 scanned += 1
@@ -228,6 +272,10 @@ class StoreAgentConversations:
         if request.initialize_cursor or request.fallback_recovery:
             raise HTTPException(422, 'Initialize transcripts only at a verified task boundary')
         async with query_store_transaction(self) as store:
+            space = await store.authorize(actor, request.personal_space_id, 'maintainer')
+            await lock_knowledge(store, space)
+            await require_source_available(store, space, source_application=request.source_application,
+                session_id=request.session_id, task_token=request.task_context_token)
             scope = await store._conversation_scope(actor, request, write=True)
             await store._conversation_task(actor, request)
             policy = await store._conversation_policy(scope)

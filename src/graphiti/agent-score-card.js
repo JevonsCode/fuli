@@ -1,4 +1,5 @@
 import { reviewAgentScoreCard } from './agent-performance-review.js';
+import { suggestionDeletionGeneration } from './role-suggestion-note.js';
 
 // Bole's zero-token score card. The Provider tallies the outcomes it records;
 // this host adds the Tonborg acceptance verdicts it keeps locally. Nothing is
@@ -15,7 +16,9 @@ const DIMENSION_NAMES = Object.freeze(Object.fromEntries(
   Object.entries(DIMENSIONS).map(([name, providerName]) => [providerName, name])));
 
 export async function getAgentScoreCard(application, input) {
-  const value = await application.personal.getProjectAgentScoreCard(scoreCardQuery(application, input));
+  // Before the card is read: a permanent delete after this keeps the review's words out of its console copy.
+  const deletionGeneration = input.review ? suggestionDeletionGeneration(application, input.personalSpaceId) : undefined;
+  const value = await application.personal.getProjectAgentScoreCard(await scoreCardQuery(application, input));
   const card = {
     personalSpaceId: value.personal_space_id,
     agentId: value.agent_id,
@@ -35,13 +38,13 @@ export async function getAgentScoreCard(application, input) {
     evidence: { tool: EVIDENCE_TOOL, addArgument: 'dimension', arguments: { personalSpaceId: value.personal_space_id,
       agentId: value.agent_id, ...(input.personalProjectId ? { personalProjectId: input.personalProjectId } : {}) } }
   };
-  return input.review ? reviewAgentScoreCard(application, card) : card;
+  return input.review ? reviewAgentScoreCard(application, card, { sourceApplication: input.sourceApplication, deletionGeneration }) : card;
 }
 
 export async function listAgentScoreEvidence(application, input) {
   const dimension = DIMENSIONS[input.dimension];
   if (!dimension) throw new TypeError(`Score card dimension must be one of ${Object.keys(DIMENSIONS).join(', ')}`);
-  const value = await application.personal.listProjectAgentScoreEvidence({ ...scoreCardQuery(application, input),
+  const value = await application.personal.listProjectAgentScoreEvidence({ ...await scoreCardQuery(application, input),
     dimension, executor_id: input.executorId ?? null, limit: input.limit ?? DEFAULT_EVIDENCE_LIMIT });
   return {
     personalSpaceId: value.personal_space_id,
@@ -55,13 +58,13 @@ export async function listAgentScoreEvidence(application, input) {
   };
 }
 
-function scoreCardQuery(application, input) {
+async function scoreCardQuery(application, input) {
   const personalProjectId = input.personalProjectId ?? null;
   return {
     personal_space_id: input.personalSpaceId,
     agent_id: input.agentId,
     personal_project_ids: personalProjectId ? [personalProjectId] : null,
-    review_verdicts: application.judgment?.reviewVerdicts({
+    review_verdicts: await application.judgment?.reviewVerdicts({
       personalSpaceId: input.personalSpaceId, agentId: input.agentId, personalProjectId
     }) ?? []
   };

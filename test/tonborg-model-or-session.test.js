@@ -8,11 +8,13 @@ import { callAgentTool } from '../src/agent-tools.js';
 import { roleWorkSessions } from '../src/graphiti/role-work-sessions.js';
 import { createJudgmentBackend } from '../src/judgment/backend.js';
 import { createJudgmentEngine } from '../src/judgment/engine.js';
-import { createReviewGate } from '../src/judgment/review-gate.js';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { JudgmentStore } from '../src/judgment/store.js';
+import { tonborgSessionEvidence } from '../src/judgment/session-package.js';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
+import { createRoleTrust } from '../src/model-backends/role-trust.js';
+import { WARNING_VERSION } from './fixtures/model-trust.js';
 import { createRoleWorkBridge } from '../src/model-backends/role-work.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
@@ -31,12 +33,22 @@ const tonborg = (extra = {}) => ({ enabled: true, connection: 'local', allowedOp
 const SESSIONS = {
   'token-a': { sessionId: 'session-a', personalProjectId: 'p', projectAgentId: 'lead', sourceApplication: 'claude_code' },
   'token-b': { sessionId: 'session-b', personalProjectId: 'p', projectAgentId: 'lead', sourceApplication: 'codex' },
-  'token-q': { sessionId: 'session-q', personalProjectId: 'q', projectAgentId: 'lead', sourceApplication: 'codex' }
+  'token-q': { sessionId: 'session-q', personalProjectId: 'q', projectAgentId: 'lead', sourceApplication: 'codex' },
+  // rec#11 D-58: a plain session and two FLAs of the project claim Tonborg's work.
+  'token-plain': { sessionId: 'session-plain', personalProjectId: 'p', projectAgentId: null, sourceApplication: 'codex' },
+  'token-fla-a': { sessionId: 'session-fla-a', personalProjectId: 'p', projectAgentId: 'fla-a', sourceApplication: 'codex' },
+  'token-fla-b': { sessionId: 'session-fla-b', personalProjectId: 'p', projectAgentId: 'fla-b', sourceApplication: 'codex' }
 };
 // These tests are about who answers and how a write survives retries and
-// restarts, so the review gate (rec#10 D-24, test/tonborg-review-gate.test.js)
+// restarts, so the trust gate (rec#10 D-36, test/tonborg-model-trust.test.js)
 // lets every answer apply unless a test asks for the production gate.
-const UNGATED = { status: key => ({ status: 'passed', reason: null, ...key }) };
+const UNGATED = () => ({ status: key => ({ status: 'passed', reason: null, modelId: key.model }), commit: (key, write) => write() });
+// The production gate over the harness's model port; acknowledged: the person saw the warning.
+const productionTrust = ({ acknowledged }) => port => {
+  const trust = createRoleTrust({ modelBackends: port });
+  if (acknowledged) trust.acknowledgeWarning('tonborg', WARNING_VERSION, 0);
+  return trust;
+};
 const reviewInput = { personalSpaceId: 's', personalProjectId: 'p', requestId: 'review-1', limit: 10 };
 const verdict = (extra = {}) => ({ target: 'entity:one', outcome: 'approve', summary: 'Confirmed routine command', evidence: ['npm test'], confidence: 0.95, ...extra });
 // evidenceIds name parts of the judgment data: candidates for a review,
@@ -44,26 +56,41 @@ const verdict = (extra = {}) => ({ target: 'entity:one', outcome: 'approve', sum
 const answer = (payload, evidenceIds = ['candidates']) => ({ decision: 'propose', payload, reason: 'Supported by the evidence.', evidenceIds, uncertainty: null });
 const reply = (payload, evidenceIds) => openAiStream(JSON.stringify(answer(payload, evidenceIds)));
 
-function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()] }), policy = {}, reviewGate = UNGATED } = {}) {
+// tags: what the fake local Ollama lists at /api/tags; without it the route is missing.
+function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()] }), policy = {}, trust = UNGATED, tags = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fuli-tonborg-'));
   const clock = { at: Date.parse('2026-10-20T12:00:00.000Z') };
   const now = () => new Date(clock.at);
   const config = { version: 1, roles,
     connections: { local: { protocol: 'openai_chat', endpoint: 'http://127.0.0.1:11434/v1', model: 'qwen-test', secretRef: null } } };
   const calls = [], writes = [], legacyRuns = [], completions = [];
+  const visibility = { private: new Map(), offline: false };
   const candidates = [{ candidate_key: 'entity:one', title: 'Build command', content: 'npm test', confirmation_status: 'confirmed',
     changed_at: '2026-01-01', reasons: [], project_ids: ['p'], ai_review_evidence_token: 'evidence-token' }];
   const task = { taskId: 't', personalProjectId: 'p', leadAgentId: 'lead', status: 'awaiting_review', revision: 2, title: 'Synthetic task', objective: 'Verify a change' };
   const ledger = new ModelUsageLedger(join(dir, 'model-usage.sqlite'));
   const port = createModelBackendPort({ readConfig: () => readModelBackendConfig('x', { read: () => config }),
     secrets: { read: async () => null }, ledger, wait: async () => {}, now,
-    fetchImpl: async (_url, init) => { calls.push(JSON.parse(init.body)); return replies(calls.length); } });
-  const app = { config: { personal: { spaceId: 's' } },
+    fetchImpl: async (url, init) => {
+      if (new URL(url).pathname === '/api/tags') return tags ? Response.json(tags) : new Response('', { status: 404 });
+      calls.push(JSON.parse(init.body));
+      return replies(calls.length);
+    } });
+  const app = { config: { personal: { spaceId: 's' } }, getCapturePolicy: () => ({ enabled: true }),
     listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
     getCollaborationPreferences: async () => completePreferences(),
     inspectProjectAgentMemory: async () => ({ current: null, revision: 0 }),
     employees: { authorize: async () => ({}) },
+    // rec#50: the Provider's visible-items read over a synthetic table. An
+    // item in visibility.private is that FLA's (in project p); offline fails.
+    personal: { readVisibleKnowledgeItems: async body => {
+      if (visibility.offline) throw Object.assign(new Error('synthetic Provider offline'), { status: 503 });
+      return { items: body.items.filter(({ item_kind: kind, item_id: id }) => {
+        const owner = visibility.private.get(`${kind}:${id}`);
+        return !owner || (owner === body.reader_agent_id && body.reader_project_id === 'p');
+      }) };
+    } },
     startKnowledgeReview: async () => ({ review_id: 'review' }),
     finishKnowledgeReview: async () => ({}),
     listKnowledgeReviewCandidates: async () => ({ candidates, total_candidate_count: candidates.length }),
@@ -85,23 +112,26 @@ function harness(t, { roles = {}, replies = () => reply({ decisions: [verdict()]
       verified_attempt: { attempt_id: 'attempt', artifact_revision: 'artifact-a', outcome: 'pass', verifier_id: 'reviewer', run_id: 'run', evidence_refs: ['report'] } }),
     recordProjectAgentTaskActivity: async value => { completions.push(value); task.status = 'completed'; return { ...task }; }
   };
+  const roleTrust = trust(port);
   const open = () => {
-    const bridge = createRoleWorkBridge({ port, store: new RoleWorkStore(join(dir, 'role-work.sqlite')),
-      verifySession: roleWorkSessions(app), resumers: { tonborg: work => app.judgment.resumeWork(work) }, now });
+    const bridge = createRoleWorkBridge({ port, store: new RoleWorkStore(join(dir, 'role-work.sqlite'), { recoveryGate: { state: () => ({ state: 'open' }) } }),
+      verifySession: roleWorkSessions(app), resumers: { tonborg: work => app.judgment.resumeWork(work) },
+      views: { tonborg: (result, session) => app.judgment.agent.workResult(result, session) },
+      packageViews: { tonborg: (evidence, work, session) => tonborgSessionEvidence(app, evidence, work, session) }, now });
     const legacy = async input => {
       legacyRuns.push(input);
       return { client: 'codex', model: 'cli-model', body: JSON.stringify({ decisions: [verdict()] }) };
     };
     app.roleWork = bridge;
-    app.judgment = createJudgmentService({ app, openStore: () => new JudgmentStore(join(dir, 'judgment.sqlite')),
-      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge, legacy }), reviewGate }) });
+    app.judgment = createJudgmentService({ app, openStore: () => new JudgmentStore(join(dir, 'judgment.sqlite'), { recoveryGate: { state: () => ({ state: 'open' }) } }),
+      engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge, legacy }), trust: roleTrust }) });
   };
   const close = () => { app.judgment.close(); app.roleWork.close(); };
   open();
   app.judgment.store().setPolicy('s', '', { mode: 'shared', quality: 'quality', client: 'codex', ...policy }, 0);
   t.after(() => { close(); ledger.close(); rmSync(dir, { recursive: true, force: true }); });
   const work = (action, input) => callAgentTool(app, 'role_work', { action, ...input });
-  return { app, config, calls, writes, legacyRuns, completions, candidates, task, ledger, clock, work,
+  return { app, config, calls, writes, legacyRuns, completions, candidates, task, ledger, clock, work, visibility,
     restart() { close(); open(); } };
 }
 
@@ -139,14 +169,14 @@ const claimAndSubmit = async (h, token, payload, evidenceIds) => {
     leaseToken: workPackage.lease.token, answer: answer(payload, evidenceIds), usage: { inputTokens: 900, outputTokens: 40 } }) };
 };
 
-test('T1: a configured model gives a bounded decision on exact candidate keys; until its build is unlocked it is only a suggestion', async t => {
-  const h = harness(t, { roles: { tonborg: tonborg() }, reviewGate: createReviewGate() });
+test('T1: a configured model gives a bounded decision on exact candidate keys; before the person saw the warning it is only a suggestion', async t => {
+  const h = harness(t, { roles: { tonborg: tonborg() }, trust: productionTrust({ acknowledged: false }) });
   const [record] = (await h.app.judgment.review(reviewInput)).records;
   assert.equal(h.calls.length, 1);
   assert.equal(record.outcome, 'escalate');
   assert.deepEqual([record.aiReview.state, record.aiReview.modelOutcome], ['ai_suggested', 'approve']);
-  // The port reports no served digest, so no registry entry can match this build.
-  assert.equal(record.aiReview.gate.reason, 'model_build_unknown');
+  // rec#10 D-36.11: until the warning is acknowledged on the settings page, the first execution is a suggestion.
+  assert.deepEqual([record.aiReview.gate.reason, record.aiReview.gate.modelId], ['warning_not_seen', 'qwen-test']);
   assert.equal(record.execution.status, 'not_applied');
   assert.deepEqual(record.judgedBy, { mode: 'model_api', independent: true });
   assert.equal(record.client, null);
@@ -156,6 +186,26 @@ test('T1: a configured model gives a bounded decision on exact candidate keys; u
   const schema = h.calls[0].response_format.json_schema.schema;
   assert.deepEqual(schema.properties.payload.properties.decisions.items.properties.target.enum, ['entity:one']);
   assert.equal(h.legacyRuns.length, 0);
+});
+
+test('T1: a local build observed after the answer never reaches the receipt, the record or the gate (D-32)', async t => {
+  const observed = '1'.repeat(64);
+  const h = harness(t, { roles: { tonborg: tonborg() }, trust: productionTrust({ acknowledged: true }),
+    tags: { models: [{ name: 'qwen-test', model: 'qwen-test', digest: observed }] },
+    replies: () => openAiStream(JSON.stringify(answer({ decisions: [verdict()] })), { model: 'qwen-test' }) });
+  const [record] = (await h.app.judgment.review(reviewInput)).records;
+  // The observation was made and kept for Settings only.
+  assert.deepEqual(h.ledger.db.prepare('SELECT observed_tag_digest AS digest FROM model_attempts').all().map(row => row.digest), [observed]);
+  // The configured model is trusted (rec#10 D-36.5); the gate names the model, never a build.
+  assert.deepEqual([record.aiReview.state, record.aiReview.modelOutcome], ['ai_reviewed', 'approve']);
+  assert.deepEqual(record.aiReview.gate, { status: 'passed', reason: null, modelId: 'qwen-test' });
+  assert.equal(Object.hasOwn(record.modelReceipt, 'modelDigest'), false);
+  assert.equal(JSON.stringify(record).includes(observed), false);
+  const stored = h.app.judgment.store().db.prepare('SELECT body FROM judgment_records').all().map(row => row.body);
+  assert.equal(stored.length, 1);
+  assert.equal(stored.some(body => body.includes(observed)), false);
+  assert.equal(record.execution.status, 'applied');
+  assert.equal(JSON.stringify(h.writes).includes(observed), false);
 });
 
 test('T2: conflicting or negative evidence escalates even when the model is confident', async t => {
@@ -235,7 +285,7 @@ test('C2 and C13: a failing model falls back to the exact session; both usages a
   assert.deepEqual(record.judgedBy, { mode: 'current_session', independent: false });
   assert.equal(record.modelReceipt.status, 'failed');
   assert.equal(h.completions.length + h.legacyRuns.length, 0);
-  assert.deepEqual(h.app.judgment.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead' }), []);
+  assert.deepEqual(await h.app.judgment.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead' }), []);
   const groups = h.ledger.usage({ role: 'tonborg' });
   assert.deepEqual(groups.map(group => [group.channel, group.requests, group.attempts]).sort(), [['model_api', 1, 2], ['session', 1, 1]]);
   assert.equal(groups.find(group => group.channel === 'session').tokens.input.reported, 900);
@@ -462,4 +512,163 @@ test('D-04 §6: the CLI runs only on an explicit legacy_cli opt-in; old policies
   const migrated = harness(t);
   assert.equal((await migrated.app.judgment.review(reviewInput)).records[0].outcome, 'pending');
   assert.equal(migrated.legacyRuns.length, 0);
+});
+
+// rec#11 D-58: Tonborg's history, memory and its own preferences, which a
+// session answering for Tonborg must not receive. entity:secret was reviewed
+// before and is FLA-A's now.
+const SECRET = { summary: 'Synthetic summary quoting FLA-A private words', feedback: 'Synthetic feedback about the secret',
+  memory: 'Synthetic Tonborg memory naming entity:secret', rule: 'Synthetic rule given to Tonborg only', title: 'Synthetic secret title' };
+
+function withHistory(h) {
+  const store = h.app.judgment.store();
+  const old = store.record('s', { personalProjectId: 'p', kind: 'review', target: 'entity:secret', title: SECRET.title,
+    summary: SECRET.summary, evidence: [SECRET.summary], outcome: 'escalate' }, 'synthetic-old-review');
+  store.feedback('s', old.id, 'down', SECRET.feedback, 0);
+  h.visibility.private.set('entity:secret', 'fla-a');
+  h.app.inspectProjectAgentMemory = async () => ({ current: { memory: SECRET.memory }, revision: 3 });
+  // The preference delivery as the Provider gives it to each reader: a rule
+  // with an owner is that FLA's (scope agent) and reaches it alone.
+  // extra: more of the Provider's answer (a cut source window, scope_unknown keys).
+  h.preferences = { failing: false, extra: {}, rules: [
+    { key: 'shared-rule', instruction: SHARED_RULE, owner: null },
+    { key: 'other-shared-rule', instruction: OTHER_SHARED_RULE, owner: null },
+    { key: 'tonborg-rule', instruction: SECRET.rule, owner: 'employee.tonborg' }] };
+  h.app.getCollaborationPreferences = async ({ projectAgentId = null }) => {
+    if (h.preferences.failing) throw Object.assign(new Error('synthetic preference read failed'), { code: 'synthetic_unavailable' });
+    return completePreferences({ effective: h.preferences.rules.filter(({ owner }) => !owner || owner === projectAgentId)
+      .map(({ key, instruction, owner }) => ({ id: key, item_kind: 'entity', preference_key: key, title: key, instruction,
+        preference_scope: owner ? 'agent' : 'global', confirmation_status: 'confirmed' })), ...h.preferences.extra });
+  };
+  return h;
+}
+const SHARED_RULE = 'Synthetic rule for everyone';
+const OTHER_SHARED_RULE = 'Synthetic second rule for everyone';
+const preferencesOf = workPackage => JSON.parse(workPackage.evidence.find(item => item.id === 'preferences').text);
+// A shared rule the person gives FLA-A after the package was made.
+const makeOwn = (h, key, owner) => { h.preferences.rules.find(item => item.key === key).owner = owner; };
+
+const leaks = value => Object.values(SECRET).filter(text => JSON.stringify(value).includes(text))
+  .concat(JSON.stringify(value).includes('entity:secret') ? ['entity:secret'] : []);
+
+test('D-58: a session claiming Tonborg\'s review gets the candidate, shared rules and criteria, never Tonborg\'s memory or history', async t => {
+  for (const token of ['token-plain', 'token-fla-b']) {
+    const h = withHistory(harness(t));
+    const [pending] = (await h.app.judgment.review(reviewInput)).records;
+    assert.equal(pending.outcome, 'pending');
+    const { workPackage, result } = await claimAndSubmit(h, token, { decisions: [verdict()] });
+    assert.deepEqual(leaks(workPackage), [], token);
+    assert.deepEqual(workPackage.evidence.map(item => item.id).sort(), ['candidates', 'policy', 'preferences'], token);
+    const candidates = JSON.parse(workPackage.evidence.find(item => item.id === 'candidates').text);
+    assert.deepEqual(candidates.map(candidate => [candidate.candidate_key, candidate.title, candidate.content]),
+      [['entity:one', 'Build command', 'npm test']]);
+    const preferences = preferencesOf(workPackage);
+    assert.deepEqual(preferences.selected.map(item => item.key), ['shared-rule', 'other-shared-rule']);
+    // The receipt says a part was withheld, so its rules make the session escalate if it matters.
+    assert.equal(preferences.status, 'partial');
+    assert.equal(preferences.context_changed, true);
+    assert.ok(preferences.omitted.truncated.includes('context_changed'));
+    assert.match(workPackage.instructions, /Tonborg/);
+    // The review still works with the minimal package.
+    assert.equal(result.status, 'completed');
+    const reviewed = result.result.records.find(record => record.target === 'entity:one');
+    assert.equal(reviewed.kind, 'review');
+    assert.equal(reviewed.aiReview.modelOutcome, 'approve');
+    assert.deepEqual(leaks(result), [], token);
+  }
+});
+
+test('D-58: a candidate the claiming session may not see now is not handed over; an unreadable visibility fails closed', async t => {
+  const h = withHistory(harness(t));
+  await h.app.judgment.review(reviewInput);
+  h.visibility.private.set('entity:one', 'fla-a');
+  for (const token of ['token-plain', 'token-fla-b']) {
+    await assert.rejects(h.work('claim', { taskContextToken: token }), { code: 'role_work_not_visible', status: 403 });
+  }
+  h.visibility.offline = true;
+  await assert.rejects(h.work('claim', { taskContextToken: 'token-fla-a' }), { code: 'role_work_visibility_unavailable', status: 503 });
+  // A refused session held no lease: FLA-A, which may see its own item, claims it at once.
+  h.visibility.offline = false;
+  const { workPackage } = await h.work('claim', { taskContextToken: 'token-fla-a' });
+  assert.equal(JSON.parse(workPackage.evidence.find(item => item.id === 'candidates').text)[0].candidate_key, 'entity:one');
+  assert.deepEqual(leaks(workPackage).filter(text => text !== 'entity:secret'), []);
+});
+
+test('D-58: a stored rule reaches a claiming session only while that session may read the same rule now', async t => {
+  // A global rule made FLA-A's after the package was made never reaches a plain session or FLA-B; a still-global one does.
+  for (const token of ['token-plain', 'token-fla-b']) {
+    const h = withHistory(harness(t));
+    await h.app.judgment.review(reviewInput);
+    makeOwn(h, 'shared-rule', 'fla-a');
+    const { workPackage } = await h.work('claim', { taskContextToken: token });
+    const preferences = preferencesOf(workPackage);
+    assert.ok(!JSON.stringify(workPackage).includes(SHARED_RULE), token);
+    assert.deepEqual(preferences.selected.map(item => [item.key, item.rule]), [['other-shared-rule', OTHER_SHARED_RULE]], token);
+    assert.deepEqual([preferences.status, preferences.context_changed], ['partial', true]);
+    assert.deepEqual(leaks(workPackage), [], token);
+  }
+  // FLA-A owns the rule now: its claim keeps the stored rule, still marked changed (its scope moved).
+  const own = withHistory(harness(t));
+  await own.app.judgment.review(reviewInput);
+  makeOwn(own, 'shared-rule', 'fla-a');
+  const preferences = preferencesOf((await own.work('claim', { taskContextToken: 'token-fla-a' })).workPackage);
+  assert.deepEqual(preferences.selected.map(item => [item.key, item.scope, item.rule]),
+    [['shared-rule', 'global', SHARED_RULE], ['other-shared-rule', 'global', OTHER_SHARED_RULE]]);
+  assert.equal(preferences.context_changed, true);
+  assert.ok(!JSON.stringify(preferences).includes(SECRET.rule), 'never Tonborg\'s own rule');
+});
+
+test('D-58: the same rules from a delivery now less complete, or with a new scope_unknown key, mark the context changed and name nothing new', async t => {
+  // The FLA's claim reads the same two shared rules it is given now, and no Tonborg rule was stored for a global review.
+  const claim = async (extra, check) => {
+    const h = withHistory(harness(t));
+    makeOwn(h, 'tonborg-rule', 'nobody');
+    await h.app.judgment.review(reviewInput);
+    const stored = preferencesOf((await h.work('claim', { taskContextToken: 'token-plain' })).workPackage);
+    assert.deepEqual([stored.status, stored.context_changed], ['complete', undefined], 'unchanged before');
+    const again = withHistory(harness(t));
+    makeOwn(again, 'tonborg-rule', 'nobody');
+    await again.app.judgment.review(reviewInput);
+    again.preferences.extra = extra;
+    const { workPackage } = await again.work('claim', { taskContextToken: 'token-plain' });
+    const preferences = preferencesOf(workPackage);
+    assert.deepEqual(preferences.selected.map(item => item.rule), [SHARED_RULE, OTHER_SHARED_RULE]);
+    assert.deepEqual([preferences.status, preferences.context_changed], ['partial', true]);
+    assert.deepEqual(preferences.omitted.truncated, ['context_changed']);
+    check(workPackage, preferences);
+  };
+  // A source window cut since the package was made.
+  await claim({ truncated: true, source_windows: { candidates_truncated: true, project_ancestors_truncated: false,
+    queued_conflicts_truncated: false } }, () => {});
+  // A rule limited to a task dimension appears: its key, and how many there are, stay out.
+  await claim({ scope_unknown: ['synthetic-private-new-key'] }, (workPackage, preferences) => {
+    assert.ok(!JSON.stringify(workPackage).includes('synthetic-private-new-key'));
+    assert.deepEqual(preferences.scope_unknown, []);
+  });
+});
+
+test('D-58: a preference delivery that cannot be read at claim time withholds every stored rule; the candidate is still reviewed', async t => {
+  const h = withHistory(harness(t));
+  await h.app.judgment.review(reviewInput);
+  h.preferences.failing = true;
+  const { workPackage } = await h.work('claim', { taskContextToken: 'token-plain' });
+  const preferences = preferencesOf(workPackage);
+  assert.deepEqual([preferences.selected, preferences.conflicts, preferences.scope_unknown], [[], [], []]);
+  assert.deepEqual([preferences.status, preferences.context_changed], ['partial', true]);
+  assert.ok(preferences.omitted.truncated.includes('context_changed'));
+  for (const text of [SHARED_RULE, OTHER_SHARED_RULE, SECRET.rule]) assert.ok(!JSON.stringify(workPackage).includes(text), text);
+  assert.equal(JSON.parse(workPackage.evidence.find(item => item.id === 'candidates').text)[0].candidate_key, 'entity:one');
+  // The session answers from the candidate; the rerun reads Tonborg's own context again and uses it.
+  h.preferences.failing = false;
+  const result = await submitAgain(h, 'token-plain', workPackage);
+  assert.equal(result.status, 'completed');
+  assert.equal(result.result.records.find(record => record.target === 'entity:one').aiReview.modelOutcome, 'approve');
+});
+
+test('D-58: Tonborg\'s own model still judges with its full context', async t => {
+  const h = withHistory(harness(t, { roles: { tonborg: tonborg() } }));
+  const [record] = (await h.app.judgment.review(reviewInput)).records;
+  assert.equal(record.judgedBy.mode, 'model_api');
+  const sent = JSON.stringify(h.calls[0]);
+  for (const text of [SECRET.memory, SECRET.summary, SECRET.rule]) assert.ok(sent.includes(text), text);
 });

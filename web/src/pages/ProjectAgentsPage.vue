@@ -254,7 +254,7 @@ async function employeeRecruited(result: EmployeeRecruitmentResult) {
 <template>
   <section ref="scroller" class="view project-agents-view" :aria-label="t('projectAgents.aria')">
     <GrowthLoading v-if="linkedAgent || resolvingTask" :label="linkedAgent ? t('projectAgents.opening') : t('projectAgents.openingTask')" />
-    <div v-else class="@container mx-auto grid w-full max-w-(--canvas-max) gap-4">
+    <div v-else class="@container mx-auto grid w-full max-w-(--layout-max) gap-4">
       <!-- One toolbar: filters, then a row with the count and the actions. It stays
            in reach on tall screens and scrolls away on short ones. -->
       <div class="project-agents-toolbar">

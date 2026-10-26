@@ -5,6 +5,7 @@ from .project_agent_access import authorize_project_agent
 from .project_agent_models import ProjectAgentAssignmentCreate, ProjectAgentAssignmentEnd
 from .provider_values import now_utc, stable_uuid
 from .store_transactions import query_store_transaction
+from .client_coverage import covers_client
 
 
 class StoreAgentLoans:
@@ -19,7 +20,7 @@ class StoreAgentLoans:
             raise HTTPException(403, 'Ask the current project team lead to coordinate this loan')
         lead = await authorize_project_agent(self, actor, space, task['personal_project_id'],
             task['project_agent_id'], require_active=True)
-        if request.source_application not in json.loads(lead['profile_json']).get('allowed_clients', []):
+        if not covers_client(json.loads(lead['profile_json']).get('allowed_clients', []), request.source_application):
             raise HTTPException(403, 'Team lead is not allowed in this client')
         return task
 
@@ -48,7 +49,7 @@ class StoreAgentLoans:
             if request.specialist_id == source_policy.team_lead_agent_id:
                 raise HTTPException(409, 'Keep project team leads available; request a specialist member')
             profile = json.loads(specialist['profile_json'])
-            if request.source_application not in profile.get('allowed_clients', []):
+            if not covers_client(profile.get('allowed_clients', []), request.source_application):
                 raise HTTPException(403, 'Specialist is not allowed in the destination client')
             rows, _, _ = await store.runtime.driver.execute_query(
                 'MATCH (t:FuliProjectAgentTask {task_id:$task, personal_space_id:$space, personal_project_id:$project}) '
@@ -104,7 +105,7 @@ class StoreAgentLoans:
                 space = await store.authorize(actor, request.personal_space_id, 'maintainer')
                 specialist = await authorize_project_agent(store, actor, space, record['source_project_id'],
                     record['specialist_id'], require_active=True, require_memory=True)
-                if record['source_application'] not in json.loads(specialist['profile_json']).get('allowed_clients', []):
+                if not covers_client(json.loads(specialist['profile_json']).get('allowed_clients', []), record['source_application']):
                     raise HTTPException(403, 'Specialist is no longer allowed in the destination client')
                 assignment = await store.create_project_agent_assignment(actor, ProjectAgentAssignmentCreate(
                     personal_space_id=record['personal_space_id'], personal_project_id=record['target_project_id'],

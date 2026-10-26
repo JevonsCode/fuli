@@ -50,6 +50,9 @@ const templateId = computed(() => String(route.params.templateId ?? ''))
 const isJefa = computed(() => templateId.value === 'jefa')
 const jefaRead = reactive(useJefaBoardLoad({
   enabled: isJefa, spaceId: personalSpaceId, boards: projectBoards, scopeValid: () => !projectFilter.invalidScope.value,
+  selectedIds: () => projectFilter.selection.value,
+  // An open task's project is read too, so its access and staleness stay authoritative.
+  linkedProjectId: () => openTaskRef.value?.projectId,
   consoleError: computed(() => !store.state && store.runtimeStatus === 'error' ? store.feedback?.message || t('employees.loadError') : ''),
   projectNames: computed(() => new Map((store.state?.personalProjects ?? []).filter(p => p.personal_space_id === personalSpaceId.value).map(p => [p.project_id, p.profile.name]))),
 }))
@@ -191,10 +194,14 @@ const peek = useRoutePeek()
 const openTaskRef = computed(() => isJefa.value && peek.item.value && peek.item.value.spaceId === personalSpaceId.value
   ? readBoardTaskPeekId(peek.item.value.id) : null)
 // Only an authoritative answer closes it; a pending or failed read keeps the link.
-const openTaskRevoked = computed(() => Boolean(openTaskRef.value) && boardTaskAccessRevoked(openTaskRef.value!, jefaRead))
+const openTaskRevoked = computed(() => Boolean(openTaskRef.value) && boardTaskAccessRevoked(openTaskRef.value!, {
+  template: jefaRead.template, catalogRead: jefaRead.catalogRead, projects: jefaRead.projects, failures: jefaRead.accessFailures,
+}))
 watch(openTaskRevoked, (revoked) => { if (revoked) void peek.close() }, { immediate: true })
 // A revoked task leaves the dialog at once (ending its read in flight), before the URL catches up.
 const shownTaskRef = computed(() => (openTaskRevoked.value ? null : openTaskRef.value))
+// Jefa reads only the selected projects' boards (and an open task's), so a change reads the new scope.
+watch([projectFilter.selection, () => openTaskRef.value?.projectId], () => { if (isJefa.value) jefaRead.selectionChanged() })
 const pageRoot = ref<HTMLElement | null>(null)
 // Bole and Tonborg put their actions in this row instead of a title row of their own.
 const toolbarActions = ref<HTMLElement | null>(null)
@@ -361,7 +368,7 @@ async function projectsSaved() {
 <template>
   <section ref="pageRoot" class="view employee-workbench-view" :class="{ 'fills-height': !isNativeWorkbench }" :aria-label="template?.name ?? t('employees.workbench')">
    <!-- The board and the iframe fill the canvas and scroll inside; a native panel scrolls with the page. -->
-   <div class="employee-workbench-canvas mx-auto flex w-full max-w-(--canvas-max) flex-col gap-3">
+   <div class="employee-workbench-canvas mx-auto flex w-full max-w-(--layout-max) flex-col gap-3">
     <!-- The Agent's name is the shell's H1; this row says only what the name does not. -->
     <header class="employee-workbench-toolbar">
       <BackLink class="employee-workbench-back" to="/project-agents" :from="openedFromAgents">{{ t('agentProfiles.back') }}</BackLink>
@@ -388,24 +395,26 @@ async function projectsSaved() {
       </div>
     </header>
     <EmployeeRecruitDialog v-if="!isNativeWorkbench" :open="manageProjectsOpen" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" :template-id="templateId" @close="manageProjectsOpen = false" @recruited="projectsSaved" />
-    <EmployeeTaskDialog v-if="isJefa" :open="createTaskOpen || Boolean(shownTaskRef)" :item="shownTaskRef" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="!jefaRead.readOnly && (template?.permissions.includes('board.write') ?? false)" @close="closeTaskDialog" @saved="loadWorkspace" />
+    <EmployeeTaskDialog v-if="isJefa" :open="createTaskOpen || Boolean(shownTaskRef)" :item="shownTaskRef" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="!(shownTaskRef ? jefaRead.taskReadOnly(shownTaskRef.projectId) : jefaRead.readOnly) && (template?.permissions.includes('board.write') ?? false)" @close="closeTaskDialog" @saved="loadWorkspace" />
     <EmployeeShareDialog v-if="isJefa" :open="shareOpen" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" @close="shareOpen = false" />
     <JefaReadStatus v-if="isJefa && !projectFilter.invalidScope.value"
       :loading="jefaRead.loading" :long-wait="jefaRead.longWait" :stage="jefaRead.stage"
       :timed-out="jefaRead.timedOut" :failure="jefaRead.failure" :failures="jefaRead.failures"
-      :total="jefaRead.projects.length" :loaded="jefaRead.loadedIds.length" :pending="jefaRead.pendingIds.length"
-      :has-content="jefaRead.hasContent" :stale="jefaRead.stale" :updated-at="jefaRead.updatedAt" @reload="retry"
+      :total="jefaRead.scopeIds.length" :loaded="jefaRead.loadedIds.length" :pending="jefaRead.pendingIds.length"
+      :has-content="jefaRead.hasContent" :stale="jefaRead.stale" :updated-at="jefaRead.updatedAt" :projects="jefaRead.projects"
+      :blocking="!supportsAllProjects" :can-clear-filter="!supportsAllProjects && projectFilter.active.value && jefaRead.catalogFailed"
+      @reload="retry" @clear-filter="projectFilter.reset"
     />
     <GrowthLoading v-if="pageLoading && !isJefa" :label="pageLoadingLabel" />
     <div v-else-if="visibleError" class="employee-workbench-state" role="alert"><p>{{ visibleError }}</p><Button size="sm" variant="ghost" @click="retry">{{ t('employees.retry') }}</Button></div>
     <div v-else-if="!template && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><p>{{ t('employees.unavailable') }}</p></div>
     <BolePeoplePanel v-else-if="isNativePeople" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
     <JudgmentWorkbench v-else-if="isNativeJudgment" :personal-space-id="personalSpaceId" />
-    <UnassignedConversationsPanel v-else-if="isNativeUnclaimed" :space-id="personalSpaceId" :formal-projects="spaceProjects.filter(isFormalProject)" :existing-project-ids="spaceProjects.map(project => project.project_id)" @project-created="store.rememberPersonalProject" />
+    <UnassignedConversationsPanel v-else-if="isNativeUnclaimed" :space-id="personalSpaceId" :focus-conversation-id="typeof route.query.conversation === 'string' ? route.query.conversation : undefined" :formal-projects="spaceProjects.filter(isFormalProject)" :existing-project-ids="spaceProjects.map(project => project.project_id)" @project-created="store.rememberPersonalProject" />
     <div v-else-if="isJefa && template && !jefaRead.loading && template.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
     <div v-else-if="!projectId && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><Button size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</Button></div>
     <EmployeeTaskBoard
-      v-else-if="projectId === ALL_PROJECTS && supportsAllProjects && (!isJefa || jefaRead.hasContent)"
+      v-else-if="projectId === ALL_PROJECTS && supportsAllProjects"
       v-model:visible-project-ids="visibleProjectIds"
       :boards="visibleProjectBoards"
       :projects="managedProjectOptions.map((project) => ({ id: project.value, name: project.label }))"

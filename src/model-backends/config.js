@@ -24,7 +24,7 @@ const KEYED_PROTOCOLS = new Set(['anthropic_messages', 'typesafe_systemone']);
 // OpenAI-compatible reasoning_effort; 'none' keeps a thinking model such as
 // qwen3.5 from spending the output budget on hidden reasoning.
 const REASONING_EFFORTS = Object.freeze(['none', 'minimal', 'low', 'medium', 'high']);
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+export const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const MAX_OPERATIONS = 32;
 const MAX_APPROVED_PROJECTS = 256;
 const MIN_TIMEOUT_MS = 1000;
@@ -54,6 +54,15 @@ export function readModelBackendConfig(path, { read = readJsonFile } = {}) {
 // Which saved configuration an edit starts from; null when there is none.
 export function configRevision(loaded) {
   return loaded.state === 'ok' ? contentHash(loaded.config) : null;
+}
+
+// Which configured connection served an answer (rec#10 D-36): its id,
+// protocol, normalized endpoint and model, as one comparable value. A role
+// trusts an answer only while its configuration still names the same one, so
+// the same model name on another connection, or an endpoint changed in
+// place, is a different identity. A digest, so no endpoint leaves the port.
+export function connectionIdentity(id, connection) {
+  return contentHash({ id, protocol: connection.protocol, endpoint: connection.endpoint, model: connection.model });
 }
 
 // Validates a whole configuration, throwing a TypeError that names the field.

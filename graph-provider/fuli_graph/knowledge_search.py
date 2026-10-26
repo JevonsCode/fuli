@@ -21,6 +21,8 @@ from .search_projection import (
     source_uris_from_references,
 )
 from .knowledge_weight import knowledge_weight
+from .knowledge_tag_ranking import TagRanking
+from .knowledge_visibility import AgentReader, fla_endpoints_visible_cypher, fla_visible, reader_parameter
 
 MIN_TERM_COVERAGE = 0.25
 LATIN_QUERY_FILLERS = {
@@ -36,7 +38,7 @@ CHINESE_QUERY_FILLERS = (
 )
 
 
-async def search_knowledge(store, actor: dict, request: SearchRequest) -> SearchResult:
+async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_explanations=None) -> SearchResult:
     spaces = [await store.authorize(actor, space_id, 'reader') for space_id in request.space_ids]
     personal_space = await _personal_search_space(store, actor, spaces, request)
     space_ids_by_group = {space['group_id']: space['id'] for space in spaces}
@@ -79,6 +81,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest) -> Search
             if is_default_retrievable(epistemic.get(edge.uuid, {}))
         ]
     names = await _entity_names(store, edges)
+    tag_ranking = await TagRanking.for_search(store, personal_space, request, project_scopes)
     ranked_edges = sorted(
         (
             (
@@ -107,13 +110,17 @@ async def search_knowledge(store, actor: dict, request: SearchRequest) -> Search
             request.active_personal_project_id,
             request.project_agent_id,
         )
-    ranked_edges = ranked_edges[: request.limit]
+    ranked_edges = [(score, edge) for _, score, edge in await tag_ranking.rerank(
+        [(edge.uuid, score, edge) for score, edge in ranked_edges], 'relationship', tag_explanations
+    )][: request.limit]
     entities = (
         await _personal_entities(
             store,
             personal_space,
             request,
             project_scopes,
+            tag_ranking,
+            tag_explanations,
         )
         if personal_space else []
     )
@@ -176,27 +183,29 @@ async def personal_edge_scopes(
         return {}
     records, _, _ = await store.runtime.driver.execute_query(
         '''
-        MATCH ()-[edge:RELATES_TO {group_id: $group_id}]->()
+        MATCH (source)-[edge:RELATES_TO {group_id: $group_id}]->(target)
         WHERE edge.uuid IN $edge_ids
           AND size(coalesce(edge.fuli_unresolved_bases, [])) = 0
+        WITH edge, ''' + fla_endpoints_visible_cypher('source', 'target') + ''' AS endpoints_visible
         OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
           space_id: $space_id,
           item_kind: 'relationship',
           item_id: edge.uuid
         })
-        WITH edge, assignment
+        WITH edge, endpoints_visible, assignment
         OPTIONAL MATCH (episode:Episodic {group_id: $group_id})
         WHERE episode.uuid IN coalesce(edge.episodes, [])
-        WITH edge, assignment, collect(DISTINCT episode) AS episodes
+        WITH edge, endpoints_visible, assignment, collect(DISTINCT episode) AS episodes
         OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_KNOWLEDGE_REFERENCE]->
               (reference:FuliKnowledgeProjectReference {
                 item_kind: 'relationship', item_id: edge.uuid, status: 'active'
               })
-        RETURN edge.uuid AS id,
+        RETURN edge.uuid AS id, endpoints_visible,
                edge.fuli_profile_aspect AS profile_aspect,
                coalesce(edge.fuli_preference_scope, 'global')
                  AS preference_scope,
                edge.fuli_preference_project_id AS preference_project_id,
+               edge.fuli_preference_project_ids AS preference_project_ids,
                edge.fuli_preference_agent_id AS preference_agent_id,
                assignment.project_id AS assignment_project_id,
                [episode IN episodes
@@ -219,6 +228,7 @@ async def personal_edge_scopes(
         project_ids=list(project_scopes),
         include_personal_global=include_personal_global,
         edge_ids=edge_ids,
+        reader=reader_parameter(_search_reader(request)),
         routing_='r',
     )
     return {
@@ -337,6 +347,8 @@ async def _personal_entities(
     space,
     request: SearchRequest,
     project_scopes: dict[str, dict],
+    tag_ranking=None,
+    tag_explanations=None,
 ) -> list[EntitySearchResult]:
     if not project_scopes and not request.include_personal_global:
         return []
@@ -387,6 +399,7 @@ async def _personal_entities(
                     ELSE coalesce(node.fuli_preference_scope, 'global') END
                     AS preference_scope,
                node.fuli_preference_project_id AS preference_project_id,
+               node.fuli_preference_project_ids AS preference_project_ids,
                node.fuli_preference_agent_id AS preference_agent_id,
                coalesce(node.fuli_key, node.uuid) AS key,
                assignment.project_id AS assignment_project_id,
@@ -487,7 +500,10 @@ async def _personal_entities(
         ranked,
         request.active_personal_project_id,
         request.project_agent_id,
-    )[: request.limit]
+    )
+    ranked = [(record, score) for _, score, record in await (tag_ranking or TagRanking()).rerank(
+        [(record['id'], score, record) for record, score in ranked], 'entity', tag_explanations
+    )][: request.limit]
     return [
         _entity_search_result(record, score, space['id'])
         for record, score in ranked
@@ -500,6 +516,8 @@ def _item_scope_metadata(
     project_scopes: dict[str, dict],
     include_personal_global: bool,
 ) -> dict | None:
+    if not fla_visible(record, _search_reader(request)):
+        return None
     profile_aspect = record.get('profile_aspect')
     if profile_aspect:
         preference_scope = record.get('preference_scope') or 'global'
@@ -508,35 +526,24 @@ def _item_scope_metadata(
                 return None
             return _global_scope_metadata()
         project_id = record.get('preference_project_id')
-        if project_id not in request.personal_project_ids:
-            return None
         if preference_scope == 'agent':
-            agent_id = record.get('preference_agent_id')
-            if (
-                not request.project_agent_id
-                or agent_id != request.project_agent_id
-                or project_id != request.active_personal_project_id
-            ):
+            if project_id not in request.personal_project_ids:
                 return None
             return _agent_scope_metadata(
                 project_id,
                 project_scopes[project_id],
-                agent_id,
+                record.get('preference_agent_id'),
             )
-        return _project_scope_metadata(project_id, project_scopes[project_id])
+        project_ids = record.get('preference_project_ids') or [project_id]
+        candidates = [pid for pid in project_ids if pid in request.personal_project_ids and pid in project_scopes]
+        if not candidates:
+            return None
+        selected = min(candidates, key=lambda pid: (pid != request.active_personal_project_id, pid))
+        return _project_scope_metadata(selected, project_scopes[selected])
 
     assignment_project_id = record.get('assignment_project_id')
     episode_project_ids = list(record.get('episode_project_ids') or [])
-    episode_project_agent_ids = list(
-        record.get('episode_project_agent_ids') or []
-    )
-    if episode_project_agent_ids:
-        if (
-            not request.project_agent_id
-            or request.project_agent_id not in episode_project_agent_ids
-            or request.active_personal_project_id not in episode_project_ids
-        ):
-            return None
+    if record.get('episode_project_agent_ids'):
         return _agent_scope_metadata(
             request.active_personal_project_id,
             project_scopes[request.active_personal_project_id],
@@ -591,6 +598,12 @@ def _item_scope_metadata(
     ):
         return _global_scope_metadata()
     return None
+
+
+def _search_reader(request: SearchRequest) -> AgentReader:
+    # The FLA was authorized in _personal_search_space; search shows no
+    # FLA-scoped item to the person's console either unless it names the FLA.
+    return AgentReader(request.active_personal_project_id, request.project_agent_id)
 
 
 def _global_scope_metadata() -> dict:
@@ -681,14 +694,15 @@ def _dedupe_ranked_edges(
         quality = (
             _scope_precedence(metadata, active_project_id, project_agent_id),
             -score,
+            edge.uuid,
         )
         current = selected.get(key)
         if current is None or quality < current[0]:
             selected[key] = (quality, score, edge)
     return sorted(
         ((score, edge) for _, score, edge in selected.values()),
-        key=lambda item: item[0],
-        reverse=True,
+        key=lambda item: (-item[0], _scope_precedence(
+            metadata_by_id.get(item[1].uuid, {}), active_project_id, project_agent_id), item[1].uuid),
     )
 
 
@@ -699,14 +713,15 @@ def _dedupe_ranked_entities(ranked, active_project_id, project_agent_id=None):
         quality = (
             _scope_precedence(record, active_project_id, project_agent_id),
             -score,
+            record['id'],
         )
         current = selected.get(key)
         if current is None or quality < current[0]:
             selected[key] = (quality, record, score)
     return sorted(
         ((record, score) for _, record, score in selected.values()),
-        key=lambda item: (item[1], _timestamp(item[0].get('created_at'))),
-        reverse=True,
+        key=lambda item: (-item[1], _scope_precedence(
+            item[0], active_project_id, project_agent_id), item[0]['id']),
     )
 
 
@@ -739,6 +754,7 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
     )
     for field in (
         'attributes_json',
+        'preference_project_ids',
         'assignment_project_id',
         'episode_project_ids',
         'episode_project_agent_ids',

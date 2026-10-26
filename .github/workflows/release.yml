@@ -14,8 +14,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # rec#7 D-28.10: the Windows Hello helper the package ships and pins. No
+  # provenance attestation yet: that waits for the owner's approval (D-28.16).
+  win-helper:
+    if: github.repository == 'JevonsCode/fuli'
+    runs-on: windows-latest
+    # Read-only: only the publish job keeps the workflow's OIDC grant (npm); the helper build gets none.
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.helper.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: helper
+        uses: ./.github/actions/win-helper
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fuli-win-helper
+          path: native/win32/fuli-win-helper.exe
+          if-no-files-found: error
+
   publish:
     if: github.repository == 'JevonsCode/fuli'
+    needs: win-helper
     runs-on: ubuntu-latest
     environment: npm
     steps:
@@ -26,6 +47,12 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: fuli-win-helper
+          path: native/win32
+      - name: Pin the Windows helper digest
+        run: node scripts/pin-win-helper.js native/win32/fuli-win-helper.exe --expect ${{ needs.win-helper.outputs.sha256 }}
       # rec#17 D-11: fails until data format migration part 2 opens the gate.
       - name: Release gate
         run: node scripts/release-gate.js

@@ -6,6 +6,7 @@ import {
   objectSchema,
   stringSchema,
 } from './schema.js';
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 const id = { ...stringSchema(), minLength: 1, maxLength: 256 };
 const label = { ...stringSchema(), minLength: 1, maxLength: 512 };
@@ -72,9 +73,12 @@ export const AGENT_INTERFACE_DEFINITIONS = [
     inputSchema: objectSchema({ enabled: { type: 'boolean' }, sessionPaused: { type: 'boolean' }, taskContextToken: id,
       recordProjects: { type: 'object', additionalProperties: { type: 'boolean' },
         description: '{personalProjectId: false} stops recording that project ("这个项目以后别记了"), true records it.' },
-      disabledSources: { type: 'array', uniqueItems: true, maxItems: 6,
-        items: { enum: ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'] },
+      disabledSources: { type: 'array', uniqueItems: true, maxItems: SOURCE_APPLICATIONS.length,
+        items: { enum: [...SOURCE_APPLICATIONS] },
         description: 'Clients whose sessions are not captured; they still use FULI tools.' },
+      capturedSources: { type: 'array', uniqueItems: true, maxItems: SOURCE_APPLICATIONS.length,
+        items: { enum: [...SOURCE_APPLICATIONS] },
+        description: 'Explicitly captured clients; overrides the legacy other alias, never disabledSources entries.' },
       projectMode: { enum: ['all', 'all_except', 'selected'],
         description: 'all_except skips excludedProjectIds; selected records only selectedProjectIds.' },
       excludedProjectIds: { type: 'array', uniqueItems: true, maxItems: 1000, items: id },
@@ -184,9 +188,10 @@ export const AGENT_INTERFACE_DEFINITIONS = [
   {
     name: 'defer_preference_conflict',
     title: 'WRITE · Defer preference conflict',
-    description: 'Defer one exact preference conflict without resolving either side. The conflict remains visible for later review.',
+    description: 'Defer one exact preference conflict without resolving either side. The conflict remains visible for later review. An FLA names projectAgentId and personalProjectId.',
     inputSchema: objectSchema({
       personalSpaceId: id,
+      personalProjectId: nullableStringSchema(), projectAgentId: nullableStringSchema(),
       conflictId: { ...stringSchema(), minLength: 1, maxLength: 1024 },
       preferenceKey: label,
       preferenceScope: enumSchema(['global', 'project']),

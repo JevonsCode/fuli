@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { getJson } from '@/api/client'
+import { ApiError, getJson } from '@/api/client'
 import { t } from '@/i18n'
 import type { ProjectAgentAssignmentRecord, ProjectAgentRecord, ProjectAgentStatus } from '@/types'
 
@@ -93,6 +93,18 @@ export function refreshEmployeeCatalog(spaceId: string): Promise<void> {
       if (version === generation) { employeeCatalogLoading.value = false; pending = null }
     })
   return pending
+}
+
+// What a failed read of one board task proves (rec#10 D-30.8): only the
+// runtime's explicit task_not_found says the task is gone. Any other 404 (a
+// gate, a project, an unknown contract, a body that is not JSON) proves
+// nothing about the task: it cannot be read right now. Other failures keep
+// their own message.
+export function taskReadFailure(error: unknown): 'missing' | 'unreadable' | null {
+  if (!(error instanceof ApiError) || error.status !== 404) return null
+  try {
+    return (JSON.parse(error.detail) as { code?: string }).code === 'task_not_found' ? 'missing' : 'unreadable'
+  } catch { return 'unreadable' }
 }
 
 export function employeeErrorMessage(error: unknown) {

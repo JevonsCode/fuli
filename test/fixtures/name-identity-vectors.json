@@ -1,0 +1,61 @@
+{
+  "comment": "Shared identity-key vectors for graph-provider/fuli_graph/name_identity.py and src/text/name-identity.js (rec#29 F1 review). Each pair is [input, identity key].",
+  "vectors": [
+    [
+      "iDev Hours",
+      "idev hours"
+    ],
+    [
+      "  iDev\t\tHours\n",
+      "idev hours"
+    ],
+    [
+      "iDevHours",
+      "idev hours"
+    ],
+    [
+      "iDev\u001cHours",
+      "idev hours"
+    ],
+    [
+      "iDev\u001fHours",
+      "idev hours"
+    ],
+    [
+      "iDev Hours",
+      "idev hours"
+    ],
+    [
+      "iDev　Hours",
+      "idev hours"
+    ],
+    [
+      "iDev Hours",
+      "idev hours"
+    ],
+    [
+      "ｉＤｅｖ",
+      "idev"
+    ],
+    [
+      "i﻿Dev​",
+      "idev"
+    ],
+    [
+      "工时",
+      "工时"
+    ],
+    [
+      "填 今天的\n工时",
+      "填 今天的 工时"
+    ],
+    [
+      "Straße",
+      "straße"
+    ],
+    [
+      "café",
+      "café"
+    ]
+  ]
+}

@@ -2,7 +2,7 @@ import { ApplicationError } from '../app/application-error.js';
 import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { projectAgentCollaborationPreferences } from './collaboration-preference-workflow.js';
-import { taskKnowledgeGuidance } from './agent-knowledge-workflows.js';
+import { taskKnowledgeGuidance } from './task-knowledge-guidance.js';
 import { taskJudgmentContext } from './task-entry-preferences.js';
 import { withWorkerTaskGuidance } from './worker-task-context.js';
 import { blockedPreferenceDelivery } from '../mcp/preference-delivery.js';
@@ -75,7 +75,7 @@ export async function readTaskPreferences(application, {
   if (projectAgentRoleTextOverflows(agent)) {
     throw blocked('The task Agent role text exceeds its delivery bound; recovery does not cut role instructions.');
   }
-  const judgment = taskJudgmentContext(application, task.personalProjectId);
+  const judgment = await taskJudgmentContext(application, task.personalProjectId);
   let result = {
     ...projection,
     context: { ...projection.context, session_id: task.sessionId, source_application: task.sourceApplication,

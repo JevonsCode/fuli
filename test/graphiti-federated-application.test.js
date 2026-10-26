@@ -109,6 +109,41 @@ test('silent project capture creates a local pre-review draft before any public 
   assert.equal(calls.some(({ origin }) => origin === 'https://workspace.example'), false);
 });
 
+test('a project capture retried after a lost reply is reported unconfirmed, pointing to the console', async () => {
+  // 0.20.1: a team-only draft is the person's alone, so the Provider answers a create that meets it
+  // exactly as a missing draft. That is neither a success nor proof that nothing was saved.
+  const calls = [];
+  let created = false;
+  const app = new FederatedGraphApplication(CONFIG, { consoleUrl: 'http://127.0.0.1:4545',
+    fetchImpl: providerFetch(calls, {
+      '/v1/publication-drafts': () => {
+        if (created) {
+          return new Response(JSON.stringify({ detail: 'publication draft not found' }),
+            { status: 404, headers: { 'content-type': 'application/json' } });
+        }
+        created = true;
+        return { id: 'draft-1', status: 'pending' };
+      }
+    }) });
+  const input = { ...episodeInput('project'), spaceId: 'project-1' };
+  await app.captureSessionKnowledge(input); // its reply is lost; the host retries the same capture
+  const retried = await app.captureSessionKnowledge(input);
+  assert.deepEqual(retried, {
+    route: 'personal_review',
+    status: 'unconfirmed',
+    message: 'Cannot confirm whether this capture was saved; check the publish queue in the FULI console.',
+    reviewUrl: 'http://127.0.0.1:4545/public-projects',
+    projectId: 'project-1',
+    providerUrl: 'https://workspace.example'
+  });
+  assert.equal(calls.filter(({ path }) => path === '/v1/publication-drafts').length, 2);
+  // Any other refusal is still an error.
+  const refusing = new FederatedGraphApplication(CONFIG, { fetchImpl: providerFetch([], {
+    '/v1/publication-drafts': () => new Response(JSON.stringify({ detail: { code: 'project_agent_knowledge_personal_only' } }),
+      { status: 422, headers: { 'content-type': 'application/json' } }) }) });
+  await assert.rejects(refusing.captureSessionKnowledge(input));
+});
+
 test('restricted knowledge cannot be submitted to a team-shared queue', async () => {
   const app = new FederatedGraphApplication(CONFIG, {
     fetchImpl: providerFetch([], {})
@@ -883,11 +918,12 @@ test('personal approval submits the full draft to shared review and then marks i
       fetchImpl: providerFetch(calls, {
         '/v1/publication-drafts/draft-1': draft,
         '/v1/projects/project-1/proposals': { id: 'proposal-1', status: 'pending' },
-        '/v1/publication-drafts/draft-1/decision': {
+        '/v1/publication-drafts/draft-1/decision': ({ body }) => ({
           ...draft,
-          status: 'submitted',
+          status: body.decision === 'begin_submit_public' ? 'submitting' : 'submitted',
+          submission_id: 'attempt', submission_started_at: new Date().toISOString(),
           shared_proposal_id: 'proposal-1'
-        }
+        })
       })
     });
 
@@ -901,14 +937,29 @@ test('personal approval submits the full draft to shared review and then marks i
       path === '/v1/projects/project-1/proposals' && method === 'POST'
     );
     assert.deepEqual(shared.body, { episode: draft.episode });
-    const finalized = calls.find(({ path, method }) =>
-      path === '/v1/publication-drafts/draft-1/decision' && method === 'POST'
+    const finalized = calls.find(({ path, method, body }) =>
+      path === '/v1/publication-drafts/draft-1/decision' && method === 'POST' && body.decision === 'submit_public'
     );
     assert.deepEqual(finalized.body, {
       decision: 'submit_public',
+      submission_id: 'attempt',
       shared_proposal_id: 'proposal-1'
     });
   });
+
+test('a source-deleted draft rejects Agent submission before any remote request', async () => {
+  const calls = [];
+  const app = new FederatedGraphApplication(CONFIG, {
+    fetchImpl: providerFetch(calls, {
+      '/v1/publication-drafts/draft-deleted': { id: 'draft-deleted', status: 'source_deleted', episode: null }
+    })
+  });
+  await assert.rejects(app.reviewPersonalDraft({ draftId: 'draft-deleted', decision: 'submit_public' }),
+    (error) => error.status === 409);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[0].path, '/v1/publication-drafts/draft-deleted');
+});
 
 test('personal knowledge correction stays on the personal Provider and keeps project scope',
   async () => {
@@ -1156,7 +1207,9 @@ function providerFetch(calls, routes) {
       body: options.body ? JSON.parse(options.body) : null,
       authorization: options.headers?.authorization
     });
-    const payload = routes[url.pathname] ?? [];
+    const route = routes[url.pathname];
+    const payload = typeof route === 'function' ? route(calls.at(-1)) : route ?? [];
+    if (payload instanceof Response) return payload;
     return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { 'content-type': 'application/json' }

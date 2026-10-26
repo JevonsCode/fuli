@@ -10,6 +10,7 @@ from .graph_query import read_graph
 from .knowledge_basis_review import inherited_reasons, record_inherited
 from .knowledge_dependencies import require_current_bases
 from .knowledge_hard_delete_traces import episode_hard_deleted, fresh_identities
+from .knowledge_source_fence import require_source_available
 from .knowledge_search import search_knowledge
 from .models import (
     CollaborationContextResult,
@@ -117,9 +118,13 @@ class StoreKnowledge:
         limit: int | None = None,
         personal_project_id: str | None = None,
         offset: int | None = None,
+        *,
+        reader_project_id: str | None = None,
+        reader_agent_id: str | None = None,
     ) -> GraphResult:
         return await read_graph(
-            self, actor, space_id, limit, personal_project_id, offset
+            self, actor, space_id, limit, personal_project_id, offset,
+            reader_project_id=reader_project_id, reader_agent_id=reader_agent_id,
         )
 
     async def collaboration_context(
@@ -233,13 +238,20 @@ class StoreKnowledge:
                 for relationship in episode.relationships
                 if relationship.type == 'RECOMMENDS_NEXT'
             ]
+            await require_source_available(self, space, episode_id=episode_id,
+                source_application=episode.source_application, session_id=episode.session_id,
+                source_turn_id=episode.source_turn_id, source_deletions_only=True)
             if existing:
-                await materialize_workflow_candidates(
-                    self,
-                    space,
-                    personal_project_id=personal_project_id,
-                    pairs=workflow_pairs,
-                )
+                async with query_store_transaction(self) as scoped:
+                    await lock_knowledge(scoped, space)
+                    await require_source_available(scoped, space, episode_id=episode_id,
+                        source_application=episode.source_application, session_id=episode.session_id,
+                        source_turn_id=episode.source_turn_id, source_deletions_only=True)
+                    if await episode_hard_deleted(scoped, space, episode_id):
+                        return CommitResult(status='duplicate', space_id=space['id'], episode_id=episode_id,
+                                            entity_ids=[], relationship_ids=[])
+                    await materialize_workflow_candidates(scoped, space,
+                        personal_project_id=personal_project_id, pairs=workflow_pairs)
                 return CommitResult(
                     status='duplicate',
                     space_id=space['id'],
@@ -266,6 +278,9 @@ class StoreKnowledge:
             # (rec#5 C8-3, C8-4).
             async with query_store_transaction(self) as scoped:
                 await lock_knowledge(scoped, space)
+                await require_source_available(scoped, space, episode_id=episode_id,
+                    source_application=episode.source_application, session_id=episode.session_id,
+                    source_turn_id=episode.source_turn_id, source_deletions_only=True)
                 if await episode_hard_deleted(scoped, space, episode_id):
                     raise HTTPException(status_code=409, detail={
                         'code': 'hard_deleted',
@@ -704,12 +719,8 @@ class StoreKnowledge:
                 await record_inherited(scoped, {'id': actor_id or 'capture'}, space, born, bases,
                                        reason='It was concluded from knowledge that waits for a review.',
                                        created_at=created_at)
-            await materialize_workflow_candidates(
-                self,
-                space,
-                personal_project_id=personal_project_id,
-                pairs=workflow_pairs,
-            )
+                await materialize_workflow_candidates(scoped, space,
+                    personal_project_id=personal_project_id, pairs=workflow_pairs)
             return CommitResult(
                 status='committed',
                 space_id=space['id'],

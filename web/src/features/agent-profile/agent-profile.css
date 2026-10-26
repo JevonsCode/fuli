@@ -240,9 +240,11 @@
   min-width: 0;
 }
 
+/* Profile panels stack in one column: cards of different lengths never sit
+   side by side (rec#38). */
 .agent-profile-primary-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4, 16px);
 }
 
@@ -571,7 +573,6 @@
     justify-content: flex-start;
   }
 
-  .agent-profile-primary-grid,
   .agent-character {
     grid-template-columns: 1fr;
   }

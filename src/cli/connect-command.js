@@ -4,7 +4,7 @@ import { clientConnectionConfig } from '../setup/client-connection.js';
 
 export function runConnectCommand(args, { env = process.env, write = console.log } = {}) {
   if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
-    write('fuli connect [--format standard|vscode|server] [--profile full|chat] [--source-application codex|claude|claude_code|cursor|kiro|other] [--data-dir DIR | --runtime-config FILE]\nPrint local MCP configuration; merge the fuli entry into your client settings. No files are changed.\nUse --profile chat for chat apps that load every tool into each conversation. fuli setup configures Claude Desktop automatically.');
+    write('fuli connect [--format standard|vscode|server] [--profile full|chat] [--source-application codex|claude|claude_code|cursor|kiro|opencode|other] [--data-dir DIR | --runtime-config FILE]\nPrint local MCP configuration; merge the fuli entry into your client settings. No files are changed.\nUse --profile chat for chat apps that load every tool into each conversation. fuli setup configures Claude Desktop automatically.');
     return;
   }
   const options = new Map();

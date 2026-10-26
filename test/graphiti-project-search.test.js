@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import {
   searchCurrentProjectKnowledge
-} from '../src/graphiti/agent-knowledge-workflows.js';
+} from '../src/graphiti/current-project-knowledge-search.js';
 import {
   relatedProjectSuggestions,
   relatedProjectSuggestionsForSearchResults

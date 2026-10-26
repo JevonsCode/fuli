@@ -4,7 +4,7 @@ import type { CapturePolicy } from '@/types'
 // One capture change an Agent asked for, as the console's confirmation page
 // shows it (rec#5 C4-2, rec#11 D-16): FULI's sentence, the change setting by
 // setting and the settings now. Only the person's confirm on that page applies it.
-export type CaptureChangeSetting = 'enabled' | 'disabledSources' | 'projectMode' | 'excludedProjectIds'
+export type CaptureChangeSetting = 'enabled' | 'disabledSources' | 'capturedSources' | 'projectMode' | 'excludedProjectIds'
   | 'selectedProjectIds' | 'unregisteredDirectories'
 
 export interface CaptureChangePreview {
@@ -19,7 +19,7 @@ export interface CaptureChangePreview {
 }
 
 const CLIENT_NAMES: Record<string, string> = { codex: 'Codex', claude: 'Claude', claude_code: 'Claude Code',
-  cursor: 'Cursor', kiro: 'Kiro' }
+  cursor: 'Cursor', kiro: 'Kiro', opencode: 'OpenCode' }
 const SHOWN_SESSION_CHARACTERS = 8
 
 export function clientName(source: string) {
@@ -45,5 +45,5 @@ export function settingValue(setting: CaptureChangeSetting, value: unknown, proj
   }
   const items = Array.isArray(value) ? value.map(String) : []
   if (!items.length) return t('capture.confirm.values.none')
-  return items.map(item => setting === 'disabledSources' ? clientName(item) : projectName(item)).join('、')
+  return items.map(item => setting === 'disabledSources' || setting === 'capturedSources' ? clientName(item) : projectName(item)).join('、')
 }

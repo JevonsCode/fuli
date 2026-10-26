@@ -17,6 +17,7 @@ from .project_agent_hierarchy import validate_worker_reporting
 from .project_agent_executor_models import project_agent_model_strategy_key
 from .project_agent_models import ProjectAgentExecutorPolicy, ProjectAgentModelStrategy, ProjectAgentProfile
 from .provider_values import native_datetime, now_utc
+from .client_coverage import covers_client
 
 
 async def worker_scope(store, actor, scope):
@@ -177,7 +178,7 @@ async def validate_worker_authority(store, scope, data):
         raise HTTPException(403, 'Parent owner is not a current coordinator or responsible lead')
     parent_record = json.loads(parent['record_json'])
     if (owner.get('status') != 'active' or parent_record['source_application'] != run['source_application']
-            or run['source_application'] not in owner_profile.get('allowed_clients', [])
+            or not covers_client(owner_profile.get('allowed_clients', []), run['source_application'])
             or not any(item.get('status') == 'active' for item in row['owner_assignments'])):
         raise HTTPException(403, 'Parent owner authority is unavailable')
     sub_lead = any(group.get('lead_agent_id') == agent['agent_id']
@@ -185,7 +186,7 @@ async def validate_worker_authority(store, scope, data):
     assignments = [dict(item) for item in row['assignments'] if item.get('status') == 'active'
                    and (task['work_kind'] in (item.get('work_kinds') or [])
                         or sub_lead and task['work_kind'] == 'delegation')]
-    if (agent.get('status') != 'active' or run['target_application'] not in agent_profile.get('allowed_clients', [])
+    if (agent.get('status') != 'active' or not covers_client(agent_profile.get('allowed_clients', []), run['target_application'])
             or not assignments or row['participant'].get('status') not in {'queued', 'running', 'paused'}):
         raise HTTPException(403, 'Worker participant assignment or client access is unavailable')
     if agent.get('memory_scope') == 'task_only' and agent.get('temporary_task_id') != run['task_id']:

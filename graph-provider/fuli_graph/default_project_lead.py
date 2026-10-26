@@ -18,12 +18,16 @@ class DefaultProjectLeadRequest(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
     source_application: SourceApplication = 'other'
+    # What the person confirmed this project's lead is for (a standing
+    # assignment, rec#29 D-41 D4); it leads the hired lead's responsibility.
+    responsibility: str | None = Field(default=None, min_length=1, max_length=240)
 
 
-def default_lead_profile(project_name):
+def default_lead_profile(project_name, responsibility=None):
+    duties = f'统筹 {project_name} 的任务拆分、分工、集成与交付，延续项目上下文；有明确边界的工作委派给合适成员，实质性改动由另一位 FLA 独立验收。'
     return ProjectAgentProfile(
         name=f'{project_name} 负责人'[:160],
-        responsibility=f'统筹 {project_name} 的任务拆分、分工、集成与交付，延续项目上下文；有明确边界的工作委派给合适成员，实质性改动由另一位 FLA 独立验收。'[:4096],
+        responsibility=(f'{responsibility.strip()}\n{duties}' if responsibility else duties)[:4096],
         work_kinds=['project_context', 'planning', 'delegation', 'integration', 'reporting'],
         capabilities=['任务拆分', '工作委派', '成果集成', '进度汇报', '项目上下文'],
         initial_preferences=['先理解目标与边界，再拆分和委派。', '结论附带可复现的验证证据。',
@@ -54,7 +58,7 @@ class StoreDefaultProjectLead:
             staffing_intent='default_lead',
             source_application=request.source_application,
             routing_reason='Every task needs a FULI Agent; this project had no team lead.',
-            recruitment_profile=default_lead_profile(project.profile.name),
+            recruitment_profile=default_lead_profile(project.profile.name, request.responsibility),
         )
         routed = await self.submit_project_agent_task(actor, submit)
         lead = routed.assigned_agent

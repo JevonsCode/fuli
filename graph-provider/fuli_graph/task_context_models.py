@@ -156,4 +156,6 @@ class SessionTurnReceiptClaim(TurnReceiptClaim):
 
 class SessionHintClaim(TurnReceiptClaim):
     """A hint a built-in Agent shows once per host session (rec#10 D-26.4)."""
-    operation: Literal['project_candidate']
+    operation: Literal['project_candidate', 'board_match']
+    # Whether the claim is still open, without taking it.
+    peek: bool = False

@@ -191,7 +191,7 @@ test('an owned checkpoint surfaces scoped native questions only after its write 
 test('sealed checkpoints never read owner attention and optional delivery failure does not undo a checkpoint', async () => {
   const worker = fixture();
   worker.app.listAgentAttention = () => assert.fail('sealed worker cannot read owner questions');
-  worker.app.judgment = { conversationQuestions: () => assert.fail('sealed worker cannot read global judgments') };
+  worker.app.judgment = { agent: { conversationQuestions: () => assert.fail('sealed worker cannot read global judgments') } };
   assert.equal((await sealed(() => checkpointTaskKnowledge(worker.app,
     request({ disposition: 'retain_nothing', capture: null })))).human_interaction, undefined);
   const ordinary = fixture();

@@ -136,10 +136,10 @@ describe('SessionRecordsPage', () => {
     failed.unmount()
   })
 
-  it('the receipt link resolves to its own canvas page', () => {
+  it('the receipt link resolves to its own page in the content column', () => {
     const resolved = appRouter.resolve('/s/0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84')
     expect(resolved.name).toBe('session-records')
-    expect(resolved.meta.layout).toBe('canvas')
+    expect(resolved.meta.layout).toBe('column')
     // rec#20 part 2: the migration link an Agent surfaces opens the person's form page.
     const migration = appRouter.resolve('/s/0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84/migrate?client=codex&project=thesis')
     expect(migration.name).toBe('session-migration')

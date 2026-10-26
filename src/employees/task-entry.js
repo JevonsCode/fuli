@@ -1,6 +1,10 @@
 // Management is a task-entry capability, not a replacement for the specialist
 // role/executor chosen by FULI. Never persist the user's prompt or start a model.
 import { employeeCollaborationReceipt } from '../agents/identity-receipt.js';
+
+// The board window a task entry lists; Jefa's board match reads the same one.
+export const TASK_ENTRY_BOARD_LIMIT = 8;
+
 export async function employeeTaskEntry({ app, registry, recruitment, workspace }, input) {
   if (!input.personalProjectId) return { status: 'project_unresolved', managers: [], worker_started: false };
   const managers = [];
@@ -16,7 +20,7 @@ export async function employeeTaskEntry({ app, registry, recruitment, workspace 
       if (!definition || definition.permission !== 'board.read' || !manifest.permissions.includes('board.read')) {
         unavailable = true; continue;
       }
-      const board = await runtime.callTool(manifest.taskEntry.boardTool, { limit: 8 }, resolved);
+      const board = await runtime.callTool(manifest.taskEntry.boardTool, { limit: TASK_ENTRY_BOARD_LIMIT }, resolved);
       managers.push({
         template_id: manifest.id, agent_id: context.agentId, name: manifest.name,
         collaboration_receipt: employeeCollaborationReceipt(app, resolved, {
@@ -25,7 +29,7 @@ export async function employeeTaskEntry({ app, registry, recruitment, workspace 
         personal_project_id: context.project.id, scope_mode: context.management.mode,
         title_mode: context.management.titleMode, title_style: context.management.titleStyle,
         board: { version: board.version, total: board.total, truncated: board.truncated,
-          items: (board.items ?? []).slice(0, 8).map(item => ({
+          items: (board.items ?? []).slice(0, TASK_ENTRY_BOARD_LIMIT).map(item => ({
             id: item.id, title: item.title, status: item.status, priority: item.priority,
             workType: item.workType, updatedAt: item.updatedAt,
           })) },

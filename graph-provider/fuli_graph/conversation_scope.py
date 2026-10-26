@@ -12,6 +12,32 @@ def conversation_scope_id(space_id, personal_project_id, agent_id):
     return stable_uuid('conversation-scope', space_id, personal_project_id, agent_id)
 
 
+async def conversation_scopes_for_space(store, space_id):
+    """Owned journals, including historical assignments and migrated HR aliases.
+
+    HR migration rewrites task references but deliberately preserves old journal
+    hashes. Derive those hashes from the retained identities and assignments,
+    never from an unconstrained combination of project and Agent IDs.
+    """
+    rows, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
+              -[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
+        WHERE agent:FuliProjectAgent OR agent:FuliProjectAgentAlias
+        CALL {
+          WITH space, agent
+          RETURN null AS project_id
+          UNION
+          WITH space, agent
+          MATCH (space)-[:CONTAINS_PROJECT]->(project:FuliPersonalProject)
+                -[:HAS_PROJECT_AGENT_ASSIGNMENT]->(:FuliProjectAgentAssignment)-[:ASSIGNED_AGENT]->(agent)
+          RETURN project.project_id AS project_id
+        }
+        RETURN DISTINCT agent.agent_id AS agent_id, project_id
+        ''', space_id=space_id, routing_='r')
+    return {conversation_scope_id(space_id, row['project_id'], row['agent_id']) for row in rows}
+
+
 def conversation_binding_id(scope, source_application, session_id):
     return stable_uuid(scope, source_application, session_id)
 

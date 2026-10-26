@@ -28,10 +28,21 @@ First inspect `task_knowledge_recall` returned by the lifecycle or preference to
 query plan is deliberately bounded and based on implementation trigger categories, not on a
 claim that every returned candidate supports the task. If it misses or its candidates are
 irrelevant while durable context may still matter, call `search_current_project_knowledge`
-yourself. Derive one to four focused queries from the action, artifact, target system, distinctive
+yourself. A coding task without such a trigger may instead get `status: indexed` with a
+`knowledge_index`: up to five `[id, title]` pairs of matching items in the exact current project and
+`matched_in_search`, how many items that one bounded search kept, never their bodies. It is not the
+project's total: more may match a search of your own. A title is only a pointer: read the item with
+`search_current_project_knowledge` (query its title) before relying on it, and cite only what you
+read. Derive one to four focused queries from the action, artifact, target system, distinctive
 identifier, and likely runbook category. Never pass the full conversational request as the sole
 query. For example, a version-release request should search release/publish and push/commit
 runbook concepts separately instead of searching the entire sentence.
+
+Its response states `retrievalGuidance`, `noMatchSourceMarker` and the shared scope fields once
+at the top level; each entry in `results` keeps its own `query`, records and `sourceMarker`. On a
+bounded page (`next_cursor` present), a query with nothing on that page shows only `query` and
+`total_items`; its records arrive on a later page. Long project ID lists name a prefix and count
+the rest in `project_ids_omitted`.
 
 Pending knowledge is eligible for on-demand retrieval and must remain visibly marked.
 `agent_confirmed` knowledge is usable but ranks below user or authoritative-source
@@ -148,6 +159,9 @@ For the chosen marker, the final answer must begin with its `leadMarkdown` uncha
 before any heading or prose, and append its `markdown` unchanged after the answer. If
 any search supports the answer, choose `sourceMarker` from one supporting search. If
 none do, choose `noMatchSourceMarker`. Never show either marker when no search was
-called. For a no-match search, `noMatchSourceMarker.markdown` is intentionally empty:
+called: `noMatchSourceMarker` reads "searched, no match" (已检索，未命中), so it belongs only
+to a search that ran in this task. A `task_knowledge_recall` without markers ran no search
+(for example `not_needed` or `project_unresolved`); do not reuse a marker from an earlier
+task. For a no-match search, `noMatchSourceMarker.markdown` is intentionally empty:
 show only its `leadMarkdown` and do not synthesize a footer. Never fabricate, rewrite,
 omit, or wrap markers in HTML. A capture or write result is not a read citation.

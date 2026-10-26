@@ -215,7 +215,7 @@ function assertHookSettings(value) {
       throw new TypeError(`Claude Code hook event ${event} must be an array`);
     }
     for (const group of groups) {
-      assertJsonObject(group, `Claude Code ${event} hook group`);
+      assertJsonObject(group, 'Claude Code hook group');
       if (!Array.isArray(group.hooks)) {
         throw new TypeError(`Claude Code ${event} hook group must contain hooks`);
       }

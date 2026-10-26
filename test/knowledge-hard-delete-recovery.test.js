@@ -15,6 +15,7 @@ import { HARD_DELETE_LEDGER_FILE, deletedKnowledgeBeside, hardDeleteLedger } fro
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
 import { PREVIEW_ID, syntheticGraph } from '../test-support/hard-delete-graph.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
+import { MODEL_ANSWER, trustedTonborg } from './fixtures/model-trust.js';
 
 // rec#5 C9, dot's review of #273: a delete whose answer is lost or whose
 // console crashes is settled from its recorded operation and cleaned up to
@@ -22,6 +23,8 @@ import { completePreferences } from './fixtures/collaboration-preferences.js';
 // words back into a local store. Synthetic graph, synthetic records.
 
 const SPACE = 'personal-space';
+// These legacy cleanup tests isolate their fence from the separately tested recovery gate.
+const recoveryGate = { state: () => ({ state: 'open' }) };
 const PASTED = 'SYNTHETIC-PASTED-KEY-0000-not-a-real-secret';
 const CONFIRM = { personalSpaceId: SPACE, itemKind: 'entity', itemId: 'item-2', previewId: PREVIEW_ID, confirmation: '删除' };
 
@@ -33,7 +36,7 @@ function dataDirectory(t) {
 
 // A Tonborg judgment that kept the words of item-2, as a store holds it.
 function rememberWords(dataDir) {
-  const store = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+  const store = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   store.record(SPACE, { kind: 'review', target: 'entity:item-2', title: `Deploy with ${PASTED}`,
     summary: `Approve ${PASTED}`, evidence: [], outcome: 'escalate', confidence: 0.4 }, 'review:item-2');
   store.close();
@@ -168,27 +171,38 @@ test('an abort that wins proves nothing was deleted, and a delete that arrives a
   const dataDir = dataDirectory(t);
   rememberWords(dataDir);
   const graph = syntheticGraph();
-  // The delete is stuck on its way for 500 ms; the console gave up after 50.
-  graph.arriveAfterMs = 500;
-  const port = () => knowledgeHardDelete(dataDir, { send: graph.send, deleteTimeoutMs: 50, abortAfterMs: 150 });
+  // The delete is stuck on its way; the test lets it arrive only after the
+  // console has given up on it.
+  let letDeleteArrive;
+  graph.arriveWhen = new Promise((resolve) => { letDeleteArrive = resolve; });
+  // The console's clock is injected, so the abort window opens when the test
+  // says so rather than after real time.
+  const clock = { at: Date.parse('2026-10-22T01:02:03Z') };
+  const port = () => knowledgeHardDelete(dataDir, { send: graph.send, now: () => new Date(clock.at),
+    deleteTimeoutMs: 0, abortAfterMs: 150 });
   assert.equal((await port().confirm(CONFIRM)).outcome, 'unknown');
   assert.equal(fenced(dataDir), true);
-  await delay(200);
   const operation = hardDeleteLedger(dataDir).find(SPACE, 'item-2');
+  // Past the abort window, the graph's abort wins because the delete has not
+  // reached its lock.
+  clock.at = Date.parse(operation.createdAt) + 151;
   const settled = await port().status(CONFIRM);
   assert.equal(settled.outcome, 'not_deleted');
   assert.equal(graph.operations.get(operation.id).state, 'aborted');
   assert.equal(fenced(dataDir), false, 'only a confirmed outcome releases the fence');
   // The late delete arrives, finds the abort under the same lock and is refused.
-  await delay(450);
+  letDeleteArrive();
+  await graph.deletes[0];
   assert.equal(graph.deleted, false);
   assert.equal(graph.operations.get(operation.id).state, 'aborted');
 });
 
+// Tonborg's configured model is trusted (rec#10 D-36.7): the fence holds all the same.
 test('a Tonborg review that was answering when the person deleted never records the deleted words', async (t) => {
   const dataDir = dataDirectory(t);
   const candidates = [{ candidate_key: 'entity:item-2', title: `Deploy with ${PASTED}`, content: PASTED,
     confirmation_status: 'confirmed', changed_at: '2026-01-01', reasons: [], project_ids: ['p'] }];
+  const writes = [];
   const app = { config: { personal: { spaceId: SPACE } },
     listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'],
@@ -198,21 +212,23 @@ test('a Tonborg review that was answering when the person deleted never records 
     employees: { authorize: async () => ({}) }, personal: {},
     startKnowledgeReview: async () => ({ review_id: 'review' }), finishKnowledgeReview: async () => ({}),
     listKnowledgeReviewCandidates: async () => ({ candidates, total_candidate_count: candidates.length }),
-    recordKnowledgeReviewProgress: async () => ({ outcome: 'ai_reviewed' }), listExecutors: async () => [] };
+    getCapturePolicy: () => ({ enabled: true }),
+    recordKnowledgeReviewProgress: async (input) => { writes.push(input); return { outcome: 'ai_reviewed' }; }, listExecutors: async () => [] };
   // Barrier: the person deletes the item, and the cleanup finishes, while the model answers.
   const judge = async () => {
     const deleted = await knowledgeHardDelete(dataDir, { send: syntheticGraph().send }).confirm(CONFIRM);
     assert.equal(deleted.outcome, 'complete');
     return { body: JSON.stringify({ decisions: [{ target: 'entity:item-2', outcome: 'approve',
-      summary: `Keep ${PASTED}`, evidence: [`said ${PASTED}`], confidence: 0.95 }] }), client: 'codex', model: null,
+      summary: `Keep ${PASTED}`, evidence: [`said ${PASTED}`], confidence: 0.95 }] }), ...MODEL_ANSWER, client: 'codex',
     sessionId: 'synthetic-session' };
   };
-  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge }),
-    openStore: () => new JudgmentStore(join(dataDir, 'judgment.sqlite')) });
+  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge, trust: trustedTonborg() }),
+    openStore: () => new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate }) });
   t.after(() => service.close());
   service.store().setPolicy(SPACE, '', { mode: 'shared', quality: 'quality', client: 'codex' }, 0);
   const result = await service.review({ personalSpaceId: SPACE, personalProjectId: 'p', requestId: 'barrier-1', limit: 10 });
   assert.equal(result.records.some((record) => record.target === 'entity:item-2'), false);
+  assert.deepEqual(writes, []);
   service.close();
   assert.deepEqual(storesHold(dataDir), []);
 });
@@ -222,7 +238,7 @@ test('a late answer or result of handed-off work keeps no deleted words', async 
   const path = join(dataDir, 'role-work.sqlite');
   const at = new Date('2026-10-22T00:00:00Z');
   // A long-running process holds the store from before the delete.
-  const running = new RoleWorkStore(path);
+  const running = new RoleWorkStore(path, { recoveryGate });
   t.after(() => running.close());
   const pkg = running.create({ request: { role: 'tonborg', operation: 'review', requestId: 'late-1',
     scope: { personalSpaceId: SPACE, personalProjectId: null, sessionRef: null }, versions: { evidence: 'e', policy: 'p' },
@@ -285,7 +301,7 @@ for (const [shape, document] of Object.entries(DAMAGED)) {
     const dataDir = dataDirectory(t);
     rememberWords(dataDir);
     writeFileSync(join(dataDir, HARD_DELETE_LEDGER_FILE), JSON.stringify(document));
-    const store = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+    const store = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
     const write = () => store.record(SPACE, { kind: 'review', target: 'entity:other', title: 'Synthetic words' }, 'review:other');
     assert.throws(write, (error) => error.code === 'data_format_damaged' && /moving it out of the data directory/.test(error.message));
     store.close();
@@ -326,4 +342,28 @@ test('a ledger moved aside or restored from an older backup is rebuilt from the 
   assert.equal(fenced(dataDir), true);
   assert.deepEqual(storesHold(dataDir), []);
   assert.deepEqual(await port().reconcile(), [], 'once known, it is not taken in twice');
+});
+
+test('restored-ledger recovery blocks local knowledge reads and writes while graph tombstones are pending', async (t) => {
+  const dataDir = dataDirectory(t);
+  rememberWords(dataDir);
+  const store = new JudgmentStore(join(dataDir, 'judgment.sqlite'));
+  t.after(() => store.close());
+  const graph = syntheticGraph();
+  graph.deleted = true;
+  let release;
+  const barrier = new Promise((resolve) => { release = resolve; });
+  const port = knowledgeHardDelete(dataDir, { personalSpaceId: () => SPACE,
+    send: async (...args) => { await barrier; return graph.send(...args); } });
+  const recovery = port.reconcile();
+  try {
+    assert.throws(() => store.records(SPACE), /recover|reconcil/i);
+    assert.throws(() => store.record(SPACE, { kind: 'review', target: 'entity:item-2', title: PASTED },
+      'restored-late-write'), /recover|reconcil/i);
+  } finally {
+    release();
+    await recovery;
+    store.close();
+  }
+  assert.deepEqual(storesHold(dataDir), []);
 });

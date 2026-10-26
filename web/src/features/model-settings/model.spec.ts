@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  costValue, roleDraft, roleEdit, rolesSharing, tokenValue, usageParts, usageRows, usageWindowStart, withConnection, withProject,
+  costValue, roleDraft, roleEdit, roleSummary, rolesSharing, tokenValue, usageParts, usageRows, usageWindowStart, withConnection, withProject,
   type ModelRolesPayload, type UsageGroup,
 } from './model'
 
@@ -76,6 +76,16 @@ const group = (overrides: Partial<UsageGroup>): UsageGroup => ({
   requests: 3, attempts: 4, failedAttempts: 1,
   tokens: { input: { reported: 300, unknownAttempts: 1 }, output: { reported: 60, unknownAttempts: 1 }, total: { reported: 360, unknownAttempts: 1 } },
   estimatedCost: null, ...overrides,
+})
+
+describe('model role rows', () => {
+  it('sums a row up in one line: who answers, the service, and how its operation runs', () => {
+    const [assistant, , , tonborg] = payload().roles
+    expect(roleSummary(assistant!)).toBe('当前会话')
+    expect(roleSummary({ ...tonborg!, trust: { operation: 'knowledge_review', suggestionsOnly: true, warningSeen: true, warningSeenAt: null,
+      warningVersion: 1, revision: 1, status: 'suggestion', reason: 'suggestions_only', evaluation: null } }))
+      .toBe('自己的模型 · OpenAI 兼容 · 127.0.0.1:11434 · 只给建议')
+  })
 })
 
 describe('model usage', () => {

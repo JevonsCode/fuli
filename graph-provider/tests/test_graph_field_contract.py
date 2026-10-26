@@ -150,6 +150,7 @@ def test_every_declared_property_is_still_named_by_the_provider():
 # `reference = old {.*, …}` copies a stored record in Cypher and adds only the
 # keys it names.
 MAP_WRITES = {
+    ('publication_submission.py', 'draft', '+='),
     ('knowledge_versions.py', 'item', '='),
     ('knowledge_versions.py', 'link', '+='),
     ('store_conversation_triage.py', 't', '+='),

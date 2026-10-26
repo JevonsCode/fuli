@@ -1,6 +1,7 @@
-import { ApiError, getJson, putJson } from '@/api/client'
+import { ApiError, apiErrorCode, getJson, putJson } from '@/api/client'
 import { t } from '@/i18n'
-import { shortUniqueIds } from '@/lib/short-ids'
+import { shortDigest } from '@/features/data-format/model'
+import { formatDateTime } from '@/lib/date-time'
 
 // The console's model settings page (rec#8): each built-in Agent's model,
 // budget and egress, edited through the loopback route, and its usage from
@@ -54,24 +55,88 @@ export interface ModelRoleView {
   egress?: { approvedProjects: ApprovedProject[]; allowUnassigned: boolean }
   budget?: ModelBudget | null
   fallbackToSession?: boolean
-  // rec#10 D-24, read from the gate registry: only Tonborg's model can be unlocked.
-  reviewGate?: ReviewGateView
+  // rec#10 D-36: whether the role's own model carries out its automatic operation now; null when it has none.
+  trust?: RoleTrust | null
+  // rec#10 D-32: the build a local Ollama listed after the latest answer.
+  localBuild?: LocalBuild
 }
 
-export interface GateEntry { modelId: string; modelDigest: string; harnessVersion: string; evidence: string; addedAt: string }
-export interface ReviewGateView { status: 'suggestion_only' | 'unlocked'; reason: string | null; entries: GateEntry[] }
+// An observation of the local catalog, never proof of what served an answer.
+export interface LocalBuild {
+  status: 'not_applicable' | 'no_record' | 'not_observed' | 'observed'
+  digest: string | null
+  completedAt: string | null
+}
 
-// The unlocked builds as model@digest prefix; the full builds go in a title.
-export function gateBuilds(gate: ReviewGateView): { text: string; title: string } {
-  const digests = shortUniqueIds(gate.entries.map(entry => entry.modelDigest))
-  return {
-    text: gate.entries.map(entry => {
-      const short = digests.get(entry.modelDigest) ?? entry.modelDigest
-      return `${entry.modelId}@${short}${short === entry.modelDigest ? '' : '…'}`
-    }).join(', '),
-    title: gate.entries.map(entry => `${entry.modelId}@${entry.modelDigest} (${entry.evidence})`).join('\n'),
+// What the 本地模型版本 row says: nothing for a connection a local build is
+// never read from; otherwise the state in words, or the build as the
+// 12-character prefix `ollama list` shows, with the full build in a title.
+export function localBuildText(build: LocalBuild | undefined, locale: string): { text: string; title?: string; code: boolean } | null {
+  if (!build || build.status === 'not_applicable') return null
+  if (build.status === 'no_record') return { text: t('modelSettings.localBuild.noRecord'), code: false }
+  if (build.status === 'not_observed' || !build.digest) {
+    return { text: t('modelSettings.localBuild.notObserved'), title: t('modelSettings.localBuild.notObservedHint'), code: false }
   }
+  const time = formatDateTime(build.completedAt, locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }, { missing: '' })
+  return { text: `${shortDigest(build.digest)}…`, title: `${build.digest}\n${t('modelSettings.localBuild.observedHint', { time })}`, code: true }
 }
+
+// rec#10 D-36 (src/model-backends/role-trust.js): the person's 「只给建议」
+// choice, whether they acknowledged the warning, and whether the configured
+// model would execute by itself now (reason says why not).
+export interface RoleTrust {
+  operation: string
+  suggestionsOnly: boolean
+  warningSeen: boolean
+  warningSeenAt: string | null
+  warningVersion: number
+  revision: number
+  status: 'automatic' | 'suggestion'
+  reason: string | null
+  evaluation: ModelEvaluation | null
+}
+
+// One evaluation of the configured model on this computer (evaluation-record.js).
+export interface ModelEvaluation {
+  role: string
+  operation: string
+  model: string
+  set: string
+  evaluatedAt: string
+  agreed: number
+  total: number
+}
+
+const TRUST_REASONS = ['suggestions_only', 'warning_not_seen', 'session_answer', 'not_configured'] as const
+
+// What the 执行方式 line says: who executes now, or why it only suggests.
+export function trustStatusText(trust: RoleTrust, model: string | null): string {
+  if (trust.status === 'automatic') return t('modelSettings.trust.automatic', { model: model ?? '' })
+  const reason = TRUST_REASONS.find(known => known === trust.reason) ?? 'other'
+  return t(`modelSettings.trust.reasons.${reason}`)
+}
+
+// A role row's one summary line: who answers, through which service, and how
+// its automatic operation runs. The model itself is shown beside it.
+export function roleSummary(view: ModelRoleView): string {
+  const answer = view.answeredBy ? t(`modelSettings.answer.${view.answeredBy}`) : t('modelSettings.none')
+  const service = view.connection ? `${t(`modelSettings.protocols.${view.connection.protocol}`)} · ${view.connection.endpointHost}` : ''
+  const trust = view.trust ? trustStatusText(view.trust, view.connection?.model ?? null) : ''
+  return [answer, service, trust].filter(Boolean).join(' · ')
+}
+
+// The one evaluation line, naming its set, day and model; it is not a general accuracy.
+export function evaluationText(evaluation: ModelEvaluation | null, locale: string): string | null {
+  if (!evaluation) return null
+  const date = formatDateTime(evaluation.evaluatedAt, locale, { year: 'numeric', month: '2-digit', day: '2-digit' }, { missing: '' })
+  return t('modelSettings.trust.evaluation', { date, set: evaluation.set, model: evaluation.model,
+    rate: Math.round((evaluation.agreed / evaluation.total) * 100) })
+}
+
+// The person's change of a role's execution mode, or their acknowledgement of its warning (loopback only).
+export type RoleTrustChange = { suggestionsOnly: boolean } | { acknowledgeWarning: number }
+export const saveRoleTrust = (role: ModelRoleId, change: RoleTrustChange, expectedRevision: number) =>
+  putJson<ModelRolesPayload>(`/api/model-backends/roles/${role}/trust`, { expectedRevision, ...change })
 
 export interface ModelRolesPayload {
   state: 'ok' | 'absent' | 'invalid'
@@ -80,6 +145,8 @@ export interface ModelRolesPayload {
   connections: Record<string, ModelConnection>
   roles: ModelRoleView[]
   operations: Partial<Record<ModelRoleId, string[]>>
+  // After a save or trust change: whether the change was written to the change history (rec#11 D-42).
+  history?: 'recorded' | 'unchanged' | 'not_recorded'
 }
 
 export const readModelRoles = (signal?: AbortSignal) =>
@@ -228,12 +295,8 @@ export function roleEdit(draft: RoleDraft, revision: string | null) {
 export type ConfigConflict = 'model_config_changed' | 'model_config_invalid'
 export function configConflict(cause: unknown): ConfigConflict | null {
   if (!(cause instanceof ApiError) || cause.status !== 409) return null
-  try {
-    const code = (JSON.parse(cause.detail) as { code?: unknown }).code
-    return code === 'model_config_changed' || code === 'model_config_invalid' ? code : null
-  } catch {
-    return null
-  }
+  const code = apiErrorCode(cause)
+  return code === 'model_config_changed' || code === 'model_config_invalid' ? code : null
 }
 
 export const saveModelRole = (role: ModelRoleId, draft: RoleDraft, revision: string | null) =>

@@ -32,6 +32,26 @@ class MemoryTagReader:
     def __init__(self, vocabulary, space_id):
         self._vocabulary, self._space_id = vocabulary, space_id
 
+    async def ranking_roots(self, namespaces, keys):
+        return [copy.deepcopy(tag) for tag in self._vocabulary.in_space(
+            self._space_id, namespaces, ('active', 'provisional', 'merged'))
+            if tag['name_key'] in keys or set(tag['alias_keys']) & set(keys)]
+
+    async def ranking_target(self, namespaces, tag_id):
+        tag = await self.get_any(tag_id)
+        return tag if tag and tag['namespace_key'] in namespaces else None
+
+    async def ranking_neighbors(self, namespaces, root_ids):
+        tags = self._vocabulary.in_space(self._space_id, namespaces, ('active',))
+        roots = [tag for tag in tags if tag['id'] in root_ids]
+        return [copy.deepcopy(tag) for tag in tags if any(
+            root['id'] in tag.get('parent_ids', []) or root['id'] in tag.get('related_ids', [])
+            or tag['id'] in root.get('related_ids', []) for root in roots)]
+
+    async def ranking_links(self, tag_ids, kind, item_ids):
+        return [link for link in await self.links_of(tag_ids)
+                if link['space_id'] == self._space_id and link['item_kind'] == kind and link['item_id'] in item_ids]
+
     async def find_by_key(self, namespace_keys, key):
         return await self._by_key(namespace_keys, key, LIVE)
 

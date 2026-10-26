@@ -16,6 +16,13 @@ from .models import (
     PreferenceConflictResolveCreate,
     PreferenceScopeChange,
 )
+from .knowledge_visibility import (
+    fla_visible_ids_cypher,
+    hidden_refs,
+    knowledge_reader,
+    reader_parameter,
+    request_reader,
+)
 from .provider_values import native_datetime as _native_datetime
 
 
@@ -42,6 +49,14 @@ async def defer_preference_conflict(
         request.personal_space_id,
         'maintainer',
     )
+    # Neither the items it names nor a conflict already kept under this id
+    # may be another FLA's: that answers as missing, and nothing is written.
+    reader = await request_reader(store, actor, space, request)
+    if reader is not None:
+        existing = await _stored_conflict(store, space['id'], request.conflict_id)
+        await _require_visible(store, space, reader, [
+            (request.left_item_kind, request.left_item_id), (request.right_item_kind, request.right_item_id),
+            *(_conflict_items(existing) if existing else [])])
     left = await _active_preference_item(
         store,
         space,
@@ -140,23 +155,30 @@ async def list_preference_conflicts(
     limit: int = 500,
     offset: int = 0,
 ) -> list[PreferenceConflictRecord]:
-    await _authorize_personal_space(
+    space = await _authorize_personal_space(
         store,
         actor,
         personal_space_id,
         'reader',
     )
+    # An Agent reads as a plain session: no conflict naming any FLA's own
+    # item (an FLA meets those over its own preferences in its task context).
+    # The console reads them all with the human-review proof. Cut before the page.
+    reader = await knowledge_reader(store, actor, space, personal_project_id=None, project_agent_id=None)
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
               [:HAS_PREFERENCE_CONFLICT]->(conflict:FuliPreferenceConflict)
-        WHERE $status IS NULL OR conflict.status = $status
+        WHERE ($status IS NULL OR conflict.status = $status)
+          AND ''' + fla_visible_ids_cypher('[conflict.left_item_id, conflict.right_item_id]') + '''
         RETURN conflict
         ORDER BY conflict.updated_at DESC, conflict.id ASC
         SKIP $offset
         LIMIT $limit
         ''',
         space_id=personal_space_id,
+        group_id=space['group_id'],
+        reader=reader_parameter(reader),
         status=status,
         limit=min(max(limit, 1), 1000),
         offset=max(offset, 0),
@@ -216,6 +238,10 @@ async def resolve_preference_conflict(
         'maintainer',
     )
     conflict = await _read_conflict(store, space['id'], conflict_id)
+    # Before anything is returned, a resolved retry included: a conflict
+    # naming another FLA's item answers as missing.
+    await _require_visible(store, space, await request_reader(store, actor, space, request),
+                           _conflict_items(conflict))
     if conflict.status == 'resolved':
         return conflict
     if conflict.status != 'ai_pending':
@@ -266,6 +292,10 @@ async def complete_preference_conflict(
         'maintainer',
     )
     conflict = await _read_conflict(store, space['id'], conflict_id)
+    # The person completes any conflict with the console's proof; without it
+    # the caller reads as a plain session.
+    await _require_visible(store, space, await knowledge_reader(
+        store, actor, space, personal_project_id=None, project_agent_id=None), _conflict_items(conflict))
     return await _complete(
         store,
         space['id'],
@@ -467,6 +497,13 @@ async def _complete(
 
 
 async def _read_conflict(store, space_id, conflict_id):
+    conflict = await _stored_conflict(store, space_id, conflict_id)
+    if conflict is None:
+        raise HTTPException(status_code=404, detail='preference conflict not found')
+    return conflict
+
+
+async def _stored_conflict(store, space_id, conflict_id):
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
@@ -478,9 +515,18 @@ async def _read_conflict(store, space_id, conflict_id):
         conflict_id=conflict_id,
         routing_='r',
     )
-    if not records:
+    return _record(records[0]['conflict']) if records else None
+
+
+def _conflict_items(conflict) -> list[tuple[str, str]]:
+    return [(conflict.left_item_kind, conflict.left_item_id),
+            (conflict.right_item_kind, conflict.right_item_id)]
+
+
+async def _require_visible(store, space, reader, items) -> None:
+    """A conflict naming an item this reader may not see is, to it, missing."""
+    if await hidden_refs(store, space, reader, items):
         raise HTTPException(status_code=404, detail='preference conflict not found')
-    return _record(records[0]['conflict'])
 
 
 async def _active_preference_item(store, space, item_id, item_kind):

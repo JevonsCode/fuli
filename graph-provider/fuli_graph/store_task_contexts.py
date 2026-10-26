@@ -23,6 +23,9 @@ from .task_context_auto_close import close_previous_routine_fallback, routine_co
 from .task_worker_attribution import lock_checkpoint_context, checkpoint_collaboration
 from .task_activity_origin import context_activity_origin
 from .task_turn_receipts import mark_turn_receipt_unread, unread_session_turn_receipts
+from .knowledge_versions import lock_knowledge
+from .knowledge_source_fence import require_source_available
+from .client_coverage import covers_client
 
 
 class StoreTaskContexts:
@@ -37,8 +40,11 @@ class StoreTaskContexts:
 
     async def begin_task_context(self, actor, request):
         self._require_personal()
-        await self.authorize(actor, request.personal_space_id, 'maintainer')
+        space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         async with query_store_transaction(self) as scoped:
+            await lock_knowledge(scoped, space)
+            await require_source_available(scoped, space, source_application=request.source_application,
+                session_id=request.session_id, source_turn_id=request.turn_id, task_token=request.token)
             session_id = scoped._task_session_id(request.personal_space_id, request.source_application, request.session_id)
             await scoped._lock_task_context_session(session_id)
             await scoped._link_task_context_sessions(request.personal_space_id, [session_id])
@@ -84,7 +90,7 @@ class StoreTaskContexts:
                 request.project_agent_id, require_active=True, allow_global=True,
             )
             allowed_clients = json.loads(agent['profile_json']).get('allowed_clients', [])
-            if request.source_application not in allowed_clients:
+            if not covers_client(allowed_clients, request.source_application):
                 raise HTTPException(status_code=403, detail='Agent is not allowed in this client')
         record = request.model_dump(mode='json')
         origin = await context_activity_origin(self, actor, request, worker_run_id=worker_run_id)
@@ -246,7 +252,7 @@ class StoreTaskContexts:
             space = await self.authorize(actor, request.personal_space_id, 'reader')
             agent = await authorize_project_agent(self, actor, space, record.get('personal_project_id'),
                                                   record['project_agent_id'], require_active=True, allow_global=True)
-            if request.source_application not in json.loads(agent['profile_json']).get('allowed_clients', []):
+            if not covers_client(json.loads(agent['profile_json']).get('allowed_clients', []), request.source_application):
                 raise HTTPException(403, 'Agent is not allowed in this client')
         # All applicability dimensions come from the durable task, never the reader.
         preferences = await read_collaboration_context(
@@ -264,6 +270,9 @@ class StoreTaskContexts:
         # A rejected preparation cannot commit memory. A later host turn may
         # still supersede a successfully prepared context; complete is separate.
         async with query_store_transaction(self) as scoped:
+            space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
+            await lock_knowledge(scoped, space)
+            await require_source_available(scoped, space, task_token=token)
             await scoped.guard_worker_task_context(actor, request.personal_space_id, token, for_write=True)
             record = await scoped._checkpoint_task_context(actor, token, request)
             if request.agent_memory is not None:

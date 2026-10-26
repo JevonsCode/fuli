@@ -11,15 +11,12 @@
 .project-agent-detail-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 8px; max-width: 360px; }
 .project-agent-detail-notice { margin: 0; padding: 8px 12px; border-radius: var(--radius-control); background: var(--color-surface-subtle); color: var(--color-muted); font-size: 13px; }
 
-/* Tabs and their panels: one column of cards; execution puts its four
-   sections side by side on a wide canvas. */
+/* Tabs and their panels: one column of cards at every width, execution's
+   four sections included (rec#38). */
 .project-agent-detail { container-type: inline-size; display: grid; gap: var(--space-4, 16px); }
 .project-agent-panel { display: grid; gap: var(--space-4, 16px); }
 .project-agent-card-section { gap: 0; padding-inline: var(--space-6, 24px); }
-.project-agent-execution-grid { display: grid; align-items: start; gap: var(--space-4, 16px); }
-@container (min-width: 960px) {
-  .project-agent-execution-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
+.project-agent-execution-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4, 16px); }
 
 .project-agent-section-heading, .project-agent-section-tools, .project-agent-assignment-card header, .project-agent-learning-card header, .project-agent-recruitment-card header, .project-agent-day-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .project-agent-section-heading { flex-wrap: wrap; margin-bottom: 4px; }

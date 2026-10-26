@@ -1,3 +1,4 @@
+import { CLIENT_PACK_FORMAT } from '../setup/agents/client-pack-store.js';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -20,16 +21,20 @@ import { CAPTURE_POLICY_FORMAT } from '../graphiti/capture-policy.js';
 import { CAPTURE_SESSION_PAUSE_FORMAT } from '../graphiti/capture-session-pause.js';
 import { RECALL_POLICY_FORMAT } from '../graphiti/recall-policy.js';
 import { GRAPH_RUNTIME_CONFIG_FORMAT } from '../graphiti/runtime-config.js';
-import { REVIEW_GATE_FILE, REVIEW_GATE_FORMAT } from '../judgment/review-gate.js';
 import { JUDGMENT_FORMAT } from '../judgment/store.js';
 import { HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT } from '../knowledge-hard-delete/delete-ledger.js';
 import { MODEL_BACKEND_CONFIG_FORMAT } from '../model-backends/config.js';
+import { MODEL_EVALUATIONS_FORMAT } from '../model-backends/evaluation-record.js';
+import { MODEL_TRUST_FORMAT } from '../model-backends/role-trust.js';
 import { ROLE_WORK_FORMAT } from '../model-backends/role-work-store.js';
+import { MODEL_SETTINGS_HISTORY_FORMAT } from '../model-backends/settings-history.js';
+import { ROLE_SUGGESTIONS_FORMAT } from '../model-backends/suggestion-log.js';
 import { MODEL_USAGE_FORMAT } from '../model-backends/usage-ledger.js';
 import { inspectJsonStore } from '../storage/json-format.js';
 import { APPLY_RECEIPTS_FORMAT } from './apply-receipts.js';
 import { FORMAT_OPERATIONS_FORMAT } from './operations-log.js';
 import { MODEL_SECRETS_FORMAT } from '../model-backends/secret-store.js';
+import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { TASK_SCHEDULE_FORMAT } from '../task-schedules/store.js';
@@ -42,15 +47,23 @@ import { TASK_SCHEDULE_FORMAT } from '../task-schedules/store.js';
 const sqliteStores = () => [
   ['judgment.sqlite', JUDGMENT_FORMAT],
   ['task-schedules.sqlite', TASK_SCHEDULE_FORMAT],
+  ['standing-assignments.sqlite', STANDING_ASSIGNMENTS_FORMAT],
   ['agent-roundtable.sqlite', ROUNDTABLE_FORMAT],
   ['model-usage.sqlite', MODEL_USAGE_FORMAT],
   ['role-work.sqlite', ROLE_WORK_FORMAT],
+  // What Astro, Bole and Jefa showed after asking their own model; suggestions only.
+  ['role-suggestions.sqlite', ROLE_SUGGESTIONS_FORMAT],
+  // Each role's 「只给建议」 choice and trust-warning acknowledgement (rec#10 D-36); absent until the first change.
+  ['model-trust.sqlite', MODEL_TRUST_FORMAT],
+  // What changed in the model settings and execution modes, and when (rec#11 D-42); never pruned.
+  ['model-settings-history.sqlite', MODEL_SETTINGS_HISTORY_FORMAT],
   ['agent-apps/registry.sqlite', AGENT_APP_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
   ['peer/node.sqlite', NODE_FORMAT],
   ['peer/coordinator.sqlite', COORDINATOR_FORMAT]
 ];
 const jsonStores = () => [
+  ['client-packs.json', CLIENT_PACK_FORMAT],
   ['runtime-settings.json', RUNTIME_SETTINGS_FORMAT],
   ['adaptive-runtime-settings.json', ADAPTIVE_RUNTIME_SETTINGS_FORMAT],
   ['adaptive-runtime-state.json', ADAPTIVE_RUNTIME_STATE_FORMAT],
@@ -74,8 +87,8 @@ const jsonStores = () => [
   ['format-apply-receipts.json', APPLY_RECEIPTS_FORMAT],
   // A person's permanent deletes, content-free: their state and the fence local stores check (rec#5 C9).
   [HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT],
-  // Model builds the person unlocked to apply Tonborg's knowledge review (rec#10 D-24); absent until one is.
-  [REVIEW_GATE_FILE, REVIEW_GATE_FORMAT]
+  // Evaluations of a role's model run on this computer, shown on the settings page (rec#10 D-36.6).
+  ['model-evaluations.json', MODEL_EVALUATIONS_FORMAT]
 ];
 // One small record per session.
 const jsonDirectories = () => [

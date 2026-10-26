@@ -1,5 +1,7 @@
 {
   "graph/1-baseline-schema": "97aea3009ca5c11a52ce4c408f27a50d519e8b7a36b8ab82cc4aa8bf326db771",
+  "graph/10-knowledge-tags": "d225f16df1d3407a5a1e05a8957d0087ea32ecb78310713cd65d6977a656bf3a",
+  "graph/11-source-hard-delete": "100662f742eaffe92b04a8ad15179cf3d7f7accb3b2835930d90783d7129d594",
   "graph/2-learning-bucket-ids": "d1a67086bb2d7877991d2f1073a4592504247b7e533a9c293b899848589d133d",
   "graph/3-control-plane-schema": "f1f966ab2ab69a5fe98a78c851483f48b8f9dd50a19e678f6a8957174488385d",
   "graph/4-legacy-agent-assignments": "d1a67086bb2d7877991d2f1073a4592504247b7e533a9c293b899848589d133d",
@@ -7,6 +9,5 @@
   "graph/6-project-relation-review-defaults": "d1a67086bb2d7877991d2f1073a4592504247b7e533a9c293b899848589d133d",
   "graph/7-space-visibility-owners": "d1a67086bb2d7877991d2f1073a4592504247b7e533a9c293b899848589d133d",
   "graph/8-project-release-records": "d1a67086bb2d7877991d2f1073a4592504247b7e533a9c293b899848589d133d",
-  "graph/9-group-id-separators": "d1a67086bb2d7877991d2f1073a4592504247b7e533a9c293b899848589d133d",
-  "graph/10-knowledge-tags": "d225f16df1d3407a5a1e05a8957d0087ea32ecb78310713cd65d6977a656bf3a"
+  "graph/9-group-id-separators": "d1a67086bb2d7877991d2f1073a4592504247b7e533a9c293b899848589d133d"
 }

@@ -16,6 +16,7 @@ import { runModelsCommand } from './cli/models-command.js';
 import { runSessionCommand } from './cli/session-command.js';
 import { runWorkerCommand } from './cli/worker-command.js';
 import { runSetupCommand } from './cli/setup-command.js';
+import { runClientsCommand } from './cli/clients-command.js';
 import { runConnectCommand } from './cli/connect-command.js';
 import { runPeerCommand } from './cli/peer-command.js';
 import { runMcpCommand, startupMessage } from './cli/mcp-command.js';
@@ -40,6 +41,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     assertSupportedNodeVersion();
     return runSetupCommand(commandArgs, { env });
   }
+  if (command === 'clients') return runClientsCommand(commandArgs, { env });
   if (command === 'connect') {
     assertSupportedNodeVersion();
     return runConnectCommand(commandArgs, { env });

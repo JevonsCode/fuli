@@ -9,29 +9,29 @@ import { storedPackageMatches } from './package-files.js';
 const TOKEN_PREFIX = 'fla_';
 const TOKEN_BYTES = 32;
 
-// The App Host port: an app proves who it is with a token issued for its active,
-// approved version. The token carries exactly that version's permissions and
-// ends when the version stops being the running one. Only token hashes are kept.
+// App tokens: an instance proves which app, version and instance it is with a
+// token issued when it started, for its active, approved version (rec#7
+// D-28.14). The token carries exactly that version's permissions and names the
+// instance id and generation; it ends when the version stops being the running
+// one, and it verifies only while that instance is the app's current one and
+// still running (sealing refuses every new call: app_sealed). Only token
+// hashes are kept.
 export function createAppTokens(context) {
   const { store, now } = context;
 
-  function issueToken({ appId }) {
-    const outcome = store.transaction(() => {
-      const app = store.existingApp(appId);
-      if (app.status !== 'active') {
-        return { refusal: appConflict('app_not_active', 'Only an active app with an approved version receives an app token') };
-      }
-      const running = runningVersion(app);
-      if (running.refusal) return running;
-      const at = now();
-      store.revokeTokens(appId, 'reissued', at);
-      const token = `${TOKEN_PREFIX}${randomBytes(TOKEN_BYTES).toString('base64url')}`;
-      const { version, digest, permissions } = running.grant;
-      store.insertToken({ tokenHash: contentHash(token), appId, version, digest, permissions, issuedAt: at });
-      return { result: { token, appId, version, permissions } };
-    });
-    if (outcome.refusal) throw outcome.refusal;
-    return outcome.result;
+  // Inside the caller's transaction, which also records the instance.
+  // A refusal is returned so that ending the tokens of a tampered package
+  // commits before the caller throws it.
+  function mintToken({ app, instanceId, generation }) {
+    const running = runningVersion(app);
+    if (running.refusal) return running;
+    const at = now();
+    store.revokeTokens(app.appId, 'reissued', at);
+    const token = `${TOKEN_PREFIX}${randomBytes(TOKEN_BYTES).toString('base64url')}`;
+    const { version, digest, permissions } = running.grant;
+    store.insertToken({ tokenHash: contentHash(token), appId: app.appId, version, digest, permissions,
+      instanceId, generation, issuedAt: at });
+    return { token, permissions };
   }
 
   // toolName: the FULI tool the app is about to call, checked against its grant.
@@ -42,22 +42,27 @@ export function createAppTokens(context) {
       if (!app || app.status !== 'active' || app.activeVersion !== issued.version) {
         return { refusal: new ApplicationError('app_token_invalid', 'This app token is unknown or no longer valid', { status: 401 }) };
       }
+      const instance = store.instance(app.appId);
+      if (!instance || instance.instanceId !== issued.instanceId || instance.generation !== issued.generation) {
+        return { refusal: appConflict('instance_superseded', 'This instance is no longer the app\'s current one') };
+      }
+      if (instance.state !== 'running') {
+        return { refusal: appConflict('app_sealed', 'This app instance is being stopped and accepts no new calls') };
+      }
       const running = runningVersion(app);
       if (running.refusal) return running;
       if (toolName !== null && !issued.permissions.includes(`fuli.${toolName}`)) {
         return { refusal: new ApplicationError('tool_not_permitted', `This app version may not call ${toolName}`, { status: 403 }) };
       }
-      const at = now();
-      store.saveApp({ ...app, lastUsedAt: at });
+      store.saveApp({ ...app, lastUsedAt: now() });
       return { result: { appId: app.appId, version: issued.version, personalSpaceId: app.personalSpaceId,
-        agentId: app.agentId, permissions: issued.permissions } };
+        agentId: app.agentId, permissions: issued.permissions, instanceId: instance.instanceId,
+        generation: instance.generation } };
     });
     if (outcome.refusal) throw outcome.refusal;
     return outcome.result;
   }
 
-  // A refusal is returned rather than thrown so that ending the tokens of a
-  // tampered package commits before the caller sees the error.
   function runningVersion(app) {
     const version = store.version(app.appId, app.activeVersion);
     const approval = store.approval(app.appId, app.activeVersion);
@@ -75,5 +80,5 @@ export function createAppTokens(context) {
     return { grant: { version: version.version, digest: approval.digest, permissions: approval.permissions } };
   }
 
-  return { issueToken, verifyToken };
+  return { mintToken, verifyToken };
 }

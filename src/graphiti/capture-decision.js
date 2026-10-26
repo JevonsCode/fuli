@@ -3,6 +3,7 @@ import { projectCaptureReason, projectOffSince, storedProjectSettings, usesProje
 import { isTemporaryProjectId } from './temporary-project-scope.js';
 import { captureNotice } from './capture-notice.js';
 import { sessionCaptureDecision, sessionFuliState } from './session-layer-decision.js';
+import { coversClient } from '../agents/source-applications.js';
 
 // The one place that decides whether a write may capture (rec#5 C1). Every
 // write path asks here: raw transcript, Agent conversation, task checkpoint,
@@ -84,6 +85,25 @@ export function taskCaptureScope(task) {
     boundSessionId: task.sessionId ?? null };
 }
 
+// A write FULI's own Agent makes by itself, for no client and no session: a
+// knowledge review Tonborg applies automatically (rec#10 D-36.11). Only the
+// global switch and, for a project, the project layer can apply; the check is
+// synchronous so it runs inside the caller's commit. Settings that cannot be
+// read or understood allow nothing.
+export function automaticWriteDecision(application, personalProjectId = null) {
+  let policy;
+  try {
+    policy = application.getCapturePolicy();
+  } catch {
+    return denied('policy_unavailable', 'policy');
+  }
+  const settings = understoodSettings(policy);
+  if (!settings) return denied('policy_unavailable', 'policy');
+  if (!policy.enabled) return denied('global_off', 'global');
+  const reason = personalProjectId ? projectCaptureReason(settings, registeredProject(personalProjectId)) : null;
+  return reason ? denied(reason, 'project') : { allowed: true, reason: null, layer: null };
+}
+
 // The result a skipped write returns. It names the decision only, never the
 // content that was not recorded.
 export function captureDisabled(decision) {
@@ -103,7 +123,7 @@ async function decide(application, scope) {
   if (!policy.enabled) return { policy, decision: denied('global_off', 'global') };
   // A write that names no client comes from an unknown client, as at every
   // other FULI boundary. Settings saved before per-client capture list none.
-  if ((policy.disabledSources ?? []).includes(scope.sourceApplication ?? 'other')) {
+  if (coversClient(policy.disabledSources, scope.sourceApplication ?? 'other', { explicit: policy.capturedSources ?? [] })) {
     return { policy, decision: denied('client_off', 'client') };
   }
   let project = null;
@@ -126,7 +146,8 @@ async function decide(application, scope) {
 
 function understoodSettings(policy) {
   if (typeof policy?.enabled !== 'boolean'
-    || (policy.disabledSources !== undefined && !Array.isArray(policy.disabledSources))) return null;
+    || (policy.disabledSources !== undefined && !Array.isArray(policy.disabledSources))
+    || (policy.capturedSources !== undefined && !Array.isArray(policy.capturedSources))) return null;
   try {
     return storedProjectSettings(policy, TypeError);
   } catch {

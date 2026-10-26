@@ -23,6 +23,7 @@ counts and opaque IDs), so an old link or a receipt says 「已彻底删除」, 
 replayed capture of a removed episode does not write it again.
 """
 import json
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 
@@ -45,6 +46,12 @@ from .knowledge_hard_delete_models import (
 from .knowledge_hard_delete_operations import (
     abort_operation, operation_fingerprint, operation_outcome, record_refusal, settled_operation,
 )
+from .knowledge_hard_delete_publications import publications_for_sources
+from .knowledge_integrity import check_knowledge_integrity, KnowledgeIntegrityRequest
+from .knowledge_source_delete_models import SourceDeleteRef
+from .knowledge_source_delete_plan import plan_source_delete
+from .knowledge_source_delete_mutation import remove_source_delete
+from .publication_source_copies import drafts_for_sources, publication_draft_counts, scrub_publication_drafts
 from .knowledge_hard_delete_traces import all_hard_deletions, hard_deletion_record, require_not_hard_deleted
 from .knowledge_management import _read_item
 from .knowledge_versions import item_revisions, lock_knowledge, version_chain, version_status
@@ -118,7 +125,7 @@ WHERE NOT edge.uuid IN $relationship_ids
   AND (episode.uuid IN coalesce(edge.episodes, []) OR edge.uuid IN coalesce(episode.entity_edges, []))
 WITH episode, mentioned, collect(DISTINCT CASE WHEN edge IS NULL THEN NULL ELSE
   {item_kind: 'relationship', item_id: edge.uuid, title: coalesce(edge.fact, edge.name, edge.uuid)} END) AS related
-RETURN episode {.uuid, .created_at, .fuli_source_kind, .fuli_source_application, .fuli_session_id,
+RETURN episode {.uuid, .created_at, .fuli_source_kind, .fuli_source_application, .fuli_session_id, .fuli_source_turn_id,
                 .fuli_source_excerpt} AS episode,
        mentioned + related AS others
 ORDER BY episode.created_at, episode.uuid
@@ -213,7 +220,7 @@ _DELETE_RECORDS = {
 
 async def preview_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteRef) -> KnowledgeHardDeletePreview:
     space = await _person_space(store, actor, request.personal_space_id)
-    return (await _plan(store, space, request.item_kind, item_id))['preview']
+    return (await _plan_request(store, space, item_id, request))['preview']
 
 
 async def apply_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteConfirm) -> KnowledgeHardDeleteRecord:
@@ -247,22 +254,33 @@ async def apply_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteC
             await record_refusal(scoped, actor, space, request.operation_id, code or f'http_{refused.status_code}',
                                  fingerprint)
         if refusal is None:
+            created_at = now_utc()
             preview = plan['preview']
             deletion_id = stable_uuid(space['id'], 'knowledge-hard-delete', request.item_kind, item_id,
                                       created_at.isoformat())
-            await _hold_dependents(scoped, actor, space, plan, deletion_id, created_at)
-            await _remove(scoped, space, plan)
+            if 'target' in plan:
+                draft_counts = await remove_source_delete(scoped, actor, space, plan, deletion_id, created_at,
+                                                         _source_knowledge_port())
+            else:
+                await _hold_dependents(scoped, actor, space, plan, deletion_id, created_at)
+                await _remove(scoped, space, plan)
+                draft_counts = await scrub_publication_drafts(scoped, space, plan['drafts'], deletion_id, created_at)
+            plan['drafts_scrubbed'] = draft_counts
             await _write_trace(scoped, actor, space, plan, deletion_id, created_at, request.operation_id, fingerprint)
     if refusal is not None:
         raise refusal
     return KnowledgeHardDeleteRecord(
         deletion_id=deletion_id, item_kind=request.item_kind, item_id=item_id, deleted_at=created_at,
-        counts=preview.counts, deleted_item_ids=[item.item_id for item in preview.items])
+        counts=preview.counts, deleted_item_ids=sorted({*[key.split(':', 1)[1] for key in _deleted_keys(plan)],
+            *[episode.episode_id for episode in preview.removed_episodes]}),
+        drafts_scrubbed=plan['drafts_scrubbed'],
+          memory_scopes=plan.get('memory', {}).get('scopes', []),
+        **_source_identity(plan))
 
 
 async def _checked_plan(scoped, space, item_id, request) -> dict:
     """The plan, if this request may run it; refusals are raised before any write."""
-    plan = await _plan(scoped, space, request.item_kind, item_id, lock=True)
+    plan = await _plan_request(scoped, space, item_id, request, lock=True)
     preview = plan['preview']
     if preview.preview_id != request.preview_id:
         raise HTTPException(status_code=409, detail={
@@ -272,7 +290,48 @@ async def _checked_plan(scoped, space, item_id, request) -> dict:
         raise HTTPException(status_code=422, detail={
             'code': 'hard_delete_unconfirmed',
             'message': 'type 删除 or the item title to confirm the delete'})
+    if publication_draft_counts(plan['drafts'], now_utc())['submitting']:
+        raise HTTPException(409, detail={'code': 'hard_delete_draft_submitting'})
     return plan
+
+
+async def _plan_request(store, space, item_id, request, *, lock=False):
+    if request.item_kind in ('episode', 'session'):
+        if not isinstance(request, SourceDeleteRef):
+            raise HTTPException(422, detail='source deletion requires its exact source range')
+        return await plan_source_delete(store, space, item_id, request, _source_knowledge_port())
+    return await _plan(store, space, request.item_kind, item_id, lock=lock)
+
+
+def _source_knowledge_port():
+    return SimpleNamespace(item_rows=_source_item_rows, record_ids=_record_ids, remove_items=_remove_source_items)
+
+
+async def _source_item_rows(store, space, keys):
+    targets = {kind: [key.split(':', 1)[1] for key in keys if key.startswith(kind + ':')]
+               for kind in ('entity', 'relationship')}
+    return await _item_rows(store, space, 'entity', '', targets)
+
+
+async def _remove_source_items(store, space, plan):
+    items = plan['items']
+    await _remove(store, space, {'targets': {kind: [item.item_id for item in items if item.item_kind == kind]
+        for kind in ('entity', 'relationship')}, 'all_ids': [item.item_id for item in items],
+        'records': plan['records'], 'preview': SimpleNamespace(kept_episodes=[], removed_episodes=[])})
+
+
+def _source_identity(plan):
+    target = plan.get('target')
+    return {'source_application': target.source_application, 'fuli_session_id': target.session_id} if target else {}
+
+
+def _deleted_keys(plan):
+    preview = plan['preview']
+    items = plan['items'] if 'target' in plan else preview.items
+    keys = {f'{preview.item_kind}:{preview.item_id}', *[f'{item.item_kind}:{item.item_id}' for item in items]}
+    if 'target' in plan:
+        keys.update(f'episode:{episode.episode_id}' for episode in preview.removed_episodes)
+    return sorted(keys)
 
 
 async def hard_delete_status(store, actor, item_id, request: KnowledgeHardDeleteRef) -> KnowledgeHardDeleteStatus:
@@ -283,7 +342,14 @@ async def hard_delete_status(store, actor, item_id, request: KnowledgeHardDelete
     deletion = await hard_deletion_record(store, space, item_id)
     if deletion is not None:
         return KnowledgeHardDeleteStatus(state='deleted', deletion=deletion)
-    present = await _read_item(store, space, item_id, request.item_kind) is not None
+    if request.item_kind in ('episode', 'session'):
+        # The integrity reader owns source presence, including a session whose
+        # only saved records are episodes and one whose task shell is empty.
+        report = await check_knowledge_integrity(store, actor, KnowledgeIntegrityRequest(
+            personal_space_id=space['id'], references=[{'kind': request.item_kind, 'id': item_id}]))
+        present = report.present_count > 0
+    else:
+        present = await _read_item(store, space, item_id, request.item_kind) is not None
     return KnowledgeHardDeleteStatus(state='present' if present else 'missing')
 
 
@@ -342,6 +408,13 @@ async def _plan(store, space, item_kind, item_id, *, lock=False) -> dict:
         _MENTIONS, group_id=space['group_id'], entity_ids=targets['entity'], routing_='r')
     record_ids = await _record_ids(store, space, items)
     dependents = await _dependents(store, space, items)
+    publications = await publications_for_sources(store, space, [*items, *dependents])
+    removed_ids = {episode.episode_id for episode in removed}
+    drafts = await drafts_for_sources(store, space, [dict(episode_id=row['uuid'],
+        source_application=row.get('fuli_source_application'), session_id=row.get('fuli_session_id'),
+        source_turn_id=row.get('fuli_source_turn_id')) for record in evidence
+        if (row := record['episode'])['uuid'] in removed_ids])
+    draft_counts = publication_draft_counts(drafts, now_utc())
     counts = KnowledgeHardDeleteCounts(
         items=len(items), versions=sum(item.role != 'relationship' for item in items),
         relationships=sum(item.role == 'relationship' for item in items), episodes=len(removed),
@@ -351,13 +424,15 @@ async def _plan(store, space, item_kind, item_id, *, lock=False) -> dict:
         'space': space['id'], 'item': [item_kind, item_id], 'locks': locks,
         'removed': [episode.episode_id for episode in removed], 'kept': [episode.episode_id for episode in kept],
         'records': record_ids, 'dependents': [[d.item_kind, d.item_id] for d in dependents],
-        'counts': counts.model_dump(),
+        'counts': counts.model_dump(), 'publications': [row.model_dump() for row in publications],
+        'drafts': [[row['draft']['id'], row['draft']['status'], row['draft'].get('submission_id'),
+                    row['draft'].get('payload_scrubbed_by')] for row in drafts],
     }, sort_keys=True, separators=(',', ':'), ensure_ascii=False))
     title = next(item.title for item in items if item.role == 'item')
     preview = KnowledgeHardDeletePreview(
-        preview_id=digest, item_kind=item_kind, item_id=item_id, title=title, items=items,
-        removed_episodes=removed, kept_episodes=kept, dependents=dependents, counts=counts)
-    return {'preview': preview, 'targets': targets, 'all_ids': all_ids, 'records': record_ids}
+        publications=publications, preview_id=digest, item_kind=item_kind, item_id=item_id, title=title, items=items,
+        removed_episodes=removed, kept_episodes=kept, dependents=dependents, counts=counts, drafts=draft_counts)
+    return {'preview': preview, 'targets': targets, 'all_ids': all_ids, 'records': record_ids, 'drafts': drafts}
 
 
 async def _item_rows(store, space, item_kind, item_id, targets):
@@ -532,13 +607,20 @@ async def _write_trace(scoped, actor, space, plan, deletion_id, created_at, oper
           outcome: 'deleted', created_by: $created_by, created_at: $created_at,
           deleted_item_keys: $deleted_item_keys, evidence_ids: $evidence_ids,
           removed_episode_ids: $removed_episode_ids, deletion_counts_json: $counts,
-          operation_id: $operation_id, operation_fingerprint: $fingerprint
+          operation_id: $operation_id, operation_fingerprint: $fingerprint,
+          source_application: $source_application, fuli_session_id: $fuli_session_id,
+          deleted_source_turn_keys: $deleted_source_turn_keys, deleted_task_tokens: $deleted_task_tokens,
+          drafts_scrubbed_json: $drafts_scrubbed
         })
         MERGE (space)-[:HAS_KNOWLEDGE_AUDIT]->(trace)
         ''', space_id=space['id'], deletion_id=deletion_id, item_id=preview.item_id, item_kind=preview.item_kind,
         created_by=actor['id'], created_at=created_at,
-        deleted_item_keys=[f'{item.item_kind}:{item.item_id}' for item in preview.items],
-        evidence_ids=[episode.episode_id for episode in [*preview.removed_episodes, *preview.kept_episodes]],
+        deleted_item_keys=_deleted_keys(plan),
+        evidence_ids=[episode.episode_id for episode in [*preview.removed_episodes, *getattr(preview, 'kept_episodes', [])]],
         removed_episode_ids=[episode.episode_id for episode in preview.removed_episodes],
         counts=json.dumps(preview.counts.model_dump(), sort_keys=True), operation_id=operation_id,
-        fingerprint=fingerprint)
+        fingerprint=fingerprint, source_application=_source_identity(plan).get('source_application'),
+        fuli_session_id=_source_identity(plan).get('fuli_session_id'),
+        deleted_source_turn_keys=plan.get('deleted_source_turn_keys'),
+        deleted_task_tokens=plan.get('inventory', {}).get('task_tokens'),
+        drafts_scrubbed=json.dumps(plan['drafts_scrubbed'], sort_keys=True))

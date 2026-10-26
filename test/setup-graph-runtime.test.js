@@ -15,6 +15,7 @@ const PATHS = Object.freeze({
   graphComposePath: 'C:/Package/compose.graphiti.yml',
   graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json',
   graphRuntimeStatePath: 'C:/Fuli/graph-runtime-state.json',
+  logPath: 'C:/Fuli/logs/runtime.log',
   runtimeSettingsPath: 'C:/Fuli/runtime-settings.json',
   containerGraphConfigProfilePath: 'C:/Fuli/runtime-configs/container.json',
   nativeGraphConfigProfilePath: 'C:/Fuli/runtime-configs/native.json'
@@ -647,6 +648,80 @@ test('setup replaces a console left running by an older install', async () => {
     assert.deepEqual(stopped, [2727]);
     assert.equal(spawned, 1);
   }
+});
+
+// The console's wait runs on a fake clock: `wait` advances it instead of
+// sleeping, and each health probe takes `probeMs` of it, up to its budget.
+function consoleStartCase({ answersAfterMs = Infinity, exitsAfterMs = Infinity, probeMs = 0 } = {}) {
+  let elapsedMs = 0;
+  const stopped = [];
+  const budgets = [];
+  let writtenState = null;
+  const run = ensureGraphRuntime({
+    paths: PATHS,
+    personalSpaceName: '我',
+    personalOnly: false,
+    port: 2727,
+    noStart: false
+  }, dependencies({
+    readConfig: configuredGraph,
+    async fetch(url) {
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
+      throw new Error(`Unexpected Provider request: ${url}`);
+    },
+    spawnWebRuntime: () => ({ pid: 2727 }),
+    isProcessAlive: () => elapsedMs < exitsAfterMs,
+    async webHealth(_url, _pid, _version, budgetMs) {
+      budgets.push(budgetMs);
+      elapsedMs += Math.min(probeMs, budgetMs);
+      return elapsedMs >= answersAfterMs;
+    },
+    async wait(ms) { elapsedMs += ms; },
+    now: () => elapsedMs,
+    stopProcess(pid) { stopped.push(pid); },
+    writeState(_path, state) { writtenState = state; }
+  }));
+  return { run, stopped, budgets, elapsed: () => elapsedMs, state: () => writtenState };
+}
+
+test('setup waits for a console that needs 16 s to come up on a slow file system', async () => {
+  const { run, stopped, state } = consoleStartCase({ answersAfterMs: 16_000 });
+  assert.equal((await run).status, 'started');
+  assert.deepEqual(stopped, []);
+  assert.equal(state().pid, 2727);
+});
+
+test('a console that never answers is stopped after 60 s, saying what still runs and how to retry or stop', async () => {
+  const { run, stopped, elapsed, state } = consoleStartCase();
+  await assert.rejects(run, (error) => {
+    assert.match(error.message, /did not answer at http:\/\/127\.0\.0\.1:2727 within 60 s/);
+    assert.match(error.message,
+      /Neo4j and the graph Provider are already running \(http:\/\/127\.0\.0\.1:8787, http:\/\/127\.0\.0\.1:8788\)/);
+    assert.match(error.message, /C:\/Fuli\/logs\/runtime\.log/);
+    assert.match(error.message, /Run the same command again to retry, or run `fuli stop`/);
+    return true;
+  });
+  assert.equal(elapsed(), 60_000, 'the wait ends at the deadline, not past it');
+  assert.deepEqual(stopped, [2727]);
+  assert.equal(state(), null, 'a console that did not start leaves no runtime state');
+});
+
+test('slow health probes count against the 60 s, and the last probe gets only the time left', async () => {
+  // Each probe uses its whole 2.5 s budget, then a 250 ms pause: 2.75 s a round.
+  const { run, budgets, elapsed } = consoleStartCase({ probeMs: 2500 });
+  await assert.rejects(run, /did not answer at http:\/\/127\.0\.0\.1:2727 within 60 s/);
+  assert.equal(elapsed(), 60_000, 'slow probes do not stretch the wait to 240 × 2.75 s');
+  assert.equal(budgets.length, 22);
+  assert.ok(budgets.slice(0, -1).every((budget) => budget === 2500));
+  assert.equal(budgets.at(-1), 60_000 - 21 * 2750, 'the last probe is capped by the remaining time');
+});
+
+test('a console that exits while starting is reported at the next check, not after the full wait', async () => {
+  const { run, elapsed } = consoleStartCase({ exitsAfterMs: 1000 });
+  await assert.rejects(run,
+    /The Fuli console exited while starting\. Neo4j and the graph Provider are already running/);
+  assert.equal(elapsed(), 1000);
 });
 
 function dependencies(overrides = {}) {

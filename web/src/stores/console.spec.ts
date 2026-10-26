@@ -37,6 +37,18 @@ describe('console store policies', () => {
     expect(store.feedback?.message).toContain('已有知识仍可读取')
   })
 
+  it('sends explicit client capture choices together without lifting the other restriction', async () => {
+    const sources = { disabledSources: ['other'], capturedSources: ['opencode'] }
+    patchJson.mockResolvedValue({ enabled: true, ...sources })
+    const store = useConsoleStore()
+    store.state = { mode: 'personal_only', personalSpaces: [], projects: [], subscriptions: [],
+      capturePolicy: { enabled: true, disabledSources: ['other'] } }
+    await store.updateCapturePolicy(true, sources)
+    expect(patchJson).toHaveBeenCalledWith('/api/capture-policy', { enabled: true, ...sources })
+    expect(store.state.capturePolicy?.disabledSources).toEqual(['other'])
+    expect(store.state.capturePolicy?.capturedSources).toEqual(['opencode'])
+  })
+
   it('leaves the persisted policy unchanged when saving fails, and reads it again', async () => {
     patchJson.mockRejectedValue(new Error('save failed'))
     getJson.mockResolvedValue({ enabled: true, updatedAt: null })

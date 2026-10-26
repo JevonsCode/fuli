@@ -1,22 +1,31 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import BackLink from '@/components/BackLink.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
+import ModelRoleHistory from '@/features/model-settings/ModelRoleHistory.vue'
+import ModelRoleTrust from '@/features/model-settings/ModelRoleTrust.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
+import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
+import { useRoleSuggestions } from '@/features/model-settings/useRoleSuggestions'
 import {
-  formatCount, gateBuilds, readModelRoles, roleName, type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
+  formatCount, localBuildText, readModelRoles, roleName, roleSummary, trustStatusText,
+  type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
-// 模型与用量 (rec#8): the four built-in Agents' model settings as one card
-// collection, each edited in a centred form, and their usage below. A save
-// is accepted only at the local process boundary (a loopback request).
+// 模型与用量 (rec#8, rec#38): one centred column of grouped lists. Each
+// built-in Agent is one row (name, state, model, one summary line) that opens
+// its settings and change history in place at full row width; editing is a centred form. Then
+// what Astro, Bole and Jefa suggested with their model and what Tonborg left
+// to the person, and their usage. A
+// save is accepted only at the local process boundary (a loopback request).
 const store = useConsoleStore()
 const payload = ref<ModelRolesPayload | null>(null)
 const loading = ref(true)
@@ -25,11 +34,17 @@ const editing = ref<ModelRoleId | null>(null)
 const notice = ref('')
 const stale = ref(false)
 let reading: AbortController | null = null
+// Read together with the role settings, so the section never appears and then goes;
+// Tonborg's read follows the active space (useRoleSuggestions).
+const activeSpace = computed(() => store.activePersonalSpace?.id ?? '')
+const suggestions = useRoleSuggestions(activeSpace)
+const { entries: suggestionEntries, loading: suggestionsLoading, error: suggestionsError, reviews, reviewsLoading, reviewsError } = suggestions
 const openedFromSettings = /^\/settings(?:[?#]|$)/
 
 const projects = computed(() => store.state?.personalProjects ?? [])
 const locale = computed(() => currentLocale())
 
+// Whether the settings were read.
 async function load() {
   reading?.abort()
   reading = new AbortController()
@@ -37,8 +52,10 @@ async function load() {
   loadError.value = ''
   try {
     payload.value = await readModelRoles(reading.signal)
+    return true
   } catch (cause) {
     if ((cause as Error)?.name !== 'AbortError') loadError.value = apiErrorReason(cause)
+    return false
   } finally {
     loading.value = false
   }
@@ -50,10 +67,23 @@ function edit(role: ModelRoleId) {
   editing.value = role
 }
 
+// A save whose change could not be written to the change history says so (rec#11 D-42).
+const historyNote = (next: ModelRolesPayload) => (next.history === 'not_recorded' ? t('modelSettings.history.notRecorded') : '')
+// Bumped whenever the page has the settings after a change, so an open change history reads again.
+const historyVersion = ref(0)
+
+// The settings or a role's execution mode changed: saved here (next), or
+// elsewhere and read again. Every change path ends here.
+async function settingsChanged(next?: ModelRolesPayload) {
+  if (next) payload.value = next
+  else if (!await load()) return
+  historyVersion.value += 1
+}
+
 function saved(next: ModelRolesPayload) {
-  notice.value = t('modelSettings.saved', { name: roleName(editing.value!) })
-  payload.value = next
+  notice.value = [t('modelSettings.saved', { name: roleName(editing.value!) }), historyNote(next)].filter(Boolean).join(' ')
   editing.value = null
+  void settingsChanged(next)
 }
 
 // A changed file closes the form; one that stopped validating keeps it open,
@@ -63,7 +93,7 @@ async function conflict(code: ConfigConflict) {
     editing.value = null
     stale.value = true
   }
-  await load()
+  await settingsChanged()
 }
 
 const count = (value: number) => formatCount(value, locale.value)
@@ -72,7 +102,7 @@ type Fact = { key: string; label: string; value: string; code?: boolean; title?:
 
 function facts(view: ModelRoleView): Fact[] {
   const answer = view.answeredBy ? t(`modelSettings.answer.${view.answeredBy}`) : t('modelSettings.none')
-  if (!view.connection) return [{ key: 'answeredBy', label: t('modelSettings.answeredBy'), value: answer }, ...gateFact(view)]
+  if (!view.connection) return [{ key: 'answeredBy', label: t('modelSettings.answeredBy'), value: answer }, ...trustFact(view)]
   const budget = view.budget
   const egress = view.egress
   const window = budget ? t('modelSettings.windowBudgetValue', { hours: count(budget.windowHours), tokens: count(budget.maxTokensPerWindow) })
@@ -82,6 +112,7 @@ function facts(view: ModelRoleView): Fact[] {
     { key: 'answeredBy', label: t('modelSettings.answeredBy'), value: answer },
     { key: 'provider', label: t('modelSettings.provider'), value: `${t(`modelSettings.protocols.${view.connection.protocol}`)} · ${view.connection.endpointHost}` },
     { key: 'model', label: t('modelSettings.model'), value: view.connection.model, code: true },
+    ...localBuildFact(view),
     { key: 'secretRef', label: t('modelSettings.secretRef'), value: view.connection.secretRef ?? t('modelSettings.none'), code: Boolean(view.connection.secretRef) },
     { key: 'operations', label: t('modelSettings.operations'), value: view.allowedOperations?.join(', ') || t('modelSettings.none'), code: Boolean(view.allowedOperations?.length) },
     { key: 'egress', label: t('modelSettings.egress'), value: egress
@@ -91,17 +122,38 @@ function facts(view: ModelRoleView): Fact[] {
       input: count(budget.maxInputTokens), output: count(budget.maxOutputTokens), seconds: count(budget.timeoutMs / 1000) }) : t('modelSettings.none') },
     { key: 'windowBudget', label: t('modelSettings.windowBudget'), value: window },
     { key: 'fallback', label: t('modelSettings.fallback'), value: view.fallbackToSession ? t('modelSettings.allowed') : t('modelSettings.notAllowed') },
-    ...gateFact(view),
+    ...trustFact(view),
   ]
 }
 
-function gateFact(view: ModelRoleView): Fact[] {
-  const gate = view.reviewGate
-  if (!gate) return []
-  const builds = gate.entries.length ? gateBuilds(gate) : null
-  return [{ key: 'gate', label: t('modelSettings.gate'), title: builds?.title,
-    value: [t(`modelSettings.gates.${gate.status}`), builds?.text].filter(Boolean).join(' · ') }]
+function localBuildFact(view: ModelRoleView): Fact[] {
+  const build = localBuildText(view.localBuild, locale.value)
+  return build ? [{ key: 'localBuild', label: t('modelSettings.localBuild.label'), value: build.text, code: build.code, title: build.title }] : []
 }
+
+// A role its own model does not answer only suggests; one it answers shows its trust section instead.
+const showsTrust = (view: ModelRoleView) => Boolean(view.trust) && view.answeredBy === 'model_api'
+
+function trustFact(view: ModelRoleView): Fact[] {
+  if (!view.trust || showsTrust(view)) return []
+  return [{ key: 'execution', label: t('modelSettings.trust.label'), value: trustStatusText(view.trust, null) }]
+}
+
+function trustSaved(next: ModelRolesPayload) {
+  notice.value = historyNote(next)
+  void settingsChanged(next)
+}
+
+// Rows open on demand; a role that waits for the person (a warning not yet
+// read, a configuration that does not validate) opens by itself, once.
+const openRoles = ref<string[]>([])
+const needsPerson = (view: ModelRoleView) => view.state === 'invalid_config' || Boolean(view.trust && showsTrust(view) && !view.trust.warningSeen)
+const announced = new Set<ModelRoleId>()
+watch(payload, (next) => {
+  const waiting = (next?.roles ?? []).filter(view => needsPerson(view) && !announced.has(view.role)).map(view => view.role)
+  waiting.forEach(role => announced.add(role))
+  if (waiting.length) openRoles.value = [...new Set([...openRoles.value, ...waiting])]
+})
 
 const stateTone = (state: ModelRoleView['state']) =>
   state === 'enabled' ? 'success' : state === 'invalid_config' ? 'warning' : 'secondary'
@@ -109,13 +161,19 @@ const stateTone = (state: ModelRoleView['state']) =>
 onMounted(() => {
   if (store.runtimeStatus === 'idle') void store.refresh()
   void load()
+  void suggestions.load()
 })
-onBeforeUnmount(() => reading?.abort())
+// The top bar's refresh reads the console again; the suggestions with it.
+watch(() => store.runtimeStatus, (status) => { if (status === 'loading' && !suggestionsLoading.value) void suggestions.load() })
+onBeforeUnmount(() => {
+  reading?.abort()
+  suggestions.stop()
+})
 </script>
 
 <template>
   <section class="view model-settings-view" :aria-label="t('modelSettings.title')">
-    <div class="@container mx-auto grid w-full max-w-(--canvas-max) gap-4">
+    <div class="model-settings-column">
       <BackLink to="/settings" :from="openedFromSettings">{{ t('modelSettings.back') }}</BackLink>
 
       <GrowthLoading v-if="loading && !payload" :label="t('modelSettings.loading')" />
@@ -125,37 +183,56 @@ onBeforeUnmount(() => reading?.abort())
       </div>
 
       <template v-else-if="payload">
-        <p v-if="payload.state === 'invalid'" class="model-settings-notice" role="alert" data-model-config-invalid>
-          {{ t('modelSettings.invalid', { error: payload.error ?? '' }) }}
-        </p>
-        <p v-if="stale" class="model-settings-notice" role="alert" data-model-stale>{{ t('modelSettings.changed') }}</p>
-        <p v-if="notice" class="model-settings-saved" role="status">{{ notice }}</p>
-        <GrowthLoading v-if="loading" variant="inline" :label="t('modelSettings.loading')" />
+        <section class="ui-section" aria-labelledby="model-roles-title">
+          <div class="ui-section-label">
+            <h2 id="model-roles-title" class="list-title">{{ t('modelSettings.rolesTitle') }}</h2>
+            <GrowthLoading v-if="loading" variant="inline" :label="t('modelSettings.loading')" />
+          </div>
+          <p v-if="payload.state === 'invalid'" class="model-settings-notice" role="alert" data-model-config-invalid>
+            {{ t('modelSettings.invalid', { error: payload.error ?? '' }) }}
+          </p>
+          <p v-if="stale" class="model-settings-notice" role="alert" data-model-stale>{{ t('modelSettings.changed') }}</p>
+          <p v-if="notice" class="model-settings-saved" role="status">{{ notice }}</p>
 
-        <ul class="m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[620px]:grid-cols-2 @min-[1400px]:grid-cols-4">
-          <li v-for="view in payload.roles" :key="view.role" class="min-w-0" :class="{ 'self-start': view.state === 'not_configured' }">
-            <article class="model-role-card flex h-full min-w-0 flex-col gap-3 rounded-lg border bg-card p-4 transition-[border-color,box-shadow]"
-              :class="{ 'border-border-strong shadow-md': editing === view.role }" :data-model-role="view.role"
-              :aria-labelledby="`model-role-${view.role}`">
-              <header class="flex flex-wrap items-center gap-2">
-                <h2 :id="`model-role-${view.role}`" class="m-0 text-base font-semibold">{{ roleName(view.role) }}</h2>
-                <Badge :variant="stateTone(view.state)" data-model-role-state>{{ t(`modelSettings.states.${view.state}`) }}</Badge>
-              </header>
-              <dl class="model-role-facts">
-                <div v-for="fact in facts(view)" :key="fact.key" :data-model-fact="fact.key">
-                  <dt>{{ fact.label }}</dt>
-                  <dd :title="fact.title"><code v-if="fact.code">{{ fact.value }}</code><template v-else>{{ fact.value }}</template></dd>
-                </div>
-              </dl>
-              <footer class="mt-auto flex border-t pt-3">
-                <Button variant="outline" size="sm" :disabled="payload.state === 'invalid'" data-model-role-edit
-                  :aria-label="`${t('modelSettings.edit')} ${roleName(view.role)}`" @click="edit(view.role)">
-                  {{ t('modelSettings.edit') }}
-                </Button>
-              </footer>
-            </article>
-          </li>
-        </ul>
+          <Accordion v-model="openRoles" type="multiple" :unmount-on-hide="false" class="model-role-list">
+            <AccordionItem v-for="view in payload.roles" :key="view.role" :value="view.role"
+              class="model-role-row" :class="{ 'model-role-row--editing shadow-md': editing === view.role }"
+              :data-model-role="view.role">
+              <AccordionTrigger class="model-role-summary">
+                <span class="model-role-heading">
+                  <span class="model-role-title">
+                    <strong :id="`model-role-${view.role}`" data-model-role-name>{{ roleName(view.role) }}</strong>
+                    <Badge :variant="stateTone(view.state)" data-model-role-state>{{ t(`modelSettings.states.${view.state}`) }}</Badge>
+                  </span>
+                  <span class="model-role-line" data-model-role-summary>
+                    <code v-if="view.connection">{{ view.connection.model }}</code>
+                    <span>{{ roleSummary(view) }}</span>
+                  </span>
+                </span>
+              </AccordionTrigger>
+              <AccordionContent class="model-role-detail">
+                <dl class="model-role-facts" :aria-labelledby="`model-role-${view.role}`">
+                  <div v-for="fact in facts(view)" :key="fact.key" :data-model-fact="fact.key">
+                    <dt>{{ fact.label }}</dt>
+                    <dd :title="fact.title"><code v-if="fact.code">{{ fact.value }}</code><template v-else>{{ fact.value }}</template></dd>
+                  </div>
+                </dl>
+                <ModelRoleTrust v-if="view.trust && showsTrust(view)" :role="view.role" :trust="view.trust"
+                  :model="view.connection?.model ?? null" @saved="trustSaved" @changed="settingsChanged()" />
+                <ModelRoleHistory :role="view.role" :version="historyVersion" />
+                <footer class="model-role-actions">
+                  <Button variant="outline" size="sm" :disabled="payload.state === 'invalid'" data-model-role-edit
+                    :aria-label="`${t('modelSettings.edit')} ${roleName(view.role)}`" @click="edit(view.role)">
+                    {{ t('modelSettings.edit') }}
+                  </Button>
+                </footer>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </section>
+
+        <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError"
+          :reviews="reviews" :reviews-loading="reviewsLoading" :reviews-error="reviewsError" @retry="suggestions.load" @recovery-pending="suggestions.blockForRecovery" />
 
         <ModelUsage />
 
@@ -168,12 +245,35 @@ onBeforeUnmount(() => reading?.abort())
 
 <style scoped>
 .model-settings-view { padding-top: clamp(16px, 3vw, 32px); padding-bottom: 96px; color: var(--color-ink); }
-.model-role-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); gap: 10px 16px; margin: 0; }
-.model-role-facts div { min-width: 0; }
-.model-role-facts dt { color: var(--color-muted); font-size: 12px; }
-.model-role-facts dd { margin: 2px 0 0; font-size: 14px; overflow-wrap: anywhere; }
-.model-role-facts code { font-family: var(--font-mono); font-size: 12.5px; }
+/* One centred column; sections keep one rhythm (rec#38). */
+.model-settings-column { display: grid; gap: var(--space-8); width: 100%; max-width: var(--layout-max); margin-inline: auto; }
+.model-settings-column > :first-child { justify-self: start; margin-bottom: calc(var(--space-4) - var(--space-8)); }
+.model-role-list { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.model-role-row { position: relative; min-width: 0; background: var(--color-surface); transition: box-shadow var(--motion-fast); }
+.model-role-row:first-child { border-start-start-radius: inherit; border-start-end-radius: inherit; }
+.model-role-row:last-child { border-end-start-radius: inherit; border-end-end-radius: inherit; }
+/* The row being edited lifts as a card above its neighbours. */
+.model-role-row--editing { z-index: 1; border-radius: var(--radius-card); outline: 1px solid var(--color-border-strong); }
+.model-role-row :deep(.model-role-summary) { padding: 14px 16px; border-radius: inherit; color: var(--color-ink); font-size: 14px; font-weight: 400; }
+.model-role-row :deep(.model-role-summary:hover) { color: var(--color-ink); background: var(--color-surface-hover); }
+.model-role-heading { display: grid; gap: 4px; min-width: 0; }
+.model-role-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.model-role-title strong { font-size: 15px; font-weight: 600; }
+.model-role-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; color: var(--color-muted); font-size: 13px; line-height: 1.5; }
+.model-role-line > span { min-width: 0; overflow-wrap: anywhere; }
+.model-role-line code, .model-role-facts code { color: var(--color-ink); font-family: var(--font-mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.model-role-row :deep(.model-role-detail) { display: grid; gap: 14px; margin: 0 16px; padding: 14px 0 16px; border-top: 1px solid var(--color-border); }
+/* Inside a row the facts are one uniform two-column list: label, then value. */
+.model-role-facts { display: grid; grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr); gap: 8px 20px; margin: 0; font-size: 14px; }
+.model-role-facts div { display: contents; }
+.model-role-facts dt { color: var(--color-muted); }
+.model-role-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.model-role-actions { display: flex; justify-content: flex-end; }
 .model-settings-notice, .model-settings-saved { margin: 0; padding: 12px 16px; border: 1px solid var(--color-border);
   border-radius: var(--radius-card); background: var(--color-surface); font-size: 14px; }
 .model-settings-notice { color: var(--color-danger); }
+@media (max-width: 520px) {
+  .model-role-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .model-role-facts div + div dt { margin-top: 10px; }
+}
 </style>

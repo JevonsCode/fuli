@@ -79,3 +79,13 @@ def test_non_bmp_characters_are_kept_whole():
 def test_display_name_keeps_the_writers_characters():
     assert display_name('  ＵＩ\n 设计 ') == 'ＵＩ 设计'
     assert display_name('café') == 'café'
+
+
+def test_shared_vectors_match_the_node_rule():
+    # The same pairs test src/text/name-identity.js, so the two rules cannot drift apart.
+    import json
+    from pathlib import Path
+
+    fixture = Path(__file__).resolve().parents[2] / 'test' / 'fixtures' / 'name-identity-vectors.json'
+    for value, key in json.loads(fixture.read_text(encoding='utf-8'))['vectors']:
+        assert identity_key(value) == key, value

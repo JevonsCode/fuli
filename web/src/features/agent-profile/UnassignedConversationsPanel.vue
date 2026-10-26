@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import CreateProjectDialog from "@/features/projects/CreateProjectDialog.vue";
 import TopicProposals from "./TopicProposals.vue";
@@ -25,6 +25,8 @@ const props = defineProps<{
   spaceId: string;
   formalProjects: readonly PersonalProject[];
   existingProjectIds: string[];
+  // A conversation a link asked to show, e.g. one Astro suggested a project for: the list opens with it lifted.
+  focusConversationId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -40,6 +42,10 @@ const targetProjectId = ref("");
 const creatingForItem = ref<UnassignedConversationItem | null>(null);
 const busyConversationId = ref<string | null>(null);
 const triageError = ref("");
+// The linked conversation is labeled already, as this read shows; else unknown when not listed.
+const focusLabeled = ref(false);
+const focusMissing = computed(() => Boolean(props.focusConversationId) && !loading.value && !loadError.value
+  && !items.value.some((item) => item.conversationId === props.focusConversationId));
 let sequence = 0;
 const store = useConsoleStore();
 
@@ -61,7 +67,11 @@ async function load() {
   loadError.value = false;
   try {
     const list = await readUnassignedConversations(props.spaceId);
-    if (current === sequence) items.value = list;
+    if (current === sequence) {
+      items.value = list.items;
+      focusLabeled.value = Boolean(props.focusConversationId && list.resolvedIds.includes(props.focusConversationId));
+      if (list.items.some((item) => item.conversationId === props.focusConversationId)) expanded.value = true;
+    }
   } catch {
     if (current === sequence) loadError.value = true;
   } finally {
@@ -104,6 +114,7 @@ async function applyTriage(
       personalProjectId,
     });
     items.value = items.value.filter((item) => item.conversationId !== conversationId);
+    if (conversationId === props.focusConversationId) focusLabeled.value = true;
     if (movingConversationId.value === conversationId) movingConversationId.value = null;
   } catch {
     triageError.value = t("agentRedesign.unassigned.triageError");
@@ -148,6 +159,10 @@ async function handleProjectCreated(project: PersonalProject) {
       </p>
     </div>
 
+    <p v-if="focusMissing" class="ui-meta" role="status" data-unassigned-focus>
+      {{ focusLabeled ? t("agentRedesign.unassigned.focusResolved") : t("agentRedesign.unassigned.focusUnknown") }}
+    </p>
+
     <TopicProposals :space-id="spaceId" :items="items" @formed="handleFormed" />
 
     <div v-if="expanded" class="unassigned-conversations-list" data-unassigned-list>
@@ -156,6 +171,8 @@ async function handleProjectCreated(project: PersonalProject) {
         v-for="item in items"
         :key="item.conversationId"
         class="ui-card unassigned-conversation-row"
+        :class="{ 'is-selected border-border-strong shadow-md': item.conversationId === focusConversationId }"
+        :aria-current="item.conversationId === focusConversationId ? 'true' : undefined"
         data-unassigned-item
       >
         <div class="unassigned-conversation-main">

@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
-import { dataUsage, exportData as copyData, removeDataDirectory } from './data-directory.js';
+import { createDataDeletion } from './data-deletion.js';
+import { dataDigest, dataUsage, exportData as copyData } from './data-directory.js';
 import { decisionSource } from './decision-source.js';
 import { appConflict } from './errors.js';
 import { removePackages } from './package-files.js';
@@ -12,15 +13,21 @@ const DATA_DELETION_WINDOW_MS = 10 * 60_000;
 // Deleting an app takes two steps. The first removes code and pages, ends app
 // tokens and keeps the data, so a later approved version continues with it.
 // The second deletes the data after an export offer and a second confirmation,
-// and leaves only the app identity and its content-free event history.
+// and leaves only the app identity and its content-free event history. Each
+// step, and an export, runs as an app operation (operations.js) under the
+// app's owner lease and write gate; the offer binds the content digest of the
+// data (rec#7 D-28.14), so data that changed after the offer is never deleted
+// on that confirmation.
 export function createAppRemoval(context) {
-  const { store, now } = context;
+  const { store, now, operations, leases, instances } = context;
+  const deletion = createDataDeletion(context);
 
-  function deleteCode({ appId, actor }) {
+  async function deleteCode({ appId, actor }) {
     const source = decisionSource(actor);
-    return store.transaction(() => {
+    return operations.run(appId, 'deleteCode', (lease) => store.transaction(() => {
+      leases.assertOwned(lease);
       const app = store.existingApp(appId);
-      if (app.status === 'deleted') throw appConflict('app_deleted', 'This app and its data were deleted');
+      if (['deleted', 'data_deleting'].includes(app.status)) throw appConflict('app_deleted', 'This app and its data were deleted');
       if (app.status !== 'code_deleted') {
         const at = now();
         store.revokeTokens(appId, 'code_deleted', at);
@@ -34,30 +41,35 @@ export function createAppRemoval(context) {
         recover: 'The data is kept. When the owning Agent submits a new version and you approve it, the app continues with this data.',
         deleteData: `fuli app delete ${appId} --data`
       };
+    }));
+  }
+
+  async function prepareDataDeletion({ appId }) {
+    return operations.run(appId, 'prepareDataDeletion', async (lease) => {
+      codeDeletedApp(appId);
+      const offered = await dataDigest(context.dataOf(appId));
+      return store.transaction(() => {
+        leases.assertOwned(lease);
+        const app = codeDeletedApp(appId);
+        const ticket = randomBytes(18).toString('base64url');
+        const expiresAt = new Date(context.clock().getTime() + DATA_DELETION_WINDOW_MS).toISOString();
+        const at = now();
+        store.saveApp({ ...app, deletionTicket: contentHash(ticket), deletionExpiresAt: expiresAt,
+          deletionDataDigest: offered.dataDigest, updatedAt: at });
+        store.recordEvent({ appId, at, action: 'data_deletion_offered', detail: { dataBytes: offered.bytes, dataFiles: offered.files } });
+        return {
+          appId, dataBytes: offered.bytes, dataFiles: offered.files,
+          export: `fuli app export ${appId} --output <new-directory>`,
+          warning: 'Deleting the data cannot be undone. Export it first if it may be needed.',
+          confirm: appId, ticket, expiresAt
+        };
+      });
     });
   }
 
-  function prepareDataDeletion({ appId }) {
-    return store.transaction(() => {
-      const app = codeDeletedApp(appId);
-      const ticket = randomBytes(18).toString('base64url');
-      const expiresAt = new Date(context.clock().getTime() + DATA_DELETION_WINDOW_MS).toISOString();
-      const usage = dataUsage(context.dataOf(appId));
-      const at = now();
-      store.saveApp({ ...app, deletionTicket: contentHash(ticket), deletionExpiresAt: expiresAt, updatedAt: at });
-      store.recordEvent({ appId, at, action: 'data_deletion_offered', detail: { dataBytes: usage.bytes } });
-      return {
-        appId, dataBytes: usage.bytes, dataFiles: usage.files,
-        export: `fuli app export ${appId} --output <new-directory>`,
-        warning: 'Deleting the data cannot be undone. Export it first if it may be needed.',
-        confirm: appId, ticket, expiresAt
-      };
-    });
-  }
-
-  function deleteData({ appId, ticket, confirm, actor }) {
+  async function deleteData({ appId, ticket, confirm, actor }) {
     const source = decisionSource(actor);
-    return store.transaction(() => {
+    return operations.run(appId, 'deleteData', (lease) => {
       const app = codeDeletedApp(appId);
       if (confirm !== appId) {
         throw appConflict('deletion_confirmation_required', `Confirm with the app id ${appId} to delete its data`);
@@ -68,25 +80,24 @@ export function createAppRemoval(context) {
       if (Date.parse(app.deletionExpiresAt) <= context.clock().getTime()) {
         throw appConflict('deletion_ticket_expired', 'The data deletion step expired; start it again');
       }
-      const usage = dataUsage(context.dataOf(appId));
-      const versions = store.versions(appId).length;
-      const at = now();
-      store.eraseContent(appId);
-      store.saveApp({ ...app, status: 'deleted', activeVersion: null, dataFormat: null,
-        deletionTicket: null, deletionExpiresAt: null, lastUsedAt: null, updatedAt: at });
-      store.recordEvent({ appId, at, action: 'data_deleted', actor: actor.user,
-        detail: { versions, dataBytes: usage.bytes, dataFiles: usage.files, ...source } });
-      removeDataDirectory(context.dataOf(appId));
-      return { appId, status: 'deleted', deletedAt: at };
+      return deletion.deleteData({ app, ticket, lease, actor: actor.user, source });
     });
   }
 
-  function exportData({ appId, destination }) {
-    const app = store.existingApp(appId);
-    if (app.status === 'deleted') throw appConflict('app_deleted', 'This app and its data were deleted');
-    const usage = copyData(context.dataOf(appId), destination);
-    store.recordEvent({ appId, at: now(), action: 'data_exported', detail: usage });
-    return { appId, destination, ...usage };
+  // Only with no instance: there is no snapshot of a running app.
+  async function exportData({ appId, destination }) {
+    return operations.run(appId, 'exportData', (lease) => {
+      instances.assertNoInstance(appId);
+      const app = store.existingApp(appId);
+      if (['deleted', 'data_deleting'].includes(app.status)) throw appConflict('app_deleted', 'This app and its data were deleted');
+      leases.assertOwned(lease);
+      const usage = copyData(context.dataOf(appId), destination);
+      store.transaction(() => {
+        leases.assertOwned(lease);
+        store.recordEvent({ appId, at: now(), action: 'data_exported', detail: usage });
+      });
+      return { appId, destination, ...usage };
+    }, { keepInstance: true });
   }
 
   function codeDeletedApp(appId) {

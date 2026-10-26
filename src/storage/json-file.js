@@ -43,8 +43,10 @@ export function writeJsonFileAtomic(filePath, value, options = {}) {
 // write. An existing file keeps its permissions; a new one is private.
 // durable: the temporary file reaches the disk (fsync) before it replaces the
 // target, for state that must survive a crash right after the write.
+// beforeReplace: validates the target immediately before every rename attempt,
+// including retries. A failed validation aborts without replacing the target.
 // io: replaces file-system calls, for tests.
-export function writeTextFileAtomic(filePath, text, { durable = false, io = {} } = {}) {
+export function writeTextFileAtomic(filePath, text, { durable = false, beforeReplace, io = {} } = {}) {
   const fileIo = { ...DEFAULT_IO, ...io };
   const directory = dirname(filePath);
   const tempPath = join(directory, `.${basename(filePath)}.${randomUUID()}.tmp`);
@@ -59,7 +61,7 @@ export function writeTextFileAtomic(filePath, text, { durable = false, io = {} }
   try {
     if (durable) writeDurably(tempPath, text, mode, fileIo);
     else fileIo.writeFileSync(tempPath, text, { encoding: 'utf8', flag: 'wx', mode });
-    replaceWithRetry(tempPath, filePath, fileIo);
+    replaceWithRetry(tempPath, filePath, fileIo, beforeReplace);
   } catch (error) {
     try {
       fileIo.rmSync(tempPath, { force: true });
@@ -82,9 +84,10 @@ function writeDurably(tempPath, text, mode, fileIo) {
 
 // The temporary file stays complete and the target untouched until one rename
 // succeeds, so retrying keeps the write atomic, inside the caller's lock.
-function replaceWithRetry(tempPath, filePath, fileIo) {
+function replaceWithRetry(tempPath, filePath, fileIo, beforeReplace) {
   let waited = 0;
   for (let pause = RENAME_RETRY_FIRST_PAUSE_MS; ; pause = Math.min(pause * 2, RENAME_RETRY_MAX_PAUSE_MS)) {
+    beforeReplace?.();
     try {
       fileIo.renameSync(tempPath, filePath);
       return;

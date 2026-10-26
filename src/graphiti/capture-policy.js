@@ -7,6 +7,7 @@ import { assertJsonFormatWritable, jsonFormat, updateVersionedJsonFileAtomic, wr
   from '../storage/json-format.js';
 import { DEFAULT_PROJECT_SETTINGS, PROJECT_CHANGE_KEYS, storedProjectSettings, updatedProjectSettings,
   usesProjectModes } from './capture-project-mode.js';
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 // Capturing a client's sessions is separate from that client using FULI tools:
 // a disabled source still queries existing memory, it just adds nothing new.
@@ -14,7 +15,7 @@ import { DEFAULT_PROJECT_SETTINGS, PROJECT_CHANGE_KEYS, storedProjectSettings, u
 // Version 2 only when per-project modes are in use (rec#5 C2).
 export const CAPTURE_POLICY_FORMAT = jsonFormat({ store: 'capture-policy', versions: [1, 2] });
 const CAPTURE_GENERATION_FORMAT = jsonFormat({ store: 'capture-policy-generation', versions: [1] });
-export const CAPTURE_SOURCES = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other']);
+export const CAPTURE_SOURCES = SOURCE_APPLICATIONS;
 
 const DEFAULT_POLICY = Object.freeze({
   enabled: true,
@@ -22,7 +23,12 @@ const DEFAULT_POLICY = Object.freeze({
   ...DEFAULT_PROJECT_SETTINGS,
   updatedAt: null
 });
-const SETTING_KEYS = Object.freeze(['enabled', 'disabledSources', ...PROJECT_CHANGE_KEYS]);
+// capturedSources (rec#11 D-64): clients the person turned on themselves that
+// an older `other` in disabledSources would otherwise keep off (OpenCode was
+// `other` before it had its own name). Optional: a FULI that predates it
+// builds validateStoredPolicy field by field, ignoring unknown fields, and
+// keeps OpenCode off. Omit the field when empty so other files keep their shape.
+const SETTING_KEYS = Object.freeze(['enabled', 'disabledSources', 'capturedSources', ...PROJECT_CHANGE_KEYS]);
 
 const ABSENT = 'absent';
 // Saves that keep landing while one change is merged; the change then fails instead of waiting longer.
@@ -69,7 +75,9 @@ export class CapturePolicyStore {
       this.parsed = { version, policy: validateStoredPolicy(value) };
     }
     const { policy } = this.parsed;
-    return { ...policy, disabledSources: [...policy.disabledSources], excludedProjectIds: [...policy.excludedProjectIds],
+    return { ...policy, disabledSources: [...policy.disabledSources],
+      ...(policy.capturedSources ? { capturedSources: [...policy.capturedSources] } : {}),
+      excludedProjectIds: [...policy.excludedProjectIds],
       selectedProjectIds: [...policy.selectedProjectIds], projectsOffSince: { ...policy.projectsOffSince } };
   }
 
@@ -223,10 +231,16 @@ export class CapturePolicyStore {
     }
     const current = this.#currentForUpdate(input);
     const now = this.now();
+    const disabledSources = input.disabledSources === undefined
+      ? current.disabledSources : validSources(input.disabledSources, TypeError, 'disabledSources');
+    const capturedSources = (input.capturedSources === undefined
+      ? current.capturedSources ?? [] : validSources(input.capturedSources, TypeError, 'capturedSources'))
+      // A client turned off is off: it is never also one turned on.
+      .filter(source => !disabledSources.includes(source));
     return { current, next: {
       enabled: input.enabled ?? current.enabled,
-      disabledSources: input.disabledSources === undefined
-        ? current.disabledSources : validSources(input.disabledSources, TypeError),
+      disabledSources,
+      ...(capturedSources.length ? { capturedSources } : {}),
       ...updatedProjectSettings(current, input, now),
       updatedAt: now
     } };
@@ -257,19 +271,23 @@ function validateStoredPolicy(value) {
   if (value.updatedAt !== null && typeof value.updatedAt !== 'string') {
     throw new CapturePolicyConfigurationError('Capture policy updatedAt is invalid');
   }
+  const disabledSources = validSources(value.disabledSources ?? [], CapturePolicyConfigurationError, 'disabledSources');
+  const capturedSources = validSources(value.capturedSources === undefined ? [] : value.capturedSources,
+    CapturePolicyConfigurationError, 'capturedSources').filter(source => !disabledSources.includes(source));
   return {
     enabled: value.enabled,
     // Policies saved before per-client capture capture every client.
-    disabledSources: validSources(value.disabledSources ?? [], CapturePolicyConfigurationError),
+    disabledSources,
+    ...(capturedSources.length ? { capturedSources } : {}),
     ...storedProjectSettings(value, CapturePolicyConfigurationError),
     updatedAt: value.updatedAt ?? null
   };
 }
 
-function validSources(value, ErrorType) {
+function validSources(value, ErrorType, setting) {
   if (!Array.isArray(value) || value.some(source => !CAPTURE_SOURCES.includes(source))
     || new Set(value).size !== value.length) {
-    throw new ErrorType('Capture policy disabledSources must list distinct supported clients');
+    throw new ErrorType(`Capture policy ${setting} must list distinct supported clients`);
   }
   return [...value].sort();
 }

@@ -21,6 +21,7 @@ import KnowledgeTagEditor from '@/features/knowledge-quick-edit/KnowledgeTagEdit
 import KnowledgeVersionPeek from '@/features/knowledge-quick-edit/KnowledgeVersionPeek.vue'
 import KnowledgeHardDeletedNotice from '@/features/knowledge-hard-delete/KnowledgeHardDeletedNotice.vue'
 import KnowledgeHardDeleteSection from '@/features/knowledge-hard-delete/KnowledgeHardDeleteSection.vue'
+import type { SourceDeleteTarget } from '@/features/knowledge-hard-delete/source-delete-model'
 import { hardDeletedFrom, type HardDeletedState } from '@/features/knowledge-hard-delete/model'
 import {
   itemEditPath, versionFromPeekId, versionPeekId, versionStatus, versionStatusLabel, versionTone,
@@ -50,6 +51,7 @@ const item = ref<KnowledgeItemView | null>(null)
 const loading = ref(false)
 const error = ref('')
 const deleted = ref<HardDeletedState | null>(null)
+const sourceDeletion = ref<{ target: SourceDeleteTarget; state: HardDeletedState } | null>(null)
 const notice = ref('')
 const root = ref<HTMLElement | null>(null)
 const showLoading = useMinimumLoadingDisplay(computed(() => loading.value && !item.value))
@@ -115,6 +117,18 @@ function versioned(versionId: string, waiting = 0) {
   void router.replace(itemEditPath(spaceId.value, { item_kind: kind.value, item_id: versionId }))
 }
 
+function sourceRemoved(target: SourceDeleteTarget, state: HardDeletedState) {
+  ++requestVersion
+  loading.value = false
+  item.value = null
+  sourceDeletion.value = { target, state }
+  void peek.close()
+}
+function reloadAfterSource() {
+  sourceDeletion.value = null
+  void load()
+}
+
 function removed(state: HardDeletedState) {
   item.value = null
   deleted.value = state
@@ -149,6 +163,7 @@ function returnFocus(event: Event) {
 watch([spaceId, kind, itemId], () => {
   item.value = null
   deleted.value = null
+  sourceDeletion.value = null
   notice.value = carriedNotice
   carriedNotice = ''
   void load()
@@ -157,9 +172,14 @@ watch([spaceId, kind, itemId], () => {
 
 <template>
   <section class="view [scrollbar-gutter:stable]">
-  <div ref="root" class="mx-auto flex w-full max-w-(--form-max) flex-col gap-4" data-knowledge-item-edit>
+  <div ref="root" class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-4" data-knowledge-item-edit>
     <BackLink to="/organize" :from="/^\/(organize|knowledge|preferences)/" class="text-sm">{{ t('knowledgeQuickEdit.back') }}</BackLink>
     <GrowthLoading v-if="showLoading" :label="t('knowledgeQuickEdit.loading')" />
+    <section v-else-if="sourceDeletion" class="grid gap-3" data-source-deleted-page>
+      <KnowledgeHardDeletedNotice :state="sourceDeletion.state" :space-id="spaceId" :item-kind="sourceDeletion.target.item_kind" :item-id="sourceDeletion.target.item_id"
+        @changed="sourceRemoved(sourceDeletion!.target, $event)" @present="reloadAfterSource" />
+      <Button v-if="sourceDeletion.state.outcome === 'complete' || sourceDeletion.state.outcome === 'gone'" variant="outline" @click="reloadAfterSource">{{ t('knowledgeHardDelete.source.reload') }}</Button>
+    </section>
     <KnowledgeHardDeletedNotice v-else-if="deleted" :state="deleted" :space-id="spaceId" :item-kind="kind" :item-id="itemId"
       @changed="removed" @present="stillThere" />
     <div v-else-if="error && !item" role="alert" class="grid justify-items-start gap-2">
@@ -197,7 +217,7 @@ watch([spaceId, kind, itemId], () => {
         </ul>
       </Card>
       <KnowledgeItemDependents :item="item" :space-id="spaceId" @saved="saved" @failed="failed" />
-      <KnowledgeItemHistory :item="item" :space-id="spaceId" @open-version="openVersion" />
+      <KnowledgeItemHistory :item="item" :space-id="spaceId" @open-version="openVersion" @source-deleted="sourceRemoved" />
       <KnowledgeHardDeleteSection :item="item" :space-id="spaceId" @deleted="removed" />
     </template>
   </div>

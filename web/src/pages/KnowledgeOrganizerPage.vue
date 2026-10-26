@@ -446,7 +446,7 @@ async function openReplacement(item: KnowledgeItem) {
   gap: 12px;
   width: 100%;
   min-height: 0;
-  max-width: var(--canvas-max);
+  max-width: var(--layout-max);
   margin-inline: auto;
 }
 
@@ -647,6 +647,27 @@ async function openReplacement(item: KnowledgeItem) {
     display: none;
   }
 
+}
+
+/* A phone: the three columns share the width, so the list never scrolls sideways (rec#38).
+   Chip columns stay fixed so every row's badges line up; a long label truncates in place. */
+@media (max-width: 560px) {
+  .organizer-table-head,
+  .organizer-row {
+    grid-template-columns: minmax(0, 1fr) 78px 100px;
+    gap: 8px;
+  }
+
+  .quadrant-chip,
+  .review-chip {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .organizer-directory {
+    --organizer-list-min-width: 0px;
+  }
 }
 
 </style>

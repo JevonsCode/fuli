@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, join } from 'node:path';
 
 import {
   connectAgent,
@@ -70,7 +73,7 @@ test('agent discovery recognizes installed Claude Code and Cursor config directo
 });
 
 test('Claude connection delegates to its lifecycle-aware config connector', () => {
-  const agent = discoverAgents({ commandExists: () => true })[1];
+  const agent = discoverAgents({ commandExists: () => true, commandVersion: () => null })[1];
   const calls = [];
   const connected = connectAgent(agent, CONTEXT, {
     connectConfig(selectedAgent, context) {
@@ -90,7 +93,7 @@ test('Claude connection delegates to its lifecycle-aware config connector', () =
 });
 
 test('Codex connection delegates to its shared config connector', () => {
-  const codex = discoverAgents({ commandExists: () => true })[0];
+  const codex = discoverAgents({ commandExists: () => true, commandVersion: () => null })[0];
   const calls = [];
   const connected = connectAgent(codex, CONTEXT, {
     connectConfig(agent, context) {
@@ -104,7 +107,7 @@ test('Codex connection delegates to its shared config connector', () => {
 });
 
 test('Cursor connection delegates to its JSON config connector', () => {
-  const cursor = discoverAgents({ commandExists: () => true })[2];
+  const cursor = discoverAgents({ commandExists: () => true, commandVersion: () => null })[2];
   const calls = [];
   const connected = connectAgent(cursor, CONTEXT, {
     connectConfig(agent, context) {
@@ -120,7 +123,7 @@ test('Cursor connection delegates to its JSON config connector', () => {
 });
 
 test('Claude disconnect removes only its Fuli JSON registration', () => {
-  const claude = discoverAgents({ commandExists: () => true })[1];
+  const claude = discoverAgents({ commandExists: () => true, commandVersion: () => null })[1];
   const calls = [];
   const result = disconnectAgent(claude, {
     disconnectConfig(agent) {
@@ -131,4 +134,23 @@ test('Claude disconnect removes only its Fuli JSON registration', () => {
 
   assert.equal(result.status, 'disconnected');
   assert.deepEqual(calls, [claude]);
+});
+
+// The real probe against a synthetic `opencode` on PATH that prints what
+// OpenCode 2.1.4 prints. No real OpenCode or home directory is touched.
+test('discovery reads OpenCode\'s real `opencode v2.1.4` version line', (t) => {
+  const bin = mkdtempSync(join(tmpdir(), 'p63-opencode-bin-'));
+  const home = mkdtempSync(join(tmpdir(), 'p63-opencode-home-'));
+  const path = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = path;
+    rmSync(bin, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  });
+  if (process.platform === 'win32') writeFileSync(join(bin, 'opencode.cmd'), '@echo opencode v2.1.4\r\n');
+  else writeFileSync(join(bin, 'opencode'), '#!/bin/sh\nprintf "opencode v2.1.4\n"\n', { mode: 0o755 });
+  process.env.PATH = `${bin}${delimiter}${path}`;
+  const agent = discoverAgents({ homeDir: home, env: {}, includeUnavailable: true }).find(({ id }) => id === 'opencode');
+  assert.equal(agent.available, true);
+  assert.equal(agent.clientVersion, '2.1.4');
 });

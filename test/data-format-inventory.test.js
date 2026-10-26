@@ -11,10 +11,15 @@ import { createNodeStore } from '../packages/roundtable/src/peer/node-store.js';
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { createStandaloneStore } from '../packages/roundtable/src/standalone/store.js';
 import { AgentAppStore } from '../src/agent-apps/store.js';
+import { localStoreFiles } from '../src/data-format/local-stores.js';
 import { EmployeeManagementStore } from '../src/employees/management-policy.js';
 import { JudgmentStore } from '../src/judgment/store.js';
+import { createRoleTrust } from '../src/model-backends/role-trust.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { createModelSettingsHistory } from '../src/model-backends/settings-history.js';
+import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
+import { createStandingAssignments } from '../src/standing-assignments/port.js';
 import { TaskScheduleStore } from '../src/task-schedules/store.js';
 
 // rec#17 D-09: every local store and the format it declares. The graph's
@@ -28,18 +33,50 @@ const SQLITE_STORES = {
     const store = new EmployeeManagementStore(path); store.read('space', 'template'); return () => store.close();
   },
   judgment: (path) => { const store = new JudgmentStore(path); return () => store.close(); },
+  'model-trust': (path) => {
+    const store = createRoleTrust({ path, modelBackends: {} }); store.setSuggestionsOnly('tonborg', false, 0); return () => store.close();
+  },
+  'model-settings-history': (path) => {
+    const store = createModelSettingsHistory({ path, readConfig: () => ({ state: 'absent' }) });
+    store.recordTrust('tonborg', 'suggestions_only', 0, { field: 'suggestionsOnly', before: false, after: true });
+    return () => store.close();
+  },
   'model-usage': (path) => { const store = new ModelUsageLedger(path); void store.db; return () => store.close(); },
   'peer-coordinator': (path) => { const store = createCoordinatorStore(path); return () => store.close(); },
   'peer-node': (path) => { const store = createNodeStore(path); return () => store.close(); },
   'role-work': (path) => { const store = new RoleWorkStore(path); void store.db; return () => store.close(); },
+  'role-suggestions': (path) => { const store = new RoleSuggestionLog(path); void store.db; return () => store.close(); },
   roundtable: (path) => { const store = createRoundtableStore(path); return () => store.close(); },
   standalone: (path) => { const store = createStandaloneStore(path); return () => store.close(); },
+  'standing-assignments': (path) => {
+    const store = createStandingAssignments({ path });
+    store.register({ personalSpaceId: 'space', projectId: 'project', leadAgentId: 'agent', terms: ['synthetic'],
+      responsibility: 'Synthetic work', source: 'user' });
+    return () => store.close();
+  },
   'task-schedules': (path) => { const store = new TaskScheduleStore(path); return () => store.close(); }
 };
 
 // The first shipped schema of each store that has migrations, as an earlier
 // FULI left it: no version, no ledger, none of the later columns or tables.
 const FIRST_RELEASES = {
+  // rec#7 part 1, before presence checks: an approval with presence only.
+  'agent-apps': `CREATE TABLE agent_apps (app_id TEXT PRIMARY KEY, provider TEXT NOT NULL, personal_space_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL,
+      active_version TEXT, data_format INTEGER, deletion_ticket TEXT, deletion_expires_at TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_used_at TEXT);
+    CREATE TABLE agent_app_versions (app_id TEXT NOT NULL, version TEXT NOT NULL, state TEXT NOT NULL, digest TEXT NOT NULL,
+      manifest TEXT NOT NULL, files INTEGER NOT NULL, bytes INTEGER NOT NULL, submitted_at TEXT NOT NULL,
+      PRIMARY KEY (app_id, version));
+    CREATE TABLE agent_app_approvals (app_id TEXT NOT NULL, version TEXT NOT NULL, digest TEXT NOT NULL, permissions TEXT NOT NULL,
+      data TEXT NOT NULL, resident INTEGER NOT NULL, approved_by TEXT NOT NULL,
+      entrypoint TEXT NOT NULL CHECK (entrypoint IN ('cli', 'http')),
+      presence TEXT NOT NULL CHECK (presence IN ('unverified', 'hello', 'touchid', 'polkit')),
+      approved_at TEXT NOT NULL, PRIMARY KEY (app_id, version));
+    CREATE TABLE agent_app_tokens (token_hash TEXT PRIMARY KEY, app_id TEXT NOT NULL, version TEXT NOT NULL, digest TEXT NOT NULL,
+      permissions TEXT NOT NULL, issued_at TEXT NOT NULL, revoked_at TEXT, revoked_reason TEXT);
+    CREATE TABLE agent_app_events (id INTEGER PRIMARY KEY AUTOINCREMENT, app_id TEXT NOT NULL, at TEXT NOT NULL,
+      action TEXT NOT NULL, version TEXT, actor TEXT, detail TEXT);`,
   'task-schedules': `CREATE TABLE task_schedules(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL,
       revision INTEGER NOT NULL, enabled INTEGER NOT NULL, body TEXT NOT NULL, next_run_at TEXT NOT NULL,
       paused_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -58,6 +95,32 @@ const FIRST_RELEASES = {
       attempt_id TEXT, accepted_attempt TEXT, start_attempts INTEGER NOT NULL DEFAULT 0, lease_expires_at TEXT,
       cancel_requested INTEGER NOT NULL DEFAULT 0, reply TEXT, error TEXT, via TEXT, verified INTEGER,
       expires_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`,
+  'model-usage': `CREATE TABLE model_attempts(
+        request_id TEXT NOT NULL, attempt_id TEXT NOT NULL, attempt_number INTEGER NOT NULL,
+        purpose TEXT NOT NULL CHECK(purpose IN ('initial', 'retry', 'repair', 'format_fallback')),
+        channel TEXT NOT NULL CHECK(channel IN ('model_api', 'session')),
+        role TEXT NOT NULL, operation TEXT NOT NULL, personal_space_id TEXT NOT NULL, personal_project_id TEXT,
+        connection_id TEXT, protocol TEXT, endpoint_host TEXT, requested_model TEXT, actual_model TEXT, output_mode TEXT,
+        started_at TEXT NOT NULL, duration_ms INTEGER NOT NULL,
+        outcome TEXT NOT NULL CHECK(outcome IN ('succeeded', 'failed', 'invalid_output')),
+        failure_class TEXT, failure_reason TEXT,
+        input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER, cached_input_tokens INTEGER,
+        cache_write_input_tokens INTEGER, reasoning_tokens INTEGER, usage_definition TEXT,
+        budget_ceiling_tokens INTEGER NOT NULL, estimated_cost REAL, cost_currency TEXT,
+        PRIMARY KEY(request_id, attempt_id));
+      CREATE INDEX model_attempts_role_time ON model_attempts(role, started_at);
+      CREATE TABLE model_reservations(
+        request_id TEXT NOT NULL, attempt_id TEXT NOT NULL, role TEXT NOT NULL, started_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL, ceiling_tokens INTEGER NOT NULL, ceiling_cost REAL, pending_attempt TEXT NOT NULL,
+        PRIMARY KEY(request_id, attempt_id));
+      CREATE INDEX model_reservations_role_time ON model_reservations(role, started_at);
+      CREATE TRIGGER model_attempts_no_update BEFORE UPDATE ON model_attempts
+        BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;
+      CREATE TRIGGER model_attempts_no_delete BEFORE DELETE ON model_attempts
+        BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;
+    INSERT INTO model_attempts VALUES('r1', 'a1', 1, 'initial', 'model_api', 'bole', 'pick', 'space', NULL, 'local',
+      'openai_chat', '127.0.0.1:11434', 'synthetic-model', 'synthetic-model', 'json_schema', 'x', 1, 'succeeded', NULL, NULL,
+      1, 1, 2, NULL, NULL, NULL, 'openai_chat', 2, NULL, NULL);`,
   'peer-node': `CREATE TABLE shares (binding_id TEXT PRIMARY KEY, space_id TEXT NOT NULL, project_id TEXT NOT NULL,
       agent_id TEXT NOT NULL, clients_json TEXT NOT NULL, working_directory TEXT, created_at TEXT NOT NULL, revoked_at TEXT);
     INSERT INTO shares VALUES('b1', 'space', 'project', 'agent', '[]', NULL, 'x', NULL);`
@@ -95,6 +158,14 @@ test('each SQLite store keeps the schema its version declares', (t) => {
   assert.deepEqual(actual, expected, 'A schema change needs a registered migration and the next version: '
     + 'add it to the store\'s sqliteFormat() declaration, then record only the new version here. '
     + 'A shipped version\'s fingerprint never changes.');
+});
+
+// The roundtable package's standalone store lives outside a FULI data directory.
+test('every SQLite store of a data directory is in its registry, so migrate status and backups see it', () => {
+  const registered = localStoreFiles('data').filter((store) => store.kind === 'sqlite');
+  assert.deepEqual(registered.map((store) => store.format.store).sort(),
+    Object.keys(SQLITE_STORES).filter((store) => store !== 'standalone').sort());
+  assert.equal(registered.find((store) => store.format.store === 'model-settings-history').label, 'model-settings-history.sqlite');
 });
 
 test('a store from its first release upgrades to exactly the schema a fresh store gets', (t) => {
@@ -146,6 +217,7 @@ test('SQLite is opened and shaped only through a declared store format', () => {
 // FULI's JSON data files refuse to overwrite a newer FULI's file
 // (writeVersionedJsonFileAtomic). These write JSON that is not FULI data.
 const UNVERSIONED_JSON_WRITERS = new Map([
+  ['src/setup/agents/client-pack-change.js', 'client-owned configuration and byte backups; package state uses the versioned client-packs store'],
   ['src/storage/json-format.js', 'the versioned writer itself'],
   ['src/agents/directory-snapshots.js', 'generated Markdown views and their manifest, regenerated from the database'],
   ['src/conversations/transcript-guard.js', 'a hook\'s per-session handoff state that expires within a minute'],
@@ -154,6 +226,7 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/setup/claude-code-config.js', 'Claude Code configuration, owned by the client'],
   ['src/setup/claude-desktop-config.js', 'Claude Desktop configuration, owned by the client'],
   ['src/setup/cursor-config.js', 'Cursor configuration, owned by the client'],
+  ['src/setup/agents/opencode/config-writer.js', 'OpenCode configuration and FULI\'s plugin file, owned by the client'],
   ['src/setup/codex-config.js', 'Codex configuration and hooks, owned by the client'],
   ['src/setup/codex-bootstrap.js', 'Codex configuration, owned by the client'],
   ['src/desktop/windows-installation-switch.js', 'installation record and shortcuts, checked by content before each replace'],
@@ -165,7 +238,9 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/graphiti/capture-policy.js',
     'its plain writes of the settings and their generation run only inside updateVersionedJsonFileAtomic, under the format lock and guard'],
   ['src/graphiti/capture-session-pause.js',
-    'its plain write runs only inside updateVersionedJsonFileAtomic, under the format lock and guard']
+    'its plain write runs only inside updateVersionedJsonFileAtomic, under the format lock and guard'],
+  ['src/model-backends/role-settings.js',
+    'its plain write of model-backends.json runs only inside updateVersionedJsonFileAtomic, under the format lock and guard']
 ]);
 
 test('every JSON data file FULI writes is written through the format guard', () => {

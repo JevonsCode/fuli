@@ -29,6 +29,16 @@ test('only capture is changeable by an Agent; device settings stay with the pers
   assert.deepEqual(changers.filter(([, by]) => by !== 'person'), [['capture', 'agent:update_capture_policy']]);
 });
 
+test('the settings guide includes explicit client capture overrides', () => {
+  const { settings } = describeSettings({ settings: DEFAULT_RUNTIME_SETTINGS,
+    consoleUrl: 'http://127.0.0.1:2727',
+    capturePolicy: { enabled: true, disabledSources: ['other'], capturedSources: ['opencode'] } });
+  const capture = settings.find(entry => entry.key === 'capture');
+  assert.deepEqual(capture.value.disabledSources, ['other']);
+  assert.deepEqual(capture.value.capturedSources, ['opencode']);
+  assert.match(capture.effect, /capturedSources overrides only legacy client aliases/);
+});
+
 test('explain_settings reads through the app and is unavailable without a local installation', async () => {
   const explained = await callAgentTool({ explainSettings: () => guide() }, 'explain_settings', {});
   assert.equal(explained.settings[0].key, 'capture');

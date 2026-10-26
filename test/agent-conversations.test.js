@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { beginConversation, checkpointConversation, resumeConversation } from '../src/graphiti/agent-conversations.js';
+import { withCaptureBudget } from '../src/conversations/capture-window.js';
 
 const task = { token: 'fuli-task-example', sessionId: 'native-session', personalProjectId: 'sample', projectAgentId: 'engineer', sourceApplication: 'codex' };
 function fixture() {
@@ -10,19 +11,36 @@ function fixture() {
     personal: { conversation: async (operation, input) => {
       calls.push({ operation, input });
       if (operation === 'append') return { status: 'saved', conversation_id: 'conversation-one', revision: 1 };
-      if (input.mode === 'session') return { conversation_id: 'conversation-one', cursor: 0 };
+      // The Provider's begin: this session's bound conversation and its window, then the empty append.
+      if (operation === 'begin') return { status: 'saved', conversation_id: 'conversation-one', revision: 1,
+        recovered_from: 'conversation-one', previous: { compacted_through: 0, context: { summary: 'Prior result', messages: [] } },
+        recent: null };
       if (input.mode === 'context') return { context: { summary: 'Prior result', messages: [] } };
       return { status: 'resumed' };
     } } };
   return { app, calls };
 }
-test('entry restores before appending and writes exact task identity', async () => {
+const slow = (operation, ms = 200) => (...request) => new Promise(resolve => setTimeout(() => resolve(operation(...request)), ms));
+test('entry asks the Provider once, as exactly this task, and restores what it recovered', async () => {
   const { app, calls } = fixture();
   const result = await beginConversation(app, task, 'continue');
-  assert.equal(result.status, 'saved');
-  assert.equal(calls[1].input.mode, 'context');
-  assert.equal(calls.at(-1).input.task_context_token, task.token);
-  assert.deepEqual(calls.at(-1).input.events, [], 'task entry must not duplicate the native transcript prompt');
+  assert.deepEqual(calls, [{ operation: 'begin', input: { personal_space_id: 'personal', personal_project_id: 'sample',
+    agent_id: 'engineer', source_application: 'codex', session_id: task.sessionId, task_context_token: task.token } }],
+  'one round trip; it carries no events, so task entry never duplicates the native transcript prompt');
+  assert.deepEqual([result.status, result.conversation_id, result.revision, result.recovered_from, result.compacted],
+    ['saved', 'conversation-one', 1, 'conversation-one', false]);
+  assert.deepEqual(result.recovery, { summary: 'Prior result', messages: [] });
+  assert.equal(result.recent_conversation, undefined);
+  assert.equal(['previous', 'recent'].some(key => key in result), false, 'the Provider\'s parts are not repeated');
+});
+test('a Provider with conversation recording off still returns what it recovered, as before', async () => {
+  const { app } = fixture();
+  app.personal.conversation = async () => ({ status: 'capture_disabled', recovered_from: 'conversation-one',
+    previous: { compacted_through: 3, context: { messages: [] } }, recent: null });
+  const result = await beginConversation(app, task);
+  assert.deepEqual([result.status, result.recovered_from, result.compacted, result.conversation_id],
+    ['capture_disabled', 'conversation-one', true, undefined]);
+  assert.deepEqual(result.recovery, { messages: [] });
 });
 test('disabled capture writes no conversation data', async () => {
   const { app, calls } = fixture(); app.getCapturePolicy = () => ({ enabled: false });
@@ -31,25 +49,67 @@ test('disabled capture writes no conversation data', async () => {
 });
 test('a new chat keeps its Agent scope without automatically resuming the last unrelated conversation', async () => {
   const { app, calls } = fixture();
-  const original = app.personal.conversation;
   app.personal.conversation = async (operation, input) => {
-    if (input.mode === 'session') return { conversation_id: null };
-    if (input.mode === 'list') return { conversations: [{ id: 'earlier-chat' }] };
-    return original(operation, input);
+    calls.push({ operation, input });
+    return { status: 'saved', conversation_id: 'conversation-one', revision: 1, recovered_from: null, previous: null,
+      recent: { id: 'earlier-chat', summary: null, last_activity: null } };
   };
   const result = await beginConversation(app, task, 'new task');
   assert.equal(result.recovered_from, null);
   assert.equal(result.conversation_id, 'conversation-one');
   assert.equal(result.recovery, null);
-  assert.equal(calls.some(call => call.input.mode === 'context'), false);
-  assert.equal(calls[0].input.agent_id, task.projectAgentId);
-  assert.equal(calls[0].input.personal_project_id, task.personalProjectId);
+  assert.deepEqual(result.recent_conversation, { id: 'earlier-chat', updated_at: null });
+  assert.deepEqual(calls.map(call => [call.operation, call.input.agent_id, call.input.personal_project_id]),
+    [['begin', task.projectAgentId, task.personalProjectId]]);
 });
 test('checkpoint receipt is not saved when provider fails', async () => {
   const { app } = fixture(); app.personal.conversation = async () => { throw new Error('offline'); };
   const result = await checkpointConversation(app, task, { summary: 'done', status: 'completed' });
   assert.equal(result.status, 'unsaved');
   assert.equal(result.conversation_id, undefined);
+});
+test('an unsaved conversation names the failed step and the error code, never its message', async () => {
+  {
+    const { app } = fixture();
+    app.personal.conversation = async () => {
+      throw Object.assign(new Error('C:/private/path secret detail'), { code: 'provider_unavailable' });
+    };
+    const result = await beginConversation(app, task, 'new task');
+    assert.deepEqual([result.status, result.step, result.reason, result.retryable], ['unsaved', 'begin', 'provider_unavailable', true]);
+    assert.doesNotMatch(JSON.stringify(result), /private|secret/);
+  }
+  const { app } = fixture();
+  app.personal.conversation = async () => { throw Object.assign(new Error('x'), { status: 503 }); };
+  assert.equal((await checkpointConversation(app, task, { summary: 'done', status: 'completed' })).reason, 'status_503');
+  // A code FULI does not name (a Provider may pass its own detail.code) is never echoed.
+  for (const [error, reason] of [[Object.assign(new Error('x'), { code: 'upstream_tenant_acme_42' }), 'other'],
+    [Object.assign(new Error('x'), { code: 'upstream_tenant_acme_42', status: 409 }), 'status_409'],
+    [Object.assign(new Error('x'), { status: 7 }), 'other']]) {
+    app.personal.conversation = async () => { throw error; };
+    const result = await checkpointConversation(app, task, { summary: 'done', status: 'completed' });
+    assert.equal(result.reason, reason);
+    assert.doesNotMatch(JSON.stringify(result), /acme/);
+  }
+});
+test('an entry whose capture budget runs out says so, so a timeout is told apart from a failure', async () => {
+  const { app } = fixture();
+  // The begin outlasts a 5 ms capture budget, and nothing later continues it.
+  app.personal.conversation = slow(app.personal.conversation);
+  const result = await withCaptureBudget(5, () => beginConversation(app, task, 'new task'));
+  assert.deepEqual([result.status, result.step, result.reason, result.retryable],
+    ['unsaved', 'begin', 'transcript_capture_timeout', true]);
+  assert.match(result.guidance, /Do not claim this conversation was saved/);
+});
+test('a begin cut short where the next hook continues it is deferred, never claimed saved', async () => {
+  const { app } = fixture();
+  app.personal.conversation = slow(app.personal.conversation);
+  const { guidance, ...result } = await withCaptureBudget(5, () => beginConversation(app, task), { continued: true });
+  assert.deepEqual(result, { status: 'deferred', step: 'begin', reason: 'transcript_capture_timeout' });
+  assert.match(guidance, /next FULI hook of this session saves it/);
+  assert.match(guidance, /not saved yet; do not claim it was saved now/);
+  // Only a timeout is deferred: a Provider failure is not continued by anything.
+  app.personal.conversation = async () => { throw Object.assign(new Error('x'), { code: 'provider_unavailable' }); };
+  assert.equal((await withCaptureBudget(5_000, () => beginConversation(app, task), { continued: true })).status, 'unsaved');
 });
 test('a Provider-disabled checkpoint never reports saved summary coverage', async () => {
   const { app } = fixture();
@@ -86,10 +146,13 @@ const latestCheckpoint = { status: 'completed', summary: 'Completed "v2" export;
 function checkpointFixture() {
   const { app, calls } = fixture();
   const original = app.personal.conversation;
+  const previous = { id: 'previous', summary: 'outer unbounded copy', status: 'completed',
+    context: { conversation_id: 'previous', revision: 7, summary: '', summary_role: 'historical',
+      latest_checkpoint: latestCheckpoint, messages: [{ sequence: 6, role: 'assistant', content: 'Recent visible raw.' }] } };
   app.personal.conversation = async (operation, input) => {
-    if (input.mode === 'context') return { id: 'previous', summary: 'outer unbounded copy', status: 'completed',
-      context: { conversation_id: 'previous', revision: 7, summary: '', summary_role: 'historical',
-        latest_checkpoint: latestCheckpoint, messages: [{ sequence: 6, role: 'assistant', content: 'Recent visible raw.' }] } };
+    if (operation === 'begin') return { status: 'saved', conversation_id: 'previous', revision: 7,
+      recovered_from: 'previous', previous, recent: null };
+    if (input.mode === 'context') return previous;
     return original(operation, input);
   };
   return { app, calls };

@@ -11,12 +11,12 @@ export function createClientInstaller({ paths, runtimeConfigPath = paths.graphRu
       throw new TypeError('Expected only a clientId');
     }
     if (busy) throw new TypeError('A client connection is already being installed');
-    const agent = discover().find(({ id }) => id === input.clientId);
+    const agent = discover({ dataDir: paths.dataDir }).find(({ id }) => id === input.clientId);
     if (!agent?.available || agent.manualOnly) throw new TypeError('Client is unavailable for automatic connection');
     busy = true;
     try {
       const result = await install(agent, {
-        defaultToolProfile: 'chat', nodePath: process.execPath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath,
+        dataDir: paths.dataDir, defaultToolProfile: 'chat', nodePath: process.execPath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath,
         sessionSkillPath: paths.sessionSkillPath, projectSkillPath: paths.projectSkillPath,
         reviewSkillPath: paths.reviewSkillPath, operationSkillPath: paths.operationSkillPath,
         sessionCommandSkillPath: paths.sessionCommandSkillPath

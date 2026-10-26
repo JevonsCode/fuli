@@ -126,7 +126,7 @@ PreferenceConflictResolutionAction = Literal[
     'split_scope',
 ]
 SourceApplication = Literal[
-    'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'
+    'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other'
 ]
 
 
@@ -711,11 +711,20 @@ class PublicationDraftRecord(StrictModel):
     personal_space_id: str
     target_project_id: str
     provider_url: str
-    status: Literal['pending', 'submitted', 'kept_personal', 'ignored']
-    episode: StructuredEpisode
+    status: Literal['pending', 'submitting', 'submission_unknown', 'submitted', 'kept_personal', 'ignored', 'source_deleted']
+    episode: StructuredEpisode | None
+    source_identity: dict[str, str] = Field(default_factory=dict)
+    payload_scrubbed_by: str | None = None
+    payload_scrubbed_at: datetime | None = None
     created_at: datetime
     decided_at: datetime | None = None
     shared_proposal_id: str | None = None
+    submission_id: str | None = None
+    submission_started_at: datetime | None = None
+    submission_unknown_at: datetime | None = None
+    submission_unknown_reason: Literal['ttl', 'remote_error'] | None = None
+    last_submission_error: dict[str, str] | None = None
+    submission_outcome: Literal['unknown'] | None = None
 
 
 class PublicationDraftDecision(StrictModel):
@@ -976,6 +985,8 @@ class CollaborationContextResult(StrictModel):
     effective_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     task_scope_excluded_count: int = Field(default=0, ge=0)
     task_scope_filtered: bool = False
+    # Keys of preferences limited to a task dimension the request did not state.
+    scope_unknown: list[str] = Field(default_factory=list)
     conflicts: list[CollaborationPreferenceConflict] = Field(default_factory=list)
     queued_conflicts: list['PreferenceConflictRecord'] = Field(default_factory=list)
     source_windows: CollaborationSourceWindows | None = None
@@ -986,7 +997,17 @@ class CollaborationContextResult(StrictModel):
     truncated: bool = False
 
 
-class PreferenceConflictDeferCreate(StrictModel):
+class AgentReaderRef(StrictModel):
+    """The Agent reading: an FLA in its project, or neither for a plain
+    session. The person's console names no reader; it proves itself with the
+    human-review channel instead (knowledge_visibility)."""
+    reader_project_id: str | None = Field(default=None, min_length=1, max_length=128)
+    reader_agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+# A conflict's write names its reader too: one naming an item this reader may
+# not see answers as missing, before anything is written or returned (0.20.1).
+class PreferenceConflictDeferCreate(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     conflict_id: str = Field(min_length=1, max_length=1024)
     preference_key: str = Field(min_length=1, max_length=512)
@@ -1013,7 +1034,7 @@ class PreferenceConflictDeferCreate(StrictModel):
         return self
 
 
-class PreferenceConflictResolveCreate(StrictModel):
+class PreferenceConflictResolveCreate(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     resolution: PreferenceConflictResolutionAction
     reason: str = Field(min_length=1, max_length=2000)

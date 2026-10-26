@@ -2,7 +2,7 @@ from .staffing_demand import StaffingDemandQuery, query_staffing_demand
 from .agent_verification_models import AgentQualityQuery, AgentVerification
 from .agent_loan_models import AgentLoanRequest, AgentLoanDecision, AgentLoanQuery
 from .agent_conversation_models import (
-    ConversationQuery, ConversationWrite, ConversationResume, ConversationPolicyWrite,
+    ConversationQuery, ConversationBegin, ConversationWrite, ConversationResume, ConversationPolicyWrite,
 )
 from .conversation_triage_models import (
     ConversationTriageWrite, ConversationTriageRead, ConversationTopicQuery, ConversationTopicFormation,
@@ -38,6 +38,10 @@ def register_agent_conversation_routes(application, store, Actor):
     @application.post('/v1/agent-conversations/query')
     async def query(request: ConversationQuery, actor: Actor):
         return await store.query_conversations(actor, request)
+
+    @application.post('/v1/agent-conversations/begin')
+    async def begin(request: ConversationBegin, actor: Actor):
+        return await store.begin_conversation(actor, request)
 
     @application.post('/v1/agent-conversations/boundary')
     async def boundary(request: ConversationWrite, actor: Actor):

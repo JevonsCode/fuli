@@ -5,6 +5,7 @@ import { projectAgentRecord } from './project-agent-mapping.js';
 import { selectedTaskEntryPreferences } from './task-entry-preferences.js';
 import { validateWorkerDescriptor } from './worker-descriptor.js';
 import { captureDecision, taskCaptureScope } from './capture-decision.js';
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 const OWN_LAYER_TOOLS = new Set([
   'get_project_agent_memory', 'list_agent_conversations', 'read_agent_conversation'
 ]);
@@ -31,7 +32,7 @@ export function createWorkerTaskContext(application, descriptor) {
       located = application.personal.getProjectAgentWorkerRun(runId, scope, { capability, signal })
         .then(run => {
           if (!['sealed', 'admitted'].includes(run?.state) || !run.actual_session_id || !run.agent_id || !run.task_id ||
-              !['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'].includes(run.target_application)) {
+              !SOURCE_APPLICATIONS.includes(run.target_application)) {
             throw denied('Worker session is not sealed and ready');
           }
           checkRun(run, scope, runId);

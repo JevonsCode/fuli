@@ -362,7 +362,7 @@ function handleProjectCreated(project: PersonalProject) {
     class="view agents-directory"
     :aria-label="t('agentProfiles.title')"
   >
-    <div class="@container mx-auto w-full max-w-(--canvas-max)">
+    <div class="@container mx-auto w-full max-w-(--layout-max)">
       <!-- One toolbar: filters first, then the count and the actions. It stays
            in reach on tall screens and scrolls away on short ones. -->
       <div class="agents-directory-toolbar">

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
+import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
 import { transcriptCaptureScope } from '../../conversations/sync-transcript.js';
 import { captureDecision, withCaptureLookups } from '../../graphiti/capture-decision.js';
@@ -26,6 +26,21 @@ import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
+import { taskSceneInput } from '../../graphiti/task-scene.js';
+import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
+
+// Claude Code shows the model only a preview (about the first 10,000
+// characters) of a hook context longer than that and saves the rest as a file
+// (rec#47 F1b). The preferences past the preview are then never seen, and the
+// preview is no frame preference-evidence.js can confirm, so every turn
+// resends the whole entry. The task entry is bounded to this many characters,
+// label included (entry-inline-budget.js, rec#11 D-54); the rest of the 10,000
+// is room for a notice appended after it (withOutdatedMcpNotice).
+const CLAUDE_ENTRY_INLINE_CHARS = 9000;
+// Claude Code resumes a session (`--resume`, `/resume`) by replaying the same
+// transcript into the model's context, so the frames delivered before are
+// still seen and a resume keeps the delivery base (rec#47, rec#11 D-69).
+export const CLAUDE_REPLAYED_SOURCES = Object.freeze(['resume']);
 
 export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');
@@ -35,7 +50,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
   }
   const source = { sourceApplication: 'claude_code', sourceSessionId: sessionId };
   if (PREFERENCE_RESET_EVENTS.includes(event)) return preferenceLifecycleOutput(event, input,
-    { sourceApplication: 'claude_code', delivery, currentTask, invoke });
+    { sourceApplication: 'claude_code', delivery, currentTask, invoke, replayedSources: CLAUDE_REPLAYED_SOURCES });
   if (event === 'UserPromptSubmit') {
     if (typeof input.cwd !== 'string' || !input.cwd.trim() || typeof input.prompt !== 'string') {
       throw new TypeError('Claude task entry requires cwd and prompt');
@@ -46,10 +61,12 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     const basis = inPlaceRefreshBasis(input);
     if (basis) return claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis);
     const context = await invoke('begin_task_context', {
-      sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source
+      sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source, ...taskSceneInput(input.prompt)
     });
-    return preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'claude_code',
-      'Fuli task context. Read full context; apply effective_preferences. Follow checkpoint_guidance: checkpoint_task_knowledge only when there is something to record; the Stop hook closes the rest. ' + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
+    const entry = compactTaskContext(context);
+    return preferenceHookOutput(entry, event, input, delivery, 'claude_code',
+      'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND,
+      false, { inlineChars: CLAUDE_ENTRY_INLINE_CHARS });
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
   return stopHookOutcome(check, invoke, source);
@@ -74,17 +91,27 @@ const UNCONFIRMED_TURN = Object.freeze({
     + 'FULI: this turn is a host system delivery, but its task ownership is not confirmed; no task was created or switched.'
 });
 
-export function claudeLifecycleUnavailable(event, input = null, reason = null) {
+export function claudeLifecycleUnavailable(event, input = null, reason = null, incomplete = '') {
   const warning = reason ?? 'Fuli context is unavailable; memory recovery and task checkpoint are not verified. '
     + 'Continue with the user request and use Fuli MCP when it becomes available.';
   const sessionId = input?.session_id;
   const fallback = event === 'UserPromptSubmit' && inPlaceRefreshBasis(input) ? ` ${START_NEW_WORK}`
     : typeof sessionId === 'string' && sessionId.trim() && sessionId.length <= 256
-    ? ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Follow checkpoint_required and checkpoint_guidance; use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog when there is something to record. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.`
+    ? ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Follow checkpoint_required and checkpoint_guidance; use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog when there is something to record. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.${incomplete}`
     : '';
   return event === 'UserPromptSubmit'
     ? { systemMessage: warning, hookSpecificOutput: { hookEventName: event, additionalContext: warning + fallback } }
     : { systemMessage: warning };
+}
+
+// At the deadline an entry that already wrote its task delivers its token and
+// what is missing (entry-budget.js); otherwise the fallback says what to fetch.
+export function claudeEntryDeadlineOutput(event, input, budget) {
+  const partial = event === 'UserPromptSubmit' ? partialEntryText(budget) : null;
+  const output = partial ? { systemMessage: 'Fuli task context is partial: the hook deadline came before it was complete.',
+    hookSpecificOutput: { hookEventName: event, additionalContext: partial } }
+    : claudeLifecycleUnavailable(event, input, null, NO_TASK_AT_DEADLINE);
+  return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, entryNotice(budget)) : output;
 }
 
 export async function runClaudeLifecycleHook(args, dependencies = {}) {
@@ -96,6 +123,9 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
   );
   const ledger = runtimeConfigPath && typeof input?.session_id === 'string' && input.session_id.trim()
     ? transcriptCaptureLedger(runtimeConfigPath, input, 'claude_code') : null;
+  // Noted before the entry runs, so an answer at the deadline carries it too.
+  const notice = noteEntryNotice(() => outdatedMcpNotice(runtimeConfigPath,
+    { sourceApplication: 'claude_code', version: FULI_VERSION, sessionId: input?.session_id }));
   // A turn whose ownership cannot be proven is held as unresolved before
   // anything else can fail or return: whatever the read below finds, its
   // Stop neither settles the session's task nor records the turn under it.
@@ -148,8 +178,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CLAUDE_UNRESOLVED_TURNS);
       return lifecycle;
     }), request);
-    return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
-      { sourceApplication: 'claude_code', version: FULI_VERSION, sessionId: input.session_id })) : output;
+    return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, notice()) : output;
   } finally {
     await Promise.allSettled([close(leases), close(app)]);
   }
@@ -200,18 +229,21 @@ async function main() {
   };
   // Finish before the host timeout, even if a dependency ignores cancellation.
   // No prompt, transcript, path or raw exception is written to diagnostics.
+  // The entry's own time ends where its requests are cancelled.
+  const abortAfterMs = Math.max(1, timeoutMs - 1500);
+  const budget = entryBudget(abortAfterMs);
   const deadline = setTimeout(() => {
     controller.abort();
-    emit(claudeLifecycleUnavailable(event, input), () => process.exit(0));
+    emit(claudeEntryDeadlineOutput(event, input, budget), () => process.exit(0));
   }, timeoutMs);
-  const abort = setTimeout(() => controller.abort(), Math.max(1, timeoutMs - 1500));
+  const abort = setTimeout(() => controller.abort(), abortAfterMs);
   try {
-    const output = await runClaudeLifecycleHook(args, { signal: controller.signal,
+    const output = await runWithEntryBudget(budget, () => runClaudeLifecycleHook(args, { signal: controller.signal,
       captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
-      readInput: async () => { input = await readHookInput(); return input; } });
+      readInput: async () => { input = await readHookInput(); return input; } }));
     emit(output);
   } catch {
-    emit(claudeLifecycleUnavailable(event, input));
+    emit(controller.signal.aborted ? claudeEntryDeadlineOutput(event, input, budget) : claudeLifecycleUnavailable(event, input));
   } finally {
     clearTimeout(abort);
     clearTimeout(deadline);

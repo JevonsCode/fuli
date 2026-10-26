@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WORKFLOW_OBSERVATION_TOOL = 'record_workflow_transition_observation';
@@ -34,6 +35,8 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'export_project_agent_memory',
   'checkpoint_project_agent_memory',
   'dismiss_project_agent',
+  // The task token is resolved for this client; its session is the conversation recorded.
+  'register_standing_assignment',
   'record_project_agent_task_activity',
   'preflight_executor',
   'report_executor_health',
@@ -49,7 +52,9 @@ const CAPTURE_SOURCE_TOOLS = new Set([
   'search_human_knowledge_changes', 'search_current_project_knowledge',
   'search_connected_knowledge', 'get_user_taste_skill',
   // A session pause and a session's record list resolve the task token for this client only.
-  'update_capture_policy', 'read_session_records'
+  'update_capture_policy', 'read_session_records',
+  // Bole's model review keeps a console copy only while this client records.
+  'get_agent_score_card'
 ]);
 
 const SESSION_ID_TOOLS = new Set([
@@ -156,7 +161,7 @@ export function normalizeAgentSessionInput(
 }
 
 export function normalizeMcpSourceApplication(value) {
-  if (!['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'other'].includes(value)) {
+  if (!SOURCE_APPLICATIONS.includes(value)) {
     throw new TypeError('Unsupported MCP source application');
   }
   return value;

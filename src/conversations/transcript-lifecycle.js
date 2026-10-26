@@ -53,9 +53,9 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
       && captureSettingsVersion(application, input.session_id) === settings) ledger.record(settings);
   };
   let started = false, output, context;
-  const invoke = async () => {
+  const invoke = async ({ continued = false } = {}) => {
     started = true;
-    output = await withCaptureBudget(captureTimeoutMs, () => run(value => { context = value; }));
+    output = await withCaptureBudget(captureTimeoutMs, () => run(value => { context = value; }), { continued });
     return output;
   };
   try {
@@ -104,7 +104,10 @@ async function hookTranscriptLifecycle({ application, runtimeConfigPath, input, 
       }
       const entryGuard = sync.status === 'capture_disabled' ? null : guard;
       if (entry && entryGuard?.value) await entryGuard.write({ ...entryGuard.value, phase: 'beginning' });
-      await invoke();
+      // The guard now records this entry: the claim below, or the next hook
+      // (keepEnteredHandoff), hands the transcript to the entered task, whose
+      // import writes its conversation. A begin cut short is deferred to it.
+      await invoke({ continued: Boolean(entry && entryGuard?.value) });
       if (entry) {
         sync = await capture(async (app, held) => {
           await recordTranscriptTaskEntry(entryGuard ? held : null, context);

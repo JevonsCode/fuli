@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { hardDeleteLedger } from '../src/knowledge-hard-delete/delete-ledger.js';
 
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { createRoleWorkBridge } from '../src/model-backends/role-work.js';
 import { RoleWorkStore } from '../src/model-backends/role-work-store.js';
+import { RoleSuggestionLog } from '../src/model-backends/suggestion-log.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
 import { reachableModules } from '../test-support/module-graph.js';
+import { entryBudget, runWithEntryBudget } from '../src/conversations/entry-budget.js';
 import { openAiStream } from './fixtures/model-transport.js';
 
 // Astro's project_candidate hint at task entry (rec#8, rec#10 D-26). Synthetic
@@ -67,6 +73,11 @@ function taskContexts() {
         session.hints.push({ operation, at: new Date().toISOString() });
         return true;
       },
+      sessionHintAvailable: async (token, operation) => {
+        calls.push({ peek: token, operation });
+        const session = sessionOf(token);
+        return session?.current === token && !session.hints.some(hint => hint.operation === operation);
+      },
       ...Object.fromEntries(['adoptAgent', 'bindCoordinationTask', 'prepare', 'checkpoint'].map(name =>
         [name, async () => { calls.push({ write: name }); throw new Error(`${name} must not run`); }]))
     },
@@ -101,7 +112,7 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
     collaborationPreferences: async (space, project, limit, agent) => ({ personal_space_id: space, personal_project_id: project,
       project_agent_id: agent, effective_preferences: [], global_preferences: [], conflicts: [] }),
     listPreferenceConflicts: async () => [],
-    conversation: async operation => operation === 'append' ? { status: 'saved', conversation_id: CONVERSATION } : {},
+    conversation: async operation => ['begin', 'append'].includes(operation) ? { status: 'saved', conversation_id: CONVERSATION } : {},
     // The Provider's triage store: a label per conversation, its labeled_at the version.
     conversationTriage: async (operation, input) => {
       // Open topics and forming a topic into a project, as the triage store does:
@@ -148,6 +159,7 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
       } });
     app.roleWork = createRoleWorkBridge({ port: app.modelBackends, store, verifySession: async () => null, resumers: {} });
   }
+  app.roleSuggestions = new RoleSuggestionLog();
   const entry = (extra = {}) => app.getCollaborationPreferences({ projectPath: '/synthetic/chat-folder', sourceApplication: 'codex',
     sessionId: 'synthetic-session-a', taskPrompt: PROMPT, agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
   const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total FROM model_attempts ORDER BY attempt_number')
@@ -163,7 +175,7 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
       assert.deepEqual(result.context.project_resolution, { status: 'global', basis: 'pending_assignment', personal_project_id: null });
     }
   };
-  return { app, entry, contexts, modelCalls, reads, attempts, reservations, assertNoAttribution, labels,
+  return { app, entry, contexts, modelCalls, reads, attempts, reservations, assertNoAttribution, labels, suggestions: () => app.roleSuggestions.list(),
     failTriageReads: error => { triageReadError = error; } };
 }
 
@@ -191,6 +203,7 @@ test('not configured: the entry answers byte for byte as today, with zero fetche
     assert.deepEqual(run.contexts.calls, [], 'no claim');
     assert.deepEqual(run.reads, today.reads, 'no extra Provider read');
     assert.deepEqual(run.attempts(), []);
+    assert.deepEqual(run.suggestions(), []);
     run.assertNoAttribution();
   }
 
@@ -238,11 +251,43 @@ test('Astro suggests one approved project as a hint; candidates are evidence wit
     [['initial', 'succeeded', 'assistant', 'project_candidate']]);
   assert.deepEqual(run.contexts.hintClaims().map(({ operation }) => operation), ['project_candidate']);
   run.assertNoAttribution(result);
+  const [noted] = run.suggestions();
+  assert.deepEqual([noted.role, noted.status, noted.hint, noted.suggestion, noted.personalProjectId, noted.subject],
+    ['assistant', 'suggested', hint.hint, hint.suggestion, null, { conversationId: result.conversation.conversation_id }]);
 
   // Every project approved: no restriction note.
   const all = harness({ role: astroRole({ egress: { approvedProjects: Object.keys(PROJECTS).map(id => ({ personalSpaceId: SPACE, personalProjectId: id })),
     allowUnassigned: true } }), replies: [answer()] });
   assert.equal((await all.entry()).project_candidate.hint, '可能属于「Garden Planner」，需你确认');
+});
+
+test('with under 4 s of the hook\'s time left Astro is skipped and recorded: no claim, no call, a later entry still asks', async () => {
+  // Unfaithful current task: the next entry of the session resolves pending_assignment again, so only a used claim would stop it.
+  const run = harness({ role: astroRole(), replies: [answer()], faithfulCurrent: false });
+  const low = await runWithEntryBudget(entryBudget(3000), () => run.entry());
+  assert.deepEqual(low.project_candidate, { status: 'skipped', reason: 'entry_time_low' });
+  assert.deepEqual(run.modelCalls, []);
+  assert.deepEqual(run.contexts.hintClaims(), [], 'the session\'s one hint is not used up');
+  assert.deepEqual(run.attempts(), []);
+  assert.deepEqual(run.suggestions(), []);
+  run.assertNoAttribution(low);
+  const ample = await runWithEntryBudget(entryBudget(15_000), () => run.entry());
+  assert.equal(ample.project_candidate.status, 'suggested');
+  assert.equal(run.modelCalls.length, 1);
+});
+
+test('with little time left the skip is shown only where a hint could be: none once the session used it or with no approved candidate', async () => {
+  const used = harness({ role: astroRole(), replies: [answer()], faithfulCurrent: false });
+  assert.equal((await runWithEntryBudget(entryBudget(15_000), () => used.entry())).project_candidate.status, 'suggested');
+  const after = await runWithEntryBudget(entryBudget(3000), () => used.entry({ taskPrompt: '再看看花园浇水提醒' }));
+  assert.equal(after.project_candidate, undefined, 'the session already used its hint: nothing, not skipped');
+  assert.equal(used.contexts.hintClaims().length, 1);
+  assert.equal(used.modelCalls.length, 1);
+  const unapproved = harness({ role: astroRole({ egress: { approvedProjects: [], allowUnassigned: true } }), replies: [answer()] });
+  const none = await runWithEntryBudget(entryBudget(3000), () => unapproved.entry());
+  assert.equal(none.project_candidate, undefined, 'no approved candidate: nothing, not skipped');
+  assert.deepEqual(unapproved.contexts.calls, [], 'no claim and no peek');
+  assert.deepEqual(unapproved.modelCalls, []);
 });
 
 test('the prompt without a project needs allowUnassigned; none shows nothing', async () => {
@@ -366,6 +411,33 @@ test('malicious answers: an invented project, a forged gate or a claimed binding
 // A model that answers only after `during` ran, as a delayed reply would.
 const delayed = (during, fields) => async () => { await during(); return answer(fields); };
 
+test('approval withdrawn during the console copy\'s own capture read: superseded, and no words kept', async () => {
+  let role = astroRole();
+  let armed = false;
+  const run = harness({ role: () => role, replies: [delayed(async () => { armed = true; })] });
+  // After the model answered, Astro reads the task once for attribution; the next read is the copy's capture scope.
+  const read = run.contexts.registry.context.bind(run.contexts.registry);
+  let reads = 0;
+  run.contexts.registry.context = async (...args) => {
+    if (armed && ++reads === 2) role = astroRole({ enabled: false });
+    return read(...args);
+  };
+  const hint = (await run.entry()).project_candidate;
+  assert.equal(reads, 2, 'withdrawn during the capture read');
+  assert.deepEqual([hint.status, hint.reason, hint.hint, hint.suggestion], ['superseded', 'permission_changed', undefined, undefined]);
+  assert.deepEqual(run.suggestions().map(noted => [noted.status, noted.reason, 'hint' in noted, 'suggestion' in noted]),
+    [['superseded', 'permission_changed', false, false]]);
+  run.assertNoAttribution();
+});
+
+test('recording turned off while the model runs keeps no console copy; the hint is the same', async () => {
+  const run = harness({ role: astroRole(), replies: [delayed(() => run.app.updateCapturePolicy({ enabled: false }))] });
+  const hint = (await run.entry()).project_candidate;
+  assert.equal(hint.status, 'suggested');
+  assert.deepEqual(run.suggestions(), []);
+  run.assertNoAttribution();
+});
+
 test('a late answer is not shown once the request would no longer be allowed out', async () => {
   // Display-time only: what was legitimately sent before cannot be recalled.
   const withdrawals = {
@@ -383,6 +455,9 @@ test('a late answer is not shown once the request would no longer be allowed out
     assert.deepEqual([hint.status, hint.reason, hint.hint, hint.suggestion], ['superseded', 'permission_changed', undefined, undefined], name);
     assert.deepEqual(hint.gate, GATE, name);
     assert.equal(hint.modelReceipt.attempts, 1, name);
+    // The console keeps only why: no hint, choice or model reason.
+    const [noted] = run.suggestions();
+    assert.deepEqual([noted.status, noted.reason, noted.hint, noted.suggestion], ['superseded', 'permission_changed', undefined, undefined], name);
     run.assertNoAttribution();
   }
 
@@ -480,6 +555,22 @@ test('the hook entry gets the same once-per-session hint; resuming a checkpoint 
   assert.equal(resumed.project_candidate, undefined);
   assert.equal(run.modelCalls.length, 1);
   run.assertNoAttribution(first);
+});
+
+test('Astro drops its entire late suggestion when its verified source session generation changed', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-astro-generation-'));
+  const run = harness({ role: astroRole(), replies: [delayed(async () => {
+    const ledger = hardDeleteLedger(directory);
+    const operation = ledger.begin({ spaceId: SPACE, itemKind: 'session', itemId: 'source', itemIds: [],
+      sourceApplication: 'codex', sessionId: 'synthetic-session-a' });
+    ledger.update(operation.id, { state: 'complete', deletionId: 'source-deletion', deletedAt: new Date().toISOString() });
+  })] });
+  run.app.roleSuggestions = new RoleSuggestionLog(join(directory, 'role-suggestions.sqlite'),
+    { recoveryGate: { state: () => ({ state: 'open' }) } });
+  t.after(() => { run.app.roleSuggestions.close(); rmSync(directory, { recursive: true, force: true }); });
+  assert.equal((await run.entry()).project_candidate.status, 'suggested');
+  assert.equal(run.app.roleSuggestions.db.prepare('SELECT count(*) AS n FROM role_suggestions').get().n, 0);
+  assert.equal(run.app.roleSuggestions.droppedCount, 1);
 });
 
 // Local smoke, never in CI: FULI_OLLAMA_SMOKE=1 and an Ollama already serving

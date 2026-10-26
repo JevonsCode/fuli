@@ -47,13 +47,7 @@ export function compactTaskContext(value) {
     continuation: { ...value.agent_receipt.continuation,
       guidance: text(value.agent_receipt.continuation.guidance, 'continuation_guidance') } };
   if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(preferenceInstructionView);
-  if (value.project_management_context?.managers) result.project_management_context = {
-    ...value.project_management_context,
-    managers: value.project_management_context.managers.map(manager => ({ ...manager,
-      board: manager.board && { version: manager.board.version, total: manager.board.total,
-        view: 'on_demand', guidance: 'Discover and call the manager read_board tool before matching, creating or updating a work item; this entry omits board details.' }
-    }))
-  };
+  if (value.project_management_context?.managers) result.project_management_context = managementContextView(value.project_management_context);
   const continuity = value.project_agent_context;
   const management = value.project_management_context;
   const omitTeam = !value.worker_run && Object.hasOwn(value, 'project_management_context')
@@ -79,9 +73,20 @@ export function compactTaskContext(value) {
   return copyPreferenceScope(value, result);
 }
 
+// Each manager's routing, title policy and tools; the board itself is read on
+// demand through the manager's own read_board tool.
+export function managementContextView(management) {
+  return { ...management,
+    managers: management.managers.map(manager => ({ ...manager,
+      board: manager.board && { version: manager.board.version, total: manager.board.total,
+        view: 'on_demand', guidance: 'Discover and call the manager read_board tool before matching, creating or updating a work item; this entry omits board details.' }
+    }))
+  };
+}
+
 // The entry receipt only has to be copied: the markdown plus the shared rule.
 // Owner details and the hand-off prompt stay on the checkpoint receipt.
-function receiptView(receipt) {
+export function receiptView(receipt) {
   return withoutDefaults({ required: receipt.required, markdown: receipt.markdown,
     collaborators: receipt.collaborators, work_status: receipt.work_status, persistence: receipt.persistence,
     guidance: ruleTextView(receipt.guidance, 'receipt_guidance') }, { flags: true });
@@ -107,18 +112,12 @@ function isDefault(value, { counts = false, flags = false } = {}) {
     || (Array.isArray(value) && !value.length) || (typeof value === 'object' && value !== null && !Array.isArray(value) && !Object.keys(value).length);
 }
 
-// Inside the same native chat the host already holds the recent messages, so
-// only the latest saved result is repeated; another chat gets the full window.
+// The Provider's whole budgeted window is kept here. What one native session
+// has already seen is left out only at delivery, against that session's own
+// transcript (recent-context.js); a client without one receives it all.
 function conversationView(conversation, share) {
   if (!share) return conversation;
-  const view = { ...conversation, guidance: ruleTextView(conversation.guidance, 'conversation_guidance') };
-  const recovery = conversation.recovery;
-  if (conversation.same_session && recovery && Array.isArray(recovery.messages)) {
-    view.recovery = { conversation_id: recovery.conversation_id, revision: recovery.revision,
-      latest_checkpoint: recovery.latest_checkpoint ?? null, summary_role: recovery.summary_role,
-      messages_omitted: recovery.messages.length, omitted_reason: 'same_host_session' };
-  }
-  return view;
+  return { ...conversation, guidance: ruleTextView(conversation.guidance, 'conversation_guidance') };
 }
 
 function ruleOrReference(section, share) {

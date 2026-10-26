@@ -4,7 +4,9 @@
 export function roleWorkSessions(app) {
   return async ({ taskContextToken, sourceApplication }) => {
     const task = await app.taskContextRegistry.context(taskContextToken, sourceApplication);
+    // projectAgentId: the task's FLA, the reader a role's result is shown to (rec#50).
     return { sessionRef: task.sessionId, personalSpaceId: app.config.personal.spaceId,
-      personalProjectId: task.personalProjectId ?? null, sourceApplication: task.sourceApplication ?? sourceApplication, taskContextToken };
+      personalProjectId: task.personalProjectId ?? null, projectAgentId: task.projectAgentId ?? null,
+      sourceApplication: task.sourceApplication ?? sourceApplication, taskContextToken };
   };
 }

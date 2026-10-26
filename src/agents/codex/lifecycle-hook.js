@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND } from '../lifecycle-message.js';
+import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
@@ -23,6 +23,8 @@ import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
+import { taskSceneInput } from '../../graphiti/task-scene.js';
+import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
 
 // Task entry gets longer: a warm entry already takes 2–4 s on a Mac and a cold
 // first one ran past 5 s, which costs the model two fallback requests. Both
@@ -69,9 +71,10 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
     { delivery, currentTask, onCurrentTask });
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
-    sourceApplication: 'codex', sourceSessionId: input.session_id });
-  const output = await preferenceHookOutput(compactTaskContext(context), event, input, delivery, 'codex',
-    'Fuli task context. Apply effective_preferences. Follow checkpoint_guidance: checkpoint with taskContextToken only when there is something to record; the Stop hook closes the rest. ' + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
+    sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(input.prompt) });
+  const entry = compactTaskContext(context);
+  const output = await preferenceHookOutput(entry, event, input, delivery, 'codex',
+    'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
   return review ? withCodexReviewGuidance(output) : output;
 }
 
@@ -93,6 +96,9 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
   );
   const ledger = runtimeConfigPath && typeof input?.session_id === 'string' && input.session_id.trim()
     ? transcriptCaptureLedger(runtimeConfigPath, input, 'codex') : null;
+  // Noted before the entry runs, so an answer at the deadline carries it too.
+  const notice = noteEntryNotice(() => outdatedMcpNotice(runtimeConfigPath,
+    { sourceApplication: 'codex', version: FULI_VERSION, sessionId: input?.session_id }));
   // A turn whose ownership cannot be proven is held as unresolved before
   // anything else can fail or return: whatever the read below finds, its
   // Stop neither settles the session's task nor records the turn under it.
@@ -147,8 +153,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CODEX_UNRESOLVED_TURNS);
       return lifecycle;
     }, { signal: dependencies.signal });
-    const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, outdatedMcpNotice(runtimeConfigPath,
-      { sourceApplication: 'codex', version: FULI_VERSION, sessionId: input?.session_id })) : output;
+    const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, notice()) : output;
     write(`${JSON.stringify(delivered)}\n`);
     return delivered;
   } finally {
@@ -227,7 +232,7 @@ async function closeQuietly(resource) {
 
 // The cause says whether the hook ran out of time or failed, so a report can
 // tell a slow first start from a broken install without exposing details.
-function codexLifecycleUnavailable(event, input, cause) {
+function codexLifecycleUnavailable(event, input, cause, incomplete = '') {
   // The person's review line never reaches the model unverified (rec#22).
   if (event === 'UserPromptSubmit' && isCodexReviewCommand(input?.prompt)) {
     return { decision: 'block', reason: CODEX_REVIEW_UNVERIFIED_REASON };
@@ -244,8 +249,18 @@ function codexLifecycleUnavailable(event, input, cause) {
   // session cannot replace it when the Agent falls back to the preferences tool.
   const fallback = ` No valid Hook task context was supplied. First call get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current working directory and taskPrompt=current user request. Follow checkpoint_required and checkpoint_guidance; use its fresh taskContextToken for checkpoint_task_knowledge with a truthful workLog when there is something to record. Native transcript capture remains unverified; do not reuse an old token or claim this Hook delivered task context.`;
   return { systemMessage: warning, hookSpecificOutput: {
-    hookEventName: event, additionalContext: warning + fallback
+    hookEventName: event, additionalContext: warning + fallback + incomplete
   } };
+}
+
+// At the deadline an entry that already wrote its task delivers its token and
+// what is missing (entry-budget.js); otherwise the fallback says what to fetch.
+function codexEntryDeadlineOutput(event, input, budget, cause) {
+  const partial = event === 'UserPromptSubmit' && !isCodexReviewCommand(input?.prompt) ? partialEntryText(budget) : null;
+  const output = partial ? { systemMessage: `Fuli task context is partial (${cause}).`,
+    hookSpecificOutput: { hookEventName: event, additionalContext: partial } }
+    : codexLifecycleUnavailable(event, input, cause, NO_TASK_AT_DEADLINE);
+  return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, entryNotice(budget)) : output;
 }
 
 export async function runCodexLifecycleCommand(args, dependencies = {}) {
@@ -261,12 +276,13 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
   let input = null;
   const readInput = dependencies.readInput ?? readHookInput;
   const unavailable = cause => `${JSON.stringify(codexLifecycleUnavailable(event, input, cause))}\n`;
+  const budget = entryBudget(timeoutMs);
   let cleanup = async () => {};
   let deadline;
   const expired = new Promise(resolve => {
     deadline = setTimeout(async () => {
       controller.abort();
-      write(unavailable(`no answer within ${timeoutMs} ms`));
+      write(`${JSON.stringify(codexEntryDeadlineOutput(event, input, budget, `no answer within ${timeoutMs} ms`))}\n`);
       // A broken dependency must not hold the host open. Give opened leases
       // and connections a bounded chance to close before the process exits.
       let grace;
@@ -276,10 +292,10 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
     }, timeoutMs);
   });
   try {
-    const running = runCodexLifecycleHook(args, { ...dependencies, signal: controller.signal, write,
+    const running = runWithEntryBudget(budget, () => runCodexLifecycleHook(args, { ...dependencies, signal: controller.signal, write,
       captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
       readInput: async () => { input = await readInput(); return input; },
-      onCleanup: close => { cleanup = close; } }).then(() => ({ timedOut: false }), () => {
+      onCleanup: close => { cleanup = close; } })).then(() => ({ timedOut: false }), () => {
       // Never print prompts, transcripts, paths or credentials.
       write(unavailable('the hook failed'));
       return { timedOut: false };

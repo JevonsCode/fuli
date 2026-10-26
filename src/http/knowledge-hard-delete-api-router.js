@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { parseHardDeleteInput } from '../knowledge-hard-delete/input.js';
 
 import { refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
@@ -12,14 +12,7 @@ import { readJson, sendJson } from './response.js';
 // Agent tool reaches these routes; an Agent can only suggest the person opens
 // the item's page (the interface catalog marks them local_user_only).
 
-const PATH = /^\/api\/knowledge\/(entity|relationship)\/([^/]+)\/hard-delete(?:\/(preview|status))?$/;
-const space = z.string().min(1).max(128);
-const BODIES = {
-  preview: z.object({ personalSpaceId: space }).strict(),
-  status: z.object({ personalSpaceId: space }).strict(),
-  confirm: z.object({ personalSpaceId: space, previewId: z.string().regex(/^[0-9a-f]{64}$/),
-    confirmation: z.string().trim().min(1).max(512) }).strict()
-};
+const PATH = /^\/api\/knowledge\/(entity|relationship|episode|session)\/([^/]+)\/hard-delete(?:\/(preview|status))?$/;
 
 export async function handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete }) {
   const match = url.pathname.match(PATH);
@@ -35,12 +28,8 @@ export async function handleKnowledgeHardDeleteRequest({ request, response, url,
     return true;
   }
   const action = match[3] ?? 'confirm';
-  const parsed = BODIES[action].safeParse(await readJson(request));
-  if (!parsed.success) throw new TypeError('Invalid permanent deletion request');
-  if (parsed.data.personalSpaceId !== app.config?.personal?.spaceId) {
-    throw new TypeError('Knowledge is deleted in the active personal space');
-  }
-  const input = { ...parsed.data, itemKind: match[1], itemId: decodeURIComponent(match[2]) };
+  const input = parseHardDeleteInput({ action, itemKind: match[1], itemId: decodeURIComponent(match[2]),
+    body: await readJson(request), personalSpaceId: app.config?.personal?.spaceId });
   sendJson(response, 200, await hardDelete[action](input));
   return true;
 }

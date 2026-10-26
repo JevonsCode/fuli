@@ -114,7 +114,7 @@ onBeforeUnmount(() => debounced.cancel())
 
 <template>
   <section class="view [scrollbar-gutter:stable]">
-    <div class="@container mx-auto flex w-full max-w-(--canvas-max) flex-col gap-4" data-tag-vocabulary>
+    <div class="@container mx-auto flex w-full max-w-(--layout-max) flex-col gap-4" data-tag-vocabulary>
       <p class="page-lede m-0 text-sm leading-relaxed text-muted-foreground">{{ t('knowledgeTags.lede') }}</p>
       <Tabs v-model="tab">
         <TabsList :aria-label="t('knowledgeTags.tabs.label')">

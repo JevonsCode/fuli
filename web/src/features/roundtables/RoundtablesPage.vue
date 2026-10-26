@@ -426,7 +426,7 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
 <template>
   <section class="view roundtable-view" :class="{ 'has-selection': hasSelection }">
    <!-- One canvas: the list of conversations, or the open one with a way back; never both side by side. -->
-   <div class="roundtable-canvas mx-auto flex w-full max-w-(--canvas-max) flex-col">
+   <div class="roundtable-canvas mx-auto flex w-full max-w-(--layout-max) flex-col">
     <p v-if="accessNotice" role="alert" class="roundtable-notice">
       {{ t('roundtable.accessLost') }} <Button size="sm" variant="ghost" @click="reloadAll">{{ t('roundtable.retry') }}</Button>
     </p>
@@ -570,8 +570,6 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
 .roundtable-view.has-selection { overflow: hidden; padding-bottom: 16px; }
 .roundtable-canvas { flex: 1 0 auto; }
 .has-selection .roundtable-canvas { flex: 1 1 0; min-height: 0; }
-/* An open conversation is one reading column, not a card stretched across a wide screen. */
-.has-selection .roundtable-layout { width: 100%; max-width: 1200px; margin-inline: auto; }
 .roundtable-empty { max-width: 520px; margin: 12vh auto 0; text-align: center; }
 .roundtable-empty strong { font-size: 16px; font-weight: 600; }
 .roundtable-empty p { margin-top: 8px; color: var(--color-muted); }

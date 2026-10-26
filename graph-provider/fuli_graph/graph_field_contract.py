@@ -158,10 +158,12 @@ NODE_FIELDS = {
     'FuliKnowledgeAudit': {
         'action': 'knowledge_audit_action', 'classification_check': 'string?',
         'conflict_check': 'string?', 'created_at': 'datetime', 'created_by': 'string',
-        'deleted_item_keys': 'string[]?', 'deletion_counts_json': 'string?',
+        'deleted_item_keys': 'string[]?', 'deleted_source_turn_keys': 'string[]?', 'deleted_task_tokens': 'string[]?',
+        'deletion_counts_json': 'string?', 'source_application': 'string?', 'fuli_session_id': 'string?',
+        'drafts_scrubbed_json': 'string?',
         'evidence_ids': 'string[]?', 'evidence_summary': 'string?',
         'feedback_kind': 'feedback_kind?', 'human_change_version': 'integer?', 'id': 'string',
-        'item_id': 'string?', 'item_kind': 'item_kind?', 'operation': 'string?',
+        'item_id': 'string?', 'item_kind': 'hard_delete_target_kind?', 'operation': 'string?',
         'operation_actor': 'string?', 'operation_fingerprint': 'string?', 'operation_id': 'string?',
         'outcome': 'string?', 'promotion': 'boolean?', 'reason': 'string?',
         'removed_episode_ids': 'string[]?', 'reported_by_kind': 'reporter_kind?',
@@ -416,7 +418,8 @@ NODE_FIELDS = {
         'updated_at': 'datetime?', 'write_serial': 'integer?',
     },
     'FuliProjectAgentMemoryCheckpoint': {
-        'id': 'string', 'payload_hash': 'string', 'record_json': 'string', 'revision': 'integer',
+        'id': 'string', 'payload_hash': 'string?', 'record_json': 'string', 'revision': 'integer',
+        'memory_state': 'memory_state?', 'scrubbed_by': 'string?',
     },
     'FuliProjectAgentRecruitment': {
         'cleanup_eligible': 'boolean?', 'confirmation_mode': 'confirmation_mode',
@@ -517,6 +520,11 @@ NODE_FIELDS = {
         'created_at': 'datetime?', 'decided_at': 'datetime?', 'id': 'string?', 'payload': 'string?',
         'personal_space_id': 'string?', 'provider_url': 'string?', 'shared_proposal_id': 'string?',
         'status': 'publication_draft_status?', 'target_project_id': 'string?',
+        'source_identity': 'string?', 'payload_scrubbed_by': 'string?', 'payload_scrubbed_at': 'datetime?',
+        'submission_id': 'string?', 'submission_started_at': 'datetime?',
+        'submission_unknown_at': 'datetime?',
+        'submission_unknown_reason': 'submission_unknown_reason?',
+        'last_submission_error': 'string?', 'submission_outcome': 'submission_outcome?',
     },
     'FuliRemoteAgentOrigin': {
         'agent_id': 'string', 'binding_id': 'string', 'digest': 'string', 'expires_at': 'datetime',
@@ -551,6 +559,7 @@ NODE_FIELDS = {
         'knowledge_usage_json': 'string?', 'knowledge_usage_result_json': 'string?',
         'personal_project_id': 'string?', 'personal_space_id': 'string',
         'project_agent_id': 'string?', 'reason': 'string?', 'record_json': 'string',
+        'scrubbed_by': 'string?',
         'token': 'string', 'turn_id': 'string?', 'turn_receipt_claimant': 'string?',
         'turn_receipt_lock': 'integer?', 'turn_receipt_state': 'turn_receipt_state?',
         'work_log_json': 'string?', 'write_serial': 'integer?',
@@ -686,6 +695,7 @@ RELATIONSHIP_FIELDS = {
 }
 
 ENUMS = {
+    'memory_state': ('present', 'scrubbed'),
     'alias_status': ('active', 'provisional', 'proposed'),
     'assignment_status': ('active', 'ended'),
     'attention_kind': ('question', 'approval', 'review', 'permission', 'blocked'),
@@ -714,6 +724,7 @@ ENUMS = {
     'human_change_status': ('none', 'unseen', 'viewed', 'reviewed'),
     'inheritance_mode': ('local_only', 'descendants', 'selected_projects'),
     'item_kind': ('entity', 'relationship'),
+    'hard_delete_target_kind': ('entity', 'relationship', 'episode', 'session'),
     'knowledge_audit_action': ('human_change', 'agent_view', 'agent_review', 'knowledge_used',
                                'knowledge_feedback', 'hard_delete', 'hard_delete_aborted',
                                'hard_delete_refused'),
@@ -740,7 +751,9 @@ ENUMS = {
     'project_relation_type': ('PART_OF', 'USES_KNOWLEDGE_FROM', 'DEPENDS_ON', 'PROVIDES_TO',
                               'SHARES_CAPABILITY_WITH', 'SUCCESSOR_OF', 'RELATED_TO'),
     'proposal_status': ('pending', 'processing', 'approved', 'rejected'),
-    'publication_draft_status': ('pending', 'submitted', 'kept_personal', 'ignored'),
+    'publication_draft_status': ('pending', 'submitting', 'submission_unknown', 'submitted', 'kept_personal', 'ignored', 'source_deleted'),
+    'submission_outcome': ('unknown',),
+    'submission_unknown_reason': ('ttl', 'remote_error'),
     'quadrant': ('known_known', 'known_unknown', 'unknown_known', 'unknown_unknown'),
     'recruitment_status': ('awaiting_confirmation', 'requested', 'fulfilled', 'cancelled',
                            'blocked', 'no_hr'),

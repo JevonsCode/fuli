@@ -1,8 +1,8 @@
 {
   "sqlite": {
     "agent-apps": {
-      "version": 1,
-      "fingerprint": "a664b90df106360febe4332b4e67c96108e2cde881cf8df1adcc90e5a1c3c93b"
+      "version": 8,
+      "fingerprint": "395f700b966ee292a516fb5b03e7cfd198fbcca629e04567106af06be4604691"
     },
     "employee-management": {
       "version": 1,
@@ -12,9 +12,17 @@
       "version": 1,
       "fingerprint": "e621120361096b31c77958988cc3fc7cd0f19345732268b0fb28c6508da24b8e"
     },
-    "model-usage": {
+    "model-settings-history": {
       "version": 1,
-      "fingerprint": "3f8209318b44d242121cf35ad6a586756e317311d2edfe02be11e6d3c5accc17"
+      "fingerprint": "83954195f632c5d2ced24cbc5454a4c01404bb152dd3cc2d6b6c45a20e1ba041"
+    },
+    "model-trust": {
+      "version": 1,
+      "fingerprint": "7b21ab0473e8f44cf82dec77db27549202c3aef3bc379d6dc370f8bf0a97d4fc"
+    },
+    "model-usage": {
+      "version": 2,
+      "fingerprint": "e8657fb8e4fbcde5ce687039fbe9145d4d1bcb8952fd42dcb14bb321e2dc8fdf"
     },
     "peer-coordinator": {
       "version": 2,
@@ -23,6 +31,10 @@
     "peer-node": {
       "version": 2,
       "fingerprint": "84e992141a5146a52f2a2f838defca2a4478a987f0b2f4bdb572e0d1f2ee2420"
+    },
+    "role-suggestions": {
+      "version": 1,
+      "fingerprint": "62e7a486ae840ecdac3a5e93e64ac41a7bfe8aded1b77a7106caa1b943de357d"
     },
     "role-work": {
       "version": 1,
@@ -35,6 +47,10 @@
     "standalone": {
       "version": 1,
       "fingerprint": "d2c2d2c979da20f5546582c0240911615bd1b64d39c5f022c4be1dd7f767d62c"
+    },
+    "standing-assignments": {
+      "version": 1,
+      "fingerprint": "c1d340c787a83a27babba7dfdea1de69ddb873aa6da9c57298e41a82e7cdeccc"
     },
     "task-schedules": {
       "version": 3,

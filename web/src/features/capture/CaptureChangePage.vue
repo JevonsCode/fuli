@@ -43,7 +43,7 @@ const projectNames = computed(() => new Map((store.state?.personalProjects ?? []
   .map(project => [project.project_id, projectDisplayName(project)])))
 const projectName = (id: string) => projectNames.value.get(id) ?? id
 const value = (setting: CaptureChangeSetting, raw: unknown) => settingValue(setting, raw, projectName)
-const CURRENT_SETTINGS: CaptureChangeSetting[] = ['enabled', 'disabledSources', 'projectMode', 'unregisteredDirectories']
+const CURRENT_SETTINGS: CaptureChangeSetting[] = ['enabled', 'disabledSources', 'capturedSources', 'projectMode', 'unregisteredDirectories']
 const projectList = (policy: CapturePolicy) => policy.projectMode === 'selected'
   ? { setting: 'selectedProjectIds' as const, ids: policy.selectedProjectIds ?? [] }
   : policy.projectMode === 'all_except' ? { setting: 'excludedProjectIds' as const, ids: policy.excludedProjectIds ?? [] } : null
@@ -221,7 +221,7 @@ onMounted(load)
 </template>
 
 <style scoped>
-.capture-change { display: grid; gap: 16px; width: 100%; min-width: 0; max-width: var(--form-max); margin-inline: auto; }
+.capture-change { display: grid; gap: 16px; width: 100%; min-width: 0; max-width: var(--layout-max); margin-inline: auto; }
 .capture-change-body { display: grid; gap: 20px; min-width: 0; padding: 0 20px; }
 .capture-change-body > section { display: grid; gap: 8px; }
 .capture-change-notice { display: grid; gap: 4px; margin: 0; padding: 12px 16px; border: 1px solid var(--color-border);

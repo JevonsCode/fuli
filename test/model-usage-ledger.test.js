@@ -70,3 +70,35 @@ test('records keep no prompt text and reject an unknown channel', () => {
   assert.equal(columns.some(name => /prompt|content|message|secret|key$/.test(name)), false);
   assert.throws(() => ledger.record(attempt({ channel: 'browser' })));
 });
+
+
+test('the latest completed answer of a role on one full endpoint and model carries its observed local build; nothing else matches', () => {
+  const ledger = new ModelUsageLedger(':memory:');
+  const endpoint = 'http://127.0.0.1:11434/a/v1';
+  const observed = 'c'.repeat(64);
+  const where = { role: 'bole', connectionId: 'local', protocol: 'openai_chat', endpoint, requestedModel: 'qwen' };
+  assert.equal(ledger.lastServed(where), null);
+  // A row from before endpoints were recorded never matches a configured endpoint.
+  ledger.record(attempt({ requestId: 'old', observedTagDigest: 'a'.repeat(64) }));
+  assert.equal(ledger.lastServed(where), null);
+  ledger.record(attempt({ endpoint, observedTagDigest: observed }));
+  // A failure, a session answer, another role, another model, another path
+  // or scheme on the same host, and another connection sharing the endpoint
+  // and tag never replace it.
+  const later = '2026-10-20T11:00:00.000Z';
+  ledger.record(attempt({ requestId: 'req-2', endpoint, startedAt: later, outcome: 'failed', failureClass: 'transient',
+    failureReason: 'timeout', observedTagDigest: 'd'.repeat(64) }));
+  ledger.record(attempt({ requestId: 'req-3', startedAt: later, channel: 'session', connectionId: null,
+    protocol: null, endpointHost: null, requestedModel: null, actualModel: null }));
+  ledger.record(attempt({ requestId: 'req-4', endpoint, startedAt: later, role: 'jefa', observedTagDigest: 'e'.repeat(64) }));
+  ledger.record(attempt({ requestId: 'req-5', endpoint, startedAt: later, requestedModel: 'qwen:8b', observedTagDigest: 'f'.repeat(64) }));
+  ledger.record(attempt({ requestId: 'req-6', endpoint: 'http://127.0.0.1:11434/b/v1', startedAt: later, observedTagDigest: '1'.repeat(64) }));
+  ledger.record(attempt({ requestId: 'req-7', endpoint: 'https://127.0.0.1:11434/a/v1', startedAt: later, observedTagDigest: '2'.repeat(64) }));
+  ledger.record(attempt({ requestId: 'req-9', endpoint, connectionId: 'local-copy', startedAt: later, observedTagDigest: '3'.repeat(64) }));
+  ledger.record(attempt({ requestId: 'req-10', endpoint, protocol: 'other_protocol', startedAt: later, observedTagDigest: '4'.repeat(64) }));
+  // completedAt is when the answer completed: start plus duration (120 ms).
+  assert.deepEqual(ledger.lastServed(where), { observedTagDigest: observed, completedAt: '2026-10-20T10:00:00.120Z' });
+  // The latest completion wins even when it started earlier; one with nothing observed stays unobserved.
+  ledger.record(attempt({ requestId: 'req-8', endpoint, startedAt: '2026-10-20T09:59:00.000Z', durationMs: 120_000 }));
+  assert.deepEqual(ledger.lastServed(where), { observedTagDigest: null, completedAt: '2026-10-20T10:01:00.000Z' });
+});

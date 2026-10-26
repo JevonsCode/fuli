@@ -72,7 +72,8 @@ test('a project-bound remote server cannot checkpoint another project token', {
   await fixture.request('/v1/personal-projects', {
     personal_space_id: fixture.context.personal_space_id,
     project_id: projectB,
-    profile: { name: 'Synthetic checkpoint project B', lifecycle: 'active' }
+    profile: { name: 'Synthetic checkpoint project B', lifecycle: 'active',
+      purpose: 'Verify a project-bound server refuses another project token.' }
   }, 'PUT');
   const app = application(fixture.config);
   const common = {
@@ -129,7 +130,7 @@ test('a project-bound remote server cannot checkpoint another project token', {
   await fixture.request('/v1/project-agents', {
     personal_space_id: fixture.context.personal_space_id,
     personal_project_id: fixture.context.personal_project_id,
-    agent_id: 'reviewer',
+    agent_id: 'reviewer', occupation: { role: 'engineering' },
     profile: {
       name: 'Synthetic reviewer', responsibility: 'Review the synthetic sample.',
       allowed_clients: ['claude'], work_kinds: ['review'], capabilities: ['review']

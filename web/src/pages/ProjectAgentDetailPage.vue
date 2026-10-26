@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import BackLink from '@/components/BackLink.vue'
+import { coversClient } from '@/lib/source-coverage'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -285,7 +286,7 @@ async function cleanup(person: ProjectAgentRecord) {
 
 <template>
   <section ref="pageRoot" class="view project-agent-manage" :aria-label="title">
-    <div class="@container mx-auto grid w-full max-w-(--canvas-max) gap-4">
+    <div class="@container mx-auto grid w-full max-w-(--layout-max) gap-4">
       <BackLink class="agent-profile-back" :to="collectionPath" :from="openedFromCollection">{{ t('shell.sections.orchestrate') }}</BackLink>
 
       <GrowthLoading v-if="pageLoading" :label="!store.state ? t('common.status.loadingConsole') : t('projectAgents.loading')" />
@@ -470,7 +471,7 @@ async function cleanup(person: ProjectAgentRecord) {
                   <div v-if="clientNames(agent).length" class="project-agent-client-list">
                     <div v-for="clientName in clientNames(agent)" :key="clientName" class="project-agent-client-row">
                       <strong>{{ sourceLabel(clientName) }}</strong>
-                      <span>{{ clientEvidenceFor(agent, clientName)?.allowed || agent.profile.allowedClients?.includes(clientName) ? t('projectAgents.clients.allowed') : t('projectAgents.clients.notAllowed') }}</span>
+                      <span>{{ clientEvidenceFor(agent, clientName)?.allowed || coversClient(agent.profile.allowedClients, clientName) ? t('projectAgents.clients.allowed') : t('projectAgents.clients.notAllowed') }}</span>
                       <span v-if="clientUseCount(agent, clientName)">{{ t('projectAgents.clients.observed', { count: clientUseCount(agent, clientName) }) }}</span>
                       <span v-else-if="agent.observedClients?.includes(clientName)">{{ t('projectAgents.clients.observedAny') }}</span>
                       <span v-else>{{ t('projectAgents.clients.unreported') }}</span>

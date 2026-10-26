@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, stat, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readPreferenceEvidence } from '../src/conversations/preference-evidence.js';
@@ -33,11 +33,25 @@ async function inspect(records, adapter = codexPreferenceEvidence, id = session,
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
+// PR #356 CI: a Windows file ID above 2^53 rounds as a Number, so a replaced
+// transcript with the neighbouring ID read as the same file.
+test('the transcript identity is the exact file ID, never a rounded Number', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-native-preference-evidence-'));
+  try {
+    const file = join(directory, 'synthetic.jsonl');
+    await writeFile(file, `${JSON.stringify(codexHeader)}\n`);
+    const exact = await stat(file, { bigint: true });
+    assert.equal((await readPreferenceEvidence(file, session, codexPreferenceEvidence)).fileId, `${exact.dev}:${exact.ino}`);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+  // The rounding the exact identity avoids: two IDs one apart, one Number.
+  const id = 23080948092205717n;
+  assert.equal(String(Number(id)), String(Number(id - 1n)));
+});
+
 test('only a matching native tool call and complete result establish preference delivery', async () => {
   const proof = await inspect([codexHeader, codexCall('call-a'), codexResult('call-a', JSON.stringify(envelope(value)))]);
   assert.equal(proof.known, true);
   assert.equal(proof.frames.length, 1);
-  assert.equal(proof.frames[0].callId, 'call-a');
   assert.deepEqual(proof.frames[0].value, value);
   for (const records of [
     [codexHeader, codexResult('unpaired', JSON.stringify(envelope(value)))],
@@ -61,6 +75,19 @@ test('Code Mode must finish and expose the whole body; running, failed and trunc
     codexResult('exec-a', [{ type: 'input_text', text: 'Script completed\nOutput:\n' }, { type: 'input_text', text: body.slice(0, -20) }])])).frames.length, 0);
 });
 
+test('the chat dispatcher proves history only for a paired whitelisted target', async () => {
+  const page = { id: 'synthetic-conversation', events: [{ sequence: 1, role: 'user', kind: 'message', content: 'synthetic raw' }] };
+  for (const toolName of ['resume_agent_conversation', 'read_agent_conversation', 'unrelated_tool', 'fuli_call']) {
+    const call = codexCall('dispatch', 'mcp__fuli__fuli_call');
+    call.payload.arguments = JSON.stringify({ toolName, input: {} });
+    const proof = await inspect([codexHeader, call, codexResult('dispatch', JSON.stringify(envelope(page)))]);
+    assert.equal(proof.frames.length, ['resume_agent_conversation', 'read_agent_conversation'].includes(toolName) ? 1 : 0);
+  }
+  const call = codexCall('dispatch', 'mcp__fuli__fuli_call');
+  call.payload.arguments = '{incomplete';
+  assert.equal((await inspect([codexHeader, call, codexResult('dispatch', JSON.stringify(envelope(page)))])).frames.length, 0);
+});
+
 test('current Codex stores the namespaced Code Mode exec call as a bare custom tool name', async () => {
   const proof = await inspect([codexHeader,
     { type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'native-exec' } },
@@ -77,7 +104,8 @@ test('compaction discards prior proofs and unfinished, foreign or unknown native
   const reset = { type: 'compacted', payload: { window_id: 'next-window' } };
   assert.equal((await inspect([...base, reset])).frames.length, 0);
   const after = await inspect([...base, reset, codexCall('after'), codexResult('after', JSON.stringify(envelope(value)))]);
-  assert.deepEqual(after.frames.map(frame => frame.callId), ['after']);
+  assert.equal(after.frames.length, 1);
+  assert.ok(after.frames[0].offset >= after.since, 'only the record after the compaction');
   assert.equal((await inspect(base, codexPreferenceEvidence, 'foreign')).known, false);
   assert.equal((await inspect(base, codexPreferenceEvidence, session, '')).known, false);
   assert.equal((await inspect([{ type: 'unknown' }])).known, false);
@@ -105,7 +133,6 @@ ${text}
     attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit', content: ['ignored'] }, ...extra });
   const proof = await inspect([hook(JSON.stringify(value))], claudePreferenceEvidence);
   assert.equal(proof.frames.length, 1);
-  assert.equal(proof.frames[0].callId, 'hook-a');
   assert.deepEqual(proof.frames[0].value, value);
   // A preview of an oversized output, another event, another session, or text
   // that is not a complete entry is not delivery.
@@ -116,4 +143,26 @@ ${text}
   }
   const boundary = { sessionId: session, type: 'system', subtype: 'compact_boundary' };
   assert.equal((await inspect([hook(JSON.stringify(value)), boundary], claudePreferenceEvidence)).frames.length, 0);
+});
+
+// openai/codex d6817454 records a command hook's context as a developer message
+// with kind hooks.additional_context and harness command-hook provenance.
+test('a Codex command-hook developer record is model-facing context only with harness hook provenance', async () => {
+  const developer = (text, metadata) => ({ type: 'response_item', payload: { type: 'message', role: 'developer',
+    content: [{ type: 'input_text', text }], ...(metadata ? { internal_chat_message_metadata_passthrough: metadata } : {}) } });
+  const hookMetadata = { content_item_kinds: ['hooks.additional_context'],
+    content_item_metadata: [{ provenance: { type: 'harness', hook: true } }] };
+  const text = `Synthetic label\n${JSON.stringify(value)}`;
+  const proof = await inspect([codexHeader, developer(text, hookMetadata)]);
+  assert.equal(proof.frames.length, 1);
+  assert.deepEqual(proof.frames[0].value, value, 'a delta base like any recorded frame (rec#15 D-29.3)');
+  for (const record of [developer(text), developer(text, { ...hookMetadata, content_item_metadata: [{ provenance: { type: 'harness', hook: false } }] }),
+    { type: 'response_item', payload: { ...developer(text, hookMetadata).payload, role: 'user' } },
+    { type: 'response_item', payload: { ...developer(text, hookMetadata).payload,
+      content: [{ type: 'input_text', text }, { type: 'input_text', text: 'extra' }] } }]) {
+    assert.equal((await inspect([codexHeader, record])).frames.length, 0);
+  }
+  const compacted = await inspect([codexHeader, developer(text, hookMetadata), { type: 'compacted', payload: {} }]);
+  assert.equal(compacted.frames.length, 0);
+  assert.ok(compacted.since > 0);
 });

@@ -127,9 +127,10 @@ export async function syncConversationTranscript(application, input, sourceAppli
 
 // Looks for the handoff prompt after the guard's scan cursor, saving progress
 // in the guard: null once it is ready (its boundary found), otherwise why the
-// handoff stays pending. An entered handoff looks only before the native end
-// its entry saw (entryEnd), so the entered task's own turn after it can never
-// hide the prompt.
+// handoff stays pending. An entered handoff looks only before entryEnd, the
+// native EOF its entry hook measured after task entry returned (see
+// keepEnteredHandoff), so the entered task's own turn after it can never hide
+// the prompt.
 async function scanHandoffPrompt(guard, input, adapter) {
   for (let page = 0; page < TRANSCRIPT_PAGES_PER_HOOK; page++) {
     const state = guard.value;
@@ -190,9 +191,12 @@ async function finishEnteredHandoff(application, claim, input, adapter, guard, f
 // An entry whose capture window expired after its handoff began has still
 // entered its task. With the lock it holds, the hook records that task in the
 // guard for the next hook to finish the handoff (finishEnteredHandoff): as a
-// claim once the old tail was flushed, otherwise with the native end the entry
-// saw, after which everything is the entered task's. Only the entry's own
-// prompt is recorded, and only once; nothing else is changed.
+// claim once the old tail was flushed, otherwise with entryEnd, after which
+// everything is the entered task's. entryEnd is the verified native EOF read
+// here, after task entry returned and before the hook returns; it is not a
+// snapshot of what the expired capture had read. A prompt the host writes
+// only after its hook (Codex) lies after it. Only the entry's own prompt is
+// recorded, and only once; nothing else is changed.
 export async function keepEnteredHandoff(guard, input, adapter, context) {
   const state = guard?.value;
   const token = context?.taskContextToken ?? context?.task_context_token;

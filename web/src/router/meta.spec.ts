@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { setLocale } from '@/i18n'
+import { pageLayout } from '@/layouts/page-layout'
 import { legacyKnowledgeHashPath, router } from './index'
 import { routeMetaText, updateDocumentTitle } from './meta'
+
+const layoutOf = (path: string) => pageLayout(router.resolve(path))
 
 describe('localized route metadata', () => {
   beforeEach(() => {
@@ -32,11 +35,12 @@ describe('localized route metadata', () => {
     expect(router.getRoutes().filter(route => 'eyebrow' in route.meta).map(route => route.path)).toEqual([])
   })
 
-  it('puts the rebuilt pages on the shared work canvas and settings in the form column', () => {
-    expect(['/', '/project-agents', '/agents/space/agent', '/project-agents/schedules', '/project-agents/manage', '/project-agents/manage/space/agent']
-      .map(path => router.resolve(path).meta.layout))
-      .toEqual(['canvas', 'canvas', 'canvas', 'canvas', 'canvas', 'canvas'])
+  it('puts collections on the work canvas, single-column pages in the content column and settings in the form column', () => {
+    // rec#38: a profile, a detail page or a list of rows stays readable on a wide screen.
+    expect(['/', '/agents/space/agent', '/project-agents/manage/space/agent'].map(layoutOf)).toEqual(['column', 'column', 'column'])
+    expect(['/project-agents', '/project-agents/schedules', '/project-agents/manage'].map(layoutOf)).toEqual(['canvas', 'canvas', 'canvas'])
     expect(router.resolve('/settings').meta.layout).toBe('form')
+    expect(layoutOf('/settings/models')).toBe('form')
     // An Agent's profile and its 编排 page are detail pages; settings keeps a sticky save bar.
     expect(router.resolve('/agents/space/agent').meta.detail).toBe(true)
     expect(router.resolve('/project-agents/manage/space/agent').name).toBe('agent-management-detail')
@@ -46,40 +50,43 @@ describe('localized route metadata', () => {
     expect(router.resolve('/settings').meta.saveBar).toBe(true)
   })
 
-  it('puts 职业 and the specialist Agent workbench on the work canvas; the workbench is a detail page under the shell H1', () => {
+  it('puts 职业, the Jefa board and the Bole team on the work canvas, the known list workbenches in the content column and installed ones on the canvas', () => {
     expect(router.resolve('/project-agents/occupations').meta.layout).toBe('canvas')
     expect(router.resolve('/project-agents/occupations').meta.detail).toBeUndefined()
     const workbench = router.resolve('/employees/jefa')
     expect(workbench.name).toBe('employee-workbench')
-    expect(workbench.meta.layout).toBe('canvas')
+    expect(pageLayout(workbench)).toBe('canvas')
+    expect(['/employees/bole', '/employees/assistant', '/employees/tonborg'].map(layoutOf)).toEqual(['canvas', 'column', 'column'])
+    // An installed employee's workbench may be a board or a table: the canvas.
+    expect(layoutOf('/employees/synthetic-installed')).toBe('canvas')
     expect(workbench.meta.detail).toBe(true)
   })
 
-  it('puts the conversations on the work canvas, leaving only the shared report outside the D-03 layouts', () => {
-    expect(['/roundtables', '/roundtables/thread-1', '/roundtables/chat/room-1'].map(path => router.resolve(path).meta.layout))
-      .toEqual(['canvas', 'canvas', 'canvas'])
+  it('lists conversations on the work canvas and reads one in the content column, leaving only the shared report outside the D-03 layouts', () => {
+    expect(['/roundtables', '/roundtables/thread-1', '/roundtables/chat/room-1'].map(layoutOf)).toEqual(['canvas', 'column', 'column'])
     expect(router.getRoutes().filter(route => !route.redirect && !route.meta.layout).map(route => route.path)).toEqual(['/reports/jefa'])
   })
 
   it('puts the inbox, connections, projects, about and not-found pages on the D-03 layouts', () => {
-    expect(['/inbox', '/public-projects'].map(path => router.resolve(path).meta.layout)).toEqual(['canvas', 'canvas'])
-    expect(['/connections', '/about', '/no-such-page'].map(path => router.resolve(path).meta.layout)).toEqual(['form', 'form', 'form'])
+    expect(['/inbox', '/public-projects'].map(layoutOf)).toEqual(['canvas', 'column'])
+    expect(['/connections', '/about', '/no-such-page'].map(layoutOf)).toEqual(['form', 'form', 'form'])
     // The shared report opens outside the shell; it keeps its own header.
     expect(router.resolve('/reports/jefa').meta.layout).toBeUndefined()
   })
 
-  it('puts the memory pages (knowledge, preferences, taste, organize) on the work canvas', () => {
-    const paths = ['/knowledge', '/knowledge/personal/space/directory', '/knowledge/personal/space/graph/entity/item',
-      '/preferences', '/preferences/writing', '/organize']
-    expect(paths.map(path => router.resolve(path).meta.layout)).toEqual(paths.map(() => 'canvas'))
+  it('puts the knowledge tables, graph and organizer on the work canvas, and the preference and taste lists in the content column', () => {
+    const paths = ['/knowledge', '/knowledge/personal/space/directory', '/knowledge/personal/space/graph/entity/item', '/organize']
+    expect(paths.map(layoutOf)).toEqual(paths.map(() => 'canvas'))
+    expect(['/preferences', '/preferences/writing'].map(layoutOf)).toEqual(['column', 'column'])
   })
 
-  it('puts every personal project view (directory, graph, item, one project) on the work canvas', () => {
+  it('puts every personal project directory and graph on the work canvas, and one project overview in the content column', () => {
     const paths = ['/personal/space/projects/directory', '/personal/space/projects/graph/entity/item',
       '/personal/space/projects/project-1/graph', '/personal/space/projects/project-1/directory/entity/item']
     expect(paths.map(path => router.resolve(path).name))
       .toEqual(['personal-projects', 'personal-projects-item', 'personal-project', 'personal-project-item'])
-    expect(paths.map(path => router.resolve(path).meta.layout)).toEqual(paths.map(() => 'canvas'))
+    expect(paths.map(layoutOf)).toEqual(paths.map(() => 'canvas'))
+    expect(layoutOf('/personal/space/projects/project-1/overview')).toBe('column')
   })
 
   it('titles the taste page the same as its section tab', () => {

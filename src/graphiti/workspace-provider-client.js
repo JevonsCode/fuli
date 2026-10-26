@@ -60,6 +60,16 @@ export function createWorkspaceProvider(workspace, {
   };
 }
 
+// The configured provider a request names, or the only one when it names none.
+export function configuredWorkspace(workspaces, providerUrl) {
+  const requested = providerUrl
+    ? canonicalProviderUrl(providerUrl)
+    : (workspaces.size === 1 ? [...workspaces.keys()][0] : null);
+  const workspace = requested ? workspaces.get(requested) : null;
+  if (!workspace) throw new TypeError('Public project provider is not configured');
+  return { ...workspace, providerUrl: requested };
+}
+
 export function aggregatePublicCapabilities(workspaces, providerStatuses, projects) {
   const ready = new Set(providerStatuses
     .filter(({ status }) => status === 'ready')

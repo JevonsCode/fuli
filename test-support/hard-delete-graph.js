@@ -6,8 +6,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 // way the provider does. Like the provider, a delete holds the space's lock
 // from arrival to commit and an abort takes the same lock, so an abort waits
 // for a delete that still runs. It can lose its answer, hold a delete for real
-// time past the console's timeout, or let a request arrive late. Synthetic
-// IDs only; nothing is sent anywhere.
+// time past the console's timeout, or hold a delete before it arrives until a
+// test releases it. Synthetic IDs only; nothing is sent anywhere.
 
 export const PREVIEW_ID = 'a'.repeat(64);
 
@@ -15,9 +15,14 @@ export function syntheticGraph({ itemIds = ['item-2', 'item-1', 'fact-1'], previ
   deletedAt = '2026-10-22T01:02:03Z' } = {}) {
   const state = {
     deleted: false, calls: [], operations: new Map(),
+    // Each delete's provider side, so a test can wait until a held one is handled.
+    deletes: [],
     // ok | lost (commits, answer lost) | down (never arrives) | gone (410) |
     // refused (422) | held (holds the lock holdMs, commits after the client gave up)
-    answerDelete: 'ok', holdMs: 0, arriveAfterMs: 0, statusDown: false
+    answerDelete: 'ok', holdMs: 0, statusDown: false,
+    // Set to a promise to hold the next delete before it arrives; the test
+    // resolves it to let the delete reach the graph.
+    arriveWhen: null
   };
   let lock = Promise.resolve();
   const withLock = (work) => {
@@ -34,7 +39,7 @@ export function syntheticGraph({ itemIds = ['item-2', 'item-1', 'fact-1'], previ
   };
   // The provider's side of one delete, from arrival to its answer.
   const arrive = async (operationId) => {
-    if (state.arriveAfterMs) await delay(state.arriveAfterMs);
+    if (state.arriveWhen) await state.arriveWhen;
     return withLock(async () => {
       const known = state.operations.get(operationId);
       if (known?.state === 'aborted') return refuse(operationId, 409, 'hard_delete_aborted');
@@ -76,6 +81,7 @@ export function syntheticGraph({ itemIds = ['item-2', 'item-1', 'fact-1'], previ
     if (path.endsWith('/hard-delete')) {
       if (state.answerDelete === 'down') throw new Error('synthetic provider unreachable');
       const answered = arrive(payload.operation_id);
+      state.deletes.push(answered);
       if (state.answerDelete === 'lost') {
         await answered;
         throw new Error('synthetic timeout after the commit');

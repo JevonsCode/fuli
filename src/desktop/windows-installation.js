@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../native-runtime/windows-assets.js';
+import { fileIdentity } from '../system/file-identity.js';
 import { canonicalWindowsInstallPath, installationSha256, windowsInstallPathsOverlap } from './windows-installation-context.js';
 
 function powershell(script) {
@@ -41,7 +42,7 @@ export function readWindowsShortcut(path, sha256) {
 
 // Windows file IDs exceed 2^53, so identities are compared as exact bigints.
 const EXACT = { bigint: true };
-const sameInode = (a, b) => a.dev === b.dev && a.ino === b.ino;
+const sameInode = (a, b) => fileIdentity(a) === fileIdentity(b);
 const sameFile = (a, b) => sameInode(a, b) && a.size === b.size && a.mtimeNs === b.mtimeNs;
 
 export function trayInventory(source) {

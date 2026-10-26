@@ -6,7 +6,10 @@ import { roundCost } from './budget.js';
 // (requestId, attemptId) so a duplicate report of the same attempt is stored
 // once. Logical requests are distinct requestIds. Rows never hold prompt
 // text, model output or keys. The channel keeps independent model API usage
-// apart from current-session usage.
+// apart from current-session usage. endpoint is the configured endpoint as
+// config.js validated it; observed_tag_digest is the build a local Ollama
+// listed for the requested tag after a valid answer (rec#10 D-32): a catalog
+// observation for the settings page, never proof of what served the answer.
 //
 // Before an attempt goes out it reserves its token (and, when priced, cost)
 // ceiling: one IMMEDIATE transaction checks the role's window and inserts the
@@ -50,7 +53,14 @@ export const MODEL_USAGE_FORMAT = sqliteFormat({
       CREATE TRIGGER IF NOT EXISTS model_attempts_no_update BEFORE UPDATE ON model_attempts
         BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;
       CREATE TRIGGER IF NOT EXISTS model_attempts_no_delete BEFORE DELETE ON model_attempts
-        BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;`
+        BEGIN SELECT RAISE(ABORT, 'model attempts are immutable'); END;`,
+  migrations: [{
+    // Earlier attempts keep both NULL: no endpoint, so they never match a
+    // configured endpoint again, and nothing observed.
+    id: 'model-usage/2-local-build-observation', to: 2, kind: 'add-columns', table: 'model_attempts',
+    summary: 'the configured endpoint of each attempt and the local model build listed after a valid answer',
+    columns: { endpoint: 'TEXT', observed_tag_digest: 'TEXT' }
+  }]
 });
 
 export class ModelUsageLedger {
@@ -68,14 +78,15 @@ export class ModelUsageLedger {
   // True when stored, false when this (requestId, attemptId) already exists.
   record(attempt) {
     const { usage } = attempt;
-    const result = this.db.prepare(`INSERT INTO model_attempts VALUES(${Array(30).fill('?').join(',')})
+    const result = this.db.prepare(`INSERT INTO model_attempts VALUES(${Array(32).fill('?').join(',')})
       ON CONFLICT(request_id, attempt_id) DO NOTHING`).run(
       attempt.requestId, attempt.attemptId, attempt.attemptNumber, attempt.purpose, attempt.channel,
       attempt.role, attempt.operation, attempt.personalSpaceId, attempt.personalProjectId,
       attempt.connectionId, attempt.protocol, attempt.endpointHost, attempt.requestedModel, attempt.actualModel,
       attempt.outputMode, attempt.startedAt, attempt.durationMs, attempt.outcome, attempt.failureClass, attempt.failureReason,
       usage.inputTokens, usage.outputTokens, usage.totalTokens, usage.cachedInputTokens, usage.cacheWriteInputTokens,
-      usage.reasoningTokens, usage.definition, attempt.budgetCeilingTokens, attempt.estimatedCost, attempt.costCurrency);
+      usage.reasoningTokens, usage.definition, attempt.budgetCeilingTokens, attempt.estimatedCost, attempt.costCurrency,
+      attempt.endpoint ?? null, attempt.observedTagDigest ?? null);
     return result.changes === 1;
   }
 
@@ -162,6 +173,22 @@ export class ModelUsageLedger {
       estimatedCost: row.cost_currency ? { amount: row.cost === null ? null : roundCost(row.cost), currency: row.cost_currency,
         basis: 'estimate', unknownAttempts: row.cost_unknown } : null
     }));
+  }
+
+  // The latest answer of a role from one connection (its id, protocol and
+  // endpoint) and model on the model API: { observedTagDigest, completedAt },
+  // or null when there is none. duration_ms is measured when the answer was
+  // validated, before any local build read, so completedAt is when the answer
+  // completed. A row without an endpoint (written before it was recorded)
+  // never matches.
+  lastServed({ role, connectionId, protocol, endpoint, requestedModel }) {
+    const row = this.db.prepare(`SELECT observed_tag_digest, started_at, duration_ms FROM model_attempts
+      WHERE role = ? AND channel = 'model_api' AND outcome = 'succeeded' AND connection_id = ? AND protocol = ?
+        AND endpoint = ? AND requested_model = ?
+      ORDER BY julianday(started_at) * 86400000 + duration_ms DESC, rowid DESC LIMIT 1`)
+      .get(role, connectionId, protocol, endpoint, requestedModel);
+    return row ? { observedTagDigest: row.observed_tag_digest,
+      completedAt: new Date(Date.parse(row.started_at) + row.duration_ms).toISOString() } : null;
   }
 
   // Nested calls join the open transaction.

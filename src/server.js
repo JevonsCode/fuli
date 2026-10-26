@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
 import { handleApiRequest } from './http/api-router.js';
 import { mapHttpError } from './http/error-mapping.js';
-import { localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
+import { isCrossSiteNavigation, localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
 import { sendJson } from './http/response.js';
 import { closeTaskEventStreams } from './http/task-events-api-router.js';
 import { serveStatic } from './http/static-handler.js';
@@ -32,10 +32,11 @@ import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
 import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
+import { knowledgeOwnerReads as createKnowledgeOwnerReads } from './knowledge-owner-reads/console-port.js';
 import { reviewUndoConsole } from './judgment/review-undo.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
 import { createModelRoleSettings } from './model-backends/role-settings.js';
-import { createReviewGate } from './judgment/review-gate.js';
+import { latestEvaluation } from './model-backends/evaluation-record.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -92,22 +93,28 @@ export async function createServer(options = {}) {
   // A person's 「彻底删除」 of one knowledge item (rec#5 C9), console only.
   const knowledgeHardDelete = options.knowledgeHardDelete ?? (localOptions.runtimeConfigPath
     ? createKnowledgeHardDelete(dirname(localOptions.runtimeConfigPath),
-      { personalSpaceId: () => application.config?.personal?.spaceId ?? null }) : null);
+      { personalSpaceId: () => application.config?.personal?.spaceId ?? null,
+        agentSnapshots: application.agentSnapshots,
+        reconcileSubmissions: () => application.reconcilePersonalSubmissions({}, knowledgeOwnerReads) }) : null);
   // A person's change of where knowledge applies (rec#20, rec#11 D-22), console only.
   const knowledgeScope = options.knowledgeScope ?? (localOptions.runtimeConfigPath
     ? createKnowledgeScopeConsole(dirname(localOptions.runtimeConfigPath)) : null);
+  // The person's full knowledge reads, every FLA's included (console only).
+  const knowledgeOwnerReads = options.knowledgeOwnerReads ?? (localOptions.runtimeConfigPath
+    ? createKnowledgeOwnerReads(dirname(localOptions.runtimeConfigPath)) : null);
   // The person's undo of Tonborg's automatic knowledge review (rec#10 D-24), console only.
   const judgmentUndo = options.judgmentUndo ?? (localOptions.runtimeConfigPath
     ? reviewUndoConsole(dirname(localOptions.runtimeConfigPath)) : null);
   // The person's own tag changes and tag governance (rec#11 D-07 part 2), console only.
   const knowledgeTags = options.knowledgeTags ?? (localOptions.runtimeConfigPath
     ? createKnowledgeTagsConsole(dirname(localOptions.runtimeConfigPath)) : null);
-  // Saves a built-in Agent's model settings; reached only by the loopback route.
+  // Saves a built-in Agent's model settings, recording what changed; reached only by the loopback route.
   const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
-    ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath) : null);
-  // The D-24 review gate registry as the model settings page shows it (read on every request).
-  const reviewGate = options.reviewGate ?? (localOptions.runtimeConfigPath
-    ? createReviewGate(dirname(localOptions.runtimeConfigPath)) : null);
+    ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath,
+      { history: application.modelSettingsHistory }) : null);
+  // The latest local evaluation of a role's model, as the model settings page shows it (rec#10 D-36.6).
+  const readModelEvaluation = options.readModelEvaluation ?? (localOptions.runtimeConfigPath
+    ? key => latestEvaluation(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelEvaluationsPath, key) : null);
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
   // is settled from its recorded operation, and graph deletions the record
   // lost are taken in again; what the graph cannot answer yet stays open for
@@ -192,9 +199,10 @@ export async function createServer(options = {}) {
       dataFormatMigrations,
       knowledgeHardDelete,
       knowledgeScope,
+      knowledgeOwnerReads,
       knowledgeTags,
       modelRoleSettings,
-      reviewGate,
+      readModelEvaluation,
       judgmentUndo,
       authority,
       lanAuthorities: allowedLanAuthorities,
@@ -285,9 +293,10 @@ async function handleRequest({
   dataFormatMigrations,
   knowledgeHardDelete,
   knowledgeScope,
+  knowledgeOwnerReads,
   knowledgeTags,
   modelRoleSettings,
-  reviewGate,
+  readModelEvaluation,
   judgmentUndo,
   authority,
   lanAuthorities,
@@ -300,6 +309,11 @@ async function handleRequest({
     lanAuthorities,
     lanAccessToken
   })) return;
+  // A page opened from another site's link reaches the static console only.
+  if (isCrossSiteNavigation(request)) {
+    serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
+    return;
+  }
   if (await handleApiRequest({
     request,
     response,
@@ -312,9 +326,10 @@ async function handleRequest({
     dataFormatMigrations,
     knowledgeHardDelete,
     knowledgeScope,
+    knowledgeOwnerReads,
     knowledgeTags,
     modelRoleSettings,
-    reviewGate,
+    readModelEvaluation,
     judgmentUndo
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);

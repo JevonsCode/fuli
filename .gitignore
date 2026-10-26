@@ -114,3 +114,9 @@ scratch/
 # Generated Python packaging output
 graph-provider/build/
 *.py[cod]
+
+# rec#7: the Windows helper is built only by GitHub Actions (.github/actions/win-helper)
+native/win32/fuli-win-helper.exe
+native/win32/build/
+native/win32/fuli-win-helper/bin/
+native/win32/fuli-win-helper/obj/
