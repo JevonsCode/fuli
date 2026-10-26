@@ -1,7 +1,8 @@
 import { receiptText } from '../agents/identity-receipt.js';
 import { choiceNumber, parseFlaMention } from './fla-mention.js';
-import { flaCandidates, flaChoice, namedAtOpening, namedByWord, narrowedByPartial, rankCandidates, unavailableReason }
-  from './fla-picker.js';
+import { flaCandidates, flaChoice, namedAtOpening, namedByWord, narrowedByPartial, rankCandidates, typedWord,
+  unavailableReason } from './fla-picker.js';
+import { resolveTaskAgentMention } from './project-agent-mention.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects } from './task-entry-project-mention.js';
 import { sessionMarkers, sessionTaskContext } from './task-entry-standing-owner.js';
@@ -29,6 +30,8 @@ const BINDING = /^fla_binding:(\S+) (\S+) (\S+) (\S+)(?: (.+))?$/su;
 const CHOICE = /^fla_choice:(\S+) (\S+) (\S+) (\S+)$/u;
 const NONE = '-';
 const MARKER_LIMIT = 2048;
+// The hint repeats at most this much of what was typed.
+const HINT_WORD_LIMIT = 32;
 // Markers travel with the entry under a symbol: JSON never serializes it, so
 // no client receives them; beginTaskFromPreferences stores them on the task.
 export const FLA_ROUTE = Symbol('fla_route');
@@ -66,11 +69,12 @@ export async function namedFlaRequest(application, resolution, input, readSessio
   // Internal Agent activity (a roundtable wake) neither starts nor ends one.
   if (hostInternalActivity(application, input)) return previous ? { state: 'carried', previous } : null;
   if (mention?.release) return { state: 'released', previous };
-  // A hand-off's `@{agentId}` names its Agent; another one ends the binding.
+  // A hand-off's `@{agentId}` names its Agent and routes as before; reaching
+  // another Agent ends the binding, a failed one keeps it.
   if (mention?.handoff) {
     if (!previous) return null;
     return mention.handoff === previous.agentId ? { state: 'continue', target: previous, origin: 'session', previous }
-      : { state: 'released', previous, quiet: true };
+      : { state: 'handoff', agentId: mention.handoff, previous };
   }
   const number = mention ? mention.choice ?? null : stored.choices.length ? choiceNumber(input.taskPrompt) : null;
   const picked = number === null ? null : stored.choices[number - 1];
@@ -93,11 +97,17 @@ export async function namedFlaRequest(application, resolution, input, readSessio
       if (request) return { ...request, ...asked };
       // D-68: a bare `@word` that only starts a name stays an ordinary
       // prompt; at most it says how to choose one.
-      const word = mention.query.split(/\s/u)[0];
+      const word = [...typedWord(mention.query)].slice(0, HINT_WORD_LIMIT).join('');
       if ([...word].length >= 2 && narrowedByPartial(word, open(ranked, input)).close) hint = word;
     }
   }
   if (!previous) return hint ? { state: 'hint', query: hint } : null;
+  // While bound, an `@word` that is none of the person's FLAs but that the
+  // folder's own `@name` rule resolves (a project Agent, one of FULI's roles)
+  // goes there this turn; one that resolves nowhere stays with the bound FLA.
+  if (mention && !mention.explicit && await resolvesInFolder(application, resolution, input)) {
+    return { state: 'carried', previous };
+  }
   // An explicit argument of the caller for another Agent or project decides
   // this call; the binding is kept.
   if ((input.projectAgentId && input.projectAgentId !== previous.agentId)
@@ -142,10 +152,16 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
   if (request.state === 'hint') {
     return { view: { status: 'hint', hint: `想找 FLA？用 #FLA ${request.query} 选择` }, notice: null, markers: [] };
   }
+  if (request.state === 'handoff') {
+    const reached = selection?.status === 'ready' && [selection.agent?.agentId, selection.requested_agent_id]
+      .includes(request.agentId);
+    if (!reached) return { view: null, notice: null, markers: kept };
+    return { view: null, notice: `已结束本会话与 ${request.previous.name ?? 'FLA'} 的绑定`, markers: [] };
+  }
   if (request.state === 'released') {
-    const notice = request.previous ? `已结束本会话与 ${request.previous.name ?? 'FLA'} 的绑定`
-      + (request.quiet ? '' : '，回到常规项目归属') : '本会话没有绑定的 FLA';
-    return { view: request.quiet ? null : { status: 'released', notice }, notice, markers: [] };
+    const notice = request.previous ? `已结束本会话与 ${request.previous.name ?? 'FLA'} 的绑定，回到常规项目归属`
+      : '本会话没有绑定的 FLA';
+    return { view: { status: 'released', notice }, notice, markers: [] };
   }
   // No FLA works this turn; the next ordinary turn continues where the session was.
   const asked = [...kept, ...sessionMarkers(request.home)];
@@ -203,10 +219,13 @@ function explicitRequest(query, ranked, resolution, input) {
 // A bare `@word` continues only an exact name: the whole display name, or one
 // of its words when that is exactly one FLA's (D-68). Anything else is null:
 // an ordinary prompt.
+// Only a whole name may answer with a refusal; a name word counts only for
+// FLAs that can continue now (D-68a), so a dismissed "Data Wu" leaves
+// `@Data 注解报错` an ordinary prompt.
 function bareRequest(query, ranked, resolution, input) {
   const exact = exactRequest(namedAtOpening(query, ranked), resolution, input);
   if (exact) return exact;
-  const worded = namedByWord(query, ranked);
+  const worded = namedByWord(query, open(ranked, input));
   return new Set(worded.map(item => item.agentId)).size === 1 ? exactRequest(worded, resolution, input) : null;
 }
 
@@ -246,6 +265,17 @@ function source(input) {
 function target(candidate) {
   return { agentId: candidate.agentId, projectId: candidate.projectId ?? null, name: candidate.name,
     project: candidate.project };
+}
+
+// Whether the folder's existing `@name` rule (project-agent-mention.js) finds
+// an Agent for this prompt, in the folder's project or, outside one, the space.
+async function resolvesInFolder(application, resolution, input) {
+  try {
+    return Boolean((await resolveTaskAgentMention(application, resolution.personalProjectId ?? null,
+      { taskPrompt: input.taskPrompt }))?.agentId);
+  } catch {
+    return false;
+  }
 }
 
 async function personCandidates(application) {

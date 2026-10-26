@@ -24,6 +24,8 @@ const NOT_PICKABLE_TYPES = new Set(['hr', 'temporary']);
 const NAME_END = /^(?:$|[\s,，:：;；!?！？.。、(（])/u;
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const PARTIAL_LIMIT = 64;
+const WORD_MINIMUM = 2;
+const ASCII = /^[\x21-\x7e]+$/u;
 const FUZZY = 2;
 
 // Candidates from a roster read of the whole personal space and its
@@ -83,10 +85,16 @@ export function namedAtOpening(query, candidates) {
 }
 
 // The candidates one of whose name's words is exactly the query's first word
-// (`@Jamie` for "Jamie Ash").
+// (`@Jamie` for "Jamie Ash"; rec#11 D-68a). The word has at least two
+// characters, and a Latin one is matched as written: `@test` is an ordinary
+// prompt even beside "Test Bot". A word that is also a common term, written
+// as the name writes it (`@Mock` for "Mock Li"), still matches.
 export function namedByWord(query, candidates) {
-  const word = firstWord(query);
-  return word ? candidates.filter(item => identityKey(item.name).split(' ').includes(word)) : [];
+  const word = typedWord(query);
+  if ([...word].length < WORD_MINIMUM) return [];
+  const words = name => ASCII.test(word) ? name.normalize('NFKC').split(/\s+/u) : identityKey(name).split(' ');
+  const key = ASCII.test(word) ? word : identityKey(word);
+  return candidates.filter(item => words(item.name).includes(key));
 }
 
 // The candidates a partial name (the query's first word) fits, closest fit
@@ -94,7 +102,7 @@ export function namedByWord(query, candidates) {
 // only when there is none, names whose letters it follows in order (`@jsh`
 // fits "Jamie Ash"), which only narrow a picker. Ranking order within a fit.
 export function narrowedByPartial(query, candidates) {
-  const partial = firstWord(query);
+  const partial = identityKey(typedWord(query));
   const fits = partial ? candidates.map(item => ({ item, fit: partialFit(partial, identityKey(item.name)) }))
     .filter(({ fit }) => fit !== null) : [];
   const close = fits.some(({ fit }) => fit < FUZZY);
@@ -111,9 +119,10 @@ function partialFit(partial, name) {
   return at === partial.length ? FUZZY : null;
 }
 
-// The query's first word, cut where punctuation or the script changes.
-function firstWord(query) {
-  const characters = [...identityKey(query).split(' ')[0]];
+// The query's first word as typed (compatibility forms folded, case kept),
+// cut where punctuation or the script changes, at most PARTIAL_LIMIT long.
+export function typedWord(query) {
+  const characters = [...String(query).normalize('NFKC').trimStart().split(/\s/u)[0]];
   const end = characters.findIndex((character, index) => index > 0
     && (NAME_END.test(character) || CJK.test(character) !== CJK.test(characters[index - 1])));
   return characters.slice(0, end < 0 ? PARTIAL_LIMIT : Math.min(end, PARTIAL_LIMIT)).join('');

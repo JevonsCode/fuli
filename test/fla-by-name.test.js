@@ -163,9 +163,11 @@ test('#FLA, case-insensitive names, Chinese names and the longest name match the
   const jamies = [ADA, JAMIE, fla('jamie-s', 'Jamie', '运维', 'project-c')];
   assert.deepEqual(owner(await fixture({ roster: jamies }).run('@Jamie Ash继续')), ['project-b', 'jamie']);
   // Two Chinese runs never split: "小林子" is not "小林".
-  const other = await fixture({ roster }).run('@小林子 帮我看下');
-  assert.equal(other.context.project_resolution.basis, 'repository_root');
-  assert.equal(other.fla, undefined);
+  for (const prompt of ['@小林子 帮我看下', '@小林继续写周报']) {
+    const other = await fixture({ roster }).run(prompt);
+    assert.equal(other.context.project_resolution.basis, 'repository_root', prompt);
+    assert.equal(other.fla, undefined, prompt);
+  }
 });
 
 test('a bare @FLA offers the person\'s FLAs as a native choice, recent first, without loading any of them', async () => {
@@ -201,7 +203,10 @@ test('#FLA with part of a name narrows the choice, and a single close fit contin
 
 test('a bare @word continues only an exact name or name word of exactly one FLA (D-68)', async () => {
   assert.deepEqual(owner(await fixture().run('@Jamie 继续')), ['project-b', 'jamie']);
-  assert.deepEqual(owner(await fixture().run('@ash 继续')), ['project-b', 'jamie']);
+  assert.deepEqual(owner(await fixture().run('@Ash 继续')), ['project-b', 'jamie']);
+  // A name word is matched as written (D-68a); a whole name is not.
+  assert.equal((await fixture().run('@ash 继续')).context.project_resolution.basis, 'repository_root');
+  assert.deepEqual(owner(await fixture().run('@jamie ash 继续')), ['project-b', 'jamie']);
   // "Jamie" is a word of two FLAs: no guess, no picker, ordinary routing.
   const two = await fixture({ roster: [ADA, JAMIE, fla('jamie-l', 'Jamie Lee', '测试', 'project-c')] }).run('@Jamie 继续');
   assert.equal(two.context.project_resolution.basis, 'repository_root');
@@ -211,6 +216,35 @@ test('a bare @word continues only an exact name or name word of exactly one FLA 
   assert.equal(partial.context.project_resolution.basis, 'repository_root');
   assert.equal(partial.human_interaction, undefined);
   assert.deepEqual(partial.fla, { status: 'hint', hint: '想找 FLA？用 #FLA Ja 选择' });
+});
+
+test('a name word needs two characters, a Latin one as written, and an FLA that can continue (D-68a)', async () => {
+  const ordinary = async (roster, prompt) => {
+    const { run, tasks } = fixture({ roster: [ADA, ...roster] });
+    const entry = await run(prompt);
+    assert.equal(entry.context.project_resolution.basis, 'repository_root', prompt);
+    assert.notEqual(entry.fla?.status, 'unavailable', prompt);
+    assert.ok(!tasks.some(task => task.agentAssignment?.match_basis?.some(item => item.startsWith('fla_'))), prompt);
+  };
+  await ordinary([fla('jw', 'J Wu', '开发', 'project-b')], '@j 你好');
+  await ordinary([fla('bot', 'Test Bot', '测试', 'project-b')], '@test 跑一下');
+  await ordinary([fla('data', 'Data Wu', '开发', 'project-b', { status: 'archived' })], '@Data 注解报错');
+  // As written, the word still names its FLA; a whole name may still say why it cannot.
+  assert.deepEqual(owner(await fixture({ roster: [ADA, fla('data', 'Data Wu', '开发', 'project-b')] })
+    .run('@Data 继续')), ['project-b', 'data']);
+  const dismissed = await fixture({ roster: [ADA, fla('data', 'Data Wu', '开发', 'project-b', { status: 'archived' })] })
+    .run('@Data Wu 继续');
+  assert.equal(dismissed.fla.reason, 'dismissed');
+});
+
+test('accepted residual: a common word written exactly as an FLA\'s name word names that FLA', async () => {
+  assert.deepEqual(owner(await fixture({ roster: [ADA, fla('mock', 'Mock Li', '测试', 'project-b')] })
+    .run('@Mock 怎么用')), ['project-b', 'mock']);
+});
+
+test('the hint repeats only the typed word, never the rest of the prompt', async () => {
+  const entry = await fixture().run(`@Ja，${'很长的说明'.repeat(300)}`);
+  assert.deepEqual(entry.fla, { status: 'hint', hint: '想找 FLA？用 #FLA Ja 选择' });
 });
 
 test('ordinary prompts that start with @ never bind the session (review of #385)', async () => {
@@ -286,10 +320,12 @@ test('the binding holds for later turns, in hooks and MCP alike, until another F
   assert.deepEqual(owner(await hook('继续')), ['project-a', 'ada']);
 });
 
-test('while bound, an @word that is no FLA stays with the bound FLA', async () => {
-  const { run } = fixture();
+test('while bound, an @word the folder resolves goes there this turn; one that resolves nowhere stays bound', async () => {
+  const jefa = fla('employee.jefa', 'Jefa', '项目经理', 'project-a');
+  const { run } = fixture({ roster: [ADA, JAMIE, JADE, jefa] });
   await run('@Jamie Ash 继续');
   assert.deepEqual(owner(await run('@src 里的代码有问题')), ['project-b', 'jamie']);
+  assert.deepEqual(owner(await run('@Jefa 看下进度')), ['project-a', 'employee.jefa']);
   assert.deepEqual(owner(await run('继续')), ['project-b', 'jamie']);
 });
 
@@ -301,6 +337,16 @@ test('a hand-off\'s @{agentId} goes to that Agent and ends the binding; the boun
   assert.deepEqual(owner(handoff), ['project-a', 'ada']);
   assert.match(handoff.agent_receipt.markdown, /已结束本会话与 Jamie Ash 的绑定/);
   assert.deepEqual(owner(await run('继续')), ['project-a', 'ada']);
+});
+
+test('a hand-off that reaches nobody keeps the binding', async () => {
+  const { run } = fixture();
+  await run('@Jamie Ash 继续');
+  // Jade works in project-c, outside this folder's scope.
+  const failed = await run('@{jade} 请接手');
+  assert.equal(failed.context.project_agent_id, null);
+  assert.doesNotMatch(failed.agent_receipt.markdown, /已结束/);
+  assert.deepEqual(owner(await run('继续')), ['project-b', 'jamie']);
 });
 
 test('a roundtable wake in a bound session carries the binding unchanged', async () => {
