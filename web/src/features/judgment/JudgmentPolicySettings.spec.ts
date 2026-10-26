@@ -14,7 +14,7 @@ describe('JudgmentPolicySettings', () => {
     getJson.mockReset().mockResolvedValue({ mode: 'manual', quality: 'quality', client: 'codex', revision: 0, globalRevision: 0, inherited: false, personalProjectId: null })
   })
 
-  it('passes only projects in the active personal space to the policy control', async () => {
+  it('sets only the active space\'s default; projects get their own setting elsewhere', async () => {
     const store = useConsoleStore()
     store.state = {
       mode: 'connected',
@@ -22,13 +22,13 @@ describe('JudgmentPolicySettings', () => {
       personalSpaces: [{ id: 'space-a', name: '我' }, { id: 'space-b', name: 'Other' }],
       personalProjects: [
         { project_id: 'project-a', personal_space_id: 'space-a', profile: { name: '验收项目', sources: [], boundaries: [] } },
-        { project_id: 'project-b', personal_space_id: 'space-b', profile: { name: '另一个项目', sources: [], boundaries: [] } },
       ],
       projects: [], subscriptions: [],
     }
     const wrapper = mount(JudgmentPolicySettings)
     await flushPromises()
-    expect(wrapper.get('[data-select="judgment-project"]').text()).toContain('验收项目')
-    expect(wrapper.get('[data-select="judgment-project"]').text()).not.toContain('另一个项目')
+    expect(getJson).toHaveBeenCalledWith('/api/judgment/policy?personalSpaceId=space-a')
+    expect(wrapper.find('[data-select="judgment-project"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('验收项目')
   })
 })

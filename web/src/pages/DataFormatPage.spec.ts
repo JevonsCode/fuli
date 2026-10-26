@@ -13,9 +13,9 @@ const DIGEST = 'a'.repeat(64)
 const plan = (digest = DIGEST) => ({
   digest,
   stores: [{
-    label: 'task-schedules.sqlite', store: 'task-schedules', kind: 'sqlite', action: 'apply', automatic: [],
-    step: { id: 'task-schedules/3-run-recovery', summary: 'recoverable claims', kind: 'backfill', fromVersion: 2,
-      toVersion: 3, count: 12, sampleIds: ['schedule-alpha-0001#1', 's2#2'], scopeDigest: 'b'.repeat(64) },
+    label: 'agent-apps/registry.sqlite', store: 'agent-apps', kind: 'sqlite', action: 'apply', automatic: [],
+    step: { id: 'agent-apps/7-identity-keys', summary: 'identity keys', kind: 'backfill', fromVersion: 6,
+      toVersion: 7, count: 12, sampleIds: ['schedule-alpha-0001#1', 's2#2'], scopeDigest: 'b'.repeat(64) },
     undo: 'available', digest: 'c'.repeat(64),
   }, {
     label: 'graph (personal)', store: 'graph', kind: 'neo4j', action: 'apply', automatic: [],
@@ -84,7 +84,7 @@ describe('DataFormatPage', () => {
     expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
     api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [{ label: 'graph (personal)',
       status: 'applied', migrationId: 'graph/9-group-id-separators' }],
-    pruned: [{ kind: 'pruned', store: 'task-schedules' }, { kind: 'prune_unverified', store: 'graph' }] })
+    pruned: [{ kind: 'pruned', store: 'agent-apps' }, { kind: 'prune_unverified', store: 'graph' }] })
     await wrapper.get('#data-format-reviewed').trigger('click')
     await wrapper.get('[data-apply]').trigger('click')
     await flushPromises()
@@ -120,8 +120,8 @@ describe('DataFormatPage', () => {
     const wrapper = await mountPage()
     const cards = wrapper.findAll('[data-store-plan]')
     expect(cards).toHaveLength(2)
-    expect(cards[0].text()).toContain('task-schedules/3-run-recovery')
-    expect(cards[0].text()).toContain('2 → 3')
+    expect(cards[0].text()).toContain('agent-apps/7-identity-keys')
+    expect(cards[0].text()).toContain('6 → 7')
     expect(cards[0].text()).toContain('12 条')
     expect(cards[0].text()).toContain('另 10 条')
     expect(cards[0].find('[title="schedule-alpha-0001#1"]').exists()).toBe(true)
@@ -135,14 +135,14 @@ describe('DataFormatPage', () => {
     expect(apply.attributes('disabled')).toBeUndefined()
 
     api.postJson.mockResolvedValue({ status: 'applied', skipped: [], results: [
-      { label: 'task-schedules.sqlite', status: 'applied', migrationId: 'task-schedules/3-run-recovery', count: 12 },
+      { label: 'agent-apps/registry.sqlite', status: 'applied', migrationId: 'agent-apps/7-identity-keys', count: 12 },
       { label: 'graph (personal)', status: 'already_applied', migrationId: 'graph/9-group-id-separators' }] })
     api.getJson.mockResolvedValue({ digest: null, stores: [], blocked: [], undoable: [] })
     await apply.trigger('click')
     await flushPromises()
 
     expect(api.postJson).toHaveBeenCalledWith('/api/data-format/apply', { digest: DIGEST })
-    expect(wrapper.text()).toContain('已应用 task-schedules/3-run-recovery')
+    expect(wrapper.text()).toContain('已应用 agent-apps/7-identity-keys')
     expect(wrapper.text()).toContain('已由另一次确认应用 graph/9-group-id-separators')
     expect(wrapper.text()).toContain('没有等待确认的数据格式迁移')
   })
@@ -159,6 +159,66 @@ describe('DataFormatPage', () => {
     expect(wrapper.text()).toContain('计划在你确认后有了变化，没有做任何修改')
     expect(wrapper.get('[data-plan-digest]').attributes('title')).toBe('f'.repeat(64))
     expect(wrapper.get('[data-apply]').attributes('disabled')).toBeDefined()
+  })
+
+  it('checks an unverified prune with a button instead of a command', async () => {
+    const wrapper = await mountPage()
+    api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [],
+      pruned: [{ kind: 'prune_unverified', store: 'graph' }] })
+    await wrapper.get('#data-format-reviewed').trigger('click')
+    await wrapper.get('[data-apply]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-prune-unverified]').text()).not.toMatch(/fuli |终端/)
+
+    api.postJson.mockResolvedValueOnce({ pruned: [{ kind: 'pruned', store: 'graph' }, { kind: 'pruned', store: 'graph' }] })
+    await wrapper.get('[data-prune-check]').trigger('click')
+    await flushPromises()
+    expect(api.postJson).toHaveBeenLastCalledWith('/api/data-format/prune', {})
+    expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
+    expect(wrapper.get('[data-prune-checked]').text()).toContain('共清理 2 份')
+  })
+
+  it('restores a whole store only after the person reads what is lost, and follows FULI through its restart', async () => {
+    vi.useFakeTimers()
+    try {
+      const wrapper = await mountPage()
+      expect(wrapper.text()).not.toMatch(/fuli migrate|终端/)
+      api.getJson.mockResolvedValueOnce({ restore: null, stores: [{ label: 'task-schedules.sqlite', store: 'task-schedules',
+        kind: 'sqlite', backups: [{ ref: 'format-backups/b1', version: 2, takenAt: '2026-10-01T08:00:00.000Z' }] }] })
+      await wrapper.get('[data-restore-open]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-restore-backup] button').trigger('click')
+      api.getJson.mockResolvedValueOnce({ impact: { store: 'task-schedules', backupRef: 'format-backups/b1',
+        takenAt: '2026-10-01T08:00:00.000Z', currentVersion: 3, backupVersion: 2, currentDigest: 'digest-now',
+        tables: [{ table: 'task_schedule_runs', current: 9, backup: 2 }], laterMigrations: [] } })
+      await wrapper.get('[data-restore-describe]').trigger('click')
+      await flushPromises()
+      expect(api.getJson).toHaveBeenLastCalledWith('/api/data-format/restore?label=task-schedules.sqlite&backup=format-backups%2Fb1')
+      expect(wrapper.get('[data-restore-impact]').text()).toContain('task_schedule_runs：现在 9 行，备份里 2 行')
+      expect(wrapper.get('[data-restore-confirm]').attributes('disabled')).toBeDefined()
+
+      await wrapper.get('#store-restore-understood').trigger('click')
+      api.postJson.mockResolvedValueOnce({ id: 'r1', label: 'task-schedules.sqlite', backupRef: 'format-backups/b1',
+        status: 'stopping', safetyBackupRef: null, started: null, error: null })
+      await wrapper.get('[data-restore-confirm]').trigger('click')
+      await flushPromises()
+      expect(api.postJson).toHaveBeenLastCalledWith('/api/data-format/restore',
+        { label: 'task-schedules.sqlite', backupRef: 'format-backups/b1', currentDigest: 'digest-now' })
+      expect(wrapper.text()).toContain('正在停止 FULI 并恢复「task-schedules.sqlite」')
+
+      // FULI is down: the read fails, and the page keeps asking.
+      api.getJson.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      await vi.advanceTimersByTimeAsync(2000)
+      api.getJson.mockResolvedValueOnce({ restore: { id: 'r1', label: 'task-schedules.sqlite', backupRef: 'format-backups/b1',
+        status: 'restored', safetyBackupRef: 'format-backups/safety', started: true, error: null } })
+      api.getJson.mockResolvedValue(plan())
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(wrapper.get('[data-restore-outcome="restored"]').text())
+        .toContain('已用备份 format-backups/b1 恢复「task-schedules.sqlite」。恢复前的存储另存为 format-backups/safety。')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('undoes one migration only after a second, explicit confirmation', async () => {

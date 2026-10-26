@@ -564,7 +564,7 @@ Core mechanisms covered by implementation and automated tests include:
 New in 0.20 (public preview `0.20.0-beta`, see the [release notes](docs/releases/0.20.0.md)):
 
 - **Projects and people**: unassigned conversations go to Astro, Jefa triages them, and when a topic keeps coming back (three conversations over at least two days) Astro asks whether to make it a project with its own people. Every project has a brief and every Agent an occupation, which Bole recruits by.
-- **Tasks**: assign without starting (backlog), schedule recurring tasks that pause after repeated failures, and stop, retry, or review any run from the task details. A temporary failure is retried automatically only when no prompt was sent.
+- **Tasks**: assign without starting (backlog), and stop, retry, or review any run from the task details. A temporary failure is retried automatically only when no prompt was sent.
 - **Decisions**: an Agent that needs you asks in the conversation first. A request that must wait for you goes to the Decisions page, and your reply reaches the Agent that asked.
 - **Roundtable**: besides asks (`message_agent`), Agents have direct and group chats (`agent_chat`) with push delivery and `wait`; the console shows them live.
 - **Memory between projects**: weighted links (related, frequent, close) say how much one project may draw on another. Weights never grant access.
@@ -738,10 +738,12 @@ overhead remains while idle.
 
 Jefa (project manager), Bole (AR, Agent Resources), and Tonborg (judgment) are built-in roles in every
 space and are never hired. Bole's workbench shows staffing, current work, and recruitment history;
-Tonborg's workbench shows decisions and feedback. **Project Agents → Hire an Agent** offers the other reusable employee templates.
-Recruitment reuses a durable identity with separate project assignments. An installed employee workbench,
-API and A2A share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not
-start a model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
+Tonborg's workbench shows decisions and feedback. Jefa's task board is built into FULI and needs no
+installation; **Manage assigned projects** on a role's card or workbench sets which projects it manages.
+The console has no hiring step: a custom employee package is recruited through the `recruit_employee` Agent
+tool, which reuses a durable identity with separate project assignments. An installed employee workbench and
+API share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not start a
+model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
 Agents can also grow small [Agent apps](docs/agent-apps.md); in this version an approved app runs
 unsandboxed with your account's permissions, after you confirm it with `fl app approve` in a terminal.
 

@@ -19,11 +19,11 @@ test('the console says the boundary in exactly the CLI wording', () => {
 });
 
 test('setup names the stores that wait and the boundary, and says nothing otherwise', async () => {
-  const waiting = () => [{ store: 'task-schedules', label: 'task-schedules.sqlite', state: 'pending_confirmation',
-    steps: ['task-schedules/3-run-recovery'] }, { store: 'judgment', label: 'judgment.sqlite', state: 'newer_format',
+  const waiting = () => [{ store: 'agent-apps', label: 'agent-apps/registry.sqlite', state: 'pending_confirmation',
+    steps: ['agent-apps/7-identity-keys'] }, { store: 'judgment', label: 'judgment.sqlite', state: 'newer_format',
     steps: [] }];
   const notice = await setupMigrationNotice('/synthetic', { notices: waiting, graphState: async () => null });
-  assert.match(notice, /Data format migrations wait for you: task-schedules\.sqlite\. Review them with fuli migrate preview/);
+  assert.match(notice, /Data format migrations wait for you: agent-apps\/registry\.sqlite\. Review them with fuli migrate preview/);
   assert.ok(notice.includes(EXTERNAL_WRITERS_NOTICE.zh) && notice.includes(EXTERNAL_WRITERS_NOTICE.en));
   assert.equal(await setupMigrationNotice('/synthetic', { notices: () => [], graphState: async () => null }), null);
 });

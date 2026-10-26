@@ -249,6 +249,31 @@ it('does not offer writes for undetected, unreadable or manual-only configuratio
   wrapper.unmount()
 })
 
+it('offers 更新接入 and 重新接入 in place of a terminal command, running the same install', async () => {
+  const fetch = vi.fn(async (url: string) => Response.json(url.endsWith('/connect')
+    ? { id: 'claude-code', status: 'connected', restartRequired: true }
+    : url.endsWith('/status') ? statusOf([
+      { id: 'codex', label: 'Codex', status: 'changed' },
+      { id: 'claude-code', label: 'Claude Code', status: 'removed' },
+      { id: 'claude-desktop', label: 'Claude Desktop', status: 'skills_left' },
+      { id: 'gemini', label: 'Gemini CLI', status: 'not_connected' },
+    ]) : configuration))
+  vi.stubGlobal('fetch', fetch)
+  const wrapper = mount(ClientConnectionSettings)
+  await open(wrapper)
+  expect(wrapper.text()).not.toMatch(/fuli setup|终端/)
+  expect(wrapper.get('[data-connect-client="codex"]').text()).toBe('更新接入')
+  expect(wrapper.get('[data-connect-client="claude-code"]').text()).toBe('重新接入')
+  expect(wrapper.get('[data-connect-client="claude-desktop"]').text()).toBe('重新接入')
+  expect(wrapper.get('[data-connect-client="gemini"]').text()).toBe('接入')
+  await wrapper.get('[data-connect-client="claude-code"]').trigger('click')
+  await flushPromises()
+  const call = fetch.mock.calls.find(([url]) => url.endsWith('/connect')) as unknown as [string, RequestInit]
+  expect(JSON.parse(call[1].body as string)).toEqual({ clientId: 'claude-code' })
+  expect(wrapper.text()).toContain('需要重启客户端')
+  wrapper.unmount()
+})
+
 it('reports partial installs without claiming success and allows retry', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/connect')
     ? { id: 'gemini', status: 'partial', restartRequired: false }

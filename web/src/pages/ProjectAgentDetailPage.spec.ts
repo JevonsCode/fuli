@@ -19,7 +19,7 @@ import { pageTitle } from '@/layouts/page-title'
 import { UiSelectStub } from '@/test-support/UiSelectStub'
 import { orchestrationAgents as agents, orchestrationResponse, orchestrationState } from '@/test-support/orchestration-fixtures'
 import ProjectAgentDetailPage from './ProjectAgentDetailPage.vue'
-import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
+import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
 import { refreshEmployeeCatalog } from '@/features/employees/catalog'
 
@@ -487,7 +487,7 @@ describe('ProjectAgentDetailPage', () => {
     await flushPromises()
     await wrapper.get('.employee-project-overview button').trigger('click')
     await flushPromises()
-    const dialog = wrapper.getComponent(EmployeeRecruitDialog)
+    const dialog = wrapper.getComponent(EmployeeScopeDialog)
     expect(dialog.props('templateId')).toBe('concierge')
     expect(dialog.props('open')).toBe(true)
     expect(dialog.get('h2').text()).toContain('Concierge')
@@ -502,8 +502,8 @@ describe('ProjectAgentDetailPage', () => {
     await wrapper.get('[data-detail-section="assignments"]').findAll('button')
       .find((button) => button.text() === '分配项目')!.trigger('click')
     await flushPromises()
-    expect(wrapper.getComponent(EmployeeRecruitDialog).props('open')).toBe(true)
-    expect(wrapper.getComponent(EmployeeRecruitDialog).props('templateId')).toBe('concierge')
+    expect(wrapper.getComponent(EmployeeScopeDialog).props('open')).toBe(true)
+    expect(wrapper.getComponent(EmployeeScopeDialog).props('templateId')).toBe('concierge')
     expect(wrapper.getComponent(AgentAssignmentDialog).props('open')).toBe(false)
     expect(postJson).not.toHaveBeenCalled()
   })

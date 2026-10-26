@@ -120,7 +120,7 @@ test('undo restores the earlier file only while it is what the migration wrote',
   const before = readFileSync(path);
   assert.throws(() => rollbackJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT,
     { migrationId: 'external-knowledge/2-binding-targets', actor: CLI }),
-  { code: 'data_format_changed_since', message: /fuli migrate restore/ });
+  { code: 'data_format_changed_since', message: /a whole-store restore/ });
   assert.deepEqual(readFileSync(path), before);
 });
 
@@ -206,7 +206,7 @@ test('an interrupted change whose file changed otherwise is refused, not guessed
 
   assert.equal(previewJsonMigration(path, EXTERNAL_KNOWLEDGE_FORMAT).action, 'blocked');
   assert.throws(() => recoverJsonFile(path, EXTERNAL_KNOWLEDGE_FORMAT), { code: 'data_format_interrupted',
-    message: /neither as it was nor as that change left it.*fuli migrate restore/ });
+    message: /neither as it was nor as that change left it.*Data format migrations/ });
   assert.deepEqual(readFileSync(path), before);
   assert.ok(existsSync(intentPath(path)));
 });

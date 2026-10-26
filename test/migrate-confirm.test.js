@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import { DataFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
@@ -17,7 +16,8 @@ import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { holdDataDirectory } from '../src/data-format/maintenance-lock.js';
 import { readFormatOperations } from '../src/data-format/operations-log.js';
 import { createServer } from '../src/server.js';
-import { TaskScheduleStore } from '../src/task-schedules/store.js';
+import { AgentAppStore } from '../src/agent-apps/store.js';
+import { FIRST_RELEASE_APP_IDS, writeFirstReleaseAgentApps } from './fixtures/agent-apps-first-release.js';
 
 // rec#17 D-09 part 2: `fuli migrate preview|apply|rollback|restore` on a data
 // directory an earlier FULI left behind. Synthetic stores only; the graph is a
@@ -30,17 +30,12 @@ function dataDir(t) {
   return directory;
 }
 
+const registryPath = (root) => join(root, 'agent-apps', 'registry.sqlite');
+const openRegistry = (root) => { const store = new AgentAppStore(registryPath(root)); void store.database; store.close(); };
+
 function legacyDataDir(root) {
-  // Unversioned, from before run recovery: two runs need the backfill.
-  const database = new DatabaseSync(join(root, 'task-schedules.sqlite'));
-  database.exec(`CREATE TABLE task_schedules(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL,
-      revision INTEGER NOT NULL, enabled INTEGER NOT NULL, body TEXT NOT NULL, next_run_at TEXT NOT NULL,
-      paused_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE task_schedule_runs(schedule TEXT NOT NULL, slot TEXT NOT NULL, task_id TEXT, status TEXT NOT NULL,
-      created_at TEXT NOT NULL, PRIMARY KEY(schedule, slot));
-    INSERT INTO task_schedule_runs VALUES('s1', 'sentinel-slot-content', NULL, 'claimed', '2026-01-01T00:00:00Z'),
-      ('s1', 'sentinel-slot-two', 'task-1', 'dispatched', '2026-01-02T00:00:00Z');`);
-  database.close();
+  // Unversioned, from the first Agent app release: two apps need the identity-key backfill.
+  writeFirstReleaseAgentApps(registryPath(root));
   mkdirSync(join(root, 'external-knowledge'), { recursive: true });
   writeFileSync(join(root, 'external-knowledge', 'bindings.json'), JSON.stringify({ version: 1, bindings: [{
     id: 'binding-1', name: 'Sentinel secret wiki', connectorType: 'mcp', connectorConfig: {}, source: {},
@@ -86,10 +81,11 @@ test('preview lists every waiting step by ID and count only, and changes nothing
   assert.equal(exitCode, 0);
   assert.deepEqual(snapshot(root), before);
   assert.deepEqual(plan.stores.map((store) => [store.label, store.step.id, store.step.count]), [
-    ['task-schedules.sqlite', 'task-schedules/3-run-recovery', 2],
+    ['agent-apps/registry.sqlite', 'agent-apps/7-identity-keys', 2],
     ['external-knowledge/bindings.json', 'external-knowledge/2-binding-targets', 1]]);
-  assert.deepEqual(plan.stores[0].automatic, ['task-schedules/2-breaker-reset']);
-  assert.deepEqual(plan.stores[0].step.sampleIds, ['s1#1', 's1#2']);
+  assert.deepEqual(plan.stores[0].automatic, ['agent-apps/2-approval-presence', 'agent-apps/3-presence-challenges',
+    'agent-apps/4-owner-lease', 'agent-apps/5-instances', 'agent-apps/6-token-instance']);
+  assert.deepEqual(plan.stores[0].step.sampleIds, FIRST_RELEASE_APP_IDS);
   assert.match(plan.digest, /^[0-9a-f]{64}$/);
   assert.match(text.output, /fuli migrate apply --digest [0-9a-f]{64}/);
   assert.match(text.output, /the digest is not a permission/);
@@ -109,7 +105,7 @@ test('changing data needs an interactive terminal and an exact, confirmed digest
   assert.equal(wrong.questions.length, 0);
   const declined = await migrate(root, ['apply', '--digest', plan.digest], { confirm: async () => false });
   assert.equal(declined.status, 'cancelled');
-  assert.match(declined.output, /task-schedules\/3-run-recovery[\s\S]*Cancelled\. Nothing was changed\./);
+  assert.match(declined.output, /agent-apps\/7-identity-keys[\s\S]*Cancelled\. Nothing was changed\./);
   assert.deepEqual(snapshot(root), before);
 });
 
@@ -118,32 +114,31 @@ test('apply migrates both stores after a backup, logs it, and the receipt names 
   legacyDataDir(root);
   const { plan } = await migrate(root, ['preview', '--json']);
   const pending = await dataFormatReceiptNotice(root)();
-  assert.equal(pending, '数据格式待确认：task-schedules/3-run-recovery 等 2 项（fuli migrate preview）');
+  assert.equal(pending, '数据格式待确认：agent-apps/7-identity-keys 等 2 项（fuli migrate preview）');
 
   const applied = await migrate(root, ['apply', '--digest', plan.digest]);
 
   assert.equal(applied.exitCode, 0);
   assert.deepEqual(applied.results.map((result) => [result.label, result.status]), [
-    ['task-schedules.sqlite', 'applied'], ['external-knowledge/bindings.json', 'applied']]);
+    ['agent-apps/registry.sqlite', 'applied'], ['external-knowledge/bindings.json', 'applied']]);
   assert.match(applied.questions[0], /presence unverified/);
-  const store = new TaskScheduleStore(join(root, 'task-schedules.sqlite'));
-  store.close();
+  openRegistry(root);
   assert.equal(JSON.parse(readFileSync(join(root, 'external-knowledge', 'bindings.json'), 'utf8')).version, 2);
-  assert.ok(readdirSync(join(root, 'format-backups')).some((name) => name.startsWith('task-schedules.sqlite.v0-')));
+  assert.ok(readdirSync(join(root, 'agent-apps', 'format-backups')).some((name) => name.startsWith('registry.sqlite.v0-')));
   assert.ok(readdirSync(join(root, 'external-knowledge', 'format-backups')).length === 1);
   const operations = readFormatOperations(root).filter((event) => event.kind === 'applied');
   assert.deepEqual(operations.map((event) => [event.kind, event.migrationId, event.entrypoint]), [
-    ['applied', 'task-schedules/3-run-recovery', 'cli'], ['applied', 'external-knowledge/2-binding-targets', 'cli']]);
+    ['applied', 'agent-apps/7-identity-keys', 'cli'], ['applied', 'external-knowledge/2-binding-targets', 'cli']]);
   assert.doesNotMatch(JSON.stringify(operations), /sentinel|Sentinel/);
   assert.equal((await migrate(root, ['preview', '--json'])).plan.digest, null);
   assert.equal(await dataFormatReceiptNotice(root)(),
     '数据格式已迁移：external-knowledge/2-binding-targets 等 2 项');
   assert.equal(await dataFormatReceiptNotice(root, { now: () => Date.now() + 25 * 3600 * 1000 })(), null);
 
-  const undone = await migrate(root, ['rollback', '--store', 'task-schedules.sqlite',
-    '--migration', 'task-schedules/3-run-recovery']);
-  assert.equal(undone.version, 2);
-  assert.throws(() => new TaskScheduleStore(join(root, 'task-schedules.sqlite')), { code: 'data_format_pending' });
+  const undone = await migrate(root, ['rollback', '--store', 'agent-apps/registry.sqlite',
+    '--migration', 'agent-apps/7-identity-keys']);
+  assert.equal(undone.version, 6);
+  assert.throws(() => openRegistry(root), { code: 'data_format_pending' });
   assert.equal(readFormatOperations(root).at(-1).kind, 'rolled_back');
 });
 
@@ -154,14 +149,14 @@ test('a whole-store restore is separate, lists backups and refuses while FULI ru
   const applied = await migrate(root, ['apply', '--digest', plan.digest]);
   const backupRef = applied.results[0].backupRef;
 
-  const listed = await migrate(root, ['restore', '--store', 'task-schedules.sqlite']);
+  const listed = await migrate(root, ['restore', '--store', 'agent-apps/registry.sqlite']);
   assert.ok(listed.backups.some((backup) => backup.ref === backupRef));
-  const running = await migrate(root, ['restore', '--store', 'task-schedules.sqlite', '--backup', backupRef],
+  const running = await migrate(root, ['restore', '--store', 'agent-apps/registry.sqlite', '--backup', backupRef],
     { consoleRunning: async () => true });
   assert.deepEqual([running.exitCode, running.status], [1, 'console_running']);
-  const restored = await migrate(root, ['restore', '--store', 'task-schedules.sqlite', '--backup', backupRef]);
+  const restored = await migrate(root, ['restore', '--store', 'agent-apps/registry.sqlite', '--backup', backupRef]);
 
-  assert.match(restored.output, /Every change to "task-schedules" made after .* is lost/);
+  assert.match(restored.output, /Every change to "agent-apps" made after .* is lost/);
   assert.equal(restored.status, 'restored');
   assert.equal(restored.version, 0);
   assert.equal(readFormatOperations(root).at(-1).kind, 'restored');
@@ -204,7 +199,7 @@ test('retrying a completed apply whose answer was lost returns its result, not a
 
   assert.equal(retried.exitCode, 0);
   assert.deepEqual(retried.results.map((result) => [result.label, result.status]), [
-    ['task-schedules.sqlite', 'already_applied'], ['external-knowledge/bindings.json', 'already_applied']]);
+    ['agent-apps/registry.sqlite', 'already_applied'], ['external-knowledge/bindings.json', 'already_applied']]);
   const changed = Object.keys(snapshot(root)).filter((name) => snapshot(root)[name] !== before[name]
     && name !== 'format-operations.json');
   assert.deepEqual(changed, []);
@@ -220,7 +215,7 @@ test('a console started while the restore question is open is refused, and so is
     providerUrl: 'http://127.0.0.1:1', accessToken: 'synthetic-token', principalId: 'p', spaceId: 's' }, workspaces: [] }));
   let consoleStart = null;
 
-  const restored = await migrate(root, ['restore', '--store', 'task-schedules.sqlite', '--backup', backupRef], {
+  const restored = await migrate(root, ['restore', '--store', 'agent-apps/registry.sqlite', '--backup', backupRef], {
     confirm: async () => {
       // The person reads the warning; meanwhile FULI is started.
       consoleStart = await createServer({ port: 0, runtimeConfigPath: join(root, 'graph-runtime.json') })
@@ -232,7 +227,7 @@ test('a console started while the restore question is open is refused, and so is
   assert.equal(restored.status, 'restored');
   const release = holdDataDirectory(root);
   try {
-    const refused = await migrate(root, ['restore', '--store', 'task-schedules.sqlite', '--backup', backupRef]);
+    const refused = await migrate(root, ['restore', '--store', 'agent-apps/registry.sqlite', '--backup', backupRef]);
     assert.deepEqual([refused.exitCode, refused.status], [1, 'console_running']);
     assert.equal(refused.questions.length, 0);
   } finally { release(); }
@@ -263,10 +258,10 @@ test('a retry still finds its receipt after the same apply pruned hundreds of ba
   const { plan } = await migrate(root, ['preview', '--json']);
   const applied = await migrate(root, ['apply', '--digest', plan.digest]);
   // An earlier FULI left 210 backups of earlier versions; pruning logs one event each.
-  const source = join(root, applied.results[0].backupRef);
+  const source = join(root, 'agent-apps', applied.results[0].backupRef);
   for (let index = 0; index < 210; index += 1) {
     const stamp = `2025-01-01T00-00-${String(Math.floor(index / 10)).padStart(2, '0')}-${String(index % 10).padStart(3, '0')}Z`;
-    copyFileSync(source, join(root, 'format-backups', `task-schedules.sqlite.v1-${stamp}.sqlite`));
+    copyFileSync(source, join(root, 'agent-apps', 'format-backups', `registry.sqlite.v1-${stamp}.sqlite`));
   }
   const pruned = await migrate(root, ['prune', '--keep', '1']);
   assert.ok(pruned.pruned.length >= 200);
@@ -327,7 +322,7 @@ test('apply and undo say who must be stopped before they ask', async (t) => {
       write: (line) => lines.push(line), confirm: async () => { asked.push(lines.join('\n')); return false; } });
   };
   await capture(['apply', '--digest', plan.digest]);
-  await capture(['rollback', '--store', 'task-schedules.sqlite', '--migration', 'task-schedules/3-run-recovery']);
+  await capture(['rollback', '--store', 'agent-apps/registry.sqlite', '--migration', 'agent-apps/7-identity-keys']);
 
   assert.equal(asked.length, 2);
   for (const shown of asked) {
@@ -387,10 +382,11 @@ test('an apply whose graph prune answer is lost says the prune is unverified and
   assert.ok(applied.output.includes(GRAPH_PRUNE_UNVERIFIED_NOTICE.en), applied.output);
 });
 
-test('the console says an unverified graph prune in exactly the CLI wording', () => {
+test('the console says an unverified graph prune in the CLI wording, and only the CLI names the command', () => {
   const messages = readFileSync(new URL('../web/src/i18n/messages/data-format.ts', import.meta.url), 'utf8');
   assert.ok(messages.includes(`pruneUnverified: '${GRAPH_PRUNE_UNVERIFIED_NOTICE.zh}'`), 'Chinese wording');
   assert.ok(messages.includes(`pruneUnverified: '${GRAPH_PRUNE_UNVERIFIED_NOTICE.en}'`), 'English wording');
+  for (const line of graphPruneUnverifiedLines()) assert.match(line, /fuli migrate prune/);
 });
 
 // As above, and the disk then refuses the local audit log: the operations
@@ -437,8 +433,8 @@ test('an apply and an undo keep their result and the unverified prune when the a
   assert.ok(applied.output.includes(GRAPH_PRUNE_UNVERIFIED_NOTICE.en) && applied.output.includes('could not be written'));
 
   rmSync(join(root, 'format-operations.json'), { recursive: true, force: true });
-  const undone = await migrate(root, ['rollback', '--store', 'task-schedules.sqlite',
-    '--migration', 'task-schedules/3-run-recovery'], { graph: providerThatLosesTheAnswerAndTheLog(root).graph });
+  const undone = await migrate(root, ['rollback', '--store', 'agent-apps/registry.sqlite',
+    '--migration', 'agent-apps/7-identity-keys'], { graph: providerThatLosesTheAnswerAndTheLog(root).graph });
 
   assert.equal(undone.exitCode, 0);
   assert.equal(undone.status, 'rolled_back');
@@ -450,4 +446,31 @@ test('the console says a failed audit write in exactly the CLI wording', () => {
   const messages = readFileSync(new URL('../web/src/i18n/messages/data-format.ts', import.meta.url), 'utf8');
   assert.ok(messages.includes(`auditFailed: '${AUDIT_FAILED_NOTICE.zh}'`), 'Chinese wording');
   assert.ok(messages.includes(`auditFailed: '${AUDIT_FAILED_NOTICE.en}'`), 'English wording');
+});
+
+test('a task-schedules.sqlite left by a FULI that had task schedules is never read, migrated, pruned or changed', async (t) => {
+  const root = dataDir(t);
+  legacyDataDir(root);
+  // Task schedules were removed (2026-10-27) and their store left the registry; a person's file
+  // and its format backups stay where they are, as synthetic bytes no FULI store reads.
+  writeFileSync(join(root, 'task-schedules.sqlite'), 'synthetic leftover schedule store');
+  mkdirSync(join(root, 'format-backups'), { recursive: true });
+  for (const stamp of ['2026-01-01T00-00-00-000Z', '2026-02-01T00-00-00-000Z']) {
+    writeFileSync(join(root, 'format-backups', `task-schedules.sqlite.v2-${stamp}.sqlite`), 'synthetic leftover backup');
+  }
+  const leftovers = () => Object.fromEntries(Object.entries(snapshot(root)).filter(([name]) => name.includes('task-schedules')));
+  const before = leftovers();
+
+  const status = await migrate(root, ['status', '--json']);
+  const { plan } = await migrate(root, ['preview', '--json']);
+  const applied = await migrate(root, ['apply', '--digest', plan.digest]);
+  const pruned = await migrate(root, ['prune', '--keep', '1']);
+
+  assert.deepEqual([status.exitCode, applied.exitCode, pruned.exitCode], [0, 0, 0]);
+  assert.deepEqual(applied.results.map((result) => result.status), ['applied', 'applied']);
+  assert.doesNotMatch(status.output + JSON.stringify(plan) + applied.output + pruned.output, /task-schedules/);
+  assert.equal(Object.keys(before).length, 3);
+  assert.deepEqual(leftovers(), before);
+  await assert.rejects(migrate(root, ['restore', '--store', 'task-schedules.sqlite']),
+    /No FULI store is labelled task-schedules\.sqlite/);
 });

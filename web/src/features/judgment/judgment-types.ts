@@ -1,6 +1,9 @@
-export type JudgmentMode = 'manual' | 'shared' | 'autonomous'
-export type JudgmentQuality = 'quality' | 'balanced' | 'economy'
-export type JudgmentClient = 'codex' | 'claude_code'
+export const JUDGMENT_MODES = ['manual', 'shared', 'autonomous'] as const
+export const JUDGMENT_QUALITIES = ['quality', 'balanced', 'economy'] as const
+export const JUDGMENT_CLIENTS = ['codex', 'claude_code'] as const
+export type JudgmentMode = typeof JUDGMENT_MODES[number]
+export type JudgmentQuality = typeof JUDGMENT_QUALITIES[number]
+export type JudgmentClient = typeof JUDGMENT_CLIENTS[number]
 export type JudgmentOutcome = 'approve' | 'escalate' | 'recommend' | 'failed'
 export type JudgmentKind = 'review' | 'routing' | 'acceptance'
 export type JudgmentExecutionStatus = 'not_applied' | 'applying' | 'applied' | 'stale' | 'failed' | 'undone'
@@ -19,9 +22,10 @@ export interface JudgmentPolicy extends JudgmentPolicySelection {
   personalProjectId: string | null
 }
 
-export interface JudgmentProjectOption {
-  id: string
-  name: string
+// Tonborg's default policy and the projects that have their own.
+export interface JudgmentPolicyOverrides {
+  default: JudgmentPolicy
+  overrides: JudgmentPolicy[]
 }
 
 export interface JudgmentFeedback {
@@ -65,6 +69,8 @@ export interface JudgmentDecisionRecord {
   objective?: string
   summary: string
   outcome: JudgmentOutcome
+  // Tonborg's confidence in its verdict (0 to 1), on reviews and acceptances.
+  confidence?: number
   aiReview?: JudgmentAiReview
   evidence: string[]
   policy: Partial<JudgmentPolicySelection> | null
@@ -81,6 +87,20 @@ export interface JudgmentDecisionRecord {
   feedback: JudgmentFeedback
   feedbackHistory: unknown[]
   executionHistory: unknown[]
+}
+
+// The console's 需要人工 / 全部 views; the server applies isHumanNeeded's rule to every record.
+export type JudgmentRecordFilter = 'human' | 'all'
+
+export interface JudgmentRecordPageQuery {
+  filter: JudgmentRecordFilter
+  search: string
+  after?: string | null
+}
+
+export interface JudgmentRecordPage {
+  records: JudgmentDecisionRecord[]
+  nextCursor?: string | null
 }
 
 export interface JudgmentReviewResult {
@@ -130,6 +150,7 @@ export function policySelection(policy: JudgmentPolicy): JudgmentPolicySelection
   return { mode: policy.mode, quality: policy.quality, client: policy.client }
 }
 
+// The store's HUMAN_NEEDED rule (src/judgment/store.js) applied to a loaded record.
 export function isHumanNeeded(record: JudgmentDecisionRecord): boolean {
   return record.outcome === 'escalate'
     || record.outcome === 'failed'
