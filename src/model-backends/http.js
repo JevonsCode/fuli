@@ -32,8 +32,8 @@ import { RETENTION } from './suggestion-log.js';
 // own human-review proof for personalSpaceId, the active space the log is
 // read in (src/knowledge-owner-reads/owner-proof.js); otherwise 403 and no
 // data. The server attaches that proof itself and trusts local HTTP callers,
-// so a local process can still read it over loopback; caller authentication
-// is rec#11 D-61. Agents have no tool that reads it. history lists
+// so a local process can still read it over loopback; FULI has no console
+// login (rec#11 D-70). Agents have no tool that reads it. history lists
 // what changed in a role's settings and execution mode and when
 // (settings-history.js, rec#11 D-42), newest first, read only; each save and
 // trust change answers whether its change was recorded there.

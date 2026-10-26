@@ -18,7 +18,7 @@ import { OWNER_PROOF_TOKEN, ownerProofPort } from '../test-support/owner-proof-p
 // the console's other full reads. It answers only a loopback request, LAN code
 // or not, and only after the console server confirmed its own human-review
 // proof with the Provider. The server attaches that proof itself, so these
-// tests do not show that a local HTTP caller is refused; that is rec#11 D-61.
+// tests do not show that a local HTTP caller is refused; FULI has no console login (rec#11 D-70).
 // Synthetic judgment records, a synthetic Provider and synthetic model words only.
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');

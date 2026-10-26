@@ -19,8 +19,8 @@ import { ProviderRequestError } from '../graphiti/provider-client.js';
 // The HTTP caller does not supply the proof: the server reads the token from
 // its provider env and attaches it itself, trusting every local HTTP caller.
 // So any local process, an Agent with a shell included, can still read these
-// routes over loopback without reading any token. Authenticating the caller
-// with a console session is a separate change (rec#11 D-61).
+// routes over loopback without reading any token. FULI is a local tool with
+// no console login (rec#11 D-70).
 // what: what the route shows, for the refusal's message.
 export async function confirmConsoleOwner(ownerReads, personalSpaceId, what) {
   const proofRequired = () => new ApplicationError('human_review_proof_required',

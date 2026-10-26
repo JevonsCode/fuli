@@ -19,7 +19,7 @@ const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/records
 // proof (owner-proof.js), before anything is read, run or written. A refused
 // request gets 403 and no data. The server attaches that proof itself and
 // trusts local HTTP callers, so a local process can still read these routes
-// over loopback; caller authentication is rec#11 D-61.
+// over loopback. FULI is a local tool with no console login (rec#11 D-70).
 // Agents read and ask Tonborg through their MCP tools (list_judgments,
 // review_with_tonborg, assess_agent_action, assess_task_completion); no MCP
 // or Agent tool module imports this one (test/judgment-console-owner.test.js).
