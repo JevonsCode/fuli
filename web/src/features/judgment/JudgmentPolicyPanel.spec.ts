@@ -49,33 +49,6 @@ describe('JudgmentPolicyPanel', () => {
     })
   })
 
-  it('uses a project override and can reset it to inherited policy', async () => {
-    getJson
-      .mockResolvedValueOnce(globalPolicy)
-      .mockResolvedValueOnce({ ...globalPolicy, inherited: false, personalProjectId: 'project-a', globalRevision: 4 })
-      .mockResolvedValueOnce(globalPolicy)
-    const wrapper = mount(JudgmentPolicyPanel, {
-      props: {
-        personalSpaceId: 'space-a',
-        projects: [{ id: 'project-a', name: '验收项目' }],
-      },
-    })
-    await flushPromises()
-
-    await wrapper.get('[data-select="judgment-project"]').setValue('project-a')
-    await flushPromises()
-    expect(getJson).toHaveBeenCalledWith('/api/judgment/policy?personalSpaceId=space-a&personalProjectId=project-a')
-
-    await wrapper.get('[data-action="reset-policy"]').trigger('click')
-    await flushPromises()
-    expect(putJson).toHaveBeenCalledWith('/api/judgment/policy', {
-      personalSpaceId: 'space-a',
-      personalProjectId: 'project-a',
-      policy: null,
-      expectedRevision: 4,
-    })
-  })
-
   it('undoes the last autosaved choice using the returned revision', async () => {
     const wrapper = mount(JudgmentPolicyPanel, { props: { personalSpaceId: 'space-a' } })
     await flushPromises()

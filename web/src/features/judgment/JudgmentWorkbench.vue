@@ -14,7 +14,8 @@ import { projectDisplayName } from '@/features/projects/project-origin'
 import type { PersonalProject } from '@/types'
 import UiSegmented from '@/ui/UiSegmented.vue'
 
-import { judgmentText } from './judgment-copy'
+import JudgmentProjectOverrides from './JudgmentProjectOverrides.vue'
+import { judgmentText, policySummary } from './judgment-copy'
 import { loadJudgmentRecords, requestJudgmentReview, submitJudgmentFeedback, undoJudgmentReview } from './judgment-api'
 import { isHumanNeeded, type JudgmentAiReview, type JudgmentDecisionRecord, type JudgmentFeedbackVote, type JudgmentRecordFilter } from './judgment-types'
 
@@ -352,15 +353,6 @@ function kindLabel(value: JudgmentDecisionRecord['kind']) {
   return judgmentText(`workbench.kind.${value}`)
 }
 
-function policyLabel(record: JudgmentDecisionRecord) {
-  if (!record.policy) return '—'
-  return [
-    record.policy.mode ? judgmentText(`mode.${record.policy.mode}`) : '',
-    record.policy.quality ? judgmentText(`quality.${record.policy.quality}`) : '',
-    record.policy.client ? judgmentText(`client.${record.policy.client}`) : '',
-  ].filter(Boolean).join(' · ')
-}
-
 function clientLabel(client?: string | null) {
   return client === 'codex' || client === 'claude_code' ? judgmentText(`client.${client}`) : client || ''
 }
@@ -415,6 +407,8 @@ function hasDetails(record: JudgmentDecisionRecord) {
       </div>
     </Teleport>
 
+    <JudgmentProjectOverrides :personal-space-id="props.personalSpaceId" :projects="props.projects" />
+
     <div class="judgment-list-controls">
       <UiSegmented v-model="filter" class="judgment-filter" :label="judgmentText('workbench.filter')" :options="filterOptions" />
       <Input v-model="searchInput" type="search" class="judgment-search" data-judgment-search maxlength="200"
@@ -458,7 +452,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
             <dt>{{ judgmentText('workbench.injectionPrecheck') }}</dt><dd>{{ injectionLabel(record.aiReview) }}</dd>
           </div>
           <div><dt>{{ judgmentText('workbench.execution') }}</dt><dd>{{ executionLabel(record.execution.status) }}</dd></div>
-          <div><dt>{{ judgmentText('workbench.policy') }}</dt><dd>{{ policyLabel(record) }}</dd></div>
+          <div><dt>{{ judgmentText('workbench.policy') }}</dt><dd>{{ policySummary(record.policy) }}</dd></div>
           <div v-if="record.personalProjectId"><dt>{{ judgmentText('workbench.project') }}</dt><dd>{{ projectNames.get(record.personalProjectId) ?? record.personalProjectId }}</dd></div>
           <div v-if="record.client || record.model"><dt>{{ judgmentText('workbench.source') }}</dt><dd>{{ sourceLabel(record) }}</dd></div>
           <div v-if="record.disposition"><dt>{{ judgmentText('workbench.disposition') }}</dt><dd>{{ judgmentText(`workbench.actions.${record.disposition}`) }}</dd></div>
