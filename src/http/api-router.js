@@ -9,6 +9,7 @@ import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-ro
 import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
 import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
 import { handleStandingAssignmentRequest } from './standing-assignment-api-router.js';
+import { handleClientLinksRequest } from './client-links-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
@@ -38,11 +39,13 @@ export async function handleApiRequest({
   modelRoleSettings = null,
   modelSecrets = null,
   readModelEvaluation = null,
-  judgmentUndo = null
+  judgmentUndo = null,
+  clientLinks = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleModelKeyRequest({ request, response, url, secrets: modelSecrets })) return true;
+  if (await handleClientLinksRequest({ request, response, url, clientLinks })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,

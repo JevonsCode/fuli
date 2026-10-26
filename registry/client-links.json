@@ -1,0 +1,80 @@
+{
+  "format": "fuli-client-links",
+  "formatVersion": 1,
+  "manifestVersion": 1,
+  "updatedAt": "2026-10-27",
+  "clients": [
+    {
+      "id": "codex",
+      "name": "Codex",
+      "sessionLinks": [
+        {
+          "id": "codex-app-thread",
+          "opens": "Codex",
+          "template": "codex://threads/{sessionId}",
+          "parameters": {
+            "sessionId": { "format": "uuid" }
+          },
+          "platforms": ["macos", "windows"],
+          "notes": "Opens the local Codex app chat with this thread ID. The ID is the session UUID Codex gives its tools (CODEX_THREAD_ID).",
+          "source": "https://learn.chatgpt.com/docs/reference/commands"
+        }
+      ],
+      "noSessionLink": null
+    },
+    {
+      "id": "claude_code",
+      "name": "Claude Code",
+      "sessionLinks": [
+        {
+          "id": "claude-code-vscode-session",
+          "opens": "VS Code",
+          "template": "vscode://anthropic.claude-code/open?session={sessionId}",
+          "parameters": {
+            "sessionId": { "format": "uuid" }
+          },
+          "platforms": ["macos", "windows", "linux"],
+          "notes": "Resumes the session in a Claude Code tab of the VS Code extension. The session must belong to the workspace open in VS Code; otherwise a new conversation starts. A terminal session has no resume link: claude-cli://open only starts a new session.",
+          "source": "https://code.claude.com/docs/en/vs-code#launch-a-vs-code-tab-from-other-tools"
+        }
+      ],
+      "noSessionLink": null
+    },
+    {
+      "id": "claude",
+      "name": "Claude",
+      "sessionLinks": [
+        {
+          "id": "claude-desktop-chat",
+          "opens": "Claude",
+          "template": "claude://claude.ai/chat/{conversationId}",
+          "parameters": {
+            "conversationId": { "format": "uuid" }
+          },
+          "platforms": ["macos", "windows", "linux"],
+          "notes": "Opens a chat in the Claude desktop app by its conversation ID. It needs the chat's conversation ID; a tool session ID is not one. Claude Code sessions in the desktop app have no link by ID (claude://code/new only starts a new one).",
+          "source": "https://support.claude.com/en/articles/14729294"
+        }
+      ],
+      "noSessionLink": null
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "sessionLinks": [],
+      "noSessionLink": "Cursor documents no link that opens a chat or Agent session by its ID."
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "sessionLinks": [],
+      "noSessionLink": "OpenCode's web documentation names no URL that opens an existing session."
+    },
+    {
+      "id": "kiro",
+      "name": "Kiro",
+      "sessionLinks": [],
+      "noSessionLink": "Kiro documents no link that opens a session by its ID."
+    }
+  ]
+}
