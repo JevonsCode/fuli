@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter, type RouteRecordRaw } from 'vue-rout
 import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getJson } from '@/api/client'
+import { getJson, postJson } from '@/api/client'
 import { noteConsoleSession } from '@/api/console-session'
 import { useConsoleStore } from '@/stores/console'
 import AppShell from './AppShell.vue'
@@ -17,6 +17,7 @@ vi.mock('@/api/client', () => ({
   patchJson: vi.fn(),
   postJson: vi.fn(),
   deleteJson: vi.fn(),
+  apiErrorReason: (error: Error) => error.message,
 }))
 
 let attentionTotal = 0
@@ -232,7 +233,7 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('shows how to sign in once while a full read waits for the console session (rec#11 D-61)', async () => {
+  it('offers one sign-in button while a full read waits for the console session, never a terminal command (rec#11 D-61, D-69)', async () => {
     const { wrapper } = await setup('/knowledge?item=s/entity:e1')
     expect(wrapper.find('[data-console-session-notice]').exists()).toBe(false)
     noteConsoleSession('/api/knowledge/entity/e1?personalSpaceId=s', true)
@@ -240,7 +241,9 @@ describe('AppShell', () => {
     await flushPromises()
     const notices = wrapper.findAll('[data-console-session-notice]')
     expect(notices).toHaveLength(1)
-    expect(notices[0]!.text()).toContain('fuli open --next "/knowledge?item=s/entity:e1"')
+    expect(notices[0]!.text()).toContain('完整记录需要先在这台电脑上登录控制台。')
+    expect(notices[0]!.text()).not.toMatch(/fuli open|终端/)
+    expect(notices[0]!.findAll('[data-console-sign-in]')).toHaveLength(1)
     noteConsoleSession('/api/knowledge/entity/e1', false)
     noteConsoleSession('/api/session-records', false)
     await flushPromises()
@@ -254,10 +257,46 @@ describe('AppShell', () => {
     noteConsoleSession('/api/graph', true)
     await flushPromises()
     const text = wrapper.get('[data-console-session-notice]').text()
-    expect(text).toBe('完整记录只在运行 FULI 的那台电脑上、用 fuli open 打开的控制台里显示，局域网设备上看不到。')
-    expect(text).not.toContain('这台电脑的终端')
+    expect(text).toBe('完整记录只在运行 FULI 的那台电脑上登录后显示，局域网设备上看不到。')
+    expect(wrapper.find('[data-console-sign-in]').exists()).toBe(false)
     noteConsoleSession('/api/graph', false)
     hostname.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('signs in with a click: the console opens its sign-in page for this page, and this page reloads once signed in (D-69)', async () => {
+    const reload = vi.fn()
+    const location = vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, hostname: '127.0.0.1', reload } as Location)
+    let answer!: () => void
+    vi.mocked(postJson).mockReset().mockImplementation(() => new Promise(resolve => { answer = () => resolve({ status: 'opened' }) }))
+    const { wrapper } = await setup('/knowledge?item=s/entity:e1')
+    noteConsoleSession('/api/graph', true)
+    await flushPromises()
+    await wrapper.get('[data-console-sign-in]').trigger('click')
+    expect(postJson).toHaveBeenCalledWith('/api/console-session/open', { next: '/knowledge?item=s/entity:e1' })
+    expect(wrapper.get('[data-console-sign-in]').text()).toContain('正在打开登录页…')
+    answer()
+    await flushPromises()
+    expect(wrapper.get('[data-console-sign-in-opened]').text()).toContain('默认浏览器打开登录页')
+    window.dispatchEvent(new StorageEvent('storage', { key: 'another.key', newValue: 'x' }))
+    expect(reload).not.toHaveBeenCalled()
+    window.dispatchEvent(new StorageEvent('storage', { key: 'fuli.consoleSession', newValue: 'synthetic-session-token' }))
+    expect(reload).toHaveBeenCalledTimes(1)
+    noteConsoleSession('/api/graph', false)
+    location.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('says why a click sign-in did not open, and offers it again', async () => {
+    vi.mocked(postJson).mockReset().mockRejectedValue(new Error('no desktop session'))
+    const { wrapper } = await setup('/knowledge')
+    noteConsoleSession('/api/graph', true)
+    await flushPromises()
+    await wrapper.get('[data-console-sign-in]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-console-sign-in-failed]').text()).toBe('no desktop session')
+    expect(wrapper.get('[data-console-sign-in]').attributes('disabled')).toBeUndefined()
+    noteConsoleSession('/api/graph', false)
     wrapper.unmount()
   })
 

@@ -624,8 +624,9 @@ fuli open
 ```
 
 The default URL is `http://127.0.0.1:2727`. `fuli open` signs this browser in with a one-time sign-in: knowledge
-details, session records, Tonborg's records, Agent conversations and working memory show only in a console opened
-this way; run `fuli open` again after each console restart (docs/judgment-and-autonomy.md, "Console trust boundary").
+details, session records, Tonborg's records, Agent conversations and working memory show only in a signed-in console.
+A console page that needs it shows a Sign in button: one click opens the same sign-in in this computer's browser, so no
+terminal is needed, also after a console restart (docs/judgment-and-autonomy.md, "Console trust boundary").
 
 The Settings page manages all seven local Fuli ports, graph runtime mode, LAN access, automatic capture,
 Agent access, UI language, and the resource refresh interval. Run `fuli restart` after saving port,

@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -8,7 +7,8 @@ import {
   stopGraphProviders
 } from '../setup/graph-runtime.js';
 import { beginFirstRunCapture } from '../setup/first-run-capture.js';
-import { consoleSignInLauncher, isSignInLauncher } from '../console-session/sign-in-launcher.js';
+import { consoleSignInLauncher } from '../console-session/sign-in-launcher.js';
+import { isLoopbackConsoleUrl, openConsoleInBrowser } from './console-browser.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { readAdaptiveRuntimeState } from '../adaptive-runtime/state.js';
@@ -240,7 +240,7 @@ function lifecycleDependencies(overrides) {
     removeState: (path) => {
       if (existsSync(path)) unlinkSync(path);
     },
-    openExternal,
+    openExternal: openConsoleInBrowser,
     consoleSignIn: consoleSignInLauncher,
     ...overrides
   };
@@ -276,23 +276,6 @@ async function providerHealth(url, workspace = null) {
   }
 }
 
-async function openExternal(url) {
-  const invocation = externalOpenInvocation(url);
-  const child = spawn(invocation.command, invocation.args, {
-    detached: true,
-    windowsHide: true,
-    stdio: 'ignore'
-  });
-  child.unref();
-}
-
-export function externalOpenInvocation(url, platform = process.platform) {
-  if (!isLoopbackConsoleUrl(url) && !isSignInLauncher(url)) throw new TypeError('Only the local Fuli console can be opened');
-  if (platform === 'darwin') return { command: 'open', args: [url] };
-  if (platform === 'win32') return { command: 'cmd', args: ['/c', 'start', '', url] };
-  return { command: 'xdg-open', args: [url] };
-}
-
 function hasManagedDevelopmentWorkspace(config, runtimeSettings) {
   return (config?.workspaces ?? []).some((workspace) =>
     isManagedDevelopmentUrl(workspace, runtimeSettings));
@@ -305,18 +288,6 @@ function isManagedDevelopmentUrl(workspace, runtimeSettings) {
     return url.protocol === 'http:' &&
       ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname) &&
       [8788, runtimeSettings.ports.workspaceProvider].includes(Number(url.port));
-  } catch {
-    return false;
-  }
-}
-
-function isLoopbackConsoleUrl(value) {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' &&
-      ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname) &&
-      url.username === '' && url.password === '' &&
-      (url.pathname === '/' || url.pathname === '') && !url.search && !url.hash;
   } catch {
     return false;
   }

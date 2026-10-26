@@ -17,7 +17,7 @@ import { handleApiRequest } from '../src/http/api-router.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { knowledgeOwnerReads } from '../src/knowledge-owner-reads/console-port.js';
-import { externalOpenInvocation } from '../src/local-runtime/lifecycle.js';
+import { externalOpenInvocation } from '../src/local-runtime/console-browser.js';
 import { createServer } from '../src/server.js';
 import { closeServer } from '../test-support/server.js';
 
@@ -225,6 +225,56 @@ test('fuli open opens the launcher file: its token goes in a header and no comma
     /Only fuli open on this computer can sign in/);
 });
 
+// What the console page's sign-in button sends: a same-origin POST.
+function openSignedIn(server, body, headers = { origin: server.url, 'sec-fetch-site': 'same-origin' }) {
+  return call(`${server.url}/api/console-session/open`, { method: 'POST', headers, body });
+}
+
+test('the console page signs in with a click: the console opens the launcher itself and answers neither code nor path', async t => {
+  const opened = [];
+  const server = await console_(t, { openSignInLauncher: async path => { opened.push(path); } });
+  const answer = await openSignedIn(server, { next: '/agents/space/employee.bole' });
+  assert.equal(answer.status, 200, JSON.stringify(answer.json));
+  assert.equal(answer.headers['cache-control'], 'no-store');
+  assert.deepEqual(Object.keys(answer.json).sort(), ['expiresInMs', 'status']);
+  assert.equal(answer.json.status, 'opened');
+  assert.equal(opened.length, 1);
+  assert.equal(isSignInLauncher(opened[0], server.root), true, 'only an owner-only launcher is opened');
+  assert.equal(answer.text.includes(launcherCode(opened[0])), false);
+  assert.equal(answer.text.includes(opened[0]), false);
+  assert.equal((await redeemCode(server, launcherCode(opened[0]))).json.next, '/agents/space/employee.bole');
+
+  const refusedNext = await openSignedIn(server, { next: '//attacker.example/' });
+  assert.equal(refusedNext.status, 400);
+  assert.equal(opened.length, 1, 'a refused landing path opens nothing');
+});
+
+test('only the console\'s own page asks the console to open a sign-in', async t => {
+  const opened = [];
+  const server = await console_(t, { openSignInLauncher: async path => { opened.push(path); } });
+  for (const [label, headers] of [['cross-site', { 'sec-fetch-site': 'cross-site', origin: 'https://attacker.example' }],
+    ['another origin', { origin: 'http://127.0.0.1:47272' }],
+    ['same-site, another port', { 'sec-fetch-site': 'same-site' }]]) {
+    const refused = await openSignedIn(server, {}, headers);
+    assert.equal(refused.status, 403, label);
+  }
+  assert.deepEqual(opened, []);
+});
+
+test('a click sign-in the console cannot open fails closed and leaves no usable code', async t => {
+  const issued = [];
+  const session = createConsoleSession();
+  const issueCode = session.issueCode;
+  session.issueCode = (next) => { const code = issueCode(next); issued.push(code); return code; };
+  let launcher;
+  const server = await console_(t, { consoleSession: session,
+    openSignInLauncher: async path => { launcher = path; throw new Error('no desktop session'); } });
+  const refused = await openSignedIn(server, {});
+  assert.deepEqual([refused.status, refused.json.code], [503, 'console_sign_in_unavailable']);
+  assert.equal(existsSync(launcher), false, 'its file is gone');
+  assert.equal((await redeemCode(server, issued[0])).status, 401, 'its code is not usable');
+});
+
 test('a sign-in fails closed when its file cannot be made owner-only; fuli open says why', async t => {
   const root = temporaryRoot(t);
   const issued = [];
@@ -356,12 +406,16 @@ test('another device can neither ask for a sign-in nor redeem one', async t => {
   const session = createConsoleSession();
   const launchers = createSignInLaunchers({ parent: () => temporaryRoot(t) });
   const code = session.issueCode('/');
-  for (const incoming of [lanRequest('POST', '/api/console-session/codes', {}), lanRequest('POST', '/api/console-session/sign-in', { code })]) {
+  const opened = [];
+  for (const incoming of [lanRequest('POST', '/api/console-session/codes', {}), lanRequest('POST', '/api/console-session/sign-in', { code }),
+    lanRequest('POST', '/api/console-session/open', {})]) {
     const { sent, response } = recorder();
     assert.equal(await handleConsoleSessionRequest({ request: incoming, response,
-      signIn: { session, launchers, readToken: () => SIGN_IN_TOKEN }, authority: '127.0.0.1:4317' }), true);
+      signIn: { session, launchers, readToken: () => SIGN_IN_TOKEN, openLauncher: async path => { opened.push(path); } },
+      authority: '127.0.0.1:4317' }), true);
     assert.deepEqual([sent.status, JSON.parse(sent.body).code], [403, 'local_user_only']);
   }
+  assert.deepEqual(opened, [], 'nothing was opened for it');
   assert.deepEqual(session.redeem(code), { next: '/' }, 'the refused request did not redeem it');
 });
 

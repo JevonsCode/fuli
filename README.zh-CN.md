@@ -519,8 +519,8 @@ fuli open
 ```
 
 管理界面默认位于 `http://127.0.0.1:2727`。`fuli open` 会用一次性登录让这个浏览器登录。知识详情、会话记录、
-Tonborg 的判断记录、Agent 对话和工作记忆只在这样打开的控制台里显示；控制台每次重启后，需要再运行一次 `fuli open`
-（见 docs/judgment-and-autonomy.md 的 “Console trust boundary”）。
+Tonborg 的判断记录、Agent 对话和工作记忆只在登录后的控制台里显示。需要登录的页面会显示「登录」按钮，点一下就会在这台电脑的浏览器里
+完成同样的一次性登录，不需要终端；控制台重启后也一样（见 docs/judgment-and-autonomy.md 的 “Console trust boundary”）。
 
 “设置”页集中管理 Fuli 使用的 7 个本机端口、图数据库运行方式、局域网访问、自动沉淀、
 Agent 使用、界面语言和资源刷新频率。端口、运行方式或局域网设置保存后执行 `fuli restart`

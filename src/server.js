@@ -41,6 +41,7 @@ import { createConsoleSession } from './console-session/session.js';
 import { discardUrlCode, handleConsoleSessionRequest, hasConsoleSession, hasSignInToken } from './console-session/http.js';
 import { createSignInLaunchers, launcherParent } from './console-session/launcher-file.js';
 import { sessionBoundPorts } from './console-session/session-ports.js';
+import { openConsoleInBrowser } from './local-runtime/console-browser.js';
 import { humanReviewToken } from './graphiti/human-review-channel.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -122,13 +123,15 @@ export async function createServer(options = {}) {
     ? key => latestEvaluation(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelEvaluationsPath, key) : null);
   // This launch's console session (rec#11 D-61): its secret lives in memory
   // only, `fuli open` shows it may sign in with the data directory's
-  // human-review token, and the code reaches the browser in an owner-only file.
+  // human-review token, and the code reaches the browser in an owner-only file,
+  // which the console page's sign-in button has the console open (D-69).
   const signIn = {
     session: options.consoleSession ?? createConsoleSession(),
     launchers: options.signInLaunchers ?? createSignInLaunchers({ parent: () => localOptions.runtimeConfigPath
       ? launcherParent(dirname(localOptions.runtimeConfigPath)) : null }),
     readToken: options.readSignInToken ?? (localOptions.runtimeConfigPath
-      ? () => humanReviewToken(dirname(localOptions.runtimeConfigPath)) : null)
+      ? () => humanReviewToken(dirname(localOptions.runtimeConfigPath)) : null),
+    openLauncher: options.openSignInLauncher ?? openConsoleInBrowser
   };
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
   // is settled from its recorded operation, and graph deletions the record

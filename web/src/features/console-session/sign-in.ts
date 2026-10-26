@@ -1,3 +1,4 @@
+import { postJson } from '@/api/client'
 import { storeConsoleSessionToken } from '@/api/console-session'
 
 export const SIGN_IN_PAGE_PATH = '/auth/console'
@@ -30,6 +31,13 @@ export async function signInFromFragment({
   const { next, token } = await answer.json() as { next?: unknown; token?: unknown }
   if (typeof token !== 'string' || !storeConsoleSessionToken(token)) return { status: 'failed', reason: 'unavailable' }
   return { status: 'signed_in', next: sameOriginPath(next, location.origin) }
+}
+
+// The sign-in button (rec#11 D-69): the console opens its sign-in page in this
+// computer's browser, landing on next. The answer holds no code; the code
+// reaches the browser the same way `fuli open` hands it over.
+export function openSignIn(next: string): Promise<{ status: 'opened' }> {
+  return postJson('/api/console-session/open', { next })
 }
 
 // Replaces the sign-in page in the history, so Back never returns to it.

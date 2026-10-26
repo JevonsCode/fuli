@@ -5,7 +5,7 @@ import { consoleSessionToken } from '@/api/console-session'
 import { i18n, setLocale } from '@/i18n'
 import { signInFromFragment } from './sign-in'
 
-// rec#11 D-61: the page `fuli open` lands on, with synthetic codes and tokens only.
+// rec#11 D-61: the page a sign-in lands on, with synthetic codes and tokens only.
 const ORIGIN = 'http://127.0.0.1:2727'
 
 function answer(status: number, body: unknown) {
@@ -56,7 +56,9 @@ describe('console sign-in page', () => {
     const wrapper = mount(ConsoleSignIn, { global: { plugins: [i18n] } })
     expect(wrapper.findAll('[role="status"], .growth-loading')).not.toHaveLength(0)
     await flushPromises()
-    expect(wrapper.get('[data-sign-in-failed]').text()).toContain('fuli open')
+    const failed = wrapper.get('[data-sign-in-failed]')
+    expect(failed.text()).not.toContain('fuli open')
+    expect(failed.findAll('[data-console-sign-in]')).toHaveLength(1)
     expect(signIn).toHaveBeenCalledTimes(1)
     vi.doUnmock('./sign-in')
   })

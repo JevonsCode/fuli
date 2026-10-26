@@ -8,12 +8,14 @@ import { consoleNextPath } from './next-path.js';
 export const SIGN_IN_PAGE_PATH = '/auth/console';
 export const CODES_PATH = '/api/console-session/codes';
 const REDEEM_PATH = '/api/console-session/sign-in';
+const OPEN_PATH = '/api/console-session/open';
 export const SIGN_IN_TOKEN_HEADER = 'x-fuli-console-sign-in';
 export const SESSION_HEADER = 'x-fuli-console-session';
 
 // The routes of a console sign-in (rec#11 D-61). signIn: { session
 // (session.js), launchers (launcher-file.js), readToken: the data directory's
-// human-review token }.
+// human-review token, openLauncher: opens a launcher file in this computer's
+// browser }.
 //
 // POST /api/console-session/codes: `fuli open` asks the running console for a
 // sign-in, with the data directory's human-review token in a header (never a
@@ -35,6 +37,14 @@ export const SESSION_HEADER = 'x-fuli-console-session';
 // host; the token does not leave this origin. Gated routes need both. Neither
 // the code, the cookie nor the token is ever logged.
 //
+// POST /api/console-session/open: the console page's sign-in button (rec#11
+// D-69), so signing in never needs a terminal. Loopback only, and only from
+// the console's own page, as redeeming is. The console writes the launcher
+// `fuli open` would get and opens it in this computer's browser itself; the
+// answer holds neither the code nor the file's path, so a caller learns
+// nothing it could redeem. The code reaches only the browser, through the
+// owner-only file.
+//
 // A code in a URL's query is not how a sign-in works: any request naming one
 // burns it first (discardUrlCode), before the request policy, so a code that
 // reached a link or a subresource cannot be used afterwards.
@@ -42,6 +52,7 @@ export async function handleConsoleSessionRequest({ request, response, signIn, a
   const url = new URL(request.url, 'http://127.0.0.1');
   if (url.pathname === CODES_PATH) return issueSignIn({ request, response, signIn, authority });
   if (url.pathname === REDEEM_PATH) return redeem({ request, response, signIn, authority });
+  if (url.pathname === OPEN_PATH) return openFromPage({ request, response, signIn, authority });
   if (url.pathname === SIGN_IN_PAGE_PATH && url.searchParams.has('code')) {
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Referrer-Policy', 'no-referrer');
@@ -94,19 +105,52 @@ async function issueSignIn({ request, response, signIn, authority }) {
     sendJson(response, 403, { error: 'Only fuli open on this computer can sign in to the console', code: 'console_sign_in_refused' });
     return true;
   }
-  const body = await readJson(request);
-  const code = signIn.session.issueCode(consoleNextPath(body?.next));
-  let launcherPath;
+  const launcher = writeLauncher(signIn, await readJson(request), authority, response);
+  if (launcher) sendJson(response, 200, { launcherPath: launcher.path, expiresInMs: CODE_TTL_MS });
+  return true;
+}
+
+async function openFromPage({ request, response, signIn, authority }) {
+  response.setHeader('Cache-Control', 'no-store');
+  if (request.method !== 'POST') {
+    sendJson(response, 405, { error: 'Method not allowed' });
+    return true;
+  }
+  if (refuseRemoteDecision(request, response, 'The console is signed in to only on the computer running FULI')) return true;
+  if (!signIn?.session || !signIn.launchers || !signIn.openLauncher) {
+    sendJson(response, 503, { error: 'Signing in to the console needs a local FULI installation' });
+    return true;
+  }
+  if (!['', 'same-origin'].includes(fetchSite(request))) {
+    sendJson(response, 403, { error: 'A console sign-in is opened only from the console\'s own page', code: 'console_sign_in_refused' });
+    return true;
+  }
+  const launcher = writeLauncher(signIn, await readJson(request), authority, response);
+  if (!launcher) return true;
   try {
-    launcherPath = signIn.launchers.write(code, `http://${authority}`);
+    await signIn.openLauncher(launcher.path);
   } catch (error) {
-    // Fails closed: a code that could not be kept private is never usable.
-    signIn.session.discard(code);
+    signIn.session.discard(launcher.code);
+    signIn.launchers.remove(launcher.code);
     sendJson(response, 503, { error: error.message, code: 'console_sign_in_unavailable' });
     return true;
   }
-  sendJson(response, 200, { launcherPath, expiresInMs: CODE_TTL_MS });
+  sendJson(response, 200, { status: 'opened', expiresInMs: CODE_TTL_MS });
   return true;
+}
+
+// Issues a code landing on body.next and writes its owner-only launcher, or
+// answers why not and returns null. Fails closed: a code that could not be
+// kept private is never usable.
+function writeLauncher(signIn, body, authority, response) {
+  const code = signIn.session.issueCode(consoleNextPath(body?.next));
+  try {
+    return { code, path: signIn.launchers.write(code, `http://${authority}`) };
+  } catch (error) {
+    signIn.session.discard(code);
+    sendJson(response, 503, { error: error.message, code: 'console_sign_in_unavailable' });
+    return null;
+  }
 }
 
 // Whether a request carries the data directory's human-review token, as
@@ -142,7 +186,7 @@ async function redeem({ request, response, signIn, authority }) {
   const redeemed = signIn.session.redeem(code);
   signIn.launchers?.remove(code);
   if (!redeemed) {
-    sendJson(response, 401, { error: 'This sign-in is used up or expired. Run fuli open again.', code: 'console_sign_in_expired' });
+    sendJson(response, 401, { error: 'This sign-in is used up or expired. Choose Sign in on the console again.', code: 'console_sign_in_expired' });
     return true;
   }
   const { cookie, token } = signIn.session.credentials();
@@ -169,5 +213,5 @@ function fetchSite(request) {
   return String(request.headers['sec-fetch-site'] ?? '').trim().toLowerCase();
 }
 
-const URL_CODE_REFUSED = 'A sign-in code in a link is not accepted, and this one is now discarded. Run fuli open in a terminal on the computer running FULI.\n'
-  + '链接里的登录码不会被接受，这个已作废。请在运行 FULI 的电脑上，在终端运行 fuli open。';
+const URL_CODE_REFUSED = 'A sign-in code in a link is not accepted, and this one is now discarded. Open the console on the computer running FULI and choose Sign in.\n'
+  + '链接里的登录码不会被接受，这个已作废。请在运行 FULI 的电脑上打开控制台，点「登录」。';

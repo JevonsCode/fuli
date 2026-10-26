@@ -3,9 +3,9 @@ import { computed, ref } from 'vue'
 const CONSOLE_SESSION_REQUIRED = 'console_session_required'
 
 // The API paths that answered 401 console_session_required (rec#11 D-61):
-// full history needs the console session `fuli open` starts. A later success
-// on the same path (the person ran fuli open, and this browser now carries
-// the session) clears it. Nothing here redirects or retries.
+// full history needs a signed-in console session. A later success on the
+// same path (this browser now carries the session) clears it. Nothing here
+// redirects or retries.
 const refusedPaths = ref<ReadonlySet<string>>(new Set())
 
 export const consoleSessionRequired = computed(() => refusedPaths.value.size > 0)
@@ -50,16 +50,15 @@ export function storeConsoleSessionToken(token: string): boolean {
 }
 
 // Only the console on the computer running FULI can be signed in; a LAN
-// device is never told to run a command "on this computer".
+// device is never offered a sign-in.
 export function isLocalConsoleHost(hostname: string): boolean {
   return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(hostname)
 }
 
-// The command that signs this browser in and comes back to this page.
-// Double quotes work in cmd, PowerShell and POSIX shells alike; the
-// characters a shell reads inside them stay percent-encoded.
-export function consoleOpenCommand(pageUrl: string): string {
-  const url = new URL(pageUrl, 'http://console.invalid')
-  const page = `${url.pathname}${url.search}${url.hash}`
-  return page === '/' ? 'fuli open' : `fuli open --next "${page.replace(/["$`]/g, encodeURIComponent)}"`
+// Runs once this origin receives a session token from another tab: the sign-in
+// page the console opened stored it. Returns the unsubscribe.
+export function onConsoleSessionStored(run: () => void): () => void {
+  const listener = (event: StorageEvent) => { if (event.key === TOKEN_KEY && event.newValue) run() }
+  window.addEventListener('storage', listener)
+  return () => window.removeEventListener('storage', listener)
 }

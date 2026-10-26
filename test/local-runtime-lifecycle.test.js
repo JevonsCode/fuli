@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
+import { externalOpenInvocation, openConsoleInBrowser } from '../src/local-runtime/console-browser.js';
 import {
-  externalOpenInvocation,
   inspectLocalRuntime,
   openLocalConsole,
   restartLocalRuntime,
@@ -305,6 +305,22 @@ test('console opening only targets a loopback Fuli URL', () => {
     join(tmpdir(), 'console-session', 'fuli-console-a&b', basename(launcher))]) {
     assert.throws(() => externalOpenInvocation(target, 'win32'), /Only the local Fuli console/, target);
   }
+});
+
+test('opening the console settles on the opener starting, and rejects instead of crashing when it cannot', async () => {
+  const { EventEmitter } = await import('node:events');
+  const child = (event, value) => () => {
+    const process = Object.assign(new EventEmitter(), { unref() { process.unrefed = true; } });
+    queueMicrotask(() => process.emit(event, value));
+    return process;
+  };
+  const started = [];
+  await openConsoleInBrowser('http://127.0.0.1:2727', { platform: 'linux',
+    spawnImpl: (...args) => { started.push(args.slice(0, 2)); return child('spawn')(); } });
+  assert.deepEqual(started, [['xdg-open', ['http://127.0.0.1:2727']]]);
+  await assert.rejects(openConsoleInBrowser('http://127.0.0.1:2727', { platform: 'linux',
+    spawnImpl: child('error', new Error('spawn xdg-open ENOENT')) }), /ENOENT/);
+  await assert.rejects(openConsoleInBrowser('https://example.com', { spawnImpl: child('spawn') }), /Only the local Fuli console/);
 });
 
 const RUNNING = Object.freeze({ readState: () => ({ version: 4, pid: 27, url: 'http://127.0.0.1:2727' }),

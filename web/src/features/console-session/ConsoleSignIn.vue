@@ -2,10 +2,12 @@
 import { onMounted, ref } from 'vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
+import SignInButton from './SignInButton.vue'
 import { landOn, signInFromFragment, type SignInOutcome } from './sign-in'
 
-// The page `fuli open` lands on (rec#11 D-61): one pending sign-in, then the
-// landing page, or why it did not work. It never retries by itself.
+// The page a sign-in lands on (rec#11 D-61): one pending sign-in, then the
+// landing page, or why it did not work with a button to sign in again (D-69).
+// It never retries by itself.
 const failure = ref<Extract<SignInOutcome, { status: 'failed' }>['reason'] | null>(null)
 
 onMounted(async () => {
@@ -18,6 +20,9 @@ onMounted(async () => {
 <template>
   <main class="view">
     <GrowthLoading v-if="!failure" :label="t('common.consoleSession.signingIn')" />
-    <p v-else class="feedback feedback-message" role="alert" data-sign-in-failed>{{ t(`common.consoleSession.failed.${failure}`) }}</p>
+    <div v-else class="feedback feedback-message" role="alert" data-sign-in-failed>
+      <span>{{ t(`common.consoleSession.failed.${failure}`) }}</span>
+      <SignInButton next="/" />
+    </div>
   </main>
 </template>

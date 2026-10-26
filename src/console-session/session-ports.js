@@ -4,7 +4,7 @@ const CONSOLE_SESSION_REQUIRED = 'console_session_required';
 
 function consoleSessionRequired() {
   return new ApplicationError(CONSOLE_SESSION_REQUIRED,
-    'This needs the console session that fuli open starts on the computer running FULI.', { status: 401 });
+    'This needs the console signed in on the computer running FULI: choose Sign in on the console page, or run fuli open.', { status: 401 });
 }
 
 // What the console session protects (rec#11 D-61): whatever returns full
