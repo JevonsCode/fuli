@@ -20,11 +20,6 @@ export const agentRedesignMessages = {
       saving: "正在保存职业",
       saved: "职业已保存",
       saveError: "职业保存失败",
-      keys: {
-        lead: "组长", assistant: "助理",
-        product: "产品", engineering: "开发", design: "设计", operations: "运营", testing: "测试",
-        research: "研究", data: "数据", writing: "写作", management: "管理",
-      },
     },
     workbench: {
       current: "当前",
@@ -142,11 +137,6 @@ export const agentRedesignMessages = {
       saving: "Saving occupation",
       saved: "Occupation saved",
       saveError: "Could not save the occupation",
-      keys: {
-        lead: "Lead", assistant: "Assistant",
-        product: "Product", engineering: "Engineering", design: "Design", operations: "Operations", testing: "Testing",
-        research: "Research", data: "Data", writing: "Writing", management: "Management",
-      },
     },
     workbench: {
       current: "Now",

@@ -15,13 +15,14 @@ from .store_occupation_catalog import OCCUPATION_LOCK, active_occupation_predica
 
 
 def occupation_from_agent_node(raw: dict) -> ProjectAgentOccupation | None:
-    """Read the stored occupation; agents never edited by a person have none."""
+    """Read the stored occupation; agents never edited by a person have none.
+    A fixed identity without a stored role reads its shipped one."""
     builtin_role = BUILTIN_AGENT_OCCUPATIONS.get(raw.get('agent_id'))
     updated_at = raw.get('occupation_updated_at') or (raw.get('created_at') if builtin_role else None)
     if updated_at is None or not (builtin_role or raw.get('occupation_role')):
         return None
     return ProjectAgentOccupation(
-        role=builtin_role or raw.get('occupation_role'),
+        role=raw.get('occupation_role') or builtin_role,
         tags=[] if builtin_role else list(raw.get('occupation_tags') or []),
         updated_at=native_datetime(updated_at),
     )

@@ -114,9 +114,11 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
         throw new EmployeeError('Project assignments changed; reload the selection before saving', 409, 'assignment_scope_conflict');
       }
       if (!agent || agent.profile.status !== 'active') {
-        const occupation = input.occupation ?? (Object.hasOwn(FIXED_EMPLOYEE_AGENT_TYPES, manifest.id)
-          ? { role: 'management', tags: [] } : undefined);
-        if (!agent && !occupation) throw new EmployeeError('New employees require occupation.role', 422, 'occupation_required');
+        // A fixed employee's occupation ships with the Provider and is locked there.
+        const occupation = input.occupation;
+        if (!agent && !occupation && !Object.hasOwn(FIXED_EMPLOYEE_AGENT_TYPES, manifest.id)) {
+          throw new EmployeeError('New employees require occupation.role', 422, 'occupation_required');
+        }
         const profile = agent ? { ...agent.profile, status: 'active' } : {
           name: manifest.name,
           occupationEmoji: manifest.occupationEmoji,

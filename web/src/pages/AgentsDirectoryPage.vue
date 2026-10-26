@@ -23,6 +23,7 @@ import { groupAgentsByProject } from "@/features/agent-profile/directory-project
 import DirectoryProjectGroup from "@/features/agent-profile/DirectoryProjectGroup.vue";
 import UnassignedConversationsPanel from "@/features/agent-profile/UnassignedConversationsPanel.vue";
 import AgentCard from "@/features/agent-profile/AgentCard.vue";
+import { useOccupationCatalog } from "@/features/occupations/occupation-catalog";
 import { isFormalProject, projectDisplayName } from "@/features/projects/project-origin";
 import {
   agentDisplayName,
@@ -49,6 +50,8 @@ const store = useConsoleStore();
 const route = useRoute();
 const router = useRouter();
 const space = computed(() => store.activePersonalSpace?.id ?? "");
+// Occupation chips name what the space catalog calls them.
+useOccupationCatalog(space);
 const agentPins = useAgentPinsState(space);
 const pinnedAgentIds = agentPins.agentIds;
 const pinSavingAgentId = agentPins.savingAgentId;

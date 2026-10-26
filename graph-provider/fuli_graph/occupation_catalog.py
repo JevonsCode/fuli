@@ -5,9 +5,11 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 from .model_base import StrictModel
 
-# Existing fixed identities keep the occupations shipped by their manifest.
+# The occupation each fixed identity ships with: stored on the Agent when the
+# identity is created, read back from there, and never reassigned by a person
+# (occupation_locked). Bole is AR, so it holds Agent resources (graph/12).
 BUILTIN_AGENT_OCCUPATIONS = {
-    'employee.jefa': 'management', 'employee.bole': 'management',
+    'employee.jefa': 'management', 'employee.bole': 'hr',
     'employee.tonborg': 'management', 'employee.assistant': 'assistant',
 }
 
@@ -36,7 +38,8 @@ _BUILTINS = [
     ('support', '支持', 'Support', '理解用户问题、提供帮助并跟进解决。', 'Understand user issues, provide help, and follow through on resolution.'),
     ('finance', '财务', 'Finance', '整理财务资料、核对账目并分析预算。', 'Organize financial records, reconcile accounts, and analyze budgets.'),
     ('legal', '法务', 'Legal', '整理法律资料、核对条款并提示相关风险。', 'Review legal materials and terms and identify relevant risks.'),
-    ('hr', '人力资源', 'Human resources', '维护人员职责、招募安排和协作记录。', 'Maintain role responsibilities, recruitment arrangements, and staffing records.'),
+    # Agents, not people: the key stays 'hr' so stored roles keep working (graph/12).
+    ('hr', 'Agent 资源', 'Agent resources', '维护 Agent 的职责、招募安排和人员配置记录。', 'Maintain Agent roles, recruitment arrangements, and staffing records.'),
 ]
 BUILTIN_OCCUPATIONS = [dict(zip(
     ('key', 'name_zh', 'name_en', 'description_zh', 'description_en'), entry,

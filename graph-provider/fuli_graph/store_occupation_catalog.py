@@ -4,7 +4,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from .graph_field_contract import stored_fields
 from .occupation_catalog import (
-    BUILTIN_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS, TEXT_FIELDS,
+    BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS, TEXT_FIELDS,
     OccupationEntry, OccupationRevision, OccupationUpdate,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
@@ -66,15 +66,16 @@ class StoreOccupationCatalog:
             WHERE $key IS NULL OR occupation.key = $key
             OPTIONAL MATCH (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent:FuliProjectAgent)
             WHERE $include_archived OR coalesce(agent.status, 'active') <> 'archived'
+            // The same reading as occupation_from_agent_node: a fixed identity
+            // without a stored role holds its shipped one and has no tags.
+            WITH occupation, agent, agent.agent_id IN keys($builtin_roles) AS fixed
             WITH occupation, agent,
-              CASE WHEN agent.agent_id = 'employee.assistant' THEN 'assistant'
-                WHEN agent.agent_id IN ['employee.bole', 'employee.jefa', 'employee.tonborg'] THEN 'management'
-                ELSE agent.occupation_role END AS role,
-              CASE WHEN agent.agent_id IN ['employee.bole', 'employee.jefa', 'employee.tonborg', 'employee.assistant']
-                THEN [] ELSE coalesce(agent.occupation_tags, []) END AS tags
+              coalesce(agent.occupation_role, CASE WHEN fixed THEN $builtin_roles[agent.agent_id] END) AS role,
+              CASE WHEN fixed THEN [] ELSE coalesce(agent.occupation_tags, []) END AS tags
             RETURN occupation, count(DISTINCT CASE WHEN role = occupation.key OR occupation.key IN tags THEN agent END) AS agent_count
             ORDER BY occupation.builtin DESC, occupation.created_at, occupation.key
             ''', space_id=space_id, key=key, include_archived=include_archived,
+            builtin_roles=BUILTIN_AGENT_OCCUPATIONS,
         )
         return [OccupationEntry(**{
             **{field: dict(row['occupation'])[field] for field in ('key', *TEXT_FIELDS, 'builtin', 'status', 'revision')},
