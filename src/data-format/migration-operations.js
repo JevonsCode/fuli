@@ -168,13 +168,19 @@ function pruneQuietly(prune, dataDir) {
 }
 
 // The console's port: the same plan and operations `fuli migrate` uses, for
-// one data directory and its personal graph.
-export function dataFormatMigrations(dataDir, { graph, prune = pruneFormatBackups, now = () => new Date() } = {}) {
+// one data directory and its personal graph. restore: the console's
+// whole-store restore (console-restore.js), which restarts FULI around it.
+export function dataFormatMigrations(dataDir, { graph, restore = null, prune = pruneFormatBackups,
+  now = () => new Date() } = {}) {
   return {
     // With the retention budget, so the console says the one `fuli migrate prune` uses.
     preview: async () => ({ ...await previewMigrations({ dataDir, graph }), retention: retentionPolicyOrNull() }),
     apply: ({ digest, actor }) => applyMigrations({ dataDir, digest, actor, graph }),
     rollback: ({ label, migrationId, actor }) => rollbackMigration({ dataDir, label, migrationId, actor, graph }),
+    // The person's check of a graph prune whose answer never came: the same
+    // prune `fuli migrate prune` runs, within the same budget.
+    retain: () => retainQuietly(pruneFormatRetention, dataDir, graph, now),
+    restore,
     // When the console starts: resolve interrupted changes, keep backups within the policy.
     prune: () => {
       try {

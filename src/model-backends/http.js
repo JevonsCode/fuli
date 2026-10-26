@@ -15,7 +15,7 @@ import { RETENTION } from './suggestion-log.js';
 // accepted only at the local process boundary (a loopback request). That
 // does not show a person sent it and is not the human-review channel: no MCP
 // or Agent tool calls it, but anything with local shell or HTTP access can.
-// Keys stay a local command (fuli models set-key).
+// Keys are saved by their own loopback route (keys-http.js), never here.
 // operations: the task types each role already sends to its model.
 // automaticOperations: the one operation per role that may apply its model's
 // answer by itself (rec#10 D-36); modelTrust (src/model-backends/role-trust.js)

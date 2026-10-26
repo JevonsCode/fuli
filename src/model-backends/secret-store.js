@@ -48,7 +48,7 @@ export function createModelSecretStore({
     const mode = ownerOnly ? fileMode(path) : null;
     if (mode !== null && (mode & OTHER_USERS_MASK) !== 0) {
       throw new ModelSecretError('secret_store_insecure',
-        'The model key store can be read by other users. Restrict it to the current user (chmod 600) and try again.');
+        'The model key store can be read by other users. Restrict it to the current user and try again.');
     }
   }
   function records() {
@@ -60,6 +60,11 @@ export function createModelSecretStore({
     return stored.secrets;
   }
   return {
+    // The references that have a key, never the keys.
+    references() {
+      assertPrivate();
+      return Object.keys(records()).sort();
+    },
     async set(ref, secret) {
       secretReference(ref, 'Key reference');
       const value = secretValue(secret);

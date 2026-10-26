@@ -13,6 +13,7 @@ vi.mock('./JudgmentProjectOverrides.vue', async () => {
 
 import { ApiError } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { t } from '@/i18n'
 import JudgmentWorkbench from './JudgmentWorkbench.vue'
 import { provideWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
 
@@ -383,7 +384,7 @@ describe('knowledge recovery fence in the workbench', () => {
       await wrapper.get('.judgment-workbench-actions button').trigger('click')
     } else await wrapper.get(operation === 'review' ? '[data-action="review"]' : operation === 'feedback' ? '[data-feedback="up"]' : '[data-action="undo"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('fuli migrate reconcile-knowledge')
+    expect(wrapper.text()).toContain(t('common.errors.knowledgeRecoveryPending'))
     expect(wrapper.text()).not.toContain('SYNTHETIC RECEIPT BODY')
     expect(wrapper.find('[data-decision-card]').exists()).toBe(false)
     const pending = deferred<{ records: unknown[] }>()
@@ -391,7 +392,7 @@ describe('knowledge recovery fence in the workbench', () => {
     await wrapper.get('.judgment-workbench-error button').trigger('click')
     expect(wrapper.getComponent(GrowthLoading).props('variant')).toBe('inline')
     pending.resolve({ records: [] }); await flushPromises()
-    expect(wrapper.text()).not.toContain('fuli migrate reconcile-knowledge')
+    expect(wrapper.text()).not.toContain(t('common.errors.knowledgeRecoveryPending'))
     expect(postJson).toHaveBeenCalledTimes(operation === 'read' ? 0 : 1)
     wrapper.unmount()
   })
@@ -412,7 +413,7 @@ it('never restores receipt bodies from an older feedback response after a recove
   await flushPromises()
   expect(wrapper.text()).not.toContain('LATE SYNTHETIC BODY')
   expect(wrapper.find('[data-decision-card]').exists()).toBe(false)
-  expect(wrapper.text()).toContain('fuli migrate reconcile-knowledge')
+  expect(wrapper.text()).toContain(t('common.errors.knowledgeRecoveryPending'))
   wrapper.unmount()
 })
 
