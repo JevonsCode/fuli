@@ -11,19 +11,30 @@ const sha = text => createHash('sha256').update(text).digest('hex');
 // A synthetic host: its native transcript, written the way each client records
 // native messages, a tool result or a delivered hook context. `inject` returns
 // the record's offset; a Claude attachment's uuid is `attachment-<offset>`.
+// Claude records form a tree as Claude Code writes them: each names the one
+// before it as parentUuid (a compaction starts a new root), and `rewind(uuid)`
+// makes the next record continue from an earlier one, leaving a branch.
 export function syntheticHost(directory, client, sessionId, { fileName = `${client}-${sessionId}.jsonl` } = {}) {
   const path = join(directory, fileName);
+  const codex = client === 'codex';
   let size = 0;
-  const write = async record => {
-    const line = `${JSON.stringify(record)}\n`;
+  let leaf = null;
+  const write = async value => {
     const offset = size;
+    let record = value;
+    if (!codex) {
+      record = { parentUuid: leaf, uuid: `record-${offset}`, ...value };
+      leaf = record.uuid;
+    }
+    const line = `${JSON.stringify(record)}\n`;
     await appendFile(path, line);
     size += Buffer.byteLength(line);
     return offset;
   };
-  const codex = client === 'codex';
   return {
     client, sessionId, path,
+    leaf: () => leaf,
+    rewind: uuid => { leaf = uuid; },
     start: () => write(codex ? { type: 'session_meta', payload: { id: sessionId } }
       : { type: 'system', subtype: 'init', sessionId }),
     // The stored event ID names the native record, as the transcript collector does.
@@ -37,7 +48,7 @@ export function syntheticHost(directory, client, sessionId, { fileName = `${clie
       : { type: 'attachment', sessionId, uuid: `attachment-${size}`,
         attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit' }, rendered: [{ content: text }] }),
     compact: () => write(codex ? { type: 'compacted', payload: { window_id: 'next' } }
-      : { type: 'system', subtype: 'compact_boundary', sessionId }),
+      : { type: 'system', subtype: 'compact_boundary', sessionId, parentUuid: null }),
     // A FULI tool result whose structured copy and visible text may differ.
     toolResult: async (id, structured, visible, name = 'mcp__fuli__begin_task_context', input = {}) => {
       const output = JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(visible) }], structuredContent: structured });
@@ -50,6 +61,7 @@ export function syntheticHost(directory, client, sessionId, { fileName = `${clie
     // and, optionally, one message at the next offset.
     rewriteInPlace: async (text = null) => {
       size = 0;
+      leaf = null;
       await writeFile(path, '');
       await write(codex ? { type: 'session_meta', payload: { id: sessionId } } : { type: 'system', subtype: 'init', sessionId });
       if (text !== null) await write(codex

@@ -67,7 +67,8 @@ export function useProjectBoardFilter(options: {
   }
   const visibleIds = computed(() => options.projectIds.value.filter(id => selected.value === null || selected.value.includes(id)))
   function syncRoute() {
-    if (!options.enabled.value || !scope || !options.ready.value || !resolved) return
+    // Every project needs no catalog, so a reset before the catalog loads still leaves the link.
+    if (!options.enabled.value || !scope || !resolved || !options.ready.value && selected.value !== null) return
     const ids = visibleIds.value
     const requested = requestedIds()
     const all = selected.value === null || ids.length > 0 && ids.length === options.projectIds.value.length
@@ -114,5 +115,7 @@ export function useProjectBoardFilter(options: {
     persist()
     syncRoute()
   }
-  return { selection, reset, invalidScope, storageUnavailable }
+  // A saved or linked filter narrower than every project, which reset clears.
+  const active = computed(() => selected.value !== null || !routeIsAll(requestedIds()))
+  return { selection, reset, active, invalidScope, storageUnavailable }
 }

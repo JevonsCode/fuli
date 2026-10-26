@@ -102,10 +102,15 @@ export const SCENARIOS = {
     const after = await c.turn(WORK, { note: 'C after compaction' });
     world.check('compact: the new generation receives the window again', sentWholeWindow(after));
     await c.turn(WORK, { note: 'C after compaction, settled' });
+    await c.sessionStart('resume');
+    const codexResumed = await c.turn(WORK, { note: 'C after SessionStart resume' });
+    world.check('Codex resume: the new generation receives the window again', sentWholeWindow(codexResumed));
     await h.turn(WORK, { note: 'H before resume' });
+    // Claude Code replays the same transcript on resume (rec#11 D-69).
     await h.sessionStart('resume');
     const resumed = await h.turn(WORK, { note: 'H after SessionStart resume' });
-    world.check('resume: the new generation receives the window again', sentWholeWindow(resumed));
+    world.check('Claude Code resume: the replayed generation keeps its base and resends nothing seen',
+      resumed.preference_delivery === 'delta' && resumed.messages_sent === 0 && resumed.resent_seen_items === 0);
     await h.turn(WORK, { note: 'H after resume, settled' });
   },
 

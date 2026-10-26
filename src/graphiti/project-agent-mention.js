@@ -1,18 +1,20 @@
+import { leadingAgentAddress, stableAddress } from './fla-mention.js';
+
 // Only an explicit leading mention selects a role. Matching uses the current scope's
 // directory, never fuzzy search or another Agent's memory. Provider authorization
 // still runs after matching, including for inactive or client-restricted names.
+// The person's own FLAs named anywhere in their space are found before this
+// (task-entry-named-fla.js); this keeps the portable `@{agentId}` form and the
+// names of FULI's own roles in the current scope.
 export async function resolveTaskAgentMention(application, projectId, input) {
-  const prompt = String(input.taskPrompt ?? '').trimStart();
-  if (!prompt.startsWith('@')) return null;
+  const raw = leadingAgentAddress(input.taskPrompt);
+  if (raw === null) return null;
   const directory = await application.personal.listProjectAgents(
     application.config.personal.spaceId, projectId);
   const agents = Array.isArray(directory) ? directory : directory.agents ?? directory.items ?? [];
-  const raw = prompt.slice(1, 2049);
   const text = normalize(raw);
-  const stable = /^\{([^{}\s]+)\}(?=$|[\s,，:：])/u.exec(raw);
-  let stableId;
-  try { stableId = stable ? decodeURIComponent(stable[1]) : null; }
-  catch { stableId = null; }
+  const stable = stableAddress(raw);
+  const stableId = stable?.agentId ?? null;
   const matches = agents.flatMap(agent => {
     const aliases = stable ? [agent.agent_id] : [agent.profile?.display_name, agent.profile?.name, agent.agent_id];
     const lengths = aliases.filter(Boolean).map(name => stable ? name : normalize(name)).filter(name => stable

@@ -284,10 +284,14 @@ test('both native adapters share blocked delivery and preserve the original task
     for (const sourceTruncated of [false, true]) {
       const value = preferenceEntry();
       value.context.source_truncated = sourceTruncated;
-      // A hard rule is never left out of an entry (rec#11 D-54), so one past
-      // the result budget blocks in every adapter.
-      if (!sourceTruncated) Object.assign(value.effective_preferences[0], { instruction: 'Synthetic large preference. '.repeat(9000),
-        preference_qualifiers: { workKind: 'implementation', constraint: 'hard' } });
+      // A hard rule past the result budget blocks Codex. Claude Code's inline
+      // budget leaves even a hard rule out when it alone does not fit (rec#11
+      // D-69), checked below; an integrity refusal blocks every adapter.
+      if (!sourceTruncated) {
+        if (lifecycle === claudeLifecycleOutput) continue;
+        Object.assign(value.effective_preferences[0], { instruction: 'Synthetic large preference. '.repeat(9000),
+          preference_qualifiers: { workKind: 'implementation', constraint: 'hard' } });
+      }
       let calls = 0;
       const output = await lifecycle('UserPromptSubmit', { session_id: 'synthetic-session', cwd: '/synthetic', prompt: 'Synthetic task' },
         async name => { assert.equal(name, 'begin_task_context'); calls++; return value; });
@@ -300,17 +304,22 @@ test('both native adapters share blocked delivery and preserve the original task
       assert.equal(calls, 1);
     }
   }
-  // A soft rule past the result budget: Codex still blocks; Claude Code's
-  // inline budget leaves it out and names it for read_task_preferences.
-  const soft = () => Object.assign(preferenceEntry(), { effective_preferences: [{ ...preferenceEntry().effective_preferences[0],
-    instruction: 'Synthetic large preference. '.repeat(9000) }] });
-  const frame = async lifecycle => {
+  // A soft or a hard rule past the result budget: Codex still blocks; Claude
+  // Code's inline budget leaves it out and names it for read_task_preferences,
+  // a hard one as such (includes_always_inline).
+  const large = qualifiers => () => Object.assign(preferenceEntry(), { effective_preferences: [{
+    ...preferenceEntry().effective_preferences[0], instruction: 'Synthetic large preference. '.repeat(9000),
+    preference_qualifiers: { workKind: 'implementation', ...qualifiers } }] });
+  const frame = async (lifecycle, entry) => {
     const text = (await lifecycle('UserPromptSubmit', { session_id: 'synthetic-session', cwd: '/synthetic', prompt: 'Synthetic task' },
-      async () => soft())).hookSpecificOutput.additionalContext;
+      async () => entry())).hookSpecificOutput.additionalContext;
     return JSON.parse(text.slice(text.indexOf('\n') + 1));
   };
-  assert.equal((await frame(codexLifecycleOutput)).preference_delivery.reason, 'delivery_budget');
-  const bounded = await frame(claudeLifecycleOutput);
-  assert.deepEqual([bounded.effective_preferences, bounded.preferences_omitted.count], [[], 1]);
-  assert.equal(bounded.preference_delivery, undefined);
+  for (const [qualifiers, hard] of [[{}, undefined], [{ constraint: 'hard' }, true]]) {
+    assert.equal((await frame(codexLifecycleOutput, large(qualifiers))).preference_delivery.reason, 'delivery_budget');
+    const bounded = await frame(claudeLifecycleOutput, large(qualifiers));
+    assert.deepEqual([bounded.effective_preferences, bounded.preferences_omitted.count], [[], 1]);
+    assert.equal(bounded.preferences_omitted.includes_always_inline, hard);
+    assert.equal(bounded.preference_delivery, undefined);
+  }
 });

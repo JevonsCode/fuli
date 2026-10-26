@@ -1,12 +1,10 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMemoryHistory, createRouter } from 'vue-router'
-import { createPinia, setActivePinia } from 'pinia'
 import type { ConsoleState } from '@/types'
 const { getJson, patchJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), patchJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, patchJson, postJson }))
 import { ApiError } from '@/api/client'
-import EmployeeWorkbenchPage from './EmployeeWorkbenchPage.vue'
+import { defaultConsoleState, mountEmployeeWorkbench as setup, resetEmployeeWorkbench, unmountEmployeeWorkbenches } from '@/test-support/employee-workbench'
 import { useConsoleStore } from '@/stores/console'
 import { refreshEmployeeCatalog } from '@/features/employees/catalog'
 import EmployeeTaskBoard from '@/features/employees/EmployeeTaskBoard.vue'
@@ -19,49 +17,9 @@ import { projectBoardFilterKey } from '@/features/employees/project-board-filter
 import { pageTitle } from '@/layouts/page-title'
 import { employeeMessages } from '@/i18n/messages/employees'
 
-const mounted: Array<{ unmount: () => void }> = []
-function defaultConsoleState(): ConsoleState {
-  return {
-    mode: 'connected', activePersonalSpaceId: 'space-a',
-    personalSpaces: [{ id: 'space-a', name: '我' }],
-    personalProjects: [{ project_id: 'project-a', personal_space_id: 'space-a', profile: { name: '验收项目', sources: [], boundaries: [] } }],
-    projects: [], subscriptions: [],
-  }
-}
-beforeEach(async () => {
-  setActivePinia(createPinia())
-  const store = useConsoleStore()
-  store.state = defaultConsoleState()
-  store.runtimeStatus = 'ready'
-  localStorage.clear()
-  await refreshEmployeeCatalog('')
-  getJson.mockReset()
-  patchJson.mockReset()
-  postJson.mockReset()
-  postJson.mockImplementation(async (_url: string, body: { personalProjectId: string }) => ({
-    project: { id: body.personalProjectId, name: body.personalProjectId },
-    items: [], total: 0, truncated: false,
-  }))
-  getJson.mockImplementation(async (url: string) => {
-    if (url.startsWith('/api/employee-templates?')) return { templates: [{
-      id: 'jefa', name: 'Jefa', role: '项目经理', runtime: { apiVersion: 1 }, runtimeStatus: 'ready',
-      capabilities: ['项目管理'], permissions: ['board.read', 'board.write'], agentId: 'employee.jefa', agentStatus: 'active', assignmentsVersion: 'version-1',
-      assignments: [{ personalProjectId: 'project-a', status: 'active' }],
-    }] }
-    if (!url.includes('personalProjectId=project-a')) throw new Error(JSON.stringify({ code: 'assignment_required' }))
-    return { templateId: 'jefa', name: 'Jefa', project: { id: 'project-a', name: '验收项目' }, runtimeStatus: 'ready', workbenchUrl: '/employee-workspaces/jefa/project-a/' }
-  })
-})
-afterEach(() => { for (const wrapper of mounted.splice(0)) wrapper.unmount(); vi.useRealTimers() })
+beforeEach(() => resetEmployeeWorkbench({ getJson, patchJson, postJson }))
+afterEach(() => { unmountEmployeeWorkbenches(); vi.useRealTimers() })
 
-async function setup(path: string) {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/employees/:templateId', component: EmployeeWorkbenchPage }, { path: '/project-agents', component: { template: '<p>Agents</p>' } }] })
-  await router.push(path)
-  const wrapper = mount(EmployeeWorkbenchPage, { global: { plugins: [router] } })
-  mounted.push(wrapper)
-  await flushPromises()
-  return wrapper
-}
 describe('employee workbench', () => {
   it('waits for console bootstrap, then loads the catalog and board in order', async () => {
     const store = useConsoleStore()
@@ -637,7 +595,7 @@ describe('Jefa bounded progressive reads', () => {
     expect(wrapper.text()).toContain('部分项目暂不可用')
     expect(wrapper.find('.growth-loading').exists()).toBe(false)
   })
-  it('uses the same budget for catalog and board instead of restarting at the board', async () => {
+  it('counts the catalog answer as progress, then times out a hung board one idle budget later', async () => {
     vi.useFakeTimers()
     const original = getJson.getMockImplementation()!
     getJson.mockImplementation(async (url: string) => {
@@ -648,8 +606,24 @@ describe('Jefa bounded progressive reads', () => {
     const wrapper = await setup('/employees/jefa')
     await vi.advanceTimersByTimeAsync(20000)
     await vi.advanceTimersByTimeAsync(10000)
+    expect(wrapper.find('.growth-loading').exists()).toBe(true)
+    await vi.advanceTimersByTimeAsync(20000)
     expect(wrapper.find('.growth-loading').exists()).toBe(false)
     expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
+  })
+  it('does not time out a slow catalog followed by a slower board', async () => {
+    vi.useFakeTimers()
+    const original = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?')) await new Promise(resolve => setTimeout(resolve, 25000))
+      return original(url)
+    })
+    postJson.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve({ items: [{ id: 'a1', projectId: 'project-a', title: '慢速读取的任务', status: 'planned' }], total: 1, truncated: false }), 8000)))
+    const wrapper = await setup('/employees/jefa')
+    await vi.advanceTimersByTimeAsync(34000)
+    expect(wrapper.text()).toContain('慢速读取的任务')
+    expect(wrapper.find('.growth-loading').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
   it('times out a hanging catalog and aborts its request without accepting late catalog data', async () => {
     vi.useFakeTimers()
@@ -717,7 +691,9 @@ describe('Jefa bounded progressive reads', () => {
     postJson.mockRejectedValue(new ApiError('forbidden', 403))
     await wrapper.get('.jefa-read-actions button').trigger('click'); await flushPromises()
     expect(wrapper.text()).not.toContain('将撤权的任务')
-    expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(false)
+    // The catalog still lists the projects, so the board keeps its filter but shows no revoked data.
+    expect(wrapper.getComponent(EmployeeTaskBoard).props('boards')).toEqual([])
+    expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取失败')
   })
   it('invalidates pending board work on unmount and changing personal space', async () => {
     let oldResponse!: (value: unknown) => void
@@ -798,7 +774,9 @@ describe('Jefa bounded progressive reads', () => {
     })
     await refreshEmployeeCatalog('space-a'); await flushPromises()
     expect(wrapper.text()).not.toContain('目录已撤销任务')
-    expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(false)
+    // The last authoritative catalog keeps the board and its filter, without the removed project.
+    expect(wrapper.getComponent(EmployeeTaskBoard).props('boards')).toEqual([])
+    expect(wrapper.getComponent(EmployeeTaskBoard).props('projects')).toEqual([{ id: 'project-b', name: '项目 B' }])
   })
 
   it('shows an explicit permission failure instead of a blank ready workbench', async () => {
