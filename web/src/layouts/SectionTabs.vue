@@ -4,7 +4,7 @@ import { t } from '@/i18n'
 import type { NavSection } from './nav-destinations'
 
 // The active destination's sections as tabs in the top bar (e.g. 记忆:
-// 知识 / 偏好 / 品味 / 知识整理), so merged pages stay one click away.
+// 知识 / 偏好 / 知识整理 / 标签), so merged pages stay one click away.
 defineProps<{ sections: readonly NavSection[]; activeKey?: string }>()
 </script>
 

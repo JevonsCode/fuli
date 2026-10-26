@@ -340,7 +340,7 @@ describe('PersonalProfilePage', () => {
     wrapper.unmount()
   })
 
-  it('leaves writing taste to its own tab and reads only preferences and conflicts', async () => {
+  it('lists the person\'s preferences as rows', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useConsoleStore()
@@ -366,7 +366,6 @@ describe('PersonalProfilePage', () => {
     await finishProfileLoading()
 
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(3)
-    expect(getJson.mock.calls.some(([url]) => String(url).startsWith('/api/writing-taste-profile'))).toBe(false)
   })
 
   it('filters collaboration preferences by global or one exact personal project', async () => {
@@ -872,42 +871,5 @@ function preferenceNode(
     },
     created_at: createdAt,
     evidence: [],
-  }
-}
-
-function writingTasteProfile(status: 'collecting' | 'preview_ready' | 'active') {
-  const ready = status !== 'collecting'
-  return {
-    status,
-    ready,
-    generated_at: '2026-08-05T00:00:00.000Z',
-    generated_from: 'personal_profile_graph',
-    scope: { personal_space_id: 'personal-space', personal_project_id: null },
-    readiness: {
-      rule_count: ready ? 3 : 1,
-      evidence_count: ready ? 6 : 1,
-      session_count: ready ? 3 : 1,
-      observation_day_count: ready ? 3 : 1,
-      confirmed_rule_count: status === 'active' ? 3 : 0,
-      observed_rule_count: status === 'preview_ready' ? 3 : 0,
-      working_hypothesis_count: status === 'collecting' ? 1 : 0,
-      conflict_count: 0,
-      standard_path_ready: status === 'preview_ready',
-      confirmed_path_ready: status === 'active',
-      thresholds: {
-        rule_count: 3,
-        evidence_count: 6,
-        session_count: 3,
-        observation_day_count: 3,
-        confirmed_rule_count: 3,
-      },
-      criteria: [],
-    },
-    conflicts: [],
-    rules: [],
-    skill_name: ready ? 'user-writing-taste' : null,
-    skill_version: ready ? 'v1:test' : null,
-    profile_markdown: ready ? '# User Writing Taste' : null,
-    agent_markdown: ready ? '# Agent View' : null,
   }
 }
