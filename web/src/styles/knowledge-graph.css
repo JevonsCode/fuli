@@ -255,5 +255,4 @@
 @media (max-width: 720px) {
   .graph-toolbar > .ui-select { width: 100%; }
   .graph-toolbar .search-form { flex: 1 1 160px; min-width: 0; }
-  .graph-view-actions { border-left: 0; padding-left: 0; }
 }

@@ -119,9 +119,6 @@ const selectedMaterialIndex = computed(() => props.selectedItem
         </div>
         <UiStatRow class="knowledge-status-filter" :items="statusStats" :label="t('knowledge.workspace.workspace.view.knowledgeStatusAria')"
           @select="key => emit('update-status', key as ContentStatus)" />
-        <small class="directory-section-count">
-          {{ t('common.counts.items', { count: visibleItems.length }) }}
-        </small>
       </header>
       <!-- @vue-generic {import('@/types').KnowledgeItem} -->
       <VirtualDirectoryList
