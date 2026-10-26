@@ -7,7 +7,7 @@ import { tonborgReviewSuggestions } from './review-suggestions.js';
 
 const UNDO_PATH = '/api/judgment/undo';
 const SUGGESTIONS_PATH = '/api/judgment/suggestions';
-const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/records', '/api/judgment/feedback',
+const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/policies', '/api/judgment/records', '/api/judgment/feedback',
   '/api/judgment/review', '/api/judgment/assess', '/api/judgment/accept', UNDO_PATH, SUGGESTIONS_PATH];
 // The routes that answer with Tonborg's full records (summary, evidence,
 // receipts, feedback reasons) or its suggestions (rec#11 D-60): a judgment
@@ -54,6 +54,7 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
     'PUT /api/agent-pins': async () => app.judgment.pin(await readJson(request)),
     'GET /api/judgment/policy': () => app.judgment.policy(query),
     'PUT /api/judgment/policy': async () => app.judgment.setPolicy(await readJson(request)),
+    'GET /api/judgment/policies': () => app.judgment.policyOverrides({ personalSpaceId: query.personalSpaceId }),
     'GET /api/judgment/records': () => app.judgment.records({ ...query, ...recordPage(url.searchParams) }),
     'POST /api/judgment/feedback': async () => app.judgment.feedback(await readJson(request)),
     'POST /api/judgment/review': async () => app.judgment.review(await readJson(request)),

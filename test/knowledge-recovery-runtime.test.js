@@ -63,7 +63,8 @@ test('real application refuses unverified local bodies as HTTP 503 and a structu
   const refused = await mcpCall(server, 'list_judgments', { personalSpaceId: SPACE });
   assert.equal(refused.isError, true);
   assert.equal(refused.structuredContent.error.code, 'knowledge_recovery_pending');
-  assert.match(refused.structuredContent.error.message, /fuli migrate reconcile-knowledge/);
+  assert.match(refused.structuredContent.error.message, /console checks again by itself/);
+  assert.doesNotMatch(refused.structuredContent.error.message, /fuli [a-z]/);
   assert.equal(refused.structuredContent.records, undefined);
   const pins = await callAgentTool(f.app, 'get_agent_pins', { personalSpaceId: SPACE });
   assert.ok(pins.agentIds.length, 'opaque IDs remain readable while body recovery is closed');

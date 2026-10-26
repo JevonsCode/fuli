@@ -4,6 +4,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { EmployeeError, parseEmployeeManifest } from './manifest.js';
 
 const builtinRoot = fileURLToPath(new URL('./catalog/', import.meta.url));
+// Workbench runtimes FULI ships for its own catalog templates. They implement
+// the same Manifest API v1 as an installed package and are ready without an
+// install step; an installed package with the same ID still replaces one.
+const BUILTIN_RUNTIMES = Object.freeze({
+  jefa: fileURLToPath(new URL('./builtin/jefa/runtime.js', import.meta.url))
+});
 
 export function createEmployeePackageRegistry({ packageDirectory, dataDirectory, catalogDirectory = builtinRoot }) {
   const runtimes = new Map();
@@ -13,7 +19,9 @@ export function createEmployeePackageRegistry({ packageDirectory, dataDirectory,
     const entries = new Map();
     for (const file of readdirSync(catalogDirectory).filter((name) => name.endsWith('.json'))) {
       const manifest = readManifest(join(catalogDirectory, file));
-      entries.set(manifest.id, { manifest, root: null, runtimeStatus: manifest.runtime ? 'install_required' : 'not_required' });
+      const builtin = manifest.runtime ? BUILTIN_RUNTIMES[manifest.id] ?? null : null;
+      entries.set(manifest.id, { manifest, root: null, builtin,
+        runtimeStatus: manifest.runtime ? builtin ? 'ready' : 'install_required' : 'not_required' });
     }
     if (packageDirectory && existsSync(packageDirectory)) {
       for (const name of readdirSync(packageDirectory)) {
@@ -30,10 +38,11 @@ export function createEmployeePackageRegistry({ packageDirectory, dataDirectory,
             confinedPath(root, manifest.runtime.entry);
             confinedPath(root, `${manifest.runtime.webRoot}/index.html`);
           }
-          entries.set(name, { manifest, root, runtimeStatus: manifest.runtime ? 'ready' : 'not_required' });
+          entries.set(name, { manifest, root, builtin: null, runtimeStatus: manifest.runtime ? 'ready' : 'not_required' });
         } catch {
+          // A damaged package does not take a built-in runtime down with it.
           const previous = entries.get(name);
-          if (previous) entries.set(name, { ...previous, runtimeStatus: 'unavailable' });
+          if (previous && !previous.builtin) entries.set(name, { ...previous, runtimeStatus: 'unavailable' });
         }
       }
     }
@@ -54,11 +63,12 @@ export function createEmployeePackageRegistry({ packageDirectory, dataDirectory,
     }
     if (!runtimes.has(id)) {
       const loading = (async () => {
-        const module = await import(pathToFileURL(confinedPath(entry.root, entry.manifest.runtime.entry)).href);
+        const entryFile = entry.builtin ?? confinedPath(entry.root, entry.manifest.runtime.entry);
+        const module = await import(pathToFileURL(entryFile).href);
         if (typeof module.createEmployeeRuntime !== 'function') throw new TypeError('Invalid employee runtime export');
         const instance = await module.createEmployeeRuntime({
           dataDirectory: resolve(dataDirectory, id),
-          packageDirectory: entry.root,
+          packageDirectory: entry.root ?? dirname(entry.builtin),
           manifest: entry.manifest
         });
         if (!instance || !['handleHttp', 'callTool', 'describeTools', 'close'].every(

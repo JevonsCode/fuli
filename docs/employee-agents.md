@@ -6,7 +6,7 @@ Every Project Agent requires a primary occupation (`occupation.role`, from `prod
 
 ## User flow
 
-Open **Project Agents → Hire an Agent**, select a template and its responsibility policy, then hire. Only non-fixed templates appear there; to narrow what Jefa or Bole manage, use **Manage assigned projects** on their card. The custom project picker supports multiple selection, individual exclusions, search, and **Invert selection**. **All projects** includes future active projects unless explicitly excluded. **Selected projects** keeps a fixed selection; selecting none in that mode hires without a project. The Agent directory reflects the persistent identity; **Specialist Agents → Jefa** in the sidebar opens its installed board directly. Hiring alone does not create a project. Register a lasting project from the personal-project directory, or explicitly coordinate a one-off task to use the temporary scope described below.
+Every Agent the console shows is built in, so the console has no hiring step. To narrow what Jefa or Bole manage, use **Manage assigned projects** on their card or workbench. A custom employee package is recruited through the `recruit_employee` Agent tool only. The custom project picker supports multiple selection, individual exclusions, search, and **Invert selection**. **All projects** includes future active projects unless explicitly excluded. **Selected projects** keeps a fixed selection; selecting none in that mode leaves the role without a project. The Agent directory reflects the persistent identity; **Specialist Agents → Jefa** in the sidebar opens its built-in board directly. Hiring alone does not create a project. Register a lasting project from the personal-project directory, or explicitly coordinate a one-off task to use the temporary scope described below.
 
 Specialist workspaces use a compact host toolbar rather than the generic console heading. They keep the workspace's own navigation and content, plus the host's project switcher and responsibility editor. The selected project is reflected in the URL; an unauthorized explicit deep link is never silently redirected to a different project. Empty assignments, unavailable templates and catalog errors each have an actionable state. The `employee` CLI/API/manifest names are unchanged for compatibility.
 
@@ -18,7 +18,7 @@ The directory's **Filter projects** control supports multi-selection and inversi
 
 Repeat recruitment is idempotent. Customized profile preferences and executor/model policies are preserved. One employee identity can have multiple project assignments. Reactivating an inactive identity is an explicit action; a conflicting unrelated identity is never overwritten. Recruitment does not start an executor or constitute model usage.
 
-The catalog shows whether a workbench package is actually installed. Identity-only templates need no runtime and remain valid employees without a sidebar workbench. A trusted built-in template may declare `workbench: { "kind": "native", "view": "people" }`; Bole uses this native panel to summarize Agent distribution, current tasks, and timestamped recruitment reasons from the same Project Agent APIs used elsewhere in the console.
+The catalog shows whether a workbench is ready: built in (Jefa), installed, or not installed. Identity-only templates need no runtime and remain valid employees without a sidebar workbench. A trusted built-in template may declare `workbench: { "kind": "native", "view": "people" }`; Bole uses this native panel to summarize Agent distribution, current tasks, and timestamped recruitment reasons from the same Project Agent APIs used elsewhere in the console.
 
 ## Unassigned conversations, Jefa triage, and explicit temporary tasks
 
@@ -44,6 +44,8 @@ show scope, assignment, worker evidence and why a completion summary is unavaila
 remains useful for work that should share a stable project identity across future tasks.
 
 ## Local installation
+
+Jefa's board needs no installation: its runtime ships with FULI (see [Jefa's built-in board](#jefas-built-in-board)). Installation is only for a custom employee package someone built. The console never asks the person to run a command; a custom package that is not installed is shown as an identity without a workspace.
 
 ```sh
 fl employee install <built-package-directory>
@@ -131,9 +133,42 @@ Recruitment accepts an exact `projectPath` (MCP), a legacy `personalProjectId`/`
 
 Management policy is stored beside the employee data in SQLite with cross-process compare-and-swap protection. It is saved before Provider changes so excluded access fails closed even after a partial failure. Assignment changes are individually durable, not one Provider transaction; removals precede additions. If a batch fails, `assignment_update_incomplete` requires reloading actual state before retrying. Receipts include the new version, policy, counts, and records. MCP results remain bounded and may report `truncated`; never treat truncated assignment records as a complete scope. Workbench, task entry, A2A and tool-call gates enforce the current policy on every request.
 
-Jefa supplies eight workbench tools for board/task reading, task creation, optimistic-concurrency updates, status questions, and session-title preparation/receipts. Its data and in-process API/A2A implementations belong to the Jefa package; the host does not import a Jefa dependency or bind another employee port. Title settings allow automatic actions, suggestions, or off. Native rename execution belongs to the current client: the employee must not claim success before an actual client receipt, overwrite a manually locked title, or edit client databases/transcripts. Clients lacking native rename capability retain suggestions.
+Jefa supplies eight workbench tools for board/task reading, task creation, optimistic-concurrency updates, status questions, and session-title preparation/receipts; [Jefa's built-in board](#jefas-built-in-board) lists them. Title settings allow automatic actions, suggestions, or off. Native rename execution belongs to the current client: the employee must not claim success before an actual client receipt, overwrite a manually locked title, or edit client databases/transcripts. Clients lacking native rename capability retain suggestions.
 
 When Jefa has its own model in `model-backends.json` (rec#8, operation `board_match`) and the task's project is approved for it, a task entry that the host has already authorized for Jefa and whose board it read also asks that model, once per host session, which listed board task (at most eight, the same window as the entry) the opening of the task (at most 600 characters) continues, or `none`. The model runs in FULI's host, never in Jefa's workbench runtime. The prompt and each task's title, summary and status are evidence of the task's project; options are positional and host-written. A task without a project, Jefa without access, or an empty board sends nothing, and the Assistant's `project_candidate` and Jefa's `board_match` never run for the same entry. The answer is the Jefa manager's `suggested_match`: a hint such as 「可能是看板上的「X」任务」 with the gate `suggestion_only`. It writes nothing and grants nothing: creating, updating or linking a task still goes through `call_employee_tool` with its permission, human-acceptance and version checks. Before it is shown, the original request is checked again against Jefa's current data-sharing approval, the board is read again through the same gates, and the task's project is read again; a withdrawn permission, a chosen task that changed, moved or was deleted, or a task now in another project replaces the hint with `superseded` and its reason. The whole decision has a 3-second deadline, retries included. `none` shows nothing; an allowed fallback keeps its reason and receipt and leaves matching to the session as before; a refusal or exhausted budget keeps its reason. Either way the session's one board hint is used up. Without Jefa's model the entry is unchanged.
+
+## Jefa's built-in board
+
+Jefa's board runtime ships with FULI in `src/employees/builtin/jefa/`, so Jefa is `ready` in every installation with no install step. It implements the same Manifest API v1 as an installed package, and the package registry loads it the same way. If a Jefa package was installed under `employees/packages/jefa`, that package replaces the built-in runtime; a damaged one does not, and the built-in board keeps working.
+
+The board is one SQLite store, `employees/data/jefa/board.sqlite`, opened through the shared data-format module and listed with the other local stores, so `fuli migrate status` and backups see it. It is separate from `employees/data/management.sqlite`. Every row is keyed by personal space and project, and the runtime only uses the project FULI authorized. Each task keeps its current state, and every change also appends the state it produced, with who made it (`agent` or `person`), to an immutable revision table. Tasks are never deleted.
+
+The eight tools, each limited by the permission it declares:
+
+| Tool | Permission | Contract |
+| --- | --- | --- |
+| `read_board` | `board.read` | Tasks ordered by status (active, blocked, review, planned, done), priority and recency. `limit` 1–200 (default 50), optional `statuses`. `version` changes on every board write; `truncated` says more tasks exist. |
+| `get_task` | `board.read` | One task with acceptance criteria, tags and its last 20 revisions. |
+| `create_tasks` | `board.write` | Up to 20 tasks. `messageId` makes a retry return the same tasks; the same ID with other content is `request_conflict`. New tasks are private and start `planned` unless a status other than `done` is given. |
+| `update_tasks` | `board.write` | Up to 50 updates, each with the `expectedUpdatedAt` it read. One stale update refuses the whole request with `version_conflict` and nothing is written. `requestId` makes a retry return the first answer. `done` is never accepted. |
+| `answer_status_question` | `board.read` | Counts per status, tasks waiting for the person's acceptance (`review`), blocked tasks and the named tasks, from the board alone. |
+| `prepare_session_title` | `session.title` | A title from only the session's linked tasks. `execution` is `client_required` (auto mode and `canRename`: the action the current client performs natively), `suggestion`, `unchanged`, `locked` (the title is locked or the person changed it after Jefa's last applied one) or `off`. A verified caller can prepare only its own session. |
+| `report_session_title` | `session.title` | The client's receipt: `applied` with the observed title, `failed` or `declined`, for one ready proposal at its revision. |
+| `get_session_title` | `session.title` | The current title record of one session in the project. |
+
+Workspace routes under `/employee-workspaces/jefa/<project>/`:
+
+| Route | Who | Answer |
+| --- | --- | --- |
+| `GET /` | anyone the host lets in | Redirects to the console board, `/employees/jefa?project=<project>`. |
+| `GET .well-known/agent-card.json` | same | Name, description, version and capabilities; Jefa is reached through `call_employee_tool`, there is no separate A2A endpoint. |
+| `GET api/snapshot` | same | `{ snapshot: { projects: [sharing state], workItems } }`: the whole private board of this project. |
+| `PATCH api/work-items/<task>/status` | the person, on this computer | `{ status }`; `done` records the person's acceptance time. |
+| `POST api/work-items` | the person, on this computer | A task the person creates; only here can a task be marked `visibility: "public_summary"`. |
+| `PATCH api/projects/<project>/sharing` | the person, on this computer | `{ publicShareEnabled, acceptsPublicRequests: false }`. Enabling keeps an existing slug; disabling drops it, so the old link answers 404. The path's project must be this workspace's project. |
+| `GET api/public/<slug>` | anyone the host lets in | `{ project: { id, name }, items, acceptsRequests: false }`: only tasks marked `public_summary`, and only their ID, title, status and priority. |
+
+The three person-only routes answer 403 `local_user_only` from another device, like the other local decisions in the interface catalog. No route adds a login or another access barrier.
 
 ## Verification and release boundary
 
@@ -173,14 +208,15 @@ Loopback links work only on the same computer; this UI does not enable LAN acces
 production hosting, or new public task visibility. Do not expose the local management service
 as a public multi-user report server.
 
-Run FULI's normal Node/web tests and typecheck. For an actual Jefa build:
+Run FULI's normal Node/web tests and typecheck. For Jefa's built-in board, or a Jefa package someone built:
 
 ```sh
+node scripts/employee-package-smoke.js
+node scripts/employee-package-smoke.js --serve
 node scripts/employee-package-smoke.js <built-package-directory>
-node scripts/employee-package-smoke.js <built-package-directory> --serve
 ```
 
-The smoke fixture uses a synthetic FULI directory but the real installed employee bundle, SQLite and MCP transport. The UI mode does not query a personal provider or external model. It deletes its temporary test data on shutdown.
+The smoke fixture uses a synthetic FULI directory but the real Jefa runtime (built in, or the installed package when a directory is given), SQLite and MCP transport. The UI mode does not query a personal provider or external model. It deletes its temporary test data on shutdown.
 
 Signing, remote catalog distribution, a runtime sandbox, database migration/uninstall UX, and production multi-user authorization remain separate release work. This feature does not authorize or publish a Feishu application.
 

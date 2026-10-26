@@ -5,6 +5,7 @@ import test from 'node:test';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 import { openAiStream } from './fixtures/model-transport.js';
 
 // A configured endpoint that answers any redirect (301, 302, 303, 307, 308)
@@ -15,10 +16,12 @@ import { openAiStream } from './fixtures/model-transport.js';
 const KEYS = { synthetic: 'synthetic-test-key' };
 const PROTOCOLS = { openai_chat: 'm-openai', anthropic_messages: 'm-anthropic', typesafe_systemone: 'jev-test' };
 
+// fetch refuses some ports (1719, 5061, 6666, ...): a free port the operating
+// system picks from that list would fail every request, so the test binds
+// through the same listener the console uses.
 async function listen(t, handler) {
-  const server = await new Promise(resolve => {
-    const created = createServer(handler).listen(0, '127.0.0.1', () => resolve(created));
-  });
+  const server = createServer(handler);
+  await listenFetchableServer(server, 0);
   t.after(() => { server.closeAllConnections(); server.close(); });
   return `http://127.0.0.1:${server.address().port}`;
 }

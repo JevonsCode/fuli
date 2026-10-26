@@ -7,7 +7,8 @@ import { formatDateTime } from '@/lib/date-time'
 // budget and egress, edited through the loopback route, and its usage from
 // the ledger. Payload shapes follow src/model-backends/port.js (roles, usage)
 // and src/model-backends/role-settings.js (the edit). A connection names its
-// key by secretRef only; no key reaches this page.
+// key by secretRef; the page can save a key under that name, but no key is
+// ever sent back to it.
 
 export const MODEL_ROLES = ['assistant', 'bole', 'jefa', 'tonborg'] as const
 export type ModelRoleId = typeof MODEL_ROLES[number]
@@ -301,6 +302,21 @@ export function configConflict(cause: unknown): ConfigConflict | null {
 
 export const saveModelRole = (role: ModelRoleId, draft: RoleDraft, revision: string | null) =>
   putJson<ModelRolesPayload>(`/api/model-backends/roles/${role}`, roleEdit(draft, revision))
+
+// ---- Keys -----------------------------------------------------------------
+// Saved on this computer by src/model-backends/keys-http.js. The key goes out
+// once in a request body; the page only ever learns which references have one.
+
+// The pattern src/model-backends/secret-store.js accepts for a reference.
+const KEY_REFERENCE = /^[a-z0-9][a-z0-9._-]{0,63}$/i
+
+export function validKeyReference(reference: string): boolean {
+  return KEY_REFERENCE.test(reference.trim())
+}
+
+export const readSavedKeys = () => getJson<{ saved: string[] }>('/api/model-backends/keys')
+export const saveModelKey = (reference: string, key: string) =>
+  putJson<{ reference: string; saved: true }>(`/api/model-backends/keys/${encodeURIComponent(reference.trim())}`, { key })
 
 // ---- Usage ----------------------------------------------------------------
 

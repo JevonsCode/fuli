@@ -1,4 +1,4 @@
-import { isLoopbackAddress } from './request-policy.js';
+import { isLoopbackAddress, refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-router.js';
 import { handleGraphApiRequest } from './graph-api-router.js';
@@ -14,6 +14,7 @@ import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
 import { handleModelBackendApiRequest } from '../model-backends/http.js';
+import { handleModelKeyRequest } from '../model-backends/keys-http.js';
 import { TONBORG_OPERATIONS } from '../judgment/backend.js';
 import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { JEFA_OPERATION } from '../graphiti/jefa-board-match.js';
@@ -37,11 +38,13 @@ export async function handleApiRequest({
   knowledgeOwnerReads = null,
   knowledgeTags = null,
   modelRoleSettings = null,
+  modelSecrets = null,
   readModelEvaluation = null,
   judgmentUndo = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
+  if (await handleModelKeyRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
@@ -134,6 +137,18 @@ export async function handleApiRequest({
 
   if (system && url.pathname === '/api/system/version' && request.method === 'GET') {
     sendJson(response, 200, await system.versionStatus());
+    return true;
+  }
+
+  // The console's own update (src/system/console-update.js): its state, and
+  // the start, which only a request from this computer may make.
+  if (system?.startUpdate && url.pathname === '/api/system/update') {
+    response.setHeader('Cache-Control', 'no-store');
+    if (request.method === 'GET') sendJson(response, 200, { update: system.updateStatus() });
+    else if (request.method !== 'POST') sendJson(response, 405, { error: 'Method not allowed' });
+    else if (!refuseRemoteDecision(request, response, 'FULI is updated only on this computer')) {
+      sendJson(response, 200, system.startUpdate());
+    }
     return true;
   }
 

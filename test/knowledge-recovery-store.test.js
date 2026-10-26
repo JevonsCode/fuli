@@ -32,7 +32,7 @@ function pending(work) {
   assert.throws(work, error => {
     assert.equal(error.code, 'knowledge_recovery_pending'); assert.equal(error.status, 503);
     assert.match(error.message, /等待/); assert.match(error.message, /console/i);
-    assert.match(error.message, /fuli migrate reconcile-knowledge/);
+    assert.doesNotMatch(error.message, /fuli [a-z]/);
     assert.ok(!JSON.stringify(error).includes(SECRET)); assert.ok(!error.message.includes(SECRET));
     return true;
   });

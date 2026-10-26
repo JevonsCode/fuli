@@ -6,6 +6,7 @@ import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { compactReceipt } from '../src/model-backends/receipt.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 import { openAiStream } from './fixtures/model-transport.js';
 
 // rec#10 D-32: after a valid answer the port reads once which build a local
@@ -53,7 +54,7 @@ async function fakeOllama(t, { tags = LISTED, replies = [REPLY], chatModel = MOD
     }
     response.writeHead(404).end();
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await listenFetchableServer(server, 0);
   t.after(() => { server.closeAllConnections(); server.close(); });
   return { endpoint: `http://127.0.0.1:${server.address().port}/v1`, seen,
     reads: () => seen.filter(hit => hit.url === '/api/tags').length };

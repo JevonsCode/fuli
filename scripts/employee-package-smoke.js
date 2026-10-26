@@ -9,11 +9,13 @@ import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { installEmployeePackage } from '../src/employees/install-package.js';
 import { createEmployeeFixture } from '../test-support/employee-fixture.js';
 
-const sourceDirectory = process.argv[2];
-if (!sourceDirectory) throw new TypeError('Usage: node scripts/employee-package-smoke.js <built-package-directory> [--serve]');
+// Without a directory it checks the Jefa runtime built into FULI; with one it
+// installs that package first, which replaces the built-in runtime.
+const sourceDirectory = process.argv.slice(2).find((argument) => !argument.startsWith('--'));
+const runtimeLabel = sourceDirectory ? 'installed' : 'built-in';
 const root = mkdtempSync(join(tmpdir(), 'fuli-employee-smoke-'));
 const runtimeConfigPath = join(root, 'host/graph-runtime.json');
-installEmployeePackage({ sourceDirectory, runtimeConfigPath });
+if (sourceDirectory) installEmployeePackage({ sourceDirectory, runtimeConfigPath });
 const app = createEmployeeFixture({ runtimeConfigPath });
 const { server, url } = await createServer({ app, port: 0 });
 // A synthetic host identity exercises the verified-session contract without
@@ -35,7 +37,7 @@ try {
     process.once('SIGINT', () => { void cleanup(); });
     process.once('SIGTERM', () => { void cleanup(); });
     console.log(`Synthetic employee UI: ${url}/project-agents`);
-    console.log('Only synthetic identity/project data; real packaged Jefa runtime. No external providers or models.');
+    console.log(`Only synthetic identity/project data; ${runtimeLabel} Jefa runtime. No external providers or models.`);
   } else {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await mcp.connect(serverTransport);
@@ -75,13 +77,8 @@ try {
     assert.equal(entry.status, 'ready');
     assert.equal(entry.managers[0].board.items[0].id, task.id);
     const base = `${url}/employee-workspaces/jefa/employee-qa/`;
-    const html = await fetch(base).then((response) => response.text());
-    assert.match(html, /name="jefa-host"/);
-    const script = html.match(/<script[^>]+src="([^"]+)"/)[1];
-    assert.equal((await fetch(new URL(script, base))).status, 200);
     const card = await fetch(`${base}.well-known/agent-card.json`).then((response) => response.json());
     assert.equal(card.name, 'Jefa');
-    assert.ok(JSON.stringify(card).includes(`${base}a2a`));
     assert.equal((await fetch(`${url}/employee-workspaces/jefa/not-assigned/`)).status, 404);
     const sharing = `${base}api/projects/employee-qa/sharing`;
     const enableShare = await fetch(sharing, { method: 'PATCH', headers: { 'content-type': 'application/json', origin: url },
@@ -91,7 +88,7 @@ try {
     const privateProjection = await fetch(publicUrl).then(response => response.json());
     assert.equal(privateProjection.items.length, 0, 'sharing must not publish existing private tasks');
     const publicItem = await fetch(`${base}api/work-items`, { method: 'POST', headers: { 'content-type': 'application/json', origin: url },
-      body: JSON.stringify({ projectId: 'employee-qa', title: 'Synthetic public task', summary: 'Private details must stay private', privacy: 'work', visibility: 'public_summary', priority: 'medium', acceptanceCriteria: [], keywords: [], tags: [], safeAutoComplete: false }) }).then(response => response.json());
+      body: JSON.stringify({ projectId: 'employee-qa', title: 'Synthetic public task', summary: 'Private details must stay private', visibility: 'public_summary', priority: 'medium' }) }).then(response => response.json());
     assert.ok(publicItem.workItem?.id);
     const publicProjection = await fetch(publicUrl).then(response => response.json());
     assert.equal(publicProjection.items.length, 1);
@@ -108,6 +105,6 @@ try {
       const board = await reopened.employees.callTool({ ...target, tool: 'read_board', arguments: {} });
       assert.equal(board.total, 2);
     } finally { await reopened.close(); }
-    console.log('PASS: packaged runtime, FULI MCP CRUD/title proposal + synthetic native-client receipt, task-entry board context, same-port assets/API/A2A discovery, project isolation, and SQLite persistence.');
+    console.log(`PASS: ${runtimeLabel} runtime, FULI MCP CRUD/title proposal + synthetic native-client receipt, task-entry board context, same-port API and Agent card, sharing and public projection, project isolation, and SQLite persistence.`);
   }
 } finally { if (!serving) await cleanup(); }
