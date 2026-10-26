@@ -8,7 +8,6 @@ import {
   stopGraphProviders
 } from '../setup/graph-runtime.js';
 import { beginFirstRunCapture } from '../setup/first-run-capture.js';
-import { consoleSignInLauncher, isSignInLauncher } from '../console-session/sign-in-launcher.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { readAdaptiveRuntimeState } from '../adaptive-runtime/state.js';
@@ -50,11 +49,10 @@ export async function startLocalRuntime(input, dependencies = {}) {
     onProgress: input.onProgress
   });
 
-  const signIn = input.open === true ? await openSignedIn(runtime.url, input, deps) : null;
+  if (input.open === true) await deps.openExternal(runtime.url);
   return {
     ...runtime,
-    managesDevelopmentWorkspace,
-    ...(signIn ? { signIn } : {})
+    managesDevelopmentWorkspace
   };
 }
 
@@ -174,26 +172,8 @@ export async function openLocalConsole(input, dependencies = {}) {
       !await deps.consoleHealth(state.url, state.pid, state.version)) {
     throw new Error('The local UI is not running. Run fl start first.');
   }
-  const signIn = await openSignedIn(state.url, input, deps);
-  return { status: 'opened', url: state.url, signIn };
-}
-
-// Opens the console signed in (rec#11 D-61), landing on input.next: the
-// console writes an owner-only launcher file holding a one-time code, and the
-// browser opens that file, so the code is never on a command line. A console
-// that cannot sign in (an older console still running, no human-review
-// channel) is opened without a session, and the reason is returned so the
-// command can say so.
-async function openSignedIn(consoleUrl, input, deps) {
-  let target = consoleUrl;
-  let signIn = { status: 'signed_in' };
-  try {
-    target = await deps.consoleSignIn({ consoleUrl, dataDir: input.paths.dataDir, next: input.next ?? null });
-  } catch (error) {
-    signIn = { status: 'unavailable', reason: error?.message ?? String(error) };
-  }
-  await deps.openExternal(target);
-  return signIn;
+  await deps.openExternal(state.url);
+  return { status: 'opened', url: state.url };
 }
 
 async function stopRecordedConsole(state, paths, deps) {
@@ -241,7 +221,6 @@ function lifecycleDependencies(overrides) {
       if (existsSync(path)) unlinkSync(path);
     },
     openExternal,
-    consoleSignIn: consoleSignInLauncher,
     ...overrides
   };
 }
@@ -287,7 +266,7 @@ async function openExternal(url) {
 }
 
 export function externalOpenInvocation(url, platform = process.platform) {
-  if (!isLoopbackConsoleUrl(url) && !isSignInLauncher(url)) throw new TypeError('Only the local Fuli console can be opened');
+  if (!isLoopbackConsoleUrl(url)) throw new TypeError('Only the local Fuli console can be opened');
   if (platform === 'darwin') return { command: 'open', args: [url] };
   if (platform === 'win32') return { command: 'cmd', args: ['/c', 'start', '', url] };
   return { command: 'xdg-open', args: [url] };

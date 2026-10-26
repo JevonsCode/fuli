@@ -324,7 +324,7 @@ async function route(t, { settingsHistory, s }) {
       if (!await handleModelBackendApiRequest({ request, response, url: new URL(request.url, 'http://local'),
         modelBackends: { roles: () => ({ state: 'ok', roles: [], connections: {} }), localBuild: () => null },
         roleSettings: s.settings, modelTrust: s.trust, automaticOperations: { tonborg: 'knowledge_review' },
-        settingsHistory, consoleSignedIn: true })) response.writeHead(404).end();
+        settingsHistory })) response.writeHead(404).end();
     } catch (error) {
       const mapped = mapHttpError(error);
       response.writeHead(mapped.status, { 'content-type': 'application/json' }).end(JSON.stringify(mapped.body));

@@ -1,5 +1,4 @@
 import { t } from '@/i18n'
-import { CONSOLE_SESSION_HEADER, consoleSessionToken, isConsoleSessionRefusal, noteConsoleSession } from './console-session'
 
 export class ApiError extends Error {
   readonly status: number
@@ -20,33 +19,16 @@ export function isKnowledgeRecoveryPending(error: unknown): boolean {
   try { return JSON.parse(error.detail)?.code === 'knowledge_recovery_pending' } catch { return false }
 }
 
-// The page's own line; the shell's notice (AppShell.vue) says what to do.
-function consoleSessionMessage(): string {
-  return t('common.errors.consoleSessionRequired')
-}
-
-// Every request carries the console session token when this origin holds one
-// (rec#11 D-61); a same-origin header needs no CORS.
-function withConsoleSession(init?: RequestInit): RequestInit | undefined {
-  const token = consoleSessionToken()
-  if (!token) return init
-  return { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), [CONSOLE_SESSION_HEADER]: token } }
-}
-
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, withConsoleSession(init))
+  const response = await fetch(url, init)
   if (!response.ok) {
     const detail = (await response.text()).trim()
-    const sessionRefused = isConsoleSessionRefusal(response.status, detail)
-    if (sessionRefused) noteConsoleSession(url, true)
-    const message = sessionRefused ? consoleSessionMessage()
-      : isKnowledgeRecoveryPending({ status: response.status, detail })
+    const message = isKnowledgeRecoveryPending({ status: response.status, detail })
       ? t('common.errors.knowledgeRecoveryPending') : response.status >= 500
       ? t('common.errors.serviceUnavailable', { status: response.status })
       : detail || t('common.errors.requestFailed', { status: response.status })
     throw new ApiError(message, response.status, detail)
   }
-  noteConsoleSession(url, false)
   return response.json() as Promise<T>
 }
 
@@ -65,7 +47,6 @@ export function apiErrorCode(error: unknown): string | null {
 // request it refused, otherwise the error's message.
 export function apiErrorReason(error: unknown, fallback = t('common.errors.operationFailed')): string {
   if (isKnowledgeRecoveryPending(error)) return t('common.errors.knowledgeRecoveryPending')
-  if (error instanceof ApiError && isConsoleSessionRefusal(error.status, error.detail)) return consoleSessionMessage()
   if (error instanceof ApiError && error.status < 500 && error.detail) {
     try {
       const reason = (JSON.parse(error.detail) as { error?: unknown })?.error

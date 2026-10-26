@@ -127,8 +127,7 @@ export function formatSetupResult(result, plan) {
       ? 'Fuli setup needs knowledge recovery before local stores are ready.'
       : 'Fuli started, but one or more Agents are not connected.'];
   if (result.knowledgeRecovery) lines.push(knowledgeReconciliationMessage(result.knowledgeRecovery));
-  // The console's full history needs the session `fuli open` starts (rec#11 D-61).
-  if (result.runtime.url) lines.push(`Open: run fuli open (console at ${result.runtime.url})`);
+  if (result.runtime.url) lines.push(`Open: ${result.runtime.url}`);
   if (result.runtime.lan === true) {
     lines.push(
       'LAN URLs:',

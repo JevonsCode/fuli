@@ -7,8 +7,6 @@ import { fileURLToPath } from 'node:url';
 import { DataFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
 import { listAgentTools } from '../src/agent-tools.js';
 import { handleDataFormatApiRequest } from '../src/http/data-format-api-router.js';
-import { createConsoleSession } from '../src/console-session/session.js';
-import { consoleSessionHeaders } from '../test-support/console-session.js';
 import { createServer } from '../src/server.js';
 import { reachableModules } from '../test-support/module-graph.js';
 
@@ -27,17 +25,13 @@ function migrations(calls, { applyError = null } = {}) {
   };
 }
 
-// Apply and undo need the console session (rec#11 D-61); these requests carry it.
-let sessionHeaders = {};
 async function withServer(port, run) {
-  const consoleSession = createConsoleSession();
-  const runtime = await createServer({ port: 0, dataFormatNotices: () => [], dataFormatMigrations: port, consoleSession,
+  const runtime = await createServer({ port: 0, dataFormatNotices: () => [], dataFormatMigrations: port,
     app: { graphiti: true, async state() { throw new Error('not queried'); }, close() {} } });
-  sessionHeaders = consoleSessionHeaders(consoleSession, runtime.url);
   try { return await run(runtime.url); } finally { await new Promise((done) => runtime.server.close(done)); }
 }
 
-const post = (url, body) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...sessionHeaders },
+const post = (url, body) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },
   body: JSON.stringify(body) });
 
 test('the console previews, applies with the digest and undoes, as entrypoint http', async () => {

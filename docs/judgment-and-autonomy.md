@@ -52,7 +52,7 @@ A review applied this way reads 「由 <模型名> 自动执行 / Executed autom
 
 ### Suggestions in the console
 
-A review the host did not apply (`ai_suggested`) is also listed under Settings → 模型与用量 → 「建议记录」, beside what Astro, Bole and Jefa suggested (rec#8). Each row shows the item's title, the model's own conclusion and reason, why it was left to the person (the host's interceptions in plain words, such as 「模型把握不足」 or 「你选了「只给建议」」), who answered (the model, or 「当前会话」) and when. Its one action, 「查看知识条目」, opens the item in 知识整理, where the person confirms, edits or corrects it as for any item; the row itself applies nothing. Like the rest of that section it is what Tonborg said at the time, not a to-do: an older suggestion for the same item in the same project reads 「已有更新」, and the item shows whether it still waits. The console reads the newest 50 at `GET /api/judgment/suggestions?personalSpaceId=` (`src/judgment/review-suggestions.js`). That route is guarded like every full judgment read, and from 0.22 needs the console session `fuli open` starts (「Console trust boundary」 below): a verdict keeps the item's title and key from when Tonborg read it, the item may have been given to one FLA since, and the model's reason was written with Tonborg's scoped preferences, memory and earlier feedback in the same request. There is no filtered view for anyone else, and no MCP or Agent tool reaches the route. The page drops a shown list when a refresh is refused or fails, and when the active space changes or is lost, cancelling a read still under way. A permanently deleted item keeps its row without its words or a link.
+A review the host did not apply (`ai_suggested`) is also listed under Settings → 模型与用量 → 「建议记录」, beside what Astro, Bole and Jefa suggested (rec#8). Each row shows the item's title, the model's own conclusion and reason, why it was left to the person (the host's interceptions in plain words, such as 「模型把握不足」 or 「你选了「只给建议」」), who answered (the model, or 「当前会话」) and when. Its one action, 「查看知识条目」, opens the item in 知识整理, where the person confirms, edits or corrects it as for any item; the row itself applies nothing. Like the rest of that section it is what Tonborg said at the time, not a to-do: an older suggestion for the same item in the same project reads 「已有更新」, and the item shows whether it still waits. The console reads the newest 50 at `GET /api/judgment/suggestions?personalSpaceId=` (`src/judgment/review-suggestions.js`). That route is guarded like every full judgment read, with the same known limit (「Console trust boundary」 below): a verdict keeps the item's title and key from when Tonborg read it, the item may have been given to one FLA since, and the model's reason was written with Tonborg's scoped preferences, memory and earlier feedback in the same request. There is no filtered view for anyone else, and no MCP or Agent tool reaches the route. The page drops a shown list when a refresh is refused or fails, and when the active space changes or is lost, cancelling a read still under way. A permanently deleted item keeps its row without its words or a link.
 
 ### Local evaluation line
 
@@ -89,80 +89,8 @@ From 0.21 every console route that answers with Tonborg's full records or a mode
 - `GET /api/judgment/suggestions` (above);
 - `GET /api/model-backends/suggestions`, the built-in Agents' suggestion log (docs/employee-agents.md).
 
-Each answers only a loopback request. A request from another device is refused with `local_user_only`, even when LAN access is on and it carries a valid LAN code. Then the console server confirms its own human-review proof with the Provider through the owner-read port (`src/knowledge-owner-reads/owner-proof.js`, one bounded read whose answer is not used), before anything is read, run or written. The HTTP caller does not supply that proof: the server reads the token from its data directory's provider env and attaches it itself. Without that port or token the route answers 403 `human_review_proof_required`; a proof the Provider refuses is refused as the Provider answered. A refused request gets no data, and a refused feedback, review or assessment changes nothing.
+Each answers only a loopback request. A request from another device is refused with `local_user_only`, even when LAN access is on and it carries a valid LAN code. Then the console server confirms its own human-review proof with the Provider through the owner-read port (`src/knowledge-owner-reads/owner-proof.js`, one bounded read whose answer is not used), before anything is read, run or written. The HTTP caller does not supply that proof: the server reads the token from its data directory's provider env and attaches it itself. Without that port or token the route answers 403 `human_review_proof_required`; a proof the Provider refuses is refused as the Provider answered. A refused request gets no data, and a refused feedback, review or assessment changes nothing. The console page needs nothing new.
 
-Agents keep their own tools (`list_judgments`, `review_with_tonborg`, `assess_agent_action`, `assess_task_completion`), and no MCP or Agent tool module imports these routes or the proof check (`test/judgment-console-owner.test.js`). `GET /api/agent-pins` and `GET /api/judgment/policy` hold no history and stay as they were.
+Agents keep their own tools (`list_judgments`, `review_with_tonborg`, `assess_agent_action`, `assess_task_completion`), and no MCP or Agent tool module imports these routes or the proof check (`test/judgment-console-owner.test.js`). `GET /api/agent-pins` and `GET /api/judgment/policy` hold no history and stay as they were; the undo keeps its own check, since only the human-review channel can send it.
 
-#### Console session (0.22, rec#11 D-61)
-
-The server attaches the proof itself, so before 0.22 any local process could read the full history over loopback HTTP without reading any token, an Agent with a shell included. From 0.22 everything that returns full history or private content, or changes real data or where it goes, serves only a browser that `fuli open` signed in. That covers reads beyond what an Agent reaches with its own token and tools, whether on the human-review channel or under the owner's own authority.
-
-- **Per launch.** Each console start makes a random secret (`crypto.randomBytes`) that stays in the server's memory. It is never written to disk, logged or put in a URL. Two credentials are derived from it, and the next launch has new ones:
-  - an `HttpOnly; SameSite=Strict; Path=/` cookie named `fuli_console_<port>`;
-  - a session token.
-- **Why two.** A cookie is not isolated by port: the browser also sends it to any other port on `127.0.0.1`, where a local process could collect it. The token is kept in the console page's `localStorage`. That storage belongs to this origin (scheme, host and port), so another port cannot read it. Every console request sends the token as `x-fuli-console-session`, and protected requests need both credentials, each compared in constant time. A custom header from another origin needs a CORS preflight. The console never grants one: another origin's preflight gets 403 with no `Access-Control-*` headers.
-- **Sign-in.** `fuli open` (and `fuli start --open`, `fuli restart --open`) asks the running console for a sign-in at `POST /api/console-session/codes`.
-  - The request is loopback only and sends the data directory's human-review token in a header.
-  - The console makes a one-time code: 32 random bytes, works once, expires after 60 seconds, and is compared in constant time against every waiting code.
-  - It writes the code into a launcher file and answers only that file's path. `fuli open` opens the file, as Jupyter does, so the code is never on a command line, where other processes (on Linux, other accounts too) could read it.
-  - **Where the file lives.** The file sits in a directory of its own under the data directory's `console-session` folder (`<data directory>/console-session/fuli-console-*/`), not under the system temporary directory. On Windows, `%TEMP%` lets other groups create and rename entries, such as a sandbox group or an AppContainer capability. One of them could swap in a directory of its own during the instant before it is hardened, and keep control of it. The default data directory, `%LOCALAPPDATA%\Fuli`, gives such groups at most read, so they cannot add or rename entries there. If you choose another data directory, its parent decides the same.
-  - **Hardening.** The directory is made private and checked before any code is written (`src/system/owner-only-directory.js`):
-    - **macOS and Linux:** the directory is set to `0700` and checked to be owned by this user with that mode. The file is `0600`.
-    - **Windows:** Node ignores those modes. The directory is first given to the current user's SID (from `whoami /user`) with `icacls /setowner`. Then it gets an explicit, protected DACL with inheritance removed: full control for that SID and for SYSTEM, and nothing else. The owner and the DACL are then read back as SIDs, and anything but exactly that owner and those two rules fails. The file inherits only those two rules. Every tool is called by its absolute System32 path, with no shell.
-    - **If any step fails** on either system, no code is written, the code is discarded, and the console answers 503 `console_sign_in_unavailable`. `fuli open` then opens the console without a session and prints the reason.
-  - The file sends the browser to `/auth/console#code=…`. A browser never sends a fragment to a server or in a Referer.
-  - That page takes the code out of the address bar at once and redeems it with a same-origin `POST /api/console-session/sign-in`. The answer sets the cookie and returns the token and the landing path. The page stores the token and replaces itself with the landing page.
-  - The console deletes the launcher file once its code is redeemed or expires, and its directory when it stops. Neither the code, the cookie nor the token is ever logged, and `fuli open` prints only the console address.
-- **Landing page.** `fuli open --next /knowledge?item=…` lands on that page after sign-in.
-  - The path is checked when the code is issued, then checked again after normalizing: `/..//host` and `/%2e%2e//host` normalize to `//host`.
-  - Only a same-origin console path is accepted. A scheme, `//host`, `/\host`, control characters, `/api/…` and `/auth/…` are refused (`src/console-session/next-path.js`).
-  - The path is kept with the code, so no link can choose where a sign-in lands. The page also refuses an answer that would leave the origin.
-- **Another site.**
-  - **Redeeming:** only the console's own page can redeem a code. A request from another origin, or with `Sec-Fetch-Site` `cross-site`, is refused by the request policy before its body is read. A `same-site` request (another port of this host without an `Origin`) is refused with 403 and its code is burned.
-  - **Codes in URLs:** a code in a URL's query is not how a sign-in works. Any request naming one, a link or a subresource from anywhere, burns it before the request policy answers.
-  - **Login CSRF:** the code reaches a page only through the owner-only file, so a page of another site cannot hold one unless a local process of this account gave it away. Even then a forced sign-in would give that page nothing: there is one person per console, the cookie is HttpOnly, and the token stays in this origin's storage.
-  - **Links from other sites:** a console page opened from another site's link still loads as the static console (rec#40 A1). Its own requests are same-origin and carry both credentials once this browser is signed in.
-- **What needs it.** A request without both credentials of this launch gets 401 `console_session_required` (`src/console-session/session-ports.js`). That includes no cookie, a wrong one, another port's, one of an earlier launch, or the cookie without the token. Nothing is sent, read, run or written.
-  - **Human-review ports:**
-    - the full reads through `src/knowledge-owner-reads/console-port.js`: the owner proof of every route listed above, the graph, an item's view, a turn's full receipt, session records and what a session holds for a migration, the writing-taste profile, preference conflicts with their defer and completion, and the personal publication review with its decisions;
-    - a permanent delete (preview, confirm, status);
-    - where knowledge applies (one item, a session's batch);
-    - tag changes and the tag reads across projects;
-    - the undo of Tonborg's automatic review.
-  - **Owner-authority routes:**
-    - `POST /api/agent-conversations/query`, which reads every client's conversations, full messages included, and `PUT /api/agent-conversations/policy`;
-    - an Agent's private working memory, `GET /api/project-agents/:agentId/memory`, and its export, `GET /api/project-agents/:agentId/memory/export`.
-  - **Writes:**
-    - confirmed data-format migrations and their undo, `POST /api/data-format/apply` and `POST /api/data-format/rollback`;
-    - a built-in Agent's model settings and its 「只给建议」 switch, `PUT /api/model-backends/roles/:role` and `PUT /api/model-backends/roles/:role/trust`. These decide where its model calls, and the content in them, go;
-    - the LAN roundtable changes that decide where this device's data can go: `POST /api/peer/coordinator`, `POST /api/peer/invitations`, `POST /api/peer/join` and `PUT /api/peer/shares`. The Roundtable package takes FULI's check as an injected `authorizeChange` and imports nothing from FULI. `fuli peer` has no browser, so it sends the data directory's human-review token instead, which is the same bar as signing in. The console reads that token only for a peer change that names one, never for other requests. Peer status, an invitation's preview, revoking a device and turning the roundtable off stay as they were, since they only show or narrow sharing.
-  - The LAN refusal above still comes first, and the Provider still checks the proof. Another device never gets a session, because sign-ins are issued and redeemed only over loopback. On a LAN device the page says that full records show only in the console on the computer running FULI; it does not tell that device to run a command.
-- **The page.** A refused read shows a one-line reason where it was asked. The top bar shows one notice with the command to run, for example `fuli open --next "/knowledge?item=…"`. The notice clears when the same read succeeds. If this origin's storage cannot be used, the sign-in page says so, and protected reads keep showing the notice. The page never redirects or retries by itself.
-
-Unchanged, without a session (none of these returns protected history):
-
-- `/api/health`, `/api/state`, system settings and runtime leases;
-- capture, recall and Agent access policy;
-- `/api/agent-pins`, `/api/judgment/policy`;
-- model roles, usage and settings history;
-- Agents' profiles, tasks and schedules, the roundtable;
-- data-format status and preview;
-- every static page.
-
-These answer what an Agent with the Provider's Agent access token could also read.
-
-Every way of opening the console signs in this way, or lands on a page that says to run `fuli open`:
-
-- **`fuli open` and `fuli start/restart --open`:** they sign in.
-- **The Windows tray** ("启动并打开" and a left click) and the portable `仅打开 Fuli.cmd` and `启动并打开 Fuli.cmd`: they run `fuli open`.
-- **On macOS:** there is no separate app; use `fuli open`.
-- **The end of `fuli setup`:** it prints `Open: run fuli open (console at …)`.
-- **Receipt links, issue links, notification links and settings links:** they are plain console pages. They show their full content once this browser is signed in in this launch; before that, they show the notice.
-
-A console restart, including a settings change that restarts it, starts a new launch. Run `fuli open` again after it. If a console is too old to sign in, or has no human-review channel, `fuli open` still opens it without a session and says why.
-
-**Known limit: same OS account.** This raises the bar; it does not isolate. Signing in needs what the human-review channel needs: read access to the data directory's provider env. Any process of the same OS account can read that file, the launcher files and the rest of the data directory (graph files included), and can drive a browser. On Windows the data directory under `%LOCALAPPDATA%` still inherits that folder's ACL, so whatever it grants (for example a sandbox group) reaches the provider env too; hardening it is a separate Windows item, not part of this change. True isolation needs the operating system: a different account or a sandbox. What the session closes:
-
-- the path that needed no token at all: a plain loopback HTTP request with only a `Host` header;
-- collecting the session cookie on another local port;
-- reading a sign-in code from a command line (`test/console-session.test.js`).
+**Known limit: local HTTP callers are trusted.** The console server trusts every local HTTP caller and attaches the proof itself. The proof shows only that the console server holds the token; it shows nothing about who sent the request. So any local process, including an Agent with a shell, can still read the full history over loopback HTTP (for example `GET /api/judgment/records` with only a `Host` header) without reading any token. D-60 makes these routes consistent with the console's other full reads and refuses LAN requests; it does not close that local HTTP path. FULI is a local tool for one person, so the console has no login and none is planned (rec#11 D-70, which drops D-61's console session).

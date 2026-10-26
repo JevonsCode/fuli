@@ -2,19 +2,10 @@ import { PeerError } from './protocol.js';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
-// The controls that change where this device's data can go: becoming a
-// coordinator, inviting a device, joining one, and what is shared with it.
-// Revoking a device and turning the roundtable off only narrow it.
-const CHANGES = new Set(['POST /api/peer/coordinator', 'POST /api/peer/invitations', 'POST /api/peer/join', 'PUT /api/peer/shares']);
-
 // The owner's LAN roundtable controls. They answer only on this computer's
 // loopback address, even when the host's own server is reachable on the LAN.
-// The host supplies its JSON body reader and writer, and may supply
-// authorizeChange(request): its own check of the owner for a change (FULI's
-// console session), called before the change's body is read; it throws to
-// refuse, and its error goes to the host as it is.
-export async function handlePeerControlRequest({ request, response, url, peer, readJson, sendJson, unavailableMessage,
-  authorizeChange = () => {} }) {
+// The host supplies its JSON body reader and writer.
+export async function handlePeerControlRequest({ request, response, url, peer, readJson, sendJson, unavailableMessage }) {
   if (!url.pathname.startsWith('/api/peer')) return false;
   if (!peer) { sendJson(response, 404, { error: 'peer_unavailable', message: unavailableMessage }); return true; }
   const host = String(request.headers.host ?? '');
@@ -22,7 +13,6 @@ export async function handlePeerControlRequest({ request, response, url, peer, r
     sendJson(response, 403, { error: 'local_owner_only', message: 'LAN roundtable settings can only be changed on this computer' });
     return true;
   }
-  if (CHANGES.has(`${request.method} ${url.pathname}`)) await authorizeChange(request);
   try {
     const result = await route(request, url.pathname, peer, readJson);
     if (result === undefined) return false;
