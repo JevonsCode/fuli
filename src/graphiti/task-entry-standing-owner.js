@@ -1,6 +1,8 @@
 import { receiptText } from '../agents/identity-receipt.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects, projectDisplayName, promptNamesProject } from './task-entry-project-mention.js';
+import { withRouteMarkers } from './task-agent-assignment.js';
+import { leadingAgentAddress } from './fla-mention.js';
 
 // A standing assignment routes one task (rec#29 D-41 D3, option b): when the
 // task prompt carries a term the person confirmed for a project, this task is
@@ -29,10 +31,6 @@ const EXPLICIT_BASES = new Set(['explicit_personal_project_id', 'explicit_agent'
 const ROUTE = /^standing_assignment:(\S+) (.+)$/su;
 const SESSION_PROJECT = /^standing_session_project:(\S+)$/u;
 const SESSION_AGENT = /^standing_session_agent:(\S+)$/u;
-// The Provider's bound on a stored match basis (task_context_models.py).
-const MATCH_BASIS_LIMIT = 32;
-const NO_AGENT = Object.freeze({ version: 1, selection_reason: null, match_basis: [], requested_agent_id: null,
-  reporting_lead_agent_id: null, execution_reason: null, execution_agent_id: null });
 const CLARIFY_GUIDANCE = 'Terms of several standing assignments match this task, so it stays where it was. Ask the '
   + 'user once which project this task belongs to, then begin the task again naming that project.';
 
@@ -90,11 +88,9 @@ export function standingOwnerEntry(resolution, selection) {
 // without an Agent, with the route appended within the Provider's bound.
 export function withStandingRoute(assignment, standingOwner) {
   if (standingOwner?.status !== 'routed') return assignment;
-  const route = [`standing_assignment:${standingOwner.assignment_id} ${standingOwner.notice}`,
+  return withRouteMarkers(assignment, [`standing_assignment:${standingOwner.assignment_id} ${standingOwner.notice}`,
     ...(standingOwner.session_project_id ? [`standing_session_project:${standingOwner.session_project_id}`] : []),
-    ...(standingOwner.session_agent_id ? [`standing_session_agent:${standingOwner.session_agent_id}`] : [])];
-  const base = assignment ?? NO_AGENT;
-  return { ...base, match_basis: [...base.match_basis.slice(0, MATCH_BASIS_LIMIT - route.length), ...route] };
+    ...(standingOwner.session_agent_id ? [`standing_session_agent:${standingOwner.session_agent_id}`] : [])]);
 }
 
 // What the session had before a routed task, so its later tasks continue
@@ -125,7 +121,7 @@ function standingMatches(application, taskPrompt) {
 }
 
 function routable(resolution, input) {
-  if (input.projectAgentId || String(input.taskPrompt).trimStart().startsWith('@')
+  if (input.projectAgentId || leadingAgentAddress(input.taskPrompt) !== null
     || EXPLICIT_BASES.has(resolution.basis)) return false;
   if (resolution.status === 'matched' || resolution.status === 'global') return true;
   return resolution.status === 'ambiguous' && resolution.basis === 'host_session_assignment';

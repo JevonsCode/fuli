@@ -1,4 +1,5 @@
-import { taskAgentAssignment } from './task-agent-assignment.js';
+import { taskAgentAssignment, withRouteMarkers } from './task-agent-assignment.js';
+import { FLA_ROUTE } from './task-entry-named-fla.js';
 import { beginConversation } from './agent-conversations.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
@@ -84,7 +85,8 @@ export async function beginTaskFromPreferences(application, preferences, {
     sourceSessionId,
     delegationToken: application.roundtable?.taskEntryDelegation?.({ sessionId })?.token,
     preferenceScope: taskPreferenceScope({ version: 1, work_kind: workKind, workflow }),
-    agentAssignment: withStandingRoute(taskAgentAssignment(preferences.project_agent_context), preferences.standing_owner),
+    agentAssignment: withRouteMarkers(withStandingRoute(taskAgentAssignment(preferences.project_agent_context),
+      preferences.standing_owner), preferences[FLA_ROUTE]),
     memoryRevision: preferences.project_agent_context?.memory?.revision ?? null,
     workLogRequired: Boolean(preferences.project_agent_context?.memory),
     entryVia

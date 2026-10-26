@@ -1,0 +1,352 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
+import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { parseFlaMention } from '../src/graphiti/fla-mention.js';
+import { compactTaskContext } from '../src/conversations/task-context-view.js';
+
+// rec#54: continue one of the person's FLAs by name in the current session,
+// from any folder, with a native choice instead of copied names or IDs.
+// Synthetic Provider boundary only; no real data, client or model.
+
+const SPACE = 'synthetic-space';
+const PROJECTS = { 'project-a': 'Alpha', 'project-b': 'Beta', 'project-c': 'Gamma' };
+// The folder this session works in belongs to project-a, whose lead is Ada.
+const FOLDER = { status: 'matched', basis: 'repository_root', personalProjectId: 'project-a' };
+
+function fla(agentId, name, role, projectId, { updated = '2026-10-01T00:00:00Z', status = 'active',
+  clients = ['codex', 'claude_code'], type = 'durable' } = {}) {
+  return { agent_id: agentId, personal_space_id: SPACE, personal_project_id: null, memory_scope: 'reviewed_agent',
+    updated_at: updated, assignments: projectId ? [{ personal_project_id: projectId, status: 'active', updated_at: updated }] : [],
+    profile: { name: role, display_name: name, responsibility: `Synthetic ${role} work`, status,
+      allowed_clients: clients, work_kinds: ['project_context'], capabilities: [], agent_type: type } };
+}
+
+const ADA = fla('ada', 'Ada Lead', '负责人', 'project-a', { updated: '2026-10-25T00:00:00Z' });
+const JAMIE = fla('jamie', 'Jamie Ash', '开发', 'project-b', { updated: '2026-10-20T00:00:00Z' });
+const JAMIE_C = fla('jamie-c', 'Jamie Ash', '测试', 'project-c', { updated: '2026-10-10T00:00:00Z' });
+const JADE = fla('jade', 'Jade Lin', '设计', 'project-c', { updated: '2026-10-15T00:00:00Z' });
+const JEFA = fla('employee.jefa', 'Jefa', '项目经理', null, { updated: '2026-10-26T00:00:00Z' });
+const TEMP = fla('temp-1', 'Jamie Temp', '临时', 'project-b', { type: 'temporary' });
+// The Agent each project's entry selects when nobody is named.
+const LEADS = { 'project-a': 'ada', 'project-b': 'jamie', 'project-c': 'jade' };
+
+// holdBy: projects whose lead holds a named member as the requested Agent.
+function fixture({ roster = [ADA, JAMIE, JADE, JEFA, TEMP], leads = LEADS, holdBy = {}, refuse = null } = {}) {
+  const calls = [];
+  const tasks = [];
+  const agents = () => roster.map(agent => structuredClone(agent));
+  const find = id => agents().find(agent => agent.agent_id === id);
+  const assigned = (agent, project) => agent.assignments.some(item => item.personal_project_id === project
+    && item.status === 'active');
+  const app = new FederatedGraphApplication({ version: 1, personal: { providerUrl: 'http://127.0.0.1:8787',
+    accessToken: 'synthetic-test-token', principalId: 'synthetic-user', spaceId: SPACE }, workspaces: [] },
+  { projectPathResolver: () => FOLDER, fetchImpl: async () => { throw new Error('Unexpected Provider request'); } });
+  app.taskContextRegistry = {
+    current: async (session, source) => tasks.findLast(task => task.sessionId === session
+      && task.sourceApplication === source) ?? null,
+    begin: async input => { const task = { ...input, token: `fuli-task-synthetic-${tasks.length}` };
+      tasks.push(task); return task; }
+  };
+  Object.assign(app.personal, {
+    listPersonalProjects: async () => Object.entries(PROJECTS).map(([id, name]) => ({ project_id: id,
+      scope_type: 'registered', profile: { name } })),
+    getPersonalProject: async (_, id) => ({ project_id: id, scope_type: 'registered', profile: { name: PROJECTS[id] } }),
+    listProjectAgents: async (_, project) => {
+      calls.push(['roster', project]);
+      return project ? agents().filter(agent => assigned(agent, project)) : agents();
+    },
+    getProjectAgent: async (_, project, id) => {
+      calls.push(['agent', project, id]);
+      if (refuse?.(id)) throw Object.assign(new Error('Synthetic refusal'), { status: 403 });
+      const agent = find(id);
+      if (!agent || (project && !assigned(agent, project))) throw Object.assign(new Error('Not found'), { status: 404 });
+      return agent;
+    },
+    resolveProjectAgentContext: async input => {
+      calls.push(['resolve', input.personal_project_id, input.agent_id]);
+      if (refuse?.(input.agent_id)) throw Object.assign(new Error('Synthetic refusal'), { status: 403 });
+      if (!input.agent_id) return { status: 'ready', reason: 'project_team_lead', agent: find(leads[input.personal_project_id]) };
+      const agent = find(input.agent_id);
+      if (!agent || !assigned(agent, input.personal_project_id)) return { status: 'agent_unavailable', reason: 'agent_unavailable' };
+      // As the Provider: a member asked for by name is held by the project's lead.
+      const lead = holdBy[input.personal_project_id];
+      return lead && lead !== agent.agent_id
+        ? { status: 'ready', reason: 'project_lead_reporting', agent: find(lead), requested_agent_id: agent.agent_id }
+        : { status: 'ready', reason: 'explicit_agent', agent };
+    },
+    getProjectAgentMemory: async input => {
+      calls.push(['memory', input.personalProjectId, input.agentId]);
+      return { personal_space_id: SPACE, personal_project_id: input.personalProjectId, agent_id: input.agentId,
+        scope: input.personalProjectId ? 'private_agent_project' : 'private_agent_global', revision: 0, current: null, history: [] };
+    },
+    collaborationPreferences: async (space, project, limit, agent) => {
+      calls.push(['preferences', project, agent]);
+      return { personal_space_id: space, personal_project_id: project, project_agent_id: agent,
+        effective_preferences: [], global_preferences: [], conflicts: [] };
+    },
+    listPreferenceConflicts: async () => [],
+    getProjectAgentCoordinationPolicy: async (_, project) => ({ team_lead_agent_id: leads[project] ?? null }),
+    listProjectAgentAssignments: async () => [],
+    listProjectAgentTasks: async () => []
+  });
+  app.searchKnowledge = async input => { calls.push(['search', input.personalProjectId, input.projectAgentId ?? null]);
+    return { facts: [], entities: [] }; };
+  const run = (taskPrompt, extra = {}) => app.getCollaborationPreferences({ projectPath: '/synthetic/alpha',
+    sessionId: 'synthetic-session', sourceApplication: 'codex', taskPrompt,
+    agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
+  // What every client's prompt hook calls (Claude Code, Codex, OpenCode).
+  const hook = (taskPrompt, extra = {}) => app.beginTaskContext({ projectPath: '/synthetic/alpha',
+    sessionId: 'synthetic-hook-session', sourceApplication: 'claude_code', taskPrompt, ...extra });
+  const memoryReads = () => calls.filter(([kind]) => kind === 'memory').map(([, project, agent]) => `${agent}@${project}`);
+  return { app, run, hook, calls, tasks, memoryReads };
+}
+
+const owner = entry => [entry.context.personal_project_id, entry.context.project_agent_id];
+const bytes = value => Buffer.byteLength(JSON.stringify(compactTaskContext(value)));
+
+test('parsing: leading @name, #FLA anywhere, release and choice; emails, decorators, scopes and @FLG are not FLAs', () => {
+  assert.deepEqual(parseFlaMention('@Jamie Ash 继续刚才的任务'), { explicit: false, query: 'Jamie Ash 继续刚才的任务' });
+  assert.deepEqual(parseFlaMention('  #FLA 小林 测试 继续'), { explicit: true, query: '小林 测试 继续' });
+  assert.deepEqual(parseFlaMention('请让 #FLA Jamie Ash 看一下'), { explicit: true, query: 'Jamie Ash 看一下' });
+  assert.deepEqual(parseFlaMention('@FLA'), { explicit: true, query: '' });
+  assert.deepEqual(parseFlaMention('#fla 2'), { choice: 2 });
+  for (const release of ['@FLA 结束', '#FLA end', '@fla release。']) assert.deepEqual(parseFlaMention(release), { release: true });
+  for (const text of ['jamie@example.com 发邮件', '@jamie@example.com', '@scope/pkg 升级', '@Override 是什么意思',
+    '@Component(selector) 报错', '@app.route 怎么写', '@README.md 看看', '@FLG 讨论一下', '请让 @Jamie Ash 继续',
+    '`@Jamie Ash`', '@{jamie} 继续', '#FLAG 不是关键词']) {
+    assert.equal(parseFlaMention(text), null, text);
+  }
+});
+
+test('excluded prompts keep the folder\'s owner and never read the roster', async () => {
+  for (const prompt of ['@Override 这个注解什么意思', '@scope/pkg 升级到最新', 'mail jamie@example.com', '@FLG 讨论',
+    '请让 @Jamie Ash 继续']) {
+    const { run, calls } = fixture({ roster: [ADA, JAMIE, fla('override', 'Override', '开发', 'project-b')] });
+    const entry = await run(prompt);
+    assert.deepEqual(owner(entry), ['project-a', 'ada'], prompt);
+    assert.equal(entry.fla, undefined);
+    assert.equal(calls.some(([kind, project]) => kind === 'roster' && project === null), false, prompt);
+  }
+});
+
+test('a unique name continues that FLA in its own project from another project\'s folder', async () => {
+  const { run, tasks, calls, memoryReads } = fixture();
+  const entry = await run('@Jamie Ash 继续刚才的任务');
+  assert.deepEqual(owner(entry), ['project-b', 'jamie']);
+  assert.equal(entry.context.project_resolution.basis, 'explicit_fla');
+  assert.equal(entry.project_agent_context.project_agent_id, 'jamie');
+  assert.equal(entry.fla.status, 'continuing');
+  assert.equal(entry.fla.notice, '本会话由 Jamie Ash 继续项目 Beta 的工作');
+  assert.match(entry.fla.guidance, /resume_agent_conversation/);
+  assert.equal(entry.agent_receipt.owner.agent_id, 'jamie');
+  assert.ok(entry.agent_receipt.markdown.endsWith(' · 本会话由 Jamie Ash 继续项目 Beta 的工作'));
+  assert.deepEqual(memoryReads(), ['jamie@project-b', 'jamie@null']);
+  assert.ok(calls.filter(([kind]) => kind === 'search').every(([, project, agent]) => project === 'project-b'
+    && (agent === null || agent === 'jamie')));
+  assert.ok(calls.filter(([kind]) => kind === 'preferences').every(([, project, agent]) => project === 'project-b' && agent === 'jamie'));
+  assert.equal(tasks[0].personalProjectId, 'project-b');
+  assert.equal(tasks[0].projectAgentId, 'jamie');
+  assert.doesNotMatch(JSON.stringify(entry), /fla_binding|fla_choice/, 'routing markers never reach the client');
+});
+
+test('#FLA, case-insensitive names, Chinese names and the longest name match the same way', async () => {
+  const roster = [ADA, JAMIE, fla('lin', '小林', '运营', 'project-b'), fla('lin-qa', '小林 测试', '测试', 'project-c')];
+  for (const [prompt, expected] of [['#FLA jAmIe aSh continue', ['project-b', 'jamie']],
+    ['@小林 测试 跑一下回归', ['project-c', 'lin-qa']], ['@小林继续写周报', ['project-b', 'lin']],
+    ['帮我 #FLA 小林 看下数据', ['project-b', 'lin']]]) {
+    assert.deepEqual(owner(await fixture({ roster }).run(prompt)), expected, prompt);
+  }
+});
+
+test('a bare @FLA offers the person\'s FLAs as a native choice, recent first, without loading any of them', async () => {
+  const { run, memoryReads } = fixture();
+  const entry = await run('@FLA');
+  assert.equal(entry.fla.status, 'choose');
+  assert.equal(entry.human_interaction.presentation, 'host_native_single_choice');
+  // Jefa (a FULI management role) and the temporary Agent are not FLAs a person continues.
+  assert.deepEqual(entry.human_interaction.options, ['1. Ada Lead — Alpha — 负责人', '2. Jamie Ash — Beta — 开发',
+    '3. Jade Lin — Gamma — 设计']);
+  assert.match(entry.fla.guidance, /#FLA N/);
+  assert.equal(entry.context.project_agent_id, null);
+  assert.equal(entry.agent_receipt.owner, null);
+  assert.match(entry.agent_receipt.markdown, /分配待确认.*等待选择 FLA/);
+  assert.deepEqual(memoryReads(), []);
+  assert.doesNotMatch(JSON.stringify(entry.human_interaction), /jamie"|project-b|jade"/, 'no internal ID is shown');
+});
+
+test('a partial name narrows the choice, and a single fit continues directly', async () => {
+  const { run } = fixture({ roster: [ADA, JAMIE, JADE, fla('jo', 'Joan Wu', '运维', 'project-c')] });
+  const narrowed = await run('@Ja 继续');
+  assert.deepEqual(narrowed.human_interaction.options, ['1. Jamie Ash — Beta — 开发', '2. Jade Lin — Gamma — 设计']);
+  assert.equal(narrowed.fla.reason, 'partial');
+  const single = fixture();
+  assert.deepEqual(owner(await single.run('@Jad 看下设计稿')), ['project-c', 'jade']);
+  // Letters in order fit too.
+  assert.deepEqual(owner(await fixture().run('@jsh 继续')), ['project-b', 'jamie']);
+});
+
+test('picking by number binds the choice, by reply or by the host calling #FLA N', async () => {
+  const { run, hook } = fixture({ roster: [ADA, JAMIE, JAMIE_C, JADE] });
+  const ambiguous = await run('@Jamie Ash 继续');
+  assert.equal(ambiguous.fla.reason, 'same_name');
+  assert.deepEqual(ambiguous.human_interaction.options, ['1. Jamie Ash — Beta — 开发', '2. Jamie Ash — Gamma — 测试']);
+  assert.match(ambiguous.human_interaction.question, /有多位「Jamie Ash」/);
+  const picked = await run('2');
+  assert.deepEqual(owner(picked), ['project-c', 'jamie-c']);
+  assert.equal(picked.fla.notice, '本会话由 Jamie Ash 继续项目 Gamma 的工作');
+  // A host that showed clickable options calls the entry with the chosen number.
+  await hook('@FLA');
+  assert.deepEqual(owner(await hook('#FLA 3')), ['project-c', 'jade']);
+  // A number nobody was offered asks again instead of guessing.
+  const unknown = await run('#FLA 9');
+  assert.equal(unknown.fla.reason, 'choice_unknown');
+});
+
+test('the same name in several projects asks among exactly those; one FLA in this folder\'s project continues here', async () => {
+  const { run } = fixture({ roster: [ADA, JAMIE, JAMIE_C, JADE] });
+  const entry = await run('#FLA Jamie Ash');
+  assert.equal(entry.human_interaction.options.length, 2);
+  assert.equal(entry.context.project_agent_id, null);
+  const twoProjects = fla('ada', 'Ada Lead', '负责人', 'project-a');
+  twoProjects.assignments.push({ personal_project_id: 'project-b', status: 'active', updated_at: '2026-10-01T00:00:00Z' });
+  assert.deepEqual(owner(await fixture({ roster: [twoProjects, JAMIE] }).run('@Ada Lead 继续')), ['project-a', 'ada']);
+  // From outside both projects, its two projects are asked.
+  const outside = await fixture({ roster: [twoProjects, JAMIE] }).run('@Ada Lead 继续', { projectPath: null });
+  assert.deepEqual(outside.human_interaction.options, ['1. Ada Lead — Alpha — 负责人', '2. Ada Lead — Beta — 负责人']);
+});
+
+test('the binding holds for later turns, in hooks and MCP alike, until another FLA is named or it is released', async () => {
+  const { run, hook, tasks } = fixture();
+  await hook('@Jamie Ash 继续刚才的任务');
+  const next = await hook('再跑一遍测试');
+  assert.deepEqual(owner(next), ['project-b', 'jamie']);
+  assert.equal(next.fla, undefined, 'a plain bound turn repeats no guidance');
+  assert.match(next.agent_receipt.markdown, /· 本会话由 Jamie Ash 继续项目 Beta 的工作$/);
+  assert.ok(tasks.at(-1).agentAssignment.match_basis.some(item => item.startsWith('fla_binding:jamie project-b ')));
+  // Another session is not bound.
+  assert.deepEqual(owner(await run('再跑一遍测试')), ['project-a', 'ada']);
+  assert.deepEqual(owner(await hook('@Jade Lin 看下设计稿')), ['project-c', 'jade']);
+  assert.deepEqual(owner(await hook('继续')), ['project-c', 'jade']);
+  const released = await hook('@FLA 结束');
+  assert.deepEqual(owner(released), ['project-a', 'ada']);
+  assert.equal(released.fla.notice, '已结束本会话与 Jade Lin 的绑定，回到常规项目归属');
+  assert.deepEqual(owner(await hook('继续')), ['project-a', 'ada']);
+});
+
+test('an @name that is no FLA of the person leaves this turn to ordinary routing and keeps the binding', async () => {
+  const { run } = fixture();
+  await run('@Jamie Ash 继续');
+  const other = await run('@Nobody 你好');
+  assert.equal(other.context.project_resolution.basis, 'repository_root');
+  assert.notEqual(other.context.project_agent_id, 'jamie');
+  assert.deepEqual(owner(await run('继续')), ['project-b', 'jamie']);
+});
+
+test('a release outside any project does not leave the session in the FLA\'s project', async () => {
+  const { app, hook } = fixture();
+  app.projectPathResolver = () => ({ status: 'not_provided', basis: null, personalProjectId: null });
+  await hook('@Jamie Ash 继续', { projectPath: null });
+  assert.deepEqual(owner(await hook('继续', { projectPath: null })), ['project-b', 'jamie']);
+  await hook('@FLA 结束', { projectPath: null });
+  const after = await hook('随便问个问题', { projectPath: null });
+  assert.equal(after.context.personal_project_id, null);
+  assert.equal(after.context.project_resolution.basis, 'pending_assignment');
+});
+
+test('a dismissed or client-restricted FLA is reported with its reason; nobody else is loaded', async () => {
+  for (const [agent, reason, text] of [
+    [{ ...JAMIE, profile: { ...JAMIE.profile, status: 'archived' } }, 'dismissed', '已被解雇'],
+    [{ ...JAMIE, profile: { ...JAMIE.profile, allowed_clients: ['cursor'] } }, 'client_not_allowed', '不允许在当前客户端使用']]) {
+    const { run, memoryReads } = fixture({ roster: [ADA, agent] });
+    const entry = await run('@Jamie Ash 继续');
+    assert.equal(entry.fla.status, 'unavailable');
+    assert.equal(entry.fla.reason, reason);
+    assert.equal(entry.fla.notice, `Jamie Ash（Beta）无法继续：${text}，未改用其他 FLA`);
+    assert.equal(entry.agent_receipt.owner, null);
+    assert.deepEqual(memoryReads(), [], reason);
+  }
+});
+
+test('a client list stored with `other` covers OpenCode', async () => {
+  const legacy = { ...JAMIE, profile: { ...JAMIE.profile, allowed_clients: ['other'] } };
+  const entry = await fixture({ roster: [ADA, legacy] }).run('@Jamie Ash 继续', { sourceApplication: 'opencode' });
+  assert.deepEqual(owner(entry), ['project-b', 'jamie']);
+});
+
+test('an FLA dismissed while bound stays the binding and says why, never falling back to the folder', async () => {
+  const roster = [ADA, structuredClone(JAMIE)];
+  const { run, memoryReads, calls } = fixture({ roster });
+  await run('@Jamie Ash 继续');
+  roster[1].profile.status = 'archived';
+  calls.length = 0;
+  const next = await run('继续');
+  assert.equal(next.fla.reason, 'dismissed');
+  assert.equal(next.context.project_agent_id, null);
+  assert.deepEqual(memoryReads(), []);
+  assert.equal((await run('还在吗')).fla.reason, 'dismissed');
+});
+
+test('an FLA the Provider will not let this reader reach is reported as such, with no private context loaded', async () => {
+  const { run, memoryReads, calls } = fixture({ refuse: id => id === 'jamie' });
+  const entry = await run('@Jamie Ash 继续');
+  assert.equal(entry.fla.reason, 'access_denied');
+  assert.match(entry.fla.notice, /无权访问该 FLA 或其项目/);
+  assert.equal(entry.project_agent_context.status, 'agent_unavailable');
+  assert.equal(entry.project_agent_context.role, undefined);
+  assert.deepEqual(memoryReads(), []);
+  assert.ok(calls.filter(([kind]) => kind === 'preferences').every(([, , agent]) => agent === null));
+});
+
+test('a member is held by its project lead as the requested Agent, and the sentence says so', async () => {
+  const { run, memoryReads } = fixture({ holdBy: { 'project-b': 'ada' },
+    roster: [{ ...ADA, assignments: [...ADA.assignments, { personal_project_id: 'project-b', status: 'active' }] }, JAMIE] });
+  const entry = await run('@Jamie Ash 继续');
+  assert.deepEqual(owner(entry), ['project-b', 'ada']);
+  assert.equal(entry.project_agent_context.requested_agent_id, 'jamie');
+  assert.equal(entry.fla.notice, 'Jamie Ash 是项目 Beta 的成员，本会话由负责人 Ada Lead 持有并请 Jamie Ash 处理');
+  assert.ok(!memoryReads().some(read => read.startsWith('jamie@')), 'the member\'s private memory is not loaded');
+});
+
+test('the checkpoint receipt names the same FLA and project as the entry', async () => {
+  const { run, tasks } = fixture();
+  await run('@Jamie Ash 继续');
+  const begun = tasks[0];
+  let checkpoint = null;
+  const task = () => ({ token: begun.token, sessionId: begun.sessionId, personalProjectId: begun.personalProjectId,
+    projectAgentId: begun.projectAgentId, sourceApplication: 'codex', agentAssignment: begun.agentAssignment,
+    projectScope: null, workLogRequired: false, checkpoint });
+  const app = { config: { personal: { spaceId: SPACE } }, getCapturePolicy: () => ({ enabled: true }),
+    taskContextRegistry: { context: async () => task(),
+      prepare: async (_token, value) => { checkpoint = { ...value, phase: 'prepare' }; return task(); },
+      checkpoint: async (_token, value) => { checkpoint = { ...checkpoint, ...value, phase: 'complete' }; return task(); } },
+    personal: { conversation: async () => ({ status: 'saved', conversation_id: 'synthetic-conversation' }),
+      getProjectAgent: async () => JAMIE } };
+  const result = await checkpointTaskKnowledge(app, { taskContextToken: begun.token, sourceApplication: 'codex',
+    disposition: 'retain_nothing', reason: 'Synthetic work continued' });
+  assert.equal(result.agent_receipt.owner.agent_id, 'jamie');
+  assert.match(result.agent_receipt.markdown, /· 本会话由 Jamie Ash 继续项目 Beta 的工作/);
+  assert.doesNotMatch(result.agent_receipt.markdown, /fla_binding|project-b/);
+});
+
+test('token budget: no @FLA adds nothing; naming, binding and choosing add a bounded, measured amount', async (t) => {
+  const plain = fixture();
+  const ordinary = await plain.run('继续看一下构建');
+  assert.equal(ordinary.fla, undefined);
+  assert.equal(ordinary.human_interaction, undefined);
+  assert.doesNotMatch(ordinary.agent_receipt.markdown, /本会话|FLA/);
+  // The same FLA reached without a name (the folder's lead) against reached by name.
+  const folderLead = bytes(ordinary);
+  const named = fixture();
+  const first = bytes(await named.run('@Ada Lead 继续看一下构建'));
+  const later = bytes(await named.run('继续看一下构建'));
+  const picker = await fixture().run('@FLA');
+  const choice = Buffer.byteLength(JSON.stringify({ fla: picker.fla, human_interaction: picker.human_interaction }));
+  t.diagnostic(`entry bytes (compact JSON): folder lead ${folderLead}, named first turn ${first} (+${first - folderLead}), `
+    + `bound later turn ${later} (+${later - folderLead}); bare @FLA picker ${bytes(picker)} in all, `
+    + `${choice} of them the choice (no Agent context)`);
+  assert.ok(first - folderLead <= 700, `the first named turn adds ${first - folderLead} bytes`);
+  assert.ok(later - folderLead <= 100, `a bound later turn adds ${later - folderLead} bytes`);
+  assert.ok(choice <= 1800, `the choice takes ${choice} bytes`);
+});

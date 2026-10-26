@@ -31,6 +31,22 @@ export function taskAgentAssignment(context) {
   try { return parseTaskAgentAssignment(value); } catch { return null; }
 }
 
+// The Provider's bound on a stored match basis (task_context_models.py).
+const MATCH_BASIS_LIMIT = 32;
+const NO_AGENT = Object.freeze({ version: 1, selection_reason: null, match_basis: [], requested_agent_id: null,
+  reporting_lead_agent_id: null, execution_reason: null, execution_agent_id: null });
+
+// A session's routing state rides on its current task: markers appended to
+// the task's assignment match basis (one without an Agent when none was
+// selected), within the Provider's bound. A standing assignment's route
+// (task-entry-standing-owner.js) and a named FLA's binding
+// (task-entry-named-fla.js) are read back by prefix on the next entry.
+export function withRouteMarkers(assignment, markers) {
+  if (!markers?.length) return assignment;
+  const base = assignment ?? NO_AGENT;
+  return { ...base, match_basis: [...base.match_basis.slice(0, MATCH_BASIS_LIMIT - markers.length), ...markers] };
+}
+
 // Absent/null is legacy unknown; a present record must match v1 exactly.
 export function parseTaskAgentAssignment(value) {
   if (value == null) return null;
