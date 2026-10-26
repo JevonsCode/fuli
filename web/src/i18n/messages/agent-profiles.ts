@@ -40,6 +40,14 @@ export const agentProfileMessages = {
     sharedTasks: "共同参与 {count} 个任务",
     joined: "加入时间",
     created: "建立档案",
+    // The built-in Agents' default responsibility, word for word as the Provider stores it
+    // (graph-provider/fuli_graph/system_agents.py; test/system-agent-defaults.test.js).
+    systemResponsibility: {
+      jefa: "项目经理：拆解目标、维护看板与进展，并为任务选择合适的 Agent。",
+      bole: "AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录；在用户发起或同意时办理离职：先问理由，沉淀教训并留下交接。",
+      tonborg: "决策员：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。",
+      assistant: "全局助手：接待未归属项目的对话，只用全局偏好，不自动询问项目归属。",
+    },
     timeUnknown: "尚未记录",
     recruitment: "为什么加入",
     departure: "为什么离开",
@@ -126,6 +134,12 @@ export const agentProfileMessages = {
     sharedTasks: "Shared {count} tasks",
     joined: "Joined",
     created: "Profile created",
+    systemResponsibility: {
+      jefa: "Project manager: breaks goals into tasks, keeps the board and progress current, and picks the right Agent for each task.",
+      bole: "AR: keeps track of which Agents exist and what they are working on, recruits when needed and keeps the recruitment records; handles a dismissal when you start or agree to it: asks why first, keeps the lessons and leaves a handover.",
+      tonborg: "Decision maker: reviews everyday matters by your preferences, suggests clients and models, and keeps the reasoning and feedback.",
+      assistant: "Global assistant: takes conversations that belong to no project, uses only global preferences, and never asks on its own which project they belong to.",
+    },
     timeUnknown: "Not recorded",
     recruitment: "Why I joined",
     departure: "Why I left",

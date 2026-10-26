@@ -14,6 +14,7 @@ import { workbenchStatusDetail } from "./workbench-status-text";
 import {
   agentDisplayName,
   agentProfilePath,
+  agentResponsibility,
   profileProjectIds,
 } from "./profile-model";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
@@ -228,7 +229,7 @@ function surfaceClick(event: MouseEvent) {
       </span>
     </p>
     <p v-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
-    <p class="agent-card-responsibility" data-agent-summary :title="agent.profile.responsibility">{{ agent.profile.responsibility }}</p>
+    <p class="agent-card-responsibility" data-agent-summary :title="agentResponsibility(agent)">{{ agentResponsibility(agent) }}</p>
     <div v-if="capabilities.length" class="agent-inline-skills">
       <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>
     </div>

@@ -23,6 +23,7 @@ import AgentConversations from "@/features/project-agents/AgentConversations.vue
 import TaskExecutionPlan from "@/features/project-agents/TaskExecutionPlan.vue";
 import {
   agentDisplayName,
+  agentResponsibility,
   collaboratorsFor,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
@@ -340,7 +341,7 @@ onMounted(() => {
               </template>
               <span v-else class="ui-meta">{{ t("agentRedesign.occupation.notSet") }}</span>
             </p>
-            <p class="agent-resume-summary">{{ agent.profile.responsibility }}</p>
+            <p class="agent-resume-summary">{{ agentResponsibility(agent) }}</p>
             <div class="agent-resume-meta">
               <span>
                 {{ t(agent.recruitedAt ? "agentProfiles.joined" : "agentProfiles.created") }}

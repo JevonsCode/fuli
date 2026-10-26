@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
-import { agentDisplayName } from '@/features/agent-profile/profile-model'
+import { agentDisplayName, agentResponsibility } from '@/features/agent-profile/profile-model'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { t } from '@/i18n'
 import type { ProjectAgentRecord } from '@/types'
@@ -85,8 +85,8 @@ function surfaceClick(event: MouseEvent) {
       </template>
       <span v-else class="text-xs text-muted-foreground">{{ t('projectAgents.detail.noRun') }}</span>
     </p>
-    <p class="agent-card-responsibility project-agent-row-responsibility" :title="agent.profile.responsibility">
-      {{ agent.profile.responsibility || t('projectAgents.notReported') }}
+    <p class="agent-card-responsibility project-agent-row-responsibility" :title="agentResponsibility(agent)">
+      {{ agentResponsibility(agent) || t('projectAgents.notReported') }}
     </p>
     <div class="agent-card-meta mt-auto flex items-center justify-between gap-3 border-t pt-2.5">
       <div class="agent-card-project-list project-agent-row-projects min-w-0 flex-1">

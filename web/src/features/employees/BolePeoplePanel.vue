@@ -15,7 +15,7 @@ import ProjectScopePicker from './ProjectScopePicker.vue'
 import { employeeAvatarUrl } from './avatars'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
 import AgentName from '@/features/agent-profile/AgentName.vue'
-import { fuzzyMatch } from '@/features/agent-profile/profile-model'
+import { agentResponsibility, fuzzyMatch } from '@/features/agent-profile/profile-model'
 import { taskStatusLabel, taskStatusTone } from '@/features/project-agents/task-labels'
 import { useWorkbenchToolbarActions } from './workbench-toolbar'
 
@@ -209,7 +209,7 @@ function normalizeAgent(value: unknown): AgentView | null {
     id,
     name: pickString(profile, 'displayName', 'display_name') || pickString(profile, 'name') || id,
     emoji: pickString(profile, 'occupationEmoji', 'occupation_emoji') || '✦',
-    responsibility: pickString(profile, 'responsibility'),
+    responsibility: agentResponsibility({ agentId: id, profile: { responsibility: pickString(profile, 'responsibility') } }),
     searchTerms: [pickString(profile, 'name'), ...array(profile.capabilities),
       ...array(profile.workKinds ?? profile.work_kinds)].filter((item): item is string => typeof item === 'string'),
     type: pickString(profile, 'agentType', 'agent_type') || 'other',
