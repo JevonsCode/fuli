@@ -39,12 +39,10 @@ import { useStableOrder } from "@/features/agent-profile/useStableOrder";
 import UiSegmented from "@/ui/UiSegmented.vue";
 import UiSelect from "@/ui/UiSelect.vue";
 import UiIconButton from "@/ui/UiIconButton.vue";
-import EmployeeRecruitDialog from "@/features/employees/EmployeeRecruitDialog.vue";
 import EmployeeWorkbenchLinks from "@/features/employees/EmployeeWorkbenchLinks.vue";
 import { employeeTemplates } from "@/features/employees/catalog";
 import { useConsoleStore } from "@/stores/console";
 import { currentLocale, t } from "@/i18n";
-import type { EmployeeRecruitmentResult } from "@/features/employees/catalog";
 import type { PersonalProject } from "@/types";
 
 const store = useConsoleStore();
@@ -87,8 +85,6 @@ const openProjects = ref<Record<string, boolean>>({});
 const scroller = ref<HTMLElement | null>(null);
 const rosterEnd = ref<HTMLElement | null>(null);
 const nearEnd = useNearEnd(rosterEnd, scroller);
-const recruiting = ref(false);
-const hireable = computed(() => employeeTemplates.value.some((entry) => !entry.fixed));
 const managesAllProjects = (agentId: string) => employeeTemplates.value
   .some((entry) => entry.agentId === agentId && entry.management?.mode === "all");
 
@@ -334,11 +330,6 @@ watch(space, (_current, previous) => {
   openProjects.value = {};
 });
 
-async function recruited(result: EmployeeRecruitmentResult) {
-  recruiting.value = false;
-  await router.push(agentProfilePath(space.value, result.agent.agentId));
-}
-
 // Reading on toward the end of the list asks for the next page; a failed
 // page waits for the reader's retry instead of looping.
 watch([nearEnd, pageLoading, pageError, rosterComplete], () => {
@@ -421,14 +412,6 @@ function handleProjectCreated(project: PersonalProject) {
             {{ t(partialRoster ? "agentProfiles.membersLoaded" : "agentProfiles.members", { count: agents.length }) }}
           </p>
           <EmployeeWorkbenchLinks :personal-space-id="space || 'current'" />
-          <Button
-            v-if="hireable"
-            size="sm"
-            :disabled="!space"
-            @click="recruiting = true"
-          >
-            {{ t("employees.recruit") }}
-          </Button>
         </div>
       </div>
 
@@ -558,14 +541,6 @@ function handleProjectCreated(project: PersonalProject) {
       </DialogContent>
     </Dialog>
 
-    <EmployeeRecruitDialog
-      :open="recruiting"
-      :personal-space-id="space"
-      :projects="projects"
-      :default-project-ids="selectedProjects ?? []"
-      @close="recruiting = false"
-      @recruited="recruited"
-    />
   </section>
 </template>
 

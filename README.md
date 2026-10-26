@@ -738,10 +738,12 @@ overhead remains while idle.
 
 Jefa (project manager), Bole (AR, Agent Resources), and Tonborg (judgment) are built-in roles in every
 space and are never hired. Bole's workbench shows staffing, current work, and recruitment history;
-Tonborg's workbench shows decisions and feedback. **Project Agents → Hire an Agent** offers the other reusable employee templates.
-Recruitment reuses a durable identity with separate project assignments. An installed employee workbench,
-API and A2A share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not
-start a model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
+Tonborg's workbench shows decisions and feedback. Jefa's task board is built into FULI and needs no
+installation; **Manage assigned projects** on a role's card or workbench sets which projects it manages.
+The console has no hiring step: a custom employee package is recruited through the `recruit_employee` Agent
+tool, which reuses a durable identity with separate project assignments. An installed employee workbench and
+API share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not start a
+model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
 Agents can also grow small [Agent apps](docs/agent-apps.md); in this version an approved app runs
 unsandboxed with your account's permissions, after you confirm it with `fl app approve` in a terminal.
 

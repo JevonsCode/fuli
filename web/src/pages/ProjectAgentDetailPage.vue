@@ -11,8 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { agentDisplayName, agentProfilePath } from '@/features/agent-profile/profile-model'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
-import { employeeTemplateIdForAgent, employeeTemplates, type EmployeeRecruitmentResult } from '@/features/employees/catalog'
-import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
+import { employeeTemplateIdForAgent, employeeTemplates } from '@/features/employees/catalog'
+import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
 import AgentConversations from '@/features/project-agents/AgentConversations.vue'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
@@ -232,7 +232,7 @@ const executorDialogOpen = ref(false)
 const executorDialogMode = ref<'executor' | 'rule'>('executor')
 const editingExecutor = ref<ProjectAgentExecutorRef | null>(null)
 const editingRule = ref<ProjectAgentRoutingRule | null>(null)
-const recruitDialogOpen = ref(false)
+const scopeDialogOpen = ref(false)
 const dialogDefaultProjectId = computed(() => linkedProject.value
   || agent.value?.assignments?.find(({ status }) => status === 'active')?.personalProjectId
   || agent.value?.personalProjectId
@@ -244,7 +244,7 @@ function recordSaved(record: ProjectAgentRecord) {
   store.notify(t('projectAgents.saved'))
 }
 function openAssignment(assignment: ProjectAgentAssignmentRecord | null = null, action: 'assign' | 'end' | 'replace' = 'assign') {
-  if (action === 'assign' && employeeId.value) { recruitDialogOpen.value = true; return }
+  if (action === 'assign' && employeeId.value) { scopeDialogOpen.value = true; return }
   assignmentTarget.value = assignment
   assignmentAction.value = action
   assignmentDialogOpen.value = true
@@ -275,7 +275,7 @@ function executorDialogSaved(value: ProjectAgentExecutorRef | ProjectAgentRoutin
   else details.ruleSaved(value as ProjectAgentRoutingRule)
   closeExecutorDialog()
 }
-async function employeeRecruited(_result: EmployeeRecruitmentResult) {
+async function employeeScopeSaved() {
   await roster.load()
   void details.refresh()
 }
@@ -354,7 +354,7 @@ async function cleanup(person: ProjectAgentRecord) {
             <Card v-if="employeeId" as="section" class="project-agent-card-section employee-project-overview" aria-labelledby="employee-project-overview-title">
               <div class="employee-project-overview-heading">
                 <div><h2 id="employee-project-overview-title">{{ employee?.management?.mode === 'all' ? t('employees.scope.continuousAll') : t('employees.scope.label') }}</h2><p>{{ t('employees.assignedCount', { count: employeeProjects.length }) }}</p></div>
-                <Button size="sm" data-employee-manage-projects @click="recruitDialogOpen = true">{{ t('employees.manageProjects') }}</Button>
+                <Button size="sm" data-employee-manage-projects @click="scopeDialogOpen = true">{{ t('employees.manageProjects') }}</Button>
               </div>
               <div v-if="employeeProjects.length" class="employee-assigned-projects">
                 <RouterLink v-for="project in employeeProjects" :key="project.id" :to="`/employees/${encodeURIComponent(employeeId)}?project=${encodeURIComponent(project.id)}`">
@@ -541,7 +541,7 @@ async function cleanup(person: ProjectAgentRecord) {
       <ProjectAgentDialog :open="dialogOpen" :agent="agent" :projects="projects" :default-project-id="dialogDefaultProjectId" :personal-space-id="spaceId" @close="dialogOpen = false" @saved="recordSaved" />
       <AgentAssignmentDialog :open="assignmentDialogOpen" :agent="agent" :assignment="assignmentTarget" :action="assignmentAction" :projects="projects" :available-agents="agents" :default-project-id="dialogDefaultProjectId" @close="closeAssignment" @saved="assignmentSaved" @changed="assignmentChanged" />
       <ExecutorRoutingDialog :open="executorDialogOpen" :mode="executorDialogMode" :personal-space-id="spaceId" :executor="editingExecutor" :rule="editingRule" :projects="projects" :available-executors="agent.executorDirectory ?? []" @close="closeExecutorDialog" @saved="executorDialogSaved" />
-      <EmployeeRecruitDialog :open="recruitDialogOpen" :personal-space-id="spaceId" :projects="projects" :template-id="employeeId ?? ''" :default-project-ids="[]" @close="recruitDialogOpen = false" @recruited="employeeRecruited" />
+      <EmployeeScopeDialog v-if="employeeId" :open="scopeDialogOpen" :personal-space-id="spaceId" :projects="projects" :template-id="employeeId" @close="scopeDialogOpen = false" @saved="employeeScopeSaved" />
     </template>
   </section>
 </template>

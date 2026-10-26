@@ -12,7 +12,7 @@ import { useRoutePeek } from '@/composables/useRoutePeek'
 import { usePageTitle } from '@/layouts/page-title'
 import { boardTaskAccessRevoked, boardTaskPeekId, readBoardTaskPeekId } from '@/features/employees/board-task-peek'
 import EmployeeTaskBoard, { type EmployeeBoardItem, type EmployeeBoardStatus, type EmployeeProjectBoard } from '@/features/employees/EmployeeTaskBoard.vue'
-import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
+import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
 import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedConversationsPanel.vue'
 import { isFormalProject } from '@/features/projects/project-origin'
@@ -394,7 +394,7 @@ async function projectsSaved() {
         </Button>
       </div>
     </header>
-    <EmployeeRecruitDialog v-if="!isNativeWorkbench" :open="manageProjectsOpen" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" :template-id="templateId" @close="manageProjectsOpen = false" @recruited="projectsSaved" />
+    <EmployeeScopeDialog v-if="!isNativeWorkbench" :open="manageProjectsOpen" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" :template-id="templateId" @close="manageProjectsOpen = false" @saved="projectsSaved" />
     <EmployeeTaskDialog v-if="isJefa" :open="createTaskOpen || Boolean(shownTaskRef)" :item="shownTaskRef" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="!(shownTaskRef ? jefaRead.taskReadOnly(shownTaskRef.projectId) : jefaRead.readOnly) && (template?.permissions.includes('board.write') ?? false)" @close="closeTaskDialog" @saved="loadWorkspace" />
     <EmployeeShareDialog v-if="isJefa" :open="shareOpen" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" @close="shareOpen = false" />
     <JefaReadStatus v-if="isJefa && !projectFilter.invalidScope.value"
@@ -411,7 +411,6 @@ async function projectsSaved() {
     <BolePeoplePanel v-else-if="isNativePeople" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
     <JudgmentWorkbench v-else-if="isNativeJudgment" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
     <UnassignedConversationsPanel v-else-if="isNativeUnclaimed" :space-id="personalSpaceId" :focus-conversation-id="typeof route.query.conversation === 'string' ? route.query.conversation : undefined" :formal-projects="spaceProjects.filter(isFormalProject)" :existing-project-ids="spaceProjects.map(project => project.project_id)" @project-created="store.rememberPersonalProject" />
-    <div v-else-if="isJefa && template && !jefaRead.loading && template.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
     <div v-else-if="!projectId && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><Button size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</Button></div>
     <EmployeeTaskBoard
       v-else-if="projectId === ALL_PROJECTS && supportsAllProjects"
@@ -434,7 +433,7 @@ async function projectsSaved() {
       @create-task="openTask()"
       @retry="loadWorkspace"
     />
-    <div v-else-if="workspace && workspace.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p><small>{{ t('employees.installHelp') }}</small></div>
+    <div v-else-if="workspace && workspace.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p></div>
     <iframe v-else-if="workspace" :key="workspace.workbenchUrl" :src="workspace.workbenchUrl" :title="`${workspace.name} · ${workspace.project.name}`" class="employee-workbench-frame" />
    </div>
   </section>

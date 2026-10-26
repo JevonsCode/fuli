@@ -18,8 +18,6 @@ export interface EmployeeTemplate {
   assignments: ProjectAgentAssignmentRecord[]
   assignmentsVersion: string
   identityConflict: boolean
-  // Fixed roles are provisioned for every space, never hired.
-  fixed?: boolean
   defaultProjectScope?: 'all' | 'selected'
   workbench?: { kind: 'native'; view: 'people' | 'judgment' | 'unclaimed' }
   management?: EmployeeManagement
