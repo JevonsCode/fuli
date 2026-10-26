@@ -2,15 +2,23 @@ import { compactTaskContext } from './task-context-view.js';
 import { hookAdditionalContextToolResult } from '../mcp/tool-result.js';
 import { SESSION_FULI_OFF } from '../agent-tools/session-fuli-gate.js';
 import { withoutDeliveryProofs } from './recent-context.js';
-import { fitUncached, inlineEntryFit, OMITTED_PREFERENCES_LABEL, WHOLE_ENTRY } from './entry-inline-budget.js';
+import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_PREFERENCES_LABEL, WHOLE_ENTRY }
+  from './entry-inline-budget.js';
 
 export const PREFERENCE_RESET_EVENTS = Object.freeze(['SessionStart', 'PreCompact']);
 const RESTORED_LABEL = 'Fuli restored current mandatory preferences for the same owned task. Apply this full result; no replacement task or Agent was selected.';
 
-export async function preferenceLifecycleOutput(event, input, { sourceApplication, delivery, currentTask, invoke }) {
+// `replayedSources`: the SessionStart sources after which the Agent's host
+// replays the same native transcript into the model's context (Claude Code's
+// resume, rec#11 D-69). The frames delivered before stay model-visible, so the
+// context generation and its pending frames are kept and nothing is restored;
+// a compaction the host records still starts a new generation.
+export async function preferenceLifecycleOutput(event, input, { sourceApplication, delivery, currentTask, invoke,
+  replayedSources = [] }) {
   if (typeof input?.session_id !== 'string' || !input.session_id.trim() || input.session_id.length > 256) {
     throw new TypeError('Preference reset requires a native session identifier');
   }
+  if (event === 'SessionStart' && replayedSources.includes(input?.source)) return {};
   const origin = { sourceApplication, nativeSessionId: input?.session_id, transcriptPath: input?.transcript_path };
   await delivery?.reset(origin);
   if (event !== 'SessionStart' || !['compact', 'resume', 'fork'].includes(input?.source)) return {};
@@ -41,13 +49,17 @@ export async function currentTaskPreferences(input, { sourceApplication, current
 export async function preferenceHookOutput(value, event, input, delivery, sourceApplication, label, forceFull = false,
   { inlineChars = null } = {}) {
   const format = projected => hookAdditionalContextToolResult(projected, { hookEventName: event,
-    label: projected?.preferences_omitted ? `${label} ${OMITTED_PREFERENCES_LABEL}` : label,
-    limitBytes: 128 * 1024, itemLimit: 1000 });
+    label: omittedLabel(label, projected?.preferences_omitted), limitBytes: 128 * 1024, itemLimit: 1000 });
   const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength) : WHOLE_ENTRY;
   const result = delivery ? await delivery.deliver(value, { sourceApplication,
     nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull }, format, fit)
     : fitUncached(fit, value, projected => format(withoutDeliveryProofs(projected)));
   return JSON.parse(result.content[0].text);
+}
+
+function omittedLabel(label, omitted) {
+  if (!omitted) return label;
+  return [label, OMITTED_PREFERENCES_LABEL, ...(omitted.includes_always_inline ? [ALWAYS_INLINE_OMITTED_LABEL] : [])].join(' ');
 }
 
 function hookContextLength(result) {

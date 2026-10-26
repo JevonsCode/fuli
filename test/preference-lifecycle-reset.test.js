@@ -13,9 +13,12 @@ const input = { session_id: session, transcript_path: '/synthetic/native.jsonl',
 const context = { nodePath: '/synthetic/node', mcpServerPath: '/synthetic/src/mcp-server.js',
   runtimeConfigPath: '/synthetic/runtime.json' };
 
-test('both native lifecycle adapters restore full current preferences for the existing token after compact/resume', async () => {
-  for (const [adapter, source] of [[codexLifecycleOutput, 'codex'], [claudeLifecycleOutput, 'claude_code']]) {
-    for (const reason of ['compact', 'resume']) {
+// Claude Code's resume replays the same transcript, so it keeps the delivery
+// base instead (rec#11 D-69, the next test).
+test('native lifecycle adapters restore full current preferences for the existing token after compact (and Codex resume)', async () => {
+  for (const [adapter, source, reasons] of [[codexLifecycleOutput, 'codex', ['compact', 'resume']],
+    [claudeLifecycleOutput, 'claude_code', ['compact']]]) {
+    for (const reason of reasons) {
       const calls = [];
       const task = { token: 'fuli-task-original-owned', sessionId: session, sourceApplication: source, checkpoint: null };
       const delivery = { reset: async origin => calls.push(['reset', origin]),
@@ -39,6 +42,14 @@ test('both native lifecycle adapters restore full current preferences for the ex
       assert.equal(restored.preference_delivery.status, 'complete');
     }
   }
+});
+
+test('a Claude Code resume keeps the delivery base and restores nothing: the host replays the same transcript', async () => {
+  const deps = { delivery: { reset: async () => { throw new Error('No reset on a replayed resume'); },
+    deliver: async () => { throw new Error('No restore on a replayed resume'); } },
+  currentTask: async () => { throw new Error('No task lookup on a replayed resume'); } };
+  const invoke = () => { throw new Error('No task read on a replayed resume'); };
+  assert.deepEqual(await claudeLifecycleOutput('SessionStart', { ...input, source: 'resume' }, invoke, deps), {});
 });
 
 test('clear/startup/PreCompact invalidate evidence without importing old context or creating a task', async () => {
