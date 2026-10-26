@@ -32,6 +32,7 @@ import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
 import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
+import { projectHierarchyConsole as createProjectHierarchyConsole } from './project-hierarchy/console-port.js';
 import { knowledgeOwnerReads as createKnowledgeOwnerReads } from './knowledge-owner-reads/console-port.js';
 import { reviewUndoConsole } from './judgment/review-undo.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
@@ -99,6 +100,9 @@ export async function createServer(options = {}) {
   // A person's change of where knowledge applies (rec#20, rec#11 D-22), console only.
   const knowledgeScope = options.knowledgeScope ?? (localOptions.runtimeConfigPath
     ? createKnowledgeScopeConsole(dirname(localOptions.runtimeConfigPath)) : null);
+  // A person's move of a project in their hierarchy (调整层级), console only.
+  const projectHierarchy = options.projectHierarchy ?? (localOptions.runtimeConfigPath
+    ? createProjectHierarchyConsole(dirname(localOptions.runtimeConfigPath)) : null);
   // The person's full knowledge reads, every FLA's included (console only).
   const knowledgeOwnerReads = options.knowledgeOwnerReads ?? (localOptions.runtimeConfigPath
     ? createKnowledgeOwnerReads(dirname(localOptions.runtimeConfigPath)) : null);
@@ -199,6 +203,7 @@ export async function createServer(options = {}) {
       dataFormatMigrations,
       knowledgeHardDelete,
       knowledgeScope,
+      projectHierarchy,
       knowledgeOwnerReads,
       knowledgeTags,
       modelRoleSettings,
@@ -293,6 +298,7 @@ async function handleRequest({
   dataFormatMigrations,
   knowledgeHardDelete,
   knowledgeScope,
+  projectHierarchy,
   knowledgeOwnerReads,
   knowledgeTags,
   modelRoleSettings,
@@ -326,6 +332,7 @@ async function handleRequest({
     dataFormatMigrations,
     knowledgeHardDelete,
     knowledgeScope,
+    projectHierarchy,
     knowledgeOwnerReads,
     knowledgeTags,
     modelRoleSettings,

@@ -271,3 +271,70 @@ describe('typed graph runtime', () => {
   })
 })
 
+describe('organize-mode project drag', () => {
+  function renderProjects(enabled: () => boolean, onProjectDrag = vi.fn()) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    Object.defineProperty(svg, 'clientWidth', { value: 900 })
+    Object.defineProperty(svg, 'clientHeight', { value: 600 })
+    document.body.append(svg)
+    const project = (id: string) => ({ id, name: id, type: 'PersonalProject', attributes: { projectId: id } })
+    const controller = renderKnowledgeGraph(svg, { nodes: [project('app'), project('docs')], edges: [] },
+      { projectVisibility: 'provided', organize: { enabled, onProjectDrag } })
+    const group = (id: string) => [...svg.querySelectorAll<SVGGElement>('.graph-node')]
+      .find((element) => element.getAttribute('aria-label')?.startsWith(`${id}，`))!
+    const position = (id: string) => {
+      const match = group(id).getAttribute('transform')!.match(/translate\(([-\d.e]+),([-\d.e]+)\)/)!
+      return { x: Number(match[1]), y: Number(match[2]) }
+    }
+    // d3-drag follows the pointer on the event's view; the test DOM's
+    // MouseEvent constructor refuses that window, so it is set afterwards.
+    const pointer = (type: string, target: EventTarget, at: { x: number; y: number }) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: at.x, clientY: at.y, button: 0 })
+      Object.defineProperty(event, 'view', { value: window })
+      target.dispatchEvent(event)
+    }
+    return { svg, controller, group, position, pointer, onProjectDrag }
+  }
+
+  it('reports the project under the dragged one and puts the dragged one back on request', () => {
+    const { svg, controller, group, position, pointer, onProjectDrag } = renderProjects(() => true)
+    try {
+      const start = position('app')
+      const docs = position('docs')
+      pointer('mousedown', group('app'), start)
+      pointer('mousemove', document.defaultView!, { x: docs.x + 5, y: docs.y + 5 })
+      pointer('mouseup', document.defaultView!, { x: docs.x + 5, y: docs.y + 5 })
+      const phases = onProjectDrag.mock.calls.map(([event]) => [event.phase, event.node.id, event.over?.id ?? null])
+      expect(phases).toEqual([['start', 'app', 'docs'], ['move', 'app', 'docs'], ['end', 'app', 'docs']])
+      // The dropped project waits where it was dropped until the page decides.
+      expect(position('app')).not.toEqual(start)
+
+      controller.markDropTarget('docs')
+      expect(group('docs').classList.contains('drop-target')).toBe(true)
+      controller.markDropTarget(null)
+      expect(svg.querySelector('.drop-target')).toBeNull()
+
+      controller.restoreNode('app')
+      expect(position('app')).toEqual(start)
+    } finally {
+      controller.destroy()
+      svg.remove()
+    }
+  })
+
+  it('drags a project as before while organize mode is off', () => {
+    const { svg, controller, group, position, pointer, onProjectDrag } = renderProjects(() => false)
+    try {
+      const start = position('app')
+      pointer('mousedown', group('app'), start)
+      pointer('mousemove', document.defaultView!, { x: start.x + 60, y: start.y })
+      pointer('mouseup', document.defaultView!, { x: start.x + 60, y: start.y })
+      expect(onProjectDrag).not.toHaveBeenCalled()
+      expect(position('app').x).toBeCloseTo(start.x + 60)
+    } finally {
+      controller.destroy()
+      svg.remove()
+    }
+  })
+})
+

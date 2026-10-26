@@ -32,7 +32,21 @@ export interface GraphController {
     names: Set<string>,
     options?: { projectOnly?: boolean; searchMatch?: boolean },
   ): number
+  /** Marks the project node a dragged project would land under (null clears it). */
+  markDropTarget(nodeId: string | null): void
+  /** Puts a project dragged in organize mode back where its drag started. */
+  restoreNode(nodeId: string): void
   destroy(): void
+}
+
+// A project dragged in organize mode: where the pointer is and which other
+// project node is under it.
+export interface ProjectDragEvent {
+  phase: 'start' | 'move' | 'end'
+  node: KnowledgeNode
+  over: KnowledgeNode | null
+  clientX: number
+  clientY: number
 }
 
 export interface GraphRenderOptions {
@@ -40,10 +54,16 @@ export interface GraphRenderOptions {
   projectVisibility?: 'formal' | 'provided'
   onNodeSelect?(node: KnowledgeNode): void
   onEdgeSelect?(edge: KnowledgeEdge): void
+  /** 调整层级: while enabled, dragging a project reports its drop instead of only moving it. */
+  organize?: {
+    enabled(): boolean
+    onProjectDrag(event: ProjectDragEvent): void
+  }
 }
 
 interface GraphNodeDatum extends KnowledgeNode, d3.SimulationNodeDatum {
   dragMoved?: boolean
+  dragOrigin?: { x: number; y: number; fx: number | null; fy: number | null }
   degree: number
   footprint: Footprint
 }
@@ -75,6 +95,8 @@ const EDGE_LABEL_HEIGHT = 20
 const PROJECT_RING_RADIUS = 24
 const LINK_GAP = 28
 const SEARCH_BADGE = { width: 30, height: 15, above: 8 }
+// How close the pointer must come to another project to drop onto it.
+const PROJECT_DROP_RADIUS = PROJECT_RING_RADIUS + 14
 
 export function renderKnowledgeGraph(
   svg: SVGSVGElement,
@@ -331,14 +353,33 @@ export function renderKnowledgeGraph(
   updatePositions()
   let settleTimer: ReturnType<typeof window.setTimeout> | null = null
 
+  let dropCandidates: d3.Quadtree<GraphNodeDatum> | null = null
+  const organizing = (node: GraphNodeDatum) =>
+    isProjectNode(node) && Boolean(callbacks.organize?.enabled())
+  const reportProjectDrag = (
+    phase: ProjectDragEvent['phase'],
+    node: GraphNodeDatum,
+    event: { x: number; y: number; sourceEvent?: { clientX?: number; clientY?: number } | null },
+  ) => callbacks.organize?.onProjectDrag({
+    phase,
+    node,
+    over: dropCandidates?.find(event.x, event.y, PROJECT_DROP_RADIUS) ?? null,
+    clientX: event.sourceEvent?.clientX ?? 0,
+    clientY: event.sourceEvent?.clientY ?? 0,
+  })
+
   const drag = d3.drag<SVGGElement, GraphNodeDatum>()
     .on('start', (event, node) => {
       event.sourceEvent?.stopPropagation()
       node.dragMoved = false
+      if (organizing(node)) {
+        node.dragOrigin = { x: node.x ?? 0, y: node.y ?? 0, fx: node.fx ?? null, fy: node.fy ?? null }
+      }
       node.fx = node.x
       node.fy = node.y
     })
     .on('drag', function dragNode(event, node) {
+      const firstMove = !node.dragMoved
       node.dragMoved = true
       node.fx = event.x
       node.fy = event.y
@@ -346,8 +387,28 @@ export function renderKnowledgeGraph(
       node.y = event.y
       d3.select(this).classed('pinned', true)
       updatePositions()
+      if (!node.dragOrigin) return
+      if (firstMove) {
+        dropCandidates = d3.quadtree<GraphNodeDatum>()
+          .x((candidate) => candidate.x ?? 0)
+          .y((candidate) => candidate.y ?? 0)
+          .addAll(nodes.filter((candidate) => isProjectNode(candidate) && candidate !== node))
+        d3.select(this).classed('organize-dragging', true)
+        reportProjectDrag('start', node, event)
+      }
+      reportProjectDrag('move', node, event)
     })
-    .on('end', function endDrag(_event, node) {
+    .on('end', function endDrag(event, node) {
+      if (node.dragOrigin) {
+        d3.select(this).classed('organize-dragging', false)
+        // The page decides: the node stays where it was dropped while the
+        // move is saved, and goes back through restoreNode otherwise.
+        if (node.dragMoved) reportProjectDrag('end', node, event)
+        else restoreNode(node.id)
+        dropCandidates = null
+        delete node.dragMoved
+        return
+      }
       if (node.dragMoved) {
         node.fx = node.x
         node.fy = node.y
@@ -463,6 +524,10 @@ export function renderKnowledgeGraph(
       return matches.length
     },
     clearSelection,
+    markDropTarget(nodeId) {
+      nodeGroups.classed('drop-target', ({ id }) => id === nodeId)
+    },
+    restoreNode,
     destroy() {
       if (settleTimer !== null) {
         window.clearTimeout(settleTimer)
@@ -472,6 +537,19 @@ export function renderKnowledgeGraph(
       root.on('.zoom', null).on('.selection', null)
       root.selectAll('*').remove()
     },
+  }
+
+  function restoreNode(nodeId: string) {
+    const node = nodes.find(({ id }) => id === nodeId)
+    const origin = node?.dragOrigin
+    if (!node || !origin) return
+    node.x = origin.x
+    node.y = origin.y
+    node.fx = origin.fx
+    node.fy = origin.fy
+    delete node.dragOrigin
+    nodeGroups.filter(({ id }) => id === nodeId).classed('pinned', origin.fx !== null)
+    updatePositions()
   }
 
   function updatePositions() {

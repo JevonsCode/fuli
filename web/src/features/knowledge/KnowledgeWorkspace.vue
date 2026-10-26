@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -30,6 +30,7 @@ import type {
 } from '@/types'
 import GraphCanvas from './GraphCanvas.vue'
 import GraphRelationLegend from './GraphRelationLegend.vue'
+import GraphSearchStatus from './GraphSearchStatus.vue'
 import KnowledgeDirectoryPanel from './KnowledgeDirectoryPanel.vue'
 import KnowledgePeek from './KnowledgePeek.vue'
 import { reconcileKnowledgeWrites } from './knowledge-write-lifecycle'
@@ -38,6 +39,8 @@ import ProjectHierarchyAside from './ProjectHierarchyAside.vue'
 import ProjectOverview from '@/features/projects/ProjectOverview.vue'
 import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 import CreateProjectEntry from '@/features/projects/CreateProjectEntry.vue'
+import ProjectDropPanel from '@/features/projects/ProjectDropPanel.vue'
+import { useProjectOrganize } from '@/features/projects/useProjectOrganize'
 import {
   currentKnowledgeGraph,
   filterKnowledgeItems,
@@ -54,7 +57,6 @@ import {
 } from './model'
 import {
    discoverPersonalProjectResults,
-  projectDiscoverySummary,
   type KnowledgeSearchResult,
   type PersonalProjectDiscovery,
 } from './project-discovery'
@@ -242,6 +244,11 @@ const projectHierarchy = computed(() =>
 )
 const graphView = computed(() => projectHierarchy.value?.graph ?? null)
 const parentProjects = computed(() => projectHierarchy.value?.parents ?? [])
+// 调整层级 works on the all-projects graph, where every project is on the canvas.
+const organizeAvailable = computed(() =>
+  props.personalProjectsOnly && !projectId.value && mode.value === 'graph',
+)
+const organize = reactive(useProjectOrganize({ graph: graphView, spaceId, canvas: graphCanvas, onMoved: () => loadGraph() }))
 const graphRelationTypes = computed(() =>
   graphView.value?.edges.map(({ type }) => type) ?? [],
 )
@@ -360,14 +367,6 @@ const peekSuspended = computed(() => Boolean(
 const manageableSelectedProject = computed(() =>
   projectForMaterial(selectedItem.value),
 )
-const projectDiscoveryCopy = computed(() => {
-  if (!projectDiscovery.value) return ''
-  if (projectDiscovery.value.checking) {
-    return t('knowledge.workspace.workspace.discovery.checking')
-  }
-  if (projectDiscovery.value.result) return projectDiscoverySummary(projectDiscovery.value.result)
-  return t('knowledge.workspace.workspace.discovery.retry')
-})
 
 const searchDebounce = createDebouncedAction(() => {
   void applySearchDraft()
@@ -1008,7 +1007,9 @@ function queryValues(value: unknown) {
         </TabsList>
       </Tabs>
       <template v-if="mode !== 'overview'">
-        <GrowthLoading v-if="searching && !projectDiscovery?.checking" variant="inline" :label="t('knowledge.workspace.workspace.search.searching')" />
+        <GrowthLoading v-if="organize.pendingLabel" variant="inline" :label="organize.pendingLabel" />
+        <span v-else-if="organize.failure && organizeAvailable" class="organize-failure" role="alert">{{ organize.failure }}</span>
+        <GrowthLoading v-else-if="searching && !projectDiscovery?.checking" variant="inline" :label="t('knowledge.workspace.workspace.search.searching')" />
         <GrowthLoading v-else-if="loading && graph && !showInitialLoading && (mode !== 'graph' || graphView?.nodes.length)" variant="inline" :label="t('common.status.loadingKnowledge')" />
         <span v-else-if="mode === 'graph' && !showInitialLoading" class="muted">{{ countLabel }}</span>
       </template>
@@ -1048,6 +1049,10 @@ function queryValues(value: unknown) {
       <label v-if="personalProjectsOnly" class="project-visibility-toggle">
         <UiToggle v-model="showTemporaryProjects" :label="t('knowledge.workspace.workspace.view.showTemporaryProjects')" />
         <span>{{ t('knowledge.workspace.workspace.view.showTemporaryProjects') }}</span>
+      </label>
+      <label v-if="organizeAvailable" class="project-visibility-toggle">
+        <UiToggle :model-value="organize.enabled" :label="t('projects.organize.toggle')" @update:model-value="organize.setEnabled" />
+        <span>{{ t('projects.organize.toggle') }}</span>
       </label>
       <CreateProjectEntry v-if="personalProjectsOnly && spaceId" :space-id="spaceId" />
 
@@ -1187,37 +1192,8 @@ function queryValues(value: unknown) {
           :space-id="spaceId"
         />
 
-        <div class="graph-canvas-panel">
-          <aside v-if="projectDiscovery" class="graph-search-status" aria-live="polite">
-            <span class="graph-search-status-kicker">{{ t('knowledge.workspace.workspace.discovery.noHitKicker') }}</span>
-            <strong class="graph-search-status-title">{{ t('knowledge.workspace.workspace.discovery.noResults', { query: projectDiscovery.query }) }}</strong>
-            <GrowthLoading v-if="projectDiscovery.checking" variant="inline" :label="projectDiscoveryCopy" />
-            <p v-else class="graph-search-status-copy">{{ projectDiscoveryCopy }}</p>
-            <div
-              v-if="projectDiscovery.result?.matches.length"
-              class="graph-search-suggestions"
-            >
-              <RouterLink
-                v-for="match in projectDiscovery.result.matches.slice(0, 5)"
-                :key="match.project.project_id"
-                class="graph-search-suggestion"
-                :to="{
-                  path: personalProjectsPath(
-                    spaceId,
-                    'graph',
-                    match.project.project_id,
-                  ),
-                  query: { q: projectDiscovery.query },
-                }"
-              >
-                <span>
-                  <strong>{{ match.project.profile.name }}</strong>
-                  <small>{{ t('knowledge.workspace.workspace.discovery.candidateCount', { count: match.count }) }}</small>
-                </span>
-                <b>{{ t('knowledge.workspace.workspace.discovery.enterProject') }}</b>
-              </RouterLink>
-            </div>
-          </aside>
+        <div class="graph-canvas-panel" :class="{ 'is-organizing': organizeAvailable && organize.enabled }">
+          <GraphSearchStatus v-if="projectDiscovery" :discovery="projectDiscovery" :space-id="spaceId" />
           <GraphRelationLegend :relation-types="graphRelationTypes" />
           <GraphCanvas
             :project-visibility="personalProjectsOnly ? 'provided' : 'formal'"
@@ -1225,11 +1201,14 @@ function queryValues(value: unknown) {
             ref="graphCanvas"
             :graph="graphView"
             :selected-item="selectedItem"
+            :organize-projects="organizeAvailable && organize.enabled"
             @select-node="selectNode"
             @select-edge="selectEdge"
+            @project-drag="organize.onProjectDrag"
           />
           <GrowthLoading v-else-if="loading" variant="compact" :label="t('common.status.loadingKnowledge')" />
           <div v-else class="graph-empty">{{ t('knowledge.workspace.workspace.view.noGraph') }}</div>
+          <ProjectDropPanel v-if="organize.dragging" :tree="organize.tree" :project="organize.dragging" :hovered="organize.hovered" />
         </div>
       </div>
     </div>
@@ -1284,6 +1263,10 @@ function queryValues(value: unknown) {
 </template>
 
 <style scoped>
+.organize-failure {
+  color: var(--color-danger);
+  font-size: 13px;
+}
 .project-visibility-toggle {
   display: inline-flex;
   align-items: center;

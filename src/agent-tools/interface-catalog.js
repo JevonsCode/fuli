@@ -46,6 +46,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('DELETE /api/external-knowledge/bindings/:bindingId', 'delete_external_knowledge_binding'),
   agent('PATCH /api/external-knowledge/conflict-policy', 'update_external_knowledge_conflict_policy'),
   agent('PUT /api/personal-projects', 'upsert_personal_project'),
+  local('POST /api/personal-projects/:projectId/parent', 'Moving a project under another one or to the top level (调整层级) decides which knowledge it inherits; the person does it in the projects view on the human-review channel, and an Agent can only suggest it.'),
   agent('PUT /api/project-agents', 'upsert_project_agent'),
   agent('DELETE /api/project-agents/:agentId', 'cleanup_test_project_agents'),
   local('PUT /api/project-agents/:agentId/occupation', 'A long-term occupation is set by a person; an Agent never infers it from one task.'),
