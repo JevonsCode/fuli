@@ -176,9 +176,32 @@ test('hard rules alone over the inline limit are trimmed too: hard rules first, 
   assert.deepEqual(frame.preferences_omitted, { count: 35 - sent.length, includes_always_inline: true,
     read: { tool: 'read_task_preferences', arguments: { taskContextToken: 'task-large' } } });
   assert.ok(text.split('\n')[0].endsWith(`${OMITTED_PREFERENCES_LABEL} ${ALWAYS_INLINE_OMITTED_LABEL}`));
-  assert.match(ALWAYS_INLINE_OMITTED_LABEL, /read_task_preferences/);
   assert.equal(frame.taskContextToken, 'task-large');
   assert.equal(frame.checkpoint_required, true);
+});
+
+// A delta repeats the label every turn, so it asks for one read of what this
+// conversation does not hold yet, never a reread per turn.
+test('the omitted-hard-rules label asks for one read, only when the conversation lacks them', () => {
+  assert.equal(ALWAYS_INLINE_OMITTED_LABEL, 'Hard rules are among them (preferences_omitted.includes_always_inline): '
+    + 'if they are not already in this conversation, read the omitted ones once with read_task_preferences before acting; '
+    + 'they stay in force.');
+});
+
+// D-69: a more specific rule overrides a broader one, so hard rules that must
+// be trimmed keep Agent, then project, then global ones.
+test('hard rules that must be trimmed keep the most specific scope first', async () => {
+  const scoped = scope => Array.from({ length: 6 }, (_, index) => ({ ...syntheticPreference(`${scope}-hard-${index + 1}`,
+    `SYNTHETIC_HARD_${scope}_${index + 1}: ${'Run the full suite before every commit. '.repeat(10)}`, { constraint: 'hard' },
+    'judgment_preference'), preference_scope: scope,
+  ...(scope === 'global' ? {} : { preference_project_id: 'project' }), ...(scope === 'agent' ? { preference_agent_id: 'lead' } : {}) }));
+  const [global, project, agent] = ['global', 'project', 'agent'].map(scoped);
+  const frame = hookFrame(await claudeEntry(syntheticLargeEntry({ items: [...global, ...project, ...agent], sessionId: SESSION })));
+  const sent = keys(frame.effective_preferences);
+  assert.equal(frame.preferences_omitted.count + sent.length, 18, 'every scope reaches the entry');
+  assert.ok(sent.length > agent.length && sent.length < agent.length + project.length, `${sent.length} sent`);
+  assert.deepEqual(keys(agent).filter(key => !sent.includes(key)), [], 'every Agent rule');
+  assert.deepEqual(sent.filter(key => keys(global).includes(key)), [], 'no global rule before every project one');
 });
 
 // dot on #356: an entry past the renderer's own 128 KiB result budget renders

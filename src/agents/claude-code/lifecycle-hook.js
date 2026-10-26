@@ -40,7 +40,7 @@ const CLAUDE_ENTRY_INLINE_CHARS = 9000;
 // Claude Code resumes a session (`--resume`, `/resume`) by replaying the same
 // transcript into the model's context, so the frames delivered before are
 // still seen and a resume keeps the delivery base (rec#47, rec#11 D-69).
-const CLAUDE_REPLAYED_SOURCES = Object.freeze(['resume']);
+export const CLAUDE_REPLAYED_SOURCES = Object.freeze(['resume']);
 
 export async function claudeLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
   if (!['UserPromptSubmit', 'Stop', ...PREFERENCE_RESET_EVENTS].includes(event)) throw new TypeError('Unsupported Claude lifecycle event');

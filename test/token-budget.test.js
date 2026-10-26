@@ -187,7 +187,8 @@ const BASELINE = Object.freeze({
   // rec#47 F1b, rec#11 D-54: Claude Code keeps only a preview of a hook context over about
   // 10,000 chars, so its entry is bounded to 9,000 and stays a confirmable frame. Measured on the
   // synthetic 60-preference entry (test-support/synthetic-large-entry.js, about 430 chars each,
-  // 7 hard or boundary): turn 1 was 37,509 chars, every turn, and is now one complete frame of
+  // 5 hard rules that always stay and 2 boundaries ranked first, D-69): turn 1 was 37,509
+  // chars, every turn, and is now one complete frame of
   // 11 preferences plus the omitted count; turn 2 was again 37,509 and is now a delta. A frame
   // that leaves preferences out adds one label sentence (with its space). Entries that fit, and
   // every other Agent, are unchanged.

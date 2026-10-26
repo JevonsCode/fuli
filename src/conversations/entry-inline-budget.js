@@ -7,9 +7,11 @@ import { blockedByDeliveryBudget } from '../mcp/preference-delivery.js';
 // context passes its limit; every other entry is delivered as it is.
 export const OMITTED_PREFERENCES_LABEL = 'More preferences apply than this entry lists (preferences_omitted): '
   + 'read them with its read call before acting where one may apply.';
-// Added when hard rules are among them (D-69).
+// Added when hard rules are among them (D-69). A delta repeats it every turn,
+// so it asks for one read, not one per turn.
 export const ALWAYS_INLINE_OMITTED_LABEL = 'Hard rules are among them (preferences_omitted.includes_always_inline): '
-  + 'read them all with read_task_preferences before acting; they stay in force.';
+  + 'if they are not already in this conversation, read the omitted ones once with read_task_preferences before acting; '
+  + 'they stay in force.';
 
 // The default: the entry as it is.
 export const WHOLE_ENTRY = (value, { deliver }) => deliver(value);
@@ -39,8 +41,9 @@ export function fitUncached(fit, value, render) {
 // 3. then as much recall and conversation as still fits comes back.
 // What is left out is named by count with its reader. If the hard rules alone
 // are over the limit (D-69), they are bounded the same way, as the largest
-// prefix in the Provider's order, and the omission says so
-// (includes_always_inline): past Claude Code's preview they were never seen.
+// prefix by scope (Agent, project, global) and then the Provider's order, and
+// the omission says so (includes_always_inline): past Claude Code's preview
+// they were never seen.
 export function inlineEntryFit(limit, length) {
   return (value, { deliver, complete }) => {
     // A frame the renderer blocked as over its own delivery budget is short,
@@ -79,11 +82,17 @@ export function inlineEntryFit(limit, length) {
   };
 }
 
-// Indexes into effective_preferences: those that always stay, and the rest
-// in rank order.
+// A more specific rule overrides a broader one, so it is the one the model is
+// least able to infer: hard rules that must be trimmed keep these first (D-69).
+const SCOPE_SPECIFICITY = Object.freeze({ agent: 0, project: 1, global: 2 });
+const specificity = item => SCOPE_SPECIFICITY[item.preference_scope] ?? 3;
+
+// Indexes into effective_preferences: those that always stay, most specific
+// scope first, then the Provider's order, and the rest in rank order.
 function inlineRanking(preferences, workKind) {
   const kept = [], optional = [];
   preferences.forEach((item, index) => (preferenceAlwaysInline(item) ? kept : optional).push(index));
+  kept.sort((a, b) => specificity(preferences[a]) - specificity(preferences[b]) || a - b);
   const rank = index => [preferenceSceneReplaceable(preferences[index]) ? 1 : 0,
     preferenceNamesWorkKind(preferences[index], workKind) ? 0 : 1,
     preferences[index].confirmation_status === 'confirmed' ? 0 : 1, index];
