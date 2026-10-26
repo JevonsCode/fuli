@@ -1,5 +1,7 @@
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
+import { ApplicationError } from '../app/application-error.js';
 import { appConflict } from './errors.js';
+import { hostToolEntry } from './host-tools/catalog.js';
 
 // What an approval covers: the exact package and everything the user saw.
 export function approvalTerms(version) {
@@ -15,6 +17,36 @@ export function approvalBinds(approval, version) {
 
 export function tamperedPackage() {
   return appConflict('package_tampered', 'The stored package no longer matches its digest, so it will not run');
+}
+
+export function dataDeleting() {
+  return appConflict('app_data_deleting', 'This app\'s data is being deleted; nothing new is added to it');
+}
+
+// What no app may ask for, refused at submission and never silently dropped
+// (rec#7 D-28.3, D-28.4): a network grant, and any tool marked egress, model
+// or launch in the host tool catalog. These limit only what the FULI Host API
+// grants; an app in trusted mode can still use the network or start programs
+// itself (rec#11 D-36.10).
+export function rejectedManifest(submitted, manifest) {
+  const reasons = [];
+  if (submitted !== null && typeof submitted === 'object' && Object.hasOwn(submitted, 'network')) {
+    reasons.push('network: the FULI host grants apps no network access');
+  }
+  if (manifest) {
+    for (const permission of manifest.permissions) {
+      const marks = hostToolEntry(permission.slice('fuli.'.length))?.marks ?? [];
+      if (marks.length) reasons.push(`${permission} is marked ${marks.join(', ')}`);
+    }
+  }
+  return reasons.length ? new ApplicationError('manifest_rejected',
+    `The FULI host grants apps nothing that sends data off this computer, spends model budget or starts other programs: ${reasons.join('; ')}`,
+    { status: 400 }) : null;
+}
+
+// The FULI Agent tools of today an app may be granted.
+export function grantableTools(toolNames) {
+  return new Set(toolNames.filter((name) => hostToolEntry(name)?.grantable).map((name) => `fuli.${name}`));
 }
 
 // Authorization is checked against today's grantable tools, not the day of approval.

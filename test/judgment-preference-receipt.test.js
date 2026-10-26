@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { createJudgmentEngine, fingerprint } from '../src/judgment/engine.js';
+import { MODEL_ANSWER, trustedTonborg } from './fixtures/model-trust.js';
 import { getCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
 
@@ -16,7 +17,7 @@ const acceptance = { personalSpaceId: 's', personalProjectId: 'p', requestId: 'a
 function fixture(t, preferences) {
   const prompts = [], requests = [], writes = [];
   const task = { taskId: 't', personalProjectId: 'p', leadAgentId: 'lead', status: 'awaiting_review', revision: 2, title: 'Release notes', objective: 'Publish release notes' };
-  const app = { config: { personal: { spaceId: 's' } }, listPersonalProjects: async () => [{ project_id: 'p' }],
+  const app = { config: { personal: { spaceId: 's' } }, getCapturePolicy: () => ({ enabled: true }), listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
     employees: { authorize: async () => ({}) },
     getCollaborationPreferences: async request => {
@@ -44,9 +45,10 @@ function fixture(t, preferences) {
       ? { decisions: data.candidates.map(c => ({ target: c.candidate_key, outcome: 'approve', summary: 'Routine', evidence: ['Scoped content'], confidence: 0.95 })) }
       : data.eligible ? { executorId: 'worker', model: 'model', disposition: 'delegate', conversationId: null, summary: 'Bounded work', evidence: ['Eligible'] }
         : { outcome: 'approve', summary: 'Verified', evidence: ['report'], confidence: 0.95 };
-    return { client: 'codex', body: JSON.stringify(body) };
+    // The review write-back cases need Tonborg's configured model trusted (rec#10 D-36).
+    return { ...MODEL_ANSWER, client: 'codex', body: JSON.stringify(body) };
   };
-  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge }) });
+  const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge, trust: trustedTonborg() }) });
   service.store().setPolicy('s', '', { mode: 'shared', quality: 'quality', client: 'codex' }, 0);
   t.after(() => service.close());
   const judged = () => JSON.parse(prompts.at(-1).split('\nDATA:\n')[1]).preferences;
@@ -160,13 +162,14 @@ test('a rule limited to a dimension the request did not state is scope_unknown, 
   let preferences = judged();
   assert.deepEqual(preferences.scope, { work_kind: 'unknown', workflow: 'unknown', session: 'unknown' });
   assert.deepEqual(preferences.selected.map(item => item.key), ['plain']);
-  assert.deepEqual(preferences.scope_unknown.map(item => [item.key, item.needs]),
-    [['release-signoff', ['workflow']], ['review-depth', ['work_kind']]]);
+  // Keys only: a rule that does not apply sends no body (rec#15 D-27.2).
+  assert.deepEqual(preferences.scope_unknown, ['release-signoff', 'review-depth']);
+  assert.doesNotMatch(JSON.stringify(preferences), /sign-off before publishing|line by line/);
   await service.assess(routing);
   preferences = judged();
   assert.equal(preferences.scope.work_kind, 'review');
   assert.deepEqual(preferences.selected.map(item => item.key), ['review-depth', 'plain']);
-  assert.deepEqual(preferences.scope_unknown.map(item => item.key), ['release-signoff']);
+  assert.deepEqual(preferences.scope_unknown, ['release-signoff']);
 });
 
 test('judgment passes the work kind, session and workflow it already knows', async t => {
@@ -198,7 +201,7 @@ test('the judge gets the task-entry projection of the real Provider read, scoped
     { sessionId: null, sourceSessionId: null, workKind: 'review', workflow: null }]);
   const preferences = judged();
   assert.equal(preferences.status, 'complete');
-  assert.deepEqual(preferences.scope_unknown.map(item => [item.key, item.needs]), [['release-signoff', ['workflow']]]);
+  assert.deepEqual(preferences.scope_unknown, ['release-signoff']);
   assert.deepEqual(preferences.conflicts.map(item => [item.key, item.alternatives.length]), [['notes-language', 2]]);
   assert.equal(preferences.omitted.out_of_task_scope, 1);
 });

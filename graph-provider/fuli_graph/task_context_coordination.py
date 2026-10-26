@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .store_transactions import query_store_transaction
+from .client_coverage import covers_client
 
 
 def task_context_record(row):
@@ -44,7 +45,7 @@ async def bind_coordination_task(store, actor, token, request):
                                                   owner_id, require_active=True)
             owner_profile = owner['profile_json']
             owner_assignment_id = owner['active_assignment_id']
-            if request.source_application not in json.loads(owner_profile).get('allowed_clients', []):
+            if not covers_client(json.loads(owner_profile).get('allowed_clients', []), request.source_application):
                 raise HTTPException(403, 'Task owner is not allowed in this client')
         # Lock order: session, context, coordination task, owner, assignment, policy.
         # Permission withdrawal cannot commit between validation and the link.

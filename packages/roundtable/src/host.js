@@ -32,6 +32,11 @@
 //   remoteOriginAuthority()                     public keys that verify those origins
 //   recordMemoryUsage(input)                    optional: { recorded, reason? }
 //   projectFolder(projectId)                    optional: the project's known folder for fresh sessions
+//   matchWork(query)                            optional: leads the person's own names for work point to, in
+//                                               this space: [{ agentId, projectId, project, responsibility?,
+//                                               matchedTerms? }] (a project name, or an active standing assignment);
+//                                               when it throws, find_agents answers from the directory
+//                                               and names its code as workUnavailable
 //   requestSignal()                             optional, sync: the current request's AbortSignal
 //   inRestrictedWorker()                        optional, sync: true inside a sealed worker run
 export const ROUNDTABLE_HOST_METHODS = Object.freeze([

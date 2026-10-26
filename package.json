@@ -1,12 +1,13 @@
 {
   "name": "fuli-context",
-  "version": "0.20.0-beta.6",
+  "version": "0.21.0-beta.1",
   "description": "Local-first collaboration relationship graph for AI agents.",
   "type": "module",
   "files": [
     "README.zh-CN.md",
     "npm-shrinkwrap.json",
     "src/",
+    "native/win32/fuli-win-helper.exe",
     "packages/roundtable/package.json",
     "packages/roundtable/bin/",
     "packages/roundtable/src/",
@@ -16,6 +17,7 @@
     "docs/project-agent-memory.md",
     "docs/agent-conversations-and-collaboration.md",
     "docs/employee-agents.md",
+    "docs/agent-apps.md",
     "docs/agent-interface-architecture.md",
     "docs/agent-roundtable.md",
     "examples/external-knowledge/markdown-folder.mjs",
@@ -53,7 +55,9 @@
     "test:node": "node --test",
     "test:web": "vitest run --config vitest.config.ts",
     "test:package": "node scripts/package-smoke.js",
+    "test:neo4j": "node --test --test-concurrency=1 test/agent-dismissal-acceptance.test.js test/conversation-hook-neo4j-acceptance.test.js test/project-agent-memory-acceptance.test.js test/task-memory-checkpoint-atomicity.test.js",
     "test:knowledge:live": "node acceptance/knowledge-live.js",
+    "measure:context-delivery": "node acceptance/context-delivery-replay/run.js",
     "test:external-knowledge:live": "node scripts/validate-external-knowledge-live.js",
     "start": "node src/server.js",
     "graph:setup": "node src/graphiti/setup.js",
@@ -89,7 +93,7 @@
     "jsonc-parser": "3.3.1",
     "reflect-metadata": "0.2.2",
     "smol-toml": "1.9.1",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@atlaskit/pragmatic-drag-and-drop": "4.0.0",
@@ -127,7 +131,7 @@
       "@hono/node-server": "2.0.12"
     },
     "brace-expansion": "$brace-expansion",
-    "fast-uri": "3.1.8",
-    "qs": "6.16.0"
+    "fast-uri": "3.1.9",
+    "qs": "6.16.1"
   }
 }

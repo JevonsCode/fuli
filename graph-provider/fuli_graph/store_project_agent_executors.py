@@ -39,6 +39,7 @@ from .provider_values import native_datetime, now_utc, stable_uuid
 from .store_project_agent_executor_learning import StoreProjectAgentExecutorLearning
 from .store_project_agent_executor_routing import StoreProjectAgentExecutorRouting
 from .store_transactions import query_store_transaction
+from .client_coverage import covers_client
 
 
 class StoreProjectAgentExecutors(
@@ -796,7 +797,7 @@ class StoreProjectAgentExecutors(
         profile_json = dict(validation_row.get('agent') or {}).get('profile_json')
         if profile_json:
             profile = ProjectAgentProfile.model_validate_json(profile_json)
-            if (request.source_application or 'other') not in profile.allowed_clients:
+            if not covers_client(profile.allowed_clients, request.source_application or 'other'):
                 raise HTTPException(
                     status_code=403,
                     detail='project Agent is not available to this source client',

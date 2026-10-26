@@ -16,6 +16,7 @@ import ClientConnectionSettings from '@/features/settings/ClientConnectionSettin
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import CaptureProjectSettings from '@/features/capture/CaptureProjectSettings.vue'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
+import { captureSourceOff, withCaptureSource } from '@/features/capture/capture-sources'
 import { fieldErrorMessage } from '@/features/settings/settings-field-error'
 import { matchingSections, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
 import {
@@ -119,8 +120,8 @@ const conversationIdFormatOptions = computed(() => [
 ])
 const captureEnabled = computed(() => store.state?.capturePolicy?.enabled !== false)
 // Capture is per client; a client that is off still reads memory through its tools.
-const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor']] as const
-const disabledCaptureSources = computed(() => store.state?.capturePolicy?.disabledSources ?? [])
+const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor'], ['opencode', 'OpenCode']] as const
+const captureSources = computed(() => store.state?.capturePolicy ?? {})
 const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFromConfirmed !== false)
 const agentAccessEnabled = computed(() =>
   store.state?.agentAccessPolicy?.enabled !== false,
@@ -264,8 +265,7 @@ function stopPolling() {
 }
 
 function toggleClientCapture(source: string, capture: boolean) {
-  const others = disabledCaptureSources.value.filter(value => value !== source)
-  void store.updateCapturePolicy(captureEnabled.value, capture ? others : [...others, source])
+  void store.updateCapturePolicy(captureEnabled.value, withCaptureSource(captureSources.value, source, capture))
 }
 
 function toggleCapture(enabled: boolean) {
@@ -392,7 +392,7 @@ async function submitSettings(event: Event) {
 
 <template>
   <section class="view settings-view" :aria-label="t('settings.aria')">
-    <div ref="searchRoot" class="settings-content mx-auto grid w-full max-w-(--form-max) gap-4">
+    <div ref="searchRoot" class="settings-content mx-auto grid w-full max-w-(--layout-max) gap-4">
       <GrowthLoading v-if="loading && !form" variant="compact" :label="t('settings.loading')" />
       <Tabs v-if="form" v-model="activeTab" :unmount-on-hide="false" class="settings-tabs gap-4" :data-searching="searching || undefined">
         <div class="settings-tabbar flex flex-wrap items-end gap-x-4 gap-y-2 border-b">
@@ -424,7 +424,7 @@ async function submitSettings(event: Event) {
                     <p class="setting-note">{{ t('settings.behavior.captureClientsMeta') }}</p>
                     <label v-for="[source, label] in CAPTURE_CLIENTS" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
                       <span><strong>{{ label }}</strong></span>
-                      <UiToggle :model-value="!disabledCaptureSources.includes(source)" :label="label" @update:model-value="toggleClientCapture(source, $event)" />
+                      <UiToggle :model-value="!captureSourceOff(captureSources, source)" :label="label" @update:model-value="toggleClientCapture(source, $event)" />
                     </label>
                   </template>
                   <label class="setting-row" data-recall-answer-from-confirmed>
@@ -452,6 +452,17 @@ async function submitSettings(event: Event) {
               <section class="settings-card judgment-settings-card">
                 <JudgmentPolicySettings />
               </section>
+              <Card as="section" class="settings-card" aria-labelledby="settings-models-title">
+                <CardHeader>
+                  <CardTitle id="settings-models-title" as="h2">{{ t('modelSettings.title') }}</CardTitle>
+                  <CardDescription>{{ t('modelSettings.settingsEntry') }}</CardDescription>
+                  <CardAction>
+                    <Button as-child size="sm" variant="outline">
+                      <RouterLink to="/settings/models" data-open-model-settings>{{ t('modelSettings.open') }}</RouterLink>
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+              </Card>
             </TabsContent>
 
             <!-- Clients -->

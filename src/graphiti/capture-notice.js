@@ -2,10 +2,12 @@ import { localClockTime } from '../text/clock-time.js';
 
 // What a person is told when automatic recording did not run (rec#11 D-01,
 // rec#5 C5). Edits the person submits explicitly are not automatic recording
-// and still save, so every notice says so. A notice names the decision and any
-// explicit operation that still ran, never anything that was not recorded. One
-// wording for every Agent: the receipt carries it on every turn while it applies.
+// and still save, so every notice says so; a refused Agent write says instead
+// that it was not saved. A notice names the decision and any explicit operation
+// that still ran, never anything that was not recorded. One wording for every
+// Agent: the receipt carries it on every turn while it applies.
 const EXPLICIT_EDITS_SAVED = '你明确提交的修改仍会保存';
+const AGENT_WRITE_NOT_SAVED = '这次由 Agent 提交的修改没有保存，你在 FULI 控制台里亲自做的修改仍会保存';
 const REASON_NOTICES = Object.freeze({
   policy_unavailable: '记录设置读取失败，本次未自动记录',
   project_off: '此项目未开启记忆',
@@ -19,7 +21,10 @@ const REASON_NOTICES = Object.freeze({
   session_start_unsaved: 'FULI 未能保存本会话开始时的设置，本会话保持停用，输入 /fuli start 可启用',
   // The call carries no task token and its client cannot say which session it
   // is, while one of that client's sessions has FULI off (session-layer-decision.js).
-  session_unattributed: 'FULI 无法确认这次调用来自哪个会话，而本客户端有会话已停用 FULI，所以没有提供'
+  session_unattributed: 'FULI 无法确认这次调用来自哪个会话，而本客户端有会话已停用 FULI，所以没有提供',
+  // The call's task token is not its session's current task (each new prompt
+  // begins a new one), under the same condition (session-fuli-gate.js).
+  task_token_not_current: '这次调用带的任务 token 已不是会话当前的任务（每次新的提问都会换新 token），而本客户端有会话已停用 FULI，所以没有提供'
 });
 // The global and client switches, and any reason without wording of its own.
 const RECORDING_OFF = '自动记录已关闭';
@@ -41,9 +46,21 @@ const TRANSCRIPT_NOTICES = Object.freeze({
 // since is when a session pause (rec#5 C5) or stop (C3b) began, in local time.
 export function captureNotice(reason, since = null) {
   if (!reason) return null;
-  if (reason === 'session_paused') return `${sinceNotice('本会话已暂停记录', since)}；${EXPLICIT_EDITS_SAVED}`;
-  if (reason === 'session_stopped') return `${sinceNotice('本会话已停用 FULI', since)}，输入 /fuli start 可重新启用；${EXPLICIT_EDITS_SAVED}`;
-  return TRANSCRIPT_NOTICES[reason] ?? `${REASON_NOTICES[reason] ?? RECORDING_OFF}；${EXPLICIT_EDITS_SAVED}`;
+  return TRANSCRIPT_NOTICES[reason] ?? `${decisionNotice(reason, since)}；${EXPLICIT_EDITS_SAVED}`;
+}
+
+// An Agent write the decision refused (rec#51). The person may have asked the
+// Agent for it, so "your explicit changes still save" would read as if this one
+// had; an Agent's call is not verifiably the person (D-01), so say it was not
+// saved and which of the person's own edits still are.
+export function refusedAgentWriteNotice(reason, since = null) {
+  return `${decisionNotice(reason, since)}；${AGENT_WRITE_NOT_SAVED}`;
+}
+
+function decisionNotice(reason, since) {
+  if (reason === 'session_paused') return sinceNotice('本会话已暂停记录', since);
+  if (reason === 'session_stopped') return `${sinceNotice('本会话已停用 FULI', since)}，输入 /fuli start 可重新启用`;
+  return REASON_NOTICES[reason] ?? RECORDING_OFF;
 }
 
 // A checkpoint retried after its first attempt keeps that attempt's decision

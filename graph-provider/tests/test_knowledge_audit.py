@@ -186,6 +186,10 @@ async def test_human_change_search_keeps_reviewed_history_discoverable():
     assert result.items[0].audit_events[0].action == 'agent_review'
     assert driver.calls[0][1]['status'] == 'reviewed'
     assert driver.calls[0][1]['search_query'] == '规则'
+    # Only an Agent searches human changes, as no FLA: every FLA's own knowledge stays out.
+    for query, parameters in driver.calls[:2]:
+        assert parameters['reader'] == {'personal_project_id': None, 'project_agent_id': None}
+        assert 'fla_episode.fuli_project_agent_id IS NOT NULL' in query
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,8 @@
 
 import json
 
+from .project_agent_names import agent_display_name
+
 
 TERMINAL_WORKER_STATUSES = {'completed', 'failed', 'cancelled', 'blocked', 'awaiting_review'}
 
@@ -31,7 +33,7 @@ async def checkpoint_collaboration(store, space_id, record):
           (owner:FuliProjectAgent {agent_id: $owner_id}) RETURN owner.profile_json AS profile_json
         ''', space_id=space_id, owner_id=owner_id)
     snapshot = {'version': 1, 'status': 'frozen',
-        'owner': {'agent_id': owner_id, 'name': _name(owners[0]['profile_json']) if owners else None},
+        'owner': _owner(owner_id, _profile(owners[0]['profile_json']) if owners else None),
         'collaborators': []}
     if not record.get('personal_project_id') or not owner_id:
         return snapshot
@@ -80,16 +82,23 @@ async def checkpoint_collaboration(store, space_id, record):
     for run_id in sorted(runs):
         agent_id, profile, evidence = runs[run_id]
         helper = helpers.setdefault(agent_id, {'agent_id': agent_id,
-            'name': profile.get('display_name') or profile.get('name'),
+            'name': _name(agent_id, profile),
             'responsibility': profile.get('responsibility'), 'runs': []})
         helper['runs'].append(evidence)
     snapshot['collaborators'] = [helpers[agent_id] for agent_id in sorted(helpers)]
     return snapshot
 
 
-def _name(profile_json):
-    profile = _profile(profile_json)
-    return profile.get('display_name') or profile.get('name')
+# The owner's person name and its role title, shown as "name [role]".
+def _owner(agent_id, profile):
+    if profile is None:
+        return {'agent_id': agent_id, 'name': None}
+    return {'agent_id': agent_id, 'name': _name(agent_id, profile), 'role': profile.get('name') or None}
+
+
+# The same name the Agent APIs show: a role-like profile name gets its nickname.
+def _name(agent_id, profile):
+    return agent_display_name(agent_id, profile.get('name') or '', profile.get('display_name')) or None
 
 
 def _profile(profile_json):

@@ -4,6 +4,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from .knowledge_review_models import (
+    KnowledgeAIReviewWithdrawal,
+    KnowledgeAIReviewWithdrawalResult,
     KnowledgeReviewAIAssessment,
     KnowledgeReviewCandidate,
     KnowledgeReviewCandidatePage,
@@ -17,6 +19,14 @@ from .knowledge_review_models import (
     KnowledgeReviewStart,
 )
 from .ai_review import ai_review_evidence_token
+from .knowledge_visibility import (
+    PLAIN_SESSION,
+    fla_endpoints_visible_cypher,
+    fla_visible,
+    fla_visible_ids_cypher,
+    knowledge_reader,
+    reader_parameter,
+)
 from .personal_project_access import authorize_personal_project
 from .provider_values import native_datetime, stable_uuid
 from .store_transactions import query_store_transaction
@@ -156,6 +166,7 @@ async def list_knowledge_review_candidates(
         _RELATIONSHIP_CANDIDATE_QUERY,
         space_id=space['id'],
         group_id=space['group_id'],
+        reader=reader_parameter(PLAIN_SESSION),
         routing_='r',
     )
     conflict_rows, _, _ = await store.runtime.driver.execute_query(
@@ -273,10 +284,13 @@ async def read_knowledge_review_decision(
 
     A caller whose write reply was lost settles it against this record: the
     decision is keyed by run and candidate, so it is the write's own receipt.
+    A decision on another FLA's item (one an older review made) reads as none
+    to an Agent, as if it did not exist; the console reads it with its proof.
     """
 
     store._require_personal()
     space = await _personal_space(store, actor, request.personal_space_id, 'maintainer')
+    reader = await knowledge_reader(store, actor, space, personal_project_id=None, project_agent_id=None)
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-
@@ -284,11 +298,15 @@ async def read_knowledge_review_decision(
               [:HAS_REVIEW_DECISION]->(decision:FuliKnowledgeReviewDecision {
                 candidate_key: $candidate_key
               })
+        WHERE ''' + fla_visible_ids_cypher('[$item_id]') + '''
         RETURN decision LIMIT 1
         ''',
         space_id=space['id'],
+        group_id=space['group_id'],
         review_id=request.review_id,
         candidate_key=request.candidate_key,
+        item_id=request.candidate_key.partition(':')[2],
+        reader=reader_parameter(reader),
         routing_='r',
     )
     return KnowledgeReviewDecisionLookupResult(
@@ -336,11 +354,15 @@ async def _record_ai_review_progress(
             group_id=space['group_id'],
             item_id=item_id,
             project_id=run.get('personal_project_id'),
+            reader=reader_parameter(PLAIN_SESSION),
         )
         if not current_records:
             raise HTTPException(status_code=404, detail='review candidate not found')
         current = dict(current_records[0])
         normalized = _normalize_item_row(current)
+        # Never a candidate, so answered like one that does not exist.
+        if not fla_visible(normalized, PLAIN_SESSION):
+            raise HTTPException(status_code=404, detail='review candidate not found')
         if not _item_in_scope(
             normalized,
             run['scope'],
@@ -385,6 +407,53 @@ async def _record_ai_review_progress(
         if not records:
             raise HTTPException(status_code=404, detail='active knowledge review not found')
         return _review_decision(dict(records[0]['decision']))
+
+
+async def withdraw_ai_review(
+    store,
+    actor: dict,
+    request: KnowledgeAIReviewWithdrawal,
+) -> KnowledgeAIReviewWithdrawalResult:
+    """A person's one-click undo of an automatic Tonborg review (rec#10 D-24).
+
+    The item loses the AI review marks only while they still name this run's
+    decision and the evidence it judged and no person changed it after the
+    review (D-36.12); a later review, version or edit keeps its own, and a
+    missing item is never recreated. The decision record stays as history of
+    what Tonborg did.
+    """
+
+    store._require_personal()
+    space = await _personal_space(store, actor, request.personal_space_id, 'maintainer')
+    item_kind, _, item_id = request.candidate_key.partition(':')
+    decision_id = stable_uuid(
+        request.personal_space_id,
+        'knowledge-review-decision',
+        request.review_id,
+        request.candidate_key,
+    )
+    records, _, _ = await store.runtime.driver.execute_query(
+        _AI_REVIEW_ENTITY_WITHDRAW_QUERY
+        if item_kind == 'entity' else _AI_REVIEW_RELATIONSHIP_WITHDRAW_QUERY,
+        group_id=space['group_id'],
+        item_id=item_id,
+        decision_id=decision_id,
+        ai_review_evidence_token=request.ai_review_evidence_token,
+    )
+    if not records:
+        raise HTTPException(status_code=404, detail={
+            'code': 'ai_review_deleted',
+            'message': 'the item no longer exists; nothing to undo',
+        })
+    if not records[0]['carries'] or records[0]['changed']:
+        raise HTTPException(status_code=409, detail={
+            'code': 'ai_review_changed',
+            'message': 'the item changed after this AI review; it was left as it is',
+        })
+    return KnowledgeAIReviewWithdrawalResult(
+        candidate_key=request.candidate_key,
+        decision_id=decision_id,
+    )
 
 
 async def finish_knowledge_review(
@@ -618,6 +687,8 @@ def _normalize_item_row(row: dict[str, Any]) -> dict[str, Any]:
         'preference_agent_id': row.get('preference_agent_id'),
         'inheritance_mode': row.get('inheritance_mode') or 'local_only',
         'project_ids': project_ids,
+        'episode_project_agent_ids': sorted({value for value in row.get('episode_project_agent_ids') or [] if value}),
+        'endpoints_visible': row.get('endpoints_visible'),
         'confirmation_status': row.get('confirmation_status') or 'pending',
         'confirmation_basis_json': row.get('confirmation_basis_json'),
         'current_quadrant': row.get('current_quadrant') or 'known_known',
@@ -644,6 +715,10 @@ def _pattern_signature(item: dict) -> tuple:
 
 
 def _item_in_scope(item: dict, scope: str, project_id: str | None) -> bool:
+    # The reviewer is no FLA: an FLA's own knowledge and a preference the
+    # person gave one FLA stay out of every review scope.
+    if not fla_visible(item, PLAIN_SESSION):
+        return False
     is_preference = item['profile_aspect'] is not None
     preference_scope = item['preference_scope'] or 'global'
     is_global_preference = is_preference and preference_scope == 'global'
@@ -762,6 +837,7 @@ RETURN item.uuid AS item_id,
        collect(DISTINCT assignment.project_id) AS assigned_project_ids,
        collect(DISTINCT reference.project_id) AS reference_project_ids,
        collect(DISTINCT episode.fuli_personal_project_id) AS evidence_project_ids,
+       collect(DISTINCT episode.fuli_project_agent_id) AS episode_project_agent_ids,
        collect(DISTINCT episode.fuli_session_id) AS session_ids,
        coalesce(item.fuli_confirmation_status, 'pending') AS confirmation_status,
        coalesce(item.fuli_utility_score, 0.0) AS utility_score,
@@ -779,9 +855,10 @@ RETURN item.uuid AS item_id,
 
 
 _RELATIONSHIP_CANDIDATE_QUERY = '''
-MATCH ()-[item:RELATES_TO {group_id: $group_id}]->()
+MATCH (source)-[item:RELATES_TO {group_id: $group_id}]->(target)
 WHERE item.invalid_at IS NULL
   AND size(coalesce(item.fuli_unresolved_bases, [])) = 0
+WITH item, ''' + fla_endpoints_visible_cypher('source', 'target') + ''' AS endpoints_visible
 OPTIONAL MATCH (episode:Episodic {group_id: $group_id})
 WHERE episode.uuid IN coalesce(item.episodes, [])
 OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
@@ -797,6 +874,7 @@ OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_KNOWLEDGE_REVISION]->
               })
 RETURN item.uuid AS item_id,
        'relationship' AS item_kind,
+       endpoints_visible,
        coalesce(item.name, 'RELATES_TO') AS title,
        coalesce(item.fact, '') AS content,
        item.fuli_profile_aspect AS profile_aspect,
@@ -817,6 +895,7 @@ RETURN item.uuid AS item_id,
        collect(DISTINCT assignment.project_id) AS assigned_project_ids,
        collect(DISTINCT reference.project_id) AS reference_project_ids,
        collect(DISTINCT episode.fuli_personal_project_id) AS evidence_project_ids,
+       collect(DISTINCT episode.fuli_project_agent_id) AS episode_project_agent_ids,
        collect(DISTINCT episode.fuli_session_id) AS session_ids,
        coalesce(item.fuli_confirmation_status, 'pending') AS confirmation_status,
        coalesce(item.fuli_utility_score, 0.0) AS utility_score,
@@ -890,7 +969,8 @@ OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_KNOWLEDGE_REFERENCE]->
 WITH item,
      collect(DISTINCT assignment.project_id) +
      collect(DISTINCT reference.project_id) +
-     collect(DISTINCT episode.fuli_personal_project_id) AS project_ids
+     collect(DISTINCT episode.fuli_personal_project_id) AS project_ids,
+     collect(DISTINCT episode.fuli_project_agent_id) AS episode_project_agent_ids
 OPTIONAL MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
                [:HAS_KNOWLEDGE_CONFLICT]->
                (knowledge:FuliKnowledgeConflict {status: 'pending'})
@@ -898,13 +978,14 @@ WHERE (knowledge.item_id = item.uuid OR knowledge.target_item_id = item.uuid)
   AND ($project_id IS NULL
        OR knowledge.target_project_id = $project_id
        OR knowledge.source_project_id = $project_id)
-WITH item, project_ids, collect(DISTINCT knowledge.id) AS knowledge_conflicts
+WITH item, project_ids, episode_project_agent_ids,
+     collect(DISTINCT knowledge.id) AS knowledge_conflicts
 OPTIONAL MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
                [:HAS_PREFERENCE_CONFLICT]->
                (preference:FuliPreferenceConflict {status: 'ai_pending'})
 WHERE (preference.left_item_id = item.uuid OR preference.right_item_id = item.uuid)
   AND ($project_id IS NULL OR preference.preference_project_id = $project_id)
-WITH item, project_ids, knowledge_conflicts,
+WITH item, project_ids, episode_project_agent_ids, knowledge_conflicts,
      collect(DISTINCT preference.id) AS preference_conflicts
 RETURN item.uuid AS item_id,
        'entity' AS item_kind,
@@ -930,6 +1011,7 @@ RETURN item.uuid AS item_id,
        coalesce(item.fuli_human_change_version, 0) AS human_change_version,
        coalesce(item.fuli_attributes_json, '{}') AS attributes_json,
        project_ids,
+       episode_project_agent_ids,
        CASE WHEN size(knowledge_conflicts) + size(preference_conflicts) > 0
             THEN true ELSE false END AS has_conflict,
        item.created_at AS created_at,
@@ -941,10 +1023,10 @@ RETURN item.uuid AS item_id,
 
 
 _AI_REVIEW_CURRENT_RELATIONSHIP_QUERY = '''
-MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()
+MATCH (source)-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->(target)
 SET item.fuli_ai_review_lock_version =
       coalesce(item.fuli_ai_review_lock_version, 0) + 1
-WITH item
+WITH item, ''' + fla_endpoints_visible_cypher('source', 'target') + ''' AS endpoints_visible
 OPTIONAL MATCH (episode:Episodic {group_id: $group_id})
 WHERE episode.uuid IN coalesce(item.episodes, [])
 OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
@@ -954,10 +1036,11 @@ OPTIONAL MATCH (:FuliSpace {id: $space_id})-[:HAS_KNOWLEDGE_REFERENCE]->
                (reference:FuliKnowledgeProjectReference {
                  item_kind: 'relationship', item_id: item.uuid, status: 'active'
                })
-WITH item,
+WITH item, endpoints_visible,
      collect(DISTINCT assignment.project_id) +
      collect(DISTINCT reference.project_id) +
-     collect(DISTINCT episode.fuli_personal_project_id) AS project_ids
+     collect(DISTINCT episode.fuli_personal_project_id) AS project_ids,
+     collect(DISTINCT episode.fuli_project_agent_id) AS episode_project_agent_ids
 OPTIONAL MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
                [:HAS_KNOWLEDGE_CONFLICT]->
                (knowledge:FuliKnowledgeConflict {status: 'pending'})
@@ -965,16 +1048,18 @@ WHERE (knowledge.item_id = item.uuid OR knowledge.target_item_id = item.uuid)
   AND ($project_id IS NULL
        OR knowledge.target_project_id = $project_id
        OR knowledge.source_project_id = $project_id)
-WITH item, project_ids, collect(DISTINCT knowledge.id) AS knowledge_conflicts
+WITH item, endpoints_visible, project_ids, episode_project_agent_ids,
+     collect(DISTINCT knowledge.id) AS knowledge_conflicts
 OPTIONAL MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})-
                [:HAS_PREFERENCE_CONFLICT]->
                (preference:FuliPreferenceConflict {status: 'ai_pending'})
 WHERE (preference.left_item_id = item.uuid OR preference.right_item_id = item.uuid)
   AND ($project_id IS NULL OR preference.preference_project_id = $project_id)
-WITH item, project_ids, knowledge_conflicts,
+WITH item, endpoints_visible, project_ids, episode_project_agent_ids, knowledge_conflicts,
      collect(DISTINCT preference.id) AS preference_conflicts
 RETURN item.uuid AS item_id,
        'relationship' AS item_kind,
+       endpoints_visible,
        coalesce(item.name, 'RELATES_TO') AS title,
        coalesce(item.fact, '') AS content,
        item.fuli_profile_aspect AS profile_aspect,
@@ -997,6 +1082,7 @@ RETURN item.uuid AS item_id,
        coalesce(item.fuli_human_change_version, 0) AS human_change_version,
        coalesce(item.fuli_attributes_json, '{}') AS attributes_json,
        project_ids,
+       episode_project_agent_ids,
        CASE WHEN size(knowledge_conflicts) + size(preference_conflicts) > 0
             THEN true ELSE false END AS has_conflict,
        item.created_at AS created_at,
@@ -1070,3 +1156,37 @@ SET item.fuli_ai_review_evidence_token = $ai_review_evidence_token,
 MERGE (run)-[:HAS_REVIEW_DECISION]->(decision)
 RETURN decision
 '''
+
+
+# rec#10 D-36.12: the marks go only while they still name this run's decision
+# and evidence, the item is still the current version, and no person changed
+# it after the review; otherwise the item stays exactly as it is and the
+# answer says why. Like the apply queries above, it writes the item's lock
+# property before it reads anything, so a later review or edit still in
+# flight is waited for and its result is what the checks read: the marks it
+# wrote are never removed by an undo that read the state before it.
+_AI_REVIEW_WITHDRAW = '''
+SET item.fuli_ai_review_lock_version = coalesce(item.fuli_ai_review_lock_version, 0) + 1
+WITH item,
+     coalesce(item.fuli_ai_review_decision_id = $decision_id
+              AND item.fuli_ai_review_evidence_token = $ai_review_evidence_token, false) AS carries,
+     (item.fuli_replaced_by_item_id IS NOT NULL
+      OR coalesce(item.fuli_invalid_at, item.invalid_at) IS NOT NULL
+      OR coalesce(item.fuli_last_human_changed_at > item.fuli_ai_reviewed_at, false)) AS changed
+FOREACH (ignored IN CASE WHEN carries AND NOT changed THEN [1] ELSE [] END |
+  REMOVE item.fuli_ai_review_evidence_token, item.fuli_ai_assessment_json,
+         item.fuli_ai_review_scope, item.fuli_ai_review_project_id,
+         item.fuli_ai_reviewed_at, item.fuli_ai_review_id,
+         item.fuli_ai_review_decision_id)
+RETURN carries, changed
+'''
+
+
+_AI_REVIEW_ENTITY_WITHDRAW_QUERY = (
+    'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})' + _AI_REVIEW_WITHDRAW
+)
+
+
+_AI_REVIEW_RELATIONSHIP_WITHDRAW_QUERY = (
+    'MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()' + _AI_REVIEW_WITHDRAW
+)

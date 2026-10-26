@@ -16,6 +16,7 @@ from .graph_format_schema import (
     CONTROL_PLANE_RULES,
     KNOWLEDGE_TAG_LABELS,
     KNOWLEDGE_TAG_RULES,
+    SOURCE_DELETE_RULES,
     SchemaRule,
 )
 
@@ -116,6 +117,11 @@ GRAPH_MIGRATIONS = (
         'graph/10-knowledge-tags', 10, 'schema',
         'open tag vocabulary: tag identity constraints and the tag link lookup index',
         rules=KNOWLEDGE_TAG_RULES, labels=KNOWLEDGE_TAG_LABELS,
+    ),
+    GraphMigration(
+        'graph/11-source-hard-delete', 11, 'schema',
+        'source deletion audit kinds and publication copies without source bodies',
+        rules=SOURCE_DELETE_RULES,
     ),
 )
 

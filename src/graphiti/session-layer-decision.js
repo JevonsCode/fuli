@@ -1,5 +1,5 @@
 import { debuglog } from 'node:util';
-import { activeAgentHostClient, activeAgentHostSession } from '../app/agent-request-context.js';
+import { activeAgentHostClient, activeAgentHostSession, activeTaskBoundSession } from '../app/agent-request-context.js';
 import { isFuliProcessSession } from '../mcp/session-id.js';
 
 // The session layer of what FULI does for a caller (rec#5 C3 and C3b): whether
@@ -9,7 +9,9 @@ import { isFuliProcessSession } from '../mcp/session-id.js';
 // would trigger). Both answers rest on the same identities.
 //
 // Only two identities can authorize a call: the session bound to its task (the
-// hook issued the task's token for the session it ran in) and, for an Agent's
+// hook issued the task's token for the session it ran in; a tool whose schema
+// names no task is bound by the current token it carries, which the session
+// gate resolved through the task registry) and, for an Agent's
 // own MCP or CLI call, the host session its client process runs in
 // (agentHostRequestContext()). A session the call merely names can only refuse
 // it, never allow it. Calls outside an Agent call (hooks, the console) are
@@ -18,7 +20,10 @@ import { isFuliProcessSession } from '../mcp/session-id.js';
 // window's port carry the session layer; a port composed without one (a test
 // double) has no paused or stopped sessions.
 //
-// scope: { sourceApplication, boundSessionId, sessionId }
+// scope: { sourceApplication, boundSessionId, sessionId, tokenUnresolved }
+// tokenUnresolved: why a task token the call carried bound it to no session
+// ('task_token_not_current' or 'policy_unavailable'). It changes no decision,
+// only the reason a call refused for want of a task says.
 
 const ALLOWED = Object.freeze({ allowed: true, reason: null, layer: null });
 // NODE_DEBUG=fuli-capture shows decisions made without a session layer.
@@ -47,11 +52,12 @@ export function sessionCaptureDecision(application, scope) {
 // FULI could not record, so a call without a task token is refused then too.
 // Calls with a task token keep one window's stop out of another (C3b-5); a
 // token's session with no durable record follows the default, so it is off.
+// A call whose token did not resolve is refused the same way, saying why.
 export function sessionUseDecision(application, scope) {
   if (!sessionsMayBeOff(application)) return ALLOWED;
   return decideSessions(application, scope, { refusal: offRefusal,
     unattributed: sourceApplication => application.hasStoppedSession(sourceApplication)
-      || !application.sessionFuliDefault().enabled ? denied('session_unattributed') : null });
+      || !application.sessionFuliDefault().enabled ? denied(scope.tokenUnresolved ?? 'session_unattributed') : null });
 }
 
 // False when FULI is on for every session, the usual case, so a caller can
@@ -61,6 +67,18 @@ export function sessionsMayBeOff(application) {
   if (!application.getSessionCapturePause) return false;
   try {
     return application.hasStoppedSession();
+  } catch {
+    return true;
+  }
+}
+
+// Whether a session of the client may record nothing (paused, stopped or
+// started off), so a call's writes need to know which session they are for.
+// True when the state cannot be read.
+export function sessionsMayBeWithoutCapture(application, sourceApplication) {
+  if (!application.getSessionCapturePause) return false;
+  try {
+    return application.hasSessionWithoutCapture(sourceApplication);
   } catch {
     return true;
   }
@@ -80,8 +98,12 @@ export function newSessionsFuli(application) {
   return application.sessionFuliDefault().enabled ? 'on' : 'off';
 }
 
-function decideSessions(application, { boundSessionId = null, sessionId = null, sourceApplication: named = 'other' }, policy) {
+function decideSessions(application, { boundSessionId: scopeTask = null, sessionId = null, sourceApplication: named = 'other' }, policy) {
   const host = activeAgentHostSession();
+  // A tool whose schema names no task, called with a current task token: the
+  // session the registry resolved for it is the call's task session too.
+  const callTask = activeTaskBoundSession();
+  const boundSessionId = scopeTask ?? callTask;
   // An Agent call's client is the one its process was started for, never the payload's.
   const sourceApplication = activeAgentHostClient() ?? named;
   const agentCall = host !== undefined;
@@ -100,7 +122,7 @@ function decideSessions(application, { boundSessionId = null, sessionId = null, 
     // The call's own sessions: its task's, any it names and, without a task,
     // the host session of the call. With a task, the host session is checked
     // below even when the MCP layer filled it in as the named session.
-    const own = boundSessionId ? [boundSessionId, sessionId === host ? null : sessionId] : [sessionId, host];
+    const own = boundSessionId ? [boundSessionId, callTask, sessionId === host ? null : sessionId] : [sessionId, host];
     for (const id of new Set(own.filter(Boolean))) {
       const refusal = policy.refusal(stateOf(id));
       if (refusal) return refusal;

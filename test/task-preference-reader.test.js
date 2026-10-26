@@ -42,7 +42,7 @@ function fixture(count = 1) {
       getPersonalProject: async () => ({ profile: { name: 'Sample', purpose: 'PROJECT_PURPOSE', boundaries: ['PROJECT_BOUNDARY'] } }),
       getProjectAgentMemory: () => { throw new Error('Recovery must not read memory'); },
       recordAgentViews: () => { throw new Error('Recovery must not record views'); } },
-    judgment: { store: () => ({ policy: () => ({ mode: 'manual', client: 'codex', revision: 1 }) }) },
+    judgment: { policy: async () => ({ mode: 'manual', client: 'codex', revision: 1 }) },
     getCollaborationPreferences: () => { throw new Error('Task entry must not run'); },
     beginTaskContext: () => { throw new Error('Task begin must not run'); }
   };
@@ -96,6 +96,13 @@ test('owned reader delivers all long instructions and mandatory guidance in both
   for (const key of ['memory', 'global_memory', 'team', 'knowledge', 'recent_tasks']) assert.equal(Object.hasOwn(role, key), false);
   assert.deepEqual(value.active_conflicts, []); assert.deepEqual(value.deferred_conflicts, []);
   assert.equal(f.reads(), pages.length);
+});
+
+test('the reader receipt names the Agent first and its role title in brackets', async () => {
+  const f = fixture();
+  f.rawAgent.profile.display_name = 'Nova Reed';
+  const value = (await call(f)).structuredContent;
+  assert.match(value.agent_receipt.markdown, /^FULI Agent：\[Nova Reed \\\[Synthetic owner\\\]\]\(/);
 });
 
 test('complete reader preserves active and queued conflict alternatives instead of delivering only effective rules', async () => {

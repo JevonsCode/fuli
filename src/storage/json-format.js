@@ -64,10 +64,10 @@ export function assertJsonFormatWritable(filePath, format) {
   return stored;
 }
 
-export function writeVersionedJsonFileAtomic(filePath, value, format, { io } = {}) {
+export function writeVersionedJsonFileAtomic(filePath, value, format, { io, durable = false } = {}) {
   requireJsonFormatVersion(value, format ?? {});
   // Nothing of the current file is used, so an unreadable one is replaced as before.
-  updateVersionedJsonFileAtomic(filePath, format, () => value, { io, read: () => null });
+  updateVersionedJsonFileAtomic(filePath, format, () => value, { io, durable, read: () => null });
 }
 
 // A read-modify-write of one file under the directory lock, taken once: the
@@ -75,9 +75,10 @@ export function writeVersionedJsonFileAtomic(filePath, value, format, { io } = {
 // meanwhile is never overwritten from an older snapshot. mutate(current)
 // gets the parsed file (null when missing) and returns the new value, or
 // undefined to leave the file as it is. read(filePath) may replace the
-// default strict parse; write(filePath, value) the plain atomic write.
+// default strict parse; write(filePath, value) the plain atomic write. durable
+// fsyncs the default write before replacement; a custom writer owns its own durability.
 export function updateVersionedJsonFileAtomic(filePath, format, mutate, {
-  io, read = readCurrentJson, write = (path, value) => writeJsonFileAtomic(path, value, { io })
+  io, durable = false, read = readCurrentJson, write = (path, value) => writeJsonFileAtomic(path, value, { io, durable })
 } = {}) {
   if (!format?.versions) throw new TypeError('A versioned JSON write needs its store format');
   return withJsonFormatLock(filePath, () => {

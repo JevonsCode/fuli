@@ -3,7 +3,7 @@ export type JudgmentQuality = 'quality' | 'balanced' | 'economy'
 export type JudgmentClient = 'codex' | 'claude_code'
 export type JudgmentOutcome = 'approve' | 'escalate' | 'recommend' | 'failed'
 export type JudgmentKind = 'review' | 'routing' | 'acceptance'
-export type JudgmentExecutionStatus = 'not_applied' | 'applying' | 'applied' | 'stale' | 'failed'
+export type JudgmentExecutionStatus = 'not_applied' | 'applying' | 'applied' | 'stale' | 'failed' | 'undone'
 export type JudgmentFeedbackVote = 'up' | 'down' | null
 
 export interface JudgmentPolicySelection {
@@ -41,6 +41,20 @@ export interface JudgmentSelection {
   client: string
 }
 
+// rec#10 D-24, D-36: how the host treated a knowledge review verdict. modelOutcome
+// is the model's own answer; interceptions are the host's reasons it did not apply;
+// gate is the role trust gate (its reason says why it refused, e.g. warning_not_seen).
+export interface JudgmentAiReview {
+  state: 'ai_suggested' | 'ai_reviewed'
+  modelOutcome: 'approve' | 'escalate'
+  interceptions: string[]
+  gate: { status: 'passed' | 'not_passed', reason: string | null, modelId: string | null }
+  // rec#26: the host pre-check found injection-shaped text in the candidate; present only then.
+  injectionSignals?: string[]
+  // rec#26: another candidate of the same model request had signals; present only then.
+  injectionInBatch?: true
+}
+
 export interface JudgmentDecisionRecord {
   id: string
   createdAt: string
@@ -51,12 +65,15 @@ export interface JudgmentDecisionRecord {
   objective?: string
   summary: string
   outcome: JudgmentOutcome
+  aiReview?: JudgmentAiReview
   evidence: string[]
   policy: Partial<JudgmentPolicySelection> | null
   client?: JudgmentClient | null
   model?: string | null
   sessionId?: string | null
   error?: unknown
+  // The knowledge it judged was permanently deleted (rec#5 C9): its words are gone and nothing brings it back.
+  hard_deleted?: boolean
   selection?: JudgmentSelection | null
   disposition?: 'continue_current' | 'reuse_conversation' | 'new_session' | 'delegate' | 'ask_user'
   conversationId?: string | null

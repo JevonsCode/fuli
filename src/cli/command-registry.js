@@ -19,14 +19,15 @@ Local service:
   open [--data-dir DIR]
 
 Install and Agent connection:
+  clients trust|update|status|rollback [--data-dir DIR]  (pinned descriptor packs; update previews; apply asks separately for each file)
   connect [--format standard|vscode|server] [--data-dir DIR | --runtime-config FILE]  (print generic MCP configuration)
-  mcp [--runtime-config FILE] [--source-application codex|claude|claude_code|cursor|kiro|other]  (stdio server)
+  mcp [--runtime-config FILE] [--source-application codex|claude|claude_code|cursor|kiro|opencode|other]  (stdio server)
   setup [--yes] [--codex-only] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--runtime-mode container|native] [--memory-profile low|balanced] [--adaptive-memory|--no-adaptive-memory] [--skip-agents] [--no-start] [--allow-provider-downgrade] [--personal-only|--with-dev-public]
   connect-workspace --url URL --token-file FILE [--data-dir DIR]
   peer status|host|invite|join|share|revoke|off [--data-dir DIR]  (LAN roundtable Beta: pair devices and share project leads)
   remote-mcp --personal-project-id ID --bearer-token-file FILE [--port PORT] [--data-dir DIR] [--source-application claude|cursor|other] [--allowed-origin HTTPS_ORIGIN] [--allowed-host HOST] [--max-sessions N] [--session-idle-ttl-seconds N]
   employee install BUILT_PACKAGE_DIRECTORY [--replace] [--runtime-config FILE]
-  app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | rollback APP_ID VERSION  (Agent apps; approve and rollback ask in this terminal)
+  app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | rollback APP_ID VERSION  (Agent apps; approve and rollback ask in this terminal, then Windows Hello)
   app delete APP_ID [--data [--output DIR]] | export APP_ID --output DIR  (delete code first, data second) [--runtime-config FILE]
   models set-key SECRET_REF [--data-dir DIR]  (built-in Agent model API key; hidden entry or stdin, never echoed)
   models check assistant|bole|jefa|tonborg [--data-dir DIR]  (synthetic connection check of one role's model backend)
@@ -38,6 +39,7 @@ Install and Agent connection:
   uninstall [--yes] [--data-dir DIR]
 
 Data formats:
+  migrate reconcile-knowledge [--data-dir DIR]  (resume confirmed knowledge deletion cleanup and verify local recovery)
   migrate status [--json] [--data-dir DIR]  (every store's format version, ledger and pending steps; read only, safe while FULI runs)
   migrate preview [--json] [--data-dir DIR]  (the steps waiting for you: stores, step IDs, counts, sample IDs and a plan digest; read only)
   migrate apply --digest DIGEST [--data-dir DIR]  (applies exactly that previewed plan after you confirm at this terminal; backs up first)

@@ -2,10 +2,11 @@ from .staffing_demand import StaffingDemandQuery, query_staffing_demand
 from .agent_verification_models import AgentQualityQuery, AgentVerification
 from .agent_loan_models import AgentLoanRequest, AgentLoanDecision, AgentLoanQuery
 from .agent_conversation_models import (
-    ConversationQuery, ConversationWrite, ConversationResume, ConversationPolicyWrite,
+    ConversationQuery, ConversationBegin, ConversationWrite, ConversationResume, ConversationPolicyWrite,
 )
 from .conversation_triage_models import (
-    ConversationTriageWrite, ConversationTopicQuery, ConversationTopicFormation, ConversationTopicDecline,
+    ConversationTriageWrite, ConversationTriageRead, ConversationTopicQuery, ConversationTopicFormation,
+    ConversationTopicDecline,
 )
 
 
@@ -38,6 +39,10 @@ def register_agent_conversation_routes(application, store, Actor):
     async def query(request: ConversationQuery, actor: Actor):
         return await store.query_conversations(actor, request)
 
+    @application.post('/v1/agent-conversations/begin')
+    async def begin(request: ConversationBegin, actor: Actor):
+        return await store.begin_conversation(actor, request)
+
     @application.post('/v1/agent-conversations/boundary')
     async def boundary(request: ConversationWrite, actor: Actor):
         return await store.claim_conversation_boundary(actor, request)
@@ -57,6 +62,10 @@ def register_agent_conversation_routes(application, store, Actor):
     @application.post('/v1/conversation-triage/record')
     async def triage(request: ConversationTriageWrite, actor: Actor):
         return await store.record_conversation_triage(actor, request)
+
+    @application.post('/v1/conversation-triage/read')
+    async def read_triage(request: ConversationTriageRead, actor: Actor):
+        return await store.read_conversation_triage(actor, request)
 
     @application.post('/v1/conversation-triage/topics')
     async def topics(request: ConversationTopicQuery, actor: Actor):

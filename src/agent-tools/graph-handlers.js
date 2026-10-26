@@ -3,19 +3,31 @@ import { assertTestToolsEnabled } from '../app/test-tools.js';
 import { activeTestToolsEnabled } from '../app/agent-request-context.js';
 import { agentInterfaceCatalog } from './interface-catalog.js';
 import { captureDecision, captureDisabled, describeCapture } from '../graphiti/capture-decision.js';
-import { captureNotice } from '../graphiti/capture-notice.js';
+import { refusedAgentWriteNotice } from '../graphiti/capture-notice.js';
 import { isTagGovernanceProposal, knowledgeTagChange, proposeTagGovernance } from '../graphiti/knowledge-tags.js';
+import { prepareKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
+
+// These tools read or change the two local stores that can retain deleted
+// knowledge. Provider-only reads and unrelated tools remain available.
+const RECOVERY_STORES = Object.freeze({
+  get_judgment_policy: 'judgment', pin_agent: 'judgment',
+  list_judgments: 'judgment', review_with_tonborg: 'judgment',
+  assess_agent_action: 'judgment', assess_task_completion: 'judgment',
+  get_agent_score_card: 'judgment', role_work: 'role-work'
+});
 
 const HANDLERS = Object.freeze({
   get_judgment_policy: (app, input) => app.judgment.policy(input),
   get_model_usage: (app, input) => modelBackends(app).usage(input),
   role_work: (app, { action, ...input }) => roleWork(app)[action === 'submit' ? 'submit' : 'claim'](input),
   manage_project_agent_schedule: (app, input) => app.taskSchedules.manage(input),
+  register_standing_assignment: (app, input) => app.registerStandingAssignment(input),
   control_project_agent_task_run: (app, input) => app.controlProjectAgentTaskRun({ ...input, agentInvocation: true }),
-  list_judgments: (app, input) => app.judgment.records(input),
-  review_with_tonborg: (app, input) => app.judgment.review(input),
-  assess_agent_action: (app, input) => app.judgment.assess(input),
-  assess_task_completion: (app, input) => app.judgment.accept(input),
+  // An Agent reads Tonborg's records without their words (rec#50, judgment/agent-view.js).
+  list_judgments: (app, input) => app.judgment.agent.records(input),
+  review_with_tonborg: (app, input) => app.judgment.agent.review(input),
+  assess_agent_action: (app, input) => app.judgment.agent.assess(input),
+  assess_task_completion: (app, input) => app.judgment.agent.accept(input),
   get_agent_pins: (app, input) => app.judgment.pins(input),
   pin_agent: (app, input) => app.judgment.pin(input),
   get_agent_quality_gate: (app, input) => app.agentVerification('query', input),
@@ -152,6 +164,9 @@ const HANDLERS = Object.freeze({
   }),
   review_human_knowledge_change: (app, input) => app.reviewHumanChange(input),
   list_knowledge_spaces: (app) => app.listKnowledgeSpaces(),
+  // Agents register projects on their own (capture.md) and FULI cannot verify a
+  // person asked, so this stops with recording; the person's explicit paths are
+  // the console and a "新项目：" task line (rec#11 D-01).
   upsert_personal_project: (app, input) => captureGuard(app, { sourceApplication: input?.sourceApplication },
     () => app.upsertPersonalProject(input)),
   list_personal_projects: (app, input) => app.listPersonalProjects(input),
@@ -318,6 +333,17 @@ export function dispatchGraphTool(app, name, input) {
       'FULI Agent access is disabled in the local console'
     );
   }
+  const recoveryStore = RECOVERY_STORES[name];
+  if (recoveryStore && app.knowledgeRecoveryGate) {
+    const spaceId = app.config.personal.spaceId;
+    if (input.personalSpaceId !== undefined && input.personalSpaceId !== spaceId) {
+      throw new ApplicationError('scope_mismatch', 'Use the active personal space', { status: 403 });
+    }
+    // Service preparation also covers console callers; the shared proof cache
+    // avoids a second network read. Store assertions still guard each access.
+    return prepareKnowledgeRecovery(app.knowledgeRecoveryGate, spaceId, recoveryStore)
+      .then(() => handler(app, input));
+  }
   return handler(app, input);
 }
 
@@ -326,7 +352,7 @@ export function dispatchGraphTool(app, name, input) {
 async function captureGuard(app, scope, operation) {
   const capture = await captureDecision(app, scope);
   return capture.allowed ? operation() : { route: 'disabled', ...captureDisabled(capture),
-    notice: captureNotice(capture.reason, capture.since), guidance: CAPTURE_OFF_GUIDANCE };
+    notice: refusedAgentWriteNotice(capture.reason, capture.since), guidance: CAPTURE_OFF_GUIDANCE };
 }
 
 const CAPTURE_OFF_GUIDANCE = 'Automatic recording is off, so nothing from this call was saved. Do not retry or describe it as saved; the user can still make explicit changes in the FULI console.';

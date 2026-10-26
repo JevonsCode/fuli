@@ -4,11 +4,13 @@ import {
   MAX_REPLY_CHARS, attemptFailure, errorDetails, isJsonResponse, postJson, readFailure,
   readJsonBody, retryAfterMs, serverSentEvents
 } from './exchange.js';
+import { observeLocalBuild, observesLocalBuild } from './ollama-local-build.js';
 
 // OpenAI-compatible Chat Completions (OpenAI, Ollama, vLLM, LM Studio...).
 // Streams with include_usage so usage arrives in the final chunk. Asks for
 // json_schema output first; the port switches to prompt mode when the
-// endpoint rejects it, and validates the reply strictly either way.
+// endpoint rejects it, and validates the reply strictly either way. A local
+// Ollama also lists the build of the configured tag (ollama-local-build.js).
 
 const DEFINITION = 'openai_chat';
 const SCHEMA_NAME = 'fuli_decision';
@@ -18,6 +20,8 @@ export const openAiChatAdapter = Object.freeze({
   outputMode: 'json_schema',
   repairable: true,
   supports: () => true,
+  observesLocalBuild,
+  observeLocalBuild,
   async call({ connection, secret, prompt, mode, maxOutputTokens, signal, fetchImpl }) {
     const state = { text: '', refusal: '', finish: null, actualModel: null, usage: reportedUsage({ definition: DEFINITION }) };
     const sent = await postJson({ fetchImpl, signal, url: `${connection.endpoint}/chat/completions`,

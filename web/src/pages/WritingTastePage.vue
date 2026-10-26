@@ -198,7 +198,7 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
   <section class="view writing-taste-view">
     <!-- One centred work canvas (D-03): rules are a card collection that adds
          columns as the canvas widens instead of stretching one row. -->
-    <div class="@container mx-auto flex w-full max-w-(--canvas-max) flex-col gap-4">
+    <div class="@container mx-auto flex w-full max-w-(--layout-max) flex-col gap-4">
     <GrowthLoading v-if="loading && profile && !showInitialLoading" variant="inline" :label="t('writingTaste.page.loading')" />
     <GrowthLoading v-if="showInitialLoading" :label="t('writingTaste.page.loading')" />
 
@@ -225,7 +225,8 @@ function isKnowledgeGraph(value: unknown): value is KnowledgeGraph {
 
       <pre v-if="showAgentPreview && profile.agent_markdown" class="ui-list writing-taste-agent-preview" data-agent-preview :aria-label="t('writingTaste.page.agentPreviewTitle')">{{ profile.agent_markdown }}</pre>
 
-      <ul v-if="profile.rules.length" class="m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[760px]:grid-cols-2 @min-[1280px]:grid-cols-3">
+      <!-- One column (rec#38): a rule's details open in place without leaving a gap beside it. -->
+      <ul v-if="profile.rules.length" class="m-0 grid list-none grid-cols-1 gap-3 p-0">
         <li v-for="rule in profile.rules" :key="`${rule.item_kind}:${rule.item_id}`" class="min-w-0">
           <Card as="article" class="h-full" data-writing-rule>
             <CardHeader>

@@ -14,6 +14,9 @@ function entry(token = 'task-a', changes = {}) {
     agent_receipt: { required: true, markdown: 'Synthetic owner' }, active_conflicts: [{ id: 'current-conflict' }],
     task_guidance: { rules: 'fuli://rules/task-entry#task_guidance', version: 'synthetic-rules' }, ...changes }, scope);
 }
+// A verified earlier frame as preference-session.js passes it: named by the
+// revision it showed the model.
+const acknowledged = snapshot => ({ ...snapshot, revision: snapshot.snapshotHash.slice(0, 12) });
 
 test('neither an intermediate nor a final paginated suffix is a whole-preference baseline', () => {
   for (const complete of [false, true]) {
@@ -36,15 +39,16 @@ test('a complete snapshot ignores task token churn and preference ordering, but 
 
 test('an acknowledged baseline produces complete updates and visible removals while retaining current task authority', () => {
   const original = entry();
-  const baseline = { ...preferenceSnapshot(original), callId: 'native-call-a' };
+  const baseline = acknowledged(preferenceSnapshot(original));
   const next = entry('task-b');
   next.effective_preferences[0].instruction = 'Changed synthetic rule';
   next.effective_preferences.splice(1, 1);
   next.effective_preferences.push({ preference_key: 'new', preference_scope: 'global',
     confirmation_status: 'confirmed', instruction: 'New synthetic rule' });
-  const delta = projectPreferenceDelta(next, baseline);
+  const delta = projectPreferenceDelta(next, baseline, new Map());
   assert.equal(delta.preference_delivery.status, 'delta');
-  assert.equal(delta.preference_delivery.base_result, 'native-call-a');
+  assert.equal(delta.preference_delivery.base_revision, baseline.revision);
+  assert.match(delta.preference_delivery.revision, /^[0-9a-f]{12}$/);
   assert.equal(delta.effective_preferences, undefined);
   assert.equal(delta.preference_updates.length, 2);
   assert.equal(delta.preference_delivery.removed[0].preference_key, 'rule-1');
@@ -65,10 +69,10 @@ test('unknown, changed-scope, blocked and non-saving baselines keep the full set
   assert.deepEqual(projectPreferenceDelta(value, null).effective_preferences,
     [...value.effective_preferences].sort((a,b)=>a.preference_key.localeCompare(b.preference_key)));
   const other = withPreferenceScope(entry(), { ...scope, project_agent_id: 'another-lead' });
-  assert.equal(projectPreferenceDelta(value, { ...preferenceSnapshot(other), callId: 'old' }).preference_delivery, undefined);
+  assert.equal(projectPreferenceDelta(value, acknowledged(preferenceSnapshot(other)), new Map()).preference_delivery, undefined);
   assert.equal(preferenceSnapshot(entry('blocked', { preferences_complete: false })), null);
   const tiny = entry('tiny', { effective_preferences: [] });
-  assert.equal(projectPreferenceDelta(tiny, { ...preferenceSnapshot(tiny), callId: 'tiny-call' }).preference_delivery, undefined);
+  assert.equal(projectPreferenceDelta(tiny, acknowledged(preferenceSnapshot(tiny)), new Map()).preference_delivery, undefined);
   assert.equal(preferenceSnapshot({ ...value }), null, 'serialized or forged input cannot supply private scope');
 });
 
@@ -83,7 +87,7 @@ test('rec#5 C7-2: two clients holding the old version both get the edited one ne
   const sessions = ['native-session-a', 'native-session-b'].map((session, index) => {
     const sessionScope = { ...scope, session_id: session };
     const cached = withPreferenceScope(entry(`task-${index}`), sessionScope);
-    return { sessionScope, baseline: { ...preferenceSnapshot(cached), callId: `native-call-${index}` } };
+    return { sessionScope, baseline: acknowledged(preferenceSnapshot(cached)) };
   });
   for (const { sessionScope, baseline } of sessions) {
     // The Provider now answers the new version under the same preference key and
@@ -91,11 +95,27 @@ test('rec#5 C7-2: two clients holding the old version both get the edited one ne
     const next = withPreferenceScope(entry('task-next'), sessionScope);
     next.effective_preferences[0] = { ...next.effective_preferences[0], instruction: 'Edited synthetic rule' };
     next.effective_preferences.splice(1, 1);
-    const delta = projectPreferenceDelta(next, baseline);
+    const delta = projectPreferenceDelta(next, baseline, new Map());
     assert.equal(delta.preference_delivery.status, 'delta');
     assert.deepEqual(delta.preference_updates.map(item => [item.preference_key, item.instruction]),
       [['rule-0', 'Edited synthetic rule']]);
     assert.deepEqual(delta.preference_delivery.removed.map(item => item.preference_key), ['rule-1']);
     assert.ok(!JSON.stringify(delta).includes('Synthetic instruction 0:'), 'the old words are not sent again');
   }
+});
+
+test('rec#15 D-29.9: a revision another set already shows in the generation is extended, never reused', () => {
+  const value = entry();
+  const { snapshotHash } = preferenceSnapshot(value);
+  assert.equal(projectPreferenceDelta(value, null, new Map()).revision, snapshotHash.slice(0, 12));
+  const taken = new Map([[snapshotHash.slice(0, 12), { snapshotHash: 'another-set' }]]);
+  assert.equal(projectPreferenceDelta(value, null, taken).revision, snapshotHash.slice(0, 16));
+  // The same set shown again keeps its revision; a frame that can never be
+  // confirmed (no readable generation) and an empty set carry none.
+  assert.equal(projectPreferenceDelta(value, null, new Map([[snapshotHash.slice(0, 12), { snapshotHash }]])).revision,
+    snapshotHash.slice(0, 12));
+  assert.equal(projectPreferenceDelta(value, null, null).revision, undefined);
+  assert.equal(projectPreferenceDelta(entry('empty', { effective_preferences: [] }), null, new Map()).revision, undefined);
+  const every = new Map(Array.from({ length: 14 }, (_, i) => [snapshotHash.slice(0, 12 + 4 * i), { snapshotHash: null }]));
+  assert.equal(projectPreferenceDelta(value, null, every).revision, undefined, 'still colliding: complete, and never a base');
 });

@@ -51,6 +51,8 @@ test('MCP instructions support task identity, hook context and an exact fallback
     /MUST begin.*sourceMarker\.leadMarkdown.*append.*sourceMarker\.markdown/is
   );
   assert.match(MCP_INSTRUCTIONS, /noMatchSourceMarker.*empty/is);
+  // "已检索，未命中" is only true after a search; a task with no search shows no marker.
+  assert.match(MCP_INSTRUCTIONS, /noMatchSourceMarker \(empty\) if searched/);
   assert.match(MCP_INSTRUCTIONS, /Keep unchanged/i);
   assert.match(MCP_INSTRUCTIONS, /executionSummary/);
   assert.match(MCP_INSTRUCTIONS, /one .*row.*worker|one .*line.*worker/i);
@@ -78,7 +80,7 @@ test('chat instructions name only tools the chat profile lists', () => {
   for (const pattern of [/Final replies MUST copy agent_receipt.markdown unchanged once/, /else before tools\/answer call exactly get_collaboration_preferences/,
     /projectPath=cwd/, /taskPrompt=current user request/, /never guess personalProjectId/, /writes=actual payload/, /task_knowledge_recall/,
     /search_current_project_knowledge/, /search_knowledge_graph/, /checkpoint_task_knowledge/, /retain_nothing/, /capture_candidates/,
-    /list_agent_interfaces.*fuli_call/, /executionSummary/, /MUST begin sourceMarker.leadMarkdown/, /noMatchSourceMarker/]) {
+    /list_agent_interfaces.*fuli_call/, /executionSummary/, /MUST begin sourceMarker.leadMarkdown/, /noMatchSourceMarker \(empty\) if searched/]) {
     assert.match(MCP_CHAT_INSTRUCTIONS, pattern);
   }
 });

@@ -18,6 +18,10 @@ from .project_agent_memory_models import (
 from .provider_values import now_utc, stable_uuid
 from .project_agent_work_log import read_employee_work_log
 from .system_hr_identity import LEGACY_HR_AGENT_ID, SYSTEM_HR_AGENT_ID, resolve_hr_alias
+from .knowledge_versions import lock_knowledge
+from .knowledge_source_fence import require_source_available
+from .store_transactions import query_store_transaction
+from .client_coverage import covers_client
 
 
 class StoreProjectAgentMemory:
@@ -63,13 +67,22 @@ class StoreProjectAgentMemory:
         self, actor, request: ProjectAgentMemoryWrite,
     ) -> ProjectAgentMemoryRecord:
         self._require_personal()
+        async with query_store_transaction(self) as scoped:
+            space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
+            await lock_knowledge(scoped, space)
+            await require_source_available(scoped, space, source_application=request.source_application,
+                                           session_id=request.source_session_id)
+            return await scoped._write_project_agent_memory(actor, request)
+
+    async def _write_project_agent_memory(self, actor, request):
+        self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         agent = await authorize_project_agent(
             self, actor, space, request.personal_project_id, request.agent_id,
             require_active=True, require_memory=True, allow_global=True,
         )
         allowed_clients = json.loads(agent['profile_json']).get('allowed_clients', [])
-        if request.source_application not in allowed_clients:
+        if not covers_client(allowed_clients, request.source_application):
             raise HTTPException(status_code=403, detail='Agent is not allowed in this client')
         if request.task_id:
             if request.personal_project_id is None:
@@ -144,6 +157,7 @@ class StoreProjectAgentMemory:
             FOREACH (ignored IN CASE WHEN can_write THEN [1] ELSE [] END |
               CREATE (checkpoint:FuliProjectAgentMemoryCheckpoint {
                 id: $checkpoint_id, revision: $revision,
+                memory_state: 'present',
                 payload_hash: $payload_hash, record_json: $record_json
               })
               CREATE (head)-[:HAS_MEMORY_CHECKPOINT]->(checkpoint)
@@ -174,6 +188,9 @@ class StoreProjectAgentMemory:
                 status_code=409,
                 detail='Agent memory changed; reload its latest revision before merging notes',
             )
+        saved = ProjectAgentMemoryRecord.model_validate_json(row['record_json'])
+        if saved.memory_state == 'scrubbed':
+            raise HTTPException(status_code=410, detail={'code': 'source_hard_deleted'})
         compatible_hashes = {payload_hash}
         if LEGACY_HR_AGENT_ID in agent.get('legacy_agent_ids', []):
             # Old checkpoints keep their exact IDs/JSON/hashes. A canonical
@@ -185,8 +202,7 @@ class StoreProjectAgentMemory:
                 ).encode()).hexdigest())
         if row['payload_hash'] not in compatible_hashes:
             raise HTTPException(status_code=409, detail='memory idempotency key has different input')
-        return ProjectAgentMemoryRecord.model_validate_json(row['record_json']).model_copy(
-            update={'agent_id': agent['agent_id']})
+        return saved.model_copy(update={'agent_id': agent['agent_id']})
 
     async def _resolved_agent_memory_id(self, space_id, project_id, agent_id):
         agent_id = await resolve_hr_alias(self, space_id, agent_id)

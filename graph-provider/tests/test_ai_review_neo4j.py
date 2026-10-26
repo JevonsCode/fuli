@@ -468,3 +468,189 @@ async def test_real_neo4j_pending_conflict_serializes_with_ai_review_write():
             client, space_id, source_project_id, source_item_id
         )
         assert projected['ai_assessment'] is None
+
+
+_REVIEW_TOKEN = 'synthetic-ai-review-undo-token-0123456789'
+
+
+async def _withdraw(client, space_id, review_id, candidate, *, headers, token=None):
+    return await client.post('/v1/knowledge/reviews/ai-review/withdraw', headers=headers, json={
+        'personal_space_id': space_id,
+        'review_id': review_id,
+        'candidate_key': candidate['candidate_key'],
+        'ai_review_evidence_token': token or candidate['ai_review_evidence_token'],
+    })
+
+
+@pytest.mark.asyncio
+async def test_real_neo4j_person_undoes_an_ai_review_and_an_agent_cannot():
+    """rec#10 D-24: an automatic review applied before the gate is undone on
+    the human-review channel; the item keeps its words and confirmation and
+    the decision stays as history. An Agent token alone changes nothing."""
+
+    settings = fixture_settings().model_copy(update={'human_review_token': _REVIEW_TOKEN})
+    suffix = uuid4().hex
+
+    async with provider_client(settings, raise_app_exceptions=True) as (client, _):
+        space_id, project_id, item_id = await _create_review_fixture(client, suffix)
+        run = await _start_tonborg_review(client, space_id, project_id)
+        candidate = await _read_candidate(client, space_id, run['review_id'], item_id)
+        _require_status(await _post_ai_review_progress(client, space_id, run['review_id'], candidate))
+        reviewed = await _read_graph_node(client, space_id, project_id, item_id)
+        assert reviewed['ai_assessment']['outcome'] == 'approve'
+
+        for headers in ({}, {'x-fuli-human-review-token': 'synthetic-wrong-token-000000000000000'}):
+            refused = await _withdraw(client, space_id, run['review_id'], candidate, headers=headers)
+            assert refused.status_code == 403, refused.text
+        human = {'x-fuli-human-review-token': _REVIEW_TOKEN}
+        other_evidence = await _withdraw(client, space_id, run['review_id'], candidate, headers=human, token='0' * 64)
+        assert other_evidence.status_code == 409, other_evidence.text
+        assert await _read_graph_node(client, space_id, project_id, item_id) == reviewed
+
+        withdrawn = _require_status(await _withdraw(client, space_id, run['review_id'], candidate, headers=human))
+        assert withdrawn['candidate_key'] == candidate['candidate_key']
+        restored = await _read_graph_node(client, space_id, project_id, item_id)
+        assert restored['ai_assessment'] is None
+        assert restored['ai_reviewed_at'] is None
+        assert restored['ai_review_evidence_token'] is None
+        def without_review(node):
+            return {key: value for key, value in node.items() if not key.startswith('ai_')}
+        assert without_review(restored) == without_review(reviewed)
+
+        history = _require_status(await client.post('/v1/knowledge/reviews/decision', json={
+            'personal_space_id': space_id, 'review_id': run['review_id'],
+            'candidate_key': candidate['candidate_key'],
+        }))
+        assert history['decision']['outcome'] == 'ai_reviewed'
+        again = await _withdraw(client, space_id, run['review_id'], candidate, headers=human)
+        assert again.status_code == 409, again.text
+        assert again.json()['detail']['code'] == 'ai_review_changed'
+
+
+@pytest.mark.asyncio
+async def test_real_neo4j_undo_never_overwrites_a_later_edit_or_recreates_a_missing_item():
+    """rec#10 D-36.12: an undo after the person edited the item (a new
+    version) is refused as changed and leaves both versions as they are; an
+    undo of an item that no longer exists is refused as deleted and creates
+    nothing."""
+
+    settings = fixture_settings().model_copy(update={'human_review_token': _REVIEW_TOKEN})
+    suffix = uuid4().hex
+    human = {'x-fuli-human-review-token': _REVIEW_TOKEN}
+
+    async with provider_client(settings, raise_app_exceptions=True) as (client, _):
+        space_id, project_id, item_id = await _create_review_fixture(client, suffix)
+        run = await _start_tonborg_review(client, space_id, project_id)
+        candidate = await _read_candidate(client, space_id, run['review_id'], item_id)
+        _require_status(await _post_ai_review_progress(client, space_id, run['review_id'], candidate))
+        version_id = (await _revise_summary(client, space_id, project_id, item_id,
+                                            'The person edited this after the review.',
+                                            'Synthetic edit after the AI review.'))['version_item_id']
+        edited = await _read_graph_node(client, space_id, project_id, version_id)
+
+        refused = await _withdraw(client, space_id, run['review_id'], candidate, headers=human)
+        assert refused.status_code == 409, refused.text
+        assert refused.json()['detail']['code'] == 'ai_review_changed'
+        assert await _read_graph_node(client, space_id, project_id, version_id) == edited
+
+        missing = dict(candidate, candidate_key=f'entity:missing-{suffix}')
+        gone = await _withdraw(client, space_id, run['review_id'], missing, headers=human)
+        assert gone.status_code == 404, gone.text
+        assert gone.json()['detail']['code'] == 'ai_review_deleted'
+        graph = _require_status(await client.get(f'/v1/spaces/{space_id}/graph'))
+        assert all(node['id'] != f'missing-{suffix}' for node in graph['nodes'])
+
+
+async def _create_relationship_fixture(client, suffix):
+    """A project with two entities and the relationship between them."""
+
+    space_id = _require_status(await client.post('/v1/spaces', json={
+        'name': f'Synthetic Tonborg undo race {suffix}', 'kind': 'personal',
+    }))['id']
+    project_id = f'undo-race-{suffix}'
+    await _create_project(client, space_id, project_id, 'Synthetic undo race project')
+    commit = _require_status(await client.post('/v1/knowledge/commits', json={
+        'space_id': space_id,
+        'personal_project_id': project_id,
+        'episode': {
+            'idempotency_key': f'undo-race-episode-{suffix}',
+            'session_id': f'undo-race-session-{suffix}',
+            'name': 'Synthetic undo race evidence',
+            'source_kind': 'conversation',
+            'source_description': 'Synthetic evidence for the undo race.',
+            'source_application': 'codex',
+            'reference_time': '2026-10-11T00:00:00Z',
+            'summary': 'Synthetic evidence for an undo race.',
+            'entities': [
+                {'key': f'undo-a-{suffix}', 'name': 'Synthetic undo fact A', 'type': 'ReviewFact',
+                 'summary': 'The first synthetic statement.'},
+                {'key': f'undo-b-{suffix}', 'name': 'Synthetic undo fact B', 'type': 'ReviewFact',
+                 'summary': 'The second synthetic statement.'},
+            ],
+            'relationships': [{
+                'key': f'undo-ab-{suffix}', 'source': f'undo-a-{suffix}', 'target': f'undo-b-{suffix}',
+                'type': 'SUPPORTS', 'fact': 'Synthetic fact A supports synthetic fact B.',
+            }],
+        },
+    }))
+    return space_id, project_id, commit['entity_ids'][0], commit['relationship_ids'][0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('item_kind', ['entity', 'relationship'])
+async def test_real_neo4j_undo_waits_for_an_edit_in_flight_and_never_removes_what_came_after(item_kind):
+    """rec#10 D-36.12, dot's round-2 review: an undo that starts while the
+    person's edit of the same item holds it waits for that edit and then reads
+    what it left: it is refused as changed, and the edit stands. An undo that
+    read the item before locking it would have removed the marks afterwards."""
+
+    settings = fixture_settings().model_copy(update={'human_review_token': _REVIEW_TOKEN})
+    suffix = uuid4().hex
+    human = {'x-fuli-human-review-token': _REVIEW_TOKEN}
+
+    async with provider_client(settings, raise_app_exceptions=True) as (client, _):
+        space_id, project_id, entity_id, relationship_id = await _create_relationship_fixture(client, suffix)
+        item_id = entity_id if item_kind == 'entity' else relationship_id
+        run = await _start_tonborg_review(client, space_id, project_id)
+        candidate = await _read_candidate(client, space_id, run['review_id'], item_id)
+        _require_status(await _post_ai_review_progress(client, space_id, run['review_id'], candidate))
+
+        edit_holds_item = asyncio.Event()
+        allow_edit_commit = asyncio.Event()
+        original_execute_query = TransactionQueryDriver.execute_query
+
+        async def gated_execute_query(self, query, **kwargs):
+            records = await original_execute_query(self, query, **kwargs)
+            # The edit's own lock on the item, taken before it writes the new version.
+            if ('fuli_ai_review_lock_version' in query and 'RETURN properties(item)' in query
+                    and not edit_holds_item.is_set()):
+                edit_holds_item.set()
+                await allow_edit_commit.wait()
+            return records
+
+        change = ({'summary': 'The person edited this while the undo was asked.'} if item_kind == 'entity'
+                  else {'fact': 'The person edited this relationship while the undo was asked.'})
+        TransactionQueryDriver.execute_query = gated_execute_query
+        edit_task = asyncio.create_task(client.patch(f'/v1/knowledge/items/{item_id}', json={
+            'personal_space_id': space_id, 'personal_project_id': project_id, 'item_kind': item_kind,
+            'action': 'update', 'reason': 'Synthetic edit racing an undo.', **change,
+        }))
+        undo_task = None
+        try:
+            await asyncio.wait_for(edit_holds_item.wait(), timeout=5)
+            undo_task = asyncio.create_task(_withdraw(client, space_id, run['review_id'], candidate, headers=human))
+            await asyncio.sleep(0.2)
+            assert not undo_task.done(), 'the undo finished while the edit still held the item'
+            allow_edit_commit.set()
+            edited, undo = await asyncio.gather(edit_task, undo_task)
+        finally:
+            allow_edit_commit.set()
+            TransactionQueryDriver.execute_query = original_execute_query
+            if undo_task is not None and not undo_task.done():
+                await undo_task
+            if not edit_task.done():
+                await edit_task
+
+        assert edited.status_code == 200, edited.text
+        assert undo.status_code == 409, undo.text
+        assert undo.json()['detail']['code'] == 'ai_review_changed'

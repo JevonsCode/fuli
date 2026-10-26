@@ -170,9 +170,9 @@ export const useConsoleStore = defineStore('console', () => {
     await loadCapturePolicy().catch(() => {})
   }
 
-  async function updateCapturePolicy(enabled: boolean, disabledSources?: string[]) {
+  async function updateCapturePolicy(enabled: boolean, sources?: Pick<CapturePolicyChange, 'disabledSources' | 'capturedSources'>) {
     try {
-      await changeCapturePolicy(disabledSources ? { enabled, disabledSources } : { enabled })
+      await changeCapturePolicy({ enabled, ...sources })
       notify(
         enabled
           ? t('console.captureNotices.enabled')

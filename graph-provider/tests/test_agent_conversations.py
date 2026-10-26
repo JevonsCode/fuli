@@ -3,8 +3,38 @@ from pydantic import ValidationError
 
 from fuli_graph.agent_conversation_models import ConversationPolicy, ConversationEvent
 from fuli_graph.conversation_context import (
-    add_task_result, fold_messages, pack_context, render_digest,
+    add_delivery_proofs, add_task_result, fold_messages, pack_context, render_digest,
 )
+
+
+def test_delivery_proofs_name_only_the_asking_sessions_records_and_never_spend_the_budget():
+    import hashlib
+    import json
+    events = [
+        {'sequence': 1, 'role': 'user', 'content': 'xxx', 'event_id': 'jsonl-v1:10:0:0',
+         'session_id': 'c', 'source_application': 'codex'},
+        {'sequence': 2, 'role': 'user', 'content': 'zzz', 'event_id': 'jsonl-v1:10:0:0',
+         'session_id': 'h', 'source_application': 'claude_code'},
+        {'sequence': 3, 'role': 'assistant', 'content': '长' * 400, 'event_id': 'jsonl-v1:90:0:0',
+         'session_id': 'c', 'source_application': 'claude_code'},
+    ]
+    budget = 700
+    context = pack_context('', events, budget, conversation_id='c-1', revision=3)
+    add_delivery_proofs(context, events, 'codex', 'c')
+    [newest] = context['messages']
+    assert newest['truncated'] is True and len(newest['content'].encode()) < len(('长' * 400).encode())
+    # The hash is of the whole message, not of the delivered prefix.
+    assert newest['content_sha256'] == hashlib.sha256(('长' * 400).encode()).hexdigest()
+    whole = add_delivery_proofs(pack_context('', events, 16000, conversation_id='c-1', revision=3),
+                                events, 'codex', 'c')
+    assert [item['sequence'] for item in whole['messages']] == [1, 2, 3]
+    # Only codex session c's own record; the same session ID from another
+    # client and another session are never own.
+    assert [item.get('own_event') for item in whole['messages']] == ['jsonl-v1:10:0:0', None, None]
+    # Proofs are added after packing: the packed window is the one the budget chose.
+    plain = pack_context('', events, budget, conversation_id='c-1', revision=3)
+    assert json.dumps(plain, ensure_ascii=False, separators=(',', ':')).encode().__len__() <= budget
+    assert [item['content'] for item in plain['messages']] == [item['content'] for item in context['messages']]
 
 
 def test_default_policy_compacts_by_size_and_accepts_old_idle_day_policies():

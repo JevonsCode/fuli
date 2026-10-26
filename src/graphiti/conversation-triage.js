@@ -1,5 +1,5 @@
 import { projectByName, projectNames } from './task-entry-project-mention.js';
-import { ASSISTANT_AGENT_ID } from './task-entry-project-scope.js';
+import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { PROPOSAL_MIN_CONVERSATIONS, proposalForTopic } from './topic-proposals.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 
@@ -63,6 +63,13 @@ export async function recordTriage(application, task, conversation, label) {
   } catch {
     return { status: 'unavailable', reason: 'triage_unavailable' };
   }
+}
+
+// The conversation's current attribution state or null: kind, project, topic,
+// source, labeled_at and the project a topic was formed into.
+export async function readConversationTriage(application, conversationId) {
+  return (await application.personal.conversationTriage('read', {
+    personal_space_id: application.config.personal.spaceId, conversation_id: conversationId })).triage;
 }
 
 // A person's correction from the pages. It is stored as source user, so a

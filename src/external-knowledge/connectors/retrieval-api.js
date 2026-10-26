@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { positiveInteger, requiredString } from '../../validation/values.js';
+import { positiveInteger, requiredResponseString, requiredString } from '../../validation/values.js';
 import { jsonObject, onlineUrl } from './response-values.js';
 
 const DEFAULT_SCORE_THRESHOLD = 0.5;
@@ -95,7 +95,7 @@ function retrievalDocument(record, { knowledgeId, index }) {
     throw new TypeError('Retrieval API records must be objects');
   }
   const metadata = jsonObject(record.metadata);
-  const content = requiredString(record.content, 'Retrieval record content', 1_000_000);
+  const content = requiredResponseString(record.content, 'Retrieval record content', 1_000_000);
   const title = firstString(
     record.title,
     metadata.title,

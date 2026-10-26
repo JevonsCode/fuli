@@ -632,6 +632,7 @@ Jefa（项目经理）、Bole（AR，Agent Resources）和 Tonborg（决策员�
 “Agents → 聘请 Agent”提供其他可复用的员工模板。招募复用持久身份，
 按项目单独任职；安装员工包后，侧栏工作台与 API/A2A 共用 FULI 端口，已有 FULI MCP 可发现和调用员工工具。
 招募不等于启动模型，也不改写已有客户端配置。详见[员工包安装与扩展协议](docs/employee-agents.md)。
+Agent 还可以自己做小的 [Agent 应用](docs/agent-apps.md)；本版本没有沙箱，经你在终端用 `fl app approve` 确认后，应用以你的账户权限运行。
 
 Project Agent 身份仍是控制面记录，不会每个身份常驻一个进程。角色工作记忆按项目私有、
 版本化地保存在同一个 Neo4j Provider 中；任务入口恢复唯一负责人，结束检查跨 MCP 进程持久化。

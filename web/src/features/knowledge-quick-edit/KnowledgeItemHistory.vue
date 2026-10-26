@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import SourceDeleteControl from '@/features/knowledge-hard-delete/SourceDeleteControl.vue'
+import type { HardDeletedState } from '@/features/knowledge-hard-delete/model'
+import type { SourceDeleteTarget } from '@/features/knowledge-hard-delete/source-delete-model'
 import { RouterLink } from 'vue-router'
 
 import { Badge } from '@/components/ui/badge'
@@ -19,7 +22,7 @@ import {
 // session links back to that session's records, opened at the turn that wrote
 // it (rec#5 C6-3).
 defineProps<{ item: KnowledgeItemView; spaceId: string }>()
-const emit = defineEmits<{ openVersion: [version: ItemVersion] }>()
+const emit = defineEmits<{ openVersion: [version: ItemVersion]; sourceDeleted: [target: SourceDeleteTarget, state: HardDeletedState] }>()
 
 const when = (value?: string | null) => formatDateTime(value, currentLocale(), DATE_TIME_MINUTE, { missing: '—' })
 const action = (value: string) => t(`knowledgeQuickEdit.history.actions.${value}`)
@@ -59,6 +62,9 @@ const action = (value: string) => t(`knowledgeQuickEdit.history.actions.${value}
       </section>
       <section class="grid gap-2" data-item-sources>
         <h3 class="m-0 text-sm font-semibold">{{ t('knowledgeQuickEdit.history.sources') }} · {{ item.evidence_count }}</h3>
+        <p v-if="item.unavailable_sources?.length" class="m-0 rounded-md border bg-muted/40 px-3 py-2" data-unavailable-sources>
+          {{ t('knowledgeQuickEdit.history.unavailableSources', { count: item.unavailable_sources.length }) }}
+        </p>
         <ol v-if="item.evidence.length" class="m-0 grid list-none gap-2 p-0">
           <li v-for="source in item.evidence" :key="source.episode_id" class="grid gap-0.5 rounded-md border px-3 py-2">
             <span class="text-xs text-muted-foreground">
@@ -70,9 +76,11 @@ const action = (value: string) => t(`knowledgeQuickEdit.history.actions.${value}
               class="justify-self-start text-xs underline underline-offset-4" data-source-session>
               {{ t('sessionRecords.fromSession') }}
             </RouterLink>
+            <SourceDeleteControl v-if="source.episode_id" :space-id="spaceId" :target="{ item_kind: 'episode', item_id: source.episode_id }"
+              @deleted="emit('sourceDeleted', { item_kind: 'episode', item_id: source.episode_id }, $event)" />
           </li>
         </ol>
-        <p v-else class="m-0 text-muted-foreground">{{ t('knowledgeQuickEdit.history.noSources') }}</p>
+        <p v-else-if="!item.unavailable_sources?.length" class="m-0 text-muted-foreground">{{ t('knowledgeQuickEdit.history.noSources') }}</p>
       </section>
       <section class="grid gap-2" data-item-revisions>
         <h3 class="m-0 text-sm font-semibold">{{ t('knowledgeQuickEdit.history.revisions') }}</h3>

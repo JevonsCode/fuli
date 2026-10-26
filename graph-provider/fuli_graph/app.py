@@ -12,6 +12,7 @@ from .auth import (
 )
 from .config import Settings, get_settings
 from .temporary_project_scope import TemporaryProjectEnsure, ensure_temporary_project
+from .publication_submission_models import PublicationSubmissionDecision
 from .graph_models import GraphResult
 from .knowledge_usage_models import KnowledgeUsageCreate, KnowledgeUsageResult
 from .knowledge_feedback_models import (
@@ -19,6 +20,8 @@ from .knowledge_feedback_models import (
     KnowledgeFeedbackResult,
 )
 from .knowledge_review_models import (
+    KnowledgeAIReviewWithdrawal,
+    KnowledgeAIReviewWithdrawalResult,
     KnowledgeReviewCandidatePage,
     KnowledgeReviewCandidateRequest,
     KnowledgeReviewDecision,
@@ -98,7 +101,6 @@ from .models import (
     ProjectDeleteResult,
     ProjectReleaseRecord,
     PublicationDraftCreate,
-    PublicationDraftDecision,
     PublicationDraftRecord,
     ProposalCreate,
     ProposalDecision,
@@ -125,6 +127,7 @@ from .knowledge_review import (
     read_knowledge_review_decision,
     record_knowledge_review_progress,
     start_knowledge_review,
+    withdraw_ai_review,
 )
 from .common_knowledge import (
     apply_common_knowledge_promotion,
@@ -143,6 +146,7 @@ from .project_knowledge import (
 from .project_agent_routes import register_project_agent_routes
 from .knowledge_item_routes import register_knowledge_item_routes
 from .knowledge_hard_delete_routes import register_knowledge_hard_delete_routes
+from .knowledge_deletion_watermark import register_knowledge_deletion_watermark_route
 from .knowledge_tag_routes import register_knowledge_tag_routes
 from .preference_conflicts import (
     complete_preference_conflict,
@@ -362,23 +366,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_graph_format_routes(application, runtime, resolved_settings, Actor, HumanReviewer)
     register_project_agent_routes(application, store, Actor)
     register_knowledge_tag_routes(application, store, Actor, ReviewAwareActor, HumanReviewer)
-    register_knowledge_item_routes(application, store, Actor, HumanReviewer)
+    register_knowledge_item_routes(application, store, Actor, ReviewAwareActor, HumanReviewer)
     register_knowledge_hard_delete_routes(application, store, HumanReviewer)
+    register_knowledge_deletion_watermark_route(application, store, Actor)
 
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(
         request: PublicationDraftCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> PublicationDraftRecord:
         return await store.create_publication_draft(actor, request)
 
     @application.get('/v1/publication-drafts', response_model=list[PublicationDraftRecord])
     async def list_publication_drafts(
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
         draft_status: Annotated[str, Query(alias='status')] = 'pending',
+        metadata_only: bool = False,
     ) -> list[PublicationDraftRecord]:
-        return await store.list_publication_drafts(actor, personal_space_id, draft_status)
+        return await store.list_publication_drafts(actor, personal_space_id, draft_status, metadata_only)
 
     @application.get(
         '/v1/publication-drafts/{draft_id}',
@@ -386,7 +392,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def get_publication_draft(
         draft_id: str,
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
     ) -> PublicationDraftRecord:
         return await store.get_publication_draft(actor, personal_space_id, draft_id)
@@ -397,8 +403,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def decide_publication_draft(
         draft_id: str,
-        request: PublicationDraftDecision,
-        actor: Actor,
+        request: PublicationSubmissionDecision,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
     ) -> PublicationDraftRecord:
         return await store.decide_publication_draft(
@@ -653,9 +659,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def review_decision(
         request: KnowledgeReviewDecisionLookup,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> KnowledgeReviewDecisionLookupResult:
         return await read_knowledge_review_decision(store, actor, request)
+
+    # Undoing Tonborg's automatic review is the person's own decision (rec#10
+    # D-24): only the human-review channel may send it, never an Agent token.
+    @application.post(
+        '/v1/knowledge/reviews/ai-review/withdraw',
+        response_model=KnowledgeAIReviewWithdrawalResult,
+    )
+    async def withdraw_review_ai_assessment(
+        request: KnowledgeAIReviewWithdrawal,
+        reviewer: HumanReviewer,
+    ) -> KnowledgeAIReviewWithdrawalResult:
+        return await withdraw_ai_review(store, reviewer, request)
 
     @application.post(
         '/v1/knowledge/reviews/finish',
@@ -791,7 +809,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def defer_conflict(
         request: PreferenceConflictDeferCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> PreferenceConflictRecord:
         return await defer_preference_conflict(store, actor, request)
 
@@ -800,7 +818,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response_model=list[PreferenceConflictRecord],
     )
     async def preference_conflicts(
-        actor: Actor,
+        actor: ReviewAwareActor,
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
         status: Annotated[str | None, Query(pattern='^(ai_pending|resolved)$')] = None,
         limit: Annotated[int, Query(ge=1, le=1000)] = 500,
@@ -838,7 +856,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def complete_conflict(
         conflict_id: str,
         request: PreferenceConflictCompleteCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> PreferenceConflictRecord:
         return await complete_preference_conflict(
             store,
@@ -909,6 +927,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> list[ProposalRecord]:
         return await store.list_proposals(actor, project_id, proposal_status)
 
+    @application.get('/v1/projects/{project_id}/proposals/lookup')
+    async def lookup_proposal(
+        project_id: str,
+        actor: Actor,
+        idempotency_key: Annotated[str, Query(min_length=1, max_length=256)],
+    ) -> dict | None:
+        return await store.lookup_proposal(actor, project_id, idempotency_key)
+
     @application.post(
         '/v1/projects/{project_id}/proposals/{proposal_id}/decision',
         response_model=ProposalRecord,
@@ -959,12 +985,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get('/v1/spaces/{space_id}/graph', response_model=GraphResult)
     async def graph(
         space_id: str,
-        actor: Actor,
+        # The console's full read carries the human-review proof; any other
+        # read is an Agent's: a plain session, or the FLA it names.
+        actor: ReviewAwareActor,
         limit: Annotated[int | None, Query(ge=1, le=2000)] = None,
         personal_project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
         offset: Annotated[int | None, Query(ge=0)] = None,
+        reader_project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+        reader_agent_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
     ) -> GraphResult:
-        return await store.graph(actor, space_id, limit, personal_project_id, offset)
+        return await store.graph(actor, space_id, limit, personal_project_id, offset,
+                                 reader_project_id=reader_project_id, reader_agent_id=reader_agent_id)
 
     return application
 

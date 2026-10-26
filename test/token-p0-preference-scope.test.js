@@ -6,13 +6,13 @@ import { normalizeAgentSessionInput } from '../src/mcp/session-id.js';
 const rule = (id, qualifiers = {}) => ({ id, item_kind: 'entity', instruction: `Rule ${id}`,
   preference_key: id, preference_scope: 'global', preference_qualifiers: qualifiers });
 
-test('an MCP process identity does not exclude preferences for an unknown native session', async () => {
-  const { preferenceAppliesToTask } = await import('../src/graphiti/preference-task-scope.js');
+test('an MCP process identity is not a native session: a session-limited rule is scope_unknown, not applied', async () => {
+  const { preferenceAppliesToTask, preferenceTaskApplicability } = await import('../src/graphiti/preference-task-scope.js');
   const item = rule('native-session', { sessionId: 'saved-session' });
   for (const source of ['claude_code', 'cursor']) {
     const input = normalizeAgentSessionInput('get_collaboration_preferences', {}, null,
       'fuli-host-process', undefined, source);
-    assert.equal(preferenceAppliesToTask(item, input), true);
+    assert.equal(preferenceTaskApplicability(item, input), 'scope_unknown');
     assert.equal(preferenceAppliesToTask(item, { ...input, sessionId: 'other-session' }), false);
     assert.equal(preferenceAppliesToTask(item, { ...input, sessionId: 'saved-session' }), true);
   }
@@ -49,19 +49,23 @@ test('business workflow and work kind are independent dimensions', async () => {
   } };
   const retained = await getCollaborationPreferences(application, { personalProjectId: 'project' },
     { sessionId: 'this-session', workKind: 'implementation', agentInvocation: true }, async () => {});
-  assert.deepEqual(retained.effective_preferences.map(p => p.preference_key), ['business-workflow', 'empty']);
+  assert.deepEqual(retained.effective_preferences.map(p => p.preference_key), ['empty']);
+  // The workflow this task does not state fails closed: its key only, no body.
+  assert.deepEqual(retained.scope_unknown, ['business-workflow']);
+  assert.doesNotMatch(JSON.stringify(retained), /Rule business-workflow/);
   const filtered = await getCollaborationPreferences(application, { personalProjectId: 'project' },
     { sessionId: 'this-session', workKind: 'implementation', workflow: 'leave-request', agentInvocation: true }, async () => {});
   assert.deepEqual(filtered.effective_preferences.map(p => p.preference_key), ['empty']);
 });
 
-test('missing task metadata and unknown scope formats conservatively retain scoped preferences', async () => {
+test('missing task metadata fails closed for stated dimensions; unknown condition formats are not dimensions', async () => {
   const items = [rule('session', { sessionId: 'saved-session' }), rule('workflow', { workflow: 'release' }),
     rule('unknown', { conditions: 'only for something unknown' })];
   const result = await getCollaborationPreferences({ config: { personal: { spaceId: 'space' } }, personal: {
     collaborationPreferences: async () => ({ effective_preferences: items }), listPreferenceConflicts: async () => []
   } }, { personalProjectId: null }, { agentInvocation: true }, async () => {});
-  assert.equal(result.effective_preferences.length, 3);
+  assert.deepEqual(result.effective_preferences.map(p => p.preference_key), ['unknown']);
+  assert.deepEqual(result.scope_unknown, ['session', 'workflow']);
 });
 
 test('legacy restrictive session text is normalized only from explicit single-session scope', async () => {
@@ -70,7 +74,7 @@ test('legacy restrictive session text is normalized only from explicit single-se
   const scoped = { ...rule('legacy'), instruction: `仅在 Codex 会话 ${session} 中协作；不能扩大权限。` };
   assert.equal(preferenceAppliesToTask(scoped, { sessionId: 'other-session' }), false);
   assert.equal(preferenceAppliesToTask(scoped, { sessionId: session }), true);
-  assert.equal(preferenceAppliesToTask(scoped, {}), true);
+  assert.equal(preferenceAppliesToTask(scoped, {}), false);
   for (const instruction of [`参考 Codex 会话 ${session} 的历史结果。`,
     `仅在 Codex 会话 ${session} 或其他会话中适用。`, '仅在公司工作中适用。']) {
     assert.equal(preferenceAppliesToTask({ ...scoped, instruction }, { sessionId: 'other-session' }), true);
@@ -86,4 +90,20 @@ test('an explicit unknown canonical session condition prevents legacy narrowing'
     assert.equal(preferenceAppliesToTask({ instruction, preference_qualifiers: { sessionId: condition } },
       { sessionId: 'other-session' }), true);
   }
+});
+
+// Compatibility change of rec#15 PR1: an unknown session no longer keeps a
+// session-limited rule. A broader rule with the same key may apply in its
+// place, but the narrower key stays listed, so it is not read as a new grant.
+test('a session-limited rule with an unknown session leaves its key in scope_unknown beside the broader same-key rule', async () => {
+  const items = [{ ...rule('global'), preference_key: 'same-key', instruction: 'Ask before force-pushing.' },
+    { ...rule('session'), preference_key: 'same-key', preference_scope: 'project',
+      instruction: 'In this session force-pushing the feature branch is fine.', preference_qualifiers: { sessionId: 'saved-session' } }];
+  const result = await getCollaborationPreferences({ config: { personal: { spaceId: 'space' } }, personal: {
+    collaborationPreferences: async () => ({ effective_preferences: items }), listPreferenceConflicts: async () => []
+  } }, { personalProjectId: 'project' }, { agentInvocation: true }, async () => {});
+  assert.deepEqual(result.effective_preferences.map(p => p.instruction), ['Ask before force-pushing.']);
+  assert.deepEqual(result.scope_unknown, ['same-key']);
+  assert.match(result.application_guidance.scope_unknown, /one may replace a broader rule with the same key/);
+  assert.doesNotMatch(JSON.stringify(result), /force-pushing the feature branch is fine/);
 });

@@ -61,6 +61,25 @@ test('negated delivery instructions do not recall a release runbook', () => {
     .trigger_categories.includes('release_delivery'));
 });
 
+test('comma-separated negated actions and relative where do not trigger recall', () => {
+  for (const prompt of ['Do not commit, push, or create branches', 'Do not commit, push or deploy',
+    'WSL Ubuntu, where `node` is installed']) {
+    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories, [], prompt);
+  }
+  for (const prompt of ['Where is the deploy runbook?', 'Can you find where config.json is loaded?',
+    'Find where config.json is loaded', 'Show me where the API handler is defined.',
+    "I'm not sure where the backup files are stored.", 'ok where is the config file',
+    'Tell me, where is the config file', 'In WSL, where should node be installed']) {
+    assert.ok(planTaskKnowledgeRecall(prompt).trigger_categories.includes('artifact_location'), prompt);
+  }
+  for (const prompt of ['push this to production', "Don't push, deploy to staging instead",
+    'Never commit, ship it after review', 'Do not push to GitHub, and deploy to staging',
+    '不要推送, 部署到测试环境', '不要提交,发布到 npm', "Don't push, deploy to staging or production",
+    "Don't commit, push it when ready, or ask me first"]) {
+    assert.ok(planTaskKnowledgeRecall(prompt).trigger_categories.includes('release_delivery'), prompt);
+  }
+});
+
 test('self-contained workflow optimization does not trigger generic runbook recall', () => {
   const prompt = '分析并优化 Analytics Dashboard Builder 的搭建、局部修改与询问速度和流程，测试 model-k3 可行性；禁止提交代码。';
   const plan = planTaskKnowledgeRecall(prompt);
@@ -96,6 +115,26 @@ test('synthetic credential fixtures suppress automatic prompt recall', async () 
   assert.equal(recall.query_count, 0);
   assert.equal(calls, 0);
   assert.equal(JSON.stringify(recall).includes(syntheticCredential), false);
+});
+
+test('a recall that ran no search carries no marker, and only a searched miss says 已检索，未命中', async () => {
+  let calls = 0;
+  const application = {
+    config: { personal: { spaceId: 'personal-space' } },
+    consoleUrl: 'http://127.0.0.1:2727',
+    async searchKnowledge() { calls += 1; return { facts: [], entities: [] }; }
+  };
+  const notSearched = await recallTaskKnowledge(application, { personalProjectId: 'fuli' }, 'Rename the parser variable.');
+  assert.equal(notSearched.status, 'not_needed');
+  assert.equal(calls, 0);
+  assert.equal('sourceMarker' in notSearched, false);
+  assert.equal('noMatchSourceMarker' in notSearched, false);
+  assert.match(notSearched.guidance.candidate_selection, /without markers ran no search: show no marker/);
+
+  const missed = await recallTaskKnowledge(application, { personalProjectId: 'fuli' }, 'Use the release method we decided previously.');
+  assert.equal(missed.status, 'no_match');
+  assert.ok(calls > 0);
+  assert.match(missed.noMatchSourceMarker.leadMarkdown, /已检索，未命中/);
 });
 
 test('automatic recall returns a compact exact-project runbook without echoing the prompt',

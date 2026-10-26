@@ -6,7 +6,7 @@ import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../src/mcp/instructions
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { sessionFuliOffContext } from '../src/conversations/session-fuli-entry.js';
-import { PASS_TASK_TOKEN } from '../src/agents/lifecycle-message.js';
+import { PASS_TASK_TOKEN, taskClosingInstruction } from '../src/agents/lifecycle-message.js';
 import { withCodexReviewGuidance } from '../src/agents/codex/review-command.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -15,6 +15,8 @@ import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { readTurnReceipt } from '../src/agents/turn-receipt.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
+import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
+import { claudeEntrySession, syntheticLargeEntry, syntheticPreferences } from '../test-support/synthetic-large-entry.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -86,7 +88,44 @@ const BASELINE = Object.freeze({
   // rec#11 D-07 part 2: change_knowledge_tags only previews the person's tag
   // governance (five actions, intoTagId), no new tool: 184,767 -> 184,935 B
   // (+168 B), measured. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 184935,
+  // rec#15 D-27.8 (dot P2 on #291): remember takes the user's stated constraint (hard|soft),
+  // workKind and tasteDomain, checked against the versioned scene table server-side so the
+  // schema lists no table: 184,935 -> 185,077 B (+142 B), measured.
+  // rec#29 F2: one full-profile tool, register_standing_assignment, previews and confirms the
+  // person's "from now on this work goes to that project" (chat reaches it through
+  // list_agent_interfaces/fuli_call): 185,077 -> 186,372 B (+1,295 B), measured. Chat,
+  // instructions and entry are unchanged.
+  // rec#29 F5: the same tool takes change retire|reassign|edit_terms with term, leadAgentId,
+  // addTerms and removeTerms instead of a second tool (measured: a separate correction tool
+  // would add ~1,170 B): 186,372 -> 186,914 B (+542 B), measured. Chat, instructions and entry
+  // are unchanged.
+  // 0.20.1 FLA read boundary, merged from release/0.20 (#344/#345): get_knowledge_graph takes
+  // projectAgentId, the FLA it reads as, since another reader no longer sees an FLA's own
+  // knowledge (+122 B on release); a conflict naming an FLA's item is missing to any other reader,
+  // so resolve_deferred_preference_conflict and defer_preference_conflict name the FLA too
+  // (+284 B on release): 186,914 -> 187,320 B (+406 B), measured on main after the merge.
+  // rec#47 F2, merged from release/0.20 (#349): the 7 records a task writes as it goes or closes
+  // (capture, decision trace, workflow observation, Agent memory checkpoint, task activity,
+  // executor actual, task outcome) take the same optional bare taskContextToken, without which
+  // they were always refused while any session of the client was stopped (+259 B on release):
+  // 187,320 -> 187,579 B, measured on main after the merge. Chat is unchanged.
+  // rec#50, merged from release/0.20 (#367): list_judgments returns decisions without their words
+  // and shows a reviewed item only to a reader who may see it now, so it takes projectAgentId as the
+  // other FLA reads do and says so (+133 B on release): 187,579 -> 187,712 B, measured on main after
+  // the merge. Chat is unchanged.
+  // rec#11 D-62: every gated tool (all but the open ones) takes the optional bare taskContextToken
+  // instead of a list of 24, since a read like list_judgments was always refused while any session
+  // of the client was stopped and the model could not pass the token its schema rejected. 102 more
+  // tools list the field; those that name a task token keep their own: 187,712 -> 191,482 B
+  // (+3,770 B, about 37 B a tool), measured. Chat is unchanged: its listed tools already took it or are
+  // open, and fuli_call reads one schema on demand.
+  // rec#11 D-64: OpenCode's own source application, so its hook tasks, capture switch and allowed
+  // clients stop being shared with every `other` client: "opencode" joins each source enum the full
+  // profile lists (about 11 B each): 191,482 -> 191,691 B (+209 B), measured. Chat is unchanged.
+  // D-64 capture isolation: optional capturedSources lets OpenCode override only
+  // the legacy other alias without enabling generic clients: +262 B, measured.
+  // Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 191953,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
@@ -98,16 +137,37 @@ const BASELINE = Object.freeze({
   // rec#5 C3b option Y: the same field on get_collaboration_preferences and the two searches:
   // 8,191 -> 8,302 B (+111 B), measured from the real tools/list.
   // rec#20: the same remember scope unsure, 8,302 -> 8,311 B (+9 B), measured.
-  chatToolSchemaBytes: 8311,
-  instructionsBytes: 2041,
+  // rec#15 D-27.8: the same remember constraint/workKind/tasteDomain, 8,311 -> 8,426 B
+  // (+115 B), measured bytes from the real tools/list.
+  chatToolSchemaBytes: 8426,
+  // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
+  // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
+  // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.
+  instructionsBytes: 2048,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
   // P6: keep the new chat instructions conditional, 1,251 -> 1,238 B.
-  chatInstructionsBytes: 1238,
+  // rec#51: the same " if searched", 1,238 -> 1,250 B (+12 B), measured.
+  chatInstructionsBytes: 1250,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.
-  projectEntryChars: 1775,
+  // An unsaved conversation names its failed step and error code; this synthetic
+  // entry has no conversation store, so it always carries them: 1,775 -> 1,820
+  // chars, measured. A saved conversation carries neither.
+  projectEntryChars: 1820,
+  // rec#51 D-59: a coding task (a change request naming a distinctive term) whose exact project
+  // holds matching knowledge gets a title-only knowledge_index in its recall: [id, title] pairs, the
+  // count that one bounded search kept and one read line, never a body. Measured over the same
+  // entry for a task that searches nothing, with UUID ids and synthetic titles of 22-45 bytes (cut
+  // at 40): no match adds nothing at all (the recall is byte for byte the not_needed one); one
+  // match +226 chars, five +529 (about 130 tokens), of which the read line is 108. #368 review:
+  // the count is named matched_in_search and the line says the titles come from one bounded
+  // search, not the project's total (+27 chars from 199/502). A task with recall intent, and
+  // every other task, is unchanged.
+  knowledgeIndexNoneChars: 0,
+  knowledgeIndexOneChars: 226,
+  knowledgeIndexFiveChars: 529,
   // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
   // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
   // other number above is unchanged; the switch adds no tool, schema or instruction text.
@@ -115,6 +175,26 @@ const BASELINE = Object.freeze({
   // rec#5 C3b option Y: the per-turn Claude Code and Codex hook label asks for the token the Agent
   // already has, instead of a sentence in the server instructions (which must stay under 2 KiB).
   taskTokenHintChars: 42,
+  // rec#47 F1: the Claude Code and Codex hook labels say how the task closes, with the token
+  // and receipt markdown, because the entry only references the checkpoint and receipt rules
+  // and Claude Code shows a long entry as a file preview, in which a tester's model searched
+  // its own hook output five times for them (+215% input tokens). Measured on the synthetic
+  // project entry, its token and receipt link included: 326 chars. The labels drop "Read full
+  // context" and "Follow checkpoint_guidance: …" (Claude Code -144, Codex -132 chars), so a
+  // turn's label grows by about 190 chars, about 50 tokens; a longer token or agent name adds
+  // its own length.
+  entryClosingChars: 326,
+  // rec#47 F1b, rec#11 D-54: Claude Code keeps only a preview of a hook context over about
+  // 10,000 chars, so its entry is bounded to 9,000 and stays a confirmable frame. Measured on the
+  // synthetic 60-preference entry (test-support/synthetic-large-entry.js, about 430 chars each,
+  // 5 hard rules that always stay and 2 boundaries ranked first, D-69): turn 1 was 37,509
+  // chars, every turn, and is now one complete frame of
+  // 11 preferences plus the omitted count; turn 2 was again 37,509 and is now a delta. A frame
+  // that leaves preferences out adds one label sentence (with its space). Entries that fit, and
+  // every other Agent, are unchanged.
+  claudeBoundedEntryChars: 8775,
+  claudeBoundedNextTurnChars: 2191,
+  omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that
   // saved items adds one heading (14 chars) and one line per item (152 chars for a short
@@ -151,9 +231,9 @@ const BASELINE = Object.freeze({
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
   ({ name, title, description, inputSchema }))));
 
-// Synthetic project entry through the real preference workflow and the Claude
-// Code hook delivery path; no live Provider.
-async function projectEntryChars() {
+// Synthetic project entry through the real preference workflow, compacted as
+// the hook delivers it; no live Provider.
+async function projectEntry({ taskPrompt = 'Synthetic task', found = { facts: [], entities: [] } } = {}) {
   const project = { project_id: 'sample', scope_type: 'registered', profile: { name: 'Sample' } };
   const lead = { agent_id: 'lead-sample', personal_space_id: 'space', personal_project_id: 'sample',
     profile: { name: 'Synthetic lead', status: 'active', allowed_clients: ['claude_code'],
@@ -176,13 +256,52 @@ async function projectEntryChars() {
     listPreferenceConflicts: async () => [], getProjectAgentCoordinationPolicy: async () => ({}),
     listProjectAgents: async () => [], listProjectAgentTasks: async () => []
   });
-  app.searchKnowledge = async () => ({ facts: [], entities: [] });
+  // `found` answers the index search alone: the lead's continuity search is not what is measured.
+  app.searchKnowledge = async ({ agentToolName }) => agentToolName === 'automatic_task_knowledge_index'
+    ? found : { facts: [], entities: [] };
   const entry = await app.getCollaborationPreferences({ projectPath: '/synthetic/sample',
     sourceApplication: 'claude_code', sourceSessionId: 'synthetic-host', sessionId: 'synthetic-session',
-    taskPrompt: 'Synthetic task', agentInvocation: true, agentToolName: 'get_collaboration_preferences' });
-  const delivered = hookAdditionalContextToolResult(compactTaskContext(entry), { hookEventName: 'UserPromptSubmit',
-    label: 'Synthetic budget entry', limitBytes: 128 * 1024, itemLimit: 1000 });
-  return JSON.parse(delivered.content[0].text).hookSpecificOutput.additionalContext.length;
+    taskPrompt, agentInvocation: true, agentToolName: 'get_collaboration_preferences' });
+  return compactTaskContext(entry);
+}
+
+const deliveredChars = entry => JSON.parse(hookAdditionalContextToolResult(entry, { hookEventName: 'UserPromptSubmit',
+  label: 'Synthetic budget entry', limitBytes: 128 * 1024, itemLimit: 1000 }).content[0].text)
+  .hookSpecificOutput.additionalContext.length;
+
+// The entry through the Claude Code hook delivery path, and the closing line
+// its real label adds.
+async function projectEntryChars() {
+  const entry = await projectEntry();
+  return { projectEntryChars: deliveredChars(entry), entryClosingChars: taskClosingInstruction(entry).length };
+}
+
+// rec#51 D-59: what a coding task's entry adds for 0, 1 and 5 matching items of
+// its project, over the same entry for a task that searches nothing. UUID ids
+// and synthetic titles of 22 to 45 bytes, as stored names run.
+const INDEX_TITLES = ['find_agents term matching', 'find_agents matches terms in both directions',
+  'Roundtable boundary for find_agents', 'find_agents warning wording', 'find_agents result order rule',
+  'find_agents never imports FULI'];
+async function knowledgeIndexChars() {
+  const base = deliveredChars(await projectEntry());
+  const added = async count => deliveredChars(await projectEntry({ taskPrompt: 'Fix find_agents so terms match as whole words',
+    found: { facts: [], entities: INDEX_TITLES.slice(0, count).map((name, index) => ({
+      id: `0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b${String(index).padStart(2, '0')}`, space_id: 'space', scope: 'personal',
+      name, type: 'Rule', summary: `SYNTHETIC body ${index}: a rule about find_agents.`, defined_project_id: 'sample',
+      scope_distance: 0, confirmation_status: 'confirmed', score: 1 })) } })) - base;
+  return { knowledgeIndexNoneChars: await added(0), knowledgeIndexOneChars: await added(1),
+    knowledgeIndexFiveChars: await added(5) };
+}
+
+// Two turns of the synthetic 60-preference entry through the real Claude Code
+// hook and session cache, the first recorded as the host records it.
+function claudeBoundedEntryChars() {
+  return claudeEntrySession(async session => {
+    const items = syntheticPreferences(60);
+    const [first, next] = [await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' })),
+      await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-2' }))];
+    return { claudeBoundedEntryChars: first.text.length, claudeBoundedNextTurnChars: next.text.length };
+  });
 }
 
 // What a chat client actually receives from tools/list, dispatcher included.
@@ -204,7 +323,8 @@ async function measure() {
     chatToolSchemaBytes: await listedChatBytes(),
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
-    projectEntryChars: await projectEntryChars(),
+    ...await projectEntryChars(), ...await knowledgeIndexChars(), ...await claudeBoundedEntryChars(),
+    omittedPreferencesLabelChars: 1 + OMITTED_PREFERENCES_LABEL.length,
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,

@@ -28,13 +28,27 @@ const GUIDANCE = 'Not run yet. The current session may complete it with role_wor
   + 'A session answer is its own assessment, never an independent verification.';
 const APPLYING_GUIDANCE = 'The answer was accepted and is being applied once. Submit again later for the result.';
 
-export function createRoleWorkBridge({ port, store, verifySession, resumers, now = () => new Date() }) {
+// views: per role, what the submitting session may read of a result
+// (result, session) => shown. The store keeps the role's full result; every
+// reply that carries one, a cached replay too, is shown through its role's
+// view under the session's permissions now. A role without a view shows no
+// result (rec#50). packageViews: per role, the evidence a claiming session
+// receives (evidence, work, session) => evidence, or a refusal; the stored
+// request stays whole (rec#11 D-58).
+export function createRoleWorkBridge({ port, store, verifySession, resumers, views = {}, packageViews = {},
+  prepareStore = async () => {}, now = () => new Date() }) {
   // execution: the token the bridge handed the role's resumer. Only the
   // execution holding a package may use its answer; an execution that lost
   // it (it was slow and another took over) stops here instead of asking
   // anew, and a call outside any execution never takes an applying answer.
-  async function decide(input, { resume = null, execution = null } = {}) {
+  // inline: the current session asked and already holds the evidence (rec#10
+  // D-26.1). No package is created; without a model, or after a
+  // fallback-eligible failure, the caller's usual answer for the session
+  // stands. Every model attempt was still settled in the ledger by the port.
+  async function decide(input, { resume = null, execution = null, inline = false } = {}) {
     const request = parseDecisionRequest(input);
+    if (inline) return inlineOutcome(await port.decide(request));
+    await prepareStore(request.scope.personalSpaceId);
     const at = now();
     const applying = store.applying(request.role, request.requestId);
     if ((applying || execution) && applying?.execution !== execution) throw executionLost(request);
@@ -55,7 +69,7 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
         { retryable: true });
     }
     const { envelope, modelReceipt } = await port.decide(request);
-    if (modelReceipt.status === 'completed') return { status: 'answered', mode: 'model_api', independent: true, envelope, modelReceipt };
+    if (modelReceipt.status === 'completed') return modelAnswer(envelope, modelReceipt);
     if (modelReceipt.status === 'not_configured' || modelReceipt.fallbackEligible) {
       const created = store.create({ request, resume, reason: modelReceipt.fallbackReason ?? modelReceipt.reason,
         fallbackReceipt: modelReceipt.status === 'not_configured' ? null : modelReceipt, at, ttlMs: PACKAGE_TTL_MS });
@@ -67,21 +81,46 @@ export function createRoleWorkBridge({ port, store, verifySession, resumers, now
   async function claim(raw) {
     const input = parseRoleWorkClaim(raw);
     const session = await verifySession(input);
+    await prepareStore(session.personalSpaceId);
     const at = now();
-    store.expire(at);
+    store.expire(at, session.personalSpaceId);
     const found = input.packageId ? existing(input.packageId) : store.nextClaimable(session, at);
     if (!found) return { workPackage: null };
     assertHolder(found, session);
+    // Decided before the lease: a session refused this work does not hold it.
+    const evidence = await packageEvidence(found, session);
     const claimed = store.claim(found.packageId, session,
       { leaseToken: randomUUID(), leaseExpiresAt: new Date(at.getTime() + LEASE_MS), at });
     if (claimed.conflict === 'busy') throw new ApplicationError('role_work_busy', 'Another session holds this work package.', { status: 409 });
     if (claimed.conflict) throw new ApplicationError('role_work_closed', `This work package is ${found.status}.`, { status: 409 });
-    return { workPackage: claimView(claimed.workPackage) };
+    return { workPackage: claimView(claimed.workPackage, evidence) };
   }
 
+  // The evidence this session may receive: the role's package view decides,
+  // or refuses the claim; a role without one hands over its evidence as asked.
+  async function packageEvidence(work, session) {
+    const evidence = work.request.evidence.map(({ id: evidenceId, text }) => ({ id: evidenceId, text }));
+    const view = packageViews[work.role];
+    return view ? view(evidence, work, session) : evidence;
+  }
+
+  // Every exit of a submission, the recorded result of a retry included,
+  // reaches the session through shown().
   async function submit(raw) {
     const input = parseRoleWorkSubmission(raw);
     const session = await verifySession(input);
+    return shown(await answer(input, session), input.packageId, session);
+  }
+
+  async function shown(reply, packageId, session) {
+    if (reply.result === undefined) return reply;
+    const view = views[store.get(packageId)?.role];
+    if (!view) return { ...reply, result: null, result_withheld: 'no_agent_view' };
+    return { ...reply, result: await view(reply.result, session) };
+  }
+
+  async function answer(input, session) {
+    await prepareStore(session.personalSpaceId);
     const at = now();
     const work = existing(input.packageId);
     assertHolder(work, session);
@@ -202,6 +241,21 @@ function sessionAnswer(work) {
     session: work.submission.session, workPackageId: work.packageId, modelReceipt: work.fallbackReceipt };
 }
 
+function modelAnswer(envelope, modelReceipt) {
+  return { status: 'answered', mode: 'model_api', independent: true, envelope, modelReceipt };
+}
+
+// A stop (refusal, privacy or permission, exhausted budget) keeps its own
+// status and reason: the session's answer is the caller's usual one, never a
+// way around the stop.
+function inlineOutcome({ envelope, modelReceipt }) {
+  if (modelReceipt.status === 'completed') return modelAnswer(envelope, modelReceipt);
+  if (modelReceipt.status === 'not_configured' || modelReceipt.fallbackEligible) {
+    return { status: 'inline', answeredBy: 'current_session', fallbackReason: modelReceipt.fallbackReason ?? modelReceipt.reason, modelReceipt };
+  }
+  return { status: modelReceipt.status, modelReceipt };
+}
+
 function pending(work, modelReceipt) {
   return { status: 'pending', workPackage: summary(work), modelReceipt };
 }
@@ -212,11 +266,11 @@ function summary(work) {
 }
 
 // What the session needs to answer, and no more: the bounded instructions,
-// the evidence, the exact answer schema and the lease.
-function claimView(work) {
+// the evidence its role's package view allows, the exact answer schema and the lease.
+function claimView(work, evidence) {
   const { request } = work;
   return { ...summary(work), scope: work.scope, versions: work.versions, instructions: request.instructions,
-    evidence: request.evidence.map(({ id: evidenceId, text }) => ({ id: evidenceId, text })),
+    evidence,
     answerSchema: decisionContract(request).providerSchema, budget: request.budget,
     lease: { token: work.lease.token, expiresAt: work.lease.expiresAt } };
 }

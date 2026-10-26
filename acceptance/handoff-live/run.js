@@ -31,9 +31,9 @@ try {
     const projectId = 'handoff-alpha', siblingId = 'handoff-beta', agentId = 'handoff-engineer';
     for (const project of [projectId, siblingId]) {
       await api('/v1/personal-projects', { personal_space_id: spaceId, project_id: project,
-        profile: { name: project, lifecycle: 'active' } }, 'PUT');
+        profile: { name: project, lifecycle: 'active', purpose: 'Verify a synthetic cross-client handoff.' } }, 'PUT');
       await api('/v1/project-agents', { personal_space_id: spaceId, personal_project_id: project, agent_id: agentId,
-        profile: { name: 'Synthetic handoff engineer', responsibility: 'Remember the synthetic acceptance brief.',
+        occupation: { role: 'engineering' }, profile: { name: 'Synthetic handoff engineer', responsibility: 'Remember the synthetic acceptance brief.',
           allowed_clients: ['codex', 'claude_code'], capabilities: ['coding'], work_kinds: ['implementation'] } }, 'PUT');
     }
     const memory = project => api(`/v1/project-agents/${agentId}/memory?${new URLSearchParams({

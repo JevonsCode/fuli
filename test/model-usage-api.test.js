@@ -35,7 +35,8 @@ function port() {
 test('the Agent tool reads compact usage with budgets and never a prompt or key', async () => {
   const definition = listAgentTools().find(tool => tool.name === 'get_model_usage');
   assert.ok(definition);
-  assert.deepEqual(Object.keys(definition.inputSchema.properties).sort(), ['from', 'role', 'to']);
+  // taskContextToken is the session gate's, never the tool's (rec#11 D-62).
+  assert.deepEqual(Object.keys(definition.inputSchema.properties).sort(), ['from', 'role', 'taskContextToken', 'to']);
   const result = await callAgentTool({ modelBackends: port() }, 'get_model_usage', { role: 'bole' });
   assert.equal(result.groups.length, 1);
   assert.equal(result.groups[0].requests, 1);

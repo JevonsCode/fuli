@@ -1,3 +1,4 @@
+import { dirname } from 'node:path';
 import { readFileSync, statSync } from 'node:fs';
 
 import { parseMcpJson } from '../setup/agents/json-mcp.js';
@@ -63,7 +64,7 @@ export function createClientConnectionObserver({
         return false;
       }
     };
-    const agents = discover({ includeUnavailable: true });
+    const agents = discover({ includeUnavailable: true, dataDir: context.dataDir ?? (context.runtimeConfigPath ? dirname(context.runtimeConfigPath) : undefined) });
     const history = sanitizeHistory(retained ?? readHistory(historyPath), agents);
     let dirty = retained !== null;
     const clients = inspect(agents, context, { readText, readJson, fileExists }).map((agent) => {

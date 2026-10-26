@@ -7,12 +7,12 @@ is authorized on its own.
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_serializer, model_validator
 
 from .knowledge_audit_models import KnowledgeChangeActor, KnowledgeItemKind, KnowledgeRevisionRecord
 from .knowledge_tag_models import KnowledgeTagReference
 from .model_base import StrictModel
-from .models import ConfirmationStatus, ContentSource
+from .models import AgentReaderRef, ConfirmationStatus, ContentSource, SearchRequest
 
 # What kind of content an item holds, for its label. Derived from the item's
 # stored profile aspect or type; not a separate Rule model.
@@ -27,12 +27,21 @@ KnowledgeVersionStatus = Literal['current', 'superseded', 'outdated', 'basis_out
 KnowledgeBasisStatus = KnowledgeVersionStatus | Literal['deleted']
 MAX_SCOPE_PROJECTS = 16
 MAX_RECEIPT_EPISODES = 3
+MAX_VISIBLE_ITEMS = 100
 
 
-class KnowledgeItemRef(StrictModel):
+class KnowledgeItemRef(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     item_kind: KnowledgeItemKind
     item_id: str = Field(min_length=1, max_length=256)
+    # Optional console-only search context: recompute an explanation on demand.
+    query_tags: SearchRequest | None = None
+
+    @model_validator(mode='after')
+    def validate_query_tags_space(self):
+        if self.query_tags is not None and self.query_tags.space_ids != [self.personal_space_id]:
+            raise ValueError('query_tags must search exactly the item personal space')
+        return self
 
 
 class KnowledgeScopeProject(StrictModel):
@@ -132,9 +141,26 @@ class KnowledgeEvidenceSource(StrictModel):
     created_at: datetime | None = None
 
 
+class KnowledgeUnavailableSource(StrictModel):
+    """Content-free evidence whose deletion still awaits the person's review."""
+    episode_id: str
+    deletion_id: str
+    status: Literal['unavailable'] = 'unavailable'
+
+
 class KnowledgeItemView(KnowledgeItemSummary):
+    tag_ranking: dict | None = None
+
+    @model_serializer(mode='wrap')
+    def serialize_optional_tag_ranking(self, handler):
+        result = handler(self)
+        if self.tag_ranking is None:
+            result.pop('tag_ranking', None)
+        return result
+
     evidence: list[KnowledgeEvidenceSource] = Field(default_factory=list)
     evidence_count: int = 0
+    unavailable_sources: list[KnowledgeUnavailableSource] = Field(default_factory=list)
     revisions: list[KnowledgeRevisionRecord] = Field(default_factory=list)
     # Every version, newest first, and the one current answers use now (None
     # once the whole item is history).
@@ -149,9 +175,26 @@ class KnowledgeItemView(KnowledgeItemSummary):
     dependent_count: int = 0
 
 
-class KnowledgeTurnReceiptRead(StrictModel):
+class KnowledgeTurnReceiptRead(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     episode_ids: list[str] = Field(min_length=1, max_length=MAX_RECEIPT_EPISODES)
+
+
+class KnowledgeItemKey(StrictModel):
+    item_kind: KnowledgeItemKind
+    item_id: str = Field(min_length=1, max_length=256)
+
+
+class KnowledgeVisibleItemsRead(AgentReaderRef):
+    """Which of these items exist and this reader may see now (rec#50): a
+    local record that names one shows it only while it does."""
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    items: list[KnowledgeItemKey] = Field(min_length=1, max_length=MAX_VISIBLE_ITEMS)
+
+
+class KnowledgeVisibleItems(StrictModel):
+    # In the order asked, without the ones this reader may not see or that are gone.
+    items: list[KnowledgeItemKey] = Field(default_factory=list)
 
 
 class KnowledgeReceiptEntry(KnowledgeItemSummary):

@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 const { getJson, postJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn(), putJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, postJson, putJson }))
 import AgentConversations from './AgentConversations.vue'
+import { setLocale } from '@/i18n'
 import { UiSelectStub } from '@/test-support/UiSelectStub'
 
 const policy = { compact_after_kb: 64, context_budget: 2000, enabled: true }
@@ -23,6 +24,7 @@ async function open(wrapper: ReturnType<typeof render>, selector?: string) {
   await flushPromises()
 }
 beforeEach(() => {
+  setLocale('zh-CN', { persist: false })
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
   postJson.mockReset().mockImplementation((_url, body) => Promise.resolve(body.mode === 'policy' ? policy : { conversations: [conversation] }))
   putJson.mockReset().mockResolvedValue(policy)
@@ -330,4 +332,27 @@ it('never downloads a pending export after the component unmounts', async () => 
   expect(URL.createObjectURL).not.toHaveBeenCalled()
   expect(saved).toEqual([])
   vi.restoreAllMocks()
+})
+
+
+it('retains a scrubbed current revision without reading its null body or falling back to history', async () => {
+  getJson.mockResolvedValue({ revision: 7, current: { revision: 7, createdAt: '2026-10-10T08:00:00Z', memory: null, memoryState: 'scrubbed', scrubbedBy: 'synthetic-deletion' },
+    history: [memory('OLDER SECRET').current] })
+  const wrapper = render()
+  await open(wrapper)
+  expect(wrapper.get('[data-working-memory]').text()).toContain('当前工作记忆正文已随来源删除清除（修订 7）')
+  expect(wrapper.get('[data-working-memory]').text()).toContain('expectedRevision 7')
+  expect(wrapper.get('[data-working-memory]').text()).not.toContain('OLDER SECRET')
+  expect(wrapper.find('.memory-summary').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+it('explains a scrubbed current revision in English without showing old content', async () => {
+  setLocale('en-US', { persist: false })
+  getJson.mockResolvedValue({ revision: 8, current: { revision: 8, createdAt: '2026-10-10T08:00:00Z', memory: null, memoryState: 'scrubbed' } })
+  const wrapper = render()
+  await open(wrapper)
+  expect(wrapper.get('[data-memory-scrubbed]').text()).toBe('The current working-memory text was cleared with a source deletion (revision 8); it does not fall back to an older version. Rewrite it at the end of this task with expectedRevision 8.')
+  expect(wrapper.find('.memory-summary').exists()).toBe(false)
+  wrapper.unmount()
 })

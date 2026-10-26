@@ -94,6 +94,7 @@ export const knowledgeQuickEditMessages = {
     },
     history: {
       title: '来源和修改历史', sources: '来源', revisions: '修改记录', noSources: '没有记录来源',
+      unavailableSources: '{count} 段来源已彻底删除，原文不可用。这条知识已保留，但依据待复核；请在上方确认是否仍然成立。',
       noRevisions: '还没有修改记录', session: '会话 {id}',
       versions: '版本', viewing: '正在看', reason: '原因：{reason}',
       releasedBases: '依据已过时，重新确认时解除 {count} 条',
@@ -212,6 +213,7 @@ export const knowledgeQuickEditMessages = {
     },
     history: {
       title: 'Sources and history', sources: 'Sources', revisions: 'Changes', noSources: 'No sources recorded',
+      unavailableSources: '{count} sources were permanently deleted; their text is unavailable. This knowledge stays but its bases need review. Confirm above whether it still holds.',
       noRevisions: 'No changes yet', session: 'Session {id}',
       versions: 'Versions', viewing: 'Viewing', reason: 'Why: {reason}',
       releasedBases: '{count} outdated bases released when it was confirmed again',

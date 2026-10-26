@@ -57,9 +57,10 @@ export async function realTaskContextProvider(t) {
   const space = await request('/v1/spaces', { name: 'Synthetic checkpoint race', kind: 'personal' });
   const projectId = 'synthetic-checkpoint-project';
   await request('/v1/personal-projects', { personal_space_id: space.id, project_id: projectId,
-    profile: { name: 'Synthetic checkpoint project', lifecycle: 'active' } }, 'PUT');
+    profile: { name: 'Synthetic checkpoint project', lifecycle: 'active',
+      purpose: 'Verify synthetic task checkpoints and Agent memory.' } }, 'PUT');
   await request('/v1/project-agents', { personal_space_id: space.id,
-    personal_project_id: projectId, agent_id: 'engineer', profile: {
+    personal_project_id: projectId, agent_id: 'engineer', occupation: { role: 'engineering' }, profile: {
       name: 'Synthetic engineer', responsibility: 'Maintain the synthetic sample.',
       allowed_clients: ['codex', 'claude'], work_kinds: ['implementation'],
       capabilities: ['coding']

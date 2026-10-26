@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import {
   checkLocalConsoleHealth,
@@ -323,7 +324,7 @@ async function waitForExit(pid, timeoutMs = CONSOLE_EXIT_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (!isProcessAlive(pid)) return true;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await delay(100);
   }
   return !isProcessAlive(pid);
 }

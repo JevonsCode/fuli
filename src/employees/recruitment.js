@@ -5,6 +5,7 @@ import {
   parseEmployeeProjectSelection, resolveEmployeeProjectSelection,
 } from './project-selection.js';
 import { managementFor, managementWithoutRevision, parseEmployeeManagement, policyAllowsProject } from './management-policy.js';
+import { coversClient } from '../agents/source-applications.js';
 
 export function createEmployeeRecruitment({ app, registry, managementStore }) {
   const locks = new Map();
@@ -191,7 +192,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
     const agent = agents.find((entry) => entry.agentId === employeeAgentId(manifest.id));
     const stored = managementStore.read(spaceId, manifest.id);
     const management = managementFor(manifest, agent, stored);
-    if (input.sourceApplication && Array.isArray(agent?.profile.allowedClients) && !agent.profile.allowedClients.includes(input.sourceApplication)) {
+    if (input.sourceApplication && Array.isArray(agent?.profile.allowedClients) && !coversClient(agent.profile.allowedClients, input.sourceApplication)) {
       throw new EmployeeError('This employee is not enabled for the current Agent client', 403, 'assignment_required');
     }
     if (!agent || agent.profile.status !== 'active' ||

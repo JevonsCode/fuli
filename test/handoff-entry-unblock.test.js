@@ -359,18 +359,21 @@ test('a fresh native chat never injects an unrelated latest checkpoint; same-ses
   let same = false;
   const checkpoint = { summary: 'unrelated migration was not performed', status: 'reported' };
   const app = { config: { personal: { spaceId: 'space' } }, getCapturePolicy: () => ({ enabled: true }), personal: {
+    // The Provider's begin: the bound chat's window, or else only the latest chat of this scope.
     conversation: async (operation, q) => {
-      requests.push(q);
-      if (q.mode === 'session') return { conversation_id: same ? 'same-chat' : null };
-      if (q.mode === 'list') return { conversations: [{ id: 'unrelated-chat' }] };
-      if (q.mode === 'context') return { context: { latest_checkpoint: checkpoint, messages: [] } };
-      return { status: 'saved' };
+      requests.push({ operation, ...q });
+      return same ? { status: 'saved', recovered_from: 'same-chat',
+        previous: { context: { latest_checkpoint: checkpoint, messages: [] } }, recent: null }
+        : { status: 'saved', recovered_from: null, previous: null, recent: { id: 'unrelated-chat' } };
     }
   } };
   const task = { token: 'task', projectAgentId: 'lead', personalProjectId: 'project', sessionId: 'native', sourceApplication: 'codex' };
   const fresh = await beginConversation(app, task);
   assert.equal(fresh.recovery, null);
-  assert.equal(requests.some(q => q.mode === 'list' || q.mode === 'context'), false);
+  // rec#10 D-27.6: a pointer to the latest conversation of this scope, no context read.
+  assert.deepEqual(fresh.recent_conversation, { id: 'unrelated-chat', updated_at: null });
+  assert.deepEqual(requests.map(q => [q.operation, q.session_id]), [['begin', 'native']]);
+  assert.doesNotMatch(JSON.stringify(fresh), /migration was not performed/);
   same = true;
   const continued = await beginConversation(app, task);
   assert.deepEqual(continued.recovery.latest_checkpoint, checkpoint);
@@ -381,7 +384,7 @@ for (const management of [{ status: 'degraded', managers: [{ agent_id: 'manager'
     let teamReads = 0;
     const app = { config: { personal: { spaceId: 'space' } },
       employees: { taskEntry: async () => management },
-      judgment: { store: () => ({ policy: () => ({ mode: 'autonomous' }) }) },
+      judgment: { policy: async () => { throw new Error('must not read judgment without team entry'); } },
       searchKnowledge: async () => ({ facts: [], entities: [] }), personal: {
         collaborationPreferences: async () => ({ personal_space_id: 'space', personal_project_id: 'project',
           project_agent_id: 'lead', effective_preferences: [{ instruction: 'Keep this preference.' }] }),

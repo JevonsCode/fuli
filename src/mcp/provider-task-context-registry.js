@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { parseTaskAgentAssignment } from '../graphiti/task-agent-assignment.js';
 import { taskActivityOrigin } from '../graphiti/task-activity-origin.js';
+import { ProviderRequestError } from '../graphiti/provider-client.js';
 
 // The Provider is the sole source of truth. Hooks commonly use separate MCP
 // processes; a process-local cache cannot prove that a task was checkpointed.
@@ -38,6 +39,20 @@ export class ProviderTaskContextRegistry {
     return taskRecord(await this.provider.getTaskContext(token, {
       personal_space_id: this.personalSpaceId, source_application: sourceApplication
     }));
+  }
+
+  // The host session of the task a token names while it is that session's
+  // current task, or null when it is not. The Provider answers 404 alike for a
+  // task a newer one of its session superseded (every prompt begins one), a
+  // task of another client and a token it never issued, so these are not told
+  // apart. Any other failure throws.
+  async currentTaskSession(token, sourceApplication = 'other') {
+    try {
+      return (await this.context(token, sourceApplication)).sessionId;
+    } catch (error) {
+      if (error instanceof ProviderRequestError && error.status === 404) return null;
+      throw error;
+    }
   }
 
   async current(sessionId, sourceApplication = 'other') {
@@ -97,6 +112,23 @@ export class ProviderTaskContextRegistry {
       personal_space_id: this.personalSpaceId, source_application: sourceApplication, receipt_ids: receiptIds
     });
     return Array.isArray(result?.claimed) ? result.claimed : [];
+  }
+
+  // True for exactly one current entry of the task's host session (keyed by
+  // the session, not the token); only the operation and time are stored.
+  async claimSessionHint(token, operation, sourceApplication = 'other') {
+    const result = await this.provider.claimSessionHint(token, {
+      personal_space_id: this.personalSpaceId, source_application: sourceApplication, operation
+    });
+    return result?.claimed === true;
+  }
+
+  // Whether that claim is still open, without taking it.
+  async sessionHintAvailable(token, operation, sourceApplication = 'other') {
+    const result = await this.provider.claimSessionHint(token, {
+      personal_space_id: this.personalSpaceId, source_application: sourceApplication, operation, peek: true
+    });
+    return result?.available === true;
   }
 
   verify(sessionId, sourceApplication = 'other') {

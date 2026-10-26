@@ -88,6 +88,8 @@ export interface ItemBasis { item_kind: ItemKind; item_id: string; content: stri
 export interface KnowledgeItemView extends KnowledgeItemSummary {
   evidence: EvidenceSource[]
   evidence_count: number
+  /** Deleted source markers contain no source text and remain only until human review. */
+  unavailable_sources?: { episode_id: string; deletion_id: string; status: 'unavailable' }[]
   revisions: ItemRevision[]
   versions?: ItemVersion[]
   current_item_id?: string | null

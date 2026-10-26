@@ -8,6 +8,7 @@ import { FederatedGraphApplication } from '../src/graphiti/federated-application
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
 import { handleKnowledgeScopeRequest } from '../src/http/knowledge-scope-api-router.js';
 import { knowledgeScopeConsole } from '../src/knowledge-scope/console-port.js';
+import { knowledgeOwnerReads } from '../src/knowledge-owner-reads/console-port.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 
 // rec#20 quick edit through the local console's HTTP routes. Synthetic
@@ -31,6 +32,13 @@ function application(reply = () => ({ status: 200, body: { ok: true } })) {
     const { status, body: payload } = reply(call);
     return { ok: status < 400, status, payload };
   } });
+  // The item view and a turn's full list show every FLA's items: they too go on that channel.
+  app.ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async (path, body, { review, method }) => {
+    const call = { path, method, body, review };
+    calls.push(call);
+    const { status, body: payload } = reply(call);
+    return { ok: status < 400, status, payload };
+  } });
   return { app, calls };
 }
 
@@ -47,7 +55,7 @@ async function api(app, method, path, body, remoteAddress = '127.0.0.1') {
     const url = new URL(`http://127.0.0.1${path}`);
     const incoming = request(method, body, remoteAddress);
     const handled = await handleKnowledgeScopeRequest({ request: incoming, response, url, app, scopeConsole: app.scopeConsole })
-      || await handleGraphApiRequest({ request: incoming, response, url, app });
+      || await handleGraphApiRequest({ request: incoming, response, url, app, ownerReads: app.ownerReads });
     return { handled, ...sent };
   } catch (error) {
     return { handled: true, ...mapHttpError(error) };
@@ -58,8 +66,12 @@ test('a receipt link opens one item: the console reads its authoritative view by
   const { app, calls } = application(() => ({ status: 200, body: { item_id: 'item/1', version: 4 } }));
   const result = await api(app, 'GET', '/api/knowledge/entity/item%2F1?personalSpaceId=personal-space');
   assert.equal(result.status, 200);
-  assert.deepEqual(calls, [{ path: '/v1/knowledge/item-views', method: 'POST',
+  assert.deepEqual(calls, [{ path: '/v1/knowledge/item-views', method: 'POST', review: true,
     body: { personal_space_id: 'personal-space', item_kind: 'entity', item_id: 'item/1' } }]);
+  app.ownerReads = null;
+  const local = await api(app, 'GET', '/api/knowledge/entity/item%2F1?personalSpaceId=personal-space');
+  assert.equal(local.status, 503, 'no human-review channel: no full read, and no Agent read in its place');
+  assert.equal(calls.length, 1);
 });
 
 test('the link grants nothing: another space is refused before reaching the Provider', async () => {
@@ -70,6 +82,31 @@ test('the link grants nothing: another space is refused before reaching the Prov
   const scope = await api(app, 'POST', '/api/knowledge/entity/item-1/scope', { personalSpaceId: 'someone-else',
     expectedVersion: 1, reason: 'mine', scope: 'global' });
   assert.equal(scope.status, 400);
+  assert.equal(calls.length, 0);
+});
+
+test('tag ranking is an explicit detail read and preserves the typed search context', async () => {
+  const explanation = { original_rank: 2, final_rank: 1, multiplier: 1.2, matches: [], no_signal_reason: null };
+  const { app, calls } = application(() => ({ status: 200, body: { item_id: 'item-1', tag_ranking: explanation } }));
+  const context = { space_ids: ['personal-space'], query: 'deployment', personal_project_ids: ['project-a'],
+    active_personal_project_id: 'project-a', include_pending: true, include_personal_global: false, limit: 7 };
+  for (const kind of ['entity', 'relationship']) {
+    const result = await api(app, 'GET', `/api/knowledge/${kind}/item-1?personalSpaceId=personal-space`
+      + `&query_tags=${encodeURIComponent(JSON.stringify(context))}`);
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body.tag_ranking, explanation);
+    assert.deepEqual(calls.at(-1), { path: '/v1/knowledge/item-views', method: 'POST', review: true, body: {
+      personal_space_id: 'personal-space', item_kind: kind, item_id: 'item-1', query_tags: context } });
+  }
+});
+
+test('malformed tag context is rejected before a Provider read', async () => {
+  const { app, calls } = application();
+  for (const value of ['{', 'null', '[]', '"deployment"', '42']) {
+    const result = await api(app, 'GET', '/api/knowledge/entity/item-1?personalSpaceId=personal-space'
+      + `&query_tags=${encodeURIComponent(value)}`);
+    assert.equal(result.status, 400);
+  }
   assert.equal(calls.length, 0);
 });
 
@@ -119,6 +156,7 @@ test('a long receipt\'s full list reads every episode it links, in the Provider\
   const result = await api(app, 'GET', '/api/knowledge/turn-receipt?personalSpaceId=personal-space&episodes=e1,e2,e3,e4,e5');
   assert.equal(result.status, 200);
   assert.deepEqual(calls.map(call => call.body.episode_ids), [['e1', 'e2', 'e3'], ['e4', 'e5']]);
+  assert.ok(calls.every(call => call.review === true && call.path === '/v1/knowledge/turn-receipts'));
   assert.deepEqual(result.body.entries.map(entry => entry.item_id), ['item-e1', 'item-e2', 'item-e3', 'item-e4', 'item-e5']);
   assert.equal(result.body.unchanged_count, 2);
   const none = await api(app, 'GET', '/api/knowledge/turn-receipt?personalSpaceId=personal-space&episodes=');

@@ -176,7 +176,10 @@ test('concurrent paired senders serialize snapshots without consuming a message 
     await call(alpha,'alpha-task','send',{chatId,requestId:'first',body:`@{${b}} FIRST`});await firstEntered.promise;
     await call(gamma,'gamma-task','send',{chatId,requestId:'second',body:`@{${b}} SECOND`});
     first.resolve();await secondEntered.promise;
-    const {setTimeout:delay}=await import('node:timers/promises');await delay(1200); // Allow queued claims/results, never inbox polling.
+    // Each sender's wake loop settles every wake it sent before reading the next
+    // snapshot, and stops at the first empty one. Once both read an empty snapshot,
+    // no wake is queued or can be sent, so a third one would already be recorded.
+    await Promise.all([alpha,gamma].map(d=>d.until('snapshots',unread=>unread===null)));
     assert.equal(beta.calls.wakes.length,2);
     assert.deepEqual(beta.calls.wakes.map(w=>[w.prompt.includes('FIRST'),w.prompt.includes('SECOND')]),[[true,false],[false,true]]);
   }finally{first.resolve();await gamma.close();await beta.close();await alpha.close();}
@@ -198,7 +201,8 @@ test('a new member wake cannot reveal or acknowledge the target older unread his
     await call(alpha,'alpha-task','members',{chatId:room.chatId,expectedRevision:room.revision,add:[c]});
     await call(gamma,'gamma-task','send',{chatId:room.chatId,requestId:'new',body:`@{${b}} NEW VISIBLE`});
     const wake=await entered.promise;assert.doesNotMatch(wake.prompt,/OLD PRIVATE UNREAD/);assert.match(wake.prompt,/NEW VISIBLE/);
-    const {setTimeout:delay}=await import('node:timers/promises');await delay(700);
+    // The coordinator acknowledges the woken messages in the same step that makes the wake answered.
+    await gamma.until('settled',state=>state.status==='answered');
     const snapshot=await alpha.app.peer.chatWakeSnapshot({request:{action:'wake_snapshot',chatId:room.chatId,to:b},
       taskContextToken:'alpha-task',sourceApplication:'codex',agentId:'alpha-lead',projectId:alpha.projectId,name:'alpha lead'});
     assert.deepEqual(snapshot.messages.map(m=>m.body),['OLD PRIVATE UNREAD']);

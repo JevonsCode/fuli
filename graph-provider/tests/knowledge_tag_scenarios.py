@@ -13,9 +13,10 @@ REVIEW = {'x-fuli-human-review-token': REVIEW_TOKEN}
 
 
 async def post(world, operation, body, status=200, headers=None):
-    """A write claimed as the person's own goes on the human-review channel, as the console sends it."""
+    """A write claimed as the person's own, and the owner's view across every project, go on the
+    human-review channel, as the console sends them."""
     if headers is None:
-        headers = REVIEW if body.get('operation_actor') == 'human' else {}
+        headers = REVIEW if body.get('operation_actor') == 'human' or body.get('include_all_projects') else {}
     response = await world.client.post(f'{TAGS}/{operation}', headers=headers, json={
         'personal_space_id': world.space, **body})
     assert response.status_code == status, response.text
@@ -231,6 +232,14 @@ async def no_cross_project_leak(world):
     owner = await post(world, 'metrics', {'personal_project_id': None, 'include_all_projects': True})
     assert owner['scope'] == 'all'
     assert owner['counts'] == [{'namespace': 'project', 'status': 'provisional', 'count': 3}]
+    # The view across every project counts other FLAs' links: an Agent's token alone is refused,
+    # with or without a wrong proof, for every read that offers it (0.20.1).
+    all_projects = {'personal_project_id': None, 'include_all_projects': True}
+    for operation, body in (('metrics', {}), ('vocabulary', {}), ('detail', {'tag_id': private['tag']['id']}),
+                            ('governance/preview', {'change': 'approve', 'tag_id': private['tag']['id']})):
+        for headers in ({}, {'x-fuli-human-review-token': 'synthetic-wrong-review-token-000000000000'}):
+            refused = await post(world, operation, {**all_projects, **body}, 403, headers=headers)
+            assert '客户' not in str(refused), operation
     # Unknown projects are refused instead of answering for them.
     await post(world, 'resolve', {'personal_project_id': 'missing-project', 'query': '夸张标题'}, 404)
 

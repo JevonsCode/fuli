@@ -1,6 +1,8 @@
 import { ApplicationError } from '../app/application-error.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
+import { graphReadPath, preferenceConflictsPath, publicationDraftsPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
+import { afterProjectWrite, sharedProjectList } from './shared-project-list.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
@@ -80,13 +82,13 @@ export class GraphitiProviderClient {
     return this.#request(`/v1/agent-loans/${operation}`, { method: 'POST', body: input });
   }
   conversation(operation, input, { signal, timeoutMs = this.requestTimeoutMs } = {}) {
-    if (!['query', 'append', 'resume', 'policy', 'boundary'].includes(operation)) throw new TypeError('Unknown conversation operation');
+    if (!['query', 'begin', 'append', 'resume', 'policy', 'boundary'].includes(operation)) throw new TypeError('Unknown conversation operation');
     return this.#request(`/v1/agent-conversations/${operation}`, {
       method: operation === 'policy' ? 'PUT' : 'POST', body: input, signal, timeoutMs
     });
   }
   conversationTriage(operation, input) {
-    if (!['record', 'topics', 'form'].includes(operation)) throw new TypeError('Unknown conversation triage operation');
+    if (!['record', 'read', 'topics', 'form'].includes(operation)) throw new TypeError('Unknown conversation triage operation');
     return this.#request(`/v1/conversation-triage/${operation}`, { method: 'POST', body: input });
   }
   currentTaskContext(input, { timeoutMs = this.requestTimeoutMs, signal } = {}) {
@@ -173,17 +175,17 @@ export class GraphitiProviderClient {
     return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/releases`);
   }
   deleteProject(projectId) {
-    return this.#request(`/v1/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+    return afterProjectWrite(this, () => this.#request(`/v1/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' }));
   }
   upsertPersonalProject(input) {
-    return this.#request('/v1/personal-projects', { method: 'PUT', body: input });
+    return afterProjectWrite(this, () => this.#request('/v1/personal-projects', { method: 'PUT', body: input }));
   }
   ensureTemporaryProject(input) {
-    return this.#request('/v1/temporary-projects/ensure', { method: 'POST', body: input });
+    return afterProjectWrite(this, () => this.#request('/v1/temporary-projects/ensure', { method: 'POST', body: input }));
   }
   listPersonalProjects(personalSpaceId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
-    return this.#request(`/v1/personal-projects?${query}`);
+    return sharedProjectList(this, personalSpaceId, () => this.#request(`/v1/personal-projects?${query}`));
   }
   getPersonalProject(personalSpaceId, projectId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
@@ -323,6 +325,12 @@ export class GraphitiProviderClient {
   }
   claimUnreadTurnReceipts(token, input) {
     return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/turn-receipts/claim-unread`, {
+      method: 'POST', body: input
+    });
+  }
+  // rec#10 D-26.4: a task-entry hint is claimed once per host session.
+  claimSessionHint(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/session-hints/claim`, {
       method: 'POST', body: input
     });
   }
@@ -624,19 +632,29 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
-  // rec#20: authoritative item views and a turn's receipt.
-  readKnowledgeItemView(input) {
-    return this.#request('/v1/knowledge/item-views', { method: 'POST', body: input });
+  // D-31.B5: aggregate recovery proof, never deletion identities or contents.
+  readHardDeletionWatermark({ personalSpaceId }) {
+    return this.#request('/v1/knowledge/hard-deletions/watermark', {
+      method: 'POST', body: { personal_space_id: personalSpaceId }
+    });
   }
+  // rec#20: a turn's receipt as an Agent reads it (knowledge-reader.js). The
+  // console's item views and full reads use its own port (src/knowledge-owner-reads).
   readTurnReceipt(input) {
     return this.#request('/v1/knowledge/turn-receipts', { method: 'POST', body: input });
+  }
+  // rec#50: which of these items exist and an Agent reader may see now (keys only).
+  readVisibleKnowledgeItems(input) {
+    return this.#request('/v1/knowledge/visible-items', { method: 'POST', body: input });
   }
   // rec#5 C6: everything one host session recorded.
   readSessionRecords(input) {
     return this.#request('/v1/session-records', { method: 'POST', body: input });
   }
-  // rec#20 part 2: what a session's temporary project holds. Scope writes go
-  // through the console's human-review channel (src/knowledge-scope).
+  // rec#20 part 2: what a session's temporary project holds, as an Agent's
+  // offer reads it (knowledge-reader.js). The console's page reads it through
+  // its own port (src/knowledge-owner-reads); scope writes go through the
+  // console's human-review channel (src/knowledge-scope).
   previewSessionMigration(input) {
     return this.#request('/v1/knowledge/session-migrations/preview', { method: 'POST', body: input });
   }
@@ -655,9 +673,8 @@ export class GraphitiProviderClient {
   createPublicationDraft(input) {
     return this.#request('/v1/publication-drafts', { method: 'POST', body: input });
   }
-  listPublicationDrafts(personalSpaceId, status = 'pending') {
-    const query = new URLSearchParams({ personal_space_id: personalSpaceId, status });
-    return this.#request(`/v1/publication-drafts?${query}`);
+  listPublicationDrafts(personalSpaceId, status = 'pending', { metadataOnly = false, ...options } = {}) {
+    return this.#request(publicationDraftsPath(personalSpaceId, { status, metadataOnly }), options);
   }
   getPublicationDraft(personalSpaceId, draftId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
@@ -665,11 +682,11 @@ export class GraphitiProviderClient {
       `/v1/publication-drafts/${encodeURIComponent(draftId)}?${query}`
     );
   }
-  decidePublicationDraft(personalSpaceId, draftId, input) {
+  decidePublicationDraft(personalSpaceId, draftId, input, options = {}) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return this.#request(
       `/v1/publication-drafts/${encodeURIComponent(draftId)}/decision?${query}`,
-      { method: 'POST', body: input }
+      { ...options, method: 'POST', body: input }
     );
   }
   createPrincipal(input) {
@@ -850,14 +867,9 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
+  // An Agent's read, as a plain session; the console's full list uses its own port (src/knowledge-owner-reads).
   listPreferenceConflicts(personalSpaceId, status = null, limit = 500, offset = 0) {
-    const query = new URLSearchParams({
-      personal_space_id: personalSpaceId,
-      limit: String(limit)
-    });
-    if (status) query.set('status', status);
-    if (offset) query.set('offset', String(offset));
-    return this.#request(`/v1/preference-conflicts?${query}`);
+    return this.#request(preferenceConflictsPath(personalSpaceId, { status, limit, offset }));
   }
   resolvePreferenceConflict(conflictId, input) {
     return this.#request(
@@ -883,10 +895,14 @@ export class GraphitiProviderClient {
       { method: 'POST', body: input }
     );
   }
-  createProposal(projectId, input) {
+  createProposal(projectId, input, options = {}) {
     return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/proposals`, {
-      method: 'POST', body: input
+      ...options, method: 'POST', body: input
     });
+  }
+  lookupProposal(projectId, idempotencyKey, options = {}) {
+    const query = new URLSearchParams({ idempotency_key: idempotencyKey });
+    return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/proposals/lookup?${query}`, options);
   }
   listProposals(projectId, status = 'pending') {
     const query = new URLSearchParams({ status });
@@ -921,11 +937,9 @@ export class GraphitiProviderClient {
     }
     return this.#request(`/v1/collaboration-preferences?${query}`);
   }
-  graph(spaceId, limit = 500, personalProjectId = null, offset = null) {
-    const query = new URLSearchParams({ limit: String(limit) });
-    if (personalProjectId) query.set('personal_project_id', personalProjectId);
-    if (offset !== null) query.set('offset', String(offset));
-    return this.#request(`/v1/spaces/${encodeURIComponent(spaceId)}/graph?${query}`);
+  // An Agent's read (knowledge-reader.js): reader names its FLA, or null for a plain session.
+  graph(spaceId, limit = 500, personalProjectId = null, offset = null, reader = null) {
+    return this.#request(graphReadPath(spaceId, { limit, personalProjectId, offset, reader }));
   }
 
   // A long-running client (an MCP server) outlives a token rotation, for

@@ -38,6 +38,9 @@ const RECORDING_OFF = '自动记录已关闭；你明确提交的修改仍会保
 // A receipt also names the page that turns the switch on again (rec#5 C10-3).
 const TURN_ON = '[在 FULI 设置里打开](<http://127.0.0.1:2727/settings>)';
 const SETTINGS_UNREADABLE = '记录设置读取失败，本次未自动记录；你明确提交的修改仍会保存';
+// rec#51: a refused Agent write says it was not saved instead of "explicit edits still save".
+const AGENT_WRITE_NOT_SAVED = '这次由 Agent 提交的修改没有保存，你在 FULI 控制台里亲自做的修改仍会保存';
+const refused = notice => notice.replace('你明确提交的修改仍会保存', AGENT_WRITE_NOT_SAVED);
 
 async function fixture(t, writePolicy) {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-capture-decision-'));
@@ -212,6 +215,29 @@ test('an older adapter that names only its client still gets that client decisio
   assert.deepEqual(f.writes().map(call => call.path), ['/v1/knowledge/commits']);
 });
 
+// rec#11 D-64: OpenCode was recorded as `other` before it had its own name.
+test('a policy that turned `other` off before OpenCode had its own source keeps OpenCode off, without a rewrite', async (t) => {
+  const f = await fixture(t, policyFile({ enabled: true, disabledSources: ['other'] }));
+  assert.deepEqual(await captureDecision(f.app, { sourceApplication: 'opencode' }),
+    { allowed: false, reason: 'client_off', layer: 'client' });
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'codex' })).allowed, true);
+  assert.deepEqual(f.app.getCapturePolicy().disabledSources, ['other'], 'the stored list is not rewritten');
+  const named = await fixture(t, policyFile({ enabled: true, disabledSources: ['opencode'] }));
+  assert.equal((await captureDecision(named.app, { sourceApplication: 'opencode' })).reason, 'client_off');
+  assert.equal((await captureDecision(named.app, { sourceApplication: 'other' })).allowed, true, 'the alias never widens `other`');
+});
+
+test('explicit OpenCode capture lifts only the legacy alias, and an explicit off still wins', async (t) => {
+  const f = await fixture(t, policyFile({ disabledSources: ['other'], capturedSources: ['opencode'] }));
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'opencode' })).allowed, true);
+  assert.equal((await captureDecision(f.app, { sourceApplication: 'other' })).reason, 'client_off');
+  // Even a hand-written file containing both lists must keep the named client off.
+  const both = await fixture(t, path => writeFile(path, JSON.stringify({ version: 1, enabled: true,
+    disabledSources: ['other', 'opencode'], capturedSources: ['opencode'], updatedAt: null })));
+  assert.equal((await captureDecision(both.app, { sourceApplication: 'opencode' })).reason, 'client_off');
+  assert.equal(both.app.getCapturePolicy().capturedSources, undefined);
+});
+
 // A retry resends the same input; a fixed capture keeps its fingerprint stable.
 const privateCheckpoint = f => ({ taskContextToken: f.task.token, sourceApplication: 'codex',
   disposition: 'capture_candidates', reason: `Finished ${PRIVATE}.`,
@@ -292,11 +318,16 @@ for (const { name, policy, reason, notice, receiptTail = notice } of [
     const graph = await callAgentTool(f.app, 'get_knowledge_graph', { spaceId: 'synthetic-space', sourceApplication: 'codex' });
     const resumed = await callAgentTool(f.app, 'resume_agent_conversation', { taskContextToken: f.task.token,
       sourceApplication: 'codex', conversationId: 'synthetic-conversation' });
+    // An Agent registering a project, even one the person asked for, is not
+    // verifiably the person: it stops, and its notice must not claim it saved.
+    const project = await callAgentTool(f.app, 'upsert_personal_project', { personalSpaceId: 'synthetic-space',
+      projectId: 'synthetic-requested', profile: { name: 'Synthetic requested project' }, sourceApplication: 'codex' });
 
-    for (const [path, result] of Object.entries({ usage, feedback, revision })) {
+    for (const [path, result] of Object.entries({ usage, feedback, revision, project })) {
       assert.equal(result.status, 'capture_disabled', path);
       assert.equal(result.reason, reason, path);
-      assert.equal(result.notice, notice, path);
+      assert.equal(result.notice, refused(notice), path);
+      assert.doesNotMatch(result.notice, /你明确提交的修改仍会保存/, path);
     }
     assert.deepEqual([crossProject.recorded, crossProject.reason], [false, reason]);
     assert.equal(f.registry.context(f.task.token, 'codex').checkpoint.knowledgeUsage, undefined,

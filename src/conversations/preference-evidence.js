@@ -2,24 +2,34 @@ import { constants } from 'node:fs';
 import { openWithoutFollowing } from '../system/open-without-following.js';
 import { canonicalJson, contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { preferenceAuthorityView } from '../mcp/preference-delivery.js';
+import { conversationResultRecovery } from './recent-context.js';
 
 const MAX_BYTES = 32 * 1024 * 1024;
-const DIRECT_TOOLS = /^(?:mcp__fuli__|mcp__fuli\.)(?:get_collaboration_preferences|begin_task_context|read_task_preferences)$/;
+const DIRECT_TOOLS = /^(?:mcp__fuli__|mcp__fuli\.)(?:get_collaboration_preferences|begin_task_context|read_task_preferences|resume_agent_conversation|read_agent_conversation)$/;
 const CODE_MODE = new Set(['functions.exec', 'functions.wait']);
 
 // Inspect the native model-facing record, never Hook stdout, a log of writes,
 // an assistant's claim, or a cache hit. Bounds/format uncertainty means full.
-export async function readPreferenceEvidence(path, sessionId, adapter) {
+// since is where the current context generation starts (after the last reset
+// record); records holds the complete native records that start at the
+// requested byte offsets, as parsed.
+export async function readPreferenceEvidence(path, sessionId, adapter, recordOffsets = new Set()) {
   let file;
   try {
     file = await openWithoutFollowing(path, constants.O_RDONLY);
-    const stat = await file.stat();
+    // Exact file identity: a Windows file ID is a 64-bit number (MFT record and
+    // sequence) that a Number rounds above 2^53, so a replaced file whose new ID
+    // is next to the old one could read as the same file and keep confirming
+    // what only the old one held (recent-context.test.js, PR #356 CI).
+    const stat = await file.stat({ bigint: true });
     if (!stat.isFile() || !stat.size || stat.size > MAX_BYTES) return { known: false };
-    const bytes = Buffer.alloc(stat.size);
+    const bytes = Buffer.alloc(Number(stat.size));
     const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
     if (bytesRead !== bytes.length || bytes.at(-1) !== 10) return { known: false };
     const calls = new Map();
-    let frames = [], offset = 0, generation = null;
+    const records = new Map();
+    const tree = { parents: new Map(), ids: new Map(), leaf: null };
+    let frames = [], offset = 0, generation = null, since = 0;
     for (const line of bytes.toString('utf8').split('\n').slice(0, -1)) {
       const end = offset + Buffer.byteLength(line) + 1;
       const record = JSON.parse(line);
@@ -27,14 +37,17 @@ export async function readPreferenceEvidence(path, sessionId, adapter) {
         if (!adapter.verify(record, sessionId)) return { known: false };
         generation = contentHash(line);
       }
+      const link = adapter.link?.(record, sessionId);
+      if (link) { tree.parents.set(link.id, link.parent); tree.ids.set(offset, link.id); tree.leaf = link.id; }
+      if (recordOffsets.has(offset)) records.set(offset, record);
       for (const event of adapter.events(record, sessionId)) {
-        if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); }
-        if (event.type === 'call' && typeof event.id === 'string') calls.set(event.id, event.name);
+        if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); since = end; }
+        if (event.type === 'call' && typeof event.id === 'string') calls.set(event.id, evidenceToolName(event));
         // A host-recorded Hook context is model-facing like a tool result; each
         // line is parsed on its own, so only a complete JSON frame counts.
         if (event.type === 'context') {
-          for (const value of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
-            frames.push({ callId: event.id, value, offset, end, recordHash: contentHash(line) });
+          for (const { value, visible, confirms = true } of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
+            frames.push({ value, visible, confirms, offset, end, recordHash: contentHash(line) });
           }
           continue;
         }
@@ -43,15 +56,40 @@ export async function readPreferenceEvidence(path, sessionId, adapter) {
         calls.delete(event.id);
         const codeMode = CODE_MODE.has(name);
         if (!codeMode && !DIRECT_TOOLS.test(name ?? '')) continue;
-        for (const value of preferenceFrames(event.output, codeMode)) {
-          frames.push({ callId: event.id, value, offset, end, recordHash: contentHash(line) });
+        for (const { value, visible, confirms = true } of preferenceFrames(event.output, codeMode)) {
+          frames.push({ value, visible, confirms, offset, end, recordHash: contentHash(line) });
         }
       }
       offset = end;
     }
-    return { known: true, fileId: `${stat.dev}:${stat.ino}`, size: bytes.length, generation, frames };
+    const active = activeChain(tree);
+    if (active) {
+      frames = frames.filter(frame => active.has(tree.ids.get(frame.offset)));
+      for (const at of records.keys()) if (!active.has(tree.ids.get(at))) records.delete(at);
+    }
+    return { known: true, fileId: `${stat.dev}:${stat.ino}`, size: bytes.length, generation, since, frames, records };
   } catch { return { known: false }; }
   finally { await file?.close(); }
+}
+
+// For a host whose records form a tree (an adapter with `link`), only the
+// chain that ends at the latest linked record is the model's context: what a
+// rewind left behind proves nothing. Null for a transcript without links,
+// which is read in file order as before.
+function activeChain({ parents, leaf }) {
+  if (leaf === null) return null;
+  const chain = new Set();
+  for (let id = leaf; id !== null && parents.has(id) && !chain.has(id); id = parents.get(id)) chain.add(id);
+  return chain;
+}
+
+function evidenceToolName(event) {
+  if (!/^(?:mcp__fuli__|mcp__fuli\.)fuli_call$/.test(event.name ?? '')) return event.name;
+  try {
+    const input = typeof event.input === 'string' ? JSON.parse(event.input) : event.input;
+    const direct = `mcp__fuli__${input?.toolName}`;
+    return DIRECT_TOOLS.test(direct) ? direct : null;
+  } catch { return null; }
 }
 
 export function preferenceFrameHash(value) {
@@ -75,14 +113,24 @@ function preferenceFrames(output, codeMode = false, depth = 0) {
       || output.preference_delivery?.status === 'paginated') return [];
   const structured = output.structuredContent ?? output.structured_content;
   if (structured) {
-    const visible = preferenceFrames(output.content, false, depth + 1);
-    return visible.some(value => preferenceFrameHash(value) === preferenceFrameHash(structured)) ? [structured] : [];
+    // The preference baseline is the structured copy whose preference view
+    // the model also saw; anything else (recent context) must be proven from
+    // what was actually visible, kept here as `visible`. Every other visible
+    // copy confirms nothing, yet the model saw it, so it is kept with
+    // `confirms: false`: the revision it shows is taken (rec#15 D-29.9).
+    const expected = preferenceFrameHash(structured);
+    return preferenceFrames(output.content, false, depth + 1).map(frame =>
+      frame.confirms !== false && preferenceFrameHash(frame.value) === expected
+        ? { value: structured, visible: frame.visible } : { ...frame, confirms: false });
   }
   if (typeof output.hookSpecificOutput?.additionalContext === 'string') {
     const lines = output.hookSpecificOutput.additionalContext.split('\n');
     return lines.flatMap(line => preferenceFrames(line, false, depth + 1));
   }
   if (typeof output.taskContextToken === 'string' && (Array.isArray(output.effective_preferences)
-      || (output.preference_delivery?.status === 'delta' && Array.isArray(output.preference_updates)))) return [output];
+      || (output.preference_delivery?.status === 'delta' && Array.isArray(output.preference_updates)))) {
+    return [{ value: output, visible: output }];
+  }
+  if (conversationResultRecovery(output)) return [{ value: output, visible: output }];
   return output.content ? preferenceFrames(output.content, false, depth + 1) : [];
 }

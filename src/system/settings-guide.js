@@ -15,10 +15,11 @@ export function describeSettings({ settings, capturePolicy, consoleUrl }) {
       {
         key: 'capture',
         value: { enabled: capturePolicy?.enabled !== false, disabledSources: capturePolicy?.disabledSources ?? [],
+          ...(capturePolicy?.capturedSources?.length ? { capturedSources: capturePolicy.capturedSources } : {}),
           projectMode: capturePolicy?.projectMode ?? 'all', excludedProjectIds: capturePolicy?.excludedProjectIds ?? [],
           selectedProjectIds: capturePolicy?.selectedProjectIds ?? [],
           unregisteredDirectories: capturePolicy?.unregisteredDirectories ?? 'capture' },
-        effect: 'When on, finished tasks may save reusable knowledge automatically (still pending until confirmed). Off stops new automatic capture only; existing knowledge and search keep working. disabledSources turns it off per client; projectMode records all projects, all but excludedProjectIds, or only selectedProjectIds; unregisteredDirectories decides work outside registered projects. get_capture_policy with projectPath says whether the current project is recorded.',
+        effect: 'When on, finished tasks may save reusable knowledge automatically (still pending until confirmed). Off stops new automatic capture only; existing knowledge and search keep working. disabledSources turns it off per client; capturedSources overrides only legacy client aliases. projectMode records all projects, all but excludedProjectIds, or only selectedProjectIds; unregisteredDirectories decides work outside registered projects. get_capture_policy with projectPath says whether the current project is recorded.',
         changedBy: 'agent:update_capture_policy',
         settingsUrl: link('capture'),
       },

@@ -1,5 +1,4 @@
 @media (max-width: 720px) {
-  .service-connection-grid { grid-template-columns: minmax(0, 1fr); }
   .service-connection-card dl > div { grid-template-columns: minmax(64px, .3fr) minmax(0, 1fr); }
   .external-binding-form, .conflict-policy-controls { grid-template-columns: minmax(0, 1fr); }
   .external-binding-form .wide-field { grid-column: auto; }

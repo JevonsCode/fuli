@@ -267,7 +267,7 @@ onBeforeUnmount(() => reading?.abort())
 
 .data-format-content {
   width: 100%;
-  max-width: var(--form-max);
+  max-width: var(--layout-max);
   display: grid;
   gap: 16px;
   margin: 0 auto;

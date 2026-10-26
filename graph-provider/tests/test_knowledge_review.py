@@ -16,8 +16,10 @@ from fuli_graph.knowledge_review import (
     read_knowledge_review_decision,
     record_knowledge_review_progress,
     start_knowledge_review,
+    withdraw_ai_review,
 )
 from fuli_graph.knowledge_review_models import (
+    KnowledgeAIReviewWithdrawal,
     KnowledgeReviewAIAssessment,
     KnowledgeReviewCandidate,
     KnowledgeReviewDecisionLookup,
@@ -438,9 +440,61 @@ async def test_decision_lookup_returns_the_run_decision_for_one_candidate_or_non
     assert missing.decision is None
     query, parameters = driver.calls[0]
     assert '[:HAS_REVIEW_DECISION]->(decision:FuliKnowledgeReviewDecision' in query
+    # An Agent reads no decision on another FLA's item: the rule is in the same query.
+    assert 'fla_item.uuid IN [$item_id]' in query
     assert parameters == {
-        'space_id': 'personal-space', 'review_id': 'review-1',
-        'candidate_key': 'entity:one', 'routing_': 'r',
+        'space_id': 'personal-space', 'group_id': 'personal-group', 'review_id': 'review-1',
+        'candidate_key': 'entity:one', 'item_id': 'one',
+        'reader': {'personal_project_id': None, 'project_agent_id': None}, 'routing_': 'r',
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('item_kind, match', [
+    ('entity', 'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})'),
+    ('relationship', 'MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()'),
+])
+async def test_withdrawing_an_ai_review_clears_only_the_marks_of_that_decision(item_kind, match):
+    """rec#10 D-24, D-36.12: a person's undo removes this run's AI review from
+    the item while the item still carries it and nobody changed it since, and
+    keeps the decision as history. Otherwise it says why and changes nothing."""
+
+    driver = SequentialDriver([
+        [{'carries': True, 'changed': False}],
+        [{'carries': False, 'changed': False}],
+        [{'carries': True, 'changed': True}],
+        [],
+    ])
+    request = KnowledgeAIReviewWithdrawal(
+        personal_space_id='personal-space', review_id='review-1',
+        candidate_key=f'{item_kind}:one', ai_review_evidence_token='b' * 64,
+    )
+
+    result = await withdraw_ai_review(StoreStub(driver), {'id': 'principal-1'}, request)
+    refusals = []
+    for _ in range(3):
+        with pytest.raises(HTTPException) as refused:
+            await withdraw_ai_review(StoreStub(driver), {'id': 'principal-1'}, request)
+        refusals.append((refused.value.status_code, refused.value.detail['code']))
+
+    assert result.candidate_key == f'{item_kind}:one'
+    # A later review, a later edit or version, and an item that no longer exists.
+    assert refusals == [(409, 'ai_review_changed'), (409, 'ai_review_changed'), (404, 'ai_review_deleted')]
+    query, parameters = driver.calls[0]
+    assert query.startswith(match)
+    assert 'item.fuli_ai_review_decision_id = $decision_id' in query
+    assert 'item.fuli_ai_review_evidence_token = $ai_review_evidence_token' in query
+    assert 'REMOVE item.fuli_ai_review_evidence_token, item.fuli_ai_assessment_json' in query
+    assert 'CASE WHEN carries AND NOT changed' in query
+    # The item is locked before anything is read (rec#10 D-36.12 review, round 2).
+    lock = query.index('SET item.fuli_ai_review_lock_version')
+    assert lock < query.index('AS carries') and lock < query.index('AS changed')
+    assert 'item.fuli_last_human_changed_at > item.fuli_ai_reviewed_at' in query
+    assert 'item.fuli_replaced_by_item_id IS NOT NULL' in query
+    assert 'decision' not in query.split('REMOVE')[1].replace('fuli_ai_review_decision_id', '')
+    assert parameters == {
+        'group_id': 'personal-group', 'item_id': 'one',
+        'decision_id': result.decision_id, 'ai_review_evidence_token': 'b' * 64,
     }
 
 

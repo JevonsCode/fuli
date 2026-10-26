@@ -60,6 +60,38 @@ def query(mode, **changes):
 
 
 @pytest.mark.asyncio
+async def test_history_finishes_after_deleted_tail_and_sparse_sequences():
+    store = Store()
+    driver = store.runtime.driver
+    for index in range(5):
+        driver.append('user', f'synthetic event {index}')
+    # Source deletion removes events without rewinding the journal revision.
+    driver.events = [event for event in driver.events if event['sequence'] in (1, 3)]
+    driver.conversation['revision'] += 1
+    first = await store.query_conversations(None, query('events', limit=1))
+    assert first['next_cursor'] == 1 and first['has_more'] is True
+    final = await store.query_conversations(None, query('events', after=1, limit=1))
+    assert final['next_cursor'] == 3 and final['has_more'] is False
+    empty = await store.query_conversations(None, query('events', after=3, limit=1))
+    assert empty['events'] == [] and empty['has_more'] is False
+
+
+@pytest.mark.asyncio
+async def test_history_byte_limit_keeps_next_page_available_without_revision_guess():
+    store = Store()
+    driver = store.runtime.driver
+    for index in range(3):
+        driver.append('user', str(index) + '字' * 90_000)
+    driver.conversation['revision'] += 1
+    cursor = 0
+    for sequence in (1, 2, 3):
+        page = await store.query_conversations(None, query('events', after=cursor, limit=50))
+        assert [event['sequence'] for event in page['events']] == [sequence]
+        assert page['has_more'] is (sequence < 3)
+        cursor = page['next_cursor']
+
+
+@pytest.mark.asyncio
 async def test_repeated_compaction_recovers_decisions_methods_and_corrections_with_raw_sources():
     store = Store()
     driver = store.runtime.driver

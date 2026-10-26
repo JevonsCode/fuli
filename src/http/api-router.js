@@ -8,11 +8,17 @@ import { handleDataFormatApiRequest } from './data-format-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
 import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
 import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
+import { handleStandingAssignmentRequest } from './standing-assignment-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
 import { handleModelBackendApiRequest } from '../model-backends/http.js';
+import { TONBORG_OPERATIONS } from '../judgment/backend.js';
+import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
+import { JEFA_OPERATION } from '../graphiti/jefa-board-match.js';
 import { FULI_VERSION } from '../package-metadata.js';
+
+const MODEL_SUGGESTIONS_PATH = '/api/model-backends/suggestions';
 
 export async function handleApiRequest({
   request,
@@ -26,13 +32,27 @@ export async function handleApiRequest({
   dataFormatMigrations = null,
   knowledgeHardDelete = null,
   knowledgeScope = null,
-  knowledgeTags = null
+  knowledgeOwnerReads = null,
+  knowledgeTags = null,
+  modelRoleSettings = null,
+  readModelEvaluation = null,
+  judgmentUndo = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
-  if (await handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork })) return true;
+  const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
+    readRoleSuggestions: app.roleSuggestions ? input => app.readRoleSuggestions(input) : null,
+    roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS) },
+    automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
+    settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation,
+    ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null });
+  // The suggestion log's owner proof is confirmed with the Provider, so that
+  // read wakes an adaptive runtime like any graph request (rec#11 D-60).
+  if (system?.withGraphRuntimeLease && url.pathname === MODEL_SUGGESTIONS_PATH
+    ? await system.withGraphRuntimeLease(`http:${request.method}:${url.pathname}`, modelBackendRequest)
+    : await modelBackendRequest()) return true;
 
   if (url.pathname === '/api/health' && request.method === 'GET') {
     sendJson(response, 200, {
@@ -169,9 +189,10 @@ export async function handleApiRequest({
     await handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete: knowledgeHardDelete }) ||
     await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope }) ||
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||
-    await handleJudgmentApiRequest({ request, response, url, app }) ||
+    await handleJudgmentApiRequest({ request, response, url, app, undoConsole: judgmentUndo, ownerReads: knowledgeOwnerReads }) ||
+    await handleStandingAssignmentRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
-    await handleGraphApiRequest({ request, response, url, app });
+    await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads });
   if (system?.withGraphRuntimeLease && (
     url.pathname.startsWith('/api/') || url.pathname.startsWith('/employee-workspaces/')
   )) {

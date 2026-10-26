@@ -10,7 +10,8 @@ import pytest
 
 from fuli_graph import session_records
 
-from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
+from test_project_agent_memory_neo4j import provider_client, seed_agent
+from test_turn_receipt_neo4j import REVIEW, reviewed_settings
 
 OFF = 'Capture was off for this task (session: session_paused); FULI kept no summary.'
 
@@ -84,7 +85,7 @@ class Session:
         return ok(await self.client.put(f'/v1/task-contexts/{self.token}/checkpoint', json=body))
 
     async def records(self, client=None):
-        return await (client or self.client).post('/v1/session-records', json={
+        return await (client or self.client).post('/v1/session-records', headers=REVIEW, json={
             'personal_space_id': self.space_id, 'source_application': 'codex', 'session_id': self.session_id})
 
 
@@ -99,7 +100,7 @@ def preference(key, text):
 
 @pytest.mark.asyncio
 async def test_a_session_list_holds_its_turns_knowledge_and_preference_evidence_with_their_source():
-    async with provider_client(fixture_settings()) as (client, _):
+    async with provider_client(reviewed_settings()) as (client, _):
         space_id = await new_space(client)
         session = Session(client, space_id, f'native-{uuid4()}')
         saved = {}
@@ -146,7 +147,7 @@ async def test_a_session_list_holds_its_turns_knowledge_and_preference_evidence_
 
 @pytest.mark.asyncio
 async def test_paused_turns_record_nothing_and_say_why_without_their_words():
-    async with provider_client(fixture_settings()) as (client, _):
+    async with provider_client(reviewed_settings()) as (client, _):
         space_id = await new_space(client)
         session = Session(client, space_id, f'native-{uuid4()}')
         for turn in range(1, 15):
@@ -170,7 +171,7 @@ async def test_paused_turns_record_nothing_and_say_why_without_their_words():
 
 @pytest.mark.asyncio
 async def test_records_name_the_project_of_the_turn_that_wrote_them_and_follow_the_readers_permission():
-    async with provider_client(fixture_settings()) as (client, _):
+    async with provider_client(reviewed_settings()) as (client, _):
         space_id = await new_space(client)
         session = Session(client, space_id, f'native-{uuid4()}')
         await session.begin('ledger', 'keeper')
@@ -185,28 +186,28 @@ async def test_records_name_the_project_of_the_turn_that_wrote_them_and_follow_t
             'Synthetic private balance': 'ledger', 'Synthetic thesis outline': 'thesis'}
         assert len({turn['conversation_id'] for turn in records['turns']}) == 2, 'one journal per Agent'
         stranger = ok(await client.post('/v1/principals', json={'name': 'Synthetic stranger'}))
-        async with provider_client(fixture_settings(), stranger['access_token']) as (other, _):
+        async with provider_client(reviewed_settings(), stranger['access_token']) as (other, _):
             assert (await session.records(other)).status_code in {403, 404}
 
 
 @pytest.mark.asyncio
 async def test_a_link_naming_only_the_session_finds_its_one_client_and_never_guesses_between_two():
-    async with provider_client(fixture_settings()) as (client, _):
+    async with provider_client(reviewed_settings()) as (client, _):
         space_id = await new_space(client)
         session = Session(client, space_id, f'native-{uuid4()}')
         await session.begin()
         await session.say('Synthetic words')
         await session.checkpoint()
-        found = ok(await client.post('/v1/session-records', json={
+        found = ok(await client.post('/v1/session-records', headers=REVIEW, json={
             'personal_space_id': space_id, 'session_id': session.session_id}))
         assert (found['source_application'], found['clients'], len(found['turns'])) == ('codex', [], 1)
         ok(await client.put('/v1/task-contexts', json={
             'personal_space_id': space_id, 'personal_project_id': 'thesis', 'session_id': session.session_id,
             'source_application': 'claude_code', 'token': f'fuli-task-{uuid4()}', 'turn_id': 'other-client-turn'}))
-        shared = ok(await client.post('/v1/session-records', json={
+        shared = ok(await client.post('/v1/session-records', headers=REVIEW, json={
             'personal_space_id': space_id, 'session_id': session.session_id}))
         assert (shared['source_application'], shared['clients'], shared['turns']) == (None, ['claude_code', 'codex'], [])
-        unknown = ok(await client.post('/v1/session-records', json={
+        unknown = ok(await client.post('/v1/session-records', headers=REVIEW, json={
             'personal_space_id': space_id, 'session_id': 'no-such-session'}))
         assert (unknown['source_application'], unknown['clients'], unknown['turns']) == (None, [], [])
 
@@ -214,7 +215,7 @@ async def test_a_link_naming_only_the_session_finds_its_one_client_and_never_gue
 # dot #263 P2-2: an item listed once keeps every episode that wrote or cited it.
 @pytest.mark.asyncio
 async def test_an_item_cited_in_two_turns_keeps_both_sources_with_their_own_turn_and_project():
-    async with provider_client(fixture_settings()) as (client, _):
+    async with provider_client(reviewed_settings()) as (client, _):
         space_id = await new_space(client)
         session = Session(client, space_id, f'native-{uuid4()}')
         cite = preference('cite', '论文引用格式用 GB/T 7714')
@@ -236,7 +237,7 @@ async def test_an_item_cited_in_two_turns_keeps_both_sources_with_their_own_turn
 # dot #263 P2-3: every conversation the session wrote to, each turn in its own.
 @pytest.mark.asyncio
 async def test_two_resumes_keep_every_conversation_and_each_turn_names_its_own():
-    async with provider_client(fixture_settings()) as (client, _):
+    async with provider_client(reviewed_settings()) as (client, _):
         space_id = await new_space(client)
         session = Session(client, space_id, f'native-{uuid4()}')
         others = [Session(client, space_id, f'native-{uuid4()}') for _ in range(2)]
@@ -263,7 +264,7 @@ async def test_two_resumes_keep_every_conversation_and_each_turn_names_its_own()
 @pytest.mark.asyncio
 async def test_the_event_bound_never_drops_a_session_for_another_sessions_events_and_reports_its_own(monkeypatch):
     monkeypatch.setattr(session_records, 'MAX_EVENTS', 4)
-    async with provider_client(fixture_settings()) as (client, _):
+    async with provider_client(reviewed_settings()) as (client, _):
         space_id = await new_space(client)
         session = Session(client, space_id, f'native-{uuid4()}')
         await session.begin()
@@ -293,7 +294,7 @@ async def test_the_event_bound_never_drops_a_session_for_another_sessions_events
 @pytest.mark.asyncio
 async def test_every_source_of_an_item_survives_so_a_later_project_and_the_last_citation_are_found(monkeypatch):
     monkeypatch.setattr(session_records, 'MAX_SOURCES', 2, raising=False)
-    async with provider_client(fixture_settings()) as (client, _):
+    async with provider_client(reviewed_settings()) as (client, _):
         space_id = await new_space(client)
         session = Session(client, space_id, f'native-{uuid4()}')
         cite = preference('cite', '论文引用格式用 GB/T 7714')

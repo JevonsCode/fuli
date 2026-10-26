@@ -1,4 +1,5 @@
 import { receiptConsoleUrl, receiptSummary, receiptText, sessionRecordsUrl } from './identity-receipt.js';
+import { providerReaderFields } from '../graphiti/knowledge-reader.js';
 
 // The per-turn receipt (rec#20): after a turn's checkpoint saved knowledge, the
 // reply tail lists every item that turn actually created or replaced, read back
@@ -34,10 +35,12 @@ function turnReceiptListUrl(application, episodeIds) {
 // The receipt of saved capture results: null when nothing substantive changed.
 // memory is the Agent working-memory write this checkpoint made, if any.
 // session: { sourceApplication, sessionId } of the turn, for the session link.
+// reader: the turn's FLA (knowledge-reader.js), or null for a plain session.
 export async function readTurnReceipt(application, captureResults, { memory = null, agentName = null,
-  heading = '本轮沉淀', session = null } = {}) {
+  heading = '本轮沉淀', session = null, reader = null } = {}) {
   const episodeIds = savedEpisodeIds(captureResults);
-  const { entries } = episodeIds.length ? await readEpisodeReceipts(application, episodeIds) : { entries: [] };
+  const { entries } = episodeIds.length ? await readEpisodeReceipts(application, episodeIds, { reader })
+    : { entries: [] };
   return renderTurnReceipt(application, entries, { episodeIds, memory, agentName, heading, session });
 }
 
@@ -52,19 +55,23 @@ export function renderTurnReceipt(application, entries, { episodeIds, memory = n
 
 // What the episodes created or replaced, read in the Provider's batches and
 // merged, so a late receipt of several turns and its full list read the same.
-export async function readEpisodeReceipts(application, episodeIds) {
+// An Agent's receipt reads as its reader and leaves out every other FLA's
+// items; the console's full list passes read, its human-review port.
+export async function readEpisodeReceipts(application, episodeIds, {
+  reader = null, read = body => application.personal.readTurnReceipt({ ...body, ...providerReaderFields(reader) })
+} = {}) {
   const entries = new Map();
   let unchanged = 0;
   const deletions = new Set();
   for (let start = 0; start < episodeIds.length; start += EPISODES_PER_READ) {
-    const read = await application.personal.readTurnReceipt({ personal_space_id: application.config.personal.spaceId,
+    const batch = await read({ personal_space_id: application.config.personal.spaceId,
       episode_ids: episodeIds.slice(start, start + EPISODES_PER_READ) });
-    if (!Array.isArray(read?.entries)) throw new TypeError('Provider did not return the turn receipt');
-    for (const entry of read.entries) entries.set(`${entry.item_kind}:${entry.item_id}`, entry);
-    unchanged += read.unchanged_count ?? 0;
+    if (!Array.isArray(batch?.entries)) throw new TypeError('Provider did not return the turn receipt');
+    for (const entry of batch.entries) entries.set(`${entry.item_kind}:${entry.item_id}`, entry);
+    unchanged += batch.unchanged_count ?? 0;
     // What a person hard-deleted since (rec#5 C9), each delete once even when
     // its sources span two reads.
-    for (const id of read.deletion_ids ?? []) deletions.add(id);
+    for (const id of batch.deletion_ids ?? []) deletions.add(id);
   }
   return { entries: [...entries.values()], unchanged_count: unchanged, deleted_count: deletions.size };
 }

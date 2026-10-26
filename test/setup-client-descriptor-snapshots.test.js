@@ -65,7 +65,7 @@ function homeFiles(homeDir, directory = homeDir) {
 
 function lifecycleAgents(homeDir, env = {}) {
   return discoverAgents({ homeDir, env, platform: process.platform, includeUnavailable: true,
-    commandExists: () => true, fileExists: () => false })
+    commandExists: () => true, commandVersion: () => null, fileExists: () => false })
     .filter(({ id }) => LIFECYCLE_CLIENTS.includes(id));
 }
 
@@ -122,7 +122,7 @@ function detection() {
   ]) {
     const key = `${platform}:${JSON.stringify(env)}`;
     const discover = (fileExists, commandExists) => discoverAgents({ platform, homeDir, env, includeUnavailable: true,
-      fileExists, commandExists }).filter(({ id }) => LIFECYCLE_CLIENTS.includes(id));
+      fileExists, commandExists, commandVersion: () => null }).filter(({ id }) => LIFECYCLE_CLIENTS.includes(id));
     const agents = discover(() => false, () => false);
     result[key] = { agents, available: {} };
     const pathApi = platform === 'win32' ? path.win32 : path.posix;

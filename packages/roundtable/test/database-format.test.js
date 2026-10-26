@@ -114,6 +114,40 @@ test('a backfill with no earlier row is only a declaration and runs on its own',
     backup_ref: inspect(path).ledger.at(-1).backup_ref });
 });
 
+test('an added table is created automatically for a fresh, a versioned and an unversioned store', (t) => {
+  const LABELS = 'CREATE TABLE IF NOT EXISTS labels(note_id TEXT NOT NULL UNIQUE, label TEXT NOT NULL)';
+  const withLabels = sqliteFormat({ store: 'notes', schema: NOTES_V1, migrations: [
+    ...notesFormat().migrations,
+    { id: 'notes/4-labels', summary: 'one label per note', to: 4, kind: 'add-table', table: 'labels', create: LABELS }
+  ] });
+  assert.throws(() => sqliteFormat({ store: 'notes', schema: NOTES_V1, migrations: [
+    { id: 'notes/2-labels', summary: 'labels', to: 2, kind: 'add-table', table: 'labels' }] }), TypeError);
+  const shapes = (path) => {
+    const database = new DatabaseSync(path, { readOnly: true });
+    try {
+      return database.prepare("SELECT name, sql FROM sqlite_master WHERE tbl_name = 'labels' ORDER BY name")
+        .all().map((row) => [row.name, row.sql]);
+    } finally { database.close(); }
+  };
+  const { directory } = fixture(t);
+  const fresh = join(directory, 'fresh.sqlite');
+  openFormattedDatabase(fresh, withLabels).close();
+  const versioned = join(directory, 'versioned.sqlite');
+  oldStore(versioned, `${NOTES_V1}; ALTER TABLE notes ADD COLUMN tags TEXT; ALTER TABLE notes ADD COLUMN checked TEXT;
+    INSERT INTO notes VALUES('n1', 'kept', NULL, 'yes'); PRAGMA user_version = 3`);
+  openFormattedDatabase(versioned, withLabels).close();
+  const unversioned = join(directory, 'unversioned.sqlite');
+  oldStore(unversioned, `${NOTES_V1}; ALTER TABLE notes ADD COLUMN checked TEXT`);
+  openFormattedDatabase(unversioned, withLabels).close();
+
+  for (const path of [fresh, versioned, unversioned]) {
+    assert.equal(inspect(path).version, 4);
+    assert.deepEqual(shapes(path), shapes(fresh));
+  }
+  assert.deepEqual(inspect(versioned).ledger.at(-1).migration_id, 'notes/4-labels');
+  assert.deepEqual(inspect(versioned).rows, [{ id: 'n1', body: 'kept', tags: null, checked: 'yes' }]);
+});
+
 test('a failed backup changes nothing', (t) => {
   const { directory, path } = fixture(t);
   oldStore(path, NOTES_V1);

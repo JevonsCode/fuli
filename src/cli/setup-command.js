@@ -13,6 +13,8 @@ import { confirmInTerminal, interactiveTerminal, writeLine } from './terminal-io
 import { askCaptureScope, captureScopeSummary } from './capture-scope-prompt.js';
 import { captureOnboardingFor } from '../setup/first-run-capture.js';
 import { setupMigrationNotice } from '../data-format/format-notices.js';
+import { knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconcile-local.js';
+import { formatShadowedLaunchers, inspectUpdateInstallation } from './update-installation.js';
 
 export async function runSetupCommand(args, dependencies = {}) {
   const options = parseSetupOptions(args);
@@ -52,6 +54,11 @@ export async function runSetupCommand(args, dependencies = {}) {
   const migrationNotice = dependencies.migrationNotice ?? (applySetup === applyLocalSetup ? setupMigrationNotice : null);
   const waiting = migrationNotice && plan.paths?.dataDir ? await migrationNotice(plan.paths.dataDir) : null;
   if (waiting) write(waiting);
+  // Stubbed setups in tests leave the host PATH alone too.
+  const shadowedLaunchers = dependencies.shadowedLaunchers ?? (applySetup === applyLocalSetup
+    ? () => formatShadowedLaunchers(inspectUpdateInstallation({ env: dependencies.env ?? process.env })) : null);
+  const shadowed = shadowedLaunchers?.();
+  if (shadowed) write(shadowed);
   return { ...result, exitCode: result.status === 'partial' ? 1 : 0 };
 }
 
@@ -116,7 +123,10 @@ export function formatSetupPreview(plan, options) {
 export function formatSetupResult(result, plan) {
   const lines = [result.status === 'ready'
     ? 'Fuli is ready.'
-    : 'Fuli started, but one or more Agents are not connected.'];
+    : result.knowledgeRecovery?.status === 'pending'
+      ? 'Fuli setup needs knowledge recovery before local stores are ready.'
+      : 'Fuli started, but one or more Agents are not connected.'];
+  if (result.knowledgeRecovery) lines.push(knowledgeReconciliationMessage(result.knowledgeRecovery));
   if (result.runtime.url) lines.push(`Open: ${result.runtime.url}`);
   if (result.runtime.lan === true) {
     lines.push(

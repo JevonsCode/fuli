@@ -2,8 +2,9 @@ import { personalHumanReviewChannel, providerRefusal } from '../graphiti/human-r
 
 // The person's tag changes from the local console (rec#11 D-07 part 2): their
 // own create, alias, attach and detach, and the governance only they apply
-// (approve, merge, split, retire, relations, undo). The Provider records these
-// as the person's, so they take the human-review token this port sends
+// (approve, merge, split, retire, relations, undo), and the owner's reads
+// across every project, which count every FLA's links (0.20.1). The Provider
+// records the changes as the person's, so they take the human-review token this port sends
 // (human-review-channel.js); an Agent's access token alone is refused. That
 // proves the local console, not a person's presence (same OS account, as in
 // D-21/D-22). Only the console's loopback routes use this module; no MCP or

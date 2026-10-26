@@ -2,6 +2,7 @@
 
 from uuid import uuid4
 from fastapi import HTTPException
+from .graph_field_contract import stored_fields
 from .occupation_catalog import (
     BUILTIN_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS, TEXT_FIELDS,
     OccupationEntry, OccupationRevision, OccupationUpdate,
@@ -43,8 +44,9 @@ async def require_active_occupations(store, space_id, keys):
 class StoreOccupationCatalog:
     async def _ensure_occupation_catalog(self, space_id):
         now = now_utc()
-        defaults = [{**entry, 'id': stable_uuid(self.settings.provider_id, space_id, 'occupation', entry['key'])}
-                    for entry in BUILTIN_OCCUPATIONS]
+        defaults = [stored_fields('FuliOccupation', {
+            **entry, 'id': stable_uuid(self.settings.provider_id, space_id, 'occupation', entry['key'])})
+            for entry in BUILTIN_OCCUPATIONS]
         await self.runtime.driver.execute_query(
             '''MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
             ''' + OCCUPATION_LOCK + '''
@@ -101,10 +103,11 @@ class StoreOccupationCatalog:
                 SET occupation = $properties
                 CREATE (space)-[:HAS_OCCUPATION]->(occupation)''',
                 space_id=request.personal_space_id,
-                properties={**request.model_dump(include=set(TEXT_FIELDS)),
+                properties=stored_fields('FuliOccupation', {
+                    **request.model_dump(include=set(TEXT_FIELDS)),
                     'id': stable_uuid(scoped.settings.provider_id, request.personal_space_id, 'occupation', key),
                     'key': key, 'builtin': False, 'status': 'active', 'revision': 0,
-                    'created_at': now, 'updated_at': now},
+                    'created_at': now, 'updated_at': now}),
             )
             return (await scoped._occupation_entries(request.personal_space_id, key))[0]
 
@@ -128,7 +131,8 @@ class StoreOccupationCatalog:
                     '''MATCH (:FuliSpace {id: $space_id})-[:HAS_OCCUPATION]->(occupation:FuliOccupation {key: $key})
                     DETACH DELETE occupation''', space_id=request.personal_space_id, key=key)
                 return current
-            changes = request.model_dump(exclude_unset=True, exclude={'personal_space_id', 'revision'})
+            changes = stored_fields('FuliOccupation', request.model_dump(
+                exclude_unset=True, exclude={'personal_space_id', 'revision'}))
             await scoped.runtime.driver.execute_query(
                 '''MATCH (:FuliSpace {id: $space_id})-[:HAS_OCCUPATION]->(occupation:FuliOccupation {key: $key})
                 SET occupation += $changes, occupation.revision = occupation.revision + 1,

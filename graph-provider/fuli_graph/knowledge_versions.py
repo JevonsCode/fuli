@@ -19,6 +19,7 @@ import json
 
 from fastapi import HTTPException
 
+from .graph_field_contract import carried_fields, stored_fields
 from .knowledge_audit import _item_match
 from .knowledge_item_version import lock_version
 from .knowledge_item_view_models import KnowledgeVersionStatus as VersionStatus
@@ -160,12 +161,13 @@ async def write_version(scoped, actor, space, item_kind, item_id, current, value
     # followed to its current version, one that went out of date is dropped.
     named = list(stored.get('fuli_derived_from_item_ids') or [])
     kept = await current_bases(scoped, space, named)
-    stored['fuli_derived_from_item_ids'] = kept or None
     released = [basis for basis in named if basis not in kept
                 and await current_version_id(scoped, space, await _item_kind(scoped, space, basis) or item_kind,
                                              basis) is None]
-    await _create_item(scoped, space, item_kind, item_id, new_id,
-                       _carried_properties(stored, item_kind, new_id, value, changed_by, created_at))
+    carried, overrides = _carried_properties(stored, item_kind, new_id, changed_by, created_at)
+    properties, legacy_keys = carried_fields('Entity' if item_kind == 'entity' else 'RELATES_TO', carried,
+                                             {**overrides, 'fuli_derived_from_item_ids': kept or None})
+    await _create_item(scoped, space, item_kind, item_id, new_id, properties)
     await _update_item(scoped, space, new_id, item_kind,
                        {**value, 'invalidAt': None, 'replacedByItemId': None, 'replacedByItemKind': None},
                        embedding, expected_lock_version=0)
@@ -193,7 +195,9 @@ async def write_version(scoped, actor, space, item_kind, item_id, current, value
         previous=previous_snapshot,
         current={**previous_snapshot, 'invalidAt': previous_snapshot.get('invalidAt') or created_at.isoformat(),
                  'replacedByItemId': new_id, 'replacedByItemKind': item_kind,
-                 **({'releasedBases': released} if released else {})},
+                 **({'releasedBases': released} if released else {}),
+                 # Names only: properties an older FULI stored that the new version kept.
+                 **({'carriedLegacyKeys': legacy_keys} if legacy_keys else {})},
         changed_by=changed_by, created_at=created_at)
     return new_id
 
@@ -427,20 +431,21 @@ def _first_author(content_source):
     return {'user_explicit': 'user', 'agent_inferred': 'agent'}.get(content_source)
 
 
-def _carried_properties(stored, item_kind, new_id, value, changed_by, created_at) -> dict:
-    properties = {key: item for key, item in stored.items() if key not in _NOT_CARRIED}
+def _carried_properties(stored, item_kind, new_id, changed_by, created_at) -> tuple[dict, dict]:
+    """The old version's properties the new one keeps, and the ones it sets."""
+    dropped = _NOT_CARRIED | {invalid_property(item_kind), 'fuli_derived_from_item_ids'}
     if changed_by == 'user':
         # A person's own version is their review: it waits for no basis. An
         # Agent's rewrite keeps waiting where the old one did.
-        properties.pop('fuli_unresolved_bases', None)
-    properties.update({
+        dropped |= {'fuli_unresolved_bases'}
+    carried = {key: item for key, item in stored.items() if key not in dropped and item is not None}
+    overrides = {
         'uuid': new_id, 'created_at': created_at, 'fuli_ai_review_lock_version': 0,
         'fuli_content_source': 'user_explicit' if changed_by == 'user' else 'agent_inferred',
-        invalid_property(item_kind): None,
-    })
+    }
     if item_kind == 'relationship':
-        properties.update({'valid_at': created_at, 'reference_time': created_at, 'episodes': []})
-    return {key: item for key, item in properties.items() if item is not None}
+        overrides.update({'valid_at': created_at, 'reference_time': created_at, 'episodes': []})
+    return carried, overrides
 
 
 async def _create_item(scoped, space, item_kind, item_id, new_id, properties) -> None:
@@ -529,10 +534,11 @@ async def _carry_tags(scoped, space, item_kind, item_id, new_id, created_at) -> 
     if not records:
         return
     # The same link shape the tag vocabulary attaches (knowledge_tags.attach_tag).
-    links = [{'id': tag_link_id(space['id'], record['tag_id'], item_kind, new_id), 'space_id': space['id'],
-              'tag_id': record['tag_id'], 'item_kind': item_kind, 'item_id': new_id, 'status': 'attached',
-              'attached_at': created_at, 'attached_by_kind': record['attached_by_kind'], 'detached_at': None,
-              'version': 1} for record in records]
+    links = [stored_fields('FuliKnowledgeTagLink', {
+        'id': tag_link_id(space['id'], record['tag_id'], item_kind, new_id), 'space_id': space['id'],
+        'tag_id': record['tag_id'], 'item_kind': item_kind, 'item_id': new_id, 'status': 'attached',
+        'attached_at': created_at, 'attached_by_kind': record['attached_by_kind'], 'detached_at': None,
+        'version': 1}) for record in records]
     await scoped.runtime.driver.execute_query(
         '''
         UNWIND $links AS row

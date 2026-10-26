@@ -4,6 +4,46 @@ from uuid import uuid4
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
 
 
+def test_context_proofs_name_only_the_asking_sessions_own_native_events():
+    """rec#15 PR2: a session's task entry asks with its own ID and gets each
+    message's full-content hash, plus the event ID of its own native records."""
+    async def scenario():
+        async with provider_client(fixture_settings()) as (client, _):
+            space = (await client.post('/v1/spaces', json={'name':'Synthetic proofs', 'kind':'personal'})).json()['id']
+            project = 'proofs-' + uuid4().hex[:10]
+            await seed_agent(client, space, project=project, allowed_clients=['codex', 'claude_code'])
+            codex = dict(personal_space_id=space, personal_project_id=project, agent_id='engineer', source_application='codex')
+            claude = {**codex, 'source_application': 'claude_code'}
+            async def begin(session, source):
+                token = 'fuli-task-' + uuid4().hex
+                r = await client.put('/v1/task-contexts', json=dict(personal_space_id=space,
+                    personal_project_id=project, project_agent_id='engineer', session_id=session,
+                    source_application=source, token=token))
+                assert r.status_code == 200, r.text
+                return token
+            c_token = await begin('shared-id', 'codex')
+            first = await client.post('/v1/agent-conversations/append', json={**codex, 'session_id': 'shared-id',
+                'task_context_token': c_token, 'events': [dict(event_id='jsonl-v1:0:0:0', role='user', content='xxx')]})
+            assert first.status_code == 200, first.text
+            cid = first.json()['conversation_id']
+            # Another client with the same native session ID writes the same event ID.
+            h_token = await begin('shared-id', 'claude_code')
+            assert (await client.post('/v1/agent-conversations/resume', json={**claude, 'session_id': 'shared-id',
+                'task_context_token': h_token, 'conversation_id': cid})).status_code == 200
+            assert (await client.post('/v1/agent-conversations/append', json={**claude, 'session_id': 'shared-id',
+                'task_context_token': h_token,
+                'events': [dict(event_id='jsonl-v1:0:0:0', role='user', content='zzz')]})).status_code == 200
+            asked = await client.post('/v1/agent-conversations/query', json={**codex, 'conversation_id': cid,
+                'mode': 'context', 'session_id': 'shared-id'})
+            assert asked.status_code == 200, asked.text
+            messages = asked.json()['context']['messages']
+            assert [(m['content'], m.get('own_event')) for m in messages] == [('xxx', 'jsonl-v1:0:0:0'), ('zzz', None)]
+            assert all(len(m['content_sha256']) == 64 for m in messages)
+            plain = await client.post('/v1/agent-conversations/query', json={**codex, 'conversation_id': cid, 'mode': 'context'})
+            assert all(set(m) == {'sequence', 'role', 'content'} for m in plain.json()['context']['messages'])
+    asyncio.run(scenario())
+
+
 def test_conversation_cross_client_replay_isolation_and_policy():
     async def scenario():
         async with provider_client(fixture_settings()) as (client, _):
@@ -158,4 +198,89 @@ def test_fresh_boundary_authorization_and_concurrent_initialization():
                 'expected_cursor':winner, 'cursor':winner+8, 'events':[{'event_id':'first', 'role':'user', 'content':'New task'}]})
             assert appended.status_code == 200, appended.text
             assert appended.json()['revision'] == 1
+    asyncio.run(scenario())
+
+
+def test_begin_returns_the_three_steps_in_one_request_and_keeps_their_privacy_rules():
+    """rec#11 D-53: a task entry's session read, recovery or latest pointer and
+    empty append in one request, each with its own route's checks."""
+    async def scenario():
+        async with provider_client(fixture_settings()) as (client, _):
+            space = (await client.post('/v1/spaces', json={'name':'Synthetic begin', 'kind':'personal'})).json()['id']
+            project = 'begin-' + uuid4().hex[:10]
+            await seed_agent(client, space, project=project, allowed_clients=['codex', 'claude_code'])
+            await seed_agent(client, space, project=project, agent='specialist', allowed_clients=['codex'])
+            codex = dict(personal_space_id=space, personal_project_id=project, agent_id='engineer', source_application='codex')
+
+            async def task(session, agent='engineer', source='codex'):
+                token = 'fuli-task-' + uuid4().hex
+                r = await client.put('/v1/task-contexts', json=dict(personal_space_id=space, personal_project_id=project,
+                    project_agent_id=agent, session_id=session, source_application=source, token=token))
+                assert r.status_code == 200, r.text
+                return token
+
+            async def begin(scope, session, token):
+                return await client.post('/v1/agent-conversations/begin', json={**scope, 'session_id': session,
+                    'task_context_token': token})
+
+            async def bound(scope, session):
+                return (await client.post('/v1/agent-conversations/query', json={**scope, 'mode': 'session',
+                    'session_id': session})).json()['conversation_id']
+            # A first entry: nothing to recover, nothing earlier in this scope; it opens this task's conversation.
+            first = await begin(codex, 'native-a', await task('native-a'))
+            assert first.status_code == 200, first.text
+            opened = first.json()
+            assert {key: opened[key] for key in ('status', 'revision', 'recovered_from', 'previous', 'recent')} == {
+                'status': 'saved', 'revision': 0, 'recovered_from': None, 'previous': None, 'recent': None}
+            assert await bound(codex, 'native-a') == opened['conversation_id']
+            token_a = await task('native-a')
+            for event_id, content in (('jsonl-v1:0:0:0', 'SYNTHETIC_OWN'), ('jsonl-v1:9:0:0', 'SYNTHETIC_SECOND')):
+                assert (await client.post('/v1/agent-conversations/append', json={**codex, 'session_id': 'native-a',
+                    'task_context_token': token_a,
+                    'events': [dict(event_id=event_id, role='user', content=content)]})).status_code == 200
+            # The same session's next entry recovers exactly what the context query returns for it, proofs included.
+            again = (await begin(codex, 'native-a', await task('native-a'))).json()
+            expected = (await client.post('/v1/agent-conversations/query', json={**codex, 'mode': 'context',
+                'conversation_id': opened['conversation_id'], 'session_id': 'native-a'})).json()
+            assert again['recovered_from'] == opened['conversation_id'] and again['recent'] is None
+            assert again['previous'] == expected
+            assert [m.get('own_event') for m in again['previous']['context']['messages']] == [
+                'jsonl-v1:0:0:0', 'jsonl-v1:9:0:0']
+            assert again['conversation_id'] == opened['conversation_id'] and again['revision'] == 2
+            # A new native session gets only the latest conversation of this scope, as the list query has it.
+            listed = (await client.post('/v1/agent-conversations/query', json={**codex, 'mode': 'list', 'limit': 1})).json()
+            fresh = (await begin(codex, 'native-b', await task('native-b'))).json()
+            assert fresh['previous'] is None and fresh['recovered_from'] is None
+            assert fresh['recent'] == listed['conversations'][0] and fresh['recent']['id'] == opened['conversation_id']
+            assert fresh['conversation_id'] != opened['conversation_id']
+            # Another client's session with the same native ID is not this session: nothing is recovered for it.
+            claude = {**codex, 'source_application': 'claude_code'}
+            other_client = (await begin(claude, 'native-a', await task('native-a', source='claude_code'))).json()
+            assert other_client['recovered_from'] is None and other_client['previous'] is None
+            # Another FLA of the same project never sees this Agent's conversations.
+            specialist = {**codex, 'agent_id': 'specialist'}
+            own = (await begin(specialist, 'native-c', await task('native-c', agent='specialist'))).json()
+            assert own['recent'] is None and own['recovered_from'] is None
+            # Refusals leave nothing behind and return no read: a client the Agent may not use,
+            # a task of another session or Agent, an unknown token, another project.
+            token_d = await task('native-d')
+            for scope, session, token, status in [
+                ({**specialist, 'source_application': 'claude_code'}, 'native-d', token_d, 403),
+                (codex, 'native-e', token_d, 409),
+                (specialist, 'native-d', token_d, 409),
+                (codex, 'native-d', 'fuli-task-missing', 404),
+                ({**codex, 'personal_project_id': 'begin-foreign'}, 'native-d', token_d, 404),
+            ]:
+                refused = await begin(scope, session, token)
+                assert refused.status_code == status, (scope, session, refused.text)
+                assert set(refused.json()) == {'detail'}
+            assert await bound(codex, 'native-d') is None and await bound(codex, 'native-e') is None
+            # Recording off for this Agent: no conversation is opened; what was bound is still recovered, as before.
+            assert (await client.put('/v1/agent-conversations/policy', json={**codex, 'source_application': None,
+                'policy': {'compact_after_kb': 64, 'context_budget': 4000, 'enabled': False}})).status_code == 200
+            disabled = (await begin(codex, 'native-a', await task('native-a'))).json()
+            assert disabled['status'] == 'capture_disabled' and 'conversation_id' not in disabled
+            assert disabled['recovered_from'] == opened['conversation_id']
+            off = (await begin(codex, 'native-f', await task('native-f'))).json()
+            assert off['status'] == 'capture_disabled' and await bound(codex, 'native-f') is None
     asyncio.run(scenario())

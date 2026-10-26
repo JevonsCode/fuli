@@ -1,6 +1,6 @@
 import {
   agentProjectResolution
-} from './agent-knowledge-workflows.js';
+} from './agent-project-resolution.js';
 import {
   activePreferenceConflicts,
   agentCollaborationPreference,
@@ -11,7 +11,7 @@ import {
   recallTaskKnowledge,
   TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
 } from './task-knowledge-recall.js';
-import { preferenceAppliesToTask } from './preference-task-scope.js';
+import { preferenceAppliesToTask, preferenceTaskApplicability } from './preference-task-scope.js';
 
 export async function getCollaborationPreferences(
   application,
@@ -46,7 +46,7 @@ export async function getCollaborationPreferences(
     result.queued_conflicts
   );
   const taskScope = { sessionId, sourceSessionId, workKind, workflow };
-  const effectivePreferences = (result.effective_preferences ?? []).filter(item => preferenceAppliesToTask(item, taskScope));
+  const { effectivePreferences, scopeUnknown } = taskScopedPreferences(result, taskScope);
   const taskKnowledgeRecall = taskPrompt === null
     ? null
     : await recallTaskKnowledge(application, projectResolution, taskPrompt, { sourceApplication, sessionId });
@@ -69,6 +69,7 @@ export async function getCollaborationPreferences(
     return {
       ...result,
       effective_preferences: effectivePreferences,
+      scope_unknown: scopeUnknown,
       deferred_conflicts: deferredConflicts,
       application_guidance: applicationGuidance,
       project_resolution: agentProjectResolution(projectResolution),
@@ -87,6 +88,7 @@ export const STATIC_APPLICATION_GUIDANCE = Object.freeze({
   deferred_conflicts: 'If the current task would use a deferred_conflict, call resolve_deferred_preference_conflict before applying either side. Ignore unrelated deferred conflicts. The resolution must preserve the AI audit marker.',
   authority: 'Human or authoritative-source confirmed preferences outrank agent-confirmed preferences. Agent-confirmed preferences are usable but lower priority and remain explicitly marked.',
   pending: 'Pending preferences are available only through on-demand knowledge search; invalid and unrelated-project preferences are excluded. Automatic preference injection does not count as usage evidence.',
+  scope_unknown: 'scope_unknown lists keys of preferences limited to a work kind, workflow or session this task does not state. Do not apply them or treat them as absent; one may replace a broader rule with the same key. Ask or search when the task turns out to need one.',
   knowledge_retrieval: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
 });
 
@@ -154,11 +156,12 @@ export function projectAgentCollaborationPreferences(raw, projectResolution, { p
   const source_windows = sourceWindows(raw, projectResolution.personalProjectId);
   const result = { ...raw, source_windows, truncated: raw.truncated === true || Object.values(source_windows).some(value => value !== false) };
   const deferredConflicts = deferredPreferenceConflicts(result, result.queued_conflicts);
-  const effectivePreferences = (result.effective_preferences ?? []).filter(item => preferenceAppliesToTask(item, taskScope));
+  const { effectivePreferences, scopeUnknown } = taskScopedPreferences(result, taskScope);
   const applicationGuidance = guidanceFor(projectResolution.personalProjectId, projectAgentId);
   return {
     effective_preferences: effectivePreferences
       .map(agentCollaborationPreference),
+    ...(scopeUnknown.length ? { scope_unknown: scopeUnknown } : {}),
     deferred_conflicts: deferredConflicts.map(agentDeferredPreferenceConflict),
     active_conflicts: activePreferenceConflicts(result),
     application_guidance: applicationGuidance,
@@ -167,4 +170,17 @@ export function projectAgentCollaborationPreferences(raw, projectResolution, { p
       task_scope_excluded_count: (result.task_scope_excluded_count ?? 0) + (result.effective_preferences ?? []).length - effectivePreferences.length,
       task_scope_filter: result.task_scope_filtered ? 'provider_before_conflicts' : 'legacy_projection' }
   };
+}
+
+// The Provider already removed what does not apply (scope_unknown names its
+// fail-closed keys); an older Provider's unfiltered items are classified here.
+function taskScopedPreferences(result, taskScope) {
+  const effectivePreferences = [];
+  const scopeUnknown = new Set(result.scope_unknown ?? []);
+  for (const item of result.effective_preferences ?? []) {
+    const applicability = preferenceTaskApplicability(item, taskScope);
+    if (applicability === 'applies') effectivePreferences.push(item);
+    else if (applicability === 'scope_unknown') scopeUnknown.add(item.preference_key);
+  }
+  return { effectivePreferences, scopeUnknown: [...scopeUnknown].sort() };
 }

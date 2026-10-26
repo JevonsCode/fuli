@@ -1,6 +1,7 @@
 """Triage labels on unclaimed conversations and topic accumulation; no LLM."""
 from fastapi import HTTPException
 from .conversation_scope import conversation_scope_id
+from .graph_field_contract import stored_fields
 from .provider_values import now_utc
 from .system_agents import SYSTEM_ASSISTANT_AGENT_ID as ASSISTANT_AGENT_ID
 
@@ -36,7 +37,8 @@ class StoreConversationTriage:
             "WHEN t.source = 'user' THEN 'user_label' ELSE null END AS kept "
             'FOREACH (_ IN CASE WHEN kept IS NULL THEN [1] ELSE [] END | SET t += $label) '
             'RETURN t, kept',
-            id=request.conversation_id, space_id=space['id'], label=label, source=request.source,
+            id=request.conversation_id, space_id=space['id'],
+            label=stored_fields('FuliConversationTriage', label), source=request.source,
             scope=conversation_scope_id(space['id'], None, ASSISTANT_AGENT_ID))
         if not rows:
             raise HTTPException(404, 'Unclaimed conversation not found')
@@ -103,6 +105,17 @@ class StoreConversationTriage:
             now=now_utc().isoformat())
         return {'personal_project_id': request.personal_project_id,
                 'conversation_ids': [row['id'] for row in rows]}
+
+    async def read_conversation_triage(self, actor, request):
+        """One conversation's current attribution state, or None: the label (kind,
+        project, topic, source, labeled_at) and the project its topic was formed
+        into, which forming sets without touching labeled_at or source."""
+        self._require_personal()
+        space = await self.authorize(actor, request.personal_space_id, 'reader')
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (t:FuliConversationTriage {id: $id, space_id: $space_id}) RETURN t',
+            id=request.conversation_id, space_id=space['id'], routing_='r')
+        return {'triage': self._triage_view(dict(rows[0]['t'])) if rows else None}
 
     @staticmethod
     def _triage_view(record):

@@ -24,7 +24,7 @@ const request = (sessionRef = null) => ({
 });
 const answer = { decision: 'propose', payload: { choice: 'ada' }, reason: 'Recent reviews.', evidenceIds: ['e1'], uncertainty: null };
 
-function harness(config = null) {
+function harness(config = null, { views = { bole: result => result } } = {}) {
   const clock = { at: Date.parse('2026-10-20T12:00:00.000Z') };
   const now = () => new Date(clock.at);
   // beforeDecide: a test may pause the role's operation before it asks.
@@ -39,7 +39,9 @@ function harness(config = null) {
       await hooks.beforeDecide?.();
       const outcome = await bridge.decide({ ...request(input.sessionRef), requestId: input.requestId ?? 'bole-1' }, { execution });
       return { choice: outcome.envelope?.payload.choice ?? null };
-    } } });
+    } },
+    // The fake Bole's result holds no stored words: a session reads it as it is.
+    views });
   const work = (action, token, extra = {}) => bridge[action]({ taskContextToken: token, ...extra });
   const submit = (token, claimed) => work('submit', token, { packageId: claimed.packageId, leaseToken: claimed.lease.token, answer });
   return { bridge, port, clock, hooks, work, submit };
@@ -128,4 +130,40 @@ test('Settings reads each role\'s backend and the open work packages over the lo
   assert.equal(roles.tonborg.connection.pricing, 'unknown');
   assert.deepEqual(sent.body.workPackages, [{ role: 'bole', status: 'pending', count: 1 }]);
   assert.doesNotMatch(JSON.stringify(sent.body), /Ada finished/);
+});
+
+test('D-26.1 inline: without a model the session keeps its usual answer; no package, no fetch, a stop keeps its reason', async () => {
+  const { bridge } = harness();
+  const inline = await bridge.decide(request('session-a'), { inline: true });
+  assert.deepEqual([inline.status, inline.answeredBy, inline.fallbackReason, inline.modelReceipt.status],
+    ['inline', 'current_session', 'no_config', 'not_configured']);
+  assert.equal('workPackage' in inline, false);
+  assert.deepEqual(bridge.summary().packages, []);
+
+  // Egress not approved stops; inline never turns a stop into a session answer.
+  const config = { version: 1, connections: { local: { protocol: 'openai_chat', endpoint: 'http://127.0.0.1:11434/v1', model: 'qwen-test', secretRef: null } },
+    roles: { bole: { enabled: true, connection: 'local', allowedOperations: ['staffing_review'], fallbackToSession: true,
+      egress: { approvedProjects: [], allowUnassigned: false },
+      budget: { maxInputTokens: 4000, maxOutputTokens: 400, timeoutMs: 30_000, windowHours: 24, maxTokensPerWindow: 100_000 } } } };
+  const stopped = await harness(config).bridge.decide(request(), { inline: true });
+  assert.deepEqual([stopped.status, stopped.modelReceipt.reason, stopped.answeredBy], ['stopped', 'egress_not_approved', undefined]);
+});
+
+test('rec#50: every reply that carries a result, a replay too, goes through its role\'s view; no view shows none', async () => {
+  const seen = [];
+  const { bridge, work, submit } = harness(null, { views: { bole: (result, session) => {
+    seen.push(session.sessionRef);
+    return { shown: result.choice };
+  } } });
+  await bridge.decide(request(), { resume: { sessionRef: null } });
+  const { workPackage } = await work('claim', 'a');
+  assert.deepEqual(await submit('a', workPackage), { status: 'completed', result: { shown: 'ada' } });
+  // A retry with the same lease replays the stored result, through the view again.
+  assert.deepEqual(await submit('a', workPackage), { status: 'completed', replayed: true, result: { shown: 'ada' } });
+  assert.deepEqual(seen, ['session-a', 'session-a']);
+
+  const blind = harness(null, { views: {} });
+  await blind.bridge.decide(request(), { resume: { sessionRef: null } });
+  const { workPackage: claimed } = await blind.work('claim', 'a');
+  assert.deepEqual(await blind.submit('a', claimed), { status: 'completed', result: null, result_withheld: 'no_agent_view' });
 });

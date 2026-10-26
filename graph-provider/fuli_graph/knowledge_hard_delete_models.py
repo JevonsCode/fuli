@@ -10,12 +10,13 @@ from .model_base import StrictModel
 
 PREVIEW_ID_PATTERN = r'^[0-9a-f]{64}$'
 OPERATION_ID_PATTERN = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+HardDeleteTargetKind = Literal['entity', 'relationship', 'episode', 'session']
 
 
 class KnowledgeHardDeleteRef(StrictModel):
     # The item is the route's; the body says which space and kind it is in.
     personal_space_id: str = Field(min_length=1, max_length=128)
-    item_kind: KnowledgeItemKind
+    item_kind: HardDeleteTargetKind
 
 
 class KnowledgeHardDeleteConfirm(KnowledgeHardDeleteRef):
@@ -89,9 +90,43 @@ class KnowledgeHardDeleteCounts(StrictModel):
     decision_snapshots: int = 0
     kept_episodes: int = 0
     dependents: int = 0
+    source_turns: int = 0
+    conversation_events: int = 0
+    conversation_summaries: int = 0
+    memory_checkpoints: int = 0
+    memory_later_revisions: int = 0
+
+
+class HardDeleteMemoryScope(StrictModel):
+    agent_id: str
+    personal_project_id: str | None
+    revisions: list[int]
+    current_revision: int
+
+
+class KnowledgeHardDeletePublication(StrictModel):
+    draft_id: str
+    project_id: str
+    project_name: str | None = None
+    provider_url: str
+    proposal_id: str
+    source_episode_ids: list[str]
+    status: Literal['submitted'] = 'submitted'
+    local_delete_retracts: Literal[False] = False
+    withdrawal_status: Literal['unavailable'] = 'unavailable'
+    withdrawal_url: None = None
+
+
+class KnowledgeHardDeleteDrafts(StrictModel):
+    pending: int = 0
+    submitted: int = 0
+    submitting: int = 0
+    unknown: int = 0
 
 
 class KnowledgeHardDeletePreview(StrictModel):
+    publications: list[KnowledgeHardDeletePublication] = Field(default_factory=list)
+    drafts: KnowledgeHardDeleteDrafts = Field(default_factory=KnowledgeHardDeleteDrafts)
     preview_id: str
     item_kind: KnowledgeItemKind
     item_id: str
@@ -106,7 +141,7 @@ class KnowledgeHardDeletePreview(StrictModel):
 class KnowledgeHardDeletion(StrictModel):
     """The content-free trace a hard delete leaves: when, by whom, how much."""
     deletion_id: str
-    item_kind: KnowledgeItemKind
+    item_kind: HardDeleteTargetKind
     deleted_at: datetime
     deleted_by: Literal['user'] = 'user'
     counts: KnowledgeHardDeleteCounts
@@ -115,6 +150,10 @@ class KnowledgeHardDeletion(StrictModel):
 class KnowledgeHardDeleteRecord(KnowledgeHardDeletion):
     item_id: str
     deleted_item_ids: list[str]
+    source_application: str | None = None
+    fuli_session_id: str | None = None
+    drafts_scrubbed: dict[str, int] = Field(default_factory=dict)
+    memory_scopes: list[HardDeleteMemoryScope] = Field(default_factory=list)
 
 
 class KnowledgeHardDeleteSpace(StrictModel):

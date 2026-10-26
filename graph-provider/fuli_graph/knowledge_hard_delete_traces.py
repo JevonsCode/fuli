@@ -11,8 +11,9 @@ import json
 
 from fastapi import HTTPException
 
-from .knowledge_hard_delete_models import KnowledgeHardDeleteCounts, KnowledgeHardDeleteRecord
+from .knowledge_hard_delete_models import KnowledgeHardDeleteCounts, KnowledgeHardDeleteRecord, HardDeleteMemoryScope
 from .provider_values import native_datetime, stable_uuid
+from .knowledge_source_memory import deleted_memory_scopes
 
 
 async def hard_deletion_record(store, space, item_id) -> KnowledgeHardDeleteRecord | None:
@@ -21,9 +22,13 @@ async def hard_deletion_record(store, space, item_id) -> KnowledgeHardDeleteReco
         '''
         MATCH (trace:FuliKnowledgeAudit {space_id: $space_id, action: 'hard_delete'})
         WHERE any(key IN coalesce(trace.deleted_item_keys, []) WHERE key ENDS WITH (':' + $item_id))
+           OR $item_id IN coalesce(trace.removed_episode_ids, [])
         RETURN trace ORDER BY trace.created_at DESC LIMIT 1
         ''', space_id=space['id'], item_id=item_id, routing_='r')
-    return deletion_record_of(dict(records[0]['trace'])) if records else None
+    if not records:
+        return None
+    result = deletion_record_of(dict(records[0]['trace']))
+    return await with_memory_scopes(store, space, result)
 
 
 async def all_hard_deletions(store, space) -> list[KnowledgeHardDeleteRecord]:
@@ -34,7 +39,14 @@ async def all_hard_deletions(store, space) -> list[KnowledgeHardDeleteRecord]:
         MATCH (trace:FuliKnowledgeAudit {space_id: $space_id, action: 'hard_delete'})
         RETURN trace ORDER BY trace.created_at
         ''', space_id=space['id'], routing_='r')
-    return [deletion_record_of(dict(record['trace'])) for record in records]
+    return [await with_memory_scopes(store, space, deletion_record_of(dict(record['trace']))) for record in records]
+
+
+async def with_memory_scopes(store, space, record):
+    if record.counts.memory_checkpoints or record.counts.memory_later_revisions:
+        scopes = await deleted_memory_scopes(store, space, record.deletion_id)
+        return record.model_copy(update={'memory_scopes': [HardDeleteMemoryScope(**scope) for scope in scopes]})
+    return record
 
 
 def deletion_record_of(trace) -> KnowledgeHardDeleteRecord:
@@ -42,7 +54,11 @@ def deletion_record_of(trace) -> KnowledgeHardDeleteRecord:
         deletion_id=trace['id'], item_kind=trace['item_kind'], item_id=trace['item_id'],
         deleted_at=native_datetime(trace['created_at']),
         counts=KnowledgeHardDeleteCounts(**json.loads(trace.get('deletion_counts_json') or '{}')),
-        deleted_item_ids=[key.split(':', 1)[1] for key in trace.get('deleted_item_keys') or []])
+        deleted_item_ids=sorted(set([trace['item_id'],
+            *[key.split(':', 1)[1] for key in trace.get('deleted_item_keys') or []],
+            *(trace.get('removed_episode_ids') or [])])),
+        source_application=trace.get('source_application'), fuli_session_id=trace.get('fuli_session_id'),
+        drafts_scrubbed=json.loads(trace.get('drafts_scrubbed_json') or '{}'))
 
 
 async def require_not_hard_deleted(store, space, item_id) -> None:
@@ -117,3 +133,17 @@ async def episode_hard_deleted(store, space, episode_id) -> bool:
         RETURN count(trace) > 0 AS deleted
         ''', space_id=space['id'], episode_id=episode_id, routing_='r')
     return bool(records and records[0]['deleted'])
+
+
+async def unavailable_source_bases(store, space, reasons) -> list[dict]:
+    """Resolve only live unresolved reasons against content-free source tombstones."""
+    if not reasons:
+        return []
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (trace:FuliKnowledgeAudit {space_id: $space_id, action: 'hard_delete'})
+        UNWIND coalesce(trace.removed_episode_ids, []) AS episode_id
+        WITH trace, episode_id WHERE (episode_id + '@' + trace.id) IN $reasons
+        RETURN DISTINCT episode_id, trace.id AS deletion_id ORDER BY episode_id, deletion_id
+        ''', space_id=space['id'], reasons=list(reasons), routing_='r')
+    return [dict(row, status='unavailable') for row in records]

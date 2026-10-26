@@ -12,7 +12,9 @@ unique-constrained as well.
 """
 from contextlib import asynccontextmanager
 
+from .graph_field_contract import stored_fields
 from .knowledge_hard_delete_traces import hard_deletion_record
+from .knowledge_tag_governance import LINK_FIELDS
 from .knowledge_management import _read_assignment, _read_item, _source_project_ids
 from .knowledge_project_scope import knowledge_project_ids
 from .knowledge_tag_models import LIVE_STATUSES
@@ -24,6 +26,7 @@ VISIBLE_STATUSES = list(LIVE_STATUSES)
 _DATETIME_FIELDS = ('created_at', 'updated_at')
 _LINK_DATETIME_FIELDS = ('attached_at', 'detached_at')
 _REVISION_DATETIME_FIELDS = ('created_at',)
+_LINK_WRITES = ('id', 'tag_id', 'item_kind', 'item_id', *LINK_FIELDS)
 
 
 class StoreKnowledgeTags:
@@ -113,6 +116,41 @@ class Neo4jTagReader:
 
     def __init__(self, driver, space_id):
         self._driver, self._space_id = driver, space_id
+
+    async def ranking_roots(self, namespaces, keys):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (tag:FuliKnowledgeTag {space_id: $space_id}) '
+            'WHERE tag.namespace_key IN $namespaces AND tag.status IN $statuses '
+            'AND (tag.name_key IN $keys OR any(key IN tag.alias_keys WHERE key IN $keys)) '
+            'RETURN tag ORDER BY tag.id', space_id=self._space_id, namespaces=namespaces,
+            keys=keys, statuses=['active', 'provisional', 'merged'], routing_='r')
+        return [_tag(record['tag']) for record in records]
+
+    async def ranking_target(self, namespaces, tag_id):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (tag:FuliKnowledgeTag {space_id: $space_id, id: $tag_id}) '
+            'WHERE tag.namespace_key IN $namespaces RETURN tag',
+            space_id=self._space_id, tag_id=tag_id, namespaces=namespaces, routing_='r')
+        return _tag(records[0]['tag']) if records else None
+
+    async def ranking_neighbors(self, namespaces, root_ids):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (root:FuliKnowledgeTag {space_id: $space_id, status: "active"}), '
+            '(tag:FuliKnowledgeTag {space_id: $space_id, status: "active"}) '
+            'WHERE root.id IN $root_ids AND root.namespace_key IN $namespaces '
+            'AND tag.namespace_key IN $namespaces '
+            'AND (root.id IN tag.parent_ids OR root.id IN tag.related_ids OR tag.id IN root.related_ids) '
+            'RETURN DISTINCT tag ORDER BY tag.id', space_id=self._space_id,
+            namespaces=namespaces, root_ids=root_ids, routing_='r')
+        return [_tag(record['tag']) for record in records]
+
+    async def ranking_links(self, tag_ids, kind, item_ids):
+        records, _, _ = await self._driver.execute_query(
+            'MATCH (tag:FuliKnowledgeTag {space_id: $space_id})-[:TAGS]->'
+            '(link:FuliKnowledgeTagLink {space_id: $space_id, status: "attached", item_kind: $kind}) '
+            'WHERE tag.id IN $tag_ids AND link.item_id IN $item_ids RETURN link ORDER BY link.id',
+            space_id=self._space_id, tag_ids=tag_ids, kind=kind, item_ids=item_ids, routing_='r')
+        return [_link(record['link']) for record in records]
 
     async def find_by_key(self, namespace_keys, key):
         """Live tags whose name or alias is the word."""
@@ -291,9 +329,12 @@ class Neo4jLockedTagVocabulary(Neo4jTagReader):
                 CREATE (space)-[:HAS_KNOWLEDGE_TAG]->(tag:FuliKnowledgeTag)
                 SET tag = row
                 RETURN tag
-                ''', space_id=self._space_id, tags=list(new_tags))
+                ''', space_id=self._space_id,
+                tags=[stored_fields('FuliKnowledgeTag', tag) for tag in new_tags])
             written.update({tag['id']: tag for tag in (_tag(record['tag']) for record in records)})
         if updates:
+            for update in updates:
+                stored_fields('FuliKnowledgeTag', update['fields'])
             records, _, _ = await self._driver.execute_query(
                 '''
                 UNWIND $updates AS row
@@ -303,6 +344,9 @@ class Neo4jLockedTagVocabulary(Neo4jTagReader):
                 ''', space_id=self._space_id, updates=list(updates))
             written.update({tag['id']: tag for tag in (_tag(record['tag']) for record in records)})
         if links:
+            # A row may carry the rest of a stored link; only these are written.
+            for link in links:
+                stored_fields('FuliKnowledgeTagLink', {name: link.get(name) for name in _LINK_WRITES})
             await self._driver.execute_query(
                 '''
                 UNWIND $links AS row
@@ -323,7 +367,8 @@ class Neo4jLockedTagVocabulary(Neo4jTagReader):
                 MATCH (tag:FuliKnowledgeTag {id: row.tag_id, space_id: $space_id})
                 CREATE (tag)-[:HAS_TAG_REVISION]->(revision:FuliKnowledgeTagRevision)
                 SET revision = row, revision.version = tag.version
-                ''', space_id=self._space_id, revisions=list(revisions))
+                ''', space_id=self._space_id,
+                revisions=[stored_fields('FuliKnowledgeTagRevision', revision) for revision in revisions])
         return written
 
 

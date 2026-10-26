@@ -1,6 +1,7 @@
 import { deferredTurnReceipt, MAX_LIST_EPISODES, readEpisodeReceipts, readTurnReceipt, renderTurnReceipt, savedEpisodeIds }
   from '../agents/turn-receipt.js';
 import { withReceiptLines, withTurnReceipt } from '../agents/identity-receipt.js';
+import { taskKnowledgeReader } from './knowledge-reader.js';
 import { formalTask, sessionMigrationLine, sessionMigrationOffer } from './session-knowledge-migration.js';
 
 // When a turn's receipt reaches a reply, exactly once (rec#20). The Provider
@@ -29,7 +30,8 @@ export async function checkpointTurnReceipt(application, task, { memory = null, 
 async function savedTurnReceipt(application, task, results, { memory, agentName }) {
   if (!savedEpisodeIds(results).length) return memory ? readTurnReceipt(application, [], { memory, agentName }) : null;
   try {
-    const receipt = await readTurnReceipt(application, results, { memory, agentName, session: taskSession(task) });
+    const receipt = await readTurnReceipt(application, results, { memory, agentName, session: taskSession(task),
+      reader: taskKnowledgeReader(task) });
     if (await application.taskContextRegistry.claimTurnReceipt(task.token, task.sourceApplication)) return receipt;
     // A later entry already showed these items; never repeat them.
     return memory ? readTurnReceipt(application, [], { memory, agentName }) : null;
@@ -60,7 +62,8 @@ async function unreadTurnReceipt(application, task) {
   try {
     const read = [];
     for (const item of unread) {
-      read.push({ item, entries: (await readEpisodeReceipts(application, savedEpisodeIds(item.capture_results))).entries });
+      read.push({ item, entries: (await readEpisodeReceipts(application, savedEpisodeIds(item.capture_results),
+        { reader: taskKnowledgeReader(task) })).entries });
     }
     const claimed = new Set(await application.taskContextRegistry.claimUnreadTurnReceipts(task.token,
       unread.map(item => item.receipt_id), task.sourceApplication));

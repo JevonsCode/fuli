@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { MODEL_ADAPTERS } from './adapters/registry.js';
 import { budgetBlock, callLimits, ceilingCost, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
-import { MODEL_BACKEND_ROLES } from './config.js';
+import { MODEL_BACKEND_ROLES, configRevision, connectionIdentity } from './config.js';
 import { decisionContract, decisionEnvelope } from './decision-contract.js';
 import { egressAllowed } from './egress.js';
 import { FAILURE_STATUS, isFallbackEligible, modelFailure } from './failures.js';
@@ -25,13 +25,19 @@ const MIN_ATTEMPT_MS = 1000;
 // A live attempt aborts at its timeout; a reservation still unsettled this
 // long after that belongs to a process that stopped before settling it.
 const RESERVATION_GRACE_MS = 60_000;
+// rec#10 D-32: the local build is read once after a valid answer, within
+// what is left of that attempt's deadline and never longer than this; with
+// less left than LOCAL_BUILD_MIN_MS it is not read at all.
+const LOCAL_BUILD_MAX_MS = 2000;
+const LOCAL_BUILD_MIN_MS = 100;
 
 const USAGE_NOTES = 'One record per actual model API attempt; requests count distinct requestIds. '
   + 'reported is null when no attempt reported that value: unknown, never 0. '
   + 'cachedInput, cacheWriteInput and reasoning are subsets of input or output as each provider defines them and are never added to totals. '
   + 'Costs are estimates from configured unit prices only; without prices the cost is unknown.';
 
-export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = globalThis.fetch, wait = delay, now = () => new Date() }) {
+export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = globalThis.fetch, wait = delay,
+  now = () => new Date(), timeoutSignal = ms => AbortSignal.timeout(ms) }) {
   // Endpoints that rejected json_schema output, for this process.
   const promptOnly = new Set();
 
@@ -49,6 +55,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         backend: 'model_api', status, reason: failure?.reason ?? reason, failureClass: failure?.failureClass ?? null,
         fallbackEligible, fallbackReason: fallbackEligible ? failure.reason : null,
         connection: target?.id ?? null, protocol: target?.protocol ?? null, requestedModel: target?.model ?? null,
+        // Which configured connection was asked (config.js connectionIdentity); a role's trust gate compares it.
+        connectionIdentity: target ? connectionIdentity(target.id, target) : null,
         actualModel: attempts.findLast(attempt => attempt.actualModel)?.actualModel ?? null,
         outputMode: attempts.length ? mode : null, attempts: attempts.length, usage: receiptUsage(attempts),
         reportedConfidence, durationMs: now().getTime() - startedAt
@@ -107,7 +115,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         requestId: request.requestId, attemptId: randomUUID(), attemptNumber: attempts.length + 1, purpose, channel: 'model_api',
         role: request.role, operation: request.operation, personalSpaceId: request.scope.personalSpaceId,
         personalProjectId: request.scope.personalProjectId, connectionId: target.id, protocol: target.protocol,
-        endpointHost: new URL(target.endpoint).host, requestedModel: target.model, outputMode: mode,
+        endpointHost: new URL(target.endpoint).host, endpoint: target.endpoint, requestedModel: target.model, outputMode: mode,
         startedAt: attemptStarted.toISOString(), budgetCeilingTokens: inputTokens + limits.maxOutputTokens,
         costCurrency: target.pricing?.currency ?? null
       };
@@ -119,8 +127,9 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       if (blocked) return stop('budget_exhausted', blocked);
 
       let result;
+      const attemptSignal = timeoutSignal(remainingMs);
       try {
-        result = await adapter.call({ connection: target, secret, request, mode, signal: AbortSignal.timeout(remainingMs),
+        result = await adapter.call({ connection: target, secret, request, mode, signal: attemptSignal,
           prompt: outgoing, maxOutputTokens: limits.maxOutputTokens, fetchImpl });
       } catch (error) {
         ledger.settleUnknown(pending, { durationMs: now().getTime() - attemptStarted.getTime(), failureReason: 'attempt_error' });
@@ -135,6 +144,9 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         failureReason: verdict.ok ? null : verdict.failure?.reason ?? 'invalid_output',
         usage: result.usage, estimatedCost: estimateCost(result.usage, target.pricing)
       };
+      if (verdict.ok && result.actualModel === target.model && adapter.observesLocalBuild?.(target)) {
+        attempt.observedTagDigest = await localBuildAfter(adapter, target, attemptSignal, deadline - now().getTime());
+      }
       ledger.settle(attempt);
       attempts.push(attempt);
 
@@ -165,6 +177,16 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     }
   }
 
+  // The local build listed after a valid answer (rec#10 D-32): bounded by the
+  // attempt's own deadline signal and by the smaller of what is left and
+  // LOCAL_BUILD_MAX_MS, skipped when too little is left. It never extends the
+  // deadline and never touches the call budget; the answer is already in hand.
+  async function localBuildAfter(adapter, target, attemptSignal, remainingMs) {
+    if (remainingMs < LOCAL_BUILD_MIN_MS || attemptSignal.aborted) return null;
+    return adapter.observeLocalBuild({ connection: target, fetchImpl,
+      signal: AbortSignal.any([attemptSignal, timeoutSignal(Math.min(remainingMs, LOCAL_BUILD_MAX_MS))]) });
+  }
+
   async function decide(input) {
     return run(parseDecisionRequest(input));
   }
@@ -183,20 +205,52 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // What Settings shows per role: which backend answers, never a key. The
     // current session answers a role without a model; an invalid file is a
     // repairable error that answers nothing, never the same as no file (C3).
+    // connections and revision are what the console edits from; they hold
+    // key references (secretRef) only.
     roles() {
       const loaded = readConfig();
       const roles = loaded.state === 'ok' ? loaded.config.roles : {};
-      return { state: loaded.state, error: loaded.error ?? null, roles: MODEL_BACKEND_ROLES.map(role => {
+      return { state: loaded.state, error: loaded.error ?? null, revision: configRevision(loaded),
+        connections: loaded.state === 'ok' ? loaded.config.connections : {}, roles: MODEL_BACKEND_ROLES.map(role => {
         const settings = roles[role];
         if (loaded.state === 'invalid') return { role, state: 'invalid_config', answeredBy: null };
         if (!settings) return { role, state: 'not_configured', answeredBy: 'current_session' };
         const connection = loaded.config.connections[settings.connection];
         return { role, state: settings.enabled ? 'enabled' : 'disabled', answeredBy: settings.enabled ? 'model_api' : 'current_session',
           connection: { id: settings.connection, protocol: connection.protocol, endpointHost: new URL(connection.endpoint).host,
-            model: connection.model, secretRef: connection.secretRef, pricing: connection.pricing ? 'configured' : 'unknown' },
+            model: connection.model, secretRef: connection.secretRef, pricing: connection.pricing ? 'configured' : 'unknown',
+            identity: connectionIdentity(settings.connection, connection) },
           allowedOperations: settings.allowedOperations, budget: settings.budget, fallbackToSession: settings.fallbackToSession,
-          egress: { approvedProjects: settings.egress.approvedProjects.length, allowUnassigned: settings.egress.allowUnassigned } };
+          egress: settings.egress };
       }) };
+    },
+    // A role's Settings entry while it may send this operation to its model,
+    // else null. A role reading it before a call reads it again on every call.
+    operationSettings(role, operation) {
+      const settings = this.roles().roles.find(entry => entry.role === role);
+      return settings?.state === 'enabled' && settings.allowedOperations.includes(operation) ? settings : null;
+    },
+    // Whether the whole request would still be allowed out now, for a role
+    // that rechecks before it shows a late answer. A role that is gone,
+    // disabled or no longer allowed the operation allows nothing.
+    allowsEgress(request) {
+      const settings = this.operationSettings(request.role, request.operation);
+      return Boolean(settings) && egressAllowed(request, settings.egress);
+    },
+    // What Settings shows of the local build behind a role's latest answer
+    // on its configured endpoint and model (rec#10 D-32). An observation of
+    // the local catalog, never proof of what served the answer; it reaches no
+    // receipt, review record or gate. Only a connection on the read path
+    // (openai_chat on loopback HTTP /v1) applies. connectionId and
+    // connection: the role's configured connection, or null.
+    localBuild(role, connectionId, connection) {
+      const none = status => ({ status, digest: null, completedAt: null });
+      if (!connection || !MODEL_ADAPTERS[connection.protocol].observesLocalBuild?.(connection)) return none('not_applicable');
+      const last = ledger.lastServed({ role, connectionId, protocol: connection.protocol, endpoint: connection.endpoint,
+        requestedModel: connection.model });
+      if (!last) return none('no_record');
+      return { status: last.observedTagDigest ? 'observed' : 'not_observed', digest: last.observedTagDigest,
+        completedAt: last.completedAt };
     },
     // A current-session answer to a work package is an attempt too, kept on
     // its own channel. Its usage is what the session reported, else unknown.

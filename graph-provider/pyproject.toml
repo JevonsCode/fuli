@@ -1,6 +1,6 @@
 [project]
 name = "fuli-graph-provider"
-version = "0.20.0b6"
+version = "0.21.0b1"
 description = "Graphiti-backed personal and shared project provider for Fuli."
 requires-python = ">=3.12"
 dependencies = [
@@ -24,6 +24,7 @@ dev = [
   "httpx==0.28.1",
   "pytest==8.4.1",
   "pytest-asyncio==1.1.0",
+  "pytest-split==0.11.0",
 ]
 
 [tool.pytest.ini_options]

@@ -242,10 +242,10 @@ def new_link(space_id: str, tag_id: str, item_kind: str, item_id: str, at, actor
 
 
 async def tag_metrics(store, actor: dict, request: KnowledgeTagMetricsQuery) -> KnowledgeTagMetrics:
-    space, namespaces = await visible_tag_scope(store, actor, request, 'reader')
+    space, namespaces = await visible_tag_scope(store, actor, request, 'reader',
+                                                all_projects=request.include_all_projects)
     since = datetime.now(timezone.utc) - timedelta(days=request.days)
-    counts, created = await store.knowledge_tag_vocabulary().metrics(
-        space['id'], None if request.include_all_projects else namespaces, since)
+    counts, created = await store.knowledge_tag_vocabulary().metrics(space['id'], namespaces, since)
     return KnowledgeTagMetrics(scope='all' if request.include_all_projects else 'visible',
                                days=request.days, counts=counts, created_by_day=created)
 
@@ -327,8 +327,12 @@ def _held(tag: dict, key: str):
 async def visible_tag_scope(store, actor: dict, request: KnowledgeTagScope, role: str, *,
                             all_projects: bool = False):
     """The caller's space and the namespaces it sees; None means every namespace
-    (the owner's console view across projects)."""
+    (the owner's console view across projects). That view lists and counts the
+    links of every FLA's own knowledge, so it is read only on the human-review
+    channel; an Agent asking for it is refused."""
     store._require_personal()
+    if all_projects and actor.get('_human_review_verified') is not True:
+        raise HTTPException(status_code=403, detail='the all-project tag view is read on the human-review channel')
     space = await store.authorize(actor, request.personal_space_id, role)
     namespaces = [PERSONAL_NAMESPACE]
     if request.personal_project_id:

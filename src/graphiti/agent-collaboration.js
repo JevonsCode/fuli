@@ -1,6 +1,7 @@
 import { verificationPreference } from './verification-preference.js';
 import { executionPlan } from './execution-mode.js';
 import { dispatchTarget, subLeadIds, reportingParent } from './project-team-hierarchy.js';
+import { coversClient } from '../agents/source-applications.js';
 const lower = values => (values ?? []).map(value => String(value).toLowerCase());
 // Matches Provider staffing: a nonempty assignment list overrides the profile list.
 const effective = (assignment, profile, field) => lower(assignment[field]?.length ? assignment[field] : profile?.[field]);
@@ -24,7 +25,7 @@ function matchCandidates(agents, task, input) {
       candidates.push({ agentId: agent.agent_id, name: agent.profile?.display_name || agent.profile?.name,
         projectId: assignment.personal_project_id, capabilities,
         allowedClients: agent.profile?.allowed_clients ?? [],
-        clientAvailable: Boolean(agent.profile?.allowed_clients?.includes(input.sourceApplication)),
+        clientAvailable: coversClient(agent.profile?.allowed_clients, input.sourceApplication),
         ...(assignment.responsibility ? { responsibility: assignment.responsibility } : {}),
         requiresLoan: assignment.personal_project_id !== task.personalProjectId,
         ...(role ? { occupation: role } : {}), occupationMatch,
@@ -97,7 +98,7 @@ export async function planAgentCollaboration(application, input) {
     if (target === item.agentId || !target) return item;
     const lead = agents.find(agent => agent.agent_id === target && agent.profile?.status !== 'archived'
       && agent.assignments?.some(assignment => assignment.status === 'active' && assignment.personal_project_id === task.personalProjectId));
-    return { ...item, clientAvailable: item.clientAvailable && Boolean(lead?.profile?.allowed_clients?.includes(input.sourceApplication)),
+    return { ...item, clientAvailable: item.clientAvailable && coversClient(lead?.profile?.allowed_clients, input.sourceApplication),
       dispatchAgentId: target };
   };
   const eligible = (pool, excluded = [], available = true) => pool.map(throughLead).filter(item => item.clientAvailable === available && !excluded.includes(item.agentId)

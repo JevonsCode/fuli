@@ -16,6 +16,7 @@ import { resolveSetupPaths } from '../setup/paths.js';
 import { acquireMaintenance, holdDataDirectory } from '../data-format/maintenance-lock.js';
 import { localRuntimeControl } from './local-runtime-control.js';
 import { confirmInTerminal, writeLine } from './terminal-io.js';
+import { reconcileLocalKnowledge, knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconcile-local.js';
 
 // `fuli migrate` (rec#17 D-09): data formats of one data directory.
 // - status, preview: read only, safe while FULI runs, fine for an Agent to run.
@@ -28,6 +29,7 @@ import { confirmInTerminal, writeLine } from './terminal-io.js';
 
 const USAGE = [
   'Usage: fuli migrate status [--json] [--data-dir DIR]',
+  '       fuli migrate reconcile-knowledge [--data-dir DIR]',
   '       fuli migrate preview [--json] [--data-dir DIR]',
   '       fuli migrate apply --digest DIGEST [--data-dir DIR]',
   '       fuli migrate rollback --store LABEL --migration ID [--data-dir DIR]',
@@ -37,6 +39,7 @@ const USAGE = [
 const UNREADABLE_EXIT_CODE = 2;
 const FAILED_EXIT_CODE = 1;
 const OPTIONS = Object.freeze({
+  'reconcile-knowledge': {},
   status: { json: { type: 'boolean' } },
   preview: { json: { type: 'boolean' } },
   apply: { digest: { type: 'string' } },
@@ -58,6 +61,7 @@ export async function runMigrateCommand(args, dependencies = {}) {
   const env = dependencies.env ?? process.env;
   const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
   const context = { options, paths, env, write: dependencies.write ?? writeLine,
+    reconcileKnowledge: dependencies.reconcileKnowledge ?? reconcileLocalKnowledge,
     confirm: dependencies.confirm ?? confirmInTerminal, fetchImpl: dependencies.fetchImpl ?? fetch,
     graph: dependencies.graph ?? personalGraphFormat(paths.dataDir, { fetchImpl: dependencies.fetchImpl ?? fetch }),
     consoleRunning: dependencies.consoleRunning ?? (() => localRuntimeControl(paths, env, () => {}).consoleRunning()),
@@ -76,6 +80,14 @@ function parseMigrateOptions(action, args) {
 }
 
 const ACTIONS = Object.freeze({
+  async 'reconcile-knowledge'({ paths, write, fetchImpl, maintenance, reconcileKnowledge }) {
+    const result = await held(maintenance.hold(paths.dataDir),
+      () => reconcileKnowledge(paths, { fetchImpl }));
+    write(knowledgeReconciliationMessage(result));
+    write(`Data directory: ${paths.dataDir}`);
+    return { ...result, exitCode: result.status === 'ready' ? 0 : FAILED_EXIT_CODE };
+  },
+
   async status({ options, paths, write, fetchImpl }) {
     const report = await collectFormatStatus({ dataDir: paths.dataDir, fetchImpl });
     write(options.json ? JSON.stringify(report, null, 2) : formatStatus(report));

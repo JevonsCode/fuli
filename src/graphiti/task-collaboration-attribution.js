@@ -10,15 +10,17 @@ export async function taskTeam(application, task, collaboratorIds) {
   const unique = new Map(proven.map(item => [item.agent_id, item]));
   const legacy = !snapshot || (snapshot.version === 1 && snapshot.status === 'legacy_unknown');
   let name = valid ? snapshot.owner.name : null;
+  let role = valid ? snapshot.owner.role ?? null : null;
   if (legacy && snapshot?.owner?.agent_id === task.projectAgentId) name = snapshot.owner.name ?? null;
   if (legacy && !(typeof name === 'string' && name.trim()) && task.projectAgentId) {
     try {
       const owner = await application.personal.getProjectAgent(
         application.config.personal.spaceId, task.personalProjectId, task.projectAgentId);
-      name = owner?.profile?.display_name || owner?.profile?.name || null;
+      name = owner?.profile?.display_name ?? null;
+      role = owner?.profile?.name ?? null;
     } catch { /* Missing display metadata cannot undo a checkpoint or change its owner. */ }
   }
-  return { name,
+  return { name, role,
     collaborators: [...unique.values()].map(item => ({ agentId: item.agent_id, name: item.name,
       responsibility: item.responsibility ?? null, runs: item.runs })),
     ignored: requested.filter(id => !unique.has(id)) };

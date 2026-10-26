@@ -127,7 +127,7 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
 
 <template>
   <section ref="page" class="view overview-view">
-    <div class="@container mx-auto w-full max-w-(--canvas-max)">
+    <div class="@container mx-auto w-full max-w-(--layout-max)">
       <template v-if="bootstrapLoading">
         <GrowthLoading :label="t('overview.read.scope')" />
         <p v-if="scopeSlow" role="status">{{ t('overview.read.slow') }}</p>
@@ -249,11 +249,9 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
 
 <style scoped>
 .overview-view { overflow-wrap: anywhere; scrollbar-gutter: stable; }
-/* Work canvas: main column plus a fixed side column once there is room. */
+/* Work canvas: one column of sections, never a side column beside the work
+   (rec#38); only the homogeneous task cards add columns on wider canvases. */
 .overview-content-grid { grid-template-columns: minmax(0, 1fr); }
-@container (min-width: 960px) {
-  .overview-content-grid { grid-template-columns: minmax(0, 1fr) 320px; }
-}
 .overview-meta { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
 .overview-empty, .overview-notice { margin: 12px 0; font-size: 14px; color: var(--color-ink-soft); }
 .overview-view ul { list-style: none; margin: 0; padding: 0; }

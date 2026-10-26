@@ -1,30 +1,43 @@
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { ApplicationError } from '../app/application-error.js';
-import {
-  approvalBinds, approvalTerms, dataTransition, tamperedPackage, unavailablePermissions
-} from './authorization.js';
-import { ensureDataDirectory } from './data-directory.js';
-import { decisionSource } from './decision-source.js';
+import { createActivation } from './activation.js';
+import { dataDeleting, rejectedManifest, unavailablePermissions } from './authorization.js';
+import { decisionSource, UNVERIFIED_CHECK } from './decision-source.js';
 import { appConflict } from './errors.js';
 import { parseAgentAppManifest } from './manifest.js';
-import { commitPackage, discardPackage, parsePackageFiles, stagePackage, storedPackageMatches } from './package-files.js';
+import { commitPackage, discardPackage, parsePackageFiles, stagePackage } from './package-files.js';
 
-// Submitting, approving and activating app versions. A version is immutable once
-// stored, and only an approval of its exact digest, given through the CLI or the
-// local console, makes it active. Part 1 has no runner: an active version runs no code.
+// Submitting app versions, and the local console's decisions on them. A version
+// is immutable once stored, and only an approval of its exact digest makes it
+// active. These decisions complete no terminal confirmation, so the run gate
+// refuses the version they activate; `fuli app approve` and `rollback` do
+// (confirmed-decisions.js).
+// Each decision runs as an app operation (operations.js): an instance this
+// process hosts is stopped first, and the owner lease is held throughout.
 export function createAppVersions(context) {
-  const { store, now } = context;
+  const { store, now, operations, leases } = context;
+  const activation = createActivation(context);
 
   async function submit({ personalSpaceId, agentId, manifest: submittedManifest, files: submittedFiles }) {
+    const rejectedNetwork = rejectedManifest(submittedManifest, null);
+    if (rejectedNetwork) throw rejectedNetwork;
     const manifest = parseAgentAppManifest(submittedManifest);
+    const rejected = rejectedManifest(submittedManifest, manifest);
+    if (rejected) throw rejected;
     const refusal = unavailablePermissions(manifest.permissions, context.grantable());
     if (refusal) throw refusal;
     const { files, bytes } = parsePackageFiles(submittedFiles, manifest);
     const owner = await ownerOf(context, { personalSpaceId, agentId });
-    const appId = agentAppId(context.provider, owner, manifest.name);
+    const identityKey = agentAppIdentity(context.provider, owner, manifest.name);
+    const appId = currentAppId(store.latestGeneration(identityKey), identityKey);
     const { staging, digest } = stagePackage(context.packagesOf(appId), manifest, files);
     try {
       return store.transaction(() => {
+        const latest = store.latestGeneration(identityKey);
+        if (currentAppId(latest, identityKey) !== appId) {
+          throw appConflict('app_changed', 'This app changed while the version was submitted; submit it again');
+        }
+        if (latest?.status === 'data_deleting') throw dataDeleting();
         const existing = store.version(appId, manifest.version);
         if (existing) {
           if (existing.digest !== digest || existing.state === 'code_deleted') {
@@ -33,12 +46,14 @@ export function createAppVersions(context) {
           return { ...submitted(appId, existing), idempotent: true };
         }
         const at = now();
-        const app = store.app(appId);
-        store.saveApp(app && app.status !== 'deleted' ? { ...app, updatedAt: at } : {
+        store.saveApp(latest?.appId === appId ? { ...latest, updatedAt: at } : {
           appId, provider: context.provider, ...owner, name: manifest.name, status: 'pending',
           activeVersion: null, dataFormat: null, deletionTicket: null, deletionExpiresAt: null,
-          createdAt: at, updatedAt: at, lastUsedAt: null
+          createdAt: at, updatedAt: at, lastUsedAt: null, identityKey, generation: (latest?.generation ?? 0) + 1
         });
+        if (latest && latest.appId !== appId) {
+          store.recordEvent({ appId: latest.appId, at, action: 'identity_regenerated', detail: { successor: appId } });
+        }
         const version = { appId, version: manifest.version, state: 'pending', digest, manifest,
           files: files.length, bytes, submittedAt: at };
         store.insertVersion(version);
@@ -51,57 +66,31 @@ export function createAppVersions(context) {
     }
   }
 
-  function approve({ appId, version, digest, approver, confirmResident = false, confirmIrreversibleMigration = false }) {
+  async function approve({ appId, version, digest, approver, confirmResident = false, confirmIrreversibleMigration = false }) {
     const source = decisionSource(approver);
-    return store.transaction(() => {
-      const app = store.existingApp(appId);
-      if (app.status === 'deleted') throw appConflict('app_deleted', 'This app and its data were deleted');
-      const candidate = requiredVersion(appId, version);
-      if (candidate.state !== 'pending') {
-        throw appConflict('version_not_pending', `Version ${version} is ${candidate.state}; only a pending version is approved`);
-      }
-      if (digest !== candidate.digest) {
-        throw appConflict('digest_mismatch', 'The package digest differs from the one approved; review the version again');
-      }
-      if (candidate.manifest.resident && !confirmResident) {
-        throw appConflict('resident_confirmation_required',
-          'This version runs a resident service, which needs its own confirmation');
-      }
-      const transition = activation(app, candidate, { confirmIrreversibleMigration });
-      const at = now();
-      store.insertApproval({ appId, version, ...approvalTerms(candidate), approvedBy: approver.user, ...source, approvedAt: at });
-      store.setVersionState(appId, version, 'approved');
-      store.recordEvent({ appId, at, action: 'approved', version, actor: approver.user, detail: { digest, ...source } });
-      return { ...activate(app, candidate, transition, { at, actor: approver.user, reason: 'superseded' }), approval: source };
-    });
+    return operations.run(appId, 'approve', (lease) => store.transaction(() => {
+      leases.assertOwned(lease);
+      const prepared = activation.approvable({ appId, version, digest, confirmResident, confirmIrreversibleMigration });
+      const result = activation.approve(prepared, { at: now(), actor: approver.user, detail: source, check: UNVERIFIED_CHECK });
+      return { ...result, approval: source };
+    }));
   }
 
-  // Rollback and re-enabling both activate a version that was approved before.
-  function rollback({ appId, version, actor, confirmIrreversibleMigration = false }) {
+  // Without a confirmation of its own, an activation never keeps the one an
+  // earlier activation of the same version had.
+  async function rollback({ appId, version, actor, confirmIrreversibleMigration = false }) {
     const source = decisionSource(actor);
-    return store.transaction(() => {
-      const app = store.existingApp(appId);
-      if (!['active', 'disabled'].includes(app.status)) {
-        throw appConflict('app_not_activatable', `An app that is ${app.status} has no approved code to activate`);
-      }
-      const target = requiredVersion(appId, version);
-      if (target.state !== 'approved') {
-        throw appConflict('version_not_approved', `Version ${version} is ${target.state}; only an approved version is activated`);
-      }
-      if (!approvalBinds(store.approval(appId, version), target)) {
-        throw appConflict('approval_mismatch', `The approval of version ${version} does not cover this package`);
-      }
-      const transition = activation(app, target, { confirmIrreversibleMigration });
-      const at = now();
-      store.recordEvent({ appId, at, action: app.activeVersion === version ? 'enabled' : 'rolled_back', version,
-        actor: actor.user, detail: { from: app.activeVersion, ...source } });
-      return activate(app, target, transition, { at, actor: actor.user, reason: 'rollback' });
-    });
+    return operations.run(appId, 'rollback', (lease) => store.transaction(() => {
+      leases.assertOwned(lease);
+      const prepared = activation.reactivatable({ appId, version, confirmIrreversibleMigration });
+      return activation.reactivate(prepared, { at: now(), actor: actor.user, detail: source, check: UNVERIFIED_CHECK });
+    }));
   }
 
-  function disable({ appId, actor }) {
+  async function disable({ appId, actor }) {
     const source = decisionSource(actor);
-    return store.transaction(() => {
+    return operations.run(appId, 'disable', (lease) => store.transaction(() => {
+      leases.assertOwned(lease);
       const app = store.existingApp(appId);
       if (!['active', 'disabled'].includes(app.status)) {
         throw appConflict('app_not_active', `An app that is ${app.status} is not running`);
@@ -114,34 +103,7 @@ export function createAppVersions(context) {
           detail: source });
       }
       return { appId, status: 'disabled', version: app.activeVersion };
-    });
-  }
-
-  function requiredVersion(appId, version) {
-    const record = store.version(appId, version);
-    if (!record) throw new ApplicationError('version_not_found', 'This app has no such version', { status: 404 });
-    return record;
-  }
-
-  function activation(app, version, options) {
-    if (!storedPackageMatches(context.packageOf(app.appId, version.version), version.digest)) throw tamperedPackage();
-    const refusal = unavailablePermissions(version.manifest.permissions, context.grantable());
-    if (refusal) throw refusal;
-    return dataTransition(app.dataFormat, version.manifest.data, options);
-  }
-
-  // The one place a version becomes the running one; earlier app tokens end here.
-  function activate(app, version, transition, { at, actor, reason }) {
-    store.revokeTokens(app.appId, reason, at);
-    store.saveApp({ ...app, status: 'active', activeVersion: version.version, dataFormat: transition.dataFormat,
-      deletionTicket: null, deletionExpiresAt: null, updatedAt: at });
-    if (transition.migration) {
-      const { note: _note, ...migration } = transition.migration;
-      store.recordEvent({ appId: app.appId, at, action: 'data_migrated', version: version.version, actor, detail: migration });
-    }
-    if (version.manifest.data.scope === 'app') ensureDataDirectory(context.dataOf(app.appId));
-    return { appId: app.appId, version: version.version, status: 'active', digest: version.digest,
-      ...(transition.migration ? { dataMigration: transition.migration } : {}) };
+    }));
   }
 
   return { submit, approve, rollback, disable };
@@ -162,14 +124,22 @@ async function ownerOf(context, owner) {
 
 // Unique across Providers, spaces and Agents, so two Agents' apps of the same
 // name never meet, and never derived from a display name alone.
-function agentAppId(provider, { personalSpaceId, agentId }, name) {
-  return `app-${contentHash({ provider, personalSpaceId, agentId, name }).slice(0, 32)}`;
+function agentAppIdentity(provider, { personalSpaceId, agentId }, name) {
+  return contentHash({ provider, personalSpaceId, agentId, name }).slice(0, 32);
+}
+
+// The app a submission adds to: the newest generation of its identity, or,
+// once that one is deleted, the next generation under a new id (rec#7 D-28.9).
+// The deleted one stays as its tombstone with its history; an id is never reused.
+function currentAppId(latest, identityKey) {
+  if (!latest) return `app-${identityKey}`;
+  return latest.status === 'deleted' ? `app-${identityKey}-g${latest.generation + 1}` : latest.appId;
 }
 
 function submitted(appId, version) {
   return {
     appId, version: version.version, status: version.state, digest: version.digest,
     ...(version.state === 'pending'
-      ? { approval: `Agent tools cannot approve it; approval comes through the CLI or local console: fuli app approve ${appId} ${version.version}` } : {})
+      ? { approval: `Agent tools cannot approve it; it runs only after the local user completes the terminal confirmation: fuli app approve ${appId} ${version.version}` } : {})
   };
 }

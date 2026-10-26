@@ -332,7 +332,7 @@ watch(peekSchedule, async (schedule) => {
 
 <template>
   <section class="view task-schedules-view">
-    <div class="mx-auto flex min-h-0 w-full max-w-(--canvas-max) flex-1 flex-col gap-3">
+    <div class="mx-auto flex min-h-0 w-full max-w-(--layout-max) flex-1 flex-col gap-3">
       <p class="page-lede m-0 text-sm text-muted-foreground">{{ t('taskSchedules.lede') }}</p>
       <!-- Toolbar: filters and sort (in the URL), then column choice and actions. -->
       <div class="task-schedules-toolbar flex flex-wrap items-center gap-2">

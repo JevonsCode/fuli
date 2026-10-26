@@ -1,7 +1,9 @@
-import { createFuliSourceMarker, sourceConsoleUrl } from './source-marker.js';
+import { createFuliSourceMarker, knowledgeItemTitle, sourceConsoleUrl } from './source-marker.js';
 import { knowledgeItemRole } from './knowledge-item-role.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { budgetAutomaticRecall } from './knowledge-result-budget.js';
+import { entryTimeBelow } from '../conversations/entry-time.js';
+import { utf8Preview } from '../text/utf8-preview.js';
 
 const MAX_QUERIES = 4;
 const MAX_ITEMS_PER_KIND = 3;
@@ -47,6 +49,45 @@ const RECALL_INTENTS = Object.freeze([
   }
 ]);
 
+// rec#51 D-59: an implementation or change request that signals no recall
+// intent gets a title-only index of what matches it in its exact project. The
+// model reads an item on demand; with nothing relevant the recall is as before.
+//
+// Whether a prompt is a change request is a heuristic, not intent
+// classification: one of its clauses opens with a change verb in the
+// imperative, after at most a few polite or sequencing words ("please", "can
+// you", "then", 请, 帮我, or a 把/给 phrase before the verb). A clause that
+// asks (a question word, a trailing question mark or 吗/呢, unless it is a
+// "can you" request) or opens with a negation ("don't", 不要) never counts,
+// nor does a change word used as a noun ("tests for", "support for").
+const CLAUSE_BREAK = /(?<=[?？])|[。！!；;，,\n]+|\.(?:\s+|$)|\s+(?:and\s+then|and|then)\s+/iu;
+const POLITE_REQUEST = /^(?:(?:ok(?:ay)?|so|now)\s+)*(?:please\s+)?(?:can|could|would|will)\s+you\b/iu;
+const QUESTION = /[?？吗呢]\s*$|什么|为什么|怎么|怎样|如何|是否|是不是|能不能|哪/u;
+const CHANGE_VERB_EN = 'fix|add|implement|change|update|refactor|rename|remove|delete|support|migrate|rewrite|replace|test|'
+  + 'debug|build|create|improve|optimi[sz]e|extend|wire|handle|make|write|move|split|port|drop|introduce|allow|ensure|'
+  + 'enable|disable|convert|cover|adjust|tighten|clean\\s+up';
+const CHANGE_CLAUSE_EN = new RegExp('^(?:(?:ok(?:ay)?|so|now|also|first|then|just|please|pls|let\'?s|help\\s+me|'
+  + '(?:can|could|would|will)\\s+you|i\\s+(?:need|want|would\\s+like)\\s+(?:you\\s+)?to|we\\s+(?:need|should|must|have)\\s+to)\\s+)*'
+  + `(?:${CHANGE_VERB_EN})\\b(?!\\s+(?:for|of|on|is|are|was|were)\\b)`, 'iu');
+const CHANGE_CLAUSE_ZH = new RegExp('^(?:(?:请|帮我|帮忙|麻烦|你|再|先|然后|接着|并|顺便|另外|好的?|ok|OK)\\s*)*'
+  + '(?:(?:把|给|为|将|对|在)[^，,。]{1,40}?)?'
+  + '(?:修复|修改|修正|修一下|修好|改成|改为|改一下|改掉|改进|实现|添加|增加|新增|加上|加个|补上|补充|补齐|补测试|写测试|加测试|测一下|测试一下|'
+  + '重构|优化|删除|删掉|去掉|移除|支持|迁移|调整|编写)', 'u');
+const MAX_INDEX_ITEMS = 5;
+const INDEX_SEARCH_LIMIT = 12;
+// Each item is an [id, title] pair: five of them with UUIDs and every title
+// cut at this size are at most 444 bytes with their count, 65 fewer than as
+// objects; the read line adds 108.
+const INDEX_TITLE_BYTES = 40;
+// A threshold for starting the one Provider search, not a timeout of its own:
+// with less of the entry's time left the entry goes without it, as it goes
+// without a model hint. A search already started is cut short like every
+// other entry read: the hook's abort signal reaches the Provider request,
+// which combines it with its own timeout (AbortSignal.any), and a failed
+// search leaves the recall not_needed.
+const INDEX_MIN_REMAINING_MS = 2000;
+const INDEX_READ = 'Titles of one bounded search: read one with search_current_project_knowledge before relying on it.';
+
 export const TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE = Object.freeze({
   before_reasking:
     'Before asking the user to repeat a stable project fact or method, inspect task_knowledge_recall and search Fuli when needed.',
@@ -55,7 +96,7 @@ export const TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE = Object.freeze({
   scope:
     'Search only the exact active personal project, its explicitly inheritable knowledge, and the bounded personal-global profile.',
   candidate_selection:
-    'Treat automatic matches as candidates. Cite only items that materially support the task; if all are irrelevant, use noMatchSourceMarker.'
+    'Treat automatic matches as candidates. Cite only items that materially support the task; if all are irrelevant, use noMatchSourceMarker. A recall without markers ran no search: show no marker.'
 });
 
 export function planTaskKnowledgeRecall(taskPrompt) {
@@ -70,9 +111,12 @@ export function planTaskKnowledgeRecall(taskPrompt) {
       queries: []
     };
   }
-  const matched = RECALL_INTENTS.filter(({ category, pattern }) => pattern.test(
-    category === 'release_delivery' ? positiveDeliveryClauses(prompt) : prompt
-  ));
+  const intentPrompt = {
+    release_delivery: positiveDeliveryClauses(prompt),
+    artifact_location: withoutRelativeWhere(prompt)
+  };
+  const matched = RECALL_INTENTS.filter(({ category, pattern }) =>
+    pattern.test(intentPrompt[category] ?? prompt));
   if (!matched.length) {
     return { status: 'not_needed', trigger_categories: [], queries: [] };
   }
@@ -92,14 +136,38 @@ export function planTaskKnowledgeRecall(taskPrompt) {
 function positiveDeliveryClauses(prompt) {
   const action = '(?:提交|发布|发版|上线|部署|推送|再推|release|publish|push|deploy|ship|rollout|commit)';
   const target = '(?:\\s*(?:代码|变更|code|changes?|this change|(?:到|to\\s+)\\s*GitHub))?';
+  // An English list goes on after a comma only while it is a run of actions
+  // that a ", or" closes ("commit, push, or create branches"); otherwise the
+  // comma starts a new instruction ("Don't push, deploy to staging or
+  // production"), and ", and" opens a positive clause. Chinese commas never
+  // join a negated list.
+  const listed = `(?=(?:${action}${target}\\s*,?\\s*)+or\\b)`;
+  const join = `(?:\\s*,\\s*${listed}(?:\\bor\\b\\s*)?|\\s*(?:和|或|以及|并|、|\\band\\b|\\bor\\b)\\s*)`;
   const negated = new RegExp('(?:不要|不用|不必|无需|不得|禁止|暂不|别|不|\\bdo\\s+not\\b|\\bdon\'t\\b|\\bnever\\b|\\bno\\b)'
     + '(?:\\s|再次|再|需要|执行|进行|要|会|自动|直接)*' + action + target
-    + '(?:\\s*(?:和|或|以及|并|、|\\band\\b|\\bor\\b)\\s*' + action + target + ')*', 'giu');
+    + '(?:' + join + action + target + ')*', 'giu');
   return prompt.replace(negated, ' ');
+}
+
+// A relative "where" right after a comma ("WSL Ubuntu, where `node` is
+// installed") describes a place inside a statement; every other "where" may
+// ask for one, with or without a question mark ("Find where config.json is
+// loaded"). A question keeps even a relative one. A sentence ends at
+// punctuation followed by a space, so a file name such as config.json stays whole.
+function withoutRelativeWhere(prompt) {
+  return prompt.split(/(?<=[.!?])\s+|(?<=[。！？])/u).map((sentence) => (
+    /[?？]\s*$/u.test(sentence) ? sentence
+      // "Tell me, where is the config file" still asks, question mark or not.
+      : sentence.replace(/,\s*where\b(?!\s+(?:is|are|was|were|do|does|did|should|can|could|would|will|to)\b)/giu, ',')
+  )).join(' ');
 }
 
 export async function recallTaskKnowledge(application, resolution, taskPrompt, { sourceApplication = null, sessionId = null } = {}) {
   const plan = planTaskKnowledgeRecall(taskPrompt);
+  if (plan.status === 'not_needed') {
+    return await knowledgeIndexRecall(application, resolution, taskPrompt, { sourceApplication, sessionId })
+      ?? recallWithoutSearch(plan.status, plan);
+  }
   if (plan.status !== 'planned') return recallWithoutSearch(plan.status, plan);
   if (!resolution.personalProjectId) {
     return {
@@ -125,9 +193,11 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
       agentToolName: 'automatic_task_knowledge_recall'
     })
   ));
+  // A personal preference reaches a task only through its scoped
+  // effective_preferences, never as recalled knowledge (rec#15 D-27.7).
   const results = settlements
     .filter(({ status }) => status === 'fulfilled')
-    .map(({ value }) => value);
+    .map(({ value }) => ({ facts: withoutPreferences(value.facts), entities: withoutPreferences(value.entities) }));
   const failedQueryCount = settlements.length - results.length;
   const focusTerms = distinctivePromptTerms(singleLine(taskPrompt).slice(0, 8192));
   const facts = rankedUnique(
@@ -179,6 +249,72 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
   }) : result;
 }
 
+// The index tier: one search of the prompt's distinctive terms, read as the
+// recall reads (the same reader, no preferences, confirmed first), keeping
+// only items the exact project defines that name one of those terms. Null,
+// so the entry carries the unchanged not_needed recall, for anything but a
+// change request in a resolved project with such a match in time.
+async function knowledgeIndexRecall(application, { personalProjectId }, taskPrompt, { sourceApplication, sessionId }) {
+  const prompt = singleLine(taskPrompt).slice(0, 8192);
+  const focusTerms = distinctivePromptTerms(prompt);
+  const focusTokens = recallFocusTokens(focusTerms);
+  if (!personalProjectId || !focusTokens.length || !changeRequested(prompt)
+    || entryTimeBelow(INDEX_MIN_REMAINING_MS)) return null;
+  let found;
+  try {
+    found = await application.searchKnowledge({
+      personalSpaceId: application.config.personal.spaceId,
+      personalProjectId,
+      query: focusTerms.join(' ').slice(0, 180),
+      limit: INDEX_SEARCH_LIMIT,
+      includeHistorical: false,
+      includePending: true,
+      sourceApplication, sourceSessionId: sessionId,
+      agentInvocation: true,
+      agentToolName: 'automatic_task_knowledge_index'
+    });
+  } catch {
+    return null;
+  }
+  const exact = (items, itemKind) => withoutPreferences(items)
+    .filter(item => item.defined_project_id === personalProjectId && !item.inherited_from_project_id
+      && recallItemMatchesFocus(item, focusTokens))
+    .map(item => ({ ...item, title: knowledgeItemTitle(item, itemKind) }));
+  const matches = confirmedFirst([...exact(found?.facts, 'relationship'), ...exact(found?.entities, 'entity')])
+    .sort(compareRecallItems);
+  if (!matches.length) return null;
+  return {
+    status: 'indexed',
+    trigger_categories: [],
+    query_count: 1,
+    guidance: taskKnowledgeRetrievalGuidance(),
+    knowledge_index: {
+      // What this one search returned and kept, not the project's total: the
+      // Provider caps each kind at INDEX_SEARCH_LIMIT, and pending items drop
+      // out when a confirmed one matched.
+      matched_in_search: matches.length,
+      items: matches.slice(0, MAX_INDEX_ITEMS).map(({ id, title }) => [id, indexTitle(title)]),
+      read: INDEX_READ
+    },
+    facts: [],
+    entities: []
+  };
+}
+
+// The heuristic described at CLAUSE_BREAK.
+function changeRequested(prompt) {
+  return prompt.split(CLAUSE_BREAK).some(clause => {
+    const text = clause?.trim();
+    if (!text || (QUESTION.test(text) && !POLITE_REQUEST.test(text))) return false;
+    return CHANGE_CLAUSE_EN.test(text) || CHANGE_CLAUSE_ZH.test(text);
+  });
+}
+
+// Bounded by the bytes the entry sends, as a JSON string.
+function indexTitle(title) {
+  return utf8Preview(singleLine(title), INDEX_TITLE_BYTES, text => Buffer.byteLength(JSON.stringify(text)));
+}
+
 // An answer can rest on the recovered conversation instead of searched knowledge.
 // Without its own marker such a reply could only cite "searched, no match".
 export function withRecoveredSource(recall, conversation, { consoleUrl, spaceId, agentId }) {
@@ -201,6 +337,10 @@ function recallWithoutSearch(status, plan) {
 
 function taskKnowledgeRetrievalGuidance() {
   return { ...TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE };
+}
+
+function withoutPreferences(items) {
+  return (items ?? []).filter(item => !item?.profile_aspect);
 }
 
 // Human-authoritative first: agent-proposed pending items fill a slot only when
