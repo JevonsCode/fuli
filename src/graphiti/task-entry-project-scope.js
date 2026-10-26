@@ -3,6 +3,7 @@ import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { projectNamedInPrompt } from './task-entry-project-mention.js';
 import { sessionTaskContext, withStandingOwner } from './task-entry-standing-owner.js';
 import { namedFlaRequest, namedFlaResolution, namedFlaTask } from './task-entry-named-fla.js';
+import { groupDiscussionRequest } from './task-entry-group-discussion.js';
 import { leadingAgentAddress } from './fla-mention.js';
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 
@@ -11,16 +12,21 @@ import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 // pending in the assistant's global scope until it is assigned to a project.
 // A standing assignment the prompt names then scopes this task alone
 // (task-entry-standing-owner.js). An FLA the person names, or this session is
-// bound to, comes first (task-entry-named-fla.js).
+// bound to, comes first (task-entry-named-fla.js). An `@FLG` group discussion
+// (task-entry-group-discussion.js) keeps wherever the session is: its
+// moderator is the session's own Agent, so no standing assignment reroutes it.
 export async function resolveTaskEntryProject(application, resolution, input) {
   if (!input.agentInvocation || !TASK_ENTRY_TOOLS.has(input.agentToolName)) return resolution;
   const readSessionTask = sessionTaskReader(application, input);
   const fla = await namedFlaRequest(application, resolution, input, readSessionTask);
+  let sessionTask = null;
+  try { sessionTask = await readSessionTask(); } catch { /* no stored member choice can be proven */ }
+  const group = groupDiscussionRequest(application, input, sessionTask);
   const named = fla && namedFlaResolution(fla);
-  if (named) return named;
-  const routed = await withStandingOwner(application,
-    await sessionEntryProject(application, resolution, input, readSessionTask), input);
-  return fla ? { ...routed, fla } : routed;
+  if (named) return group ? { ...named, group } : named;
+  const home = await sessionEntryProject(application, resolution, input, readSessionTask);
+  const routed = group ? home : await withStandingOwner(application, home, input);
+  return fla || group ? { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}) } : routed;
 }
 
 // The session's current task, read at most once per entry, and not at all

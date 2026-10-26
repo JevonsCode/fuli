@@ -106,7 +106,7 @@ function fixture({ roster = [ADA, JAMIE, JADE, JEFA, TEMP], leads = LEADS, holdB
 const owner = entry => [entry.context.personal_project_id, entry.context.project_agent_id];
 const bytes = value => Buffer.byteLength(JSON.stringify(compactTaskContext(value)));
 
-test('parsing: leading @name, #FLA anywhere, release and choice; emails, decorators, scopes and @FLG are not FLAs', () => {
+test('parsing: leading @name, #FLA anywhere, release and choice; emails, decorators and scopes are not FLAs, @FLG is a group', () => {
   assert.deepEqual(parseFlaMention('@Jamie Ash 继续刚才的任务'), { explicit: false, query: 'Jamie Ash 继续刚才的任务' });
   assert.deepEqual(parseFlaMention('  #FLA 小林 测试 继续'), { explicit: true, query: '小林 测试 继续' });
   assert.deepEqual(parseFlaMention('请让 #FLA Jamie Ash 看一下'), { explicit: true, query: 'Jamie Ash 看一下' });
@@ -115,14 +115,15 @@ test('parsing: leading @name, #FLA anywhere, release and choice; emails, decorat
   for (const release of ['@FLA 结束', '#FLA end', '@fla release。']) assert.deepEqual(parseFlaMention(release), { release: true });
   assert.deepEqual(parseFlaMention('@{Team%20%2F%20x} 请接手'), { handoff: 'Team / x' });
   for (const text of ['jamie@example.com 发邮件', '@jamie@example.com', '@scope/pkg 升级', '@Override 是什么意思',
-    '@Component(selector) 报错', '@app.route 怎么写', '@README.md 看看', '@FLG 讨论一下', '请让 @Jamie Ash 继续',
+    '@Component(selector) 报错', '@app.route 怎么写', '@README.md 看看', '请让 @Jamie Ash 继续',
     '`@Jamie Ash`', '#FLAG 不是关键词']) {
     assert.equal(parseFlaMention(text), null, text);
   }
+  assert.deepEqual(parseFlaMention('@FLG 讨论一下'), { group: { query: '讨论一下' } });
 });
 
 test('excluded prompts keep the folder\'s owner and never read the roster', async () => {
-  for (const prompt of ['@Override 这个注解什么意思', '@scope/pkg 升级到最新', 'mail jamie@example.com', '@FLG 讨论',
+  for (const prompt of ['@Override 这个注解什么意思', '@scope/pkg 升级到最新', 'mail jamie@example.com',
     '请让 @Jamie Ash 继续']) {
     const { run, calls } = fixture({ roster: [ADA, JAMIE, fla('override', 'Override', '开发', 'project-b')] });
     const entry = await run(prompt);

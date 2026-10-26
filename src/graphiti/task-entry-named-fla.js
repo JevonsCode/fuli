@@ -7,6 +7,7 @@ import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects } from './task-entry-project-mention.js';
 import { sessionMarkers, sessionTaskContext } from './task-entry-standing-owner.js';
 import { agentUnavailableReason } from './agent-availability.js';
+import { markerField as field, markerValue as unfield } from './task-agent-assignment.js';
 
 // Continue a named FLA in this host session (rec#54). `@Jamie Ash …` or
 // `#FLA Jamie Ash …` names one of the person's FLAs in any of their projects;
@@ -28,11 +29,10 @@ import { agentUnavailableReason } from './agent-availability.js';
 
 const BINDING = /^fla_binding:(\S+) (\S+) (\S+) (\S+)(?: (.+))?$/su;
 const CHOICE = /^fla_choice:(\S+) (\S+) (\S+) (\S+)$/u;
-const NONE = '-';
 const MARKER_LIMIT = 2048;
 // The hint repeats at most this much of what was typed.
 const HINT_WORD_LIMIT = 32;
-// Markers travel with the entry under a symbol: JSON never serializes it, so
+// Markers (this binding's, and an @FLG member choice's) travel with the entry under a symbol: JSON never serializes it, so
 // no client receives them; beginTaskFromPreferences stores them on the task.
 export const FLA_ROUTE = Symbol('fla_route');
 
@@ -61,7 +61,9 @@ const QUESTIONS = Object.freeze({
 // neither involves a named FLA (the entry then routes as it always did).
 // readSessionTask: the session's current task, read once per entry.
 export async function namedFlaRequest(application, resolution, input, readSessionTask) {
-  const mention = parseFlaMention(input.taskPrompt);
+  const parsed = parseFlaMention(input.taskPrompt);
+  // `@FLG` addresses a group (task-entry-group-discussion.js), not one FLA.
+  const mention = parsed?.group ? null : parsed;
   let task = null;
   try { task = await readSessionTask(); } catch { /* the binding cannot be proven; route as before */ }
   const stored = storedFla(task);
@@ -278,7 +280,9 @@ async function resolvesInFolder(application, resolution, input) {
   }
 }
 
-async function personCandidates(application) {
+// Every FLA of the person's own space as candidates (fla-picker.js); the
+// group discussion's member choice reads the same roster.
+export async function personCandidates(application) {
   const spaceId = application.config.personal.spaceId;
   const [roster, projects] = await Promise.all([application.personal.listProjectAgents(spaceId, null),
     nameableProjects(application)]);
@@ -302,14 +306,6 @@ async function whyUnavailable(application, target, selection, sourceApplication)
     return 'unavailable';
   }
 }
-
-// Marker fields: IDs and names with spaces and % escaped, `-` for none.
-const field = value => value === null || value === undefined ? NONE
-  : String(value).replace(/%/g, '%25').replace(/\s/g, '%20');
-const unfield = value => {
-  if (value === NONE) return null;
-  try { return decodeURIComponent(value); } catch { return null; }
-};
 
 function bindingMarker(target, notice = null) {
   const marker = `fla_binding:${field(target.agentId)} ${field(target.projectId)} ${field(target.name)} ${field(target.project)}`;
