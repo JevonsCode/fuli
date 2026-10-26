@@ -16,6 +16,7 @@ import UiSegmented from '@/ui/UiSegmented.vue'
 
 import JudgmentProjectOverrides from './JudgmentProjectOverrides.vue'
 import { judgmentText, policySummary } from './judgment-copy'
+import { escalationReason } from './judgment-escalation'
 import { loadJudgmentRecords, requestJudgmentReview, submitJudgmentFeedback, undoJudgmentReview } from './judgment-api'
 import { isHumanNeeded, type JudgmentAiReview, type JudgmentDecisionRecord, type JudgmentFeedbackVote, type JudgmentRecordFilter } from './judgment-types'
 
@@ -442,6 +443,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
           <span class="judgment-outcome" :class="`is-${record.outcome}`">{{ verdictLabel(record) }}</span>
         </header>
         <p class="judgment-record-summary">{{ record.summary }}</p>
+        <p v-if="escalationReason(record)" class="judgment-escalation-reason" data-escalation-reason>{{ escalationReason(record) }}</p>
         <p v-if="awaitsTrustWarning(record)" class="judgment-trust-warning" data-trust-warning>
           {{ t('modelSettings.trust.warning') }} {{ judgmentText('workbench.trustWarningPending') }}
           <RouterLink to="/settings/models">{{ judgmentText('workbench.trustWarningOpen') }}</RouterLink>
@@ -532,6 +534,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
 .judgment-outcome.is-escalate, .judgment-outcome.is-failed { color: var(--color-danger); background: var(--color-danger-soft); }
 .judgment-outcome.is-approve { color: var(--color-success); background: var(--color-success-soft); }
 .judgment-record-summary { margin: 0; color: var(--color-ink); font-size: 13px; line-height: 1.65; }
+.judgment-escalation-reason { margin: 0; color: var(--color-warning); font-size: 12px; line-height: 1.6; }
 .judgment-trust-warning, .judgment-undo-refused { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
 .judgment-trust-warning a { color: var(--color-ink); text-decoration: underline; text-underline-offset: 2px; }
 .judgment-record-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }

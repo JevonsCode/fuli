@@ -69,6 +69,8 @@ export interface JudgmentDecisionRecord {
   objective?: string
   summary: string
   outcome: JudgmentOutcome
+  // Tonborg's confidence in its verdict (0 to 1), on reviews and acceptances.
+  confidence?: number
   aiReview?: JudgmentAiReview
   evidence: string[]
   policy: Partial<JudgmentPolicySelection> | null
