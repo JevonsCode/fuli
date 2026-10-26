@@ -13,8 +13,9 @@ import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 // A standing assignment the prompt names then scopes this task alone
 // (task-entry-standing-owner.js). An FLA the person names, or this session is
 // bound to, comes first (task-entry-named-fla.js). An `@FLG` group discussion
-// (task-entry-group-discussion.js) keeps wherever the session is: its
-// moderator is the session's own Agent, so no standing assignment reroutes it.
+// (task-entry-group-discussion.js) keeps wherever the session is on its own
+// `@FLG` turns and while it is in progress: its moderator is the session's own
+// Agent, so no standing assignment reroutes it then. Other turns route as usual.
 export async function resolveTaskEntryProject(application, resolution, input) {
   if (!input.agentInvocation || !TASK_ENTRY_TOOLS.has(input.agentToolName)) return resolution;
   const readSessionTask = sessionTaskReader(application, input);
@@ -25,7 +26,7 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   const named = fla && namedFlaResolution(fla);
   if (named) return group ? { ...named, group } : named;
   const home = await sessionEntryProject(application, resolution, input, readSessionTask);
-  const routed = group ? home : await withStandingOwner(application, home, input);
+  const routed = group?.holdsProject ? home : await withStandingOwner(application, home, input);
   return fla || group ? { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}) } : routed;
 }
 
