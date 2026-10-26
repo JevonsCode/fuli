@@ -1,26 +1,42 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
-import { computed, ref, watch } from 'vue'
+import { Input } from '@/components/ui/input'
+import { useVirtualizer } from '@tanstack/vue-virtual'
+import { computed, onBeforeUnmount, ref, watch, type ComponentPublicInstance } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { apiErrorCode, isKnowledgeRecoveryPending } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
+import { createDebouncedAction } from '@/lib/debounce'
 import { useWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
+import { projectDisplayName } from '@/features/projects/project-origin'
+import type { PersonalProject } from '@/types'
 import UiSegmented from '@/ui/UiSegmented.vue'
 
 import { judgmentText } from './judgment-copy'
 import { loadJudgmentRecords, requestJudgmentReview, submitJudgmentFeedback, undoJudgmentReview } from './judgment-api'
-import { isHumanNeeded, type JudgmentAiReview, type JudgmentDecisionRecord, type JudgmentFeedbackVote } from './judgment-types'
+import { isHumanNeeded, type JudgmentAiReview, type JudgmentDecisionRecord, type JudgmentFeedbackVote, type JudgmentRecordFilter } from './judgment-types'
 
-const props = defineProps<{ personalSpaceId: string }>()
+const props = withDefaults(defineProps<{ personalSpaceId: string; projects?: PersonalProject[] }>(), { projects: () => [] })
+
+// A card's height before it is measured, the delay before typing searches,
+// and how many cards before the end the next page is read.
+const ESTIMATED_CARD_HEIGHT = 320
+const SEARCH_DELAY_MS = 300
+const LOAD_AHEAD = 3
 
 const records = ref<JudgmentDecisionRecord[]>([])
+const nextCursor = ref<string | null>(null)
 const loading = ref(false)
+const loadingMore = ref(false)
 const error = ref('')
 const recoveryPending = ref(false)
 const reviewError = ref('')
-const filter = ref<'all' | 'human'>('human')
+const filter = ref<JudgmentRecordFilter>('human')
+// What the person typed, and the search the loaded records answer.
+const searchInput = ref('')
+const search = ref('')
 const reviewing = ref(false)
 const feedbackSavingId = ref<string | null>(null)
 const undoingId = ref<string | null>(null)
@@ -38,12 +54,47 @@ const visibleRecords = computed(() => {
 })
 const busy = computed(() => loading.value || reviewing.value)
 // With nothing to show, the empty block carries the one primary action instead of the toolbar.
-const showEmpty = computed(() => !loading.value && !error.value && !visibleRecords.value.length)
+const showEmpty = computed(() => !loading.value && !error.value && !visibleRecords.value.length && !nextCursor.value)
+const emptyText = computed(() => judgmentText(search.value ? 'workbench.emptySearch' : filter.value === 'human' ? 'workbench.emptyHuman' : 'workbench.empty'))
+const loadingLabel = computed(() => judgmentText(search.value ? 'workbench.searching' : 'workbench.loading'))
 const filterOptions = computed(() => [
   { value: 'human' as const, label: judgmentText('workbench.human') },
   { value: 'all' as const, label: judgmentText('workbench.all') },
 ])
+const projectNames = computed(() => new Map(props.projects.map(project => [project.project_id, projectDisplayName(project)])))
 const toolbarActions = useWorkbenchToolbarActions()
+
+// Thousands of records stay smooth: only the cards near the viewport are
+// rendered, each measured as it is drawn since decisions differ in length.
+const scroller = ref<HTMLElement | null>(null)
+const virtualizer = useVirtualizer(computed(() => ({
+  count: visibleRecords.value.length,
+  getScrollElement: () => scroller.value,
+  estimateSize: () => ESTIMATED_CARD_HEIGHT,
+  getItemKey: (index: number) => visibleRecords.value[index]?.id ?? index,
+  gap: 12,
+  overscan: 3,
+})))
+const virtualCards = computed(() => virtualizer.value.getVirtualItems().flatMap((row) => {
+  const record = visibleRecords.value[row.index]
+  return record ? [{ row, record }] : []
+}))
+function measureCard(element: Element | ComponentPublicInstance | null) {
+  if (!element || element instanceof Element) virtualizer.value.measureElement(element)
+}
+// Read the next page as the last loaded cards come into view.
+watch([() => virtualCards.value.at(-1)?.row.index, () => visibleRecords.value.length, nextCursor], ([last, count]) => {
+  if (last !== undefined && last >= count - 1 - LOAD_AHEAD) void loadMore()
+})
+
+const searchSoon = createDebouncedAction(() => {
+  if (search.value === searchInput.value.trim()) return
+  search.value = searchInput.value.trim()
+  void load()
+}, SEARCH_DELAY_MS)
+watch(searchInput, () => searchSoon.schedule())
+onBeforeUnmount(() => searchSoon.cancel())
+watch(filter, () => { void load() })
 
 watch(() => props.personalSpaceId, (scope) => {
   scopeGeneration += 1
@@ -51,6 +102,8 @@ watch(() => props.personalSpaceId, (scope) => {
   feedbackGeneration += 1
   recoveryPending.value = false
   records.value = []
+  nextCursor.value = null
+  loadingMore.value = false
   feedbackReasons.value = {}
   feedbackReasonDirty.value = new Set()
   error.value = ''
@@ -83,9 +136,11 @@ function recoveryFailure(cause: unknown) {
   // a body while the current space's deletion record is unconfirmed.
   scopeGeneration += 1
   records.value = []
+  nextCursor.value = null
   feedbackReasons.value = {}
   feedbackReasonDirty.value = new Set()
   loading.value = false
+  loadingMore.value = false
   reviewing.value = false
   feedbackSavingId.value = null
   undoingId.value = null
@@ -95,21 +150,27 @@ function recoveryFailure(cause: unknown) {
   return true
 }
 
+// Reads the first page of the current view and search again. The loaded
+// cards stay visible until the answer replaces them; a later page still on
+// its way is dropped.
 async function load(scopeInput?: unknown) {
   const scope = typeof scopeInput === 'string' ? scopeInput : props.personalSpaceId
   const current = scopeGeneration
   const requestGeneration = ++loadGeneration
   error.value = ''
+  loadingMore.value = false
   if (!scope || !isCurrentScope(scope, current)) {
     loading.value = false
     return
   }
   loading.value = true
   try {
-    const result = await loadJudgmentRecords(scope)
+    const page = await loadJudgmentRecords(scope, { filter: filter.value, search: search.value })
     if (isCurrentScope(scope, current) && requestGeneration === loadGeneration) {
       recoveryPending.value = false
-      applyRecords(Array.isArray(result.records) ? result.records : [])
+      applyRecords(Array.isArray(page.records) ? page.records : [])
+      nextCursor.value = page.nextCursor ?? null
+      scroller.value?.scrollTo?.({ top: 0 })
     }
   } catch (cause) {
     if (isCurrentScope(scope, current) && requestGeneration === loadGeneration) {
@@ -117,6 +178,28 @@ async function load(scopeInput?: unknown) {
     }
   } finally {
     if (isCurrentScope(scope, current) && requestGeneration === loadGeneration) loading.value = false
+  }
+}
+
+// Appends the page after the last one read.
+async function loadMore() {
+  const scope = props.personalSpaceId
+  const after = nextCursor.value
+  if (!scope || !after || loading.value || loadingMore.value || error.value || recoveryPending.value) return
+  const current = scopeGeneration
+  const requestGeneration = loadGeneration
+  const isCurrent = () => isCurrentScope(scope, current) && requestGeneration === loadGeneration
+  loadingMore.value = true
+  try {
+    const page = await loadJudgmentRecords(scope, { filter: filter.value, search: search.value, after })
+    if (!isCurrent()) return
+    const loaded = new Set(records.value.map(record => record.id))
+    applyRecords([...records.value, ...(page.records ?? []).filter(record => !loaded.has(record.id))])
+    nextCursor.value = page.nextCursor ?? null
+  } catch (cause) {
+    if (isCurrent() && !recoveryFailure(cause)) error.value = cause instanceof Error ? cause.message : judgmentText('workbench.loadError')
+  } finally {
+    if (isCurrent()) loadingMore.value = false
   }
 }
 
@@ -332,10 +415,14 @@ function hasDetails(record: JudgmentDecisionRecord) {
       </div>
     </Teleport>
 
-    <UiSegmented v-model="filter" class="judgment-filter" :label="judgmentText('workbench.filter')" :options="filterOptions" />
+    <div class="judgment-list-controls">
+      <UiSegmented v-model="filter" class="judgment-filter" :label="judgmentText('workbench.filter')" :options="filterOptions" />
+      <Input v-model="searchInput" type="search" class="judgment-search" data-judgment-search maxlength="200"
+        :aria-label="judgmentText('workbench.search')" :placeholder="judgmentText('workbench.search')" @keydown.enter.prevent="searchSoon.flush()" />
+    </div>
 
-    <GrowthLoading v-if="loading && !records.length && !recoveryPending" variant="compact" :label="judgmentText('workbench.loading')" />
-    <GrowthLoading v-else-if="loading" variant="inline" :label="judgmentText('workbench.loading')" />
+    <GrowthLoading v-if="loading && !records.length && !recoveryPending" variant="compact" :label="loadingLabel" />
+    <GrowthLoading v-else-if="loading" variant="inline" :label="loadingLabel" />
     <div v-if="error" class="judgment-workbench-error" role="alert">
       <span>{{ error }}</span>
       <Button size="sm" variant="ghost" :disabled="busy" @click="load">{{ judgmentText('workbench.retry') }}</Button>
@@ -343,14 +430,16 @@ function hasDetails(record: JudgmentDecisionRecord) {
     <div v-if="reviewError" class="judgment-workbench-error" role="alert">{{ reviewError }}</div>
 
     <div v-if="showEmpty" class="ui-empty rounded-lg border bg-card" data-judgment-empty>
-      <p class="m-0">{{ judgmentText(filter === 'human' ? 'workbench.emptyHuman' : 'workbench.empty') }}</p>
+      <p class="m-0">{{ emptyText }}</p>
       <Button class="mt-3" size="sm" data-action="review" :disabled="busy || !props.personalSpaceId" :loading="reviewing" :loading-label="judgmentText('workbench.reviewing')" @click="review">
         {{ judgmentText('workbench.review') }}
       </Button>
     </div>
     <!-- One column (rec#38): decisions differ in length, so they never sit side by side. -->
-    <div v-else class="judgment-record-list grid grid-cols-1 gap-3">
-      <article v-for="record in visibleRecords" :key="record.id" data-decision-card class="judgment-record-card" :class="{ 'is-human-needed': isHumanNeeded(record) }">
+    <div v-else ref="scroller" class="judgment-record-scroller" data-judgment-scroller>
+     <div class="judgment-record-list" :style="{ height: `${virtualizer.getTotalSize()}px` }">
+      <div v-for="{ row, record } in virtualCards" :key="String(row.key)" :ref="measureCard" class="judgment-record-row" :data-index="row.index" :style="{ transform: `translateY(${row.start}px)` }">
+      <article data-decision-card class="judgment-record-card" :class="{ 'is-human-needed': isHumanNeeded(record) }">
         <header class="judgment-record-heading">
           <div>
             <span class="judgment-record-kind">{{ kindLabel(record.kind) }}</span>
@@ -370,6 +459,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
           </div>
           <div><dt>{{ judgmentText('workbench.execution') }}</dt><dd>{{ executionLabel(record.execution.status) }}</dd></div>
           <div><dt>{{ judgmentText('workbench.policy') }}</dt><dd>{{ policyLabel(record) }}</dd></div>
+          <div v-if="record.personalProjectId"><dt>{{ judgmentText('workbench.project') }}</dt><dd>{{ projectNames.get(record.personalProjectId) ?? record.personalProjectId }}</dd></div>
           <div v-if="record.client || record.model"><dt>{{ judgmentText('workbench.source') }}</dt><dd>{{ sourceLabel(record) }}</dd></div>
           <div v-if="record.disposition"><dt>{{ judgmentText('workbench.disposition') }}</dt><dd>{{ judgmentText(`workbench.actions.${record.disposition}`) }}</dd></div>
           <div v-if="record.selection"><dt>{{ judgmentText('workbench.selection') }}</dt><dd>{{ selectionLabel(record) }}</dd></div>
@@ -417,14 +507,28 @@ function hasDetails(record: JudgmentDecisionRecord) {
           <p v-if="undoRefusals[record.id]" class="judgment-undo-refused" role="status" data-undo-refused>{{ undoRefusals[record.id] }}</p>
         </section>
       </article>
+      </div>
+     </div>
+     <div v-if="nextCursor" class="judgment-record-more">
+      <GrowthLoading v-if="loadingMore" data-loading-more variant="inline" :label="judgmentText('workbench.loadingMore')" />
+      <Button v-else size="sm" variant="ghost" data-action="load-more" :disabled="busy || Boolean(error)" @click="loadMore">{{ judgmentText('workbench.loadMore') }}</Button>
+     </div>
     </div>
   </section>
 </template>
 
 <style scoped>
-.judgment-workbench { container-type: inline-size; display: grid; gap: 12px; min-width: 0; }
+/* The workbench takes the rest of the page and its record list scrolls inside,
+   so the view and search stay in reach while thousands of records scroll. */
+.judgment-workbench { container-type: inline-size; display: flex; flex: 1 1 0; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
 .judgment-workbench-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.judgment-list-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .judgment-filter { width: fit-content; }
+.judgment-search { flex: 1 1 240px; min-width: 0; }
+.judgment-record-scroller { flex: 1 1 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.judgment-record-list { position: relative; width: 100%; }
+.judgment-record-row { position: absolute; top: 0; left: 0; width: 100%; }
+.judgment-record-more { display: flex; justify-content: center; padding: 12px 0 4px; }
 .judgment-record-card { display: grid; align-content: start; gap: 13px; padding: 18px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .judgment-record-card.is-human-needed { border-color: color-mix(in srgb, var(--color-warning) 48%, var(--color-border)); }
 .judgment-record-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }

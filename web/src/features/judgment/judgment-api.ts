@@ -5,8 +5,12 @@ import type {
   JudgmentFeedbackVote,
   JudgmentPolicy,
   JudgmentPolicySelection,
+  JudgmentRecordPage,
+  JudgmentRecordPageQuery,
   JudgmentReviewResult,
 } from './judgment-types'
+
+const JUDGMENT_PAGE_SIZE = 30
 
 export function judgmentQuery(personalSpaceId: string, personalProjectId?: string | null) {
   const query = new URLSearchParams({ personalSpaceId })
@@ -34,10 +38,12 @@ export function saveJudgmentPolicy(
   return putJson<JudgmentPolicy>('/api/judgment/policy', body)
 }
 
-export function loadJudgmentRecords(personalSpaceId: string, personalProjectId?: string | null) {
-  return getJson<{ records: JudgmentDecisionRecord[] }>(
-    `/api/judgment/records?${judgmentQuery(personalSpaceId, personalProjectId)}`,
-  )
+// One page of the space's records, newest first; after is the previous page's nextCursor.
+export function loadJudgmentRecords(personalSpaceId: string, { filter, search, after }: JudgmentRecordPageQuery) {
+  const query = new URLSearchParams({ personalSpaceId, limit: String(JUDGMENT_PAGE_SIZE), filter })
+  if (search) query.set('search', search)
+  if (after) query.set('after', after)
+  return getJson<JudgmentRecordPage>(`/api/judgment/records?${query}`)
 }
 
 export function requestJudgmentReview(personalSpaceId: string, personalProjectId?: string | null, limit = 10) {

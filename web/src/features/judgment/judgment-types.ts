@@ -83,6 +83,20 @@ export interface JudgmentDecisionRecord {
   executionHistory: unknown[]
 }
 
+// The console's 需要人工 / 全部 views; the server applies isHumanNeeded's rule to every record.
+export type JudgmentRecordFilter = 'human' | 'all'
+
+export interface JudgmentRecordPageQuery {
+  filter: JudgmentRecordFilter
+  search: string
+  after?: string | null
+}
+
+export interface JudgmentRecordPage {
+  records: JudgmentDecisionRecord[]
+  nextCursor?: string | null
+}
+
 export interface JudgmentReviewResult {
   records: JudgmentDecisionRecord[]
   remaining: number
@@ -130,6 +144,7 @@ export function policySelection(policy: JudgmentPolicy): JudgmentPolicySelection
   return { mode: policy.mode, quality: policy.quality, client: policy.client }
 }
 
+// The store's HUMAN_NEEDED rule (src/judgment/store.js) applied to a loaded record.
 export function isHumanNeeded(record: JudgmentDecisionRecord): boolean {
   return record.outcome === 'escalate'
     || record.outcome === 'failed'

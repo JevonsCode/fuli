@@ -84,7 +84,7 @@ The MCP tools are `get_judgment_policy`, `list_judgments`, `review_with_tonborg`
 
 From 0.21 every console route that answers with Tonborg's full records or a model's free text works like the console's other full reads (knowledge details, session records) (rec#11 D-60):
 
-- `GET /api/judgment/records` (records, receipts, feedback reasons and the questions for the person);
+- `GET /api/judgment/records` (records, receipts, feedback reasons and the questions for the person), one page at a time, newest first: `limit` (1–100, default 50), `after` (the previous page's `nextCursor`; `null` at the end), `filter` (`all` or `human`, the console's 需要人工 view) and `search` (matched in the store across every record: title, objective, conclusion, evidence, client, model, project id or name, and the latest feedback and receipt reasons);
 - `POST /api/judgment/feedback`, `POST /api/judgment/review`, `POST /api/judgment/assess` and `POST /api/judgment/accept`, which answer with the full records they wrote or ran;
 - `GET /api/judgment/suggestions` (above);
 - `GET /api/model-backends/suggestions`, the built-in Agents' suggestion log (docs/employee-agents.md).
