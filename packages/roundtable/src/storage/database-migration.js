@@ -156,7 +156,7 @@ export function rollbackSqliteMigration(path, format, { migrationId, actor, back
       throw new DataFormatError(format.store, 'data_format_changed_since', `Rows of FULI store "${format.store}" `
         + `changed after migration ${migrationId}, so undoing it would overwrite those changes. Nothing was changed. `
         + `Restoring the whole store from ${undo.backup_ref} would discard every change made since; that is a `
-        + 'separate operation (fuli migrate restore).', [migrationId]);
+        + 'separate operation: a whole-store restore (Settings → Data format migrations).', [migrationId]);
     }
     const before = backupRows(path, format, undo.backup_ref, undo.table_name, columns);
     const backupRef = takeBackup(path, format, version, backup, [migrationId], { purpose: `undoing ${migrationId}` });

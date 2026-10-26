@@ -13,7 +13,7 @@
 .project-overview-purpose { max-width: var(--measure); color: var(--color-ink-soft); line-height: 1.6; }
 .project-overview-actions { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
 
-.project-capture-card { padding: var(--space-4) var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.project-capture-card, .project-judgment-card { padding: var(--space-4) var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .project-team { display: grid; gap: var(--space-3); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .project-team-header { display: flex; align-items: center; gap: var(--space-3); min-height: var(--control-height); }
 .project-team-header h3 { font-size: var(--text-section); font-weight: 650; margin-right: auto; }

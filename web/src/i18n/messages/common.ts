@@ -26,23 +26,12 @@ export const commonMessages = {
     },
     errors: {
       loadFailed: '读取失败，请重试。',
-      knowledgeRecoveryPending: '正在等待图谱确认删除记录，这部分内容暂时读不到。请稍后重试；如果一直这样，运行 fuli migrate reconcile-knowledge。',
-      consoleSessionRequired: '这部分需要用 fuli open 打开的控制台。',
-      consoleSessionGuide: '完整记录只在用 fuli open 打开的控制台里显示。请在这台电脑的终端运行 {command}，再在它打开的页面里继续。',
-      consoleSessionLan: '完整记录只在运行 FULI 的那台电脑上、用 fuli open 打开的控制台里显示，局域网设备上看不到。',
+      knowledgeRecoveryPending: '正在等待图谱确认删除记录，这部分内容暂时读不到。FULI 正在自动重新核对，请稍后再试。',
       serviceUnavailable: '服务暂时无法响应，请稍后重试。({status})',
       pageNotFound: '找不到这个页面',
       pageNotFoundCopy: '链接可能已失效。',
       requestFailed: '请求失败 ({status})',
       operationFailed: '操作失败',
-    },
-    consoleSession: {
-      signingIn: '正在登录控制台…',
-      failed: {
-        missing: '这个页面没有收到登录码。请在终端运行 fuli open 重新打开控制台。',
-        refused: '这次登录没有成功：登录码已用过或已过期。请在终端再运行一次 fuli open。',
-        unavailable: '控制台现在无法完成登录（连不上，或浏览器不允许本站保存数据）。请稍后在终端再运行 fuli open。',
-      },
     },
     status: {
       loadingConsole: '正在读取空间与服务状态…',
@@ -91,24 +80,13 @@ export const commonMessages = {
       clear: 'Clear',
     },
     errors: {
-      knowledgeRecoveryPending: 'Waiting for the graph to confirm deletion records; this content cannot be read yet. Try again later; if it stays this way, run fuli migrate reconcile-knowledge.',
-      consoleSessionRequired: 'This needs a console opened with fuli open.',
-      consoleSessionGuide: 'Full records show only in a console opened with fuli open. Run {command} in a terminal on this computer, then continue in the page it opens.',
-      consoleSessionLan: 'Full records show only in the console opened with fuli open on the computer running FULI, not on a LAN device.',
+      knowledgeRecoveryPending: 'Waiting for the graph to confirm deletion records; this content cannot be read yet. FULI is checking again by itself; try again in a moment.',
       loadFailed: 'Could not load. Please retry.',
       serviceUnavailable: 'The service is temporarily unavailable. Try again shortly. ({status})',
       pageNotFound: 'Page not found',
       pageNotFoundCopy: 'This link may be outdated.',
       requestFailed: 'Request failed ({status})',
       operationFailed: 'Operation failed',
-    },
-    consoleSession: {
-      signingIn: 'Signing in to the console…',
-      failed: {
-        missing: 'This page did not receive a sign-in code. Run fuli open in a terminal to open the console again.',
-        refused: 'This sign-in did not work: its code was used or expired. Run fuli open in a terminal again.',
-        unavailable: 'The console could not finish signing in (it did not answer, or the browser does not let this site keep data). Run fuli open in a terminal again later.',
-      },
     },
     status: {
       loadingConsole: 'Loading spaces and service status…',

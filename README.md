@@ -564,7 +564,7 @@ Core mechanisms covered by implementation and automated tests include:
 New in 0.20 (public preview `0.20.0-beta`, see the [release notes](docs/releases/0.20.0.md)):
 
 - **Projects and people**: unassigned conversations go to Astro, Jefa triages them, and when a topic keeps coming back (three conversations over at least two days) Astro asks whether to make it a project with its own people. Every project has a brief and every Agent an occupation, which Bole recruits by.
-- **Tasks**: assign without starting (backlog), schedule recurring tasks that pause after repeated failures, and stop, retry, or review any run from the task details. A temporary failure is retried automatically only when no prompt was sent.
+- **Tasks**: assign without starting (backlog), and stop, retry, or review any run from the task details. A temporary failure is retried automatically only when no prompt was sent.
 - **Decisions**: an Agent that needs you asks in the conversation first. A request that must wait for you goes to the Decisions page, and your reply reaches the Agent that asked.
 - **Roundtable**: besides asks (`message_agent`), Agents have direct and group chats (`agent_chat`) with push delivery and `wait`; the console shows them live.
 - **Memory between projects**: weighted links (related, frequent, close) say how much one project may draw on another. Weights never grant access.
@@ -623,9 +623,7 @@ Open the management UI after setup:
 fuli open
 ```
 
-The default URL is `http://127.0.0.1:2727`. `fuli open` signs this browser in with a one-time sign-in: knowledge
-details, session records, Tonborg's records, Agent conversations and working memory show only in a console opened
-this way; run `fuli open` again after each console restart (docs/judgment-and-autonomy.md, "Console trust boundary").
+The default URL is `http://127.0.0.1:2727`.
 
 The Settings page manages all seven local Fuli ports, graph runtime mode, LAN access, automatic capture,
 Agent access, UI language, and the resource refresh interval. Run `fuli restart` after saving port,
@@ -651,7 +649,7 @@ system locale. User data such as paths and space names is displayed unchanged.
 | `fuli stop [--data-dir DIR]` | Stop services without deleting data |
 | `fuli restart [options]` | Restart local services using the same runtime options as `start` |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | Show UI, personal graph, and shared-service status; `--json` emits machine-readable output |
-| `fuli open [--next PATH] [--data-dir DIR]` | Open the current management UI in the default browser, signed in for its full history (one-time sign-in; `--next` lands on a console page such as `/knowledge`) |
+| `fuli open [--data-dir DIR]` | Open the current management UI in the default browser |
 | `fuli graph export --output DIR [--mode container\|native]` | Export graph data as a checksummed, copyable offline bundle |
 | `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | Verify and replace target graph data, preserving an automatic pre-import rollback bundle |
 | `fuli graph migrate --to native [--yes]` | Move a container graph to native mode, accepted only when node and relationship counts match |
@@ -740,10 +738,12 @@ overhead remains while idle.
 
 Jefa (project manager), Bole (AR, Agent Resources), and Tonborg (judgment) are built-in roles in every
 space and are never hired. Bole's workbench shows staffing, current work, and recruitment history;
-Tonborg's workbench shows decisions and feedback. **Project Agents → Hire an Agent** offers the other reusable employee templates.
-Recruitment reuses a durable identity with separate project assignments. An installed employee workbench,
-API and A2A share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not
-start a model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
+Tonborg's workbench shows decisions and feedback. Jefa's task board is built into FULI and needs no
+installation; **Manage assigned projects** on a role's card or workbench sets which projects it manages.
+The console has no hiring step: a custom employee package is recruited through the `recruit_employee` Agent
+tool, which reuses a durable identity with separate project assignments. An installed employee workbench and
+API share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not start a
+model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
 Agents can also grow small [Agent apps](docs/agent-apps.md); in this version an approved app runs
 unsandboxed with your account's permissions, after you confirm it with `fl app approve` in a terminal.
 

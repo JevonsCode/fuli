@@ -463,7 +463,7 @@ Agent 上下文。
 0.20 新增（公开预览版 `0.20.0-beta`，详见[发布说明](docs/releases/0.20.0.md)）：
 
 - **项目与人员**：没有归属的会话先交给 Astro，Jefa 负责分诊，同一话题反复出现（累计 3 个会话、跨至少 2 天）时，Astro 会问你要不要为它成立项目、招人维护。项目都有简介，Agent 都有职业，Bole 按职业招聘。
-- **任务**：可以只指派不开工（backlog）；可以定时创建任务，连续失败会自动暂停；在任务详情里可以停止、重试、回看任何一次运行。临时故障只在确定没发出指令时才自动重试。
+- **任务**：可以只指派不开工（backlog）；在任务详情里可以停止、重试、回看任何一次运行。临时故障只在确定没发出指令时才自动重试。
 - **待决策**：Agent 需要你时，先在当前会话里问你。需要等你稍后处理的请求进「待决策」页，你的回复会送回发起请求的 Agent。
 - **圆桌**：除了问答（`message_agent`），Agent 之间还能私聊和群聊（`agent_chat`），支持推送和 `wait` 等待；控制台实时显示。
 - **项目间记忆**：用权重（有关系 / 常往来 / 密切）表示一个项目能从另一个项目取多少记忆。权重不授予权限。
@@ -518,9 +518,7 @@ MCP。默认只连接个人 Provider，不会模拟团队共享服务。
 fuli open
 ```
 
-管理界面默认位于 `http://127.0.0.1:2727`。`fuli open` 会用一次性登录让这个浏览器登录。知识详情、会话记录、
-Tonborg 的判断记录、Agent 对话和工作记忆只在这样打开的控制台里显示；控制台每次重启后，需要再运行一次 `fuli open`
-（见 docs/judgment-and-autonomy.md 的 “Console trust boundary”）。
+管理界面默认位于 `http://127.0.0.1:2727`。
 
 “设置”页集中管理 Fuli 使用的 7 个本机端口、图数据库运行方式、局域网访问、自动沉淀、
 Agent 使用、界面语言和资源刷新频率。端口、运行方式或局域网设置保存后执行 `fuli restart`
@@ -545,7 +543,7 @@ CLI 的帮助、交互提示、状态和错误信息固定使用英文，不跟�
 | `fuli stop [--data-dir DIR]` | 停止服务并保留数据 |
 | `fuli restart [选项]` | 使用与 `start` 相同的运行参数重启本机服务 |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | 查看管理界面、个人图谱和公共服务状态；`--json` 输出机器可读结果 |
-| `fuli open [--next PATH] [--data-dir DIR]` | 在默认浏览器中打开当前管理界面，并用一次性登录让浏览器登录，才能看到完整记录（`--next` 登录后打开某个控制台页面，例如 `/knowledge`） |
+| `fuli open [--data-dir DIR]` | 在默认浏览器中打开当前管理界面 |
 | `fuli graph export --output DIR [--mode container\|native]` | 把当前图数据导出为可校验、可复制的离线备份包 |
 | `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | 校验备份并替换目标图数据；导入前自动保留回滚包 |
 | `fuli graph migrate --to native [--yes]` | 把容器图谱迁移到原生模式；节点和关系数量完全一致才算成功 |
@@ -631,8 +629,9 @@ Kubernetes 或整台容器虚拟机；原生模式会直接停止对应 Provider
 
 Jefa（项目经理）、Bole（AR，Agent Resources）和 Tonborg（决策员）是每个空间自带的角色，
 不需要招募。Bole 的工作台可查看人员安排、当前工作与招募历史；Tonborg 的工作台可查看判断与反馈。
-“Agents → 聘请 Agent”提供其他可复用的员工模板。招募复用持久身份，
-按项目单独任职；安装员工包后，侧栏工作台与 API/A2A 共用 FULI 端口，已有 FULI MCP 可发现和调用员工工具。
+Jefa 的任务看板随 FULI 内置，无需安装；在角色卡片或工作台的“管理负责项目”里设置它负责哪些项目。
+控制台不再有聘请步骤：自定义员工包通过 Agent 工具 `recruit_employee` 招募，招募复用持久身份，
+按项目单独任职；安装员工包后，侧栏工作台与 API 共用 FULI 端口，已有 FULI MCP 可发现和调用员工工具。
 招募不等于启动模型，也不改写已有客户端配置。详见[员工包安装与扩展协议](docs/employee-agents.md)。
 Agent 还可以自己做小的 [Agent 应用](docs/agent-apps.md)；本版本没有沙箱，经你在终端用 `fl app approve` 确认后，应用以你的账户权限运行。
 

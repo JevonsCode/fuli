@@ -42,10 +42,11 @@ const tonborg = (connection = 'local', extra = {}) => ({ enabled: true, connecti
   fallbackToSession: true, ...extra });
 const approval = { target: 'entity:one', outcome: 'approve', summary: 'Routine confirmed command', evidence: ['npm test'], confidence: 0.95 };
 
-// answeredBy: who the stand-in bridge reports answered; answering: awaited
-// while the model "answers", so a test can act during an in-flight review.
+// answeredBy: who the stand-in bridge reports answered; verdict: what it
+// answers for every candidate; client: the policy's client; answering:
+// awaited while the model "answers", so a test can act during an in-flight review.
 function harness(t, { mode = 'shared', connection = 'local', roles, acknowledged = true, answeredBy = 'model_api',
-  capture = { enabled: true }, answering = async () => {}, candidateCount = 1, content = 'npm test' } = {}) {
+  capture = { enabled: true }, answering = async () => {}, candidateCount = 1, content = 'npm test', verdict = approval, client = 'codex' } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fuli-model-trust-'));
   const config = { version: 1, connections: CONNECTIONS, roles: roles ?? { tonborg: tonborg(connection) } };
   const ledger = new ModelUsageLedger(':memory:');
@@ -60,7 +61,7 @@ function harness(t, { mode = 'shared', connection = 'local', roles, acknowledged
   const writes = [];
   const app = { config: { personal: { spaceId: 's' } }, getCapturePolicy: () => capture,
     listPersonalProjects: async () => [{ project_id: 'p' }],
-    listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
+    listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: [client], capabilities: ['fuli.employee:tonborg'] } }],
     getCollaborationPreferences: async () => completePreferences(),
     inspectProjectAgentMemory: async () => ({ current: null, revision: 0 }),
     employees: { authorize: async () => ({}) },
@@ -73,16 +74,16 @@ function harness(t, { mode = 'shared', connection = 'local', roles, acknowledged
     const asked = config.roles.tonborg?.connection ?? connection;
     const used = config.connections[asked];
     await answering();
-    const envelope = { payload: { decisions: candidates.map(candidate => ({ ...approval, target: candidate.candidate_key })) } };
+    const envelope = { payload: { decisions: candidates.map(candidate => ({ ...verdict, target: candidate.candidate_key })) } };
     return answeredBy === 'model_api'
       ? { status: 'answered', mode: 'model_api', envelope,
         modelReceipt: { backend: 'model_api', status: 'answered', connection: asked, protocol: used.protocol,
           connectionIdentity: connectionIdentity(asked, used), requestedModel: used.model, actualModel: `${used.model}-served` } }
-      : { status: 'answered', mode: 'current_session', envelope, session: { sourceApplication: 'codex', sessionRef: 'session-1' },
+      : { status: 'answered', mode: 'current_session', envelope, session: { sourceApplication: client, sessionRef: 'session-1' },
         modelReceipt: { backend: 'current_session', status: 'answered', requestedModel: null, actualModel: null }, workPackageId: 'work-1' };
   } };
   const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge }), trust }) });
-  service.store().setPolicy('s', '', { mode, quality: 'quality', client: 'codex' }, 0);
+  service.store().setPolicy('s', '', { mode, quality: 'quality', client }, 0);
   t.after(() => { service.close(); trust.close(); ledger.close(); rmSync(dir, { recursive: true, force: true }); });
   // The next review offers a different item: one already judged with unchanged evidence is not asked again.
   const nextItem = () => candidates.splice(0, candidates.length, { ...candidates[0], candidate_key: 'entity:next', ai_review_evidence_token: 'f'.repeat(64) });
@@ -402,9 +403,38 @@ async function call(h, method, pathname, body = null, address = '127.0.0.1', ext
   const sent = {};
   const response = { setHeader() {}, writeHead(status) { sent.status = status; }, end(text) { sent.body = JSON.parse(text); } };
   await handleModelBackendApiRequest({ request, response, url: new URL(`http://127.0.0.1${pathname}`), modelBackends: h.port,
-    operations: { tonborg: ['knowledge_review'] }, automaticOperations: { tonborg: 'knowledge_review' }, modelTrust: h.trust,
-    consoleSignedIn: true, ...extra });
+    operations: { tonborg: ['knowledge_review'] }, automaticOperations: { tonborg: 'knowledge_review' }, modelTrust: h.trust, ...extra });
   return sent;
 }
 
 const pick = (value, keys) => Object.fromEntries(keys.map(key => [key, value[key]]));
+
+// The owner's case (2026-10-27): 自主处理 · 质量优先 · Claude Code, a single-session
+// item with confidence_score 0.5, shown as 需要确认 and 尚未执行. Autonomous
+// mode applies only an approval Tonborg is sure of (confidence ≥ 0.85) from
+// its own configured model; anything else rightly waits for the person, and
+// the record keeps why (the web card says it in one line).
+test('autonomous: an unsure approval, or one a session gave, waits for the person; a sure trusted one applies', async t => {
+  const unsure = { ...approval, summary: 'Device-specific one-off step', confidence: 0.5,
+    evidence: ['Single session, confidence_score 0.5, no negative evidence'] };
+  const options = { mode: 'autonomous', client: 'claude_code', verdict: unsure };
+
+  const bySession = await reviewOnce(t, { ...options, answeredBy: 'current_session' });
+  assert.deepEqual([bySession.record.outcome, bySession.record.execution.status, bySession.record.confidence], ['escalate', 'not_applied', 0.5]);
+  assert.deepEqual(pick(bySession.record.policy, ['mode', 'quality', 'client']), { mode: 'autonomous', quality: 'quality', client: 'claude_code' });
+  assert.deepEqual([bySession.record.aiReview.interceptions, bySession.record.aiReview.gate.reason], [['below_confidence', 'gate_not_passed'], 'session_answer']);
+  assert.equal(bySession.writes.length, 0);
+
+  const byModel = await reviewOnce(t, options);
+  assert.deepEqual([byModel.record.outcome, byModel.record.execution.status], ['escalate', 'not_applied']);
+  assert.deepEqual([byModel.record.aiReview.interceptions, byModel.record.aiReview.gate.status], [['below_confidence'], 'passed']);
+  assert.equal(byModel.writes.length, 0);
+
+  // A session's sure approval is still only a suggestion: only Tonborg's own model may act alone.
+  const sureSession = await reviewOnce(t, { ...options, verdict: approval, answeredBy: 'current_session' });
+  assert.deepEqual([sureSession.record.execution.status, sureSession.record.aiReview.interceptions], ['not_applied', ['gate_not_passed']]);
+
+  const sure = await reviewOnce(t, { ...options, verdict: approval });
+  assert.deepEqual([sure.record.outcome, sure.record.execution.status], ['approve', 'applied']);
+  assert.equal(sure.writes.length, 1);
+});

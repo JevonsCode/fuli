@@ -1,12 +1,19 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', async original => ({ ...(await original<typeof import('@/api/client')>()), getJson, postJson }))
+// The per-project policy list has its own spec; here it only has to be in the workbench.
+vi.mock('./JudgmentProjectOverrides.vue', async () => {
+  const { defineComponent, h } = await import('vue')
+  return { default: defineComponent({ props: { personalSpaceId: String, projects: Array },
+    setup: props => () => h('div', { 'data-judgment-overrides': props.personalSpaceId }) }) }
+})
 
 import { ApiError } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { t } from '@/i18n'
 import JudgmentWorkbench from './JudgmentWorkbench.vue'
 import { provideWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
 
@@ -34,6 +41,11 @@ function record(overrides: Record<string, unknown> = {}) {
   }
 }
 
+// jsdom lays nothing out: give the record list a viewport so its virtual list draws cards.
+let viewport: MockInstance
+beforeEach(() => { viewport = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(900) })
+afterEach(() => viewport.mockRestore())
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (cause: unknown) => void
@@ -56,7 +68,7 @@ describe('JudgmentWorkbench', () => {
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
     await flushPromises()
 
-    expect(getJson).toHaveBeenCalledWith('/api/judgment/records?personalSpaceId=space-a')
+    expect(getJson).toHaveBeenCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human')
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(1)
     await wrapper.get('.judgment-filter [data-value="all"]').trigger('click')
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(2)
@@ -64,6 +76,19 @@ describe('JudgmentWorkbench', () => {
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(1)
     expect(wrapper.text()).toContain('release checklist')
     expect(wrapper.get('[data-decision-card] h3').text()).toBe('release checklist')
+    // A manual policy explains itself: no reason line.
+    expect(wrapper.find('[data-escalation-reason]').exists()).toBe(false)
+    // Each project's own Tonborg judgment is set from the workbench too.
+    expect(wrapper.get('[data-judgment-overrides]').attributes('data-judgment-overrides')).toBe('space-a')
+  })
+
+  it('says in one line why an autonomous record still needs confirmation (2026-10-27)', async () => {
+    getJson.mockResolvedValue({ records: [record({ title: 'Install a debug APK over adb on a phone', confidence: 0.5,
+      policy: { mode: 'autonomous', quality: 'quality', client: 'claude_code' },
+      evidence: ['Single session, confidence_score 0.5, no negative evidence'] })] })
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+    expect(wrapper.get('[data-escalation-reason]').text()).toMatch(/^(Tonborg 把握不足（0\.5），交给你确认|Tonborg is not sure enough \(0\.5\), so it is yours to confirm)$/)
   })
 
   it('requests a bounded review with a fresh request ID and shows the result', async () => {
@@ -158,7 +183,7 @@ describe('JudgmentWorkbench', () => {
   })
 
   it('keeps autonomous runtime recommendations out of the human-needed queue', async () => {
-    getJson.mockResolvedValueOnce({ records: [record({
+    getJson.mockResolvedValue({ records: [record({
       kind: 'routing', outcome: 'recommend', disposition: 'continue_current', policy: { mode: 'autonomous' },
     })] })
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
@@ -359,7 +384,7 @@ describe('knowledge recovery fence in the workbench', () => {
       await wrapper.get('.judgment-workbench-actions button').trigger('click')
     } else await wrapper.get(operation === 'review' ? '[data-action="review"]' : operation === 'feedback' ? '[data-feedback="up"]' : '[data-action="undo"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('fuli migrate reconcile-knowledge')
+    expect(wrapper.text()).toContain(t('common.errors.knowledgeRecoveryPending'))
     expect(wrapper.text()).not.toContain('SYNTHETIC RECEIPT BODY')
     expect(wrapper.find('[data-decision-card]').exists()).toBe(false)
     const pending = deferred<{ records: unknown[] }>()
@@ -367,7 +392,7 @@ describe('knowledge recovery fence in the workbench', () => {
     await wrapper.get('.judgment-workbench-error button').trigger('click')
     expect(wrapper.getComponent(GrowthLoading).props('variant')).toBe('inline')
     pending.resolve({ records: [] }); await flushPromises()
-    expect(wrapper.text()).not.toContain('fuli migrate reconcile-knowledge')
+    expect(wrapper.text()).not.toContain(t('common.errors.knowledgeRecoveryPending'))
     expect(postJson).toHaveBeenCalledTimes(operation === 'read' ? 0 : 1)
     wrapper.unmount()
   })
@@ -388,6 +413,97 @@ it('never restores receipt bodies from an older feedback response after a recove
   await flushPromises()
   expect(wrapper.text()).not.toContain('LATE SYNTHETIC BODY')
   expect(wrapper.find('[data-decision-card]').exists()).toBe(false)
-  expect(wrapper.text()).toContain('fuli migrate reconcile-knowledge')
+  expect(wrapper.text()).toContain(t('common.errors.knowledgeRecoveryPending'))
   wrapper.unmount()
+})
+
+describe('paged, searchable record list', () => {
+  const many = (count: number) => Array.from({ length: count }, (_, index) => record({ id: `decision-${index}`, title: `Synthetic record ${index}`,
+    createdAt: new Date(Date.UTC(2026, 9, 11) - index * 60_000).toISOString() }))
+
+  it('renders only the cards near the viewport and follows the scroll', async () => {
+    const cardHeight = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ width: 600, height: 300 }))
+    getJson.mockReset().mockResolvedValue({ records: many(200), nextCursor: null })
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+
+    const drawn = () => wrapper.findAll('[data-decision-card]')
+    expect(drawn().length).toBeGreaterThan(0)
+    expect(drawn().length).toBeLessThan(12)
+    expect(drawn()[0]!.text()).toContain('Synthetic record 0')
+    const scroller = wrapper.get('[data-judgment-scroller]')
+    scroller.element.scrollTop = (300 + 12) * 120
+    await scroller.trigger('scroll')
+    await flushPromises()
+    // Cards not drawn yet keep their estimated height, so the window lands near, not exactly on, card 120.
+    const indexes = wrapper.findAll('[data-index]').map(row => Number(row.attributes('data-index')))
+    expect(Math.min(...indexes)).toBeGreaterThan(90)
+    expect(Math.max(...indexes)).toBeLessThan(130)
+    expect(drawn().length).toBeLessThan(12)
+    cardHeight.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('reads the next page as the last cards come into view, keeping the loaded ones', async () => {
+    const nextPage = deferred<unknown>()
+    getJson.mockReset()
+      .mockResolvedValueOnce({ records: many(2), nextCursor: 'decision-1' })
+      .mockReturnValueOnce(nextPage.promise)
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+
+    expect(getJson).toHaveBeenLastCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human&after=decision-1')
+    expect(wrapper.get('[data-loading-more]').attributes('aria-label')).toBe('正在加载更多判断记录…')
+    expect(wrapper.findAll('[data-decision-card]')).toHaveLength(2)
+    nextPage.resolve({ records: [record({ id: 'decision-1' }), ...many(3).slice(2)], nextCursor: null })
+    await flushPromises()
+    expect(wrapper.findAll('[data-decision-card]')).toHaveLength(3)
+    expect(wrapper.find('[data-action="load-more"]').exists()).toBe(false)
+    expect(getJson).toHaveBeenCalledTimes(2)
+  })
+
+  it('searches every record on the server and keeps the loaded cards visible while it searches', async () => {
+    const searched = deferred<unknown>()
+    getJson.mockReset().mockResolvedValueOnce({ records: many(2), nextCursor: null }).mockReturnValueOnce(searched.promise)
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+
+    const search = wrapper.get('[data-judgment-search]')
+    expect(search.attributes('aria-label')).toBe('搜索标题、结论、理由、项目或来源')
+    await search.setValue('  Garden  ')
+    await search.trigger('keydown', { key: 'Enter' })
+    expect(getJson).toHaveBeenLastCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human&search=Garden')
+    expect(wrapper.getComponent(GrowthLoading).props()).toMatchObject({ variant: 'inline', label: '正在搜索判断记录…' })
+    expect(wrapper.findAll('[data-decision-card]')).toHaveLength(2)
+
+    searched.resolve({ records: [], nextCursor: null })
+    await flushPromises()
+    expect(wrapper.find('[data-decision-card]').exists()).toBe(false)
+    expect(wrapper.get('[data-judgment-empty]').text()).toContain('没有符合搜索的判断记录')
+  })
+
+  it('searches after typing pauses, without a request per keystroke', async () => {
+    vi.useFakeTimers()
+    try {
+      getJson.mockReset().mockResolvedValue({ records: [], nextCursor: null })
+      const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+      await flushPromises()
+      const search = wrapper.get('[data-judgment-search]')
+      for (const text of ['r', 'ri', 'riv']) await search.setValue(text)
+      expect(getJson).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(300)
+      expect(getJson).toHaveBeenCalledTimes(2)
+      expect(getJson).toHaveBeenLastCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human&search=riv')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('names a record\'s project from the space\'s projects', async () => {
+    const projects = [{ project_id: 'project-a', profile: { name: 'Synthetic Garden' } }] as never
+    getJson.mockReset().mockResolvedValue({ records: [record()], nextCursor: null })
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a', projects } })
+    await flushPromises()
+    expect(wrapper.get('.judgment-record-meta').text()).toContain('Synthetic Garden')
+  })
 })

@@ -7,7 +7,7 @@ import { tonborgReviewSuggestions } from './review-suggestions.js';
 
 const UNDO_PATH = '/api/judgment/undo';
 const SUGGESTIONS_PATH = '/api/judgment/suggestions';
-const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/records', '/api/judgment/feedback',
+const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/policies', '/api/judgment/records', '/api/judgment/feedback',
   '/api/judgment/review', '/api/judgment/assess', '/api/judgment/accept', UNDO_PATH, SUGGESTIONS_PATH];
 // The routes that answer with Tonborg's full records (summary, evidence,
 // receipts, feedback reasons) or its suggestions (rec#11 D-60): a judgment
@@ -17,9 +17,9 @@ const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/records
 // full reads, each is loopback only, a LAN device with its LAN code included,
 // and answers only after the console server confirmed its own human-review
 // proof (owner-proof.js), before anything is read, run or written. A refused
-// request gets 403 and no data. The server attaches that proof itself, and
-// only for a request of the console session `fuli open` started (rec#11
-// D-61); any other local request gets 401 console_session_required.
+// request gets 403 and no data. The server attaches that proof itself and
+// trusts local HTTP callers, so a local process can still read these routes
+// over loopback. FULI is a local tool with no console login (rec#11 D-70).
 // Agents read and ask Tonborg through their MCP tools (list_judgments,
 // review_with_tonborg, assess_agent_action, assess_task_completion); no MCP
 // or Agent tool module imports this one (test/judgment-console-owner.test.js).
@@ -54,7 +54,8 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
     'PUT /api/agent-pins': async () => app.judgment.pin(await readJson(request)),
     'GET /api/judgment/policy': () => app.judgment.policy(query),
     'PUT /api/judgment/policy': async () => app.judgment.setPolicy(await readJson(request)),
-    'GET /api/judgment/records': () => app.judgment.records(query),
+    'GET /api/judgment/policies': () => app.judgment.policyOverrides({ personalSpaceId: query.personalSpaceId }),
+    'GET /api/judgment/records': () => app.judgment.records({ ...query, ...recordPage(url.searchParams) }),
     'POST /api/judgment/feedback': async () => app.judgment.feedback(await readJson(request)),
     'POST /api/judgment/review': async () => app.judgment.review(await readJson(request)),
     'POST /api/judgment/assess': async () => app.judgment.assess(await readJson(request)),
@@ -66,4 +67,12 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
   if (!action) sendJson(response, 405, { error: 'Method not allowed' });
   else sendJson(response, 200, await action());
   return true;
+}
+
+// The console's page of records: its size, the cursor after the previous
+// page, the searched text and the 全部 / 需要人工 view.
+function recordPage(params) {
+  const page = params.has('limit') ? { limit: Number(params.get('limit')) } : {};
+  for (const key of ['after', 'search', 'filter']) if (params.get(key)) page[key] = params.get(key);
+  return page;
 }

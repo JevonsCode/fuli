@@ -5,7 +5,7 @@ const getJson = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', async original => ({ ...(await original<typeof import('@/api/client')>()), getJson }))
 import { ApiError } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { setLocale } from '@/i18n'
+import { setLocale, t } from '@/i18n'
 import RoleSuggestions from './RoleSuggestions.vue'
 import { useRoleSuggestions } from './useRoleSuggestions'
 import type { RoleSuggestion } from './suggestions'
@@ -33,8 +33,8 @@ describe('role suggestions recovery fence', () => {
     const oldRead = reader.load(); await reader.load(); await flushPromises()
     expect(wrapper.text()).not.toContain(entry.hint)
     expect(wrapper.text()).toContain(locale === 'zh-CN'
-      ? '正在等待图谱确认删除记录，这部分内容暂时读不到。请稍后重试；如果一直这样，运行 fuli migrate reconcile-knowledge。'
-      : 'Waiting for the graph to confirm deletion records; this content cannot be read yet. Try again later; if it stays this way, run fuli migrate reconcile-knowledge.')
+      ? '正在等待图谱确认删除记录，这部分内容暂时读不到。FULI 正在自动重新核对，请稍后再试。'
+      : 'Waiting for the graph to confirm deletion records; this content cannot be read yet. FULI is checking again by itself; try again in a moment.')
     older.resolve({ suggestions: [entry] }); await oldRead; await flushPromises()
     expect(wrapper.text()).not.toContain(entry.hint)
     const retry = deferred<{ suggestions: RoleSuggestion[] }>()
@@ -44,7 +44,7 @@ describe('role suggestions recovery fence', () => {
     expect(wrapper.text()).not.toContain(entry.hint)
     retry.resolve({ suggestions: [{ ...entry, hint: 'FRESH SAFE SUGGESTION' }] }); await flushPromises()
     expect(wrapper.text()).toContain('FRESH SAFE SUGGESTION')
-    expect(wrapper.text()).not.toContain('fuli migrate reconcile-knowledge')
+    expect(wrapper.text()).not.toContain(t('common.errors.knowledgeRecoveryPending'))
     wrapper.unmount(); reader.stop()
   })
   it('ignores a late failure and completion after a newer read or stop', async () => {
@@ -81,10 +81,10 @@ it('a score-card gate refusal clears suggestions and invalidates an overlapping 
   const pendingRead = reader.load()
   await wrapper.get('[data-suggestion-action]').trigger('click'); await flushPromises()
   expect(wrapper.text()).not.toContain('SYNTHETIC SCORE REASON')
-  expect(wrapper.text()).toContain('fuli migrate reconcile-knowledge')
+  expect(wrapper.text()).toContain(t('common.errors.knowledgeRecoveryPending'))
   late.resolve({ suggestions: [bole] }); await pendingRead; await flushPromises()
   expect(wrapper.text()).not.toContain('SYNTHETIC SCORE REASON')
-  expect(wrapper.text()).toContain('fuli migrate reconcile-knowledge')
+  expect(wrapper.text()).toContain(t('common.errors.knowledgeRecoveryPending'))
   wrapper.unmount(); reader.stop()
 })
 

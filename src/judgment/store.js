@@ -7,6 +7,19 @@ import { assertKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.
 
 export const DEFAULT_PINS = Object.freeze(['employee.bole', 'employee.jefa', 'employee.tonborg']);
 export const DEFAULT_POLICY = Object.freeze({ mode: 'manual', quality: 'quality', client: 'codex' });
+// A record's latest execution status and receipt, as get() reports them.
+const LATEST_EXECUTION = 'FROM judgment_execution e WHERE e.decision = r.id ORDER BY e.id DESC LIMIT 1';
+const LATEST_STATUS = `COALESCE((SELECT e.status ${LATEST_EXECUTION}), 'not_applied')`;
+// What the console's 需要人工 / Human needed view lists; the web's
+// isHumanNeeded (judgment-types.ts) applies the same rule to a loaded record.
+const HUMAN_NEEDED = `(json_extract(r.body,'$.outcome') IN ('escalate','failed') OR ${LATEST_STATUS} IN ('stale','failed')
+  OR (${LATEST_STATUS} = 'not_applied' AND json_extract(r.body,'$.policy.mode') = 'manual'))`;
+// The words a person searches records by: title, objective, conclusion,
+// evidence, source, project id, and the latest feedback and receipt reasons.
+const SEARCHED_TEXT = ["json_extract(r.body,'$.title')", "json_extract(r.body,'$.objective')", "json_extract(r.body,'$.summary')",
+  "json_extract(r.body,'$.evidence')", "json_extract(r.body,'$.client')", "json_extract(r.body,'$.model')", 'r.project',
+  '(SELECT f.reason FROM judgment_feedback f WHERE f.decision = r.id ORDER BY f.revision DESC LIMIT 1)',
+  `json_extract((SELECT e.receipt ${LATEST_EXECUTION}), '$.reason')`];
 const conflict = () => new EmployeeError('This record changed. Reload and try again.', 409, 'judgment_conflict');
 export const JUDGMENT_FORMAT = sqliteFormat({
   store: 'judgment',
@@ -71,6 +84,12 @@ export class JudgmentStore {
     return { ...(own.value ?? global.value ?? DEFAULT_POLICY), revision: own.revision,
       globalRevision: global.revision, inherited: Boolean(project && !own.value), personalProjectId: project || null };
   }
+  // Every project's own policy, as policy() reports it; a removed override is not one.
+  policyOverrides(space) {
+    this.#assertRecovery(space);
+    return this.db.prepare(`SELECT substr(key, ${'policy:'.length + 1}) AS project FROM judgment_settings
+      WHERE space=? AND key LIKE 'policy:_%' AND value <> 'null' ORDER BY key`).all(space).map(({ project }) => this.policy(space, project));
+  }
   setPolicy(space, project, value, expectedRevision) {
     this.writeSetting(space, `policy:${project}`, value, expectedRevision);
     return this.policy(space, project);
@@ -100,12 +119,27 @@ export class JudgmentStore {
       feedback: feedbackHistory.at(-1) ?? { revision: 0, vote: null, reason: '' },
       execution: executionHistory.at(-1) ?? { status: 'not_applied' } };
   }
-  records(space, { personalProjectId, limit = 50 } = {}) {
+  // One page of records, newest first. after: the id of the previous page's
+  // last record (records are never deleted, so it stays a stable cursor).
+  // search: { text, projectIds } keeps records whose words, source, latest
+  // feedback or receipt reason contain the text, or whose project is one of
+  // projectIds. humanNeeded: only records that wait for the person.
+  records(space, { personalProjectId, limit = 50, after = null, search = null, humanNeeded = false } = {}) {
     this.#assertRecovery(space);
-    const rows = personalProjectId === undefined
-      ? this.db.prepare('SELECT id FROM judgment_records WHERE space=? ORDER BY rowid DESC LIMIT ?').all(space, limit)
-      : this.db.prepare('SELECT id FROM judgment_records WHERE space=? AND project=? ORDER BY rowid DESC LIMIT ?').all(space, personalProjectId ?? '', limit);
-    return rows.map(({ id }) => this.get(space, id));
+    const where = ['r.space = ?'];
+    const params = [space];
+    if (personalProjectId !== undefined) { where.push('r.project = ?'); params.push(personalProjectId ?? ''); }
+    if (after) { where.push('r.rowid < (SELECT rowid FROM judgment_records WHERE space = ? AND id = ?)'); params.push(space, after); }
+    if (humanNeeded) where.push(HUMAN_NEEDED);
+    if (search) {
+      const pattern = `%${search.text.replace(/[\\%_]/g, '\\$&')}%`;
+      const matches = SEARCHED_TEXT.map(field => `${field} LIKE ? ESCAPE '\\'`);
+      if (search.projectIds.length) matches.push(`r.project IN (${search.projectIds.map(() => '?').join(',')})`);
+      where.push(`(${matches.join(' OR ')})`);
+      params.push(...SEARCHED_TEXT.map(() => pattern), ...search.projectIds);
+    }
+    return this.db.prepare(`SELECT r.id FROM judgment_records r WHERE ${where.join(' AND ')} ORDER BY r.rowid DESC LIMIT ?`)
+      .all(...params, limit).map(({ id }) => this.get(space, id));
   }
   // Knowledge review verdicts the host left to the person (ai_suggested,
   // rec#10 D-24, D-36), newest first, in every project of the space.

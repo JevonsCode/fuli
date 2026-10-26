@@ -105,11 +105,7 @@ Messages expire after at most 30 minutes. Devices verify transport certificates,
 signed messages and the source Provider's project-lead proof before any execution.
 The console's separate LAN-access switch does not turn this feature on.
 
-The equivalent local controls are available with `fuli peer --help`. From 0.22, becoming
-a coordinator, inviting, joining and changing shares need the console session `fuli open`
-starts. `fuli peer` sends the data directory's human-review token instead. Any other local
-request is refused with 401 `console_session_required` (rec#11 D-61,
-docs/judgment-and-autonomy.md). Full database
+The equivalent local controls are available with `fuli peer --help`. Full database
 backups contain private device and origin-authority material; keep those backups
 private. Public knowledge exports do not include those keys.
 

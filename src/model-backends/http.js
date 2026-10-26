@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 import { refuseRemoteDecision } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
-import { requireConsoleSession } from '../console-session/session-ports.js';
 import { confirmConsoleOwner } from '../knowledge-owner-reads/owner-proof.js';
 import { positiveInteger } from '../validation/values.js';
 import { MODEL_BACKEND_ROLES } from './config.js';
@@ -16,9 +15,7 @@ import { RETENTION } from './suggestion-log.js';
 // accepted only at the local process boundary (a loopback request). That
 // does not show a person sent it and is not the human-review channel: no MCP
 // or Agent tool calls it, but anything with local shell or HTTP access can.
-// Keys stay a local command (fuli models set-key). A save and a trust change
-// also need the console session `fuli open` starts (rec#11 D-61): they decide
-// where a role's model calls, and the content in them, go.
+// Keys are saved by their own loopback route (keys-http.js), never here.
 // operations: the task types each role already sends to its model.
 // automaticOperations: the one operation per role that may apply its model's
 // answer by itself (rec#10 D-36); modelTrust (src/model-backends/role-trust.js)
@@ -34,9 +31,9 @@ import { RETENTION } from './suggestion-log.js';
 // included, and answers only after ownerReads confirmed the console server's
 // own human-review proof for personalSpaceId, the active space the log is
 // read in (src/knowledge-owner-reads/owner-proof.js); otherwise 403 and no
-// data. The server attaches that proof itself, and only for a request of the
-// console session `fuli open` started (rec#11 D-61); any other local request
-// gets 401 console_session_required. Agents have no tool that reads it. history lists
+// data. The server attaches that proof itself and trusts local HTTP callers,
+// so a local process can still read it over loopback; FULI has no console
+// login (rec#11 D-70). Agents have no tool that reads it. history lists
 // what changed in a role's settings and execution mode and when
 // (settings-history.js, rec#11 D-42), newest first, read only; each save and
 // trust change answers whether its change was recorded there.
@@ -54,7 +51,7 @@ const TRUST_EDIT = z.union([
 export async function handleModelBackendApiRequest({
   request, response, url, modelBackends, roleWork = null, readRoleSuggestions = null, roleSettings = null, operations = {},
   automaticOperations = {}, modelTrust = null, settingsHistory = null, readEvaluation = null, ownerReads = null,
-  personalSpaceId = null, consoleSignedIn = false
+  personalSpaceId = null
 }) {
   const roleEdit = ROLE_ROUTE.exec(url.pathname)?.[1] ?? null;
   const trustEdit = TRUST_ROUTE.exec(url.pathname)?.[1] ?? null;
@@ -86,12 +83,10 @@ export async function handleModelBackendApiRequest({
   let saved = null;
   if (roleEdit) {
     if (refuseRemoteDecision(request, response, 'Model settings are changed only on this computer')) return true;
-    requireConsoleSession(consoleSignedIn);
     saved = roleSettings.save(roleEdit, await readJson(request));
   }
   if (trustEdit) {
     if (refuseRemoteDecision(request, response, 'A role\'s execution mode is changed only on this computer')) return true;
-    requireConsoleSession(consoleSignedIn);
     if (!Object.hasOwn(automaticOperations, trustEdit)) throw new TypeError(`${trustEdit} has no operation that runs by itself`);
     const parsed = TRUST_EDIT.safeParse(await readJson(request));
     if (!parsed.success) throw new TypeError('Send expectedRevision with either suggestionsOnly or acknowledgeWarning');

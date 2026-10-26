@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { t } from '@/i18n'
 import { UiDialog, UiSelect } from '@/ui'
 import type { PersonalProject } from '@/types'
+import ModelKeyEntry from './ModelKeyEntry.vue'
 import {
   MODEL_PROTOCOLS, REASONING_EFFORTS, configConflict, projectKey, roleDraft, roleName, rolesSharing, saveModelRole, withConnection, withProject,
   type ConfigConflict, type ModelRoleId, type ModelRolesPayload, type RoleDraft,
@@ -114,6 +115,7 @@ async function save() {
             :disabled="frozen" data-model-secret-ref />
           <FieldDescription>{{ t('modelSettings.secretRefHint') }}</FieldDescription>
         </Field>
+        <ModelKeyEntry class="model-role-wide" :reference="draft.secretRef" :disabled="frozen" />
       </div>
 
       <Field orientation="horizontal">

@@ -18,19 +18,19 @@ test('a store waiting for a person is named with its step, read only and cached 
   let inspections = 0;
   const notices = dataFormatNotices(root, { now: () => clock, inspect: () => {
     inspections += 1;
-    return [{ store: 'task-schedules', label: 'task-schedules.sqlite', state: 'pending_confirmation',
-      steps: [{ id: 'task-schedules/3-run-recovery' }] }, { store: 'judgment', label: 'judgment.sqlite',
+    return [{ store: 'agent-apps', label: 'agent-apps/registry.sqlite', state: 'pending_confirmation',
+      steps: [{ id: 'agent-apps/7-identity-keys' }] }, { store: 'judgment', label: 'judgment.sqlite',
       state: 'current', steps: [] }];
   } });
 
-  assert.deepEqual(notices(), [{ store: 'task-schedules', label: 'task-schedules.sqlite',
-    state: 'pending_confirmation', steps: ['task-schedules/3-run-recovery'] }]);
+  assert.deepEqual(notices(), [{ store: 'agent-apps', label: 'agent-apps/registry.sqlite',
+    state: 'pending_confirmation', steps: ['agent-apps/7-identity-keys'] }]);
   notices();
   clock = 10_001;
   notices();
   assert.equal(inspections, 2);
-  assert.equal(dataFormatNoticeLine(notices()[0]), 'Data format: store task-schedules (task-schedules.sqlite) '
-    + 'is pending_confirmation; steps task-schedules/3-run-recovery. Run `fuli migrate status` for details.');
+  assert.equal(dataFormatNoticeLine(notices()[0]), 'Data format: store agent-apps (agent-apps/registry.sqlite) '
+    + 'is pending_confirmation; steps agent-apps/7-identity-keys. Run `fuli migrate status` for details.');
   assert.deepEqual(dataFormatNotices(root)(), [{ store: 'judgment', label: 'judgment.sqlite',
     state: 'newer_format', steps: [] }]);
 });

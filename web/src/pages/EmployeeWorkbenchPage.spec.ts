@@ -8,13 +8,14 @@ import { defaultConsoleState, mountEmployeeWorkbench as setup, resetEmployeeWork
 import { useConsoleStore } from '@/stores/console'
 import { refreshEmployeeCatalog } from '@/features/employees/catalog'
 import EmployeeTaskBoard from '@/features/employees/EmployeeTaskBoard.vue'
-import EmployeeRecruitDialog from '@/features/employees/EmployeeRecruitDialog.vue'
+import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
 import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
 import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedConversationsPanel.vue'
 import { projectBoardFilterKey } from '@/features/employees/project-board-filter'
 import { pageTitle } from '@/layouts/page-title'
+import { employeeMessages } from '@/i18n/messages/employees'
 
 beforeEach(() => resetEmployeeWorkbench({ getJson, patchJson, postJson }))
 afterEach(() => { unmountEmployeeWorkbenches(); vi.useRealTimers() })
@@ -361,6 +362,29 @@ describe('employee workbench', () => {
     expect(wrapper.get('iframe').attributes('src')).toBe('/employee-workspaces/reviewer/project-a/')
     expect(wrapper.get('iframe').attributes('title')).toBe('Reviewer · 验收项目')
   })
+  it('says plainly that a custom workspace is not installed, without a terminal command', async () => {
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?')) return { templates: [{
+        id: 'reviewer', name: 'Reviewer', role: '审阅员', runtime: { apiVersion: 1 }, runtimeStatus: 'install_required',
+        capabilities: ['审阅'], permissions: ['board.read'], agentId: 'employee.reviewer', agentStatus: 'active', assignmentsVersion: 'version-reviewer',
+        assignments: [{ personalProjectId: 'project-a', status: 'active' }],
+      }] }
+      if (url.includes('/workspace?')) return { templateId: 'reviewer', name: 'Reviewer', role: '审阅员', project: { id: 'project-a', name: '验收项目' }, runtimeStatus: 'install_required', workbenchUrl: '/employee-workspaces/reviewer/project-a/' }
+      throw new Error(`unexpected URL: ${url}`)
+    })
+    const wrapper = await setup('/employees/reviewer?project=project-a')
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await wrapper.vm.$nextTick()
+      await flushPromises()
+    }
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    expect(wrapper.get('.employee-workbench-state').text()).toBe('这个 Agent 的工作台没有安装，目前只能作为 Agent 身份使用。')
+  })
+  it('never sends the person to a terminal from an employee page, in either language', () => {
+    for (const messages of Object.values(employeeMessages)) {
+      expect(JSON.stringify(messages)).not.toMatch(/\bfl\s|\bfuli\s+[a-z]|\bnpm\s|\bnode\s|<目录>|<directory>|终端|terminal/i)
+    }
+  })
   it('rejects a workbench descriptor pointing to an external page', async () => {
     getJson.mockImplementation(async (url: string) => {
       if (url.startsWith('/api/employee-templates?')) return { templates: [{
@@ -388,7 +412,7 @@ describe('employee workbench', () => {
     const boardCallsBefore = postJson.mock.calls.filter(([, body]) => body.tool === 'read_board').length
     await wrapper.get('.employee-workbench-actions button.employee-manage-projects').trigger('click')
     await flushPromises()
-    const dialog = wrapper.getComponent(EmployeeRecruitDialog)
+    const dialog = wrapper.getComponent(EmployeeScopeDialog)
     expect(dialog.props('templateId')).toBe('jefa')
     expect(dialog.find('.project-scope-trigger').exists()).toBe(false)
     expect((dialog.get('input[value="project-a"]').element as HTMLInputElement).checked).toBe(true)
@@ -420,7 +444,7 @@ describe('employee workbench', () => {
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.get('.employee-workbench-state h2').text()).toBe('先选择要负责的项目')
     await wrapper.get('.employee-workbench-state button').trigger('click')
-    expect(wrapper.getComponent(EmployeeRecruitDialog).props('open')).toBe(true)
+    expect(wrapper.getComponent(EmployeeScopeDialog).props('open')).toBe(true)
   })
 
   it('does not invent project assignments for an unknown Agent', async () => {
@@ -447,7 +471,7 @@ describe('employee workbench', () => {
 
     expect(wrapper.getComponent(BolePeoplePanel).props('personalSpaceId')).toBe('space-a')
     expect(wrapper.find('iframe').exists()).toBe(false)
-    expect(wrapper.findComponent(EmployeeRecruitDialog).exists()).toBe(false)
+    expect(wrapper.findComponent(EmployeeScopeDialog).exists()).toBe(false)
     expect(wrapper.find('.employee-manage-projects').exists()).toBe(false)
     expect(wrapper.vm.$route.query.project).toBeUndefined()
     expect(getJson.mock.calls.some(([url]) => String(url).includes('/workspace?'))).toBe(false)
@@ -492,7 +516,7 @@ describe('employee workbench', () => {
     expect(wrapper.get('.employee-workbench-mark img').attributes('src')).toContain('tonborg-avatar.webp')
     expect(wrapper.findComponent(JudgmentWorkbench).props('personalSpaceId')).toBe('space-a')
     expect(wrapper.find('iframe').exists()).toBe(false)
-    expect(wrapper.findComponent(EmployeeRecruitDialog).exists()).toBe(false)
+    expect(wrapper.findComponent(EmployeeScopeDialog).exists()).toBe(false)
     expect(wrapper.get('.employee-native-link').attributes('href')).toBe('/agents/space-a/employee.tonborg')
     // 主页 sits beside the role like Jefa's share icon; Tonborg's actions join the same toolbar row.
     expect(wrapper.find('.employee-workbench-identity .employee-native-link').exists()).toBe(true)

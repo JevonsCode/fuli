@@ -21,15 +21,6 @@ import { ProviderRequestError } from './provider-client.js';
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
-// The data directory's human-review token. It also lets `fuli open` ask the
-// running console for a sign-in code (src/console-session), so a console
-// session needs what this channel needs: read access to the data directory.
-export function humanReviewToken(dataDir, readText = (path) => readFileSync(path, 'utf8')) {
-  const token = parseProviderEnv(readText(join(dataDir, 'graph-provider.env'))).FULI_PERSONAL_HUMAN_REVIEW_TOKEN;
-  if (!token) throw new TypeError('The graph provider has no human-review channel; run fuli setup again');
-  return token;
-}
-
 // send(path, body, { review, timeoutMs, method }) -> { ok, status, payload }; a GET sends no body.
 export function personalHumanReviewChannel(dataDir, {
   fetchImpl = fetch,
@@ -44,11 +35,16 @@ export function personalHumanReviewChannel(dataDir, {
     }
     return { providerUrl: providerUrl.replace(/\/$/, ''), accessToken };
   };
+  const reviewToken = () => {
+    const token = parseProviderEnv(readText(join(dataDir, 'graph-provider.env'))).FULI_PERSONAL_HUMAN_REVIEW_TOKEN;
+    if (!token) throw new TypeError('The graph provider has no human-review channel; run fuli setup again');
+    return token;
+  };
   return async (path, body, { review = false, timeoutMs = REQUEST_TIMEOUT_MS, method = 'POST' } = {}) => {
     const { providerUrl, accessToken } = connection();
     const headers = { authorization: `Bearer ${accessToken}`,
       ...(method === 'GET' ? {} : { 'content-type': 'application/json' }),
-      ...(review ? { 'x-fuli-human-review-token': humanReviewToken(dataDir, readText) } : {}) };
+      ...(review ? { 'x-fuli-human-review-token': reviewToken() } : {}) };
     const response = await fetchImpl(`${providerUrl}${path}`, { method, headers,
       ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }), signal: AbortSignal.timeout(timeoutMs) });
     const payload = await response.json().catch(() => ({}));

@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { runMigrateCommand } from '../src/cli/migrate-command.js';
+import { writeFirstReleaseAgentApps } from './fixtures/agent-apps-first-release.js';
 
 // rec#17 D-09: `fuli migrate status` is read only. Every fixture is
 // synthetic; each test hashes the whole data directory before and after.
@@ -61,13 +62,8 @@ const byLabel = (report) => Object.fromEntries(report.stores.map((store) => [sto
 
 function legacyDataDir(root) {
   json(join(root, 'graph-runtime.json'), { version: 1, personal: { providerUrl: 'http://127.0.0.1:1' }, workspaces: [] });
-  // Unversioned, from before run recovery, with a run: a backfill waits for a person.
-  sqlite(join(root, 'task-schedules.sqlite'), `CREATE TABLE task_schedules(id TEXT PRIMARY KEY, space TEXT NOT NULL,
-      project TEXT NOT NULL, revision INTEGER NOT NULL, enabled INTEGER NOT NULL, body TEXT NOT NULL,
-      next_run_at TEXT NOT NULL, paused_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE task_schedule_runs(schedule TEXT NOT NULL, slot TEXT NOT NULL, task_id TEXT, status TEXT NOT NULL,
-      created_at TEXT NOT NULL, PRIMARY KEY(schedule, slot));
-    INSERT INTO task_schedule_runs VALUES('s1', 'sentinel-slot-content', NULL, 'claimed', 'x');`);
+  // Unversioned, from the first Agent app release, with apps: a backfill waits for a person.
+  writeFirstReleaseAgentApps(join(root, 'agent-apps', 'registry.sqlite'));
   // Unversioned WAL store with no live log: read as immutable, no -wal/-shm left.
   sqlite(join(root, 'agent-roundtable.sqlite'), `PRAGMA journal_mode = WAL;
     CREATE TABLE threads(id TEXT PRIMARY KEY, space_id TEXT NOT NULL, project_id TEXT, subject TEXT NOT NULL,
@@ -101,10 +97,12 @@ test('status reports legacy, pending, newer and half-applied stores without chan
   assert.deepEqual(snapshot(root), before);
   assert.equal(exitCode, 0);
   const stores = byLabel(JSON.parse(output));
-  assert.equal(stores['task-schedules.sqlite'].state, 'pending_confirmation');
-  assert.deepEqual(stores['task-schedules.sqlite'].steps.map((step) => [step.id, step.state]), [
-    ['task-schedules/1-baseline', 'detected'], ['task-schedules/2-breaker-reset', 'automatic'],
-    ['task-schedules/3-run-recovery', 'pending_confirmation']]);
+  assert.equal(stores['agent-apps/registry.sqlite'].state, 'pending_confirmation');
+  assert.deepEqual(stores['agent-apps/registry.sqlite'].steps.map((step) => [step.id, step.state]), [
+    ['agent-apps/1-baseline', 'detected'], ['agent-apps/2-approval-presence', 'automatic'],
+    ['agent-apps/3-presence-challenges', 'automatic'], ['agent-apps/4-owner-lease', 'automatic'],
+    ['agent-apps/5-instances', 'automatic'], ['agent-apps/6-token-instance', 'automatic'],
+    ['agent-apps/7-identity-keys', 'pending_confirmation']]);
   assert.equal(stores['agent-roundtable.sqlite'].state, 'upgrade_on_open');
   assert.equal(stores['agent-roundtable.sqlite'].steps[0].state, 'automatic');
   assert.deepEqual([stores['judgment.sqlite'].state, stores['judgment.sqlite'].version], ['newer_format', 9]);
@@ -120,9 +118,9 @@ test('status reports legacy, pending, newer and half-applied stores without chan
   assert.equal(stores['capture-session-pause/pins/off'].state, 'newer_format');
   assert.equal(stores['role-work.sqlite'].state, 'absent');
   assert.equal(stores['graph (personal)'].state, 'pending_confirmation');
-  assert.match(text.output, /step task-schedules\/3-run-recovery: pending_confirmation/);
+  assert.match(text.output, /step agent-apps\/7-identity-keys: pending_confirmation/);
   assert.match(text.output, /step graph\/9-group-id-separators: pending_confirmation/);
-  assert.doesNotMatch(output + text.output, /sentinel-slot-content/, 'no record content is reported');
+  assert.doesNotMatch(output + text.output, /sentinel/, 'no record content is reported');
 });
 
 test('a store opened and migrated by FULI reports current with its ledger', async (t) => {

@@ -7,8 +7,6 @@ import { fileURLToPath } from 'node:url';
 import { DataFormatError } from '../packages/roundtable/src/storage/data-format-error.js';
 import { listAgentTools } from '../src/agent-tools.js';
 import { handleDataFormatApiRequest } from '../src/http/data-format-api-router.js';
-import { createConsoleSession } from '../src/console-session/session.js';
-import { consoleSessionHeaders } from '../test-support/console-session.js';
 import { createServer } from '../src/server.js';
 import { reachableModules } from '../test-support/module-graph.js';
 
@@ -23,21 +21,25 @@ function migrations(calls, { applyError = null } = {}) {
     preview: async () => PLAN,
     apply: async (input) => { calls.push(['apply', input]); if (applyError) throw applyError; return { status: 'applied', results: [], skipped: [] }; },
     rollback: async (input) => { calls.push(['rollback', input]); return { status: 'rolled_back', version: 2 }; },
-    prune: () => []
+    prune: () => [],
+    retain: async () => { calls.push(['retain']); return [{ kind: 'pruned', store: 'graph' }]; },
+    restore: {
+      choices: () => [{ label: 'task-schedules.sqlite', store: 'task-schedules', kind: 'sqlite',
+        backups: [{ ref: 'format-backups/b', version: 2, takenAt: '2026-10-01T00:00:00.000Z' }] }],
+      status: () => null,
+      describe: (label, backupRef) => { calls.push(['describe', label, backupRef]); return { backupRef, currentDigest: 'd' }; },
+      start: (input) => { calls.push(['restore', input]); return { id: 'r1', status: 'stopping' }; }
+    }
   };
 }
 
-// Apply and undo need the console session (rec#11 D-61); these requests carry it.
-let sessionHeaders = {};
 async function withServer(port, run) {
-  const consoleSession = createConsoleSession();
-  const runtime = await createServer({ port: 0, dataFormatNotices: () => [], dataFormatMigrations: port, consoleSession,
+  const runtime = await createServer({ port: 0, dataFormatNotices: () => [], dataFormatMigrations: port,
     app: { graphiti: true, async state() { throw new Error('not queried'); }, close() {} } });
-  sessionHeaders = consoleSessionHeaders(consoleSession, runtime.url);
   try { return await run(runtime.url); } finally { await new Promise((done) => runtime.server.close(done)); }
 }
 
-const post = (url, body) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...sessionHeaders },
+const post = (url, body) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },
   body: JSON.stringify(body) });
 
 test('the console previews, applies with the digest and undoes, as entrypoint http', async () => {
@@ -45,13 +47,13 @@ test('the console previews, applies with the digest and undoes, as entrypoint ht
   await withServer(migrations(calls), async (url) => {
     assert.deepEqual(await (await fetch(`${url}/api/data-format`)).json(), PLAN);
     assert.equal((await post(`${url}/api/data-format/apply`, { digest: PLAN.digest })).status, 200);
-    assert.equal((await post(`${url}/api/data-format/rollback`, { label: 'task-schedules.sqlite',
-      migrationId: 'task-schedules/3-run-recovery' })).status, 200);
+    assert.equal((await post(`${url}/api/data-format/rollback`, { label: 'agent-apps/registry.sqlite',
+      migrationId: 'agent-apps/7-identity-keys' })).status, 200);
     assert.equal((await post(`${url}/api/data-format/apply`, { digest: 'not-a-digest' })).status, 400);
     assert.equal((await post(`${url}/api/data-format/apply`, { digest: PLAN.digest, yes: true })).status, 400);
   });
   assert.deepEqual(calls, [['apply', { digest: PLAN.digest, actor: { entrypoint: 'http' } }],
-    ['rollback', { label: 'task-schedules.sqlite', migrationId: 'task-schedules/3-run-recovery',
+    ['rollback', { label: 'agent-apps/registry.sqlite', migrationId: 'agent-apps/7-identity-keys',
       actor: { entrypoint: 'http' } }]]);
 });
 
@@ -64,21 +66,50 @@ test('a stale confirmation is a 409 the page can read again', async () => {
   });
 });
 
-test('apply and undo are refused from another device', async () => {
+test('the console checks an unverified prune and restores a whole store without a terminal', async () => {
+  const calls = [];
+  await withServer(migrations(calls), async (url) => {
+    const pruned = await post(`${url}/api/data-format/prune`, {});
+    assert.equal(pruned.status, 200);
+    assert.deepEqual(await pruned.json(), { pruned: [{ kind: 'pruned', store: 'graph' }] });
+    const choices = await (await fetch(`${url}/api/data-format/restore`)).json();
+    assert.equal(choices.stores[0].backups[0].ref, 'format-backups/b');
+    assert.equal(choices.restore, null);
+    const described = await fetch(`${url}/api/data-format/restore?label=task-schedules.sqlite&backup=format-backups%2Fb`);
+    assert.deepEqual(await described.json(), { impact: { backupRef: 'format-backups/b', currentDigest: 'd' } });
+    assert.equal((await fetch(`${url}/api/data-format/restore?label=task-schedules.sqlite`)).status, 400);
+    const started = await post(`${url}/api/data-format/restore`, { label: 'task-schedules.sqlite',
+      backupRef: 'format-backups/b', currentDigest: 'd' });
+    assert.deepEqual(await started.json(), { id: 'r1', status: 'stopping' });
+    assert.deepEqual(await (await fetch(`${url}/api/data-format/restore/status`)).json(), { restore: null });
+    assert.equal((await post(`${url}/api/data-format/restore`, { label: 'task-schedules.sqlite',
+      backupRef: 'format-backups/b' })).status, 400);
+    assert.equal((await post(`${url}/api/data-format/prune`, { keep: 1 })).status, 400);
+  });
+  assert.deepEqual(calls, [['retain'], ['describe', 'task-schedules.sqlite', 'format-backups/b'],
+    ['restore', { label: 'task-schedules.sqlite', backupRef: 'format-backups/b', currentDigest: 'd' }]]);
+});
+
+test('apply, undo, prune and restore are refused from another device', async () => {
   const calls = [];
   const sent = [];
   const response = { setHeader() {}, writeHead(status) { sent.push(status); return this; }, end() {} };
-  for (const action of ['apply', 'rollback']) {
-    const request = { method: 'POST', socket: { remoteAddress: '192.168.1.20' }, headers: {} };
-    await handleDataFormatApiRequest({ request, response, url: new URL(`http://lan/api/data-format/${action}`),
+  const lan = (method) => ({ method, socket: { remoteAddress: '192.168.1.20' }, headers: {} });
+  for (const action of ['apply', 'rollback', 'prune', 'restore']) {
+    await handleDataFormatApiRequest({ request: lan('POST'), response, url: new URL(`http://lan/api/data-format/${action}`),
       migrations: migrations(calls) });
   }
-  assert.deepEqual(sent, [403, 403]);
+  for (const path of ['restore', 'restore?label=x&backup=y', 'restore/status']) {
+    await handleDataFormatApiRequest({ request: lan('GET'), response, url: new URL(`http://lan/api/data-format/${path}`),
+      migrations: migrations(calls) });
+  }
+  assert.deepEqual(sent, [403, 403, 403, 403, 403, 403, 403]);
   assert.deepEqual(calls, []);
 });
 
 test('no MCP or Agent tool module reaches the operations that change data formats', () => {
   const changing = ['src/data-format/migration-operations.js', 'src/data-format/graph-format-client.js',
+    'src/data-format/console-restore.js',
     'src/graphiti/human-review-channel.js',
     'src/data-format/backup-retention.js', 'packages/roundtable/src/storage/database-migration.js',
     'src/storage/json-format-migration.js'].map((path) => join(ROOT, path));

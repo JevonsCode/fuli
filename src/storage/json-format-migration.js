@@ -130,7 +130,7 @@ export function rollbackJsonMigration(filePath, format, { migrationId, actor, no
       throw new DataFormatError(format.store, 'data_format_changed_since', `FULI store "${format.store}" changed `
         + `after migration ${migrationId}, so undoing it would overwrite those changes. Nothing was changed. `
         + `Restoring the whole file from ${latest.backupRef} would discard every change made since; that is a `
-        + 'separate operation (fuli migrate restore).', [migrationId]);
+        + 'separate operation: a whole-store restore (Settings → Data format migrations).', [migrationId]);
     }
     const before = JSON.parse(readFileSync(backupPath(filePath, format, latest.backupRef), 'utf8'));
     const backupRef = backupFile(filePath, format, current.version, copy, now, `undoing ${migrationId}`);

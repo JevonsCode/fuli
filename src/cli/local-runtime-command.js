@@ -95,15 +95,13 @@ export function formatLocalRuntimeResult(command, result) {
       ? 'Fuli local services have not been initialized.'
       : 'Fuli local services stopped. Graph data was preserved.';
   }
-  if (command === 'open') return [`Opened: ${result.url}`, signInNotice(result.signIn)].filter(Boolean).join('\n');
+  if (command === 'open') return `Opened: ${result.url}`;
   if (command === 'status') return formatStatus(result);
   throw new TypeError(`Unknown local runtime command: ${command}`);
 }
 
 function formatStartedRuntime(title, result) {
   const lines = [title, `Management UI: ${result.url}`];
-  const notSignedIn = signInNotice(result.signIn);
-  if (notSignedIn) lines.push(notSignedIn);
   const agentSetupNotice = formatAgentSetupNotice(result.agentSetupCheck);
   if (agentSetupNotice) lines.push(agentSetupNotice);
   if (result.lan === true) {
@@ -116,12 +114,6 @@ function formatStartedRuntime(title, result) {
     );
   }
   return lines.join('\n');
-}
-
-// A console opened without its session (rec#11 D-61) shows no full history.
-function signInNotice(signIn) {
-  if (signIn?.status !== 'unavailable') return null;
-  return `Not signed in (${signIn.reason}). Full history, knowledge details and session records need a console session; run fl open again, or fl restart if an older console is still running.`;
 }
 
 function checkAgentSetup({ paths, env, nodePath, discover, inspect }) {

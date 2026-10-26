@@ -1,4 +1,4 @@
-import { isLoopbackAddress } from './request-policy.js';
+import { isLoopbackAddress, refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-router.js';
 import { handleGraphApiRequest } from './graph-api-router.js';
@@ -13,6 +13,7 @@ import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
 import { handleModelBackendApiRequest } from '../model-backends/http.js';
+import { handleModelKeyRequest } from '../model-backends/keys-http.js';
 import { TONBORG_OPERATIONS } from '../judgment/backend.js';
 import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { JEFA_OPERATION } from '../graphiti/jefa-board-match.js';
@@ -35,16 +36,13 @@ export async function handleApiRequest({
   knowledgeOwnerReads = null,
   knowledgeTags = null,
   modelRoleSettings = null,
+  modelSecrets = null,
   readModelEvaluation = null,
-  judgmentUndo = null,
-  // Whether the request carries this launch's console session (rec#11 D-61).
-  consoleSignedIn = false,
-  // A LAN roundtable change: the console session or `fuli peer` with the
-  // data directory's human-review token.
-  peerChangeAllowed = () => false
+  judgmentUndo = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
-  if (await handlePeerApiRequest({ request, response, url, peer, ownerChangeAllowed: peerChangeAllowed })) return true;
+  if (await handlePeerApiRequest({ request, response, url, peer })) return true;
+  if (await handleModelKeyRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
@@ -52,7 +50,7 @@ export async function handleApiRequest({
     roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS) },
     automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
     settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation,
-    ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null, consoleSignedIn });
+    ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null });
   // The suggestion log's owner proof is confirmed with the Provider, so that
   // read wakes an adaptive runtime like any graph request (rec#11 D-60).
   if (system?.withGraphRuntimeLease && url.pathname === MODEL_SUGGESTIONS_PATH
@@ -140,6 +138,18 @@ export async function handleApiRequest({
     return true;
   }
 
+  // The console's own update (src/system/console-update.js): its state, and
+  // the start, which only a request from this computer may make.
+  if (system?.startUpdate && url.pathname === '/api/system/update') {
+    response.setHeader('Cache-Control', 'no-store');
+    if (request.method === 'GET') sendJson(response, 200, { update: system.updateStatus() });
+    else if (request.method !== 'POST') sendJson(response, 405, { error: 'Method not allowed' });
+    else if (!refuseRemoteDecision(request, response, 'FULI is updated only on this computer')) {
+      sendJson(response, 200, system.startUpdate());
+    }
+    return true;
+  }
+
   if (system && url.pathname === '/api/system/runtime' && request.method === 'GET') {
     sendJson(response, 200, system.runtimeStatus());
     return true;
@@ -190,14 +200,14 @@ export async function handleApiRequest({
   // request: an adaptive runtime wakes the provider for a preview and keeps
   // it up through a long apply or undo.
   const graphRequest = async () =>
-    await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations, consoleSignedIn }) ||
+    await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations }) ||
     await handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete: knowledgeHardDelete }) ||
     await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope }) ||
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||
     await handleJudgmentApiRequest({ request, response, url, app, undoConsole: judgmentUndo, ownerReads: knowledgeOwnerReads }) ||
     await handleStandingAssignmentRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
-    await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads, consoleSignedIn });
+    await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads });
   if (system?.withGraphRuntimeLease && (
     url.pathname.startsWith('/api/') || url.pathname.startsWith('/employee-workspaces/')
   )) {

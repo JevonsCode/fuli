@@ -16,7 +16,7 @@ Local service:
   stop [--data-dir DIR]
   restart [--port PORT] [--open] [--lan|--no-lan] [--rebuild] [--data-dir DIR] [--personal-space NAME]
   status [--json] [--data-dir DIR] [--port PORT]
-  open [--next PATH] [--data-dir DIR]  (opens the console signed in; PATH: a console page such as /knowledge)
+  open [--data-dir DIR]
 
 Install and Agent connection:
   clients trust|update|status|rollback [--data-dir DIR]  (pinned descriptor packs; update previews; apply asks separately for each file)

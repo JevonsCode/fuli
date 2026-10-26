@@ -25,23 +25,20 @@ import { listenFetchableServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
-import { startTaskScheduler } from './task-schedules/scheduler.js';
 import { dataFormatNoticeLine, dataFormatNotices } from './data-format/format-notices.js';
 import { personalGraphFormat } from './data-format/graph-format-client.js';
 import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
+import { consoleRestore } from './data-format/console-restore.js';
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
+import { createKnowledgeRecoveryCheck } from './knowledge-hard-delete/recovery-check.js';
 import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
 import { knowledgeOwnerReads as createKnowledgeOwnerReads } from './knowledge-owner-reads/console-port.js';
 import { reviewUndoConsole } from './judgment/review-undo.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
 import { createModelRoleSettings } from './model-backends/role-settings.js';
+import { createModelSecretStore } from './model-backends/secret-store.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
-import { createConsoleSession } from './console-session/session.js';
-import { discardUrlCode, handleConsoleSessionRequest, hasConsoleSession, hasSignInToken } from './console-session/http.js';
-import { createSignInLaunchers, launcherParent } from './console-session/launcher-file.js';
-import { sessionBoundPorts } from './console-session/session-ports.js';
-import { humanReviewToken } from './graphiti/human-review-channel.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -91,7 +88,8 @@ export async function createServer(options = {}) {
   // A person's confirmed migrations, the same operations as `fuli migrate`.
   const dataFormatMigrations = options.dataFormatMigrations ?? (localOptions.runtimeConfigPath
     ? createDataFormatMigrations(dirname(localOptions.runtimeConfigPath),
-      { graph: personalGraphFormat(dirname(localOptions.runtimeConfigPath)) }) : null);
+      { graph: personalGraphFormat(dirname(localOptions.runtimeConfigPath)),
+        restore: consoleRestore(dirname(localOptions.runtimeConfigPath)) }) : null);
   for (const pruned of dataFormatMigrations?.prune() ?? []) {
     if (pruned.kind === 'prune_failed') console.warn(`Format backups were not pruned: ${pruned.reason}`);
   }
@@ -117,19 +115,13 @@ export async function createServer(options = {}) {
   const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
     ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath,
       { history: application.modelSettingsHistory }) : null);
+  // The model keys the settings page saves, where `fuli models set-key` saves them; reached only by the loopback route.
+  const modelSecrets = options.modelSecrets ?? (localOptions.runtimeConfigPath
+    ? createModelSecretStore({ path: resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelSecretStorePath })
+    : null);
   // The latest local evaluation of a role's model, as the model settings page shows it (rec#10 D-36.6).
   const readModelEvaluation = options.readModelEvaluation ?? (localOptions.runtimeConfigPath
     ? key => latestEvaluation(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelEvaluationsPath, key) : null);
-  // This launch's console session (rec#11 D-61): its secret lives in memory
-  // only, `fuli open` shows it may sign in with the data directory's
-  // human-review token, and the code reaches the browser in an owner-only file.
-  const signIn = {
-    session: options.consoleSession ?? createConsoleSession(),
-    launchers: options.signInLaunchers ?? createSignInLaunchers({ parent: () => localOptions.runtimeConfigPath
-      ? launcherParent(dirname(localOptions.runtimeConfigPath)) : null }),
-    readToken: options.readSignInToken ?? (localOptions.runtimeConfigPath
-      ? () => humanReviewToken(dirname(localOptions.runtimeConfigPath)) : null)
-  };
   // A delete whose answer was lost, or whose local cleanup a crash cut short,
   // is settled from its recorded operation, and graph deletions the record
   // lost are taken in again; what the graph cannot answer yet stays open for
@@ -142,14 +134,13 @@ export async function createServer(options = {}) {
   let system = null;
   let resourcesClosing = null;
   let stopJudgment = () => {};
-  let stopTaskSchedules = () => {};
   let peer = null;
   let workerRuntime = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopTaskSchedules(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close(),
-        () => signIn.launchers.close(), () => releaseDataDirectory()]) {
+      for (const close of [() => stopJudgment(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close(),
+        () => releaseDataDirectory()]) {
         try {
           const pending = close();
           if (pending?.then) await pending;
@@ -199,6 +190,13 @@ export async function createServer(options = {}) {
     // construction or configuration validation fails, even without a listener.
     await failStartup(error);
   }
+  // A request that finds deletion recovery pending starts the console's own
+  // re-check, the same reconciliation it ran when it started.
+  const knowledgeRecovery = knowledgeHardDelete && application.knowledgeRecoveryGate
+    ? createKnowledgeRecoveryCheck({ reconcile: () => knowledgeHardDelete.reconcile(),
+      gate: application.knowledgeRecoveryGate, spaceId: () => application.config?.personal?.spaceId ?? null,
+      ...(system?.withGraphRuntimeLease ? { run: (work) => system.withGraphRuntimeLease('knowledge-recovery', work) } : {}) })
+    : null;
   let authority = null;
   let allowedLanAuthorities = [];
   const server = createHttpServer((request, response) => {
@@ -217,9 +215,9 @@ export async function createServer(options = {}) {
       knowledgeOwnerReads,
       knowledgeTags,
       modelRoleSettings,
+      modelSecrets,
       readModelEvaluation,
       judgmentUndo,
-      signIn,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -231,6 +229,7 @@ export async function createServer(options = {}) {
         return;
       }
       const mapped = mapHttpError(error);
+      if (mapped.body.code === 'knowledge_recovery_pending') void knowledgeRecovery?.check();
       sendJson(response, mapped.status, mapped.body);
     });
   });
@@ -250,8 +249,6 @@ export async function createServer(options = {}) {
     await failStartup(new Error('Server did not bind to a valid local authority'));
   }
   stopJudgment = startJudgmentScheduler({ app: application,
-    ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
-  stopTaskSchedules = startTaskScheduler({ app: application,
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
   // Resumes only what the owner already turned on; console LAN access never enables it.
   if (application.peer && options.peer !== false) {
@@ -312,15 +309,13 @@ async function handleRequest({
   knowledgeOwnerReads,
   knowledgeTags,
   modelRoleSettings,
+  modelSecrets,
   readModelEvaluation,
   judgmentUndo,
-  signIn,
   authority,
   lanAuthorities,
   lanAccessToken
 }) {
-  // A sign-in code in a URL is burned whatever the policy answers.
-  discardUrlCode(request, signIn);
   if (rejectRequestOutsidePolicy({
     request,
     response,
@@ -328,17 +323,11 @@ async function handleRequest({
     lanAuthorities,
     lanAccessToken
   })) return;
-  // The sign-in routes answer a navigation from another site themselves: they refuse it.
-  if (await handleConsoleSessionRequest({ request, response, signIn, authority })) return;
   // A page opened from another site's link reaches the static console only.
   if (isCrossSiteNavigation(request)) {
     serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
     return;
   }
-  // Protected reads and changes serve only the console session (rec#11 D-61).
-  const consoleSignedIn = hasConsoleSession(request, signIn.session, authority);
-  const reviewPorts = sessionBoundPorts({ knowledgeOwnerReads, knowledgeHardDelete, knowledgeScope, knowledgeTags, judgmentUndo },
-    consoleSignedIn);
   if (await handleApiRequest({
     request,
     response,
@@ -349,12 +338,14 @@ async function handleRequest({
     peer,
     dataFormats,
     dataFormatMigrations,
-    ...reviewPorts,
-    consoleSignedIn,
-    // Asked only when a peer change is made, so no other request reads the token.
-    peerChangeAllowed: () => consoleSignedIn || hasSignInToken(request, signIn),
+    knowledgeHardDelete,
+    knowledgeScope,
+    knowledgeOwnerReads,
+    knowledgeTags,
     modelRoleSettings,
-    readModelEvaluation
+    modelSecrets,
+    readModelEvaluation,
+    judgmentUndo
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }

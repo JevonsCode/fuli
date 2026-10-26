@@ -12,6 +12,7 @@ import { personalProjectsPath } from '@/router/paths'
 import type { PersonalProject } from '@/types'
 import ProjectTeamSummary from './ProjectTeamSummary.vue'
 import ProjectCaptureSwitch from '@/features/capture/ProjectCaptureSwitch.vue'
+import ProjectJudgmentPolicy from '@/features/judgment/ProjectJudgmentPolicy.vue'
 
 const props = withDefaults(defineProps<{
   spaceId: string
@@ -52,6 +53,8 @@ const visibleFrequentProjects = computed(() =>
       </div>
     </header>
     <ProjectCaptureSwitch :key="project.project_id" class="project-capture-card" :project-id="project.project_id" :project-name="project.profile.name" />
+    <ProjectJudgmentPolicy :key="`judgment-${project.project_id}`" class="project-judgment-card" :personal-space-id="spaceId"
+      :project-id="project.project_id" :project-name="project.profile.name" :heading="t('judgment.project.heading')" />
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
     <section
       class="project-frequent-projects"

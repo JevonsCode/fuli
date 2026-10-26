@@ -11,7 +11,8 @@ import { backupRetentionPolicy, pruneFormatBackups } from '../src/data-format/ba
 import { pruneFormatRetention, RETENTION_BUDGET_NOTICE, retentionLines } from '../src/data-format/format-retention.js';
 import { dataFormatMigrations } from '../src/data-format/migration-operations.js';
 import { readFormatOperations } from '../src/data-format/operations-log.js';
-import { TASK_SCHEDULE_FORMAT } from '../src/task-schedules/store.js';
+import { AGENT_APP_FORMAT } from '../src/agent-apps/store.js';
+import { writeFirstReleaseAgentApps } from './fixtures/agent-apps-first-release.js';
 
 // rec#17 D-11 §5 / D-09 part 2: format backups are bounded, but never the one
 // an undo needs, the latest ledger entry's, or the newest of the current version.
@@ -19,26 +20,20 @@ import { TASK_SCHEDULE_FORMAT } from '../src/task-schedules/store.js';
 function migratedStore(t) {
   const root = mkdtempSync(join(tmpdir(), 'fuli-backup-retention-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const path = join(root, 'task-schedules.sqlite');
-  const database = new DatabaseSync(path);
-  database.exec(`CREATE TABLE task_schedules(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL,
-      revision INTEGER NOT NULL, enabled INTEGER NOT NULL, body TEXT NOT NULL, next_run_at TEXT NOT NULL,
-      paused_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE task_schedule_runs(schedule TEXT NOT NULL, slot TEXT NOT NULL, task_id TEXT, status TEXT NOT NULL,
-      created_at TEXT NOT NULL, PRIMARY KEY(schedule, slot));
-    INSERT INTO task_schedule_runs VALUES('s1', 'slot', NULL, 'claimed', '2026-01-01T00:00:00Z');`);
-  database.close();
-  const plan = previewSqliteMigration(path, TASK_SCHEDULE_FORMAT);
-  const applied = applyConfirmedSqliteMigration(path, TASK_SCHEDULE_FORMAT, { digest: plan.digest,
+  const path = join(root, 'agent-apps', 'registry.sqlite');
+  writeFirstReleaseAgentApps(path);
+  const plan = previewSqliteMigration(path, AGENT_APP_FORMAT);
+  // The confirmed backfill leaves the store at version 7.
+  const applied = applyConfirmedSqliteMigration(path, AGENT_APP_FORMAT, { digest: plan.digest,
     actor: { entrypoint: 'cli' } });
   // Older backups of earlier versions an earlier FULI left, oldest first.
-  const backups = join(root, 'format-backups');
-  const source = join(root, applied.backupRef);
+  const backups = join(root, 'agent-apps', 'format-backups');
+  const source = join(root, 'agent-apps', applied.backupRef);
   for (const [version, stamp] of [[0, '2026-01-01T00-00-00-000Z'], [1, '2026-02-01T00-00-00-000Z'],
-    [2, '2026-03-01T00-00-00-000Z'], [2, '2026-04-01T00-00-00-000Z'], [3, '2026-05-01T00-00-00-000Z']]) {
-    copyFileSync(source, join(backups, `task-schedules.sqlite.v${version}-${stamp}.sqlite`));
+    [2, '2026-03-01T00-00-00-000Z'], [2, '2026-04-01T00-00-00-000Z'], [7, '2026-05-01T00-00-00-000Z']]) {
+    copyFileSync(source, join(backups, `registry.sqlite.v${version}-${stamp}.sqlite`));
   }
-  return { root, applied, backups };
+  return { root, path, applied, backups };
 }
 
 test('pruning keeps what undo, the last applied version and the current version need', (t) => {
@@ -51,7 +46,7 @@ test('pruning keeps what undo, the last applied version and the current version 
 
   assert.deepEqual(result.pruned.map((entry) => entry.backupRef), dryRun.pruned.map((entry) => entry.backupRef));
   const left = readdirSync(backups).sort();
-  assert.deepEqual(left, [undoBackup, 'task-schedules.sqlite.v3-2026-05-01T00-00-00-000Z.sqlite'].sort());
+  assert.deepEqual(left, [undoBackup, 'registry.sqlite.v7-2026-05-01T00-00-00-000Z.sqlite'].sort());
   assert.equal(result.pruned.length, 4);
   const logged = readFormatOperations(root).filter((event) => event.kind === 'pruned');
   assert.deepEqual(logged.map((event) => event.backupRef).sort(), result.pruned.map((entry) => entry.backupRef).sort());
@@ -67,8 +62,8 @@ test('the newest backups within the count are kept and size is bounded next', (t
 
   assert.equal(result.pruned.length, 2);
   assert.ok(result.pruned.every((entry) => /more than 2 backups/.test(entry.reason)));
-  assert.ok(!existsSync(join(backups, 'task-schedules.sqlite.v0-2026-01-01T00-00-00-000Z.sqlite')));
-  assert.ok(existsSync(join(backups, 'task-schedules.sqlite.v2-2026-04-01T00-00-00-000Z.sqlite')));
+  assert.ok(!existsSync(join(backups, 'registry.sqlite.v0-2026-01-01T00-00-00-000Z.sqlite')));
+  assert.ok(existsSync(join(backups, 'registry.sqlite.v2-2026-04-01T00-00-00-000Z.sqlite')));
 });
 
 test('the policy is configurable and rejects nonsense', () => {
@@ -80,8 +75,8 @@ test('the policy is configurable and rejects nonsense', () => {
 });
 
 test('a store whose ledger cannot be read keeps every backup', (t) => {
-  const { root, backups } = migratedStore(t);
-  const database = new DatabaseSync(join(root, 'task-schedules.sqlite'));
+  const { root, path, backups } = migratedStore(t);
+  const database = new DatabaseSync(path);
   database.exec('DROP TABLE fuli_format_ledger; CREATE TABLE fuli_format_ledger(garbage TEXT)');
   database.close();
 
@@ -97,8 +92,8 @@ test('local backups and graph undo journals share one size budget, oldest unprot
   const { root, backups } = migratedStore(t);
   // keep=2 leaves two unprotected local backups, 0.4 GiB each (0.8 GiB); the
   // ones an undo or the current version needs are tiny.
-  const large = new Set(['task-schedules.sqlite.v2-2026-03-01T00-00-00-000Z.sqlite',
-    'task-schedules.sqlite.v2-2026-04-01T00-00-00-000Z.sqlite']);
+  const large = new Set(['registry.sqlite.v2-2026-03-01T00-00-00-000Z.sqlite',
+    'registry.sqlite.v2-2026-04-01T00-00-00-000Z.sqlite']);
   const sizeOf = (path) => (large.has(basename(path)) ? 0.4 * GIB : 1);
   // The graph: the journal an undo needs, and two unprotected ones of 0.4 GiB (0.8 GiB).
   const journals = [
@@ -128,11 +123,11 @@ test('local backups and graph undo journals share one size budget, oldest unprot
   assert.deepEqual(dry.graph.pruned.map((entry) => entry.backupRef), ['undo journal j3']);
   const sized = result.local.pruned.filter((entry) => /use more than/.test(entry.reason));
   assert.deepEqual(sized.map((entry) => entry.backupRef),
-    ['format-backups/task-schedules.sqlite.v2-2026-03-01T00-00-00-000Z.sqlite']);
+    ['format-backups/registry.sqlite.v2-2026-03-01T00-00-00-000Z.sqlite']);
   assert.deepEqual(dry.local.pruned.map((entry) => entry.backupRef), result.local.pruned.map((entry) => entry.backupRef));
   assert.ok(result.local.plannedBytesKept <= GIB && result.local.plannedBytesKept >= 0.8 * GIB);
   assert.equal(result.graph.pruned[0].reason, 'format backups and graph undo journals use more than 1024 MB');
-  assert.ok(existsSync(join(backups, 'task-schedules.sqlite.v2-2026-04-01T00-00-00-000Z.sqlite')));
+  assert.ok(existsSync(join(backups, 'registry.sqlite.v2-2026-04-01T00-00-00-000Z.sqlite')));
 });
 
 test('what an undo needs stays even when it alone is over the shared budget', async (t) => {
@@ -145,7 +140,7 @@ test('what an undo needs stays even when it alone is over the shared budget', as
   const result = await pruneFormatRetention({ dataDir: root, graph, policy: { keep: 0, maxBytes: GIB } });
 
   assert.deepEqual(result.graph.pruned, []);
-  assert.ok(existsSync(join(root, applied.backupRef)));
+  assert.ok(existsSync(join(root, 'agent-apps', applied.backupRef)));
   assert.equal(readdirSync(backups).length, 2);
 });
 

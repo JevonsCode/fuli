@@ -17,6 +17,7 @@ import { discoverAgents } from '../setup/agents.js';
 import { createClientConnectionObserver } from './client-connection-status.js';
 import { createClientInstaller } from './client-connection-install.js';
 import { createSettingsApplier } from './settings-apply.js';
+import { consoleUpdate } from './console-update.js';
 
 export function createSystemService({
   paths,
@@ -47,6 +48,7 @@ export function createSystemService({
   clientInstaller = createClientInstaller({ paths, runtimeConfigPath }),
   executorAdapters = new Map(),
   versionChecker = createPackageVersionChecker(),
+  update = consoleUpdate(paths.dataDir),
   runtimeBroker = createAdaptiveRuntimeBroker({
     paths,
     settings: readAdaptiveRuntimeSettings(paths.adaptiveRuntimeSettingsPath),
@@ -107,7 +109,10 @@ export function createSystemService({
     clientConnectionStatus: () => clientObserver.observe(),
     connectClient: clientInstaller,
     resources: () => resourceMonitor.sample(),
-    versionStatus: () => versionChecker.check(),
+    // selfUpdate: whether the console can run the update itself (console-update.js).
+    versionStatus: async () => ({ ...await versionChecker.check(), selfUpdate: update.offered() }),
+    updateStatus: () => update.status(),
+    startUpdate: () => update.start(),
     runtimeStatus: () => runtimeBroker.status(),
     acquireRuntimeLease: (input) => runtimeBroker.acquire(input),
     refreshRuntimeLease: (leaseId) => runtimeBroker.refresh(leaseId),
