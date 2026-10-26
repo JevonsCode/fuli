@@ -25,6 +25,10 @@ const SPACE = 'synthetic-space';
 const PROJECT = 'project';
 const AGENT = 'lead';
 const HOOKS = { codex: codexLifecycleOutput, claude_code: claudeLifecycleOutput };
+// The SessionStart sources after which the host replays the same transcript
+// into the model's context, so the model keeps what it saw: Claude Code's
+// resume (rec#11 D-69). Every other source starts a new model view.
+const REPLAYED_SESSION_STARTS = { codex: [], claude_code: ['resume'] };
 const bytes = text => Buffer.byteLength(text, 'utf8');
 const sha = text => createHash('sha256').update(text).digest('hex');
 const frameOf = text => JSON.parse(text.split('\n').at(-1));
@@ -151,6 +155,7 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
     };
     session.sessionStart = async source => {
       await resetHook('SessionStart', { source });
+      if (REPLAYED_SESSION_STARTS[client].includes(source)) return;
       view = model();
       session.generation++;
     };
