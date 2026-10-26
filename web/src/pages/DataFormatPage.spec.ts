@@ -161,6 +161,66 @@ describe('DataFormatPage', () => {
     expect(wrapper.get('[data-apply]').attributes('disabled')).toBeDefined()
   })
 
+  it('checks an unverified prune with a button instead of a command', async () => {
+    const wrapper = await mountPage()
+    api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [],
+      pruned: [{ kind: 'prune_unverified', store: 'graph' }] })
+    await wrapper.get('#data-format-reviewed').trigger('click')
+    await wrapper.get('[data-apply]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-prune-unverified]').text()).not.toMatch(/fuli |终端/)
+
+    api.postJson.mockResolvedValueOnce({ pruned: [{ kind: 'pruned', store: 'graph' }, { kind: 'pruned', store: 'graph' }] })
+    await wrapper.get('[data-prune-check]').trigger('click')
+    await flushPromises()
+    expect(api.postJson).toHaveBeenLastCalledWith('/api/data-format/prune', {})
+    expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
+    expect(wrapper.get('[data-prune-checked]').text()).toContain('共清理 2 份')
+  })
+
+  it('restores a whole store only after the person reads what is lost, and follows FULI through its restart', async () => {
+    vi.useFakeTimers()
+    try {
+      const wrapper = await mountPage()
+      expect(wrapper.text()).not.toMatch(/fuli migrate|终端/)
+      api.getJson.mockResolvedValueOnce({ restore: null, stores: [{ label: 'task-schedules.sqlite', store: 'task-schedules',
+        kind: 'sqlite', backups: [{ ref: 'format-backups/b1', version: 2, takenAt: '2026-10-01T08:00:00.000Z' }] }] })
+      await wrapper.get('[data-restore-open]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-restore-backup] button').trigger('click')
+      api.getJson.mockResolvedValueOnce({ impact: { store: 'task-schedules', backupRef: 'format-backups/b1',
+        takenAt: '2026-10-01T08:00:00.000Z', currentVersion: 3, backupVersion: 2, currentDigest: 'digest-now',
+        tables: [{ table: 'task_schedule_runs', current: 9, backup: 2 }], laterMigrations: [] } })
+      await wrapper.get('[data-restore-describe]').trigger('click')
+      await flushPromises()
+      expect(api.getJson).toHaveBeenLastCalledWith('/api/data-format/restore?label=task-schedules.sqlite&backup=format-backups%2Fb1')
+      expect(wrapper.get('[data-restore-impact]').text()).toContain('task_schedule_runs：现在 9 行，备份里 2 行')
+      expect(wrapper.get('[data-restore-confirm]').attributes('disabled')).toBeDefined()
+
+      await wrapper.get('#store-restore-understood').trigger('click')
+      api.postJson.mockResolvedValueOnce({ id: 'r1', label: 'task-schedules.sqlite', backupRef: 'format-backups/b1',
+        status: 'stopping', safetyBackupRef: null, started: null, error: null })
+      await wrapper.get('[data-restore-confirm]').trigger('click')
+      await flushPromises()
+      expect(api.postJson).toHaveBeenLastCalledWith('/api/data-format/restore',
+        { label: 'task-schedules.sqlite', backupRef: 'format-backups/b1', currentDigest: 'digest-now' })
+      expect(wrapper.text()).toContain('正在停止 FULI 并恢复「task-schedules.sqlite」')
+
+      // FULI is down: the read fails, and the page keeps asking.
+      api.getJson.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      await vi.advanceTimersByTimeAsync(2000)
+      api.getJson.mockResolvedValueOnce({ restore: { id: 'r1', label: 'task-schedules.sqlite', backupRef: 'format-backups/b1',
+        status: 'restored', safetyBackupRef: 'format-backups/safety', started: true, error: null } })
+      api.getJson.mockResolvedValue(plan())
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(wrapper.get('[data-restore-outcome="restored"]').text())
+        .toContain('已用备份 format-backups/b1 恢复「task-schedules.sqlite」。恢复前的存储另存为 format-backups/safety。')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('undoes one migration only after a second, explicit confirmation', async () => {
     const wrapper = await mountPage()
     await wrapper.get('[data-undo]').trigger('click')

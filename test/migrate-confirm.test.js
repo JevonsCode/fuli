@@ -387,10 +387,11 @@ test('an apply whose graph prune answer is lost says the prune is unverified and
   assert.ok(applied.output.includes(GRAPH_PRUNE_UNVERIFIED_NOTICE.en), applied.output);
 });
 
-test('the console says an unverified graph prune in exactly the CLI wording', () => {
+test('the console says an unverified graph prune in the CLI wording, and only the CLI names the command', () => {
   const messages = readFileSync(new URL('../web/src/i18n/messages/data-format.ts', import.meta.url), 'utf8');
   assert.ok(messages.includes(`pruneUnverified: '${GRAPH_PRUNE_UNVERIFIED_NOTICE.zh}'`), 'Chinese wording');
   assert.ok(messages.includes(`pruneUnverified: '${GRAPH_PRUNE_UNVERIFIED_NOTICE.en}'`), 'English wording');
+  for (const line of graphPruneUnverifiedLines()) assert.match(line, /fuli migrate prune/);
 });
 
 // As above, and the disk then refuses the local audit log: the operations

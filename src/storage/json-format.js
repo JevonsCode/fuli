@@ -248,7 +248,7 @@ function resolveInterruptedChange(filePath, format, { allowConflict = false } = 
     if (allowConflict) return 'conflict';
     throw new DataFormatError(format.store, 'data_format_interrupted', `FULI store "${format.store}" has an `
       + `interrupted ${intent.operation} (${intent.event?.migrationId}) and the file is neither as it was nor as `
-      + 'that change left it. Nothing was written; restore the whole file (fuli migrate restore) from '
+      + 'that change left it. Nothing was written; restore the whole file (Settings → Data format migrations) from '
       + `${intent.backupRef ?? 'a backup'} or another backup.`, intent.event?.migrationId ? [intent.event.migrationId] : []);
   }
   rmSync(jsonIntentPath(filePath), { force: true });
