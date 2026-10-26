@@ -241,6 +241,10 @@
 .graph-edge-label.related .graph-edge-label-text,
 .graph-edge-label.selected .graph-edge-label-text { fill: var(--color-accent); font-weight: 700; }
 
+/* A relation label with no free room on its line would cover a node or another
+   label; it shows only while its relation is in focus. */
+.graph-edge-label.crowded:not(.hovered, .focused, .selected, .search-match) { opacity: 0; }
+
 .graph-viewport--compact-labels .graph-node-label,
 .graph-viewport--compact-labels .graph-node .graph-node-id,
 .graph-viewport--compact-labels .graph-edge-label { opacity: 0; }
