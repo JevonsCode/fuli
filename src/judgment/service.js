@@ -15,6 +15,10 @@ export const policySchema = z.object({ mode: z.enum(['manual', 'shared', 'autono
   backend: z.enum(['model_or_session', 'legacy_cli']).optional() }).strict();
 const scopeSchema = z.object({ personalSpaceId: id, personalProjectId: id.nullable().optional() });
 const revision = z.number().int().min(0);
+// after: the previous page's nextCursor. filter human: only records that wait for the person.
+const recordPageSchema = scopeSchema.extend({ limit: z.number().int().min(1).max(100).default(50), after: id.optional(),
+  search: z.string().trim().max(200).optional().transform(text => text || undefined),
+  filter: z.enum(['all', 'human']).default('all') }).strict();
 const pinSchema = z.object({ personalSpaceId: id, agentId: id, pinned: z.boolean(), expectedRevision: revision }).strict();
 const policyWriteSchema = scopeSchema.extend({ policy: policySchema.nullable(), expectedRevision: revision }).strict();
 const reviewVerdictSchema = z.object({ personalSpaceId: id, agentId: id, personalProjectId: id.nullable().optional() }).strict();
@@ -35,6 +39,19 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       if (!(Array.isArray(result) ? result : result.projects ?? []).some(p => (p.projectId ?? p.project_id) === input.personalProjectId && p.profile?.lifecycle !== 'archived')) {
         throw new EmployeeError('Project not found', 404, 'project_not_found');
       }
+    }
+  }
+  // The projects whose name contains the searched text. Names live in the
+  // Provider; without it the search still covers the records' own words.
+  async function projectsNamed(personalSpaceId, text) {
+    const wanted = text.toLowerCase();
+    try {
+      const result = await app.listPersonalProjects({ personalSpaceId });
+      return (Array.isArray(result) ? result : result.projects ?? [])
+        .filter(project => String(project.profile?.name ?? '').toLowerCase().includes(wanted))
+        .map(project => project.projectId ?? project.project_id);
+    } catch {
+      return [];
     }
   }
   // The scope's own records and the global ones, newest first.
@@ -65,11 +82,15 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       if (!parsed.personalProjectId && parsed.policy === null) throw new TypeError('Only project overrides can be removed');
       return store().setPolicy(parsed.personalSpaceId, parsed.personalProjectId ?? '', parsed.policy, parsed.expectedRevision);
     },
+    // One page, newest first; nextCursor reads the next page (null at the end).
     async records(input) {
-      const parsed = parse(scopeSchema.extend({ limit: z.number().int().min(1).max(100).default(50) }).strict(), input);
+      const { search, filter, ...parsed } = parse(recordPageSchema, input);
       await scope(parsed);
-      const records = store().records(parsed.personalSpaceId, parsed);
-      return { ...judgmentHumanInteraction(records, parsed.personalSpaceId), records };
+      const page = store().records(parsed.personalSpaceId, { ...parsed, limit: parsed.limit + 1, humanNeeded: filter === 'human',
+        search: search ? { text: search, projectIds: await projectsNamed(parsed.personalSpaceId, search) } : null });
+      const records = page.slice(0, parsed.limit);
+      return { ...judgmentHumanInteraction(records, parsed.personalSpaceId), records,
+        nextCursor: page.length > parsed.limit ? records.at(-1).id : null };
     },
     // Reads the local ledger only; no judgment client runs.
     async reviewVerdicts(input) {
