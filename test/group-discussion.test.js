@@ -13,7 +13,7 @@ import { callRoundtableTool } from '../src/agent-roundtable/tools.js';
 // roundtable's wake port that records each call and answers as the member it
 // was asked to restore; the roundtable, chat, delegation checks and store are
 // the real ones. What the person typed reaches the roundtable the way the task
-// entry records it (confirmGroupDiscussion, requestGroupFollowUp). Synthetic
+// entry records it (recordGroupChoice, requestGroupFollowUp). Synthetic
 // data only.
 
 const agent = (agentId, name, occupation, allowedClients = ['claude_code', 'codex']) => ({ agentId,
@@ -60,7 +60,7 @@ function fixture({ answer = null, clientAvailable = () => true, agents = AGENTS,
     sourceApplication: 'claude_code', action, ...data });
   // What the person's @FLG entry records: the confirmed members, then a follow-up.
   const confirm = (requestId, members, question = '这个方案的产品体验和技术风险？') =>
-    roundtable.confirmGroupDiscussion({ requestId, agentId: 'lead', projectId: 'app', question, members });
+    roundtable.recordGroupChoice({ requestId, agentId: 'lead', projectId: 'app', question, members });
   const start = async (requestId, members, extra = {}) => {
     confirm(requestId, members, extra.question);
     return call('start', { requestId, ...(extra.responseRounds !== undefined ? { responseRounds: extra.responseRounds } : {}) });

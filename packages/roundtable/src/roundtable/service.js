@@ -592,7 +592,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     discuss: discussions.discuss,
     ownerGroupDiscussion: discussions.ownerView,
     ownerStopGroupDiscussion: discussions.ownerStop,
-    confirmGroupDiscussion: discussions.ownerConfirm,
+    recordGroupChoice: discussions.ownerRecordChoice,
     requestGroupFollowUp: discussions.ownerFollowUp,
     groupDiscussionStatus: discussions.ownerStatus,
     ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),

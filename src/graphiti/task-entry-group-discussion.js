@@ -188,8 +188,8 @@ function confirmed(application, request, moderator, personalProjectId) {
   const requestId = `flg-${randomUUID()}`;
   // What the person confirmed is recorded where start checks it.
   try {
-    if (!application.roundtable?.confirmGroupDiscussion) throw new Error('No roundtable');
-    application.roundtable.confirmGroupDiscussion({ requestId, agentId: moderator, projectId: personalProjectId,
+    if (!application.roundtable?.recordGroupChoice) throw new Error('No roundtable');
+    application.roundtable.recordGroupChoice({ requestId, agentId: moderator, projectId: personalProjectId,
       question, members: members.map(item => item.agentId) });
   } catch { return said('unavailable', 'roundtable_unavailable', []); }
   const notice = [`已确认 ${members.length} 位 @FLG 讨论成员：${members.map(item => item.name).join('、')}`,

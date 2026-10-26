@@ -52,7 +52,7 @@ function fixture({ folder = FOLDER } = {}) {
   const NAMES = Object.fromEntries(ROSTER.map(agent => [agent.agent_id,
     `${agent.profile.display_name}（${agent.profile.name}）`]));
   app.roundtable = { pending: () => [], attentionReplies: () => [], taskEntryDelegation: () => null,
-    confirmGroupDiscussion: input => { calls.push(['confirm', input]);
+    recordGroupChoice: input => { calls.push(['confirm', input]);
       discussions.set(input.requestId, { ...input, status: 'confirmed', followUps: 0, chatId: null }); },
     groupDiscussionStatus: ({ requestId }) => {
       const found = discussions.get(requestId);

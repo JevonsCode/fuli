@@ -17,7 +17,7 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   },
   {
     name: 'group_discussion', title: 'ROUNDTABLE · Group discussion (@FLG)',
-    description: 'Moderate an @FLG discussion the person confirmed, as the current task Agent; each member is woken read-only in its own client and answers itself, so never write a member\'s view. start: requestId (the entry\'s flg.start),responseRounds?; status/stop: chatId,after?; wait: chatId,after?,timeoutSeconds?; follow_up: chatId (carries out the person\'s own @FLG follow-up); summary: chatId,requestId,body. Grants no edits or publishing.',
+    description: 'Moderate the @FLG discussion the person chose, as the current task Agent; each member is woken read-only in its own client and answers itself, so never write a member\'s view. start: requestId (the entry\'s flg.start),responseRounds?; status/stop: chatId,after?; wait: chatId,after?,timeoutSeconds?; follow_up: chatId (carries out the person\'s own @FLG follow-up); summary: chatId,requestId,body. Grants no edits or publishing.',
     inputSchema: objectSchema({ taskContextToken: text(160), action: enumSchema(['start','status','wait','follow_up','stop','summary']),
       chatId: text(160), requestId: text(128), responseRounds: integerSchema({ minimum: 0, maximum: 2 }), body: text(8000),
       after: integerSchema({ minimum: 0 }), timeoutSeconds: integerSchema({ minimum: 1, maximum: 300 }) },

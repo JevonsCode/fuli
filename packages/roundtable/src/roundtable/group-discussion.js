@@ -6,7 +6,7 @@ import { WAKE_CLIENTS } from './wake.js';
 // A group discussion (@FLG, rec#55): the current task's Agent moderates a
 // group chat with 2–4 of the person's FLAs. What runs is what the person
 // typed: the task entry records the members and question they confirmed
-// (ownerConfirm) and each `@FLG …` follow-up they wrote (ownerFollowUp);
+// (ownerRecordChoice) and each `@FLG …` follow-up they wrote (ownerFollowUp);
 // start and follow_up only carry those out, once each, and members come only
 // from that confirmation, never from the chat's current membership.
 //
@@ -429,7 +429,7 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
   // typed in their chat, recorded where start and follow_up can check it.
   return {
     discuss,
-    ownerConfirm({ requestId, agentId, projectId, question, members }) {
+    ownerRecordChoice({ requestId, agentId, projectId, question, members }) {
       return store.discussions.confirm({ scope: scope(), requestId, owner: `local:${agentId}`, projectId, question,
         members });
     },

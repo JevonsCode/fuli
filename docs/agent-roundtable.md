@@ -153,7 +153,7 @@ Unknown execution or unconfirmed cleanup keeps its safety hold.
 
 `group_discussion` runs a moderated discussion on top of a `kind=group` chat. It
 only carries out what the person typed in their chat: task entry records the
-confirmed members and question (`confirmGroupDiscussion`) and each `@FLG …`
+confirmed members and question (`recordGroupChoice`) and each `@FLG …`
 follow-up (`requestGroupFollowUp`). `start` takes that confirmation's request ID
 and runs it once; an unknown ID, another moderator or project, or a stopped
 confirmation is refused, and members and question come from the record.
