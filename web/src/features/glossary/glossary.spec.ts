@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { messages } from '@/i18n'
 import GlossaryLayer from './GlossaryLayer.vue'
+import layerSource from './GlossaryLayer.vue?raw'
 import { useGlossaryMode } from './glossary-mode'
 import { findTerm, GLOSSARY_TERMS } from './terms'
 
@@ -34,6 +35,23 @@ describe('glossary terms', () => {
     expect(findTerm(host.querySelector('em'))?.term.id).toBe('quadrant.known_known')
     expect(findTerm(host.querySelector('i'))?.term.id).toBe('quadrant.known_known')
     expect(findTerm(host.querySelector('p'))).toBeUndefined()
+  })
+
+  it('explains every destination and section only where it is tagged, never a common word elsewhere', () => {
+    for (const [group, keys] of [['destination', messages['zh-CN'].shell.destinations], ['section', messages['zh-CN'].shell.sections]] as const) {
+      for (const key of Object.keys(keys)) expect(GLOSSARY_TERMS.some(term => term.id === `${group}.${key}`), `${group}.${key}`).toBe(true)
+    }
+    const host = html('<a data-term="section.agentDirectory"><span>全部</span></a><button type="button">全部</button><b>我的</b>')
+    expect(findTerm(host.querySelector('span'))?.term.id).toBe('section.agentDirectory')
+    expect(findTerm(host.querySelector('button'))).toBeUndefined()
+    expect(findTerm(host.querySelector('b'))).toBeUndefined()
+  })
+
+  it('outlines a hovered term inside its own box, so a scrolling parent cannot clip it', () => {
+    const rule = layerSource.slice(layerSource.indexOf('[data-glossary-hit] {'))
+    const declarations = rule.slice(0, rule.indexOf('}'))
+    expect(declarations).toMatch(/outline-offset:\s*-\d/)
+    expect(declarations).not.toMatch(/border-radius/)
   })
 })
 
@@ -74,6 +92,54 @@ describe('GlossaryLayer', () => {
     await flushPromises()
     expect(mode.active.value).toBe(false)
     expect(document.documentElement.hasAttribute('data-glossary')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('leaves on a right-click instead of opening the context menu', async () => {
+    const wrapper = mount(GlossaryLayer, { attachTo: document.body })
+    const mode = useGlossaryMode()
+    const host = html('<span>正文</span>')
+    const outside = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    host.querySelector('span')!.dispatchEvent(outside)
+    expect(outside.defaultPrevented).toBe(false)
+    mode.toggle()
+    await flushPromises()
+    const inside = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    host.querySelector('span')!.dispatchEvent(inside)
+    await flushPromises()
+    expect(inside.defaultPrevented).toBe(true)
+    expect(mode.active.value).toBe(false)
+    expect(document.documentElement.hasAttribute('data-glossary')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('unpins on Alt: the mode stays while Alt is held and ends when it comes up', async () => {
+    const wrapper = mount(GlossaryLayer, { attachTo: document.body })
+    const mode = useGlossaryMode()
+    mode.toggle()
+    alt('keydown')
+    await flushPromises()
+    expect(mode.pinned.value).toBe(false)
+    expect(mode.active.value).toBe(true)
+    alt('keyup')
+    await flushPromises()
+    expect(mode.active.value).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('leaves on Esc and closes the open explanation', async () => {
+    const wrapper = mount(GlossaryLayer, { attachTo: document.body })
+    const mode = useGlossaryMode()
+    const host = html('<button type="button">待确认</button>')
+    mode.toggle()
+    await flushPromises()
+    host.querySelector('button')!.click()
+    await flushPromises()
+    expect(document.querySelector('[data-glossary-term]')).not.toBeNull()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(mode.active.value).toBe(false)
+    expect(document.querySelector('[data-glossary-term]')).toBeNull()
     wrapper.unmount()
   })
 

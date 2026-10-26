@@ -12,7 +12,7 @@ defineProps<{ sections: readonly NavSection[]; activeKey?: string }>()
   <nav v-if="sections.length > 1" class="section-tabs" :aria-label="t('shell.sectionsAria')">
     <RouterLink v-for="section in sections" :key="section.key" :to="section.to" class="section-tab"
       :class="{ 'is-active': section.key === activeKey }" :aria-current="section.key === activeKey ? 'page' : undefined"
-      :data-section="section.key">
+      :data-section="section.key" :data-term="`section.${section.key}`">
       {{ t(`shell.sections.${section.key}`) }}
     </RouterLink>
   </nav>
