@@ -35,6 +35,8 @@ describe('JudgmentPolicyPanel', () => {
     await flushPromises()
 
     expect(getJson).toHaveBeenCalledWith('/api/judgment/policy?personalSpaceId=space-a')
+    // The card names what it sets: how Tonborg judges by default, for every project.
+    expect(wrapper.get('h3').text()).toMatch(/^(Tonborg 的默认判断方式|Tonborg's default judgment)$/)
     expect(wrapper.findAll('input[type="radio"][name="judgment-mode"]')).toHaveLength(3)
 
     await wrapper.get('input[type="radio"][value="shared"]').setValue(true)
