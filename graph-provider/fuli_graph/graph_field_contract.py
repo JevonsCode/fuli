@@ -479,6 +479,7 @@ NODE_FIELDS = {
     'FuliProjectAgentTaskEvent': {
         'activity_date': 'date?', 'actor_kind': 'task_event_actor', 'actual_executor_id': 'string?',
         'actual_model': 'string?', 'actual_model_provider': 'string?', 'agent_id': 'string?',
+        'blocker_cleared_by': 'blocker_clear_cause?',
         'created_at': 'datetime|string', 'event_id': 'string', 'execution_plan_json': 'string?',
         'executor_blocked_reason': 'string?', 'executor_fallback_reason': 'string?',
         'executor_selection_reason': 'string?', 'hr_identity_original_refs_json': 'string?',
@@ -700,6 +701,7 @@ ENUMS = {
     'assignment_status': ('active', 'ended'),
     'attention_kind': ('question', 'approval', 'review', 'permission', 'blocked'),
     'attention_status': ('open', 'resolved', 'cancelled'),
+    'blocker_clear_cause': ('session_activity', 'session_reply', 'attention_answer'),
     'confirmation_mode': ('automatic', 'require_confirmation'),
     'confirmation_status': ('confirmed', 'agent_confirmed', 'pending'),
     'content_source': ('user_explicit', 'agent_inferred'),

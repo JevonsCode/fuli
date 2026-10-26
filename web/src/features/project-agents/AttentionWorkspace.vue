@@ -10,6 +10,7 @@ import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import { useAgentRecords } from '@/features/agent-profile/useAgentRecords'
 import AttentionPeek from './AttentionPeek.vue'
+import TaskBlockerNotice from './TaskBlockerNotice.vue'
 import type { AttentionAnswer, AttentionReplyDraft } from './attention-replies'
 import { inboxLocation, useAgentAttention, type AgentAttention, type AttentionPeekState } from './attention-store'
 
@@ -141,6 +142,7 @@ async function respond(item: AgentAttention, answer: AttentionAnswer) {
               <Badge class="ml-auto" variant="secondary" :title="t(`attention.kinds.${item.kind}`)">{{ t(`attention.kinds.${item.kind}`) }}</Badge>
             </p>
             <button type="button" class="attention-request-title" :disabled="Boolean(busy)" aria-haspopup="dialog" @click="openRequest(item.requestId)">{{ item.title }}</button>
+            <TaskBlockerNotice v-if="item.taskBlocker" compact :blocker="item.taskBlocker" />
             <p class="m-0 mt-auto min-w-0 truncate text-xs text-muted-foreground" :title="projectName(item)">{{ projectName(item) }}</p>
           </article>
         </li>

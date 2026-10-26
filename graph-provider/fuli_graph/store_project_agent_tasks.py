@@ -27,11 +27,13 @@ from .store_project_agent_task_staffing import (
 )
 from .store_project_agent_coordination_policy import StoreProjectAgentCoordinationPolicy
 from .store_project_agent_task_activity import StoreProjectAgentTaskActivity, TERMINAL_TASK_STATUSES
+from .store_project_agent_task_blockers import StoreProjectAgentTaskBlockers
 from .store_transactions import TransactionQueryDriver, query_store_transaction
 from .task_activity_origin import coordination_activity_origin, read_activity_origin
 from .project_agent_hierarchy import reporting_parent, bind_task_coordinator, validate_task_reports
 class StoreProjectAgentTasks(
     StoreProjectAgentTaskActivity,
+    StoreProjectAgentTaskBlockers,
     StoreProjectAgentCoordinationPolicy,
     StoreProjectAgentTaskRecruitment,
     StoreProjectAgentTaskReads,
@@ -695,7 +697,9 @@ class StoreProjectAgentTasks(
             raise
 
     @staticmethod
-    def _validate_task_transition(current, requested, *, has_actual_executor=False):
+    def _validate_task_transition(
+        current, requested, *, has_actual_executor=False, from_blocking_session=False,
+    ):
         if not current:
             return
         if current in TERMINAL_TASK_STATUSES:
@@ -722,6 +726,12 @@ class StoreProjectAgentTasks(
         }
         if current == 'blocked' and has_actual_executor:
             allowed['blocked'] = {'queued', 'running', 'cancelled', 'failed'}
+        if current == 'blocked' and from_blocking_session:
+            # The session that reported the block resolved it there and moves on.
+            allowed['blocked'] = {
+                'queued', 'running', 'paused', 'awaiting_review',
+                'completed', 'cancelled', 'failed',
+            }
         if requested not in allowed.get(current, set()):
             raise HTTPException(
                 status_code=409,

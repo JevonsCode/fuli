@@ -18,6 +18,7 @@ import { namedFlaReceiptNotices } from './task-entry-named-fla.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
+import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 
 export async function checkpointTaskKnowledge(application, {
   taskContextToken,
@@ -94,6 +95,9 @@ export async function checkpointTaskKnowledge(application, {
     const conversation = captureCheck.allowed ? await checkpointConversation(application, task, effectiveLog, team)
       : captureDisabled(captureCheck);
     const triaged = await recordTriage(application, task, conversation, triageLabel);
+    // This session went on, so a block it reported has ended and leaves the person's queue.
+    await clearSessionTaskBlockers(application, { sourceApplication: task.sourceApplication,
+      sessionIds: [task.sessionId], cause: 'session_activity', captureAllowed: captureCheck.allowed });
     const interaction = activeSealedWorkerRequest() ? {} : await checkpointHumanInteraction(application, task);
     return { ...interaction, ...result, conversation, ...(triaged ? { triage: triaged } : {}),
       agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,

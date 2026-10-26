@@ -5,6 +5,7 @@ from pydantic import Field, model_validator
 
 from .model_base import StrictModel
 from .model_validation import reject_credentials
+from .project_agent_task_models import ProjectAgentTaskBlocker
 
 
 AttentionStatus = Literal['open', 'resolved', 'cancelled']
@@ -60,9 +61,12 @@ class AgentAttentionRecord(StrictModel):
     status: AttentionStatus = 'open'
     revision: int = 0
     response: str | None = None
-    responded_by: Literal['human', 'agent'] | None = None
+    # system: FULI closed it because the task it stood for left blocked.
+    responded_by: Literal['human', 'agent', 'system'] | None = None
     created_at: datetime
     updated_at: datetime
+    # The linked task's current block, read with the request; never stored on it.
+    task_blocker: ProjectAgentTaskBlocker | None = None
 
 
 class AgentAttentionList(StrictModel):

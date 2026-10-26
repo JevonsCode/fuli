@@ -1,5 +1,6 @@
 import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
 import { nonEmptyText, requiredString } from '../validation/values.js';
+import { projectAgentTaskBlocker } from './project-agent-mapping.js';
 
 const fields = {
   personalSpaceId: 'personal_space_id', personalProjectId: 'personal_project_id',
@@ -16,7 +17,9 @@ export function attentionInput(input) {
 
 export function attentionRecord(value) {
   const names = Object.fromEntries(Object.entries(fields).map(([camel, snake]) => [snake, camel]));
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [names[key] ?? key, item]));
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => key === 'task_blocker'
+    // The linked task's current block, read with the request.
+    ? ['taskBlocker', projectAgentTaskBlocker(item)] : [names[key] ?? key, item]));
 }
 
 export async function listAgentAttention(application, input) {

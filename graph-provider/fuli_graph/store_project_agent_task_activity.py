@@ -11,7 +11,9 @@ from .project_agent_models import ProjectAgentModelStrategy, ProjectAgentProfile
 from .project_agent_task_models import ProjectAgentTaskActivityCreate, ProjectAgentTaskRecord
 from .provider_values import now_utc, stable_uuid
 from .store_project_agent_task_recruitment import RECRUITMENT_CLAIM_TTL
+from .store_project_agent_task_blockers import STATUS_UPDATE_RESPONSE
 from .store_transactions import query_store_transaction
+from .task_blocker import blocked_in_session
 from .task_participant_running import running_since_set
 
 
@@ -125,10 +127,14 @@ class StoreProjectAgentTaskActivity:
                 or context.get('project_agent_id') != raw_task.get('lead_agent_id')
                 or request.agent_id != raw_task.get('lead_agent_id')):
                 raise HTTPException(403, 'Judgment acceptance requires the current accountable lead')
+        blocker = self._blocker_from_row(row)
         self._validate_task_transition(
             raw_task.get('status'),
             request.status,
             has_actual_executor=bool(request.actual_executor_id),
+            from_blocking_session=blocked_in_session(
+                blocker, request.source_application, request.source_session_id,
+            ),
         )
         expected_revision = getattr(request, 'expected_revision', None)
         if expected_revision is None:
@@ -406,6 +412,10 @@ class StoreProjectAgentTaskActivity:
                 actor,
                 request.personal_space_id,
                 request.task_id,
+            )
+        if raw_task.get('status') == 'blocked' and request.status != 'blocked':
+            await self._close_blocker_attention(
+                request.personal_space_id, request.task_id, STATUS_UPDATE_RESPONSE, now,
             )
         if actual_report:
             # This is the sole owner of actual projection fields: an older

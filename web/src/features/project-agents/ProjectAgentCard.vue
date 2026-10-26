@@ -9,6 +9,7 @@ import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { t } from '@/i18n'
 import type { ProjectAgentRecord } from '@/types'
 import AgentHand from './AgentHand.vue'
+import TaskBlockerNotice from './TaskBlockerNotice.vue'
 import { currentWork } from './agent-roster-records'
 import { agentManagementPath, projectChipGroups } from './orchestration-filters'
 import { taskStatusLabel } from './task-labels'
@@ -85,6 +86,7 @@ function surfaceClick(event: MouseEvent) {
       </template>
       <span v-else class="text-xs text-muted-foreground">{{ t('projectAgents.detail.noRun') }}</span>
     </p>
+    <TaskBlockerNotice v-if="work?.status === 'blocked' && work.blocker" compact :blocker="work.blocker" :updated-at="work.updatedAt" />
     <p class="agent-card-responsibility project-agent-row-responsibility" :title="agent.profile.responsibility">
       {{ agent.profile.responsibility || t('projectAgents.notReported') }}
     </p>

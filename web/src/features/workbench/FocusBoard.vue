@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { UiAvatar, UiChip, UiIcon } from '@/ui'
+import TaskBlockerNotice from '@/features/project-agents/TaskBlockerNotice.vue'
 import type { WorkbenchBoard } from './workbench-board'
 import { focusItem, workLanes } from './workbench-model'
 
@@ -35,6 +36,8 @@ const focusAgent = computed(() => {
             </span>
             <h2>{{ focus.kind === 'question' ? focus.attention.title : focus.task.title }}</h2>
             <p v-if="focus.kind === 'question' && focus.attention.detail">{{ focus.attention.detail }}</p>
+            <TaskBlockerNotice v-else-if="focus.kind !== 'question' && focus.task.status === 'blocked' && focus.task.blocker"
+              :blocker="focus.task.blocker" :updated-at="focus.task.updatedAt" />
             <p v-else-if="focus.kind !== 'question' && focus.task.failureReason">{{ focus.task.failureReason }}</p>
             <span class="focus-meta">
               {{ board.projectName(focus.kind === 'question' ? focus.attention.personalProjectId : focus.task.personalProjectId) }}
@@ -84,9 +87,10 @@ const focusAgent = computed(() => {
             <RouterLink :to="board.taskHref(task)" class="focus-row" data-focus-stuck>
               <UiChip tone="danger">{{ board.statusLabel(task.status) }}</UiChip>
               <span class="focus-row-copy"><strong>{{ task.title }}</strong>
-                <small>{{ task.failureReason || board.projectName(task.personalProjectId) }}</small></span>
+                <small>{{ (!task.blocker && task.failureReason) || board.projectName(task.personalProjectId) }}</small></span>
               <span class="focus-row-time">{{ board.since(task.updatedAt) }}</span>
             </RouterLink>
+            <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" compact :blocker="task.blocker" :updated-at="task.updatedAt" />
           </li>
         </ul>
         <footer class="focus-done">{{ t('workbench.focus.doneToday', { count: lanes.done.length }) }}</footer>

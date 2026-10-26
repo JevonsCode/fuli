@@ -173,6 +173,13 @@ SOURCE_DELETE_RULES = (
     _node_index('fuli_publication_source_copy', 'FuliPublicationDraft', 'personal_space_id', 'payload_scrubbed_by'),
 )
 
+# A task event records why a block ended (blocker_cleared_by). Every prompt in
+# a client session looks up the blocks that session reported, so events are
+# found by their session; existing records need no rewrite.
+TASK_BLOCKER_RULES = (
+    _node_index('fuli_project_agent_event_session', 'FuliProjectAgentTaskEvent', 'source_session_id', 'status'),
+)
+
 # Every Fuli label in the code when the format registry was introduced.
 BASELINE_LABELS = frozenset({
     'FuliAgentAttention',

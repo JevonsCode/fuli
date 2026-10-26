@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import PinIcon from "@/components/PinIcon.vue";
 import AgentHand from "@/features/project-agents/AgentHand.vue";
+import TaskBlockerNotice from "@/features/project-agents/TaskBlockerNotice.vue";
 import { currentLocale, t } from "@/i18n";
 import { useNow } from "@/composables/useNow";
 import { formatElapsed } from "@/lib/elapsed-time";
@@ -227,7 +228,8 @@ function surfaceClick(event: MouseEvent) {
         {{ lastUpdate ? t("agentRedesign.workbench.lastUpdate", { time: lastUpdate }) : t("agentRedesign.workbench.lastUpdateUnknown") }}
       </span>
     </p>
-    <p v-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
+    <TaskBlockerNotice v-if="entry?.blocker" compact :blocker="entry.blocker" :updated-at="entry.lastUpdateAt" @click.stop />
+    <p v-else-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
     <p class="agent-card-responsibility" data-agent-summary :title="agent.profile.responsibility">{{ agent.profile.responsibility }}</p>
     <div v-if="capabilities.length" class="agent-inline-skills">
       <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>

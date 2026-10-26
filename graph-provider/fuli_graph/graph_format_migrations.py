@@ -17,6 +17,7 @@ from .graph_format_schema import (
     KNOWLEDGE_TAG_LABELS,
     KNOWLEDGE_TAG_RULES,
     SOURCE_DELETE_RULES,
+    TASK_BLOCKER_RULES,
     SchemaRule,
 )
 
@@ -122,6 +123,11 @@ GRAPH_MIGRATIONS = (
         'graph/11-source-hard-delete', 11, 'schema',
         'source deletion audit kinds and publication copies without source bodies',
         rules=SOURCE_DELETE_RULES,
+    ),
+    GraphMigration(
+        'graph/12-task-blocker-clear', 12, 'schema',
+        'why a task block ended on its event, and the session lookup that ends it',
+        rules=TASK_BLOCKER_RULES,
     ),
 )
 

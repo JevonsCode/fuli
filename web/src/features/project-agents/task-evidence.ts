@@ -1,5 +1,7 @@
 import type {
+  BlockerClearCause,
   ConversationSourceApplication,
+  ProjectAgentTaskBlocker,
   ProjectAgentActualExecution,
   ProjectAgentAssignmentRecord,
   ProjectAgentExecutorPolicy,
@@ -232,7 +234,21 @@ export function normalizeEvent(value: unknown): ProjectAgentTaskEvent | null {
     workerId: stringOf(record, 'workerId', 'worker_id'), workerLabel: stringOf(record, 'workerLabel', 'worker_label'),
     workerOccupationEmoji: stringOf(record, 'workerOccupationEmoji', 'worker_occupation_emoji'),
     workerStatus: stringOf(record, 'workerStatus', 'worker_status'),
+    blockerClearedBy: stringOf(record, 'blockerClearedBy', 'blocker_cleared_by') as BlockerClearCause | null,
     createdAt: stringOf(record, 'createdAt', 'created_at') ?? '',
+  }
+}
+
+export function normalizeBlocker(value: unknown): ProjectAgentTaskBlocker | null {
+  if (!value || typeof value !== 'object') return null
+  const record = unknownRecord(value)
+  const sessionId = stringOf(record, 'sessionId', 'session_id')
+  return {
+    reason: stringOf(record, 'reason', 'reason'), since: stringOf(record, 'since', 'since'),
+    agentId: stringOf(record, 'agentId', 'agent_id'),
+    application: stringOf(record, 'application', 'application') as ConversationSourceApplication | null,
+    sessionId, sessionUrl: stringOf(record, 'sessionUrl', 'session_url'),
+    observed: Boolean(sessionId) && record.observed === true,
   }
 }
 
@@ -314,7 +330,8 @@ export function normalizeTask(value: unknown): ProjectAgentTaskRecord | null {
     matchBasis: arrayOf(valueOf(record, 'matchBasis', 'match_basis')).filter((item): item is string => typeof item === 'string'), complexity: (() => { const complexity = valueOf(record, 'complexity', 'complexity'); return typeof complexity === 'string' || typeof complexity === 'number' ? complexity : null })(), complexityBasis: arrayOf(valueOf(record, 'complexityBasis', 'complexity_basis')).filter((item): item is string => typeof item === 'string'),
     modelStrategySource: stringOf(record, 'modelStrategySource', 'model_strategy_source') ?? undefined, actualExecution: reportedActual,
     executionSummary: normalizeExecutionSummary(valueOf(record, 'executionSummary', 'execution_summary')),
-    routingDecision, events: arrayOf(record.events).map(normalizeEvent).filter(Boolean) as ProjectAgentTaskEvent[],
+    routingDecision, blocker: normalizeBlocker(record.blocker),
+    events: arrayOf(record.events).map(normalizeEvent).filter(Boolean) as ProjectAgentTaskEvent[],
   }
 }
 

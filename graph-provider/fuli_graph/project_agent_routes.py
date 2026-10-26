@@ -53,6 +53,8 @@ from .project_agent_task_models import (
     ProjectAgentRecruitmentPolicyUpdate,
     ProjectAgentRecruitmentRecord,
     ProjectAgentTaskActivityCreate,
+    ProjectAgentTaskBlockerClear,
+    ProjectAgentTaskBlockerClearResult,
     ProjectAgentTaskRecord,
     ProjectAgentTaskRouteResult,
     ProjectAgentTaskSubmit,
@@ -72,7 +74,7 @@ def register_project_agent_routes(
     register_project_agent_worker_routes(application, store, Actor)
     notify_task_change = register_task_notification_routes(application, store, Actor)
     from .project_agent_attention_routes import register_project_agent_attention_routes
-    register_project_agent_attention_routes(application, store, Actor)
+    register_project_agent_attention_routes(application, store, Actor, notify_task_change)
     register_project_agent_score_card_routes(application, store, Actor)
 
     @application.put('/v1/project-agents', response_model=ProjectAgentRecord)
@@ -325,6 +327,19 @@ def register_project_agent_routes(
         # The store's transaction has committed before readers are notified.
         notify_task_change(request.personal_space_id, task_id)
         return task
+
+    @application.post(
+        '/v1/project-agent-task-blockers/clear',
+        response_model=ProjectAgentTaskBlockerClearResult,
+    )
+    async def clear_session_task_blockers(
+        request: ProjectAgentTaskBlockerClear,
+        actor: Actor,
+    ) -> ProjectAgentTaskBlockerClearResult:
+        result = await store.clear_session_task_blockers(actor, request)
+        for task_id in result.cleared_task_ids:
+            notify_task_change(request.personal_space_id, task_id)
+        return result
 
     @application.get(
         '/v1/project-agents/{agent_id}/activity',

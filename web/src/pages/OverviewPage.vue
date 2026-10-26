@@ -15,6 +15,7 @@ import { currentWork, overviewTaskTitle, overviewOwnerId, overviewOpenRequest, o
 import { useOverviewData } from '@/features/overview/useOverviewData'
 import OverviewReadStatus from '@/features/overview/OverviewReadStatus.vue'
 import OverviewExcerpt from '@/features/overview/OverviewExcerpt.vue'
+import TaskBlockerNotice from '@/features/project-agents/TaskBlockerNotice.vue'
 import { inboxLocation, useAgentAttention } from '@/features/project-agents/attention-store'
 import { taskStatusLabel, taskStatusTone } from '@/features/project-agents/task-labels'
 import { currentLocale, t } from '@/i18n'
@@ -207,7 +208,8 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
                     <Badge :variant="taskStatusTone(task.status)" :title="statusLabel(task.status)">{{ statusLabel(task.status) }}</Badge>
                   </div>
                   <p class="overview-meta">{{ t('overview.work.owner', { name: owner(task) }) }} · {{ projectName(task.personalProjectId) }}</p>
-                  <OverviewExcerpt v-if="task.status === 'blocked' || task.status === 'failed'" class="overview-reason" :text="task.failureReason?.trim() || t('overview.missing.reason')" />
+                  <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" compact :blocker="task.blocker" :updated-at="task.updatedAt" />
+                  <OverviewExcerpt v-else-if="task.status === 'blocked' || task.status === 'failed'" class="overview-reason" :text="task.failureReason?.trim() || t('overview.missing.reason')" />
                   <div class="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1">
                     <time class="overview-meta" :datetime="task.updatedAt || task.createdAt || undefined">{{ formatDate(task.updatedAt || task.createdAt) }}</time>
                     <div class="ml-auto flex min-w-0 max-w-full flex-wrap gap-1">

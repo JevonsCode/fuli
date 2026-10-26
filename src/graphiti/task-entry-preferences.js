@@ -14,6 +14,7 @@ import { receiptNotices } from './capture-notice.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
+import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
 
 export async function finishTaskEntryPreferences(application, preferences, input) {
@@ -30,12 +31,24 @@ export async function finishTaskEntryPreferences(application, preferences, input
 export function beginTaskEntry(application, input) {
   return withSharedProjectList(async () => {
     if (input.projectPath !== undefined && input.projectPath !== null) application.listPersonalProjects().catch(() => {});
-    const entry = await beginTaskContext(application, input);
+    // The person replied in this session, so a block it reported has ended.
+    const [entry] = await Promise.all([beginTaskContext(application, input), clearReplyBlockers(application, input)]);
     // Its task and opening writes are done: a hook deadline from here on
     // delivers the token instead of nothing (entry-budget.js).
     noteEntryTask(entry);
     return withEntryHint(application, entry, input);
   });
+}
+
+// The person replied in this session; the clear is one of its writes, so it
+// asks the same capture decision as the entry's other writes.
+async function clearReplyBlockers(application, input) {
+  const sourceApplication = input.sourceApplication ?? 'other';
+  const sessionIds = [input.sessionId, input.sourceSessionId];
+  const capture = await captureDecision(application, { sourceApplication, personalProjectId: input.personalProjectId ?? null,
+    projectPath: input.projectPath ?? undefined, sessionId: input.sessionId ?? input.sourceSessionId }).catch(() => null);
+  return clearSessionTaskBlockers(application, { sourceApplication, sessionIds, cause: 'session_reply',
+    captureAllowed: capture?.allowed === true });
 }
 
 // At most one built-in Agent model decision per entry (rec#10 D-26.2): Astro
