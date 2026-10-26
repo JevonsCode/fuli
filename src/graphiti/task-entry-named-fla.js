@@ -152,7 +152,7 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
   const kept = request.previous ? [bindingMarker(request.previous)] : [];
   if (request.state === 'carried') return { view: null, notice: null, markers: kept };
   if (request.state === 'hint') {
-    return { view: { status: 'hint', hint: `想找 FLA？用 #FLA ${request.query} 选择` }, notice: null, markers: [] };
+    return { view: { status: 'hint', hint: `想找 FLA？用 #FLA ${request.query} 选一位，或用 @FLG 邀请几位一起讨论` }, notice: null, markers: [] };
   }
   if (request.state === 'handoff') {
     const reached = selection?.status === 'ready' && [selection.agent?.agentId, selection.requested_agent_id]

@@ -216,7 +216,7 @@ test('a bare @word continues only an exact name or name word of exactly one FLA 
   const partial = await fixture().run('@Ja 继续');
   assert.equal(partial.context.project_resolution.basis, 'repository_root');
   assert.equal(partial.human_interaction, undefined);
-  assert.deepEqual(partial.fla, { status: 'hint', hint: '想找 FLA？用 #FLA Ja 选择' });
+  assert.deepEqual(partial.fla, { status: 'hint', hint: '想找 FLA？用 #FLA Ja 选一位，或用 @FLG 邀请几位一起讨论' });
 });
 
 test('a name word needs two characters, a Latin one as written, and an FLA that can continue (D-68a)', async () => {
@@ -245,7 +245,7 @@ test('accepted residual: a common word written exactly as an FLA\'s name word na
 
 test('the hint repeats only the typed word, never the rest of the prompt', async () => {
   const entry = await fixture().run(`@Ja，${'很长的说明'.repeat(300)}`);
-  assert.deepEqual(entry.fla, { status: 'hint', hint: '想找 FLA？用 #FLA Ja 选择' });
+  assert.deepEqual(entry.fla, { status: 'hint', hint: '想找 FLA？用 #FLA Ja 选一位，或用 @FLG 邀请几位一起讨论' });
 });
 
 test('ordinary prompts that start with @ never bind the session (review of #385)', async () => {

@@ -149,6 +149,30 @@ older unread history it was not allowed to see. Durable execution claims keep
 one wake active per Agent; subsequent rooms wait for completion notifications.
 Unknown execution or unconfirmed cleanup keeps its safety hold.
 
+## Group discussions (@FLG, rec#55)
+
+`group_discussion` runs a moderated discussion on top of a `kind=group` chat. The
+moderator is the current project task's Agent; the 2–4 members are the Agents the
+person confirmed at task entry (`@FLG`, docs/agent-conversations-and-collaboration.md).
+Each member turn is a real `message_agent` wake: the member's own allowed client
+(Claude Code or Codex) restores it under a per-attempt delegation the Provider
+verifies, and only a verified answer is posted to the chat as that member. A
+member without an installed executor fails at once with `no_executor`; when no
+member has one, nothing is created (`flg_no_executor`). An unanswered ask is
+withdrawn so it does not wait in the member's inbox.
+
+Round 1 asks every member for its view; then members who replied respond to the
+others' views, by default once and at most twice, with only the question and
+800-character excerpts of the previous round. `follow_up` asks the same members,
+or one of them, one more round. `stop` ends the discussion: unsettled turns end
+as not replied and a late answer is not counted. `summary` records the
+moderator's summary in the chat and is refused unless it names every member that
+did not reply. Turn states (`invited`, `waiting`, `replied`, `failed`, `ended`)
+are stored in the roundtable file (migration `roundtable/3-group-discussions`), so
+the console and other processes see the same state. Rounds run in the process
+that started them; a turn whose process went away is failed as `interrupted`
+after its deadline. Members on other paired devices are not supported.
+
 Local tests use synthetic Agent/project identities and loopback mTLS devices.
 They verify protocol behavior, not real paired-computer acceptance or an actual
 model/client run. Actual paired devices still need matching code, explicit owner
