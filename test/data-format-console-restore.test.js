@@ -2,33 +2,27 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import { runMigrateCommand } from '../src/cli/migrate-command.js';
 import { consoleRestore, runConsoleRestore } from '../src/data-format/console-restore.js';
 import { acquireMaintenance, holdDataDirectory } from '../src/data-format/maintenance-lock.js';
 import { readFormatOperations } from '../src/data-format/operations-log.js';
+import { writeFirstReleaseAgentApps } from './fixtures/agent-apps-first-release.js';
 
 // The console's whole-store restore: the person confirms what a backup
 // discards, and a detached worker stops FULI, restores under the exclusive
 // maintenance lock and starts FULI again. Synthetic stores only.
 
-const STORE = 'task-schedules.sqlite';
+// A store with a pending migration (agent-apps/7-identity-keys), so apply makes a backup.
+const STORE = 'agent-apps/registry.sqlite';
 const noGraph = { preview: async () => ({ plan: null, undoable: [] }),
   prune: async () => { throw Object.assign(new Error('no graph here'), { code: 'ENOENT' }); } };
 
 async function dataDirWithBackup(t) {
   const root = mkdtempSync(join(tmpdir(), 'fuli-console-restore-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const database = new DatabaseSync(join(root, STORE));
-  database.exec(`CREATE TABLE task_schedules(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL,
-      revision INTEGER NOT NULL, enabled INTEGER NOT NULL, body TEXT NOT NULL, next_run_at TEXT NOT NULL,
-      paused_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE task_schedule_runs(schedule TEXT NOT NULL, slot TEXT NOT NULL, task_id TEXT, status TEXT NOT NULL,
-      created_at TEXT NOT NULL, PRIMARY KEY(schedule, slot));
-    INSERT INTO task_schedule_runs VALUES('s1', 'synthetic-slot', NULL, 'claimed', '2026-01-01T00:00:00Z');`);
-  database.close();
+  writeFirstReleaseAgentApps(join(root, STORE));
   const run = (args) => runMigrateCommand([...args, '--data-dir', root], { env: {}, interactive: true, graph: noGraph,
     write: () => {}, confirm: async () => true });
   const { plan } = await run(['preview', '--json']);
