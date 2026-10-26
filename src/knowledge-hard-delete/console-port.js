@@ -34,7 +34,7 @@ const ABORT_AFTER_MS = 2 * DELETE_TIMEOUT_MS;
 // them as they are: preference-delivery (scope, snapshot and frame hashes),
 // transcript-capture (capture settings versions per session), the capture
 // settings, previews and onboarding files, model-usage.sqlite (counts), and the
-// task schedule, Agent app, employee, roundtable and peer stores (no
+// Agent app, employee, roundtable and peer stores (no
 // knowledge items; an Agent's own roundtable messages are its records).
 
 export function knowledgeHardDelete(dataDir, {

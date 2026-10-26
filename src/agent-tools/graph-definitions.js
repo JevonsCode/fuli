@@ -2,7 +2,6 @@ import { EMPLOYEE_TOOL_DEFINITIONS } from './employee-definitions.js';
 import { AGENT_APP_TOOL_DEFINITIONS } from './agent-app-definitions.js';
 import { JUDGMENT_TOOL_DEFINITIONS } from './judgment-definitions.js';
 import { MODEL_BACKEND_DEFINITIONS } from './model-backend-definitions.js';
-import { TASK_SCHEDULE_DEFINITIONS } from './task-schedule-definitions.js';
 import { STANDING_ASSIGNMENT_DEFINITIONS } from './standing-assignment-definitions.js';
 import { TASK_RUN_DEFINITIONS } from './task-run-definitions.js';
 import { TASK_PREFERENCE_DEFINITIONS } from './task-preference-definitions.js';
@@ -26,7 +25,6 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...JUDGMENT_TOOL_DEFINITIONS,
   ...MODEL_BACKEND_DEFINITIONS,
   ...AGENT_SCORE_CARD_DEFINITIONS,
-  ...TASK_SCHEDULE_DEFINITIONS,
   ...TASK_RUN_DEFINITIONS,
   ...STANDING_ASSIGNMENT_DEFINITIONS,
   ...TASK_PREFERENCE_DEFINITIONS,

@@ -342,7 +342,7 @@ test('the version check and the write share one write lock, so no undo fits betw
     competitor = child.stdout;
   } });
   try {
-    // An autocommit write, like TaskScheduleStore.insert.
+    // An autocommit write, like a store's single INSERT outside a transaction.
     open.prepare("INSERT INTO notes(id, body, checked) VALUES('n3', 'autocommit write', 'yes')").run();
   } finally { open.close(); }
 

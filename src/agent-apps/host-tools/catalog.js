@@ -99,7 +99,6 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   coordinate_project_agent_task: LAUNCH,
   submit_project_agent_task: LAUNCH,
   control_project_agent_task_run: LAUNCH,
-  manage_project_agent_schedule: LAUNCH,
   recruit_employee: LAUNCH,
   call_employee_tool: LAUNCH,
   acquire_runtime_lease: LAUNCH,
