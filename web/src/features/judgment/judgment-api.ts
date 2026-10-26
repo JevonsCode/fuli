@@ -1,13 +1,16 @@
 import { getJson, postJson, putJson } from '@/api/client'
 
-import type {
-  JudgmentDecisionRecord,
-  JudgmentFeedbackVote,
-  JudgmentPolicy,
-  JudgmentPolicySelection,
-  JudgmentRecordPage,
-  JudgmentRecordPageQuery,
-  JudgmentReviewResult,
+import {
+  normalizeJudgmentPolicy,
+  policySelection,
+  type JudgmentDecisionRecord,
+  type JudgmentFeedbackVote,
+  type JudgmentPolicy,
+  type JudgmentPolicyOverrides,
+  type JudgmentPolicySelection,
+  type JudgmentRecordPage,
+  type JudgmentRecordPageQuery,
+  type JudgmentReviewResult,
 } from './judgment-types'
 
 const JUDGMENT_PAGE_SIZE = 30
@@ -36,6 +39,16 @@ export function saveJudgmentPolicy(
   } = { personalSpaceId, policy, expectedRevision }
   if (personalProjectId) body.personalProjectId = personalProjectId
   return putJson<JudgmentPolicy>('/api/judgment/policy', body)
+}
+
+export function loadJudgmentPolicyOverrides(personalSpaceId: string) {
+  return getJson<JudgmentPolicyOverrides>(`/api/judgment/policies?${judgmentQuery(personalSpaceId)}`)
+}
+
+// Gives a project its own policy, starting from the one it uses now (the default).
+export async function startProjectJudgmentPolicy(personalSpaceId: string, personalProjectId: string) {
+  const current = normalizeJudgmentPolicy(await loadJudgmentPolicy(personalSpaceId, personalProjectId))
+  return saveJudgmentPolicy(personalSpaceId, personalProjectId, policySelection(current), current.revision)
 }
 
 // One page of the space's records, newest first; after is the previous page's nextCursor.

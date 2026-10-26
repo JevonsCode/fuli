@@ -13,7 +13,9 @@ const id = z.string().trim().min(1).max(256);
 export const policySchema = z.object({ mode: z.enum(['manual', 'shared', 'autonomous']),
   quality: z.enum(['quality', 'balanced', 'economy']), client: z.enum(['codex', 'claude_code']),
   backend: z.enum(['model_or_session', 'legacy_cli']).optional() }).strict();
+const spaceSchema = z.object({ personalSpaceId: id }).strict();
 const scopeSchema = z.object({ personalSpaceId: id, personalProjectId: id.nullable().optional() });
+const projectIdOf = project => project.projectId ?? project.project_id;
 const revision = z.number().int().min(0);
 // after: the previous page's nextCursor. filter human: only records that wait for the person.
 const recordPageSchema = scopeSchema.extend({ limit: z.number().int().min(1).max(100).default(50), after: id.optional(),
@@ -31,14 +33,19 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
   function space(input) {
     if (input.personalSpaceId !== app.config.personal.spaceId) throw new EmployeeError('Use the active personal space', 403, 'scope_mismatch');
   }
+  async function projects(personalSpaceId) {
+    const result = await app.listPersonalProjects({ personalSpaceId });
+    return Array.isArray(result) ? result : result.projects ?? [];
+  }
+  // The IDs of the space's projects that are not archived: the scopes a policy or review may name.
+  async function activeProjectIds(personalSpaceId) {
+    return (await projects(personalSpaceId)).filter(p => p.profile?.lifecycle !== 'archived').map(projectIdOf);
+  }
   async function scope(input) {
     space(input);
     await prepareStore(input.personalSpaceId);
-    if (input.personalProjectId) {
-      const result = await app.listPersonalProjects({ personalSpaceId: input.personalSpaceId });
-      if (!(Array.isArray(result) ? result : result.projects ?? []).some(p => (p.projectId ?? p.project_id) === input.personalProjectId && p.profile?.lifecycle !== 'archived')) {
-        throw new EmployeeError('Project not found', 404, 'project_not_found');
-      }
+    if (input.personalProjectId && !(await activeProjectIds(input.personalSpaceId)).includes(input.personalProjectId)) {
+      throw new EmployeeError('Project not found', 404, 'project_not_found');
     }
   }
   // The projects whose name contains the searched text. Names live in the
@@ -46,10 +53,9 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
   async function projectsNamed(personalSpaceId, text) {
     const wanted = text.toLowerCase();
     try {
-      const result = await app.listPersonalProjects({ personalSpaceId });
-      return (Array.isArray(result) ? result : result.projects ?? [])
+      return (await projects(personalSpaceId))
         .filter(project => String(project.profile?.name ?? '').toLowerCase().includes(wanted))
-        .map(project => project.projectId ?? project.project_id);
+        .map(projectIdOf);
     } catch {
       return [];
     }
@@ -81,6 +87,13 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       const parsed = parse(policyWriteSchema, input); await scope(parsed);
       if (!parsed.personalProjectId && parsed.policy === null) throw new TypeError('Only project overrides can be removed');
       return store().setPolicy(parsed.personalSpaceId, parsed.personalProjectId ?? '', parsed.policy, parsed.expectedRevision);
+    },
+    // Tonborg's default policy and every active project's own override.
+    async policyOverrides(input) {
+      const parsed = parse(spaceSchema, input); await scope(parsed);
+      const active = new Set(await activeProjectIds(parsed.personalSpaceId));
+      return { default: store().policy(parsed.personalSpaceId),
+        overrides: store().policyOverrides(parsed.personalSpaceId).filter(policy => active.has(policy.personalProjectId)) };
     },
     // One page, newest first; nextCursor reads the next page (null at the end).
     async records(input) {

@@ -17,6 +17,14 @@ vi.mock('@/features/capture/ProjectCaptureSwitch.vue', () => ({
   },
 }))
 
+vi.mock('@/features/judgment/ProjectJudgmentPolicy.vue', () => ({
+  default: {
+    name: 'ProjectJudgmentPolicy',
+    props: ['personalSpaceId', 'projectId', 'projectName', 'heading'],
+    template: '<div data-project-judgment-stub :data-project="projectId">{{ heading }}</div>',
+  },
+}))
+
 import { setLocale } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import type { FrequentProjectSummary } from '@/features/knowledge/project-relation-weights'
@@ -135,5 +143,15 @@ describe('ProjectOverview frequent projects section', () => {
     const section = wrapper.get('[data-frequent-projects]')
     expect(section.find('[data-frequent-projects-empty]').exists()).toBe(true)
     expect(section.findAll('[data-frequent-project]')).toHaveLength(0)
+  })
+
+  it('shows this project\'s Tonborg judgment setting', () => {
+    const wrapper = mount(ProjectOverview, {
+      props: { spaceId: 'space-1', project: makeProject() },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    const setting = wrapper.get('[data-project-judgment-stub]')
+    expect(setting.attributes('data-project')).toBe('fuli')
+    expect(setting.text()).toBe('这个项目的 Tonborg 判断方式')
   })
 })
