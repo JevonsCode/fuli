@@ -5,9 +5,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 // list routes the console port sends, and keeps each operation's outcome the
 // way the provider does. Like the provider, a delete holds the space's lock
 // from arrival to commit and an abort takes the same lock, so an abort waits
-// for a delete that still runs. It can lose its answer, hold a delete for real
-// time past the console's timeout, or hold a delete before it arrives until a
-// test releases it. Synthetic IDs only; nothing is sent anywhere.
+// for a delete that still runs. It can lose its answer, hold a delete's
+// transaction past the console's timeout, or hold a delete before it arrives,
+// each until a test releases it. Synthetic IDs only; nothing is sent anywhere.
 
 export const PREVIEW_ID = 'a'.repeat(64);
 
@@ -18,11 +18,14 @@ export function syntheticGraph({ itemIds = ['item-2', 'item-1', 'fact-1'], previ
     // Each delete's provider side, so a test can wait until a held one is handled.
     deletes: [],
     // ok | lost (commits, answer lost) | down (never arrives) | gone (410) |
-    // refused (422) | held (holds the lock holdMs, commits after the client gave up)
-    answerDelete: 'ok', holdMs: 0, statusDown: false,
+    // refused (422)
+    answerDelete: 'ok', statusDown: false,
     // Set to a promise to hold the next delete before it arrives; the test
     // resolves it to let the delete reach the graph.
-    arriveWhen: null
+    arriveWhen: null,
+    // Set to a promise to hold the delete's transaction, and the space's lock,
+    // after it arrived; the test resolves it to let the delete commit.
+    commitWhen: null
   };
   let lock = Promise.resolve();
   const withLock = (work) => {
@@ -45,7 +48,7 @@ export function syntheticGraph({ itemIds = ['item-2', 'item-1', 'fact-1'], previ
       if (known?.state === 'aborted') return refuse(operationId, 409, 'hard_delete_aborted');
       if (state.answerDelete === 'gone' || state.deleted) return refuse(operationId, 410, 'hard_deleted');
       if (state.answerDelete === 'refused') return refuse(operationId, 422, 'hard_delete_unconfirmed');
-      if (state.holdMs) await delay(state.holdMs);
+      if (state.commitWhen) await state.commitWhen;
       state.deleted = true;
       state.operations.set(operationId, { state: 'committed' });
       return reply(200, record());
