@@ -183,10 +183,11 @@ watch(peekKey, async (key) => {
               <TableHead v-for="key in OCCUPATION_SORT_KEYS" :key="key" :aria-sort="ariaSort(key)"
                 :class="{ 'pl-4': key === 'name', 'text-right': key === 'agents' }"
                 :data-term="key === 'agents' ? 'occupation.agentCount' : undefined" :data-occupation-column="key">
-                <button type="button" class="occupations-sort" :class="{ 'is-sorted': sort.key === key }" @click="sort = nextOccupationSort(sort, key)">
+                <Button variant="ghost" size="sm" class="occupations-sort -mx-2 h-auto min-h-0 gap-1 px-2 py-1 text-xs font-semibold"
+                  :class="{ 'is-sorted': sort.key === key }" @click="sort = nextOccupationSort(sort, key)">
                   {{ t(`occupations.columns.${key}`) }}
                   <UiIcon v-if="sort.key === key" :name="sort.direction === 'asc' ? 'chevron-up' : 'chevron-down'" :size="14" />
-                </button>
+                </Button>
               </TableHead>
               <TableHead class="pr-4 text-right"><span class="sr-only">{{ t('occupations.columns.actions') }}</span></TableHead>
             </TableRow>
@@ -272,13 +273,9 @@ watch(peekKey, async (key) => {
 }
 .occupation-row.is-archived :is(.occupation-name, .occupation-duties) { color: var(--color-muted); }
 /* The open row lifts; it never gets a side bar. */
-.occupation-row.is-selected { box-shadow: var(--shadow-md, 0 2px 8px rgb(0 0 0 / 0.08)); }
-.occupations-sort {
-  display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; color: inherit; background: none;
-  font: inherit; cursor: pointer;
-}
-.occupations-sort:hover, .occupations-sort.is-sorted { color: var(--color-ink); }
-.occupations-sort:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.occupation-row.is-selected { box-shadow: var(--shadow-md); }
+.occupations-sort { color: var(--color-muted); }
+.occupations-sort.is-sorted { color: var(--color-ink); }
 .occupation-name:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .occupations-form { display: grid; gap: 12px; }
 .occupations-form small { color: var(--color-muted); font-size: 12px; }
