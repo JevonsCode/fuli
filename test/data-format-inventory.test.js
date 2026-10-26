@@ -11,6 +11,7 @@ import { createNodeStore } from '../packages/roundtable/src/peer/node-store.js';
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { createStandaloneStore } from '../packages/roundtable/src/standalone/store.js';
 import { AgentAppStore } from '../src/agent-apps/store.js';
+import { AgentServiceStore } from '../src/agent-services/store.js';
 import { localStoreFiles } from '../src/data-format/local-stores.js';
 import { EmployeeManagementStore } from '../src/employees/management-policy.js';
 import { JefaBoardStore } from '../src/employees/builtin/jefa/board-store.js';
@@ -30,6 +31,7 @@ const FINGERPRINTS = new URL('./fixtures/data-format-fingerprints.json', import.
 // Each SQLite store, opened through its own public entry point.
 const SQLITE_STORES = {
   'agent-apps': (path) => { const store = new AgentAppStore(path); void store.database; return () => store.close(); },
+  'agent-services': (path) => { const store = new AgentServiceStore(path); void store.db; return () => store.close(); },
   'employee-management': (path) => {
     const store = new EmployeeManagementStore(path); store.read('space', 'template'); return () => store.close();
   },

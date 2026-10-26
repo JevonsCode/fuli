@@ -91,6 +91,13 @@ lowers ranking and marks the item for attention without deleting its history. Ag
 must not demote human/source-confirmed knowledge; authoritative contradiction may require review
 or demotion under the Provider policy.
 
+## Services You Start
+
+When you start a long-running server (a dev server, a Node or Python server, anything that listens) and
+leave it running, call `report_agent_service` with `action: register`, the current `taskContextToken`,
+its address, purpose, pid and command. When you stop or restart it, call it again with `action: update`,
+the `serviceId` and `state` (and the new `pid`). The person sees and manages these in FULI's Services page.
+
 ## More Detail, Only When Needed
 
 Open these files next to this skill only when the task reaches that step; ordinary tasks need none of them.

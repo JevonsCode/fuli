@@ -127,7 +127,10 @@ const BASELINE = Object.freeze({
   // Chat, instructions and entry are unchanged.
   // Task schedules removed (owner's decision, 2026-10-27): manage_project_agent_schedule leaves
   // the full profile: 191,953 -> 190,325 B (-1,628 B), measured. Chat is unchanged.
-  fullToolSchemaBytes: 190325,
+  // rec#11 D-71 服务管理: one full-profile tool, report_agent_service, registers or updates a
+  // server an Agent started (chat reaches it through list_agent_interfaces/fuli_call):
+  // 190,325 -> 191,315 B (+990 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 191315,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

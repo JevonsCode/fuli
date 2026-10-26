@@ -9,6 +9,7 @@ import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-ro
 import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
 import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
 import { handleStandingAssignmentRequest } from './standing-assignment-api-router.js';
+import { handleAgentServicesRequest } from './agent-services-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
@@ -191,6 +192,7 @@ export async function handleApiRequest({
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||
     await handleJudgmentApiRequest({ request, response, url, app, undoConsole: judgmentUndo, ownerReads: knowledgeOwnerReads }) ||
     await handleStandingAssignmentRequest({ request, response, url, app }) ||
+    await handleAgentServicesRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
     await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads });
   if (system?.withGraphRuntimeLease && (
