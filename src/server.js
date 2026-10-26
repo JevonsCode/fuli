@@ -31,6 +31,7 @@ import { personalGraphFormat } from './data-format/graph-format-client.js';
 import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
+import { createKnowledgeRecoveryCheck } from './knowledge-hard-delete/recovery-check.js';
 import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
 import { knowledgeOwnerReads as createKnowledgeOwnerReads } from './knowledge-owner-reads/console-port.js';
 import { reviewUndoConsole } from './judgment/review-undo.js';
@@ -184,6 +185,13 @@ export async function createServer(options = {}) {
     // construction or configuration validation fails, even without a listener.
     await failStartup(error);
   }
+  // A request that finds deletion recovery pending starts the console's own
+  // re-check, the same reconciliation it ran when it started.
+  const knowledgeRecovery = knowledgeHardDelete && application.knowledgeRecoveryGate
+    ? createKnowledgeRecoveryCheck({ reconcile: () => knowledgeHardDelete.reconcile(),
+      gate: application.knowledgeRecoveryGate, spaceId: () => application.config?.personal?.spaceId ?? null,
+      ...(system?.withGraphRuntimeLease ? { run: (work) => system.withGraphRuntimeLease('knowledge-recovery', work) } : {}) })
+    : null;
   let authority = null;
   let allowedLanAuthorities = [];
   const server = createHttpServer((request, response) => {
@@ -215,6 +223,7 @@ export async function createServer(options = {}) {
         return;
       }
       const mapped = mapHttpError(error);
+      if (mapped.body.code === 'knowledge_recovery_pending') void knowledgeRecovery?.check();
       sendJson(response, mapped.status, mapped.body);
     });
   });

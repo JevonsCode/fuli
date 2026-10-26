@@ -3,8 +3,10 @@ import { join } from 'node:path';
 import { ApplicationError } from '../app/application-error.js';
 import { HARD_DELETE_LEDGER_FILE, ledgerStamp, readHardDeleteProof } from './delete-ledger.js';
 
-const WAIT = '等待图谱确认删除记录；请启动控制台或运行 fuli migrate reconcile-knowledge。 '
-  + 'Waiting for deletion recovery; start the console or run fuli migrate reconcile-knowledge.';
+// Read by Agents and by the console (which shows its own wording); neither
+// is told to run a command: the console re-checks by itself (recovery-check.js).
+const WAIT = '等待图谱确认删除记录；FULI 控制台会自动重新核对，请稍后重试。 '
+  + 'Waiting for deletion recovery; the FULI console checks again by itself, so try again shortly.';
 const closed = reason => ({ state: 'closed', reason });
 const open = Object.freeze({ state: 'open', reason: null });
 
