@@ -7,6 +7,7 @@ import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import { isMainModule } from '../src/system/main-module.js';
+import { CHILD_HANG_GUARD_MS } from '../test-support/child-process-guard.js';
 
 function linkedInstall(t, target = null) {
   const root = mkdtempSync(join(tmpdir(), 'fuli-main-module-'));
@@ -57,7 +58,7 @@ for (const [host, folder, event] of [
   const { root, real, linked } = linkedInstall(t, process.cwd());
   const run = base => spawnSync(process.execPath, [join(base, 'src', 'agents', folder, 'lifecycle-hook.js'),
     '--event', event, '--runtime-config', join(root, 'private-missing.json')], {
-    input: '{PRIVATE_INVALID_INPUT', encoding: 'utf8', timeout: 5000
+    input: '{PRIVATE_INVALID_INPUT', encoding: 'utf8', timeout: CHILD_HANG_GUARD_MS
   });
   const direct = run(real), throughLink = run(linked);
   assert.equal(direct.status, 0);
@@ -90,7 +91,7 @@ for (const [name, path, failure] of [
   // site assets or dist output are copied, read or modified by buildSite.
   const nodeArgs = name === 'site' ? ['--import', `data:text/javascript,${encodeURIComponent(stub)}`] : [];
   const options = { cwd: root, env: { ...process.env, FULI_GRAPH_RUNTIME_CONFIG: runtimeConfigPath },
-    encoding: 'utf8', timeout: 5000 };
+    encoding: 'utf8', timeout: CHILD_HANG_GUARD_MS };
   for (const base of [real, linked]) {
     const result = spawnSync(process.execPath, [...nodeArgs, join(base, path), ...args], options);
     assert.equal(result.status, 1, `${name} main must reach the isolated stop condition`);

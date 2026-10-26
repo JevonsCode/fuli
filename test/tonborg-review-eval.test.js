@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { listenFetchableServer } from '../src/server/listen.js';
+
 import { buildSets, normalizedText } from '../acceptance/tonborg-review-eval/case-sets.js';
 import { createLocalOllamaTransport, localOnlyFetch } from '../acceptance/tonborg-review-eval/local-ollama-transport.js';
 import { createReviewPath } from '../acceptance/tonborg-review-eval/review-path.js';
@@ -46,10 +48,13 @@ test('the transport reaches only the local Ollama and refuses tool-bearing chats
 // server, which counts what reaches it. Native fetch follows redirects unless told not to.
 async function redirectingOllama(t, status) {
   const reached = [];
-  const listen = handler => new Promise(resolve => {
-    const server = createServer(handler).listen(0, '127.0.0.1', () => resolve(server));
+  // fetch refuses some ports a free-port bind can return (1719, 5061, 6666, ...).
+  const listen = async handler => {
+    const server = createServer(handler);
+    await listenFetchableServer(server, 0);
     t.after(() => { server.closeAllConnections(); server.close(); });
-  });
+    return server;
+  };
   const elsewhere = await listen((request, response) => { reached.push(request.url); response.end('{"ok":true}'); });
   const local = await listen((request, response) => {
     response.writeHead(status, { location: `http://127.0.0.1:${elsewhere.address().port}${request.url}` }).end();
