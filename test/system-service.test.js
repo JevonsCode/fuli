@@ -71,7 +71,8 @@ test('system settings distinguish immediately applied refresh changes from resta
       return configured;
     },
     resourceMonitor: { sample: async () => ({ status: 'ready' }) },
-    versionChecker: { check: async () => ({ updateAvailable: true }) }
+    versionChecker: { check: async () => ({ updateAvailable: true }) },
+    update: { offered: () => false }
   });
 
   const refreshOnly = await service.updateSettings({
@@ -102,5 +103,5 @@ test('system settings distinguish immediately applied refresh changes from resta
   assert.equal(changedPort.configured.ports.console, 3030);
   assert.equal(changedPort.restartRequired, true);
   assert.equal(changedPort.apply.status, 'applying');
-  assert.deepEqual(await service.versionStatus(), { updateAvailable: true });
+  assert.deepEqual(await service.versionStatus(), { updateAvailable: true, selfUpdate: false });
 });
