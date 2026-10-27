@@ -94,7 +94,7 @@
         <div class="chapters">
           <section class="chapter hero-chapter" data-scene="scatter" aria-labelledby="hero-title">
             <div class="chapter-copy">
-              <p class="eyebrow"><span data-i18n="next.eyebrow">抢先体验 · npm beta</span> <span data-preview-version>0.22.0-beta.2</span></p>
+              <p class="eyebrow"><span data-i18n="next.eyebrow">抢先体验 · npm beta</span> <span data-preview-version>0.22.0-beta.3</span></p>
               <h1 data-i18n-html="hero.title" id="hero-title">让每一次协作，<br>都产生<em>复利</em>。</h1>
               <p data-i18n="hero.description" class="lede">Fuli 给你的每个任务安排一位长期 Agent。它记得你的品味与判断，在接入的 AI 客户端之间接续工作，遇到问题还能直接去问别的 Agent。</p>
               <div class="hero-actions">
@@ -260,6 +260,7 @@
           <li data-i18n="next.c.agents.4">每个新 Agent 都有不重复的人名，岗位写在职业和职责里；已有的 Agent 不会被自动改名。</li>
           <li data-i18n="next.c.agents.5">生成的 Agent 有固定的角色头像；内置 Agent 的默认介绍跟随界面语言。</li>
           <li data-i18n="next.c.agents.6">长期职责：说一次「以后这类工作交给某个项目」，确认后，命中关键词的任务都交给它的组长。</li>
+          <li data-i18n="next.c.agents.7">设置里可以写一句「Agent 取名风格」，新 Agent 按它起名，名字仍然不重复。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.roundtable">圆桌像聊天一样</h3><ul>
           <li data-i18n="next.c.roundtable.1">对话变成聊天界面：你的消息在右边，每位 Agent 的在左边。</li>
@@ -274,6 +275,7 @@
           <li data-i18n="next.c.work.4">Jefa 的看板随 FULI 安装，不用另装；「聘请 Agent」按钮已移除。</li>
           <li data-i18n="next.c.work.5">回执写全协作者；负责人收尾后才到的执行者报告不再丢失。</li>
           <li data-i18n="next.c.work.6">定时任务已移除：它只会新建任务卡，没有东西去执行。</li>
+          <li data-i18n="next.c.work.7">阻塞的任务可以由你「标记为已解除」；阻塞卡片只写一行原因和已阻塞几天。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.services">服务、职业和项目图谱</h3><ul>
           <li data-i18n="next.c.services.1">新的「服务」页列出 Agent 启动的服务和 Agent 应用的工作台，可以搜索和筛选；只有你能停止，停止前核对进程身份。</li>
@@ -301,6 +303,12 @@
           <li data-i18n="next.c.interface.2">「?」说明模式能解释每个标签页和侧栏入口，右键或 Esc 退出。</li>
           <li data-i18n="next.c.interface.3">任务状态只用一套颜色：阻塞和失败是红色。</li>
           <li data-i18n="next.c.interface.4">去掉单独的「品味」页和 Agent 页上的「问 AR」；偏好计数写清楚两个数。</li>
+          <li data-i18n="next.c.interface.5">界面上不再出现内部代码和英文类型名，原始信息收在详情里；知识目录只有一个滚动条。</li>
+        </ul></div>
+        <div><h3 data-i18n="next.c.local">Windows 和本机运行</h3><ul>
+          <li data-i18n="next.c.local.1">端口被 Windows 保留时，托盘会说明是哪一段，并能一键换到空闲端口；第一次安装会避开保留的端口。</li>
+          <li data-i18n="next.c.local.2">更新可以把 Neo4j 升到同一版本线的新补丁，切换前先备份图谱；之后不能再退回旧补丁。</li>
+          <li data-i18n="next.c.local.3">本地服务的日志每次启动时超过 50 MB 就轮换，Provider 不再记录 Neo4j 的提示。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.upgrade">升级前要知道</h3><ul>
           <li data-i18n="next.c.upgrade.1">图谱有一步迁移要你在「设置 → 数据格式迁移」确认，确认之前图谱只读。</li>
@@ -319,7 +327,7 @@
           <code>npm install --global fuli-context@beta &amp;&amp; fuli setup<span>npm</span></code>
         </div>
         <p data-i18n="next.switchBack">想回到稳定版：去掉 FULI_NPM_PACKAGE_SPEC 再运行一次安装脚本。稳定版的版本号更低，原生 Provider 需要 fuli setup --allow-provider-downgrade。预览版升级过的数据（自动升级的，和你确认过的迁移），旧版本打不开，只能用升级前的备份恢复。</p>
-        <p class="start-links"><a data-i18n="next.release" data-preview-release class="button" href="https://github.com/JevonsCode/fuli/releases/tag/v0.22.0-beta.2">这一版的更新说明</a><a data-i18n="next.releasePrevious" data-release-notes="0.21.0" href="https://github.com/JevonsCode/fuli/blob/main/docs/releases/0.21.0.md">0.21 的更新说明</a><a data-i18n="next.stable" data-i18n-href="next.stableUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到稳定版</a></p>
+        <p class="start-links"><a data-i18n="next.release" data-preview-release class="button" href="https://github.com/JevonsCode/fuli/releases/tag/v0.22.0-beta.3">这一版的更新说明</a><a data-i18n="next.releasePrevious" data-release-notes="0.21.0" href="https://github.com/JevonsCode/fuli/blob/main/docs/releases/0.21.0.md">0.21 的更新说明</a><a data-i18n="next.stable" data-i18n-href="next.stableUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到稳定版</a></p>
       </section>
     </main>
 
