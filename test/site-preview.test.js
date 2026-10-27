@@ -3,12 +3,14 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parseHTML } from 'linkedom';
 import { createSitePages } from '../scripts/build-site.js';
-import { messages } from '../site/translations.js';
+import { messages as homeMessages, sceneMessages as homeScenes } from '../site/translations.js';
+import { messages, sceneMessages } from '../site/next/translations.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const { version } = JSON.parse(read('../package.json'));
 const files = createSitePages({ home: read('../site/index.html'), preview: read('../site/next/index.html'), version });
 const base = 'https://xn--8ovp9s.xn--m8txu.com/fuli/';
+const home = parseHTML(read('../site/index.html')).document;
 const installers = [
   'curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | FULI_NPM_PACKAGE_SPEC=fuli-context@beta sh',
   "$env:FULI_NPM_PACKAGE_SPEC='fuli-context@beta'; irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex",
@@ -19,23 +21,53 @@ test('the preview page is built at /next/ in Chinese by default and in English, 
   for (const [route, locale, prefix] of [['', 'zh-CN', '../'], ['zh/', 'zh-CN', '../../'], ['en/', 'en', '../../']]) {
     const { document } = parseHTML(files.get(`next/${route}index.html`));
     assert.equal(document.documentElement.lang, locale);
-    assert.equal(document.title, messages[locale]['next.meta.title']);
+    assert.equal(document.title, messages[locale]['meta.title']);
     assert.equal(document.querySelector('[data-preview-version]').textContent, version);
     assert.equal(document.querySelector('[data-preview-release]').href, `https://github.com/JevonsCode/fuli/releases/tag/v${version}`);
     assert.equal(document.querySelector('link[rel="canonical"]').href, `${base}next/${route}`);
     const alternates = [...document.querySelectorAll('link[hreflang]')].map(node => [node.hreflang, node.href]);
     assert.deepEqual(alternates, [['zh-Hans', base + 'next/zh/'], ['en', base + 'next/en/'], ['x-default', base + 'next/']]);
-    assert.equal(document.querySelector('link[rel="stylesheet"]').href, prefix + 'style.css');
+    assert.deepEqual([...document.querySelectorAll('link[rel="stylesheet"]')].map(node => node.href), [prefix + 'style.css', prefix + 'scene.css']);
     assert.equal(document.querySelector('script[type="module"]').src, prefix + 'next.js');
-    assert.equal(document.querySelector('.brand').href, prefix);
+    assert.equal(document.querySelector('.terminal').dataset.copy, 'npm install --global fuli-context@beta && fuli setup');
     assert.equal(document.querySelector('[data-i18n="next.stable"]').href, messages[locale]['next.stableUrl']);
-    assert.ok(document.querySelectorAll('.principles h3').length >= 3, 'a few headed sections summarize the release');
+    assert.ok(document.querySelectorAll('.preview-changes h3').length >= 3, 'a few headed sections summarize the release');
     assert.deepEqual([...document.querySelectorAll('.oneliner code')].map(node => node.textContent.slice(0, -node.querySelector('span').textContent.length)), installers);
     if (locale === 'en') {
       for (const element of document.querySelectorAll('.brand, .language-switch')) element.remove();
       assert.doesNotMatch(document.body.textContent, /[\u3400-\u9fff]/);
     }
   }
+});
+
+// The preview is the whole home site with this release's copy (Jevons 10-27), so it
+// can replace the home page when the release goes stable.
+test('the preview page has every part of the home page and its scroll story', () => {
+  const { document } = parseHTML(files.get('next/index.html'));
+  const ids = page => [...page.querySelectorAll('.chapter, [data-overlay], .chapter-nav a, .principles:not(.preview-changes) > div, #fragment-rig')].map(node => node.dataset.scene ?? node.dataset.overlay ?? node.getAttribute('href') ?? node.id ?? '');
+  assert.deepEqual(ids(document), ids(home));
+  for (const link of document.querySelectorAll('.nav nav > a[href^="#"], .chapter-nav a')) assert.ok(document.querySelector(link.getAttribute('href')), link.getAttribute('href'));
+  assert.equal(document.querySelector('.brand').getAttribute('href'), '#top');
+  assert.ok(document.querySelector('#motion-toggle'));
+});
+
+test('the preview copy covers both languages and every scene, and changes the home copy', () => {
+  assert.deepEqual(Object.keys(messages.en).sort(), Object.keys(messages['zh-CN']).sort());
+  const { document } = parseHTML(read('../site/next/index.html'));
+  for (const element of document.querySelectorAll('*')) {
+    for (const attribute of element.attributes) {
+      if (!attribute.name.startsWith('data-i18n')) continue;
+      for (const locale of ['en', 'zh-CN']) assert.ok(messages[locale][attribute.value], `Missing ${locale}: ${attribute.value}`);
+    }
+  }
+  for (const locale of ['en', 'zh-CN']) {
+    assert.deepEqual(Object.keys(sceneMessages[locale]).sort(), Object.keys(homeScenes[locale]).sort());
+    for (const labels of Object.values(sceneMessages[locale])) assert.equal(labels.length, 12);
+    for (const chapter of ['agents', 'roundtable', 'taste', 'team', 'memory', 'database']) {
+      assert.notEqual(messages[locale][chapter + '.description'], homeMessages[locale][chapter + '.description'], chapter);
+    }
+  }
+  assert.doesNotMatch(JSON.stringify(sceneMessages.en), /[㐀-鿿]/);
 });
 
 // The preview page sums up everything since the current stable release, not just

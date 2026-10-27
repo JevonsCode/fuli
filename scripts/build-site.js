@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { parseHTML } from 'linkedom';
 import { createLanguageController } from '../site/i18n.js';
+import * as previewCatalog from '../site/next/translations.js';
 import { SITE_URL, structuredData } from '../site/metadata.js';
 import { isMainModule } from '../src/system/main-module.js';
 
@@ -36,10 +37,10 @@ function markdown(document) {
 }
 
 // Renders one language route of a page template; `base` is the template's own route.
-function renderPage(template, base, route, locale) {
+function renderPage(template, base, route, locale, catalog) {
   const { document } = parseHTML(template);
   if (route) document.documentElement.dataset.pageLocale = locale;
-  createLanguageController({ document, languages: [locale] });
+  createLanguageController({ document, languages: [locale], catalog });
   const pageUrl = SITE_URL + base + route;
   // A language route sits one directory below its template, so relative URLs gain one "../".
   if (route) {
@@ -80,7 +81,7 @@ function homePages(template, files) {
 // The preview channel names the version this build packages (package.json is its only source).
 function previewPages(template, version, files) {
   for (const [route, locale] of languageRoutes) {
-    const { document } = renderPage(template, PREVIEW_BASE, route, locale);
+    const { document } = renderPage(template, PREVIEW_BASE, route, locale, previewCatalog);
     add(document, 'link', { rel: 'sitemap', type: 'application/xml', href: SITE_URL + 'sitemap.xml' });
     for (const element of document.querySelectorAll('[data-preview-version]')) element.textContent = version;
     for (const link of document.querySelectorAll('[data-preview-release]')) link.href = `https://github.com/JevonsCode/fuli/releases/tag/v${version}`;

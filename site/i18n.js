@@ -1,4 +1,4 @@
-import { messages, sceneMessages } from './translations.js';
+import * as homeCatalog from './translations.js';
 import { structuredData } from './metadata.js';
 
 const STORAGE_KEY = 'fuli.site.language';
@@ -13,7 +13,9 @@ export function resolveLanguage(languages = [], saved) {
   return 'en';
 }
 
-export function createLanguageController({ document, languages = [], getStorage = () => null }) {
+// `catalog` holds a page's copy: { messages, sceneMessages }; the stable home page by default.
+export function createLanguageController({ document, languages = [], getStorage = () => null, catalog = homeCatalog }) {
+  const { messages, sceneMessages } = catalog;
   let saved;
   try { saved = getStorage()?.getItem(STORAGE_KEY); } catch { /* Storage is optional. */ }
   // Explicit language URLs always remain readable, even with a different saved preference.
