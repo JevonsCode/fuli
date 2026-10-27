@@ -482,7 +482,7 @@ async function openReplacement(item: KnowledgeItem) {
   color: var(--color-muted);
   background: var(--color-surface-subtle);
   font-size: 12px;
-  font-weight: 680;
+  font-weight: var(--weight-medium);
 }
 
 .organizer-row {
@@ -523,8 +523,8 @@ async function openReplacement(item: KnowledgeItem) {
 
 .organizer-item-copy strong {
   color: var(--color-ink);
-  font-size: 12px;
-  font-weight: 630;
+  font-size: var(--text-control);
+  font-weight: var(--weight-strong);
 }
 
 .organizer-item-copy small,
@@ -540,7 +540,7 @@ async function openReplacement(item: KnowledgeItem) {
   border-radius: 999px;
   padding: 4px 7px;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
 }
 

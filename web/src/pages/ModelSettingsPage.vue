@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
 import ModelRoleHistory from '@/features/model-settings/ModelRoleHistory.vue'
 import ModelRoleTrust from '@/features/model-settings/ModelRoleTrust.vue'
+import { UiNotice } from '@/ui'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
 import { useRoleSuggestions } from '@/features/model-settings/useRoleSuggestions'
@@ -188,11 +189,11 @@ onBeforeUnmount(() => {
             <h2 id="model-roles-title" class="list-title">{{ t('modelSettings.rolesTitle') }}</h2>
             <GrowthLoading v-if="loading" variant="inline" :label="t('modelSettings.loading')" />
           </div>
-          <p v-if="payload.state === 'invalid'" class="model-settings-notice" role="alert" data-model-config-invalid>
+          <UiNotice v-if="payload.state === 'invalid'" tone="error" data-model-config-invalid>
             {{ t('modelSettings.invalid', { error: payload.error ?? '' }) }}
-          </p>
-          <p v-if="stale" class="model-settings-notice" role="alert" data-model-stale>{{ t('modelSettings.changed') }}</p>
-          <p v-if="notice" class="model-settings-saved" role="status">{{ notice }}</p>
+          </UiNotice>
+          <UiNotice v-if="stale" tone="error" data-model-stale>{{ t('modelSettings.changed') }}</UiNotice>
+          <UiNotice v-if="notice" tone="success">{{ notice }}</UiNotice>
 
           <Accordion v-model="openRoles" type="multiple" :unmount-on-hide="false" class="model-role-list">
             <AccordionItem v-for="view in payload.roles" :key="view.role" :value="view.role"
@@ -269,9 +270,6 @@ onBeforeUnmount(() => {
 .model-role-facts dt { color: var(--color-muted); }
 .model-role-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .model-role-actions { display: flex; justify-content: flex-end; }
-.model-settings-notice, .model-settings-saved { margin: 0; padding: 12px 16px; border: 1px solid var(--color-border);
-  border-radius: var(--radius-card); background: var(--color-surface); font-size: 14px; }
-.model-settings-notice { color: var(--color-danger); }
 @media (max-width: 520px) {
   .model-role-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .model-role-facts div + div dt { margin-top: 10px; }
