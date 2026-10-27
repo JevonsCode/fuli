@@ -106,10 +106,11 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
       assert.equal(value.project_agent_context.worker_started, false);
       // The entry receipt only carries what is copied; owner details stay on the checkpoint receipt.
       assert.match(value.agent_receipt.markdown, /\\\[Synthetic engineer\\\]/);
-      personName ??= value.agent_receipt.owner.name;
+      personName ??= value.project_agent_context.role.displayName;
+      assert.ok(personName, JSON.stringify(value.project_agent_context.role));
       assert.doesNotMatch(personName, /engineer/i);
-      assert.equal(value.agent_receipt.owner.name, personName);
-      assert.equal(value.project_agent_context.role.name, personName);
+      assert.equal(value.project_agent_context.role.displayName, personName);
+      assert.equal(value.project_agent_context.role.name, 'Synthetic engineer');
       assert.equal(value.project_agent_context.role.responsibility, 'Maintain the synthetic sample.');
       assert.equal(value.project_agent_context.role.character.taste, 'Clear writing.');
       assert.equal(value.project_agent_context.role.expectations, 'Preserve confirmed preferences.');
