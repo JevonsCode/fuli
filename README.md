@@ -623,7 +623,11 @@ Open the management UI after setup:
 fuli open
 ```
 
-The default URL is `http://127.0.0.1:2727`.
+The default URL is `http://127.0.0.1:2727`. On Windows, Hyper-V, WSL and winnat reserve port ranges that change
+between boots (`netsh interface ipv4 show excludedportrange protocol=tcp` lists them). A first setup picks ports outside
+those ranges, a console that cannot start on a reserved port says which range holds it, and the Windows tray's
+**Use another port** moves the console to a free nearby port, keeps a backup of `runtime-settings.json` and restarts Fuli.
+Open Agent sessions keep showing the old console address in Fuli links until they restart.
 
 The Settings page manages all seven local Fuli ports, graph runtime mode, LAN access, automatic capture,
 Agent access, UI language, and the resource refresh interval. Run `fuli restart` after saving port,

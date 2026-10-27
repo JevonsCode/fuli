@@ -141,8 +141,11 @@ describe('AgentCard projects', () => {
     })
     expect(blocked.get('.agent-card-tags').text()).toContain('FLA 000025')
     expect(blocked.get('[data-occupation]').text()).toBe('助手 · 管理')
-    expect(blocked.get('[data-task-reason-text]').text()).toBe('交给你指定的 Agent；没有可用的执行客户端')
-    const shown = blocked.text().replace(blocked.get('[data-task-reason-raw]').text(), '')
+    const line = blocked.get('[data-blocker-reason]')
+    expect(line.text()).toBe('交给你指定的 Agent；没有可用的执行客户端')
+    // The one-line card keeps the stored text only as its tooltip.
+    expect(line.attributes('title')).toBe('explicit_agent: explicit Agent selected; executor: no usable executor')
+    const shown = blocked.text()
     for (const raw of ['explicit_agent', 'no usable executor', 'assistant', 'management']) expect(shown).not.toContain(raw)
 
     const waiting = render({ agent: { ...agent, agentId: 'agent-fla' },

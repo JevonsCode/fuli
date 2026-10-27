@@ -92,7 +92,7 @@ test('a failed start returns the observed degraded state, preserves data, and om
   const f = await fixture(t);
   await configured(f);
   const calls = [];
-  const result = await runTrayAction('start', f.context, { runCli: async (context, args) => {
+  const result = await runTrayAction('start', f.context, { portBlocked: async () => false, runCli: async (context, args) => {
     calls.push(args[0]);
     return args[0] === 'status' ? reply({ status: 'degraded' })
       : { code: 1, stdout: 'Temporary access code: do-not-copy', stderr: '端口已占用 / Port already in use' };
@@ -100,9 +100,87 @@ test('a failed start returns the observed degraded state, preserves data, and om
   assert.equal(result.ok, false);
   assert.equal(result.status, 'degraded');
   assert.match(result.error, /Port already in use/);
+  assert.equal(result.portBlocked, undefined, 'a port in use is not a Windows reservation');
   assert.doesNotMatch(JSON.stringify(result), /do-not-copy/);
   assert.deepEqual(calls, ['status', 'start', 'status']);
   assert.equal(existsSync(join(f.dataDir, 'graph-runtime.json')), true);
+});
+
+test('a start that fails on a port Windows reserves offers the port change', async t => {
+  const f = await fixture(t);
+  await configured(f);
+  const checked = [];
+  const result = await runTrayAction('start-open', f.context, {
+    portBlocked: async (context) => { checked.push(context.dataDir); return true; },
+    runCli: async (context, args) => args[0] === 'status' ? reply({ status: 'degraded' })
+      : { code: 1, stdout: '', stderr: '端口 2727 被 Windows 保留（2634–2733），换一个端口即可。' }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.portBlocked, true);
+  assert.match(result.error, /被 Windows 保留（2634–2733）/);
+  assert.deepEqual(checked, [f.dataDir]);
+});
+
+test('changing the port saves it first, restarts a running Fuli, opens it and says what to restart', async t => {
+  const f = await fixture(t);
+  await configured(f);
+  const calls = [];
+  const switched = [];
+  const result = await runTrayAction('change-port', f.context, {
+    switchPort: async (paths) => { switched.push(paths.runtimeSettingsPath); calls.push('switch'); return { previousPort: 2727, port: 2734 }; },
+    runCli: async (context, args) => {
+      calls.push(args[0]);
+      return args[0] === 'status' ? reply(running) : { code: 0, stdout: '', stderr: '' };
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(switched, [join(f.dataDir, 'runtime-settings.json')]);
+  assert.deepEqual(calls, ['status', 'switch', 'restart', 'status', 'open', 'status']);
+  assert.match(result.notice, /已改用端口 2734（原 2727）/);
+  assert.match(result.notice, /until those sessions restart/);
+});
+
+test('changing the port of a console that failed to start starts it on the new port', async t => {
+  const f = await fixture(t);
+  await configured(f);
+  const calls = [];
+  let started = false;
+  const result = await runTrayAction('change-port', f.context, {
+    switchPort: async () => ({ previousPort: 2727, port: 2734 }),
+    runCli: async (context, args) => {
+      calls.push(args[0]);
+      if (args[0] === 'start') started = true;
+      return args[0] === 'status' ? reply(started ? running : { status: 'degraded' }) : { code: 0, stdout: '', stderr: '' };
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, ['status', 'start', 'status', 'open', 'status']);
+});
+
+test('a port change that fails after saving still says which port is now configured', async t => {
+  const f = await fixture(t);
+  await configured(f);
+  const result = await runTrayAction('change-port', f.context, {
+    portBlocked: async () => { throw new Error('a port change does not check reservations again'); },
+    switchPort: async () => ({ previousPort: 2727, port: 2734 }),
+    runCli: async (context, args) => args[0] === 'status' ? reply({ status: 'degraded' })
+      : { code: 1, stdout: '', stderr: 'Graphiti provider did not become ready' }
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /Graphiti provider did not become ready\n\n已改用端口 2734/);
+  assert.equal(result.portBlocked, undefined);
+});
+
+test('the port change needs set-up native data and never writes settings otherwise', async t => {
+  const f = await fixture(t);
+  const switchPort = async () => { throw new Error('settings must not be written'); };
+  const runCli = async () => reply(stopped);
+  const unset = await runTrayAction('change-port', f.context, { switchPort, runCli });
+  assert.equal(unset.ok, false);
+  assert.match(unset.error, /not set up yet/);
+  await configured(f, 'container');
+  const container = await runTrayAction('change-port', f.context, { switchPort, runCli });
+  assert.match(container.error, /will not switch/);
 });
 
 test('stop must confirm its final state; partial or still-running results never permit stop-and-exit', async t => {

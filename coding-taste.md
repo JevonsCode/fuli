@@ -42,6 +42,7 @@ Each row is the single home for that behavior; reuse it or extend it.
 | Deep freeze of config defaults | `src/validation/values.js` | |
 | SHA-256 of text, bytes and files | `src/security/digest.js` (`sha256Bytes`, `sha256File`) | One place that decides encoding (`hex`) and streaming for files. |
 | Graph Provider readiness wait, managed-workspace detection, process liveness | `src/local-runtime/provider-readiness.js`, `src/local-runtime/processes.js` | Setup, native runtime, adaptive runtime and backup restore all call the same wait with their own timeout and error text. |
+| A started child process's log file (Neo4j, Graph Provider, console) | `src/local-runtime/child-process-log.js` (`openChildProcessLog`) | Rotates a log past 50 MB to `.1`–`.3` before the child starts; no spawn opens its log with `openSync(path, 'a')` by hand. |
 | Promise-based sleep | `node:timers/promises` (`setTimeout as delay`) | Do not hand-roll `new Promise((resolve) => setTimeout(resolve, ms))`. |
 | Atomic text and JSON file writes | `src/storage/json-file.js` (`writeTextFileAtomic`, `writeJsonFileAtomic`) | Keeps the existing file mode; new files are private. `durable` flushes before the replace. A rename Windows refuses while a reader has the file open is retried for a bounded time. No module renames a temporary file into place by hand. |
 | A file's exact identity (`dev:ino`) | `src/system/file-identity.js` (`fileIdentity`) | Takes a stat read with `{ bigint: true }` and refuses a Number stat: Windows file IDs exceed 2^53 (rec#49). |

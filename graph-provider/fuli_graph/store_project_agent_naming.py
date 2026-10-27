@@ -1,8 +1,11 @@
 """Each Agent's person-like name, unique within its personal space.
 
 A new Agent is named when it is written (Bole's recruitment and direct
-creation alike); an existing Agent keeps its name unless a person changes it,
-and a change to a name another Agent already uses is refused. The naming
+creation alike); an existing Agent keeps its name unless a person changes it.
+A given name another Agent already uses is refused with free alternatives,
+so the caller can choose another (in the person's naming style, when set).
+A recruitment's proposed name is checked when it is proposed; one taken by
+the time the Agent is provisioned falls back to a generated name. The naming
 rules themselves live in project_agent_names.py.
 """
 import json
@@ -10,7 +13,9 @@ import json
 from fastapi import HTTPException
 
 from .name_identity import identity_key
-from .project_agent_names import agent_display_name, new_agent_display_name, title_like, unique_nickname
+from .project_agent_names import (
+    NameTaken, agent_display_name, free_nicknames, new_agent_display_name, title_like, unique_nickname,
+)
 from .system_agents import SYSTEM_PROFILES
 from .system_hr_identity import LEGACY_HR_AGENT_ID
 
@@ -41,7 +46,12 @@ def _taken(names, agent_id):
             for other, (name, nickname) in names.items() if other != agent_id}
 
 
-async def with_person_name(store, request):
+def _name_taken(alternatives):
+    return HTTPException(409, 'agent_name_taken: another Agent in this personal space already uses this name; '
+                              f'free names: {", ".join(alternatives)}. Choose one or propose another.')
+
+
+async def with_person_name(store, request, *, recruitment_id=None):
     """The upsert with the nickname it stores: generated or numbered for a new
     Agent, kept when an update omits it, refused when it duplicates another's."""
     if request.agent_id in SYSTEM_NAMED:
@@ -50,15 +60,32 @@ async def with_person_name(store, request):
     taken = _taken(names, request.agent_id)
     profile = request.profile
     if request.agent_id not in names:
-        nickname = new_agent_display_name(request.agent_id, profile.name, profile.display_name, taken)
+        try:
+            nickname = new_agent_display_name(request.agent_id, profile.name, profile.display_name, taken)
+        except NameTaken as error:
+            if recruitment_id is None:
+                raise _name_taken(error.alternatives) from None
+            nickname = unique_nickname(request.agent_id, taken)
     elif profile.display_name is None:
         nickname = names[request.agent_id][1]
     else:
         nickname = profile.display_name
         current = agent_display_name(request.agent_id, *names[request.agent_id])
         if identity_key(nickname) != identity_key(current) and identity_key(nickname) in taken:
-            raise HTTPException(409, 'agent_name_taken: another Agent in this personal space already uses this name')
+            raise _name_taken(free_nicknames(request.agent_id, taken))
     return request.model_copy(update={'profile': profile.model_copy(update={'display_name': nickname})})
+
+
+async def require_free_proposed_name(store, personal_space_id, agent_id, profile):
+    """Refuse a recruitment whose proposed nickname another Agent uses, before
+    anything is written, so the recruiter proposes another."""
+    if not profile.display_name:
+        return
+    names = await space_agent_names(store, personal_space_id)
+    try:
+        new_agent_display_name(agent_id, profile.name, profile.display_name, _taken(names, agent_id))
+    except NameTaken as error:
+        raise _name_taken(error.alternatives) from None
 
 
 async def with_rename_suggestion(store, record):

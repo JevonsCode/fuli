@@ -28,7 +28,7 @@ Pass the last-read `targetsVersion` as `expectedTargetsVersion` when changing ta
 
 Bole is provisioned by the Provider as a fixed native role, not recruited through `recruit_employee`. Inspect staffing through the Project Agent read tools.
 
-Every Agent has a person-like nickname unique in its personal space. When recruiting or creating one, put the job in its occupation and responsibility, not its `displayName`: a job-title name or none is replaced by a generated name, and a taken name gets a number. Changing an existing Agent's `displayName` to a name another Agent uses is refused with `agent_name_taken`. Never rename an existing Agent on your own; a read may return `nameSuggestion` for the person to accept.
+Every Agent has a person-like nickname unique in its personal space. When recruiting or creating one, put the job in its occupation and responsibility, not its `displayName`: a job-title name or none is replaced by a generated name. Right before proposing a new Agent's `displayName` (`recruitmentProfile` or `upsert_project_agent`), call `get_agent_naming_style`: when the person saved a style (Agent 取名风格), propose a name in it; when it returns `null`, omit `displayName`. A given name another Agent uses is refused with `agent_name_taken` and free generated names, before anything is written: propose another in the same style, or use one of them. If you cannot find a free name, tell the person; never reuse a taken one. Only the person sets, edits or clears the style in settings (`explain_settings` gives the link). Changing a style never renames existing Agents, and renaming an existing Agent to a taken name is refused the same way. Never rename an existing Agent on your own; a read may return `nameSuggestion` for the person to accept.
 
 The following controls are deliberately local-user-only unless the current interface catalog says otherwise:
 
@@ -38,6 +38,7 @@ The following controls are deliberately local-user-only unless the current inter
 - preference-scope confirmation
 - batch knowledge confirmation
 - Jefa work-item completion that records explicit human acceptance
+- marking a blocked task as unblocked (「标记为已解除」): suggest the person uses the button on the task card or task detail; an Agent ends a block only by continuing in the session that reported it
 - permanently deleting knowledge (「彻底删除」): suggest the person opens the item page's 危险操作 section; there is no Agent tool, not even a preview
 
 Explain the precise UI action when one of these boundaries blocks the request. Never work around it through direct HTTP, storage, browser scripting, or a shell command.

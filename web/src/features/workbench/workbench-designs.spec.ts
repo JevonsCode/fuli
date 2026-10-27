@@ -36,14 +36,17 @@ describe('workbench designs', () => {
     expect(wrapper.get('[data-focus-stuck]').text()).toContain('Needs a token')
   })
 
-  it('a stuck card says what blocks it, since when and in which session, outside the card link', () => {
+  it('a stuck card says in one line what blocks it and for how long, outside the card link', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
     const blocker = { reason: 'Which staging database?', since: recent, agentId: 'agent-a', application: 'claude_code' as const,
       sessionId: 'synthetic-session', sessionUrl: null, observed: true }
     const wrapper = mountDesign(KanbanBoard, board([task('b', 'blocked', { blocker, failureReason: 'stale' })]))
     const notice = wrapper.get('[data-lane="stuck"] [data-task-blocker]')
     expect(notice.get('[data-blocker-reason]').text()).toBe('Which staging database?')
-    expect(notice.get('[data-blocker-where]').text()).toBe('在 Claude Code · 会话 synthetic-session')
+    expect(notice.get('[data-blocker-status]').text()).toBe('阻塞')
+    expect(notice.get('[data-blocker-age]').text()).toMatch(/^已阻塞 /)
+    // The session and whether FULI sees it are in the task detail, not on the card.
+    expect(notice.find('[data-blocker-where]').exists()).toBe(false)
     expect(notice.element.closest('a')).toBeNull()
     expect(wrapper.find('.kanban-reason').exists()).toBe(false)
     vi.unstubAllGlobals()

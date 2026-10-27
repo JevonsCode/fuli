@@ -18,7 +18,10 @@ project history. Explicit user-selected Agents and locked policies remain higher
 When no registered project matches, coordination may return an isolated temporary project;
 keep its exact returned ID for this task. Ambiguous candidates still require a choice. Temporary
 scope creation is not Agent recruitment approval or proof of execution; follow the returned
-recruitment/authorization state and worker plan.
+recruitment/authorization state and worker plan. When you recruit with a `recruitmentProfile`, read
+`get_agent_naming_style` first and give its `displayName` in the person's style (omit it when the
+style is `null`); on `agent_name_taken` propose another free name in that style, and tell the person
+if you cannot find one.
 
 Treat the returned durable Agent identity and a host worker as different things. A durable Agent
 keeps its project assignment, preferences, task history, and Agent-scoped graph memory while idle;
@@ -47,7 +50,8 @@ not fabricate an execution-summary row. The Provider's `executionSummary` remain
 A blocked report should say what it waits for; the Provider records when and in which session.
 The block clears itself when that same session continues (a checkpoint or a new prompt there) or
 the person answers its request; activity in another session does not clear it, so do not report
-the task running from elsewhere to work around a block.
+the task running from elsewhere to work around a block. Only the person can mark a block cleared
+otherwise (「标记为已解除」 in the console); no Agent tool does it.
 
 `workerStatus` requires `workerId` and the participating `agentId`. Structured actual executor,
 provider and model form one report and must match authorized preflight evidence. When that

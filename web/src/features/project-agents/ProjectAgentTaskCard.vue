@@ -8,6 +8,7 @@ import TaskExecutionPlan from './TaskExecutionPlan.vue'
 import TaskRunControls from './TaskRunControls.vue'
 import TaskBlockerNotice from './TaskBlockerNotice.vue'
 import TaskReason from './TaskReason.vue'
+import TaskBlockerClear from './TaskBlockerClear.vue'
 import { lastBlockerClear } from './task-blocker'
 import { parallelPlanHasEvidence, workerEventEvidence } from './task-evidence'
 import {
@@ -42,6 +43,9 @@ const emit = defineEmits<{ changed: [] }>()
 const expanded = ref(props.linked)
 const execution = computed(() => actualExecution(props.task))
 const blockerClear = computed(() => lastBlockerClear(props.task))
+const scope = computed(() => props.task.personalProjectId
+  ? { personalSpaceId: props.personalSpaceId, personalProjectId: props.task.personalProjectId, taskId: props.task.taskId }
+  : null)
 const workerEvents = computed(() => workerEventEvidence(props.task))
 const participants = computed(() => props.task.participants.map(participant => {
   const agent = props.agents.find(item => item.agentId === participant.agentId)
@@ -62,10 +66,15 @@ function toggle(event: Event) {
       <div><strong>{{ task.title }}</strong><small>{{ projectName }}</small></div>
       <Badge :variant="taskStatusTone(task.status)" data-task-status>{{ taskStatusLabel(task.status) }}</Badge>
     </header>
-    <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" :blocker="task.blocker" :updated-at="task.updatedAt" />
+    <template v-if="task.status === 'blocked' && task.blocker">
+      <TaskBlockerNotice :blocker="task.blocker" :updated-at="task.updatedAt" />
+      <TaskBlockerClear v-if="scope" :scope="scope" :title="task.title" :blocker="task.blocker" :updated-at="task.updatedAt" @cleared="emit('changed')" />
+    </template>
     <TaskReason v-else-if="task.resultSummary || task.failureReason" :reason="task.resultSummary || task.failureReason" :fallback="t('projectAgents.notReported')" />
-    <p v-if="blockerClear" class="project-agent-muted" data-blocker-cleared>
-      {{ t('taskBlocker.cleared', { time: formatDate(blockerClear.at), cause: t(`taskBlocker.causes.${blockerClear.cause}`) }) }}
+    <p v-if="blockerClear" class="project-agent-muted" data-blocker-cleared :data-cause="blockerClear.cause">
+      <template v-if="blockerClear.cause === 'person'">{{ t('taskBlocker.clearedByYou', { time: formatDate(blockerClear.at) }) }}</template>
+      <template v-else>{{ t('taskBlocker.cleared', { time: formatDate(blockerClear.at), cause: t(`taskBlocker.causes.${blockerClear.cause}`) }) }}</template>
+      <span v-if="blockerClear.note" class="project-agent-task-clear-note" data-blocker-clear-note>{{ t('taskBlocker.clearNote', { note: blockerClear.note }) }}</span>
     </p>
     <ProjectAgentTaskDiagnostics :task="task" :project-name="projectName" />
     <p v-if="participants.length" class="project-agent-task-people" data-task-participants>

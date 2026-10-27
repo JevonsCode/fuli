@@ -29,7 +29,7 @@ def endpoints():
     app = FastAPI()
     async def actor():
         return {'space': 'space-a'}
-    register_project_agent_routes(app, Store(), Annotated[dict, Depends(actor)])
+    register_project_agent_routes(app, Store(), Annotated[dict, Depends(actor)], Annotated[dict, Depends(actor)])
     routes = {route.path: route.endpoint for route in app.routes}
     assert '/v1/project-agent-task-events' in routes, 'Task updates need an authenticated notification stream'
     return routes['/v1/project-agent-task-events'], routes['/v1/project-agent-tasks/{task_id}/events']

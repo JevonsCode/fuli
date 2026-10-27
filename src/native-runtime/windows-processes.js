@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { closeSync, mkdirSync, openSync, readFileSync } from 'node:fs';
+import { closeSync, readFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { basename, dirname, join, normalize, win32 } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { execute, OWNED_PROCESS_TYPE, powershell } from '../local-runtime/windows-process-handle.js';
 
 const samePath = (left, right) => typeof left === 'string' && typeof right === 'string'
@@ -148,8 +149,7 @@ export async function stopWindowsNativeProcess(pid, entry, { timeoutMs } = {}) {
 }
 
 async function spawnOwned(command, args, environment, logPath, { provider = false } = {}) {
-  mkdirSync(dirname(logPath), { recursive: true });
-  const log = openSync(logPath, 'a');
+  const log = openChildProcessLog(logPath);
   let child;
   try {
     child = spawn(command, args, { detached: true, windowsHide: true,

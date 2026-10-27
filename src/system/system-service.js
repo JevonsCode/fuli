@@ -175,7 +175,8 @@ function settingsResult(configured, active) {
         ...configured,
         resourceRefreshSeconds: active.resourceRefreshSeconds,
         conversationLaunchers: active.conversationLaunchers,
-        notifications: active.notifications
+        notifications: active.notifications,
+        agentNamingStyle: active.agentNamingStyle
       },
       active
     )

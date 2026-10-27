@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import math
 import os
 import re
@@ -24,6 +25,12 @@ from .config import Settings
 from .graph_format import UNCHECKED, GraphFormatUnavailable, prepare_graph_format, writer_fence
 
 _ACCESS_MODE_ERROR = 'Neo.ClientError.Statement.AccessMode'
+
+# The driver logs every DBMS notification (an unknown label or property key in
+# Graphiti's queries, which a sparse graph meets on almost every search) as a
+# warning with the whole query, which filled provider.log to gigabytes. Driver
+# errors still raise and are logged by their callers.
+logging.getLogger('neo4j.notifications').setLevel(logging.ERROR)
 
 
 class AgentStructuredLLM(LLMClient):

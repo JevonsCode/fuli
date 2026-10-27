@@ -136,7 +136,11 @@ const BASELINE = Object.freeze({
   // 更好的项目管理: create_project_agent_assignment takes an optional projectManager (the Agent
   // becomes the project's own PM; its board's shape lives in Jefa's configure_project_board, read
   // on demand): 192,460 -> 192,809 B (+349 B), measured. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 192809,
+  // Agent 取名风格: one full-profile read, get_agent_naming_style, that a recruiting Agent calls only
+  // right before proposing a new Agent's name (the style is never put in an entry), and a one-line
+  // displayName pointer to it in the three schemas that create Agents: 192,809 -> 193,488 B (+679 B),
+  // measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 193488,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

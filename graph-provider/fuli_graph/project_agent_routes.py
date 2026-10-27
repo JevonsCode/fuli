@@ -55,6 +55,7 @@ from .project_agent_task_models import (
     ProjectAgentTaskActivityCreate,
     ProjectAgentTaskBlockerClear,
     ProjectAgentTaskBlockerClearResult,
+    ProjectAgentTaskBlockerPersonClear,
     ProjectAgentTaskRecord,
     ProjectAgentTaskRouteResult,
     ProjectAgentTaskSubmit,
@@ -65,6 +66,7 @@ def register_project_agent_routes(
     application: FastAPI,
     store: Any,
     Actor: Any,
+    HumanReviewer: Any,
 ) -> None:
     """Attach Project Agent routes while keeping ``create_app`` orchestration small."""
 
@@ -340,6 +342,20 @@ def register_project_agent_routes(
         for task_id in result.cleared_task_ids:
             notify_task_change(request.personal_space_id, task_id)
         return result
+
+    @application.post(
+        '/v1/project-agent-tasks/{task_id}/blocker/clear',
+        response_model=ProjectAgentTaskRecord,
+    )
+    async def clear_task_blocker_by_person(
+        task_id: str,
+        request: ProjectAgentTaskBlockerPersonClear,
+        actor: HumanReviewer,
+    ) -> ProjectAgentTaskRecord:
+        """The person's 「标记为已解除」, on the console's human-review channel only."""
+        task = await store.clear_task_blocker_by_person(actor, task_id, request)
+        notify_task_change(request.personal_space_id, task_id)
+        return task
 
     @application.get(
         '/v1/project-agents/{agent_id}/activity',

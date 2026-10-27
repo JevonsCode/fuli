@@ -705,7 +705,7 @@ ENUMS = {
     'assignment_status': ('active', 'ended'),
     'attention_kind': ('question', 'approval', 'review', 'permission', 'blocked'),
     'attention_status': ('open', 'resolved', 'cancelled'),
-    'blocker_clear_cause': ('session_activity', 'session_reply', 'attention_answer'),
+    'blocker_clear_cause': ('session_activity', 'session_reply', 'attention_answer', 'person'),
     'confirmation_mode': ('automatic', 'require_confirmation'),
     'confirmation_status': ('confirmed', 'agent_confirmed', 'pending'),
     'content_source': ('user_explicit', 'agent_inferred'),

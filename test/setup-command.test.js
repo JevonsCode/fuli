@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { formatSetupResult, runSetupCommand } from '../src/cli/setup-command.js';
+import { formatSetupPreview, formatSetupResult, runSetupCommand } from '../src/cli/setup-command.js';
 import { applyLocalSetup, planLocalSetup } from '../src/setup/setup.js';
+import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 
 const OPTIONS = Object.freeze({
   dataDir: null,
@@ -124,6 +125,7 @@ test('local setup planning is side-effect free and describes detected agents', (
       runtimeSettingsPath: 'C:/Fuli/runtime-settings.json'
     }),
     readSettings: () => SAVED_RUNTIME_SETTINGS,
+    settingsExist: () => true,
     discover: () => [
       { id: 'codex', label: 'Codex', available: true, configPath: 'C:/Codex/config.toml' },
       { id: 'claude-code', label: 'Claude Code', available: false, configPath: 'C:/x' }
@@ -171,6 +173,34 @@ test('local setup recommends native mode on a low-memory Mac without overriding 
     runtimeMode: 'native'
   }, dependencies);
   assert.equal(selected.runtimeSettings.graphRuntimeMode, 'native');
+});
+
+test('first setup on Windows picks ports outside the ranges Windows reserves; saved or chosen ports stay', () => {
+  const reserved = [{ start: 2634, end: 2733 }, { start: 7600, end: 7699 }];
+  const platforms = [];
+  const dependencies = (settingsExist) => ({
+    resolvePaths: () => ({ dataDir: 'C:/Fuli', runtimeSettingsPath: 'C:/Fuli/runtime-settings.json',
+      mcpServerPath: 'C:/Package/src/mcp-server.js' }),
+    readSettings: () => DEFAULT_RUNTIME_SETTINGS,
+    settingsExist: () => settingsExist,
+    readReservedRanges: ({ platform }) => { platforms.push(platform); return reserved; },
+    discover: () => [],
+    inspectInstallations: (agents) => agents,
+    platform: 'win32'
+  });
+
+  const first = planLocalSetup({ ...OPTIONS, port: null }, dependencies(false));
+  assert.equal(first.runtimeSettings.ports.console, 2734);
+  assert.equal(first.runtimeSettings.ports.personalNeo4jBolt, 7700);
+  assert.equal(first.runtimeSettings.ports.personalProvider, DEFAULT_RUNTIME_SETTINGS.ports.personalProvider);
+  assert.deepEqual(platforms, ['win32']);
+  assert.match(formatSetupPreview(first, { ...OPTIONS, port: null }), /Management UI: http:\/\/127\.0\.0\.1:2734/);
+
+  assert.equal(planLocalSetup({ ...OPTIONS, port: null }, dependencies(true)).runtimeSettings.ports.console, 2727,
+    'an existing installation keeps its saved ports');
+  assert.equal(planLocalSetup({ ...OPTIONS, port: 2727 }, dependencies(false)).runtimeSettings.ports.console, 2727,
+    'a port the person passed is kept');
+  assert.deepEqual(platforms, ['win32']);
 });
 
 test('applying setup starts the runtime, backs up configs, and connects available agents',

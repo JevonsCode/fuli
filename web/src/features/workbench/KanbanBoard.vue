@@ -47,7 +47,7 @@ const lead = (task: { leadAgentId?: string | null; ownerAgentId?: string | null 
               <small>{{ board.projectName(task.personalProjectId) }} · {{ board.since(task.completedAt ?? task.updatedAt) }}</small>
             </span>
           </RouterLink>
-          <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" compact class="kanban-blocker"
+          <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" compact with-status class="kanban-blocker"
             :blocker="task.blocker" :updated-at="task.updatedAt" />
         </li>
         <li v-if="lanes[lane].length > PER_LANE" class="kanban-more">{{ t('workbench.board.more', { count: lanes[lane].length - PER_LANE }) }}</li>
