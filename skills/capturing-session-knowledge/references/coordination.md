@@ -26,6 +26,13 @@ the host creates an execution process only when needed. Start only entries in `w
 each worker only its returned isolated `context` (including `lifecycle`), role, and workstream boundary, and never expose
 another Agent's private context. Fuli is the control plane and does not itself prove that a native
 worker started.
+
+`@FLG … 一起看` (task entry `flg.status: together`) is not coordination: no member is woken and no
+worker starts. The session reads `flg.context`, a read-only index of the confirmed members (their
+projects, standing responsibilities, latest tasks and matching knowledge titles; their working memory
+is withheld). Checkpoint the task as the session's own Agent only: never list a member as a
+collaborator, never write a member's `agentMemory`, and capture a fact learned from a member's
+context only after reading the full item it comes from.
 Do not forward the parent's task token. The coordinator alone checkpoints the shared host task
 after integrating worker results; a worker's completion is not that task's completion.
 
