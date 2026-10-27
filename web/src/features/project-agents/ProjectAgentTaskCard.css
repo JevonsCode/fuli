@@ -39,19 +39,11 @@
 .project-agent-execution-summary-table tbody a { margin-top: 3px; color: var(--color-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
 .project-agent-execution-summary-table tbody a:focus-visible { border-radius: 2px; outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .project-agent-execution-worker { display: flex !important; align-items: center; gap: 4px; }
-.project-agent-execution-summary-row i { display: inline-flex; border-radius: 999px; background: var(--color-surface-subtle); color: var(--color-muted); padding: 2px 6px; font-size: 12px; font-style: normal; font-weight: 700; }
-.project-agent-execution-summary-row i.is-completed { background: var(--color-surface-subtle); color: var(--color-ink); }
-.project-agent-execution-summary-row i.is-failed { background: var(--color-danger-soft); color: var(--color-danger); }
-.project-agent-execution-summary-row i.is-cancelled { background: var(--color-surface-subtle); color: var(--color-muted); }
 .project-agent-execution-summary-list { display: grid; margin: 7px 0 0; padding: 0; list-style: none; }
 .project-agent-worker-event-row { min-width: 0; padding: 10px 0; border-top: 1px solid var(--color-border); }.project-agent-worker-event-row:first-child { border-top: 0; }
 .project-agent-worker-event-row header { align-items: flex-start; }
 .project-agent-worker-event-row header strong { min-width: 0; display: flex; align-items: center; gap: 5px; overflow-wrap: anywhere; color: var(--color-ink); font-size: 12px; }
 .project-agent-worker-event-row header strong small { display: inline; margin: 0; color: var(--color-muted); font-size: 12px; font-weight: 500; }
-.project-agent-worker-event-row header i { flex: 0 0 auto; border-radius: 999px; background: var(--color-surface-subtle); color: var(--color-muted); padding: 2px 6px; font-size: 12px; font-style: normal; font-weight: 700; }
-.project-agent-worker-event-row header i.is-completed { background: var(--color-surface-subtle); color: var(--color-ink); }
-.project-agent-worker-event-row header i.is-failed { background: var(--color-danger-soft); color: var(--color-danger); }
-.project-agent-worker-event-row header i.is-cancelled { background: var(--color-surface-subtle); color: var(--color-muted); }
 .project-agent-execution-summary-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 10px; margin: 8px 0 0; }
 .project-agent-execution-summary-meta div { min-width: 0; }
 .project-agent-execution-summary-meta dt { color: var(--color-muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
@@ -66,7 +58,3 @@
 .project-agent-task-card.is-linked { box-shadow: inset 0 0 0 2px var(--color-accent); }
 .project-agent-task-card header { align-items: flex-start; }
 .project-agent-task-card header small { margin-top: 3px; }
-.project-agent-task-card header .ui-badge { color: var(--color-muted); font-style: normal; }
-.project-agent-task-card header .ui-badge.is-completed { color: var(--color-ink); }
-.project-agent-task-card header .ui-badge.is-failed { background: var(--color-danger-soft); color: var(--color-danger); }
-.project-agent-task-card header .ui-badge.is-cancelled { color: var(--color-muted); }

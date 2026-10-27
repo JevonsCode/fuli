@@ -135,7 +135,7 @@ describe('Agent profile integration', () => {
     expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(true)
   })
 
-  it('offers each profile link once and no Ask AR on the AR itself', async () => {
+  it('offers each profile link once and never a manual Ask AR detour', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
       if (isAgentRead(url)) return agentRead(url, [person('employee.bole')])
@@ -150,6 +150,11 @@ describe('Agent profile integration', () => {
     expect(wrapper.findAll('a[href^="/employees/bole?"]')).toHaveLength(0)
     expect(wrapper.findAll('.agent-management-card a')).toHaveLength(1)
     expect(wrapper.get('[data-open-management]').text()).toBe('打开 Agent 管理')
+    wrapper.unmount()
+    getJson.mockImplementation(normal)
+    const other = await setup()
+    expect(other.wrapper.findAll('a[href^="/employees/bole?"]')).toHaveLength(0)
+    expect(other.wrapper.text()).not.toContain('问 AR')
   })
 
   it('exposes conversation retention under an accessible secondary tab', async () => {

@@ -31,9 +31,8 @@
 @source "../../features/agent-profile/AgentPeek.vue";
 @source "../../pages/AgentProfilePage.vue";
 @source "../../pages/SettingsPage.vue";
-/* Memory pages on the D-03 canvas: the knowledge quick look and the taste rules. */
+/* Memory pages on the D-03 canvas: the knowledge quick look. */
 @source "../../features/knowledge/KnowledgePeek.vue";
-@source "../../pages/WritingTastePage.vue";
 /* rec#20: a turn receipt's item quick edit and full list, on the form column. */
 @source "../../pages/KnowledgeItemEditPage.vue";
 @source "../../pages/KnowledgeTurnReceiptPage.vue";

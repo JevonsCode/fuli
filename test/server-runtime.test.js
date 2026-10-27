@@ -51,16 +51,6 @@ test('Web server exposes the Graphiti facade and graph console', async () => {
       offset: 0
     });
 
-    const writingTaste = await getJson(
-      `${url}/api/writing-taste-profile?personalSpaceId=personal-1&limit=120`
-    );
-    assert.equal(writingTaste.status, 'collecting');
-    assert.deepEqual(calls.find(([name]) => name === 'writing-taste')[1], {
-      personalSpaceId: 'personal-1',
-      personalProjectId: null,
-      limit: 120
-    });
-
     await getJson(
       `${url}/api/project-agents?personalSpaceId=personal-1&status=active`
     );
@@ -363,10 +353,6 @@ function graphApp(calls) {
     getKnowledgeGraph: async (input) => {
       calls.push(['graph', input]);
       return { nodes: [], edges: [], truncated: false };
-    },
-    getWritingTasteProfile: async (input) => {
-      calls.push(['writing-taste', input]);
-      return { status: 'collecting', ready: false, rules: [] };
     },
     listProjectAgents: async (input) => {
       calls.push(['project-agent-list', input]);

@@ -71,7 +71,7 @@
 .project-agent-calendar {
   --heat-gap: 3px; --heat-labels: 32px;
   --heat-cell: clamp(10px, calc((100cqw - var(--heat-labels) - 8px - (var(--weeks) - 1) * var(--heat-gap)) / var(--weeks)), 28px);
-  container-type: inline-size; min-width: 0; max-width: 100%; margin-top: 12px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin;
+  container-type: inline-size; min-width: 0; max-width: 100%; margin-top: 12px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
   display: grid; grid-template-columns: var(--heat-labels) max-content; grid-template-rows: auto auto; column-gap: 8px; row-gap: 4px;
 }
 .project-agent-calendar-months { grid-column: 2; display: grid; grid-template-columns: repeat(var(--weeks), var(--heat-cell)); gap: var(--heat-gap); color: var(--color-muted); font-size: 11px; line-height: 1.4; }

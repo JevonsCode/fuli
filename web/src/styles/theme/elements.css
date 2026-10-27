@@ -5,6 +5,15 @@
  * already did. Tailwind's preflight is not used; this is FULI's own reset.
  */
 * { box-sizing: border-box; }
+/* One scrollbar everywhere (Jevons 10-27): thin, a quiet rounded thumb and
+   no track. Scrollers that hide their bar (tab strips) keep their own
+   `scrollbar-width: none`. Browsers that support the standard properties use
+   them; the ::-webkit rules shape the thumb where they do not. */
+* { scrollbar-width: thin; scrollbar-color: var(--color-border-strong) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--color-border-strong) padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--color-muted); }
 /* shadcn-vue components draw hairlines with the bare `border` utility and
    expect the theme border colour (Tailwind's own default is currentColor).
    Every FULI rule that draws a border names its colour, so this only fills

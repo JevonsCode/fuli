@@ -171,6 +171,31 @@ async def test_cross_client_member_does_not_require_its_lead_to_run_in_that_clie
         assert result['reporting_lead_agent_id'] == 'lead'
 
 
+@pytest.mark.asyncio
+async def test_owner_grant_restores_the_named_project_agent_once_without_a_sender_task():
+    # The person's own console message: no task context, any active Agent of the project.
+    async with provider_client(fixture_settings()) as (client, _):
+        scope, _request = await setup_delegation(client)
+
+        def owner(**changes):
+            return client.post('/v1/project-agent-context/owner-delegations', json={
+                **scope, 'agent_id': 'member', 'target_application': 'codex', **changes})
+        missing = await owner(agent_id='nobody')
+        assert missing.status_code == 404 and missing.json()['detail']['code'] == 'agent_unavailable', missing.text
+        issued = await owner()
+        assert issued.status_code == 200, issued.text
+        token = issued.json()['token']
+        assert (await resolve(client, scope, token, 'owner-session', agent_id='other'))['status'] == 'agent_unavailable'
+        restored = await resolve(client, scope, token, 'owner-session')
+        assert restored['status'] == 'ready' and restored['agent']['agent_id'] == 'member'
+        assert (await resolve(client, scope, token, 'another-session'))['status'] == 'agent_unavailable'
+        verified = await client.post('/v1/project-agent-context/delegations/verify', json={
+            'personal_space_id': scope['personal_space_id'], 'token': token, 'session_id': 'owner-session'})
+        assert verified.json() == {'redeemed': True}
+        lead = await owner(agent_id='lead')
+        assert lead.status_code == 200, lead.text
+
+
 async def worker_run_fixture(client):
     from test_project_agent_team_lifecycle_neo4j import binding_fixture, binding_parent, binding_task, binding_policy, bind
     from test_project_agent_activity_atomicity_neo4j import seed_executor
