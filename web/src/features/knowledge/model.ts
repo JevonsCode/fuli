@@ -1,4 +1,5 @@
 import { currentLocale, t } from '@/i18n'
+import { tableLabel } from '@/i18n/label-table'
 import { DATE_ONLY, DATE_TIME_FULL, DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import type {
   ConfirmationActor,
@@ -11,6 +12,7 @@ import type {
   KnowledgeNode,
   HumanChangeStatus,
 } from '@/types'
+import { relationVisual } from './relation-visuals'
 
 export type KnowledgeReviewState =
   | 'confirmed'
@@ -24,21 +26,6 @@ const MANAGEMENT_TYPES = new Set([
   'PersonalProject',
   'ProjectPurpose',
   'ProjectScope',
-  'ProjectSource',
-  'ProjectBoundary',
-  'ProjectAssessment',
-  'AssessmentDimension',
-  'RelatedPersonalProject',
-  'ExternalKnowledgeSource',
-])
-
-const PROJECT_MATERIAL_TYPES = new Set([
-  'ProjectSpace',
-  'PersonalSpace',
-  'PersonalProject',
-  'ProjectPurpose',
-  'ProjectScope',
-  'TechnicalSummary',
   'ProjectSource',
   'ProjectBoundary',
   'ProjectAssessment',
@@ -218,13 +205,41 @@ export function isManagementKnowledgeItem(item: KnowledgeItem | null) {
     || isManagementId(item.id)
 }
 
-export function projectMaterialTypeLabel(item: KnowledgeItem) {
+export interface KnowledgeTypeLabel {
+  label: string
+  /** The stored type when FULI has no name for it, shown as small meta. */
+  unknownType: string | null
+}
+
+/**
+ * An item's type in the reader's language: a relationship by its relation,
+ * an entity through the type table. A type FULI has no name for (an Agent may
+ * name its own) reads as 其他类型 and keeps the stored type as meta.
+ */
+export function knowledgeTypeLabel(item: KnowledgeItem): KnowledgeTypeLabel {
   if (item.itemKind === 'relationship') {
-    return t('knowledge.domain.materialTypes.relationship')
+    return { label: t('knowledge.domain.items.relationshipType', { type: relationVisual(item.raw.type).label }), unknownType: null }
   }
-  return PROJECT_MATERIAL_TYPES.has(item.type)
-    ? t(`knowledge.domain.materialTypes.${item.type}`)
-    : item.type
+  const label = tableLabel('knowledge.domain.types', item.type) ?? tableLabel('knowledge.domain.materialTypes', item.type)
+  return label ? { label, unknownType: null } : { label: t('knowledge.domain.types.other'), unknownType: item.type }
+}
+
+/** The type filter's choices: each stored type once, named as the list names it, in reading order. */
+export function knowledgeTypeOptions(items: readonly KnowledgeItem[]) {
+  const labels = new Map<string, string>()
+  for (const item of items) {
+    if (labels.has(item.type)) continue
+    const type = knowledgeTypeLabel(item)
+    labels.set(item.type, type.unknownType ? `${type.label} · ${type.unknownType}` : type.label)
+  }
+  return [...labels].map(([value, label]) => ({ value, label }))
+    .sort((left, right) => left.label.localeCompare(right.label, currentLocale()))
+}
+
+export function projectMaterialTypeLabel(item: KnowledgeItem) {
+  return item.itemKind === 'relationship'
+    ? t('knowledge.domain.materialTypes.relationship')
+    : knowledgeTypeLabel(item).label
 }
 
 export function personalProjectIdForItem(item: KnowledgeItem | null) {
@@ -618,6 +633,7 @@ function searchableText(item: KnowledgeItem) {
     item.title,
     item.body,
     item.type,
+    knowledgeTypeLabel(item).label,
     quadrantLabel(item.originQuadrant),
     profileAspectLabel(item.profileAspect),
     item.reasoningSummary,

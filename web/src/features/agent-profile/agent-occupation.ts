@@ -1,13 +1,20 @@
 import { putJson } from "@/api/client";
+import { t } from "@/i18n";
+import { tableLabel } from "@/i18n/label-table";
 import { occupationEntry, occupationName } from "@/features/occupations/occupation-catalog";
 import type { AgentOccupation, AgentOccupationKey, ProjectAgentRecord } from "@/types";
 
 export const MAX_OCCUPATION_TAGS = 5;
 
-/** The space catalog's name for an occupation; its key until the catalog is read. */
+/**
+ * The space catalog's name for an occupation. Until the catalog is read (or
+ * when it cannot be), a built-in reads as its shipped name and any other key
+ * as a custom occupation: the key itself is never shown.
+ */
 export function occupationLabel(key: AgentOccupationKey) {
   const entry = occupationEntry(key);
-  return entry ? occupationName(entry) : key;
+  if (entry) return occupationName(entry);
+  return tableLabel("occupations.builtinNames", key) ?? t("occupations.customName");
 }
 
 /** Main role first, then the extra tags, without repeating the role. */

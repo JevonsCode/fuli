@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { t } from '@/i18n'
 
@@ -12,12 +12,19 @@ const props = withDefaults(defineProps<{
   resetKey?: unknown
   activeIndex?: number
   itemKey?: (item: T, index: number) => string | number
+  /**
+   * 'list': the list is its own fixed-height scroll box. 'page': the list
+   * grows with its rows and follows the page's scroll, so the page has one
+   * scrollbar; the header sticks to the top of the page.
+   */
+  scrollsWith?: 'list' | 'page'
 }>(), {
   minWidth: '100%',
   overscan: 8,
   resetKey: undefined,
   activeIndex: -1,
   itemKey: undefined,
+  scrollsWith: 'list',
 })
 
 defineSlots<{
@@ -27,12 +34,19 @@ defineSlots<{
   footer?: () => unknown
 }>()
 
+const root = ref<HTMLElement | null>(null)
 const scroller = ref<HTMLElement | null>(null)
 const header = ref<HTMLElement | null>(null)
+const canvas = ref<HTMLElement | null>(null)
+const page = ref<HTMLElement | null>(null)
 const scrollTop = ref(0)
 const viewportHeight = ref(640)
 const headerHeight = ref(0)
 let resizeObserver: ResizeObserver | null = null
+
+const pageScroll = computed(() => props.scrollsWith === 'page')
+// The element whose scroll moves the rows: the list's own box, or the page.
+const scrollElement = computed(() => (pageScroll.value ? page.value : scroller.value))
 
 const itemCount = computed(() => props.items.length)
 const indexWidth = computed(() => Math.max(3, String(itemCount.value).length))
@@ -64,11 +78,26 @@ const canvasStyle = computed(() => ({
 }))
 const headerStyle = computed(() => ({ minWidth: props.minWidth }))
 
-watch([scroller, header], ([element, headerElement]) => {
+function scrollingAncestor(element: HTMLElement) {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(node).overflowY)) return node
+  }
+  return document.scrollingElement instanceof HTMLElement ? document.scrollingElement : null
+}
+
+onMounted(() => {
+  if (pageScroll.value && root.value) page.value = scrollingAncestor(root.value)
+})
+
+watch([scrollElement, header], ([element, headerElement], _previous, onCleanup) => {
   resizeObserver?.disconnect()
   resizeObserver = null
   if (!element) return
   updateViewport()
+  if (pageScroll.value) {
+    element.addEventListener('scroll', updateViewport, { passive: true })
+    onCleanup(() => element.removeEventListener('scroll', updateViewport))
+  }
   if (typeof ResizeObserver !== 'function') return
   resizeObserver = new ResizeObserver(updateViewport)
   resizeObserver.observe(element)
@@ -82,14 +111,14 @@ watch(() => props.resetKey, async () => {
 
 watch(itemCount, async () => {
   await nextTick()
-  const element = scroller.value
+  const element = scrollElement.value
   if (!element) return
   const maximumScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
   if (element.scrollTop > maximumScrollTop) element.scrollTop = maximumScrollTop
   updateViewport()
 })
 
-watch([scroller, () => props.activeIndex], async ([element, activeIndex]) => {
+watch([scrollElement, () => props.activeIndex], async ([element, activeIndex]) => {
   if (!element || activeIndex < 0 || activeIndex >= itemCount.value) return
   await nextTick()
   scrollIndexIntoView(activeIndex)
@@ -101,38 +130,49 @@ function formatIndex(index: number) {
   return String(index).padStart(indexWidth.value, '0')
 }
 
+// Where the first row sits in the scrolling element's content: 0 in the
+// list's own box (the header scrolls with it), the rows' offset in the page.
+function rowsOffset(element: HTMLElement) {
+  if (!pageScroll.value || !canvas.value) return 0
+  return canvas.value.getBoundingClientRect().top - element.getBoundingClientRect().top + element.scrollTop
+}
+
 function updateViewport() {
-  const element = scroller.value
+  const element = scrollElement.value
   if (!element) return
-  scrollTop.value = element.scrollTop
+  scrollTop.value = Math.max(0, element.scrollTop - rowsOffset(element))
   viewportHeight.value = element.clientHeight || viewportHeight.value
   headerHeight.value = header.value?.offsetHeight ?? 0
 }
 
 function onScroll(event: Event) {
+  if (pageScroll.value) return
   const element = event.currentTarget as HTMLElement
   scrollTop.value = element.scrollTop
 }
 
 function scrollToStart() {
-  const element = scroller.value
+  const element = scrollElement.value
   if (!element) return
-  element.scrollTop = 0
-  scrollTop.value = 0
+  // In the page, only bring the list's start back into view; the content above it stays.
+  const start = pageScroll.value ? Math.max(0, rowsOffset(element) - headerHeight.value) : 0
+  if (!pageScroll.value || element.scrollTop > start) element.scrollTop = start
+  updateViewport()
 }
 
 function scrollIndexIntoView(index: number) {
-  const element = scroller.value
+  const element = scrollElement.value
   if (!element || index < 0 || index >= itemCount.value) return
-  const rowTop = index * props.rowHeight
+  // The sticky header covers the page's top edge; in the list's own box it scrolls away.
+  const topInset = pageScroll.value ? headerHeight.value : 0
+  const bottomInset = pageScroll.value ? 0 : headerHeight.value
+  const rowTop = rowsOffset(element) + index * props.rowHeight
   const rowBottom = rowTop + props.rowHeight
-  const visibleTop = element.scrollTop
-  const visibleBottom = visibleTop + element.clientHeight - headerHeight.value
-  if (rowTop < visibleTop) element.scrollTop = rowTop
-  else if (element.clientHeight && rowBottom > visibleBottom) {
-    element.scrollTop = rowBottom - element.clientHeight + headerHeight.value
+  if (rowTop - topInset < element.scrollTop) element.scrollTop = rowTop - topInset
+  else if (element.clientHeight && rowBottom > element.scrollTop + element.clientHeight - bottomInset) {
+    element.scrollTop = rowBottom - element.clientHeight + bottomInset
   }
-  scrollTop.value = element.scrollTop
+  updateViewport()
 }
 
 defineExpose({
@@ -142,7 +182,7 @@ defineExpose({
 </script>
 
 <template>
-  <section class="virtual-directory-list" :aria-label="label">
+  <section ref="root" class="virtual-directory-list" :class="{ 'is-page-scroll': pageScroll }" :aria-label="label">
     <div
       ref="scroller"
       class="virtual-directory-list__scroller"
@@ -157,7 +197,7 @@ defineExpose({
         <slot name="header" />
       </div>
 
-      <div class="virtual-directory-list__canvas" :style="canvasStyle">
+      <div ref="canvas" class="virtual-directory-list__canvas" :style="canvasStyle">
         <div
           v-for="index in visibleIndices"
           :key="itemKey?.(items[index] as T, index) ?? index"
@@ -273,6 +313,18 @@ defineExpose({
   font-size: 12px;
   line-height: 1;
   pointer-events: none;
+}
+
+/* Page scroll: the list is as tall as its rows, the page scrolls, the header
+   sticks to the page's top and the position stays at the window's bottom.
+   clip (not hidden) so the sticky header still follows the page. */
+.virtual-directory-list.is-page-scroll { height: auto; overflow: clip; }
+.is-page-scroll .virtual-directory-list__scroller { height: auto; overflow: visible; }
+.is-page-scroll .virtual-directory-list__position {
+  position: sticky;
+  right: auto;
+  width: fit-content;
+  margin: -38px 12px 0 auto;
 }
 
 .virtual-directory-list__position strong {

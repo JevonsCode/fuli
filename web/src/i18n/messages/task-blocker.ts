@@ -22,14 +22,6 @@ export const taskBlockerMessages = {
       session_reply: '你在同一会话里回复了',
       attention_answer: '你在待决策里答复了',
     },
-    codes: {
-      worker_authentication_required: '执行这个任务的客户端需要先登录。',
-      worker_authentication_unknown: '无法确认执行客户端是否已登录。',
-      worker_workspace_untrusted: '执行客户端还没有信任这个工作目录。',
-      worker_model_unavailable: '选定的模型当前不可用。',
-      worker_model_strategy_unmapped: '执行客户端没有和这个任务的模型策略对应的模型。',
-      worker_session_stopped: '执行这个任务的会话已经停止。',
-    },
     clear: {
       action: '标记为已解除',
       body: '任务会回到运行中，相关的待决策请求一并关闭。阻塞记录和你的备注会留在任务历史里。',
@@ -68,14 +60,6 @@ export const taskBlockerMessages = {
       session_activity: 'the same session continued the work',
       session_reply: 'you replied in the same session',
       attention_answer: 'you answered it in Decisions',
-    },
-    codes: {
-      worker_authentication_required: 'The client running this task needs to sign in first.',
-      worker_authentication_unknown: 'Could not confirm that the client running this task is signed in.',
-      worker_workspace_untrusted: 'The client running this task does not trust this folder yet.',
-      worker_model_unavailable: 'The selected model is not available.',
-      worker_model_strategy_unmapped: 'The client has no model matching this task\'s model strategy.',
-      worker_session_stopped: 'The session running this task stopped.',
     },
     clear: {
       action: 'Mark as unblocked',

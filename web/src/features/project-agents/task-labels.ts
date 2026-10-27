@@ -1,4 +1,5 @@
 import { currentLocale, t } from '@/i18n'
+import { tableLabel } from '@/i18n/label-table'
 import { formatDateTime } from '@/lib/date-time'
 import type {
   ConversationSourceApplication,
@@ -32,27 +33,25 @@ export function policyLabel(policy: ProjectAgentExecutorPolicy | null | undefine
 }
 
 /** A reported enum value through its label table; an unknown value stays as reported unless the caller names it. */
-function tableLabel(table: string, value: string, unrecognized = value) {
-  const key = `projectAgents.${table}.${value}`
-  const translated = t(key)
-  return translated === key ? unrecognized : translated
+function projectAgentLabel(table: string, value: string, unrecognized = value) {
+  return tableLabel(`projectAgents.${table}`, value) ?? unrecognized
 }
 
 /** The one label table for task and work statuses (Agents, Overview, Bole). */
 export function taskStatusLabel(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string, options: { unrecognized?: string } = {}) {
-  return tableLabel('taskStatus', status, options.unrecognized)
+  return projectAgentLabel('taskStatus', status, options.unrecognized)
 }
 
 export function recruitmentStatusLabel(status: string) {
-  return tableLabel('recruitmentStatus', status)
+  return projectAgentLabel('recruitmentStatus', status)
 }
 
 export function recruitmentPositionLabel(positionKind: string) {
-  return tableLabel('recruitmentPosition', positionKind)
+  return projectAgentLabel('recruitmentPosition', positionKind)
 }
 
 export function memoryScopeLabel(scope: string | null | undefined) {
-  return scope ? tableLabel('memoryScopes', scope) : t('projectAgents.notReported')
+  return scope ? projectAgentLabel('memoryScopes', scope) : t('projectAgents.notReported')
 }
 
 export type StatusTone = 'danger' | 'warning' | 'active' | 'success' | 'neutral'
@@ -92,11 +91,11 @@ export function taskStatusChipTone(status: ProjectAgentTaskStatus | ProjectAgent
 }
 
 export function sourceLabel(source: ConversationSourceApplication | null | undefined) {
-  return source ? t(`projectAgents.clients.${source}`) : t('projectAgents.notReported')
+  return source ? projectAgentLabel('clients', source) : t('projectAgents.notReported')
 }
 
 export function participantRoleLabel(role: string | null | undefined) {
-  return role ? tableLabel('participantRoles', role) : t('projectAgents.notReported')
+  return role ? projectAgentLabel('participantRoles', role) : t('projectAgents.notReported')
 }
 
 export function actualExecution(task: ProjectAgentTaskRecord): ProjectAgentActualExecution | null {

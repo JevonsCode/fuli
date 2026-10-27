@@ -16,7 +16,8 @@ import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
 import AgentName from '@/features/agent-profile/AgentName.vue'
 import { agentResponsibility, fuzzyMatch } from '@/features/agent-profile/profile-model'
-import { taskStatusLabel, taskStatusTone } from '@/features/project-agents/task-labels'
+import { recruitmentStatusLabel, taskStatusLabel, taskStatusTone } from '@/features/project-agents/task-labels'
+import TaskReason from '@/features/project-agents/TaskReason.vue'
 import { useWorkbenchToolbarActions } from './workbench-toolbar'
 
 type UnknownRecord = Record<string, unknown>
@@ -344,8 +345,8 @@ function formattedDate(value: string) {
         <ol v-else-if="filteredRecruitments.length" class="bole-timeline m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4">
           <li v-for="recruitment in filteredRecruitments" :key="recruitment.id" class="bole-card bole-recruitment-card">
             <div class="bole-recruitment-identity"><strong><AgentName :space-id="personalSpaceId" :agent-id="recruitment.agentId" :name="agentName(recruitment.agentId)" /></strong><small>{{ typeLabel(recruitment.positionKind) }} · {{ projectName(recruitment.projectId) }}</small></div>
-            <p class="bole-recruitment-reason">{{ recruitment.reason }}</p>
-            <p class="bole-recruitment-meta"><span>{{ recruitment.workKind || recruitment.status }}</span><time :datetime="recruitment.createdAt">{{ formattedDate(recruitment.createdAt) }}</time></p>
+            <TaskReason class="bole-recruitment-reason" :reason="recruitment.reason" :fallback="t('projectAgents.notReported')" />
+            <p class="bole-recruitment-meta"><span>{{ recruitment.workKind || recruitmentStatusLabel(recruitment.status) }}</span><time :datetime="recruitment.createdAt">{{ formattedDate(recruitment.createdAt) }}</time></p>
           </li>
         </ol>
         <p v-else class="ui-empty m-0 rounded-lg border border-dashed bg-card" data-bole-empty>{{ t(filtersActive ? 'employees.bole.noMatch' : 'employees.bole.noRecruitments') }}</p>

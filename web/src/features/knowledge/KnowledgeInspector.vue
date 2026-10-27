@@ -20,6 +20,7 @@ import {
   humanChangeStatusLabel,
   isManagementKnowledgeItem,
   knowledgeItems,
+  knowledgeTypeLabel,
   knowledgeReviewState,
   personalProjectIdForItem,
   profileAspectLabel,
@@ -28,6 +29,7 @@ import {
   quadrantLabel,
   reviewStateLabel,
 } from './model'
+import { relationVisual } from './relation-visuals'
 import { useConversationLauncherConfiguration } from './conversation-launcher-settings'
 import type {
   ConversationLauncherConfiguration,
@@ -253,7 +255,7 @@ function preferenceScopeLabel(item: KnowledgeItem) {
       </section>
 
       <dl class="inspector-meta">
-        <div><dt>{{ t('knowledge.workspace.inspector.fields.type') }}</dt><dd>{{ item.type }}</dd></div>
+        <div><dt>{{ t('knowledge.workspace.inspector.fields.type') }}</dt><dd :title="item.type">{{ knowledgeTypeLabel(item).label }}</dd></div>
         <div v-if="!managementItem"><dt>{{ t('knowledge.workspace.inspector.fields.confirmationStatus') }}</dt><dd>{{ reviewStateLabel(item) }}</dd></div>
         <template v-if="!managementItem && showsAgentConfirmationProgress(item)">
           <div class="inspector-auto-confirmation">
@@ -343,7 +345,7 @@ function preferenceScopeLabel(item: KnowledgeItem) {
         <h4 class="inspector-subtitle">{{ t('knowledge.workspace.inspector.relations') }}</h4>
         <div class="inspector-relations">
           <div v-for="edge in related" :key="edge.id" class="inspector-relation">
-            <strong class="relation-type">{{ edge.type }}</strong>
+            <strong class="relation-type" :title="edge.type">{{ relationVisual(edge.type).label }}</strong>
             <p class="relation-target">{{ edge.fact || t('knowledge.workspace.inspector.relationshipFallback') }}</p>
           </div>
         </div>

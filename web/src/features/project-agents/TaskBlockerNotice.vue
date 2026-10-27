@@ -7,7 +7,9 @@ import type { ProjectAgentTaskBlocker } from '@/types'
 import UiChip from '@/ui/UiChip.vue'
 import { useClientLinks } from '@/features/client-links/client-links-store'
 import { sessionLinksFor } from '@/features/client-links/model'
+import TaskReason from './TaskReason.vue'
 import { blockedFor, blockerReasonText } from './task-blocker'
+import { taskReason } from './task-reason'
 import { formatDate, sessionHref, sourceLabel, taskStatusChipTone, taskStatusLabel } from './task-labels'
 
 // A blocked task. On cards it is one calm line: what it waits for and for how
@@ -26,6 +28,8 @@ const props = defineProps<{
 
 const now = useNow()
 const reason = computed(() => blockerReasonText(props.blocker))
+// The stored text, as the one-line card's tooltip when it is not already what the line says.
+const rawReason = computed(() => taskReason(props.blocker.reason)?.raw ?? undefined)
 const duration = computed(() => blockedFor(props.blocker, now.value))
 
 const links = useClientLinks()
@@ -60,13 +64,13 @@ async function copySession() {
 <template>
   <p v-if="compact" class="task-blocker-line" :aria-label="t('taskBlocker.label')" data-task-blocker>
     <UiChip v-if="withStatus" :tone="taskStatusChipTone('blocked')" data-blocker-status>{{ taskStatusLabel('blocked') }}</UiChip>
-    <span class="task-blocker-line-reason" :title="reason" data-blocker-reason>{{ reason }}</span>
+    <span class="task-blocker-line-reason" :title="rawReason ?? reason" data-blocker-reason>{{ reason }}</span>
     <span v-if="duration" class="task-blocker-age" :title="blocker.since ? formatDate(blocker.since) : undefined" data-blocker-age>
       {{ t('taskBlocker.blockedFor', { duration }) }}
     </span>
   </p>
   <section v-else class="task-blocker" :aria-label="t('taskBlocker.label')" data-task-blocker>
-    <p class="task-blocker-reason" data-blocker-reason>{{ reason }}</p>
+    <TaskReason class="task-blocker-reason" :reason="blocker.reason" :fallback="t('taskBlocker.noReason')" data-blocker-reason />
     <p class="task-blocker-meta">
       <span data-blocker-since>{{ blocker.since ? t('taskBlocker.since', { time: formatDate(blocker.since) }) : t('taskBlocker.sinceUnknown') }}</span>
       <span data-blocker-where>{{ where }}</span>

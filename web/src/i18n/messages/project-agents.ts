@@ -77,7 +77,7 @@ export const projectAgentMessages = {
     loading: '正在读取项目 Agent 列表…',
     loadError: '项目 Agent 暂时无法读取。',
     emptyTitle: '还没有项目 Agent',
-    emptyCopy: '开始项目任务后，AR 会按需安排 Agent。',
+    emptyCopy: '开始项目任务后，Bole 会按需安排 Agent。',
     noMatchTitle: '没有匹配的 Agent',
     noMatchCopy: '调整项目、状态或搜索条件。',
     stats: {
@@ -91,7 +91,7 @@ export const projectAgentMessages = {
       autoGrow: '新员工自动归组',
       unavailableMember: '成员不可用', removeUnavailable: '取消勾选以移除',
       autoGrowMeta: '新招的长期 Agent 自动加入小组，第一位担任组长。',
-      hr: 'AR', manager: '项目经理', lead: '项目总负责人', noLead: '待配置项目总负责人',
+      hr: 'Agent 资源', manager: '项目经理', lead: '项目总负责人', noLead: '待配置项目总负责人',
       unavailable: '项目总负责人不可用，请完成交接',
       summary: '日常找组长沟通，成员按职责协作。',
       members: '小组成员', edit: '管理小组', save: '保存小组',
@@ -116,7 +116,7 @@ export const projectAgentMessages = {
     agentType: {
       coordinator: '协调',
       durable: '长期',
-      hr: 'AR',
+      hr: 'Agent 资源',
       temporary: '临时',
     },
     status: {
@@ -199,7 +199,7 @@ export const projectAgentMessages = {
       fulfilled: '已完成',
       cancelled: '已取消',
       blocked: '受阻',
-      no_hr: '没有 AR Agent',
+      no_hr: '没有负责 Agent 资源的 Agent',
     },
     recruitmentPosition: { durable: '长期岗位', temporary: '临时岗位' },
     memoryScopes: { reviewed_agent: '经审阅的 Agent 记忆', task_only: '仅限任务' },
@@ -339,7 +339,7 @@ export const projectAgentMessages = {
     },
     recruitment: {
       awaiting: '{count} 个待确认',
-      hr: 'AR Agent',
+      hr: 'Agent 资源',
       trigger: '触发客户端',
       reason: '招聘原因',
       time: '时间',
@@ -459,7 +459,7 @@ export const projectAgentMessages = {
       incomplete: 'Incomplete', failed: 'Failed', no_change: 'No changes', unreported: 'Summary missing', running: 'In progress',
     },
     team: {
-      hr: 'AR', manager: 'Project manager', lead: 'Project lead', noLead: 'Project lead required',
+      hr: 'Agent resources', manager: 'Project manager', lead: 'Project lead', noLead: 'Project lead required',
       autoGrow: 'Add new employees to the team',
       unavailableMember: 'Unavailable member', removeUnavailable: 'Uncheck to remove',
       autoGrowMeta: 'New long-term Agents join the team; the first becomes lead.',
@@ -489,7 +489,7 @@ export const projectAgentMessages = {
     loading: 'Loading the project Agent directory…',
     loadError: 'Project Agents are temporarily unavailable.',
     emptyTitle: 'No project Agents yet',
-    emptyCopy: 'Start a project task and AR will staff an Agent.',
+    emptyCopy: 'Start a project task and Bole will staff an Agent.',
     noMatchTitle: 'No matching Agents',
     noMatchCopy: 'Change the project, status, or search filters.',
     stats: {
@@ -517,7 +517,7 @@ export const projectAgentMessages = {
     agentType: {
       coordinator: 'Coordinator',
       durable: 'Durable',
-      hr: 'AR',
+      hr: 'Agent resources',
       temporary: 'Temporary',
     },
     status: {
@@ -600,7 +600,7 @@ export const projectAgentMessages = {
       fulfilled: 'Fulfilled',
       cancelled: 'Cancelled',
       blocked: 'Blocked',
-      no_hr: 'No AR Agent',
+      no_hr: 'No Agent-resources Agent',
     },
     recruitmentPosition: { durable: 'Durable role', temporary: 'Temporary role' },
     memoryScopes: { reviewed_agent: 'Reviewed Agent memory', task_only: 'Task only' },
@@ -740,7 +740,7 @@ export const projectAgentMessages = {
     },
     recruitment: {
       awaiting: '{count} awaiting confirmation',
-      hr: 'AR Agent',
+      hr: 'Agent resources',
       trigger: 'Trigger client',
       reason: 'Recruitment reason',
       time: 'Time',

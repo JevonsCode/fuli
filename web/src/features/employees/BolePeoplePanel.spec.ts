@@ -238,7 +238,7 @@ describe('Bole people panel', () => {
     await wrapper.get('.bole-search').setValue('发布')
     expect(wrapper.get('.bole-agent-card').text()).toContain('Jefa')
     await wrapper.get('.bole-clear').trigger('click')
-    const roleButton = wrapper.findAll('.bole-role-filters button').find((button) => button.text().includes('AR Agent'))!
+    const roleButton = wrapper.findAll('.bole-role-filters button').find((button) => button.text().includes('Agent 资源'))!
     await roleButton.trigger('click')
     expect(wrapper.findAll('.bole-agent-card')).toHaveLength(1)
     expect(wrapper.get('.bole-agent-card').text()).toContain('Bole')
