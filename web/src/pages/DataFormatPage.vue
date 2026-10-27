@@ -14,7 +14,7 @@ import {
 } from '@/features/data-format/model'
 import StoreRestore from '@/features/data-format/StoreRestore.vue'
 import { t } from '@/i18n'
-import { UiEmpty } from '@/ui'
+import { UiEmpty, UiNotice } from '@/ui'
 
 // 数据格式迁移 (rec#17 D-09 part 2): one confirm screen. Each store waiting for
 // a person is a card with its step, versions, record count and sample IDs;
@@ -156,7 +156,7 @@ onBeforeUnmount(() => reading?.abort())
       </Card>
 
       <template v-else-if="plan">
-        <p v-if="stale" class="data-format-notice" role="alert">{{ t('dataFormat.stale') }}</p>
+        <UiNotice v-if="stale" tone="error">{{ t('dataFormat.stale') }}</UiNotice>
         <section v-if="outcome" class="data-format-results" :aria-label="t('dataFormat.results')" role="status">
           <p v-for="result in outcome.results" :key="result.label" :data-result="result.status">
             <strong>{{ result.label }}</strong> {{ resultText(result) }}
@@ -419,7 +419,6 @@ code {
   gap: 12px;
 }
 
-.data-format-notice,
 .data-format-results {
   margin: 0;
   padding: 12px 16px;

@@ -8,7 +8,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { Button } from '@/components/ui/button'
-import UiNotice from '@/ui/UiNotice.vue'
+import { UiEmpty, UiNotice } from '@/ui'
 import { subscribeChatUpdates } from '@/features/project-agents/task-updates'
 import {
   appendChatPage, listChats, listThreads, readChat, readThread,
@@ -341,6 +341,12 @@ const empty = computed(() => threadsState.value === 'ready' && chatsState.value 
 const listsFailed = computed(() => threadsState.value === 'failed' && chatsState.value === 'failed' && !threads.value.length && !chats.value.length && !accessNotice.value)
 function retryLists() { void loadThreads(); void loadChats() }
 const hasMoreChats = computed(() => Boolean(localNext.value || remoteNext.value))
+// A few conversations fill less than one row on a wide screen.
+const SPARSE_CONVERSATIONS = 3
+const sparse = computed(() => {
+  const count = threads.value.length + chats.value.length
+  return count > 0 && count <= SPARSE_CONVERSATIONS && !hasMoreChats.value
+})
 // A wide screen shows a thread's participants open; a phone keeps them folded.
 // It follows the breakpoint when the window is resized.
 const narrowQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(max-width: 860px)') : null
@@ -435,10 +441,12 @@ const lastFrom = (item: RoundtableThreadSummary) => item.last?.from ?? t('roundt
       <BackLink v-if="hasSelection" class="roundtable-back" :to="listPath" :from="openedFromList" data-roundtable-back>{{ t('roundtable.back') }}</BackLink>
       <nav v-else ref="listElement" class="ui-conversation-list roundtable-list" :aria-label="t('roundtable.threads')">
         <div class="ui-conversation-head">
-          <span role="status" tabindex="-1" data-roundtable-list-head>{{ t('roundtable.count', { count: threads.length + chats.length }) }}</span>
-          <span v-if="threads.length" class="ui-meta">{{ t('roundtable.latest50') }}</span>
+          <span class="roundtable-list-count">
+            <span role="status" tabindex="-1" data-roundtable-list-head>{{ t('roundtable.count', { count: threads.length + chats.length }) }}</span>
+            <span v-if="threads.length" class="ui-meta">{{ t('roundtable.latest50') }}</span>
+          </span>
+          <Button size="sm" data-roundtable-start @click="starting = true">{{ t('roundtable.start.open') }}</Button>
         </div>
-        <Button class="roundtable-start" size="sm" data-roundtable-start @click="starting = true">{{ t('roundtable.start.open') }}</Button>
         <GrowthLoading v-if="listLoading" variant="compact" :label="t('roundtable.loading')" />
         <p v-else-if="empty" class="ui-meta roundtable-remote-note">{{ t('roundtable.empty') }}</p>
         <p v-if="remoteUnavailable" class="ui-meta roundtable-remote-note">{{ t('roundtable.chat.remoteUnavailable') }}</p>
@@ -469,6 +477,10 @@ const lastFrom = (item: RoundtableThreadSummary) => item.last?.from ?? t('roundt
             <strong class="ui-conversation-item-title">{{ item.subject }}</strong>
             <span v-if="item.last" class="ui-conversation-item-sub">{{ lastFrom(item) }}：{{ item.last.body }}</span>
           </RouterLink>
+          <!-- A short list leaves the row half empty: the next slot invites a new conversation. -->
+          <UiEmpty v-if="sparse" class="roundtable-sparse" icon="chat" :text="t('roundtable.start.hint')">
+            <Button size="sm" variant="outline" data-roundtable-start-tile @click="starting = true">{{ t('roundtable.start.open') }}</Button>
+          </UiEmpty>
         </div>
         <p v-if="localMoreFailed" role="alert" class="roundtable-remote-note">{{ t('roundtable.localMoreFailed') }}</p>
         <Button v-if="hasMoreChats" class="roundtable-more" size="sm" variant="ghost" :loading="loadingMoreChats"
@@ -504,10 +516,11 @@ const lastFrom = (item: RoundtableThreadSummary) => item.last?.from ?? t('roundt
 .roundtable-empty p { margin-top: 8px; color: var(--color-muted); }
 .roundtable-empty-action { margin-top: 16px; }
 .roundtable-notice { margin: 0 0 8px; }
-.roundtable-waiting { color: var(--color-warning); font-weight: 600; }
+.roundtable-waiting { color: var(--color-warning); font-weight: var(--weight-medium); }
 .roundtable-remote-note { margin: 0; }
 .roundtable-more { justify-self: start; }
-.roundtable-start { justify-self: start; }
+.roundtable-list-count { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; color: var(--color-ink-soft); font-size: var(--text-control); }
+.roundtable-sparse { min-height: 100%; }
 .roundtable-back { align-self: flex-start; color: var(--color-muted); font-size: 13px; text-decoration: none; }
 .roundtable-back:hover { color: var(--color-ink); }
 .roundtable-detail-state { display: grid; align-content: start; gap: 12px; padding: 16px; }

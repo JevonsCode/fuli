@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 // The rest are controls deliberately deferred to their own components (tabs,
 // toggle groups, list rows, cards, pickers).
 const BASELINE = { button: 27, switch: 3 }
-const HEAVY_WEIGHT_BASELINE = 122
+const HEAVY_WEIGHT_BASELINE = 114
 const templates = import.meta.glob<string>('../**/*.vue', { query: '?raw', import: 'default', eager: true })
 const outsideDesignSystem = Object.entries(templates).filter(([file]) => !file.startsWith('./')).map(([, source]) => source)
 // The classes the shared Button replaced. A template is where a class gets
@@ -39,7 +39,8 @@ describe('design system adoption', () => {
   // bold and flattens the hierarchy. This count may only go down: move a rule
   // to var(--weight-strong) or var(--weight-medium) when a page is touched.
   // 2026-10-28: 122 after the shared components moved to the scale (the brand
-  // wordmark keeps its 700).
+  // wordmark keeps its 700). 114 after the wide-layouts pass moved the Agent
+  // card, 知识整理 and 项目资料 rules to the tokens.
   it('never adds a weight heavier than the type scale', () => {
     const styles = import.meta.glob<string>(['../**/*.vue', '../**/*.css', '../../styles.css'], { query: '?raw', import: 'default', eager: true })
     const heavy = Object.values(styles).reduce((sum, source) => sum + (source.match(/font-weight:\s*(6[1-9]\d|[7-9]\d\d|bold)/g)?.length ?? 0), 0)

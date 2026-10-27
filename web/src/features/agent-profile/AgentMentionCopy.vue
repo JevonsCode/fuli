@@ -99,7 +99,7 @@ onBeforeUnmount(() => clearTimeout(reset));
 .agent-mention { display: inline-flex; flex: 0 0 auto; }
 .agent-mention-copy.is-copied,
 .agent-mention-phrasing.is-copied .agent-mention-state { color: var(--color-success); }
-.agent-mention-title { margin: 0 0 8px; color: var(--color-ink); font-size: 13px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; }
+.agent-mention-title { margin: 0 0 8px; color: var(--color-ink); font-size: 13px; font-weight: var(--weight-strong); line-height: 1.5; overflow-wrap: anywhere; }
 .agent-mention-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .agent-mention-phrasing {
   width: 100%; height: auto; justify-content: space-between; gap: 10px; padding: 8px 10px;
@@ -109,6 +109,6 @@ onBeforeUnmount(() => clearTimeout(reset));
 .agent-mention-phrasing:hover:not(:disabled) { border-color: var(--color-border-strong); background: var(--color-surface-hover); }
 .agent-mention-text { min-width: 0; font-family: var(--font-mono); font-size: 12px; font-weight: 500; line-height: 1.55; overflow-wrap: anywhere; }
 .agent-mention-rest { color: var(--color-faint); }
-.agent-mention-state { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; color: var(--color-muted); font-size: 12px; font-weight: 550; }
+.agent-mention-state { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; color: var(--color-muted); font-size: 12px; font-weight: var(--weight-medium); }
 .agent-mention-hint { margin: 8px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 </style>

@@ -330,6 +330,7 @@ async function openReplacement(item: KnowledgeItem) {
       <!-- @vue-generic {import('@/types').KnowledgeItem} -->
       <VirtualDirectoryList
         class="organizer-directory"
+        scrolls-with="page"
         :items="visibleItems"
         :row-height="ROW_HEIGHT"
         :active-index="selectedItemIndex"
@@ -430,10 +431,9 @@ async function openReplacement(item: KnowledgeItem) {
 </template>
 
 <style scoped>
+/* The page is the one scroll container: the table grows with its rows and
+   its header sticks to the top of the page (no scroll box inside the page). */
 .knowledge-organizer {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
   padding-bottom: 20px;
   scrollbar-gutter: stable;
 }
@@ -441,11 +441,9 @@ async function openReplacement(item: KnowledgeItem) {
 /* One centred work canvas (D-03); an item opens in a quick look over it. */
 .organizer-canvas {
   display: flex;
-  flex: 1;
   flex-direction: column;
   gap: 12px;
   width: 100%;
-  min-height: 0;
   max-width: var(--layout-max);
   margin-inline: auto;
 }
@@ -455,13 +453,11 @@ async function openReplacement(item: KnowledgeItem) {
 .organizer-result-summary { color: var(--color-muted); font-size: 12px; white-space: nowrap; }
 
 .organizer-layout {
-  min-height: 0;
-  flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-control);
-  overflow: hidden;
+  overflow: clip;
   background: var(--color-surface);
 }
 
@@ -486,7 +482,7 @@ async function openReplacement(item: KnowledgeItem) {
   color: var(--color-muted);
   background: var(--color-surface-subtle);
   font-size: 12px;
-  font-weight: 680;
+  font-weight: var(--weight-medium);
 }
 
 .organizer-row {
@@ -527,8 +523,8 @@ async function openReplacement(item: KnowledgeItem) {
 
 .organizer-item-copy strong {
   color: var(--color-ink);
-  font-size: 12px;
-  font-weight: 630;
+  font-size: var(--text-control);
+  font-weight: var(--weight-strong);
 }
 
 .organizer-item-copy small,
@@ -544,7 +540,7 @@ async function openReplacement(item: KnowledgeItem) {
   border-radius: 999px;
   padding: 4px 7px;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
 }
 
