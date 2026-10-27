@@ -95,7 +95,8 @@ export function preferenceSnapshot(value) {
 
 // A complete result as it is, plus the revision a later delta can name.
 // `shown` is null when this session can never confirm the frame, and an empty
-// set never needs a base: both stay exactly the uncached result.
+// set (outside a bounded frame) never needs a base: both stay exactly the
+// uncached result.
 export function completePreferenceFrame(value, shown) {
   return withRevision(value, preferenceSnapshot(value), shown);
 }
@@ -166,8 +167,11 @@ export function applySceneSwitchSnapshot(value, frame, base, scene) {
   return { ...listed, units, snapshotHash: contentHash({ scopeHash: listed.scopeHash, units }) };
 }
 
+// An empty set needs no base, except in a bounded frame that leaves every
+// preference out (rec#11 D-72): its revision is the base the next delta names.
 function withRevision(value, snapshot, shown) {
-  const revision = shown && snapshot?.preferences.length ? uniqueRevision(snapshot.snapshotHash, shown) : null;
+  const based = snapshot?.preferences.length || Object.hasOwn(value, 'preferences_omitted');
+  const revision = shown && based ? uniqueRevision(snapshot.snapshotHash, shown) : null;
   return revision ? withPreferenceScope({ ...value, revision }, value[SCOPE]) : value;
 }
 

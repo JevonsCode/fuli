@@ -25,6 +25,8 @@ export function turnStart(transcriptPath) {
 //   sourceApplication, adapter  the Agent and its native transcript adapter
 //   unconfirmed  bilingual sentence: why this turn's ownership is not confirmed
 //   resolution   what the refreshed task's token can and cannot do for this turn
+//   inlineChars  the host's inline limit for the refreshed context, if it has one
+//     (entry-inline-budget.js)
 //   continuedInTurn(input, token, from)  the Agent's evidence of an explicit
 //     continuation in its native history; without one no turn is ever proven
 
@@ -34,7 +36,7 @@ export function turnStart(transcriptPath) {
 // claims that this turn belongs to that task. Without a readable owned task it
 // establishes none. onCurrentTask names the task found.
 export async function refreshCurrentTaskInPlace(event, input, invoke,
-  { sourceApplication, unconfirmed, resolution }, { delivery, currentTask, onCurrentTask }) {
+  { sourceApplication, unconfirmed, resolution, inlineChars = null }, { delivery, currentTask, onCurrentTask }) {
   let refresh;
   const lookup = async (...parameters) => {
     const task = await currentTask?.(...parameters);
@@ -48,7 +50,7 @@ export async function refreshCurrentTaskInPlace(event, input, invoke,
     refresh = { status: 'unreadable', reason: error?.code === 'preference_recovery_blocked' ? error.message : null };
   }
   return refresh.status === 'refreshed' ? preferenceHookOutput(refresh.context, event, input, delivery, sourceApplication,
-    `${unconfirmed} ${resolution} ${START_NEW_WORK} ${TASK_RULES_ON_DEMAND}`, true)
+    `${unconfirmed} ${resolution} ${START_NEW_WORK} ${TASK_RULES_ON_DEMAND}`, true, { inlineChars })
     : { hookSpecificOutput: { hookEventName: event, additionalContext: noValidContext(refresh) } };
 }
 

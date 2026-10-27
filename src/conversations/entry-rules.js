@@ -6,6 +6,8 @@ import { CONVERSATION_GUIDANCE } from '../graphiti/agent-conversations.js';
 import { PROJECT_AGENT_CONTINUITY_GUIDANCE } from '../graphiti/project-agent-task-entry.js';
 import { TEAM_GUIDANCE } from '../graphiti/project-agent-team-context.js';
 import { CONTINUATION_GUIDANCE, RECEIPT_GUIDANCE } from '../agents/identity-receipt.js';
+import { MANAGER_ENTRY_GUIDANCE, MANAGER_ENTRY_SUMMARY } from '../employees/task-entry.js';
+import { AUTO_JUDGMENT_GUIDANCE, AUTO_JUDGMENT_SUMMARY } from '../graphiti/task-entry-preferences.js';
 
 const MEMORY_GUIDANCE = 'Use get_project_agent_memory before merging or checkpointing working memory; this preview omits history and may truncate notes.';
 export const DETAILS_GUIDANCE = 'Read get_project_team for staffing and list_project_agent_tasks for task history when needed.';
@@ -35,8 +37,11 @@ const PREFERENCE_DELIVERY_GUIDANCE = Object.freeze({
 const GLOBAL_MEMORY_GUIDANCE = 'Global layer of the same employee. Read get_project_agent_memory with personalProjectId: null before merging or checkpointing it; this preview omits history and may truncate notes.';
 
 // Task-independent rule text shared by every task entry. The hot path sends a
-// versioned reference; the full text stays readable as one MCP resource.
+// versioned reference; the full text stays readable as one MCP resource, and
+// each section as its own, the form a reference names: an MCP client matches
+// a resource by its whole URI, so a #fragment never resolved (rec#11 D-72).
 export const ENTRY_RULES_URI = 'fuli://rules/task-entry';
+export const ENTRY_RULES_SECTION_TEMPLATE = `${ENTRY_RULES_URI}/{section}`;
 
 let rules = null;
 
@@ -51,14 +56,19 @@ export function entryRules() {
       global_memory_guidance: GLOBAL_MEMORY_GUIDANCE, continuation_guidance: CONTINUATION_GUIDANCE,
       scope_guidance: { ...GENERIC_SCOPE_GUIDANCE }, receipt_guidance: RECEIPT_GUIDANCE,
       details_guidance: DETAILS_GUIDANCE, checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE,
+      manager_guidance: MANAGER_ENTRY_GUIDANCE, judgment_guidance: AUTO_JUDGMENT_GUIDANCE,
       preference_delivery: { ...PREFERENCE_DELIVERY_GUIDANCE } };
     rules = Object.freeze({ sections, version: contentHash(sections).slice(0, 12) });
   }
   return rules;
 }
 
+// A section whose rule an ordinary task acts on keeps that one sentence inline.
+const SECTION_SUMMARIES = () => ({ manager_guidance: MANAGER_ENTRY_SUMMARY, judgment_guidance: AUTO_JUDGMENT_SUMMARY });
+
 export function entryRulesReference(section) {
-  return { rules: `${ENTRY_RULES_URI}#${section}`, version: entryRules().version };
+  const summary = SECTION_SUMMARIES()[section];
+  return { ...(summary ? { summary } : {}), rules: `${ENTRY_RULES_URI}/${section}`, version: entryRules().version };
 }
 
 // True only when every static key is present with exactly the shared text.
@@ -74,10 +84,20 @@ export function ruleTextView(value, section) {
 
 export function entryRulesMarkdown() {
   const { sections, version } = entryRules();
-  const block = (title, entries) => [`## ${title}`, ...entries.map(([key, text]) =>
-    `- **${key}**: ${typeof text === 'string' ? text : JSON.stringify(text)}`)];
   return [`# FULI task entry rules (version ${version})`, '',
     'Task entries reference these sections instead of repeating them each turn.', '',
-    ...Object.entries(sections).flatMap(([title, value]) => typeof value === 'string'
-      ? [`## ${title}`, value, ''] : [...block(title, Object.entries(value)), ''])].join('\n');
+    ...Object.entries(sections).flatMap(([title, value]) => sectionMarkdown(title, value))].join('\n');
+}
+
+// One section, as its reference reads it; null for a section that does not exist.
+export function entryRulesSectionMarkdown(section) {
+  const { sections, version } = entryRules();
+  if (!Object.hasOwn(sections, section)) return null;
+  return [`# FULI task entry rules (version ${version})`, '', ...sectionMarkdown(section, sections[section])].join('\n');
+}
+
+function sectionMarkdown(title, value) {
+  return typeof value === 'string' ? [`## ${title}`, value, '']
+    : [`## ${title}`, ...Object.entries(value).map(([key, text]) =>
+      `- **${key}**: ${typeof text === 'string' ? text : JSON.stringify(text)}`), ''];
 }
