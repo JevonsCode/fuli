@@ -77,17 +77,19 @@ function closeContext(context) {
 // identity (ownerKind: console, standalone or cli) and its in-process write
 // gates. runner: what instances run in (trusted-runner.js: this version has
 // no sandbox, so an approved app runs with the user's own permissions).
+// serviceLog records each workbench instance in the services port
+// (src/agent-services/port.js, workbench): absent in the CLI, which starts none.
 // callFuliTool runs a granted FULI Agent tool for an app; hostTools,
 // hostIdentity, dataFs, wait, closeWaitMs and timers are seams for synthetic tests.
 export function agentAppContext({
   root, providerIdentity = null, resolveOwner = null, toolNames, clock = () => new Date(), ownerKind = 'cli',
   hostIdentity = createHostIdentity(), runner = createTrustedRunner({ hostIdentity }), callFuliTool = null,
-  hostTools = null, fs = dataFs, wait, closeWaitMs, timers
+  hostTools = null, fs = dataFs, wait, closeWaitMs, timers, serviceLog = null
 }) {
   const store = new AgentAppStore(join(root, 'registry.sqlite'));
   const now = () => clock().toISOString();
   const context = {
-    store, clock, now, resolveOwner, runner, wait, closeWaitMs, dataFs: fs,
+    store, clock, now, resolveOwner, runner, wait, closeWaitMs, dataFs: fs, serviceLog,
     provider: providerIdentity === null ? null : String(providerIdentity).replace(/\/+$/, ''),
     packagesOf: (appId) => join(root, 'packages', appId),
     packageOf: (appId, version) => join(root, 'packages', appId, version),

@@ -27,6 +27,7 @@ If an expected capability is absent from `list_agent_interfaces`, report an Agen
 - Require explicit user authorization for deletes, publication, subscription changes, destructive conflict decisions, or changes that affect another project. An unambiguous request already authorizes that exact action; do not ask again unless the target or consequences remain unclear.
 - Use environment-variable references for connector secrets. Never request, print, store, or copy secret values into knowledge records, logs, Skill files, or tool arguments that expect only a reference.
 - Stay inside the exact FULI workspace and registered project scopes. Do not use home-directory-wide discovery as a fallback.
+- Record every long-running server you start with `report_agent_service` and update it when you stop it. Stopping a service through FULI, deleting its record and clearing its log are the person's actions in the console.
 - Browser automation may be used only for optional visual verification after a structured operation. It must not be the mechanism that changes FULI data.
 
 ## Selecting tools

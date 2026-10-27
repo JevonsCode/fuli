@@ -28,6 +28,18 @@ const EXIT_MESSAGES = Object.freeze({
   exited: 'The app finished and ended by itself.'
 });
 
+// The services port's record of a workbench (context.serviceLog): a failure to
+// record never fails or holds up the app's own lifecycle.
+function recordService(work) {
+  try {
+    const recorded = work();
+    recorded?.catch?.(() => {});
+    return recorded;
+  } catch {
+    return null;
+  }
+}
+
 // Waits ms unless aborted; resolves either way.
 const waitFor = (ms, signal) => delay(ms, undefined, { signal }).catch(() => {});
 
@@ -158,6 +170,7 @@ export function createAppInstances(context) {
     if (opened.refusal) throw opened.refusal;
     const { generation, version, token } = opened;
     const instance = { instanceId, generation };
+    const output = recordService(() => context.serviceLog?.output(instanceId)) ?? null;
     let handle;
     try {
       if (version.manifest.data.scope === 'app') {
@@ -166,7 +179,7 @@ export function createAppInstances(context) {
       }
       handle = await runner.start({ appId, instanceId, generation, mode, manifest: version.manifest,
         packageDirectory: context.packageOf(appId, version.version), dataDirectory: context.dataOf(appId),
-        environment: { FULI_APP_ID: appId, FULI_APP_INSTANCE: instanceId, FULI_APP_TOKEN: token },
+        environment: { FULI_APP_ID: appId, FULI_APP_INSTANCE: instanceId, FULI_APP_TOKEN: token }, output,
         onExit: (exit) => exited(appId, instance, exit) });
     } catch (error) {
       unlessClosed(() => endInstance(appId, lease, instance, 'start_failed', { sealedAt: now() }));
@@ -202,6 +215,12 @@ export function createAppInstances(context) {
       throw superseded();
     }
     hosted.set(appId, { lease, ...instance, handle, sealing: null, sealed: false });
+    if (handle.pid) {
+      const app = store.existingApp(appId);
+      const { title, description, runtime } = version.manifest;
+      recordService(() => context.serviceLog?.started({ appId, instanceId, personalSpaceId: app.personalSpaceId,
+        agentId: app.agentId, purpose: `${title}: ${description}`, command: `node ${runtime.entry}`, pid: handle.pid }));
+    }
     return { status: 'running', appId, instanceId, generation, version: version.version, mode };
   }
 
@@ -293,6 +312,7 @@ export function createAppInstances(context) {
       store.updateInstance(instance, { ...fields, state: 'sealed', stoppedAt: now(), stopReason: reason });
       store.recordEvent({ appId, at: now(), action: 'stopped', detail: { instanceId: instance.instanceId, reason } });
     });
+    recordService(() => context.serviceLog?.ended({ instanceId: instance.instanceId, reason }));
   }
 
   // Before a decision on the app, inside its lifecycle: this process's
@@ -314,6 +334,7 @@ export function createAppInstances(context) {
         store.recordEvent({ appId, at: now(), action: 'app_exited',
           detail: { instanceId, generation, code, signal, category: exitCategory, message: EXIT_MESSAGES[exitCategory] } });
       });
+      recordService(() => context.serviceLog?.exited({ instanceId, exit: { code, signal, category: exitCategory } }));
       await seal(appId, 'app_exited');
     }).catch(() => {});
   }

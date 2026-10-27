@@ -8,7 +8,7 @@ describe('nav destinations', () => {
     expect(all.map(d => d.key)).toEqual(['constellation', 'agents', 'chat', 'projects', 'memory', 'settings'])
     const limited = navDestinations({ spaceId: 'personal-1', publicProjects: false })
     expect(limited.find(d => d.key === 'projects')?.sections.map(s => s.key)).toEqual(['myProjects'])
-    expect(all.find(d => d.key === 'memory')?.sections.map(s => s.key)).toEqual(['knowledge', 'preferences', 'writing', 'organize', 'tags'])
+    expect(all.find(d => d.key === 'memory')?.sections.map(s => s.key)).toEqual(['knowledge', 'preferences', 'organize', 'tags'])
   })
 
   it.each([
@@ -16,13 +16,13 @@ describe('nav destinations', () => {
     ['/project-agents', 'agents', 'agentDirectory'],
     ['/agents/employee.bole', 'agents', 'agentDirectory'],
     ['/project-agents/occupations', 'agents', 'occupations'],
+    ['/project-agents/services', 'agents', 'services'],
     ['/project-agents/manage', 'agents', 'orchestrate'],
     ['/inbox', 'chat', 'askedYou'],
     ['/roundtables/abc', 'chat', 'roundtables'],
     ['/personal/personal-1/projects/graph', 'projects', 'myProjects'],
     ['/public-projects', 'projects', 'publicProjects'],
     ['/preferences', 'memory', 'preferences'],
-    ['/preferences/writing', 'memory', 'writing'],
     ['/organize', 'memory', 'organize'],
     ['/tags', 'memory', 'tags'],
     ['/about', 'settings', 'about'],

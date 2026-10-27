@@ -209,14 +209,12 @@ body { margin: 0; min-width: 320px; }
 #knowledge-type-filter { max-width: 160px; }
 #knowledge-quadrant-filter { max-width: 130px; }
 #knowledge-profile-filter { max-width: 135px; }
-.graph-view-actions {
-  display: flex; align-items: center; gap: 3px; margin-left: auto; padding-left: 4px;
-  border-left: 1px solid var(--color-border);
-}
+/* Spacing, not separator lines, sets the toolbar, filters and table apart. */
+.graph-view-actions { display: flex; align-items: center; gap: 3px; margin-left: auto; }
 .graph-controls { display: flex; gap: 3px; }
 .knowledge-layout {
   min-height: 0; flex: 1; display: grid; align-items: stretch;
-  grid-template-columns: minmax(0, 1fr); border: 1px solid var(--color-border-strong);
+  grid-template-columns: minmax(0, 1fr); box-shadow: var(--shadow-sm);
   border-radius: var(--radius-card); overflow: hidden; background: var(--color-surface); isolation: isolate;
 }
 .knowledge-directory-panel {
@@ -252,7 +250,7 @@ body { margin: 0; min-width: 320px; }
 .directory-section-heading {
   min-width: 0; display: flex; flex-wrap: wrap; align-items: center;
   justify-content: space-between; gap: 8px 14px;
-  padding: 12px 16px; border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle);
+  padding: 12px 16px; background: var(--color-surface-subtle);
 }
 .directory-section-copy {
   min-width: 0; flex: 1 1 260px; display: flex; align-items: baseline; gap: 10px;

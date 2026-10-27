@@ -132,11 +132,11 @@ export function appRegistry(t, { tools = [] } = {}) {
   });
 
   function host({ pid, ownerKind = 'console', runner = fakeRunner(), hostTools = new Map(), fs = realFs,
-    wait, closeWaitMs, timers = { setInterval: () => ({ unref() {} }), clearInterval: () => {} } } = {}) {
+    wait, closeWaitMs, timers = { setInterval: () => ({ unref() {} }), clearInterval: () => {} }, serviceLog = null } = {}) {
     const context = agentAppContext({ root, providerIdentity: 'http://127.0.0.1:65530', ownerKind,
       resolveOwner: async (owner) => owner, toolNames: () => tools, clock: () => new Date(clock.now),
       hostIdentity: fakeHostIdentity(world, pid), runner, hostTools: () => hostTools, fs, wait, closeWaitMs,
-      timers });
+      timers, serviceLog });
     const service = agentAppServiceOver(context);
     opened.push(service);
     // The terminal confirmation answers with the app's name, as a user typing it would.

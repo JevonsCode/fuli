@@ -168,6 +168,26 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('opens the clients tab on its main section expanded, not on closed headings only', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const router = settingsRouter()
+    await router.push('/settings?tab=clients')
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, router] }, attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.get('[data-settings-tab="clients"]').attributes('hidden')).toBeUndefined()
+    expect(wrapper.get('.conversation-launcher-card').attributes('data-state')).toBe('open')
+    // The person can still close it.
+    await wrapper.get('.conversation-launcher-card button').trigger('click')
+    expect(wrapper.get('.conversation-launcher-card').attributes('data-state')).toBe('closed')
+    wrapper.unmount()
+  })
+
   it('opens the tab and section of an invalid field on save, focuses it and sends nothing', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

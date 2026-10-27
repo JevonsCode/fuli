@@ -9,7 +9,9 @@ import { basename } from 'node:path';
 // the check and the termination and the wait use it. The Agent app owner
 // lease (src/agent-apps/host-identity.js) only reads a FULI host process's
 // exact creation time and whether it has exited (rec#7 D-28.25); it never
-// terminates one (D-28.29, rec#11 D-36).
+// terminates one (D-28.29, rec#11 D-36). The services manager stops a service
+// an Agent recorded with Stop, after the person confirmed its PID and command
+// (src/agent-services/process-identity.js, rec#11 D-71).
 
 export function execute(command, args, options = {}) {
   const { sensitiveValues = [], ...executionOptions } = options;
@@ -78,6 +80,16 @@ public static class FuliOwnedProcess {
     try {
       long created, exited, kernel, user;
       return GetProcessTimes(handle, out created, out exited, out kernel, out user) ? created.ToString() : "";
+    } finally { CloseHandle(handle); }
+  }
+  // The image path as Stop compares it (a symbolic link resolved), or "".
+  public static string Image(uint pid) {
+    string failure;
+    IntPtr handle = Open(pid, QueryLimited, out failure);
+    if (handle == IntPtr.Zero) return "";
+    try {
+      int size=32768; var image=new StringBuilder(size);
+      return QueryFullProcessImageName(handle, 0, image, ref size) ? image.ToString() : "";
     } finally { CloseHandle(handle); }
   }
   public static string Probe(uint pid, long expectedCreated) {

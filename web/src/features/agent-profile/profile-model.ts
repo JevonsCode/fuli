@@ -1,9 +1,22 @@
+import { messages, t } from "@/i18n";
 import type { ProjectAgentRecord, ProjectAgentTaskRecord } from "@/types";
 
 export const agentProfilePath = (space: string, agent: string) =>
   `/agents/${encodeURIComponent(space)}/${encodeURIComponent(agent)}`;
 export const agentDisplayName = (agent: ProjectAgentRecord) =>
   agent.profile.displayName || agent.profile.name;
+
+// A built-in Agent's responsibility in the console's language while it is
+// still the default the Provider stored in Chinese; a person's own edit is
+// shown as written.
+const SYSTEM_RESPONSIBILITY = messages["zh-CN"].agentProfiles.systemResponsibility;
+export function agentResponsibility(agent: { agentId: string; profile: { responsibility: string } }): string {
+  const key = agent.agentId.startsWith("employee.") ? agent.agentId.slice("employee.".length) : "";
+  const stored = agent.profile.responsibility;
+  return key in SYSTEM_RESPONSIBILITY
+    && stored.trim() === SYSTEM_RESPONSIBILITY[key as keyof typeof SYSTEM_RESPONSIBILITY]
+    ? t(`agentProfiles.systemResponsibility.${key}`) : stored;
+}
 export const activeAssignments = (agent: ProjectAgentRecord) =>
   (agent.assignments ?? []).filter((item) => item.status === "active");
 export const profileProjectIds = (agent: ProjectAgentRecord) => [
