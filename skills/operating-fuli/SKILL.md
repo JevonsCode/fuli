@@ -23,7 +23,8 @@ If an expected capability is absent from `list_agent_interfaces`, report an Agen
 
 - Never enable or weaken Agent access through an Agent tool. The Agent-access kill switch remains a local-user control.
 - Never change device/runtime settings or complete human confirmation queues on the user's behalf when the catalog marks them `local_user_only`.
-- Never mark a Jefa work item complete through its human-acceptance workbench route; use an Agent task-update tool only for non-acceptance workflow changes.
+- Never mark a Jefa work item complete through its human-acceptance workbench route; use an Agent task-update tool only for non-acceptance workflow changes. A custom column that stands for `done` is the same acceptance: never move a task there.
+- Set a project's own project manager or board (custom columns, external board link) only on the person's request; a project with an external board is tracked at its link, so do not mirror its tasks on Jefa's board.
 - Require explicit user authorization for deletes, publication, subscription changes, destructive conflict decisions, or changes that affect another project. An unambiguous request already authorizes that exact action; do not ask again unless the target or consequences remain unclear.
 - Use environment-variable references for connector secrets. Never request, print, store, or copy secret values into knowledge records, logs, Skill files, or tool arguments that expect only a reference.
 - Stay inside the exact FULI workspace and registered project scopes. Do not use home-directory-wide discovery as a fallback.

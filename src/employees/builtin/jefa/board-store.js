@@ -2,7 +2,9 @@ import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { contentHash } from '../../../../packages/roundtable/src/canonical-json.js';
 import { openFormattedDatabase, sqliteFormat } from '../../../../packages/roundtable/src/storage/database-format.js';
+import { InvalidInputError } from '../../../app/application-error.js';
 import { EmployeeError } from '../../manifest.js';
+import { boardColumn, DEFAULT_PROJECT_BOARD } from './project-board.js';
 
 // Jefa's task board, built into FULI. One file under the
 // employee data directory (employees/data/jefa/board.sqlite), separate from
@@ -12,7 +14,20 @@ import { EmployeeError } from '../../manifest.js';
 // Temporal history: jefa_work_items holds each task's current state and every
 // change appends the state it produced to jefa_work_item_revisions in the same
 // transaction. Revisions are immutable, so a task can always be read back to
-// who changed it and when. Tasks are never deleted.
+// who changed it and when. Tasks are never deleted. A project's own board
+// (project-board.js) keeps the same history in jefa_project_board_revisions.
+const PROJECT_BOARD_TABLES = `
+      CREATE TABLE IF NOT EXISTS jefa_project_boards(
+        space_id TEXT NOT NULL, project_id TEXT NOT NULL, revision INTEGER NOT NULL,
+        record TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(space_id, project_id));
+      CREATE TABLE IF NOT EXISTS jefa_project_board_revisions(
+        space_id TEXT NOT NULL, project_id TEXT NOT NULL, revision INTEGER NOT NULL,
+        record TEXT NOT NULL, recorded_at TEXT NOT NULL, PRIMARY KEY(space_id, project_id, revision));
+      CREATE TRIGGER IF NOT EXISTS jefa_project_board_revisions_no_update BEFORE UPDATE ON jefa_project_board_revisions
+        BEGIN SELECT RAISE(ABORT, 'Jefa project board revisions are immutable'); END;
+      CREATE TRIGGER IF NOT EXISTS jefa_project_board_revisions_no_delete BEFORE DELETE ON jefa_project_board_revisions
+        BEGIN SELECT RAISE(ABORT, 'Jefa project board revisions are immutable'); END;`;
+
 export const JEFA_BOARD_FORMAT = sqliteFormat({
   store: 'jefa-board',
   schema: `
@@ -44,6 +59,15 @@ export const JEFA_BOARD_FORMAT = sqliteFormat({
         source_application TEXT NOT NULL, session_id TEXT NOT NULL, revision INTEGER NOT NULL,
         record TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(space_id, project_id, id),
         UNIQUE(space_id, project_id, source_application, session_id));`,
+  migrations: [{
+    id: 'jefa-board/2-project-boards', to: 2, kind: 'add-table', table: 'jefa_project_boards',
+    summary: 'each project\'s own board: its project manager and custom columns or external board link, with every revision',
+    create: PROJECT_BOARD_TABLES
+  }, {
+    // Absent on existing tasks: they show in the first column for their state.
+    id: 'jefa-board/3-task-board-columns', to: 3, kind: 'add-columns', table: 'jefa_work_items',
+    summary: 'the custom board column a task was moved to', columns: { board_column: 'TEXT' }
+  }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
 
@@ -96,7 +120,8 @@ export class JefaBoardStore {
     return { ...item, history };
   }
 
-  // tasks: validated task fields; visibility defaults to private.
+  // tasks: validated task fields; visibility defaults to private. A
+  // boardColumn sets the task's state to the state that column stands for.
   create(scope, { requestId, tasks, actor }) {
     return this.#once(scope, 'create', requestId, tasks, () => tasks.map((task) => {
       const at = this.now().toISOString();
@@ -104,7 +129,7 @@ export class JefaBoardStore {
         status: task.status ?? 'planned', priority: task.priority ?? 'medium', visibility: task.visibility ?? 'private',
         workType: task.workType, acceptanceCriteria: task.acceptanceCriteria ?? [], tags: task.tags ?? [],
         createdAt: at, updatedAt: at };
-      return this.#write(scope, item, 1, actor);
+      return this.#write(scope, this.#placed(scope, item, task, actor), 1, actor);
     }));
   }
 
@@ -116,21 +141,57 @@ export class JefaBoardStore {
         throw new EmployeeError('The task changed since it was read; read it again before updating', 409, 'version_conflict');
       }
       const current = itemFromRow(row);
-      const item = { ...current, ...change, updatedAt: this.#nextTime(current.updatedAt) };
-      if (change.status && change.status !== current.status) item.acceptedAt = change.status === 'done' ? item.updatedAt : undefined;
+      const item = this.#placed(scope, { ...current, ...change, updatedAt: this.#nextTime(current.updatedAt) }, change, actor, current);
+      if (item.status !== current.status) item.acceptedAt = item.status === 'done' ? item.updatedAt : undefined;
       return this.#write(scope, item, row.revision + 1, actor);
     }));
   }
 
   // The person's own move, from the console: no version check, as the board shows it.
-  setStatus(scope, id, status) {
+  setStatus(scope, id, status, column) {
     return this.#transaction(() => {
       const row = this.#row(scope, id);
       const current = itemFromRow(row);
-      if (current.status === status) return current;
+      if (current.status === status && (column === undefined || current.boardColumn === column)) return current;
       const updatedAt = this.#nextTime(current.updatedAt);
-      const item = { ...current, status, updatedAt, acceptedAt: status === 'done' ? updatedAt : undefined };
+      const item = this.#placed(scope, { ...current, status, updatedAt }, { status, boardColumn: column }, 'person', current);
+      if (item.status !== current.status) item.acceptedAt = status === 'done' ? updatedAt : undefined;
       return this.#write(scope, item, row.revision + 1, 'person');
+    });
+  }
+
+  // How this project's own board is set up; revision 0 is the built-in board Jefa manages itself.
+  projectBoard(scope) {
+    const row = this.database.prepare('SELECT record FROM jefa_project_boards WHERE space_id = ? AND project_id = ?')
+      .get(scope.spaceId, scope.projectId);
+    return row ? JSON.parse(row.record)
+      : { projectId: scope.projectId, revision: 0, managerAgentId: null, board: DEFAULT_PROJECT_BOARD, updatedAt: null };
+  }
+
+  // request: the caller's input, which a retry must repeat; expectedRevision,
+  // when given, must be the revision read. change() returns { managerAgentId?,
+  // board? } with the board parsed (parseProjectBoard gives new columns their
+  // ids, so it runs once, inside the request); an omitted field keeps its value.
+  configureProjectBoard(scope, { requestId, request }, change) {
+    return this.#once(scope, 'project-board', requestId, request, () => {
+      const current = this.projectBoard(scope);
+      if (request.expectedRevision !== undefined && request.expectedRevision !== current.revision) {
+        throw new EmployeeError('The project board changed since it was read; read it again before saving', 409, 'version_conflict');
+      }
+      const { managerAgentId, board } = change();
+      const updatedAt = current.updatedAt ? this.#nextTime(current.updatedAt) : this.now().toISOString();
+      const record = { projectId: scope.projectId, revision: current.revision + 1,
+        managerAgentId: managerAgentId === undefined ? current.managerAgentId : managerAgentId,
+        board: board ?? current.board, updatedAt };
+      this.database.prepare(`INSERT INTO jefa_project_boards(space_id, project_id, revision, record, updated_at)
+          VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(space_id, project_id) DO UPDATE SET revision = excluded.revision, record = excluded.record,
+          updated_at = excluded.updated_at`)
+        .run(scope.spaceId, scope.projectId, record.revision, JSON.stringify(record), updatedAt);
+      this.database.prepare(`INSERT INTO jefa_project_board_revisions(space_id, project_id, revision, record, recorded_at)
+        VALUES (?, ?, ?, ?, ?)`).run(scope.spaceId, scope.projectId, record.revision, JSON.stringify(record), updatedAt);
+      this.#bumpProject(scope);
+      return record;
     });
   }
 
@@ -188,6 +249,25 @@ export class JefaBoardStore {
 
   close() { if (!this.closed) { this.closed = true; this.#database?.close(); } }
 
+  // A task moved to a custom column takes that column's state. A change of
+  // state alone leaves the column, so the task shows in the first column for
+  // its new state. Only the person accepts a task as done.
+  #placed(scope, item, change, actor, previous = item) {
+    if (change.boardColumn === undefined) {
+      if (item.status === previous.status) return item;
+      const { boardColumn: _left, ...moved } = item;
+      return moved;
+    }
+    const column = boardColumn(this.projectBoard(scope).board, change.boardColumn);
+    if (change.status !== undefined && change.status !== column.mapsTo) {
+      throw new InvalidInputError('status and boardColumn disagree; pass only boardColumn, or the state that column stands for');
+    }
+    if (column.mapsTo === 'done' && actor !== 'person') {
+      throw new EmployeeError('Jefa completion requires explicit human acceptance in the workbench', 403, 'human_acceptance_required');
+    }
+    return { ...item, status: column.mapsTo, boardColumn: column.id };
+  }
+
   #row(scope, id) {
     const row = this.database.prepare('SELECT * FROM jefa_work_items WHERE space_id = ? AND project_id = ? AND id = ?')
       .get(scope.spaceId, scope.projectId, id);
@@ -215,15 +295,15 @@ export class JefaBoardStore {
   // Returns the task as stored.
   #write(scope, item, revision, actor) {
     this.database.prepare(`INSERT INTO jefa_work_items(space_id, project_id, id, revision, title, summary, status, priority,
-        visibility, work_type, acceptance_criteria, tags, accepted_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        visibility, work_type, acceptance_criteria, tags, accepted_at, created_at, updated_at, board_column)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(space_id, project_id, id) DO UPDATE SET revision = excluded.revision, title = excluded.title,
         summary = excluded.summary, status = excluded.status, priority = excluded.priority, visibility = excluded.visibility,
         work_type = excluded.work_type, acceptance_criteria = excluded.acceptance_criteria, tags = excluded.tags,
-        accepted_at = excluded.accepted_at, updated_at = excluded.updated_at`)
+        accepted_at = excluded.accepted_at, updated_at = excluded.updated_at, board_column = excluded.board_column`)
       .run(scope.spaceId, scope.projectId, item.id, revision, item.title, item.summary, item.status, item.priority,
         item.visibility, item.workType ?? null, JSON.stringify(item.acceptanceCriteria), JSON.stringify(item.tags),
-        item.acceptedAt ?? null, item.createdAt, item.updatedAt);
+        item.acceptedAt ?? null, item.createdAt, item.updatedAt, item.boardColumn ?? null);
     this.database.prepare(`INSERT INTO jefa_work_item_revisions(space_id, project_id, id, revision, actor, record, recorded_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)`)
       .run(scope.spaceId, scope.projectId, item.id, revision, actor, JSON.stringify(item), item.updatedAt);
@@ -276,7 +356,8 @@ function itemFromRow(row) {
     id: row.id, projectId: row.project_id, title: row.title, summary: row.summary, status: row.status,
     priority: row.priority, visibility: row.visibility, ...(row.work_type ? { workType: row.work_type } : {}),
     acceptanceCriteria: JSON.parse(row.acceptance_criteria), tags: JSON.parse(row.tags),
-    ...(row.accepted_at ? { acceptedAt: row.accepted_at } : {}), createdAt: row.created_at, updatedAt: row.updated_at
+    ...(row.accepted_at ? { acceptedAt: row.accepted_at } : {}), ...(row.board_column ? { boardColumn: row.board_column } : {}),
+    createdAt: row.created_at, updatedAt: row.updated_at
   };
 }
 

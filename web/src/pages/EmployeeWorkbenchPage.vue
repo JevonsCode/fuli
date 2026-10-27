@@ -11,7 +11,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { useRoutePeek } from '@/composables/useRoutePeek'
 import { usePageTitle } from '@/layouts/page-title'
 import { boardTaskAccessRevoked, boardTaskPeekId, readBoardTaskPeekId } from '@/features/employees/board-task-peek'
-import EmployeeTaskBoard, { type EmployeeBoardItem, type EmployeeBoardStatus, type EmployeeProjectBoard } from '@/features/employees/EmployeeTaskBoard.vue'
+import EmployeeTaskBoard, { type EmployeeBoardItem, type BoardMoveTarget, type EmployeeProjectBoard } from '@/features/employees/EmployeeTaskBoard.vue'
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
 import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedConversationsPanel.vue'
@@ -295,9 +295,10 @@ function taskMoveRequestId() {
     ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
   return `aggregate-board-move-${suffix}`
 }
-async function moveTask(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
+async function moveTask(item: EmployeeBoardItem, { status, boardColumn }: BoardMoveTarget) {
   if (isJefa.value && jefaRead.readOnly) return
-  if (item.status === status) return
+  // Two of a project's own columns may stand for one status: a move between them keeps it.
+  if (item.status === status && (boardColumn === undefined || item.boardColumn === boardColumn)) return
   const key = boardItemKey(item)
   if (movingItemKeys.value.includes(key)) return
   const context = `${templateId.value}:${personalSpaceId.value}`
@@ -310,7 +311,7 @@ async function moveTask(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
     if (templateId.value === 'jefa' && status === 'done') {
       const result = await patchJson<{ workItem?: EmployeeBoardItem }>(
         `/employee-workspaces/${encodeURIComponent(templateId.value)}/${encodeURIComponent(item.projectId)}/api/work-items/${encodeURIComponent(item.id)}/status`,
-        { status },
+        { status, ...(boardColumn ? { boardColumn } : {}) },
       )
       updated = result.workItem
     } else {
@@ -324,7 +325,7 @@ async function moveTask(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
           updates: [{
             id: item.id,
             expectedUpdatedAt: item.updatedAt,
-            status,
+            ...(boardColumn ? { boardColumn } : { status }),
           }],
         },
       })

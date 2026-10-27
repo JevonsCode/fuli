@@ -4,6 +4,7 @@ import { dismissalLessonHint } from './project-agent-dismissal.js';
 import { requireGroupedAgentTaskContext } from './project-team-hierarchy.js';
 import { resolveCoordinationScope, scopedTaskIdempotencyKey } from './temporary-project-scope.js';
 import { enrichProjectAgentTaskActivity } from '../agents/token-usage-resolver.js';
+import { parseProjectBoard } from '../employees/builtin/jefa/project-board.js';
 import {
   executorActualReportRecord,
   executorRecord,
@@ -139,11 +140,28 @@ export async function cleanupProjectAgentTestRoles(application, input) {
   );
 }
 
+// projectManager makes the assigned Agent the project's own project manager on
+// Jefa's board, with an optional board of the person's own columns or an
+// external link. The board is checked before anything is written; the
+// assignment and the board are two writes, and a retry with the same
+// idempotencyKey finishes both.
 export async function createProjectAgentAssignment(application, input) {
+  const board = input.projectManager?.board;
+  if (board) parseProjectBoard(board);
   const value = await application.personal.createProjectAgentAssignment(
     providerProjectAgentAssignment(input)
   );
-  return projectAgentAssignmentRecord(value);
+  const assignment = projectAgentAssignmentRecord(value);
+  if (!input.projectManager) return assignment;
+  try {
+    const { projectBoard } = await application.employees.callTool({ templateId: 'jefa',
+      personalSpaceId: input.personalSpaceId, personalProjectId: input.personalProjectId, tool: 'configure_project_board',
+      arguments: { requestId: `assignment:${input.idempotencyKey}`, managerAgentId: input.agentId, ...(board ? { board } : {}) } });
+    return { ...assignment, projectBoard };
+  } catch (error) {
+    throw new ApplicationError('project_board_not_saved', 'The assignment was saved but the Agent was not made the project '
+      + `manager (${error.code ?? 'error'}: ${error.message}). Retry with the same idempotencyKey to finish it.`, { status: 502 });
+  }
 }
 
 export async function listProjectAgentAssignments(application, input) {

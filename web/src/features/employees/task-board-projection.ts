@@ -1,20 +1,22 @@
-import { boardItemKey, type EmployeeBoardItem, type EmployeeBoardStatus } from './task-board-model'
+import { boardItemKey, type EmployeeBoardItem } from './task-board-model'
 
 // What the board shows while a move is in progress. Canonical items are never
 // changed here: a drag adds a placeholder where the card would land, and a
 // submitted move shows the card in its target column until the server answers.
+// A column is named by its key (project-board-layout.ts): a built-in status
+// or one of the project's own columns.
 
 /** A move the board has submitted and the server has not answered yet. */
 export interface PendingBoardMove {
   key: string
-  status: EmployeeBoardStatus
+  column: string
   index: number
 }
 
 /** The card being dragged (pointer or keyboard) and where it would land. */
 export interface BoardDragProjection {
   key: string
-  status: EmployeeBoardStatus | null
+  column: string | null
   index: number
   height: number
 }
@@ -25,14 +27,15 @@ type BoardSlot =
 
 /** The slots of one column: canonical tasks, pending moves in or out, and a drag placeholder. */
 export function projectBoardColumn(
-  status: EmployeeBoardStatus,
+  column: string,
   items: readonly EmployeeBoardItem[],
   pending: readonly PendingBoardMove[],
   drag: BoardDragProjection | null,
+  columnOf: (item: EmployeeBoardItem) => string,
 ): BoardSlot[] {
   const pendingByKey = new Map(pending.map((move) => [move.key, move]))
   const slots: BoardSlot[] = items
-    .filter((item) => item.status === status && !pendingByKey.has(boardItemKey(item)))
+    .filter((item) => columnOf(item) === column && !pendingByKey.has(boardItemKey(item)))
     .map((item) => {
       const key = boardItemKey(item)
       return { kind: 'task', key, item, pending: false, dragSource: drag?.key === key }
@@ -40,11 +43,11 @@ export function projectBoardColumn(
   const byKey = new Map(items.map((item) => [boardItemKey(item), item]))
   for (const move of pending) {
     const item = byKey.get(move.key)
-    if (!item || move.status !== status) continue
+    if (!item || move.column !== column) continue
     slots.splice(clampIndex(move.index, slots.length), 0, { kind: 'task', key: move.key, item, pending: true, dragSource: false })
   }
   const source = drag ? byKey.get(drag.key) : undefined
-  if (drag && source && drag.status === status && source.status !== status) {
+  if (drag && source && drag.column === column && columnOf(source) !== column) {
     slots.splice(clampIndex(drag.index, slots.length), 0, { kind: 'placeholder', key: `placeholder:${drag.key}`, height: drag.height })
   }
   return slots

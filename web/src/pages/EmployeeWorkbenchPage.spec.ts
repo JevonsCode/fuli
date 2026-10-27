@@ -264,7 +264,7 @@ describe('employee workbench', () => {
     const wrapper = await setup('/employees/jefa')
     const board = wrapper.getComponent(EmployeeTaskBoard)
     const item = board.props('boards').find((entry) => entry.project.id === 'project-b')!.items[0]
-    board.vm.$emit('move-task', item, 'active')
+    board.vm.$emit('move-task', item, { status: 'active' })
     await flushPromises()
     expect(postJson).toHaveBeenLastCalledWith('/api/employee-templates/jefa/call', {
       personalSpaceId: 'space-a',
@@ -299,7 +299,7 @@ describe('employee workbench', () => {
     const board = wrapper.getComponent(EmployeeTaskBoard)
     const item = board.props('boards')[0].items[0]
 
-    board.vm.$emit('move-task', item, 'done')
+    board.vm.$emit('move-task', item, { status: 'done' })
     await flushPromises()
 
     expect(patchJson).toHaveBeenCalledWith(
@@ -325,7 +325,7 @@ describe('employee workbench', () => {
     const board = wrapper.getComponent(EmployeeTaskBoard)
     const item = board.props('boards')[0].items[0]
 
-    board.vm.$emit('move-task', item, 'done')
+    board.vm.$emit('move-task', item, { status: 'done' })
     await flushPromises()
     expect(board.props('movingItemKeys')).toEqual(['project-a:task-project-a'])
     expect(board.props('boards')[0].items[0]).toEqual(item)
