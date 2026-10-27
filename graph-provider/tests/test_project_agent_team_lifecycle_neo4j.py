@@ -168,6 +168,29 @@ async def binding_policy(client, scope):
 
 
 @pytest.mark.asyncio
+async def test_a_flat_member_dispatching_from_its_task_coordinates_links_and_lists_it():
+    async with provider_client(fixture_settings()) as (client, _):
+        scope = await binding_fixture(client)
+        await seed_agent(client, scope['personal_space_id'], project=scope['personal_project_id'],
+                         agent='member', allowed_clients=['codex', 'claude_code'])
+        await binding_policy(client, scope)
+        token = 'fuli-task-member-dispatch'
+        await binding_parent(client, scope, token, 'member-session', owner='member')
+        created = await client.post('/v1/project-agent-tasks', json={**scope,
+            'idempotency_key': 'synthetic-member-dispatch', 'title': 'Synthetic member dispatch',
+            'objective': 'Verify the dispatcher keeps its task record.', 'work_kind': 'implementation',
+            'source_application': 'codex', 'staffing_intent': 'reuse_preferred', 'lead_agent_id': 'specialist',
+            'routing_reason': 'Synthetic dispatch acceptance.', 'task_context_token': token})
+        assert created.status_code == 200, created.text
+        task = created.json()['task']
+        assert task['coordinator_agent_id'] == 'member'
+        assert (await bind(client, scope, token, task['task_id'])).status_code == 200
+        listed = await client.get('/v1/project-agent-tasks', params={**scope, 'agent_id': 'member'})
+        assert listed.status_code == 200, listed.text
+        assert task['task_id'] in {item['task_id'] for item in listed.json()}
+
+
+@pytest.mark.asyncio
 async def test_parent_retains_multiple_links_owner_and_checkpoint_across_provider_restart():
     settings = fixture_settings()
     async with provider_client(settings) as (client, access_token):
