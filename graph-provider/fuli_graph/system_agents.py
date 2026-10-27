@@ -7,6 +7,7 @@ original coordinator reference.
 
 import json
 
+from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS
 from .project_agent_models import ProjectAgentProfile
 from .project_agent_employee_numbers import ASSIGN_EMPLOYEE_NUMBERS, EMPLOYEE_NUMBER_LOCK
 from .provider_values import now_utc, stable_uuid
@@ -175,7 +176,7 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
         work_kinds=profile.work_kinds,
         agent_type=profile.agent_type,
         memory_scope='task_only' if agent_id == SYSTEM_ASSISTANT_AGENT_ID else 'reviewed_agent',
-        occupation_role='assistant' if agent_id == SYSTEM_ASSISTANT_AGENT_ID else 'management',
+        occupation_role=BUILTIN_AGENT_OCCUPATIONS[agent_id],
         now=now,
     )
     if agent_id == SYSTEM_JUDGMENT_AGENT_ID:

@@ -43,7 +43,7 @@ watch(expanded, value => {
         <RouterLink :to="destination.to" class="nav-rail-link" :class="{ 'is-active': destination.key === activeKey, 'has-active-child': childActive(destination.key) }"
           :aria-current="destination.key === activeKey ? 'page' : undefined"
           :aria-label="t(`shell.destinations.${destination.key}`)" :title="expanded ? undefined : t(`shell.destinations.${destination.key}`)"
-          :data-destination="destination.key">
+          :data-destination="destination.key" :data-term="`destination.${destination.key}`">
           <UiIcon :name="destination.icon" :size="expanded ? 20 : 22" />
           <span class="nav-rail-label">{{ t(`shell.destinations.${destination.key}`) }}</span>
           <span v-if="destination.key === 'chat' && attentionCount" class="nav-rail-badge"

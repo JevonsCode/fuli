@@ -11,7 +11,7 @@ import { createServer } from '../src/server.js';
 import { createEmployeeFixture } from '../test-support/employee-fixture.js';
 
 // Synthetic FULI directories only; the built-in Jefa board is real.
-const JEFA_TOOLS = ['read_board', 'get_task', 'create_tasks', 'update_tasks', 'answer_status_question',
+const JEFA_TOOLS = ['read_board', 'get_task', 'create_tasks', 'update_tasks', 'configure_project_board', 'answer_status_question',
   'prepare_session_title', 'report_session_title', 'get_session_title'];
 const jefaManifest = JSON.parse(readFileSync(new URL('../src/employees/catalog/jefa.json', import.meta.url)));
 

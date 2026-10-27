@@ -59,7 +59,7 @@ test('large team roster deduplicates stable identities and defers overflow', () 
   assert.equal(view.team.roster.length, 4);
   assert.equal(view.team.roster_total, 30);
   assert.equal(view.team.roster_truncated, true);
-  assert.equal(view.details_guidance.rules, 'fuli://rules/task-entry#details_guidance');
+  assert.equal(view.details_guidance.rules, 'fuli://rules/task-entry/details_guidance');
   assert.match(entryRules().sections.details_guidance, /get_project_team/);
   assert.deepEqual(Object.keys(view.team.roster[0]), ['name', 'occupation']);
 });

@@ -23,6 +23,7 @@ import AgentConversations from "@/features/project-agents/AgentConversations.vue
 import TaskExecutionPlan from "@/features/project-agents/TaskExecutionPlan.vue";
 import {
   agentDisplayName,
+  agentResponsibility,
   collaboratorsFor,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
@@ -170,7 +171,6 @@ const workbench = computed(() =>
   employeeTemplates.value.find((item) => item.agentId === agent.value?.agentId),
 );
 // Bole is the AR: its own profile has nobody else to ask.
-const isAr = computed(() => workbench.value?.id === "bole");
 const date = (value?: string | null) =>
   value && !Number.isNaN(Date.parse(value))
     ? new Date(value).toLocaleDateString()
@@ -339,7 +339,7 @@ onMounted(() => {
               </template>
               <span v-else class="ui-meta">{{ t("agentRedesign.occupation.notSet") }}</span>
             </p>
-            <p class="agent-resume-summary">{{ agent.profile.responsibility }}</p>
+            <p class="agent-resume-summary">{{ agentResponsibility(agent) }}</p>
             <div class="agent-resume-meta">
               <span>
                 {{ t(agent.recruitedAt ? "agentProfiles.joined" : "agentProfiles.created") }}
@@ -359,11 +359,6 @@ onMounted(() => {
               @click="showSettings = !showSettings"
             >
               {{ t("agentProfiles.settings") }}
-            </Button>
-            <Button v-if="!isAr" as-child variant="outline">
-              <RouterLink :to="{ path: '/employees/bole', query: { q: agentDisplayName(agent) } }">
-                {{ t("agentProfiles.askHR") }}
-              </RouterLink>
             </Button>
           </div>
         </Card>
@@ -559,9 +554,6 @@ onMounted(() => {
               <Card as="section" class="agent-resume-section" aria-labelledby="agent-organization-heading">
                 <div class="agent-section-heading">
                   <h2 id="agent-organization-heading">{{ t("agentProfiles.organization") }}</h2>
-                  <RouterLink v-if="!isAr" :to="{ path: '/employees/bole', query: { q: agentDisplayName(agent) } }">
-                    {{ t("agentProfiles.hr") }}
-                  </RouterLink>
                 </div>
                 <div v-for="team in teams" :key="team.projectId" class="agent-organization">
                   <h3>{{ projectName(team.projectId) }}</h3>

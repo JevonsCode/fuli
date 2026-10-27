@@ -7,6 +7,7 @@ import { useConsoleStore } from '@/stores/console'
 import { employeeTemplates } from '@/features/employees/catalog'
 import type { ProjectAgentRecord } from '@/types'
 import { pageTitle } from '@/layouts/page-title'
+import { SYNTHETIC_OCCUPATIONS } from '@/test-support/occupation-fixtures'
 import AgentProfilePage from './AgentProfilePage.vue'
 
 const { getJson, postJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn(), putJson: vi.fn() }))
@@ -53,6 +54,7 @@ beforeEach(() => {
     if (parsed.pathname === '/api/project-agent-tasks') return [task('done', id, 'Completed evidence'), task('queued', id, 'Only scheduled', 'queued')]
     if (parsed.pathname === '/api/project-team') return teamView('beta', 'Birch', [['alpha', 'Aster'], ['gamma', 'Cedar']])
     if (parsed.pathname === '/api/executors') return []
+    if (parsed.pathname === '/api/occupations') return SYNTHETIC_OCCUPATIONS
     if (parsed.pathname === '/api/employee-templates') return { templates: [] }
     if (parsed.pathname === `/api/project-agents/${id}/memory`) return { revision: 0, current: null, history: [], workLog: [] }
     throw new Error(`Unexpected request: ${url}`)
@@ -135,7 +137,7 @@ describe('Agent profile integration', () => {
     expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(true)
   })
 
-  it('offers each profile link once and no Ask AR on the AR itself', async () => {
+  it('offers each profile link once and never a manual Ask AR detour', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
       if (isAgentRead(url)) return agentRead(url, [person('employee.bole')])
@@ -150,6 +152,11 @@ describe('Agent profile integration', () => {
     expect(wrapper.findAll('a[href^="/employees/bole?"]')).toHaveLength(0)
     expect(wrapper.findAll('.agent-management-card a')).toHaveLength(1)
     expect(wrapper.get('[data-open-management]').text()).toBe('打开 Agent 管理')
+    wrapper.unmount()
+    getJson.mockImplementation(normal)
+    const other = await setup()
+    expect(other.wrapper.findAll('a[href^="/employees/bole?"]')).toHaveLength(0)
+    expect(other.wrapper.text()).not.toContain('问 AR')
   })
 
   it('exposes conversation retention under an accessible secondary tab', async () => {

@@ -27,7 +27,6 @@ from .store_project_agent_occupation import occupation_from_agent_node
 from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS
 from .store_occupation_catalog import active_occupation_predicate, occupation_error, require_active_occupations
 from .system_agents import (
-    SYSTEM_PROFILES,
     SYSTEM_ASSISTANT_AGENT_ID,
     SYSTEM_COORDINATOR_AGENT_ID,
     SYSTEM_HR_AGENT_ID,
@@ -141,7 +140,7 @@ class StoreProjectAgents:
         )
         updated_at = now_utc()
         occupation_role = request.occupation.role if request.occupation else (
-            'management' if request.agent_id in SYSTEM_PROFILES else None)
+            BUILTIN_AGENT_OCCUPATIONS.get(request.agent_id))
         memory_scope = (
             'task_only'
             if request.profile.agent_type == 'temporary'

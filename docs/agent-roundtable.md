@@ -63,11 +63,48 @@ inside one thread, so Agents cannot loop forever. Woken Agents run read-only.
 
 ## What people see
 
-The console's **圆桌 / Roundtable** page lists every thread with its participants and
-shows the full timeline: who asked whom, through which client, the exact message and
-answer, and how it was delivered. People watch; they do not need to act.
+The console's **对话 / 圆桌** page lists every thread and opens each one as a chat:
+the person's own messages on the right, each FLA's on the left with its face, name,
+client and time, and under every message where it stands for each recipient
+(left on the board, queued to wake, replying, replied, or why it could not be woken).
+Agent chat rooms (`agent_chat`) stay read-only for people.
 
 Threads are stored locally in `agent-roundtable.sqlite` in the Fuli data directory.
+
+## The person's conversations: board and instant (publish/subscribe)
+
+The person can message their own FLAs from the console, one FLA or several at once.
+Each thread is a small publish/subscribe channel, and this is the contract later
+group work (`@FLG`, rec#55) builds on:
+
+- **Subscribers.** The FLAs the person addressed in a thread are its subscribers
+  (`thread_subscriptions`, roundtable store version 4). A thread belongs to one
+  project, and every subscriber must work in it; the person adds a member by
+  addressing it.
+- **Publish.** A post (`POST /api/roundtable/threads` for a new thread,
+  `POST /api/roundtable/threads/:threadId/messages` for the next post) becomes one
+  ask per addressed subscriber, from the person (`from.client = "person"`). Without
+  `to`, a post goes to every subscriber.
+- **Delivery per subscriber.** `board`: the ask waits; the FLA sees it in
+  `read_agent_messages` / task entry the next time it works and answers with
+  `reply_agent_message`. `instant`: the post pushes the ask to the FLA at once —
+  FULI starts a real run of it through the same wake every Agent-to-Agent ask uses
+  (durable execution claim, the FLA's own allowed client, a per-attempt grant, only a
+  verified answer becomes its reply). The run's grant is an owner grant
+  (`/v1/project-agent-context/owner-delegations`): there is no sender task, so the
+  Provider restores exactly the named active Agent of that project, once.
+  `PUT /api/roundtable/threads/:threadId/mode` sets every subscriber's delivery;
+  switching to `instant` also wakes the FLAs for what is still waiting on the board.
+- **One run per FLA.** A busy FLA is woken when its earlier run ends; members of a
+  group run in parallel, each answering for itself, and each wake sees the thread's
+  last 8 messages so a group reads as one conversation.
+- **Honest fallback.** When an instant post cannot start a run (no Claude Code or
+  Codex this FLA may use on this computer, no known project folder yet, the wake
+  failed or timed out), the ask stays on the board with its reason, and the page says
+  so in words. Nothing is shown as replying unless a run is going.
+
+These routes are the person's own (`local_user_only` in the interface catalog);
+Agents keep using `message_agent` and `agent_chat`.
 
 ## Clients
 
@@ -146,6 +183,11 @@ one wake active per Agent; subsequent rooms wait for completion notifications.
 Unknown execution or unconfirmed cleanup keeps its safety hold.
 
 ## Group discussions (@FLG, rec#55)
+
+This section is mode 2 (「在圆桌里分头回复」). Mode 1 (「在这个会话里一起看」, chosen at
+the same confirmation) never reaches the roundtable: task entry hands the session a
+read-only index of the members' context (`src/graphiti/group-member-context.js`)
+and nobody is woken (docs/agent-conversations-and-collaboration.md).
 
 `group_discussion` runs a moderated discussion on top of a `kind=group` chat. It
 only carries out what the person typed in their chat: task entry records the

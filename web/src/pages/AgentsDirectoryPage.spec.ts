@@ -8,6 +8,7 @@ import { t } from '@/i18n'
 import { forgetLoadedRosters } from '@/features/agent-profile/useAgentRosterPages'
 import { agentPinsMessages } from '@/i18n/messages/agent-pins'
 import AgentsDirectoryPage from './AgentsDirectoryPage.vue'
+import { SYNTHETIC_OCCUPATIONS } from '@/test-support/occupation-fixtures'
 
 const { getJson, putJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, putJson, postJson, patchJson: vi.fn() }))
@@ -145,6 +146,7 @@ describe('Agent directory integration', () => {
       ROSTER_ALL,
       '/api/project-agent-tasks?personalSpaceId=space-a&limit=200',
       '/api/agent-pins?personalSpaceId=space-a',
+      '/api/occupations?personalSpaceId=space-a',
     ].includes(url) || String(url).startsWith('/api/employee-templates'))).toBe(true)
   })
 
@@ -570,6 +572,7 @@ describe('Agent directory integration', () => {
       }
       if (url === '/api/project-agent-tasks?personalSpaceId=space-a&limit=200') return []
       if (url === '/api/agent-pins?personalSpaceId=space-a') return { revision: 1, agentIds: [] }
+      if (url === '/api/occupations?personalSpaceId=space-a') return SYNTHETIC_OCCUPATIONS
       throw new Error(`Unexpected detail request: ${url}`)
     })
     postJson.mockImplementation(async (url: string, body: Record<string, unknown>) => {
@@ -610,8 +613,9 @@ describe('Agent directory integration', () => {
     expect(groups[0]!.get('[data-project-purpose]').text()).toBe('Ship clean v2 project agent pages')
     expect(groups[0]!.get('[data-project-header-lead]').text()).toContain('Aster')
     const occupations = groups[0]!.get('[data-project-member-occupations]').text()
-    expect(occupations).toContain(t('agentRedesign.occupation.keys.lead'))
-    expect(occupations).toContain(t('agentRedesign.occupation.keys.engineering'))
+    // Names come from the space catalog, the one list there is.
+    expect(occupations).toContain('负责人')
+    expect(occupations).toContain('工程')
 
     const unassignedPanel = wrapper.get('[data-unassigned-conversations]')
     expect(unassignedPanel.text()).toContain(t('agentRedesign.unassigned.count', { count: 1 }))

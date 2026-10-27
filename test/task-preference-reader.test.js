@@ -163,7 +163,7 @@ const withoutEntryOnly = value => Object.fromEntries(Object.entries(value).filte
 // The entry references shared rule text; resolve it before comparing with full recovery.
 const resolvedRules = value => Object.fromEntries(Object.entries(value).map(([key, item]) =>
   [key, typeof item?.rules === 'string' && item.version === entryRules().version
-    ? entryRules().sections[item.rules.split('#')[1]] : item]));
+    ? entryRules().sections[item.rules.split('/').at(-1)] : item]));
 
 test('recovered Agent context matches every instruction field of the compacted entry, including team reporting', async () => {
   const f = fixture();
@@ -176,7 +176,7 @@ test('recovered Agent context matches every instruction field of the compacted e
   const entry = compactTaskContext({ project_agent_context: applyAgentAssignment(await loadProjectAgentContinuity(entryApp, {
     projectId: 'project-a', agent: projectAgentRecord(f.rawAgent), sourceApplication: 'codex',
     selectionReason: selection.selection_reason, matchBasis: selection.match_basis }), selection) }).project_agent_context;
-  assert.equal(entry.team_guidance.rules, 'fuli://rules/task-entry#team_guidance');
+  assert.equal(entry.team_guidance.rules, 'fuli://rules/task-entry/team_guidance');
   const result = await call(f); assert.notEqual(result.isError, true, JSON.stringify(result));
   const recovered = result.structuredContent.project_agent_context;
   assert.deepEqual(withoutEntryOnly(recovered), JSON.parse(JSON.stringify(resolvedRules(withoutEntryOnly(entry)))));

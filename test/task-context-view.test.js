@@ -24,11 +24,11 @@ test('shared rule text becomes a versioned reference readable as one resource', 
   const view = compactTaskContext(entry());
   const { version, sections } = entryRules();
   assert.match(version, /^[0-9a-f]{12}$/);
-  assert.deepEqual(view.task_guidance, { rules: `${ENTRY_RULES_URI}#task_guidance`, version });
+  assert.deepEqual(view.task_guidance, { rules: `${ENTRY_RULES_URI}/task_guidance`, version });
   assert.equal(view.application_guidance.project_scope, 'Synthetic project scope.');
   assert.equal(view.application_guidance.inheritance, undefined);
-  assert.equal(view.application_guidance.rules, `${ENTRY_RULES_URI}#application_guidance`);
-  assert.equal(view.project_agent_context.team_guidance.rules, `${ENTRY_RULES_URI}#team_guidance`);
+  assert.equal(view.application_guidance.rules, `${ENTRY_RULES_URI}/application_guidance`);
+  assert.equal(view.project_agent_context.team_guidance.rules, `${ENTRY_RULES_URI}/team_guidance`);
   assert.equal(view.project_agent_context.memory.personalSpaceId, undefined);
   const markdown = entryRulesMarkdown();
   for (const text of [sections.task_guidance.checkpoint, sections.application_guidance.inheritance,

@@ -8,11 +8,12 @@ import { UiIcon } from '@/ui'
 import ProjectScopePicker from './ProjectScopePicker.vue'
 import { boardTaskPeekId, type BoardTaskRef } from './board-task-peek'
 import { bindBoardScroller, bindDraggableCard, bindDropColumn, monitorBoardDrag, type BoardDropLocation } from './task-board-dnd'
-import { boardItemKey, EMPLOYEE_BOARD_STATUSES, isBoardMove } from './task-board-model'
+import { boardColumns, columnKeyOf, isColumnMove, ownColumnLabel } from './project-board-layout'
+import { boardItemKey } from './task-board-model'
 import { boardDropIndex, projectBoardColumn, type BoardDragProjection, type PendingBoardMove } from './task-board-projection'
 
-import type { EmployeeBoardItem, EmployeeBoardStatus, EmployeeProjectBoard } from './task-board-model'
-export type { EmployeeBoardItem, EmployeeBoardStatus, EmployeeProjectBoard } from './task-board-model'
+import type { BoardMoveTarget, EmployeeBoardItem, EmployeeProjectBoard } from './task-board-model'
+export type { BoardMoveTarget, EmployeeBoardItem, EmployeeBoardStatus, EmployeeProjectBoard } from './task-board-model'
 
 const props = defineProps<{
   boards: EmployeeProjectBoard[]
@@ -35,16 +36,18 @@ const emit = defineEmits<{
   'select-task': [item: EmployeeBoardItem]
   'create-task': []
   'update:visible-project-ids': [projectIds: string[]]
-  'move-task': [item: EmployeeBoardItem, status: EmployeeBoardStatus]
+  'move-task': [item: EmployeeBoardItem, target: BoardMoveTarget]
   retry: []
   'reset-project-filter': []
 }>()
 
 // Drag, keyboard and the "Move to…" menu are three ways to aim one move. They
-// share the status rule (isBoardMove), the projection and submitMove; the
-// pointer part is Pragmatic drag and drop behind task-board-dnd.ts.
+// share the move rule (isColumnMove), the projection and submitMove; the
+// pointer part is Pragmatic drag and drop behind task-board-dnd.ts. A board
+// showing one project with its own columns shows those columns; otherwise the
+// built-in ones, each card naming its project's own column.
 type MoveOrigin = 'pointer' | 'keyboard' | 'menu'
-type DragState = BoardDragProjection & { sourceStatus: EmployeeBoardStatus; mode: 'pointer' | 'keyboard' }
+type DragState = BoardDragProjection & { sourceColumn: string; mode: 'pointer' | 'keyboard' }
 /** `saving` turns true once the page reports the request as in flight. */
 type PendingMove = PendingBoardMove & { origin: MoveOrigin; saving: boolean }
 
@@ -64,7 +67,16 @@ const announcement = ref('')
 const drag = ref<DragState | null>(null)
 const pendingMoves = ref<PendingMove[]>([])
 const projectNames = computed(() => new Map(props.boards.map(({ project }) => [project.id, project.name])))
-const allItems = computed(() => props.boards.flatMap(({ items }) => items))
+// A project on an external board shows its link card, never tasks.
+const externalBoards = computed(() => props.boards.flatMap(({ project, projectBoard }) =>
+  projectBoard?.board.kind === 'external' ? [{ project, ...projectBoard.board.external }] : []))
+const onlyExternal = computed(() => props.boards.length > 0 && externalBoards.value.length === props.boards.length)
+const projectSetups = computed(() => new Map(props.boards.map(({ project, projectBoard }) => [project.id, projectBoard?.board ?? null])))
+// Its own columns, when the board shows exactly that one project.
+const ownSetup = computed(() => props.visibleProjectIds.length === 1 && props.boards.length === 1
+  && props.boards[0]!.project.id === props.visibleProjectIds[0] ? projectSetups.value.get(props.visibleProjectIds[0]!) ?? null : null)
+const allItems = computed(() => props.boards.filter(({ projectBoard }) => projectBoard?.board.kind !== 'external').flatMap(({ items }) => items))
+const layout = computed(() => boardColumns(ownSetup.value, allItems.value))
 const itemsByKey = computed(() => new Map(allItems.value.map((item) => [boardItemKey(item), item])))
 const filteredItems = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
@@ -76,8 +88,8 @@ const filteredItems = computed(() => {
     ...(item.tags ?? []),
   ].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle))
 })
-const columns = computed(() => EMPLOYEE_BOARD_STATUSES.map((definition) => {
-  const slots = projectBoardColumn(definition.value, filteredItems.value, pendingMoves.value, drag.value)
+const columns = computed(() => layout.value.map((definition) => {
+  const slots = projectBoardColumn(definition.key, filteredItems.value, pendingMoves.value, drag.value, columnOf)
   return { ...definition, slots, taskCount: slots.filter(({ kind }) => kind === 'task').length }
 }))
 const truncatedProjects = computed(() => props.boards.filter(({ truncated }) => truncated).length)
@@ -87,6 +99,13 @@ const hasMatches = computed(() => filteredItems.value.length > 0)
 
 function projectName(projectId: string) {
   return projectNames.value.get(projectId) ?? projectId
+}
+function columnOf(item: EmployeeBoardItem) {
+  return columnKeyOf(layout.value, item)
+}
+/** On the built-in columns, the name the card's own project gives its column. */
+function ownLabel(item: EmployeeBoardItem) {
+  return ownSetup.value ? null : ownColumnLabel(projectSetups.value.get(item.projectId), item)
 }
 function showAllProjects() {
   emit('update:visible-project-ids', props.projects.map((project) => project.id))
@@ -110,43 +129,43 @@ function canMove() {
 function canStartMove(key: string) {
   return canMove() && !drag.value && itemsByKey.value.has(key) && !isBusy(key)
 }
-function columnLabel(status: EmployeeBoardStatus) {
-  const definition = EMPLOYEE_BOARD_STATUSES.find((entry) => entry.value === status)
-  return definition ? t(definition.labelKey) : status
+function columnLabel(key: string) {
+  return layout.value.find((column) => column.key === key)?.label ?? key
 }
-function columnSlots(status: EmployeeBoardStatus) {
-  return columns.value.find((column) => column.value === status)?.slots ?? []
+function columnSlots(key: string) {
+  return columns.value.find((column) => column.key === key)?.slots ?? []
 }
 function savingLabel(key: string) {
   const move = pendingMove(key)
-  return move ? t('employees.allProjects.movingTo', { status: columnLabel(move.status) }) : t('employees.allProjects.saving')
+  return move ? t('employees.allProjects.movingTo', { status: columnLabel(move.column) }) : t('employees.allProjects.saving')
 }
 
 function liftCard(key: string, mode: DragState['mode'], height: number) {
   const item = itemsByKey.value.get(key)
   if (!item || !canStartMove(key)) return
   // Over its own column a card shows no placeholder, so its index there is unused.
-  drag.value = { key, sourceStatus: item.status, status: item.status, index: 0, height, mode }
-  announcement.value = t('employees.allProjects.dragLifted', { task: item.title, status: columnLabel(item.status) })
+  const column = columnOf(item)
+  drag.value = { key, sourceColumn: column, column, index: 0, height, mode }
+  announcement.value = t('employees.allProjects.dragLifted', { task: item.title, status: columnLabel(column) })
 }
-function aimDrag(status: EmployeeBoardStatus | null, index: number) {
+function aimDrag(column: string | null, index: number) {
   const current = drag.value
   if (!current) return
-  current.status = status
+  current.column = column
   current.index = index
 }
 function announceAim() {
-  const status = drag.value?.status
-  if (status) announcement.value = t('employees.allProjects.dragMoved', { status: columnLabel(status) })
+  const column = drag.value?.column
+  if (column) announcement.value = t('employees.allProjects.dragMoved', { status: columnLabel(column) })
 }
 function aimPointer(location: BoardDropLocation | null) {
   const current = drag.value
   if (!current || current.mode !== 'pointer') return
   if (!location) return aimDrag(null, 0)
   // Free space of the column already aimed at (the placeholder itself) keeps the slot.
-  if (!location.overKey && location.status === current.status) return
-  const changed = location.status !== current.status
-  aimDrag(location.status, boardDropIndex(columnSlots(location.status), current.key, location.overKey, location.edge))
+  if (!location.overKey && location.column === current.column) return
+  const changed = location.column !== current.column
+  aimDrag(location.column, boardDropIndex(columnSlots(location.column), current.key, location.overKey, location.edge))
   if (changed) announceAim()
 }
 function cancelDrag() {
@@ -158,11 +177,11 @@ function dropDrag(origin: MoveOrigin) {
   const current = drag.value
   if (!current) return
   drag.value = null
-  if (!current.status) {
+  if (!current.column) {
     announcement.value = t('employees.allProjects.dragCancelled')
     return
   }
-  void submitMove(current.key, current.status, current.index, origin)
+  void submitMove(current.key, current.column, current.index, origin)
 }
 
 /**
@@ -170,16 +189,17 @@ function dropDrag(origin: MoveOrigin) {
  * disappeared or already moved is never sent; the board only shows the move
  * as pending until the page reports the server's answer.
  */
-async function submitMove(key: string, status: EmployeeBoardStatus, index: number, origin: MoveOrigin) {
+async function submitMove(key: string, column: string, index: number, origin: MoveOrigin) {
   const item = itemsByKey.value.get(key)
+  const target = layout.value.find((entry) => entry.key === column)
   // A drop clears its lift before submitting; a lift still active here belongs to another interaction.
-  if (!item || !canMove() || drag.value || isBusy(key) || !isBoardMove(item, status)) {
+  if (!item || !target || !canMove() || drag.value || isBusy(key) || !isColumnMove(layout.value, item, column)) {
     announcement.value = t('employees.allProjects.dragCancelled')
     return
   }
-  pendingMoves.value = [...pendingMoves.value, { key, status, index, origin, saving: false }]
+  pendingMoves.value = [...pendingMoves.value, { key, column, index, origin, saving: false }]
   announcement.value = ''
-  emit('move-task', item, status)
+  emit('move-task', item, { status: target.status, ...(target.boardColumn ? { boardColumn: target.boardColumn } : {}) })
   await nextTick()
   const move = pendingMove(key)
   if (!move) return
@@ -197,8 +217,8 @@ function removePending(key: string) {
 function settleMove(move: PendingMove) {
   removePending(move.key)
   const item = itemsByKey.value.get(move.key)
-  announcement.value = item?.status === move.status
-    ? t('employees.allProjects.dragDropped', { task: item.title, status: columnLabel(move.status) })
+  announcement.value = item && columnOf(item) === move.column
+    ? t('employees.allProjects.dragDropped', { task: item.title, status: columnLabel(move.column) })
     : ''
   void restoreFocus(move.key, move.origin)
 }
@@ -226,8 +246,9 @@ async function restoreFocus(key: string, origin: MoveOrigin) {
   // A lift in progress (of another card: a busy card cannot lift) keeps its focus.
   if (!board || drag.value || !focusBelongsTo(key, board)) return
   // Look in the column the card now belongs to: its old element may still be leaving the other one.
-  const status = pendingMove(key)?.status ?? itemsByKey.value.get(key)?.status
-  const column = board.querySelector(`[data-board-column="${status}"]`)
+  const item = itemsByKey.value.get(key)
+  const columnKey = pendingMove(key)?.column ?? (item ? columnOf(item) : undefined)
+  const column = board.querySelector(`[data-board-column="${columnKey}"]`)
   const card = [...column?.querySelectorAll<HTMLElement>('[data-board-key]') ?? []].find((element) => element.dataset.boardKey === key)
   const control = card?.querySelector<HTMLButtonElement>(`[data-move-control="${origin === 'menu' ? 'menu' : 'handle'}"]`)
   ;(control && !control.disabled ? control : card ?? board).focus()
@@ -257,25 +278,25 @@ function onHandleKeydown(event: KeyboardEvent, key: string) {
     dropDrag('keyboard')
     return
   }
-  const status = current.status ?? current.sourceStatus
+  const column = current.column ?? current.sourceColumn
   if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-    const position = EMPLOYEE_BOARD_STATUSES.findIndex((entry) => entry.value === status) + (event.key === 'ArrowLeft' ? -1 : 1)
-    const next = EMPLOYEE_BOARD_STATUSES[Math.max(0, Math.min(EMPLOYEE_BOARD_STATUSES.length - 1, position))]!.value
+    const position = layout.value.findIndex((entry) => entry.key === column) + (event.key === 'ArrowLeft' ? -1 : 1)
+    const next = layout.value[Math.max(0, Math.min(layout.value.length - 1, position))]!.key
     aimDrag(next, boardDropIndex(columnSlots(next), key, null, null))
   } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-    const last = boardDropIndex(columnSlots(status), key, null, null)
-    aimDrag(status, Math.max(0, Math.min(last, current.index + (event.key === 'ArrowUp' ? -1 : 1))))
+    const last = boardDropIndex(columnSlots(column), key, null, null)
+    aimDrag(column, Math.max(0, Math.min(last, current.index + (event.key === 'ArrowUp' ? -1 : 1))))
   } else return
   event.preventDefault()
   announceAim()
 }
 let menuMoveKey: string | null = null
-function moveFromMenu(item: EmployeeBoardItem, status: EmployeeBoardStatus) {
+function moveFromMenu(item: EmployeeBoardItem, column: string) {
   const key = boardItemKey(item)
   // One interaction at a time: choosing from the menu ends any lift first.
   if (drag.value) cancelDrag()
   menuMoveKey = key
-  void submitMove(key, status, boardDropIndex(columnSlots(status), key, null, null), 'menu')
+  void submitMove(key, column, boardDropIndex(columnSlots(column), key, null, null), 'menu')
 }
 
 /** The menu would refocus its trigger, which a move just replaced; focus follows the card instead. */
@@ -294,7 +315,7 @@ watch(() => drag.value !== null && canMove() && filteredItems.value.some((item) 
   if (!stillValid) cancelDrag()
 })
 
-type CardBinding = { key: string; status: EmployeeBoardStatus }
+type CardBinding = { key: string; column: string }
 const boundCards = new WeakMap<HTMLElement, { card: CardBinding; cleanup: () => void }>()
 function bindCard(element: HTMLElement, card: CardBinding | null) {
   const handle = element.querySelector<HTMLElement>('[data-move-control="handle"]')
@@ -320,9 +341,9 @@ const vBoardCard: ObjectDirective<HTMLElement, CardBinding | null> = {
   beforeUnmount: unbindCard,
 }
 const boundColumns = new WeakMap<HTMLElement, () => void>()
-const vBoardColumn: ObjectDirective<HTMLElement, EmployeeBoardStatus> = {
+const vBoardColumn: ObjectDirective<HTMLElement, string> = {
   mounted: (element, { value }) => boundColumns.set(element, bindDropColumn({
-    boardId, element, status: value, list: element.querySelector<HTMLElement>('.employee-all-projects-list'),
+    boardId, element, column: value, list: element.querySelector<HTMLElement>('.employee-all-projects-list'),
   })),
   beforeUnmount: (element) => {
     boundColumns.get(element)?.()
@@ -397,7 +418,15 @@ onBeforeUnmount(() => {
       <p>{{ t('employees.allProjects.noProjectsVisibleHint') }}</p>
       <Button @click="showAllProjects">{{ t('employees.allProjects.showAllProjects') }}</Button>
     </div>
-    <div v-else-if="!hasItems" class="employee-all-projects-empty">
+    <ul v-if="hasVisibleProjects && externalBoards.length" class="employee-board-external-list" :aria-label="t('employees.projectBoard.externalList')">
+      <li v-for="external in externalBoards" :key="external.project.id" class="employee-board-external" :data-external-board="external.project.id">
+        <span class="employee-all-projects-project">{{ external.project.name }}</span>
+        <strong>{{ t('employees.projectBoard.usesExternal') }}</strong>
+        <a :href="external.url" target="_blank" rel="noopener noreferrer">{{ external.label || t('employees.projectBoard.openExternal') }}</a>
+      </li>
+    </ul>
+    <template v-if="hasVisibleProjects && !onlyExternal">
+    <div v-if="!hasItems" class="employee-all-projects-empty">
       <h3>{{ t(incomplete || truncatedProjects ? 'employees.read.incomplete' : 'employees.allProjects.empty') }}</h3>
       <p>{{ t(incomplete || truncatedProjects ? 'employees.read.incompleteHint' : 'employees.allProjects.emptyHint') }}</p>
     </div>
@@ -408,25 +437,26 @@ onBeforeUnmount(() => {
     <div v-else class="employee-all-projects-board-shell">
       <p v-if="canMoveTasks" id="employee-drag-instructions" class="visually-hidden">{{ t('employees.allProjects.dragHint') }}</p>
       <p class="visually-hidden" aria-live="assertive" aria-atomic="true" data-board-announcer>{{ announcement }}</p>
-      <div ref="boardElement" class="employee-all-projects-board" :class="{ 'is-dragging': drag }" tabindex="-1" :aria-label="t('employees.allProjects.boardLabel')">
+      <div ref="boardElement" class="employee-all-projects-board" :class="{ 'is-dragging': drag }" :style="{ '--board-column-count': columns.length }" tabindex="-1" :aria-label="t('employees.allProjects.boardLabel')">
       <section
         v-for="column in columns"
-        :key="column.value"
-        v-board-column="column.value"
+        :key="column.key"
+        v-board-column="column.key"
         class="employee-all-projects-column"
-        :class="{ 'is-drop-target': drag?.status === column.value }"
-        :data-board-column="column.value"
+        :class="{ 'is-drop-target': drag?.column === column.key }"
+        :data-board-column="column.key"
+        :data-board-status="column.status"
       >
         <header>
-          <h3>{{ t(column.labelKey) }}</h3>
+          <h3>{{ column.label }}</h3>
           <span :aria-label="t('employees.allProjects.taskCount', { count: column.taskCount })">{{ column.taskCount }}</span>
         </header>
-        <TransitionGroup name="employee-task-shift" tag="div" class="employee-all-projects-list" :data-status="column.value">
+        <TransitionGroup name="employee-task-shift" tag="div" class="employee-all-projects-list" :data-status="column.status">
           <template v-for="slot in column.slots" :key="slot.key">
             <div v-if="slot.kind === 'placeholder'" class="employee-all-projects-slot" :style="{ height: `${slot.height}px` }" data-drag-placeholder="true" aria-hidden="true" />
             <article
               v-else
-              v-board-card="canMoveTasks ? { key: slot.key, status: column.value } : null"
+              v-board-card="canMoveTasks ? { key: slot.key, column: column.key } : null"
               class="employee-all-projects-task"
               :class="{ 'is-drag-source': slot.dragSource, 'is-saving': isBusy(slot.key), 'is-selected': isSelected(slot.item) }"
               :data-board-task="boardTaskPeekId(slot.item)"
@@ -441,7 +471,7 @@ onBeforeUnmount(() => {
                 :aria-label="t('employees.allProjects.openTask', { project: projectName(slot.item.projectId), task: slot.item.title })"
                 @click="emit('select-task', slot.item)"
               >
-                <span class="employee-all-projects-project">{{ projectName(slot.item.projectId) }}</span>
+                <span class="employee-all-projects-project">{{ projectName(slot.item.projectId) }}<span v-if="ownLabel(slot.item)" class="employee-all-projects-own-column" data-own-column> · {{ ownLabel(slot.item) }}</span></span>
                 <strong>{{ slot.item.title }}</strong>
                 <span v-if="slot.item.summary && slot.item.summary !== slot.item.title" class="employee-all-projects-summary">{{ slot.item.summary }}</span>
                 <span v-if="slot.item.tags?.length" class="employee-all-projects-tags" aria-hidden="true">
@@ -466,6 +496,8 @@ onBeforeUnmount(() => {
                 <span class="employee-all-projects-move-menu">
                   <BoardMoveMenu
                     :item="slot.item"
+                    :columns="layout"
+                    :current="columnOf(slot.item)"
                     :disabled="isBusy(slot.key)"
                     @move="moveFromMenu(slot.item, $event)"
                     @close-auto-focus="onMenuCloseFocus"
@@ -475,11 +507,12 @@ onBeforeUnmount(() => {
               <GrowthLoading v-if="isBusy(slot.key) && !slot.dragSource" class="employee-all-projects-saving" variant="inline" :label="savingLabel(slot.key)" />
             </article>
           </template>
-          <p v-if="!column.slots.length" :key="`${column.value}-empty`" class="employee-all-projects-column-empty">{{ t('employees.allProjects.columnEmpty') }}</p>
+          <p v-if="!column.slots.length" :key="`${column.key}-empty`" class="employee-all-projects-column-empty">{{ t('employees.allProjects.columnEmpty') }}</p>
         </TransitionGroup>
         </section>
       </div>
     </div>
+    </template>
   </section>
 </template>
 
@@ -498,7 +531,7 @@ onBeforeUnmount(() => {
 .employee-all-projects-notice { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 8px 12px; border-radius: 10px; background: var(--color-warning-soft); color: var(--color-warning); font-size: 13px; }
 .employee-all-projects-notice.is-error { background: var(--color-danger-soft); color: var(--color-danger); }
 .employee-all-projects-board-shell { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 8px; }
-.employee-all-projects-board { display: grid; flex: 1; grid-template-columns: repeat(5, minmax(230px, 1fr)); gap: 12px; min-height: 0; overflow-x: auto; padding: 2px 2px 4px; }
+.employee-all-projects-board { display: grid; flex: 1; grid-template-columns: repeat(var(--board-column-count, 5), minmax(230px, 1fr)); gap: 12px; min-height: 0; overflow-x: auto; padding: 2px 2px 4px; }
 .employee-all-projects-board:focus { outline: none; }
 .employee-all-projects-column { display: flex; min-width: 230px; min-height: 0; flex-direction: column; overflow: hidden; border-radius: 14px; background: var(--color-surface-subtle); transition: background-color 160ms ease, box-shadow 160ms ease; }
 .employee-all-projects-column.is-drop-target { background: var(--color-surface-subtle); box-shadow: inset 0 0 0 1px var(--color-accent-line); }
@@ -541,6 +574,12 @@ onBeforeUnmount(() => {
 .employee-all-projects-summary { display: -webkit-box; overflow: hidden; color: var(--color-muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .employee-all-projects-tags { display: flex; flex-wrap: wrap; gap: 5px; }
 .employee-all-projects-tags span { max-width: 100%; overflow: hidden; border-radius: 5px; background: var(--color-surface-subtle); color: var(--color-muted); font-size: 12px; line-height: 1.5; padding: 2px 6px; text-overflow: ellipsis; white-space: nowrap; }
+.employee-all-projects-own-column { color: var(--color-muted); font-weight: 500; }
+/* A project on an external board: one card with its link, lifted like a task card. */
+.employee-board-external-list { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.employee-board-external { display: grid; flex: 0 1 300px; gap: 4px; min-width: 0; padding: 11px 12px; border-radius: 12px; background: var(--color-surface); box-shadow: var(--shadow-sm); font-size: 13px; }
+.employee-board-external strong { font-weight: 600; }
+.employee-board-external a { color: var(--color-accent); overflow-wrap: anywhere; }
 .employee-all-projects-column-empty { margin: 24px 8px; color: var(--color-muted); font-size: 12px; text-align: center; }
 .employee-all-projects-empty { display: grid; flex: 1; place-content: center; justify-items: center; padding: 30px; text-align: center; }
 .employee-all-projects-empty h3 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
@@ -555,7 +594,7 @@ onBeforeUnmount(() => {
   .employee-all-projects-search { grid-column: 1 / -1; }
   .employee-all-projects-filter, .employee-all-projects-search { flex-basis: auto; min-width: 0; }
   .employee-all-projects-search { flex-basis: auto; }
-  .employee-all-projects-board { grid-template-columns: repeat(5, minmax(82vw, 1fr)); }
+  .employee-all-projects-board { grid-template-columns: repeat(var(--board-column-count, 5), minmax(82vw, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .employee-all-projects-column, .employee-task-shift-move, .employee-task-shift-enter-active, .employee-task-shift-leave-active { transition-duration: 1ms !important; }

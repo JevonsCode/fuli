@@ -4,13 +4,17 @@
       "version": 8,
       "fingerprint": "395f700b966ee292a516fb5b03e7cfd198fbcca629e04567106af06be4604691"
     },
+    "agent-services": {
+      "version": 1,
+      "fingerprint": "b7dbb1739e11817936d3be0ea5e72739fd6b5b96dda8922f6985a6d947a93c4d"
+    },
     "employee-management": {
       "version": 1,
       "fingerprint": "ac51af848f3e7277f38e13ba68567a10d187ee6558249c3230eec4493c53bf9b"
     },
     "jefa-board": {
-      "version": 1,
-      "fingerprint": "7f12e25b7b34038f7a424b4c5e0982904780b71525433ab3a367be76f24fea12"
+      "version": 3,
+      "fingerprint": "4361b94c01a458b680a0191279fb7ad49f0a4e7a18fadd1b5bc0438865243218"
     },
     "judgment": {
       "version": 1,
@@ -45,8 +49,8 @@
       "fingerprint": "49aaea129bdbd051a4046e7bfa38a7652da87ad54a893ce25e1deb0d9688dbe3"
     },
     "roundtable": {
-      "version": 3,
-      "fingerprint": "3fafb0f900cb36db20ed59e8c6a450038bcf6311ab3c80282130fcc54c87db67"
+      "version": 4,
+      "fingerprint": "6a7309518beb0127f5441680a10e896c435da37721da90a042f22a97bcc261eb"
     },
     "standalone": {
       "version": 1,

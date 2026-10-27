@@ -149,11 +149,6 @@ test('preference conflicts: an Agent tool reads as a plain session; the console 
   assert.equal(listed.status, 200);
   assert.deepEqual(sent, [{ path: '/v1/preference-conflicts', method: 'GET', review: true,
     query: { personal_space_id: SPACE, limit: '500', status: 'ai_pending' } }]);
-  // The writing-taste profile counts the person's conflicts the same way, with the graph.
-  sent.length = 0;
-  await consoleGet(app, `/api/writing-taste-profile?personalSpaceId=${SPACE}`, ownerReads);
-  assert.deepEqual(sent.map(({ path, review }) => [path, review]).sort(), [
-    ['/v1/preference-conflicts', true], [`/v1/spaces/${SPACE}/graph`, true]]);
   assert.equal(calls.length, 1, 'the console\'s reads never leave on the Agent client');
 });
 

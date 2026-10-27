@@ -23,10 +23,12 @@ import { groupAgentsByProject } from "@/features/agent-profile/directory-project
 import DirectoryProjectGroup from "@/features/agent-profile/DirectoryProjectGroup.vue";
 import UnassignedConversationsPanel from "@/features/agent-profile/UnassignedConversationsPanel.vue";
 import AgentCard from "@/features/agent-profile/AgentCard.vue";
+import { useOccupationCatalog } from "@/features/occupations/occupation-catalog";
 import { isFormalProject, projectDisplayName } from "@/features/projects/project-origin";
 import {
   agentDisplayName,
   agentProfilePath,
+  agentResponsibility,
   fuzzyMatch,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
@@ -49,6 +51,8 @@ const store = useConsoleStore();
 const route = useRoute();
 const router = useRouter();
 const space = computed(() => store.activePersonalSpace?.id ?? "");
+// Occupation chips name what the space catalog calls them.
+useOccupationCatalog(space);
 const agentPins = useAgentPinsState(space);
 const pinnedAgentIds = agentPins.agentIds;
 const pinSavingAgentId = agentPins.savingAgentId;
@@ -120,7 +124,7 @@ const matches = (agent: (typeof agents.value)[number]) =>
     [
       agentDisplayName(agent),
       agent.employeeNumber ? `FLA ${agent.employeeNumber}` : "",
-      agent.profile.responsibility,
+      agentResponsibility(agent),
       ...agent.profile.capabilities,
       ...profileProjectIds(agent).map((id) => projectNames.value[id] || id),
     ].join(" "),

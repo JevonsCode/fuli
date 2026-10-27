@@ -6,6 +6,7 @@ import { refuseRemoteDecision } from '../../../http/request-policy.js';
 import { readJson, sendJson } from '../../../http/response.js';
 import { jsonSchemaToZod } from '../../../mcp/tool-schema.js';
 import { EmployeeError } from '../../manifest.js';
+import { TASK_STATUSES } from './project-board.js';
 
 // Jefa's workspace routes under /employee-workspaces/jefa/<project>/. The host
 // has already authorized the project (context.project); a project named in a
@@ -13,7 +14,8 @@ import { EmployeeError } from '../../manifest.js';
 // sharing a project are the person's own decisions on this computer
 // (interface-catalog.js, local_user_only); the public projection shows only
 // tasks marked public_summary, and only their title, status and priority.
-const statusBody = jsonSchemaToZod(objectSchema({ status: enumSchema(['planned', 'active', 'blocked', 'review', 'done']) }, ['status']));
+// A move to one of the project's own columns names it in boardColumn too.
+const statusBody = jsonSchemaToZod(objectSchema({ status: enumSchema(TASK_STATUSES), boardColumn: boundedString(48) }, ['status']));
 const sharingBody = jsonSchemaToZod(objectSchema({ publicShareEnabled: { type: 'boolean' }, acceptsPublicRequests: { type: 'boolean' } },
   ['publicShareEnabled', 'acceptsPublicRequests']));
 const workItemBody = jsonSchemaToZod(objectSchema({
@@ -53,8 +55,8 @@ export async function handleJefaHttp(store, manifest, request, response, context
     sendJson(response, 201, { workItem });
   } else if ((match = route('PATCH', /^\/api\/work-items\/([^/]+)\/status$/))) {
     if (refuseRemoteDecision(request, response, 'A task is accepted as done only on this computer')) return;
-    const { status } = parse(statusBody, await readJson(request), 'status');
-    sendJson(response, 200, { workItem: store.setStatus(scope, segment(match[1]), status) });
+    const { status, boardColumn } = parse(statusBody, await readJson(request), 'status');
+    sendJson(response, 200, { workItem: store.setStatus(scope, segment(match[1]), status, boardColumn) });
   } else {
     sendJson(response, 404, { error: 'Not found', code: 'not_found' });
   }

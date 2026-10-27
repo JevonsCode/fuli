@@ -6,6 +6,7 @@ import { captureDecision, captureDisabled, describeCapture } from '../graphiti/c
 import { refusedAgentWriteNotice } from '../graphiti/capture-notice.js';
 import { isTagGovernanceProposal, knowledgeTagChange, proposeTagGovernance } from '../graphiti/knowledge-tags.js';
 import { prepareKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
+import { reportAgentService } from '../agent-services/agent-report.js';
 
 // These tools read or change the two local stores that can retain deleted
 // knowledge. Provider-only reads and unrelated tools remain available.
@@ -21,6 +22,7 @@ const HANDLERS = Object.freeze({
   get_model_usage: (app, input) => modelBackends(app).usage(input),
   role_work: (app, { action, ...input }) => roleWork(app)[action === 'submit' ? 'submit' : 'claim'](input),
   register_standing_assignment: (app, input) => app.registerStandingAssignment(input),
+  report_agent_service: (app, input) => reportAgentService(app, input),
   control_project_agent_task_run: (app, input) => app.controlProjectAgentTaskRun({ ...input, agentInvocation: true }),
   // An Agent reads Tonborg's records without their words (rec#50, judgment/agent-view.js).
   list_judgments: (app, input) => app.judgment.agent.records(input),

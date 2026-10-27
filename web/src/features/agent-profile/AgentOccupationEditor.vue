@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, ref, watch } from "vue";
 import UiSelect from "@/ui/UiSelect.vue";
 import { t } from "@/i18n";
@@ -7,7 +8,6 @@ import type { AgentOccupationKey, ProjectAgentRecord } from "@/types";
 import { occupationDescription, occupationEntry, useOccupationCatalog } from "@/features/occupations/occupation-catalog";
 import {
   MAX_OCCUPATION_TAGS,
-  OCCUPATION_KEYS,
   occupationLabel,
   occupationLabels,
   saveAgentOccupation,
@@ -31,13 +31,13 @@ watch(role, (value) => {
   if (value) tags.value = tags.value.filter((tag) => tag !== value);
 });
 
-// The space catalog's active occupations; built-in keys until it is read. The
-// Agent's current choices stay listed even if they were archived since.
+// The space catalog's active occupations, the one list there is. The Agent's
+// current choices stay listed even if they were archived since.
 const catalog = useOccupationCatalog(computed(() => props.agent.personalSpaceId));
 const keys = computed(() => {
   const active = catalog.active.value.map((entry) => entry.key);
   const current = [props.agent.occupation?.role, ...(props.agent.occupation?.tags ?? [])].filter((key): key is string => Boolean(key));
-  return [...new Set([...(active.length ? active : OCCUPATION_KEYS), ...current])];
+  return [...new Set([...active, ...current])];
 });
 const duties = (key: string) => {
   const entry = occupationEntry(key);
@@ -95,6 +95,7 @@ async function save() {
         {{ t("agentRedesign.occupation.tags") }}
         <small class="ui-meta">{{ t("agentRedesign.occupation.tagsHint") }}</small>
       </legend>
+      <GrowthLoading v-if="catalog.loading.value && !catalog.active.value.length" variant="inline" :label="t('occupations.loading')" />
       <Button size="sm" variant="ghost"
         v-for="key in keys"
         :key="key"

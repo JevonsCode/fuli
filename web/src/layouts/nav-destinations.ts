@@ -19,6 +19,8 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
       // The one entry to team management: assign work, staff projects, automation rules.
       { key: 'orchestrate', to: '/project-agents/manage', owns: ['/project-agents/manage'] },
       { key: 'occupations', to: '/project-agents/occupations', owns: ['/project-agents/occupations'] },
+      // 服务管理: services FLAs started and their workbenches (rec#11 D-71).
+      { key: 'services', to: '/project-agents/services', owns: ['/project-agents/services'] },
     ] },
     { key: 'chat', icon: 'chat', to: '/roundtables', owns: ['/roundtables', '/inbox'], sections: [
       { key: 'roundtables', to: '/roundtables', owns: ['/roundtables'] },
@@ -31,7 +33,6 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
     { key: 'memory', icon: 'memory', to: knowledge, owns: ['/knowledge', '/preferences', '/organize', '/tags'], sections: [
       { key: 'knowledge', to: knowledge, owns: ['/knowledge'] },
       { key: 'preferences', to: '/preferences', owns: ['/preferences'] },
-      { key: 'writing', to: '/preferences/writing', owns: ['/preferences/writing'] },
       { key: 'organize', to: '/organize', owns: ['/organize'] },
       { key: 'tags', to: '/tags', owns: ['/tags'] },
     ] },
@@ -51,7 +52,7 @@ export function activeDestination(destinations: readonly NavDestination[], path:
   return destinations.find(destination => owns(destination.owns, path, destination.exact))
 }
 
-// The longest owning prefix wins, so /preferences/writing selects 品味, not 偏好.
+// The longest owning prefix wins, so /project-agents/manage selects 编排, not 全部.
 export function activeSection(destination: NavDestination | undefined, path: string): NavSection | undefined {
   return destination?.sections
     .filter(section => owns(section.owns, path))
