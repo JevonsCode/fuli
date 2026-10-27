@@ -110,6 +110,7 @@ export function hookAdditionalContextToolResult(
   {
     hookEventName,
     label,
+    blockedLabel = BLOCKED_PREFERENCE_LABEL,
     limitBytes = RESULT_LIMIT_BYTES,
     itemLimit = RESULT_ITEM_LIMIT
   }
@@ -119,7 +120,7 @@ export function hookAdditionalContextToolResult(
   const warning = !blocked && result.structuredContent.truncated
     ? '\nContext delivery is incomplete. Do not claim full employee recovery or merge truncated memory. Read get_project_agent_memory for the exact role and project before continuing its work.'
     : '';
-  const additionalContext = `${blocked ? BLOCKED_PREFERENCE_LABEL : label}${warning}\n${JSON.stringify(result.structuredContent)}`;
+  const additionalContext = `${blocked ? blockedLabel : label}${warning}\n${JSON.stringify(result.structuredContent)}`;
   return {
     ...result,
     content: [{

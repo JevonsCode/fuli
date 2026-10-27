@@ -4,9 +4,6 @@ import { blockedByDeliveryBudget, blockedPreferenceDelivery } from '../mcp/prefe
 
 // The blocked reason of an entry that does not fit its host's inline limit.
 const INLINE_BUDGET = 'inline_budget';
-// How much of each role text and initial preference a bounded role keeps.
-const ROLE_PREVIEW_CHARS = 280;
-const ROLE_PREFERENCE_PREVIEW = 3;
 
 // A task entry bounded to the inline limit of the host that shows it (rec#11
 // D-54). An Agent adapter whose host keeps only a preview of a longer hook
@@ -18,6 +15,10 @@ export const OMITTED_PREFERENCES_LABEL = 'More preferences apply than this entry
 export const ALWAYS_INLINE_OMITTED_LABEL = 'Hard rules are among them (preferences_omitted.includes_always_inline): '
   + 'if they are not already in this conversation, read the omitted ones once with read_task_preferences before acting; '
   + 'they stay in force.';
+
+// Added when the active conflicts are left out (D-72).
+export const OMITTED_CONFLICTS_LABEL = 'Unresolved preference conflicts apply that this entry does not list (active_conflicts_omitted): '
+  + 'read them with read_task_preferences before acting where one may apply, and apply no alternative until it is resolved.';
 
 // The default: the entry as it is.
 export const WHOLE_ENTRY = (value, { deliver }) => deliver(value);
@@ -48,10 +49,11 @@ export function fitUncached(fit, value, render) {
 //    give way to them, one at a time, each to a count or preview with its
 //    reader (D-72, detailLevels): the working-memory previews (global layer
 //    first; each keeps its revision), the directory snapshot, the team roster,
-//    the managers' details, the active conflicts and then the role text. The
-//    ranked preferences are bounded beside the hard rules at the first detail
-//    level where those fit;
-// 4. then as much recall, conversation and detail as still fits comes back.
+//    the managers' details and then the active conflicts. The role is never
+//    cut. The ranked preferences are bounded beside the hard rules at the
+//    first detail level where those fit;
+// 4. then as much recall and conversation as still fits comes back, and each
+//    reduced detail on its own while it fits, the last reduced first.
 // What is left out is named by count with its reader. If the hard rules alone
 // are still over the limit (D-69), they are bounded the same way, as the
 // largest prefix by scope (Agent, project, global) and then the Provider's
@@ -74,7 +76,9 @@ export function inlineEntryFit(limit, length) {
     }
     const preferences = Array.isArray(value.effective_preferences) ? value.effective_preferences : [];
     const { kept, ranked } = inlineRanking(preferences, entryWorkKind(value));
-    const bounded = [...levels, ...detailLevels(levels.at(-1))];
+    const leanest = levels.at(-1);
+    const steps = detailSteps(leanest);
+    const bounded = [...levels, ...steps.map((_, index) => reducedDetails(leanest, steps.slice(0, index + 1)))];
     const fitsAt = (level, selected) => fits(complete(withPreferences(level, selected, preferences.length)));
     // The richest level where every hard rule fits, and what the search may
     // leave out there: the ranked rest. Where none fits, the hard rules
@@ -91,10 +95,20 @@ export function inlineEntryFit(limit, length) {
       if (fitsAt(level, selection(middle))) low = middle;
       else high = middle - 1;
     }
-    const whole = low === order.length;
-    for (const candidate of richer) {
-      const attempt = deliver(whole ? candidate : withPreferences(candidate, selection(low), preferences.length));
-      if (fits(attempt)) return attempt;
+    const frame = candidate => low === order.length ? candidate : withPreferences(candidate, selection(low), preferences.length);
+    for (const [index, candidate] of richer.entries()) {
+      const attempt = deliver(frame(candidate));
+      if (!fits(attempt)) continue;
+      // A detail level reduces every detail before its own; each of them
+      // comes back on its own while it fits, the last reduced first.
+      let reduced = steps.slice(0, Math.max(0, index - levels.length + 1));
+      let best = attempt;
+      for (const step of [...reduced].reverse()) {
+        const without = reduced.filter(item => item !== step);
+        const restored = deliver(frame(reducedDetails(leanest, without)));
+        if (fits(restored)) [reduced, best] = [without, restored];
+      }
+      return best;
     }
     return deliver(blockedPreferenceDelivery(value, INLINE_BUDGET));
   };
@@ -119,8 +133,17 @@ function inlineRanking(preferences, workKind) {
   return { kept, ranked };
 }
 
+// A frame that leaves preferences or conflicts out is not the complete set a
+// reader's result (read_task_preferences, behind a restore or refresh)
+// declares, so those claims go. preferences_complete is not set false, which
+// would make it a blocked frame.
+function withoutCompleteClaims(value) {
+  const { preferences_complete: _complete, same_task_recovery_available: _recovery, preference_delivery: delivery, ...rest } = value;
+  return { ...rest, ...(delivery && delivery.status !== 'complete' ? { preference_delivery: delivery } : {}) };
+}
+
 function withPreferences(level, selected, total) {
-  return copyPreferenceScope(level, { ...level,
+  return copyPreferenceScope(level, { ...withoutCompleteClaims(level),
     effective_preferences: level.effective_preferences.filter((_, index) => selected.has(index)),
     preferences_omitted: { count: total - selected.size,
       ...(level.effective_preferences.some((item, index) => !selected.has(index) && preferenceAlwaysInline(item))
@@ -150,83 +173,62 @@ function contextLevels(value) {
   return levels;
 }
 
-// The leanest context with fewer details, one step at a time (D-72). A step
-// that finds nothing to reduce adds no level.
-function detailLevels(leanest) {
-  const levels = [];
-  let current = leanest;
-  for (const step of DETAIL_STEPS) {
-    const next = step(current);
-    if (!next) continue;
-    current = copyPreferenceScope(leanest, next);
-    levels.push(current);
-  }
-  return levels;
+// The detail steps that have something to reduce in `leanest`, in order.
+// Each touches one field, so any subset of them applies on its own.
+function detailSteps(leanest) {
+  return DETAIL_STEPS.filter(step => step(leanest));
+}
+
+function reducedDetails(leanest, steps) {
+  return copyPreferenceScope(leanest, steps.reduce((value, step) => step(value) ?? value, leanest));
 }
 
 const withContinuity = (value, field, view) => ({ ...value, project_agent_context: { ...value.project_agent_context, [field]: view } });
+const present = values => Object.fromEntries(Object.entries(values).filter(([, item]) => item !== undefined));
+const memoryArguments = (value, personalProjectId) => present({ personalSpaceId: value.context?.personal_space_id,
+  personalProjectId, agentId: value.context?.project_agent_id ?? value.project_agent_context?.project_agent_id });
 
 // Each step returns the entry with one detail reduced to what it counts and
-// the call that reads it, or null when there is nothing to reduce.
+// the call that reads it, or null when there is nothing to reduce. The role is
+// never cut: recovery does not cut role instructions either
+// (task-preference-reader.js), so an entry that needs it is the blocked frame.
 const DETAIL_STEPS = [
   // The global layer first, as it is the less specific one.
-  value => value.project_agent_context?.global_memory?.current
-    ? withContinuity(value, 'global_memory', memoryPointer(value.project_agent_context.global_memory, { personalProjectId: null })) : null,
-  value => value.project_agent_context?.memory?.current
-    ? withContinuity(value, 'memory', memoryPointer(value.project_agent_context.memory)) : null,
+  value => value.project_agent_context?.global_memory?.current ? withContinuity(value, 'global_memory',
+    memoryPointer(value.project_agent_context.global_memory, memoryArguments(value, null))) : null,
+  value => value.project_agent_context?.memory?.current ? withContinuity(value, 'memory',
+    memoryPointer(value.project_agent_context.memory, memoryArguments(value, value.context?.personal_project_id ?? null))) : null,
+  // The snapshot's files are written with the memory the layers' read returns.
   value => {
     const snapshot = value.project_agent_context?.directorySnapshot;
     return Array.isArray(snapshot?.files) ? withContinuity(value, 'directorySnapshot',
-      { status: snapshot.status, path: snapshot.path, files_omitted: snapshot.files.length }) : null;
+      { status: snapshot.status, path: snapshot.path, files_omitted: snapshot.files.length,
+        read: { tool: 'get_project_agent_memory', arguments: memoryArguments(value, value.context?.personal_project_id ?? null) } }) : null;
   },
   value => {
     const team = value.project_agent_context?.team;
-    return team?.roster?.length ? withContinuity(value, 'team',
-      { roster_total: team.roster_total ?? team.roster.length, read: { tool: 'get_project_team' } }) : null;
+    return team?.roster?.length ? withContinuity(value, 'team', { roster_total: team.roster_total ?? team.roster.length,
+      read: { tool: 'get_project_team', arguments: present({ personalSpaceId: value.context?.personal_space_id,
+        personalProjectId: value.context?.personal_project_id ?? value.project_agent_context?.personal_project_id }) } }) : null;
   },
   value => {
     const managers = value.project_management_context?.managers;
     return managers?.length ? { ...value, project_management_context: { ...value.project_management_context,
-      managers: managers.map(manager => ({ template_id: manager.template_id, agent_id: manager.agent_id, name: manager.name,
-        guidance: manager.guidance, read: { tool: manager.tools?.discover ?? 'list_employee_tools',
+      managers: managers.map(manager => present({ template_id: manager.template_id, agent_id: manager.agent_id, name: manager.name,
+        title_mode: manager.title_mode, suggested_match: manager.suggested_match, guidance: manager.guidance,
+        read: { tool: manager.tools?.discover ?? 'list_employee_tools',
           arguments: { templateId: manager.template_id, personalProjectId: manager.personal_project_id } } })) } } : null;
   },
-  ({ active_conflicts: conflicts, ...value }) => conflicts?.length ? { ...value,
+  ({ active_conflicts: conflicts, ...value }) => conflicts?.length ? { ...withoutCompleteClaims(value),
     active_conflicts_omitted: { count: conflicts.length,
-      read: { tool: 'read_task_preferences', arguments: { taskContextToken: value.taskContextToken } } } } : null,
-  value => {
-    const role = value.project_agent_context?.role;
-    const bounded = role && boundedRole(role);
-    return bounded ? withContinuity(value, 'role', bounded) : null;
-  }
+      read: { tool: 'read_task_preferences', arguments: { taskContextToken: value.taskContextToken } } } } : null
 ];
 
 // A layer's preview without its notes: its scope, revision and rules stay,
 // so a checkpoint still names the revision it read (task-context-view.js).
 function memoryPointer(memory, readArguments) {
   const { current: _current, notesTruncated: _cut, ...pointer } = memory;
-  return { ...pointer, view: 'omitted',
-    read: { tool: 'get_project_agent_memory', ...(readArguments ? { arguments: readArguments } : {}) } };
-}
-
-// The role with each text cut to its first ROLE_PREVIEW_CHARS code points and
-// at most ROLE_PREFERENCE_PREVIEW initial preferences, or null when nothing is
-// longer. get_project_agent reads the whole profile.
-function boundedRole(role) {
-  let cut = false;
-  const text = value => {
-    if (typeof value !== 'string') return value;
-    const points = [...value];
-    if (points.length <= ROLE_PREVIEW_CHARS) return value;
-    cut = true;
-    return `${points.slice(0, ROLE_PREVIEW_CHARS).join('')}…`;
-  };
-  const preferences = role.initial_preferences ?? [];
-  if (preferences.length > ROLE_PREFERENCE_PREVIEW) cut = true;
-  const bounded = { ...role, responsibility: text(role.responsibility), expectations: text(role.expectations),
-    initial_preferences: preferences.slice(0, ROLE_PREFERENCE_PREVIEW).map(text),
-    ...(role.character ? { character: Object.fromEntries(Object.entries(role.character).map(([key, value]) => [key, text(value)])) } : {}) };
-  return cut ? { ...bounded, truncated: true, read: { tool: 'get_project_agent' } } : null;
+  return { ...pointer, view: 'omitted', read: { tool: 'get_project_agent_memory', arguments: readArguments } };
 }
 
 // The recall without its items: what it matched, how many, and the search

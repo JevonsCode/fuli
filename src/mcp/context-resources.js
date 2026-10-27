@@ -1,4 +1,5 @@
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { ENTRY_RULES_SECTION_TEMPLATE, ENTRY_RULES_URI, entryRulesMarkdown, entryRulesSectionMarkdown }
   from '../conversations/entry-rules.js';
 import { singleLine } from '../text/single-line.js';
@@ -48,7 +49,7 @@ export function registerFuliContextResources(server, app, {
     },
     (uri, variables) => {
       const text = entryRulesSectionMarkdown(String(variables?.section ?? ''));
-      if (text === null) throw new Error(`FULI task entry rule section not found: ${variables?.section}`);
+      if (text === null) throw new McpError(ErrorCode.InvalidParams, `FULI task entry rule section not found: ${variables?.section}`);
       return markdownResource(uri, text);
     }
   );

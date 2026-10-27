@@ -49,9 +49,9 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     throw new TypeError('Claude lifecycle requires a host session identifier');
   }
   const source = { sourceApplication: 'claude_code', sourceSessionId: sessionId };
-  if (PREFERENCE_RESET_EVENTS.includes(event)) return preferenceLifecycleOutput(event, input,
+  if (PREFERENCE_RESET_EVENTS.includes(event)) return withinInlineLimit(event, input, await preferenceLifecycleOutput(event, input,
     { sourceApplication: 'claude_code', delivery, currentTask, invoke, replayedSources: CLAUDE_REPLAYED_SOURCES,
-      inlineChars: CLAUDE_ENTRY_INLINE_CHARS });
+      inlineChars: CLAUDE_ENTRY_INLINE_CHARS }));
   if (event === 'UserPromptSubmit') {
     if (typeof input.cwd !== 'string' || !input.cwd.trim() || typeof input.prompt !== 'string') {
       throw new TypeError('Claude task entry requires cwd and prompt');
@@ -60,18 +60,31 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     const off = await entryRefusal?.();
     if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
     const basis = inPlaceRefreshBasis(input);
-    if (basis) return claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis);
+    if (basis) return withinInlineLimit(event, input,
+      await claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis));
     const context = await invoke('begin_task_context', {
       sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source, ...taskSceneInput(input.prompt)
     });
     const entry = compactTaskContext(context);
-    return preferenceHookOutput(entry, event, input, delivery, 'claude_code',
+    return withinInlineLimit(event, input, await preferenceHookOutput(entry, event, input, delivery, 'claude_code',
       'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND,
-      false, { inlineChars: CLAUDE_ENTRY_INLINE_CHARS });
+      false, { inlineChars: CLAUDE_ENTRY_INLINE_CHARS }));
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
   return stopHookOutcome(check, invoke, source);
 }
+
+// The last guard of the inline limit (rec#11 D-72): a context the bounded
+// fit could not bring under it, not even as its blocked frame, is never sent;
+// the turn gets the unavailable output instead.
+function withinInlineLimit(event, input, output) {
+  const text = output?.hookSpecificOutput?.additionalContext;
+  return typeof text === 'string' && text.length > CLAUDE_ENTRY_INLINE_CHARS
+    ? claudeLifecycleUnavailable(event, input, INLINE_LIMIT_UNAVAILABLE) : output;
+}
+
+const INLINE_LIMIT_UNAVAILABLE = 'Fuli task context does not fit Claude Code\'s inline limit, not even as a blocked frame; '
+  + 'memory recovery and task checkpoint are not verified. Continue with the user request and use Fuli MCP when it becomes available.';
 
 // A turn whose task transition cannot be proven re-reads the current task in
 // place (rec#15, unresolved-turns.js). The installed hook holds the turn as

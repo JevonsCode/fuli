@@ -113,7 +113,8 @@ export async function syntheticWorkingEntry({ items, sessionId, token = 'fuli-ta
   const judgment = await taskJudgmentContext({ config: { personal: { spaceId: SPACE } }, judgment: { policy: async () =>
     ({ mode: 'auto', quality: 'quality', client: 'claude_code', revision: 3, globalRevision: 2, inherited: false, personalProjectId: PROJECT }) } },
   PROJECT);
-  return withPreferenceScope({ ...entry, checkpoint_required: false, checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE,
+  return withPreferenceScope({ ...entry, context: { personal_space_id: SPACE, ...entry.context },
+    checkpoint_required: false, checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE,
     resumed_checkpoint: false, previous_checkpoint_missing: false, task_guidance: taskKnowledgeGuidance(),
     conversation: { ...entry.conversation, revision: 3, recovered_from: null, compacted: false, guidance: CONVERSATION_GUIDANCE },
     agent_receipt: { ...entry.agent_receipt, guidance: RECEIPT_GUIDANCE },

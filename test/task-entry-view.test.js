@@ -102,5 +102,13 @@ test('every rule reference an entry names resolves to its own section through an
       assert.equal(resource.text.includes(`## ${other}\n`), false, `${uri} holds only its section`);
     }
   }
-  await assert.rejects(client.readResource({ uri: 'fuli://rules/task-entry/no_such_section' }));
+  // An unknown section is the caller's argument, not a server failure.
+  await assert.rejects(client.readResource({ uri: 'fuli://rules/task-entry/no_such_section' }), error => error.code === -32602);
+});
+
+test('a sealed worker keeps the full manager rules, and they name read_board', async () => {
+  const value = await entry();
+  const [manager] = compactTaskContext({ ...value, worker_run: { run_id: 'run-1' } }).project_management_context.managers;
+  assert.equal(typeof manager.guidance, 'string');
+  assert.match(manager.guidance, /read_board/);
 });

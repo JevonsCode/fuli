@@ -19,10 +19,14 @@ export function taskClosingInstruction(entry) {
   const checkpoint = entry.checkpoint_required === true ? `Before your final reply, call ${call}. `
     : entry.checkpoint_guidance ? `The Stop hook closes this task. Call ${call} only when something is worth recording `
       + '(knowledge, experience, memory changes, collaborators, a meaningful workLog). ' : '';
-  const receipt = entry.agent_receipt?.required === true && typeof entry.agent_receipt.markdown === 'string'
+  return checkpoint + taskReceiptInstruction(entry);
+}
+
+// The receipt sentence alone: a blocked frame keeps it too (preference-lifecycle.js).
+export function taskReceiptInstruction(entry) {
+  return entry?.agent_receipt?.required === true && typeof entry.agent_receipt.markdown === 'string'
     ? 'End your final reply with agent_receipt.markdown, unchanged and once '
       + '(a receipt returned by checkpoint_task_knowledge replaces it). ' : '';
-  return checkpoint + receipt;
 }
 
 const DEFAULT_MAX_BYTES = 8_000;
