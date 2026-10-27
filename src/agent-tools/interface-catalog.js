@@ -68,6 +68,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('POST /api/project-agent-tasks', 'submit_project_agent_task'),
   agent('POST /api/project-agent-tasks/:taskId/runs/:runId/stop', 'control_project_agent_task_run'),
   agent('POST /api/project-agent-tasks/:taskId/retry', 'control_project_agent_task_run'),
+  local('POST /api/project-agent-tasks/:taskId/blocker/clear', 'Marking a blocked task as unblocked (标记为已解除) is the person\'s word that the block is resolved outside FULI; they do it in the console on the human-review channel. An Agent clears its own block only by continuing in the session that reported it.'),
   local('POST /api/standing-assignments/:assignmentId/retire', 'Ending a standing assignment in the console is the local person\'s action on the record they read; in a conversation an Agent previews it with register_standing_assignment and confirms only after the person\'s yes (rec#29 F5).'),
   local('POST /api/standing-assignments/:assignmentId/reassign', 'Pointing a standing assignment at another Agent or project in the console is the local person\'s action; in a conversation an Agent previews it with register_standing_assignment and confirms only after the person\'s yes.'),
   local('POST /api/standing-assignments/:assignmentId/terms', 'Editing a standing assignment\'s terms in the console is the local person\'s action; in a conversation an Agent previews it with register_standing_assignment and confirms only after the person\'s yes.'),

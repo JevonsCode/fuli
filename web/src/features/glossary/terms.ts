@@ -24,6 +24,8 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     term('profile', key, `knowledge.domain.profiles.${key}`, `glossary.profile.${key}`)),
   ...['running', 'queued', 'backlog', 'paused', 'blocked', 'awaiting_review', 'awaiting_recruitment', 'none', 'ended'].map(key =>
     term('work', key, `agentRedesign.workStatus.${key}`, `glossary.work.${key}`)),
+  // The person's own end of a block; tagged because the button text is an action.
+  taggedTerm('work', 'unblock', 'taskBlocker.clear.action', 'glossary.work.unblock'),
   ...['working', 'waiting', 'idle', 'error'].map(key =>
     term('presence', key, `glossary.presence.${key}.label`, `glossary.presence.${key}.body`)),
   ...['pending', 'agent', 'person'].map(key =>

@@ -47,7 +47,8 @@ not fabricate an execution-summary row. The Provider's `executionSummary` remain
 A blocked report should say what it waits for; the Provider records when and in which session.
 The block clears itself when that same session continues (a checkpoint or a new prompt there) or
 the person answers its request; activity in another session does not clear it, so do not report
-the task running from elsewhere to work around a block.
+the task running from elsewhere to work around a block. Only the person can mark a block cleared
+otherwise (「标记为已解除」 in the console); no Agent tool does it.
 
 `workerStatus` requires `workerId` and the participating `agentId`. Structured actual executor,
 provider and model form one report and must match authorized preflight evidence. When that

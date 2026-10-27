@@ -19,7 +19,7 @@ from .project_agent_task_models import (
     ProjectAgentWorkerRuntime,
 )
 from .provider_values import native_datetime
-from .task_blocker import current_blocker
+from .task_blocker import current_blocker, person_clear_note
 from .temporary_project_scope import TEMPORARY_SCOPE
 from .task_activity_origin import read_activity_origin
 
@@ -222,6 +222,7 @@ class StoreProjectAgentTaskReads:
             ):
                 if name in ProjectAgentTaskEventRecord.model_fields:
                     fields[name] = event.get(name)
+            fields['blocker_clear_note'] = person_clear_note(event.get('blocker_cleared_by'), event['summary'])
             fields.update(cls._event_json_fields(event))
             if event.get('execution_plan_json'):
                 fields['execution_plan'] = ProjectAgentExecutionPlan.model_validate_json(event['execution_plan_json'])

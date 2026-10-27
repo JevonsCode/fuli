@@ -37,6 +37,10 @@ class GraphMigration:
     summary: str
     rules: tuple[SchemaRule, ...] = ()
     labels: frozenset[str] = frozenset()
+    # A schema step that only extends the stored field contract
+    # (graph_field_contract.py) runs no DDL and changes no record: its version
+    # alone makes an older guarded FULI refuse values it has never seen.
+    fields_only: bool = False
     # Record-changing steps: the IDs of the records that still need the step,
     # the step itself, which only a confirmed migration runs, and what it may
     # change so that it can be undone (graph_format_journal.py).
@@ -138,6 +142,11 @@ GRAPH_MIGRATIONS = (
         'why a task block ended on its event, and the session lookup that ends it',
         rules=TASK_BLOCKER_RULES,
     ),
+    GraphMigration(
+        'graph/14-person-blocker-clear', 14, 'schema',
+        "a task block the person marked cleared in the console (blocker_cleared_by 'person')",
+        fields_only=True,
+    ),
 )
 
 GRAPH_FORMAT_VERSION = GRAPH_MIGRATIONS[-1].to_version
@@ -147,7 +156,7 @@ def _validate(migrations: tuple[GraphMigration, ...]) -> None:
     for expected, migration in enumerate(migrations, start=1):
         if migration.to_version != expected:
             raise ValueError(f'{migration.id} must move the graph to version {expected}')
-        if migration.automatic and not migration.rules and not migration.labels:
+        if migration.automatic and not (migration.rules or migration.labels or migration.fields_only):
             raise ValueError(f'{migration.id} declares no schema')
         if migration.kind in RECORD_KINDS and not (
             migration.pending and migration.apply and migration.journal

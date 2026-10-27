@@ -1,22 +1,27 @@
-"""A blocked task says what, since when and where; its own session ends it."""
+"""A blocked task says what, since when and where; its own session or the person ends it."""
 
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import Annotated
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.testclient import TestClient
 
 from fuli_graph.project_agent_attention_models import AgentAttentionDecision
+from fuli_graph.project_agent_routes import register_project_agent_routes
 from fuli_graph.project_agent_task_models import (
     ProjectAgentTaskActivityCreate,
     ProjectAgentTaskBlockerClear,
+    ProjectAgentTaskBlockerPersonClear,
     ProjectAgentTaskEventRecord,
 )
 from fuli_graph.store_project_agent_attention import StoreProjectAgentAttention
+from fuli_graph.store_project_agent_task_reads import StoreProjectAgentTaskReads
 from fuli_graph.store_project_agent_tasks import StoreProjectAgentTasks
-from fuli_graph.task_blocker import current_blocker
+from fuli_graph.task_blocker import PERSON_CLEAR_SUMMARY, current_blocker
 from test_project_agent_tasks import ActivityStore
 
 T0 = datetime(2026, 10, 27, 8, 0, tzinfo=UTC)
@@ -132,7 +137,11 @@ class BlockerStore(StoreProjectAgentTasks):
         return {'id': personal_space_id, 'kind': 'personal'}
 
     async def _find_task_row(self, personal_space_id, task_id, personal_project_id=None):
+        self.project_reads = getattr(self, 'project_reads', []) + [personal_project_id]
         return self.row
+
+    async def get_project_agent_task(self, actor, personal_space_id, task_id, **options):
+        return {'task_id': task_id, 'read_as': actor, **options}
 
 
 def clear(session_id, cause='session_reply'):
@@ -151,6 +160,7 @@ async def test_progress_in_the_blocking_session_clears_the_block_and_records_why
     [cleared] = store.runtime.driver.writes('CREATE (event:FuliProjectAgentTaskEvent')
     assert cleared['cause'] == cause and cleared['session_id'] == SESSION_A
     assert cleared['agent_id'] == 'agent-a' and 'Unblocked automatically' in cleared['summary']
+    assert cleared['actor_kind'] == 'system'
     [closed] = store.runtime.driver.writes('FuliAgentAttention')
     assert closed['response'] == cleared['summary']
 
@@ -209,3 +219,100 @@ async def test_answering_the_blocking_request_ends_the_block(monkeypatch, change
     # An Agent withdrawing its own request is not an answer.
     await store.decide_agent_attention({}, decision, human=False)
     store._clear_task_blocker.assert_not_awaited()
+
+
+# The person's 「标记为已解除」: a session that will never continue leaves its
+# block in place, so the person ends it from the console.
+PERSON = {'id': 'principal', '_human_review_verified': True}
+
+
+def person_clear(note=None, project='project-a'):
+    return ProjectAgentTaskBlockerPersonClear(personal_space_id='personal-space', personal_project_id=project,
+                                              note=note)
+
+
+@pytest.mark.asyncio
+async def test_the_person_marks_a_block_cleared_and_history_keeps_who_when_and_their_note():
+    store = BlockerStore(blocked_row())
+    task = await store.clear_task_blocker_by_person(PERSON, 'task-a', person_clear('Solved it by hand.'))
+    assert task == {'task_id': 'task-a', 'read_as': PERSON, 'personal_project_id': 'project-a'}
+    assert set(store.project_reads) == {'project-a'}
+    [cleared] = store.runtime.driver.writes('CREATE (event:FuliProjectAgentTaskEvent')
+    assert (cleared['cause'], cleared['actor_kind'], cleared['summary']) == ('person', 'human', 'Solved it by hand.')
+    # Whichever session reported the block; the clear claims none.
+    assert (cleared['application'], cleared['session_id']) == (None, None)
+    [move] = [query for query, _ in store.runtime.driver.calls if 'CREATE (event:FuliProjectAgentTaskEvent' in query]
+    assert "SET task.status = 'running'" in move and "participant.status = 'running'" in move
+    [closed] = store.runtime.driver.writes('FuliAgentAttention')
+    assert closed['response'] == 'Solved it by hand.' and closed['kinds'] == ['blocked', 'question']
+
+
+@pytest.mark.asyncio
+async def test_without_a_note_the_clear_says_the_person_did_it():
+    store = BlockerStore(blocked_row())
+    await store.clear_task_blocker_by_person(PERSON, 'task-a', person_clear())
+    [cleared] = store.runtime.driver.writes('CREATE (event:FuliProjectAgentTaskEvent')
+    assert cleared['summary'] == PERSON_CLEAR_SUMMARY
+
+
+@pytest.mark.asyncio
+async def test_only_the_human_review_channel_marks_a_block_cleared():
+    store = BlockerStore(blocked_row())
+    for actor in ({'id': 'principal'}, {'id': 'principal', '_human_review_verified': 'yes'}):
+        with pytest.raises(HTTPException) as refused:
+            await store.clear_task_blocker_by_person(actor, 'task-a', person_clear('Agent says done.'))
+        assert refused.value.status_code == 403
+    assert store.runtime.driver.calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_task_that_is_not_blocked_or_not_found_is_refused_without_a_write():
+    row = blocked_row(BLOCKED_ROWS + [event('running', 12)])
+    row['task']['status'] = 'running'
+    store = BlockerStore(row)
+    with pytest.raises(HTTPException) as stale:
+        await store.clear_task_blocker_by_person(PERSON, 'task-a', person_clear())
+    assert stale.value.status_code == 409
+    missing = BlockerStore(None)
+    with pytest.raises(HTTPException) as absent:
+        await missing.clear_task_blocker_by_person(PERSON, 'task-a', person_clear(project='project-b'))
+    assert absent.value.status_code == 404
+    assert store.runtime.driver.writes('CREATE (event') == missing.runtime.driver.writes('CREATE (event') == []
+
+
+def test_the_task_history_reads_the_persons_note_but_not_a_system_summary():
+    rows = BLOCKED_ROWS + [
+        event('running', 12, 'Solved it by hand.', actor_kind='human', blocker_cleared_by='person',
+              source_application=None, source_session_id=None),
+        event('blocked', 20),
+        event('running', 25, PERSON_CLEAR_SUMMARY, actor_kind='human', blocker_cleared_by='person'),
+        event('blocked', 30),
+        event('running', 35, 'Unblocked automatically: x', actor_kind='system', blocker_cleared_by='session_reply'),
+    ]
+    events = StoreProjectAgentTaskReads._events_from_row({'event_rows': rows})
+    assert [(item.blocker_cleared_by, item.blocker_clear_note) for item in events if item.blocker_cleared_by] == [
+        ('person', 'Solved it by hand.'), ('person', None), ('session_reply', None)]
+
+
+def test_the_console_route_takes_only_the_human_review_actor():
+    async def actor():
+        return {'id': 'principal'}
+
+    async def human(x_fuli_human_review_token: Annotated[str | None, Header()] = None):
+        if x_fuli_human_review_token != 'synthetic-proof':
+            raise HTTPException(403, 'independent human review proof required')
+        return {'id': 'principal', '_human_review_verified': True}
+
+    calls = []
+
+    async def clear_task_blocker_by_person(actor_value, task_id, request):
+        calls.append((actor_value, task_id, request.note))
+        return {'task_id': task_id, 'title': 'Synthetic', 'status': 'running'}
+
+    app = FastAPI()
+    store = SimpleNamespace(clear_task_blocker_by_person=clear_task_blocker_by_person)
+    register_project_agent_routes(app, store, Annotated[dict, Depends(actor)], Annotated[dict, Depends(human)])
+    client = TestClient(app)
+    body = {'personal_space_id': 'personal-space', 'personal_project_id': 'project-a', 'note': 'Done.'}
+    assert client.post('/v1/project-agent-tasks/task-a/blocker/clear', json=body).status_code == 403
+    assert calls == []

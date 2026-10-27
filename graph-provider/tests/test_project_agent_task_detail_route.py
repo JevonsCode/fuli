@@ -26,6 +26,7 @@ async def test_task_detail_can_omit_history_without_losing_worker_evidence():
     app = FastAPI()
     register_project_agent_routes(
         app, SimpleNamespace(get_project_agent_task=read), Annotated[dict, Depends(actor)],
+        Annotated[dict, Depends(actor)],
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url='http://fixture',

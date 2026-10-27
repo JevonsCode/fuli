@@ -94,9 +94,10 @@ ProjectAgentOptimizationPriority = Literal[
 ]
 ProjectAgentTokenUsageSource = Literal['executor', 'host', 'dingdong']
 # Why a blocked task left blocked without its own status report: the session
-# it was blocked in recorded more work or the person replied there, or the
-# person answered its blocking request in FULI.
-BlockerClearCause = Literal['session_activity', 'session_reply', 'attention_answer']
+# it was blocked in recorded more work or the person replied there, the
+# person answered its blocking request in FULI, or the person marked it
+# unblocked in the console (graph 14).
+BlockerClearCause = Literal['session_activity', 'session_reply', 'attention_answer', 'person']
 
 _WORKER_EVIDENCE_ALIASES = {
     'worker_id': 'workerId',
@@ -416,6 +417,8 @@ class ProjectAgentTaskEventRecord(StrictModel):
     token_usage: ProjectAgentTokenUsage | None = None
     worker_runtime: ProjectAgentWorkerRuntime | None = None
     blocker_cleared_by: BlockerClearCause | None = None
+    # The person's note when they marked the block cleared (task_blocker.py).
+    blocker_clear_note: str | None = None
     created_at: datetime
 
     _normalize_worker_aliases = model_validator(mode='before')(
@@ -460,6 +463,14 @@ class ProjectAgentTaskBlockerClear(StrictModel):
     source_application: SourceApplication
     source_session_id: str = Field(min_length=1, max_length=256)
     cause: Literal['session_activity', 'session_reply']
+
+
+class ProjectAgentTaskBlockerPersonClear(StrictModel):
+    """The person's 「标记为已解除」 from the console, with an optional short note."""
+
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    personal_project_id: str = Field(min_length=1, max_length=128)
+    note: str | None = Field(default=None, min_length=1, max_length=500)
 
 
 class ProjectAgentTaskBlockerClearResult(StrictModel):

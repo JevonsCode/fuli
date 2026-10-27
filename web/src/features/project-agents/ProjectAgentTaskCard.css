@@ -58,3 +58,4 @@
 .project-agent-task-card.is-linked { box-shadow: inset 0 0 0 2px var(--color-accent); }
 .project-agent-task-card header { align-items: flex-start; }
 .project-agent-task-card header small { margin-top: 3px; }
+.project-agent-task-clear-note { display: block; overflow-wrap: anywhere; }

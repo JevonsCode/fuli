@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import manifest from '../../../../registry/client-links.json'
 import type { ProjectAgentTaskBlocker, ProjectAgentTaskRecord } from '@/types'
 import TaskBlockerNotice from './TaskBlockerNotice.vue'
-import { blockerReasonText, lastBlockerClear } from './task-blocker'
+import { blockedFor, blockerIsStale, blockerReasonText, lastBlockerClear } from './task-blocker'
 
 const SESSION = '0f8fad5b-d9cb-469f-a165-70867728950e'
 const blocker = (changes: Partial<ProjectAgentTaskBlocker> = {}): ProjectAgentTaskBlocker => ({
@@ -56,6 +56,40 @@ describe('a blocked task says what, since when, where, and how to get back there
   })
 })
 
+describe('a blocked card is one calm line', () => {
+  it('names the reason and how long it has been blocked, without session details or reads', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    // Twelve days and an hour ago, against the shared clock the card reads.
+    const since = new Date(Date.now() - (12 * 24 + 1) * 60 * 60 * 1000).toISOString()
+    const wrapper = mount(TaskBlockerNotice, { props: { compact: true,
+      blocker: blocker({ since, sessionId: null, observed: false }) } })
+    await flushPromises()
+    expect(wrapper.get('[data-blocker-reason]').text()).toBe('Which staging database should the migration target?')
+    expect(wrapper.get('[data-blocker-age]').text()).toBe('已阻塞 12天')
+    expect(wrapper.find('[data-blocker-where]').exists()).toBe(false)
+    expect(wrapper.find('[data-blocker-observed]').exists()).toBe(false)
+    expect(wrapper.find('[data-blocker-status]').exists()).toBe(false)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('leads with the red status chip where the card shows no status, and omits an unknown age', () => {
+    const wrapper = mount(TaskBlockerNotice, { props: { compact: true, withStatus: true, blocker: blocker({ since: null }) } })
+    const chip = wrapper.get('[data-blocker-status]')
+    expect(chip.text()).toBe('阻塞')
+    expect(chip.classes()).toContain('is-danger')
+    expect(wrapper.find('[data-blocker-age]').exists()).toBe(false)
+  })
+
+  it('calls a block stale after about three days without activity', () => {
+    const now = Date.parse('2026-10-28T09:00:00Z')
+    expect(blockedFor({ since: '2026-10-28T06:00:00Z' }, now)).toBe('3小时')
+    expect(blockerIsStale({ since: '2026-10-11T08:00:00Z' }, '2026-10-11T08:00:00Z', now)).toBe(true)
+    expect(blockerIsStale({ since: '2026-10-11T08:00:00Z' }, '2026-10-27T08:00:00Z', now)).toBe(false)
+    expect(blockerIsStale({ since: null }, null, now)).toBe(false)
+  })
+})
+
 describe('blocker text', () => {
   it('turns a worker code into its sentence and keeps a reported question as written', () => {
     expect(blockerReasonText({ reason: 'worker_authentication_required. Actual model use is unverified.' }))
@@ -70,9 +104,18 @@ describe('blocker text', () => {
     const task = { taskId: 'task-a', title: 't', status: 'running', participants: [], events: [
       event('blocked', '2026-10-27T08:00:00Z'), event('running', '2026-10-27T09:00:00Z', 'session_reply'),
     ] } as unknown as ProjectAgentTaskRecord
-    expect(lastBlockerClear(task)).toEqual({ cause: 'session_reply', at: '2026-10-27T09:00:00Z' })
+    expect(lastBlockerClear(task)).toEqual({ cause: 'session_reply', at: '2026-10-27T09:00:00Z', note: null })
     expect(lastBlockerClear({ ...task, status: 'blocked' })).toBeNull()
     const explicit = { ...task, events: [...task.events!, event('blocked', '2026-10-27T10:00:00Z'), event('running', '2026-10-27T11:00:00Z')] } as unknown as ProjectAgentTaskRecord
     expect(lastBlockerClear(explicit)).toBeNull()
+  })
+
+  it('keeps a clear the person made, with their note', () => {
+    const task = { taskId: 'task-a', title: 't', status: 'running', participants: [], events: [
+      { eventId: 'a', taskId: 'task-a', status: 'blocked', summary: 's', createdAt: '2026-10-11T08:00:00Z' },
+      { eventId: 'b', taskId: 'task-a', status: 'running', summary: 'Solved elsewhere.', createdAt: '2026-10-28T08:00:00Z',
+        blockerClearedBy: 'person', blockerClearNote: 'Solved elsewhere.' },
+    ] } as unknown as ProjectAgentTaskRecord
+    expect(lastBlockerClear(task)).toEqual({ cause: 'person', at: '2026-10-28T08:00:00Z', note: 'Solved elsewhere.' })
   })
 })

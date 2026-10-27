@@ -560,6 +560,7 @@ export function projectAgentTaskEventRecord(value = {}) {
     fallbackReason: value.executor_fallback_reason ?? value.fallback_reason ?? null,
     fallbackUsed: value.fallback_used ?? false,
     blockerClearedBy: value.blocker_cleared_by ?? null,
+    blockerClearNote: value.blocker_clear_note ?? null,
     createdAt: value.created_at
   };
   copyOptional(

@@ -235,6 +235,7 @@ export function normalizeEvent(value: unknown): ProjectAgentTaskEvent | null {
     workerOccupationEmoji: stringOf(record, 'workerOccupationEmoji', 'worker_occupation_emoji'),
     workerStatus: stringOf(record, 'workerStatus', 'worker_status'),
     blockerClearedBy: stringOf(record, 'blockerClearedBy', 'blocker_cleared_by') as BlockerClearCause | null,
+    blockerClearNote: stringOf(record, 'blockerClearNote', 'blocker_clear_note'),
     createdAt: stringOf(record, 'createdAt', 'created_at') ?? '',
   }
 }
