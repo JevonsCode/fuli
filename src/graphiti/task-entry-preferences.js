@@ -1,5 +1,6 @@
 import { captureSettingsUrl, receiptText, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { FLA_ROUTE, namedFlaEntry } from './task-entry-named-fla.js';
+import { groupDiscussionEntry } from './task-entry-group-discussion.js';
 import { beginTaskContext, beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { getCollaborationPreferences as getCollaborationPreferencesWorkflow } from './collaboration-preference-workflow.js';
 import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
@@ -97,7 +98,11 @@ async function entryPreferences(application, projectResolution, {
   // FLA may work this turn, no Agent is selected at all.
   const fla = projectResolution.fla
     ? await namedFlaEntry(application, projectResolution.fla, selected, sourceApplication) : null;
-  const selection = fla?.selection ?? selected;
+  // An `@FLG` member choice loads no Agent either; its moderator is the one selected.
+  const group = projectResolution.group ? await groupDiscussionEntry(application, projectResolution.group,
+    fla?.selection ?? selected, projectResolution.personalProjectId ?? null) : null;
+  const selection = group?.selection ?? fla?.selection ?? selected;
+  const routeMarkers = [...(fla?.markers ?? []), ...(group?.markers ?? [])];
   // A rejected explicit role must not leak its private preferences via fallback.
   const selectedAgentId = selection ? selection.agent?.agentId ?? null : projectAgentId;
   const standing = standingOwnerEntry(projectResolution, selection);
@@ -149,14 +154,16 @@ async function entryPreferences(application, projectResolution, {
   // Answers a person gave to this Agent's own requests while it was away.
   const answered = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.attentionReplies
     ? application.roundtable.attentionReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];
-  const notices = [...(fla?.notice ? [receiptText(fla.notice)] : []), ...(standing?.notice ? [standing.receiptNotice] : []),
+  const notices = [...[fla?.notice, group?.notice].filter(Boolean).map(receiptText),
+    ...(standing?.notice ? [standing.receiptNotice] : []),
     ...receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
       { settingsUrl: captureSettingsUrl(application) }), ...formatNotices];
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),
     ...(standing ? { standing_owner: standing.field } : {}),
-    ...(fla?.view ? { fla: fla.view } : {}), ...(fla?.interaction ? { human_interaction: fla.interaction } : {}),
-    ...(fla?.markers.length ? { [FLA_ROUTE]: fla.markers } : {}),
+    ...(fla?.view ? { fla: fla.view } : {}), ...(group?.view ? { flg: group.view } : {}),
+    ...(group?.interaction ?? fla?.interaction ? { human_interaction: group?.interaction ?? fla.interaction } : {}),
+    ...(routeMarkers.length ? { [FLA_ROUTE]: routeMarkers } : {}),
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),
     ...(waiting.length ? { agent_messages: waiting,
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
@@ -510,7 +511,7 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
             <ol v-if="split.exchanges.length">
               <template v-for="exchange in split.exchanges" :key="exchange.ask?.id ?? exchange.replies[0]!.id">
                 <li v-for="message in [...(exchange.ask ? [exchange.ask] : []), ...exchange.replies]" :key="message.id" class="roundtable-message" :class="`is-${message.kind}`">
-                  <span class="roundtable-avatar" :style="agentIdentityStyle(message.from.agentId)" aria-hidden="true">{{ initial(message.from) }}</span>
+                  <span class="roundtable-avatar" :style="agentIdentityStyle(message.from.agentId)" aria-hidden="true"><img v-if="message.from.agentId" :src="agentAvatarUrl(message.from.agentId)" alt="" /><template v-else>{{ initial(message.from) }}</template></span>
                   <div class="roundtable-bubble">
                     <p class="roundtable-byline">
                       <strong>{{ message.from.name }}</strong>
@@ -595,6 +596,7 @@ const threadRecord = computed(() => { if (!thread.value) return ''; const { mess
 .roundtable-request.is-closed .roundtable-request-state { color: var(--color-danger); }
 .roundtable-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; max-width: 760px; }
 .roundtable-message.is-reply { margin-left: 42px; }
+.roundtable-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .roundtable-avatar { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); font-size: 12px; font-weight: 650; }
 .roundtable-bubble { min-width: 0; }
 .roundtable-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }

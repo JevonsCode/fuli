@@ -5,6 +5,7 @@ const getJson = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', () => ({ getJson }))
 
 import ProjectTeamSummary from './ProjectTeamSummary.vue'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { setLocale, t } from '@/i18n'
 import type { ProjectTeam, ProjectTeamPerson } from './project-team-api'
 
@@ -35,6 +36,24 @@ describe('ProjectTeamSummary', () => {
   beforeEach(() => {
     setLocale('zh-CN', { persist: false })
     getJson.mockReset()
+  })
+
+  it('uses the shared portraits for lead, sub-lead, members, collaborators and fixed-role peers', async () => {
+    const subLead = person('SubLead')
+    const member = person('Member', { occupationEmoji: '🔧' })
+    getJson.mockResolvedValue(team({ members: [subLead, member], peers: [person('employee.bole')],
+      subTeams: [{ id: 'sub', name: 'Sub team', lead: subLead, unavailableLead: null, members: [member], unavailableMemberIds: [] }],
+    }))
+    const wrapper = mountSummary()
+    await flushPromises()
+    const images = () => wrapper.findAll('.project-team-avatar img').map(image => image.attributes('src'))
+    const expected = ['Lead', 'SubLead', 'Member', 'Helper', 'employee.bole'].map(agentAvatarUrl)
+    expect(images()).toEqual(expected)
+    await wrapper.get('button.project-team-lead').trigger('click')
+    expect(images()).toEqual(expected)
+    await wrapper.get('button.project-team-lead').trigger('click')
+    expect(images()).toEqual(expected)
+    wrapper.unmount()
   })
 
   it('shows the one lead first and expands the organization inline from that row', async () => {

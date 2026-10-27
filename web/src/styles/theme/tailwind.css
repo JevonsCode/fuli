@@ -54,6 +54,9 @@
 @source "../../features/project-history/ProjectHistoryPreview.vue";
 @source "../../pages/SharedJefaReportPage.vue";
 @source "../../pages/NotFoundPage.vue";
+/* rec#11 D-71: 服务管理, the services FLAs started, on the same canvas. */
+@source "../../pages/AgentServicesPage.vue";
+@source "../../features/agent-services";
 
 @import "./base.css";
 @import "./semantic.css";

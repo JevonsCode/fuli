@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 import { createEmployeeService } from '../employees/service.js';
 import { agentAppRoot, createAgentAppService } from '../agent-apps/service.js';
+import { createAgentServices } from '../agent-services/port.js';
 import { callAgentTool, listAgentTools } from '../agent-tools.js';
 import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
@@ -32,12 +33,19 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
     providerIdentity
   });
   app.employees = createEmployeeService({ app, runtimeConfigPath });
+  // The services FULI Agents started (服务管理): workbenches recorded by the
+  // app runner below, other servers reported by their Agents.
+  app.agentServices = createAgentServices({
+    path: join(dataDir, 'agent-services.sqlite'),
+    stopWorkbench: (appId) => app.agentApps.stop({ appId })
+  });
   app.agentApps = createAgentAppService({
     root: agentAppRoot(runtimeConfigPath),
     providerIdentity,
     resolveOwner: (owner) => app.getProjectAgent(owner),
     toolNames: () => listAgentTools().map(({ name }) => name),
     ownerKind: 'console',
+    serviceLog: app.agentServices.workbench,
     callFuliTool: (name, input) => callAgentTool(app, name, input)
   });
   app.modelBackends = openModelBackendRuntime(paths);
@@ -67,5 +75,6 @@ export function closeLocalRuntimes(app) {
   app.modelBackends?.close();
   app.roundtable?.close();
   app.peer?.close();
-  return Promise.all([app.agentApps?.close(), app.employees?.close()]);
+  // The app runner records its last stops before the services store closes.
+  return Promise.all([app.agentApps?.close(), app.employees?.close()]).finally(() => app.agentServices?.close());
 }
