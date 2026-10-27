@@ -1,7 +1,7 @@
 // Who is subscribed to a roundtable thread and how each one receives what is
 // posted there. "instant" pushes: a post starts or wakes the member at once.
 // "board" waits: the member picks the post up when it next works. Part of the
-// roundtable store format (roundtable/3-thread-subscriptions), so the console
+// roundtable store format (roundtable/4-thread-subscriptions), so the console
 // and every client's MCP process read the same subscriptions.
 export const DELIVERY_MODES = Object.freeze(['board', 'instant']);
 

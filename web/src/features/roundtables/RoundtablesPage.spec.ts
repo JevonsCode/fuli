@@ -17,6 +17,7 @@ vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typ
 
 import { setLocale } from '@/i18n'
 import RoundtablesPage from './RoundtablesPage.vue'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 
 const thread = {
   id: 'thread-1', subject: '登录重构评审过了吗？', projectId: 'app', updatedAt: '2026-10-10T08:00:00Z', messageCount: 2,
@@ -51,7 +52,12 @@ describe('RoundtablesPage', () => {
     const avatars = wrapper.findAll('.roundtable-avatar').map((avatar) => avatar.attributes('style'))
     expect(faces[0]).toMatch(/--agent-identity: var\(--identity-[0-7]\)/)
     expect(avatars).toEqual(faces)
-    expect(wrapper.findAll('.roundtable-avatar').map((avatar) => avatar.text())).toEqual(['M', 'N'])
+    expect(wrapper.findAll('.roundtable-avatar img').map(image => image.attributes('src'))).toEqual(
+      ['lead-1', 'reviewer-1'].map(agentAvatarUrl),
+    )
+    expect(wrapper.findAll('.roundtable-seat-face img').map(image => image.attributes('src'))).toEqual(
+      ['lead-1', 'reviewer-1'].map(agentAvatarUrl),
+    )
     wrapper.unmount()
   })
 

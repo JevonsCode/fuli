@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
@@ -30,6 +31,10 @@ const seats = computed(() => props.room.members.map(member => ({
 })))
 const sender = (address: string) => byAddress.value.get(address)
 const senderName = (address: string) => sender(address)?.name ?? t('roundtable.unknownAgent')
+const senderAvatar = (address: string) => {
+  const id = sender(address)?.agentId
+  return id ? agentAvatarUrl(id) : undefined
+}
 const initial = (address: string) => senderName(address).trim().slice(0, 1).toUpperCase()
 
 const body = ref<HTMLElement | null>(null)
@@ -89,7 +94,7 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
       <ol v-if="room.messages.length" class="roundtable-chat-messages">
         <li v-for="message in room.messages" :key="message.messageId" class="roundtable-chat-message" tabindex="-1"
           :data-message-id="message.messageId" data-roundtable-chat-message>
-          <span class="roundtable-chat-avatar" :style="agentIdentityStyle(sender(message.from)?.agentId ?? null)" aria-hidden="true">{{ initial(message.from) }}</span>
+          <span class="roundtable-chat-avatar" :style="agentIdentityStyle(sender(message.from)?.agentId ?? null)" aria-hidden="true"><img v-if="senderAvatar(message.from)" :src="senderAvatar(message.from)" alt="" /><template v-else>{{ initial(message.from) }}</template></span>
           <div class="roundtable-chat-bubble">
             <p class="roundtable-chat-byline">
               <strong>{{ senderName(message.from) }}</strong>
@@ -117,6 +122,7 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
 .roundtable-chat-fold summary { cursor: pointer; color: var(--color-muted); font-size: 12px; }
 .roundtable-chat-messages { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
 .roundtable-chat-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; max-width: 760px; }
+.roundtable-chat-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .roundtable-chat-avatar { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); font-size: 12px; font-weight: 650; }
 .roundtable-chat-bubble { min-width: 0; }
 .roundtable-chat-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 6px; }

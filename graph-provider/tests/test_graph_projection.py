@@ -110,6 +110,30 @@ def test_personal_relation_projection_exposes_review_status_and_authority():
     }
 
 
+def test_a_parent_the_project_moved_away_from_is_history_not_a_current_edge():
+    ended_at = datetime(2026, 10, 27, tzinfo=UTC)
+    space = {'id': 'personal-1', 'name': 'Me', 'kind': 'personal', 'group_id': 'personal-group',
+             'description': None}
+    projects = [
+        {'id': f'node-{name}', 'project_id': name, 'publication_key': None, 'name': name,
+         'profile_json': '{"name":"%s","sources":[],"boundaries":[]}' % name}
+        for name in ['app', 'old-parent', 'new-parent']
+    ]
+    relation = {'source_project_id': 'app', 'source_name': 'app', 'relation_type': 'PART_OF',
+                'confirmation_authority': None, 'decision_revision': 2}
+    _, edges = management_projection(space, projects, [
+        {**relation, 'id': 'ended', 'target_project_id': 'old-parent', 'target_name': 'old-parent',
+         'status': 'rejected', 'reviewed_at': ended_at},
+        {**relation, 'id': 'current', 'target_project_id': 'new-parent', 'target_name': 'new-parent',
+         'status': 'active', 'confirmation_authority': 'human_review', 'reviewed_at': ended_at},
+    ])
+    part_of = {edge.id: edge.invalid_at for edge in edges if edge.type == 'PART_OF'}
+    assert part_of == {
+        'personal-project-relation:ended': ended_at,
+        'personal-project-relation:current': None,
+    }
+
+
 def test_personal_project_projection_expands_profile_without_personal_space_siblings():
     nodes, edges = personal_project_projection(
         {'id': 'personal-1', 'kind': 'personal', 'group_id': 'personal-group'},

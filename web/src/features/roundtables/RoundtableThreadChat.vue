@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
 import { postMessage, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
@@ -89,7 +90,8 @@ watch(() => props.thread.messages.length, async (length, previous) => {
       <ol v-else class="roundtable-bubbles">
         <li v-for="bubble in bubbles" :key="bubble.id" class="roundtable-bubble-row" :class="{ 'is-mine': bubble.mine }"
           data-roundtable-bubble :data-mine="bubble.mine || undefined">
-          <span v-if="!bubble.mine" class="roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true">{{ initial(bubble) }}</span>
+          <span v-if="!bubble.mine" class="roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true"><img
+            v-if="bubble.from.agentId" :src="agentAvatarUrl(bubble.from.agentId)" alt="" /><template v-else>{{ initial(bubble) }}</template></span>
           <div class="roundtable-bubble-column">
             <p class="roundtable-byline">
               <strong>{{ sender(bubble) }}</strong>
@@ -133,6 +135,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
 .roundtable-bubble-column { display: grid; min-width: 0; gap: 4px; }
 .is-mine .roundtable-bubble-column { justify-items: end; }
 .roundtable-avatar { display: grid; flex: 0 0 auto; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); font-size: 12px; font-weight: 650; }
+.roundtable-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .roundtable-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
 .roundtable-byline > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .roundtable-byline strong { font-size: 13px; font-weight: 600; }
