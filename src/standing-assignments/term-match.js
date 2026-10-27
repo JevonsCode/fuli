@@ -17,14 +17,19 @@ const firstChar = (text, at) => [...text.slice(at, at + 2)][0];
 const lastChar = (text, end) => [...text.slice(Math.max(0, end - 2), end)].at(-1);
 
 export function termOccurs(text, term) {
+  return termIndex(text, term) !== -1;
+}
+
+// Where the term first occurs as a whole term (termOccurs), or -1.
+export function termIndex(text, term) {
   const opensWord = spacedWord(firstChar(term, 0));
   const closesWord = spacedWord(lastChar(term, term.length));
   for (let at = text.indexOf(term); at !== -1; at = text.indexOf(term, at + 1)) {
     if (opensWord && spacedWord(lastChar(text, at))) continue;
     if (closesWord && spacedWord(firstChar(text, at + term.length))) continue;
-    return true;
+    return at;
   }
-  return false;
+  return -1;
 }
 
 // Whether a search names a confirmed term or the term names the search, both

@@ -24,9 +24,9 @@ export function resolveClientCommand(client, { env = process.env, platform = pro
   return wakeAdapter(client)?.resolveCommand({ env, platform, fileExists, which }) ?? null;
 }
 
-export function wakeArguments(client, { sessionId = null, cwd, delegated = false, plannedSessionId = null } = {}) {
+export function wakeArguments(client, { sessionId = null, cwd, delegated = false, plannedSessionId = null, readOnly = false } = {}) {
   if (sessionId !== null && !SESSION_ID.test(sessionId)) throw new TypeError('Invalid client session id');
-  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId });
+  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, readOnly });
 }
 
 // Clients only resume a conversation from the directory it started in.
@@ -36,7 +36,7 @@ export function sessionWorkingDirectory(client, sessionId, { home = homedir(), e
 }
 
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
-  delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession } = {}) {
+  delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession, readOnly = false } = {}) {
   const command = resolveClientCommand(client, { env });
   if (!command) throw Object.assign(new Error(`${client} is not installed on this machine`), { code: 'client_unavailable' });
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
@@ -47,7 +47,7 @@ export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeout
   const plannedSessionId = onSession && adapterFor(client).plansSession ? randomUUID() : null;
   if (plannedSessionId) await onSession(plannedSessionId);
   let observedSession = null;
-  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId }),
+  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, readOnly }),
     { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn, onEvent: event => {
       const observed = adapterFor(client).nativeSessionId(event);
       if (!observed) return;
