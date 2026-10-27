@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -66,6 +66,34 @@ test('a digest mismatch, a missing package, another version or a changed file is
     writeFileSync(join(target, 'src', 'cli.js'), 'changed');
   } }), /checksum mismatch: src\/cli\.js/);
   await assert.rejects(downloadWindowsTrayRelease('../../evil', scratch(t), release({})), /version/i);
+});
+
+// macOS tmpdir() is /var/..., a link to /private/var/...; a redirected Windows
+// TEMP is a junction. The package is checked against its resolved files, so a
+// download directory reached through a link is accepted and a file linked out
+// of the package is still refused.
+test('a package reached through a directory link is verified against its resolved files', async (t) => {
+  const f = fixture(t);
+  const name = trayArchiveName('0.12.4');
+  const real = scratch(t);
+  // The link is removed by itself before its parent, so no cleanup follows it.
+  const holder = mkdtempSync(join(tmpdir(), 'fuli-tray-release-link-'));
+  const linked = join(holder, 'linked');
+  symlinkSync(real, linked, 'junction');
+  t.after(() => { unlinkSync(linked); rmSync(holder, { recursive: true, force: true }); });
+  const good = { [url('0.12.4')]: ARCHIVE, [url('0.12.4', '.sha256')]: trayChecksumLine(sha256Bytes(ARCHIVE), name) };
+  const copy = async (_archive, target) => cpSync(f.source, target, { recursive: true });
+  assert.equal(await downloadWindowsTrayRelease('0.12.4', linked, { ...release(good), extract: copy }), join(linked, 'package'));
+  if (process.platform === 'win32') return; // File links need a privilege Windows runners may lack.
+  const outside = join(scratch(t), 'cli.js');
+  writeFileSync(outside, readFileSync(join(f.source, 'src', 'cli.js')));
+  const escaped = join(scratch(t), 'escaped');
+  mkdirSync(escaped);
+  await assert.rejects(downloadWindowsTrayRelease('0.12.4', escaped, { ...release(good), extract: async (archive, target) => {
+    await copy(archive, target);
+    unlinkSync(join(target, 'src', 'cli.js'));
+    symlinkSync(outside, join(target, 'src', 'cli.js'));
+  } }), /checksum mismatch: src\/cli\.js/);
 });
 
 test('the release script\'s zip round-trips through the update download', { skip: process.platform !== 'win32' }, async (t) => {
