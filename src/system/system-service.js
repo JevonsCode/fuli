@@ -109,10 +109,13 @@ export function createSystemService({
     clientConnectionStatus: () => clientObserver.observe(),
     connectClient: clientInstaller,
     resources: () => resourceMonitor.sample(),
-    // selfUpdate: whether the console can run the update itself (console-update.js).
-    versionStatus: async () => ({ ...await versionChecker.check(), selfUpdate: update.offered() }),
+    // updateKind: how the console's one-click update installs it (console-update.js).
+    versionStatus: async () => ({ ...await versionChecker.check(), updateKind: update.kind() }),
     updateStatus: () => update.status(),
-    startUpdate: () => update.start(),
+    startUpdate: async ({ stopProcesses } = {}) => {
+      const version = await versionChecker.check();
+      return update.start({ version: version.updateAvailable ? version.latestVersion : null, stopProcesses });
+    },
     runtimeStatus: () => runtimeBroker.status(),
     acquireRuntimeLease: (input) => runtimeBroker.acquire(input),
     refreshRuntimeLease: (leaseId) => runtimeBroker.refresh(leaseId),

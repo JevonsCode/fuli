@@ -25,7 +25,7 @@ import { listenFetchableServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
-import { dataFormatNoticeLine, dataFormatNotices } from './data-format/format-notices.js';
+import { dataFormatNoticeLine, dataFormatNotices, latestNotices } from './data-format/format-notices.js';
 import { personalGraphFormat } from './data-format/graph-format-client.js';
 import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
@@ -83,8 +83,10 @@ export async function createServer(options = {}) {
   const application = runtime.application;
   // The console, not every hook or MCP process, reports the local stores this
   // FULI cannot use as they are, named with their steps (rec#17).
-  const dataFormats = options.dataFormatNotices ?? (localOptions.runtimeConfigPath
+  // /api/health answers them without waiting on a store (latestNotices).
+  const formatNotices = options.dataFormatNotices ?? (localOptions.runtimeConfigPath
     ? dataFormatNotices(dirname(localOptions.runtimeConfigPath)) : null);
+  const dataFormats = formatNotices ? latestNotices(formatNotices) : null;
   for (const notice of dataFormats?.() ?? []) console.warn(dataFormatNoticeLine(notice));
   // A person's confirmed migrations, the same operations as `fuli migrate`.
   const dataFormatMigrations = options.dataFormatMigrations ?? (localOptions.runtimeConfigPath

@@ -13,8 +13,16 @@ export function parseWindowsCommandOptions(args, dependencies, action) {
     if (arg === '--yes') yes = true;
     else if (arg === '--preview') preview = true;
     else if (arg === '--allow-downgrade' && action === 'Update') options.allowDowngrade = true;
-    else if (arg === '--install-root' && args[index + 1] && !args[index + 1].startsWith('--')) options.installRoot = args[++index];
+    else if (arg === '--install-root' && value(args, index)) options.installRoot = args[++index];
+    // The console's one-click update: where to write the outcome, and the
+    // processes the person picked to stop ("PID:created", comma-separated).
+    else if (arg === '--result-file' && action === 'Update' && value(args, index)) options.resultFile = args[++index];
+    else if (arg === '--stop-pid' && action === 'Update' && /^\d+:\d+(,\d+:\d+)*$/.test(args[index + 1] ?? '')) {
+      options.stopPids = args[++index].split(',');
+    }
     else throw new Error(`Unknown or missing ${action.toLowerCase()} option: ${arg}`);
   }
   return { options, yes, preview };
 }
+
+const value = (args, index) => args[index + 1] && !args[index + 1].startsWith('--');

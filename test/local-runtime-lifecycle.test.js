@@ -209,6 +209,22 @@ test('fl stop retries the identity check once when the console answered late', a
   assert.equal(result.console, 'stopped');
 });
 
+test('fl stop gives a busy console longer to name itself than status does', async () => {
+  const timeouts = [];
+  const result = await stopLocalRuntime(input(), {
+    readConfig: () => ({ workspaces: [] }),
+    readState: () => ({ version: 4, pid: 27, url: 'http://127.0.0.1:2727' }),
+    fileExists: () => false,
+    isProcessAlive: () => true,
+    consoleHealth: async (_url, _pid, _version, timeoutMs) => { timeouts.push(timeoutMs); return true; },
+    waitForExit: async () => true,
+    removeState: () => {},
+    stopProcess: () => {}
+  });
+  assert.equal(result.console, 'stopped');
+  assert.ok(timeouts[0] >= 10_000);
+});
+
 test('fl status keeps Provider credentials out of its result', async () => {
   const result = await inspectLocalRuntime(input(), {
     readConfig: () => ({

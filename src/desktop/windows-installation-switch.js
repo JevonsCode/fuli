@@ -3,6 +3,7 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { writeTextFileAtomic } from '../storage/json-file.js';
 import { canonicalWindowsInstallPath, installationSha256, windowsInstallPathsOverlap } from './windows-installation-context.js';
+import { stopInstalledFuli } from './windows-running-fuli.js';
 import { prepareWindowsUpdateRuntime, restoreWindowsUpdateRuntime } from './windows-update-runtime.js';
 
 // Switching the installed version: shared by update and user-initiated rollback.
@@ -44,13 +45,15 @@ export function stageWindowsShortcuts(shortcuts, packageRoot, createShortcut, re
   });
 }
 
-export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard = () => {} }) {
+// stopping: how processes that outlive the installed CLI's stop are handled (windows-running-fuli.js).
+export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard = () => {}, stopping = {} }) {
   try {
     lock.assertHeld();
     assertInstallationUnchanged(plan.recordPath, plan.record);
     for (const shortcut of plan.shortcuts) assertInstallationUnchanged(shortcut.path, shortcut.bytes);
     write('Stopping the running Fuli ' + plan.current.applicationVersion + '...');
-    await requireInstalledCli(runCli, plan.current.packageRoot, ['stop', '--data-dir', plan.current.dataDir], 'The running Fuli could not be stopped; nothing was switched.');
+    await stopInstalledFuli(plan, { ...stopping, runCli, write });
+    lock.assertHeld();
   } catch (error) {
     discard();
     throw error;
@@ -134,10 +137,12 @@ export async function requireInstalledCli(runCli, packageRoot, args, message) {
   if (result.code !== 0) throw new Error(message); // Do not echo CLI output containing user data or access codes.
   return result;
 }
+// Only the stop's reason is ever read from the output (windows-running-fuli.js);
+// start can print a LAN access code, so nothing else is shown or kept.
 export function runInstalledCli(packageRoot, args) {
   return new Promise(resolveRun => {
     execFile(join(packageRoot, 'runtime', 'node', 'node.exe'), [join(packageRoot, 'src', 'cli.js'), ...args], {
       cwd: packageRoot, env: process.env, windowsHide: true, encoding: 'utf8', timeout: 600_000, maxBuffer: 8 * 1024 * 1024
-    }, error => resolveRun({ code: error ? error.code ?? 1 : 0 }));
+    }, (error, stdout, stderr) => resolveRun({ code: error ? error.code ?? 1 : 0, stdout, stderr }));
   });
 }

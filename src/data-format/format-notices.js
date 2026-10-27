@@ -25,6 +25,26 @@ export function dataFormatNotices(dataDir, { inspect = inspectLocalStores, now =
   };
 }
 
+// The console's answer: the latest notices at once, refreshed right after.
+// Inspecting opens every store read-only and waits up to its busy timeout on
+// another process's write lock, synchronously; on the request path that froze
+// /api/health past `fuli stop`'s ownership check, so the stop left the console
+// running and Update-Fuli refused to switch.
+export function latestNotices(notices, { schedule = setImmediate } = {}) {
+  let latest = notices();
+  let scheduled = false;
+  return () => {
+    if (!scheduled) {
+      scheduled = true;
+      schedule(() => {
+        scheduled = false;
+        try { latest = notices(); } catch { /* keep the last answer; the next request tries again */ }
+      });
+    }
+    return latest;
+  };
+}
+
 // The steps that hold the store, not the automatic ones before them.
 function waitingSteps(steps) {
   const waiting = steps.filter((step) => WAITING_STEP_STATES.has(step.state));
