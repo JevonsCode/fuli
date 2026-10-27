@@ -49,11 +49,13 @@ relationship types) with no writer running, exports it under
 accepts the result only when the native census is identical. On any failure it
 switches back to container mode. The container volume is only read and is left
 stopped; client integrations are not changed (run `setup --connected-only` from
-the installed CLI afterwards to point clients at it). Updates, uninstall and update
-rollback are **not implemented**. Installed `fuli update` fails before
-npm access or stopping services. A later update slice must verify stopped owned
-processes, preserve data/configuration, rebind native asset paths and implement
-rollback before replacing an installation. Do not manually move installed slots.
+the installed CLI afterwards to point clients at it). Updates run from a new
+package's `Update-Fuli.cmd` or the console's one-click update; `Rollback-Fuli.cmd`
+and `Uninstall-Fuli.cmd` ship in the installed slot (see `TRAY.md`). An update may
+move Neo4j up a patch in the same major.minor after a graph backup and then refuses
+to roll back below it; a downgrade or a major/minor change is refused. Installed
+`fuli update` fails before npm access or stopping services. Do not manually move
+installed slots.
 
 On a caught first-install failure, cleanup removes only files still matching the
 identities created by that attempt, then removes its empty directories. Replaced
