@@ -1,10 +1,19 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useOccupationCatalog } from '@/features/occupations/occupation-catalog'
+import { SYNTHETIC_OCCUPATIONS } from '@/test-support/occupation-fixtures'
 import type { ProjectAgentRecord } from '@/types'
 import AgentOccupationEditor from './AgentOccupationEditor.vue'
 
-const { putJson } = vi.hoisted(() => ({ putJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ putJson, getJson: vi.fn(), postJson: vi.fn(), patchJson: vi.fn() }))
+const { putJson, getJson } = vi.hoisted(() => ({ putJson: vi.fn(), getJson: vi.fn() }))
+vi.mock('@/api/client', () => ({ putJson, getJson, postJson: vi.fn(), patchJson: vi.fn() }))
+
+// The editor offers the space catalog's active occupations.
+beforeAll(async () => {
+  getJson.mockResolvedValue(SYNTHETIC_OCCUPATIONS)
+  await useOccupationCatalog(ref('space-a')).load()
+})
 
 const agent: ProjectAgentRecord = {
   agentId: 'alpha', personalSpaceId: 'space-a', createdAt: '', updatedAt: '',
