@@ -7,16 +7,18 @@ import { requiresSymlinks, requiresUnixNativeAssets } from '../test-support/plat
 import { manageNativeNeo4j, planNativeNeo4j } from '../src/native-runtime/neo4j-lifecycle.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 import { NATIVE_NEO4J_VERSION } from '../src/native-runtime/runtime.js';
-async function fixture(t, fault = '') {
+// version: the installed Neo4j; an older patch than the pinned one is upgraded by update.
+async function fixture(t, fault = '', version = NATIVE_NEO4J_VERSION) {
   const root = await mkdtemp(join(tmpdir(), 'fuli-asset-lifecycle-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const paths = resolveSetupPaths({ dataDir: root });
-  await mkdir(join(paths.nativeNeo4jHome, 'bin'), { recursive: true });
-  await writeFile(join(paths.nativeNeo4jHome, 'bin', 'neo4j'), 'synthetic-old');
+  const home = join(paths.nativeRuntimeDir, `neo4j-community-${version}`);
+  await mkdir(join(home, 'bin'), { recursive: true });
+  await writeFile(join(home, 'bin', 'neo4j'), 'synthetic-old');
   await mkdir(join(paths.nativePersonalDir, 'data'), { recursive: true });
   await writeFile(join(paths.nativePersonalDir, 'data', 'sentinel'), 'keep-data');
-  const current = { version: 1, status: 'ready', mode: 'native', neo4jVersion: NATIVE_NEO4J_VERSION,
-    neo4jHome: paths.nativeNeo4jHome, javaHome: '/synthetic/jdk', providerPython: '/synthetic/python' };
+  const current = { version: 1, status: 'ready', mode: 'native', neo4jVersion: version,
+    neo4jHome: home, javaHome: '/synthetic/jdk', providerPython: '/synthetic/python' };
   await writeFile(paths.nativeRuntimeManifestPath, JSON.stringify(current));
   const events = [];
   const deps = {
@@ -27,14 +29,23 @@ async function fixture(t, fault = '') {
     checkRuntime: async () => {},
     storeFormats: async () => ({ 'personal:neo4j': 'record-aligned-1.1' }),
     services: descriptor => ({
-      start: async () => { const next = descriptor.neo4jHome !== paths.nativeNeo4jHome; events.push(next ? 'start-new' : 'start-old'); if (next && ['health', 'stop-new'].includes(fault)) throw new Error('injected new health failure'); },
+      start: async () => { const next = descriptor.neo4jHome !== home; events.push(next ? 'start-new' : 'start-old'); if (next && ['health', 'stop-new'].includes(fault)) throw new Error('injected new health failure'); },
       checkDatabaseHealth: async () => { events.push('health'); },
-      stopDatabases: async () => { events.push(descriptor.neo4jHome !== paths.nativeNeo4jHome ? 'stop-new' : 'stop-old'); if (fault === 'stop-new') throw new Error('injected new stop failure'); }
-    })
+      stopDatabases: async () => { events.push(descriptor.neo4jHome !== home ? 'stop-new' : 'stop-old'); if (fault === 'stop-new') throw new Error('injected new stop failure'); }
+    }),
+    // Records which Neo4j the manifest selected when the backup ran.
+    backupGraph: async outputDir => {
+      events.push('backup');
+      backups.push({ outputDir, selected: JSON.parse(await readFile(paths.nativeRuntimeManifestPath, 'utf8')).neo4jHome });
+      if (fault === 'backup') throw new Error('injected dump failure');
+    }
   };
+  const backups = [];
   const manifest = async () => JSON.parse(await readFile(paths.nativeRuntimeManifestPath, 'utf8'));
-  return { paths, current, deps, events, manifest };
+  return { paths, current, deps, events, manifest, backups };
 }
+// A synthetic older patch of the pinned Neo4j.
+const OLDER = NATIVE_NEO4J_VERSION.replace(/\d+$/, patch => String(Number(patch) - 1));
 test('preview is read-only and does not stage or stop', async t => {
   const f = await fixture(t); const before = await readFile(f.paths.nativeRuntimeManifestPath);
   const preview = await planNativeNeo4j({ paths: f.paths, action: 'update' });
@@ -84,10 +95,72 @@ test('changed rollback asset is refused before stopping anything', async t => {
   await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'rollback' }, f.deps), /changed|integrity/i);
   assert.ok(!f.events.includes('stop-runtime'));
 });
-test('different Neo4j version is refused before staging or stopping', async t => {
-  const f = await fixture(t); await writeFile(f.paths.nativeRuntimeManifestPath, JSON.stringify({ ...f.current, neo4jVersion: '5.26.0' }));
-  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /version|migration/i);
+test('a newer or other-minor installed Neo4j is refused before staging or stopping', async t => {
+  const newer = NATIVE_NEO4J_VERSION.replace(/\d+$/, patch => String(Number(patch) + 1));
+  for (const [version, reason] of [[newer, /downgrade/], ['5.27.0', /major or minor/]]) {
+    const f = await fixture(t, '', version);
+    await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), reason);
+    assert.deepEqual(f.events, []);
+  }
+});
+
+test('an older patch is upgraded after a graph backup made while the installed Neo4j is selected', async t => {
+  const f = await fixture(t, '', OLDER);
+  const plan = await planNativeNeo4j({ paths: f.paths, action: 'update' });
+  assert.deepEqual([plan.upgrade, plan.neo4jVersion], [true, NATIVE_NEO4J_VERSION]);
+  await manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps);
+  const next = await f.manifest();
+  assert.equal(next.neo4jVersion, NATIVE_NEO4J_VERSION);
+  assert.ok(next.neo4jHome.endsWith(`neo4j-community-${NATIVE_NEO4J_VERSION}`));
+  assert.ok(f.events.indexOf('stop-runtime') < f.events.indexOf('backup'));
+  assert.ok(f.events.indexOf('backup') < f.events.indexOf('start-new'));
+  const [backup] = f.backups;
+  assert.equal(backup.selected, f.current.neo4jHome);
+  assert.equal(join(backup.outputDir, '..'), f.paths.graphBackupDir);
+  assert.match(backup.outputDir, new RegExp(`before-neo4j-${NATIVE_NEO4J_VERSION.replaceAll('.', '\\.')}-`));
+  assert.deepEqual(next.previousNeo4jAsset.version, OLDER);
+  assert.equal(next.previousNeo4jAsset.graphBackup, backup.outputDir);
+});
+
+test('the same version takes no graph backup', async t => {
+  const f = await fixture(t);
+  await manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps);
+  assert.deepEqual(f.backups, []);
+  assert.equal((await f.manifest()).previousNeo4jAsset.graphBackup, undefined);
+});
+
+test('a failed graph backup switches nothing and restarts the installed console', async t => {
+  const f = await fixture(t, 'backup', OLDER); f.deps.runtime.consoleRunning = async () => true;
+  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /graph backup before the Neo4j upgrade failed; no assets were switched/);
+  assert.deepEqual(await f.manifest(), f.current);
+  assert.ok(!f.events.includes('start-new'));
+  assert.ok(f.events.includes('start-console'));
+});
+
+test('a failed candidate on the newer patch restores the installed one and names the backup', async t => {
+  const f = await fixture(t, 'health', OLDER);
+  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps),
+    error => /restored/.test(error.message) && error.message.includes(`kept at ${f.backups[0].outputDir}`));
+  assert.deepEqual(await f.manifest(), f.current);
+});
+
+test('rollback to the older patch is refused before stopping anything and names the backup', async t => {
+  const f = await fixture(t, '', OLDER);
+  await manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps);
+  const selected = await readFile(f.paths.nativeRuntimeManifestPath); f.events.length = 0;
+  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'rollback' }, f.deps),
+    error => /downgrade/.test(error.message) && error.message.includes(`kept at ${f.backups[0].outputDir}`));
   assert.deepEqual(f.events, []);
+  assert.deepEqual(await readFile(f.paths.nativeRuntimeManifestPath), selected);
+});
+
+test('uninstall after a patch upgrade removes both versions\' assets and keeps data', requiresUnixNativeAssets, async t => {
+  const f = await fixture(t, '', OLDER);
+  await manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps);
+  const upgraded = (await f.manifest()).neo4jHome;
+  await manageNativeNeo4j({ paths: f.paths, action: 'uninstall' }, f.deps);
+  for (const home of [f.current.neo4jHome, upgraded]) await assert.rejects(readFile(join(home, 'bin', 'neo4j')), /ENOENT/);
+  assert.equal(await readFile(join(f.paths.nativePersonalDir, 'data', 'sentinel'), 'utf8'), 'keep-data');
 });
 
 test('changed store format blocks user rollback without replacing the manifest or data', async t => {

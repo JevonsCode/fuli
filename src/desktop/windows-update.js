@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
-import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { compareSemanticVersions } from '../semantic-version.js';
 import { canonicalWindowsInstallPath, installationSha256, readWindowsInstallation, windowsInstallPathsOverlap } from './windows-installation-context.js';
 import { createWindowsShortcut, readWindowsShortcut, trayInventory } from './windows-installation.js';
@@ -41,13 +40,13 @@ export function planWindowsUpdate({ source, installRoot, env = process.env, read
     throw new Error(comparison === 0 ? 'This version is already installed.'
       : 'The update package must be newer than the installed version. To replace it with a lower version on purpose (for example a local rc build with a public beta), back up the data folder and run Update-Fuli with --allow-downgrade.');
   }
-  snapshotWindowsUpdateRuntime(installed.current, source);
-  return { source, ...installed, inventorySha256: inventory.inventorySha256, applicationVersion, downgrade: comparison < 0 };
+  const { neo4jUpgrade } = snapshotWindowsUpdateRuntime(installed.current, source);
+  return { source, ...installed, inventorySha256: inventory.inventorySha256, applicationVersion, downgrade: comparison < 0, neo4jUpgrade };
 }
 
 export async function updateWindowsInstallation(options, {
   runCli = runInstalledCli, createShortcut = createWindowsShortcut, readShortcut = readWindowsShortcut,
-  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping
+  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping, backupGraph
 } = {}) {
   const plan = planWindowsUpdate({ ...options, readShortcut });
   if ((options.expectedInstallationId && options.expectedInstallationId !== plan.current.installationId)
@@ -67,12 +66,11 @@ export async function updateWindowsInstallation(options, {
     let staged;
     try {
       staged = stageUpdate(plan, inventory, installationId, packageRoot, createShortcut, readShortcut);
-      staged.runtime = snapshotWindowsUpdateRuntime(plan.current, packageRoot);
     } catch (error) {
       discard();
       throw error;
     }
-    return await stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard, stopping });
+    return await stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard, stopping, backupGraph });
   } finally { await lock.release(); }
 }
 
@@ -84,14 +82,16 @@ function stageUpdate(plan, inventory, installationId, packageRoot, createShortcu
     writeFileSync(join(packageRoot, name), bytes, { flag: 'wx' });
   }
   writeFileSync(join(packageRoot, 'tray-files.sha256.json'), inventory.bytes, { flag: 'wx' });
-  resolveWindowsNativeBundle(readWindowsNativeBundle(packageRoot));
+  const runtime = snapshotWindowsUpdateRuntime(plan.current, packageRoot);
   const receipt = { version: 1, kind: 'windows-user-installation', installationId,
     installRoot: plan.installRoot, packageRoot, dataDir: plan.current.dataDir, inventorySha256: plan.inventorySha256 };
   writeFileSync(join(packageRoot, 'installed-context.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
   const next = { ...receipt, status: 'installed', applicationVersion: plan.applicationVersion,
     shortcuts: plan.current.shortcuts, ...(plan.current.adoptedExistingData ? { adoptedExistingData: true } : {}),
     previousInstallation: { installationId: plan.current.installationId, packageRoot: plan.current.packageRoot,
-      applicationVersion: plan.current.applicationVersion } };
+      applicationVersion: plan.current.applicationVersion,
+      // Named when a rollback to an older Neo4j is refused (neo4j-version-policy.js).
+      ...(runtime.neo4jUpgrade ? { graphBackup: runtime.neo4jUpgrade.backupDir } : {}) } };
   const shortcuts = stageWindowsShortcuts(plan.shortcuts, packageRoot, createShortcut, readShortcut);
-  return { next, record: Buffer.from(JSON.stringify(next, null, 2) + '\n'), shortcuts };
+  return { next, record: Buffer.from(JSON.stringify(next, null, 2) + '\n'), shortcuts, runtime };
 }

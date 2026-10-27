@@ -19,6 +19,8 @@ export async function runWindowsUpdateCommand(args = [], dependencies = {}) {
     const plan = (dependencies.plan ?? planWindowsUpdate)(updateOptions);
     if (plan.downgrade) write('这是降版替换（--allow-downgrade）：程序换成更低的版本号，数据不变；更新前请先备份数据目录。 / This replaces Fuli with a lower version (--allow-downgrade); data is kept. Back up the data folder first.');
     write(`更新 / Update: ${plan.current.applicationVersion} → ${plan.applicationVersion}\n程序 / Application: ${plan.installRoot}\n保留数据 / Keep data: ${plan.current.dataDir}\n请先退出 Fuli 托盘；服务会自动停止后重启。 / Exit the tray first; services will be stopped and restarted.`);
+    const upgrade = plan.neo4jUpgrade;
+    if (upgrade) write(`Neo4j ${upgrade.from} → ${upgrade.to}：切换前先备份图谱；升级后不能回退到 ${upgrade.from}。 / The graph is backed up before the switch; rolling back to Neo4j ${upgrade.from} afterwards is refused.`);
     if (preview) return { status: 'preview' };
     if (!yes && !await confirm('更新？ / Update? [y/N] ')) return { status: 'cancelled' };
     const stopping = { stopPids, confirmStop: yes ? undefined : async blockers => {
