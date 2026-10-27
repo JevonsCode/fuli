@@ -26,6 +26,7 @@ Always inspect the complete `targets` array, not the legacy first-target aliases
 Pass the last-read `targetsVersion` as `expectedTargetsVersion` when changing targets. On `external_knowledge_conflict` or `external_knowledge_busy`, re-read after the other operation completes; do not replay a stale target array. The registry serializes mutations across console/MCP processes; an interrupted process releases its reservation automatically.
 
 Bole is provisioned by the Provider as a fixed native role, not recruited through `recruit_employee`. Inspect staffing through the Project Agent read tools.
+
 Every Agent has a person-like nickname unique in its personal space. When recruiting or creating one, put the job in its occupation and responsibility, not its `displayName`: a job-title name or none is replaced by a generated name, and a taken name gets a number. Changing an existing Agent's `displayName` to a name another Agent uses is refused with `agent_name_taken`. Never rename an existing Agent on your own; a read may return `nameSuggestion` for the person to accept.
 
 The following controls are deliberately local-user-only unless the current interface catalog says otherwise:
