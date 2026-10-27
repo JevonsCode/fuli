@@ -26,7 +26,7 @@ it('loads work records only when opened and preserves truthful incomplete status
   await open(wrapper)
   expect(getJson).toHaveBeenCalledWith('/api/project-agents/agent/memory?personalSpaceId=space&personalProjectId=project-a')
   expect(wrapper.text()).toContain('Verification interrupted')
-  expect(wrapper.text()).toContain('cursor')
+  expect(wrapper.text()).toContain('Cursor')
 })
 
 it('ignores an older project response after the project selector changes', async () => {

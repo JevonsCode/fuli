@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import manifest from '../../../../registry/client-links.json'
 import type { ProjectAgentTaskBlocker, ProjectAgentTaskRecord } from '@/types'
 import TaskBlockerNotice from './TaskBlockerNotice.vue'
-import { blockerReasonText, lastBlockerClear } from './task-blocker'
+import { lastBlockerClear } from './task-blocker'
 
 const SESSION = '0f8fad5b-d9cb-469f-a165-70867728950e'
 const blocker = (changes: Partial<ProjectAgentTaskBlocker> = {}): ProjectAgentTaskBlocker => ({
@@ -57,11 +57,15 @@ describe('a blocked task says what, since when, where, and how to get back there
 })
 
 describe('blocker text', () => {
-  it('turns a worker code into its sentence and keeps a reported question as written', () => {
-    expect(blockerReasonText({ reason: 'worker_authentication_required. Actual model use is unverified.' }))
-      .toBe('执行这个任务的客户端需要先登录。')
-    expect(blockerReasonText({ reason: 'Need the API region.' })).toBe('Need the API region.')
-    expect(blockerReasonText({ reason: null })).toBe('没有记录阻塞原因')
+  it('reads a worker or staffing code as its sentence, keeps the stored text under 原始信息, and says when none was recorded', async () => {
+    const worker = await render(blocker({ reason: 'worker_authentication_required. Actual model use is unverified.' }))
+    expect(worker.get('[data-task-reason-text]').text()).toBe('执行这个任务的客户端需要先登录。')
+    expect(worker.get('[data-task-reason-raw] summary').text()).toBe('原始信息')
+    expect(worker.get('[data-task-reason-raw] code').text()).toBe('worker_authentication_required. Actual model use is unverified.')
+    const staffing = await render(blocker({ reason: 'project_team_lead: project team lead is the stable conversation owner and fits this work; executor: no usable executor' }))
+    expect(staffing.get('[data-task-reason-text]').text()).toBe('由项目组长负责；没有可用的执行客户端')
+    const empty = await render(blocker({ reason: null }))
+    expect(empty.get('[data-blocker-reason]').text()).toBe('没有记录阻塞原因')
   })
 
   it('names why and when the latest block ended by itself', () => {

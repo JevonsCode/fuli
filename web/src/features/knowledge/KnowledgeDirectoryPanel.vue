@@ -10,6 +10,7 @@ import {
   distinctSummary,
   formatTime,
   humanChangeStatusLabel,
+  knowledgeTypeLabel,
   knowledgeReviewState,
   latestItemValue,
   profileAspectLabel,
@@ -123,6 +124,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
       <!-- @vue-generic {import('@/types').KnowledgeItem} -->
       <VirtualDirectoryList
         class="knowledge-directory-virtual-list"
+        scrolls-with="page"
         :items="visibleItems"
         :row-height="68"
         :active-index="selectedKnowledgeIndex"
@@ -178,7 +180,10 @@ const selectedMaterialIndex = computed(() => props.selectedItem
             <span class="knowledge-review-state" :class="`state-${knowledgeReviewState(item)}`">
               {{ reviewStateLabel(item) }}
             </span>
-            <span class="knowledge-row-type">{{ item.type }}</span>
+            <span class="knowledge-row-type" :title="item.type">
+              {{ knowledgeTypeLabel(item).label }}
+              <small v-if="knowledgeTypeLabel(item).unknownType" data-unknown-type>{{ knowledgeTypeLabel(item).unknownType }}</small>
+            </span>
             <span class="knowledge-row-source">{{ sourceLabel(item) }}</span>
             <!-- Minutes in a roomy table, the date alone in a narrow one; the full time on hover. -->
             <span class="knowledge-row-time" :title="formatTime(latestItemValue(item))">
@@ -223,6 +228,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
       <!-- @vue-generic {import('@/types').KnowledgeItem} -->
       <VirtualDirectoryList
         class="project-material-virtual-list"
+        scrolls-with="page"
         :items="visibleProjectMaterialItems"
         :row-height="61"
         :active-index="selectedMaterialIndex"
@@ -242,7 +248,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
             @click="emit('select-item', item)"
           >
             <span class="project-material-copy">
-              <strong>{{ item.itemKind === 'entity' ? item.title : item.type }}</strong>
+              <strong>{{ item.itemKind === 'entity' ? item.title : knowledgeTypeLabel(item).label }}</strong>
               <small>{{ item.body }}</small>
             </span>
             <span class="project-material-type">{{ projectMaterialTypeLabel(item) }}</span>

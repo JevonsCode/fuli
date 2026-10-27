@@ -3,6 +3,7 @@
 .project-agent-task-card header { display: flex; justify-content: space-between; gap: 12px; }
 .project-agent-task-card header strong { color: var(--color-ink); font-size: 14px; }
 .project-agent-task-card p { margin: 8px 0 0; font-size: 14px; line-height: 1.55; }
+.project-agent-task-card .task-reason { margin-top: 8px; font-size: 14px; line-height: 1.55; }
 .project-agent-task-card small { display: block; margin-top: 8px; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 .project-agent-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .project-agent-occupation-emoji { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 1.2em; font-size: 15px; line-height: 1; }

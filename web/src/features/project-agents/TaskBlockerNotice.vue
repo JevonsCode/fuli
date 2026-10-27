@@ -5,7 +5,7 @@ import { t } from '@/i18n'
 import type { ProjectAgentTaskBlocker } from '@/types'
 import { useClientLinks } from '@/features/client-links/client-links-store'
 import { sessionLinksFor } from '@/features/client-links/model'
-import { blockerReasonText } from './task-blocker'
+import TaskReason from './TaskReason.vue'
 import { formatDate, sessionHref, sourceLabel } from './task-labels'
 
 // What a person needs to act on a blocked task: what it waits for, since
@@ -22,7 +22,6 @@ const links = useClientLinks()
 const copyState = ref<'' | 'copied' | 'failed'>('')
 onMounted(() => { links.load().catch(() => {}) })
 
-const reason = computed(() => blockerReasonText(props.blocker))
 const sessionLinks = computed(() => {
   const built = sessionLinksFor(links.state?.manifest, props.blocker.application, { sessionId: props.blocker.sessionId })
   if (built.length) return built
@@ -50,7 +49,7 @@ async function copySession() {
 
 <template>
   <section class="task-blocker" :class="{ 'is-compact': compact }" :aria-label="t('taskBlocker.label')" data-task-blocker>
-    <p class="task-blocker-reason" data-blocker-reason>{{ reason }}</p>
+    <TaskReason class="task-blocker-reason" :reason="blocker.reason" :fallback="t('taskBlocker.noReason')" :clamp="compact" data-blocker-reason />
     <p class="task-blocker-meta">
       <span data-blocker-since>{{ blocker.since ? t('taskBlocker.since', { time: formatDate(blocker.since) }) : t('taskBlocker.sinceUnknown') }}</span>
       <span data-blocker-where>{{ where }}</span>
@@ -75,12 +74,11 @@ async function copySession() {
   border-radius: var(--radius-md, 8px); background: var(--color-danger-soft);
 }
 .task-blocker p { margin: 0; }
-.task-blocker-reason { color: var(--color-danger); font-weight: 600; overflow-wrap: anywhere; }
+.task-blocker-reason :deep(.task-reason-text) { color: var(--color-danger); font-weight: 600; }
 .task-blocker-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--color-muted); font-size: 13px; overflow-wrap: anywhere; }
 .task-blocker-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
 .task-blocker-link { color: var(--color-danger); font-weight: 600; }
 .task-blocker-copy { height: auto; padding: 0; color: var(--color-danger); font: inherit; text-decoration: underline; }
 .task-blocker-note { color: var(--color-muted); font-size: 12px; }
 .is-compact { padding: 8px 10px; gap: 4px; }
-.is-compact .task-blocker-reason { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 </style>

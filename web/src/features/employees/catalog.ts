@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { ApiError, getJson } from '@/api/client'
 import { t } from '@/i18n'
+import { tableLabel } from '@/i18n/label-table'
 import type { ProjectAgentAssignmentRecord, ProjectAgentRecord, ProjectAgentStatus } from '@/types'
 
 export interface EmployeeTemplate {
@@ -58,6 +59,11 @@ export interface EmployeeWorkspace {
 export function employeeTemplateIdForAgent(agent: ProjectAgentRecord): string | null {
   const id = /^employee\.([a-z][a-z0-9-]{0,63})$/.exec(agent.agentId)?.[1]
   return id && agent.profile.capabilities.includes(`fuli.employee:${id}`) ? id : null
+}
+
+/** A built-in employee's role in the reader's language; another template's role as its manifest wrote it. */
+export function employeeRoleLabel(template: Pick<EmployeeTemplate, 'id' | 'role'>) {
+  return tableLabel('employees.roles', template.id) ?? template.role
 }
 
 export const employeeTemplates = ref<EmployeeTemplate[]>([])

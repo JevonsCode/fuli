@@ -5,13 +5,15 @@ import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
+import type { ConversationSourceApplication } from '@/types'
+import { sourceLabel } from './task-labels'
 
 const props = defineProps<{
   personalSpaceId: string
   agentId: string
   projects: Array<{ id: string; name: string }>
 }>()
-interface WorkRecord { taskContextToken: string; sourceApplication: string; createdAt: string; status: string; summary: string }
+interface WorkRecord { taskContextToken: string; sourceApplication: ConversationSourceApplication; createdAt: string; status: string; summary: string }
 const projectId = ref('')
 const opened = ref(false)
 const loading = ref(false)
@@ -72,7 +74,7 @@ function status(value: string) {
     </div>
     <ol v-else-if="records.length">
       <li v-for="record in records" :key="record.taskContextToken">
-        <div class="work-record-meta"><strong>{{ status(record.status) }}</strong><span>{{ record.sourceApplication }}</span><time :datetime="record.createdAt">{{ date(record.createdAt) }}</time></div>
+        <div class="work-record-meta"><strong>{{ status(record.status) }}</strong><span>{{ sourceLabel(record.sourceApplication) }}</span><time :datetime="record.createdAt">{{ date(record.createdAt) }}</time></div>
         <p>{{ record.summary }}</p>
       </li>
     </ol>

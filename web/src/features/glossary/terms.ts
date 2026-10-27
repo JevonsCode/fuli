@@ -24,6 +24,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     term('profile', key, `knowledge.domain.profiles.${key}`, `glossary.profile.${key}`)),
   ...['running', 'queued', 'backlog', 'paused', 'blocked', 'awaiting_review', 'awaiting_recruitment', 'none', 'ended'].map(key =>
     term('work', key, `agentRedesign.workStatus.${key}`, `glossary.work.${key}`)),
+  term('work', 'rawReason', 'taskReason.raw', 'glossary.work.rawReason'),
   ...['working', 'waiting', 'idle', 'error'].map(key =>
     term('presence', key, `glossary.presence.${key}.label`, `glossary.presence.${key}.body`)),
   ...['pending', 'agent', 'person'].map(key =>
@@ -42,6 +43,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
   taggedTerm('occupation', 'archived', 'occupations.stats.archived', 'glossary.occupation.archived'),
   taggedTerm('occupation', 'active', 'occupations.stats.active', 'glossary.occupation.active'),
   taggedTerm('occupation', 'agentCount', 'glossary.occupation.agentCountLabel', 'glossary.occupation.agentCount'),
+  term('occupation', 'hr', 'agentProfiles.roles.hr', 'glossary.occupation.hr'),
   ...['manual', 'shared', 'autonomous'].map(key =>
     taggedTerm('tonborg', key, `judgment.mode.${key}`, `glossary.tonborg.${key}`)),
   taggedTerm('tonborg', 'escalate', 'judgment.workbench.outcome.escalate', 'glossary.tonborg.escalate'),

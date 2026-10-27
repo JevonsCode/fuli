@@ -7,6 +7,7 @@ import ProjectAgentTaskDiagnostics from './ProjectAgentTaskDiagnostics.vue'
 import TaskExecutionPlan from './TaskExecutionPlan.vue'
 import TaskRunControls from './TaskRunControls.vue'
 import TaskBlockerNotice from './TaskBlockerNotice.vue'
+import TaskReason from './TaskReason.vue'
 import { lastBlockerClear } from './task-blocker'
 import { parallelPlanHasEvidence, workerEventEvidence } from './task-evidence'
 import {
@@ -62,7 +63,7 @@ function toggle(event: Event) {
       <Badge :variant="taskStatusTone(task.status)" data-task-status>{{ taskStatusLabel(task.status) }}</Badge>
     </header>
     <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" :blocker="task.blocker" :updated-at="task.updatedAt" />
-    <p v-else-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p>
+    <TaskReason v-else-if="task.resultSummary || task.failureReason" :reason="task.resultSummary || task.failureReason" :fallback="t('projectAgents.notReported')" />
     <p v-if="blockerClear" class="project-agent-muted" data-blocker-cleared>
       {{ t('taskBlocker.cleared', { time: formatDate(blockerClear.at), cause: t(`taskBlocker.causes.${blockerClear.cause}`) }) }}
     </p>

@@ -48,6 +48,7 @@ import {
   knowledgeItemFromEdge,
   knowledgeItemFromNode,
   knowledgeItems,
+  knowledgeTypeOptions,
   managementKnowledgeItems,
   mergeKnowledgeGraphs,
   personalProjectIdForItem,
@@ -173,10 +174,9 @@ const directorySection = computed<DirectorySection>(() => {
   }
   return queryValue(route.query.section) === 'materials' ? 'materials' : 'knowledge'
 })
-const typeOptions = computed(() => [...new Set(allItems.value.map(({ type }) => type))].sort())
 const typeSelectOptions = computed(() => [
   { value: 'all', label: t('knowledge.workspace.workspace.filters.allTypes') },
-  ...typeOptions.value.map((type) => ({ value: type, label: type })),
+  ...knowledgeTypeOptions(allItems.value),
 ])
 const quadrantSelectOptions = computed(() => [
   { value: 'all', label: t('knowledge.workspace.workspace.filters.allQuadrants') },
@@ -994,7 +994,7 @@ function queryValues(value: unknown) {
 <template>
   <section
     class="view graph-view vue-knowledge-view"
-    :class="{ 'graph-canvas-active': mode === 'graph', 'is-project-overview': mode === 'overview' }"
+    :class="{ 'graph-canvas-active': mode === 'graph', 'is-project-overview': mode === 'overview', 'is-directory': mode === 'directory' }"
   >
     <div class="knowledge-canvas">
     <div class="knowledge-view-heading">

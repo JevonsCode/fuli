@@ -7,6 +7,7 @@ import UiDialog from '@/ui/UiDialog.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import {
   batchConfirmationBasis,
+  knowledgeTypeLabel,
   quadrantLabel,
   knowledgeItemKey,
 } from '@/features/knowledge/model'
@@ -215,7 +216,7 @@ function fail(message: string) {
             <input v-model="selectedItemKeys" type="checkbox" :value="knowledgeItemKey(item)" />
             <span>
               <strong>{{ item.title }}</strong>
-              <small>{{ quadrantLabel(item.originQuadrant) }} · {{ item.type }}</small>
+              <small>{{ quadrantLabel(item.originQuadrant) }} · {{ knowledgeTypeLabel(item).label }}</small>
               <em>{{ basisFor(item)?.existenceReason }}</em>
               <em>{{ basisFor(item)?.quadrantReason }}</em>
               <!-- Confirming it is a person's review of what it waited for (D-20.7). -->

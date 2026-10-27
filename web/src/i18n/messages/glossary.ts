@@ -25,6 +25,7 @@ export const glossaryMessages = {
     },
     occupation: {
       catalog: '职业是 Agent 的角色类型：显示为它的职业标签，招聘时也按职业找合适的 Agent。',
+      hr: 'Bole 的职业：记录有哪些 Agent、各自在做什么，按需招募并保留招募记录。以前叫 AR。',
       archived: '归档不是删除：新的选择里不再出现，已经是这个职业的 Agent 保持不变，随时可以恢复。',
       active: '在用的职业会出现在给 Agent 选职业和招聘的选项里。',
       agentCountLabel: 'Agent 数',
@@ -74,6 +75,7 @@ export const glossaryMessages = {
     },
     work: {
       running: 'Agent 正在处理这项任务。',
+      rawReason: 'FULI 记录下来的原文，通常是给排查问题用的代码和英文说明；上面那句是它的意思。',
       queued: '任务已排队，等前面的工作完成后开始。',
       backlog: '已经指派给人，但还没开工；改成排队后才会开始。',
       paused: '任务被暂停，恢复后从中断处继续。',
@@ -121,6 +123,7 @@ export const glossaryMessages = {
     },
     occupation: {
       catalog: 'An occupation is an Agent\'s role type: it shows as the Agent\'s occupation chip, and recruitment matches Agents by it.',
+      hr: 'Bole\'s occupation: keeps track of which Agents exist and what they work on, recruits when needed and keeps the recruitment records. Formerly called AR.',
       archived: 'Archiving is not deleting: the occupation leaves new choices, Agents that already have it keep it, and you can restore it anytime.',
       active: 'Active occupations appear when you choose an Agent\'s occupation and when recruiting.',
       agentCountLabel: 'Agents',
@@ -170,6 +173,7 @@ export const glossaryMessages = {
     },
     work: {
       running: 'An Agent is working on this task.',
+      rawReason: 'The text FULI recorded, usually a code and an English note for troubleshooting; the sentence above is what it means.',
       queued: 'Queued; it starts when earlier work finishes.',
       backlog: 'Assigned but not started; it starts once it is moved to the queue.',
       paused: 'Paused; it resumes where it stopped.',

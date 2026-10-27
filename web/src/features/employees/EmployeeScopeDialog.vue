@@ -16,7 +16,7 @@ import { personalProjectsPath } from '@/router/paths'
 import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 import type { PersonalProject } from '@/types'
 import {
-  employeeTemplates, fetchEmployeeCatalog, refreshEmployeeCatalog,
+  employeeRoleLabel, employeeTemplates, fetchEmployeeCatalog, refreshEmployeeCatalog,
   employeeErrorMessage, type EmployeeRecruitmentResult, type EmployeeTemplate,
 } from './catalog'
 
@@ -180,7 +180,7 @@ function scopeKeydown(event: KeyboardEvent) {
           <template v-else>{{ selected.name.slice(0, 1) }}</template>
         </span>
         <div>
-          <h3>{{ selected.name }} <span>{{ selected.role }}</span></h3>
+          <h3>{{ selected.name }} <span>{{ employeeRoleLabel(selected) }}</span></h3>
           <p>{{ selected.description }}</p>
           <p class="ui-meta">{{ selected.capabilities.join(' · ') }}</p>
         </div>

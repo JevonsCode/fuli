@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { t } from '@/i18n'
 import { UiAvatar, UiChip } from '@/ui'
 import TaskBlockerNotice from '@/features/project-agents/TaskBlockerNotice.vue'
+import { taskReason } from '@/features/project-agents/task-reason'
 import type { WorkbenchBoard } from './workbench-board'
 import { workLanes, type WorkLane } from './workbench-model'
 
@@ -39,7 +40,7 @@ const lead = (task: { leadAgentId?: string | null; ownerAgentId?: string | null 
         <li v-for="task in lanes[lane].slice(0, PER_LANE)" :key="task.taskId">
           <RouterLink class="kanban-card" :to="board.taskHref(task)" data-kanban-task>
             <strong>{{ task.title }}</strong>
-            <small v-if="lane === 'stuck' && !task.blocker && task.failureReason" class="kanban-reason">{{ task.failureReason }}</small>
+            <small v-if="lane === 'stuck' && !task.blocker && task.failureReason" class="kanban-reason" :title="task.failureReason">{{ taskReason(task.failureReason)?.text }}</small>
             <span class="kanban-meta">
               <UiAvatar size="sm" :name="lead(task).name" :image="lead(task).image" :color="lead(task).color" :soft-color="lead(task).softColor"
                 :status="task.status === 'running' ? 'working' : lane === 'stuck' ? 'error' : 'none'" />
