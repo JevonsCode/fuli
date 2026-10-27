@@ -8,7 +8,6 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
 import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-hook.js';
-import { openCodeLifecycleOutput } from '../src/agents/opencode/lifecycle-hook.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { entryRules } from '../src/conversations/entry-rules.js';
 import { registerFuliContextResources } from '../src/mcp/context-resources.js';
@@ -22,8 +21,7 @@ const FRAMES = {
   claude_code: async () => hookFrame((await claudeLifecycleOutput('UserPromptSubmit', input, entry))
     .hookSpecificOutput.additionalContext),
   codex: async () => hookFrame((await codexLifecycleOutput('UserPromptSubmit', { ...input, turn_id: 'turn-1' }, entry))
-    .hookSpecificOutput.additionalContext),
-  opencode: async () => hookFrame((await openCodeLifecycleOutput('prompt', input, entry)).context)
+    .hookSpecificOutput.additionalContext)
 };
 
 // Every `rules` reference anywhere in a frame.
