@@ -7,9 +7,6 @@ export const routeMessages = {
       title: '偏好',
       description: '全局与项目级的品味、个性和判断偏好。',
     },
-    writingTaste: {
-      title: '品味',
-    },
     personalProjects: {
       title: '项目',
       description: '本机私有项目、项目知识与按任务生效的协作偏好。',
@@ -73,9 +70,6 @@ export const routeMessages = {
     preferences: {
       title: 'Preferences',
       description: 'Global and project taste, personality, and judgment preferences.',
-    },
-    writingTaste: {
-      title: 'Taste',
     },
     personalProjects: {
       title: 'Projects',

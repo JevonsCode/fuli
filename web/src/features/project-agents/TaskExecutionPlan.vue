@@ -6,6 +6,7 @@ import { celebrateOnce } from '@/lib/celebration'
 import { currentLocale, t } from '@/i18n'
 import type { ProjectAgentTaskEvent, ProjectAgentTaskRecord } from '@/types'
 import { normalizeTask } from './task-evidence'
+import { statusTone } from './task-labels'
 import { subscribeTaskUpdates } from './task-updates'
 
 const props = withDefaults(defineProps<{
@@ -80,7 +81,7 @@ watch([
       <small>{{ t('projectAgents.executionPlan.reported') }}</small>
     </div>
     <ol class="plan-steps" aria-live="polite">
-      <li v-for="step in steps" :key="step.id" :class="`is-${step.status}`" :aria-current="step.status === 'in_progress' ? 'step' : undefined">
+      <li v-for="step in steps" :key="step.id" :class="`is-${step.status}`" :data-tone="statusTone(step.status)" :aria-current="step.status === 'in_progress' ? 'step' : undefined">
         <div class="plan-step-heading">
           <span>{{ step.title }}</span>
           <small class="plan-step-status">{{ t(`projectAgents.executionPlan.status.${step.status}`) }}</small>
@@ -104,8 +105,11 @@ watch([
 .plan-steps li { padding-left: 2px; font-size: 13px; line-height: 1.6; }
 .plan-step-status { flex-shrink: 0; color: var(--color-muted); }
 .plan-steps .is-in_progress { font-weight: 600; }
-.is-in_progress .plan-step-status, .is-completed .plan-step-status { color: var(--color-success); }
-.is-blocked .plan-step-status { color: var(--color-warning); }
+/* Colours come from the shared status tone (task-labels.ts statusTone). */
+[data-tone="active"] .plan-step-status { color: var(--color-accent); }
+[data-tone="success"] .plan-step-status { color: var(--color-success); }
+[data-tone="warning"] .plan-step-status { color: var(--color-warning); }
+[data-tone="danger"] .plan-step-status { color: var(--color-danger); }
 .plan-steps p { margin: 3px 0 0; white-space: pre-wrap; font-weight: 400; }
 .plan-updated { margin: 0; line-height: 1.5; }
 @media (max-width: 540px) { .plan-heading { flex-wrap: wrap; } }

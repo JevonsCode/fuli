@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Button } from '@/components/ui/button'
+import { taskStatusChipTone } from '@/features/project-agents/task-labels'
 import { t } from '@/i18n'
 import { UiAvatar, UiChip, UiIcon } from '@/ui'
 import type { WorkbenchBoard } from './workbench-board'
@@ -82,7 +83,7 @@ const focusAgent = computed(() => {
         <ul v-else class="focus-working">
           <li v-for="task in stuck" :key="task.taskId">
             <RouterLink :to="board.taskHref(task)" class="focus-row" data-focus-stuck>
-              <UiChip tone="danger">{{ board.statusLabel(task.status) }}</UiChip>
+              <UiChip :tone="taskStatusChipTone(task.status)">{{ board.statusLabel(task.status) }}</UiChip>
               <span class="focus-row-copy"><strong>{{ task.title }}</strong>
                 <small>{{ task.failureReason || board.projectName(task.personalProjectId) }}</small></span>
               <span class="focus-row-time">{{ board.since(task.updatedAt) }}</span>
