@@ -6,7 +6,7 @@
 // - The list is an underline row, not upstream's grey pill track: in-page
 //   tabs sit below the shell's section pills and must read as one level
 //   lower. The active trigger takes the primary underline and full ink.
-// - Triggers use FULI type (13px/600), the FULI focus outline, and keep
+// - Triggers use FULI type (13px/500), the FULI focus outline, and keep
 //   their label on one line; the list scrolls sideways instead of wrapping
 //   when a translation is long.
 // - Dark-mode utilities are dropped (dark mode is reserved, not offered).

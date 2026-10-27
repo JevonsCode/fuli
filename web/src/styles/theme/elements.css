@@ -21,9 +21,10 @@
 *, ::before, ::after { border-color: var(--border); }
 button { cursor: pointer; }
 h1, h2, h3, p { margin: 0; }
-h1 { font-size: var(--text-title); font-weight: 650; line-height: 1.25; letter-spacing: -.02em; }
-h2 { font-size: 17px; font-weight: 620; line-height: 1.35; letter-spacing: -.01em; }
-h3 { font-size: var(--text-section); font-weight: 600; line-height: 1.4; }
+/* Headings follow the type scale (base.css): page, section, card. */
+h1 { font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.02em; }
+h2 { font-size: var(--text-section); font-weight: var(--weight-strong); line-height: var(--leading-heading); letter-spacing: -.01em; }
+h3 { font-size: var(--text-card-title); font-weight: var(--weight-strong); line-height: var(--leading-heading); }
 a { color: var(--color-accent); }
 
 :where(button, input, select, textarea) { font: inherit; color: inherit; }
@@ -50,7 +51,7 @@ a { color: var(--color-accent); }
 :where(input, textarea, select):disabled { color: var(--color-muted); background: var(--color-surface-subtle); cursor: not-allowed; }
 :where(select) {
   appearance: none; padding-right: 32px; cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%2366706a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 4.5 3 3 3-3'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23626c66' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 4.5 3 3 3-3'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 10px center;
 }
 

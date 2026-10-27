@@ -5,7 +5,7 @@
 // default = primary, outline = the everyday bordered button, ghost = text
 // button, destructive = danger, icon / icon-sm = icon-only.
 // Local changes here: FULI metrics (min-height from --control-height so long
-// labels can wrap, 13px/550 type, 1px border on every variant), FULI focus
+// labels can wrap, 13px/500 type, 1px border on every variant), FULI focus
 // outline and disabled look (no pointer-events-none, so a disabled button
 // still shows its title), no forced 16px size for icons (FULI icons carry
 // their own size), and hover only on enabled buttons.
@@ -15,7 +15,7 @@ import { cva } from "class-variance-authority"
 export { default as Button } from "./Button.vue"
 
 export const buttonVariants = cva(
-  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border text-sm leading-[1.4] font-[550] tracking-[.01em] no-underline transition-[color,background-color,border-color] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 aria-invalid:border-destructive",
+  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border text-sm leading-[1.4] font-medium tracking-[.01em] no-underline transition-[color,background-color,border-color] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 aria-invalid:border-destructive",
   {
     variants: {
       variant: {

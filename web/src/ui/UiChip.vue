@@ -11,7 +11,7 @@ withDefaults(defineProps<{ tone?: 'neutral' | 'accent' | 'warning' | 'danger'; t
 <style scoped>
 .ui-chip {
   display: inline-flex; align-items: center; height: 22px; max-width: 160px; padding: 0 8px;
-  overflow: hidden; border-radius: var(--radius-pill); font-size: 12px; font-weight: 600; line-height: 22px;
+  overflow: hidden; border-radius: var(--radius-pill); font-size: 12px; font-weight: var(--weight-medium); line-height: 22px;
   text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
 }
 .ui-chip.is-neutral { color: var(--color-ink-soft); background: var(--color-surface-subtle); }

@@ -6,6 +6,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import UiNotice from '@/ui/UiNotice.vue'
 import { projectDisplayName } from '@/features/projects/project-origin'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -90,7 +91,7 @@ onBeforeUnmount(() => controller.abort())
           </SelectContent>
         </Select>
       </div>
-      <p v-else-if="chosen.length && !shared.length" role="status" class="roundtable-new-warning">{{ t('roundtable.start.noSharedProject') }}</p>
+      <UiNotice v-else-if="chosen.length && !shared.length" tone="warning">{{ t('roundtable.start.noSharedProject') }}</UiNotice>
       <RoundtableComposer :mode="mode" :sending="sending" :error="error" :disabled="!chosen.length || !project"
         @update:mode="value => mode = value" @send="send" />
     </template>
@@ -107,5 +108,4 @@ onBeforeUnmount(() => controller.abort())
 .roundtable-new-agent span { display: grid; min-width: 0; gap: 2px; font-size: 13px; }
 .roundtable-new-agent small { overflow: hidden; color: var(--color-faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .roundtable-new-project { display: flex; }
-.roundtable-new-warning { color: var(--color-warning); font-size: 12px; }
 </style>

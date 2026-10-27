@@ -18,7 +18,7 @@ import { navigationFailure } from '@/router/navigation-recovery'
 <style scoped>
 .navigation-recovery { display: flex; flex: 0 0 auto; align-items: center; gap: 16px; margin: 12px 24px; padding: 16px; background: var(--color-warning-soft); color: var(--color-warning); border-radius: 10px; font-size: 13px; }
 .navigation-recovery > div { flex: 1; min-width: 0; }
-.navigation-recovery strong { font-weight: 650; }
+.navigation-recovery strong { font-weight: var(--weight-strong); }
 .navigation-recovery p { margin: 4px 0 0; line-height: 1.6; }
 .navigation-recovery :is(a, button):focus-visible { outline: 2px solid var(--color-warning); outline-offset: 3px; }
 @media (max-width: 640px) { .navigation-recovery { margin: 10px 12px; flex-wrap: wrap; gap: 10px; }.navigation-recovery > div { flex-basis: 100%; } }

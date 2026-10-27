@@ -40,7 +40,7 @@ const style = computed(() => ({
   --avatar-soft: var(--color-accent-soft);
   position: relative; display: inline-grid; flex: 0 0 auto; place-items: center;
   border-radius: 30%; color: var(--avatar-color); background: var(--avatar-soft);
-  font-weight: 700; line-height: 1;
+  font-weight: var(--weight-strong); line-height: 1;
 }
 .ui-avatar.is-sm { width: 28px; height: 28px; font-size: 13px; }
 .ui-avatar.is-md { width: 40px; height: 40px; font-size: 18px; }

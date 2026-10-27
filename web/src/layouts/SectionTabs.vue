@@ -22,7 +22,7 @@ defineProps<{ sections: readonly NavSection[]; activeKey?: string }>()
 .section-tabs { display: flex; gap: 4px; padding: 3px; border-radius: var(--radius-pill); background: var(--color-surface-subtle); overflow-x: auto; scrollbar-width: none; }
 .section-tab {
   flex: 0 0 auto; padding: 6px 14px; border-radius: var(--radius-pill); color: var(--color-muted);
-  font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap;
+  font-size: 13px; font-weight: var(--weight-medium); text-decoration: none; white-space: nowrap;
   transition: color var(--motion-fast), background var(--motion-fast);
 }
 .section-tab:hover { color: var(--color-ink); }

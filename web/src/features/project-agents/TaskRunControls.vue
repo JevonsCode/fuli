@@ -5,6 +5,7 @@ import { t } from '@/i18n'
 import type { ProjectAgentTaskRecord } from '@/types'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
+import UiNotice from '@/ui/UiNotice.vue'
 import { formatDate, taskStatusLabel } from './task-labels'
 import {
   actionFailure, mergeRunPages, readTaskRuns, retryTask, runIsActive, runOutcomeUncertain, stopTaskRun, taskIsRetryable,
@@ -183,12 +184,12 @@ function stateLabel(state: string) {
       </Button>
       <Button variant="outline" v-if="retryable" size="sm" @click="openRetry">{{ t('taskRuns.retry') }}</Button>
     </div>
-    <p v-if="notice" role="status" class="task-run-notice">{{ notice }}</p>
-    <p v-if="retried" role="status" class="task-run-notice">
+    <UiNotice v-if="notice">{{ notice }}</UiNotice>
+    <UiNotice v-if="retried" tone="success">
       {{ t('taskRuns.retried', { status: taskStatusLabel(retried.task.status) }) }}
       <RouterLink v-if="newTaskHref" :to="newTaskHref">{{ t('taskRuns.viewNew') }}</RouterLink>
       <code v-else>{{ retried.task.taskId }}</code>
-    </p>
+    </UiNotice>
     <p v-if="retried?.mustDiscloseRecruitment && retried.clientNotice" role="note" class="task-run-risk" data-task-run-disclosure>{{ retried.clientNotice }}</p>
 
     <div class="project-agent-section-heading">
@@ -250,7 +251,7 @@ function stateLabel(state: string) {
         <label><input v-model="retryStart" type="radio" name="retry-start" value="queue" /> {{ t('taskRuns.retryQueue') }}</label>
         <label><input v-model="retryStart" type="radio" name="retry-start" value="backlog" /> {{ t('taskRuns.retryBacklog') }}</label>
       </fieldset>
-      <p v-if="retrySlow" role="status" class="task-run-notice">{{ t('taskRuns.retrySlow') }}</p>
+      <UiNotice v-if="retrySlow">{{ t('taskRuns.retrySlow') }}</UiNotice>
       <p v-if="retryUnknown?.resent" role="alert" class="task-run-risk">{{ t('taskRuns.retryStillUnknown') }}</p>
       <template v-if="uncertain && !retryUnknown">
         <p role="note" class="task-run-risk">{{ t('taskRuns.retryRisk') }}</p>
@@ -271,7 +272,6 @@ function stateLabel(state: string) {
 .task-run-controls { display: grid; gap: 8px; margin-top: 12px; }
 .task-run-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .task-run-short-id { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: .75; }
-.task-run-notice { margin: 0; font-size: 13px; }
 .task-run-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .task-run-item { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 10px; }
 .task-run-item header { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }

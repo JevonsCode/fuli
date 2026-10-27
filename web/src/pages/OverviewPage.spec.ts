@@ -123,6 +123,29 @@ beforeEach(() => {
 
 describe('OverviewPage', () => {
   afterEach(() => vi.useRealTimers())
+  it('says the no-progress hint once for the section, keeping it as each clear button\'s tooltip', async () => {
+    const longAgo = new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString()
+    const blocked = (id: string) => ({ ...task(id, 'blocked', longAgo, 'project-a'),
+      blocker: { reason: 'Need the staging region.', since: longAgo, agent_id: 'synthetic-engineer', application: 'codex', session_id: null, session_url: null, observed: false } })
+    const { wrapper } = await setup({ taskPayload: { items: ['a', 'b', 'c', 'd'].map(blocked) } })
+
+    expect(wrapper.findAll('[data-testid="overview-current-work-item"]')).toHaveLength(4)
+    expect(wrapper.findAll('[data-overview-stale-hint]')).toHaveLength(1)
+    expect(wrapper.find('[data-blocker-stale]').exists()).toBe(false)
+    const clears = wrapper.findAll('[data-blocker-clear-open]')
+    expect(clears).toHaveLength(4)
+    for (const clear of clears) expect(clear.attributes('title')).toBe('很久没有进展，如果已经解决可以标记为已解除')
+  })
+
+  it('hints nothing while every blocked card is recent', async () => {
+    const recent = new Date().toISOString()
+    const blocked = { ...task('fresh', 'blocked', recent, 'project-a'),
+      blocker: { reason: 'Need the staging region.', since: recent, agent_id: 'synthetic-engineer', application: 'codex', session_id: null, session_url: null, observed: false } }
+    const { wrapper } = await setup({ taskPayload: { items: [blocked] } })
+    expect(wrapper.find('[data-overview-stale-hint]').exists()).toBe(false)
+    expect(wrapper.get('[data-blocker-clear-open]').attributes('title')).toBeUndefined()
+  })
+
   it('uses the Agent identity portrait in the constellation view', async () => {
     designLab.value.workbench = 'constellation'
     const row = { ...task('running', 'running', '2026-09-10T00:00:00Z', 'project-a'), lead_agent_id: 'owner' }

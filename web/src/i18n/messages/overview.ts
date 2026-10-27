@@ -24,6 +24,7 @@ export const overviewMessages = {
       retry: '重试',
       refresh: '刷新',
       updated: '更新于 {date}', owner: '负责人 {name}', expand: '展开已读取任务（{count}）', collapse: '收起任务', loaded: '已读取 {count} 条',
+      staleBlocked: '有阻塞的任务很久没有进展，如果已经解决，可以在卡片上标记为已解除。',
     },
     read: {
       scope: '正在读取工作台范围…', scopeFailed: '工作台范围暂不可用。', slow: '读取时间较长。', timeout: '读取超时。',
@@ -78,6 +79,7 @@ export const overviewMessages = {
       retry: 'Retry',
       refresh: 'Refresh',
       updated: 'Updated {date}', owner: 'Owner {name}', expand: 'Expand loaded tasks ({count})', collapse: 'Collapse tasks', loaded: '{count} records read',
+      staleBlocked: 'Some blocked tasks have had no progress for a while. If one is solved, mark it as unblocked on its card.',
     },
     read: {
       scope: 'Reading workspace scope…', scopeFailed: 'Workspace scope is unavailable.', slow: 'Taking longer than usual.', timeout: 'Read timed out.',
