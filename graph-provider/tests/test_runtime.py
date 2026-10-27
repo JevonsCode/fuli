@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import math
 
 import pytest
@@ -9,6 +10,15 @@ from fuli_graph.runtime import (
     LocalLexicalReranker,
     ManagedNeo4jDriver,
 )
+
+
+def test_neo4j_notifications_stay_out_of_the_provider_log_while_driver_errors_remain(caplog):
+    from neo4j._async.work.result import notification_log
+
+    notification_log.warning('Received notification from DBMS server: synthetic unknown label')
+    logging.getLogger('neo4j').error('synthetic driver error')
+
+    assert [record.getMessage() for record in caplog.records] == ['synthetic driver error']
 
 
 def test_local_hash_embedder_rejects_dimensions_that_are_too_small():
