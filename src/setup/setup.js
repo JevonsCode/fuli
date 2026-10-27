@@ -1,5 +1,6 @@
 import { installAgent } from './install-agent.js';
 import { backupAgentConfig } from './config-backup.js';
+import { existsSync } from 'node:fs';
 import { totalmem } from 'node:os';
 import { inspectAgentInstallations } from './agent-installation-status.js';
 import { connectAgent, discoverAgents } from './agents.js';
@@ -13,6 +14,7 @@ import {
   readRuntimeSettings,
   runtimeSettingsWithOverrides
 } from '../system/runtime-settings.js';
+import { readReservedPortRanges, withoutReservedPorts } from '../system/reserved-ports.js';
 import {
   DEFAULT_ADAPTIVE_RUNTIME_SETTINGS,
   adaptiveRuntimeSettingsWithOverrides,
@@ -26,6 +28,8 @@ export function planLocalSetup(options, {
   inspectInstallations = inspectAgentInstallations,
   readSettings = readRuntimeSettings,
   readAdaptiveSettings = readAdaptiveRuntimeSettings,
+  settingsExist = existsSync,
+  readReservedRanges = readReservedPortRanges,
   platform = process.platform,
   hostTotalMemory = totalmem,
   nodePath = process.execPath
@@ -34,10 +38,16 @@ export function planLocalSetup(options, {
   const savedRuntimeSettings = paths.runtimeSettingsPath
     ? readSettings(paths.runtimeSettingsPath)
     : DEFAULT_RUNTIME_SETTINGS;
-  const runtimeSettings = runtimeSettingsWithOverrides(savedRuntimeSettings, {
+  const requestedSettings = runtimeSettingsWithOverrides(savedRuntimeSettings, {
     consolePort: options.port,
     graphRuntimeMode: options.runtimeMode
   });
+  // A first setup on Windows keeps clear of the port ranges the system reserves
+  // now; saved settings and a port the person chose are kept as they are.
+  const firstSetup = !(paths.runtimeSettingsPath && settingsExist(paths.runtimeSettingsPath));
+  const runtimeSettings = firstSetup && options.port === null
+    ? { ...requestedSettings, ports: withoutReservedPorts(requestedSettings.ports, readReservedRanges({ platform })) }
+    : requestedSettings;
   const savedAdaptiveRuntimeSettings = paths.adaptiveRuntimeSettingsPath
     ? readAdaptiveSettings(paths.adaptiveRuntimeSettingsPath)
     : DEFAULT_ADAPTIVE_RUNTIME_SETTINGS;

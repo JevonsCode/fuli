@@ -51,6 +51,7 @@ import {
   writeAdaptiveRuntimeState
 } from '../adaptive-runtime/state.js';
 import { nonEmptyText } from '../validation/values.js';
+import { reservedPortProblem } from '../system/reserved-ports.js';
 
 export {
   dockerInfoIndicatesDaemon,
@@ -234,7 +235,8 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     throw new Error(consoleStartFailure(consoleStart, {
       url,
       providerUrls: input.personalOnly ? [urls.personal] : [urls.personal, urls.workspace],
-      logPath: input.paths.logPath
+      logPath: input.paths.logPath,
+      portProblem: await deps.consolePortProblem(runtimeSettings.ports.console, lan ? '0.0.0.0' : '127.0.0.1')
     }));
   }
   const state = {
@@ -501,11 +503,12 @@ function waitForWeb(url, pid, deps) {
 
 // By now Neo4j and the Provider run and the graph is set up; only the console
 // failed. Say so, so a person neither assumes nothing started nor loses track of it.
-function consoleStartFailure(outcome, { url, providerUrls, logPath }) {
+// A port Windows reserves is named first: retrying on the same port cannot help.
+function consoleStartFailure(outcome, { url, providerUrls, logPath, portProblem }) {
   const problem = outcome === 'timed_out'
     ? `The Fuli console did not answer at ${url} within ${CONSOLE_READY_TIMEOUT_MS / 1000} s, so it was stopped.`
     : 'The Fuli console exited while starting.';
-  return `${problem} Neo4j and the graph Provider are already running (${providerUrls.join(', ')}) ` +
+  return `${portProblem ? `${portProblem} ` : ''}${problem} Neo4j and the graph Provider are already running (${providerUrls.join(', ')}) ` +
     `and your data is kept. The console's output is in ${logPath}. ` +
     'Run the same command again to retry, or run `fuli stop` to stop the graph services.';
 }
@@ -595,6 +598,7 @@ function graphDependencies(overrides) {
     isProcessAlive,
     stopProcess,
     webHealth: checkLocalConsoleHealth,
+    consolePortProblem: (port, host) => reservedPortProblem(port, { host }),
     consoleVersion: readLocalConsoleVersion,
     discoverLanAddresses,
     createLanAccessToken: secret,

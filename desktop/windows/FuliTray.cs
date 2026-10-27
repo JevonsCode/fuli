@@ -94,6 +94,11 @@ internal static class FuliTray
             AddAction("仅打开管理页 / Open running console", "open");
             AddAction("停止 Fuli 服务 / Stop services", "stop");
             AddAction("刷新状态 / Refresh status", "status");
+            // The tray's "?" for this term: a menu item explains itself in its tooltip.
+            menu.ShowItemToolTips = true;
+            AddAction("换一个端口 / Use another port", "change-port").ToolTipText =
+                "Windows 会临时保留一些端口。Fuli 改用附近一个可用端口、保存设置（保留旧设置备份）并重启。\n"
+                + "Windows reserves some ports. Fuli moves to a free nearby port, saves the setting (keeping a backup) and restarts.";
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("打开日志目录 / Open logs", null, delegate { OpenDirectory(selected.logDir); });
             menu.Items.Add("打开数据目录 / Open data folder", null, delegate { OpenDirectory(selected.dataDir); });
@@ -119,9 +124,9 @@ internal static class FuliTray
             RunAction("status", false);
         }
 
-        private void AddAction(string title, string action)
+        private ToolStripItem AddAction(string title, string action)
         {
-            menu.Items.Add(title, null, delegate { RunAction(action, true); });
+            return menu.Items.Add(title, null, delegate { RunAction(action, true); });
         }
 
         private void RunAction(string action, bool showErrors)
@@ -139,6 +144,7 @@ internal static class FuliTray
             operation.Text = command == "status" ? "正在读取服务状态 / Reading service status"
                 : command == "stop" ? "正在停止 Fuli 服务 / Stopping Fuli services"
                 : command == "open" ? "正在打开管理页 / Opening console"
+                : command == "change-port" ? "正在换端口并重启 Fuli / Moving Fuli to another port and restarting"
                 : "正在启动并打开 Fuli / Starting and opening Fuli";
             operation.Visible = true;
             Task.Run(delegate
@@ -152,13 +158,22 @@ internal static class FuliTray
                     state.Text = reply.label ?? "状态未知 / Unknown";
                     var tip = "Fuli — " + state.Text;
                     icon.Text = tip.Length > 63 ? tip.Substring(0, 63) : tip;
+                    var changePort = false;
                     if (!reply.ok && (showErrors || exitAfterOperation))
                     {
-                        MessageBox.Show(dispatch, (reply.error ?? "服务操作失败 / The service operation failed")
+                        // A port Windows reserves: offer the port change right here.
+                        var offerPort = reply.portBlocked && !exitAfterOperation;
+                        var answer = MessageBox.Show(dispatch, (reply.error ?? "服务操作失败 / The service operation failed")
                             + "\n\n数据目录 / Data: " + selected.dataDir
                             + "\n日志 / Logs: " + selected.logDir
-                            + "\nNative 日志 / Native logs: " + selected.nativeLogDir,
-                            "Fuli", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            + "\nNative 日志 / Native logs: " + selected.nativeLogDir
+                            + (offerPort ? "\n\n换一个端口并重启 Fuli？ / Use another port and restart Fuli?" : ""),
+                            "Fuli", offerPort ? MessageBoxButtons.YesNo : MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        changePort = offerPort && answer == DialogResult.Yes;
+                    }
+                    else if (reply.ok && reply.notice != null && showErrors)
+                    {
+                        MessageBox.Show(dispatch, reply.notice, "Fuli", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                     // Failed or partial stops keep the tray and its diagnostic
                     // state visible. Closing the browser never stops services.
@@ -168,6 +183,7 @@ internal static class FuliTray
                     busy = false;
                     foreach (ToolStripItem item in menu.Items)
                         if (item is ToolStripMenuItem && item != state && item != operation) item.Enabled = true;
+                    if (changePort) RunAction("change-port", true);
                 });
             });
         }
