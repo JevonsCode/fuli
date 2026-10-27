@@ -27,6 +27,10 @@
 //   sealDelegation({ token, sessionId })        binds the token to the woken session
 //   verifyDelegation({ token, sessionId })      { redeemed, memoryResultCount }
 //   revokeDelegation({ token })
+//   issueOwnerDelegation({ projectId, agentId, targetClient, targetSessionId, lifetimeSeconds })
+//                                               optional: { token } for the person's own message to one
+//                                               of their Agents (no sender task); without it the person's
+//                                               message waits on the board and nothing is woken
 //   issueRemoteOrigin({ taskContextToken, client, messageId, digest, targetNode, bindingId, expiresAt, purpose? })
 //                                               { agent_id, proof }: signed origin for a cross-device ask or chat
 //   remoteOriginAuthority()                     public keys that verify those origins
