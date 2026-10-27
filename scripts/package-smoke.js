@@ -116,7 +116,8 @@ try {
         'docs/agent-interface-architecture.md',
         'docs/agent-roundtable.md',
         'docs/judgment-and-autonomy.md',
-        'docs/client-connections.md'
+        'docs/client-connections.md',
+        'docs/client-links.md'
       ].includes(path), `unexpected published documentation file ${path}`);
     }
     assert.doesNotMatch(path, /^(?:AGENTS|CLAUDE)\.md$/);

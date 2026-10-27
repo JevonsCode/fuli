@@ -453,6 +453,9 @@ export class GraphitiProviderClient {
       }
     );
   }
+  clearSessionTaskBlockers(input) {
+    return this.#request('/v1/project-agent-task-blockers/clear', { method: 'POST', body: input });
+  }
   openProjectAgentTaskEvents(personalSpaceId, { signal } = {}) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return this.#request(`/v1/project-agent-task-events?${query}`, { stream: true, signal });

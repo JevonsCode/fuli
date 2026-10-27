@@ -1,5 +1,5 @@
 import { normalizeOverviewTasks } from "@/features/overview/overview-data";
-import type { ProjectAgentRecord } from "@/types";
+import type { ProjectAgentRecord, ProjectAgentTaskBlocker } from "@/types";
 import {
   AGENT_WORK_STATUSES,
   type AgentWorkStatus,
@@ -27,6 +27,8 @@ export interface WorkbenchTaskSnapshot {
   participantUpdatedAt: Record<string, string | null>;
   /** The task's recorded result/blocking summary, when there is one. */
   summary: string | null;
+  /** What the task waits for and where, while it is blocked. */
+  blocker: ProjectAgentTaskBlocker | null;
 }
 
 export interface AgentWorkbenchEntry {
@@ -39,6 +41,8 @@ export interface AgentWorkbenchEntry {
   lastUpdateAt: string | null;
   /** Recorded reason for a waiting state (blocked, review, paused); null if none was recorded. */
   reason: string | null;
+  /** The current task's block: what, since when and in which session. */
+  blocker?: ProjectAgentTaskBlocker | null;
   /**
    * Recorded entry into running for the current task. Null when not running,
    * when the provider does not report it, or for rows written before it was
@@ -79,6 +83,7 @@ export function indexWorkbenchTasks(value: unknown, personalSpaceId: string) {
         task.participants.map((item) => [item.agentId, item.updatedAt ?? null]),
       ),
       summary: task.resultSummary?.trim() || null,
+      blocker: task.status === "blocked" ? task.blocker ?? null : null,
     };
   }
   return index;
@@ -135,6 +140,7 @@ export function agentWorkbenchEntry(
     title,
     lastUpdateAt,
     reason: WAITING_WITH_REASON.has(status) ? snapshot?.summary ?? null : null,
+    blocker: status === "blocked" ? snapshot?.blocker ?? null : null,
     runningSince:
       fromRoster && status === "running" ? agent.currentTaskRunningSince ?? null : null,
   };

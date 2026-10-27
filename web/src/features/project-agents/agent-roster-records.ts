@@ -75,6 +75,7 @@ export function currentWorkEntry(agent: ProjectAgentRecord): AgentWorkbenchEntry
     title: task?.title ?? null,
     lastUpdateAt: task?.updatedAt ?? null,
     reason: null,
+    blocker: task?.status === 'blocked' ? task.blocker ?? null : null,
     runningSince: null,
   }
 }

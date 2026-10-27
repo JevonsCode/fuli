@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { t } from '@/i18n'
 import { UiAvatar, UiChip } from '@/ui'
+import TaskBlockerNotice from '@/features/project-agents/TaskBlockerNotice.vue'
 import type { WorkbenchBoard } from './workbench-board'
 import { workLanes, type WorkLane } from './workbench-model'
 
@@ -38,13 +39,15 @@ const lead = (task: { leadAgentId?: string | null; ownerAgentId?: string | null 
         <li v-for="task in lanes[lane].slice(0, PER_LANE)" :key="task.taskId">
           <RouterLink class="kanban-card" :to="board.taskHref(task)" data-kanban-task>
             <strong>{{ task.title }}</strong>
-            <small v-if="lane === 'stuck' && task.failureReason" class="kanban-reason">{{ task.failureReason }}</small>
+            <small v-if="lane === 'stuck' && !task.blocker && task.failureReason" class="kanban-reason">{{ task.failureReason }}</small>
             <span class="kanban-meta">
               <UiAvatar size="sm" :name="lead(task).name" :image="lead(task).image" :color="lead(task).color" :soft-color="lead(task).softColor"
                 :status="task.status === 'running' ? 'working' : lane === 'stuck' ? 'error' : 'none'" />
               <small>{{ board.projectName(task.personalProjectId) }} · {{ board.since(task.completedAt ?? task.updatedAt) }}</small>
             </span>
           </RouterLink>
+          <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" compact class="kanban-blocker"
+            :blocker="task.blocker" :updated-at="task.updatedAt" />
         </li>
         <li v-if="lanes[lane].length > PER_LANE" class="kanban-more">{{ t('workbench.board.more', { count: lanes[lane].length - PER_LANE }) }}</li>
         <li v-if="!count(lane)" class="kanban-empty">{{ t('workbench.board.empty') }}</li>
@@ -74,6 +77,7 @@ const lead = (task: { leadAgentId?: string | null; ownerAgentId?: string | null 
 .kanban-card strong { color: var(--color-ink); font-size: 13px; font-weight: 600; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .kanban-card > .ui-chip { justify-self: start; }
 .kanban-reason { color: var(--color-danger); font-size: 12px; line-height: 1.5; }
+.kanban-blocker { margin-top: 4px; font-size: 12px; }
 .kanban-meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .kanban-meta small { overflow: hidden; color: var(--color-faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .kanban-more, .kanban-empty { padding: 6px 4px; color: var(--color-faint); font-size: 12px; }

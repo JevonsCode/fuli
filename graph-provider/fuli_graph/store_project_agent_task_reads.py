@@ -19,6 +19,7 @@ from .project_agent_task_models import (
     ProjectAgentWorkerRuntime,
 )
 from .provider_values import native_datetime
+from .task_blocker import current_blocker
 from .temporary_project_scope import TEMPORARY_SCOPE
 from .task_activity_origin import read_activity_origin
 
@@ -182,32 +183,9 @@ class StoreProjectAgentTaskReads:
         RETURN task, participant_rows, event_rows, decision
         '''
 
-    def _task_from_row(self, row):
-        raw = dict(row['task'])
-        decision_raw = dict(row['decision']) if row.get('decision') else {}
-        if decision_raw.get('decision_json'):
-            decision = ProjectAgentRoutingDecisionRecord.model_validate_json(
-                decision_raw['decision_json']
-            )
-        else:
-            decision = ProjectAgentRoutingDecisionRecord(
-                decision_id=decision_raw.get('decision_id') or 'legacy',
-                task_id=raw['task_id'],
-                coordinator_agent_id=raw['coordinator_agent_id'],
-                complexity=raw.get('complexity') or 'standard',
-                complexity_basis=list(raw.get('complexity_basis') or []),
-                selected_model_strategy=(
-                    ProjectAgentModelStrategy.model_validate_json(
-                        raw['effective_model_strategy_json']
-                    )
-                    if raw.get('effective_model_strategy_json') else None
-                ),
-                model_strategy_source=raw.get('model_strategy_source') or 'coordinator',
-                outcome=raw.get('routing_outcome') or 'unassigned',
-                reason=raw.get('routing_reason') or 'no_match',
-                match_basis=list(raw.get('match_basis') or []),
-                created_at=native_datetime(raw['created_at']),
-            )
+    @classmethod
+    def _events_from_row(cls, row):
+        """The task's recorded events, oldest first."""
         events = []
         for value in row.get('event_rows') or []:
             if value is None:
@@ -240,14 +218,52 @@ class StoreProjectAgentTaskReads:
                 'worker_status',
                 'source_session_url',
                 'tools_used',
+                'blocker_cleared_by',
             ):
                 if name in ProjectAgentTaskEventRecord.model_fields:
                     fields[name] = event.get(name)
-            fields.update(self._event_json_fields(event))
+            fields.update(cls._event_json_fields(event))
             if event.get('execution_plan_json'):
                 fields['execution_plan'] = ProjectAgentExecutionPlan.model_validate_json(event['execution_plan_json'])
             events.append(ProjectAgentTaskEventRecord(**fields))
         events.sort(key=lambda item: item.created_at)
+        return events
+
+    @classmethod
+    def _blocker_from_row(cls, row):
+        """The current block of the task in row, without projecting the whole task."""
+        raw = dict(row['task'])
+        if raw.get('status') != 'blocked':
+            return None
+        return current_blocker('blocked', cls._events_from_row(row), raw.get('result_summary'))
+
+    def _task_from_row(self, row):
+        raw = dict(row['task'])
+        decision_raw = dict(row['decision']) if row.get('decision') else {}
+        if decision_raw.get('decision_json'):
+            decision = ProjectAgentRoutingDecisionRecord.model_validate_json(
+                decision_raw['decision_json']
+            )
+        else:
+            decision = ProjectAgentRoutingDecisionRecord(
+                decision_id=decision_raw.get('decision_id') or 'legacy',
+                task_id=raw['task_id'],
+                coordinator_agent_id=raw['coordinator_agent_id'],
+                complexity=raw.get('complexity') or 'standard',
+                complexity_basis=list(raw.get('complexity_basis') or []),
+                selected_model_strategy=(
+                    ProjectAgentModelStrategy.model_validate_json(
+                        raw['effective_model_strategy_json']
+                    )
+                    if raw.get('effective_model_strategy_json') else None
+                ),
+                model_strategy_source=raw.get('model_strategy_source') or 'coordinator',
+                outcome=raw.get('routing_outcome') or 'unassigned',
+                reason=raw.get('routing_reason') or 'no_match',
+                match_basis=list(raw.get('match_basis') or []),
+                created_at=native_datetime(raw['created_at']),
+            )
+        events = self._events_from_row(row)
         fields = {
             'task_id': raw['task_id'],
             'personal_space_id': raw['personal_space_id'],
@@ -306,6 +322,7 @@ class StoreProjectAgentTaskReads:
             'events': events,
         }
         fields['execution_summary'] = self._execution_summary(row, events)
+        fields['blocker'] = current_blocker(raw['status'], events, raw.get('result_summary'))
         executor_raw = json.loads(raw['executor_decision_json']) \
             if raw.get('executor_decision_json') else None
         executor_policy_raw = raw.get('executor_policy_json')

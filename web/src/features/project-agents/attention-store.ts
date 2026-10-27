@@ -3,11 +3,14 @@ import { ref } from 'vue'
 import { ApiError, getJson, postJson } from '@/api/client'
 import { t } from '@/i18n'
 import type { AttentionAnswer, AttentionDelivery, AttentionReplyDraft } from './attention-replies'
+import type { ProjectAgentTaskBlocker } from '@/types'
 
 export interface AgentAttention {
   requestId: string; personalSpaceId: string; personalProjectId: string; agentId: string
   taskId: string | null; kind: string; title: string; detail: string; requestedAction: string; options?: string[] | null
   revision: number; status: 'open' | 'resolved' | 'cancelled'; createdAt: string
+  /** The linked task's current block, read with the request; absent once the task left blocked. */
+  taskBlocker?: ProjectAgentTaskBlocker | null
 }
 interface AttentionList { items: AgentAttention[]; total: number; counts: Record<string, number> }
 /**

@@ -39,6 +39,7 @@ import { MODEL_SECRETS_FORMAT } from '../model-backends/secret-store.js';
 import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
+import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
 
 // Every FULI store kept in one data directory, by the path its owner opens
 // (rec#17 D-09). Labels are relative to the data directory, so a report names
@@ -92,7 +93,9 @@ const jsonStores = () => [
   // A person's permanent deletes, content-free: their state and the fence local stores check (rec#5 C9).
   [HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT],
   // Evaluations of a role's model run on this computer, shown on the settings page (rec#10 D-36.6).
-  ['model-evaluations.json', MODEL_EVALUATIONS_FORMAT]
+  ['model-evaluations.json', MODEL_EVALUATIONS_FORMAT],
+  // The applied client link manifest, its auto-update switch and what each update changed.
+  ['client-links.json', CLIENT_LINKS_STATE_FORMAT]
 ];
 // One small record per session.
 const jsonDirectories = () => [

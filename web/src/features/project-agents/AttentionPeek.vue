@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { t } from '@/i18n'
 import AttentionReply from './AttentionReply.vue'
+import TaskBlockerNotice from './TaskBlockerNotice.vue'
 import type { AttentionAnswer, AttentionReplyDraft } from './attention-replies'
 import { attentionTaskHref, type AgentAttention, type AttentionPeekState } from './attention-store'
 
@@ -44,6 +45,7 @@ const emit = defineEmits<{ 'update:draft': [value: AttentionReplyDraft]; submit:
         <a v-if="item.taskId && !busy" class="attention-task-link ml-auto" :href="attentionTaskHref(item)">{{ t('attention.task') }} ↗</a>
       </DialogDescription>
     </DialogHeader>
+    <TaskBlockerNotice v-if="item.taskBlocker" :blocker="item.taskBlocker" />
     <AttentionReply v-if="state === 'open'" :model-value="draft" :item="item" :busy="busy" :refreshing="refreshing" :error="error"
       @update:model-value="emit('update:draft', $event)" @submit="emit('submit', $event)" />
     <p v-else class="attention-handled" role="status">{{ t('attention.requestHandled') }}</p>

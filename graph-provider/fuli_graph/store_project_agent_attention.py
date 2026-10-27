@@ -11,6 +11,7 @@ from .project_agent_attention_models import (
     AgentAttentionRecord,
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .store_project_agent_task_blockers import BLOCKER_ATTENTION_KINDS
 from .system_hr_identity import resolve_hr_alias
 
 
@@ -96,8 +97,10 @@ class StoreProjectAgentAttention:
         counts = {}
         for agent in row['open_agents']:
             counts[agent] = counts.get(agent, 0) + 1
+        items = [dict(item) for item in row['items']]
+        blockers = await self._task_blockers(personal_space_id, [item.get('task_id') for item in items])
         return AgentAttentionList(
-            items=[attention_record(dict(item)) for item in row['items']],
+            items=[attention_record(item, blockers) for item in items],
             total=row['total'], counts=counts,
         )
 
@@ -114,7 +117,8 @@ class StoreProjectAgentAttention:
         )
         if not rows:
             raise HTTPException(status_code=404, detail='attention request not found')
-        return attention_record(dict(rows[0]['request']))
+        raw = dict(rows[0]['request'])
+        return attention_record(raw, await self._task_blockers(personal_space_id, [raw.get('task_id')]))
 
     async def decide_agent_attention(
         self, actor, request: AgentAttentionDecision, *, human: bool,
@@ -147,12 +151,29 @@ class StoreProjectAgentAttention:
         )
         if not rows:
             raise HTTPException(status_code=409, detail='attention changed or is no longer open; reload it')
-        return attention_record(dict(rows[0]['request']))
+        record = attention_record(dict(rows[0]['request']))
+        if human and record.task_id and record.kind in BLOCKER_ATTENTION_KINDS:
+            # The person's answer to a blocking request ends that task's block.
+            await self._clear_task_blocker(request.personal_space_id, record.task_id, 'attention_answer')
+        return record
+
+    async def _task_blockers(self, personal_space_id, task_ids):
+        """The current block of each listed task that is blocked, by task ID."""
+        task_ids = sorted({task_id for task_id in task_ids if task_id})
+        if not task_ids:
+            return {}
+        rows, _, _ = await self.runtime.driver.execute_query(
+            self._task_read_query("WHERE task.task_id IN $task_ids AND task.status = 'blocked'"),
+            personal_space_id=personal_space_id, task_ids=task_ids, routing_='r',
+        )
+        return {dict(row['task'])['task_id']: self._blocker_from_row(row) for row in rows}
 
 
-def attention_record(raw):
-    return AgentAttentionRecord(**{
+def attention_record(raw, task_blockers=None):
+    record = AgentAttentionRecord(**{
         key: native_datetime(raw.get(key)) if key in {'created_at', 'updated_at'} else raw.get(key)
         for key in AgentAttentionRecord.model_fields
         if key in raw
     })
+    blocker = (task_blockers or {}).get(record.task_id)
+    return record.model_copy(update={'task_blocker': blocker}) if blocker else record

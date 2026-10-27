@@ -36,6 +36,19 @@ describe('workbench designs', () => {
     expect(wrapper.get('[data-focus-stuck]').text()).toContain('Needs a token')
   })
 
+  it('a stuck card says what blocks it, since when and in which session, outside the card link', () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    const blocker = { reason: 'Which staging database?', since: recent, agentId: 'agent-a', application: 'claude_code' as const,
+      sessionId: 'synthetic-session', sessionUrl: null, observed: true }
+    const wrapper = mountDesign(KanbanBoard, board([task('b', 'blocked', { blocker, failureReason: 'stale' })]))
+    const notice = wrapper.get('[data-lane="stuck"] [data-task-blocker]')
+    expect(notice.get('[data-blocker-reason]').text()).toBe('Which staging database?')
+    expect(notice.get('[data-blocker-where]').text()).toBe('在 Claude Code · 会话 synthetic-session')
+    expect(notice.element.closest('a')).toBeNull()
+    expect(wrapper.find('.kanban-reason').exists()).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
   it('Focus is calm when nothing needs the person', () => {
     const wrapper = mountDesign(FocusBoard, board([task('r', 'running')]))
     expect(wrapper.get('[data-focus-hero]').classes()).toContain('is-calm')

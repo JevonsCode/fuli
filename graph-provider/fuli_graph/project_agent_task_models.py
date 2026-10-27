@@ -93,6 +93,10 @@ ProjectAgentOptimizationPriority = Literal[
     'time',
 ]
 ProjectAgentTokenUsageSource = Literal['executor', 'host', 'dingdong']
+# Why a blocked task left blocked without its own status report: the session
+# it was blocked in recorded more work or the person replied there, or the
+# person answered its blocking request in FULI.
+BlockerClearCause = Literal['session_activity', 'session_reply', 'attention_answer']
 
 _WORKER_EVIDENCE_ALIASES = {
     'worker_id': 'workerId',
@@ -411,6 +415,7 @@ class ProjectAgentTaskEventRecord(StrictModel):
     worker_status: ProjectAgentTaskStatus | None = None
     token_usage: ProjectAgentTokenUsage | None = None
     worker_runtime: ProjectAgentWorkerRuntime | None = None
+    blocker_cleared_by: BlockerClearCause | None = None
     created_at: datetime
 
     _normalize_worker_aliases = model_validator(mode='before')(
@@ -430,6 +435,35 @@ class ProjectAgentTaskEventRecord(StrictModel):
     @classmethod
     def validate_tools_used(cls, value):
         return unique_text_list(value, 'tools used') if value is not None else None
+
+
+class ProjectAgentTaskBlocker(StrictModel):
+    """What a blocked task waits for, since when, and the session that reported it.
+
+    since is None when no recorded event moved the task into blocked (a task
+    blocked before its history was kept); the reason is then the task's stored
+    summary, and no session is claimed.
+    """
+
+    reason: str | None = None
+    since: datetime | None = None
+    agent_id: str | None = None
+    source_application: SourceApplication | None = None
+    source_session_id: str | None = None
+    source_session_url: str | None = None
+
+
+class ProjectAgentTaskBlockerClear(StrictModel):
+    """A session's own progress, which ends a block that same session reported."""
+
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    source_application: SourceApplication
+    source_session_id: str = Field(min_length=1, max_length=256)
+    cause: Literal['session_activity', 'session_reply']
+
+
+class ProjectAgentTaskBlockerClearResult(StrictModel):
+    cleared_task_ids: list[str] = Field(default_factory=list)
 
 
 class ProjectAgentRoutingDecisionRecord(StrictModel):
@@ -527,6 +561,7 @@ class ProjectAgentTaskRecord(StrictModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None = None
+    blocker: ProjectAgentTaskBlocker | None = None
     events: list[ProjectAgentTaskEventRecord] = Field(default_factory=list)
 
 

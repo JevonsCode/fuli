@@ -44,6 +44,10 @@ with `record_project_agent_task_activity`,
 including concrete worker identity. Call `record_project_agent_executor_actual` only after real
 executor/model use. If the host cannot start a worker, report the task as blocked or failed and do
 not fabricate an execution-summary row. The Provider's `executionSummary` remains authoritative.
+A blocked report should say what it waits for; the Provider records when and in which session.
+The block clears itself when that same session continues (a checkpoint or a new prompt there) or
+the person answers its request; activity in another session does not clear it, so do not report
+the task running from elsewhere to work around a block.
 
 `workerStatus` requires `workerId` and the participating `agentId`. Structured actual executor,
 provider and model form one report and must match authorized preflight evidence. When that
