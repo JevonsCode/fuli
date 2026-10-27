@@ -574,6 +574,12 @@ class StoreProjectAgentTasks(
                        OR EXISTS {
                     MATCH (task)-[:HAS_PARTICIPANT]->
                           (:FuliProjectAgent {agent_id: $agent_id})
+                  }
+                       // A task the Agent dispatched from its own task context,
+                       // including ones the system coordinator recorded.
+                       OR EXISTS {
+                    MATCH (:FuliTaskContext {personal_space_id: $personal_space_id,
+                          project_agent_id: $agent_id})-[:COORDINATES_TASK]->(task)
                   })
                 '''
             ) + '\nORDER BY task.updated_at DESC, task.task_id LIMIT $limit',

@@ -111,6 +111,43 @@ async def test_grouped_coordinator_requires_its_current_assignment_and_source_cl
     assert error.value.status_code == 403
 
 
+class FlatOwnerStore:
+    def __init__(self, owner):
+        self.owner = owner
+
+    async def get_task_context(self, *args):
+        return {'project_agent_id': self.owner}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('owner', ['lead', 'member'])
+async def test_a_flat_team_dispatcher_coordinates_the_task_it_dispatches(owner):
+    from fuli_graph.project_agent_hierarchy import bind_task_coordinator
+    from test_project_agent_tasks import task_request
+    # Without this the system coordinator took the task: the dispatcher's
+    # context could not link it and its own task list never showed it.
+    bound = await bind_task_coordinator(FlatOwnerStore(owner), {}, task_request(
+        task_context_token='current', lead_agent_id='other'), policy(sub_teams=[]))
+    assert bound.coordinator_agent_id == owner
+
+
+@pytest.mark.asyncio
+async def test_a_flat_team_coordinator_that_leaves_the_dispatcher_unaccountable_is_refused_before_writing():
+    from fuli_graph.project_agent_hierarchy import bind_task_coordinator
+    from test_project_agent_tasks import task_request
+    flat = policy(sub_teams=[])
+    with pytest.raises(HTTPException) as error:
+        await bind_task_coordinator(FlatOwnerStore('member'), {}, task_request(
+            task_context_token='current', lead_agent_id='other', coordinator_agent_id='lead'), flat)
+    assert error.value.status_code == 403
+    for owner, changes in [('lead', {'coordinator_agent_id': 'other'}),
+                           ('member', {'coordinator_agent_id': 'lead', 'lead_agent_id': 'member'})]:
+        request = task_request(task_context_token='current', **{'lead_agent_id': 'other', **changes})
+        assert await bind_task_coordinator(FlatOwnerStore(owner), {}, request, flat) is request
+    unowned = task_request(task_context_token='current')
+    assert await bind_task_coordinator(FlatOwnerStore(None), {}, unowned, flat) is unowned
+
+
 @pytest.mark.asyncio
 async def test_automatic_staffing_enters_the_sublead_before_the_specialist():
     from test_project_agent_teams import TeamStore
