@@ -87,6 +87,9 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
   }), { mode: 0o600 });
   let revision = 0;
   let conversationId;
+  // "Synthetic engineer" reads as a job title, so the Provider gives the new Agent a
+  // person name; the role stays in profile.name. Both must hold across client switches.
+  let personName;
   for (const sourceApplication of ['codex', 'claude', 'claude_code', 'cursor']) {
     const connection = await connectMcp(runtimeConfigPath, { sourceApplication });
     const sessionId = `synthetic-${sourceApplication}-session`;
@@ -102,7 +105,12 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
       assert.equal(value.project_agent_context.status, 'ready');
       assert.equal(value.project_agent_context.worker_started, false);
       // The entry receipt only carries what is copied; owner details stay on the checkpoint receipt.
-      assert.match(value.agent_receipt.markdown, /Synthetic engineer/);
+      assert.match(value.agent_receipt.markdown, /\\\[Synthetic engineer\\\]/);
+      personName ??= value.agent_receipt.owner.name;
+      assert.doesNotMatch(personName, /engineer/i);
+      assert.equal(value.agent_receipt.owner.name, personName);
+      assert.equal(value.project_agent_context.role.name, personName);
+      assert.equal(value.project_agent_context.role.responsibility, 'Maintain the synthetic sample.');
       assert.equal(value.project_agent_context.role.character.taste, 'Clear writing.');
       assert.equal(value.project_agent_context.role.expectations, 'Preserve confirmed preferences.');
       assert.equal(value.project_agent_context.memory.revision, revision);
@@ -172,7 +180,9 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
       assert.equal(saved.isError, undefined, JSON.stringify(saved));
       assert.equal(saved.structuredContent.agent_memory.revision, ++revision);
       assert.equal(saved.structuredContent.agent_memory.sourceApplication, sourceApplication);
-      assert.equal(saved.structuredContent.conversation.receipt.owner.name, 'Synthetic engineer');
+      const receipt = saved.structuredContent.conversation.receipt;
+      assert.equal(receipt.owner.name, personName);
+      assert.match(receipt.markdown, /\\\[Synthetic engineer\\\]/);
       const savedId = saved.structuredContent.conversation.conversation_id;
       if (conversationId) assert.equal(savedId, conversationId);
       conversationId = savedId;
