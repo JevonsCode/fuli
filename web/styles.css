@@ -289,6 +289,14 @@ body { margin: 0; min-width: 320px; }
 }
 .project-material-type { color: var(--color-ink); font-size: 12px; font-weight: 620; }
 .project-material-link { color: var(--color-muted); font-size: 12px; font-weight: 650; text-align: right; }
+/* The directory is one page with one scrollbar: the page scrolls and the
+   table grows with its rows instead of sitting in a fixed-height box. clip,
+   not hidden, so the table header can stick to the top of the page. */
+.graph-view.is-directory { overflow-y: auto; padding-top: 0; }
+/* The page's top space scrolls away with the content, so nothing shows above the stuck header. */
+.graph-view.is-directory .knowledge-canvas { flex: 1 0 auto; padding-top: 12px; }
+.graph-view.is-directory :is(.knowledge-layout, .knowledge-directory-panel) { flex: 0 0 auto; overflow: clip; }
+.graph-view.is-directory .directory-kind-tabs { position: static; }
 .graph-canvas-active .knowledge-layout {
   min-height: 0; flex: 1; align-items: stretch; overflow: hidden;
 }
@@ -334,6 +342,7 @@ body { margin: 0; min-width: 320px; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .knowledge-row-type { color: var(--color-ink); font-weight: 620; }
+.knowledge-row-type small { display: block; overflow: hidden; color: var(--color-muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; }
 .knowledge-row-source, .knowledge-row-time { color: var(--color-muted); }
 /* Minutes in a roomy table; below about a 1400px window the date alone, so the
    type and time columns no longer cut off. The full time is the cell's title. */

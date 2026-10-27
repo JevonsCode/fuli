@@ -123,6 +123,36 @@ describe('AgentCard projects', () => {
     expect(wrapper.get('[data-agent-summary]').text()).toBe('负责拆活、派活、整合，对用户汇报。')
     expect(wrapper.get('[data-current-task]').text()).toContain('收口 R-06 项目视图改造')
   })
+  it('shows no raw code: occupations and Bole\'s role by name, a blocked or waiting reason by its meaning', () => {
+    const bole = render({ agent: { ...agent, agentId: 'employee.bole', employeeNumber: '000002',
+      profile: { ...agent.profile, name: 'Bole', agentType: 'hr' }, occupation: { role: 'hr', tags: [], updatedAt: '2026-10-27T00:00:00Z' } } })
+    expect(bole.get('.agent-card-role').text()).toBe('Agent 资源')
+    // The fixed role is its occupation, so it is not repeated.
+    expect(bole.find('[data-occupation]').exists()).toBe(false)
+    expect(bole.get('.agent-card-tags').text()).not.toMatch(/\bAR\b|\bhr\b/)
+
+    // assistant is not in this space's synthetic catalog: it reads as the shipped name, never the key.
+    const blocked = render({
+      agent: { ...agent, agentId: 'agent-fla', employeeNumber: '000025', occupation: { role: 'assistant', tags: ['management'], updatedAt: '2026-10-27T00:00:00Z' } },
+      entry: { status: 'blocked', source: 'roster', taskId: 'task-1', title: 'Synthetic task', lastUpdateAt: null, runningSince: null,
+        reason: 'project_team_lead: project team lead is the stable conversation owner and fits this work; executor: no usable executor',
+        blocker: { reason: 'explicit_agent: explicit Agent selected; executor: no usable executor', since: null, agentId: null,
+          application: null, sessionId: null, sessionUrl: null, observed: false } },
+    })
+    expect(blocked.get('.agent-card-tags').text()).toContain('FLA 000025')
+    expect(blocked.get('[data-occupation]').text()).toBe('助手 · 管理')
+    const line = blocked.get('[data-blocker-reason]')
+    expect(line.text()).toBe('交给你指定的 Agent；没有可用的执行客户端')
+    // The one-line card keeps the stored text only as its tooltip.
+    expect(line.attributes('title')).toBe('explicit_agent: explicit Agent selected; executor: no usable executor')
+    const shown = blocked.text()
+    for (const raw of ['explicit_agent', 'no usable executor', 'assistant', 'management']) expect(shown).not.toContain(raw)
+
+    const waiting = render({ agent: { ...agent, agentId: 'agent-fla' },
+      entry: { status: 'paused', source: 'roster', taskId: 'task-2', title: 'Synthetic task', lastUpdateAt: null, runningSince: null,
+        reason: 'recruitment cancelled: synthetic reason' } })
+    expect(waiting.get('[data-status-detail]').text()).toBe('已暂停：招聘已取消，任务在等待重新安排')
+  })
   it('offers the #FLA copy only on an FLA, never on a FULI role', () => {
     expect(render().find('[data-agent-mention-copy]').exists()).toBe(false)
     const fla = render({ agent: { ...agent, agentId: 'custom', profile: { ...agent.profile, name: 'PPT 专责', displayName: 'Iris Vale' } } })

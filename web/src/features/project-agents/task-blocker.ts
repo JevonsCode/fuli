@@ -2,15 +2,9 @@ import { postJson } from '@/api/client'
 import { currentLocale, t } from '@/i18n'
 import { formatElapsed } from '@/lib/elapsed-time'
 import type { BlockerClearCause, ProjectAgentTaskBlocker, ProjectAgentTaskRecord } from '@/types'
+import { taskReason } from './task-reason'
 import type { TaskScope } from './task-runs'
 
-// A worker FULI started reports its block as a code ("worker_session_stopped. …");
-// the person reads the sentence it stands for.
-const WORKER_CODE = /^(worker_[a-z_]+)\.(?:\s|$)/
-const WORKER_CODES = new Set([
-  'worker_authentication_required', 'worker_authentication_unknown', 'worker_workspace_untrusted',
-  'worker_model_unavailable', 'worker_model_strategy_unmapped', 'worker_session_stopped',
-])
 // A block with no recorded activity for this long gets a quiet hint that the
 // person can mark it cleared: its session has most likely moved on.
 const STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000
@@ -18,13 +12,11 @@ const STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000
 /**
  * The block in one plain sentence: what is missing or being asked. Every
  * surface reads the reason through here, so a reason code becomes words in
- * one place.
+ * one place (taskReason: a known code reads as its sentence, an unknown one
+ * as a generic sentence, an Agent's own words as written).
  */
 export function blockerReasonText(blocker: Pick<ProjectAgentTaskBlocker, 'reason'> | null | undefined) {
-  const reason = blocker?.reason?.trim()
-  if (!reason) return t('taskBlocker.noReason')
-  const code = WORKER_CODE.exec(reason)?.[1]
-  return code && WORKER_CODES.has(code) ? t(`taskBlocker.codes.${code}`) : reason
+  return taskReason(blocker?.reason)?.text ?? t('taskBlocker.noReason')
 }
 
 /** How long the task has been blocked ("3 天"); null when its start was not recorded. */

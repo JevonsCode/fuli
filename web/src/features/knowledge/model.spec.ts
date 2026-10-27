@@ -13,6 +13,8 @@ import {
   knowledgeReviewState,
   knowledgeItemFromNode,
   knowledgeItems,
+  knowledgeTypeLabel,
+  knowledgeTypeOptions,
   managementKnowledgeItems,
   mergeKnowledgeGraphs,
   personalProjectIdForItem,
@@ -409,5 +411,28 @@ describe('knowledge model', () => {
       quadrantReason: '该内容在发现时符合“已知的未知”：被明确提出、但仍在等待答案的问题。',
       proposedBy: { kind: 'agent', label: 'Codex' },
     })
+  })
+})
+
+describe('knowledge types read in the reader\'s language', () => {
+  const node = (id: string, type: string) => knowledgeItemFromNode({ id, name: id, type })
+
+  it('names known types and project materials, and a relationship by its relation', () => {
+    expect(knowledgeTypeLabel(node('a', 'PersonalPreference'))).toEqual({ label: '个人偏好', unknownType: null })
+    expect(knowledgeTypeLabel(node('b', 'ReusableExperience')).label).toBe('可复用经验')
+    expect(knowledgeTypeLabel(node('c', 'Fact')).label).toBe('事实')
+    expect(knowledgeTypeLabel(node('d', 'ProjectPurpose')).label).toBe('项目目标')
+    const relationship = knowledgeItems({
+      nodes: [{ id: 'x', name: 'x', type: 'Fact' }, { id: 'y', name: 'y', type: 'Fact' }],
+      edges: [{ id: 'e', source: 'x', target: 'y', type: 'PART_OF', fact: 'synthetic' }],
+    }).find(item => item.itemKind === 'relationship')!
+    expect(knowledgeTypeLabel(relationship).label).toBe('关系 · 属于')
+  })
+
+  it('reads an unknown type as 其他类型 and keeps the type as meta, also in the filter choices', () => {
+    expect(knowledgeTypeLabel(node('e', 'SyntheticCustomType'))).toEqual({ label: '其他类型', unknownType: 'SyntheticCustomType' })
+    expect(knowledgeTypeOptions([node('f', 'Fact'), node('g', 'SyntheticCustomType'), node('h', 'Fact')]).map(option => option.label))
+      .toEqual(expect.arrayContaining(['事实', '其他类型 · SyntheticCustomType']))
+    expect(knowledgeTypeOptions([node('f', 'Fact'), node('h', 'Fact')])).toEqual([{ value: 'Fact', label: '事实' }])
   })
 })

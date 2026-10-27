@@ -1,14 +1,16 @@
 import { t } from "@/i18n";
+import { taskReason } from "@/features/project-agents/task-reason";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 
 /**
  * One plain sentence for a state that needs explaining: what it waits for
  * and why, or which part of the status is missing. Uses only recorded data;
- * a missing reason is said to be missing, never invented.
+ * a missing reason is said to be missing, never invented, and a recorded code
+ * reads as the sentence it stands for.
  */
 export function workbenchStatusDetail(entry: AgentWorkbenchEntry | undefined): string | null {
   if (!entry) return null;
-  const reason = entry.reason;
+  const reason = taskReason(entry.reason)?.text;
   switch (entry.status) {
     case "blocked":
       return reason ? t("agentRedesign.statusDetail.blocked", { reason }) : t("agentRedesign.statusDetail.blockedUnrecorded");

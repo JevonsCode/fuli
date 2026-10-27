@@ -3,7 +3,7 @@ import { computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
-import { employeeTemplates, refreshEmployeeCatalog } from './catalog'
+import { employeeRoleLabel, employeeTemplates, refreshEmployeeCatalog } from './catalog'
 import { employeeAvatarUrl } from './avatars'
 
 // Shortcuts into the fixed roles' workbenches (Jefa's board, Bole's people panel).
@@ -17,7 +17,7 @@ const employees = computed(() => employeeTemplates.value.filter((entry) => entry
   <Button v-for="employee in employees" :key="employee.id" as-child variant="outline" class="employee-workbench-link">
     <RouterLink :to="`/employees/${encodeURIComponent(employee.id)}`" :title="t('agentProfiles.workbench')">
       <img v-if="employeeAvatarUrl(employee.id)" :src="employeeAvatarUrl(employee.id)" alt="" aria-hidden="true" />
-      {{ employee.name }} · {{ employee.role }}
+      {{ employee.name }} · {{ employeeRoleLabel(employee) }}
     </RouterLink>
   </Button>
 </template>

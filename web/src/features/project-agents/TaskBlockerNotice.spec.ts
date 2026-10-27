@@ -91,11 +91,26 @@ describe('a blocked card is one calm line', () => {
 })
 
 describe('blocker text', () => {
-  it('turns a worker code into its sentence and keeps a reported question as written', () => {
+  it('reads a worker or staffing code as its sentence, keeps a reported question as written, and says when none was recorded', () => {
     expect(blockerReasonText({ reason: 'worker_authentication_required. Actual model use is unverified.' }))
       .toBe('执行这个任务的客户端需要先登录。')
+    expect(blockerReasonText({ reason: 'explicit_agent: explicit Agent selected; executor: no usable executor' }))
+      .toBe('交给你指定的 Agent；没有可用的执行客户端')
     expect(blockerReasonText({ reason: 'Need the API region.' })).toBe('Need the API region.')
     expect(blockerReasonText({ reason: null })).toBe('没有记录阻塞原因')
+  })
+
+  it('keeps the stored text under 原始信息 in the detail, and as the tooltip of the one-line card', async () => {
+    const raw = 'project_team_lead: project team lead is the stable conversation owner and fits this work; executor: no usable executor'
+    const detail = await render(blocker({ reason: raw }))
+    expect(detail.get('[data-task-reason-text]').text()).toBe('由项目组长负责；没有可用的执行客户端')
+    expect(detail.get('[data-task-reason-raw] summary').text()).toBe('原始信息')
+    expect(detail.get('[data-task-reason-raw] code').text()).toBe(raw)
+    const line = mount(TaskBlockerNotice, { props: { compact: true, blocker: blocker({ reason: raw }) } }).get('[data-blocker-reason]')
+    expect(line.text()).toBe('由项目组长负责；没有可用的执行客户端')
+    expect(line.attributes('title')).toBe(raw)
+    const written = mount(TaskBlockerNotice, { props: { compact: true, blocker: blocker() } }).get('[data-blocker-reason]')
+    expect(written.attributes('title')).toBe('Which staging database should the migration target?')
   })
 
   it('names why and when the latest block ended by itself', () => {

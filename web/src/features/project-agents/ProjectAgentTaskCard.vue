@@ -7,6 +7,7 @@ import ProjectAgentTaskDiagnostics from './ProjectAgentTaskDiagnostics.vue'
 import TaskExecutionPlan from './TaskExecutionPlan.vue'
 import TaskRunControls from './TaskRunControls.vue'
 import TaskBlockerNotice from './TaskBlockerNotice.vue'
+import TaskReason from './TaskReason.vue'
 import TaskBlockerClear from './TaskBlockerClear.vue'
 import { lastBlockerClear } from './task-blocker'
 import { parallelPlanHasEvidence, workerEventEvidence } from './task-evidence'
@@ -69,7 +70,7 @@ function toggle(event: Event) {
       <TaskBlockerNotice :blocker="task.blocker" :updated-at="task.updatedAt" />
       <TaskBlockerClear v-if="scope" :scope="scope" :title="task.title" :blocker="task.blocker" :updated-at="task.updatedAt" @cleared="emit('changed')" />
     </template>
-    <p v-else-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p>
+    <TaskReason v-else-if="task.resultSummary || task.failureReason" :reason="task.resultSummary || task.failureReason" :fallback="t('projectAgents.notReported')" />
     <p v-if="blockerClear" class="project-agent-muted" data-blocker-cleared :data-cause="blockerClear.cause">
       <template v-if="blockerClear.cause === 'person'">{{ t('taskBlocker.clearedByYou', { time: formatDate(blockerClear.at) }) }}</template>
       <template v-else>{{ t('taskBlocker.cleared', { time: formatDate(blockerClear.at), cause: t(`taskBlocker.causes.${blockerClear.cause}`) }) }}</template>

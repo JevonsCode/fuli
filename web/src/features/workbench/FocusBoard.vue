@@ -6,6 +6,8 @@ import { taskStatusChipTone } from '@/features/project-agents/task-labels'
 import { t } from '@/i18n'
 import { UiAvatar, UiChip, UiIcon } from '@/ui'
 import TaskBlockerNotice from '@/features/project-agents/TaskBlockerNotice.vue'
+import TaskReason from '@/features/project-agents/TaskReason.vue'
+import { taskReason } from '@/features/project-agents/task-reason'
 import type { WorkbenchBoard } from './workbench-board'
 import { focusItem, workLanes } from './workbench-model'
 
@@ -39,7 +41,7 @@ const focusAgent = computed(() => {
             <p v-if="focus.kind === 'question' && focus.attention.detail">{{ focus.attention.detail }}</p>
             <TaskBlockerNotice v-else-if="focus.kind !== 'question' && focus.task.status === 'blocked' && focus.task.blocker"
               :blocker="focus.task.blocker" :updated-at="focus.task.updatedAt" />
-            <p v-else-if="focus.kind !== 'question' && focus.task.failureReason">{{ focus.task.failureReason }}</p>
+            <TaskReason v-else-if="focus.kind !== 'question' && focus.task.failureReason" :reason="focus.task.failureReason" :fallback="t('overview.missing.reason')" />
             <span class="focus-meta">
               {{ board.projectName(focus.kind === 'question' ? focus.attention.personalProjectId : focus.task.personalProjectId) }}
               · {{ board.since(focus.kind === 'question' ? focus.attention.createdAt : focus.task.updatedAt) }}
@@ -88,7 +90,7 @@ const focusAgent = computed(() => {
             <RouterLink :to="board.taskHref(task)" class="focus-row" data-focus-stuck>
               <UiChip :tone="taskStatusChipTone(task.status)">{{ board.statusLabel(task.status) }}</UiChip>
               <span class="focus-row-copy"><strong>{{ task.title }}</strong>
-                <small>{{ (!task.blocker && task.failureReason) || board.projectName(task.personalProjectId) }}</small></span>
+                <small :title="(!task.blocker && task.failureReason) || undefined">{{ (!task.blocker && taskReason(task.failureReason)?.text) || board.projectName(task.personalProjectId) }}</small></span>
               <span class="focus-row-time">{{ board.since(task.updatedAt) }}</span>
             </RouterLink>
             <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" compact :blocker="task.blocker" :updated-at="task.updatedAt" />

@@ -12,6 +12,12 @@ describe('workbenchStatusDetail', () => {
     expect(workbenchStatusDetail(entry('awaiting_review', { reason: '登录页改版' }))).toBe('等待验收：登录页改版')
   })
 
+  it('reads a recorded code as its sentence, never the stored English', () => {
+    const detail = workbenchStatusDetail(entry('blocked', { reason: 'explicit_agent: explicit Agent selected; executor: no usable executor' }))
+    expect(detail).toBe('受阻：交给你指定的 Agent；没有可用的执行客户端')
+    expect(workbenchStatusDetail(entry('paused', { reason: 'recruitment cancelled: synthetic reason' }))).toBe('已暂停：招聘已取消，任务在等待重新安排')
+  })
+
   it('says a reason is missing instead of inventing one', () => {
     expect(workbenchStatusDetail(entry('blocked'))).toContain('没有记录原因')
     expect(workbenchStatusDetail(entry('awaiting_review'))).toContain('没有记录')

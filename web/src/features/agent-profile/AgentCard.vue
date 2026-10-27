@@ -84,11 +84,12 @@ const taskLink = computed(() => ({
   query: { task: props.entry?.taskId ?? "" },
 }));
 const statusDetail = computed(() => workbenchStatusDetail(props.entry));
-const occupation = computed(() => occupationLabels(props.agent.occupation));
 const workStatusClass = computed(() => `is-${workStatus.value}`);
 const workTone = computed(() => statusTone(workStatus.value));
 // Jefa and Bole are fixed roles every space has.
 const fixedRole = computed(() => ({ coordinator: t("agentProfiles.roles.projectManager"), hr: t("agentProfiles.roles.hr") })[props.agent.profile.agentType as string] ?? "");
+// The fixed role is not repeated among the occupations (Bole's role is its occupation).
+const occupation = computed(() => occupationLabels(props.agent.occupation).filter((label) => label !== fixedRole.value));
 function localized(
   key: string,
   fallback: string,
