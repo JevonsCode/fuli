@@ -404,6 +404,42 @@ test('setup migrates an existing personal runtime onto the host observation capa
   ]);
 });
 
+test('a graph waiting for a confirmed format step still starts, so the person can confirm it in the console', async () => {
+  const requests = [];
+  const result = await ensureGraphRuntime({
+    paths: PATHS, personalSpaceName: '我', personalOnly: true, port: 2727, noStart: true
+  }, dependencies({
+    readConfig: configuredGraph,
+    async fetch(url) {
+      requests.push(url);
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) {
+        return response({ detail: { code: 'data_format_read_only', store: 'graph',
+          message: 'graph/12-builtin-occupations needs confirmation' } }, 503);
+      }
+      throw new Error(`Unexpected Provider request: ${url}`);
+    }
+  }));
+
+  assert.equal(result.status, 'initialized');
+  assert.equal(requests.filter(url => url.includes('/v1/project-agents/system-hr?')).length, 1);
+});
+
+test('any other Provider refusal of the identity upgrade still stops setup', async () => {
+  await assert.rejects(ensureGraphRuntime({
+    paths: PATHS, personalSpaceName: '我', personalOnly: true, port: 2727, noStart: true
+  }, dependencies({
+    readConfig: configuredGraph,
+    async fetch(url) {
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) {
+        return response({ detail: { code: 'data_format_blocked', store: 'graph' } }, 503);
+      }
+      throw new Error(`Unexpected Provider request: ${url}`);
+    }
+  })), /Provider setup failed at \/v1\/project-agents\/system-hr/);
+});
+
 test('Docker setup falls back to Rancher Desktop when the default daemon is unavailable', () => {
   const checkedSockets = [];
   const environment = selectDockerEnvironment({

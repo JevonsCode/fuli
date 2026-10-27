@@ -180,9 +180,14 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     }
   }
   // Run the idempotent identity upgrade on existing installs as well as first setup.
+  // A graph waiting for a format step the person confirms is read-only, and that
+  // confirmation happens in the console this start brings up: skip the upgrade
+  // then; the next start after the confirmation runs it.
   await providerRequest(config.personal.providerUrl, `/v1/project-agents/system-hr?${new URLSearchParams({
     personal_space_id: config.personal.spaceId
-  })}`, { token: config.personal.accessToken, fetchImpl: deps.fetch });
+  })}`, { token: config.personal.accessToken, fetchImpl: deps.fetch }).catch(error => {
+    if (error.code !== 'data_format_read_only') throw error;
+  });
   const activeProfilePath = configSelection.switched
     ? graphConfigProfilePath(input.paths, runtimeMode)
     : null;
@@ -457,7 +462,10 @@ async function providerRequest(baseUrl, path, { token, body, fetchImpl }) {
     },
     body: JSON.stringify(body)
   });
-  if (!response.ok) throw new Error(`Provider setup failed at ${path}`);
+  if (!response.ok) {
+    const code = await Promise.resolve().then(() => response.json()).then(value => value?.detail?.code, () => undefined);
+    throw Object.assign(new Error(`Provider setup failed at ${path}`), { code });
+  }
   return response.json();
 }
 
