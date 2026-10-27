@@ -24,6 +24,9 @@ export function deliveryLabel({ to, state }: ChatDelivery, via: string | null) {
   return t(`roundtable.delivery.${state.kind}`, { name })
 }
 
+/** A held message reads as a warning and a failed one as danger, in the shared status tones. */
+export const deliveryTone = ({ state }: ChatDelivery) => state.kind === 'failed' ? 'danger' : state.kind === 'held' ? 'warning' : undefined
+
 /** How a reply was produced: a woken conversation, a new session, or during a task. */
 export function viaLabel(via: string | null) {
   const mode = via?.split(':')[1]
