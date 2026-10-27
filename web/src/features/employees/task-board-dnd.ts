@@ -4,19 +4,18 @@ import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-sc
 import { attachClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge/attach-closest-edge'
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge/extract-closest-edge'
 
-import { isEmployeeBoardStatus, type EmployeeBoardStatus } from './task-board-model'
-
 // Pointer drag for the employee task board, on Pragmatic drag and drop.
 // The library reports which card or column the pointer is over, draws the
 // native drag preview and scrolls near edges. It never reorders or submits
 // anything: the board owns the move rules, the projection and the one submit
-// path it shares with the keyboard and the "Move to…" menu.
+// path it shares with the keyboard and the "Move to…" menu. Columns are named
+// by key (project-board-layout.ts): a built-in status or a project's own column.
 
 const CARD = 'employee-board-card'
 const COLUMN = 'employee-board-column'
 
 export interface BoardDropLocation {
-  status: EmployeeBoardStatus
+  column: string
   /** The card under the pointer, or null over a column's free space. */
   overKey: string | null
   edge: 'top' | 'bottom' | null
@@ -32,12 +31,12 @@ function isCardOf(boardId: symbol, data: DragData) {
 /** The innermost connected card or column of this board under the pointer. */
 function readLocation(boardId: symbol, dropTargets: readonly DropTargetRecord[]): BoardDropLocation | null {
   for (const { element, data } of dropTargets) {
-    if (data.boardId !== boardId || !element.isConnected || !isEmployeeBoardStatus(data.status)) continue
+    if (data.boardId !== boardId || !element.isConnected || typeof data.column !== 'string') continue
     if (data.type === CARD && typeof data.key === 'string') {
       const edge = extractClosestEdge(data)
-      return { status: data.status, overKey: data.key, edge: edge === 'top' || edge === 'bottom' ? edge : null }
+      return { column: data.column, overKey: data.key, edge: edge === 'top' || edge === 'bottom' ? edge : null }
     }
-    if (data.type === COLUMN) return { status: data.status, overKey: null, edge: null }
+    if (data.type === COLUMN) return { column: data.column, overKey: null, edge: null }
   }
   return null
 }
@@ -50,7 +49,7 @@ export function bindDraggableCard(options: {
   boardId: symbol
   element: HTMLElement
   handle: HTMLElement
-  card: { key: string; status: EmployeeBoardStatus }
+  card: { key: string; column: string }
   canDrag: () => boolean
 }) {
   const { boardId, element, handle, card } = options
@@ -65,22 +64,22 @@ export function bindDraggableCard(options: {
       element,
       canDrop: ({ source }) => isCardOf(boardId, source.data),
       getData: ({ input }) => attachClosestEdge(
-        { type: CARD, boardId, key: card.key, status: card.status },
+        { type: CARD, boardId, key: card.key, column: card.column },
         { element, input, allowedEdges: ['top', 'bottom'] },
       ),
     }),
   )
 }
 
-/** A status column: a drop target for this board's cards; its list scrolls near the edges. */
-export function bindDropColumn(options: { boardId: symbol; element: HTMLElement; list: HTMLElement | null; status: EmployeeBoardStatus }) {
-  const { boardId, element, list, status } = options
+/** A column: a drop target for this board's cards; its list scrolls near the edges. */
+export function bindDropColumn(options: { boardId: symbol; element: HTMLElement; list: HTMLElement | null; column: string }) {
+  const { boardId, element, list, column } = options
   const canScroll = ({ source }: { source: { data: DragData } }) => isCardOf(boardId, source.data)
   return combine(
     dropTargetForElements({
       element,
       canDrop: ({ source }) => isCardOf(boardId, source.data),
-      getData: () => ({ type: COLUMN, boardId, status }),
+      getData: () => ({ type: COLUMN, boardId, column }),
     }),
     ...(list ? [autoScrollForElements({ element: list, canScroll })] : []),
   )

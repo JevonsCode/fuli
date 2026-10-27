@@ -9,6 +9,14 @@ vi.mock('./ProjectTeamSummary.vue', () => ({
   },
 }))
 
+vi.mock('./ProjectBoardSettings.vue', () => ({
+  default: {
+    name: 'ProjectBoardSettings',
+    props: ['spaceId', 'projectId', 'projectName'],
+    template: '<div data-project-board-stub :data-project="projectId" />',
+  },
+}))
+
 vi.mock('@/features/capture/ProjectCaptureSwitch.vue', () => ({
   default: {
     name: 'ProjectCaptureSwitch',

@@ -9,7 +9,6 @@ import {
   stringSchema
 } from './schema.js';
 import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
-
 const id = boundedString(256);
 const shortText = boundedString(2048);
 const idempotencyKey = { ...boundedString(256), minLength: 8 };
@@ -98,7 +97,12 @@ export const projectAgentAssignmentInput = objectSchema({
   executorPolicyOverride: { ...projectAgentExecutorPolicy, type: ['object', 'null'] },
   reason: shortText,
   sourceApplication,
-  sourceSessionId: nullableStringSchema()
+  sourceSessionId: nullableStringSchema(),
+  // The board is checked by Jefa's own contract before anything is written.
+  projectManager: {
+    ...objectSchema({ board: { type: 'object', additionalProperties: true } }),
+    description: 'Only when the person asks: the Agent becomes this project\'s own project manager on Jefa\'s board, optionally with board as in Jefa\'s configure_project_board (the person\'s columns or an external link).'
+  }
 }, ['personalSpaceId', 'personalProjectId', 'agentId', 'idempotencyKey', 'responsibility', 'reason']);
 export const projectAgentAssignmentEndInput = objectSchema({
   personalSpaceId: id,

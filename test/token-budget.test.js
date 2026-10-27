@@ -133,7 +133,10 @@ const BASELINE = Object.freeze({
   // rec#11 D-71 服务管理: one full-profile tool, report_agent_service, registers or updates a
   // server an Agent started (chat reaches it through list_agent_interfaces/fuli_call):
   // 191,468 -> 192,460 B (+992 B, measured). Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 192460,
+  // 更好的项目管理: create_project_agent_assignment takes an optional projectManager (the Agent
+  // becomes the project's own PM; its board's shape lives in Jefa's configure_project_board, read
+  // on demand): 192,460 -> 192,809 B (+349 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 192809,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
