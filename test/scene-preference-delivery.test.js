@@ -98,7 +98,7 @@ test('frontend -> chat -> frontend replaces only the scene set; boundaries, hard
   assert.doesNotMatch(JSON.stringify(chat.frame), /SYNTHETIC_(?:FRONTEND|DESIGN|GENERAL)/);
   assert.deepEqual(unchangedContext(chat.frame), unchangedContext(frontend.frame));
   assert.deepEqual([...replay(views, chat.frame).keys()].sort(), kept, 'the boundary and the hard constraint are never revoked');
-  assert.equal(chat.frame.preference_delivery.rules, 'fuli://rules/task-entry#preference_delivery');
+  assert.equal(chat.frame.preference_delivery.rules, 'fuli://rules/task-entry/preference_delivery');
   // The rule a consumer follows is the protocol replay() implements.
   const rule = entryRules().sections.preference_delivery.scene_switch;
   for (const clause of [/修订号（完整帧的 revision，或 preference_delivery.revision）等于 supersedes 的帧，不一定是相邻的上一帧/,

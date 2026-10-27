@@ -44,8 +44,11 @@ for (const [agent, enter, inlineChars] of AGENTS) {
     const preview = context.slice(0, PREVIEW_CHARS);
     const [label] = context.split('\n');
     assert.ok(label.length < PREVIEW_CHARS);
-    assert.ok(label.includes(`The Stop hook closes this task. Call checkpoint_task_knowledge with taskContextToken "${TOKEN}" only when something is worth recording`));
-    assert.ok(label.includes(`End your final reply with this agent_receipt markdown, unchanged and once: ${JSON.stringify(RECEIPT)}`));
+    assert.ok(label.includes('The Stop hook closes this task. Call checkpoint_task_knowledge with this taskContextToken only when something is worth recording'));
+    assert.ok(label.includes('End your final reply with agent_receipt.markdown, unchanged and once'));
+    // The label names the fields; their values are sent once, in the context (rec#11 D-72).
+    assert.equal(label.includes(TOKEN), false);
+    assert.equal(label.includes(RECEIPT), false);
     assert.doesNotMatch(label, /Read full context|Follow checkpoint_guidance/);
     for (const field of [`"taskContextToken":"${TOKEN}"`, '"checkpoint_required":false', `"markdown":${JSON.stringify(RECEIPT)}`]) {
       assert.ok(preview.includes(field), `${field} in the first ${PREVIEW_CHARS} characters`);
@@ -61,7 +64,7 @@ for (const [agent, enter, inlineChars] of AGENTS) {
   test(`${agent}: a required checkpoint is asked for, not left to the Stop hook`, async () => {
     const [label] = (await enter(hookEntry({ checkpoint_required: true, checkpoint_guidance: undefined })))
       .hookSpecificOutput.additionalContext.split('\n');
-    assert.ok(label.includes(`Before your final reply, call checkpoint_task_knowledge with taskContextToken "${TOKEN}".`));
+    assert.ok(label.includes('Before your final reply, call checkpoint_task_knowledge with this taskContextToken.'));
     assert.doesNotMatch(label, /Stop hook closes/);
   });
 

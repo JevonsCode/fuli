@@ -651,7 +651,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.equal('global_preferences' in preferences.structuredContent, false);
   // The scope lines are a template over context IDs, referenced from the rules.
   assert.equal(preferences.structuredContent.application_guidance.scope_rules,
-    'fuli://rules/task-entry#scope_guidance');
+    'fuli://rules/task-entry/scope_guidance');
 
   const tasteSkill = await connection.client.callTool({
     name: 'get_user_taste_skill',
@@ -798,7 +798,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   const resourceTemplates = await connection.client.listResourceTemplates();
   assert.deepEqual(
     resourceTemplates.resourceTemplates.map(({ uriTemplate }) => uriTemplate),
-    ['fuli://projects/{projectId}']
+    ['fuli://rules/task-entry/{section}', 'fuli://projects/{projectId}']
   );
   const projectResource = await connection.client.readResource({
     uri: 'fuli://projects/hotel-b'

@@ -1,6 +1,12 @@
 import { copyPreferenceScope, entryWorkKind } from './preference-snapshot.js';
 import { preferenceAlwaysInline, preferenceNamesWorkKind, preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
-import { blockedByDeliveryBudget } from '../mcp/preference-delivery.js';
+import { blockedByDeliveryBudget, blockedPreferenceDelivery } from '../mcp/preference-delivery.js';
+
+// The blocked reason of an entry that does not fit its host's inline limit.
+const INLINE_BUDGET = 'inline_budget';
+// How much of each role text and initial preference a bounded role keeps.
+const ROLE_PREVIEW_CHARS = 280;
+const ROLE_PREFERENCE_PREVIEW = 3;
 
 // A task entry bounded to the inline limit of the host that shows it (rec#11
 // D-54). An Agent adapter whose host keeps only a preview of a longer hook
@@ -30,23 +36,30 @@ export function fitUncached(fit, value, render) {
 // An entry that fits is unchanged. Otherwise, in this order:
 // 1. the automatic recall becomes a pointer to its search, then the recent
 //    conversation drops its oldest messages, as the Provider's own window does;
-// 2. then preferences go, lowest ranked first. Closing fields, identity,
-//    role, authority, conflicts and everything outside effective_preferences
-//    but working memory (below) stay; so do hard rules (preferenceAlwaysInline). The rest rank by kind
-//    and task scene: a boundary a scene switch never revokes first, then an
-//    item whose own scene key names the task's work kind, then human-confirmed
-//    before agent-confirmed, then the Provider's order. The set is the largest
-//    ranked prefix whose complete frame fits with the leanest such context, so the
-//    same preferences select the same set on the next turn, and a delta follows;
-// 3. then as much recall and conversation as still fits comes back.
-// What is left out is named by count with its reader. Working-memory previews
-// give way only to hard rules (D-72): when the hard rules do not fit beside
-// them, the global layer's preview and then the project layer's become a
-// pointer to get_project_agent_memory, keeping each layer's revision. If the
-// hard rules alone are still over the limit (D-69), they are bounded the same
-// way, as the largest prefix by scope (Agent, project, global) and then the
-// Provider's order, and the omission says so (includes_always_inline): past
-// Claude Code's preview they were never seen.
+// 2. then preferences go, lowest ranked first, except hard rules
+//    (preferenceAlwaysInline). The rest rank by kind and task scene: a
+//    boundary a scene switch never revokes first, then an item whose own scene
+//    key names the task's work kind, then human-confirmed before
+//    agent-confirmed, then the Provider's order. The set is the largest ranked
+//    prefix whose complete frame fits with the leanest context of step 1, so
+//    the same preferences select the same set on the next turn, and a delta
+//    follows;
+// 3. where even the hard rules do not fit beside the rest, the entry's details
+//    give way to them, one at a time, each to a count or preview with its
+//    reader (D-72, detailLevels): the working-memory previews (global layer
+//    first; each keeps its revision), the directory snapshot, the team roster,
+//    the managers' details, the active conflicts and then the role text. The
+//    ranked preferences are bounded beside the hard rules at the first detail
+//    level where those fit;
+// 4. then as much recall, conversation and detail as still fits comes back.
+// What is left out is named by count with its reader. If the hard rules alone
+// are still over the limit (D-69), they are bounded the same way, as the
+// largest prefix by scope (Agent, project, global) and then the Provider's
+// order, and the omission says so (includes_always_inline): past Claude
+// Code's preview they were never seen. Closing fields and identity always
+// stay. An entry that does not fit even so is never sent past the limit: it is
+// the blocked frame (inline_budget) that keeps the token, closing fields and
+// identity and recovers through read_task_preferences.
 export function inlineEntryFit(limit, length) {
   return (value, { deliver, complete }) => {
     // A frame the renderer blocked as over its own delivery budget is short,
@@ -61,7 +74,7 @@ export function inlineEntryFit(limit, length) {
     }
     const preferences = Array.isArray(value.effective_preferences) ? value.effective_preferences : [];
     const { kept, ranked } = inlineRanking(preferences, entryWorkKind(value));
-    const bounded = [...levels, ...memoryLevels(levels.at(-1))];
+    const bounded = [...levels, ...detailLevels(levels.at(-1))];
     const fitsAt = (level, selected) => fits(complete(withPreferences(level, selected, preferences.length)));
     // The richest level where every hard rule fits, and what the search may
     // leave out there: the ranked rest. Where none fits, the hard rules
@@ -70,7 +83,7 @@ export function inlineEntryFit(limit, length) {
     const [level, fixed, order] = base ? [base, kept, ranked] : [bounded.at(-1), [], kept.length ? kept : ranked];
     const richer = bounded.slice(0, bounded.indexOf(level) + 1);
     const selection = count => new Set([...fixed, ...order.slice(0, count)]);
-    // The largest prefix of `order` that fits; at a memory level that may be all of it.
+    // The largest prefix of `order` that fits; at a detail level that may be all of it.
     let low = 0;
     let high = order.length;
     while (low < high) {
@@ -79,12 +92,11 @@ export function inlineEntryFit(limit, length) {
       else high = middle - 1;
     }
     const whole = low === order.length;
-    let attempt;
     for (const candidate of richer) {
-      attempt = deliver(whole ? candidate : withPreferences(candidate, selection(low), preferences.length));
+      const attempt = deliver(whole ? candidate : withPreferences(candidate, selection(low), preferences.length));
       if (fits(attempt)) return attempt;
     }
-    return attempt;
+    return deliver(blockedPreferenceDelivery(value, INLINE_BUDGET));
   };
 }
 
@@ -138,26 +150,83 @@ function contextLevels(value) {
   return levels;
 }
 
-// The leanest context with fewer working-memory previews: the global layer's
-// first, as it is the less specific one, then the project layer's (D-72).
-function memoryLevels(leanest) {
+// The leanest context with fewer details, one step at a time (D-72). A step
+// that finds nothing to reduce adds no level.
+function detailLevels(leanest) {
   const levels = [];
   let current = leanest;
-  for (const layer of ['global_memory', 'memory']) {
-    const continuity = current.project_agent_context;
-    if (!continuity?.[layer]?.current) continue;
-    current = copyPreferenceScope(leanest, { ...current,
-      project_agent_context: { ...continuity, [layer]: memoryPointer(continuity[layer]) } });
+  for (const step of DETAIL_STEPS) {
+    const next = step(current);
+    if (!next) continue;
+    current = copyPreferenceScope(leanest, next);
     levels.push(current);
   }
   return levels;
 }
 
+const withContinuity = (value, field, view) => ({ ...value, project_agent_context: { ...value.project_agent_context, [field]: view } });
+
+// Each step returns the entry with one detail reduced to what it counts and
+// the call that reads it, or null when there is nothing to reduce.
+const DETAIL_STEPS = [
+  // The global layer first, as it is the less specific one.
+  value => value.project_agent_context?.global_memory?.current
+    ? withContinuity(value, 'global_memory', memoryPointer(value.project_agent_context.global_memory, { personalProjectId: null })) : null,
+  value => value.project_agent_context?.memory?.current
+    ? withContinuity(value, 'memory', memoryPointer(value.project_agent_context.memory)) : null,
+  value => {
+    const snapshot = value.project_agent_context?.directorySnapshot;
+    return Array.isArray(snapshot?.files) ? withContinuity(value, 'directorySnapshot',
+      { status: snapshot.status, path: snapshot.path, files_omitted: snapshot.files.length }) : null;
+  },
+  value => {
+    const team = value.project_agent_context?.team;
+    return team?.roster?.length ? withContinuity(value, 'team',
+      { roster_total: team.roster_total ?? team.roster.length, read: { tool: 'get_project_team' } }) : null;
+  },
+  value => {
+    const managers = value.project_management_context?.managers;
+    return managers?.length ? { ...value, project_management_context: { ...value.project_management_context,
+      managers: managers.map(manager => ({ template_id: manager.template_id, agent_id: manager.agent_id, name: manager.name,
+        guidance: manager.guidance, read: { tool: manager.tools?.discover ?? 'list_employee_tools',
+          arguments: { templateId: manager.template_id, personalProjectId: manager.personal_project_id } } })) } } : null;
+  },
+  ({ active_conflicts: conflicts, ...value }) => conflicts?.length ? { ...value,
+    active_conflicts_omitted: { count: conflicts.length,
+      read: { tool: 'read_task_preferences', arguments: { taskContextToken: value.taskContextToken } } } } : null,
+  value => {
+    const role = value.project_agent_context?.role;
+    const bounded = role && boundedRole(role);
+    return bounded ? withContinuity(value, 'role', bounded) : null;
+  }
+];
+
 // A layer's preview without its notes: its scope, revision and rules stay,
 // so a checkpoint still names the revision it read (task-context-view.js).
-function memoryPointer(memory) {
+function memoryPointer(memory, readArguments) {
   const { current: _current, notesTruncated: _cut, ...pointer } = memory;
-  return { ...pointer, view: 'omitted', read: { tool: 'get_project_agent_memory' } };
+  return { ...pointer, view: 'omitted',
+    read: { tool: 'get_project_agent_memory', ...(readArguments ? { arguments: readArguments } : {}) } };
+}
+
+// The role with each text cut to its first ROLE_PREVIEW_CHARS code points and
+// at most ROLE_PREFERENCE_PREVIEW initial preferences, or null when nothing is
+// longer. get_project_agent reads the whole profile.
+function boundedRole(role) {
+  let cut = false;
+  const text = value => {
+    if (typeof value !== 'string') return value;
+    const points = [...value];
+    if (points.length <= ROLE_PREVIEW_CHARS) return value;
+    cut = true;
+    return `${points.slice(0, ROLE_PREVIEW_CHARS).join('')}…`;
+  };
+  const preferences = role.initial_preferences ?? [];
+  if (preferences.length > ROLE_PREFERENCE_PREVIEW) cut = true;
+  const bounded = { ...role, responsibility: text(role.responsibility), expectations: text(role.expectations),
+    initial_preferences: preferences.slice(0, ROLE_PREFERENCE_PREVIEW).map(text),
+    ...(role.character ? { character: Object.fromEntries(Object.entries(role.character).map(([key, value]) => [key, text(value)])) } : {}) };
+  return cut ? { ...bounded, truncated: true, read: { tool: 'get_project_agent' } } : null;
 }
 
 // The recall without its items: what it matched, how many, and the search

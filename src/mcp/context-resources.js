@@ -1,5 +1,6 @@
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { ENTRY_RULES_URI, entryRulesMarkdown } from '../conversations/entry-rules.js';
+import { ENTRY_RULES_SECTION_TEMPLATE, ENTRY_RULES_URI, entryRulesMarkdown, entryRulesSectionMarkdown }
+  from '../conversations/entry-rules.js';
 import { singleLine } from '../text/single-line.js';
 
 const PROJECT_RESOURCE_TEMPLATE = 'fuli://projects/{projectId}';
@@ -34,6 +35,22 @@ export function registerFuliContextResources(server, app, {
       mimeType: RESOURCE_MIME_TYPE
     },
     (uri) => markdownResource(uri, entryRulesMarkdown())
+  );
+
+  // The form every entry reference names (entryRulesReference): one section.
+  server.registerResource(
+    'fuli-task-entry-rule-section',
+    new ResourceTemplate(ENTRY_RULES_SECTION_TEMPLATE, { list: undefined }),
+    {
+      title: 'FULI · Task entry rule section',
+      description: 'One section of the shared task entry rules, as a task entry references it.',
+      mimeType: RESOURCE_MIME_TYPE
+    },
+    (uri, variables) => {
+      const text = entryRulesSectionMarkdown(String(variables?.section ?? ''));
+      if (text === null) throw new Error(`FULI task entry rule section not found: ${variables?.section}`);
+      return markdownResource(uri, text);
+    }
   );
 
   const projectResources = new ResourceTemplate(PROJECT_RESOURCE_TEMPLATE, {

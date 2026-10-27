@@ -50,7 +50,8 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
   }
   const source = { sourceApplication: 'claude_code', sourceSessionId: sessionId };
   if (PREFERENCE_RESET_EVENTS.includes(event)) return preferenceLifecycleOutput(event, input,
-    { sourceApplication: 'claude_code', delivery, currentTask, invoke, replayedSources: CLAUDE_REPLAYED_SOURCES });
+    { sourceApplication: 'claude_code', delivery, currentTask, invoke, replayedSources: CLAUDE_REPLAYED_SOURCES,
+      inlineChars: CLAUDE_ENTRY_INLINE_CHARS });
   if (event === 'UserPromptSubmit') {
     if (typeof input.cwd !== 'string' || !input.cwd.trim() || typeof input.prompt !== 'string') {
       throw new TypeError('Claude task entry requires cwd and prompt');
@@ -189,9 +190,9 @@ const CLAUDE_TRANSCRIPT = Object.freeze({ normalize: normalizeClaudeRecord, veri
 // Claude Code's policy for unresolved turns (unresolved-turns.js): a
 // successful checkpoint_task_knowledge with the task's token in the turn,
 // recorded by the host, proves the turn that task's (turn-ownership.js), and
-// the model is told exactly that.
+// the model is told exactly that. The refreshed context is bounded like an entry.
 const CLAUDE_UNRESOLVED_TURNS = Object.freeze({
-  sourceApplication: 'claude_code', adapter: CLAUDE_TRANSCRIPT,
+  sourceApplication: 'claude_code', adapter: CLAUDE_TRANSCRIPT, inlineChars: CLAUDE_ENTRY_INLINE_CHARS,
   resolution: 'The current task context of this session follows for reference, refreshed now. Its taskContextToken '
     + 'is not this turn\'s confirmed task. This turn becomes that task\'s only by a successful checkpoint_task_knowledge with '
     + 'that token in this turn, which you should make only if you know this turn continues that task\'s own work.',

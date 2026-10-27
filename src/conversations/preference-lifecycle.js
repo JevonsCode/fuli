@@ -14,8 +14,9 @@ const RESTORED_LABEL = 'Fuli restored current mandatory preferences for the same
 // resume, rec#11 D-69). The frames delivered before stay model-visible, so the
 // context generation and its pending frames are kept and nothing is restored;
 // a compaction the host records still starts a new generation.
+// `inlineChars`: the host's inline limit, as for its task entry (preferenceHookOutput).
 export async function preferenceLifecycleOutput(event, input, { sourceApplication, delivery, currentTask, invoke,
-  replayedSources = [] }) {
+  replayedSources = [], inlineChars = null }) {
   if (typeof input?.session_id !== 'string' || !input.session_id.trim() || input.session_id.length > 256) {
     throw new TypeError('Preference reset requires a native session identifier');
   }
@@ -27,7 +28,7 @@ export async function preferenceLifecycleOutput(event, input, { sourceApplicatio
   if (refresh.status === 'other_session') throw new TypeError('Preference recovery requires the same owned native task');
   // No open task, or FULI was stopped for the session since its task began (rec#5 C3b): nothing to restore.
   if (refresh.status !== 'refreshed') return {};
-  return preferenceHookOutput(refresh.context, event, input, delivery, sourceApplication, RESTORED_LABEL, true);
+  return preferenceHookOutput(refresh.context, event, input, delivery, sourceApplication, RESTORED_LABEL, true, { inlineChars });
 }
 
 // A fresh read of the session's current task, in place: the same token, scope

@@ -75,7 +75,7 @@ test('task context preview bounds both memory layers with honest truncation meta
   assert.equal(view.memory.current.memory.summary.length, 800);
   assert.equal(view.global_memory.current.memory.summary, 'Short synthetic global notes.');
   assert.deepEqual([view.memory.revision, view.global_memory.revision], [3, 5]);
-  assert.equal(view.global_memory.guidance.rules, 'fuli://rules/task-entry#global_memory_guidance');
+  assert.equal(view.global_memory.guidance.rules, 'fuli://rules/task-entry/global_memory_guidance');
   assert.match(entryRules().sections.global_memory_guidance, /personalProjectId: null/);
   const result = hookAdditionalContextToolResult(compactTaskContext(source), options);
   assert.equal(result.structuredContent.truncated, undefined);
@@ -114,7 +114,8 @@ test('compact entry preserves executable scope, conflicts and memory revision wh
   assert.deepEqual(view.project_agent_context.team, { roster: [] });
   assert.equal(view.project_agent_context.memory.revision, 7);
   assert.equal(view.project_management_context.managers[0].board.items, undefined);
-  assert.match(view.project_management_context.managers[0].board.guidance, /read_board/);
+  assert.deepEqual(view.project_management_context.managers[0].board, { version: 3, total: 60, view: 'on_demand' });
+  assert.equal(view.project_management_context.managers[0].guidance, 'Preserve approval rules', 'changed rules stay inline');
 });
 
 test('compact preference qualifiers omit retrieval aliases while retaining unknown conditions from legacy attributes', async () => {
@@ -229,7 +230,7 @@ test('real task checkpoint and confirmation guidance cannot be clipped under his
     taskContextRegistry: { begin: async input => ({ ...input, token: 'fuli-task-synthetic-real-guidance' }) }
   }, preferenceEntry(), { sessionId: 'synthetic-session' }));
   // Shared rule text travels as a versioned reference, so memory pressure cannot clip it.
-  assert.deepEqual(value.task_guidance, { rules: 'fuli://rules/task-entry#task_guidance', version: entryRules().version });
+  assert.deepEqual(value.task_guidance, { rules: 'fuli://rules/task-entry/task_guidance', version: entryRules().version });
   assert.ok(Buffer.byteLength(entryRules().sections.task_guidance.checkpoint) > 512);
   assert.ok(Buffer.byteLength(entryRules().sections.task_guidance.knowledge_routing) > 512);
   value.conversation = { recovery: { messages: [{ role: 'user', content: 'Historical context. '.repeat(12_000) }] } };

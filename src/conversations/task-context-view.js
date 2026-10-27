@@ -77,14 +77,15 @@ export function compactTaskContext(value) {
 }
 
 // Each manager's routing, title policy and tools; the board itself is read on
-// demand through the manager's own read_board tool. `guidance` gives the
-// routing rules as this entry delivers them (a task entry references them).
+// demand through the manager's own read_board tool, as its routing rules say.
+// `guidance` gives those rules as this entry delivers them (a task entry
+// references them). The receipt of the entry's own board read names no work
+// the Agent did, so the view leaves it out.
 export function managementContextView(management, guidance) {
   return { ...management,
-    managers: management.managers.map(manager => ({ ...manager,
+    managers: management.managers.map(({ collaboration_receipt: _receipt, ...manager }) => ({ ...manager,
       ...(manager.guidance ? { guidance: guidance(manager.guidance) } : {}),
-      board: manager.board && { version: manager.board.version, total: manager.board.total,
-        view: 'on_demand', guidance: 'Discover and call the manager read_board tool before matching, creating or updating a work item; this entry omits board details.' }
+      board: manager.board && { version: manager.board.version, total: manager.board.total, view: 'on_demand' }
     }))
   };
 }
