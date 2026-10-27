@@ -7,6 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isMainModule } from '../src/system/main-module.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../src/native-runtime/windows-assets.js';
+import { assertShortBuildPath } from './windows-build-path.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DOWNLOADS = {
@@ -26,9 +27,9 @@ export async function buildWindowsPortable({ output, assetRoot, buildPython, cac
   for (const [key, value] of Object.entries({ output, assetRoot, buildPython, cacheDir })) {
     if (typeof value !== 'string' || !value.trim()) throw new Error('Missing --' + key);
   }
-  output = resolve(output);
+  output = assertShortBuildPath('--output', output, 'T:\\fb\\portable');
+  cacheDir = assertShortBuildPath('--cache-dir', cacheDir, 'T:\\fb\\portable');
   assetRoot = resolve(assetRoot);
-  cacheDir = resolve(cacheDir);
   if (existsSync(output) && (await readdir(output)).length) throw new Error('Output must be a new or empty directory.');
   const inside = (root, path) => { const local = relative(root, path); return !isAbsolute(local) && !local.startsWith('..'); };
   if ([output, cacheDir].some(path => inside(PACKAGE_ROOT, path) || inside(assetRoot, path))) {
