@@ -6,7 +6,7 @@ import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
 import { postMessage, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
-import { deliveryLabel, reasonLabel, viaLabel } from './roundtable-delivery'
+import { deliveryLabel, deliveryTone, reasonLabel, viaLabel } from './roundtable-delivery'
 import { chatBubbles, postRecipients, tableSeats, type ChatBubble } from './roundtable-model'
 import { gapToEnd, scrollToEnd, TAIL_FOLLOW_PX } from './roundtable-scroll'
 import RoundtableComposer from './RoundtableComposer.vue'
@@ -102,7 +102,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
             <p v-if="viaLabel(bubble.via) && bubble.kind === 'reply'" class="roundtable-delivery">{{ viaLabel(bubble.via) }}</p>
             <ul v-if="bubble.deliveries.length" class="roundtable-deliveries">
               <li v-for="delivery in bubble.deliveries" :key="delivery.messageId" :data-roundtable-delivery="delivery.state.kind"
-                :class="`is-${delivery.state.kind}`">
+                :data-tone="deliveryTone(delivery)">
                 <GrowthLoading v-if="delivery.state.kind === 'replying'" variant="inline" :label="deliveryLabel(delivery, bubble.via)" />
                 <template v-else>{{ deliveryLabel(delivery, bubble.via) }}</template>
               </li>
@@ -143,8 +143,8 @@ watch(() => props.thread.messages.length, async (length, previous) => {
 .is-mine .roundtable-bubble { border-color: transparent; border-radius: 14px 4px 14px 14px; background: var(--color-accent-soft); }
 .roundtable-deliveries { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--color-faint); font-size: 12px; }
 .is-mine .roundtable-deliveries { justify-items: end; text-align: right; }
-.roundtable-deliveries .is-held { color: var(--color-warning); }
-.roundtable-deliveries .is-failed { color: var(--color-danger); }
+.roundtable-deliveries [data-tone="warning"] { color: var(--color-warning); }
+.roundtable-deliveries [data-tone="danger"] { color: var(--color-danger); }
 .roundtable-delivery { margin: 0; color: var(--color-faint); font-size: 12px; }
 .roundtable-cleanup { margin: 0; color: var(--color-warning); font-size: 12px; font-weight: 600; }
 .roundtable-blocked, .roundtable-recipients { margin: 0; padding: 8px 28px 0; font-size: 12px; }
