@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { employeeAvatarUrl } from '@/features/employees/avatars'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { t } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { agentIdentityStyle } from './agent-identity-color'
@@ -35,8 +35,7 @@ function retry() {
         :aria-current="isActive(agent.agentId) ? 'page' : undefined" :aria-label="`${agentDisplayName(agent)} · ${t('agentProfiles.profile')}`"
         :title="expanded ? undefined : agentDisplayName(agent)" :data-pinned-agent="agent.agentId">
         <span class="pinned-rail-portrait" :style="agentIdentityStyle(agent.agentId)" aria-hidden="true">
-          <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
-          <template v-else>{{ agent.profile.occupationEmoji || agentDisplayName(agent).slice(0, 1) }}</template>
+          <img :src="agentAvatarUrl(agent.agentId)" alt="" />
         </span>
         <span v-if="expanded" class="pinned-rail-name">{{ agentDisplayName(agent) }}</span>
       </RouterLink>

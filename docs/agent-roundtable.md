@@ -145,6 +145,53 @@ older unread history it was not allowed to see. Durable execution claims keep
 one wake active per Agent; subsequent rooms wait for completion notifications.
 Unknown execution or unconfirmed cleanup keeps its safety hold.
 
+## Group discussions (@FLG, rec#55)
+
+`group_discussion` runs a moderated discussion on top of a `kind=group` chat. It
+only carries out what the person typed in their chat: task entry records the
+confirmed members and question (`recordGroupChoice`) and each `@FLG …`
+follow-up (`requestGroupFollowUp`). `start` takes that confirmation's request ID
+and runs it once; an unknown ID, another moderator or project, or a stopped
+confirmation is refused, and members and question come from the record.
+`follow_up` carries out the recorded follow-up once, to the confirmed members (or
+the one named), never to whoever the chat holds now; a discussion has at most two
+response rounds and five follow-ups. A woken (delegated) session cannot start or
+continue one. The moderator is the current project task's Agent
+(docs/agent-conversations-and-collaboration.md). A start refused for good (no
+executor, no active member) ends the confirmation with that reason, and a
+confirmation not started within ten minutes expires, so neither keeps the session
+held. Accepted residual: confirmation and follow-ups are recorded from task-entry
+input; a model that calls the entry tool itself can produce them within the same
+caps (fixed members, each consumed once, two response rounds, five follow-ups),
+and with no more authority than `message_agent`.
+
+Each member turn is a real `message_agent` wake in a fresh session (no resume) of
+the member's own allowed client. Claude Code discussion wakes deny file edits and the shell: they keep the
+non-interactive mode and add `--disallowedTools Edit,Write,NotebookEdit,MultiEdit,Bash` (a deny rule wins over any allow rule). Codex runs in its `read-only` sandbox. The prompt holds the
+question, the member's role line and 800-character excerpts of the other members;
+the member's own FULI entry delivers its preferences and knowledge index. The
+Provider issues and verifies a per-attempt delegation, and only a verified answer
+is posted as that member, in the same transaction that settles its still-open
+turn: an answer to a turn already stopped or failed is never posted. A member
+without an installed executor fails at once with `no_executor`, a dismissed one
+with `unavailable`, one woken elsewhere at that moment with `busy`; when no member
+can be woken, nothing is created (`flg_no_executor`). An unanswered ask is
+withdrawn so it does not wait in the member's inbox.
+
+`stop` (or the person's `@FLG 结束` from any process) ends unsettled turns as not
+replied and cancels wakes running in the runner's process. `summary` records the
+moderator's summary, and FULI appends the members that did not reply so they are
+never counted. Turn states (`invited`, `waiting`, `replied`, `failed`, `ended`) are
+stored in the roundtable file (migration `roundtable/3-group-discussions`). Rounds
+run in the process that started them, which writes a heartbeat every 20 seconds (a busy file is retried next time; a store moved underneath by an undo or restore ends the run, its open turns `interrupted`);
+another process fails the open turns of a runner without a heartbeat for a minute
+as `interrupted`, and never touches a live runner's turns. Members on other paired
+devices are not supported.
+
+The roundtable file moves to format 3 on upgrade. An older FULI refuses it (the
+roundtable and chats are unavailable there), and restoring the pre-upgrade backup
+drops the chats, discussions and messages written since the upgrade.
+
 Local tests use synthetic Agent/project identities and loopback mTLS devices.
 They verify protocol behavior, not real paired-computer acceptance or an actual
 model/client run. Actual paired devices still need matching code, explicit owner

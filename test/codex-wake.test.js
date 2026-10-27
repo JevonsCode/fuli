@@ -12,6 +12,9 @@ test('Codex runs read-only, resuming a session or starting in the project direct
     ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', 'cx-session-1', '-']);
   assert.deepEqual(wakeArguments('codex', { cwd: '/work/app' }),
     ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/work/app', '-']);
+  // A group discussion wake is the same: Codex wakes are always read-only.
+  assert.deepEqual(wakeArguments('codex', { cwd: '/work/app', readOnly: true }),
+    wakeArguments('codex', { cwd: '/work/app' }));
 });
 
 test('Codex answers are the last agent message of a completed turn', () => {

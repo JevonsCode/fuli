@@ -39,13 +39,24 @@ const NO_AGENT = Object.freeze({ version: 1, selection_reason: null, match_basis
 // A session's routing state rides on its current task: markers appended to
 // the task's assignment match basis (one without an Agent when none was
 // selected), within the Provider's bound. A standing assignment's route
-// (task-entry-standing-owner.js) and a named FLA's binding
-// (task-entry-named-fla.js) are read back by prefix on the next entry.
+// (task-entry-standing-owner.js), a named FLA's binding
+// (task-entry-named-fla.js) and a group discussion's member choice
+// (task-entry-group-discussion.js) are read back by prefix on the next entry.
 export function withRouteMarkers(assignment, markers) {
   if (!markers?.length) return assignment;
   const base = assignment ?? NO_AGENT;
   return { ...base, match_basis: [...base.match_basis.slice(0, MATCH_BASIS_LIMIT - markers.length), ...markers] };
 }
+
+const NO_VALUE = '-';
+// One space-free field of a route marker: IDs and names with spaces and %
+// escaped, `-` for none. markerValue reads it back (null for none or malformed).
+export const markerField = value => value === null || value === undefined ? NO_VALUE
+  : String(value).replace(/%/g, '%25').replace(/\s/g, '%20');
+export const markerValue = value => {
+  if (value === NO_VALUE) return null;
+  try { return decodeURIComponent(value); } catch { return null; }
+};
 
 // Absent/null is legacy unknown; a present record must match v1 exactly.
 export function parseTaskAgentAssignment(value) {

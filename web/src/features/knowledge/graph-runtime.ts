@@ -8,6 +8,17 @@ import {
   filterFormalProjectGraph,
   projectRelationTierLabel,
 } from './project-relation-weights'
+import {
+  collisionRadius,
+  edgeLabelPlacement,
+  estimateMonospaceWidth,
+  estimateTextWidth,
+  fitLabel,
+  fitTransform,
+  nodeFootprint,
+  separateFootprints,
+  type Footprint,
+} from './graph-layout'
 import { localizeRelationTokens, relationVisual } from './relation-visuals'
 
 export interface GraphController {
@@ -21,7 +32,21 @@ export interface GraphController {
     names: Set<string>,
     options?: { projectOnly?: boolean; searchMatch?: boolean },
   ): number
+  /** Marks the project node a dragged project would land under (null clears it). */
+  markDropTarget(nodeId: string | null): void
+  /** Puts a project dragged in organize mode back where its drag started. */
+  restoreNode(nodeId: string): void
   destroy(): void
+}
+
+// A project dragged in organize mode: where the pointer is and which other
+// project node is under it.
+export interface ProjectDragEvent {
+  phase: 'start' | 'move' | 'end'
+  node: KnowledgeNode
+  over: KnowledgeNode | null
+  clientX: number
+  clientY: number
 }
 
 export interface GraphRenderOptions {
@@ -29,10 +54,18 @@ export interface GraphRenderOptions {
   projectVisibility?: 'formal' | 'provided'
   onNodeSelect?(node: KnowledgeNode): void
   onEdgeSelect?(edge: KnowledgeEdge): void
+  /** 调整层级: while enabled, dragging a project reports its drop instead of only moving it. */
+  organize?: {
+    enabled(): boolean
+    onProjectDrag(event: ProjectDragEvent): void
+  }
 }
 
 interface GraphNodeDatum extends KnowledgeNode, d3.SimulationNodeDatum {
   dragMoved?: boolean
+  dragOrigin?: { x: number; y: number; fx: number | null; fy: number | null }
+  degree: number
+  footprint: Footprint
 }
 
 interface GraphEdgeDatum extends d3.SimulationLinkDatum<GraphNodeDatum> {
@@ -51,10 +84,19 @@ interface GraphEdgeDatum extends d3.SimulationLinkDatum<GraphNodeDatum> {
 const COLORS = ['blue', 'teal', 'violet', 'amber', 'rose', 'cyan', 'slate'].map(
   (name) => `var(--color-chart-${name})`,
 )
-const MIN_SCALE = 0.18
+// Low enough that fitting a dense graph never has to cut its edges off.
+const MIN_SCALE = 0.05
 const MAX_SCALE = 5
 const MAX_FIT_SCALE = 1.5
 const GRAPH_LABEL_COMPACT_SCALE = 0.72
+const NODE_LABEL_FONT_SIZE = 12
+const NODE_ID_FONT_SIZE = 7
+const EDGE_LABEL_HEIGHT = 20
+const PROJECT_RING_RADIUS = 24
+const LINK_GAP = 28
+const SEARCH_BADGE = { width: 30, height: 15, above: 8 }
+// How close the pointer must come to another project to drop onto it.
+const PROJECT_DROP_RADIUS = PROJECT_RING_RADIUS + 14
 
 export function renderKnowledgeGraph(
   svg: SVGSVGElement,
@@ -67,11 +109,15 @@ export function renderKnowledgeGraph(
   const width = Math.max(svg.clientWidth || 0, 760)
   const height = Math.max(svg.clientHeight || 0, 520)
   const visibleGraph = callbacks.projectVisibility === 'provided' ? graph : filterFormalProjectGraph(graph)
-  const nodes: GraphNodeDatum[] = visibleGraph.nodes.map((node) => ({ ...node }))
-  const nodeIds = new Set(nodes.map(({ id }) => id))
+  const nodeIds = new Set(visibleGraph.nodes.map(({ id }) => id))
   const links = visibleGraph.edges
     .map(normalizeEdge)
     .filter(({ sourceId, targetId }) => nodeIds.has(sourceId) && nodeIds.has(targetId))
+  const nodes: GraphNodeDatum[] = visibleGraph.nodes.map((node) => ({
+    ...node,
+    degree: degree(node.id, links),
+    footprint: { left: 0, top: 0, right: 0, bottom: 0 },
+  }))
 
   const root = d3.select<SVGSVGElement, unknown>(svg)
   root.selectAll('*').remove()
@@ -193,11 +239,11 @@ export function renderKnowledgeGraph(
 
   nodeGroups.filter((node) => !isProjectNode(node)).append('circle')
     .attr('class', 'graph-node-shape')
-    .attr('r', (node) => 10 + Math.min(7, degree(node.id, links)))
+    .attr('r', shapeRadius)
     .attr('fill', (node) => colorFor(node.type))
   nodeGroups.filter(isProjectNode).append('circle')
     .attr('class', 'graph-project-ring')
-    .attr('r', 24)
+    .attr('r', PROJECT_RING_RADIUS)
   nodeGroups.filter(isProjectNode).append('circle')
     .attr('class', 'graph-node-shape')
     .attr('r', 19)
@@ -211,24 +257,20 @@ export function renderKnowledgeGraph(
     .attr('r', 4)
   nodeGroups.append('text')
     .attr('class', 'graph-node-label')
-    .attr('y', (node) => isProjectNode(node)
-      ? 39
-      : 26 + Math.min(7, degree(node.id, links)))
-    .text((node) => truncate(localizeRelationTokens(node.name), 22))
+    .attr('y', labelBaseline)
+    .text((node) => fitLabel(localizeRelationTokens(node.name), NODE_LABEL_FONT_SIZE))
   nodeGroups.append('text')
     .attr('class', 'graph-node-id')
-    .attr('y', (node) => isProjectNode(node)
-      ? 51
-      : 38 + Math.min(7, degree(node.id, links)))
+    .attr('y', idBaseline)
     .text((node) => `#${graphNodeIdentity(node)}`)
   const searchBadges = nodeGroups.append('g')
     .attr('class', 'graph-search-badge')
-    .attr('transform', (node) => `translate(0,${isProjectNode(node) ? -36 : -28})`)
+    .attr('transform', (node) => `translate(0,${badgeCenter(node)})`)
   searchBadges.append('rect')
-    .attr('x', -15)
-    .attr('y', -8)
-    .attr('width', 30)
-    .attr('height', 15)
+    .attr('x', -SEARCH_BADGE.width / 2)
+    .attr('y', -SEARCH_BADGE.above)
+    .attr('width', SEARCH_BADGE.width)
+    .attr('height', SEARCH_BADGE.height)
     .attr('rx', 4)
   searchBadges.append('text')
     .attr('y', 3)
@@ -246,6 +288,22 @@ export function renderKnowledgeGraph(
         : null,
     ].filter(Boolean).join('\n'))
 
+  nodeGroups.each(function measureFootprint(node) {
+    const label = this.querySelector<SVGTextElement>('.graph-node-label')
+    const id = this.querySelector<SVGTextElement>('.graph-node-id')
+    node.footprint = nodeFootprint({
+      shapeRadius: shapeRadius(node),
+      labelWidth: measuredWidth(label, (text) => estimateTextWidth(text, NODE_LABEL_FONT_SIZE)),
+      labelBaseline: labelBaseline(node),
+      labelFontSize: NODE_LABEL_FONT_SIZE,
+      idWidth: measuredWidth(id, (text) => estimateMonospaceWidth(text, NODE_ID_FONT_SIZE)),
+      idBaseline: idBaseline(node),
+      idFontSize: NODE_ID_FONT_SIZE,
+      badgeTop: badgeCenter(node) - SEARCH_BADGE.above,
+      badgeWidth: SEARCH_BADGE.width,
+    })
+  })
+
   const zoom = d3.zoom<SVGSVGElement, unknown>()
     .scaleExtent([MIN_SCALE, MAX_SCALE])
     .on('zoom', (event) => {
@@ -255,30 +313,35 @@ export function renderKnowledgeGraph(
     })
   root.call(zoom).on('dblclick.zoom', null)
 
+  // Projects gather on a ring around the center long enough for all of
+  // them side by side; a single project sits in the middle.
+  const projectRadii = nodes.filter(isProjectNode).map(({ footprint }) => collisionRadius(footprint))
+  const projectRing = projectRadii.length > 1
+    ? projectRadii.reduce((sum, radius) => sum + radius, 0) / Math.PI
+    : 0
   const simulation = d3.forceSimulation<GraphNodeDatum>(nodes)
     .force(
       'link',
       d3.forceLink<GraphNodeDatum, GraphEdgeDatum>(links)
         .id(({ id }) => id)
-        .distance(118)
+        .distance((edge) => collisionRadius(linkedNode(edge.source).footprint)
+          + collisionRadius(linkedNode(edge.target).footprint) + LINK_GAP)
         .strength(0.42),
     )
     .force('charge', d3.forceManyBody<GraphNodeDatum>().strength(-390).distanceMax(620))
     .force(
       'collide',
-      d3.forceCollide<GraphNodeDatum>().radius(
-        (node) => isProjectNode(node)
-          ? 58
-          : 38 + Math.min(10, degree(node.id, links)),
-      ),
+      d3.forceCollide<GraphNodeDatum>()
+        .radius((node) => collisionRadius(node.footprint))
+        .iterations(2),
     )
     .force(
       'project-focus',
       d3.forceRadial<GraphNodeDatum>(
-        (node) => isProjectNode(node) ? 70 : 210,
+        (node) => isProjectNode(node) ? projectRing : projectRing + 210,
         width / 2,
         height / 2,
-      ).strength((node) => isProjectNode(node) ? 0.55 : 0.008),
+      ).strength((node) => isProjectNode(node) ? 0.3 : 0.008),
     )
     .force('center', d3.forceCenter(width / 2, height / 2))
     .force('x', d3.forceX<GraphNodeDatum>(width / 2).strength(0.025))
@@ -286,17 +349,37 @@ export function renderKnowledgeGraph(
     .stop()
 
   for (let tick = 0; tick < 220; tick += 1) simulation.tick()
+  separateFootprints(nodes)
   updatePositions()
   let settleTimer: ReturnType<typeof window.setTimeout> | null = null
+
+  let dropCandidates: d3.Quadtree<GraphNodeDatum> | null = null
+  const organizing = (node: GraphNodeDatum) =>
+    isProjectNode(node) && Boolean(callbacks.organize?.enabled())
+  const reportProjectDrag = (
+    phase: ProjectDragEvent['phase'],
+    node: GraphNodeDatum,
+    event: { x: number; y: number; sourceEvent?: { clientX?: number; clientY?: number } | null },
+  ) => callbacks.organize?.onProjectDrag({
+    phase,
+    node,
+    over: dropCandidates?.find(event.x, event.y, PROJECT_DROP_RADIUS) ?? null,
+    clientX: event.sourceEvent?.clientX ?? 0,
+    clientY: event.sourceEvent?.clientY ?? 0,
+  })
 
   const drag = d3.drag<SVGGElement, GraphNodeDatum>()
     .on('start', (event, node) => {
       event.sourceEvent?.stopPropagation()
       node.dragMoved = false
+      if (organizing(node)) {
+        node.dragOrigin = { x: node.x ?? 0, y: node.y ?? 0, fx: node.fx ?? null, fy: node.fy ?? null }
+      }
       node.fx = node.x
       node.fy = node.y
     })
     .on('drag', function dragNode(event, node) {
+      const firstMove = !node.dragMoved
       node.dragMoved = true
       node.fx = event.x
       node.fy = event.y
@@ -304,8 +387,28 @@ export function renderKnowledgeGraph(
       node.y = event.y
       d3.select(this).classed('pinned', true)
       updatePositions()
+      if (!node.dragOrigin) return
+      if (firstMove) {
+        dropCandidates = d3.quadtree<GraphNodeDatum>()
+          .x((candidate) => candidate.x ?? 0)
+          .y((candidate) => candidate.y ?? 0)
+          .addAll(nodes.filter((candidate) => isProjectNode(candidate) && candidate !== node))
+        d3.select(this).classed('organize-dragging', true)
+        reportProjectDrag('start', node, event)
+      }
+      reportProjectDrag('move', node, event)
     })
-    .on('end', function endDrag(_event, node) {
+    .on('end', function endDrag(event, node) {
+      if (node.dragOrigin) {
+        d3.select(this).classed('organize-dragging', false)
+        // The page decides: the node stays where it was dropped while the
+        // move is saved, and goes back through restoreNode otherwise.
+        if (node.dragMoved) reportProjectDrag('end', node, event)
+        else restoreNode(node.id)
+        dropCandidates = null
+        delete node.dragMoved
+        return
+      }
       if (node.dragMoved) {
         node.fx = node.x
         node.fy = node.y
@@ -338,6 +441,8 @@ export function renderKnowledgeGraph(
       settleTimer = window.setTimeout(() => {
         settleTimer = null
         simulation.stop()
+        separateFootprints(nodes)
+        updatePositions()
       }, 700)
     })
 
@@ -419,6 +524,10 @@ export function renderKnowledgeGraph(
       return matches.length
     },
     clearSelection,
+    markDropTarget(nodeId) {
+      nodeGroups.classed('drop-target', ({ id }) => id === nodeId)
+    },
+    restoreNode,
     destroy() {
       if (settleTimer !== null) {
         window.clearTimeout(settleTimer)
@@ -428,6 +537,19 @@ export function renderKnowledgeGraph(
       root.on('.zoom', null).on('.selection', null)
       root.selectAll('*').remove()
     },
+  }
+
+  function restoreNode(nodeId: string) {
+    const node = nodes.find(({ id }) => id === nodeId)
+    const origin = node?.dragOrigin
+    if (!node || !origin) return
+    node.x = origin.x
+    node.y = origin.y
+    node.fx = origin.fx
+    node.fy = origin.fy
+    delete node.dragOrigin
+    nodeGroups.filter(({ id }) => id === nodeId).classed('pinned', origin.fx !== null)
+    updatePositions()
   }
 
   function updatePositions() {
@@ -441,12 +563,21 @@ export function renderKnowledgeGraph(
       .attr('y1', (edge) => coordinate(edge.source, 'y'))
       .attr('x2', (edge) => coordinate(edge.target, 'x'))
       .attr('y2', (edge) => coordinate(edge.target, 'y'))
-    edgeLabels
-      .attr('transform', (edge) => `translate(${
-        (coordinate(edge.source, 'x') + coordinate(edge.target, 'x')) / 2
-      },${
-        (coordinate(edge.source, 'y') + coordinate(edge.target, 'y')) / 2 - 5
-      })`)
+    const placedLabels: Array<{ x: number; y: number; width: number; height: number }> = []
+    edgeLabels.each(function placeEdgeLabel(edge) {
+      const size = { width: edgeLabelWidth(edge), height: EDGE_LABEL_HEIGHT }
+      const place = edgeLabelPlacement(
+        linkedNode(edge.source),
+        linkedNode(edge.target),
+        size,
+        nodes,
+        placedLabels,
+      )
+      if (place.fits) placedLabels.push({ x: place.x, y: place.y, ...size })
+      d3.select(this)
+        .attr('transform', `translate(${place.x},${place.y})`)
+        .classed('crowded', !place.fits)
+    })
     nodeGroups.attr(
       'transform',
       (node) => `translate(${node.x ?? width / 2},${node.y ?? height / 2})`,
@@ -539,28 +670,11 @@ export function renderKnowledgeGraph(
     root.transition().duration(180).call(zoom.scaleBy, factor)
   }
 
+  // Fits whole footprints, names included, so nothing is cut off at an edge.
   function fitToNodes(items: GraphNodeDatum[], duration = 220) {
-    if (!items.length) return
-    const xs = items.map(({ x }) => x ?? width / 2)
-    const ys = items.map(({ y }) => y ?? height / 2)
-    const minX = Math.min(...xs)
-    const maxX = Math.max(...xs)
-    const minY = Math.min(...ys)
-    const maxY = Math.max(...ys)
-    const boundsWidth = Math.max(maxX - minX, 90)
-    const boundsHeight = Math.max(maxY - minY, 90)
-    const scale = Math.max(
-      MIN_SCALE,
-      Math.min(
-        MAX_FIT_SCALE,
-        0.82 / Math.max(boundsWidth / width, boundsHeight / height),
-      ),
-    )
-    const centerX = (minX + maxX) / 2
-    const centerY = (minY + maxY) / 2
-    const transform = d3.zoomIdentity
-      .translate(width / 2 - scale * centerX, height / 2 - scale * centerY)
-      .scale(scale)
+    const fit = fitTransform(items, width, height, { minScale: MIN_SCALE, maxScale: MAX_FIT_SCALE })
+    if (!fit) return
+    const transform = d3.zoomIdentity.translate(fit.x, fit.y).scale(fit.k)
     if (duration) {
       root.transition().duration(duration).call(zoom.transform, transform)
     } else {
@@ -612,6 +726,29 @@ function pendingHumanChange(item: KnowledgeNode | GraphEdgeDatum | null | undefi
     || item?.human_change_status === 'viewed'
 }
 
+function shapeRadius(node: GraphNodeDatum) {
+  return isProjectNode(node) ? PROJECT_RING_RADIUS : 10 + Math.min(7, node.degree)
+}
+
+function labelBaseline(node: GraphNodeDatum) {
+  return isProjectNode(node) ? 39 : 26 + Math.min(7, node.degree)
+}
+
+function idBaseline(node: GraphNodeDatum) {
+  return labelBaseline(node) + 12
+}
+
+function badgeCenter(node: GraphNodeDatum) {
+  return isProjectNode(node) ? -36 : -28
+}
+
+// The rendered width when the browser can measure it, an estimate otherwise.
+function measuredWidth(text: SVGTextElement | null, estimate: (value: string) => number) {
+  if (!text) return 0
+  const measured = typeof text.getComputedTextLength === 'function' ? text.getComputedTextLength() : 0
+  return measured > 0 ? measured : estimate(text.textContent ?? '')
+}
+
 function degree(id: string, edges: GraphEdgeDatum[]) {
   return edges.reduce(
     (count, edge) => count + Number(edge.sourceId === id || edge.targetId === id),
@@ -629,10 +766,6 @@ function edgeDisplayLabel(edge: GraphEdgeDatum) {
 
 function edgeLabelWidth(edge: GraphEdgeDatum) {
   return Math.max(54, 31 + [...edgeDisplayLabel(edge)].length * 10)
-}
-
-function truncate(value: string, limit: number) {
-  return value.length > limit ? `${value.slice(0, limit - 1)}…` : value
 }
 
 function seeded(value = '') {

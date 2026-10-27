@@ -2,12 +2,14 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { currentLocale, t } from '@/i18n'
-import { renderKnowledgeGraph, type GraphController } from './graph-runtime'
+import { renderKnowledgeGraph, type GraphController, type ProjectDragEvent } from './graph-runtime'
 import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from '@/types'
 
 const props = defineProps<{
   graph: KnowledgeGraph
   projectVisibility?: 'formal' | 'provided'
+  /** 调整层级: dragging a project reports where it would be dropped. */
+  organizeProjects?: boolean
   selectedItem?: {
     itemKind: 'entity' | 'relationship'
     id: string
@@ -17,6 +19,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   selectNode: [node: KnowledgeNode]
   selectEdge: [edge: KnowledgeEdge]
+  projectDrag: [event: ProjectDragEvent]
 }>()
 
 const svg = ref<SVGSVGElement | null>(null)
@@ -37,6 +40,8 @@ defineExpose({
   fit: () => controller?.fit(),
   reset: () => controller?.reset(),
   clearSelection: () => controller?.clearSelection(),
+  markDropTarget: (nodeId: string | null) => controller?.markDropTarget(nodeId),
+  restoreNode: (nodeId: string) => controller?.restoreNode(nodeId),
   selectItem: (itemKind: 'entity' | 'relationship', id: string) =>
     controller?.selectItem(itemKind, id) ?? false,
   focusByNames: (
@@ -53,6 +58,10 @@ async function render() {
     projectVisibility: props.projectVisibility,
     onNodeSelect: (node) => emit('selectNode', node),
     onEdgeSelect: (edge) => emit('selectEdge', edge),
+    organize: {
+      enabled: () => Boolean(props.organizeProjects),
+      onProjectDrag: (event) => emit('projectDrag', event),
+    },
   })
   applySelection()
 }
