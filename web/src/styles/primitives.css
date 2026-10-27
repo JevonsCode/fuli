@@ -22,7 +22,8 @@
 .ui-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* Disclosure */
-.ui-disclosure { border-top: 1px solid var(--color-border); padding-block: 14px; }
+/* Spacing alone sets a disclosure apart; no rule above it. */
+.ui-disclosure { padding-block: 14px; }
 .ui-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; color: var(--color-ink); font-size: 14px; font-weight: 600; }
 .ui-disclosure > summary::-webkit-details-marker { display: none; }
 .ui-disclosure > summary::after { content: ''; width: 7px; height: 7px; border: solid var(--color-muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); margin: 0 4px 4px; transition: transform var(--motion-fast); }

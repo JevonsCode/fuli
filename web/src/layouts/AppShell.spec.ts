@@ -5,6 +5,7 @@ import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getJson } from '@/api/client'
+import { findTerm } from '@/features/glossary/terms'
 import { useConsoleStore } from '@/stores/console'
 import AppShell from './AppShell.vue'
 import { usePageTitle } from './page-title'
@@ -86,10 +87,28 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
   it('marks the active destination and shows only the sections current capabilities allow', async () => {
-    const { wrapper } = await setup('/preferences/writing')
+    const { wrapper } = await setup('/preferences')
     expect(wrapper.get('[data-destination="memory"]').attributes('aria-current')).toBe('page')
-    expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toEqual(['knowledge', 'preferences', 'writing', 'organize', 'tags'])
-    expect(wrapper.get('[data-section="writing"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toEqual(['knowledge', 'preferences', 'organize', 'tags'])
+    expect(wrapper.get('[data-section="preferences"]').attributes('aria-current')).toBe('page')
+    wrapper.unmount()
+  })
+
+  it('lets glossary mode explain every sidebar destination and section tab', async () => {
+    const { wrapper, router } = await setup('/project-agents', { browsePublicProjects: true })
+    const unexplained = (selector: string) => wrapper.findAll(selector)
+      .filter(element => findTerm(element.element)?.element !== element.element)
+      .map(element => element.attributes(selector.slice(1, -1)))
+    expect(unexplained('[data-destination]')).toEqual([])
+    for (const path of ['/project-agents', '/roundtables', '/public-projects', '/preferences', '/settings']) {
+      await router.push(path)
+      await flushPromises()
+      expect(wrapper.findAll('[data-section]').length, path).toBeGreaterThan(1)
+      expect(unexplained('[data-section]'), path).toEqual([])
+    }
+    // 设置 is both a destination and its first tab; each explains itself.
+    expect(findTerm(wrapper.get('[data-destination="settings"]').element)?.term.id).toBe('destination.settings')
+    expect(findTerm(wrapper.get('[data-section="settings"]').element)?.term.id).toBe('section.settings')
     wrapper.unmount()
   })
 

@@ -27,6 +27,7 @@ import { isFormalProject, projectDisplayName } from "@/features/projects/project
 import {
   agentDisplayName,
   agentProfilePath,
+  agentResponsibility,
   fuzzyMatch,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
@@ -120,7 +121,7 @@ const matches = (agent: (typeof agents.value)[number]) =>
     [
       agentDisplayName(agent),
       agent.employeeNumber ? `FLA ${agent.employeeNumber}` : "",
-      agent.profile.responsibility,
+      agentResponsibility(agent),
       ...agent.profile.capabilities,
       ...profileProjectIds(agent).map((id) => projectNames.value[id] || id),
     ].join(" "),
