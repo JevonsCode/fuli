@@ -39,7 +39,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
   taggedTerm('memory', 'all', 'common.status.all', 'glossary.memory.all'),
   // Ids other pages tag with data-term (occupations, the Tonborg policy).
   taggedTerm('occupation', 'catalog', 'shell.sections.occupations', 'glossary.occupation.catalog'),
-  taggedTerm('occupation', 'archived', 'occupations.archived', 'glossary.occupation.archived'),
+  taggedTerm('occupation', 'archived', 'occupations.stats.archived', 'glossary.occupation.archived'),
   taggedTerm('occupation', 'active', 'occupations.stats.active', 'glossary.occupation.active'),
   taggedTerm('occupation', 'agentCount', 'glossary.occupation.agentCountLabel', 'glossary.occupation.agentCount'),
   ...['manual', 'shared', 'autonomous'].map(key =>
