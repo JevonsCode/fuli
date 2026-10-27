@@ -116,6 +116,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   get_capture_policy: UNSCOPED,
   read_session_records: UNSCOPED,
   register_standing_assignment: UNSCOPED,
+  report_agent_service: UNSCOPED,
   explain_settings: UNSCOPED,
   update_capture_policy: UNSCOPED,
   defer_preference_conflict: UNSCOPED,

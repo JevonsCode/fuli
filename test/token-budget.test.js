@@ -130,7 +130,10 @@ const BASELINE = Object.freeze({
   // rec#55 @FLG: one new roundtable tool, group_discussion, which the moderating Agent calls only
   // after the person confirms members: 190,325 -> 191,468 B (+1,143 B), measured. Chat, instructions
   // and an ordinary entry are unchanged.
-  fullToolSchemaBytes: 191468,
+  // rec#11 D-71 服务管理: one full-profile tool, report_agent_service, registers or updates a
+  // server an Agent started (chat reaches it through list_agent_interfaces/fuli_call):
+  // 191,468 -> 192,460 B (+992 B, measured). Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 192460,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

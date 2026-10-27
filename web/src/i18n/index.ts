@@ -23,6 +23,7 @@ import { attentionMessages } from './messages/attention'
 import { shellMessages } from './messages/shell'
 import { designLabMessages } from './messages/design-lab'
 import { occupationsMessages } from './messages/occupations'
+import { agentServicesMessages } from './messages/agent-services'
 import { dataFormatMessages } from './messages/data-format'
 import { modelSettingsMessages } from './messages/model-settings'
 import { workbenchMessages } from './messages/workbench'
@@ -94,6 +95,7 @@ export const messages = {
     shell: shellMessages['zh-CN'],
     designLab: designLabMessages['zh-CN'],
     occupations: occupationsMessages['zh-CN'],
+    agentServices: agentServicesMessages['zh-CN'],
     dataFormat: dataFormatMessages['zh-CN'],
     modelSettings: modelSettingsMessages['zh-CN'],
     workbench: workbenchMessages['zh-CN'],
@@ -135,6 +137,7 @@ export const messages = {
     shell: shellMessages['en-US'],
     designLab: designLabMessages['en-US'],
     occupations: occupationsMessages['en-US'],
+    agentServices: agentServicesMessages['en-US'],
     dataFormat: dataFormatMessages['en-US'],
     modelSettings: modelSettingsMessages['en-US'],
     workbench: workbenchMessages['en-US'],

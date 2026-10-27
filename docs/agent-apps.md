@@ -96,8 +96,12 @@ the shutdown says so and names the app instead of reporting a clean close; closi
 
 An app that ends by itself ends its instance. The app's details show the exit code, the signal and one of three fixed
 categories with a fixed message: `load_failed` (it ended before its entry finished loading), `crashed` (it ended with
-an error after that) or `exited` (it finished with code 0). FULI does not read or keep anything the app writes to its
-output. It can then be started again.
+an error after that) or `exited` (it finished with code 0). The app's details and history never carry anything the app
+wrote. It can then be started again.
+
+Each app process the console starts is also listed as a workbench under Agents → Services (服务管理), with its start,
+stop and exit. Its last 16 KiB of stdout and stderr are kept there, with the app token replaced by `[redacted]`, so the
+person can read why it stopped; only the console shows that log, no Agent tool returns it, and the person can clear it.
 
 An entry has finished loading once its module, including any top-level `await`, has settled. An entry whose top-level
 `await` never settles (a server loop awaited at the top level, for example) never counts as loaded, so a later crash is

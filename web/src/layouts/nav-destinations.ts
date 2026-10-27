@@ -19,6 +19,8 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
       // The one entry to team management: assign work, staff projects, automation rules.
       { key: 'orchestrate', to: '/project-agents/manage', owns: ['/project-agents/manage'] },
       { key: 'occupations', to: '/project-agents/occupations', owns: ['/project-agents/occupations'] },
+      // 服务管理: services FLAs started and their workbenches (rec#11 D-71).
+      { key: 'services', to: '/project-agents/services', owns: ['/project-agents/services'] },
     ] },
     { key: 'chat', icon: 'chat', to: '/roundtables', owns: ['/roundtables', '/inbox'], sections: [
       { key: 'roundtables', to: '/roundtables', owns: ['/roundtables'] },
