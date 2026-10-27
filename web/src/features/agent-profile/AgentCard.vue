@@ -18,6 +18,8 @@ import {
 } from "./profile-model";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentPinsText } from "./agent-pins";
+import AgentMentionCopy from "./AgentMentionCopy.vue";
+import { isMentionableFla } from "./fla-mention";
 import { agentIdentityStyle } from "./agent-identity-color";
 import { loopPhaseDelay } from "@/lib/motion-phase";
 import { occupationLabels } from "./agent-occupation";
@@ -38,6 +40,8 @@ const props = defineProps<{
   pinned?: boolean;
   pinPending?: boolean;
   selected?: boolean;
+  /** Another FLA to name in the "call them in together" phrasing. */
+  mentionPartner?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -244,17 +248,20 @@ function surfaceClick(event: MouseEvent) {
         <span v-else-if="managesAllProjects" class="ui-badge">{{ t("agentProfiles.allProjects") }}</span>
         <span v-else class="agent-card-no-project">{{ t("agentProfiles.noProject") }}</span>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        class="agent-card-peek shrink-0"
-        data-agent-peek
-        :aria-label="t('agentProfiles.quickLookAgent', { name })"
-        :aria-haspopup="'dialog'"
-        @click.stop="emit('peek')"
-      >
-        {{ t("agentProfiles.quickLook") }}
-      </Button>
+      <div class="flex shrink-0 items-center gap-1.5">
+        <AgentMentionCopy v-if="isMentionableFla(agent)" :name="name" :partner="mentionPartner" />
+        <Button
+          variant="ghost"
+          size="sm"
+          class="agent-card-peek shrink-0"
+          data-agent-peek
+          :aria-label="t('agentProfiles.quickLookAgent', { name })"
+          :aria-haspopup="'dialog'"
+          @click.stop="emit('peek')"
+        >
+          {{ t("agentProfiles.quickLook") }}
+        </Button>
+      </div>
     </div>
   </article>
 </template>

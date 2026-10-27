@@ -1,4 +1,5 @@
 import type { ProjectAgentRecord, ProjectAgentTaskRecord } from "@/types";
+import { isMentionableFla } from "./fla-mention";
 
 export const agentProfilePath = (space: string, agent: string) =>
   `/agents/${encodeURIComponent(space)}/${encodeURIComponent(agent)}`;
@@ -14,6 +15,14 @@ export const profileProjectIds = (agent: ProjectAgentRecord) => [
       : []),
   ]),
 ];
+
+/** Another FLA to name beside this one when calling them in together: one sharing a project first. */
+export function mentionPartner(agent: ProjectAgentRecord, roster: ProjectAgentRecord[]) {
+  const others = roster.filter((item) => item.agentId !== agent.agentId && isMentionableFla(item));
+  const projects = new Set(profileProjectIds(agent));
+  const partner = others.find((item) => profileProjectIds(item).some((id) => projects.has(id))) ?? others[0];
+  return partner ? agentDisplayName(partner) : null;
+}
 
 const normalized = (value: string) =>
   value.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase();

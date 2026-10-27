@@ -110,4 +110,9 @@ describe('AgentCard projects', () => {
     expect(wrapper.get('[data-agent-summary]').text()).toBe('负责拆活、派活、整合，对用户汇报。')
     expect(wrapper.get('[data-current-task]').text()).toContain('收口 R-06 项目视图改造')
   })
+  it('offers the #FLA copy only on an FLA, never on a FULI role', () => {
+    expect(render().find('[data-agent-mention-copy]').exists()).toBe(false)
+    const fla = render({ agent: { ...agent, agentId: 'custom', profile: { ...agent.profile, name: 'PPT 专责', displayName: 'Iris Vale' } } })
+    expect(fla.get('[data-agent-mention-copy]').attributes('aria-label')).toBe('复制 #FLA Iris Vale')
+  })
 })

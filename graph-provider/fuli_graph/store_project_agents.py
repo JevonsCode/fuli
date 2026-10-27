@@ -23,6 +23,7 @@ from .project_agent_models import (
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .project_agent_names import agent_display_name
 from .store_transactions import query_store_transaction
+from .store_project_agent_naming import with_person_name, with_rename_suggestion
 from .store_project_agent_occupation import occupation_from_agent_node
 from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS
 from .store_occupation_catalog import active_occupation_predicate, occupation_error, require_active_occupations
@@ -133,6 +134,7 @@ class StoreProjectAgents:
                 space,
                 request.personal_project_id,
             )
+        request = await with_person_name(self, request)
         node_id = stable_uuid(
             self.settings.provider_id,
             request.personal_space_id,
@@ -410,11 +412,11 @@ class StoreProjectAgents:
             for item in records[0].get('assignment_rows') or []
         ):
             raise HTTPException(status_code=404, detail='project Agent not found')
-        return self._project_agent_from_row(
+        return await with_rename_suggestion(self, self._project_agent_from_row(
             records[0],
             personal_space_id,
             personal_project_id,
-        )
+        ))
 
     async def _project_agent_rows(
         self,

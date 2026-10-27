@@ -4,6 +4,7 @@ import test from 'node:test';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { groupChoiceReply, parseFlaMention } from '../src/graphiti/fla-mention.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
+import { CONSOLE_LOCALES, consolePhrasings } from '../test-support/console-mention-phrasings.js';
 import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
@@ -193,6 +194,16 @@ test('named members plus "recommend more": keeps the named and adds checked reco
   assert.deepEqual(names(preselected(entry)), ['Nova Lane', 'Jamie Ash']);
   assert.equal(options(entry).length, 2);
   assert.match(options(entry)[1], /职责涉及「技术」/u);
+});
+
+test('the console\'s @FLG phrasings name their FLAs, and "recommend one more" adds one, in both locales', async () => {
+  for (const locale of CONSOLE_LOCALES) {
+    const copied = consolePhrasings(locale, 'Nova Lane', 'Pia Mo');
+    const pair = await fixture().hook(`${copied.pair}这个方案`);
+    assert.deepEqual(names(preselected(pair)), ['Nova Lane', 'Pia Mo'], locale);
+    const more = await fixture().hook(`${copied.recommend}技术架构`);
+    assert.deepEqual(names(preselected(more)), ['Nova Lane', 'Jamie Ash'], locale);
+  }
 });
 
 test('a name several FLAs share offers each of them unchecked to pick from', async () => {

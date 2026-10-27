@@ -24,8 +24,12 @@ import TaskExecutionPlan from "@/features/project-agents/TaskExecutionPlan.vue";
 import {
   agentDisplayName,
   collaboratorsFor,
+  mentionPartner,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
+import AgentMentionCopy from "@/features/agent-profile/AgentMentionCopy.vue";
+import AgentRenameHint from "@/features/agent-profile/AgentRenameHint.vue";
+import { isMentionableFla } from "@/features/agent-profile/fla-mention";
 import { isAgentTaskDataComplete, taskHasAgent } from "@/features/agent-profile/agent-work-summary";
 import { useAgentRecords } from "@/features/agent-profile/useAgentRecords";
 import { CURRENT_WORK_STATUSES } from "@/features/overview/overview-data";
@@ -132,6 +136,10 @@ const collaboratorRecords = useAgentRecords(
   space,
   computed(() => collaborators.value.map((person) => person.agentId)),
 );
+// The pair phrasing names an FLA this one has worked with, when one is known.
+const partner = computed(() => agent.value
+  ? mentionPartner(agent.value, collaborators.value.flatMap((person) => collaboratorRecords.records.value[person.agentId] ?? []))
+  : null);
 const personName = (id: string) => {
   const person = collaboratorRecords.records.value[id];
   return person ? agentDisplayName(person) : id;
@@ -348,6 +356,7 @@ onMounted(() => {
             </div>
           </div>
           <div class="agent-profile-actions">
+            <AgentMentionCopy v-if="isMentionableFla(agent)" size="default" :name="agentDisplayName(agent)" :partner="partner" />
             <Button v-if="workbench" as-child variant="outline">
               <RouterLink :to="`/employees/${encodeURIComponent(workbench.id)}`">
                 {{ t("agentProfiles.workbench") }}
@@ -367,6 +376,8 @@ onMounted(() => {
             </Button>
           </div>
         </Card>
+
+        <AgentRenameHint :agent="agent" @saved="saved" />
 
         <GrowthLoading
           v-if="loading || store.runtimeStatus === 'loading'"

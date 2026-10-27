@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ from fuli_graph.project_agent_models import (
     ProjectAgentProfile,
     ProjectAgentUpsert,
 )
+from fuli_graph.project_agent_names import unique_nickname
 from fuli_graph.store_project_agents import SYSTEM_HR_AGENT_ID, StoreProjectAgents
 
 
@@ -20,6 +22,7 @@ async def test_project_agent_upsert_creates_space_identity_and_project_assignmen
     profile = project_agent_profile()
     driver = SequentialDriver([
         [{'project': {'project_id': 'project-a'}}],
+        [{'agent_id': 'employee.bole', 'profile_json': '{"name": "Bole", "display_name": "Bole"}'}],
         [{'agent': raw_agent(profile)}],
         [{'agent_id': 'activity-agent'}],
         [{'project': {'project_id': 'project-a'}}],
@@ -49,16 +52,20 @@ async def test_project_agent_upsert_creates_space_identity_and_project_assignmen
     assert result.profile.capabilities == ['活动策划', '活动复盘']
     assert result.profile.occupation_emoji == '🧱'
     assert [item.personal_project_id for item in result.assignments] == ['project-a']
-    identity_query, identity_parameters = driver.calls[1]
-    assignment_query, assignment_parameters = driver.calls[2]
+    identity_query, identity_parameters = driver.calls[2]
+    assignment_query, assignment_parameters = driver.calls[3]
     assert 'HAS_PROJECT_AGENT_IDENTITY' in identity_query
     assert identity_parameters['agent_id'] == 'activity-agent'
     assert identity_parameters['occupation_emoji'] == '🧱'
+    # A new Agent named only by its role gets a person-like nickname of its own.
+    stored = json.loads(identity_parameters['profile_json'])
+    assert stored['name'] == '活动 Agent'
+    assert stored['display_name'] == unique_nickname('activity-agent', {'bole'})
     assert 'HAS_PROJECT_AGENT_ASSIGNMENT' in assignment_query
     assert 'agent._task_lifecycle_lock' in assignment_query
     assert "agent.status <> 'archived'" in assignment_query
     assert assignment_parameters['personal_project_id'] == 'project-a'
-    assert driver.calls[4][1]['personal_project_id'] is None
+    assert driver.calls[5][1]['personal_project_id'] is None
 
 
 @pytest.mark.asyncio
@@ -66,6 +73,7 @@ async def test_project_agent_upsert_does_not_duplicate_an_explicit_active_assign
     profile = project_agent_profile()
     driver = SequentialDriver([
         [{'project': {'project_id': 'project-a'}}],
+        [{'agent_id': 'activity-agent', 'profile_json': profile.model_dump_json()}],
         [{'agent': raw_agent(profile)}],
         [{'agent_id': 'activity-agent'}],
         [{'project': {'project_id': 'project-a'}}],
@@ -90,7 +98,7 @@ async def test_project_agent_upsert_does_not_duplicate_an_explicit_active_assign
         ),
     )
 
-    assignment_query = driver.calls[2][0]
+    assignment_query = driver.calls[3][0]
     assert 'active_assignment_count' in assignment_query
     assert 'legacy_assignment_count' in assignment_query
     assert 'active_assignment_count = 0' in assignment_query
@@ -499,6 +507,7 @@ def test_project_agent_upsert_requires_dedicated_archive_operation():
 async def test_project_agent_upsert_cannot_reactivate_an_archived_identity():
     driver = SequentialDriver([
         [{'project': {'project_id': 'project-a'}}],
+        [{'agent_id': 'activity-agent', 'profile_json': project_agent_profile().model_dump_json()}],
         [],
     ])
 
@@ -513,8 +522,8 @@ async def test_project_agent_upsert_cannot_reactivate_an_archived_identity():
             ),
         )
 
-    assert len(driver.calls) == 2
-    identity_query = driver.calls[1][0]
+    assert len(driver.calls) == 3
+    identity_query = driver.calls[2][0]
     assert 'agent._profile_upsert_lock' in identity_query
     assert "agent.status <> 'archived'" in identity_query
 

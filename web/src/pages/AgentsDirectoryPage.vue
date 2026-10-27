@@ -28,6 +28,7 @@ import {
   agentDisplayName,
   agentProfilePath,
   fuzzyMatch,
+  mentionPartner,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
 import { agentPinsText, useAgentPinsState } from "@/features/agent-profile/agent-pins";
@@ -205,6 +206,7 @@ const cardProps = (agent: (typeof agents.value)[number]) => ({
   pinned: pinnedAgentIds.value.includes(agent.agentId),
   pinPending: pinSavingAgentId.value === agent.agentId,
   selected: peekId.value === agent.agentId,
+  mentionPartner: mentionPartner(agent, agents.value),
 });
 const reorderAvailable = computed(() => {
   const fresh = visibleIn(freshOrder.value);
@@ -534,6 +536,7 @@ function handleProjectCreated(project: PersonalProject) {
           :manages-all-projects="peekAgent ? managesAllProjects(peekAgent.agentId) : false"
           :pinned="peekAgent ? pinnedAgentIds.includes(peekAgent.agentId) : false"
           :pin-pending="Boolean(peekAgent) && pinSavingAgentId === peekAgent?.agentId"
+          :mention-partner="peekAgent ? mentionPartner(peekAgent, agents) : null"
           @toggle-pin="peekAgent && toggleAgentPin(peekAgent.agentId, $event)"
           @open-full="openFullPage"
           @retry="peekRecords.load({ force: true })"
