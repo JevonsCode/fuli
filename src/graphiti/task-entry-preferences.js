@@ -159,11 +159,16 @@ async function entryPreferences(application, projectResolution, {
     }) };
 }
 
+// What an automatic judgment policy asks of the Agent. The entry references
+// it by version (entry-rules.js, judgment_guidance) beside the summary.
+export const AUTO_JUDGMENT_SUMMARY = 'Before choosing a new subagent, session, client or model, call assess_agent_action.';
+export const AUTO_JUDGMENT_GUIDANCE = 'Before choosing a new subagent, session, client or model, use assess_agent_action with the exact project, Agent and task. Use its eligible recommendation within the saved policy; recheck host capability before dispatch. Do not ask again for an already delegated routine choice. Escalations, user rules and locked executor policies still apply. For an awaiting-review FULI task, its accountable lead can use assess_task_completion with exact task/artifact revision and real verification evidence. Jefa human acceptance and external publication remain separate. Recommendations are not permissions or execution receipts.';
+
 export async function taskJudgmentContext(application, personalProjectId) {
   const judgmentPolicy = await application.judgment?.policy({ personalSpaceId: application.config.personal.spaceId,
     personalProjectId: personalProjectId ?? null });
   return judgmentPolicy ? { agentId: 'employee.tonborg', policy: judgmentPolicy,
       guidance: judgmentPolicy.mode === 'manual'
         ? 'Tonborg is available for advice via assess_agent_action; retain human review.'
-        : 'Before choosing a new subagent, session, client or model, use assess_agent_action with the exact project, Agent and task. Use its eligible recommendation within the saved policy; recheck host capability before dispatch. Do not ask again for an already delegated routine choice. Escalations, user rules and locked executor policies still apply. For an awaiting-review FULI task, its accountable lead can use assess_task_completion with exact task/artifact revision and real verification evidence. Jefa human acceptance and external publication remain separate. Recommendations are not permissions or execution receipts.' } : null;
+        : AUTO_JUDGMENT_GUIDANCE } : null;
 }

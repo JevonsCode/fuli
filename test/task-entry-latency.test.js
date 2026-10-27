@@ -249,7 +249,7 @@ test('a partial entry keeps the built receipt and management context, and lists 
   const delivered = context.project_management_context.managers[0];
   assert.equal(delivered.guidance, 'Synthetic manager routing.');
   assert.equal(delivered.title_mode, 'suggest');
-  assert.deepEqual(delivered.board, { version: 'v1', total: 1, view: 'on_demand', guidance: delivered.board.guidance });
+  assert.deepEqual(delivered.board, { version: 'v1', total: 1, view: 'on_demand' });
   await assertExecutable([{ tool: delivered.tools.discover,
     arguments: { templateId: delivered.template_id, personalProjectId: delivered.personal_project_id } }]);
   assert.deepEqual(context.task_knowledge_recall, { status: 'not_needed', facts: [], entities: [] });
