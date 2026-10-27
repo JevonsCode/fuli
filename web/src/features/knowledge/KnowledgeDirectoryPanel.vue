@@ -230,12 +230,21 @@ const selectedMaterialIndex = computed(() => props.selectedItem
         class="project-material-virtual-list"
         scrolls-with="page"
         :items="visibleProjectMaterialItems"
-        :row-height="61"
+        :row-height="48"
         :active-index="selectedMaterialIndex"
         :reset-key="listResetKey"
         :item-key="knowledgeItemKey"
         :label="t('knowledge.workspace.workspace.view.materialDirectory')"
       >
+        <template #header>
+          <div class="project-material-head" aria-hidden="true">
+            <span>{{ t('knowledge.workspace.workspace.view.columns.name') }}</span>
+            <span class="project-material-head-description">{{ t('knowledge.workspace.workspace.view.columns.description') }}</span>
+            <span class="project-material-head-type">{{ t('knowledge.workspace.workspace.view.columns.type') }}</span>
+            <span />
+          </div>
+        </template>
+
         <template #default="{ item }">
           <button
             class="project-material-row"

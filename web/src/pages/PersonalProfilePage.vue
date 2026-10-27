@@ -948,37 +948,39 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   }
 }
 
-/* Each preference is a card; wider canvases add a column instead of stretching the card. */
+/* Each preference is a tile; wider canvases add columns instead of stretching the tile.
+   Aspect and date head the tile, the preference reads in the middle and its
+   status sits at the foot, so tiles in a row line up. */
 .personal-profile-row { display: grid; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .personal-profile-open {
-  /* Fixed aspect, status and date columns, so titles and statuses line up from card to card. */
-  display: grid; grid-template-columns: 4.75rem minmax(0, 1fr) 11rem 7.5rem; align-items: center; gap: 14px;
-  width: 100%; padding: 14px 16px; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 1fr auto;
+  grid-template-areas: "aspect time" "copy copy" "origin origin"; align-items: start; gap: 10px 12px;
+  width: 100%; height: 100%; padding: 16px 18px; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer;
 }
+.personal-profile-open > .profile-aspect-mark { grid-area: aspect; }
+.personal-profile-open > time { grid-area: time; }
+.personal-profile-open > .personal-profile-copy { grid-area: copy; }
+.personal-profile-open > .personal-profile-origin { grid-area: origin; align-self: end; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  padding-top: 10px; border-top: 1px solid var(--color-border); justify-items: start; text-align: left; }
 .personal-profile-open:hover, .personal-profile-row.selected .personal-profile-open { background: var(--color-surface-hover); }
 .personal-profile-open:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
-.personal-profile-copy, .personal-profile-origin { display: grid; gap: 4px; min-width: 0; }
+.personal-profile-copy { display: grid; gap: 4px; min-width: 0; }
+.personal-profile-origin { min-width: 0; }
 .personal-profile-copy strong { color: var(--color-ink); font-size: 14px; font-weight: 600; }
 .personal-profile-copy small { display: -webkit-box; overflow: hidden; color: var(--color-ink-soft); font-size: 13px; line-height: 1.55; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.personal-profile-origin, .personal-profile-open time { justify-items: end; text-align: right; }
-.personal-profile-open time { white-space: nowrap; }
+.personal-profile-open time { align-self: center; white-space: nowrap; }
 .profile-aspect-mark { justify-self: start; max-width: 100%; text-align: center; }
 .personal-profile-origin strong { color: var(--color-ink-soft); font-size: 12px; font-weight: 600; }
 .personal-profile-origin small, .personal-profile-open time { color: var(--color-faint); font-size: 12px; }
 .personal-profile-more { grid-column: 1 / -1; width: 100%; color: var(--color-accent); }
 .personal-profile-scope-filter { width: min(240px, 28vw); }
-@media (max-width: 720px) {
-  .personal-profile-open { grid-template-columns: auto minmax(0, 1fr); }
-  .personal-profile-origin, .personal-profile-open time { grid-column: 2; justify-items: start; text-align: left; }
-}
 </style>
 
 <style scoped>
 .vue-personal-profile { padding-bottom: calc(80px + env(safe-area-inset-bottom) + 16px); min-width: 0; scrollbar-gutter: stable; }
 /* One centred work canvas (D-03); a preference opens in a quick look over it. */
-.profile-canvas { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: var(--layout-max); margin-inline: auto; container: profile-canvas / inline-size; }
-.personal-profile-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; overflow: visible; border: 0; border-radius: 0; background: transparent; }
-@container profile-canvas (min-width: 1280px) { .personal-profile-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.profile-canvas { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: var(--layout-max); margin-inline: auto; }
+.personal-profile-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; overflow: visible; border: 0; border-radius: 0; background: transparent; }
 .personal-profile-row { min-width: 0; scroll-margin-top: 80px; }
 /* The open row lifts as a card while its quick look is up (never a side bar). */
 .personal-profile-row.selected { position: relative; z-index: 1; border-color: var(--color-border-strong); background: var(--color-surface); box-shadow: var(--shadow-md); }

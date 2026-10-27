@@ -111,6 +111,8 @@ export const knowledgeWorkspaceMessages = {
         knowledgeStatusAria: '知识内容状态',
         columns: {
           content: '内容',
+          name: '名称',
+          description: '说明',
           quadrant: '发现时象限',
           review: '确认状态',
           type: '类型',
@@ -392,6 +394,8 @@ export const knowledgeWorkspaceMessages = {
         knowledgeStatusAria: 'Knowledge content status',
         columns: {
           content: 'Content',
+          name: 'Name',
+          description: 'Description',
           quadrant: 'Discovery quadrant',
           review: 'Confirmation status',
           type: 'Type',

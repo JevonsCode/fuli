@@ -21,6 +21,10 @@
   /* Every page uses one centred width (Jevons, 10-27); wider screens add
      columns inside a page instead of each page picking its own width. */
   --canvas-max: 1888px;
+  /* A form's fields and settings rows inside that page: a label and its
+     control stay close on a wide screen. The page and its top bar keep
+     --canvas-max; only form content is centred at this measure. */
+  --form-measure: 1040px;
   --measure: 72ch;
   --page-gutter: clamp(20px, 2.4vw, 56px);
 }

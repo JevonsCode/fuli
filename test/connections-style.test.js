@@ -16,8 +16,11 @@ test('connection sections are cards on the form column and keep accessible help 
   const routes = readFileSync('web/src/router/index.ts', 'utf8');
   assert.match(routes, /path: '\/connections',[\s\S]*?layout: 'form',/);
   const shell = readFileSync('web/src/layouts/AppShell.vue', 'utf8');
-  // Every page kind is centred at the one width (Jevons 10-27).
+  // Every page kind is centred at the one width (Jevons 10-27) and the top bar
+  // keeps it; only a form's content reads at the narrower form measure.
   assert.match(shell, /\.app-main\[data-layout\] \{ --layout-max: var\(--canvas-max\); \}/);
+  assert.match(shell, /\.app-main\[data-layout="form"\] \{ --layout-max: var\(--form-measure\); \}/);
+  assert.match(shell, /:is\(\.app-topbar-inner, \.feedback-message\) \{ max-width: var\(--canvas-max\);/);
   assert.doesNotMatch(shell, /--(column|form)-max/);
   assert.doesNotMatch(styles, /\.external-knowledge-section, \.conflict-policy-section/);
   const helpRule = styles.match(/\.section-help-link\s*\{(?<body>[^}]*)\}/);

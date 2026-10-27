@@ -265,10 +265,20 @@ body { margin: 0; min-width: 320px; }
 .knowledge-status-filter { flex: 0 0 auto; }
 .knowledge-directory-virtual-list,
 .project-material-virtual-list { min-width: 0; min-height: 0; flex: 1; }
+/* Project materials read as a table: name, description, type and the way in,
+   each in its own column, so a wide screen spreads them instead of leaving a
+   long empty gap between a stacked title and its link. */
+.project-material-head, .project-material-row {
+  width: 100%; display: grid; align-items: center; gap: 16px;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr) minmax(94px, 140px) 88px;
+}
+.project-material-head {
+  padding: 10px 16px; border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted); background: var(--color-surface-subtle); font-size: 12px; font-weight: 680;
+  letter-spacing: .05em;
+}
 .project-material-row {
-  width: 100%; height: 100%; display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(94px, 118px) auto; align-items: center; gap: 16px;
-  padding: 10px 16px; border: 0; border-bottom: 1px solid var(--color-border);
+  height: 100%; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--color-border);
   color: var(--color-ink); background: var(--color-surface); text-align: left;
 }
 .project-material-row:hover { background: var(--color-surface); }
@@ -278,7 +288,8 @@ body { margin: 0; min-width: 320px; }
   position: relative; z-index: 1; background: var(--color-surface);
   box-shadow: inset 0 0 0 1px var(--color-border-strong), var(--shadow-md);
 }
-.project-material-copy { min-width: 0; display: grid; gap: 4px; }
+/* The name and description are the row's first two columns. */
+.project-material-copy { display: contents; }
 .project-material-copy strong {
   overflow: hidden; color: var(--color-ink); font-size: 12px; font-weight: 630;
   text-overflow: ellipsis; white-space: nowrap;
@@ -395,8 +406,9 @@ body { margin: 0; min-width: 320px; }
   }
   .knowledge-column-type,
   .knowledge-row-type { display: none; }
-  .project-material-row { grid-template-columns: minmax(0, 1fr) auto; }
-  .project-material-type { display: none; }
+  .project-material-head, .project-material-row { grid-template-columns: minmax(0, 1fr) 88px; }
+  .project-material-head > :is(.project-material-head-description, .project-material-head-type),
+  .project-material-copy small, .project-material-type { display: none; }
 }
 @container knowledge-directory (max-width: 500px) {
   .knowledge-table-head { grid-template-columns: minmax(0, 1fr) 128px; gap: 12px; letter-spacing: 0; }

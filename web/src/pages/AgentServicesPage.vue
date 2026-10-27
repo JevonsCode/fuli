@@ -185,7 +185,7 @@ async function confirmDelete() {
 
 <template>
   <section class="view agent-services-view">
-    <div class="mx-auto flex min-h-0 w-full max-w-(--layout-max) flex-1 flex-col gap-3">
+    <div class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-3">
       <p class="page-lede m-0 text-sm text-muted-foreground">{{ t('agentServices.lede') }}</p>
       <div class="flex flex-wrap items-center gap-2">
         <label class="agent-services-search">
@@ -211,7 +211,7 @@ async function confirmDelete() {
         {{ loadError }} <Button size="sm" variant="ghost" @click="load">{{ t('agentServices.retry') }}</Button>
       </p>
 
-      <div class="flex min-h-0 flex-1 flex-col">
+      <div class="flex flex-col">
         <GrowthLoading v-if="loading && !services.length" variant="compact" :label="t('agentServices.loading')" />
         <div v-else-if="loadError && !services.length" class="ui-empty rounded-lg border bg-card text-destructive" role="alert">
           <p class="m-0">{{ loadError }}</p>
@@ -220,8 +220,8 @@ async function confirmDelete() {
         <div v-else-if="loaded && !services.length" class="ui-empty rounded-lg border bg-card" data-service-empty>
           <p class="m-0">{{ t('agentServices.empty') }}</p>
         </div>
-        <Table v-else-if="services.length" class="min-w-[880px]" container-class="min-h-0 shrink rounded-lg border bg-card">
-          <TableHeader class="sticky top-0 z-[1] bg-card shadow-[0_1px_0_var(--border)] [&_tr]:border-b-0">
+        <Table v-else-if="services.length" class="min-w-[880px]" container-class="rounded-lg border bg-card">
+          <TableHeader class="bg-card shadow-[0_1px_0_var(--border)] [&_tr]:border-b-0">
             <TableRow class="hover:bg-transparent">
               <TableHead class="min-w-[220px] pl-4">{{ t('agentServices.columns.purpose') }}</TableHead>
               <TableHead>{{ t('agentServices.columns.address') }}</TableHead>
@@ -333,7 +333,8 @@ async function confirmDelete() {
 </template>
 
 <style scoped>
-.agent-services-view { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 16px; }
+/* The page is the one scroll container; the table grows with its rows. */
+.agent-services-view { padding-bottom: 16px; }
 .agent-services-search { flex: 1 1 220px; max-width: 320px; }
 .agent-services-search input { box-sizing: border-box; width: 100%; }
 .agent-services-view :deep(.agent-services-select) { flex: 0 0 160px; min-width: 0; }

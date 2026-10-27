@@ -119,7 +119,11 @@ describe('KnowledgeOrganizerPage', () => {
       subscriptions: [],
     }
 
+    // The page (here a stand-in scroll box) is the list's one scroll container.
+    const page = document.body.appendChild(document.createElement('div'))
+    page.style.overflowY = 'auto'
     const wrapper = mount(KnowledgeOrganizerPage, {
+      attachTo: page,
       global: {
         plugins: [pinia],
         stubs: {
@@ -144,9 +148,14 @@ describe('KnowledgeOrganizerPage', () => {
     expect(wrapper.findAll('.organizer-row').length).toBeLessThan(101)
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 101')
 
-    const directory = wrapper.get('.virtual-directory-list__scroller')
-    directory.element.scrollTop = 68 * 50
-    await directory.trigger('scroll')
+    // The page is the one scroll container: the table follows the page's scroll.
+    expect(wrapper.get('.virtual-directory-list').classes()).toContain('is-page-scroll')
+    // jsdom has no layout: the rows' canvas moves up by what the page scrolled.
+    const canvas = wrapper.get('.virtual-directory-list__canvas').element
+    canvas.getBoundingClientRect = () => ({ top: -page.scrollTop }) as DOMRect
+    page.scrollTop = 68 * 50
+    page.dispatchEvent(new Event('scroll'))
+    await flushPromises()
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('051/ 101')
 
     await wrapper.get('.organizer-search input').setValue('最后一页')
@@ -155,6 +164,7 @@ describe('KnowledgeOrganizerPage', () => {
     expect(wrapper.get('.organizer-row').text()).toContain('最后一页的知识')
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 001')
     wrapper.unmount()
+    page.remove()
   })
 
   it('counts and filters effective Tonborg reviews, then returns them to pending after invalidation', async () => {

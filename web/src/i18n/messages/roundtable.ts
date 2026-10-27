@@ -18,7 +18,7 @@ export const roundtableMessages = {
     },
     instantBlocked: '{name} 现在不能即时回复：{reason}。发给 {name} 的消息会留在留言板。',
     start: {
-      open: '新对话', title: '和 FLA 对话', cancel: '取消', who: '和谁对话（可以选几位一起）',
+      open: '新对话', hint: '有事要和 FLA 商量时，开一段新对话。', title: '和 FLA 对话', cancel: '取消', who: '和谁对话（可以选几位一起）',
       loading: '正在读取可以对话的 FLA…', loadFailed: '可以对话的 FLA 没有读取成功。', none: '还没有可以对话的 FLA。',
       project: '这段对话属于哪个项目', chooseProject: '选择项目', noSharedProject: '选中的 FLA 不在同一个项目里，请分开对话。',
     },
@@ -83,7 +83,7 @@ export const roundtableMessages = {
     },
     instantBlocked: '{name} cannot reply instantly right now: {reason}. Messages to {name} stay on the board.',
     start: {
-      open: 'New conversation', title: 'Talk with your FLAs', cancel: 'Cancel', who: 'Who to talk with (pick several for a group)',
+      open: 'New conversation', hint: 'Need an FLA for something? Start a new conversation.', title: 'Talk with your FLAs', cancel: 'Cancel', who: 'Who to talk with (pick several for a group)',
       loading: 'Loading the FLAs you can talk with…', loadFailed: 'Could not load the FLAs you can talk with.', none: 'There are no FLAs to talk with yet.',
       project: 'Which project this conversation belongs to', chooseProject: 'Choose a project', noSharedProject: 'The chosen FLAs do not share a project; talk with them separately.',
     },

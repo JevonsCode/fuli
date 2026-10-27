@@ -164,6 +164,28 @@ describe('RoundtablesPage', () => {
     expect(wrapper.get('[data-roundtable-start]').text()).toBe('新对话')
     wrapper.unmount()
   })
+
+  it('fills a short list with an invitation to start a conversation, and drops it once the row is full', async () => {
+    const threadsOf = (count: number) => Array.from({ length: count }, (_, index) => ({ ...thread, id: `thread-${index}` }))
+    let listed = threadsOf(2)
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/roundtable/chats?') ? { chats: [], hasMore: false }
+      : url === '/api/roundtable/agents' ? { agents: [] } : { threads: listed })
+    const short = await mountAt('/roundtables')
+    // The count and the one start action share the list's head row.
+    expect(short.get('.ui-conversation-head').find('[data-roundtable-start]').exists()).toBe(true)
+    const invitation = short.get('.ui-conversation-items .roundtable-sparse')
+    expect(invitation.text()).toContain('开一段新对话')
+    await invitation.get('[data-roundtable-start-tile]').trigger('click')
+    await flushPromises()
+    expect(short.text()).toContain('和 FLA 对话')
+    short.unmount()
+
+    listed = threadsOf(4)
+    const full = await mountAt('/roundtables')
+    expect(full.findAll('[data-testid="roundtable-thread"]')).toHaveLength(4)
+    expect(full.find('.roundtable-sparse').exists()).toBe(false)
+    full.unmount()
+  })
 })
 
 

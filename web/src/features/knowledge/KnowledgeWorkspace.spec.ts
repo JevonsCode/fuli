@@ -242,6 +242,8 @@ describe('KnowledgeWorkspace', () => {
 
     expect(wrapper.get('#directory-tab-materials').attributes('aria-selected')).toBe('true')
     expect(wrapper.findAll('.project-material-row')).toHaveLength(3)
+    // A compact table: name, description and type each have a column.
+    expect(wrapper.findAll('.project-material-head > span').map(cell => cell.text())).toEqual(['名称', '说明', '类型', ''])
 
     await body().get('.inspector-actions button[data-variant="outline"]').trigger('click')
     await flushPromises()
