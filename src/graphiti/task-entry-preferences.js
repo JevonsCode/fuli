@@ -32,12 +32,15 @@ export async function finishTaskEntryPreferences(application, preferences, input
 export function beginTaskEntry(application, input) {
   return withSharedProjectList(async () => {
     if (input.projectPath !== undefined && input.projectPath !== null) application.listPersonalProjects().catch(() => {});
-    // The person replied in this session, so a block it reported has ended.
-    const [entry] = await Promise.all([beginTaskContext(application, input), clearReplyBlockers(application, input)]);
+    const entry = await beginTaskContext(application, input);
     // Its task and opening writes are done: a hook deadline from here on
     // delivers the token instead of nothing (entry-budget.js).
     noteEntryTask(entry);
-    return withEntryHint(application, entry, input);
+    // The person replied in this session, so a block it reported has ended.
+    // Only an entry the Provider accepted clears it: a failing Provider is
+    // asked for no write.
+    const [hinted] = await Promise.all([withEntryHint(application, entry, input), clearReplyBlockers(application, input)]);
+    return hinted;
   });
 }
 
