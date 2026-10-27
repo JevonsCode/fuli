@@ -107,6 +107,42 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('saves, edits and clears the Agent naming style with its suggested length', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    const withStyle = { ...configured, agentNamingStyle: '用两个字的植物名' }
+    const puts: Array<{ agentNamingStyle: string }> = []
+    vi.stubGlobal('fetch', vi.fn(async (input, init?: RequestInit) => {
+      if (String(input) === '/api/system/settings' && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body))
+        puts.push(body)
+        return Response.json({ configured: body, active: body, restartRequired: false })
+      }
+      if (String(input) === '/api/system/settings') return Response.json({ configured: withStyle, active: withStyle, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+    const card = wrapper.get('[data-agent-naming-card]')
+    expect(card.text()).toContain('Agent 取名风格')
+    expect(card.text()).toContain('建议 100 字左右')
+    const field = wrapper.get<HTMLTextAreaElement>('[data-agent-naming-style]')
+    expect(field.element.value).toBe('用两个字的植物名')
+    expect(card.text()).toContain('8 / 建议 100 字')
+
+    await field.setValue('像北欧神话里的名字')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    await wrapper.get('[data-agent-naming-clear]').trigger('click')
+    expect(field.element.value).toBe('')
+    expect(wrapper.get('[data-agent-naming-clear]').attributes('disabled')).toBeDefined()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(puts.map(body => body.agentNamingStyle)).toEqual(['像北欧神话里的名字', ''])
+    wrapper.unmount()
+  })
+
   it('hides the runtime-mode choice once the install already runs native', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

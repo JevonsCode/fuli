@@ -1,5 +1,5 @@
-"""Each Agent's own person-like name: generated, numbered or refused at write time,
-offered as a rename on read. Synthetic Agents only."""
+"""Each Agent's own person-like name: generated, numbered or refused with free
+alternatives at write time, offered as a rename on read. Synthetic Agents only."""
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -12,12 +12,14 @@ from fuli_graph.project_agent_models import ProjectAgentProfile, ProjectAgentRec
 from fuli_graph.project_agent_names import (
     FIRST_NAMES,
     LAST_NAMES,
+    NameTaken,
     agent_display_name,
+    free_nicknames,
     new_agent_display_name,
     title_like,
     unique_nickname,
 )
-from fuli_graph.store_project_agent_naming import with_person_name, with_rename_suggestion
+from fuli_graph.store_project_agent_naming import require_free_proposed_name, with_person_name, with_rename_suggestion
 
 
 class NamesStore:
@@ -70,8 +72,22 @@ def test_a_new_agent_gets_a_person_name_and_keeps_the_job_as_its_role():
     assert is_generated(new_agent_display_name('agent-ppt', 'PPT 专责', 'PPT 专责', taken))
     assert new_agent_display_name('agent-ppt', 'PPT 专责', 'Iris Vale', taken) == 'Iris Vale'
     assert new_agent_display_name('agent-ppt', 'Iris Vale', None, taken) == 'Iris Vale'
-    assert new_agent_display_name('agent-ppt', 'PPT 专责', 'Lyra North', taken) == 'Lyra North 2'
-    assert new_agent_display_name('agent-ppt', 'PPT 专责', 'LYRA  north', taken | {'lyra north 2'}) == 'LYRA  north 3'
+    # A role name that reads as a person is numbered; a nickname given on purpose is refused.
+    assert new_agent_display_name('agent-ppt', 'Lyra North', None, taken) == 'Lyra North 2'
+    assert new_agent_display_name('agent-ppt', 'LYRA  north', None, taken | {'lyra north 2'}) == 'LYRA  north 3'
+    with pytest.raises(NameTaken) as refused:
+        new_agent_display_name('agent-ppt', 'PPT 专责', 'LYRA  north', taken)
+    assert refused.value.alternatives == free_nicknames('agent-ppt', taken)
+
+
+def test_free_alternatives_are_distinct_unused_generated_names():
+    legacy = unique_nickname('agent-ppt', set())
+    taken = {identity_key(legacy), 'bole'}
+    free = free_nicknames('agent-ppt', taken)
+    assert len(free) == 3 and len(set(free)) == 3
+    assert all(is_generated(name) and identity_key(name) not in taken for name in free)
+    every = {identity_key(f'{first} {last}') for first in FIRST_NAMES for last in LAST_NAMES}
+    assert free_nicknames('agent-ppt', every) == [f'{legacy} 2']
 
 
 @pytest.mark.asyncio
@@ -96,6 +112,44 @@ async def test_an_update_keeps_the_stored_nickname_and_refuses_another_agents_na
     with pytest.raises(HTTPException) as refused:
         await with_person_name(store, upsert('agent-ppt', 'PPT 专责', 'lyra north'))
     assert refused.value.status_code == 409 and 'agent_name_taken' in refused.value.detail
+    assert 'free names' in refused.value.detail
+
+
+@pytest.mark.asyncio
+async def test_a_new_agent_given_a_taken_name_is_refused_with_free_alternatives():
+    store = NamesStore({'agent-other': {'name': 'x', 'display_name': 'Lyra North'}})
+    with pytest.raises(HTTPException) as refused:
+        await with_person_name(store, upsert('agent-ppt', 'PPT 专责', 'lyra NORTH'))
+    detail = refused.value.detail
+    assert refused.value.status_code == 409 and detail.startswith('agent_name_taken')
+    assert all(name in detail for name in free_nicknames('agent-ppt', {'lyra north'}))
+    # A free name in the person's style is kept as given.
+    kept = await with_person_name(store, upsert('agent-ppt', 'PPT 专责', '青禾'))
+    assert kept.profile.display_name == '青禾'
+
+
+@pytest.mark.asyncio
+async def test_a_recruited_agent_whose_proposed_name_was_taken_since_gets_a_generated_one():
+    store = NamesStore({'agent-other': {'name': 'x', 'display_name': '青禾'}})
+    request = await with_person_name(store, upsert('agent-ppt', 'PPT 专责', '青禾'), recruitment_id='recruitment-1')
+    assert request.profile.display_name == unique_nickname('agent-ppt', {'青禾'})
+
+
+@pytest.mark.asyncio
+async def test_a_recruitment_proposing_a_taken_name_is_refused_before_anything_is_written():
+    store = NamesStore({'agent-other': {'name': 'x', 'display_name': '青禾'}})
+    with pytest.raises(HTTPException) as refused:
+        await require_free_proposed_name(store, 'space', 'task-1', ProjectAgentProfile(
+            name='PPT 专责', display_name='青禾', responsibility='制作 PPT。'))
+    assert refused.value.status_code == 409 and 'agent_name_taken' in refused.value.detail
+    for display_name in ('松风', 'PPT 专责'):
+        await require_free_proposed_name(store, 'space', 'task-1', ProjectAgentProfile(
+            name='PPT 专责', display_name=display_name, responsibility='制作 PPT。'))
+    reads = store.calls
+    # Without a proposed name the generator names the Agent, so nothing is read.
+    await require_free_proposed_name(store, 'space', 'task-1', ProjectAgentProfile(
+        name='PPT 专责', responsibility='制作 PPT。'))
+    assert store.calls == reads
 
 
 @pytest.mark.asyncio

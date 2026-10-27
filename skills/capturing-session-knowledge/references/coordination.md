@@ -18,7 +18,10 @@ project history. Explicit user-selected Agents and locked policies remain higher
 When no registered project matches, coordination may return an isolated temporary project;
 keep its exact returned ID for this task. Ambiguous candidates still require a choice. Temporary
 scope creation is not Agent recruitment approval or proof of execution; follow the returned
-recruitment/authorization state and worker plan.
+recruitment/authorization state and worker plan. When you recruit with a `recruitmentProfile`, read
+`get_agent_naming_style` first and give its `displayName` in the person's style (omit it when the
+style is `null`); on `agent_name_taken` propose another free name in that style, and tell the person
+if you cannot find one.
 
 Treat the returned durable Agent identity and a host worker as different things. A durable Agent
 keeps its project assignment, preferences, task history, and Agent-scoped graph memory while idle;

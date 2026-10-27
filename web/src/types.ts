@@ -775,6 +775,7 @@ export interface RuntimeSettings {
   resourceRefreshSeconds: 5 | 10 | 30 | 60
   conversationLaunchers: ConversationLauncherConfiguration
   notifications: { needsPersonUrl: string }
+  agentNamingStyle: string
 }
 
 export interface SystemSettingsResult {

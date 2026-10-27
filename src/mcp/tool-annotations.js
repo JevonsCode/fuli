@@ -12,6 +12,7 @@ const READ_TOOLS = new Set([
   'get_capture_policy',
   'read_session_records',
   'explain_settings',
+  'get_agent_naming_style',
   'list_external_knowledge_connectors',
   'discover_external_knowledge_sources',
   'list_external_knowledge_bindings',

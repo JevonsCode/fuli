@@ -54,7 +54,10 @@ export const projectAgentModelStrategy = objectSchema({
 });
 export const projectAgentProfile = objectSchema({
   name: boundedString(160),
-  displayName: boundedString(160),
+  displayName: {
+    ...boundedString(160),
+    description: 'Unique person-like name; for a new Agent follow get_agent_naming_style, or omit to generate one.'
+  },
   responsibility: boundedString(4096),
   character: {
     ...objectSchema({
