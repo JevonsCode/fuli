@@ -17,7 +17,7 @@ function entry(token = 'task-a') {
   return withPreferenceScope({ taskContextToken: token, task_context_token: token, checkpoint_required: true,
     effective_preferences: Array.from({ length: 12 }, (_, i) => ({ preference_key: `rule-${i}`, preference_scope: 'project',
       instruction: `SYNTHETIC_PRIVATE_PREFERENCE_${i}: ${'Complete rule body. '.repeat(12)}` })),
-    task_guidance: { rules: 'fuli://rules/task-entry#task_guidance', version: 'synthetic' },
+    task_guidance: { rules: 'fuli://rules/task-entry/task_guidance', version: 'synthetic' },
     application_guidance: { authority: 'Synthetic current authority' },
     agent_receipt: { required: true, markdown: `Current owner ${token}` },
     active_conflicts: [{ id: `current-${token}` }], context: { personal_project_id: 'project', project_agent_id: 'lead' }

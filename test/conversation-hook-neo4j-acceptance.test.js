@@ -127,7 +127,7 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const application = openFederatedGraphApplication({ runtimeConfigPath });
   try {
     const checkpoint = await callAgentTool(application, 'checkpoint_task_knowledge', {
-      taskContextToken: first.task_context_token, disposition: 'retain_nothing',
+      taskContextToken: first.taskContextToken, disposition: 'retain_nothing',
       reason: 'Synthetic acceptance only.', workLog: { status: 'completed', summary: 'Synthetic Hook flow verified.' },
       agentMemory: { expectedRevision: 0, memory: { summary: 'SYNTHETIC_DURABLE_MEMORY_MARKER' } },
       sourceApplication: 'claude_code', sourceSessionId: session
@@ -159,7 +159,7 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const historyApplication = openFederatedGraphApplication({ runtimeConfigPath });
   try {
     const resumed = await callAgentTool(historyApplication, 'resume_agent_conversation', {
-      taskContextToken: next.task_context_token, conversationId: first.conversation.conversation_id,
+      taskContextToken: next.taskContextToken, conversationId: first.conversation.conversation_id,
       sourceApplication: 'codex', sourceSessionId: codexSession
     });
     assert.equal(resumed.context.latest_checkpoint.summary, 'Synthetic Hook flow verified.');
@@ -214,7 +214,7 @@ test('candidate Hook subprocesses persist visible history and recover only the s
     await appendFile(nativePath, 'x'.repeat(2 * 1024 * 1024) + '\n' + nativeRow('user', 'UNCERTAIN_NATIVE_USER_RECORD'));
     const incoming = 'Implement the synthetic unblocked task.';
     const after = context(await hook(source, 'UserPromptSubmit', { ...nativeInput, prompt: incoming }));
-    assert.notEqual(after.task_context_token, before.task_context_token);
+    assert.notEqual(after.taskContextToken, before.taskContextToken);
     assert.equal(after.context.project_agent_id, 'engineer');
     assert.equal(Array.isArray(after.effective_preferences), true);
     const scoped = extra => query({ source_application: sourceApplication, ...extra });
