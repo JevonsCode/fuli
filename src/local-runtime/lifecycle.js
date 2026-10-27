@@ -20,6 +20,10 @@ import { isProcessAlive, stopProcess } from './processes.js';
 
 const CONSOLE_EXIT_TIMEOUT_MS = 15_000;
 const STOPPING_CONSOLE_GRACE_MS = 3_000;
+// Stopping waits longer for the console's identity than status does: a
+// console busy for a few seconds is still the one to stop, and an answer
+// missed here leaves it running (Update-Fuli: "could not be stopped").
+const STOP_IDENTITY_TIMEOUT_MS = 10_000;
 
 export async function startLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
@@ -183,14 +187,14 @@ async function stopRecordedConsole(state, paths, deps) {
     return 'not_running';
   }
   if (!isLoopbackConsoleUrl(state.url)) return 'unverified';
-  if (!await deps.consoleHealth(state.url, state.pid, state.version)) {
+  if (!await deps.consoleHealth(state.url, state.pid, state.version, STOP_IDENTITY_TIMEOUT_MS)) {
     // A console that is already shutting down stops answering health checks
     // before its process exits; wait for it instead of reporting a failure.
     if (await deps.waitForExit(state.pid, STOPPING_CONSOLE_GRACE_MS)) {
       deps.removeState(paths.graphRuntimeStatePath);
       return 'not_running';
     }
-    if (!await deps.consoleHealth(state.url, state.pid, state.version)) return 'unverified';
+    if (!await deps.consoleHealth(state.url, state.pid, state.version, STOP_IDENTITY_TIMEOUT_MS)) return 'unverified';
   }
 
   deps.stopProcess(state.pid);

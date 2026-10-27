@@ -47,7 +47,7 @@ export function planWindowsUpdate({ source, installRoot, env = process.env, read
 
 export async function updateWindowsInstallation(options, {
   runCli = runInstalledCli, createShortcut = createWindowsShortcut, readShortcut = readWindowsShortcut,
-  acquireLock = acquireWindowsUpdateLock, write = () => {}
+  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping
 } = {}) {
   const plan = planWindowsUpdate({ ...options, readShortcut });
   if ((options.expectedInstallationId && options.expectedInstallationId !== plan.current.installationId)
@@ -72,7 +72,7 @@ export async function updateWindowsInstallation(options, {
       discard();
       throw error;
     }
-    return await stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard });
+    return await stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard, stopping });
   } finally { await lock.release(); }
 }
 
