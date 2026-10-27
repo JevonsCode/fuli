@@ -52,6 +52,10 @@ being integrated, report each worker's terminal result in `workerStatus` and kee
 required worker or participant result has been recorded should the coordinator send the final task
 `completed`, `failed`, or `cancelled` activity. Never let the first completed worker close the task
 before the remaining workers have reported their tools, session evidence, and exact Token usage.
+A worker report that arrives after the coordinator completed, cancelled or paused the task is kept
+as that worker's history and leaves the task status unchanged; record it once and do not retry it
+as a status change. In a team without sub-teams, the Agent dispatching from its own task becomes
+the new task's coordinator: omit `coordinatorAgentId` rather than naming the project lead.
 
 ## Report Actual Worker Execution
 
