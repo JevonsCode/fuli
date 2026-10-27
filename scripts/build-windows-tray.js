@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { validateTrayDataDir } from '../src/desktop/windows-controller.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../src/native-runtime/windows-assets.js';
 import { isMainModule } from '../src/system/main-module.js';
+import { assertShortBuildPath } from './windows-build-path.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sha256 = value => createHash('sha256').update(value).digest('hex');
@@ -30,8 +31,8 @@ export async function buildWindowsTray({ assetBundle, output, dataDir, compiler 
   for (const [name, path] of Object.entries({ assetBundle, output, dataDir })) {
     if (typeof path !== 'string' || !isAbsolute(path)) throw new Error('Expected an absolute --' + name + ' path.');
   }
+  output = assertShortBuildPath('--output', output, 'T:\\fb\\tray');
   const assets = await realpath(assetBundle);
-  output = resolve(output);
   if (existsSync(output)) throw new Error('The tray output directory must not exist.');
   if (contains(PACKAGE_ROOT, output) || contains(output, PACKAGE_ROOT)
       || contains(assets, output) || contains(output, assets)) throw new Error('Output must be separate from the checkout and input assets.');
