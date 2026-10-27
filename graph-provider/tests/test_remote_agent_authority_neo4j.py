@@ -83,6 +83,40 @@ async def test_remote_grant_cannot_restore_a_lead_after_handoff():
 
 
 @pytest.mark.asyncio
+async def test_remote_refusals_name_why_the_receiving_lead_cannot_be_woken():
+    # A share that outlived its lead used to fail as a bare provider_error.
+    def code(response, status):
+        assert response.status_code == status, response.text
+        return response.json()['detail']['code']
+
+    async with provider_client(fixture_settings()) as (client, _):
+        scope, _request = await setup_delegation(client)
+        await seed_agent(client, scope['personal_space_id'], agent='lead', allowed_clients=['codex'])
+        grant = lambda **changes: client.post('/v1/project-agent-context/remote-delegations',
+                                              json=remote_grant(scope, **changes))
+        assert code(await grant(agent_id='member', origin_attempt_id='to-member'), 403) == 'lead_changed'
+        assert code(await grant(target_application='claude_code', origin_attempt_id='wrong-client'),
+                    403) == 'client_not_allowed'
+        issued = await grant(origin_attempt_id='issued')
+        assert issued.status_code == 200, issued.text
+        assert code(await grant(origin_attempt_id='issued'), 409) == 'attempt_already_granted'
+        check = {'personal_space_id': scope['personal_space_id'], 'token': issued.json()['token']}
+        sealed = await client.post('/v1/project-agent-context/delegations/seal', json={**check, 'session_id': 'session-a'})
+        assert sealed.status_code == 200, sealed.text
+        other = await client.post('/v1/project-agent-context/delegations/seal', json={**check, 'session_id': 'session-b'})
+        assert code(other, 409) == 'delegation_unavailable'
+
+        await seed_agent(client, scope['personal_space_id'], project='leaderless-project', agent='lead')
+        leaderless = await grant(personal_project_id='leaderless-project', origin_attempt_id='leaderless')
+        assert code(leaderless, 403) == 'lead_unavailable'
+
+        handoff = await client.put('/v1/project-agent-coordination-policy', json={
+            **scope, 'team_lead_agent_id': 'other', 'team_member_agent_ids': ['member', 'lead']})
+        assert handoff.status_code == 200, handoff.text
+        assert code(await grant(origin_attempt_id='after-handoff'), 403) == 'lead_changed'
+
+
+@pytest.mark.asyncio
 async def test_remote_grant_for_a_project_in_another_space_is_rejected():
     async with provider_client(fixture_settings()) as (client, _):
         scope, _request = await setup_delegation(client)

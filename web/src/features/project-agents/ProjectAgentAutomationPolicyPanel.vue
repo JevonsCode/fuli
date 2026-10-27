@@ -5,6 +5,7 @@ import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
+import { agentResponsibility } from '@/features/agent-profile/profile-model'
 import type { ProjectAgentCoordinationPolicy, ProjectAgentRecord, ProjectSubTeamPolicy } from '@/types'
 
 const props = defineProps<{
@@ -296,7 +297,7 @@ function stringValue(value: unknown) {
       </div>
       <p class="project-team-summary">{{ t('projectAgents.team.summary') }}</p>
       <ul v-if="selectedMembers.length" class="project-team-members">
-        <li v-for="member in selectedMembers" :key="member.agentId"><button type="button" @click="emit('select', member.agentId)"><strong>{{ label(member) }}</strong><span>{{ member.profile.responsibility }}</span></button></li>
+        <li v-for="member in selectedMembers" :key="member.agentId"><button type="button" @click="emit('select', member.agentId)"><strong>{{ label(member) }}</strong><span>{{ agentResponsibility(member) }}</span></button></li>
       </ul>
       <details>
         <summary>{{ t('projectAgents.team.edit') }}</summary>

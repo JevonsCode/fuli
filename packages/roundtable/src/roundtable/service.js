@@ -4,6 +4,7 @@ import { projectAddress, resolveProjectLead, verifiedProjectFolder } from './pro
 import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
 import { createAgentChat } from './chat.js';
 import { createGroupDiscussion } from './group-discussion.js';
+import { createPersonConversation } from './person-conversation.js';
 import { ATTENTION_REPLIES_GUIDANCE, createAttentionInbox } from './attention-inbox.js';
 import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 
@@ -257,38 +258,51 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const nested = history.filter((message) => message.kind === 'ask' && message.status === 'delivering').length;
     if (!wait || nested >= NESTED_ASK_LIMIT) return queued(thread, ask, target, nested ? 'nested_limit' : 'not_waiting');
     if (!taskContextToken || !from.projectId) return queued(thread, ask, target, 'task_context_required');
+    const woken = await wakeAsk({ thread, ask, target, chatWakeChatId, signal, readOnly,
+      timeoutMs: Math.min(Math.max(timeoutSeconds, 30), 900) * 1000,
+      targets: async () => deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
+        crossProject ? { strictCwd: true, freshCwd: await verifiedProjectFolder(host, targetProjectId, projectPath) } : {}),
+      noTargets: () => crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
+        ? 'no_working_directory' : 'no_client',
+      prompt: wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client,
+        targetProjectId: crossProject ? targetProjectId : null }),
+      issueGrant: (delivery, lifetime) => host.issueDelegation({ taskContextToken, client: from.client,
+        agentId: target.agentId, ...(crossProject ? { targetProjectId } : {}), targetClient: delivery.client,
+        // Claude resumes into a fork with a new ID. Only Codex resumes in place.
+        targetSessionId: delivery.client === 'codex' ? delivery.sessionId : null,
+        lifetimeSeconds: lifetime }),
+      replyTo: { agentId: from.agent?.agentId, name: ask.from_name, client: from.client, session: from.session } });
+    if (woken.status !== 'answered') return { ...queued(thread, ask, target, woken.reason), ...cleanupView(woken.cleanup) };
+    const observation = await observeReturnedMemory(host, store, { ask, reply: woken.reply, from, taskContextToken });
+    return { status: 'answered', threadId: thread.id, messageId: ask.id, recipient: { agentId: target.agentId, name: label(target) },
+      ...(observation ? { memoryObservation: observation } : {}),
+      via: woken.via, reply: woken.reply.body };
+  }
+
+  // The one way an ask wakes its recipient, whoever sent it: a durable execution
+  // claim, the recipient's own clients in order, a per-attempt grant, and only a
+  // verified answer becomes its reply. An ask that is not answered stays queued
+  // with the reason, so the recipient still sees it when it next works.
+  async function wakeAsk({ thread, ask, target, targets, noTargets, prompt, timeoutMs, signal, issueGrant, replyTo,
+    chatWakeChatId = null, readOnly = false }) {
     const claim = store.claimExecution(spaceId(), target.agentId, ask.id, { chatWakeChatId });
-    if (!claim.claimed) return queued(thread, ask, target, claim.reason);
+    if (!claim.claimed) return { status: 'queued', reason: claim.reason };
     let attempts;
-    try { attempts = await deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
-      crossProject ? { strictCwd: true, freshCwd: await verifiedProjectFolder(host, targetProjectId, projectPath) } : {}); }
+    try { attempts = await targets(); }
     catch (error) { finishWake(ask); throw error; }
-    if (!attempts.length) { finishWake(ask); return queued(thread, ask, target,
-      crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
-        ? 'no_working_directory' : 'no_client'); }
-    const prompt = wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client,
-      targetProjectId: crossProject ? targetProjectId : null });
-    const timeoutMs = Math.min(Math.max(timeoutSeconds, 30), 900) * 1000;
+    if (!attempts.length) { finishWake(ask); return { status: 'queued', reason: noTargets() }; }
     try {
-      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, readOnly,
-        issueGrant: (delivery, lifetime) => host.issueDelegation({ taskContextToken, client: from.client,
-          agentId: target.agentId, ...(crossProject ? { targetProjectId } : {}), targetClient: delivery.client,
-          // Claude resumes into a fork with a new ID. Only Codex resumes in place.
-          targetSessionId: delivery.client === 'codex' ? delivery.sessionId : null,
-          lifetimeSeconds: lifetime }) });
+      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, readOnly, issueGrant });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
         inReplyTo: ask.id, via, from: { agentId: target.agentId, name: label(target), client: delivery.client,
-          session: answer.sessionId }, to: { agentId: from.agent?.agentId, name: ask.from_name, client: from.client, session: from.session } });
-      const observation = await observeReturnedMemory(host, store, { ask, reply, from, taskContextToken });
-      return { status: 'answered', threadId: thread.id, messageId: ask.id, recipient: { agentId: target.agentId, name: label(target) },
-        ...(observation ? { memoryObservation: observation } : {}),
-        via, reply: reply.body };
+          session: answer.sessionId }, to: replyTo });
+      return { status: 'answered', reply, via };
     } catch (error) {
       finishWake(ask, error);
       store.updateMessage(ask.id, { status: 'queued', error: error.code ?? 'wake_failed' });
-      return { ...queued(thread, ask, target, error.code ?? 'wake_failed'), ...cleanupView(error.cleanup) };
+      return { status: 'queued', reason: error.code ?? 'wake_failed', cleanup: error.cleanup ?? null };
     }
   }
 
@@ -572,13 +586,15 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
   const attentionInbox = createAttentionInbox({ store, spaceId });
-  const canWake = agent => (agent.profile.allowedClients ?? []).some(client => WAKE_CLIENTS.includes(client) && clientAvailable(client));
-  const { memberChat, ...chat } = createAgentChat({ host, peer, store, agents, idFactory, messageAgent, attentionInbox,
-    waitUntilIdle: async (agentId, signal) => {
-      const state = await waitForChatChange(() => store.executionState(spaceId(), agentId),
-        { store: store.chat, signal, ready: state => state.held || !state.busy });
-      return !state.held;
-    }, canWake });
+  // False when an earlier run of this Agent may still be running (a cleanup hold).
+  const waitUntilIdle = async (agentId, signal) => {
+    const state = await waitForChatChange(() => store.executionState(spaceId(), agentId),
+      { store: store.chat, signal, ready: state => state.held || !state.busy });
+    return !state.held;
+  };
+  const wakeClientsFor = agent => (agent.profile.allowedClients ?? []).filter(client => WAKE_CLIENTS.includes(client) && clientAvailable(client));
+  const canWake = agent => wakeClientsFor(agent).length > 0;
+  const { memberChat, ...chat } = createAgentChat({ host, peer, store, agents, idFactory, messageAgent, attentionInbox, waitUntilIdle, canWake });
   // A discussion member that did not answer keeps no ask in its inbox.
   const withdraw = messageId => {
     const ask = store.getMessage(messageId);
@@ -587,6 +603,11 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   const discussions = createGroupDiscussion({ host, store, agents, chat: chat.chat, memberChat, messageAgent, withdraw, canWake,
     // A woken session has no person in it to confirm members or ask a follow-up.
     inDelegatedWake: () => Boolean(env.FULI_ROUNDTABLE_DELEGATION), now });
+  const person = createPersonConversation({ host, store, spaceId, agents, idFactory, label, wakeAsk, deliveryTargets,
+    waitUntilIdle, canWake, wakeClientsFor });
+  // The console's view of a thread: its messages and, for the person's own
+  // conversations, who is subscribed and how each one receives a post.
+  const ownerThread = async ({ threadId }) => ({ ...thread({ threadId }), ...await person.view(threadId) });
   return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote,
     discuss: discussions.discuss,
@@ -602,8 +623,11 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       .filter(message => projectId === undefined || messageProject(message) === projectId).map(inboxItem),
     deliverAttentionReply: attentionInbox.deliver,
     attentionReplies: attentionInbox.taskEntry,
+    ownerThread,
+    ownerSend: async input => ownerThread({ threadId: await person.send(input) }),
+    ownerSetMode: async input => ownerThread({ threadId: await person.setMode(input) }),
     close: () => {
-      const pending = [chat.closeChatWakes(), discussions.close()].filter(Boolean);
+      const pending = [chat.closeChatWakes(), discussions.close(), person.close()].filter(Boolean);
       return pending.length ? Promise.all(pending).then(() => opened?.close()) : opened?.close();
     } };
 }

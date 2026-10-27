@@ -65,8 +65,11 @@ watch(activeTab, tab => {
 })
 // Low-frequency items sit in Accordion sections. A search match or an invalid
 // field opens its section; the person's own choices are kept apart so a
-// cleared search closes only what the search opened.
-const openedSections = ref<string[]>([])
+// cleared search closes only what the search opened. The 客户端 tab is made of
+// collapsible sections only, so its first one starts open: a tab never opens
+// on nothing but closed headings. Open sections are not remembered between visits.
+const DEFAULT_OPEN_SECTIONS = ['launchers']
+const openedSections = ref<string[]>([...DEFAULT_OPEN_SECTIONS])
 const searchSections = ref<string[]>([])
 const openSections = computed({
   get: () => [...new Set([...openedSections.value, ...searchSections.value])],

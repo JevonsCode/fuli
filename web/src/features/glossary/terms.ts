@@ -2,11 +2,18 @@ import { messages, SUPPORTED_LOCALES } from '@/i18n'
 
 // Every term the glossary can explain. Labels reuse the strings the pages
 // already show, so a click on visible text finds its term in either language.
-export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight'
-export interface GlossaryTerm { id: string; group: GlossaryGroup; labelKey: string; bodyKey: string }
+// A tagged term is found only through its element's data-term: its label is a
+// common word (全部, 我的, 知识) that also appears where it means something else.
+export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'destination' | 'section' | 'memory' | 'occupation' | 'tonborg'
+export interface GlossaryTerm { id: string; group: GlossaryGroup; labelKey: string; bodyKey: string; tagged?: true }
 
 const term = (group: GlossaryGroup, key: string, labelKey: string, bodyKey: string): GlossaryTerm =>
   ({ id: `${group}.${key}`, group, labelKey, bodyKey })
+const taggedTerm = (group: GlossaryGroup, key: string, labelKey: string, bodyKey: string): GlossaryTerm =>
+  ({ ...term(group, key, labelKey, bodyKey), tagged: true })
+
+// Every sidebar destination and every top-bar section tab, so each page can say what it is for.
+const { destinations, sections } = messages['zh-CN'].shell
 
 export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
   ...['known_known', 'known_unknown', 'unknown_known', 'unknown_unknown'].map(key =>
@@ -21,6 +28,23 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     term('presence', key, `glossary.presence.${key}.label`, `glossary.presence.${key}.body`)),
   ...['pending', 'agent', 'person'].map(key =>
     term('weight', key, `glossary.weight.${key}.label`, `glossary.weight.${key}.body`)),
+  ...Object.keys(destinations).map(key =>
+    taggedTerm('destination', key, `shell.destinations.${key}`, `glossary.destination.${key}`)),
+  ...Object.keys(sections).map(key =>
+    taggedTerm('section', key, `shell.sections.${key}`, `glossary.section.${key}`)),
+  ...['preferenceCount'].map(key =>
+    taggedTerm('memory', key, `glossary.memory.${key}.label`, `glossary.memory.${key}.body`)),
+  taggedTerm('memory', 'current', 'common.status.current', 'glossary.memory.current'),
+  taggedTerm('memory', 'history', 'knowledge.workspace.workspace.view.history', 'glossary.memory.history'),
+  taggedTerm('memory', 'all', 'common.status.all', 'glossary.memory.all'),
+  // Ids other pages tag with data-term (occupations, the Tonborg policy).
+  taggedTerm('occupation', 'catalog', 'shell.sections.occupations', 'glossary.occupation.catalog'),
+  taggedTerm('occupation', 'archived', 'occupations.archived', 'glossary.occupation.archived'),
+  taggedTerm('occupation', 'active', 'occupations.stats.active', 'glossary.occupation.active'),
+  taggedTerm('occupation', 'agentCount', 'glossary.occupation.agentCountLabel', 'glossary.occupation.agentCount'),
+  ...['manual', 'shared', 'autonomous'].map(key =>
+    taggedTerm('tonborg', key, `judgment.mode.${key}`, `glossary.tonborg.${key}`)),
+  taggedTerm('tonborg', 'escalate', 'judgment.workbench.outcome.escalate', 'glossary.tonborg.escalate'),
 ]
 
 const byId = new Map(GLOSSARY_TERMS.map(entry => [entry.id, entry]))
@@ -36,13 +60,12 @@ const normalize = (text: string) => text.replace(/\s+/g, ' ').trim().toLocaleLow
 // unique; where a label repeats across groups the first registered group wins.
 const byLabel = new Map<string, GlossaryTerm>()
 for (const entry of GLOSSARY_TERMS) {
+  if (entry.tagged) continue
   for (const locale of SUPPORTED_LOCALES) {
     const label = messageAt(locale, entry.labelKey)
     if (typeof label === 'string' && !byLabel.has(normalize(label))) byLabel.set(normalize(label), entry)
   }
 }
-
-export function glossaryTerm(id: string): GlossaryTerm | undefined { return byId.get(id) }
 
 const MAX_LABEL = 24
 const MAX_DEPTH = 4

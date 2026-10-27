@@ -18,7 +18,8 @@ export default defineConfig({
     // Shared Windows CI runners can be several times slower than a workstation;
     // multi-step page specs need more than the 5-second default there.
     testTimeout: 15_000,
-    // Token and theme files are read as text by specs that check contrast and layering.
-    css: { include: [/tokens\.css/, /styles[\\/]theme[\\/]/] },
+    // Token, theme and shared chrome stylesheets are read as text by specs that
+    // check contrast, layering and divider lines.
+    css: { include: [/tokens\.css/, /styles[\\/]theme[\\/]/, /web[\\/]styles\.css/, /primitives\.css/] },
   },
 })

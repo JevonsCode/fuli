@@ -9,7 +9,7 @@ export interface UiStat {
   tone?: 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
   pressed?: boolean
   ariaLabel?: string
-  /** A glossary term id (data-term) for this count. */
+  /** A glossary term id, so 「?」 mode can explain the count. */
   term?: string
 }
 defineProps<{ items: readonly UiStat[]; label: string }>()
