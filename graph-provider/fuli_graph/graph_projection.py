@@ -61,7 +61,7 @@ def management_projection(
             fact=_relation_fact(relation),
             attributes=_relation_attributes(relation),
             valid_at=None,
-            invalid_at=None,
+            invalid_at=_relation_invalid_at(relation),
         ))
     return nodes, edges
 
@@ -122,7 +122,7 @@ def personal_project_projection(
             fact=_relation_fact(relation),
             attributes=_relation_attributes(relation),
             valid_at=None,
-            invalid_at=None,
+            invalid_at=_relation_invalid_at(relation),
         ))
 
     fields = (
@@ -195,6 +195,14 @@ def _relation_attributes(relation: dict) -> dict:
         'reviewedBy': relation.get('reviewed_by'),
         'reviewedAt': native_datetime(relation.get('reviewed_at')),
     }
+
+
+def _relation_invalid_at(relation: dict):
+    """A rejected relation (a parent the person moved the project away from, a
+    declined suggestion) is history: it is drawn only when history is shown."""
+    if relation.get('status') != 'rejected':
+        return None
+    return native_datetime(relation.get('reviewed_at') or relation.get('updated_at'))
 
 
 def coalesce_personal_project_identity(

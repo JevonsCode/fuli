@@ -9,6 +9,8 @@ const getJson = vi.hoisted(() => vi.fn())
 const graphCalls = vi.hoisted(() => ({
   clearSelection: vi.fn(),
   selectItem: vi.fn(() => true),
+  markDropTarget: vi.fn(),
+  restoreNode: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({ getJson, patchJson: vi.fn() }))
@@ -17,11 +19,14 @@ vi.mock('./GraphCanvas.vue', async () => {
   return {
     default: defineComponent({
       name: 'GraphCanvasStub',
-      props: ['graph', 'selectedItem'],
+      props: ['graph', 'selectedItem', 'organizeProjects'],
+      emits: ['projectDrag'],
       setup(_props, { expose }) {
         expose({
           clearSelection: graphCalls.clearSelection,
           selectItem: graphCalls.selectItem,
+          markDropTarget: graphCalls.markDropTarget,
+          restoreNode: graphCalls.restoreNode,
           focusByNames: () => 0,
         })
         return () => h('div', { class: 'graph-canvas-stub' })
@@ -459,6 +464,51 @@ describe('KnowledgeWorkspace', () => {
     expect(wrapper.get('.graph-relation-legend').text()).toContain('目标')
     expect(wrapper.text()).not.toContain('PART_OF')
     expect(wrapper.text()).not.toContain('HAS_PURPOSE')
+    wrapper.unmount()
+  })
+
+  it('offers 调整层级 on the all-projects graph and hands project drags to the organizer', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = {
+      mode: 'personal_only', activePersonalSpaceId: 'space-1', personalSpaces: [{ id: 'space-1', name: '我' }],
+      personalProjects: [{ personal_space_id: 'space-1', project_id: 'project-1', profile: { name: '项目一' } }],
+      projects: [], subscriptions: [],
+    }
+    const page = { template: '<div />' }
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/personal/:spaceId/projects/:mode', component: page },
+      { path: '/personal/:spaceId/projects/:projectId/:mode', component: page },
+    ] })
+    await router.push('/personal/space-1/projects/graph')
+    await router.isReady()
+    const wrapper = mount(KnowledgeWorkspace, { props: { personalProjectsOnly: true },
+      global: { plugins: [pinia, router] } })
+    await finishInitialLoading()
+
+    const toggle = wrapper.get('[role="switch"][aria-label="调整层级"]')
+    const canvas = () => wrapper.findComponent({ name: 'GraphCanvasStub' })
+    expect(canvas().props('organizeProjects')).toBe(false)
+    await toggle.trigger('click')
+    expect(canvas().props('organizeProjects')).toBe(true)
+    expect(wrapper.get('.graph-canvas-panel').classes()).toContain('is-organizing')
+
+    // A drag shows the drop panel beside the canvas; it goes away on drop.
+    const drag = (phase: string) => canvas().vm.$emit('projectDrag', {
+      phase, node: graph.nodes[0], over: null, clientX: 0, clientY: 0 })
+    drag('start')
+    await flushPromises()
+    expect(wrapper.find('.project-drop-panel').text()).toContain('把“项目一”放到')
+    drag('end')
+    await flushPromises()
+    expect(wrapper.find('.project-drop-panel').exists()).toBe(false)
+    expect(graphCalls.restoreNode).toHaveBeenCalledWith(graph.nodes[0].id)
+
+    // Inside one project the canvas holds no other project to move under.
+    await router.push('/personal/space-1/projects/project-1/graph')
+    await flushPromises()
+    expect(wrapper.find('[role="switch"][aria-label="调整层级"]').exists()).toBe(false)
+    expect(canvas().props('organizeProjects')).toBe(false)
     wrapper.unmount()
   })
 
