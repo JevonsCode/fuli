@@ -119,7 +119,8 @@ test('fl restart applies persisted ports and LAN settings when CLI overrides are
     lanAccess: true,
     resourceRefreshSeconds: 10,
     conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS,
-    notifications: { needsPersonUrl: '' }
+    notifications: { needsPersonUrl: '' },
+    agentNamingStyle: ''
   };
   await runLocalRuntimeCommand('restart', [], {
     resolvePaths: () => ({
