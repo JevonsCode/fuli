@@ -5,6 +5,7 @@ import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflo
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { parseFlaMention } from '../src/graphiti/fla-mention.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
+import { CONSOLE_LOCALES, consolePhrasings } from '../test-support/console-mention-phrasings.js';
 
 // rec#54: continue one of the person's FLAs by name in the current session,
 // from any folder, with a native choice instead of copied names or IDs.
@@ -168,6 +169,19 @@ test('#FLA, case-insensitive names, Chinese names and the longest name match the
     const other = await fixture({ roster }).run(prompt);
     assert.equal(other.context.project_resolution.basis, 'repository_root', prompt);
     assert.equal(other.fla, undefined, prompt);
+  }
+});
+
+test('the console\'s copied #FLA and its "continue here" phrasing continue that FLA, in both locales', async () => {
+  const roster = [ADA, JAMIE, fla('lin', '小林', '运营', 'project-b')];
+  for (const locale of CONSOLE_LOCALES) {
+    for (const [name, expected] of [['Jamie Ash', ['project-b', 'jamie']], ['小林', ['project-b', 'lin']]]) {
+      const copied = consolePhrasings(locale, name, null);
+      // Pasted alone, typed on directly after, or pasted mid-sentence.
+      for (const prompt of [copied.continue, `${copied.mention}看下进度`, `帮我 ${copied.mention}看下进度`]) {
+        assert.deepEqual(owner(await fixture({ roster }).run(prompt)), expected, `${locale}: ${prompt}`);
+      }
+    }
   }
 });
 

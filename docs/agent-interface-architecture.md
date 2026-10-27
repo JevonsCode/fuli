@@ -31,6 +31,15 @@ receive a deterministic nickname derived from their Agent ID; existing custom na
 and explicit display names are preserved. These are product nicknames, not real people.
 Reading a legacy profile does not rewrite its stored history.
 
+Every new Agent (Bole's recruitment or a direct write) gets a nickname no other Agent in the
+personal space uses: one that reads as a job title ("PPT 专责", "design Agent"), or none at all,
+is replaced by a generated name such as "Lyra North"; a person-like name another Agent already
+has gets a number ("Lyra North 2"). The job stays in `profile.name`, the occupation and the
+responsibility. An update that omits `displayName` keeps the stored one; changing it to a name
+another Agent uses is refused with `agent_name_taken`. Existing Agents are never renamed
+automatically: when an Agent's shown name reads as a job title, reading it returns
+`nameSuggestion`, a free nickname the profile page offers as a one-click rename.
+
 Use `request_agent_attention` only for an explicit human action, with the exact space,
 project and Agent, optional task ID, request kind, context and `requestedAction`.
 The same idempotency key and payload returns the same request, including after closure;

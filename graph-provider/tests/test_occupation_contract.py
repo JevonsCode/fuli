@@ -133,9 +133,9 @@ async def test_global_assistant_is_readable_without_project():
     store._require_personal = lambda: None
     store.authorize = AsyncMock(return_value={'id': 'space'})
     store._project_agent_rows = AsyncMock(return_value=[{'agent_id': 'employee.assistant'}])
-    store._project_agent_from_row = lambda row, space, project: {**row, 'personal_project_id': project}
+    store._project_agent_from_row = lambda row, space, project: SimpleNamespace(**row, personal_project_id=project)
     result = await store.get_project_agent({}, 'space', None, 'employee.assistant')
-    assert result == {'agent_id': 'employee.assistant', 'personal_project_id': None}
+    assert vars(result) == {'agent_id': 'employee.assistant', 'personal_project_id': None}
 
 
 @pytest.mark.parametrize('kind', ['engineering', 'testing', 'management', 'lead'])

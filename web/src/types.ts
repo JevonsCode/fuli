@@ -572,6 +572,8 @@ export interface ProjectAgentRecord {
   /** Fixed roles keep the occupation their manifest gives them. */
   occupationLocked?: boolean
   employeeNumber?: string | null
+  /** A free person-like name the Provider offers when the shown name reads as a job title. */
+  nameSuggestion?: string | null
   legacyAgentIds?: string[]
   personalSpaceId: string
   personalProjectId?: string | null

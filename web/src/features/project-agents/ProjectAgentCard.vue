@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { agentDisplayName, agentResponsibility } from '@/features/agent-profile/profile-model'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import AgentMentionCopy from '@/features/agent-profile/AgentMentionCopy.vue'
+import { isMentionableFla } from '@/features/agent-profile/fla-mention'
 import { t } from '@/i18n'
 import type { ProjectAgentRecord } from '@/types'
 import AgentHand from './AgentHand.vue'
@@ -24,6 +26,8 @@ const props = defineProps<{
   /** The projects this Agent is responsible for (policy membership for employees). */
   projects: Array<{ id: string; name: string }>
   selected?: boolean
+  /** Another FLA to name in the "call them in together" phrasing. */
+  mentionPartner?: string | null
 }>()
 const emit = defineEmits<{ peek: [] }>()
 
@@ -93,17 +97,20 @@ function surfaceClick(event: MouseEvent) {
         <Badge v-if="chips.length > MAX_PROJECT_CHIPS" variant="secondary">+{{ chips.length - MAX_PROJECT_CHIPS }}</Badge>
         <span v-if="!chips.length" class="agent-card-no-project">{{ t('employees.noAssignedProjects') }}</span>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        class="shrink-0"
-        data-agent-peek
-        :aria-label="t('agentProfiles.quickLookAgent', { name })"
-        aria-haspopup="dialog"
-        @click.stop="emit('peek')"
-      >
-        {{ t('agentProfiles.quickLook') }}
-      </Button>
+      <div class="flex shrink-0 items-center gap-1.5">
+        <AgentMentionCopy v-if="isMentionableFla(agent)" :name="name" :partner="mentionPartner" />
+        <Button
+          variant="ghost"
+          size="sm"
+          class="shrink-0"
+          data-agent-peek
+          :aria-label="t('agentProfiles.quickLookAgent', { name })"
+          aria-haspopup="dialog"
+          @click.stop="emit('peek')"
+        >
+          {{ t('agentProfiles.quickLook') }}
+        </Button>
+      </div>
     </div>
   </article>
 </template>

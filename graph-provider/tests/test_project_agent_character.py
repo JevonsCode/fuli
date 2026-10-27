@@ -62,13 +62,14 @@ async def test_profile_update_serializes_and_reads_traits_without_dropping_setti
     updated = ProjectAgentProfile(**payload)
     raw = raw_agent(updated)
     driver = SequentialDriver([
+        [{'agent_id': 'activity-agent', 'profile_json': original.model_dump_json()}],
         [{'agent': raw}],
         [{'agent': raw, 'assignment_rows': [], 'task_rows': [], 'observed_clients': []}],
     ])
     result = await StoreStub(driver).upsert_project_agent(
         {'id': 'principal-1'}, ProjectAgentUpsert(
             personal_space_id='personal-space', agent_id='activity-agent', profile=updated))
-    persisted = json.loads(driver.calls[0][1]['profile_json'])
+    persisted = json.loads(driver.calls[1][1]['profile_json'])
     assert persisted == updated.model_dump(mode='json')
     assert result.profile == updated
     assert result.profile.executor_policy == original.executor_policy

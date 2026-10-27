@@ -12,6 +12,7 @@ import AgentPeek from '@/features/agent-profile/AgentPeek.vue'
 import { employeeTemplateIdForAgent, employeeTemplates } from '@/features/employees/catalog'
 import ProjectScopePicker from '@/features/employees/ProjectScopePicker.vue'
 import { currentAssignmentsFor, currentWorkEntry } from '@/features/project-agents/agent-roster-records'
+import { mentionPartner } from '@/features/agent-profile/profile-model'
 import { linkedTaskOwner } from '@/features/project-agents/linked-task-owner'
 import {
   agentManagementPath,
@@ -309,6 +310,7 @@ function recordSaved(record: ProjectAgentRecord) {
             :space-id="spaceId"
             :projects="responsibleProjectsFor(agent)"
             :selected="peekId === agent.agentId"
+            :mention-partner="mentionPartner(agent, agents)"
             @peek="openPeek(agent.agentId)"
           />
         </li>
@@ -326,6 +328,7 @@ function recordSaved(record: ProjectAgentRecord) {
           :entry="peekAgent ? currentWorkEntry(peekAgent) : undefined"
           :project-names="{}"
           :project-labels="peekAgent ? responsibleProjectsFor(peekAgent).map((project) => project.name) : []"
+          :mention-partner="peekAgent ? mentionPartner(peekAgent, agents) : null"
           @open-full="openFullPage"
           @retry="retryPage"
         >

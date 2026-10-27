@@ -445,12 +445,12 @@ describe('Agent profile integration', () => {
 
   it('keeps settings expanded and shows saved values after saving the profile', async () => {
     const { wrapper } = await setup()
-    await wrapper.get('.agent-profile-actions button').trigger('click'); await flushPromises()
+    await wrapper.get('.agent-profile-actions button[aria-expanded]').trigger('click'); await flushPromises()
     await wrapper.get('.agent-simple-settings textarea').setValue('Explain verification evidence.')
     await wrapper.get('.agent-simple-settings').trigger('submit'); await flushPromises()
     expect(putJson).toHaveBeenCalledTimes(1)
     expect(wrapper.find('.agent-simple-settings').exists()).toBe(true)
-    expect(wrapper.get('.agent-profile-actions button').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.agent-profile-actions button[aria-expanded]').attributes('aria-expanded')).toBe('true')
     expect(wrapper.get('.agent-expectation').text()).toContain('Explain verification evidence.')
   })
 })
