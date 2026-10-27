@@ -133,7 +133,7 @@ export async function buildWindowsPortable({ output, assetRoot, buildPython, cac
           : ['runtime/jre21/legal', 'runtime/jre21/release'] })) };
     await writeFile(join(output, 'portable-inventory.json'), JSON.stringify(inventory, null, 2) + '\n');
     await writeFile(join(output, 'PORTABLE.md'), portableInstructions(inventory.applicationVersion));
-    await writeFile(join(output, 'THIRD_PARTY_NOTICES.md'), thirdPartyNotices());
+    await writeFile(join(output, 'THIRD_PARTY_NOTICES.md'), thirdPartyNotices(resolvedBundle.neo4jVersion));
     assert.deepEqual(await Promise.all(['neo4j', 'jre21'].map(name => hashTree(join(assetRoot, name)))), assetBefore,
       'Supplied assets must remain unchanged');
     const files = await hashTree(output);
@@ -233,12 +233,13 @@ function portableInstructions(version) {
     'portable-inventory.json 记录固定下载来源、SHA256、Provider 依赖版本和资产许可证；portable-files.sha256.json 是构建时文件树，不含运行后的 data/。\n';
 }
 
-function thirdPartyNotices() {
+// neo4jVersion: the version the supplied runtime/neo4j actually contains.
+function thirdPartyNotices(neo4jVersion) {
   return '# Included third-party components\n\n' +
     '- Fuli: LICENSE and package.json.\n' +
     '- Node.js 24.18.0: runtime/node/LICENSE, official Node.js binary archive.\n' +
     '- CPython 3.12.10 embeddable: runtime/python/LICENSE.txt; official Python.org archive.\n' +
-    '- Neo4j Community 5.26.0: runtime/neo4j/LICENSE.txt, LICENSES.txt, NOTICE.txt and licenses/.\n' +
+    `- Neo4j Community ${neo4jVersion}: runtime/neo4j/LICENSE.txt, LICENSES.txt, NOTICE.txt and licenses/.\n` +
     '- Provided Eclipse Temurin Java 21 jlink image: runtime/jre21/release and legal/ (included image provenance, not a newly downloaded JDK).\n' +
     '- Python/Graphiti dependencies: runtime/python/Lib/site-packages/*.dist-info metadata/licenses; exact versions, origins and archive hashes in portable-inventory.json.\n' +
     '- Node dependencies: node_modules/*/package.json and their included LICENSE/NOTICE files; npm-shrinkwrap.json pins the dependency graph.\n';

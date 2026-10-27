@@ -263,6 +263,7 @@ test('native setup accepts a lower Provider only when the downgrade is explicit'
   assert.ok(mutations.includes('manifest'));
 });
 
+// A bare older patch is not a ready selection; a newer major is never reused.
 for (const neo4jVersion of ['5.26.0', '2026.09.0']) {
   test(`native setup refuses Neo4j ${neo4jVersion} data reuse before mutation`, async () => {
     const paths = resolveSetupPaths({ dataDir: '/synthetic', packageRoot: '/package' });
@@ -277,6 +278,29 @@ for (const neo4jVersion of ['5.26.0', '2026.09.0']) {
     assert.deepEqual(mutations, []);
   });
 }
+
+test('setup keeps an older installed Neo4j patch selected and never upgrades it implicitly', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'fuli-older-patch-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const paths = resolveSetupPaths({ dataDir: root, packageRoot: '/package' });
+  const older = NATIVE_NEO4J_VERSION.replace(/\d+$/, patch => String(Number(patch) - 1));
+  const home = join(paths.nativeRuntimeDir, `neo4j-community-${older}`);
+  const installs = [];
+  const deps = { platform: 'darwin', resolveJavaHome: async () => '/jdk-21', resolveUvCommand: async () => 'uv',
+    providerSourceFingerprint: async () => 'a'.repeat(64), installNeo4j: async () => installs.push('database'),
+    installProvider: async ({ venvPath }) => { await mkdir(join(venvPath, 'bin'), { recursive: true }); await writeFile(join(venvPath, 'bin', 'python'), ''); },
+    writeManifest: async (path, value) => { await mkdir(dirname(path), { recursive: true }); await writeFile(path, JSON.stringify(value)); } };
+  await mkdir(join(home, 'bin'), { recursive: true });
+  for (const name of ['neo4j', 'neo4j-admin']) await writeFile(join(home, 'bin', name), '');
+  await mkdir(paths.nativeRuntimeDir, { recursive: true });
+  await writeFile(paths.nativeRuntimeManifestPath, JSON.stringify({ version: 1, status: 'ready', mode: 'native', neo4jVersion: older, neo4jHome: home }));
+  const selected = await ensureNativeRuntime({ paths, env: {} }, deps);
+  assert.deepEqual([selected.neo4jVersion, selected.neo4jHome], [older, home]);
+  assert.deepEqual(installs, []);
+  await rm(home, { recursive: true });
+  await assert.rejects(ensureNativeRuntime({ paths, env: {} }, deps), /fuli graph runtime update/);
+  assert.deepEqual(installs, [], 'missing older assets are never replaced with the pinned version');
+});
 
 test('setup preserves a lifecycle-selected immutable Neo4j home and rollback metadata', async () => {
   const { readFile, rm } = await import('node:fs/promises');

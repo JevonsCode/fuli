@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { chmodSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,6 +9,7 @@ import { restartLocalRuntime, startLocalRuntime } from '../local-runtime/lifecyc
 import { stopGraphProviders } from '../setup/graph-runtime.js';
 import { writeRuntimeSettings } from './runtime-settings.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
+import { portRefusal, reservedPortProblem } from './reserved-ports.js';
 
 const operationPath = (paths) => join(paths.dataDir, 'settings-apply.json');
 function saveOperation(paths, value) {
@@ -103,10 +103,10 @@ export async function runSettingsApply(paths, id, {
 async function checkChangedPorts(configured, previous) {
   for (const [key, port] of Object.entries(configured.ports)) {
     if (port === previous.ports[key]) continue;
-    const server = createServer();
-    await new Promise((resolve, reject) => {
-      server.once('error', () => reject(new TypeError(`Port ${port} is unavailable or already in use.`)));
-      server.listen(port, configured.lanAccess ? '0.0.0.0' : '127.0.0.1', () => server.close(resolve));
-    });
+    const host = configured.lanAccess ? '0.0.0.0' : '127.0.0.1';
+    const refusal = await portRefusal(port, host);
+    if (refusal === null) continue;
+    throw new TypeError(await reservedPortProblem(port, { host, probe: async () => refusal })
+      ?? `Port ${port} is unavailable or already in use.`);
   }
 }

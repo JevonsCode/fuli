@@ -37,10 +37,20 @@ The manifest switches atomically. Real PID/process-group ownership is checked fo
 both Neo4j ports; an authenticated component query must report the pinned version.
 Offline `neo4j-admin database info` records the format of every managed store.
 
+When the installed Neo4j is an older patch of the pinned version (same major.minor),
+setup and start keep using it; only `update` upgrades it. After the old services
+stop and before the newer Neo4j opens the store, update backs up the graph with the
+`fuli graph export` mechanism into `backups/graph/before-neo4j-<version>-<time>`,
+using the installed Neo4j. A failed backup switches nothing. A newer or other-minor
+installed version is refused.
+
 User rollback selects only the retained same-version assets with their recorded
 file fingerprint and identical store-format metadata. It preserves database writes
 made after the update. It never loads a database backup, migrates or downgrades a
-store. Changed/unknown versions or formats block rollback.
+store. Changed/unknown versions or formats block rollback. Rollback after a patch
+upgrade is refused: the newer Neo4j may have raised the store's kernel version, and
+the older one might not open it. The message names the pre-upgrade backup, which
+stays in place; restoring it discards graph changes made since the upgrade.
 
 If a candidate fails, Fuli confirms its process group and listeners have stopped,
 checks that the stores still have their original formats, restores the previous

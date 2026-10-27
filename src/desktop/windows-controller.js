@@ -4,11 +4,15 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readWindowsNativeBundle } from '../native-runtime/windows-assets.js';
+import { resolveSetupPaths } from '../setup/paths.js';
+import { switchConsolePort } from '../system/console-port-switch.js';
 import { isMainModule } from '../system/main-module.js';
+import { reservedPortProblem } from '../system/reserved-ports.js';
+import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { readWindowsInstallation, windowsMigrationCommand } from './windows-installation-context.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop']);
+const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port']);
 const STATES = new Set(['running', 'stopped', 'degraded', 'not_configured']);
 
 function contains(root, path) {
@@ -81,7 +85,16 @@ function assertNativeSelection(context) {
   }
 }
 
-export async function runTrayAction(action, context, { runCli = executeCli } = {}) {
+// Whether the selected data's console port is one Windows will not hand out.
+async function consolePortBlocked(context) {
+  const settings = readRuntimeSettings(join(context.dataDir, 'runtime-settings.json'));
+  return await reservedPortProblem(settings.ports.console, {
+    host: settings.lanAccess ? '0.0.0.0' : '127.0.0.1' }) !== null;
+}
+
+export async function runTrayAction(action, context, {
+  runCli = executeCli, portBlocked = consolePortBlocked, switchPort = switchConsolePort
+} = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir]);
   const inspect = async () => {
@@ -97,9 +110,26 @@ export async function runTrayAction(action, context, { runCli = executeCli } = {
     const result = await invoke(args);
     if (result.code !== 0) throw cliError(result);
   };
+  let starting = false;
+  let notice = null;
   try {
-    if (['start', 'start-open', 'stop'].includes(action)) assertNativeSelection(context);
+    if (['start', 'start-open', 'stop', 'change-port'].includes(action)) assertNativeSelection(context);
+    if (action === 'change-port') {
+      if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
+        throw new Error('Fuli 尚未设置，请先「启动并打开」。 / Fuli is not set up yet; use Start and open first.');
+      }
+      const before = await inspect();
+      const switched = await switchPort(resolveSetupPaths({ dataDir: context.dataDir }));
+      // Client MCP and hook configurations name the data directory, never a port;
+      // a running MCP process keeps the console address it read when it started.
+      notice = `已改用端口 ${switched.port}（原 ${switched.previousPort}）。已打开的 Agent 会话里的 Fuli 链接仍指向旧地址，重开会话即可更新。`
+        + ` / Fuli now uses port ${switched.port} (was ${switched.previousPort}). Fuli links in open Agent sessions point to the old address until those sessions restart.`;
+      await command([before.status === 'running' ? 'restart' : 'start']);
+      const ready = await inspect();
+      if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
+    }
     if (action === 'start' || action === 'start-open') {
+      starting = true;
       if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
         await command(['setup', '--yes', '--skip-agents', '--personal-only', '--runtime-mode', 'native']);
       } else {
@@ -109,20 +139,23 @@ export async function runTrayAction(action, context, { runCli = executeCli } = {
       const ready = await inspect();
       if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
     }
-    if (action === 'open' || action === 'start-open') await command(['open']);
+    if (['open', 'start-open', 'change-port'].includes(action)) await command(['open']);
     if (action === 'stop') await command(['stop']);
     const state = await inspect();
     if (action === 'stop' && !['stopped', 'not_configured'].includes(state.status)) {
       throw new Error('Fuli did not confirm that the selected runtime stopped.');
     }
-    return { ok: true, action, status: state.status, label: trayStateLabel(state), state };
+    return { ok: true, action, status: state.status, label: trayStateLabel(state), state, ...(notice ? { notice } : {}) };
   } catch (error) {
     // A failed start can already own processes. Keep their CLI state and report
     // what is actually running; never kill by process name or delete the data.
     const state = await inspect().catch(() => null);
+    // A start that failed on a port Windows reserves offers the port change.
+    const blocked = starting && await portBlocked(context).catch(() => false);
     return { ok: false, action, status: state?.status ?? 'unknown',
       label: state ? trayStateLabel(state) : '状态未知 / Unknown',
-      state, error: error.message };
+      state, error: notice ? `${error.message}\n\n${notice}` : error.message,
+      ...(blocked ? { portBlocked: true } : {}) };
   }
 }
 

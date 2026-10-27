@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { writeTextFileAtomic } from '../storage/json-file.js';
 import { canonicalWindowsInstallPath, installationSha256, windowsInstallPathsOverlap } from './windows-installation-context.js';
 import { stopInstalledFuli } from './windows-running-fuli.js';
-import { prepareWindowsUpdateRuntime, restoreWindowsUpdateRuntime } from './windows-update-runtime.js';
+import { backupWindowsGraph, prepareWindowsUpdateRuntime, restoreWindowsUpdateRuntime } from './windows-update-runtime.js';
 
 // Switching the installed version: shared by update and user-initiated rollback.
 // The record and shortcuts change only after the running version has stopped,
@@ -46,7 +46,8 @@ export function stageWindowsShortcuts(shortcuts, packageRoot, createShortcut, re
 }
 
 // stopping: how processes that outlive the installed CLI's stop are handled (windows-running-fuli.js).
-export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard = () => {}, stopping = {} }) {
+// backupGraph: the graph backup before a Neo4j patch upgrade (windows-update-runtime.js).
+export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard = () => {}, stopping = {}, backupGraph = backupWindowsGraph }) {
   try {
     lock.assertHeld();
     assertInstallationUnchanged(plan.recordPath, plan.record);
@@ -58,10 +59,10 @@ export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot
     discard();
     throw error;
   }
-  return switchInstallation(plan, staged, packageRoot, runCli, lock, write);
+  return switchInstallation(plan, staged, packageRoot, runCli, lock, write, backupGraph);
 }
 
-async function switchInstallation(plan, staged, packageRoot, runCli, lock, write) {
+async function switchInstallation(plan, staged, packageRoot, runCli, lock, write, backupGraph) {
   const execute = runCli;
   runCli = async (...args) => {
     lock.assertHeld();
@@ -70,6 +71,9 @@ async function switchInstallation(plan, staged, packageRoot, runCli, lock, write
     return result;
   };
   const { current } = plan;
+  const upgrade = staged.runtime.neo4jUpgrade;
+  // After the newer Neo4j opened the store, the older one might not open it again.
+  const kept = () => upgrade ? ` The graph backup taken before Neo4j ${upgrade.to} is kept at ${upgrade.backupDir}.` : '';
   const args = command => [command, '--data-dir', current.dataDir];
   // A confirmed downgrade lets the new version replace the recorded Provider.
   const startArgs = () => plan.downgrade ? [...args('start'), '--allow-provider-downgrade'] : args('start');
@@ -79,6 +83,12 @@ async function switchInstallation(plan, staged, packageRoot, runCli, lock, write
     lock.assertHeld();
     assertInstallationUnchanged(plan.recordPath, plan.record);
     for (const shortcut of plan.shortcuts) assertInstallationUnchanged(shortcut.path, shortcut.bytes);
+    if (upgrade) {
+      write(`Backing up the graph before upgrading Neo4j ${upgrade.from} → ${upgrade.to}...`);
+      try { await backupGraph(staged.runtime, current); }
+      catch (error) { throw new Error('The graph backup before the Neo4j upgrade failed; nothing was switched.', { cause: error }); }
+      lock.assertHeld();
+    }
     prepareWindowsUpdateRuntime(staged.runtime);
     writeTextFileAtomic(plan.recordPath, staged.record);
     switched = true;
@@ -111,8 +121,8 @@ async function switchInstallation(plan, staged, packageRoot, runCli, lock, write
       await requireInstalledCli(runCli, current.packageRoot, args('start'), 'The previous Fuli did not start again.');
       await requireInstalledCli(runCli, current.packageRoot, args('status'), 'The previous Fuli did not report a running state.');
     } catch (caught) { failures.push(caught); }
-    if (failures.length) throw new AggregateError([error, ...failures], 'Rollback needs attention: ' + failures.map(e => e.message).join('; '));
-    throw new Error(`${error.message} Fuli ${current.applicationVersion} was restored; the other copy is kept at ${packageRoot}.`, { cause: error });
+    if (failures.length) throw new AggregateError([error, ...failures], 'Rollback needs attention: ' + failures.map(e => e.message).join('; ') + (started ? kept() : ''));
+    throw new Error(`${error.message} Fuli ${current.applicationVersion} was restored; the other copy is kept at ${packageRoot}.${started ? kept() : ''}`, { cause: error });
   }
   write('Reconnecting already connected Agent clients...');
   let clients = 'not_reconnected';

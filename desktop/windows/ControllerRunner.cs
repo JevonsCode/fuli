@@ -200,6 +200,10 @@ public sealed class ControllerReply
     public bool ok { get; set; }
     public string error { get; set; }
     public string label { get; set; }
+    // A failed start on a port Windows reserves; the tray offers "change-port".
+    public bool portBlocked { get; set; }
+    // What a completed action changed that the person should know, e.g. the new port.
+    public string notice { get; set; }
     public string dataDir { get; set; }
     public string logDir { get; set; }
     public string nativeLogDir { get; set; }

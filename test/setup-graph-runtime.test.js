@@ -689,8 +689,9 @@ test('setup replaces a console left running by an older install', async () => {
 
 // The console's wait runs on a fake clock: `wait` advances it instead of
 // sleeping, and each health probe takes `probeMs` of it, up to its budget.
-function consoleStartCase({ answersAfterMs = Infinity, exitsAfterMs = Infinity, probeMs = 0 } = {}) {
+function consoleStartCase({ answersAfterMs = Infinity, exitsAfterMs = Infinity, probeMs = 0, portProblem = null } = {}) {
   let elapsedMs = 0;
+  const portChecks = [];
   const stopped = [];
   const budgets = [];
   let writtenState = null;
@@ -717,10 +718,28 @@ function consoleStartCase({ answersAfterMs = Infinity, exitsAfterMs = Infinity, 
     async wait(ms) { elapsedMs += ms; },
     now: () => elapsedMs,
     stopProcess(pid) { stopped.push(pid); },
-    writeState(_path, state) { writtenState = state; }
+    writeState(_path, state) { writtenState = state; },
+    async consolePortProblem(port, host) { portChecks.push([port, host]); return portProblem; }
   }));
-  return { run, stopped, budgets, elapsed: () => elapsedMs, state: () => writtenState };
+  return { run, stopped, budgets, portChecks, elapsed: () => elapsedMs, state: () => writtenState };
 }
+
+test('a console that cannot listen on a port Windows reserves says so first, with the range', async () => {
+  const reserved = '端口 2727 被 Windows 保留（2634–2733），换一个端口即可。 / Port 2727 is reserved by Windows (2634–2733); use another port.';
+  const { run, portChecks } = consoleStartCase({ exitsAfterMs: 250, portProblem: reserved });
+  await assert.rejects(run, (error) => {
+    assert.ok(error.message.startsWith(`${reserved} The Fuli console exited while starting.`), error.message);
+    assert.match(error.message, /Neo4j and the graph Provider are already running/);
+    return true;
+  });
+  assert.deepEqual(portChecks, [[2727, '127.0.0.1']]);
+});
+
+test('a console that starts never looks at port reservations', async () => {
+  const { run, portChecks } = consoleStartCase({ answersAfterMs: 0 });
+  assert.equal((await run).status, 'started');
+  assert.deepEqual(portChecks, []);
+});
 
 test('setup waits for a console that needs 16 s to come up on a slow file system', async () => {
   const { run, stopped, state } = consoleStartCase({ answersAfterMs: 16_000 });
@@ -784,6 +803,8 @@ function dependencies(overrides = {}) {
     writeRuntimeSettings() {},
     readState() { return null; },
     waitForExit: async () => true,
+    // Never read this machine's reserved ports or probe a real port.
+    consolePortProblem: async () => null,
     ...overrides
   };
 }

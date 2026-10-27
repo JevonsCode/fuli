@@ -6,8 +6,6 @@ import {
   chmodSync,
   closeSync,
   existsSync,
-  mkdirSync,
-  openSync,
   readFileSync,
   unlinkSync
 } from 'node:fs';
@@ -24,6 +22,7 @@ import { assertManagedNeo4jHome, withNativeAssetOperation } from './neo4j-asset-
 import { assertMacNativePortFree, assertMacNativePortOwner } from './macos-ports.js';
 import { resolveNativeJavaHome } from './java-runtime.js';
 import { installNativeNeo4j } from './neo4j-install.js';
+import { neo4jPatchUpgrade } from './neo4j-version-policy.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { compareSemanticVersions } from '../semantic-version.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from './windows-assets.js';
@@ -39,6 +38,7 @@ import {
   readRuntimeSettings
 } from '../system/runtime-settings.js';
 import { nonEmptyText } from '../validation/values.js';
+import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
 import { parseProviderEnv } from '../setup/provider-env.js';
 
@@ -452,9 +452,15 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
     throw new Error('Native Graph Provider source fingerprint is invalid.');
   }
   const saved = deps.readManifest(input.paths.nativeRuntimeManifestPath);
+  // An older patch stays selected: only `fuli graph runtime update` upgrades it,
+  // after a graph backup. A newer or other-minor version is refused here.
+  const upgradePending = saved?.neo4jVersion ? neo4jPatchUpgrade(saved.neo4jVersion, NATIVE_NEO4J_VERSION) : false;
+  const neo4jVersion = upgradePending ? saved.neo4jVersion : NATIVE_NEO4J_VERSION;
+  const pendingUpgrade = () => new Error(`Native Neo4j version ${neo4jVersion} last opened this graph; this Fuli bundles ${NATIVE_NEO4J_VERSION}. Upgrade it with \`fuli graph runtime update\`, which backs up the graph first and needs the ${neo4jVersion} assets still installed.`);
+  if (upgradePending && (saved.status !== 'ready' || !saved.neo4jHome)) throw pendingUpgrade();
   let neo4jHome = input.paths.nativeNeo4jHome;
-  if (saved?.status === 'ready' && saved.neo4jHome && saved.neo4jVersion === NATIVE_NEO4J_VERSION) {
-    neo4jHome = await assertManagedNeo4jHome(input.paths, saved.neo4jHome, NATIVE_NEO4J_VERSION);
+  if (saved?.status === 'ready' && saved.neo4jHome && saved.neo4jVersion === neo4jVersion) {
+    neo4jHome = await assertManagedNeo4jHome(input.paths, saved.neo4jHome, neo4jVersion);
   }
   const expected = {
     ...(saved?.previousNeo4jAsset ? { previousNeo4jAsset: saved.previousNeo4jAsset } : {}),
@@ -462,7 +468,7 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
     version: MANIFEST_VERSION,
     status: 'ready',
     mode: 'native',
-    neo4jVersion: NATIVE_NEO4J_VERSION,
+    neo4jVersion,
     providerVersion: `${FULI_VERSION}+native.${PROVIDER_RUNTIME_REVISION}`,
     providerFingerprint,
     javaHome,
@@ -470,14 +476,12 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
     neo4jHome,
     providerPython
   };
-  if (saved?.neo4jVersion && saved.neo4jVersion !== NATIVE_NEO4J_VERSION) {
-    throw new Error('Native Neo4j version changes require an explicit data migration plan. Refusing implicit upgrade or downgrade.');
-  }
   assertProviderUpgrade(saved?.providerVersion, expected.providerVersion, input.allowProviderDowngrade);
   if (manifestReady(saved, expected, input.paths, deps.pathExists)) return saved;
 
   deps.onProgress(input, `Installing native Neo4j ${NATIVE_NEO4J_VERSION}…`);
   if (!neo4jReady(input.paths, deps.pathExists, neo4jHome)) {
+    if (upgradePending) throw pendingUpgrade();
     await deps.installNeo4j({
       paths: input.paths,
       home: neo4jHome,
@@ -751,8 +755,7 @@ function spawnNativeDatabase(spec) {
     }
     unlinkSync(spec.pidPath);
   }
-  mkdirSync(dirname(spec.logPath), { recursive: true });
-  const log = openSync(spec.logPath, 'a');
+  const log = openChildProcessLog(spec.logPath);
   try {
     const child = spawn(spec.command, spec.args, {
       detached: true,
@@ -768,8 +771,7 @@ function spawnNativeDatabase(spec) {
 }
 
 function spawnNativeProvider(spec) {
-  mkdirSync(dirname(spec.logPath), { recursive: true });
-  const log = openSync(spec.logPath, 'a');
+  const log = openChildProcessLog(spec.logPath);
   try {
     const child = spawn(spec.python, [
       '-m', 'uvicorn', 'fuli_graph.app:app',

@@ -33,6 +33,7 @@ export function resolveSetupPaths({
     adaptiveRuntimeSettingsPath: join(resolvedDataDir, 'adaptive-runtime-settings.json'),
     adaptiveRuntimeStatePath: join(resolvedDataDir, 'adaptive-runtime-state.json'),
     runtimeSettingsPath: join(resolvedDataDir, 'runtime-settings.json'),
+    runtimeSettingsBackupDir: join(resolvedDataDir, 'backups', 'settings'),
     modelBackendConfigPath: join(resolvedDataDir, 'model-backends.json'),
     modelSecretStorePath: join(resolvedDataDir, 'model-secrets.json'),
     modelUsageLedgerPath: join(resolvedDataDir, 'model-usage.sqlite'),
@@ -69,7 +70,7 @@ export function resolveSetupPaths({
     ),
     backupDir: join(resolvedDataDir, 'backups', 'agents'),
     agentDirectoryRoot: join(resolvedDataDir, 'agents'),
-    graphBackupDir: join(resolvedDataDir, 'backups', 'graph'),
+    graphBackupDir: graphBackupDirectory(resolvedDataDir),
     logPath: join(resolvedDataDir, 'logs', 'runtime.log'),
     serverPath: join(root, 'src', 'server.js'),
     mcpServerPath: join(root, 'src', 'mcp-server.js'),
@@ -81,6 +82,11 @@ export function resolveSetupPaths({
     operationSkillPath: join(root, 'skills', 'operating-fuli'),
     sessionCommandSkillPath: join(root, 'skills', 'fuli')
   };
+}
+
+// Where `fuli graph export` backups of a data directory are kept.
+export function graphBackupDirectory(dataDir) {
+  return join(dataDir, 'backups', 'graph');
 }
 
 function defaultDataDir({ platform, env, homeDir }) {
