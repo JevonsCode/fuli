@@ -271,6 +271,9 @@ export class GraphitiProviderClient {
   issueRemoteAgentDelegation(input) {
     return this.#request('/v1/project-agent-context/remote-delegations', { method: 'POST', body: input });
   }
+  issueOwnerAgentDelegation(input) {
+    return this.#request('/v1/project-agent-context/owner-delegations', { method: 'POST', body: input });
+  }
   issueRemoteAgentOrigin(input) {
     return this.#request('/v1/project-agent-context/remote-origins', { method: 'POST', body: input });
   }

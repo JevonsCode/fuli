@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import type { ProjectAgentTaskBlocker } from '@/types'
 import { useClientLinks } from '@/features/client-links/client-links-store'
@@ -57,9 +58,9 @@ async function copySession() {
     <div v-if="blocker.sessionId || sessionLinks.length" class="task-blocker-actions">
       <a v-for="link in sessionLinks" :key="link.href" class="task-blocker-link" :href="link.href" :title="link.notes || undefined"
         rel="noreferrer" data-blocker-open>{{ t('taskBlocker.open', { app: link.opens }) }}</a>
-      <button v-if="blocker.sessionId" type="button" class="task-blocker-copy" data-blocker-copy @click="copySession">
+      <Button v-if="blocker.sessionId" variant="link" size="sm" class="task-blocker-copy" data-blocker-copy @click="copySession">
         {{ copyState === 'copied' ? t('taskBlocker.copied') : t('taskBlocker.copy') }}
-      </button>
+      </Button>
       <span v-if="copyState === 'failed'" role="alert">{{ t('taskBlocker.copyFailed') }}</span>
     </div>
     <p v-if="!compact || !blocker.observed" class="task-blocker-note" data-blocker-observed :data-observed="blocker.observed">
@@ -78,7 +79,7 @@ async function copySession() {
 .task-blocker-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--color-muted); font-size: 13px; overflow-wrap: anywhere; }
 .task-blocker-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
 .task-blocker-link { color: var(--color-danger); font-weight: 600; }
-.task-blocker-copy { padding: 0; border: 0; background: none; color: var(--color-danger); font: inherit; text-decoration: underline; cursor: pointer; }
+.task-blocker-copy { height: auto; padding: 0; color: var(--color-danger); font: inherit; text-decoration: underline; }
 .task-blocker-note { color: var(--color-muted); font-size: 12px; }
 .is-compact { padding: 8px 10px; gap: 4px; }
 .is-compact .task-blocker-reason { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

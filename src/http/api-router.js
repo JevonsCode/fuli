@@ -7,9 +7,11 @@ import { handleAgentAppApiRequest } from './agent-app-api-router.js';
 import { handleDataFormatApiRequest } from './data-format-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
 import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
+import { handleProjectHierarchyRequest } from './project-hierarchy-api-router.js';
 import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
 import { handleStandingAssignmentRequest } from './standing-assignment-api-router.js';
 import { handleClientLinksRequest } from './client-links-api-router.js';
+import { handleAgentServicesRequest } from './agent-services-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
@@ -34,6 +36,7 @@ export async function handleApiRequest({
   dataFormatMigrations = null,
   knowledgeHardDelete = null,
   knowledgeScope = null,
+  projectHierarchy = null,
   knowledgeOwnerReads = null,
   knowledgeTags = null,
   modelRoleSettings = null,
@@ -206,9 +209,11 @@ export async function handleApiRequest({
     await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations }) ||
     await handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete: knowledgeHardDelete }) ||
     await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope }) ||
+    await handleProjectHierarchyRequest({ request, response, url, app, hierarchyConsole: projectHierarchy }) ||
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||
     await handleJudgmentApiRequest({ request, response, url, app, undoConsole: judgmentUndo, ownerReads: knowledgeOwnerReads }) ||
     await handleStandingAssignmentRequest({ request, response, url, app }) ||
+    await handleAgentServicesRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
     await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads });
   if (system?.withGraphRuntimeLease && (

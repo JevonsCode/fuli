@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ActivityOriginBadge from "@/features/agent-profile/ActivityOriginBadge.vue";
-import { employeeAvatarUrl } from "@/features/employees/avatars";
+import { agentAvatarUrl } from "@/features/agent-profile/agent-avatar";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
 import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
@@ -23,6 +23,7 @@ import AgentConversations from "@/features/project-agents/AgentConversations.vue
 import TaskExecutionPlan from "@/features/project-agents/TaskExecutionPlan.vue";
 import {
   agentDisplayName,
+  agentResponsibility,
   collaboratorsFor,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
@@ -170,7 +171,6 @@ const workbench = computed(() =>
   employeeTemplates.value.find((item) => item.agentId === agent.value?.agentId),
 );
 // Bole is the AR: its own profile has nobody else to ask.
-const isAr = computed(() => workbench.value?.id === "bole");
 const date = (value?: string | null) =>
   value && !Number.isNaN(Date.parse(value))
     ? new Date(value).toLocaleDateString()
@@ -324,8 +324,7 @@ onMounted(() => {
              carries only what the name does not say. -->
         <Card as="header" class="agent-resume-header">
           <span class="agent-portrait agent-identity" :style="agentIdentityStyle(agent.agentId)" aria-hidden="true">
-            <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
-            <template v-else>{{ agent.profile.occupationEmoji || agentDisplayName(agent).slice(0, 1) }}</template>
+            <img :src="agentAvatarUrl(agent.agentId)" alt="" />
           </span>
           <div class="agent-resume-intro grid min-w-0 flex-[1_1_360px] gap-2">
             <div class="agent-resume-name-row flex-wrap justify-start gap-2">
@@ -340,7 +339,7 @@ onMounted(() => {
               </template>
               <span v-else class="ui-meta">{{ t("agentRedesign.occupation.notSet") }}</span>
             </p>
-            <p class="agent-resume-summary">{{ agent.profile.responsibility }}</p>
+            <p class="agent-resume-summary">{{ agentResponsibility(agent) }}</p>
             <div class="agent-resume-meta">
               <span>
                 {{ t(agent.recruitedAt ? "agentProfiles.joined" : "agentProfiles.created") }}
@@ -360,11 +359,6 @@ onMounted(() => {
               @click="showSettings = !showSettings"
             >
               {{ t("agentProfiles.settings") }}
-            </Button>
-            <Button v-if="!isAr" as-child variant="outline">
-              <RouterLink :to="{ path: '/employees/bole', query: { q: agentDisplayName(agent) } }">
-                {{ t("agentProfiles.askHR") }}
-              </RouterLink>
             </Button>
           </div>
         </Card>
@@ -560,9 +554,6 @@ onMounted(() => {
               <Card as="section" class="agent-resume-section" aria-labelledby="agent-organization-heading">
                 <div class="agent-section-heading">
                   <h2 id="agent-organization-heading">{{ t("agentProfiles.organization") }}</h2>
-                  <RouterLink v-if="!isAr" :to="{ path: '/employees/bole', query: { q: agentDisplayName(agent) } }">
-                    {{ t("agentProfiles.hr") }}
-                  </RouterLink>
                 </div>
                 <div v-for="team in teams" :key="team.projectId" class="agent-organization">
                   <h3>{{ projectName(team.projectId) }}</h3>

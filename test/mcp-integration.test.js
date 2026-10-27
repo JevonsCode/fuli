@@ -246,7 +246,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
     'get_model_usage', 'role_work',
     'get_agent_score_card',
-    'control_project_agent_task_run', 'register_standing_assignment',
+    'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
     'read_task_preferences',
     'begin_task_context',
     'checkpoint_task_knowledge',
@@ -302,7 +302,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'subscribe_public_project', 'unsubscribe_public_project',
     'list_project_review_queue', 'review_project_proposal',
     'get_graphiti_status',
-    'agent_chat', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
+    'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'
   ]);
   const preferencesTool = listed.tools.find(

@@ -1,3 +1,4 @@
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -136,7 +137,7 @@ describe('Agent profile integration', () => {
     expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(true)
   })
 
-  it('offers each profile link once and no Ask AR on the AR itself', async () => {
+  it('offers each profile link once and never a manual Ask AR detour', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
       if (isAgentRead(url)) return agentRead(url, [person('employee.bole')])
@@ -151,6 +152,11 @@ describe('Agent profile integration', () => {
     expect(wrapper.findAll('a[href^="/employees/bole?"]')).toHaveLength(0)
     expect(wrapper.findAll('.agent-management-card a')).toHaveLength(1)
     expect(wrapper.get('[data-open-management]').text()).toBe('打开 Agent 管理')
+    wrapper.unmount()
+    getJson.mockImplementation(normal)
+    const other = await setup()
+    expect(other.wrapper.findAll('a[href^="/employees/bole?"]')).toHaveLength(0)
+    expect(other.wrapper.text()).not.toContain('问 AR')
   })
 
   it('exposes conversation retention under an accessible secondary tab', async () => {
@@ -305,6 +311,7 @@ describe('Agent profile integration', () => {
     const { wrapper } = await setup()
     // The shell renders the page's one H1 from this title: the Agent's real name.
     expect(pageTitle.value.text).toBe('Aster')
+    expect(wrapper.get('.agent-portrait img').attributes('src')).toBe(agentAvatarUrl('alpha'))
     expect(wrapper.find('h1').exists()).toBe(false)
     expect(wrapper.get('.agent-portrait').attributes('style')).toMatch(/--agent-identity: var\(--identity-[0-7]\)/)
     expect(wrapper.text()).toContain('Synthetic active project')

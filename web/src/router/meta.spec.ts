@@ -74,10 +74,10 @@ describe('localized route metadata', () => {
     expect(router.resolve('/reports/jefa').meta.layout).toBeUndefined()
   })
 
-  it('puts the knowledge tables, graph and organizer on the work canvas, and the preference and taste lists in the content column', () => {
+  it('puts the knowledge tables, graph and organizer on the work canvas, and the preference list in the content column', () => {
     const paths = ['/knowledge', '/knowledge/personal/space/directory', '/knowledge/personal/space/graph/entity/item', '/organize']
     expect(paths.map(layoutOf)).toEqual(paths.map(() => 'canvas'))
-    expect(['/preferences', '/preferences/writing'].map(layoutOf)).toEqual(['column', 'column'])
+    expect(layoutOf('/preferences')).toBe('column')
   })
 
   it('puts every personal project directory and graph on the work canvas, and one project overview in the content column', () => {
@@ -87,12 +87,6 @@ describe('localized route metadata', () => {
       .toEqual(['personal-projects', 'personal-projects-item', 'personal-project', 'personal-project-item'])
     expect(paths.map(layoutOf)).toEqual(paths.map(() => 'canvas'))
     expect(layoutOf('/personal/space/projects/project-1/overview')).toBe('column')
-  })
-
-  it('titles the taste page the same as its section tab', () => {
-    const route = router.resolve('/preferences/writing')
-    expect(route.name).toBe('writing-taste')
-    expect(routeMetaText(route.meta.title)).toBe('品味')
   })
 
   it('registers the concise project Agent directory', () => {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Badge } from '@/components/ui/badge'
 import { t } from '@/i18n'
 import type { ProjectAgentRecord, ProjectAgentTaskRecord } from '@/types'
 import ProjectAgentTaskDiagnostics from './ProjectAgentTaskDiagnostics.vue'
@@ -22,6 +23,7 @@ import {
   sourceLabel,
   strategyLabel,
   taskStatusLabel,
+  taskStatusTone,
   tokenUsageLabel,
   workerEventLabel,
 } from './task-labels'
@@ -57,7 +59,7 @@ function toggle(event: Event) {
   <article :id="`task-${task.taskId}`" class="ui-card project-agent-task-card" :class="{ 'is-linked': linked }">
     <header>
       <div><strong>{{ task.title }}</strong><small>{{ projectName }}</small></div>
-      <i class="ui-badge" :class="`is-${task.status}`">{{ taskStatusLabel(task.status) }}</i>
+      <Badge :variant="taskStatusTone(task.status)" data-task-status>{{ taskStatusLabel(task.status) }}</Badge>
     </header>
     <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" :blocker="task.blocker" :updated-at="task.updatedAt" />
     <p v-else-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p>
@@ -122,7 +124,7 @@ function toggle(event: Event) {
                 </td>
                 <td :data-label="t('projectAgents.fields.tokenUsage')">{{ tokenUsageLabel(summary.tokenUsage) }}</td>
                 <td :data-label="t('projectAgents.fields.terminalStatus')">
-                  <i v-if="summary.status" :class="'is-' + summary.status">{{ executionSummaryStatusLabel(summary.status) }}</i>
+                  <Badge v-if="summary.status" :variant="taskStatusTone(summary.status)">{{ executionSummaryStatusLabel(summary.status) }}</Badge>
                   <span v-else>{{ t('projectAgents.notReported') }}</span>
                 </td>
               </tr>
@@ -145,7 +147,7 @@ function toggle(event: Event) {
                 {{ workerEventLabel(event) }}
                 <small v-if="event.agentId">{{ t('projectAgents.fields.agentId') }} · {{ event.agentId }}</small>
               </strong>
-              <i :class="`is-${event.workerStatus || event.status}`">{{ executionSummaryStatusLabel(event.workerStatus || event.status) }}</i>
+              <Badge :variant="taskStatusTone(event.workerStatus || event.status)">{{ executionSummaryStatusLabel(event.workerStatus || event.status) }}</Badge>
             </header>
             <dl class="project-agent-execution-summary-meta">
               <div><dt>{{ t('projectAgents.fields.workSummary') }}</dt><dd>{{ event.summary || t('projectAgents.notReported') }}</dd></div>

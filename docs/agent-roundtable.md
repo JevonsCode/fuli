@@ -63,11 +63,48 @@ inside one thread, so Agents cannot loop forever. Woken Agents run read-only.
 
 ## What people see
 
-The console's **圆桌 / Roundtable** page lists every thread with its participants and
-shows the full timeline: who asked whom, through which client, the exact message and
-answer, and how it was delivered. People watch; they do not need to act.
+The console's **对话 / 圆桌** page lists every thread and opens each one as a chat:
+the person's own messages on the right, each FLA's on the left with its face, name,
+client and time, and under every message where it stands for each recipient
+(left on the board, queued to wake, replying, replied, or why it could not be woken).
+Agent chat rooms (`agent_chat`) stay read-only for people.
 
 Threads are stored locally in `agent-roundtable.sqlite` in the Fuli data directory.
+
+## The person's conversations: board and instant (publish/subscribe)
+
+The person can message their own FLAs from the console, one FLA or several at once.
+Each thread is a small publish/subscribe channel, and this is the contract later
+group work (`@FLG`, rec#55) builds on:
+
+- **Subscribers.** The FLAs the person addressed in a thread are its subscribers
+  (`thread_subscriptions`, roundtable store version 4). A thread belongs to one
+  project, and every subscriber must work in it; the person adds a member by
+  addressing it.
+- **Publish.** A post (`POST /api/roundtable/threads` for a new thread,
+  `POST /api/roundtable/threads/:threadId/messages` for the next post) becomes one
+  ask per addressed subscriber, from the person (`from.client = "person"`). Without
+  `to`, a post goes to every subscriber.
+- **Delivery per subscriber.** `board`: the ask waits; the FLA sees it in
+  `read_agent_messages` / task entry the next time it works and answers with
+  `reply_agent_message`. `instant`: the post pushes the ask to the FLA at once —
+  FULI starts a real run of it through the same wake every Agent-to-Agent ask uses
+  (durable execution claim, the FLA's own allowed client, a per-attempt grant, only a
+  verified answer becomes its reply). The run's grant is an owner grant
+  (`/v1/project-agent-context/owner-delegations`): there is no sender task, so the
+  Provider restores exactly the named active Agent of that project, once.
+  `PUT /api/roundtable/threads/:threadId/mode` sets every subscriber's delivery;
+  switching to `instant` also wakes the FLAs for what is still waiting on the board.
+- **One run per FLA.** A busy FLA is woken when its earlier run ends; members of a
+  group run in parallel, each answering for itself, and each wake sees the thread's
+  last 8 messages so a group reads as one conversation.
+- **Honest fallback.** When an instant post cannot start a run (no Claude Code or
+  Codex this FLA may use on this computer, no known project folder yet, the wake
+  failed or timed out), the ask stays on the board with its reason, and the page says
+  so in words. Nothing is shown as replying unless a run is going.
+
+These routes are the person's own (`local_user_only` in the interface catalog);
+Agents keep using `message_agent` and `agent_chat`.
 
 ## Clients
 
@@ -144,6 +181,53 @@ receipts advance only a contiguous target cursor, so a newer member cannot erase
 older unread history it was not allowed to see. Durable execution claims keep
 one wake active per Agent; subsequent rooms wait for completion notifications.
 Unknown execution or unconfirmed cleanup keeps its safety hold.
+
+## Group discussions (@FLG, rec#55)
+
+`group_discussion` runs a moderated discussion on top of a `kind=group` chat. It
+only carries out what the person typed in their chat: task entry records the
+confirmed members and question (`recordGroupChoice`) and each `@FLG …`
+follow-up (`requestGroupFollowUp`). `start` takes that confirmation's request ID
+and runs it once; an unknown ID, another moderator or project, or a stopped
+confirmation is refused, and members and question come from the record.
+`follow_up` carries out the recorded follow-up once, to the confirmed members (or
+the one named), never to whoever the chat holds now; a discussion has at most two
+response rounds and five follow-ups. A woken (delegated) session cannot start or
+continue one. The moderator is the current project task's Agent
+(docs/agent-conversations-and-collaboration.md). A start refused for good (no
+executor, no active member) ends the confirmation with that reason, and a
+confirmation not started within ten minutes expires, so neither keeps the session
+held. Accepted residual: confirmation and follow-ups are recorded from task-entry
+input; a model that calls the entry tool itself can produce them within the same
+caps (fixed members, each consumed once, two response rounds, five follow-ups),
+and with no more authority than `message_agent`.
+
+Each member turn is a real `message_agent` wake in a fresh session (no resume) of
+the member's own allowed client. Claude Code discussion wakes deny file edits and the shell: they keep the
+non-interactive mode and add `--disallowedTools Edit,Write,NotebookEdit,MultiEdit,Bash` (a deny rule wins over any allow rule). Codex runs in its `read-only` sandbox. The prompt holds the
+question, the member's role line and 800-character excerpts of the other members;
+the member's own FULI entry delivers its preferences and knowledge index. The
+Provider issues and verifies a per-attempt delegation, and only a verified answer
+is posted as that member, in the same transaction that settles its still-open
+turn: an answer to a turn already stopped or failed is never posted. A member
+without an installed executor fails at once with `no_executor`, a dismissed one
+with `unavailable`, one woken elsewhere at that moment with `busy`; when no member
+can be woken, nothing is created (`flg_no_executor`). An unanswered ask is
+withdrawn so it does not wait in the member's inbox.
+
+`stop` (or the person's `@FLG 结束` from any process) ends unsettled turns as not
+replied and cancels wakes running in the runner's process. `summary` records the
+moderator's summary, and FULI appends the members that did not reply so they are
+never counted. Turn states (`invited`, `waiting`, `replied`, `failed`, `ended`) are
+stored in the roundtable file (migration `roundtable/3-group-discussions`). Rounds
+run in the process that started them, which writes a heartbeat every 20 seconds (a busy file is retried next time; a store moved underneath by an undo or restore ends the run, its open turns `interrupted`);
+another process fails the open turns of a runner without a heartbeat for a minute
+as `interrupted`, and never touches a live runner's turns. Members on other paired
+devices are not supported.
+
+The roundtable file moves to format 3 on upgrade. An older FULI refuses it (the
+roundtable and chats are unavailable there), and restoring the pre-upgrade backup
+drops the chats, discussions and messages written since the upgrade.
 
 Local tests use synthetic Agent/project identities and loopback mTLS devices.
 They verify protocol behavior, not real paired-computer acceptance or an actual

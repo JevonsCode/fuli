@@ -131,8 +131,6 @@ watchEffect(() => {
    scroll container, so the title starts exactly where the content does. A
    long record name takes at most two lines. */
 .app-main[data-layout] { --layout-max: var(--canvas-max); }
-.app-main[data-layout="column"] { --layout-max: var(--column-max); }
-.app-main[data-layout="form"] { --layout-max: var(--form-max); }
 .app-main[data-layout] :is(.app-topbar, .app-feedback-row) { overflow: hidden; scrollbar-gutter: stable; }
 .app-main[data-layout] :is(.app-topbar-inner, .feedback-message) { max-width: var(--layout-max); margin-inline: auto; }
 .app-main[data-layout] .app-title { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

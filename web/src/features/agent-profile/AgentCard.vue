@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { employeeAvatarUrl } from "@/features/employees/avatars";
+import { agentAvatarUrl } from "@/features/agent-profile/agent-avatar";
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import { workbenchStatusDetail } from "./workbench-status-text";
 import {
   agentDisplayName,
   agentProfilePath,
+  agentResponsibility,
   profileProjectIds,
 } from "./profile-model";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
@@ -23,6 +24,7 @@ import { agentIdentityStyle } from "./agent-identity-color";
 import { loopPhaseDelay } from "@/lib/motion-phase";
 import { occupationLabels } from "./agent-occupation";
 import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
+import { statusTone } from "@/features/project-agents/task-labels";
 import type { ProjectAgentRecord } from "@/types";
 
 const WORKING_RING_MS = 2400;
@@ -80,6 +82,7 @@ const taskLink = computed(() => ({
 const statusDetail = computed(() => workbenchStatusDetail(props.entry));
 const occupation = computed(() => occupationLabels(props.agent.occupation));
 const workStatusClass = computed(() => `is-${workStatus.value}`);
+const workTone = computed(() => statusTone(workStatus.value));
 // Jefa and Bole are fixed roles every space has.
 const fixedRole = computed(() => ({ coordinator: t("agentProfiles.roles.projectManager"), hr: t("agentProfiles.roles.hr") })[props.agent.profile.agentType as string] ?? "");
 function localized(
@@ -153,8 +156,7 @@ function surfaceClick(event: MouseEvent) {
         aria-hidden="true"
         data-card-portrait
       >
-        <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
-        <template v-else>{{ agent.profile.occupationEmoji || name.slice(0, 1) }}</template>
+        <img :src="agentAvatarUrl(agent.agentId)" alt="" />
       </span>
       <div class="min-w-0 flex-1">
         <div class="agent-directory-name flex min-w-0 items-start gap-1.5">
@@ -182,6 +184,7 @@ function surfaceClick(event: MouseEvent) {
             class="agent-card-work-status"
             :class="workStatusClass"
             :data-work-status="workStatus"
+            :data-tone="workTone"
             :aria-label="`${t('agentRedesign.workStatus.label')} · ${workStatusLabel}`"
           >
             <span class="agent-card-work-status-text">{{ workStatusLabel }}</span>
@@ -229,8 +232,8 @@ function surfaceClick(event: MouseEvent) {
       </span>
     </p>
     <TaskBlockerNotice v-if="entry?.blocker" compact :blocker="entry.blocker" :updated-at="entry.lastUpdateAt" @click.stop />
-    <p v-else-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
-    <p class="agent-card-responsibility" data-agent-summary :title="agent.profile.responsibility">{{ agent.profile.responsibility }}</p>
+    <p v-else-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :data-tone="workTone" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
+    <p class="agent-card-responsibility" data-agent-summary :title="agentResponsibility(agent)">{{ agentResponsibility(agent) }}</p>
     <div v-if="capabilities.length" class="agent-inline-skills">
       <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>
     </div>

@@ -241,6 +241,24 @@
 .graph-edge-label.related .graph-edge-label-text,
 .graph-edge-label.selected .graph-edge-label-text { fill: var(--color-accent); font-weight: 700; }
 
+/* 调整层级: the project under a dragged one grows and takes the accent to show it accepts the drop. */
+.graph-canvas-panel.is-organizing .graph-node.project-node { cursor: grab; }
+.graph-node.organize-dragging { pointer-events: none; opacity: .86; }
+.graph-project-ring { transform-box: fill-box; transform-origin: center; }
+.graph-node.project-node.drop-target .graph-project-ring {
+  fill: var(--color-accent-soft); stroke: var(--color-accent); stroke-width: 3; transform: scale(1.32);
+  transition: transform .14s var(--motion-ease, ease-out), fill .12s, stroke .12s;
+}
+.graph-node.project-node.drop-target .graph-node-shape { fill: var(--color-accent); }
+@media (prefers-reduced-motion: reduce) {
+  .graph-node.project-node.drop-target .graph-project-ring { transition: none; }
+}
+:root[data-motion="reduced"] .graph-node.project-node.drop-target .graph-project-ring { transition: none; }
+
+/* A relation label with no free room on its line would cover a node or another
+   label; it shows only while its relation is in focus. */
+.graph-edge-label.crowded:not(.hovered, .focused, .selected, .search-match) { opacity: 0; }
+
 .graph-viewport--compact-labels .graph-node-label,
 .graph-viewport--compact-labels .graph-node .graph-node-id,
 .graph-viewport--compact-labels .graph-edge-label { opacity: 0; }
@@ -255,5 +273,4 @@
 @media (max-width: 720px) {
   .graph-toolbar > .ui-select { width: 100%; }
   .graph-toolbar .search-form { flex: 1 1 160px; min-width: 0; }
-  .graph-view-actions { border-left: 0; padding-left: 0; }
 }

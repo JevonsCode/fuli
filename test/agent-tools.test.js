@@ -37,7 +37,7 @@ const NAMES = [
   'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
   'get_model_usage', 'role_work',
   'get_agent_score_card',
-  'control_project_agent_task_run', 'register_standing_assignment',
+  'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
   'read_task_preferences',
   'begin_task_context',
   'checkpoint_task_knowledge',
@@ -138,7 +138,7 @@ const NAMES = [
   'list_project_review_queue',
   'review_project_proposal',
   'get_graphiti_status',
-  'agent_chat', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
+  'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'
 ];
 
@@ -340,6 +340,9 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     modelBackends: { usage: input => calls.push(['model-usage', input]) },
     roleWork: { claim: input => calls.push(['role-work-claim', input]), submit: input => calls.push(['role-work-submit', input]) },
     registerStandingAssignment: async input => calls.push(['standing-assignment', input]),
+    config: { personal: { spaceId: 'space-a' } },
+    taskContextRegistry: { context: async () => ({ sessionId: 'session-a', personalProjectId: null, projectAgentId: null, sourceApplication: 'other' }) },
+    agentServices: { register: async (owner, input) => calls.push(['service-register', input]) },
     controlProjectAgentTaskRun: async input => calls.push(['task-run-control', input]),
     queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
     resumeAgentConversation: async input => calls.push(['conversation-resume', input]),
@@ -521,8 +524,10 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   process.env.FULI_ENABLE_TEST_TOOLS = '1';
   try {
     for (const name of NAMES.filter((value) => !ROUNDTABLE_TOOL_NAMES.includes(value))) {
-      // A tag change names its write; every other probe is the bare tool name.
-      await callAgentTool(app, name, name === 'change_knowledge_tags' ? { probe: name, action: 'create' } : { probe: name });
+      // A tag change and a service report name their write; every other probe is the bare tool name.
+      const probe = { change_knowledge_tags: { action: 'create' },
+        report_agent_service: { action: 'register', taskContextToken: 'fuli-task-probe' } }[name];
+      await callAgentTool(app, name, { probe: name, ...probe });
     }
   assert.deepEqual(calls.map(([name]) => name), [
     'request-attention', 'list-attention', 'cancel-attention',
@@ -533,7 +538,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-targets', 'external-delete', 'external-conflict-policy',
     'external-update-policy', 'defer-preference-conflict', 'delete-public-project',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call', 'app-submit', 'app-list',
-    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'model-usage', 'role-work-claim', 'agent-score-card', 'task-run-control', 'standing-assignment',
+    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'model-usage', 'role-work-claim', 'agent-score-card', 'task-run-control', 'standing-assignment', 'service-register',
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',

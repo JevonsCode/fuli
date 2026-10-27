@@ -82,6 +82,11 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
         agent_id: agentId, target_application: targetClient, target_session_id: targetSessionId,
         lifetime_seconds: lifetimeSeconds, origin_node: originNode, origin_message_id: originMessageId,
         origin_attempt_id: originAttemptId }),
+    // The person's own console message to one of their Agents: no sender task.
+    issueOwnerDelegation: ({ projectId, agentId, targetClient, targetSessionId, lifetimeSeconds }) =>
+      app.personal.issueOwnerAgentDelegation({ personal_space_id: spaceId(), personal_project_id: projectId,
+        agent_id: agentId, target_application: targetClient, target_session_id: targetSessionId,
+        lifetime_seconds: lifetimeSeconds }),
     sealDelegation: ({ token, sessionId }) => app.personal.sealAgentDelegation({ personal_space_id: spaceId(),
       token, session_id: sessionId }),
     async verifyDelegation({ token, sessionId }) {

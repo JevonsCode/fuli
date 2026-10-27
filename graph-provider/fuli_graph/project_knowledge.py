@@ -305,6 +305,20 @@ async def read_personal_project_relations(store, space_id: str) -> list[dict]:
     ]
 
 
+def personal_project_relation_id(space_id, source_project_id, target_project_id, relation_type):
+    """One relation of a type between two projects of a space, whoever created it."""
+    return _stable_uuid(
+        space_id, 'personal-project-relation', source_project_id, target_project_id, relation_type
+    )
+
+
+def relation_review_event_id(space_id, relation_id, decision_revision, decision):
+    """The review event that moved a relation to this revision ('activate' or 'reject')."""
+    return _stable_uuid(
+        space_id, 'personal-project-relation-review', relation_id, str(decision_revision), decision
+    )
+
+
 async def review_personal_project_relation(
     store,
     actor: dict,
@@ -322,12 +336,8 @@ async def review_personal_project_relation(
     reviewed_at = datetime.now(timezone.utc)
     next_revision = request.decision_revision + 1
     status = 'active' if request.decision == 'activate' else 'rejected'
-    review_event_id = _stable_uuid(
-        space_id,
-        'personal-project-relation-review',
-        relation_id,
-        str(next_revision),
-        request.decision,
+    review_event_id = relation_review_event_id(
+        space_id, relation_id, next_revision, request.decision
     )
     records, _, _ = await store.runtime.driver.execute_query(
         _REVIEW_PERSONAL_PROJECT_RELATION_QUERY,
@@ -754,8 +764,8 @@ async def _maybe_create_project_relation(
     )
     if request.relation_type == 'RELATED_TO' and source > target:
         source, target = target, source
-    relation_id = _stable_uuid(
-        space['id'], 'personal-project-relation', source, target, request.relation_type
+    relation_id = personal_project_relation_id(
+        space['id'], source, target, request.relation_type
     )
     changed_at = datetime.now(timezone.utc)
     records, _, _ = await store.runtime.driver.execute_query(

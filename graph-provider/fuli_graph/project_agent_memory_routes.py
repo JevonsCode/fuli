@@ -16,7 +16,8 @@ from .agent_conversation_routes import register_agent_conversation_routes
 from .default_project_lead import DefaultProjectLeadRequest
 from .task_context_routes import register_task_context_routes
 from .project_agent_delegations import (
-    AgentDelegationCheck, AgentDelegationIssue, AgentRemoteDelegationIssue, AgentDelegationMemoryResult,
+    AgentDelegationCheck, AgentDelegationIssue, AgentRemoteDelegationIssue, AgentOwnerDelegationIssue,
+    AgentDelegationMemoryResult,
 )
 from .project_agent_remote_origins import AgentRemoteOriginIssue
 
@@ -37,6 +38,10 @@ def register_project_agent_memory_routes(application, store, Actor):
     @application.post('/v1/project-agent-context/remote-delegations')
     async def issue_remote_delegation(request: AgentRemoteDelegationIssue, actor: Actor):
         return await store.issue_remote_agent_delegation(actor, request)
+
+    @application.post('/v1/project-agent-context/owner-delegations')
+    async def issue_owner_delegation(request: AgentOwnerDelegationIssue, actor: Actor):
+        return await store.issue_owner_agent_delegation(actor, request)
 
     @application.post('/v1/project-agent-context/remote-origins')
     async def issue_remote_origin(request: AgentRemoteOriginIssue, actor: Actor):

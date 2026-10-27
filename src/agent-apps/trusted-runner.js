@@ -17,7 +17,7 @@ const STOP_WAIT_MS = 5000;
 const PLATFORM_ENVIRONMENT = new Set(['PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'LANG']);
 // How an app process ended: exited (code 0), load_failed (it ended before the
 // launcher reported its entry loaded) or crashed (any other end after that).
-// Nothing the app wrote is read or kept: no output, no error text.
+// The category never carries anything the app wrote.
 const EXIT_CATEGORIES = Object.freeze({ exited: 'exited', loadFailed: 'load_failed', crashed: 'crashed' });
 // The launcher's ready signal arrives on this descriptor; after an exit, its
 // last byte is waited for this long at most.
@@ -34,11 +34,14 @@ const READY_FLUSH_MS = 500;
 // - kind, and selfCheck() → { ok: true } or { ok: false, detail }: the check
 //   that must pass before every start (runner_check_failed otherwise);
 // - start({ appId, instanceId, generation, mode, packageDirectory,
-//   dataDirectory, manifest, environment, onExit }) → a handle { pid,
+//   dataDirectory, manifest, environment, output, onExit }) → a handle { pid,
 //   pidIdentity, exePath, socket } that keeps the runner's own reference to
 //   the process; environment holds only FULI_APP_* values; onExit({ code,
 //   signal, category }) is called once when the process has ended, for any
-//   reason, with one of EXIT_CATEGORIES;
+//   reason, with one of EXIT_CATEGORIES; output, when given, receives what
+//   the process writes to stdout and stderr (write(stream, text)) and is told
+//   the app token to redact; without it both are discarded. Only the person
+//   reads it, in the services log (src/agent-services, rec#11 D-71);
 // - stop(handle): stops the process through that reference and waits for its exit;
 // - stopOrphan(instance): for an instance whose host has exited, answers once
 //   its process is confirmed gone, or refuses. A runner never signals a
@@ -56,12 +59,22 @@ export function createTrustedRunner({
     return existsSync(nodePath) && existsSync(LAUNCHER) ? { ok: true } : { ok: false, detail: 'node_missing' };
   }
 
-  async function start({ manifest, packageDirectory, environment: appEnvironment, onExit = () => {} }) {
+  async function start({ manifest, packageDirectory, environment: appEnvironment, output = null, onExit = () => {} }) {
     if (!manifest.runtime.entry) return { pid: null, pidIdentity: null, exePath: null, socket: null, child: null };
+    const written = output ? 'pipe' : 'ignore';
     const child = spawnProcess(nodePath, [LAUNCHER, join(packageDirectory, manifest.runtime.entry)], {
       cwd: packageDirectory, env: { ...platformEnvironment(environment), ...appEnvironment },
-      stdio: ['pipe', 'ignore', 'ignore', 'pipe'], shell: false, windowsHide: true
+      stdio: ['pipe', written, written, 'pipe'], shell: false, windowsHide: true
     });
+    if (output) {
+      output.redact(appEnvironment.FULI_APP_TOKEN);
+      for (const stream of ['stdout', 'stderr']) {
+        child[stream].setEncoding('utf8');
+        child[stream].on('data', (text) => output.write(stream, text));
+        child[stream].on('error', () => {});
+        child[stream].unref?.();
+      }
+    }
     const ready = child.stdio[READY_FD];
     let loaded = false;
     ready.once('data', () => { loaded = true; });
