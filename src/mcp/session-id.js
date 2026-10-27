@@ -9,7 +9,7 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   // The caller's client decides whether its own turns are recorded.
   'get_capture_policy',
   'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message',
-  'agent_chat',
+  'agent_chat', 'group_discussion',
   'get_agent_message_status', 'cancel_agent_message',
   'get_agent_quality_gate', 'record_agent_verification',
   'assess_task_completion',

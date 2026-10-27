@@ -18,7 +18,9 @@ export function createChatService({ store, transaction, scope, transport, direct
     return room;
   }
   // inbox: the waiting Agent's answered attention requests, which end a wait too.
-  async function execute(actor, raw, { signal, authorize, onMessage, inbox } = {}) {
+  // commit: for a send, called with the new message inside its transaction;
+  // false rolls the message back (the group discussion's settled turn).
+  async function execute(actor, raw, { signal, authorize, onMessage, inbox, commit } = {}) {
     signal?.throwIfAborted();
     await authorize?.();
     signal?.throwIfAborted();
@@ -100,8 +102,11 @@ export function createChatService({ store, transaction, scope, transport, direct
         if (!saved) delivered = { chatId: room.id, targets: store.members(room.id).filter(m => m.address !== actor.address
           && (room.kind === 'direct' || request.body.includes(`@{${m.address}}`))
           && !store.waiting(scope, m.address, room.id)).map(m => m.address) };
-        return messageView(saved ?? store.append({ chatId: room.id, seq: store.lastSeq(room.id) + 1,
+        const message = messageView(saved ?? store.append({ chatId: room.id, seq: store.lastSeq(room.id) + 1,
           id: idFactory(), sender: actor.address, requestId: request.requestId, body: request.body, at }));
+        // A caller's own record of this message, in the same transaction: refused, nothing is posted.
+        if (commit && !commit(message)) error('chat_commit_refused', 'The message was not posted', 409);
+        return message;
       }
       if (room.kind === 'direct') error('chat_direct_fixed', 'Direct chat membership is fixed', 409);
       if (room.revision !== request.expectedRevision) error('chat_conflict', 'Chat revision changed; reload before editing', 409);

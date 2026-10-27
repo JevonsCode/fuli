@@ -12,6 +12,7 @@ import { setLocale } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConsoleState, ProjectAgentTaskStatus } from '@/types'
 import OverviewPage from './OverviewPage.vue'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 
 const project = (id: string, name: string) => ({
   project_id: id,
@@ -122,6 +123,15 @@ beforeEach(() => {
 
 describe('OverviewPage', () => {
   afterEach(() => vi.useRealTimers())
+  it('uses the Agent identity portrait in the constellation view', async () => {
+    designLab.value.workbench = 'constellation'
+    const row = { ...task('running', 'running', '2026-09-10T00:00:00Z', 'project-a'), lead_agent_id: 'owner' }
+    const { wrapper } = await setup({ taskPayload: { items: [row] }, rosterPayload: [{ agentId: 'owner', personalSpaceId: 'space-a', profile: { name: 'Mira Chen' } }] })
+    expect(wrapper.get('.constellation-moon-image').attributes('href')).toBe(agentAvatarUrl('owner'))
+    expect(wrapper.find('.constellation-moon-initial').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('leads with one real open request, an owner, failed reason and safe next action', async () => {
     const row = { ...task('failed', 'failed', '2026-09-10T00:00:00Z', 'project-a'), lead_agent_id: 'owner', failure_reason: 'Source rejected this read' }
     const { wrapper } = await setup({ taskPayload: { items: [row] }, attentionPayload: { items: [attention('first'), attention('second'), { ...attention('closed'), status: 'resolved' }], total: 8, counts: {} }, rosterPayload: [{ agentId: 'owner', personalSpaceId: 'space-a', profile: { name: 'Mira Chen' } }] })

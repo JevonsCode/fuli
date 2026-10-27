@@ -12,7 +12,7 @@ import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import type { PersonalProject } from '@/types'
 import ProjectScopePicker from './ProjectScopePicker.vue'
-import { employeeAvatarUrl } from './avatars'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
 import AgentName from '@/features/agent-profile/AgentName.vue'
 import { fuzzyMatch } from '@/features/agent-profile/profile-model'
@@ -23,7 +23,6 @@ type UnknownRecord = Record<string, unknown>
 type AgentView = {
   id: string
   name: string
-  emoji: string
   responsibility: string
   searchTerms: string[]
   type: string
@@ -142,7 +141,6 @@ function agentSearchTerms(id: string) {
 // A count is unknown while its read is pending or after it failed, not zero.
 function shownCount(count: number, readFailed: boolean) { return loading.value || readFailed ? '—' : count }
 function clearFilters() { search.value = ''; roleFilter.value = ''; workFilter.value = 'all'; selectedProjects.value = null }
-function avatar(agentId: string) { return employeeAvatarUrl(agentId.replace(/^employee\./, '')) }
 
 watch([() => props.personalSpaceId, () => route.query.q], ([space, query], [previousSpace]) => {
   if (space !== previousSpace) {
@@ -208,7 +206,6 @@ function normalizeAgent(value: unknown): AgentView | null {
   return {
     id,
     name: pickString(profile, 'displayName', 'display_name') || pickString(profile, 'name') || id,
-    emoji: pickString(profile, 'occupationEmoji', 'occupation_emoji') || '✦',
     responsibility: pickString(profile, 'responsibility'),
     searchTerms: [pickString(profile, 'name'), ...array(profile.capabilities),
       ...array(profile.workKinds ?? profile.work_kinds)].filter((item): item is string => typeof item === 'string'),
@@ -321,7 +318,7 @@ function formattedDate(value: string) {
           <ul v-if="filteredAgents.length" class="bole-agent-list m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4">
             <li v-for="agent in filteredAgents" :key="agent.id" class="bole-card bole-agent-card">
               <div class="bole-agent-identity">
-                <span class="bole-agent-mark" aria-hidden="true"><img v-if="avatar(agent.id)" :src="avatar(agent.id)" alt=""><template v-else>{{ agent.emoji }}</template></span>
+                <span class="bole-agent-mark" aria-hidden="true"><img :src="agentAvatarUrl(agent.id)" alt=""></span>
                 <div><strong><AgentName :space-id="personalSpaceId" :agent-id="agent.id" :name="agent.name" /></strong><AgentHand :agent-id="agent.id" /><small>{{ agent.responsibility || typeLabel(agent.type) }}</small></div>
               </div>
               <div class="bole-agent-work">

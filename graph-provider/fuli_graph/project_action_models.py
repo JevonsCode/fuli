@@ -162,3 +162,17 @@ class PersonalProjectRelationReviewRecord(StrictModel):
     reviewed_at: datetime
     review_reason: str
     review_event_id: str
+
+
+class PersonalProjectParentChange(StrictModel):
+    """Where a project sits in the person's hierarchy: under one parent, or top level (None)."""
+    parent_project_id: str | None = Field(default=None, min_length=1, max_length=128)
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class PersonalProjectParentRecord(StrictModel):
+    personal_space_id: str
+    project_id: str
+    parent_project_id: str | None = None
+    previous_parent_project_ids: list[str]
+    changed: bool

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { projectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
 import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
 import { createAgentChat } from './chat.js';
+import { createGroupDiscussion } from './group-discussion.js';
 import { ATTENTION_REPLIES_GUIDANCE, createAttentionInbox } from './attention-inbox.js';
 import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 
@@ -22,7 +23,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   env = process.env, locateCwd = sessionWorkingDirectory, clientAvailable = (client) => Boolean(resolveClientCommand(client)),
   // Boot-anchor evidence recorded with a cleanup hold. Production records none
   // (null) until a separately verified proof exists; release stays disabled.
-  bootEvidence = async () => null }) {
+  bootEvidence = async () => null, now = Date.now }) {
   assertRoundtableHost(host);
   const spaceId = () => host.spaceId();
   // Opened on first use: most MCP processes never touch the roundtable.
@@ -173,7 +174,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   // Tries each target until one answers as the restored Agent. The grant is the
   // only authority the woken session receives and is revoked after every attempt.
-  async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth, oneGrant = false }) {
+  async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth, oneGrant = false,
+    readOnly = false }) {
     const unusable = new Set();
     let failure = 'wake_failed';
     let cleanup = null;
@@ -186,7 +188,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       try {
         grant = await issueGrant(delivery, timeoutMs / 1000);
         answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
-          timeoutMs, prompt, delegationToken: grant.token, peerDepth, signal, onSpawn,
+          timeoutMs, prompt, delegationToken: grant.token, peerDepth, signal, onSpawn, readOnly,
           onSession: session => host.sealDelegation({ token: grant.token, sessionId: session }) });
         const verified = answer.sessionId && await host.verifyDelegation({ token: grant.token, sessionId: answer.sessionId });
         if (!verified?.redeemed) throw Object.assign(new Error('The receiving session did not restore the Agent'),
@@ -227,7 +229,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   }
 
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
-    conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWake = null } = {}) {
+    conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWake = null,
+    // readOnly: a group discussion turn, woken where it can change nothing (wake adapters).
+    readOnly = false } = {}) {
     if (roundtableProjectId && peer?.isRemoteAddress(to)) throw validation('This scoped consultation cannot leave its project');
     if (peer?.isRemoteAddress(to)) {
       return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal });
@@ -266,7 +270,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       targetProjectId: crossProject ? targetProjectId : null });
     const timeoutMs = Math.min(Math.max(timeoutSeconds, 30), 900) * 1000;
     try {
-      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal,
+      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, readOnly,
         issueGrant: (delivery, lifetime) => host.issueDelegation({ taskContextToken, client: from.client,
           agentId: target.agentId, ...(crossProject ? { targetProjectId } : {}), targetClient: delivery.client,
           // Claude resumes into a fork with a new ID. Only Codex resumes in place.
@@ -568,15 +572,29 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
   const attentionInbox = createAttentionInbox({ store, spaceId });
-  const chat = createAgentChat({ host, peer, store, agents, idFactory, messageAgent, attentionInbox,
+  const canWake = agent => (agent.profile.allowedClients ?? []).some(client => WAKE_CLIENTS.includes(client) && clientAvailable(client));
+  const { memberChat, ...chat } = createAgentChat({ host, peer, store, agents, idFactory, messageAgent, attentionInbox,
     waitUntilIdle: async (agentId, signal) => {
       const state = await waitForChatChange(() => store.executionState(spaceId(), agentId),
         { store: store.chat, signal, ready: state => state.held || !state.busy });
       return !state.held;
-    },
-    canWake: agent => (agent.profile.allowedClients ?? []).some(client => WAKE_CLIENTS.includes(client) && clientAvailable(client)) });
+    }, canWake });
+  // A discussion member that did not answer keeps no ask in its inbox.
+  const withdraw = messageId => {
+    const ask = store.getMessage(messageId);
+    if (ask?.status === 'queued') store.updateMessage(ask.id, { status: 'cancelled', error: ask.error ?? 'cancelled' });
+  };
+  const discussions = createGroupDiscussion({ host, store, agents, chat: chat.chat, memberChat, messageAgent, withdraw, canWake,
+    // A woken session has no person in it to confirm members or ask a follow-up.
+    inDelegatedWake: () => Boolean(env.FULI_ROUNDTABLE_DELEGATION), now });
   return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote,
+    discuss: discussions.discuss,
+    ownerGroupDiscussion: discussions.ownerView,
+    ownerStopGroupDiscussion: discussions.ownerStop,
+    recordGroupChoice: discussions.ownerRecordChoice,
+    requestGroupFollowUp: discussions.ownerFollowUp,
+    groupDiscussionStatus: discussions.ownerStatus,
     ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
@@ -585,8 +603,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     deliverAttentionReply: attentionInbox.deliver,
     attentionReplies: attentionInbox.taskEntry,
     close: () => {
-      const pending = chat.closeChatWakes();
-      return pending ? pending.then(() => opened?.close()) : opened?.close();
+      const pending = [chat.closeChatWakes(), discussions.close()].filter(Boolean);
+      return pending.length ? Promise.all(pending).then(() => opened?.close()) : opened?.close();
     } };
 }
 

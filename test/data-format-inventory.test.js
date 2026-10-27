@@ -184,7 +184,9 @@ const SQLITE_OUTSIDE_FORMATS = new Map([
   ['src/storage/file-lock.js', 'cross-process lock files with no tables'],
   ['src/data-format/maintenance-lock.js', 'the shared/exclusive maintenance lock file of a data directory, no data'],
   ['packages/roundtable/src/roundtable/chat-store.js', 'the chat tables of the roundtable and peer-coordinator formats'],
-  ['packages/roundtable/src/roundtable/attention-inbox-store.js', 'the attention tables of the roundtable format']
+  ['packages/roundtable/src/roundtable/attention-inbox-store.js', 'the attention tables of the roundtable format'],
+  ['packages/roundtable/src/roundtable/group-discussion-store.js',
+    'the group discussion tables of the roundtable format (migration roundtable/3-group-discussions)']
 ]);
 
 test('SQLite is opened and shaped only through a declared store format', () => {
