@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { taskStatusLabel, taskStatusTone } from './task-labels'
+import { statusTone, taskStatusChipTone, taskStatusLabel, taskStatusTone } from './task-labels'
+
+describe('statusTone', () => {
+  it('gives one status one tone, and never a green or accent one to a problem', () => {
+    for (const status of ['blocked', 'failed', 'unavailable']) {
+      expect(statusTone(status)).toBe('danger')
+      expect(taskStatusTone(status)).toBe('destructive')
+      expect(taskStatusChipTone(status)).toBe('danger')
+    }
+    for (const status of ['awaiting_review', 'paused', 'awaiting_recruitment']) {
+      expect(taskStatusChipTone(status)).toBe('warning')
+    }
+    expect(statusTone('running')).toBe('active')
+    expect(statusTone('in_progress')).toBe('active')
+    expect(taskStatusChipTone('running')).toBe('accent')
+    expect(['completed', 'ended', 'cancelled'].map(taskStatusChipTone)).toEqual(['neutral', 'neutral', 'neutral'])
+  })
+})
 
 describe('taskStatusTone', () => {
   it('reads trouble as danger, waiting as warning, live work as primary and done as success', () => {

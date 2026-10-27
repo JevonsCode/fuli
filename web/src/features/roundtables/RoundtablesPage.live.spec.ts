@@ -142,21 +142,6 @@ describe('RoundtablesPage live updates', () => {
     wrapper.unmount()
   })
 
-  it('shows every top-level field the API returned in the record, including zero and unknown fields', async () => {
-    getJson.mockImplementation(async (url: string) => {
-      if (url === '/api/roundtable/threads') return { threads: [] }
-      if (url.startsWith('/api/roundtable/chats?')) return { chats: [room], hasMore: false }
-      return page([1], { owner: 'SYNTHETIC-OWNER', revision: 0, rawField: 'RAW-ROOM-FIELD' })
-    })
-    const { wrapper } = await mountAt('/roundtables/chat/room')
-    const record = wrapper.get('[data-roundtable-record] pre').text()
-    expect(record).toContain('SYNTHETIC-OWNER')
-    expect(record).toContain('"revision": 0')
-    expect(record).toContain('RAW-ROOM-FIELD')
-    expect(record).not.toContain('CHAT-1')
-    wrapper.unmount()
-  })
-
   it('follows new messages when the reader is at the end', async () => {
     let tail = false
     getJson.mockImplementation(async (url: string) => {

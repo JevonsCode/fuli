@@ -55,17 +55,40 @@ export function memoryScopeLabel(scope: string | null | undefined) {
   return scope ? tableLabel('memoryScopes', scope) : t('projectAgents.notReported')
 }
 
+export type StatusTone = 'danger' | 'warning' | 'active' | 'success' | 'neutral'
+
+const DANGER_STATUSES = new Set(['blocked', 'failed', 'unavailable'])
+const WARNING_STATUSES = new Set(['awaiting_review', 'paused', 'awaiting_recruitment'])
+const ACTIVE_STATUSES = new Set(['running', 'in_progress'])
+
 /**
- * How a task status reads at a glance, as a Badge variant: trouble is danger,
- * waiting on a person or a breaker is warning, live work is primary, done is
- * success, anything else stays neutral.
+ * The one status → tone mapping for every task, work, worker and plan-step
+ * status, so one status always has one colour: trouble (blocked, failed) is
+ * danger, waiting on a person or a breaker is warning, live work is active,
+ * done is success, anything else (queued, ended, cancelled) stays neutral.
+ * A problem is never green. Pages colour statuses with these tones only:
+ * Badge through taskStatusTone, UiChip through taskStatusChipTone, page CSS
+ * through a data-tone attribute.
  */
+export function statusTone(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string): StatusTone {
+  if (DANGER_STATUSES.has(status)) return 'danger'
+  if (WARNING_STATUSES.has(status)) return 'warning'
+  if (ACTIVE_STATUSES.has(status)) return 'active'
+  if (status === 'completed') return 'success'
+  return 'neutral'
+}
+
+const BADGE_VARIANTS = { danger: 'destructive', warning: 'warning', active: 'default', success: 'success', neutral: 'secondary' } as const
+const CHIP_TONES = { danger: 'danger', warning: 'warning', active: 'accent', success: 'neutral', neutral: 'neutral' } as const
+
+/** A status as a Badge variant. */
 export function taskStatusTone(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string) {
-  if (status === 'blocked' || status === 'failed') return 'destructive' as const
-  if (['awaiting_review', 'paused', 'awaiting_recruitment'].includes(status)) return 'warning' as const
-  if (status === 'running') return 'default' as const
-  if (status === 'completed') return 'success' as const
-  return 'secondary' as const
+  return BADGE_VARIANTS[statusTone(status)]
+}
+
+/** A status as a UiChip tone (UiChip has no success tone; done reads neutral). */
+export function taskStatusChipTone(status: ProjectAgentTaskStatus | ProjectAgentWorkStatus | string) {
+  return CHIP_TONES[statusTone(status)]
 }
 
 export function sourceLabel(source: ConversationSourceApplication | null | undefined) {

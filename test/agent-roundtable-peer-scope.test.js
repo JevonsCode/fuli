@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
+import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 function fixture() {
@@ -96,5 +97,39 @@ test('a remote attempt uses its one grant and reports why that delivery failed',
       timeoutMs: 1000,
     }), { code: 'delegation_not_redeemed' });
     assert.equal(grants.length, 1);
+  } finally { service.close(); }
+});
+
+test('a Provider refusal of the shared lead reaches the receiving thread with its reason', async () => {
+  const store = createRoundtableStore();
+  const woken = [];
+  // The Provider's answer when a share outlived its lead (a handoff the directory has not caught up with).
+  const personal = new GraphitiProviderClient({ baseUrl: 'http://provider.invalid', accessToken: 'synthetic-token',
+    fetchImpl: async url => new URL(url).pathname === '/v1/project-agent-context/remote-delegations'
+      ? Response.json({ detail: { code: 'lead_changed', message: 'Remote devices can only ask the project lead' } }, { status: 403 })
+      : Response.json([]) });
+  const app = {
+    config: { personal: { spaceId: 'fixture-space' } },
+    listProjectAgents: async () => [{ agentId: 'shared-lead', profile: { name: 'Shared lead', status: 'active', allowedClients: ['codex'] } }],
+    personal,
+  };
+  const host = createFuliRoundtableHost(app);
+  const service = createAgentRoundtable({ host, openStore: () => store, clientAvailable: () => true,
+    wake: async input => { woken.push(input); return { body: 'Synthetic reply', sessionId: 'fixture-session' }; } });
+  try {
+    await assert.rejects(service.answerRemote({
+      claim: { messageId: 'stale-share-ask', attemptId: 'fixture-attempt', sender: { nodeId: 'd'.repeat(64), name: 'Fixture peer' },
+        assertion: { messageId: 'stale-share-ask', threadId: 'stale-share-thread', body: 'Question', conversation: 'new', depth: 1,
+          from: { agentId: 'peer-lead', name: 'Peer lead' } } },
+      share: { spaceId: 'fixture-space', bindingId: 'shared-binding', agentId: 'shared-lead', projectId: 'shared-project', clients: ['codex'], workingDirectory: process.cwd() },
+      issueGrant: (delivery, lifetime) => host.issueRemoteDelegation({ projectId: 'shared-project', agentId: 'shared-lead',
+        targetClient: delivery.client, targetSessionId: null, lifetimeSeconds: Math.round(lifetime),
+        originNode: 'd'.repeat(64), originMessageId: 'stale-share-ask', originAttemptId: 'fixture-attempt' }),
+      timeoutMs: 300_000,
+    }), { code: 'lead_changed' });
+    assert.deepEqual(woken, [], 'nothing is woken without authority');
+    const [thread] = service.threads().threads;
+    assert.deepEqual(store.messages(thread.id).map(message => [message.kind, message.status, message.error]),
+      [['ask', 'failed', 'lead_changed']]);
   } finally { service.close(); }
 });

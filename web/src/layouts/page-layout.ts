@@ -1,10 +1,9 @@
 import type { RouteLocationNormalized } from 'vue-router'
 
-// The shell's page widths (D-03, rec#38): the wide work canvas for content
-// that is wide by nature (boards, tables, graphs, tile collections), a
-// readable centred column for single-column content pages, and the narrower
-// form column. A page reads its width as --layout-max, which the shell sets
-// from this value, so no page picks its own.
+// What kind of page a route is: a work canvas (boards, tables, graphs, tile
+// collections), a single-column content page, or a form. Every kind is
+// centred at the same width today (--canvas-max, Jevons 10-27); a page reads
+// it as --layout-max, which the shell sets, so no page picks its own.
 export type PageLayout = 'canvas' | 'column' | 'form'
 type LayoutRoute = Pick<RouteLocationNormalized, 'meta' | 'params'>
 export type PageLayoutRule = PageLayout | ((route: LayoutRoute) => PageLayout)
