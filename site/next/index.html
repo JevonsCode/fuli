@@ -41,23 +41,23 @@
       </section>
 
       <section data-i18n-aria-label="next.changes" class="principles" aria-label="这一版的主要变化">
-        <div><h3 data-i18n="next.console">控制台点一下就行</h3><p data-i18n="next.consoleBody">更新、重新接入客户端、填模型密钥、整库恢复，都变成控制台里的按钮，不再让你去终端输命令。控制台也不做登录：FULI 是本机工具。</p></div>
-        <div><h3 data-i18n="next.jefa">Jefa 看板自带</h3><p data-i18n="next.jefaBody">Jefa 的任务看板直接内置在 FULI 里，不用另外安装。「聘请 Agent」按钮和「定时任务」已移除。</p></div>
-        <div><h3 data-i18n="next.tonborg">Tonborg 的判断更好查</h3><p data-i18n="next.tonborgBody">判断记录可以搜索全部历史，长列表分页加载。可以设默认判断方式，也可以给单个项目单独设置；交给你确认的记录，会写明原因。</p></div>
-        <div><h3 data-i18n="next.fla">按名字接着找 Agent</h3><p data-i18n="next.flaBody">在任何目录里输入 @名字 或 #FLA，就能让你自己的某位 Agent 接着在当前对话里工作；记不清名字时，会给出可选列表。</p></div>
-        <div><h3 data-i18n="next.opencode">OpenCode 接入</h3><p data-i18n="next.opencodeBody">OpenCode 2.x 通过插件接入 FULI 的任务入口和收尾，不再依赖模型自己去调用工具。OpenCode 的对话还不会自动采集。</p></div>
-        <div><h3 data-i18n="next.data">数据格式</h3><p data-i18n="next.dataBody">新增 Jefa 看板的本地存储，属于兼容新增。升级前照常备份。</p></div>
+        <div><h3 data-i18n="next.console">控制台点一下就行</h3><p data-i18n="next.consoleBody">更新、重新接入客户端、填模型密钥、整库恢复，都变成控制台里的按钮，不再让你去终端。控制台不做登录，FULI 是本机工具。Jefa 看板直接内置，不用另外安装。</p></div>
+        <div><h3 data-i18n="next.agents">按名字找 Agent，或请几位一起讨论</h3><p data-i18n="next.agentsBody">在任何目录里用 @名字 或 #FLA 让你的某位 Agent 接着做；用 @FLG 请 2–4 位一起讨论，每位在自己的客户端里只读作答，总结会列出没回复的人。</p></div>
+        <div><h3 data-i18n="next.roundtable">圆桌像聊天一样</h3><p data-i18n="next.roundtableBody">圆桌对话变成聊天界面，可以选「留言板」等对方下次来看，或「即时对话」马上唤醒它回答；唤醒不了时会说明原因。</p></div>
+        <div><h3 data-i18n="next.work">阻塞和服务一眼看清</h3><p data-i18n="next.workBody">阻塞的任务写明在等什么、从什么时候、在哪个会话，并能打开那个会话；在原会话继续后自动解除。新的「服务」页列出 Agent 启动的服务，只有你能停止。</p></div>
+        <div><h3 data-i18n="next.tonborg">Tonborg 和项目图谱</h3><p data-i18n="next.tonborgBody">Tonborg 的判断记录可以搜索全部历史，可以给单个项目设判断方式，交给你确认时写明原因。项目图谱不再重叠，还能拖动「调整层级」。</p></div>
+        <div><h3 data-i18n="next.opencode">OpenCode 插件</h3><p data-i18n="next.opencodeBody">OpenCode 2.x 通过插件接入 FULI 的任务入口和收尾，不再依赖模型自己调用工具。OpenCode 的对话还不会自动采集。</p></div>
       </section>
 
       <section class="start" id="start" aria-labelledby="start-title">
         <h2 data-i18n="next.installTitle" id="start-title">一条命令装上预览版</h2>
-        <p data-i18n="next.installDescription">已经装了 FULI 的话，先运行 fuli stop，并备份数据目录。下面的命令用原来的安装脚本，只是把安装的包换成 fuli-context@beta，装完会接着运行 fuli setup。</p>
+        <p data-i18n="next.installDescription">已经装了 FULI 的话，先运行 fuli stop，并备份数据目录。下面的命令用原来的安装脚本，只是把安装的包换成 fuli-context@beta，装完会接着运行 fuli setup。这一版的图谱有一步迁移要你在「设置 → 数据格式迁移」里确认，确认之前图谱只读。</p>
         <div class="oneliner">
           <code>curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | FULI_NPM_PACKAGE_SPEC=fuli-context@beta sh<span>macOS / Linux</span></code>
           <code>$env:FULI_NPM_PACKAGE_SPEC='fuli-context@beta'; irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex<span>Windows PowerShell</span></code>
           <code>npm install --global fuli-context@beta &amp;&amp; fuli setup<span>npm</span></code>
         </div>
-        <p data-i18n="next.switchBack">想回到稳定版：去掉 FULI_NPM_PACKAGE_SPEC 再运行一次安装脚本。稳定版的版本号更低，原生 Provider 需要 fuli setup --allow-provider-downgrade。在预览版里确认过的数据格式迁移，旧版本不会写入，只能用升级前的备份恢复。</p>
+        <p data-i18n="next.switchBack">想回到稳定版：去掉 FULI_NPM_PACKAGE_SPEC 再运行一次安装脚本。稳定版的版本号更低，原生 Provider 需要 fuli setup --allow-provider-downgrade。预览版升级过的数据（自动升级的，和你确认过的迁移），旧版本打不开，只能用升级前的备份恢复。</p>
         <p class="start-links"><a data-i18n="next.release" data-preview-release class="button" href="https://github.com/JevonsCode/fuli/releases/tag/v0.22.0-beta.1">查看完整更新说明</a><a data-i18n="next.stable" data-i18n-href="next.stableUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到稳定版</a></p>
       </section>
     </main>
