@@ -38,6 +38,27 @@ test('the preview page is built at /next/ in Chinese by default and in English, 
   }
 });
 
+// The preview page sums up everything since the current stable release, not just
+// the last beta (Jevons 10-27): it names that baseline and links the notes of every
+// release line between it and this version, whose own notes are the release link.
+test('the preview page covers every release line since the stable baseline', () => {
+  const minor = value => Number(value.split('.')[1]);
+  for (const [route, locale] of [['', 'zh-CN'], ['en/', 'en']]) {
+    const { document } = parseHTML(files.get(`next/${route}index.html`));
+    const baseline = document.querySelector('[data-preview-baseline]')?.dataset.previewBaseline;
+    assert.match(baseline ?? '', /^\d+\.\d+\.\d+$/);
+    assert.ok(minor(baseline) < minor(version), 'the baseline is the stable release before this preview');
+    assert.ok(messages[locale]['next.description'].includes(baseline));
+    assert.ok(messages[locale]['next.changes'].includes(baseline));
+    const notes = new Map([...document.querySelectorAll('[data-release-notes]')].map(link => [link.dataset.releaseNotes, link.href]));
+    for (let line = minor(baseline) + 1; line < minor(version); line += 1) {
+      const release = `0.${line}.0`;
+      assert.equal(notes.get(release), `https://github.com/JevonsCode/fuli/blob/main/docs/releases/${release}.md`);
+      assert.ok(read(`../docs/releases/${release}.md`).length > 0);
+    }
+  }
+});
+
 test('the preview install commands use the variable the site installers read', () => {
   assert.match(read('../site/install.sh'), /package_spec="\$\{FULI_NPM_PACKAGE_SPEC:-fuli-context@latest\}"/);
   assert.match(read('../site/install.ps1'), /\$env:FULI_NPM_PACKAGE_SPEC/);
