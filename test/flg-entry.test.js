@@ -138,9 +138,20 @@ test('parsing: @FLG and #FLG only at the start share the FLA parser; numbers or 
     assert.deepEqual(groupChoiceReply(reply), { choices: expected }, reply);
   }
   // A bare word is ordinary talk, never a confirmation.
-  for (const reply of ['开始', '好', 'ok', '可以', 'yes', '1 3 个方案', '第一个', 'go ahead and refactor', '13 apples']) {
+  for (const reply of ['开始', '好', 'ok', '可以', 'yes', '1 3 个方案', '第一个', 'go ahead and refactor', '13 apples',
+    '一起看', '圆桌']) {
     assert.equal(groupChoiceReply(reply), null, reply);
   }
+  // The mode rides on the confirmation: both labels the choice offers, or a short word.
+  assert.deepEqual(groupChoiceReply('1 3 一起看'), { choices: [1, 3], mode: 'session' });
+  assert.deepEqual(groupChoiceReply('2 3 开始 圆桌'), { choices: [2, 3], mode: 'roundtable' });
+  for (const [prompt, mode] of [['@FLG 一起看', 'session'], ['@FLG 开始 在这个会话里一起看', 'session'],
+    ['@FLG 在圆桌里分头回复', 'roundtable'], ['@FLG 开始，圆桌', 'roundtable']]) {
+    assert.deepEqual(parseFlaMention(prompt), { group: { confirm: true, mode } }, prompt);
+  }
+  assert.deepEqual(parseFlaMention('@FLG 1 3 在这个会话里一起看'), { group: { choices: [1, 3], mode: 'session' } });
+  // A question that mentions a mode is still a question.
+  assert.deepEqual(parseFlaMention('@FLG #Nova Lane 一起看这个'), { group: { query: '#Nova Lane 一起看这个' } });
 });
 
 test('question only: recommends fitting FLAs with reasons, preselected, without the moderator or unwakeable FLAs', async () => {
@@ -148,7 +159,10 @@ test('question only: recommends fitting FLAs with reasons, preselected, without 
   const entry = await hook('@FLG 讨论这个方案的产品体验和技术风险');
   assert.equal(entry.flg.status, 'choose');
   assert.equal(entry.human_interaction.presentation, 'host_native_multi_choice');
-  assert.match(entry.human_interaction.guidance, /multi-select[\s\S]*"1 3"[\s\S]*@FLG/u);
+  assert.match(entry.human_interaction.guidance, /multi-select[\s\S]*mode_choice[\s\S]*"1 3 一起看"[\s\S]*@FLG/u);
+  // Without a mode in the question the roundtable is preselected, as before mode 1.
+  assert.deepEqual(entry.human_interaction.mode_choice, { question: '怎么一起工作？',
+    options: ['在这个会话里一起看', '在圆桌里分头回复'], preselected: 2 });
   const shown = names(options(entry));
   assert.ok(shown.length >= 2 && shown.length <= 4);
   assert.deepEqual(shown.slice(0, 2), ['Pia Mo', 'Jamie Ash']);
@@ -355,6 +369,120 @@ test('a bare @FLG asks for the question; @FLG 1 3 without a choice says so', asy
   assert.equal((await fixture().hook('@FLG 1 3')).flg.reason, 'no_choice');
 });
 
+// Mode 1 reads through the same methods the Agent tools call; this records
+// them and serves synthetic tasks, standing assignments and knowledge.
+function sameSessionFixture() {
+  const setup = fixture();
+  const { app, calls } = setup;
+  app.personal.listProjectAgentTasks = async input => {
+    calls.push(['tasks', input.agentId, input.limit]);
+    return ['1', '2', '3', '4'].map(n => ({ task_id: `${input.agentId}-task-${n}`, personal_space_id: SPACE,
+      personal_project_id: 'project-a', title: `${input.agentId} 的第 ${n} 个任务`, status: n === '1' ? 'running' : 'completed' }));
+  };
+  app.standingAssignments = { match: () => [], list: () => [{ assignmentId: 'sa-1', projectId: 'project-a',
+    leadAgentId: 'qa', terms: ['回归测试'], responsibility: '每次发布前的回归测试' }] };
+  app.searchKnowledge = async input => {
+    calls.push(['search', input.agentToolName, input.personalProjectId, input.query]);
+    return { facts: [], entities: [{ id: 'k-1', name: 'Release checklist', summary: 'release checklist steps',
+      defined_project_id: input.personalProjectId, confirmation_status: 'confirmed' }] };
+  };
+  const memberSearches = () => calls.filter(([kind, tool]) => kind === 'search' && tool === 'flg_member_knowledge_index');
+  return { ...setup, memberSearches };
+}
+
+test('mode 1: 一起看 loads a read-only index of each member into this session; nobody is woken, no memory is read', async () => {
+  const { hook, calls, memoryReads, memberSearches, tasks } = sameSessionFixture();
+  const choose = await hook('@FLG #Nova Lane #Pia Mo 一起看这个 "release checklist"');
+  assert.equal(choose.flg.status, 'choose');
+  assert.deepEqual(names(preselected(choose)), ['Nova Lane', 'Pia Mo']);
+  // The question asked for this session, so that mode is preselected.
+  assert.equal(choose.human_interaction.mode_choice.preselected, 1);
+  const entry = await hook('@FLG 开始');
+  assert.equal(entry.flg.status, 'together');
+  // Nothing is recorded in the roundtable and nobody is woken.
+  assert.deepEqual(calls.filter(([kind]) => ['confirm', 'follow_up'].includes(kind)), []);
+  assert.equal(entry.flg.start, undefined);
+  // The session's own Agent keeps working this turn.
+  assert.deepEqual([entry.context.personal_project_id, entry.context.project_agent_id], ['project-a', 'ada']);
+  const { context } = entry.flg;
+  assert.deepEqual(context.members.map(member => member.agent_id), ['qa', 'pm']);
+  const nova = context.members[0];
+  assert.deepEqual(nova.projects, [['project-a', 'Alpha']]);
+  assert.deepEqual(nova.standing, ['每次发布前的回归测试']);
+  assert.deepEqual(nova.tasks, [['qa-task-1', 'qa 的第 1 个任务', 'running'], ['qa-task-2', 'qa 的第 2 个任务', 'completed'],
+    ['qa-task-3', 'qa 的第 3 个任务', 'completed']]);
+  assert.equal(context.members[1].standing, undefined);
+  // Knowledge titles of the members' projects, searched once per project, without the members' names.
+  assert.deepEqual(context.knowledge, [['project-a', [['k-1', 'Release checklist']]]]);
+  assert.deepEqual(memberSearches().map(([, , project]) => project), ['project-a']);
+  assert.doesNotMatch(memberSearches()[0][3], /Nova|Pia/u);
+  // Working memory is never read, and the entry says it was withheld.
+  assert.deepEqual(memoryReads().filter(([, , agent]) => agent !== 'ada'), []);
+  assert.match(context.withheld, /private_agent_project/u);
+  assert.match(context.read, /view_project_agent_task[\s\S]*search_current_project_knowledge/u);
+  assert.match(entry.flg.guidance, /Nobody is woken[\s\S]*Read-only/u);
+  // One receipt line names whose context was loaded.
+  const line = '本会话已载入 2 位 @FLG 成员的上下文：Nova Lane、Pia Mo（工作记忆为各 FLA 私有，未载入）';
+  assert.equal(entry.flg.notice, line);
+  assert.ok(entry.agent_receipt.markdown.includes(line));
+  assert.ok(tasks.at(-1).agentAssignment.match_basis.some(item => item.startsWith('flg_with:qa ')));
+});
+
+test('mode 1: later @FLG <text> reads the same members again; ordinary turns carry nothing; @FLG 结束 ends it', async () => {
+  const { hook, memberSearches } = sameSessionFixture();
+  await hook('@FLG Nova Lane、Pia Mo 一起看这个');
+  assert.equal((await hook('@FLG 开始')).flg.status, 'together');
+  const ordinary = await hook('先看看日志');
+  assert.equal(ordinary.flg, undefined);
+  const again = await hook('@FLG 再看看 "deploy runbook"');
+  assert.equal(again.flg.status, 'together');
+  assert.deepEqual(again.flg.context.members.map(member => member.name), ['Nova Lane', 'Pia Mo']);
+  assert.equal(again.human_interaction, undefined);
+  assert.match(memberSearches().at(-1)[3], /deploy runbook/u);
+  const ended = await hook('@FLG 结束');
+  assert.equal(ended.flg.status, 'ended');
+  assert.match(ended.agent_receipt.markdown, /已结束本会话的 @FLG 一起看/u);
+  assert.equal((await hook('@FLG 新的问题')).flg.status, 'choose');
+});
+
+test('mode is chosen at confirmation: the answer overrides the preselection either way', async () => {
+  const toSession = sameSessionFixture();
+  await toSession.hook('@FLG 讨论这个方案的产品体验和技术风险');
+  const together = await toSession.hook('@FLG 1 2 在这个会话里一起看');
+  assert.equal(together.flg.status, 'together');
+  assert.deepEqual(toSession.calls.filter(([kind]) => kind === 'confirm'), []);
+  const toRoundtable = sameSessionFixture();
+  await toRoundtable.hook('@FLG Nova Lane、Pia Mo 一起看这个');
+  const started = await toRoundtable.hook('1 2 圆桌');
+  assert.equal(started.flg.status, 'confirmed');
+  assert.deepEqual(toRoundtable.calls.find(([kind]) => kind === 'confirm')[1].members, ['qa', 'pm']);
+  assert.equal(started.flg.context, undefined);
+});
+
+test('mode 1 offers members no roundtable wake could reach, and says so for the session\'s own FLA', async () => {
+  const { hook } = sameSessionFixture();
+  // Otto Cole only works in OpenCode: no wake client, but nothing is woken in this session.
+  const choose = await hook('@FLG Otto Cole、Nova Lane、Ada Lead 一起看这个');
+  assert.deepEqual(names(preselected(choose)), ['Otto Cole', 'Nova Lane']);
+  assert.match(choose.flg.notice, /Ada Lead 无法参加：就是本会话的 FLA/u);
+  const roundtable = await fixture().hook('@FLG Otto Cole、Nova Lane 讨论');
+  assert.match(roundtable.flg.notice, /Otto Cole 无法参加：没有可唤醒它的执行器/u);
+});
+
+test('mode 1: a member whose tasks cannot be read is said so; the rest still loads', async () => {
+  const { app, hook } = sameSessionFixture();
+  const read = app.personal.listProjectAgentTasks;
+  app.personal.listProjectAgentTasks = async input => {
+    if (input.agentId === 'pm') throw Object.assign(new Error('synthetic outage'), { status: 503 });
+    return read(input);
+  };
+  await hook('@FLG Nova Lane、Pia Mo 一起看这个');
+  const entry = await hook('@FLG 开始');
+  assert.equal(entry.flg.status, 'together');
+  assert.equal(entry.flg.context.members[1].tasks, 'unavailable');
+  assert.equal(entry.flg.context.members[0].tasks.length, 3);
+});
+
 test('token budget: an ordinary prompt carries nothing new; the member choice and the confirmation stay small', async t => {
   const plain = await fixture().hook('讨论这个方案的产品体验和技术风险');
   assert.equal(plain.flg, undefined);
@@ -366,6 +494,14 @@ test('token budget: an ordinary prompt carries nothing new; the member choice an
   const choice = size({ flg: choose.flg, human_interaction: choose.human_interaction });
   const confirmation = size({ flg: confirm.flg });
   t.diagnostic(`choice fields ${choice} B, confirmation field ${confirmation} B, choice entry ${bytes(choose)} B`);
-  assert.ok(choice < 1_400, `choice ${choice}`);
+  // Mode 1 adds mode_choice (two labels) and the mode to the guidance: 1,171 -> about 1,400 B.
+  assert.ok(choice < 1_500, `choice ${choice}`);
   assert.ok(confirmation < 700, `confirmation ${confirmation}`);
+  // Mode 1's index for two members, each with three tasks, plus one knowledge title: once per
+  // confirmation or `@FLG <text>`, never on ordinary turns; full items are read on demand.
+  const same = sameSessionFixture();
+  await same.hook('@FLG Nova Lane、Pia Mo 一起看 "release checklist"');
+  const together = size({ flg: (await same.hook('@FLG 开始')).flg });
+  t.diagnostic(`mode 1 field for two members ${together} B`);
+  assert.ok(together < 2_000, `together ${together}`);
 });

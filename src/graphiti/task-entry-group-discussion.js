@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { groupChoiceReply, parseFlaMention } from './fla-mention.js';
+import { groupChoiceReply, groupModeHint, parseFlaMention } from './fla-mention.js';
 import { flaGroupChoice, namedInText, rankCandidates, unavailableReason } from './fla-picker.js';
 import { personCandidates } from './task-entry-named-fla.js';
 import { recommendMembers } from './group-member-recommendation.js';
+import { groupMemberContext } from './group-member-context.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { markerField as field, markerValue as unfield } from './task-agent-assignment.js';
 import { WAKE_CLIENTS } from '../../packages/roundtable/src/agents/wake-registry.js';
@@ -16,14 +17,20 @@ import { WAKE_CLIENTS } from '../../packages/roundtable/src/agents/wake-registry
 //    or asks for more, the FLAs that fit the question
 //    (group-member-recommendation.js), each with a short reason.
 // 2. The person confirms: numbers such as `1 3`, or `@FLG 开始` for the
-//    preselection (the host's native answer comes back as `@FLG 1 3`). The
-//    entry records the confirmed members and question in the roundtable and
-//    hands its request ID to the session's own Agent, which moderates with the
-//    group_discussion tool; start runs exactly that confirmation, once
-//    (packages/roundtable/src/roundtable/group-discussion.js).
-// 3. While that discussion is open, `@FLG <text>` records the person's
-//    follow-up for the same members (one follow_up each) and `@FLG 结束`
-//    stops it at once. No extra step is asked of the person.
+//    preselection (the host's native answer comes back as `@FLG 1 3`), and
+//    with them how the group works; the choice preselects the mode the
+//    question asks for (`一起看`), else the roundtable.
+//    - 「在圆桌里分头回复」 (mode 2): the entry records the confirmed members
+//      and question in the roundtable and hands its request ID to the
+//      session's own Agent, which moderates with the group_discussion tool;
+//      start runs exactly that confirmation, once
+//      (packages/roundtable/src/roundtable/group-discussion.js).
+//    - 「在这个会话里一起看」 (mode 1): nobody is woken; the entry hands this
+//      session a small read-only index of each member's context
+//      (group-member-context.js) and remembers the members.
+// 3. Afterwards `@FLG <text>` records the person's follow-up for the same
+//    members (mode 2: one follow_up each; mode 1: the index read again for
+//    that text) and `@FLG 结束` stops it at once. No extra step is asked.
 //
 // The member choice and the started discussion are routing state, stored as
 // markers on the session's current task like a named FLA's choice; the
@@ -34,6 +41,10 @@ import { WAKE_CLIENTS } from '../../packages/roundtable/src/agents/wake-registry
 const CHOICE = /^flg_choice:(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) ([01])$/u;
 const QUESTION = /^flg_question:(.*)$/su;
 const STARTED = /^flg_group:(\S+)$/u;
+const MODE_MARKER = /^flg_mode:(session|roundtable)$/u;
+const WITH = /^flg_with:(\S+) (\S+) (\S+) (\S+) (\S+)$/u;
+// The mode choice, in the order it is offered.
+const MODES = Object.freeze({ session: '在这个会话里一起看', roundtable: '在圆桌里分头回复' });
 const MEMBER_MINIMUM = 2;
 const OPTION_LIMIT = 4;
 const RECOMMENDED = 3;
@@ -46,22 +57,27 @@ const LOOSE_YES = /^(?:好|好的|好吧|行|可以|嗯|对|是|ok|okay|yes|yep|
 // A discussion in progress keeps its session where it is.
 const ACTIVE = new Set(['confirmed', 'running']);
 
-const CHOOSE_GUIDANCE = 'Ask this now with the host native multi-select UI, the preselected options checked and '
-  + 'custom input last; where there is none, show the numbered list and let the person reply with numbers such as '
-  + '"1 3", or "@FLG 开始" for the checked ones. Start nothing and speak for no member before the answer. When they '
-  + 'answer, call begin_task_context with projectPath=current directory and taskPrompt "@FLG <the chosen numbers>" '
-  + '(or "@FLG 开始") and follow its flg.guidance. A choice is not a permission grant.';
+const CHOOSE_GUIDANCE = 'Ask this now with the host native multi-select UI (preselected checked, custom input last) '
+  + 'and mode_choice as a second, single choice in the same UI; where there is none, show both numbered lists and let '
+  + 'the person reply such as "1 3 一起看", "1 3 圆桌", or "@FLG 开始" for the checked ones. Start nothing and speak for '
+  + 'no member before the answer. Then call begin_task_context with projectPath=current directory and taskPrompt '
+  + '"@FLG <numbers> <一起看|圆桌>" (or "@FLG 开始 <一起看|圆桌>") and follow its flg.guidance. A choice is not a '
+  + 'permission grant.';
 const START_GUIDANCE = 'The person confirmed these members. Call group_discussion with action start, this entry\'s '
   + 'taskContextToken and start.requestId. Each member is woken in its own client without file edits or shell and answers for itself: '
   + 'never write or guess a member\'s view. Then call group_discussion wait and follow its guidance until it '
   + 'concludes. The discussion authorizes no edits or publishing.';
 const FOLLOW_UP_GUIDANCE = 'The person asked this follow-up of the same members; do not choose members again. Call '
   + 'group_discussion follow_up with chat_id (it carries out exactly this follow-up), then wait and follow its guidance.';
+const TOGETHER_GUIDANCE = 'Nobody is woken: work on the person\'s request in this conversation with these members in '
+  + 'mind. flg.context is an index; read a full item only when needed, as its read line says. Read-only: never change '
+  + 'a member\'s tasks, memory or assignments, never read a member\'s working memory, and never speak as a member; say '
+  + 'whose context a point comes from.';
 const STOPPED_GUIDANCE = 'The person stopped this discussion; no member is woken any more. Call group_discussion '
   + 'status with chat_id and follow its guidance for the summary.';
 const REASONS = Object.freeze({
   dismissed: '已被解雇', inactive: '已停用', no_project: '目前没有在任的项目', no_executor: '没有可唤醒它的执行器',
-  moderator: '是本会话的主持，不另外唤醒'
+  moderator: '是本会话的主持，不另外唤醒', own: '就是本会话的 FLA'
 });
 const NOTICES = Object.freeze({
   project_required: '@FLG 需要由项目里的 FLA 主持；当前会话不在项目中，没有发起讨论',
@@ -71,8 +87,7 @@ const NOTICES = Object.freeze({
   no_choice: '没有待确认的 @FLG 成员列表；用「@FLG 问题」发起讨论',
   none_running: '本会话没有进行中的 @FLG 讨论',
   stop_unavailable: '暂时无法停止 @FLG 讨论，请稍后再说一次 @FLG 结束',
-  roundtable_unavailable: '暂时无法记录确认的成员，没有发起讨论',
-  not_started: '这场 @FLG 讨论还没开始，开始后再追问',
+  roundtable_unavailable: '暂时无法记录确认的成员，没有发起讨论',  not_started: '这场 @FLG 讨论还没开始，开始后再追问',
   follow_up_limit: '这场 @FLG 讨论已追问 5 次，到了上限；再写「@FLG 问题」会重新选人',
   question_required: '请在 @FLG 后写上要讨论的问题，例如「@FLG 讨论这个方案的产品体验和技术风险」'
 });
@@ -87,18 +102,21 @@ export function groupDiscussionRequest(application, input, task) {
   // A discussion that ended, or that this FULI cannot find, is no longer carried.
   const status = stored.started ? discussionStatus(application, stored.started) : null;
   if (!status || status.status === 'ended') stored.started = null;
-  const carried = stored.started ? { state: 'carried', stored, holdsProject: ACTIVE.has(status.status) } : null;
+  const carried = stored.started || stored.together.length
+    ? { state: 'carried', stored, holdsProject: ACTIVE.has(status?.status) } : null;
+  // What the member index's knowledge search is attributed to.
+  const source = { sourceApplication: input.sourceApplication, sessionId: input.sessionId ?? input.sourceSessionId };
   if (hostInternalActivity(application, input)) return carried;
   const reply = mention && (mention.choices || mention.confirm) ? mention
     : !mention && stored.choices.length ? groupChoiceReply(input.taskPrompt) : null;
-  if (reply) return { state: stored.choices.length ? 'confirm' : 'no_choice', reply, stored, holdsProject: true };
+  if (reply) return { state: stored.choices.length ? 'confirm' : 'no_choice', reply, stored, holdsProject: true, source };
   // `@FLG 好` / `@FLG ok` while a choice waits is an unclear answer to it, not a new question.
   if (mention?.query && stored.choices.length && LOOSE_YES.test(mention.query)) {
     return { state: 'unclear', stored, holdsProject: true };
   }
   if (!mention) return carried;
   if (mention.release) return { state: 'stop', stored, holdsProject: true };
-  return { state: 'ask', query: mention.query, stored, status, holdsProject: true };
+  return { state: 'ask', query: mention.query, stored, status, holdsProject: true, source };
 }
 
 // What the entry says, offers and stores, once the session's own Agent (the
@@ -106,9 +124,19 @@ export function groupDiscussionRequest(application, input, task) {
 // member choice), notice (one receipt sentence), selection (replaces the
 // selection when no Agent works this turn) and markers.
 export async function groupDiscussionEntry(application, request, selection, personalProjectId) {
-  const kept = request.stored.started ? [startedMarker(request.stored.started)] : [];
+  const kept = request.stored.started ? [startedMarker(request.stored.started)]
+    : request.stored.together.map(withMarker);
   if (request.state === 'carried') return { markers: kept };
   if (request.state === 'no_choice') return said('unavailable', 'no_choice', kept);
+  const sameSession = !request.stored.started && request.stored.together.length > 0;
+  if (request.state === 'stop' && sameSession) {
+    const notice = '已结束本会话的 @FLG 一起看';
+    return { view: { status: 'ended', notice }, notice, selection: noAgent(), markers: [] };
+  }
+  // Mode 1 needs no moderator: the same members' index, read for the new text.
+  if (request.state === 'ask' && request.query && sameSession) {
+    return together(application, request.stored.together, request.query, request.source);
+  }
   if (request.state === 'stop') {
     let stopped = null;
     try {
@@ -135,12 +163,14 @@ async function memberChoice(application, query, { moderator, personalProjectId }
   let candidates;
   try { candidates = await personCandidates(application); } catch { return said('unavailable', 'roster_unavailable', []); }
   const ranked = rankCandidates(candidates, { currentProjectId: personalProjectId });
+  const mode = groupModeHint(query) ?? 'roundtable';
+  const unavailable = item => memberUnavailable(item, moderator, mode);
   const notices = [];
   const options = [];
   for (const items of namedInText(query, ranked)) {
-    const open = items.filter(item => !memberUnavailable(item, moderator));
+    const open = items.filter(item => !unavailable(item));
     if (!open.length) {
-      notices.push(`${items[0].name} 无法参加：${REASONS[memberUnavailable(items[0], moderator)]}，未改用其他 FLA`);
+      notices.push(`${items[0].name} 无法参加：${REASONS[unavailable(items[0])]}，未改用其他 FLA`);
       continue;
     }
     const agents = [...new Set(open.map(item => item.agentId))];
@@ -158,7 +188,7 @@ async function memberChoice(application, query, { moderator, personalProjectId }
   const room = OPTION_LIMIT - options.length;
   const wanted = Math.min(room, !named ? count ?? RECOMMENDED : wantsMore ? count ?? 1 : room);
   const taken = new Set([moderator, ...options.map(item => item.agentId)]);
-  const pool = ranked.filter((item, index) => !taken.has(item.agentId) && !memberUnavailable(item, moderator)
+  const pool = ranked.filter((item, index) => !taken.has(item.agentId) && !unavailable(item)
     && ranked.findIndex(other => other.agentId === item.agentId) === index);
   const recommended = recommendMembers(query, pool, { count: wanted, currentProjectId: personalProjectId,
     standing: standingMatches(application, query) });
@@ -167,35 +197,44 @@ async function memberChoice(application, query, { moderator, personalProjectId }
   const question = !named ? '按问题推荐了这些 FLA，要邀请哪几位一起讨论？'
     : options.some(item => item.note === '同名，请选择') ? '有同名的 FLA，请选出要邀请的那一位，再确认成员'
       : wantsMore ? '你点名的和推荐的 FLA 已勾选，要邀请哪几位？' : '你点名的 FLA 已勾选，还要加谁吗？';
-  const { shown, interaction } = flaGroupChoice(options, { title: '选择 @FLG 讨论成员', question, guidance: CHOOSE_GUIDANCE });
+  const { shown, interaction } = memberAndModeChoice(options, question, mode);
   const notice = ['等待确认 @FLG 讨论成员', ...notices].join('；');
   const text = [...query].slice(0, QUESTION_LIMIT).join('');
   return { view: { status: 'choose', question: text, notice }, interaction, notice,
-    selection: noAgent(), markers: [`flg_question:${text}`, ...shown.map(choiceMarker)] };
+    selection: noAgent(), markers: [`flg_question:${text}`, `flg_mode:${mode}`, ...shown.map(choiceMarker)] };
+}
+
+// The member multi-select with the mode choice beside it, its mode preselected.
+function memberAndModeChoice(members, question, mode) {
+  const { shown, interaction } = flaGroupChoice(members, { title: '选择 @FLG 讨论成员', question, guidance: CHOOSE_GUIDANCE });
+  return { shown, interaction: { ...interaction, mode_choice: { question: '怎么一起工作？', options: Object.values(MODES),
+    preselected: Object.keys(MODES).indexOf(mode) + 1 } } };
 }
 
 // The same member choice again, saying why the last answer did not confirm it.
-function chooseAgain({ choices, question }, reason) {
-  const { interaction } = flaGroupChoice(choices, { title: '选择 @FLG 讨论成员',
-    question: `${reason}，要邀请哪几位一起讨论？`, guidance: CHOOSE_GUIDANCE });
+function chooseAgain({ choices, question, mode }, reason) {
+  const { interaction } = memberAndModeChoice(choices, `${reason}，要邀请哪几位一起讨论？`, mode);
   const notice = `等待确认 @FLG 讨论成员：${reason}`;
   return { view: { status: 'choose', question, notice }, interaction, notice,
-    selection: noAgent(), markers: [`flg_question:${question}`, ...choices.map(choiceMarker)] };
+    selection: noAgent(), markers: [`flg_question:${question}`, `flg_mode:${mode}`, ...choices.map(choiceMarker)] };
 }
 
 function confirmed(application, request, moderator, personalProjectId) {
   const { choices, question } = request.stored;
+  const mode = request.reply.mode ?? request.stored.mode;
   const picked = request.reply.confirm ? choices.filter(item => item.preselected)
     : request.reply.choices.map(number => choices[number - 1]);
   const unknown = request.reply.choices?.filter(number => !choices[number - 1]) ?? [];
   // The session's own Agent moderates; it is said, never silently dropped.
   const moderating = picked.find(item => item?.agentId === moderator);
+  const self = moderating ? `${moderating.name} ${REASONS[mode === 'session' ? 'own' : 'moderator']}` : null;
   const members = [...new Map(picked.filter(Boolean).filter(item => item.agentId !== moderator)
     .map(item => [item.agentId, item])).values()];
   if (unknown.length || members.length < MEMBER_MINIMUM) {
-    return chooseAgain(request.stored, [unknown.length ? `没有编号 ${unknown.join('、')}` : '至少选两位',
-      ...(moderating ? [`${moderating.name} ${REASONS.moderator}`] : [])].join('；'));
+    return chooseAgain({ ...request.stored, mode }, [unknown.length ? `没有编号 ${unknown.join('、')}` : '至少选两位',
+      ...(self ? [self] : [])].join('；'));
   }
+  if (mode === 'session') return together(application, members, question, request.source, self);
   const requestId = `flg-${randomUUID()}`;
   // What the person confirmed is recorded where start checks it.
   try {
@@ -204,9 +243,21 @@ function confirmed(application, request, moderator, personalProjectId) {
       question, members: members.map(item => item.agentId) });
   } catch { return said('unavailable', 'roundtable_unavailable', []); }
   const notice = [`已确认 ${members.length} 位 @FLG 讨论成员：${members.map(item => item.name).join('、')}`,
-    ...(moderating ? [`${moderating.name} ${REASONS.moderator}`] : [])].join('；');
+    ...(self ? [self] : [])].join('；');
   return { view: { status: 'confirmed', notice, start: { requestId }, guidance: START_GUIDANCE }, notice,
     markers: [startedMarker(requestId)] };
+}
+
+// Mode 1: this session reads the members' index for the person's text and
+// keeps the members, so a later `@FLG <text>` reads it again. One receipt
+// line says whose context was loaded and that working memory was not; a part
+// that cannot be read is said in the index itself.
+async function together(application, members, text, source, extra = null) {
+  const context = await groupMemberContext(application, members, text, source);
+  const notice = [`本会话已载入 ${members.length} 位 @FLG 成员的上下文：${members.map(item => item.name).join('、')}`
+    + '（工作记忆为各 FLA 私有，未载入）', ...(extra ? [extra] : [])].join('；');
+  return { view: { status: 'together', notice, context, guidance: TOGETHER_GUIDANCE }, notice,
+    markers: members.map(withMarker) };
 }
 
 // The person's `@FLG <text>` for the discussion this session started: recorded
@@ -234,9 +285,14 @@ function discussionStatus(application, requestId) {
 }
 
 // Why an FLA cannot take part, or null: dismissed or inactive, no project, no
-// client a roundtable wake can start, or this session's own Agent.
-function memberUnavailable(item, moderator) {
-  if (item.agentId === moderator) return 'moderator';
+// client a roundtable wake can start (the roundtable only: mode 1 wakes
+// nobody), or this session's own Agent.
+function memberUnavailable(item, moderator, mode) {
+  if (item.agentId === moderator) return mode === 'session' ? 'own' : 'moderator';
+  if (mode === 'session') {
+    const reason = unavailableReason(item, null);
+    return reason !== 'client_not_allowed' ? reason : item.projectId === undefined ? 'no_project' : null;
+  }
   const reasons = WAKE_CLIENTS.map(client => unavailableReason(item, client));
   if (reasons.includes(null)) return null;
   return reasons.find(reason => reason !== 'client_not_allowed') ?? 'no_executor';
@@ -272,6 +328,10 @@ function startedMarker(requestId) {
   return `flg_group:${requestId}`;
 }
 
+function withMarker(item) {
+  return `flg_with:${[item.agentId, item.projectId, item.name, item.project, item.occupation].map(field).join(' ')}`;
+}
+
 function storedGroup(task) {
   const basis = task?.agentAssignment?.match_basis ?? [];
   const choices = basis.map(item => CHOICE.exec(item)).filter(Boolean)
@@ -281,5 +341,10 @@ function storedGroup(task) {
     .filter(item => item.agentId);
   const question = basis.map(item => QUESTION.exec(item)?.[1]).find(value => value !== undefined) ?? '';
   const started = basis.map(item => STARTED.exec(item)?.[1]).find(Boolean) ?? null;
-  return { choices, question, started };
+  const mode = basis.map(item => MODE_MARKER.exec(item)?.[1]).find(Boolean) ?? 'roundtable';
+  const together = basis.map(item => WITH.exec(item)).filter(Boolean)
+    .map(([, agentId, projectId, name, project, occupation]) => ({ agentId: unfield(agentId),
+      projectId: unfield(projectId), name: unfield(name), project: unfield(project), occupation: unfield(occupation) ?? '' }))
+    .filter(item => item.agentId);
+  return { choices, question, started, mode, together };
 }
