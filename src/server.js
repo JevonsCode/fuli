@@ -34,6 +34,7 @@ import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-ha
 import { createKnowledgeRecoveryCheck } from './knowledge-hard-delete/recovery-check.js';
 import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
 import { projectHierarchyConsole as createProjectHierarchyConsole } from './project-hierarchy/console-port.js';
+import { taskBlockerConsole as createTaskBlockerConsole } from './task-blockers/console-port.js';
 import { knowledgeOwnerReads as createKnowledgeOwnerReads } from './knowledge-owner-reads/console-port.js';
 import { reviewUndoConsole } from './judgment/review-undo.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
@@ -109,6 +110,9 @@ export async function createServer(options = {}) {
   // A person's move of a project in their hierarchy (调整层级), console only.
   const projectHierarchy = options.projectHierarchy ?? (localOptions.runtimeConfigPath
     ? createProjectHierarchyConsole(dirname(localOptions.runtimeConfigPath)) : null);
+  // A person's 「标记为已解除」 of a blocked task, console only.
+  const taskBlockers = options.taskBlockers ?? (localOptions.runtimeConfigPath
+    ? createTaskBlockerConsole(dirname(localOptions.runtimeConfigPath)) : null);
   // The person's full knowledge reads, every FLA's included (console only).
   const knowledgeOwnerReads = options.knowledgeOwnerReads ?? (localOptions.runtimeConfigPath
     ? createKnowledgeOwnerReads(dirname(localOptions.runtimeConfigPath)) : null);
@@ -225,6 +229,7 @@ export async function createServer(options = {}) {
       knowledgeHardDelete,
       knowledgeScope,
       projectHierarchy,
+      taskBlockers,
       knowledgeOwnerReads,
       knowledgeTags,
       modelRoleSettings,
@@ -324,6 +329,7 @@ async function handleRequest({
   knowledgeHardDelete,
   knowledgeScope,
   projectHierarchy,
+  taskBlockers,
   knowledgeOwnerReads,
   knowledgeTags,
   modelRoleSettings,
@@ -360,6 +366,7 @@ async function handleRequest({
     knowledgeHardDelete,
     knowledgeScope,
     projectHierarchy,
+    taskBlockers,
     knowledgeOwnerReads,
     knowledgeTags,
     modelRoleSettings,

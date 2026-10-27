@@ -86,6 +86,7 @@ export const glossaryMessages = {
       awaiting_recruitment: '还缺合适的职业，等伯乐招到人再开始。',
       none: '当前没有进行中的任务。',
       ended: '任务已结束。',
+      unblock: '阻塞已经在 FULI 之外解决、报告阻塞的会话又不会再继续时，由你把它标记为已解除。任务回到运行中，相关的待决策请求一并关闭，阻塞记录留在任务历史里。Agent 不能这样做。',
     },
     presence: {
       working: { label: '工作中', body: '正在工作。' },
@@ -186,6 +187,7 @@ export const glossaryMessages = {
       awaiting_recruitment: 'Needs an occupation nobody has yet; it starts once Bole recruits one.',
       none: 'No task in progress.',
       ended: 'The task has ended.',
+      unblock: 'When a block was solved outside FULI and the session that reported it will not continue, you mark it as unblocked. The task goes back to running, its open decision requests close, and the block stays in the task history. Agents cannot do this.',
     },
     presence: {
       working: { label: 'Working', body: 'Working now.' },

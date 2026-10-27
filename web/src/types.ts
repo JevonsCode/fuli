@@ -333,10 +333,12 @@ export interface ProjectAgentTaskEvent {
   workerStatus?: ProjectAgentTaskStatus | string | null
   /** Set on the event that ended a block without the task's own report, naming why. */
   blockerClearedBy?: BlockerClearCause | null
+  /** The person's note when they marked the block cleared themselves ('person'). */
+  blockerClearNote?: string | null
   createdAt: string
 }
 
-export type BlockerClearCause = 'session_activity' | 'session_reply' | 'attention_answer'
+export type BlockerClearCause = 'session_activity' | 'session_reply' | 'attention_answer' | 'person'
 
 /** What a blocked task waits for, since when, and the client session that reported it. */
 export interface ProjectAgentTaskBlocker {

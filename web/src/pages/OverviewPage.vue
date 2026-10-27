@@ -17,6 +17,7 @@ import { useOverviewData } from '@/features/overview/useOverviewData'
 import OverviewReadStatus from '@/features/overview/OverviewReadStatus.vue'
 import OverviewExcerpt from '@/features/overview/OverviewExcerpt.vue'
 import TaskBlockerNotice from '@/features/project-agents/TaskBlockerNotice.vue'
+import TaskBlockerClear from '@/features/project-agents/TaskBlockerClear.vue'
 import { inboxLocation, useAgentAttention } from '@/features/project-agents/attention-store'
 import { taskStatusLabel, taskStatusTone } from '@/features/project-agents/task-labels'
 import { currentLocale, t } from '@/i18n'
@@ -120,6 +121,8 @@ function owner(task: ProjectAgentTaskRecord) { const id = overviewOwnerId(task);
 function taskTitle(task: ProjectAgentTaskRecord) { return overviewTaskTitle(task) || t('overview.missing.taskTitle') }
 function statusLabel(status: string) { return taskStatusLabel(status, { unrecognized: t('overview.missing.status') }) }
 function formatDate(value?: string | null) { return formatDateTime(value, currentLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }, { missing: t('overview.missing.time'), invalid: t('overview.missing.time') }) }
+// A block the person marked cleared also closes its open decision requests.
+function blockerCleared() { void data.loadTasks(); void data.loadRequests() }
 function requestFor(task: ProjectAgentTaskRecord) { return overviewOpenRequest(task, data.requestItems.value, activeSpaceId.value) }
 function nextHref(task: ProjectAgentTaskRecord) { const request = requestFor(task); return request ? inboxLocation(request.agentId, request.requestId) : overviewTaskHref(task) }
 function nextLabel(task: ProjectAgentTaskRecord) { if (requestFor(task)) return t('overview.actions.request'); return t(`overview.actions.${['blocked', 'failed', 'awaiting_review'].includes(task.status) ? task.status : 'task'}`) }
@@ -209,7 +212,11 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
                     <Badge :variant="taskStatusTone(task.status)" :title="statusLabel(task.status)">{{ statusLabel(task.status) }}</Badge>
                   </div>
                   <p class="overview-meta">{{ t('overview.work.owner', { name: owner(task) }) }} · {{ projectName(task.personalProjectId) }}</p>
-                  <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" compact :blocker="task.blocker" :updated-at="task.updatedAt" />
+                  <template v-if="task.status === 'blocked' && task.blocker">
+                    <TaskBlockerNotice compact :blocker="task.blocker" :updated-at="task.updatedAt" />
+                    <TaskBlockerClear v-if="task.personalProjectId" :title="taskTitle(task)" :blocker="task.blocker" :updated-at="task.updatedAt"
+                      :scope="{ personalSpaceId: activeSpaceId, personalProjectId: task.personalProjectId, taskId: task.taskId }" @cleared="blockerCleared" />
+                  </template>
                   <OverviewExcerpt v-else-if="task.status === 'blocked' || task.status === 'failed'" class="overview-reason" :text="task.failureReason?.trim() || t('overview.missing.reason')" />
                   <div class="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-1">
                     <time class="overview-meta" :datetime="task.updatedAt || task.createdAt || undefined">{{ formatDate(task.updatedAt || task.createdAt) }}</time>

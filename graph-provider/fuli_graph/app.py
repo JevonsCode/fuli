@@ -367,7 +367,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return await store.get_personal_project(actor, personal_space_id, project_id)
 
     register_graph_format_routes(application, runtime, resolved_settings, Actor, HumanReviewer)
-    register_project_agent_routes(application, store, Actor)
+    register_project_agent_routes(application, store, Actor, HumanReviewer)
     register_knowledge_tag_routes(application, store, Actor, ReviewAwareActor, HumanReviewer)
     register_knowledge_item_routes(application, store, Actor, ReviewAwareActor, HumanReviewer)
     register_knowledge_hard_delete_routes(application, store, HumanReviewer)

@@ -7,6 +7,10 @@ session that reported it. Nothing is inferred from configuration.
 
 from .project_agent_task_models import ProjectAgentTaskBlocker, ProjectAgentTaskEventRecord
 
+# The person's 「标记为已解除」 keeps their note as the event's summary, or
+# this sentence when they wrote none.
+PERSON_CLEAR_SUMMARY = 'Marked as unblocked by the person in FULI.'
+
 
 def current_blocker(
     status: str,
@@ -46,3 +50,10 @@ def blocked_in_session(
         and blocker.source_session_id == source_session_id
         and blocker.source_application == source_application
     )
+
+
+def person_clear_note(cause: str | None, summary: str | None) -> str | None:
+    """The note the person wrote when they marked a block cleared, if any."""
+    if cause != 'person' or not summary or summary == PERSON_CLEAR_SUMMARY:
+        return None
+    return summary
