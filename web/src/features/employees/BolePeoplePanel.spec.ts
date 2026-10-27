@@ -1,3 +1,4 @@
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -71,6 +72,9 @@ describe('Bole people panel', () => {
     const wrapper = mountPanel()
     await flushPromises()
     const links = wrapper.findAll('.bole-agent-identity a')
+    expect(wrapper.findAll('.bole-agent-mark img').map(image => image.attributes('src'))).toEqual(
+      ['employee.jefa', 'employee.bole', 'agent.researcher'].map(agentAvatarUrl),
+    )
     expect(links.map(link => link.attributes('href'))).toEqual([
       '/agents/space-a/employee.jefa', '/agents/space-a/employee.bole', '/agents/space-a/agent.researcher',
     ])

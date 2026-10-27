@@ -42,9 +42,12 @@ from .project_action_models import (
     KnowledgeProjectActionResult,
     KnowledgeProjectPreviewRecord,
     KnowledgeProjectPreviewRequest,
+    PersonalProjectParentChange,
+    PersonalProjectParentRecord,
     PersonalProjectRelationReviewRecord,
     PersonalProjectRelationReviewRequest,
 )
+from .personal_project_hierarchy import change_personal_project_parent
 from .personal_global_preference_models import (
     PersonalGlobalPreferenceDecisionApply,
     PersonalGlobalPreferenceDecisionInspection,
@@ -902,6 +905,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             actor,
             space_id,
             relation_id,
+            request,
+        )
+
+    @application.post(
+        '/v1/personal-spaces/{space_id}/projects/{project_id}/parent',
+        response_model=PersonalProjectParentRecord,
+    )
+    async def move_local_project(
+        space_id: str,
+        project_id: str,
+        request: PersonalProjectParentChange,
+        actor: HumanReviewer,
+    ) -> PersonalProjectParentRecord:
+        return await change_personal_project_parent(
+            store,
+            actor,
+            space_id,
+            project_id,
             request,
         )
 

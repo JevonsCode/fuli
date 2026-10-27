@@ -1,5 +1,6 @@
 import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
 import { identityKey } from '../text/name-identity.js';
+import { termIndex } from '../standing-assignments/term-match.js';
 import { agentUnavailableReason } from './agent-availability.js';
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { isPeerRoleAgent } from './project-team-view.js';
@@ -9,7 +10,8 @@ import { projectDisplayName } from './task-entry-project-mention.js';
 // works in, so the same name in two projects is two choices. Matching a typed
 // name, narrowing a partial one and ranking are shared by every picker over
 // FLAs; rec#55's @FLG member choice reuses them with a multi-select
-// presentation. Names and projects only: nothing here reads memory, and the
+// presentation and names found anywhere in its text. Names, projects and
+// role text only: nothing here reads memory, and the
 // Provider still decides whether a chosen FLA may work.
 
 // Claude Code's native choice UI shows at most four options; the numbered
@@ -54,6 +56,7 @@ function candidate(agent, { project, assignment }) {
   return { agentId: agent.agent_id, projectId: project === undefined ? undefined : project?.project_id ?? null,
     name, project: project ? projectDisplayName(project) : project === null ? GLOBAL_PROJECT : null,
     occupation: profile.display_name && profile.name !== name ? profile.name : '',
+    responsibility: profile.responsibility ?? '', capabilities: profile.capabilities ?? [],
     status: profile.status ?? 'active', allowedClients: profile.allowed_clients ?? [],
     recency: Math.max(0, ...[assignment?.updated_at, agent.current_task_running_since, agent.updated_at]
       .map(value => Date.parse(value ?? '')).filter(Number.isFinite)) };
@@ -133,14 +136,50 @@ function nameEnds(name, rest) {
   return CJK.test([...name].at(-1)) !== CJK.test([...rest][0]);
 }
 
+// The names a free text carries anywhere, as whole terms (term-match.js), each
+// with every candidate of that name: longest names first, and a name inside a
+// longer one already found does not count again ("Jamie" in "Jamie Ash"). A
+// word written `@Jamie` names whoever namedByWord finds. Order of appearance.
+export function namedInText(text, candidates) {
+  let rest = identityKey(text);
+  const found = [];
+  const keys = [...new Set(candidates.map(item => identityKey(item.name)).filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    const at = termIndex(rest, key);
+    if (at === -1) continue;
+    found.push({ at, items: candidates.filter(item => identityKey(item.name) === key) });
+    rest = rest.slice(0, at) + '\u0000'.repeat(key.length) + rest.slice(at + key.length);
+  }
+  for (const word of String(text).matchAll(/(?:^|\s)@(\S+)/gu)) {
+    const items = namedByWord(word[1], candidates).filter(item => !found.some(({ items: known }) => known.includes(item)));
+    if (items.length) found.push({ at: Infinity, items });
+  }
+  return found.sort((a, b) => a.at - b.at).map(({ items }) => items);
+}
+
 // The native single choice over the first PICKER_OPTIONS candidates, each
 // "n. name — project — occupation"; the question says how many more a longer
 // name would reach. No internal ID is shown. guidance: what a pick leads to.
 export function flaChoice(candidates, { title, question, guidance }) {
   const shown = candidates.slice(0, PICKER_OPTIONS);
   const more = candidates.length - shown.length;
-  const options = shown.map((item, index) => `${index + 1}. ${[item.name, item.project, item.occupation]
-    .filter(Boolean).join(' — ')}`);
   return { shown, more, interaction: nativeChoiceInteraction({ source: { kind: 'fla_picker' }, title, guidance,
-    question: `${question}（姓名 — 项目 — 职业）${more ? `还有 ${more} 位，输入更多名字可缩小范围。` : ''}`, options }) };
+    question: `${question}（姓名 — 项目 — 职业）${more ? `还有 ${more} 位，输入更多名字可缩小范围。` : ''}`,
+    options: shown.map(optionText) }) };
+}
+
+// The native multi-select over at most PICKER_OPTIONS members (rec#55), each
+// "n. name — project — occupation · note" where note says why it is offered;
+// the preselected ones are those marked so. Same numbering in every client.
+export function flaGroupChoice(members, { title, question, guidance }) {
+  const shown = members.slice(0, PICKER_OPTIONS);
+  return { shown, interaction: nativeChoiceInteraction({ source: { kind: 'flg_picker' }, title, guidance,
+    question: `${question}（姓名 — 项目 — 职业 · 理由）`, selection: 'multiple',
+    preselected: shown.flatMap((item, index) => item.preselected ? [index + 1] : []),
+    options: shown.map((item, index) => `${optionText(item, index)}${item.note ? ` · ${item.note}` : ''}`) }) };
+}
+
+function optionText(item, index) {
+  return `${index + 1}. ${[item.name, item.project, item.occupation].filter(Boolean).join(' — ')}`;
 }

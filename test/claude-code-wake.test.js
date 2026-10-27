@@ -14,6 +14,13 @@ test('Claude Code resumes by forking, so an open window is never written', () =>
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk']);
 });
 
+test('a read-only (group discussion) wake keeps the non-interactive mode and denies file edits and the shell', () => {
+  assert.deepEqual(wakeArguments('claude_code', { readOnly: true, plannedSessionId: 'planned-1' }),
+    ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
+      '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash', '--session-id', 'planned-1']);
+  assert.ok(!wakeArguments('claude_code', { readOnly: true }).includes('plan'));
+});
+
 test('Claude Code answers come from the final result event', () => {
   assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: [
     JSON.stringify({ type: 'system', session_id: 'fork-1' }), JSON.stringify({ type: 'result', result: ' 好的 ' })].join('\n') }),

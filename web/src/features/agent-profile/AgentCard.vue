@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { employeeAvatarUrl } from "@/features/employees/avatars";
+import { agentAvatarUrl } from "@/features/agent-profile/agent-avatar";
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { Badge } from "@/components/ui/badge";
@@ -155,8 +155,7 @@ function surfaceClick(event: MouseEvent) {
         aria-hidden="true"
         data-card-portrait
       >
-        <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
-        <template v-else>{{ agent.profile.occupationEmoji || name.slice(0, 1) }}</template>
+        <img :src="agentAvatarUrl(agent.agentId)" alt="" />
       </span>
       <div class="min-w-0 flex-1">
         <div class="agent-directory-name flex min-w-0 items-start gap-1.5">

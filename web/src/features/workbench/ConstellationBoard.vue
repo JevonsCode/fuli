@@ -64,7 +64,8 @@ const shortName = (name: string) => (name.length > 14 ? `${name.slice(0, 13)}…
               <circle class="constellation-halo" :cx="moon.x" :cy="moon.y" r="17" />
               <circle class="constellation-moon-body" :cx="moon.x" :cy="moon.y" r="13"
                 :style="{ fill: face(moon.agent).softColor ?? undefined, stroke: face(moon.agent).color ?? undefined }" />
-              <text class="constellation-moon-initial" :x="moon.x" :y="moon.y + 4" :style="{ fill: face(moon.agent).color ?? undefined }">{{ initial(moon.agent) }}</text>
+              <image v-if="face(moon.agent).image" :href="face(moon.agent).image!" :x="moon.x - 13" :y="moon.y - 13" width="26" height="26" class="constellation-moon-image" />
+              <text v-else class="constellation-moon-initial" :x="moon.x" :y="moon.y + 4" :style="{ fill: face(moon.agent).color ?? undefined }">{{ initial(moon.agent) }}</text>
             </a>
           </RouterLink>
         </template>
@@ -89,6 +90,7 @@ const shortName = (name: string) => (name.length > 14 ? `${name.slice(0, 13)}…
 .constellation-more { fill: var(--color-muted); font-size: 12px; text-anchor: middle; }
 .constellation-moon { cursor: pointer; }
 .constellation-moon-body { fill: var(--color-accent-soft); stroke: var(--color-accent); stroke-width: 1.5; }
+.constellation-moon-image { clip-path: circle(50%); pointer-events: none; }
 .constellation-moon-initial { fill: var(--color-accent); font-size: 11px; font-weight: 650; text-anchor: middle; pointer-events: none; }
 .constellation-halo { fill: none; stroke: transparent; stroke-width: 2; transform-box: fill-box; transform-origin: center; }
 .constellation-moon.is-running .constellation-halo { stroke: var(--status-working, var(--color-accent)); animation: constellation-pulse 2.4s ease-in-out infinite; }

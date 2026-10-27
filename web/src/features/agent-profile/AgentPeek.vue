@@ -6,7 +6,7 @@ import PinIcon from "@/components/PinIcon.vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { employeeAvatarUrl } from "@/features/employees/avatars";
+import { agentAvatarUrl } from "@/features/agent-profile/agent-avatar";
 import { currentLocale, t } from "@/i18n";
 import { formatElapsed } from "@/lib/elapsed-time";
 import { useNow } from "@/composables/useNow";
@@ -72,8 +72,7 @@ const pinLabel = computed(() =>
   <template v-else>
     <DialogHeader class="flex-row items-start gap-3">
       <span class="agent-portrait small agent-card-identity" :style="agentIdentityStyle(agent.agentId)" aria-hidden="true">
-        <img v-if="employeeAvatarUrl(agent.agentId)" :src="employeeAvatarUrl(agent.agentId)" alt="" />
-        <template v-else>{{ agent.profile.occupationEmoji || name.slice(0, 1) }}</template>
+        <img :src="agentAvatarUrl(agent.agentId)" alt="" />
       </span>
       <div class="grid min-w-0 gap-1">
         <DialogTitle class="text-xl leading-tight [overflow-wrap:anywhere]">{{ name }}</DialogTitle>

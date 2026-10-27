@@ -6,6 +6,7 @@ import { RouterLink } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import AgentName from '@/features/agent-profile/AgentName.vue'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { currentLocale, t } from '@/i18n'
 import { readProjectTeam, type ProjectTeam, type ProjectTeamPerson } from './project-team-api'
 
@@ -73,10 +74,6 @@ async function load() {
   }
 }
 
-function initial(person: ProjectTeamPerson) {
-  return person.occupationEmoji || [...person.name.trim()][0]?.toLocaleUpperCase() || '?'
-}
-
 function number(person: ProjectTeamPerson) {
   return person.employeeNumber ? t('projects.overview.employeeNumber', { number: person.employeeNumber }) : ''
 }
@@ -117,7 +114,7 @@ function number(person: ProjectTeamPerson) {
         :aria-label="`${t('projects.overview.lead')} ${team.lead.name}. ${expanded ? t('projects.overview.hideOrganization') : t('projects.overview.showOrganization')}`"
         @click="expanded = !expanded"
       >
-        <span class="project-team-avatar" aria-hidden="true">{{ initial(team.lead) }}</span>
+        <span class="project-team-avatar" aria-hidden="true"><img :src="agentAvatarUrl(team.lead.agentId)" alt="" /></span>
         <span class="project-team-lead-text">
           <span class="project-team-lead-name">
             <strong>{{ team.lead.name }}</strong>
@@ -155,7 +152,7 @@ function number(person: ProjectTeamPerson) {
         <div v-for="group in memberGroups" :key="group.key" class="project-team-group" :class="[`is-${group.key}`, { 'is-sub-team': group.lead || group.unavailableLead }]" :data-team-group="group.key">
           <h4>{{ group.title }}</h4>
           <p v-if="group.lead" class="project-team-sub-lead">
-            <span class="project-team-avatar is-small" aria-hidden="true">{{ initial(group.lead) }}</span>
+            <span class="project-team-avatar is-small" aria-hidden="true"><img :src="agentAvatarUrl(group.lead.agentId)" alt="" /></span>
             <AgentName :space-id="spaceId" :agent-id="group.lead.agentId" :name="group.lead.name" />
             <span class="ui-meta">{{ t('projects.overview.subLead') }}</span>
           </p>
@@ -164,7 +161,7 @@ function number(person: ProjectTeamPerson) {
           </p>
           <ul v-if="group.people.length" class="project-team-list">
             <li v-for="person in group.people" :key="person.agentId">
-              <span class="project-team-avatar is-small" aria-hidden="true">{{ initial(person) }}</span>
+              <span class="project-team-avatar is-small" aria-hidden="true"><img :src="agentAvatarUrl(person.agentId)" alt="" /></span>
               <span class="project-team-person">
                 <span>
                   <AgentName :space-id="spaceId" :agent-id="person.agentId" :name="person.name" />
@@ -187,7 +184,7 @@ function number(person: ProjectTeamPerson) {
             <h4>{{ group.title }}</h4>
             <ul class="project-team-list">
               <li v-for="person in group.people" :key="person.agentId">
-                <span class="project-team-avatar is-small" aria-hidden="true">{{ initial(person) }}</span>
+                <span class="project-team-avatar is-small" aria-hidden="true"><img :src="agentAvatarUrl(person.agentId)" alt="" /></span>
                 <span class="project-team-person">
                   <span>
                     <AgentName :space-id="spaceId" :agent-id="person.agentId" :name="person.name" />
