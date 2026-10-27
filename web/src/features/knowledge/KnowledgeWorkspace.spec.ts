@@ -13,7 +13,8 @@ const graphCalls = vi.hoisted(() => ({
   restoreNode: vi.fn(),
 }))
 
-vi.mock('@/api/client', () => ({ getJson, patchJson: vi.fn() }))
+// The real ApiError and apiErrorCode, so pages that tell API errors apart can still do so.
+vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, patchJson: vi.fn() }))
 vi.mock('./GraphCanvas.vue', async () => {
   const { defineComponent, h } = await import('vue')
   return {
