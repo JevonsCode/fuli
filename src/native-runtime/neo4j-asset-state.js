@@ -58,7 +58,8 @@ function overlaps(a, b) {
   return inside(a, b) || inside(b, a);
 }
 
-export async function managedNeo4jContainers(paths, version) {
+// versions: the Neo4j versions this runtime may hold (the current one and a retained older patch).
+export async function managedNeo4jContainers(paths, versions) {
   const root = join(paths.nativeRuntimeDir, 'neo4j-assets');
   let entries;
   try { entries = await readdir(root, { withFileTypes: true }); }
@@ -69,8 +70,8 @@ export async function managedNeo4jContainers(paths, version) {
     if (!entry.isDirectory() || !/^jvs-a-[a-f0-9-]+$/.test(entry.name)) throw new Error('Unknown Neo4j asset entry was preserved.');
     const container = join(root, entry.name);
     const receipt = JSON.parse(await readFile(join(container, 'fuli-asset-owner.json'), 'utf8'));
-    if (receipt.kind !== 'fuli-neo4j-assets' || receipt.id !== entry.name || receipt.version !== version) throw new Error('Unowned Neo4j asset directory was preserved.');
-    await assertManagedNeo4jHome(paths, join(container, `neo4j-community-${version}`), version);
+    if (receipt.kind !== 'fuli-neo4j-assets' || receipt.id !== entry.name || !versions.includes(receipt.version)) throw new Error('Unowned Neo4j asset directory was preserved.');
+    await assertManagedNeo4jHome(paths, join(container, `neo4j-community-${receipt.version}`), receipt.version);
     containers.push(container);
   }
   return containers;

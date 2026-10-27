@@ -29,6 +29,7 @@ export async function runNativeRuntimeCommand(args, dependencies = {}) {
   const plan = options.action === 'install' ? { neo4jVersion: NATIVE_NEO4J_VERSION }
     : await (dependencies.plan ?? planNativeNeo4j)({ paths, action: options.action });
   write(`Native Neo4j ${options.action}: ${plan.neo4jVersion ?? NATIVE_NEO4J_VERSION}\nData: ${paths.dataDir}\nKnowledge data is preserved. Java is not installed or upgraded.`);
+  if (plan.upgrade) write(`Neo4j ${plan.current.neo4jVersion} → ${plan.neo4jVersion}: the graph is backed up under ${paths.graphBackupDir} first; rolling back to ${plan.current.neo4jVersion} afterwards is refused.`);
   if (options.preview) return { status: 'preview', action: options.action, neo4jVersion: plan.neo4jVersion };
   if (!options.yes && !await (dependencies.confirm ?? confirmAction)(options.action)) return { status: 'cancelled' };
   const result = options.action === 'install'

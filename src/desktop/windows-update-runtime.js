@@ -1,23 +1,48 @@
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { exportGraphData } from '../backup/graph-backup.js';
+import { createGraphBackupAdapter } from '../backup/runtime-adapters.js';
+import { neo4jPatchUpgrade, neo4jUpgradeBackupPath } from '../native-runtime/neo4j-version-policy.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { compareSemanticVersions } from '../semantic-version.js';
+import { graphBackupDirectory, resolveSetupPaths } from '../setup/paths.js';
 import { writeTextFileAtomic } from '../storage/json-file.js';
 
 // downgrade: an older package refuses a newer runtime descriptor, so the switch
 // clears it and the older version records its own bundled runtime on start.
-export function snapshotWindowsUpdateRuntime(current, candidateRoot, { downgrade = false } = {}) {
+// A newer Neo4j patch in the candidate is an upgrade: the graph is backed up
+// before the newer Neo4j first opens the store (backupWindowsGraph). An older
+// one is refused, whichever way the application version goes.
+export function snapshotWindowsUpdateRuntime(current, candidateRoot, { downgrade = false, now = () => new Date() } = {}) {
   const settingsPath = join(current.dataDir, 'runtime-settings.json');
   if (!existsSync(settingsPath) || JSON.parse(readFileSync(settingsPath)).graphRuntimeMode !== 'native') {
     throw new Error('Open the installed Fuli tray and configure native mode before updating. Container data requires a separate migration.');
   }
   const assets = root => resolveWindowsNativeBundle(readWindowsNativeBundle(root));
   const previous = assets(current.packageRoot), next = assets(candidateRoot);
-  if (previous.neo4jVersion !== next.neo4jVersion) throw new Error('Automatic update requires the same Neo4j version; database upgrades require a separate migration.');
+  const upgrade = neo4jPatchUpgrade(previous.neo4jVersion, next.neo4jVersion, { backup: current.previousInstallation?.graphBackup });
   const path = join(current.dataDir, 'native-runtime', 'manifest.json');
   const bytes = existsSync(path) ? readFileSync(path) : null;
   if (bytes) requireOwnedDescriptor(bytes, previous, current.applicationVersion);
-  return { path, bytes, next, downgrade };
+  else if (upgrade) throw new Error(`Upgrading Neo4j ${previous.neo4jVersion} → ${next.neo4jVersion} backs up the graph first, which needs the installed runtime record. Start Fuli ${current.applicationVersion} once, then update again.`);
+  const neo4jUpgrade = upgrade ? { from: previous.neo4jVersion, to: next.neo4jVersion,
+    backupDir: neo4jUpgradeBackupPath(graphBackupDirectory(current.dataDir), next.neo4jVersion, now()) } : null;
+  return { path, bytes, next, downgrade, neo4jUpgrade };
+}
+
+// Runs inside the switch, after the installed version stopped and before the
+// record changes. The runtime descriptor still selects the installed Neo4j, so
+// `fuli graph export`'s mechanism dumps the store with the version that wrote it.
+// It runs in this process: the candidate's CLI cannot resolve its paths until
+// the record names it. The switch decides what starts afterwards, never the export.
+export async function backupWindowsGraph(snapshot, current, {
+  exportGraph = exportGraphData, createAdapter = createGraphBackupAdapter
+} = {}) {
+  if (!snapshot.neo4jUpgrade) return;
+  const paths = resolveSetupPaths({ dataDir: current.dataDir, packageRoot: current.packageRoot, platform: 'win32' });
+  const adapter = await createAdapter({ mode: 'native', paths });
+  await exportGraph({ outputDir: snapshot.neo4jUpgrade.backupDir, sourceMode: 'native', instances: adapter.instances,
+    adapter: { ...adapter, start: async () => {} } });
 }
 
 // Runs inside the switch, after the current version stopped and before the record changes.
