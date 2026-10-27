@@ -41,6 +41,20 @@ class AgentRemoteDelegationIssue(StrictModel):
     origin_attempt_id: str = Field(min_length=1, max_length=128, pattern=r'^[A-Za-z0-9][A-Za-z0-9._:-]*$')
 
 
+class AgentOwnerDelegationIssue(StrictModel):
+    """The person's own message from the local console to one of their FLAs.
+
+    There is no sender task: the owner of the space addresses an active Agent
+    of one project directly. The grant restores exactly that Agent, once.
+    """
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    personal_project_id: str = Field(min_length=1, max_length=128)
+    agent_id: str = Field(min_length=1, max_length=128)
+    target_application: SourceApplication
+    target_session_id: str | None = Field(default=None, min_length=1, max_length=256)
+    lifetime_seconds: int = Field(default=300, ge=30, le=900)
+
+
 class AgentDelegationCheck(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     token: str = Field(min_length=32, max_length=128)
@@ -51,7 +65,26 @@ class AgentDelegationMemoryResult(AgentDelegationCheck):
     result_count: int = Field(ge=1, le=1000)
 
 
+def _refused(status, code, message):
+    # The code says why, so a woken-Agent failure is not a bare provider_error.
+    return HTTPException(status, detail={'code': code, 'message': message})
+
+
 class StoreAgentDelegations:
+    async def _receiving_agent(self, actor, space_id, project_id, agent_id, application):
+        try:
+            target = await self.get_project_agent(actor, space_id, project_id, agent_id)
+        except HTTPException as error:
+            if error.status_code != 404:
+                raise
+            raise _refused(404, 'agent_unavailable',
+                           'The receiving Agent has no active assignment in this project') from error
+        if target.profile.status != 'active':
+            raise _refused(403, 'agent_unavailable', 'The receiving Agent is not active')
+        if not covers_client(target.profile.allowed_clients, application):
+            raise _refused(403, 'client_not_allowed', 'The receiving Agent is unavailable in this client')
+        return target
+
     async def record_agent_delegation_memory(self, actor, request):
         scope = await self.admit_agent_delegation(actor, request)
         if request.session_id != scope['session_id']:
@@ -80,7 +113,8 @@ class StoreAgentDelegations:
             ''', token_hash=token_hash(request.token), space_id=request.personal_space_id,
             session_id=request.session_id)
         if not rows:
-            raise HTTPException(409, 'Delegation expired or another session is already bound')
+            raise _refused(409, 'delegation_unavailable',
+                           'Delegation expired or another session is already bound')
         return {'sealed': True}
 
     async def admit_agent_delegation(self, actor, request):
@@ -138,10 +172,8 @@ class StoreAgentDelegations:
             target_lead = target_policy.team_lead_agent_id
             if not target_lead or request.agent_id != target_lead:
                 raise HTTPException(403, 'Cross-project requests can only address the target lead')
-        target = await self.get_project_agent(actor, request.personal_space_id, target_project_id, request.agent_id)
-        if (target.profile.status != 'active'
-                or not covers_client(target.profile.allowed_clients, request.target_application)):
-            raise HTTPException(403, 'The receiving Agent is unavailable in this client')
+        await self._receiving_agent(actor, request.personal_space_id, target_project_id, request.agent_id,
+                                    request.target_application)
         token = token_urlsafe(32)
         # Only hashes are stored. A crash leaves a bounded lifetime, never a
         # reusable authority derived from a public message or thread identifier.
@@ -174,14 +206,15 @@ class StoreAgentDelegations:
             actor, request.personal_space_id, request.personal_project_id)
         lead = policy.team_lead_agent_id
         # Remote asks keep the receiving project's accountable lead: in this
-        # version only that lead can be woken, never a member directly.
-        if not lead or request.agent_id != lead:
-            raise HTTPException(403, 'Remote devices can only ask the project lead')
-        target = await self.get_project_agent(
-            actor, request.personal_space_id, request.personal_project_id, request.agent_id)
-        if (target.profile.status != 'active'
-                or not covers_client(target.profile.allowed_clients, request.target_application)):
-            raise HTTPException(403, 'The receiving Agent is unavailable in this client')
+        # version only that lead can be woken, never a member directly. The
+        # codes match the share states the owner sees (lead_changed,
+        # lead_unavailable), so a share that outlived its lead says so.
+        if not lead:
+            raise _refused(403, 'lead_unavailable', 'Remote devices can only ask the project lead')
+        if request.agent_id != lead:
+            raise _refused(403, 'lead_changed', 'Remote devices can only ask the project lead')
+        await self._receiving_agent(actor, request.personal_space_id, request.personal_project_id,
+                                    request.agent_id, request.target_application)
         token = token_urlsafe(32)
         await self.runtime.driver.execute_query(
             '''MATCH (old:FuliAgentDelegation {space_id: $space_id})
@@ -210,7 +243,35 @@ class StoreAgentDelegations:
             session_id=request.target_session_id, lead=lead, policy_updated_at=getattr(policy, 'updated_at', None),
             lifetime=request.lifetime_seconds)
         if not rows:
-            raise HTTPException(409, 'This remote delivery attempt already received authority')
+            raise _refused(409, 'attempt_already_granted',
+                           'This remote delivery attempt already received authority')
+        return {'token': token}
+
+    async def issue_owner_agent_delegation(self, actor, request):
+        self._require_personal()
+        space = await self.authorize(actor, request.personal_space_id, 'maintainer')
+        await authorize_personal_project(self, actor, space, request.personal_project_id)
+        policy = await self.get_project_agent_coordination_policy(
+            actor, request.personal_space_id, request.personal_project_id)
+        lead = policy.team_lead_agent_id
+        if not lead:
+            raise _refused(409, 'lead_unavailable', 'The project needs an accountable lead before its Agents can be woken')
+        await self._receiving_agent(actor, request.personal_space_id, request.personal_project_id,
+                                    request.agent_id, request.target_application)
+        token = token_urlsafe(32)
+        await self.runtime.driver.execute_query(
+            '''MATCH (old:FuliAgentDelegation {space_id: $space_id})
+               WHERE old.expires_at <= datetime() DELETE old''', space_id=request.personal_space_id)
+        await self.runtime.driver.execute_query(
+            '''CREATE (:FuliAgentDelegation {token_hash: $token_hash, space_id: $space_id,
+                 project_id: $project_id, agent_id: $agent_id, source_application: $application,
+                 session_id: $session_id, sender_token: null, lead_agent_id: $lead, origin: 'owner',
+                 target_policy_updated_at: $policy_updated_at,
+                 expires_at: datetime() + duration({seconds: $lifetime}), redeemed: false})''',
+            token_hash=token_hash(token), space_id=request.personal_space_id,
+            project_id=request.personal_project_id, agent_id=request.agent_id,
+            application=request.target_application, session_id=request.target_session_id, lead=lead,
+            policy_updated_at=getattr(policy, 'updated_at', None), lifetime=request.lifetime_seconds)
         return {'token': token}
 
     async def redeem_agent_delegation(self, request, lead):
@@ -265,9 +326,11 @@ class StoreAgentDelegations:
                  })
                WITH grant, count(task) AS live_sender
                // A local grant needs its live sender task; a remote grant has no
-               // local sender and may only ever restore the current lead.
+               // local sender and may only ever restore the current lead. An
+               // owner grant is the person's own message to the Agent it names.
                WHERE (grant.origin IS NULL AND live_sender > 0)
                   OR (grant.origin = 'remote' AND grant.agent_id = grant.lead_agent_id)
+                  OR grant.origin = 'owner'
                SET grant.session_id = $session_id, grant.redeemed = true
                RETURN grant.token_hash AS token_hash''',
             token_hash=token_hash(request.delegation_token), space_id=request.personal_space_id,

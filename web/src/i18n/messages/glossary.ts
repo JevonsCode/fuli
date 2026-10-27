@@ -38,7 +38,7 @@ export const glossaryMessages = {
     },
     destination: {
       constellation: '打开 FULI 的第一页：待你处理的事、当前工作、最近项目和服务状态。',
-      agents: '你的 Agent 团队：全部 Agent、编排、定时任务和职业。',
+      agents: '你的 Agent 团队：全部 Agent、编排、服务和职业。',
       chat: 'Agent 之间的对话记录，以及等你决定的请求。',
       projects: '只在本机的个人项目，以及可以订阅的公开项目。',
       memory: 'FULI 为你记下的知识、偏好和标签，以及整理它们的地方。',
@@ -47,9 +47,9 @@ export const glossaryMessages = {
     section: {
       agentDirectory: '空间里的所有 Agent，可按状态和项目筛选；点开一个查看它的档案和工作。',
       orchestrate: '管理团队的入口：给 Agent 派活、为项目配人、设置自动化规则。',
-      schedules: '按固定间隔自动创建项目任务的计划。列出的时间是计划，不保证一定运行。',
       occupations: '职业目录：每个 Agent 的角色类型，用于它的职业标签和招聘时的匹配。',
-      roundtables: 'Agent 之间聊天和互相提问的只读记录；你在这里旁观，不参与发言。',
+      services: 'Agent 启动的服务和各自的工作台：地址、用途、是谁的、是否在运行；可以停止、删除记录和查看日志。',
+      roundtables: '和 Agent 对话的地方：留言板模式等它下次工作时回复，即时对话模式会立刻唤起它来回复；Agent 之间的对话也在这里。',
       askedYou: 'Agent 需要你决定或回答的请求在这里排队，不打断你手上的工作。',
       myProjects: '只在本机的私有项目：项目知识、资料和概览。',
       publicProjects: '公共 Provider 上的项目：发现、订阅和维护。',
@@ -134,7 +134,7 @@ export const glossaryMessages = {
     },
     destination: {
       constellation: 'The first page of FULI: what needs you, current work, recent projects and service status.',
-      agents: 'Your Agent team: every Agent, orchestration, schedules and occupations.',
+      agents: 'Your Agent team: every Agent, orchestration, services and occupations.',
       chat: 'Conversations between Agents, and the requests waiting for your decision.',
       projects: 'Your private projects on this computer, and public projects you can subscribe to.',
       memory: 'The knowledge, preferences and tags FULI keeps for you, and where you tidy them.',
@@ -143,9 +143,9 @@ export const glossaryMessages = {
     section: {
       agentDirectory: 'Every Agent in the space, filtered by status and project; open one to see its profile and work.',
       orchestrate: 'Where you manage the team: assign work to Agents, staff projects and set automation rules.',
-      schedules: 'Plans that create a project task at a fixed interval. The times listed are plans, not guaranteed runs.',
       occupations: 'The occupation catalog: each Agent\'s role type, used for its occupation chip and for recruitment matching.',
-      roundtables: 'A read-only record of Agents chatting and asking each other; you watch here without taking part.',
+      services: 'Services Agents started and each Agent\'s workbench: address, purpose, owner and whether it is running; stop them, delete records and read logs.',
+      roundtables: 'Where you talk with Agents: message-board mode waits for its next working session to reply, live mode wakes it to reply now; conversations between Agents are here too.',
       askedYou: 'Requests where an Agent needs your decision or answer wait here without interrupting your work.',
       myProjects: 'Private projects on this computer: project knowledge, materials and overview.',
       publicProjects: 'Projects on a public Provider: discover, subscribe to and maintain them.',
