@@ -175,6 +175,13 @@ export const settingsMessages = {
       needsPersonUrl: '需要你时通知',
       needsPersonUrlMeta: 'Agent 举手等你决定时，FULI 把事件发到这个本机地址（例如 DingDong）。只接受 127.0.0.1、localhost 或 [::1]；留空就关闭。',
     },
+    agentNaming: {
+      title: 'Agent 取名风格',
+      description: '用一句话写你想要的名字风格，之后新建的 Agent 按它取名。建议 100 字左右；留空就用 FULI 默认的名字。已有 Agent 不会改名。',
+      placeholder: '例如：用两个字的植物名，像青禾、松风',
+      count: '{count} / 建议 100 字',
+      clear: '清空',
+    },
     conversationLaunchers: {
       title: '会话打开方式',
       enabled: '启用',
@@ -396,6 +403,13 @@ export const settingsMessages = {
       title: 'Notifications',
       needsPersonUrl: 'Notify when you are needed',
       needsPersonUrlMeta: 'When an Agent raises a hand for your decision, FULI posts the event to this address on this machine (for example DingDong). Only 127.0.0.1, localhost or [::1]; leave empty to turn it off.',
+    },
+    agentNaming: {
+      title: 'Agent naming style',
+      description: 'Describe the names you want in a sentence; Agents created from now on are named in that style. About 100 characters is suggested; leave it empty for FULI\'s default names. Existing Agents keep their names.',
+      placeholder: 'For example: two-syllable plant names, like Sage or Rowan',
+      count: '{count} / about 100 suggested',
+      clear: 'Clear',
     },
     conversationLaunchers: {
       title: 'Conversation openers',

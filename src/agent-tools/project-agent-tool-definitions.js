@@ -45,6 +45,12 @@ export const PROJECT_AGENT_TOOL_DEFINITIONS = [
     }, ['personalSpaceId', 'agentId', 'profile'])
   },
   {
+    name: 'get_agent_naming_style',
+    title: 'READ · Get the Agent naming style',
+    description: 'Before proposing a new Agent\'s displayName: the person\'s saved naming style, or null (generated names). Only the person changes it.',
+    inputSchema: objectSchema({})
+  },
+  {
     name: 'list_project_agents',
     title: 'READ · Find project Agents by responsibility',
     description: 'Resolve the exact local project from projectPath and return its lightweight Agent directory. Optionally filter active/inactive/archived records or find Agents whose capabilities or responsibility match a capability query. This never loads another Agent\'s private memory.',

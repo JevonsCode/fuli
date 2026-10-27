@@ -16,6 +16,7 @@ export const glossaryMessages = {
       memory: '记忆',
       occupation: '职业',
       tonborg: 'Tonborg 判断',
+      setting: '设置',
     },
     memory: {
       preferenceCount: { label: '偏好条数', body: '前一个数是按当前维度和范围列出的条数，后一个是全部偏好的总数（含历史）。偏好的条数没有上限。' },
@@ -35,6 +36,9 @@ export const glossaryMessages = {
       shared: 'Tonborg 按你已经确认过的做法处理常规事项，拿不准时问你。',
       autonomous: 'Tonborg 自己处理常规审核和执行选择，必要时再找你；有风险的操作始终要你确认。',
       escalate: 'Tonborg 判断这一项不能自己决定，需要你看一下再定。',
+    },
+    setting: {
+      agentNamingStyle: '你用一句话写下想要的 Agent 名字风格。之后新建 Agent 时，负责招聘的 Agent 按它起名，FULI 只保证名字不和已有 Agent 重复；重名就换一个同风格的，实在想不出会告诉你。已有 Agent 不改名；留空就用默认名字。',
     },
     destination: {
       constellation: '打开 FULI 的第一页：待你处理的事、当前工作、最近项目和服务状态。',
@@ -112,6 +116,7 @@ export const glossaryMessages = {
       memory: 'Memory',
       occupation: 'Occupation',
       tonborg: 'Tonborg judgment',
+      setting: 'Setting',
     },
     memory: {
       preferenceCount: { label: 'Preference count', body: 'The first number is how many preferences the chosen aspect and scope list; the second is how many there are in all, history included. There is no limit on how many preferences FULI keeps.' },
@@ -131,6 +136,9 @@ export const glossaryMessages = {
       shared: 'Tonborg handles routine items the way you already confirmed, and asks you when unsure.',
       autonomous: 'Tonborg handles routine reviews and execution choices itself and comes to you when needed; risky actions always need you.',
       escalate: 'Tonborg judged it should not decide this item itself; it needs your look before it goes ahead.',
+    },
+    setting: {
+      agentNamingStyle: 'A sentence describing the names you want for Agents. When a new Agent is created, the recruiting Agent names it in this style and FULI only makes sure no other Agent already has the name; on a clash it picks another in the same style, and tells you if it cannot find one. Existing Agents keep their names; leave it empty for the default names.',
     },
     destination: {
       constellation: 'The first page of FULI: what needs you, current work, recent projects and service status.',

@@ -17,6 +17,7 @@ from .project_agent_task_models import (
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .store_project_agents import SYSTEM_COORDINATOR_AGENT_ID
+from .store_project_agent_naming import require_free_proposed_name
 from .store_project_agent_task_reads import StoreProjectAgentTaskReads
 from .store_project_agent_task_persistence import StoreProjectAgentTaskPersistence
 from .store_project_agent_task_recruitment import StoreProjectAgentTaskRecruitment
@@ -247,6 +248,8 @@ class StoreProjectAgentTasks(
                 recruitment_profile,
                 request.source_application,
             )
+            # A proposed name another Agent uses is refused before anything is written.
+            await require_free_proposed_name(self, request.personal_space_id, task_id, recruitment_profile)
 
         coordinator = await self.ensure_system_project_coordinator(
             actor,

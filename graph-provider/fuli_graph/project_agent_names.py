@@ -5,9 +5,12 @@ responsibility); ``profile.display_name`` is the person-like nickname people
 call it by. A new Agent gets a nickname no other Agent in its personal space
 uses (new_agent_display_name). An existing Agent is never renamed here; one
 whose shown name reads as a job (title_like) is only offered a free nickname.
+A nickname given for a new Agent that another Agent uses is refused (NameTaken)
+with free alternatives; it is never silently duplicated.
 """
 import hashlib
 import re
+from itertools import islice
 
 from .name_identity import identity_key
 
@@ -39,6 +42,16 @@ JOB_TITLE = re.compile(
 )
 NAME_LIMIT = 160
 NICKNAMES = len(FIRST_NAMES) * len(LAST_NAMES)
+# Free nicknames offered with a refused one.
+ALTERNATIVES = 3
+
+
+class NameTaken(ValueError):
+    """A given nickname another Agent of the space already uses."""
+
+    def __init__(self, alternatives: list[str]):
+        super().__init__('another Agent in this personal space already uses this name')
+        self.alternatives = alternatives
 
 
 def agent_display_name(agent_id: str, name: str, display_name: str | None = None):
@@ -63,20 +76,31 @@ def unique_nickname(agent_id: str, taken: set[str]) -> str:
     It starts where agent_display_name derives a legacy nickname, so an Agent
     whose derived name is still free gets that name. ``taken`` holds identity keys.
     """
+    return free_nicknames(agent_id, taken, 1)[0]
+
+
+def free_nicknames(agent_id: str, taken: set[str], count: int = ALTERNATIVES) -> list[str]:
+    """Up to ``count`` free generated nicknames from the Agent's own place in the
+    list, or one numbered nickname when every generated one is taken."""
     digest = hashlib.sha256(agent_id.encode()).digest()
     start = (digest[0] % len(FIRST_NAMES)) * len(LAST_NAMES) + digest[1] % len(LAST_NAMES)
     names = (_nickname((start + step) % NICKNAMES) for step in range(NICKNAMES))
-    free = next((name for name in names if identity_key(name) not in taken), None)
-    return free or _numbered(_nickname(start), taken)
+    free = list(islice((name for name in names if identity_key(name) not in taken), count))
+    return free or [_numbered(_nickname(start), taken)]
 
 
 def new_agent_display_name(agent_id: str, name: str, display_name: str | None, taken: set[str]) -> str:
-    """The nickname a new Agent starts with: the one given when it reads as a
-    person (numbered when another Agent already has it), otherwise a generated one."""
+    """The nickname a new Agent starts with: the display_name given when it reads
+    as a person (NameTaken when another Agent already has it), else its role name
+    when that reads as a person (numbered when taken), otherwise a generated one."""
     given = display_name or name
     if title_like(given):
         return unique_nickname(agent_id, taken)
-    return given if identity_key(given) not in taken else _numbered(given, taken)
+    if identity_key(given) not in taken:
+        return given
+    if display_name:
+        raise NameTaken(free_nicknames(agent_id, taken))
+    return _numbered(given, taken)
 
 
 def _nickname(index: int) -> str:

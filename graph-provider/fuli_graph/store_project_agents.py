@@ -133,7 +133,7 @@ class StoreProjectAgents:
                 space,
                 request.personal_project_id,
             )
-        request = await with_person_name(self, request)
+        request = await with_person_name(self, request, recruitment_id=recruitment_id)
         node_id = stable_uuid(
             self.settings.provider_id,
             request.personal_space_id,

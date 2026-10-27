@@ -7,6 +7,7 @@ import { refusedAgentWriteNotice } from '../graphiti/capture-notice.js';
 import { isTagGovernanceProposal, knowledgeTagChange, proposeTagGovernance } from '../graphiti/knowledge-tags.js';
 import { prepareKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
 import { reportAgentService } from '../agent-services/agent-report.js';
+import { agentNamingStyleAnswer } from '../agent-naming/naming-style.js';
 
 // These tools read or change the two local stores that can retain deleted
 // knowledge. Provider-only reads and unrelated tools remain available.
@@ -54,6 +55,7 @@ const HANDLERS = Object.freeze({
   // The caller's own session only, in its own project (rec#5 C6-5).
   read_session_records: (app, input) => app.readOwnSessionRecords(input ?? {}),
   explain_settings: (app) => settingsGuide(app),
+  get_agent_naming_style: (app) => agentNamingStyle(app),
   // sessionPaused pauses or resumes only the caller's session, at once. Every
   // other field is a long-term setting an Agent can only ask for: the person
   // confirms it in the console (rec#5 C4-2, rec#11 D-16). The client is this
@@ -309,6 +311,11 @@ function roleWork(app) {
 function settingsGuide(app) {
   if (!app.explainSettings) throw new Error('Settings are unavailable without a local installation');
   return app.explainSettings();
+}
+
+function agentNamingStyle(app) {
+  if (!app.agentNamingStyle) throw new Error('Settings are unavailable without a local installation');
+  return agentNamingStyleAnswer(app.agentNamingStyle());
 }
 
 function externalKnowledge(app) {

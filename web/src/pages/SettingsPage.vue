@@ -3,6 +3,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -453,6 +454,23 @@ async function submitSettings(event: Event) {
                   </label>
                 </div>
               </Card>
+              <Card v-if="form.agentNamingStyle !== undefined" as="section" class="settings-card" aria-labelledby="settings-agent-naming-title" data-agent-naming-card>
+                <CardHeader>
+                  <CardTitle id="settings-agent-naming-title" as="h2">{{ t('settings.agentNaming.title') }}</CardTitle>
+                  <CardDescription id="settings-agent-naming-description">{{ t('settings.agentNaming.description') }}</CardDescription>
+                </CardHeader>
+                <div class="setting-list agent-naming-field">
+                  <Textarea v-model="form.agentNamingStyle" rows="2" maxlength="500" :placeholder="t('settings.agentNaming.placeholder')"
+                    aria-labelledby="settings-agent-naming-title" aria-describedby="settings-agent-naming-description settings-agent-naming-count"
+                    data-agent-naming-style data-settings-field="agentNamingStyle" />
+                  <div class="agent-naming-actions">
+                    <small id="settings-agent-naming-count">{{ t('settings.agentNaming.count', { count: form.agentNamingStyle.length }) }}</small>
+                    <Button type="button" variant="ghost" size="sm" :disabled="!form.agentNamingStyle" data-agent-naming-clear @click="form.agentNamingStyle = ''">
+                      {{ t('settings.agentNaming.clear') }}
+                    </Button>
+                  </div>
+                </div>
+              </Card>
               <section class="settings-card judgment-settings-card">
                 <JudgmentPolicySettings />
               </section>
@@ -817,6 +835,9 @@ async function submitSettings(event: Event) {
 .notification-url > span { display: grid; gap: 4px; }
 .notification-url small { color: var(--color-muted); font-size: 12px; }
 .notification-url input { width: 100%; min-width: 0; }
+.agent-naming-field { gap: 8px; }
+.agent-naming-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.agent-naming-actions small { color: var(--color-muted); font-size: 12px; }
 
 .setting-list { display: grid; }
 .setting-row {

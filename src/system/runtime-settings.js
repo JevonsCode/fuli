@@ -5,6 +5,7 @@ import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { deepFreeze } from '../validation/values.js';
 import { normalizeNeedsPersonUrl } from '../notifications/needs-person.js';
+import { normalizeAgentNamingStyle } from '../agent-naming/naming-style.js';
 
 export const RUNTIME_SETTINGS_VERSION = 1;
 export const RUNTIME_SETTINGS_FORMAT = jsonFormat({ store: 'runtime-settings', versions: [RUNTIME_SETTINGS_VERSION] });
@@ -90,7 +91,8 @@ export const DEFAULT_RUNTIME_SETTINGS = deepFreeze({
   lanAccess: false,
   resourceRefreshSeconds: 5,
   conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS,
-  notifications: { needsPersonUrl: '' }
+  notifications: { needsPersonUrl: '' },
+  agentNamingStyle: ''
 });
 
 export function readRuntimeSettings(path, {
@@ -153,6 +155,7 @@ export function normalizeRuntimeSettings(input, {
     { base: base.conversationLaunchers ?? DEFAULT_CONVERSATION_LAUNCHERS }
   );
   const notifications = normalizeNotifications(input.notifications, base.notifications);
+  const agentNamingStyle = normalizeAgentNamingStyle(input.agentNamingStyle ?? base.agentNamingStyle ?? '');
   return {
     version: RUNTIME_SETTINGS_VERSION,
     graphRuntimeMode,
@@ -160,7 +163,8 @@ export function normalizeRuntimeSettings(input, {
     lanAccess,
     resourceRefreshSeconds,
     conversationLaunchers,
-    notifications
+    notifications,
+    agentNamingStyle
   };
 }
 
