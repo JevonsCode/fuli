@@ -32,18 +32,21 @@ export function fitUncached(fit, value, render) {
 //    conversation drops its oldest messages, as the Provider's own window does;
 // 2. then preferences go, lowest ranked first. Closing fields, identity,
 //    role, authority, conflicts and everything outside effective_preferences
-//    stay; so do hard rules (preferenceAlwaysInline). The rest rank by kind
+//    but working memory (below) stay; so do hard rules (preferenceAlwaysInline). The rest rank by kind
 //    and task scene: a boundary a scene switch never revokes first, then an
 //    item whose own scene key names the task's work kind, then human-confirmed
 //    before agent-confirmed, then the Provider's order. The set is the largest
-//    ranked prefix whose complete frame fits with the leanest context, so the
+//    ranked prefix whose complete frame fits with the leanest such context, so the
 //    same preferences select the same set on the next turn, and a delta follows;
 // 3. then as much recall and conversation as still fits comes back.
-// What is left out is named by count with its reader. If the hard rules alone
-// are over the limit (D-69), they are bounded the same way, as the largest
-// prefix by scope (Agent, project, global) and then the Provider's order, and
-// the omission says so (includes_always_inline): past Claude Code's preview
-// they were never seen.
+// What is left out is named by count with its reader. Working-memory previews
+// give way only to hard rules (D-72): when the hard rules do not fit beside
+// them, the global layer's preview and then the project layer's become a
+// pointer to get_project_agent_memory, keeping each layer's revision. If the
+// hard rules alone are still over the limit (D-69), they are bounded the same
+// way, as the largest prefix by scope (Agent, project, global) and then the
+// Provider's order, and the omission says so (includes_always_inline): past
+// Claude Code's preview they were never seen.
 export function inlineEntryFit(limit, length) {
   return (value, { deliver, complete }) => {
     // A frame the renderer blocked as over its own delivery budget is short,
@@ -58,24 +61,27 @@ export function inlineEntryFit(limit, length) {
     }
     const preferences = Array.isArray(value.effective_preferences) ? value.effective_preferences : [];
     const { kept, ranked } = inlineRanking(preferences, entryWorkKind(value));
-    const leanestFits = selected => fits(complete(withPreferences(levels.at(-1), selected, preferences.length)));
-    // What the search may leave out: the ranked rest after every hard rule,
-    // or the hard rules themselves when they alone do not fit.
-    const [fixed, order] = !kept.length || leanestFits(new Set(kept)) ? [kept, ranked] : [[], kept];
-    if (!order.length) return deliver(levels.at(-1));
+    const bounded = [...levels, ...memoryLevels(levels.at(-1))];
+    const fitsAt = (level, selected) => fits(complete(withPreferences(level, selected, preferences.length)));
+    // The richest level where every hard rule fits, and what the search may
+    // leave out there: the ranked rest. Where none fits, the hard rules
+    // themselves at the leanest level.
+    const base = bounded.slice(levels.length - 1).find(level => fitsAt(level, new Set(kept)));
+    const [level, fixed, order] = base ? [base, kept, ranked] : [bounded.at(-1), [], kept.length ? kept : ranked];
+    const richer = bounded.slice(0, bounded.indexOf(level) + 1);
     const selection = count => new Set([...fixed, ...order.slice(0, count)]);
-    // At least one item of `order` is left out: with all of them nothing fit.
+    // The largest prefix of `order` that fits; at a memory level that may be all of it.
     let low = 0;
-    let high = order.length - 1;
+    let high = order.length;
     while (low < high) {
       const middle = Math.ceil((low + high) / 2);
-      if (leanestFits(selection(middle))) low = middle;
+      if (fitsAt(level, selection(middle))) low = middle;
       else high = middle - 1;
     }
-    const selected = selection(low);
+    const whole = low === order.length;
     let attempt;
-    for (const level of levels) {
-      attempt = deliver(withPreferences(level, selected, preferences.length));
+    for (const candidate of richer) {
+      attempt = deliver(whole ? candidate : withPreferences(candidate, selection(low), preferences.length));
       if (fits(attempt)) return attempt;
     }
     return attempt;
@@ -130,6 +136,28 @@ function contextLevels(value) {
       omitted_sequence: Math.max(recovery.omitted_sequence ?? 0, messages[dropped - 1].sequence) } } }));
   }
   return levels;
+}
+
+// The leanest context with fewer working-memory previews: the global layer's
+// first, as it is the less specific one, then the project layer's (D-72).
+function memoryLevels(leanest) {
+  const levels = [];
+  let current = leanest;
+  for (const layer of ['global_memory', 'memory']) {
+    const continuity = current.project_agent_context;
+    if (!continuity?.[layer]?.current) continue;
+    current = copyPreferenceScope(leanest, { ...current,
+      project_agent_context: { ...continuity, [layer]: memoryPointer(continuity[layer]) } });
+    levels.push(current);
+  }
+  return levels;
+}
+
+// A layer's preview without its notes: its scope, revision and rules stay,
+// so a checkpoint still names the revision it read (task-context-view.js).
+function memoryPointer(memory) {
+  const { current: _current, notesTruncated: _cut, ...pointer } = memory;
+  return { ...pointer, view: 'omitted', read: { tool: 'get_project_agent_memory' } };
 }
 
 // The recall without its items: what it matched, how many, and the search

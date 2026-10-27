@@ -299,7 +299,8 @@ test('both native adapters share blocked delivery and preserve the original task
       const data = JSON.parse(text.slice(text.indexOf('\n') + 1));
       assert.match(text, /^Fuli preference delivery is blocked/);
       assert.equal(data.preference_delivery.reason, sourceTruncated ? 'source_window' : 'delivery_budget');
-      assert.equal(data.task_context_token, value.task_context_token);
+      assert.equal(data.taskContextToken, value.taskContextToken);
+      assert.equal(data.task_context_token, undefined, 'the hook sends the token once');
       assert.equal(Object.hasOwn(data, 'effective_preferences'), false);
       assert.equal(calls, 1);
     }

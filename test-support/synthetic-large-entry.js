@@ -11,6 +11,16 @@ import { createSessionPreferenceDelivery } from '../src/conversations/preference
 import { projectAgentCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';
 import { withPreferenceScope } from '../src/conversations/preference-snapshot.js';
 import { syntheticHost, syntheticPreference } from './synthetic-context-session.js';
+import { agentMemoryView } from '../src/graphiti/project-agent-memory.js';
+import { PROJECT_AGENT_CONTINUITY_GUIDANCE } from '../src/graphiti/project-agent-task-entry.js';
+import { TEAM_GUIDANCE } from '../src/graphiti/project-agent-team-context.js';
+import { CONVERSATION_GUIDANCE } from '../src/graphiti/agent-conversations.js';
+import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from '../src/graphiti/task-knowledge-guidance.js';
+import { TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE } from '../src/graphiti/task-knowledge-recall.js';
+import { createFuliSourceMarker } from '../src/graphiti/source-marker.js';
+import { RECEIPT_GUIDANCE } from '../src/agents/identity-receipt.js';
+import { employeeTaskEntry } from '../src/employees/task-entry.js';
+import { taskJudgmentContext } from '../src/graphiti/task-entry-preferences.js';
 
 // Claude Code keeps a hook context longer than this only as a preview.
 const CLAUDE_PREVIEW_CHARS = 10000;
@@ -86,6 +96,86 @@ export function syntheticLargeEntry({ items, sessionId, token = 'task-large', wo
     ...(conversation ? { conversation: { status: 'saved', conversation_id: conversation.conversation_id, recovery: conversation } } : {}) },
   { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: AGENT, session_id: sessionId,
     source_application: 'claude_code', preference_scope: { version: 1, work_kind: workKind, workflow: null } });
+}
+
+// A working project lead's begin_task_context, shaped like the Mac sample of rec#47
+// (0.21.0-beta.2) had it: the hook closes the task, a persistent role with
+// both memory layers and a directory snapshot, a small team, Jefa's managed
+// board, Tonborg's automatic judgment, a matched recall and a saved
+// conversation. Every guidance text comes from its real producer.
+export async function syntheticWorkingEntry({ items, sessionId, token = 'fuli-task-6f1d2c3b-8a4e-4f5d-9b0c-1e2f3a4b5c6d' }) {
+  const entry = syntheticLargeEntry({ items, sessionId, token, recall: { ...syntheticRecall(4, { length: 280 }),
+    guidance: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE, sourceMarker: createFuliSourceMarker({
+      facts: [{ uuid: 'fact-1', fact: 'SYNTHETIC recalled fact 1', personal_project_id: PROJECT }] }),
+    noMatchSourceMarker: createFuliSourceMarker({}) },
+  conversation: syntheticRecovery(4, { length: 400 }) });
+  const management = await syntheticManagement();
+  const judgment = await taskJudgmentContext({ config: { personal: { spaceId: SPACE } }, judgment: { policy: async () =>
+    ({ mode: 'auto', quality: 'quality', client: 'claude_code', revision: 3, globalRevision: 2, inherited: false, personalProjectId: PROJECT }) } },
+  PROJECT);
+  return withPreferenceScope({ ...entry, checkpoint_required: false, checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE,
+    resumed_checkpoint: false, previous_checkpoint_missing: false, task_guidance: taskKnowledgeGuidance(),
+    conversation: { ...entry.conversation, revision: 3, recovered_from: null, compacted: false, guidance: CONVERSATION_GUIDANCE },
+    agent_receipt: { ...entry.agent_receipt, guidance: RECEIPT_GUIDANCE },
+    project_agent_context: syntheticContinuity(), project_management_context: management, judgment_context: judgment },
+  { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: AGENT, session_id: sessionId,
+    source_application: 'claude_code', preference_scope: { version: 1, work_kind: 'implementation', workflow: null } });
+}
+
+const NOTE = 'SYNTHETIC working note about the export cursor, the rollback plan and the review checklist for this project. ';
+
+function memoryLayer(personalProjectId, revision) {
+  const note = index => `${NOTE}${index}. ${NOTE}`.slice(0, 190);
+  return agentMemoryView({ personal_space_id: SPACE, personal_project_id: personalProjectId, agent_id: AGENT,
+    scope: personalProjectId === null ? 'private_agent_global' : 'private_agent_project', storage: 'provider',
+    authority: 'agent_working_notes', revision,
+    current: { checkpoint_id: `00000000-0000-4000-8000-0000000000${revision}${personalProjectId ? 1 : 2}`, personal_space_id: SPACE,
+      personal_project_id: personalProjectId, agent_id: AGENT, revision, created_at: '2026-10-26T10:00:00.000Z',
+      source_application: 'claude_code', source_session_id: '7d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6',
+      task_id: `00000000-0000-4000-8000-00000000009${revision}`,
+      memory: { summary: `SYNTHETIC summary. ${NOTE.repeat(4)}`, decisions: [1, 2, 3, 4].map(note),
+        open_threads: [1, 2].map(note), next_actions: [1, 2].map(note) } },
+    history: [], work_log: [] });
+}
+
+function syntheticContinuity() {
+  const person = (index, occupation) => ({ agent_id: `project.member-${index}`, name: `Synthetic member ${index}`, occupation,
+    responsibility: 'SYNTHETIC responsibility for one bounded part of the project.', role: 'member' });
+  return { status: 'ready', project_agent_id: AGENT, personal_project_id: PROJECT, source_application: 'claude_code',
+    wake_mode: 'task_entry', worker_started: false, selection_reason: 'project_lead', match_basis: [],
+    role: { name: 'Synthetic lead', responsibility: 'SYNTHETIC lead who owns the export service and its review.',
+      initial_preferences: [], character: { judgment: 'SYNTHETIC: weighs evidence before acting; asks when the scope is unclear.',
+        taste: 'SYNTHETIC: small diffs, clear names.', personality: 'SYNTHETIC: calm and direct.' },
+      expectations: 'SYNTHETIC: reports what was verified and what was not.' },
+    project_brief: { name: 'Synthetic export service', summary: 'SYNTHETIC export service with paginated cursors.' },
+    memory: memoryLayer(PROJECT, 7), global_memory: memoryLayer(null, 5),
+    team: { lead_agent_id: AGENT, roster: [{ agent_id: AGENT, name: 'Synthetic lead', occupation: 'engineer', role: 'lead' },
+      person(1, 'engineer'), person(2, 'tester'), person(3, 'designer')], user_facing_agent_id: AGENT,
+    reporting_lines: [1, 2, 3].map(index => ({ agent_id: `project.member-${index}`, reports_to_agent_id: AGENT })),
+    unavailable_agent_ids: [], assigned_collaborators: [], assigned_peers: [], peer_roles: ['hr', 'project_manager'],
+    worker_started: false, guidance: TEAM_GUIDANCE },
+    recent_tasks: [], knowledge: [], unavailable_components: [],
+    directorySnapshot: { status: 'current', path: `/synthetic/fuli/agents/${SPACE}/${AGENT}`, files: [
+      { file: 'AGENTS.md', scope: 'identity', state: 'unchanged' },
+      { file: 'MEMORY.md', scope: 'global', revision: 5, state: 'unchanged' },
+      { file: `projects/${PROJECT}.md`, scope: 'project', revision: 7, state: 'written' }] },
+    guidance: PROJECT_AGENT_CONTINUITY_GUIDANCE };
+}
+
+// Jefa's task entry through the real employee entry with a synthetic board.
+function syntheticManagement() {
+  const manifest = { id: 'jefa', name: 'Jefa', role: 'Project manager', permissions: ['board.read', 'board.write'],
+    taskEntry: { boardTool: 'read_board', titleTool: 'prepare_session_title' } };
+  const context = { agentId: 'employee.jefa', name: 'Jefa', role: 'Project manager', project: { id: PROJECT },
+    management: { mode: 'project', titleMode: 'suggest', titleStyle: 'concise' } };
+  const board = { version: 12, total: 9, truncated: true, items: Array.from({ length: 9 }, (_, index) => ({
+    id: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`, title: `SYNTHETIC board item ${index + 1}`,
+    status: 'todo', priority: 'medium', workType: 'feature', updatedAt: '2026-10-26T10:00:00.000Z' })) };
+  return employeeTaskEntry({ app: { consoleUrl: 'http://127.0.0.1:4318', config: { personal: { spaceId: SPACE } } },
+    registry: { catalog: () => [{ manifest, runtimeStatus: 'ready' }], get: () => ({ manifest }),
+      runtime: async () => ({ describeTools: async () => [{ name: 'read_board', permission: 'board.read' }], callTool: async () => board }) },
+    recruitment: { authorize: async () => context }, workspace: async () => context },
+  { personalProjectId: PROJECT, sourceApplication: 'claude_code', sourceSessionId: '7d1e2f3a-4b5c-4d6e-8f70-8192a3b4c5d6' });
 }
 
 export const hookFrame = text => JSON.parse(text.split('\n').at(-1));

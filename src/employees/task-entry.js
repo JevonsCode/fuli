@@ -4,6 +4,9 @@ import { employeeCollaborationReceipt } from '../agents/identity-receipt.js';
 
 // The board window a task entry lists; Jefa's board match reads the same one.
 export const TASK_ENTRY_BOARD_LIMIT = 8;
+// How an Agent works with a manager its task entry lists. The entry
+// references it by version (entry-rules.js, manager_guidance).
+export const MANAGER_ENTRY_GUIDANCE = 'Route actionable work in this project through this manager: match existing board items, or create a concise task for new work. Keep conversation-only questions out of the backlog. Update linked items as evidence arrives; Agent completion goes to review, never human-confirmed done. When this conversation materially advances a matched task and its progress was actually recorded, end the user-facing response with a short receipt naming that task; never claim a task update that did not succeed. Before creating or editing, discover the installed tool schemas and preserve versions/idempotency. If title_mode is auto or suggest, prepare a title from only this session’s linked work item IDs. Auto applies only when the current host exposes a native session rename capability and the exact target session is known: execute the returned action in that host, then report its actual result. Never edit client databases or transcripts, invent an execution receipt, rename another session, or override a locked/manual title. Do not start an additional model solely for this entry.';
 
 export async function employeeTaskEntry({ app, registry, recruitment, workspace }, input) {
   if (!input.personalProjectId) return { status: 'project_unresolved', managers: [], worker_started: false };
@@ -36,7 +39,7 @@ export async function employeeTaskEntry({ app, registry, recruitment, workspace 
         session: { sourceApplication: input.sourceApplication ?? 'other', sessionId: input.sourceSessionId ?? input.sessionId ?? null },
         tools: { discover: 'list_employee_tools', call: 'call_employee_tool',
           read_board: manifest.taskEntry.boardTool, prepare_title: manifest.taskEntry.titleTool ?? null },
-        guidance: 'Route actionable work in this project through this manager: match existing board items, or create a concise task for new work. Keep conversation-only questions out of the backlog. Update linked items as evidence arrives; Agent completion goes to review, never human-confirmed done. When this conversation materially advances a matched task and its progress was actually recorded, end the user-facing response with a short receipt naming that task; never claim a task update that did not succeed. Before creating or editing, discover the installed tool schemas and preserve versions/idempotency. If title_mode is auto or suggest, prepare a title from only this session’s linked work item IDs. Auto applies only when the current host exposes a native session rename capability and the exact target session is known: execute the returned action in that host, then report its actual result. Never edit client databases or transcripts, invent an execution receipt, rename another session, or override a locked/manual title. Do not start an additional model solely for this entry.'
+        guidance: MANAGER_ENTRY_GUIDANCE
       });
     } catch (error) {
       // Excluded/unassigned/inactive projects never reach the plugin runtime.

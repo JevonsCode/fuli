@@ -51,7 +51,8 @@ for (const [agent, enter, inlineChars] of AGENTS) {
       assert.ok(preview.includes(field), `${field} in the first ${PREVIEW_CHARS} characters`);
     }
     const delivered = JSON.parse(context.split('\n').at(-1));
-    assert.deepEqual(Object.keys(delivered).slice(0, 4), ['taskContextToken', 'task_context_token', 'checkpoint_required', 'agent_receipt']);
+    assert.deepEqual(Object.keys(delivered).slice(0, 3), ['taskContextToken', 'checkpoint_required', 'agent_receipt']);
+    assert.equal(delivered.task_context_token, undefined, 'the hook sends the token once');
     const omitted = delivered.preferences_omitted?.count ?? 0;
     assert.equal(delivered.effective_preferences.length + omitted, 60, 'every preference is listed or counted');
     if (!inlineChars) assert.equal(omitted, 0, 'no preference is dropped to make room');

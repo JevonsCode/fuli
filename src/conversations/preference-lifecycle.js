@@ -2,6 +2,7 @@ import { compactTaskContext } from './task-context-view.js';
 import { hookAdditionalContextToolResult } from '../mcp/tool-result.js';
 import { SESSION_FULI_OFF } from '../agent-tools/session-fuli-gate.js';
 import { withoutDeliveryProofs } from './recent-context.js';
+import { copyPreferenceScope } from './preference-snapshot.js';
 import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_PREFERENCES_LABEL, WHOLE_ENTRY }
   from './entry-inline-budget.js';
 
@@ -46,8 +47,12 @@ export async function currentTaskPreferences(input, { sourceApplication, current
 
 // `inlineChars` is the inline limit of a host that keeps only a preview of a
 // longer hook context (entry-inline-budget.js); without it the entry is whole.
-export async function preferenceHookOutput(value, event, input, delivery, sourceApplication, label, forceFull = false,
+// The model passes taskContextToken (PASS_TASK_TOKEN), so the hook context
+// leaves out its snake_case copy; MCP results keep both (rec#11 D-72).
+export async function preferenceHookOutput(entry, event, input, delivery, sourceApplication, label, forceFull = false,
   { inlineChars = null } = {}) {
+  const { task_context_token: _copy, ...rest } = entry;
+  const value = copyPreferenceScope(entry, rest);
   const format = projected => hookAdditionalContextToolResult(projected, { hookEventName: event,
     label: omittedLabel(label, projected?.preferences_omitted), limitBytes: 128 * 1024, itemLimit: 1000 });
   const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength) : WHOLE_ENTRY;

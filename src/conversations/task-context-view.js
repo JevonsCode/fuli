@@ -47,12 +47,15 @@ export function compactTaskContext(value) {
     continuation: { ...value.agent_receipt.continuation,
       guidance: text(value.agent_receipt.continuation.guidance, 'continuation_guidance') } };
   if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(preferenceInstructionView);
-  if (value.project_management_context?.managers) result.project_management_context = managementContextView(value.project_management_context);
+  if (value.project_management_context?.managers) result.project_management_context = managementContextView(
+    value.project_management_context, guidance => text(guidance, 'manager_guidance'));
   const continuity = value.project_agent_context;
   const management = value.project_management_context;
   const omitTeam = !value.worker_run && Object.hasOwn(value, 'project_management_context')
     && (management?.status === 'degraded' || !management?.managers?.length);
   if (omitTeam) delete result.judgment_context;
+  else if (value.judgment_context?.guidance) result.judgment_context = { ...value.judgment_context,
+    guidance: text(value.judgment_context.guidance, 'judgment_guidance') };
   const teamRules = !omitTeam && (continuity?.team?.guidance ?? continuity?.team_guidance);
   const teamGuidance = teamRules ? text(teamRules, 'team_guidance') : undefined;
   if (continuity) result.project_agent_context = { ...continuity,
@@ -74,10 +77,12 @@ export function compactTaskContext(value) {
 }
 
 // Each manager's routing, title policy and tools; the board itself is read on
-// demand through the manager's own read_board tool.
-export function managementContextView(management) {
+// demand through the manager's own read_board tool. `guidance` gives the
+// routing rules as this entry delivers them (a task entry references them).
+export function managementContextView(management, guidance) {
   return { ...management,
     managers: management.managers.map(manager => ({ ...manager,
+      ...(manager.guidance ? { guidance: guidance(manager.guidance) } : {}),
       board: manager.board && { version: manager.board.version, total: manager.board.total,
         view: 'on_demand', guidance: 'Discover and call the manager read_board tool before matching, creating or updating a work item; this entry omits board details.' }
     }))
@@ -144,10 +149,14 @@ function memoryPreview(memory, guidance) {
     openThreads: list(notes.openThreads),
     nextActions: list(notes.nextActions)
   };
-  // Space, project and Agent IDs are already in the entry context.
+  // Space, project and Agent IDs are already in the entry context, and the
+  // record's revision is the layer's (scopedAgentMemoryView checks both). Its
+  // checkpoint, task and session IDs are provenance the full read returns.
+  const { personalSpaceId: _space, personalProjectId: _project, agentId: _agent, revision: _revision,
+    checkpointId: _checkpoint, taskId: _task, sourceSessionId: _session, ...record } = current ?? {};
   return { ...memory, history: undefined, workLog: undefined, personalSpaceId: undefined,
     personalProjectId: undefined, agentId: undefined, storage: undefined,
-    current: current && { ...current, memory: preview },
+    current: current && { ...record, memory: preview },
     view: 'preview', notesTruncated, requiresFullReadBeforeWrite: true, guidance };
 }
 

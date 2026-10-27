@@ -6,6 +6,8 @@ import { CONVERSATION_GUIDANCE } from '../graphiti/agent-conversations.js';
 import { PROJECT_AGENT_CONTINUITY_GUIDANCE } from '../graphiti/project-agent-task-entry.js';
 import { TEAM_GUIDANCE } from '../graphiti/project-agent-team-context.js';
 import { CONTINUATION_GUIDANCE, RECEIPT_GUIDANCE } from '../agents/identity-receipt.js';
+import { MANAGER_ENTRY_GUIDANCE } from '../employees/task-entry.js';
+import { AUTO_JUDGMENT_GUIDANCE } from '../graphiti/task-entry-preferences.js';
 
 const MEMORY_GUIDANCE = 'Use get_project_agent_memory before merging or checkpointing working memory; this preview omits history and may truncate notes.';
 export const DETAILS_GUIDANCE = 'Read get_project_team for staffing and list_project_agent_tasks for task history when needed.';
@@ -51,6 +53,7 @@ export function entryRules() {
       global_memory_guidance: GLOBAL_MEMORY_GUIDANCE, continuation_guidance: CONTINUATION_GUIDANCE,
       scope_guidance: { ...GENERIC_SCOPE_GUIDANCE }, receipt_guidance: RECEIPT_GUIDANCE,
       details_guidance: DETAILS_GUIDANCE, checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE,
+      manager_guidance: MANAGER_ENTRY_GUIDANCE, judgment_guidance: AUTO_JUDGMENT_GUIDANCE,
       preference_delivery: { ...PREFERENCE_DELIVERY_GUIDANCE } };
     rules = Object.freeze({ sections, version: contentHash(sections).slice(0, 12) });
   }
