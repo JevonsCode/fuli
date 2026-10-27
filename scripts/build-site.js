@@ -5,8 +5,11 @@ import { createLanguageController } from '../site/i18n.js';
 import { SITE_URL, structuredData } from '../site/metadata.js';
 import { isMainModule } from '../src/system/main-module.js';
 
-const variants = [['', 'zh-CN'], ['zh/', 'zh-CN'], ['en/', 'en']];
-const alternates = [['zh-Hans', 'zh/'], ['en', 'en/'], ['x-default', '']];
+// Each page is published at its template's own route (Chinese by default) and
+// one directory below it per language; every language lists the same alternates.
+const languageRoutes = [['', 'zh-CN'], ['zh/', 'zh-CN'], ['en/', 'en']];
+const alternateRoutes = [['zh-Hans', 'zh/'], ['en', 'en/'], ['x-default', '']];
+const PREVIEW_BASE = 'next/';
 const plain = node => node.textContent.replace(/\s+/g, ' ').trim();
 
 function add(document, tag, attributes, text) {
@@ -32,38 +35,65 @@ function markdown(document) {
   return lines.join('\n');
 }
 
-export function createSitePages(template) {
-  const files = new Map();
-  for (const [path, locale] of variants) {
-    const { document } = parseHTML(template);
-    if (path) document.documentElement.dataset.pageLocale = locale;
-    createLanguageController({ document, languages: [locale] });
-    const pageUrl = SITE_URL + path;
-    const prefix = path ? '../' : './';
+// Renders one language route of a page template; `base` is the template's own route.
+function renderPage(template, base, route, locale) {
+  const { document } = parseHTML(template);
+  if (route) document.documentElement.dataset.pageLocale = locale;
+  createLanguageController({ document, languages: [locale] });
+  const pageUrl = SITE_URL + base + route;
+  // A language route sits one directory below its template, so relative URLs gain one "../".
+  if (route) {
     for (const element of document.querySelectorAll('[href], [src]')) {
       for (const attribute of ['href', 'src']) {
         const value = element.getAttribute(attribute);
-        if (value?.startsWith('./')) element.setAttribute(attribute, prefix + value.slice(2));
+        if (value?.startsWith('./')) element.setAttribute(attribute, '../' + value.slice(2));
+        else if (value?.startsWith('../')) element.setAttribute(attribute, '../' + value);
       }
     }
-    document.querySelector('link[rel="canonical"]').href = pageUrl;
-    document.querySelector('meta[property="og:url"]').content = pageUrl;
-    add(document, 'meta', { name: 'robots', content: 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1' });
-    add(document, 'meta', { property: 'og:site_name', content: 'FULI' });
-    add(document, 'meta', { property: 'og:image:alt', content: 'FULI logo' });
-    add(document, 'meta', { name: 'twitter:title', 'data-i18n-content': 'meta.title', content: document.title });
-    add(document, 'meta', { name: 'twitter:description', 'data-i18n-content': 'meta.description', content: document.querySelector('meta[name="description"]').content });
-    add(document, 'meta', { name: 'twitter:image', content: SITE_URL + 'assets/fuli-logo.png' });
-    for (const [language, route] of alternates) add(document, 'link', { rel: 'alternate', hreflang: language, href: SITE_URL + route });
+  }
+  document.querySelector('link[rel="canonical"]').href = pageUrl;
+  document.querySelector('meta[property="og:url"]').content = pageUrl;
+  add(document, 'meta', { name: 'robots', content: 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1' });
+  add(document, 'meta', { property: 'og:site_name', content: 'FULI' });
+  add(document, 'meta', { property: 'og:image:alt', content: 'FULI logo' });
+  const title = document.querySelector('title').getAttribute('data-i18n');
+  const description = document.querySelector('meta[name="description"]');
+  add(document, 'meta', { name: 'twitter:title', 'data-i18n-content': title, content: document.title });
+  add(document, 'meta', { name: 'twitter:description', 'data-i18n-content': description.getAttribute('data-i18n-content'), content: description.content });
+  add(document, 'meta', { name: 'twitter:image', content: SITE_URL + 'assets/fuli-logo.png' });
+  for (const [language, alternate] of alternateRoutes) add(document, 'link', { rel: 'alternate', hreflang: language, href: SITE_URL + base + alternate });
+  return { document, pageUrl };
+}
+
+function homePages(template, files) {
+  for (const [route, locale] of languageRoutes) {
+    const { document, pageUrl } = renderPage(template, '', route, locale);
     add(document, 'link', { rel: 'alternate', type: 'text/markdown', href: pageUrl + 'index.md' });
     add(document, 'link', { rel: 'describedby', type: 'text/plain', href: SITE_URL + 'llms.txt' });
     add(document, 'link', { rel: 'sitemap', type: 'application/xml', href: SITE_URL + 'sitemap.xml' });
     add(document, 'script', { id: 'site-schema', type: 'application/ld+json' }, JSON.stringify(structuredData(locale, pageUrl)).replace(/</g, '\\u003c'));
-    files.set(path + 'index.html', document.toString());
-    files.set(path + 'index.md', markdown(document));
+    files.set(route + 'index.html', document.toString());
+    files.set(route + 'index.md', markdown(document));
   }
+}
 
-  const urls = variants.map(([path]) => `  <url>\n    <loc>${SITE_URL}${path}</loc>\n${alternates.map(([locale, route]) => `    <xhtml:link rel="alternate" hreflang="${locale}" href="${SITE_URL}${route}" />`).join('\n')}\n  </url>`);
+// The preview channel names the version this build packages (package.json is its only source).
+function previewPages(template, version, files) {
+  for (const [route, locale] of languageRoutes) {
+    const { document } = renderPage(template, PREVIEW_BASE, route, locale);
+    add(document, 'link', { rel: 'sitemap', type: 'application/xml', href: SITE_URL + 'sitemap.xml' });
+    for (const element of document.querySelectorAll('[data-preview-version]')) element.textContent = version;
+    for (const link of document.querySelectorAll('[data-preview-release]')) link.href = `https://github.com/JevonsCode/fuli/releases/tag/v${version}`;
+    files.set(PREVIEW_BASE + route + 'index.html', document.toString());
+  }
+}
+
+export function createSitePages({ home, preview, version }) {
+  const files = new Map();
+  homePages(home, files);
+  previewPages(preview, version, files);
+
+  const urls = ['', PREVIEW_BASE].flatMap(base => languageRoutes.map(([route]) => `  <url>\n    <loc>${SITE_URL}${base}${route}</loc>\n${alternateRoutes.map(([locale, alternate]) => `    <xhtml:link rel="alternate" hreflang="${locale}" href="${SITE_URL}${base}${alternate}" />`).join('\n')}\n  </url>`));
   files.set('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls.join('\n')}\n</urlset>\n`);
   files.set('llms.txt', `# FULI\n\n> FULI (Fuli, 复利; npm: fuli-context) is a collaboration layer for persistent AI agents across MCP-compatible clients.\n\nFULI connects task ownership, agent working memory, personal and project preferences, and direct conversations between agents. Every space includes Jefa for project management, Bole for AR (Agent Resources: recruiting and staffing), and Tonborg for preference-guided judgment. Tonborg reviews within the chosen autonomy level and recommends clients and models; the host performs the actual execution. Decision logs accept thumbs up, thumbs down and an optional reason to guide later judgments. FULI retrieves relevant context through CLI, MCP and HTTP. Generic MCP configuration is available through fuli connect; automatic conversation capture and wake/resume require dedicated client adapters. The relationship graph and conversation records are stored on the user's computer.\n\n## Product\n\n- [Product overview in English](${SITE_URL}en/index.md): Capabilities, architecture and installation.\n- [产品介绍（中文）](${SITE_URL}zh/index.md): 功能、架构与安装。\n\n## Documentation\n\n- [English documentation](https://raw.githubusercontent.com/JevonsCode/fuli/main/README.md): Setup and usage.\n- [中文文档](https://raw.githubusercontent.com/JevonsCode/fuli/main/README.zh-CN.md): 安装与使用。\n\n## Optional\n\n- [Source repository](https://github.com/JevonsCode/fuli): Source code and issues.\n- [npm package](https://www.npmjs.com/package/fuli-context): Published installation package.\n- [Release notes](https://github.com/JevonsCode/fuli/releases): Version history.\n`);
   return files;
@@ -73,7 +103,11 @@ export async function buildSite() {
   const source = new URL('../site/', import.meta.url);
   const output = new URL('../dist/site/', import.meta.url);
   await cp(source, output, { recursive: true });
-  const files = createSitePages(await readFile(new URL('index.html', source), 'utf8'));
+  const files = createSitePages({
+    home: await readFile(new URL('index.html', source), 'utf8'),
+    preview: await readFile(new URL(PREVIEW_BASE + 'index.html', source), 'utf8'),
+    version: JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version,
+  });
   for (const [path, content] of files) {
     const destination = new URL(path, output);
     await mkdir(new URL('./', destination), { recursive: true });

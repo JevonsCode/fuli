@@ -4,11 +4,13 @@ import test from 'node:test';
 import { parseHTML } from 'linkedom';
 import { createSitePages } from '../scripts/build-site.js';
 
-const template = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
+const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+const template = read('../site/index.html');
+const pages = () => createSitePages({ home: template, preview: read('../site/next/index.html'), version: '0.0.0-beta.0' });
 const base = 'https://xn--8ovp9s.xn--m8txu.com/fuli/';
 
 test('each language is complete without JavaScript and has reciprocal discovery links', () => {
-  const files = createSitePages(template);
+  const files = pages();
   for (const [path, locale] of [['', 'zh-CN'], ['zh/', 'zh-CN'], ['en/', 'en']]) {
     const { document } = parseHTML(files.get(path + 'index.html'));
     assert.equal(document.documentElement.lang, locale);
@@ -45,10 +47,10 @@ test('each language is complete without JavaScript and has reciprocal discovery 
 });
 
 test('sitemap and machine-readable summaries describe the same public product', () => {
-  const files = createSitePages(template);
-  assert.deepEqual(files, createSitePages(template), 'Generation is deterministic');
+  const files = pages();
+  assert.deepEqual(files, pages(), 'Generation is deterministic');
   const sitemap = files.get('sitemap.xml');
-  for (const path of ['', 'zh/', 'en/']) assert.ok(sitemap.includes(`<loc>${base}${path}</loc>`));
+  for (const path of ['', 'zh/', 'en/', 'next/', 'next/zh/', 'next/en/']) assert.ok(sitemap.includes(`<loc>${base}${path}</loc>`));
   assert.doesNotMatch(sitemap, /127\.0\.0\.1|localhost|v0/);
   assert.match(files.get('llms.txt'), /AI agent/);
   assert.ok(files.get('llms.txt').includes(base + 'en/index.md'));
