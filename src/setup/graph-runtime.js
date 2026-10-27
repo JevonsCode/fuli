@@ -5,13 +5,12 @@ import {
   closeSync,
   existsSync,
   mkdirSync,
-  openSync,
   readFileSync,
   writeFileSync
 } from 'node:fs';
-import { dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import {
   ensureContainerRuntime,
   runDockerCompose
@@ -542,8 +541,7 @@ export async function stopGraphProviders(paths, envPath, options = {}) {
 }
 
 function spawnWebRuntime(input) {
-  mkdirSync(dirname(input.paths.logPath), { recursive: true });
-  const log = openSync(input.paths.logPath, 'a');
+  const log = openChildProcessLog(input.paths.logPath);
   try {
     const args = [
       input.paths.serverPath,

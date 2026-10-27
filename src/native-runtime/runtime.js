@@ -6,8 +6,6 @@ import {
   chmodSync,
   closeSync,
   existsSync,
-  mkdirSync,
-  openSync,
   readFileSync,
   unlinkSync
 } from 'node:fs';
@@ -39,6 +37,7 @@ import {
   readRuntimeSettings
 } from '../system/runtime-settings.js';
 import { nonEmptyText } from '../validation/values.js';
+import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
 import { parseProviderEnv } from '../setup/provider-env.js';
 
@@ -751,8 +750,7 @@ function spawnNativeDatabase(spec) {
     }
     unlinkSync(spec.pidPath);
   }
-  mkdirSync(dirname(spec.logPath), { recursive: true });
-  const log = openSync(spec.logPath, 'a');
+  const log = openChildProcessLog(spec.logPath);
   try {
     const child = spawn(spec.command, spec.args, {
       detached: true,
@@ -768,8 +766,7 @@ function spawnNativeDatabase(spec) {
 }
 
 function spawnNativeProvider(spec) {
-  mkdirSync(dirname(spec.logPath), { recursive: true });
-  const log = openSync(spec.logPath, 'a');
+  const log = openChildProcessLog(spec.logPath);
   try {
     const child = spawn(spec.python, [
       '-m', 'uvicorn', 'fuli_graph.app:app',
