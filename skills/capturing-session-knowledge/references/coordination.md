@@ -44,6 +44,10 @@ with `record_project_agent_task_activity`,
 including concrete worker identity. Call `record_project_agent_executor_actual` only after real
 executor/model use. If the host cannot start a worker, report the task as blocked or failed and do
 not fabricate an execution-summary row. The Provider's `executionSummary` remains authoritative.
+A blocked report should say what it waits for; the Provider records when and in which session.
+The block clears itself when that same session continues (a checkpoint or a new prompt there) or
+the person answers its request; activity in another session does not clear it, so do not report
+the task running from elsewhere to work around a block.
 
 `workerStatus` requires `workerId` and the participating `agentId`. Structured actual executor,
 provider and model form one report and must match authorized preflight evidence. When that
@@ -59,6 +63,10 @@ being integrated, report each worker's terminal result in `workerStatus` and kee
 required worker or participant result has been recorded should the coordinator send the final task
 `completed`, `failed`, or `cancelled` activity. Never let the first completed worker close the task
 before the remaining workers have reported their tools, session evidence, and exact Token usage.
+A worker report that arrives after the coordinator completed, cancelled or paused the task is kept
+as that worker's history and leaves the task status unchanged; record it once and do not retry it
+as a status change. In a team without sub-teams, the Agent dispatching from its own task becomes
+the new task's coordinator: omit `coordinatorAgentId` rather than naming the project lead.
 
 ## Report Actual Worker Execution
 

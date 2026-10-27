@@ -249,6 +249,7 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/setup/codex-bootstrap.js', 'Codex configuration, owned by the client'],
   ['src/desktop/windows-installation-switch.js', 'installation record and shortcuts, checked by content before each replace'],
   ['src/desktop/windows-update-runtime.js', 'a byte snapshot of the installation record, restored as it was'],
+  ['src/desktop/windows-update-command.js', 'the outcome of one update run, handed to the tray that started it and read once'],
   ['src/native-runtime/neo4j-lifecycle.js', 'Neo4j runtime manifest and journal; store versions are checked by neo4j-store-formats.js'],
   ['src/native-runtime/runtime.js', 'Neo4j process state of the running console'],
   ['src/setup/graph-runtime.js', 'console process state; the graph runtime config it writes is versioned'],

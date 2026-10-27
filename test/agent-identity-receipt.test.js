@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
+import { taskTeam } from '../src/graphiti/task-collaboration-attribution.js';
 import { successToolResult, hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 
@@ -51,6 +52,22 @@ test('the receipt names the lead and each collaborator once, never the lead twic
     + ' · 协作 [Jefa](<http://127.0.0.1:3999/agents/synthetic-space/employee.jefa>)、'
     + '[Nova Reed](<http://127.0.0.1:3999/agents/synthetic-space/reviewer>)');
   assert.deepEqual(receipt.collaborators.map(item => item.agent_id), ['employee.jefa', 'reviewer']);
+});
+
+test('members the lead session ran itself reach the final receipt from the frozen snapshot', async () => {
+  // Host-run workers have no WorkerRun, so their evidence carries no run ID.
+  const run = (worker, status) => ({ run_id: null, worker_id: worker, task_id: 'task-backup',
+    work_kind: 'implementation', worker_label: `${worker} slice`, application: 'claude_code',
+    session_id: null, session_url: null, status, event_id: `event-${worker}`, observation_ids: [] });
+  const task = { projectAgentId: 'engineer', personalProjectId: 'synthetic-project', checkpoint: { collaboration: {
+    version: 1, status: 'frozen', owner: { agent_id: 'engineer', name: 'Alex Morgan' }, collaborators: [
+      { agent_id: 'member-b', name: 'Bea', runs: [run('subagent-1', 'completed')] },
+      { agent_id: 'member-c', name: 'Cy', runs: [run('subagent-2', 'failed')] }] } } };
+  const team = await taskTeam(application, task, ['member-b', 'member-c']);
+  assert.deepEqual(team.ignored, []);
+  const receipt = taskAgentReceipt(application, { ...owner, name: team.name, collaborators: team.collaborators });
+  assert.deepEqual(receipt.collaborators.map(item => item.agent_id), ['member-b', 'member-c']);
+  assert.match(receipt.markdown, /协作 \[Bea\].*（subagent-1 slice）、\[Cy\].*（subagent-2 slice）/);
 });
 
 test('an unavailable owner is explicit and never fabricated', () => {

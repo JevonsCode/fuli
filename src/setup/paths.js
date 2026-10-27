@@ -42,6 +42,7 @@ export function resolveSetupPaths({
     modelSettingsHistoryPath: join(resolvedDataDir, 'model-settings-history.sqlite'),
     standingAssignmentsPath: join(resolvedDataDir, 'standing-assignments.sqlite'),
     modelEvaluationsPath: join(resolvedDataDir, 'model-evaluations.json'),
+    clientLinksPath: join(resolvedDataDir, 'client-links.json'),
     nativeRuntimeDir,
     nativeRuntimeManifestPath: join(nativeRuntimeDir, 'manifest.json'),
     nativeProcessStatePath: join(nativeRuntimeDir, 'processes.json'),

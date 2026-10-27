@@ -25,7 +25,7 @@ import { listenFetchableServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
-import { dataFormatNoticeLine, dataFormatNotices } from './data-format/format-notices.js';
+import { dataFormatNoticeLine, dataFormatNotices, latestNotices } from './data-format/format-notices.js';
 import { personalGraphFormat } from './data-format/graph-format-client.js';
 import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
@@ -40,6 +40,7 @@ import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-
 import { createModelRoleSettings } from './model-backends/role-settings.js';
 import { createModelSecretStore } from './model-backends/secret-store.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
+import { createClientLinksRegistry } from './client-links/registry.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -83,8 +84,10 @@ export async function createServer(options = {}) {
   const application = runtime.application;
   // The console, not every hook or MCP process, reports the local stores this
   // FULI cannot use as they are, named with their steps (rec#17).
-  const dataFormats = options.dataFormatNotices ?? (localOptions.runtimeConfigPath
+  // /api/health answers them without waiting on a store (latestNotices).
+  const formatNotices = options.dataFormatNotices ?? (localOptions.runtimeConfigPath
     ? dataFormatNotices(dirname(localOptions.runtimeConfigPath)) : null);
+  const dataFormats = formatNotices ? latestNotices(formatNotices) : null;
   for (const notice of dataFormats?.() ?? []) console.warn(dataFormatNoticeLine(notice));
   // A person's confirmed migrations, the same operations as `fuli migrate`.
   const dataFormatMigrations = options.dataFormatMigrations ?? (localOptions.runtimeConfigPath
@@ -130,6 +133,10 @@ export async function createServer(options = {}) {
   // is settled from its recorded operation, and graph deletions the record
   // lost are taken in again; what the graph cannot answer yet stays open for
   // the page's retry. A damaged record is reported here and on every use.
+  // The client link manifest: bundled, updated by the person or once a day when they turned that on.
+  const clientLinks = options.clientLinks ?? (localOptions.runtimeConfigPath
+    ? createClientLinksRegistry({ statePath: resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).clientLinksPath })
+    : null);
   knowledgeHardDelete?.reconcile().catch((error) => {
     console.warn(`Permanent deletes were not reconciled: ${error?.message ?? error}`);
   });
@@ -138,12 +145,13 @@ export async function createServer(options = {}) {
   let system = null;
   let resourcesClosing = null;
   let stopJudgment = () => {};
+  let stopClientLinkUpdates = () => {};
   let peer = null;
   let workerRuntime = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopClientLinkUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -223,6 +231,7 @@ export async function createServer(options = {}) {
       modelSecrets,
       readModelEvaluation,
       judgmentUndo,
+      clientLinks,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -255,6 +264,9 @@ export async function createServer(options = {}) {
   }
   stopJudgment = startJudgmentScheduler({ app: application,
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+  stopClientLinkUpdates = clientLinks?.startAutoUpdate({
+    onError: (error) => console.warn(`Client links were not updated: ${error?.message ?? error}`)
+  }) ?? (() => {});
   // Resumes only what the owner already turned on; console LAN access never enables it.
   if (application.peer && options.peer !== false) {
     peer = createPeerRuntime({ host: application.roundtableHost, roundtable: application.roundtable, port: application.peer,
@@ -318,6 +330,7 @@ async function handleRequest({
   modelSecrets,
   readModelEvaluation,
   judgmentUndo,
+  clientLinks,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -352,7 +365,8 @@ async function handleRequest({
     modelRoleSettings,
     modelSecrets,
     readModelEvaluation,
-    judgmentUndo
+    judgmentUndo,
+    clientLinks
   })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }

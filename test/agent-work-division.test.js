@@ -41,6 +41,17 @@ test('standard work reuses the main FLA and assigns a different FLA to acceptanc
   assert.equal(result.executionStarted, false);
 });
 
+test('a member owner in a flat team coordinates the work it dispatches, not the project lead', async () => {
+  // The project lead as coordinator left the member's task context unable to
+  // link the dispatched task, and the member's own task list never showed it.
+  const app = fixture(team());
+  app.taskContextRegistry.context = async () => ({ projectAgentId: 'developer', personalProjectId: 'sample' });
+  const plan = (await planAgentCollaboration(app, input)).divisionPlan;
+  assert.equal(plan.coordinatorAgentId, 'developer');
+  const delegated = plan.workstreams.find(stream => stream.dispatch);
+  assert.equal(delegated.dispatch.arguments.coordinatorAgentId, 'developer');
+});
+
 test('small work stays together without a new worker or recruitment', async () => {
   const result = await planAgentCollaboration(fixture([team()[0]]), { ...input, taskSize: 'small' });
   assert.equal(result.divisionPlan.mode, 'single');

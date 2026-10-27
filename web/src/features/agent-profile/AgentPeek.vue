@@ -16,6 +16,8 @@ import { occupationLabels } from "./agent-occupation";
 import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
 import { statusTone } from "@/features/project-agents/task-labels";
 import { agentPinsText } from "./agent-pins";
+import AgentMentionCopy from "./AgentMentionCopy.vue";
+import { isMentionableFla } from "./fla-mention";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentDisplayName, agentResponsibility, profileProjectIds } from "./profile-model";
 
@@ -34,6 +36,8 @@ const props = defineProps<{
   managesAllProjects?: boolean;
   pinned?: boolean;
   pinPending?: boolean;
+  /** Another FLA to name in the "call them in together" phrasing. */
+  mentionPartner?: string | null;
 }>();
 const emit = defineEmits<{ "toggle-pin": [pinned: boolean]; "open-full": []; retry: [] }>();
 
@@ -118,6 +122,7 @@ const pinLabel = computed(() =>
       </div>
     </dl>
     <DialogFooter class="border-t pt-4">
+      <AgentMentionCopy v-if="isMentionableFla(agent)" class="sm:mr-auto" size="default" :name="name" :partner="mentionPartner" />
       <slot name="actions">
         <Button
           variant="outline"

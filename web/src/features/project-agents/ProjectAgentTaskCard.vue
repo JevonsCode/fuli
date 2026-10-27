@@ -6,6 +6,8 @@ import type { ProjectAgentRecord, ProjectAgentTaskRecord } from '@/types'
 import ProjectAgentTaskDiagnostics from './ProjectAgentTaskDiagnostics.vue'
 import TaskExecutionPlan from './TaskExecutionPlan.vue'
 import TaskRunControls from './TaskRunControls.vue'
+import TaskBlockerNotice from './TaskBlockerNotice.vue'
+import { lastBlockerClear } from './task-blocker'
 import { parallelPlanHasEvidence, workerEventEvidence } from './task-evidence'
 import {
   actualExecution,
@@ -38,6 +40,7 @@ const props = defineProps<{
 const emit = defineEmits<{ changed: [] }>()
 const expanded = ref(props.linked)
 const execution = computed(() => actualExecution(props.task))
+const blockerClear = computed(() => lastBlockerClear(props.task))
 const workerEvents = computed(() => workerEventEvidence(props.task))
 const participants = computed(() => props.task.participants.map(participant => {
   const agent = props.agents.find(item => item.agentId === participant.agentId)
@@ -58,7 +61,11 @@ function toggle(event: Event) {
       <div><strong>{{ task.title }}</strong><small>{{ projectName }}</small></div>
       <Badge :variant="taskStatusTone(task.status)" data-task-status>{{ taskStatusLabel(task.status) }}</Badge>
     </header>
-    <p v-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p>
+    <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" :blocker="task.blocker" :updated-at="task.updatedAt" />
+    <p v-else-if="task.resultSummary || task.failureReason">{{ task.resultSummary || task.failureReason }}</p>
+    <p v-if="blockerClear" class="project-agent-muted" data-blocker-cleared>
+      {{ t('taskBlocker.cleared', { time: formatDate(blockerClear.at), cause: t(`taskBlocker.causes.${blockerClear.cause}`) }) }}
+    </p>
     <ProjectAgentTaskDiagnostics :task="task" :project-name="projectName" />
     <p v-if="participants.length" class="project-agent-task-people" data-task-participants>
       {{ t('projectAgents.fields.collaborators') }} · {{ participants.map(participant => participant.label).join('、') }}

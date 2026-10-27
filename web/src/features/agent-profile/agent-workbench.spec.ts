@@ -28,7 +28,7 @@ describe('agentWorkbenchEntry', () => {
     const entry = agentWorkbenchEntry(agent({ workStatus: 'running', currentTaskId: 'task-1' }), { tasks })
     expect(entry).toEqual({
       status: 'running', source: 'roster', taskId: 'task-1',
-      title: 'Synthetic running task', lastUpdateAt: '2026-10-17T02:00:00Z', reason: null, runningSince: null,
+      title: 'Synthetic running task', lastUpdateAt: '2026-10-17T02:00:00Z', reason: null, blocker: null, runningSince: null,
     })
   })
 

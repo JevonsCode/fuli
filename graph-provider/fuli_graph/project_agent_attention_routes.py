@@ -8,7 +8,7 @@ from .project_agent_attention_models import (
 )
 
 
-def register_project_agent_attention_routes(application, store, Actor: Any):
+def register_project_agent_attention_routes(application, store, Actor: Any, notify_task_change):
     @application.post('/v1/agent-attention', response_model=AgentAttentionRecord)
     async def create(request: AgentAttentionCreate, actor: Actor):
         return await store.create_agent_attention(actor, request)
@@ -43,4 +43,8 @@ def register_project_agent_attention_routes(application, store, Actor: Any):
     async def respond(request: AgentAttentionDecision, actor: Actor):
         # Only the trusted local-user HTTP workflow exposes this operation.
         # A reply does not execute an approval, permission change or acceptance.
-        return await store.decide_agent_attention(actor, request, human=True)
+        record = await store.decide_agent_attention(actor, request, human=True)
+        if record.task_id:
+            # Answering a blocking request may have ended the task's block.
+            notify_task_change(request.personal_space_id, record.task_id)
+        return record

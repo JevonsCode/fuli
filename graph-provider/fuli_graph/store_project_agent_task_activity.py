@@ -11,7 +11,9 @@ from .project_agent_models import ProjectAgentModelStrategy, ProjectAgentProfile
 from .project_agent_task_models import ProjectAgentTaskActivityCreate, ProjectAgentTaskRecord
 from .provider_values import now_utc, stable_uuid
 from .store_project_agent_task_recruitment import RECRUITMENT_CLAIM_TTL
+from .store_project_agent_task_blockers import STATUS_UPDATE_RESPONSE
 from .store_transactions import query_store_transaction
+from .task_blocker import blocked_in_session
 from .task_participant_running import running_since_set
 
 
@@ -125,14 +127,34 @@ class StoreProjectAgentTaskActivity:
                 or context.get('project_agent_id') != raw_task.get('lead_agent_id')
                 or request.agent_id != raw_task.get('lead_agent_id')):
                 raise HTTPException(403, 'Judgment acceptance requires the current accountable lead')
-        self._validate_task_transition(
-            raw_task.get('status'),
-            request.status,
-            has_actual_executor=bool(request.actual_executor_id),
-        )
+        blocker = self._blocker_from_row(row)
+        worker_only = self._worker_evidence_only(raw_task.get('status'), request)
+        if not worker_only:
+            self._validate_task_transition(
+                raw_task.get('status'),
+                request.status,
+                has_actual_executor=bool(request.actual_executor_id),
+                from_blocking_session=blocked_in_session(
+                    blocker, request.source_application, request.source_session_id,
+                ),
+            )
         expected_revision = getattr(request, 'expected_revision', None)
         if expected_revision is None:
             expected_revision = raw_task.get('revision') or 0
+        if expected_revision != (raw_task.get('revision') or 0):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f'task revision is stale: expected {expected_revision}, current '
+                    f'{raw_task.get("revision") or 0}; read the task again and retry'
+                ),
+            )
+        if (not worker_only and request.status == 'running' and not request.agent_id
+                and not raw_task.get('lead_agent_id')):
+            raise HTTPException(
+                status_code=409,
+                detail='task has no lead yet: report running with the participating agentId that leads it',
+            )
         if request.agent_id:
             participant = next(
                 (
@@ -242,7 +264,7 @@ class StoreProjectAgentTaskActivity:
             }
             WITH task, agent,
                  task.lead_agent_id IS NULL AND $status = 'running'
-                   AS promote_lead
+                   AND NOT $worker_only AS promote_lead
             WHERE NOT promote_lead OR (
               agent IS NOT NULL AND NOT EXISTS {
                 MATCH (task)-[existing_lead:HAS_PARTICIPANT]->()
@@ -300,6 +322,14 @@ class StoreProjectAgentTaskActivity:
             FOREACH (_ IN CASE
               WHEN same_payload AND applied_transition
               THEN [1] ELSE [] END |
+              SET task.updated_at = CASE
+                    WHEN task.updated_at IS NULL OR task.updated_at < $updated_at
+                    THEN $updated_at ELSE task.updated_at END,
+                  task.revision = coalesce(task.revision, 0) + 1
+            )
+            FOREACH (_ IN CASE
+              WHEN same_payload AND applied_transition AND NOT $worker_only
+              THEN [1] ELSE [] END |
               SET task.status = $status,
                   task.result_summary = CASE
                     WHEN $status IN ['completed', 'awaiting_review', 'failed', 'blocked', 'cancelled'] THEN $summary
@@ -321,11 +351,7 @@ class StoreProjectAgentTaskActivity:
                   task.executor_blocked_reason = coalesce(
                     $executor_blocked_reason,
                     task.executor_blocked_reason),
-                  task.completed_at = $terminal_at,
-                  task.updated_at = CASE
-                    WHEN task.updated_at IS NULL OR task.updated_at < $updated_at
-                    THEN $updated_at ELSE task.updated_at END,
-                  task.revision = coalesce(task.revision, 0) + 1
+                  task.completed_at = $terminal_at
             )
             FOREACH (_ IN CASE
               WHEN same_payload AND applied_transition AND agent IS NOT NULL
@@ -340,6 +366,7 @@ class StoreProjectAgentTaskActivity:
             FOREACH (_ IN CASE
               WHEN same_payload
                 AND applied_transition
+                AND NOT $worker_only
                 AND participant IS NOT NULL
                 AND NOT (coalesce(participant.status, '') IN
                     ['completed', 'failed', 'cancelled'])
@@ -365,7 +392,9 @@ class StoreProjectAgentTaskActivity:
             expected_revision=expected_revision,
             event_id=event_id,
             agent_id=request.agent_id,
-            status=request.status,
+            # A worker-only event keeps the task's own status in its history.
+            status=raw_task.get('status') if worker_only else request.status,
+            worker_only=worker_only,
             recruitment_claim_expired_before=now - RECRUITMENT_CLAIM_TTL,
             actor_kind=request.actor_kind,
             summary=request.summary,
@@ -406,6 +435,10 @@ class StoreProjectAgentTaskActivity:
                 actor,
                 request.personal_space_id,
                 request.task_id,
+            )
+        if raw_task.get('status') == 'blocked' and request.status != 'blocked':
+            await self._close_blocker_attention(
+                request.personal_space_id, request.task_id, STATUS_UPDATE_RESPONSE, now,
             )
         if actual_report:
             # This is the sole owner of actual projection fields: an older
@@ -459,6 +492,28 @@ class StoreProjectAgentTaskActivity:
             request.personal_space_id,
             request.task_id,
         )
+
+    @classmethod
+    def _worker_evidence_only(cls, current, request: ProjectAgentTaskActivityCreate) -> bool:
+        """True when a worker's own report asks for a task status the task cannot take.
+
+        A worker reports its status with the task status it assumes (running, or
+        awaiting review when it finished). After the lead completed, cancelled or
+        paused the task, that assumption is out of date, but the worker's outcome
+        is still real history and the receipt's only proof the worker took part.
+        Such a report is recorded for the worker and leaves the task's status to
+        the lead. A blocked task is not: only evidence or the reporting session
+        moves it on, and a refused report says why.
+        """
+        if (not (request.worker_status and request.worker_id and request.agent_id)
+                or request.status in TERMINAL_TASK_STATUSES or current in {None, 'blocked'}):
+            return False
+        try:
+            cls._validate_task_transition(current, request.status,
+                                          has_actual_executor=bool(request.actual_executor_id))
+        except HTTPException:
+            return True
+        return False
 
     async def _worker_run_superseded(self, request: ProjectAgentTaskActivityCreate) -> bool:
         """True when a later run of the same Agent has started on this task.

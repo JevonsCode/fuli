@@ -74,3 +74,56 @@ jobs:
         run: >-
           node -e "const p=require('./package.json');const prerelease=p.version.split('-')[1];const tag=prerelease?prerelease.split('.')[0]:'latest';if(!/^[a-z][a-z0-9-]*$/i.test(tag))throw new Error('Invalid npm dist-tag');require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT,'tag='+tag+'\n')"
       - run: npx --yes npm@11.13.0 publish --access public --tag "${{ steps.npm-dist-tag.outputs.tag }}"
+
+  # The per-user Windows (tray) install updates from this asset with one click
+  # (src/desktop/windows-tray-release.js): the tray package as one zip and its
+  # SHA-256, attached to the release after the npm package is published.
+  windows-tray:
+    if: github.repository == 'JevonsCode/fuli'
+    needs: publish
+    runs-on: windows-latest
+    # Writes release assets only; no OIDC grant.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: npm ci
+      - name: Prepare the pinned Neo4j and a Java 21 runtime
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $assets = Join-Path $env:RUNNER_TEMP 'fuli-assets'
+          New-Item -ItemType Directory -Force $assets | Out-Null
+          $pin = node --input-type=module -e "const m = await import('./src/native-runtime/runtime.js'); console.log(JSON.stringify({ url: m.NATIVE_NEO4J_URL, sha256: m.NATIVE_NEO4J_SHA256, version: m.NATIVE_NEO4J_VERSION }))" | ConvertFrom-Json
+          $archive = Join-Path $env:RUNNER_TEMP 'neo4j.tar.gz'
+          Invoke-WebRequest -Uri $pin.url -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $pin.sha256) { throw 'Neo4j archive checksum mismatch' }
+          & "$env:SystemRoot\System32\tar.exe" -xzf $archive -C $assets
+          Rename-Item (Join-Path $assets "neo4j-community-$($pin.version)") 'neo4j'
+          & "$env:JAVA_HOME\bin\jlink.exe" --module-path "$env:JAVA_HOME\jmods" --add-modules ALL-MODULE-PATH --strip-debug --no-man-pages --no-header-files --output (Join-Path $assets 'jre21')
+      - name: Build and package the Windows tray
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $t = $env:RUNNER_TEMP
+          node scripts/build-windows-portable.js --output "$t\fuli-portable" --asset-root "$t\fuli-assets" --build-python python --cache-dir "$t\fuli-cache"
+          node scripts/build-windows-tray.js --asset-bundle "$t\fuli-portable" --output "$t\fuli-tray" --data-dir "$t\fuli-tray-data"
+          node scripts/package-windows-tray-release.js --tray "$t\fuli-tray" --output "$t\fuli-release"
+      - name: Attach the tray package to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          gh release upload "$env:GITHUB_REF_NAME" (Get-ChildItem "$env:RUNNER_TEMP\fuli-release").FullName --clobber

@@ -60,5 +60,7 @@ export function installedWindowsFixture(t) {
   writeFileSync(join(source, 'tray-files.sha256.json'), JSON.stringify(inventory));
   const calls = [];
   return { ...f, current, source, calls, options: { source, env: f.env },
-    deps: { ...f.deps, acquireLock: async () => ({ assertHeld() {}, async release() {} }), runCli: async (root, args) => { calls.push({ root, args }); return { code: 0 }; } } };
+    deps: { ...f.deps, acquireLock: async () => ({ assertHeld() {}, async release() {} }), runCli: async (root, args) => { calls.push({ root, args }); return { code: 0 }; },
+      // A refused stop is retried without the production pause.
+      stopping: { wait: async () => {} } } };
 }

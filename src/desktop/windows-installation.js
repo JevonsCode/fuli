@@ -50,6 +50,9 @@ export function trayInventory(source) {
   const entries = JSON.parse(bytes);
   if (!Array.isArray(entries)) throw new Error('Invalid tray checksum inventory.');
   const names = new Set();
+  // Containment compares resolved paths on both sides, so a source reached
+  // through a link or junction (a redirected TEMP, macOS /var) still matches.
+  const root = realpathSync(source);
   for (const entry of entries) {
     if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string'
         || !/^[a-f0-9]{64}$/.test(entry[1]) || isAbsolute(entry[0]) || entry[0].includes(':')
@@ -61,7 +64,7 @@ export function trayInventory(source) {
         || name === 'data' || name.startsWith('data/')) throw new Error('Duplicate or mutable tray inventory path: ' + name);
     names.add(name);
     const path = join(source, entry[0]);
-    if (!lstatSync(path).isFile() || relative(source, realpathSync(path)).startsWith('..')
+    if (!lstatSync(path).isFile() || relative(root, realpathSync(path)).startsWith('..')
         || installationSha256(readFileSync(path)) !== entry[1]) throw new Error('Tray checksum mismatch: ' + entry[0]);
   }
   for (const required of ['Fuli.exe', 'runtime/node/node.exe', 'src/cli.js', 'src/desktop/windows-controller.js', 'native-bundle.json', 'tray-config.json', 'package.json']) {

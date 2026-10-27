@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import PinIcon from "@/components/PinIcon.vue";
 import AgentHand from "@/features/project-agents/AgentHand.vue";
+import TaskBlockerNotice from "@/features/project-agents/TaskBlockerNotice.vue";
 import { currentLocale, t } from "@/i18n";
 import { useNow } from "@/composables/useNow";
 import { formatElapsed } from "@/lib/elapsed-time";
@@ -19,6 +20,8 @@ import {
 } from "./profile-model";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentPinsText } from "./agent-pins";
+import AgentMentionCopy from "./AgentMentionCopy.vue";
+import { isMentionableFla } from "./fla-mention";
 import { agentIdentityStyle } from "./agent-identity-color";
 import { loopPhaseDelay } from "@/lib/motion-phase";
 import { occupationLabels } from "./agent-occupation";
@@ -40,6 +43,8 @@ const props = defineProps<{
   pinned?: boolean;
   pinPending?: boolean;
   selected?: boolean;
+  /** Another FLA to name in the "call them in together" phrasing. */
+  mentionPartner?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -230,7 +235,8 @@ function surfaceClick(event: MouseEvent) {
         {{ lastUpdate ? t("agentRedesign.workbench.lastUpdate", { time: lastUpdate }) : t("agentRedesign.workbench.lastUpdateUnknown") }}
       </span>
     </p>
-    <p v-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :data-tone="workTone" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
+    <TaskBlockerNotice v-if="entry?.blocker" compact :blocker="entry.blocker" :updated-at="entry.lastUpdateAt" @click.stop />
+    <p v-else-if="statusDetail" class="agent-card-status-detail" :class="workStatusClass" :data-tone="workTone" :title="statusDetail" data-status-detail>{{ statusDetail }}</p>
     <p class="agent-card-responsibility" data-agent-summary :title="agentResponsibility(agent)">{{ agentResponsibility(agent) }}</p>
     <div v-if="capabilities.length" class="agent-inline-skills">
       <span v-for="skill in capabilities" :key="skill">{{ skill }}</span>
@@ -248,17 +254,20 @@ function surfaceClick(event: MouseEvent) {
         <span v-else-if="managesAllProjects" class="ui-badge">{{ t("agentProfiles.allProjects") }}</span>
         <span v-else class="agent-card-no-project">{{ t("agentProfiles.noProject") }}</span>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        class="agent-card-peek shrink-0"
-        data-agent-peek
-        :aria-label="t('agentProfiles.quickLookAgent', { name })"
-        :aria-haspopup="'dialog'"
-        @click.stop="emit('peek')"
-      >
-        {{ t("agentProfiles.quickLook") }}
-      </Button>
+      <div class="flex shrink-0 items-center gap-1.5">
+        <AgentMentionCopy v-if="isMentionableFla(agent)" :name="name" :partner="mentionPartner" />
+        <Button
+          variant="ghost"
+          size="sm"
+          class="agent-card-peek shrink-0"
+          data-agent-peek
+          :aria-label="t('agentProfiles.quickLookAgent', { name })"
+          :aria-haspopup="'dialog'"
+          @click.stop="emit('peek')"
+        >
+          {{ t("agentProfiles.quickLook") }}
+        </Button>
+      </div>
     </div>
   </article>
 </template>

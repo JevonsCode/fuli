@@ -18,6 +18,7 @@ from .graph_format_schema import (
     KNOWLEDGE_TAG_LABELS,
     KNOWLEDGE_TAG_RULES,
     SOURCE_DELETE_RULES,
+    TASK_BLOCKER_RULES,
     SchemaRule,
 )
 
@@ -131,6 +132,11 @@ GRAPH_MIGRATIONS = (
         builtin_occupations.pending_builtin_occupations,
         builtin_occupations.apply_builtin_occupations,
         builtin_occupations.BUILTIN_OCCUPATION_JOURNAL,
+    ),
+    GraphMigration(
+        'graph/13-task-blocker-clear', 13, 'schema',
+        'why a task block ended on its event, and the session lookup that ends it',
+        rules=TASK_BLOCKER_RULES,
     ),
 )
 

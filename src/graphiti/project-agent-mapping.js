@@ -1,4 +1,5 @@
 import { taskActivityOrigin } from './task-activity-origin.js';
+import { isFuliProcessSession } from '../mcp/session-id.js';
 
 export function providerProjectAgentProfile(profile) {
   if (!profile || typeof profile !== 'object') {
@@ -71,6 +72,8 @@ export function projectAgentRecord(value) {
     Object.hasOwn(profile, 'agent_type'));
   copyOptional(result.profile, 'displayName', profile.display_name,
     Object.hasOwn(profile, 'display_name'));
+  copyOptional(result, 'nameSuggestion', value.name_suggestion,
+    Object.hasOwn(value, 'name_suggestion'));
   copyOptional(result, 'legacyAgentIds', value.legacy_agent_ids,
     Object.hasOwn(value, 'legacy_agent_ids'));
   copyOptional(result, 'employeeNumber', value.employee_number,
@@ -484,6 +487,7 @@ export function projectAgentTaskRecord(value = {}) {
     createdAt: value.created_at,
     updatedAt: value.updated_at,
     completedAt: value.completed_at ?? null,
+    blocker: projectAgentTaskBlocker(value.blocker),
     events: (value.events ?? []).map(projectAgentTaskEventRecord)
   };
   copyOptional(
@@ -493,6 +497,24 @@ export function projectAgentTaskRecord(value = {}) {
     hasAny(value, ['execution_summary', 'executionSummary'])
   );
   return result;
+}
+
+// What a blocked task waits for, since when, and where. A session ID FULI gave
+// its own MCP process names no conversation the person could open or continue,
+// so it is not shown, and FULI cannot see that session's progress (observed).
+export function projectAgentTaskBlocker(value) {
+  if (!value || typeof value !== 'object') return null;
+  const sessionId = value.source_session_id && !isFuliProcessSession(value.source_session_id)
+    ? value.source_session_id : null;
+  return {
+    reason: value.reason ?? null,
+    since: value.since ?? null,
+    agentId: value.agent_id ?? null,
+    application: value.source_application ?? null,
+    sessionId,
+    sessionUrl: sessionId ? value.source_session_url ?? null : null,
+    observed: Boolean(sessionId)
+  };
 }
 
 export function projectAgentTaskParticipantRecord(value = {}) {
@@ -537,6 +559,7 @@ export function projectAgentTaskEventRecord(value = {}) {
     routingRuleId: value.matched_executor_rule_id ?? value.routing_rule_id ?? null,
     fallbackReason: value.executor_fallback_reason ?? value.fallback_reason ?? null,
     fallbackUsed: value.fallback_used ?? false,
+    blockerClearedBy: value.blocker_cleared_by ?? null,
     createdAt: value.created_at
   };
   copyOptional(

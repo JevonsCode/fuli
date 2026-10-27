@@ -21,7 +21,7 @@ export function planWindowsRollback({ installRoot, env = process.env, readShortc
 
 export async function rollbackWindowsInstallation(options, {
   runCli = runInstalledCli, createShortcut = createWindowsShortcut, readShortcut = readWindowsShortcut,
-  acquireLock = acquireWindowsUpdateLock, write = () => {}
+  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping
 } = {}) {
   const plan = planWindowsRollback({ ...options, readShortcut });
   if (options.expectedInstallationId && options.expectedInstallationId !== plan.current.installationId) {
@@ -40,7 +40,7 @@ export async function rollbackWindowsInstallation(options, {
     const staged = { next, record: Buffer.from(JSON.stringify(next, null, 2) + '\n'),
       shortcuts: stageWindowsShortcuts(plan.shortcuts, target.packageRoot, createShortcut, readShortcut),
       runtime: snapshotWindowsUpdateRuntime(plan.current, target.packageRoot, { downgrade: true }) };
-    return await stopAndSwitchWindowsInstallation(plan, staged, target.packageRoot, { runCli, lock, write });
+    return await stopAndSwitchWindowsInstallation(plan, staged, target.packageRoot, { runCli, lock, write, stopping });
   } finally { await lock.release(); }
 }
 

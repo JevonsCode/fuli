@@ -13,6 +13,7 @@ import UiToggle from '@/ui/UiToggle.vue'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
+import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import CaptureProjectSettings from '@/features/capture/CaptureProjectSettings.vue'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
@@ -471,6 +472,7 @@ async function submitSettings(event: Event) {
             <!-- Clients -->
             <TabsContent value="clients" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="clients">
               <ClientConnectionSettings />
+              <ClientLinksSettings />
               <Card as="section" class="settings-card settings-advanced-card" aria-labelledby="settings-clients-advanced-title">
                 <CardHeader><CardTitle id="settings-clients-advanced-title" as="h2">{{ t('settings.groups.advanced') }}</CardTitle></CardHeader>
                 <Accordion v-model="openSections" type="multiple" :unmount-on-hide="false" class="settings-accordion">

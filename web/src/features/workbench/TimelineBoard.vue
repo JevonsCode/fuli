@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { currentLocale, t } from '@/i18n'
 import { taskStatusChipTone } from '@/features/project-agents/task-labels'
 import { UiAvatar, UiChip } from '@/ui'
+import TaskBlockerNotice from '@/features/project-agents/TaskBlockerNotice.vue'
 import type { WorkbenchBoard } from './workbench-board'
 import { laneOf, timelineHours } from './workbench-model'
 
@@ -29,6 +30,7 @@ const lead = (task: { leadAgentId?: string | null; ownerAgentId?: string | null 
             </span>
             <UiChip :tone="taskStatusChipTone(task.status)">{{ board.statusLabel(task.status) }}</UiChip>
           </RouterLink>
+          <TaskBlockerNotice v-if="task.status === 'blocked' && task.blocker" compact :blocker="task.blocker" :updated-at="task.updatedAt" />
         </li>
       </ul>
     </section>

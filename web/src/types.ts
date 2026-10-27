@@ -331,7 +331,26 @@ export interface ProjectAgentTaskEvent {
   workerLabel?: string | null
   workerOccupationEmoji?: string | null
   workerStatus?: ProjectAgentTaskStatus | string | null
+  /** Set on the event that ended a block without the task's own report, naming why. */
+  blockerClearedBy?: BlockerClearCause | null
   createdAt: string
+}
+
+export type BlockerClearCause = 'session_activity' | 'session_reply' | 'attention_answer'
+
+/** What a blocked task waits for, since when, and the client session that reported it. */
+export interface ProjectAgentTaskBlocker {
+  /** The reported question or missing thing; null when none was recorded. */
+  reason: string | null
+  /** When the task became blocked; null when no recorded event says. */
+  since: string | null
+  agentId: string | null
+  application: ConversationSourceApplication | null
+  /** The client's own session ID; null when the client named none. */
+  sessionId: string | null
+  sessionUrl: string | null
+  /** FULI sees that session's progress and ends the block when it goes on. */
+  observed: boolean
 }
 
 export interface ProjectAgentRoutingDecision {
@@ -400,6 +419,8 @@ export interface ProjectAgentTaskRecord {
   actualExecution?: ProjectAgentActualExecution | null
   executionSummary?: ProjectAgentTaskExecutionSummary[]
   routingDecision?: ProjectAgentRoutingDecision | null
+  /** Set only while the task is blocked. */
+  blocker?: ProjectAgentTaskBlocker | null
   events?: ProjectAgentTaskEvent[]
 }
 
@@ -572,6 +593,8 @@ export interface ProjectAgentRecord {
   /** Fixed roles keep the occupation their manifest gives them. */
   occupationLocked?: boolean
   employeeNumber?: string | null
+  /** A free person-like name the Provider offers when the shown name reads as a job title. */
+  nameSuggestion?: string | null
   legacyAgentIds?: string[]
   personalSpaceId: string
   personalProjectId?: string | null

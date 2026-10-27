@@ -9,3 +9,10 @@ test('employee numbers are preserved as strings without replacing identity keys'
     assert.equal(result.employeeNumber, employee_number);
   }
 });
+
+test('a Provider rename suggestion reaches the console as nameSuggestion, and its absence as null', () => {
+  assert.equal(projectAgentRecord({ agent_id: 'a', profile: {}, name_suggestion: 'Iris Vale' }).nameSuggestion, 'Iris Vale');
+  // A rename answers null, so the console's merged record drops the old offer.
+  assert.equal(projectAgentRecord({ agent_id: 'a', profile: {}, name_suggestion: null }).nameSuggestion, null);
+  assert.equal(Object.hasOwn(projectAgentRecord({ agent_id: 'a', profile: {} }), 'nameSuggestion'), false);
+});

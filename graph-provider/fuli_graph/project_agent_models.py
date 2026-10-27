@@ -305,5 +305,8 @@ class ProjectAgentRecord(StrictModel):
     recruitment_source_application: SourceApplication | None = None
     archived_at: datetime | None = None
     archive_reason: str | None = None
+    # A free person-like nickname, offered (never applied) when the shown name
+    # reads as a job title; read-time only, not stored.
+    name_suggestion: str | None = None
     created_at: datetime
     updated_at: datetime
