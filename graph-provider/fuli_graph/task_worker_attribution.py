@@ -1,4 +1,10 @@
-"""Freeze existing, exact-parent worker evidence in the task checkpoint."""
+"""Freeze existing, exact-parent worker evidence in the task checkpoint.
+
+Two kinds of evidence name a collaborator: a WorkerRun this context authorized
+(a launched worker session), or a worker this context's own session ran itself
+and reported on a task the context coordinates. Evidence of the second kind has
+no run ID.
+"""
 
 import json
 
@@ -58,14 +64,13 @@ async def checkpoint_collaboration(store, space_id, record):
         ORDER BY run.id, event.created_at, event.event_id
         ''', token=record['token'], space_id=space_id,
         project_id=record['personal_project_id'], owner_id=owner_id)
-    runs = {}
+    # A launched worker is proven by its WorkerRun; a worker this session ran
+    # itself (a host subagent) by its own terminal event on a coordinated task.
+    runs = await _host_worker_evidence(store, space_id, record, owner_id)
     for row in rows:
         run, event = dict(row['run']), dict(row['event'])
-        try:
-            runtime = json.loads(event.get('worker_runtime_json') or 'null')
-        except (TypeError, ValueError):
-            continue
-        if (not isinstance(runtime, dict) or runtime.get('application') != run['target_application']
+        runtime = _runtime(event)
+        if (runtime is None or runtime.get('application') != run['target_application']
                 or runtime.get('session_id') != run['actual_session_id']
                 or event.get('worker_status') not in TERMINAL_WORKER_STATUSES):
             continue
@@ -87,6 +92,60 @@ async def checkpoint_collaboration(store, space_id, record):
         helper['runs'].append(evidence)
     snapshot['collaborators'] = [helpers[agent_id] for agent_id in sorted(helpers)]
     return snapshot
+
+
+async def _host_worker_evidence(store, space_id, record, owner_id):
+    """Latest terminal events of workers this context's own session ran itself.
+
+    Only a task this context coordinates, only a participating Agent other than
+    the owner, only events reported from this context's client session, and
+    never a worker ID that belongs to a WorkerRun: a launched worker is proven
+    by its run alone, so a second parent cannot borrow its evidence.
+    """
+    sessions = sorted({value for value in (record.get('session_id'), record.get('source_session_id')) if value})
+    if not sessions or not record.get('source_application'):
+        return {}
+    rows, _, _ = await store.runtime.driver.execute_query('''
+        MATCH (parent:FuliTaskContext {token: $token, personal_space_id: $space_id})-[:COORDINATES_TASK]->
+          (task:FuliProjectAgentTask {personal_space_id: $space_id, personal_project_id: $project_id})
+        MATCH (task)-[:HAS_TASK_EVENT]->(event:FuliProjectAgentTaskEvent)-[:EVENT_AGENT]->(agent:FuliProjectAgent)
+        WHERE agent.agent_id <> $owner_id AND event.worker_id IS NOT NULL
+          AND event.worker_status IN $terminal
+          AND event.source_application = $application AND event.source_session_id IN $sessions
+          AND EXISTS { MATCH (task)-[:HAS_PARTICIPANT]->(agent) }
+          AND NOT EXISTS { MATCH (task)-[:HAS_WORKER_RUN]->(run:FuliProjectAgentWorkerRun)
+                           WHERE run.worker_id = event.worker_id }
+        WITH task, agent, event ORDER BY event.created_at DESC, event.event_id DESC
+        WITH task, agent, event.worker_id AS worker_id, collect(event)[0] AS event
+        RETURN task.task_id AS task_id, task.work_kind AS work_kind, agent.agent_id AS agent_id,
+          agent.profile_json AS profile_json, event
+        ORDER BY task_id, worker_id
+        ''', token=record['token'], space_id=space_id, project_id=record['personal_project_id'],
+        owner_id=owner_id, terminal=sorted(TERMINAL_WORKER_STATUSES),
+        application=record['source_application'], sessions=sessions)
+    evidence = {}
+    for row in rows:
+        event = dict(row['event'])
+        runtime = _runtime(event) or {}
+        evidence[f"host:{row['task_id']}:{event['worker_id']}"] = (
+            row['agent_id'], _profile(row['profile_json']), {
+                'run_id': None, 'worker_id': event['worker_id'],
+                'task_id': row['task_id'], 'work_kind': row['work_kind'],
+                'worker_label': event.get('worker_label'),
+                'application': runtime.get('application') or event.get('source_application'),
+                'session_id': runtime.get('session_id'), 'session_url': runtime.get('session_url'),
+                'status': event['worker_status'], 'event_id': event['event_id'],
+                'observation_ids': [],
+            })
+    return evidence
+
+
+def _runtime(event):
+    try:
+        runtime = json.loads(event.get('worker_runtime_json') or 'null')
+    except (TypeError, ValueError):
+        return None
+    return runtime if isinstance(runtime, dict) else None
 
 
 # The owner's person name and its role title, shown as "name [role]".

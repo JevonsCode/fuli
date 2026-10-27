@@ -33,8 +33,10 @@ async def bind_task_coordinator(store, actor, request, policy):
     The local user can still maintain tasks without an Agent task token. A
     grouped member may register its own work, but only leads staff children.
     """
-    if not getattr(policy, 'sub_teams', []) or not request.task_context_token:
+    if not request.task_context_token:
         return request
+    if not getattr(policy, 'sub_teams', []):
+        return await _bind_flat_dispatcher(store, actor, request, policy)
     from fastapi import HTTPException
     context = await store.get_task_context(actor, request.personal_space_id,
                                            request.task_context_token, request.source_application)
@@ -60,6 +62,29 @@ async def bind_task_coordinator(store, actor, request, policy):
             or request.staffing_intent not in {'reuse_preferred', 'unassigned'}):
         raise HTTPException(403, 'Members register only their own work and report to the immediate lead')
     return request.model_copy(update={'lead_agent_id': sender, 'coordinator_agent_id': parent})
+
+
+async def _bind_flat_dispatcher(store, actor, request, policy):
+    """In a flat team the Agent dispatching from its own task is the coordinator.
+
+    Its task context links the new task and later staffs it only while it is
+    the task's coordinator, lead or the project lead. Without a coordinator the
+    task fell to the system coordinator: the link failed after the task existed
+    and the dispatcher's own task list never showed it. Refuse a coordinator
+    that would leave the dispatcher unaccountable before anything is written.
+    """
+    from fastapi import HTTPException
+    context = await store.get_task_context(actor, request.personal_space_id,
+                                           request.task_context_token, request.source_application)
+    sender = context.get('project_agent_id')
+    if not sender:
+        return request
+    if request.coordinator_agent_id is None:
+        return request.model_copy(update={'coordinator_agent_id': sender})
+    if sender not in {request.coordinator_agent_id, request.lead_agent_id,
+                      getattr(policy, 'team_lead_agent_id', None)}:
+        raise HTTPException(403, 'The coordinator must be the dispatching task owner; omit coordinatorAgentId')
+    return request
 
 
 def validate_task_reports(policy, coordinator, participants):

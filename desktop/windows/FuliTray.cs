@@ -45,8 +45,10 @@ internal static class FuliTray
                 }
                 try
                 {
+                    // "-exit": the console's one-click update asks the tray to exit; services keep running.
                     using (var signal = new EventWaitHandle(false, EventResetMode.AutoReset, name + "-open"))
-                    using (var tray = new TrayContext(runner, selected, signal)) Application.Run(tray);
+                    using (var exitSignal = new EventWaitHandle(false, EventResetMode.AutoReset, name + "-exit"))
+                    using (var tray = new TrayContext(runner, selected, signal, exitSignal)) Application.Run(tray);
                 }
                 finally { mutex.ReleaseMutex(); }
             }
@@ -72,11 +74,12 @@ internal static class FuliTray
         private readonly Control dispatch = new Control();
         private readonly System.Windows.Forms.Timer refresh = new System.Windows.Forms.Timer();
         private readonly RegisteredWaitHandle openWait;
+        private readonly RegisteredWaitHandle exitWait;
         private bool busy;
         private bool exitAfterOperation;
         private volatile bool exiting;
 
-        public TrayContext(ControllerRunner runner, ControllerReply selected, EventWaitHandle signal)
+        public TrayContext(ControllerRunner runner, ControllerReply selected, EventWaitHandle signal, EventWaitHandle exitSignal)
         {
             this.runner = runner;
             this.selected = selected;
@@ -107,6 +110,9 @@ internal static class FuliTray
             };
             openWait = ThreadPool.RegisterWaitForSingleObject(signal,
                 delegate { Post(delegate { RunAction("start-open", true); }); }, null, Timeout.Infinite, false);
+            // Like the menu's exit: a running operation finishes first.
+            exitWait = ThreadPool.RegisterWaitForSingleObject(exitSignal,
+                delegate { Post(RequestTrayExit); }, null, Timeout.Infinite, true);
             refresh.Interval = 30000;
             refresh.Tick += delegate { if (!busy) RunAction("status", false); };
             refresh.Start();
@@ -210,6 +216,7 @@ internal static class FuliTray
             {
                 exiting = true;
                 openWait.Unregister(null);
+                exitWait.Unregister(null);
                 refresh.Dispose();
                 icon.Dispose();
                 image.Dispose();

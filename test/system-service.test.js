@@ -72,7 +72,7 @@ test('system settings distinguish immediately applied refresh changes from resta
     },
     resourceMonitor: { sample: async () => ({ status: 'ready' }) },
     versionChecker: { check: async () => ({ updateAvailable: true }) },
-    update: { offered: () => false }
+    update: { kind: () => 'windows-tray' }
   });
 
   const refreshOnly = await service.updateSettings({
@@ -103,5 +103,5 @@ test('system settings distinguish immediately applied refresh changes from resta
   assert.equal(changedPort.configured.ports.console, 3030);
   assert.equal(changedPort.restartRequired, true);
   assert.equal(changedPort.apply.status, 'applying');
-  assert.deepEqual(await service.versionStatus(), { updateAvailable: true, selfUpdate: false });
+  assert.deepEqual(await service.versionStatus(), { updateAvailable: true, updateKind: 'windows-tray' });
 });

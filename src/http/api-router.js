@@ -151,7 +151,8 @@ export async function handleApiRequest({
     if (request.method === 'GET') sendJson(response, 200, { update: system.updateStatus() });
     else if (request.method !== 'POST') sendJson(response, 405, { error: 'Method not allowed' });
     else if (!refuseRemoteDecision(request, response, 'FULI is updated only on this computer')) {
-      sendJson(response, 200, system.startUpdate());
+      const { stopProcesses } = await readJson(request);
+      sendJson(response, 200, await system.startUpdate({ stopProcesses }));
     }
     return true;
   }

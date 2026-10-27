@@ -84,8 +84,10 @@ export async function planAgentCollaboration(application, input) {
     (await application.personal.getProjectAgentCoordinationPolicy(spaceId, projectId))?.team_lead_agent_id ?? null])));
   const token = input.taskContextToken;
   const subLeads = subLeadIds(policy);
-  const coordinatorAgentId = subLeads.has(task.projectAgentId) ? task.projectAgentId
-    : policy.team_lead_agent_id ?? task.projectAgentId;
+  // In a flat team the owner coordinates the work it dispatches, as the Provider
+  // binds it; another coordinator would leave its context unable to link it.
+  const coordinatorAgentId = subLeads.has(task.projectAgentId) || (!policy.sub_teams?.length && task.projectAgentId)
+    ? task.projectAgentId : policy.team_lead_agent_id ?? task.projectAgentId;
   const memberOwner = Boolean(policy.sub_teams?.length && task.projectAgentId !== policy.team_lead_agent_id
     && !subLeads.has(task.projectAgentId));
   const hierarchy = policy.sub_teams?.length ? { policy, coordinatorAgentId } : null;

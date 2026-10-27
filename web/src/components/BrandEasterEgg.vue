@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
 import { getJson } from '@/api/client'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
+import type { ConsoleUpdateKind } from '@/features/update/model'
 import { t } from '@/i18n'
 import { FULI_VERSION } from '@/version'
 
@@ -14,8 +15,8 @@ interface PackageVersionStatus {
   updateAvailable: boolean
   packageUrl: string
   checkedAt: string
-  // Whether the console can run the update itself (src/system/console-update.js).
-  selfUpdate?: boolean
+  // How the console's one-click update installs it (src/system/console-update.js).
+  updateKind?: ConsoleUpdateKind
 }
 
 // compact: the icon rail shows only the mark; the mark only pops and the effect ends on a short timer,
@@ -174,7 +175,7 @@ onBeforeUnmount(() => {
       :aria-label="t('console.update.title', { version: latestVersion })"
     >
       <strong>{{ t('console.update.title', { version: latestVersion }) }}</strong>
-      <ConsoleUpdate :version="latestVersion" :offered="versionStatus?.selfUpdate !== false" @busy="updating = $event" />
+      <ConsoleUpdate :version="latestVersion" :kind="versionStatus?.updateKind ?? 'npm'" @busy="updating = $event" />
       <a :href="packageUrl" target="_blank" rel="noopener noreferrer">
         {{ t('console.update.npmLink') }}
       </a>

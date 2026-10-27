@@ -177,6 +177,54 @@ async def test_concurrent_first_prepare_serializes_two_providers_and_preserves_f
 
 
 @pytest.mark.asyncio
+async def test_a_member_the_lead_session_ran_itself_is_a_collaborator_but_another_session_is_not():
+    async with provider_client(fixture_settings()) as (client, _):
+        scope, payload, _ = await worker_run_fixture(client)
+
+        async def report(worker_id, session_id, worker_status, key):
+            response = await client.post(f'/v1/project-agent-tasks/{payload["task_id"]}/events', json={**scope,
+                'task_id': payload['task_id'], 'agent_id': 'specialist', 'worker_id': worker_id,
+                'status': 'running', 'worker_status': worker_status, 'worker_label': 'Synthetic host subagent',
+                'source_application': 'codex', 'source_session_id': session_id,
+                'idempotency_key': f'host-worker-{key}', 'summary': f'Synthetic host worker {worker_status}.'})
+            assert response.status_code == 200, response.text
+
+        await report('host-subagent', 'worker-parent-session', 'running', 'start')
+        await report('host-subagent', 'worker-parent-session', 'completed', 'done')
+        await report('foreign-subagent', 'another-session', 'completed', 'foreign')
+        snapshot = await checkpoint(client, scope, payload['task_context_token'], 'complete')
+        assert [item['agent_id'] for item in snapshot['collaborators']] == ['specialist']
+        runs = snapshot['collaborators'][0]['runs']
+        assert [(item['run_id'], item['worker_id'], item['status']) for item in runs] == [
+            (None, 'host-subagent', 'completed')]
+
+
+@pytest.mark.asyncio
+async def test_a_worker_report_after_the_task_was_cancelled_lands_and_still_names_the_worker():
+    async with provider_client(fixture_settings()) as (client, _):
+        scope, payload, _ = await worker_run_fixture(client)
+        path = f'/v1/project-agent-tasks/{payload["task_id"]}/events'
+        stopped = await client.post(path, json={**scope, 'task_id': payload['task_id'], 'agent_id': 'specialist',
+            'status': 'cancelled', 'summary': 'Synthetic task stopped.', 'source_application': 'codex',
+            'idempotency_key': 'synthetic-task-stop'})
+        assert stopped.status_code == 200, stopped.text
+        late = await client.post(path, json={**scope, 'task_id': payload['task_id'], 'agent_id': 'specialist',
+            'worker_id': 'late-subagent', 'status': 'awaiting_review', 'worker_status': 'completed',
+            'source_application': 'codex', 'source_session_id': 'worker-parent-session',
+            'idempotency_key': 'synthetic-late-worker', 'summary': 'Synthetic worker finished after the stop.'})
+        assert late.status_code == 200, late.text
+        task, before = late.json(), stopped.json()
+        assert (task['status'], task['completed_at'], task['result_summary']) == (
+            'cancelled', before['completed_at'], 'Synthetic task stopped.')
+        assert task['revision'] == before['revision'] + 1
+        worker_event = next(event for event in task['events'] if event.get('worker_id') == 'late-subagent')
+        assert (worker_event['status'], worker_event['worker_status']) == ('cancelled', 'completed')
+        snapshot = await checkpoint(client, scope, payload['task_context_token'], 'complete')
+        assert [(item['run_id'], item['worker_id']) for item in snapshot['collaborators'][0]['runs']] == [
+            (None, 'late-subagent')]
+
+
+@pytest.mark.asyncio
 async def test_another_project_cannot_claim_or_display_the_original_worker_receipt():
     from test_project_agent_memory_neo4j import seed_agent
     from test_project_agent_team_lifecycle_neo4j import binding_policy
