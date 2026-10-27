@@ -47,6 +47,12 @@ describe('mark a blocked task as unblocked', () => {
     expect(recent.find('[data-blocker-stale]').exists()).toBe(false)
   })
 
+  it('keeps the hint only as the tooltip where the page says it once', () => {
+    const quiet = mount(TaskBlockerClear, { props: { scope, title: 'Migrate staging', blocker: blocker(daysAgo(12)), updatedAt: daysAgo(12), hint: 'tooltip' } })
+    expect(quiet.find('[data-blocker-stale]').exists()).toBe(false)
+    expect(quiet.get('[data-blocker-clear-open]').attributes('title')).toBe('很久没有进展，如果已经解决可以标记为已解除')
+  })
+
   it('sends the note to the console route and hands back the running task', async () => {
     const task = { taskId: 'task-a', title: 'Migrate staging', status: 'running', participants: [] }
     const calls = respond(200, task)

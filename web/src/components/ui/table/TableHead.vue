@@ -11,7 +11,7 @@ const props = defineProps<{
 <template>
   <th
     data-slot="table-head"
-    :class="cn('h-10 px-3 text-left align-middle text-xs font-semibold whitespace-nowrap text-muted-foreground', props.class)"
+    :class="cn('h-10 px-3 text-left align-middle text-xs font-medium whitespace-nowrap text-muted-foreground', props.class)"
   >
     <slot />
   </th>

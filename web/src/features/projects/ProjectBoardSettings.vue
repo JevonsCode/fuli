@@ -10,7 +10,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import type { ProjectBoardRecord } from '@/features/employees/project-board-layout'
 import { EMPLOYEE_BOARD_STATUSES } from '@/features/employees/task-board-model'
 import { t } from '@/i18n'
-import { UiIconButton, UiSelect } from '@/ui'
+import { UiIconButton, UiNotice, UiSelect } from '@/ui'
 import { bindColumnRow, monitorColumnReorder } from './board-column-dnd'
 import {
   boardFromDraft, builtinDraftColumns, draftFromRecord, draftProblem, managerCandidates, moveDraftColumn, newDraftColumn,
@@ -177,9 +177,9 @@ onBeforeUnmount(() => stopMonitor())
         <UiSelect v-model="managerId" field size="sm" name="project-board-manager" :label="t('employees.projectBoard.manager')"
           :options="managerOptions" :disabled="busy" />
         <p class="ui-meta">{{ t('employees.projectBoard.managerHint') }}</p>
-        <p v-if="goneManager" class="project-board-warning" role="status" data-manager-gone>
+        <UiNotice v-if="goneManager" tone="warning" data-manager-gone>
           {{ t('employees.projectBoard.managerGone', { name: goneManager }) }}
-        </p>
+        </UiNotice>
         <Button v-if="!recruitOpen" type="button" size="sm" variant="outline" :disabled="busy" data-action="open-recruit" @click="openRecruit">
           {{ t('employees.projectBoard.recruit') }}
         </Button>
@@ -273,7 +273,6 @@ onBeforeUnmount(() => stopMonitor())
 .project-board-manager { display: grid; gap: 8px; justify-items: start; }
 .project-board-manager > :first-child { width: min(100%, 360px); }
 .project-board-manager p { margin: 0; }
-.project-board-warning { color: var(--color-warning); font-size: 13px; }
 .project-board-recruit { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .project-board-field { display: grid; gap: 5px; min-width: min(100%, 260px); color: var(--color-ink); font-size: 12px; }
 .project-board-label { color: var(--color-ink); font-size: 12px; }

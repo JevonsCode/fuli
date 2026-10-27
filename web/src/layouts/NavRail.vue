@@ -97,25 +97,28 @@ watch(expanded, value => {
 .nav-rail.is-expanded .nav-rail-link.is-active { box-shadow: none; }
 .nav-rail-link.is-active.has-active-child { background: transparent; }
 .nav-rail-link:hover { color: var(--color-ink); background: var(--color-surface-hover); }
+/* Expanded, first-level names read in soft ink, a step above their muted sub-items. */
+.nav-rail.is-expanded .nav-rail-link:not(.is-active, :hover) { color: var(--color-ink-soft); }
 .nav-rail-link:active { transform: scale(.96); }
 .nav-rail-link.is-active { color: var(--color-accent); background: var(--color-accent-soft); box-shadow: var(--glow-accent); }
 .nav-rail-link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 /* Collapsed, the label is the accessible name only; expanded, it is shown. */
 .nav-rail-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.nav-rail.is-expanded .nav-rail-label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 14px; font-weight: 600; }
+.nav-rail.is-expanded .nav-rail-label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 14px; font-weight: var(--weight-medium); }
 .nav-rail-badge {
   position: absolute; top: 4px; right: 4px; display: grid; min-width: 18px; height: 18px; padding: 0 4px; place-items: center;
   border-radius: var(--radius-pill); color: var(--color-on-accent); background: var(--status-waiting);
-  font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
+  font-size: 11px; font-weight: var(--weight-strong); line-height: 1; font-variant-numeric: tabular-nums;
   /* Trim the line box to the digits so the number sits optically centred in the dot. */
   text-box: trim-both cap alphabetic;
 }
 .nav-rail.is-expanded .nav-rail-badge { position: static; margin-left: auto; }
-/* Second level: same column as the first-level names, told apart by colour. */
+/* Second level: same column as the first-level names, told apart by size
+   and weight; muted text (not faint, which is for placeholders) keeps 4.5:1. */
 .nav-rail-sublinks { display: grid; gap: 2px; margin: 0 0 4px; padding: 0; list-style: none; }
 .nav-rail-sublink {
   display: flex; align-items: center; height: 32px; padding: 0 10px 0 38px; border-radius: 10px;
-  color: var(--color-faint); font-size: 13px; font-weight: 500; line-height: 1; text-decoration: none;
+  color: var(--color-muted); font-size: 13px; font-weight: var(--weight-regular); line-height: 1; text-decoration: none;
   transition: color var(--motion-fast), background var(--motion-fast);
 }
 .nav-rail-sublink:hover { color: var(--color-ink); background: var(--color-surface-hover); }
@@ -148,7 +151,7 @@ watch(expanded, value => {
   }
   .nav-rail-label, .nav-rail.is-expanded .nav-rail-label {
     position: static; width: auto; max-width: 100%; height: auto; overflow: hidden; clip-path: none;
-    font-size: 11px; font-weight: 600; text-overflow: ellipsis;
+    font-size: 11px; font-weight: var(--weight-medium); text-overflow: ellipsis;
   }
   .nav-rail.is-expanded .nav-rail-badge { position: absolute; }
 }

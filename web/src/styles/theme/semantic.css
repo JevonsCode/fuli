@@ -15,7 +15,7 @@
   --color-sidebar: #f1efe9;
   --color-ink: #1b1f1d;
   --color-ink-soft: #3a403c;
-  --color-muted: #66706a;
+  --color-muted: #626c66; /* 4.5:1 or more on the sidebar and subtle surfaces */
   --color-faint: #959c97;
   --color-border: #e5e2da;
   --color-border-strong: #d2cec4;

@@ -233,7 +233,7 @@ function onOptionKeydown(event: KeyboardEvent) {
   border: 0; border-radius: 6px; color: var(--color-ink); background: transparent; font-size: 14px; text-align: left; cursor: pointer;
 }
 .ui-select__option:hover:not(:disabled), .ui-select__option:focus-visible { background: var(--color-surface-hover); outline: none; }
-.ui-select__option[aria-selected=true] { color: var(--color-accent); font-weight: 550; }
+.ui-select__option[aria-selected=true] { color: var(--color-accent); font-weight: var(--weight-medium); }
 .ui-select__copy { flex: 1; min-width: 0; display: grid; }
 .ui-select__copy > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-select__copy small { color: var(--color-muted); font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest'
 // The rest are controls deliberately deferred to their own components (tabs,
 // toggle groups, list rows, cards, pickers).
 const BASELINE = { button: 27, switch: 3 }
+const HEAVY_WEIGHT_BASELINE = 122
 const templates = import.meta.glob<string>('../**/*.vue', { query: '?raw', import: 'default', eager: true })
 const outsideDesignSystem = Object.entries(templates).filter(([file]) => !file.startsWith('./')).map(([, source]) => source)
 // The classes the shared Button replaced. A template is where a class gets
@@ -31,5 +32,17 @@ describe('design system adoption', () => {
   it('keeps one button system: no legacy button classes anywhere', () => {
     const offenders = Object.entries(templates).filter(([, source]) => LEGACY_BUTTON_CLASS.test(source)).map(([file]) => file)
     expect(offenders).toEqual([])
+  })
+
+  // The type scale has three weights (theme/base.css): 400, 500 for controls,
+  // 600 for headings. Older page CSS still asks for 650-750, which renders as
+  // bold and flattens the hierarchy. This count may only go down: move a rule
+  // to var(--weight-strong) or var(--weight-medium) when a page is touched.
+  // 2026-10-28: 122 after the shared components moved to the scale (the brand
+  // wordmark keeps its 700).
+  it('never adds a weight heavier than the type scale', () => {
+    const styles = import.meta.glob<string>(['../**/*.vue', '../**/*.css', '../../styles.css'], { query: '?raw', import: 'default', eager: true })
+    const heavy = Object.values(styles).reduce((sum, source) => sum + (source.match(/font-weight:\s*(6[1-9]\d|[7-9]\d\d|bold)/g)?.length ?? 0), 0)
+    expect(heavy, 'use var(--weight-strong) (600) or var(--weight-medium) (500)').toBeLessThanOrEqual(HEAVY_WEIGHT_BASELINE)
   })
 })

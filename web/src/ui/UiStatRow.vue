@@ -39,7 +39,7 @@ defineEmits<{ select: [key: string] }>()
   color: var(--color-ink-soft); background: var(--color-surface); font: inherit; font-size: 13px; line-height: 1;
 }
 .ui-stat i { width: 6px; height: 6px; border-radius: 50%; background: var(--stat); }
-.ui-stat strong { color: var(--color-ink); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.ui-stat strong { color: var(--color-ink); font-size: 13px; font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
 .ui-stat.is-accent { --stat: var(--color-accent); }
 .ui-stat.is-success { --stat: var(--color-success); }
 .ui-stat.is-warning { --stat: var(--color-warning); }

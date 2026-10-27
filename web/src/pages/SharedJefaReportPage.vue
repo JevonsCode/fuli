@@ -5,6 +5,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { t } from '@/i18n'
+import UiNotice from '@/ui/UiNotice.vue'
 import EmployeeTaskBoard, { type EmployeeProjectBoard } from '@/features/employees/EmployeeTaskBoard.vue'
 import { publicProjectReport, reportProjects } from '@/features/employees/shared-report'
 const route = useRoute()
@@ -52,7 +53,7 @@ async function load() {
         <Button variant="outline" @click="load">{{ t('employees.retry') }}</Button>
       </Card>
       <template v-else>
-        <p v-if="failed" class="report-warning">{{ t('employees.share.unavailableCount', { count: failed }) }}</p>
+        <UiNotice v-if="failed" tone="warning" class="report-warning">{{ t('employees.share.unavailableCount', { count: failed }) }}</UiNotice>
         <Card v-if="!publicTaskCount" class="report-state" role="status">
           <h2 class="m-0 text-lg font-semibold">{{ t('employees.shareContent.emptyTitle') }}</h2>
           <p>{{ t('employees.shareContent.emptyReport', { count: boards.length }) }}</p>
@@ -73,5 +74,5 @@ async function load() {
 .shared-jefa-report-canvas { max-width: calc(var(--canvas-max) + 48px); }
 .report-state { align-items: center; max-width: 520px; margin: 48px auto; padding: 32px 24px; text-align: center; }
 .report-state p { max-width: 44ch; margin: 0; color: var(--color-muted); line-height: 1.7; }
-.report-warning { margin: 12px 24px 0; font-size: 13px; color: var(--color-warning); }
+.report-warning { margin: 12px 24px 0; }
 </style>

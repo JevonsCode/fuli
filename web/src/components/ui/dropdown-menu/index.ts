@@ -9,7 +9,7 @@
 // - tw-animate-css is not used: the menu fades in (animate-popover-in), which
 //   reduced motion zeroes.
 // - Items use a pointer cursor and the FULI hover surface; destructive items
-//   use the danger tint.
+//   use the danger tint. A label is 12px/500 muted, not semibold.
 // - Not copied (nothing uses them yet): Group, RadioGroup, RadioItem,
 //   Shortcut, Sub, SubContent, SubTrigger, and the Portal re-export.
 export { default as DropdownMenu } from "./DropdownMenu.vue"

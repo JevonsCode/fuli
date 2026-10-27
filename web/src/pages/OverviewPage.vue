@@ -10,6 +10,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import UiNotice from '@/ui/UiNotice.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { currentWork, overviewTaskTitle, overviewOwnerId, overviewOpenRequest, overviewAttentionTaskHref, overviewTaskHref, recentProjects } from '@/features/overview/overview-data'
@@ -19,6 +20,8 @@ import OverviewExcerpt from '@/features/overview/OverviewExcerpt.vue'
 import TaskBlockerNotice from '@/features/project-agents/TaskBlockerNotice.vue'
 import { taskReason } from '@/features/project-agents/task-reason'
 import TaskBlockerClear from '@/features/project-agents/TaskBlockerClear.vue'
+import { blockerIsStale } from '@/features/project-agents/task-blocker'
+import { useNow } from '@/composables/useNow'
 import { inboxLocation, useAgentAttention } from '@/features/project-agents/attention-store'
 import { taskStatusLabel, taskStatusTone } from '@/features/project-agents/task-labels'
 import { currentLocale, t } from '@/i18n'
@@ -77,6 +80,9 @@ const taskGroups = computed(() => {
   for (const request of data.requestItems.value) if (!groups.has(request.personalProjectId)) groups.set(request.personalProjectId, [])
   return [...groups].map(([id, items]) => ({ id, items, requests: data.requestItems.value.filter(item => item.personalProjectId === id) }))
 })
+const now = useNow()
+// Any shown blocked card with no progress for days: the hint is said once for the section.
+const staleBlocked = computed(() => currentTasks.value.some(task => task.status === 'blocked' && task.blocker && task.personalProjectId && blockerIsStale(task.blocker, task.updatedAt, now.value)))
 const allTaskCount = computed(() => currentWork(data.taskItems.value, Infinity).length)
 const attentionItem = computed(() => data.requestItems.value[0])
 const recentProjectItems = computed(() => data.denied.value ? [] : recentProjects(data.taskItems.value, projects.value))
@@ -153,12 +159,13 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
             </div>
           </header>
           <OverviewReadStatus class="px-5" :state="requests" :label="t('overview.attention.loading')" :failed="t('overview.attention.loadFailed')" @retry="data.loadRequests" />
-          <div v-if="attentionItem" :key="`${activeSpaceId}:${attentionItem.requestId}`" class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5" data-testid="overview-attention-item">
-            <div class="min-w-0 flex-[1_1_420px]">
-              <h3 class="text-base font-semibold">{{ attentionItem.title?.trim() || t('overview.missing.requestTitle') }}</h3>
+          <!-- The request at the measure with its actions right beside it; on narrow canvases the actions wrap under it. -->
+          <div v-if="attentionItem" :key="`${activeSpaceId}:${attentionItem.requestId}`" class="flex flex-wrap items-end gap-x-8 gap-y-3 px-5" data-testid="overview-attention-item">
+            <div class="grid min-w-0 max-w-(--measure) flex-[0_1_var(--measure)] gap-1">
+              <h3 class="text-md font-semibold">{{ attentionItem.title?.trim() || t('overview.missing.requestTitle') }}</h3>
               <p class="overview-meta">{{ t('overview.attention.agent', { id: agentName(attentionItem.agentId) }) }} · {{ projectName(attentionItem.personalProjectId) }}</p>
               <OverviewExcerpt :text="attentionItem.requestedAction?.trim() || t('overview.attention.viewContent')" />
-              <details v-if="attentionItem.detail" class="overview-request-detail"><summary>{{ t('overview.attention.detail') }}</summary><p>{{ attentionItem.detail }}</p></details>
+              <details v-if="attentionItem.detail" class="overview-request-detail"><summary>{{ t('overview.attention.detail') }}</summary><p class="ui-prose">{{ attentionItem.detail }}</p></details>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <Button as-child><RouterLink data-testid="overview-attention-open" :to="inboxLocation(attentionItem.agentId, attentionItem.requestId)">{{ t(requests.error ? 'overview.attention.recheck' : 'overview.attention.respond') }}</RouterLink></Button>
@@ -179,10 +186,15 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
               <Button v-if="!tasks.error" :disabled="tasks.loading" variant="ghost" size="sm" data-testid="overview-work-retry" @click="data.loadTasks">{{ t('overview.work.refresh') }}</Button>
             </div>
           </header>
+          <!-- Said once for the section; each card's clear button keeps it as its tooltip. -->
+          <p v-if="staleBlocked" class="overview-meta -mt-1 mb-3" data-overview-stale-hint>{{ t('overview.work.staleBlocked') }}</p>
           <OverviewReadStatus :state="tasks" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" test-id="overview-work-retry" @retry="data.loadTasks" />
           <OverviewReadStatus :state="names" :label="t('overview.missing.nameLoading')" :failed="t('overview.missing.nameUnavailable')" @retry="data.loadNames" />
-          <p v-if="names.data?.partial" class="overview-notice">{{ t('overview.missing.nameUnavailable') }} <Button variant="ghost" size="sm" :disabled="names.loading" @click="data.loadNames">{{ t('overview.read.reload') }}</Button></p>
-          <p v-if="sceneFailed" class="overview-notice" role="status">{{ t('overview.views.fallback') }}</p>
+          <UiNotice v-if="names.data?.partial" tone="warning" class="mb-3">
+            {{ t('overview.missing.nameUnavailable') }}
+            <template #actions><Button variant="ghost" size="sm" :disabled="names.loading" @click="data.loadNames">{{ t('overview.read.reload') }}</Button></template>
+          </UiNotice>
+          <UiNotice v-if="sceneFailed" class="mb-3">{{ t('overview.views.fallback') }}</UiNotice>
           <ConstellationBoard v-if="view === 'constellation' && (currentTasks.length || data.requestItems.value.length)" :board="board" />
           <Workbench3D v-if="view === 'office' && (currentTasks.length || data.requestItems.value.length)" :key="activeSpaceId" :board="board" scene="office" @fallback="sceneFallback" @pick="pick" />
           <Card v-if="selectedTask && view !== 'list'" class="overview-selected my-3 gap-1 px-4 py-3 shadow-md" role="status">
@@ -209,13 +221,13 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
                   class="overview-current-work-item flex min-w-0 flex-col gap-1.5 rounded-lg border bg-card px-4 pt-3.5 pb-2.5 transition-[border-color,box-shadow]"
                   :class="{ 'is-selected border-border-strong shadow-md': selected === `${task.personalProjectId}:${task.taskId}` }" data-testid="overview-current-work-item">
                   <div class="flex items-start justify-between gap-3">
-                    <h3 class="overview-task-title min-w-0 flex-1 text-base font-semibold" :title="taskTitle(task)">{{ taskTitle(task) }}</h3>
+                    <h3 class="overview-task-title min-w-0 flex-1 text-md font-semibold" :title="taskTitle(task)">{{ taskTitle(task) }}</h3>
                     <Badge :variant="taskStatusTone(task.status)" :title="statusLabel(task.status)">{{ statusLabel(task.status) }}</Badge>
                   </div>
                   <p class="overview-meta">{{ t('overview.work.owner', { name: owner(task) }) }} · {{ projectName(task.personalProjectId) }}</p>
                   <template v-if="task.status === 'blocked' && task.blocker">
                     <TaskBlockerNotice compact :blocker="task.blocker" :updated-at="task.updatedAt" />
-                    <TaskBlockerClear v-if="task.personalProjectId" :title="taskTitle(task)" :blocker="task.blocker" :updated-at="task.updatedAt"
+                    <TaskBlockerClear v-if="task.personalProjectId" hint="tooltip" :title="taskTitle(task)" :blocker="task.blocker" :updated-at="task.updatedAt"
                       :scope="{ personalSpaceId: activeSpaceId, personalProjectId: task.personalProjectId, taskId: task.taskId }" @cleared="blockerCleared" />
                   </template>
                   <OverviewExcerpt v-else-if="task.status === 'blocked' || task.status === 'failed'" class="overview-reason" :text="taskReason(task.failureReason)?.text || t('overview.missing.reason')" />
@@ -235,24 +247,23 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
           <p v-if="tasks.data?.partial" class="overview-meta">{{ t('overview.work.loaded', { count: data.taskItems.value.length }) }}</p>
         </section>
 
-        <aside class="overview-column grid min-w-0 gap-6">
-          <Card as="section" class="gap-1 pb-2" aria-labelledby="overview-projects-heading">
-            <h2 id="overview-projects-heading" class="px-5 text-lg font-semibold">{{ t('overview.sections.recentProjects') }}</h2>
-            <ul class="overview-project-list">
-              <li v-for="project in recentProjectItems" :key="project.id" data-testid="overview-recent-project">
-                <RouterLink :to="personalProjectsPath(activeSpaceId, 'overview', project.id)"><strong>{{ project.name }}</strong><span>{{ project.updatedAt ? formatDate(project.updatedAt) : t('overview.projects.noActivity') }}</span></RouterLink>
-              </li>
-            </ul>
-            <p v-if="!recentProjectItems.length" class="overview-empty px-5">{{ t('overview.projects.empty') }}</p>
-          </Card>
-          <Card as="section" class="gap-1 pb-2" aria-labelledby="overview-services-heading">
-            <h2 id="overview-services-heading" class="px-5 text-lg font-semibold">{{ t('overview.sections.services') }}</h2>
-            <ul class="overview-service-list">
-              <li><strong>{{ t('overview.services.local') }}</strong><Badge :variant="localServiceStatus === 'ready' ? 'success' : localServiceStatus === 'error' ? 'destructive' : 'secondary'">{{ t(`overview.services.${localServiceStatus}`) }}</Badge></li>
-              <li><strong>{{ t('overview.services.public') }}</strong><Badge :variant="publicServiceStatus === 'ready' ? 'success' : publicServiceStatus === 'error' ? 'destructive' : 'secondary'">{{ t(`overview.services.${publicServiceStatus}`) }}</Badge></li>
-            </ul>
-          </Card>
-        </aside>
+        <!-- Compact tiles that add columns as the canvas widens, never full-width rows. -->
+        <section class="min-w-0" aria-labelledby="overview-projects-heading">
+          <h2 id="overview-projects-heading" class="mb-3 text-lg font-semibold">{{ t('overview.sections.recentProjects') }}</h2>
+          <ul v-if="recentProjectItems.length" class="overview-tiles">
+            <li v-for="project in recentProjectItems" :key="project.id" data-testid="overview-recent-project">
+              <RouterLink class="overview-tile" :to="personalProjectsPath(activeSpaceId, 'overview', project.id)"><strong :title="project.name">{{ project.name }}</strong><span>{{ project.updatedAt ? formatDate(project.updatedAt) : t('overview.projects.noActivity') }}</span></RouterLink>
+            </li>
+          </ul>
+          <p v-else class="overview-empty">{{ t('overview.projects.empty') }}</p>
+        </section>
+        <section class="min-w-0" aria-labelledby="overview-services-heading">
+          <h2 id="overview-services-heading" class="mb-3 text-lg font-semibold">{{ t('overview.sections.services') }}</h2>
+          <ul class="overview-tiles">
+            <li class="overview-tile is-row"><strong>{{ t('overview.services.local') }}</strong><Badge :variant="localServiceStatus === 'ready' ? 'success' : localServiceStatus === 'error' ? 'destructive' : 'secondary'">{{ t(`overview.services.${localServiceStatus}`) }}</Badge></li>
+            <li class="overview-tile is-row"><strong>{{ t('overview.services.public') }}</strong><Badge :variant="publicServiceStatus === 'ready' ? 'success' : publicServiceStatus === 'error' ? 'destructive' : 'secondary'">{{ t(`overview.services.${publicServiceStatus}`) }}</Badge></li>
+          </ul>
+        </section>
       </div>
     </div>
   </section>
@@ -264,7 +275,7 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
    (rec#38); only the homogeneous task cards add columns on wider canvases. */
 .overview-content-grid { grid-template-columns: minmax(0, 1fr); }
 .overview-meta { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
-.overview-empty, .overview-notice { margin: 12px 0; font-size: 14px; color: var(--color-ink-soft); }
+.overview-empty { margin: 12px 0; font-size: 14px; color: var(--color-ink-soft); }
 .overview-view ul { list-style: none; margin: 0; padding: 0; }
 .overview-task-title { display: -webkit-box; overflow: hidden; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .overview-current-work-item:hover { border-color: var(--color-border-strong); }
@@ -274,16 +285,20 @@ const publicServiceStatus = computed(() => store.publicRuntimeStatus)
 .overview-request-detail p { white-space: pre-wrap; line-height: 1.6; margin: 0; }
 .overview-request-members li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
 .overview-request-members p { flex: 1 1 180px; margin: 0; font-size: 14px; }
-.overview-task-group > summary { min-height: 40px; padding-block: 8px; font-weight: 600; cursor: pointer; color: var(--color-ink); }
+.overview-task-group > summary { min-height: 40px; padding-block: 8px; font-weight: var(--weight-strong); cursor: pointer; color: var(--color-ink); }
 .overview-view :deep(.overview-view-select) { min-width: 132px; max-width: 100%; }
-.overview-project-list li, .overview-service-list li { border-top: 1px solid var(--color-border); }
-.overview-project-list li:first-child, .overview-service-list li:first-child { border-top: 0; }
-.overview-project-list a { display: grid; gap: 2px; padding: 12px 20px; color: inherit; text-decoration: none; }
-.overview-project-list a:hover strong { color: var(--color-accent); }
-.overview-project-list strong, .overview-service-list strong { min-width: 0; font-size: 14px; font-weight: 550; }
-.overview-project-list span { color: var(--color-muted); font-size: 12px; }
-.overview-service-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 20px; }
+.overview-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 256px), 1fr)); gap: 12px; }
+.overview-tile {
+  display: grid; align-content: center; gap: 2px; min-width: 0; height: 100%; padding: 12px 16px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface);
+  color: inherit; text-decoration: none; transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+.overview-tile.is-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+a.overview-tile:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-sm); }
+.overview-tile strong { min-width: 0; overflow: hidden; font-size: var(--text-card-title); font-weight: var(--weight-strong); line-height: var(--leading-heading); text-overflow: ellipsis; white-space: nowrap; }
+.overview-tile span { color: var(--color-muted); font-size: var(--text-meta); }
 .overview-view a:focus-visible, .overview-view summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
+.overview-view a.overview-tile:focus-visible { border-radius: var(--radius-card); }
 /* Touch screens keep 44px targets; a mouse gets the compact controls. */
 @media (pointer: coarse) {
   .overview-view :deep([data-slot="button"]), .overview-view :deep(.ui-select__trigger) { min-height: 44px; }
