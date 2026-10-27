@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f6f5f1">
     <title data-i18n="next.meta.title">FULI 抢先体验 · 预览版</title>
-    <meta data-i18n-content="next.meta.description" name="description" content="FULI 下一版的公开预览：版本号、主要变化，以及每个平台一条命令安装或切换到 beta。">
+    <meta data-i18n-content="next.meta.description" name="description" content="FULI 下一版的公开预览：相对稳定版的全部变化，以及每个平台一条命令安装或切换到 beta。">
     <meta data-i18n-content="next.meta.title" property="og:title" content="FULI 抢先体验 · 预览版">
-    <meta data-i18n-content="next.meta.description" property="og:description" content="FULI 下一版的公开预览：版本号、主要变化，以及每个平台一条命令安装或切换到 beta。">
+    <meta data-i18n-content="next.meta.description" property="og:description" content="FULI 下一版的公开预览：相对稳定版的全部变化，以及每个平台一条命令安装或切换到 beta。">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://xn--8ovp9s.xn--m8txu.com/fuli/next/">
     <meta property="og:image" content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/fuli-logo.png">
@@ -36,17 +36,74 @@
         <div class="chapter-copy">
           <p data-i18n="next.eyebrow" class="eyebrow">抢先体验 · npm beta</p>
           <h1 id="next-title">FULI <em data-preview-version>0.22.0-beta.2</em></h1>
-          <p data-i18n="next.description" class="lede">这是下一版的公开预览，给愿意先试新功能的人用。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。</p>
+          <p data-i18n="next.description" class="lede">这是下一版的公开预览，给愿意先试新功能的人用。下面列出它相对当前稳定版 0.20.1 的全部新功能和变化（包括 0.21 和 0.22 两轮），不只是比上一个 beta 多了什么。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。</p>
         </div>
       </section>
 
-      <section data-i18n-aria-label="next.changes" class="principles" aria-label="这一版的主要变化">
-        <div><h3 data-i18n="next.console">控制台点一下就行</h3><p data-i18n="next.consoleBody">更新、重新接入客户端、填模型密钥、整库恢复，都变成控制台里的按钮，不再让你去终端；Windows 托盘版从这一版起也能一键更新。控制台不做登录，FULI 是本机工具。</p></div>
-        <div><h3 data-i18n="next.agents">按名字找 Agent，或请几位一起讨论</h3><p data-i18n="next.agentsBody">在任何目录里用 @名字 或 #FLA 让你的某位 Agent 接着做，Agent 卡片上可以一键复制。用 @FLG 把 2–4 位的上下文索引载入当前会话，或请它们在圆桌里各自只读作答。每个新 Agent 都有不重复的名字。</p></div>
-        <div><h3 data-i18n="next.roundtable">圆桌像聊天一样</h3><p data-i18n="next.roundtableBody">圆桌对话变成聊天界面，可以选「留言板」等对方下次来看，或「即时对话」马上唤醒它回答；唤醒不了时会说明原因。</p></div>
-        <div><h3 data-i18n="next.work">阻塞和服务一眼看清</h3><p data-i18n="next.workBody">阻塞的任务写明在等什么、从什么时候、在哪个会话，并能打开那个会话；在原会话继续后自动解除。新的「服务」页列出 Agent 启动的服务，只有你能停止。</p></div>
-        <div><h3 data-i18n="next.tonborg">项目、Tonborg 和图谱</h3><p data-i18n="next.tonborgBody">项目可以有自己的项目经理和看板：自定义列对应内置状态，或者链接到外部看板。Tonborg 的判断记录可以搜索全部历史，可以按项目设判断方式。项目图谱不再重叠，还能拖动「调整层级」。</p></div>
-        <div><h3 data-i18n="next.opencode">OpenCode 插件</h3><p data-i18n="next.opencodeBody">OpenCode 2.x 通过插件接入 FULI 的任务入口和收尾，不再依赖模型自己调用工具。OpenCode 的对话还不会自动采集。</p></div>
+      <section data-i18n-aria-label="next.changes" class="principles preview-changes" data-preview-baseline="0.20.1" aria-label="相对稳定版 0.20.1 的全部变化">
+        <div><h3 data-i18n="next.c.console">控制台点一下就行</h3><ul>
+          <li data-i18n="next.c.console.1">删除恢复没完成时，控制台会自己重新核对，不用你做什么。</li>
+          <li data-i18n="next.c.console.2">「数据格式」页一键重新核对；整库恢复先列出会丢掉什么，再「停止 FULI 并恢复」。</li>
+          <li data-i18n="next.c.console.3">内置 Agent 的模型密钥直接在页面里填，只写不显示。</li>
+          <li data-i18n="next.c.console.4">每个客户端旁边有「更新接入」「重新接入」。</li>
+          <li data-i18n="next.c.console.5">更新提示上有「更新到 vX」按钮；Windows 托盘版从 0.22 起也能一键更新。</li>
+          <li data-i18n="next.c.console.6">控制台不做登录：FULI 是本机工具。</li>
+        </ul></div>
+        <div><h3 data-i18n="next.c.agents">你的 Agent</h3><ul>
+          <li data-i18n="next.c.agents.1">在任何目录里用 @名字 或 #FLA，让你的某位 Agent 接着做。</li>
+          <li data-i18n="next.c.agents.2">Agent 卡片上可以「复制 #FLA」，还给出几句可以直接用的说法。</li>
+          <li data-i18n="next.c.agents.3">@FLG 请 2–4 位 Agent：在当前会话里载入它们的上下文索引，或在圆桌里各自只读作答。</li>
+          <li data-i18n="next.c.agents.4">每个新 Agent 都有不重复的人名，岗位写在职业和职责里；已有的 Agent 不会被自动改名。</li>
+          <li data-i18n="next.c.agents.5">生成的 Agent 有固定的角色头像；内置 Agent 的默认介绍跟随界面语言。</li>
+          <li data-i18n="next.c.agents.6">长期职责：说一次「以后这类工作交给某个项目」，确认后，命中关键词的任务都交给它的组长。</li>
+        </ul></div>
+        <div><h3 data-i18n="next.c.roundtable">圆桌像聊天一样</h3><ul>
+          <li data-i18n="next.c.roundtable.1">对话变成聊天界面：你的消息在右边，每位 Agent 的在左边。</li>
+          <li data-i18n="next.c.roundtable.2">「留言板」等它下次工作时回复，「即时对话」马上唤醒它回答。</li>
+          <li data-i18n="next.c.roundtable.3">每条消息写明每位收件人的实际状态，唤醒不了时说明原因。</li>
+          <li data-i18n="next.c.roundtable.4">另一台设备发来的提问失败时，会写明原因，例如共享项目换了负责人。</li>
+        </ul></div>
+        <div><h3 data-i18n="next.c.work">任务和项目管理</h3><ul>
+          <li data-i18n="next.c.work.1">阻塞的任务写明在等什么、从什么时候、在哪个会话，能打开那个会话；在原会话继续后自动解除。</li>
+          <li data-i18n="next.c.work.2">各客户端打开会话的链接清单可以在设置里检查更新，先看差异再应用。</li>
+          <li data-i18n="next.c.work.3">项目可以有自己的项目经理和看板：自定义列对应内置状态，或者链接外部看板。</li>
+          <li data-i18n="next.c.work.4">Jefa 的看板随 FULI 安装，不用另装；「聘请 Agent」按钮已移除。</li>
+          <li data-i18n="next.c.work.5">回执写全协作者；负责人收尾后才到的执行者报告不再丢失。</li>
+          <li data-i18n="next.c.work.6">定时任务已移除：它只会新建任务卡，没有东西去执行。</li>
+        </ul></div>
+        <div><h3 data-i18n="next.c.services">服务、职业和项目图谱</h3><ul>
+          <li data-i18n="next.c.services.1">新的「服务」页列出 Agent 启动的服务和 Agent 应用的工作台，可以搜索和筛选；只有你能停止，停止前核对进程身份。</li>
+          <li data-i18n="next.c.services.2">Bole 的职业改为「Agent 资源」；职业页改成表格，默认只显示在用的职业。</li>
+          <li data-i18n="next.c.services.3">项目图谱的节点和名字不再重叠或被裁掉；「调整层级」可以把项目拖到另一个项目下面。</li>
+        </ul></div>
+        <div><h3 data-i18n="next.c.tonborg">Tonborg 和内置 Agent</h3><ul>
+          <li data-i18n="next.c.tonborg.1">判断记录可以搜索全部历史，分页加载。</li>
+          <li data-i18n="next.c.tonborg.2">默认判断方式可以按项目单独设置。</li>
+          <li data-i18n="next.c.tonborg.3">每张等你处理的卡片都说明为什么要你确认。</li>
+          <li data-i18n="next.c.tonborg.4">注入格式预检：命中已知注入格式时拦下批准、交给你。这只是很窄的补充检查，不算注入防护。</li>
+          <li data-i18n="next.c.tonborg.5">内置 Agent 的建议集中在「设置 → 模型与用量 → 建议记录」。</li>
+          <li data-i18n="next.c.tonborg.6">内置 Agent 的模型设置每次改动都有记录，密钥只记为「已更改」。</li>
+        </ul></div>
+        <div><h3 data-i18n="next.c.entry">入口、工具和客户端</h3><ul>
+          <li data-i18n="next.c.entry.1">Claude Code 的任务入口按预览上限裁剪可选内容，硬规则和收尾字段保留。</li>
+          <li data-i18n="next.c.entry.2">修改类的请求附上命中知识的标题索引，需要时再读正文。</li>
+          <li data-i18n="next.c.entry.3">开始一次会话只需要一次 Provider 请求。</li>
+          <li data-i18n="next.c.entry.4">所有经过会话检查的工具都能带当前任务令牌；可以预期的输入错误报 invalid_input。</li>
+          <li data-i18n="next.c.entry.5">WSL 客户端的路径会正确转换，可以访问 Windows 上的 FULI。</li>
+          <li data-i18n="next.c.entry.6">OpenCode 2.x 通过插件接入任务入口和收尾，有自己的来源；它的对话还不会自动采集。</li>
+        </ul></div>
+        <div><h3 data-i18n="next.c.interface">界面</h3><ul>
+          <li data-i18n="next.c.interface.1">所有页面统一 1888px 宽、同一种滚动条，分割线更少。</li>
+          <li data-i18n="next.c.interface.2">「?」说明模式能解释每个标签页和侧栏入口，右键或 Esc 退出。</li>
+          <li data-i18n="next.c.interface.3">任务状态只用一套颜色：阻塞和失败是红色。</li>
+          <li data-i18n="next.c.interface.4">去掉单独的「品味」页和 Agent 页上的「问 AR」；偏好计数写清楚两个数。</li>
+        </ul></div>
+        <div><h3 data-i18n="next.c.upgrade">升级前要知道</h3><ul>
+          <li data-i18n="next.c.upgrade.1">图谱有一步迁移要你在「设置 → 数据格式迁移」确认，确认之前图谱只读。</li>
+          <li data-i18n="next.c.upgrade.2">另一步图谱结构变化和圆桌存储升级，会在备份后自动完成；另外新增几个本地存储。</li>
+          <li data-i18n="next.c.upgrade.3">升级后的数据旧版本打不开，退回需要升级前的备份。</li>
+          <li data-i18n="next.c.upgrade.4">fuli setup 等待就绪改为真正的截止时间，超时会说明哪些在运行、怎么重试。</li>
+        </ul></div>
       </section>
 
       <section class="start" id="start" aria-labelledby="start-title">
@@ -58,7 +115,7 @@
           <code>npm install --global fuli-context@beta &amp;&amp; fuli setup<span>npm</span></code>
         </div>
         <p data-i18n="next.switchBack">想回到稳定版：去掉 FULI_NPM_PACKAGE_SPEC 再运行一次安装脚本。稳定版的版本号更低，原生 Provider 需要 fuli setup --allow-provider-downgrade。预览版升级过的数据（自动升级的，和你确认过的迁移），旧版本打不开，只能用升级前的备份恢复。</p>
-        <p class="start-links"><a data-i18n="next.release" data-preview-release class="button" href="https://github.com/JevonsCode/fuli/releases/tag/v0.22.0-beta.2">查看完整更新说明</a><a data-i18n="next.stable" data-i18n-href="next.stableUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到稳定版</a></p>
+        <p class="start-links"><a data-i18n="next.release" data-preview-release class="button" href="https://github.com/JevonsCode/fuli/releases/tag/v0.22.0-beta.2">这一版的更新说明</a><a data-i18n="next.releasePrevious" data-release-notes="0.21.0" href="https://github.com/JevonsCode/fuli/blob/main/docs/releases/0.21.0.md">0.21 的更新说明</a><a data-i18n="next.stable" data-i18n-href="next.stableUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到稳定版</a></p>
       </section>
     </main>
 

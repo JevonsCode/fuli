@@ -185,6 +185,9 @@ figure.window figcaption { padding: 0 20px; }
 .principles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(20px, 4vw, 56px); padding: clamp(64px, 10vh, 112px) var(--gutter); border-top: 1px solid var(--line); }
 .principles h3 { font-size: 18px; font-weight: 650; }
 .principles p { margin-top: 10px; color: var(--ink-soft); }
+.preview-changes { row-gap: clamp(36px, 6vh, 64px); }
+.preview-changes ul { margin: 12px 0 0; padding-left: 1.1em; color: var(--ink-soft); }
+.preview-changes li + li { margin-top: 8px; }
 
 .start { padding: clamp(80px, 12vh, 140px) var(--gutter); background: var(--night); color: #e9f1ee; }
 .start h2 { margin: 0; color: #fff; }
