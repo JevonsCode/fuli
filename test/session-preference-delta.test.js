@@ -12,7 +12,7 @@ function entry(token = 'task-a', changes = {}) {
       instruction: `Synthetic instruction ${i}: ${'Keep the current boundary. '.repeat(8)}` })),
     context: { personal_space_id: 'space', personal_project_id: 'project', project_agent_id: 'lead', source_truncated: false },
     agent_receipt: { required: true, markdown: 'Synthetic owner' }, active_conflicts: [{ id: 'current-conflict' }],
-    task_guidance: { rules: 'fuli://rules/task-entry#task_guidance', version: 'synthetic-rules' }, ...changes }, scope);
+    task_guidance: { rules: 'fuli://rules/task-entry/task_guidance', version: 'synthetic-rules' }, ...changes }, scope);
 }
 // A verified earlier frame as preference-session.js passes it: named by the
 // revision it showed the model.

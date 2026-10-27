@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 
 import { fireDrag, installDragEnvironment, nextDragFrame } from '@/test-support/drag-events'
-import EmployeeTaskBoard, { type EmployeeBoardItem, type EmployeeBoardStatus, type EmployeeProjectBoard } from './EmployeeTaskBoard.vue'
+import EmployeeTaskBoard, { type BoardMoveTarget, type EmployeeBoardItem, type EmployeeBoardStatus, type EmployeeProjectBoard } from './EmployeeTaskBoard.vue'
 
 const task: EmployeeBoardItem = {
   id: 'task-1',
@@ -52,7 +52,7 @@ function mountWithPage(items: EmployeeBoardItem[] = [task, other]) {
     canMoveTasks: true,
     movingItemKeys: movingItemKeys.value,
     actionError: actionError.value,
-    onMoveTask: (item: EmployeeBoardItem, status: EmployeeBoardStatus) => {
+    onMoveTask: (item: EmployeeBoardItem, { status }: BoardMoveTarget) => {
       const key = `${item.projectId}:${item.id}`
       actionError.value = ''
       movingItemKeys.value = [...movingItemKeys.value, key]
@@ -119,7 +119,7 @@ describe('employee task board', () => {
     expect(column('active').querySelector('[data-drag-placeholder]')).not.toBeNull()
     await handle.trigger('keydown', { key: ' ' })
 
-    expect(wrapper.emitted('move-task')).toEqual([[task, 'active']])
+    expect(wrapper.emitted('move-task')).toEqual([[task, { status: 'active' }]])
   })
 
   it('keeps project filtering separate from assignment scope', async () => {
@@ -518,5 +518,58 @@ describe('employee task board', () => {
     await flushPromises()
 
     expect(menu.contains(document.activeElement)).toBe(true)
+  })
+})
+
+describe('a project\'s own board', () => {
+  const columns = [
+    { id: 'col-todo', label: '待开发', mapsTo: 'planned' as const }, { id: 'col-test', label: '发布到测试环境', mapsTo: 'active' as const },
+    { id: 'col-live', label: '上线', mapsTo: 'active' as const }, { id: 'col-done', label: '已完成', mapsTo: 'done' as const },
+  ]
+  const ownBoard = { projectId: 'project-a', revision: 1, managerAgentId: null, board: { kind: 'builtin' as const, columns }, updatedAt: null }
+  const live: EmployeeBoardItem = { ...other, boardColumn: 'col-live' }
+  const external: EmployeeProjectBoard = {
+    project: { id: 'project-b', name: '活动项目' }, items: [{ ...task, id: 'task-b', projectId: 'project-b', title: '外部任务' }],
+    total: 1, truncated: false,
+    projectBoard: { projectId: 'project-b', revision: 1, managerAgentId: null, updatedAt: null,
+      board: { kind: 'external', external: { url: 'https://project.example.test/board', label: '飞书项目' } } },
+  }
+  function mountBoard(boards: EmployeeProjectBoard[], visibleProjectIds: string[]) {
+    return track(mount(EmployeeTaskBoard, { attachTo: document.body, props: {
+      boards, projects: boards.map(({ project: entry }) => entry), visibleProjectIds, failedProjects: 0, canMoveTasks: true,
+    } }))
+  }
+  const ownColumn = (key: string) => document.querySelector<HTMLElement>(`[data-board-column="${key}"]`)!
+
+  it('shows its own columns when the board shows that project alone, and moves between two columns of one status', async () => {
+    const wrapper = mountBoard([{ project, items: [task, live], total: 2, truncated: false, projectBoard: ownBoard }], ['project-a'])
+    expect(wrapper.findAll('[data-board-column] h3').map((heading) => heading.text())).toEqual(['待开发', '发布到测试环境', '上线', '已完成'])
+    expect(ownColumn('col-live').textContent).toContain('核对验收')
+    expect(ownColumn('col-todo').textContent).toContain('整理发布清单')
+
+    const handle = wrapper.get('[data-board-key="project-a:task-2"] [data-move-control="handle"]')
+    await handle.trigger('keydown', { key: ' ' })
+    await handle.trigger('keydown', { key: 'ArrowLeft' })
+    await handle.trigger('keydown', { key: ' ' })
+    expect(wrapper.emitted('move-task')).toEqual([[live, { status: 'active', boardColumn: 'col-test' }]])
+  })
+
+  it('keeps the built-in columns across projects, names each card\'s own column and links an external board instead of its tasks', () => {
+    const wrapper = mountBoard([{ project, items: [task, live], total: 2, truncated: false, projectBoard: ownBoard }, external],
+      ['project-a', 'project-b'])
+    expect(wrapper.findAll('[data-board-column]').map((column) => column.attributes('data-board-column')))
+      .toEqual(['planned', 'active', 'blocked', 'review', 'done'])
+    expect(cardIn('active', '核对验收')!.querySelector('[data-own-column]')?.textContent).toContain('上线')
+    expect(wrapper.text()).not.toContain('外部任务')
+    const link = wrapper.get('[data-external-board="project-b"]')
+    expect(link.text()).toContain('这个项目用外部看板')
+    expect(link.get('a').attributes()).toMatchObject({ href: 'https://project.example.test/board', target: '_blank', rel: 'noopener noreferrer' })
+  })
+
+  it('shows only the link card when the one visible project uses an external board', () => {
+    const wrapper = mountBoard([external], ['project-b'])
+    expect(wrapper.find('[data-external-board="project-b"]').exists()).toBe(true)
+    expect(wrapper.find('[data-board-column]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('当前范围暂无任务')
   })
 })

@@ -104,6 +104,37 @@ const FIRST_RELEASES = {
     INSERT INTO model_attempts VALUES('r1', 'a1', 1, 'initial', 'model_api', 'bole', 'pick', 'space', NULL, 'local',
       'openai_chat', '127.0.0.1:11434', 'synthetic-model', 'synthetic-model', 'json_schema', 'x', 1, 'succeeded', NULL, NULL,
       1, 1, 2, NULL, NULL, NULL, 'openai_chat', 2, NULL, NULL);`,
+  // PR #393: the board before projects had their own columns or external board.
+  'jefa-board': `CREATE TABLE jefa_projects(
+        space_id TEXT NOT NULL, project_id TEXT NOT NULL, revision INTEGER NOT NULL,
+        share_slug TEXT, share_enabled_at TEXT, PRIMARY KEY(space_id, project_id));
+      CREATE TABLE jefa_work_items(
+        space_id TEXT NOT NULL, project_id TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL,
+        title TEXT NOT NULL, summary TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('planned', 'active', 'blocked', 'review', 'done')),
+        priority TEXT NOT NULL CHECK(priority IN ('critical', 'high', 'medium', 'low')),
+        visibility TEXT NOT NULL CHECK(visibility IN ('private', 'public_summary')),
+        work_type TEXT, acceptance_criteria TEXT NOT NULL, tags TEXT NOT NULL, accepted_at TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(space_id, project_id, id));
+      CREATE TABLE jefa_work_item_revisions(
+        space_id TEXT NOT NULL, project_id TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL,
+        actor TEXT NOT NULL CHECK(actor IN ('agent', 'person')), record TEXT NOT NULL, recorded_at TEXT NOT NULL,
+        PRIMARY KEY(space_id, project_id, id, revision));
+      CREATE TRIGGER jefa_work_item_revisions_no_update BEFORE UPDATE ON jefa_work_item_revisions
+        BEGIN SELECT RAISE(ABORT, 'Jefa task revisions are immutable'); END;
+      CREATE TRIGGER jefa_work_item_revisions_no_delete BEFORE DELETE ON jefa_work_item_revisions
+        BEGIN SELECT RAISE(ABORT, 'Jefa task revisions are immutable'); END;
+      CREATE TABLE jefa_requests(
+        space_id TEXT NOT NULL, project_id TEXT NOT NULL, kind TEXT NOT NULL, request_id TEXT NOT NULL,
+        digest TEXT NOT NULL, result TEXT NOT NULL, recorded_at TEXT NOT NULL,
+        PRIMARY KEY(space_id, project_id, kind, request_id));
+      CREATE TABLE jefa_session_titles(
+        space_id TEXT NOT NULL, project_id TEXT NOT NULL, id TEXT NOT NULL,
+        source_application TEXT NOT NULL, session_id TEXT NOT NULL, revision INTEGER NOT NULL,
+        record TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(space_id, project_id, id),
+        UNIQUE(space_id, project_id, source_application, session_id));
+    INSERT INTO jefa_work_items VALUES('space', 'project', 'task', 1, 'Synthetic task', '', 'active', 'medium', 'private',
+      NULL, '[]', '[]', NULL, 'x', 'x');`,
   'peer-node': `CREATE TABLE shares (binding_id TEXT PRIMARY KEY, space_id TEXT NOT NULL, project_id TEXT NOT NULL,
       agent_id TEXT NOT NULL, clients_json TEXT NOT NULL, working_directory TEXT, created_at TEXT NOT NULL, revoked_at TEXT);
     INSERT INTO shares VALUES('b1', 'space', 'project', 'agent', '[]', NULL, 'x', NULL);`

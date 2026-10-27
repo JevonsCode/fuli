@@ -2,8 +2,10 @@
 
 This slice installs a complete checksum-verified tray directory for the current
 user. Build with `scripts/build-windows-tray.js`, reusing either a portable or tray
-asset bundle with the identical shrinkwrap. The builder still refreshes application,
-management page and embedded Provider source from the checkout.
+asset bundle with the identical shrinkwrap. Keep `--output` to 80 characters or
+fewer (for example `T:\fb\tray`); a longer root leaves no room for the bundled
+Python files under Windows' 260-character limit. The builder still refreshes
+application, management page and embedded Provider source from the checkout.
 
 Run `Install-Fuli.cmd` in the resulting directory and confirm its displayed paths.
 No administrator permission is requested. Defaults:

@@ -5,14 +5,15 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { t } from '@/i18n'
 import { UiIcon } from '@/ui'
-import { boardItemKey, EMPLOYEE_BOARD_STATUSES, isBoardMove, type EmployeeBoardItem, type EmployeeBoardStatus } from './task-board-model'
+import { isColumnMove, type BoardColumn } from './project-board-layout'
+import { boardItemKey, type EmployeeBoardItem } from './task-board-model'
 
 // A card's "Move to…" menu: the non-drag way to move a task. It only offers
 // columns the shared move rule allows; the board submits the choice. Loaded
 // asynchronously by EmployeeTaskBoard, so pages that cannot move tasks never
 // load the menu.
-defineProps<{ item: EmployeeBoardItem; disabled: boolean }>()
-const emit = defineEmits<{ move: [status: EmployeeBoardStatus]; 'close-auto-focus': [event: Event] }>()
+defineProps<{ item: EmployeeBoardItem; columns: readonly BoardColumn[]; current: string; disabled: boolean }>()
+const emit = defineEmits<{ move: [column: string]; 'close-auto-focus': [event: Event] }>()
 </script>
 
 <template>
@@ -34,15 +35,14 @@ const emit = defineEmits<{ move: [status: EmployeeBoardStatus]; 'close-auto-focu
       <DropdownMenuLabel>{{ t('employees.allProjects.moveToLabel') }}</DropdownMenuLabel>
       <DropdownMenuSeparator />
       <DropdownMenuItem
-        v-for="status in EMPLOYEE_BOARD_STATUSES"
-        :key="status.value"
-        :disabled="!isBoardMove(item, status.value)"
-        :data-move-target="status.value"
-        @select="emit('move', status.value)"
+        v-for="column in columns"
+        :key="column.key"
+        :disabled="!isColumnMove(columns, item, column.key)"
+        :data-move-target="column.key"
+        @select="emit('move', column.key)"
       >
-        {{ status.value === item.status ? t('employees.allProjects.currentStatus', { status: t(status.labelKey) }) : t(status.labelKey) }}
+        {{ column.key === current ? t('employees.allProjects.currentStatus', { status: column.label }) : column.label }}
       </DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu>
 </template>
-

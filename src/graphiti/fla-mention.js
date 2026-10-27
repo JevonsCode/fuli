@@ -11,8 +11,10 @@
 // - `@FLG …` or `#FLG …` (Fuli Agents Group) only at the very start: a
 //   discussion among several FLAs. Its text may name members and ask for
 //   more to be recommended (task-entry-group-discussion.js); `@FLG 1 3` or
-//   `@FLG 开始` answers its member choice and `@FLG 结束` stops it. A bare
-//   reply of numbers answers the choice too; a bare "好" or "开始" does not.
+//   `@FLG 开始` answers its member choice, optionally with how the group
+//   works (`一起看` in this session, `圆桌` in the roundtable), and `@FLG 结束`
+//   stops it. A bare reply of numbers answers the choice too; a bare "好",
+//   "开始" or "一起看" does not.
 //
 // A leading `@` is not an address when it is evidently something else: an
 // email (`@user@example.com`), a package scope or path (`@scope/pkg`), a code
@@ -24,11 +26,18 @@ const HASH_KEYWORD = /(?:^|\s)#FLA(?=$|\s)/iu;
 const GROUP = /^[#@]FLG(?=$|[\s:：,，])/iu;
 const RELEASE = /^(?:结束|释放|解除|退出|停止|end|release|stop)\s*[。.!！]?\s*$/iu;
 const CHOICE = /^(\d{1,2})\s*[.、)）]?\s*$/u;
+// How a confirmed group works (rec#55): in this session, which reads every
+// member's context (mode 1), or in the roundtable, where each member is woken
+// and answers for itself (mode 2). The choice offers both labels.
+const SESSION_MODE = String.raw`在?(?:这个|本)会话里?一起看|本会话|一起看|same session|this session`;
+const ROUNDTABLE_MODE = String.raw`在?圆桌里?分头回复|圆桌|分头回复|roundtable`;
+const MODE = String.raw`(?:(${SESSION_MODE})|(${ROUNDTABLE_MODE}))`;
 // Several numbers answer a multi-select (`1 3`, `1,3`, `1、3`), optionally
-// followed by a confirmation word. A confirmation word alone takes the
-// preselection only after `@FLG` (`@FLG 开始`).
-const CHOICES = /^(\d{1,2}(?:\s*[,，、\s]\s*\d{1,2})*)\s*[,，。]?\s*(?:开始|确认|go|start|ok)?\s*[。.!！]?\s*$/iu;
-const CONFIRM = /^(?:开始|开始吧|确认|go|start)\s*[。.!！]?\s*$/iu;
+// followed by a confirmation word and a mode. A confirmation word or a mode
+// alone takes the preselection only after `@FLG` (`@FLG 开始`, `@FLG 一起看`).
+const CHOICES = new RegExp(String.raw`^(\d{1,2}(?:\s*[,，、\s]\s*\d{1,2})*)\s*[,，。]?\s*(?:开始|确认|go|start|ok)?`
+  + String.raw`\s*[,，]?\s*${MODE}?\s*[。.!！]?\s*$`, 'iu');
+const CONFIRM = new RegExp(String.raw`^(开始吧|开始|确认|go|start)?\s*[,，]?\s*${MODE}?\s*[。.!！]?\s*$`, 'iu');
 // Inline code and fenced blocks are quoted text, never an address.
 const CODE = /```[\s\S]*?(?:```|$)|`[^`\n]*`/gu;
 // An identifier called like a function (`@Component(`) or a dotted name
@@ -70,20 +79,35 @@ export function parseFlaMention(prompt) {
 }
 
 // What follows `@FLG`: { release } (stop the discussion), the answer to its
-// member choice (numbers, or { confirm } for the preselection), or { query }:
-// the question, which may name members and ask for recommendations.
+// member choice (numbers, or { confirm } for the preselection, each with the
+// mode when it names one), or { query }: the question, which may name
+// members and ask for recommendations.
 function groupMention(rest) {
   const text = rest.replace(/^[\s:：,，]+/u, '').trim().slice(0, ADDRESS_LIMIT);
   if (RELEASE.test(text)) return { release: true };
-  if (CONFIRM.test(text)) return { confirm: true };
+  const confirm = CONFIRM.exec(text);
+  if (confirm?.slice(1).some(Boolean)) return { confirm: true, ...namedMode(confirm) };
   return groupChoiceReply(text) ?? { query: text };
 }
 
 // A reply of numbers to a member choice: { choices: [n…] } (distinct, as
-// typed), or null for anything else.
+// typed) and the mode it names, or null for anything else.
 export function groupChoiceReply(prompt) {
   const numbers = CHOICES.exec(typeof prompt === 'string' ? prompt.trim() : '');
-  return numbers ? { choices: [...new Set(numbers[1].split(/[\s,，、]+/u).filter(Boolean).map(Number))] } : null;
+  return numbers ? { choices: [...new Set(numbers[1].split(/[\s,，、]+/u).filter(Boolean).map(Number))],
+    ...namedMode(numbers) } : null;
+}
+
+// The mode a question asks for, 'session' or 'roundtable', or null.
+export function groupModeHint(text) {
+  if (new RegExp(ROUNDTABLE_MODE, 'iu').test(text)) return 'roundtable';
+  return new RegExp(SESSION_MODE, 'iu').test(text) ? 'session' : null;
+}
+
+// The mode a confirmation names: its last two groups are MODE's.
+function namedMode(match) {
+  const [session, roundtable] = match.slice(-2);
+  return session ? { mode: 'session' } : roundtable ? { mode: 'roundtable' } : {};
 }
 
 // The portable `{agentId}` form (percent-encoded) an address opens with:

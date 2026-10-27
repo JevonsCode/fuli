@@ -256,26 +256,48 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
 // change request in a resolved project with such a match in time.
 async function knowledgeIndexRecall(application, { personalProjectId }, taskPrompt, { sourceApplication, sessionId }) {
   const prompt = singleLine(taskPrompt).slice(0, 8192);
-  const focusTerms = distinctivePromptTerms(prompt);
-  const focusTokens = recallFocusTokens(focusTerms);
-  if (!personalProjectId || !focusTokens.length || !changeRequested(prompt)
-    || entryTimeBelow(INDEX_MIN_REMAINING_MS)) return null;
-  let found;
+  if (!personalProjectId || !changeRequested(prompt) || entryTimeBelow(INDEX_MIN_REMAINING_MS)) return null;
+  let index;
   try {
-    found = await application.searchKnowledge({
-      personalSpaceId: application.config.personal.spaceId,
-      personalProjectId,
-      query: focusTerms.join(' ').slice(0, 180),
-      limit: INDEX_SEARCH_LIMIT,
-      includeHistorical: false,
-      includePending: true,
-      sourceApplication, sourceSessionId: sessionId,
-      agentInvocation: true,
-      agentToolName: 'automatic_task_knowledge_index'
-    });
+    index = await projectKnowledgeIndex(application, personalProjectId, prompt,
+      { sourceApplication, sessionId, agentToolName: 'automatic_task_knowledge_index' });
   } catch {
     return null;
   }
+  if (!index) return null;
+  return {
+    status: 'indexed',
+    trigger_categories: [],
+    query_count: 1,
+    guidance: taskKnowledgeRetrievalGuidance(),
+    knowledge_index: { ...index, read: INDEX_READ },
+    facts: [],
+    entities: []
+  };
+}
+
+// The index of one exact project for a text: one search of the text's
+// distinctive terms, keeping the items that project itself defines and that
+// name one of those terms, confirmed first, as [id, title] pairs. Null when
+// the text has no such term (no search) or nothing matches; a failed search
+// throws. Task entry's index tier and the @FLG same-session member index
+// (group-member-context.js) share it. agentToolName labels the search.
+export async function projectKnowledgeIndex(application, personalProjectId, text,
+  { sourceApplication, sessionId, agentToolName }) {
+  const focusTerms = distinctivePromptTerms(text);
+  const focusTokens = recallFocusTokens(focusTerms);
+  if (!focusTokens.length) return null;
+  const found = await application.searchKnowledge({
+    personalSpaceId: application.config.personal.spaceId,
+    personalProjectId,
+    query: focusTerms.join(' ').slice(0, 180),
+    limit: INDEX_SEARCH_LIMIT,
+    includeHistorical: false,
+    includePending: true,
+    sourceApplication, sourceSessionId: sessionId,
+    agentInvocation: true,
+    agentToolName
+  });
   const exact = (items, itemKind) => withoutPreferences(items)
     .filter(item => item.defined_project_id === personalProjectId && !item.inherited_from_project_id
       && recallItemMatchesFocus(item, focusTokens))
@@ -283,22 +305,11 @@ async function knowledgeIndexRecall(application, { personalProjectId }, taskProm
   const matches = confirmedFirst([...exact(found?.facts, 'relationship'), ...exact(found?.entities, 'entity')])
     .sort(compareRecallItems);
   if (!matches.length) return null;
-  return {
-    status: 'indexed',
-    trigger_categories: [],
-    query_count: 1,
-    guidance: taskKnowledgeRetrievalGuidance(),
-    knowledge_index: {
-      // What this one search returned and kept, not the project's total: the
-      // Provider caps each kind at INDEX_SEARCH_LIMIT, and pending items drop
-      // out when a confirmed one matched.
-      matched_in_search: matches.length,
-      items: matches.slice(0, MAX_INDEX_ITEMS).map(({ id, title }) => [id, indexTitle(title)]),
-      read: INDEX_READ
-    },
-    facts: [],
-    entities: []
-  };
+  // What this one search returned and kept, not the project's total: the
+  // Provider caps each kind at INDEX_SEARCH_LIMIT, and pending items drop
+  // out when a confirmed one matched.
+  return { matched_in_search: matches.length,
+    items: matches.slice(0, MAX_INDEX_ITEMS).map(({ id, title }) => [id, indexTitle(title)]) };
 }
 
 // The heuristic described at CLAUSE_BREAK.

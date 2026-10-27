@@ -1,5 +1,6 @@
 import { entryBudgets as budgets, entryTimeBelow } from './entry-time.js';
 import { managementContextView, receiptView } from './task-context-view.js';
+import { ruleTextView } from './entry-rules.js';
 
 // A built-in Agent's model hint (Astro, Jefa) may take its 3 s model decision
 // plus a few Provider reads; with less than this left the entry goes without.
@@ -78,7 +79,8 @@ export function partialEntryText(budget) {
 // Bounded parts the entry built before the deadline, in their entry view.
 function builtParts({ agent_receipt: receipt, project_management_context: management, task_knowledge_recall: recall }) {
   return { ...(receipt ? { agent_receipt: receiptView(receipt) } : {}),
-    ...(management ? { project_management_context: management.managers ? managementContextView(management) : management } : {}),
+    ...(management ? { project_management_context: management.managers
+      ? managementContextView(management, guidance => ruleTextView(guidance, 'manager_guidance')) : management } : {}),
     ...(recall ? { task_knowledge_recall: recall } : {}) };
 }
 

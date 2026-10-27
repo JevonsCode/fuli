@@ -10,6 +10,7 @@ import {
 import { t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
 import type { PersonalProject } from '@/types'
+import ProjectBoardSettings from './ProjectBoardSettings.vue'
 import ProjectTeamSummary from './ProjectTeamSummary.vue'
 import ProjectCaptureSwitch from '@/features/capture/ProjectCaptureSwitch.vue'
 import ProjectJudgmentPolicy from '@/features/judgment/ProjectJudgmentPolicy.vue'
@@ -56,6 +57,7 @@ const visibleFrequentProjects = computed(() =>
     <ProjectJudgmentPolicy :key="`judgment-${project.project_id}`" class="project-judgment-card" :personal-space-id="spaceId"
       :project-id="project.project_id" :project-name="project.profile.name" :heading="t('judgment.project.heading')" />
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
+    <ProjectBoardSettings :key="`board-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" :project-name="project.profile.name" />
     <section
       class="project-frequent-projects"
       data-frequent-projects

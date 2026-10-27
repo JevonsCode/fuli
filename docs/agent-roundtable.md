@@ -184,6 +184,11 @@ Unknown execution or unconfirmed cleanup keeps its safety hold.
 
 ## Group discussions (@FLG, rec#55)
 
+This section is mode 2 (「在圆桌里分头回复」). Mode 1 (「在这个会话里一起看」, chosen at
+the same confirmation) never reaches the roundtable: task entry hands the session a
+read-only index of the members' context (`src/graphiti/group-member-context.js`)
+and nobody is woken (docs/agent-conversations-and-collaboration.md).
+
 `group_discussion` runs a moderated discussion on top of a `kind=group` chat. It
 only carries out what the person typed in their chat: task entry records the
 confirmed members and question (`recordGroupChoice`) and each `@FLG …`

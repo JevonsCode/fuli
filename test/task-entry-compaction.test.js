@@ -34,7 +34,7 @@ test('the entry receipt keeps what must be copied and references its rule', () =
   const view = compactTaskContext(entry()).agent_receipt;
   assert.deepEqual(Object.keys(view).sort(), ['guidance', 'markdown', 'required']);
   assert.equal(view.markdown, receipt.markdown);
-  assert.equal(view.guidance.rules, 'fuli://rules/task-entry#receipt_guidance');
+  assert.equal(view.guidance.rules, 'fuli://rules/task-entry/receipt_guidance');
   const helped = compactTaskContext(entry({ agent_receipt: { ...receipt,
     collaborators: [{ agent_id: 'qa', name: 'QA' }], work_status: 'completed' } })).agent_receipt;
   assert.deepEqual(helped.collaborators, [{ agent_id: 'qa', name: 'QA' }]);
@@ -49,7 +49,7 @@ test('context drops zero counts and off-flags but keeps IDs and real truncation'
 
 test('scope lines become a reference only when they match the template for these IDs', () => {
   const view = compactTaskContext(entry()).application_guidance;
-  assert.equal(view.scope_rules, 'fuli://rules/task-entry#scope_guidance');
+  assert.equal(view.scope_rules, 'fuli://rules/task-entry/scope_guidance');
   for (const key of ['apply', 'global_scope', 'project_scope', 'agent_scope']) assert.equal(key in view, false, key);
   const custom = { ...preferenceScopeGuidance('sample', 'lead'), ...STATIC_APPLICATION_GUIDANCE, project_scope: 'Custom scope.' };
   const kept = compactTaskContext(entry({ application_guidance: custom })).application_guidance;

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { EmployeeManagementStore } from './management-policy.js';
 import { employeeTaskEntry } from './task-entry.js';
 import { employeeCollaborationReceipt } from '../agents/identity-receipt.js';
+import { isPeerRoleAgent } from '../graphiti/project-team-view.js';
 
 export function createEmployeeService({ app, runtimeConfigPath, registry: configuredRegistry, managementStore: configuredManagementStore }) {
   const registry = configuredRegistry ?? createEmployeePackageRegistry(employeeDirectories(runtimeConfigPath));
@@ -62,6 +63,9 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
     if (context.templateId === 'jefa' && tool.permission === 'board.write' && requestsHumanAcceptance(input.arguments)) {
       throw new EmployeeError('Jefa completion requires explicit human acceptance in the workbench', 403, 'human_acceptance_required');
     }
+    if (context.templateId === 'jefa' && input.tool === 'configure_project_board' && typeof input.arguments?.managerAgentId === 'string') {
+      await assertProjectManager(app, context, input.arguments.managerAgentId);
+    }
     const session = input.sourceSessionId ? {
       sourceApplication: input.sourceApplication ?? 'other', id: input.sourceSessionId,
       verified: input.sourceSessionVerified === true,
@@ -97,6 +101,22 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
     },
     async close() { try { await registry.close(); } finally { managementStore.close(); } }
   };
+}
+
+// A project's own project manager, named on Jefa's board, is one of the
+// project's Agents: active, with an active assignment in that exact project.
+// Jefa, Bole, Tonborg and AR stay peers and never become a project's manager.
+async function assertProjectManager(app, context, agentId) {
+  const agent = (await app.listProjectAgents({ personalSpaceId: context.personalSpaceId }))
+    .find((entry) => entry.agentId === agentId);
+  const assigned = (agent?.profile?.status ?? 'active') === 'active' && (agent?.assignments ?? [])
+    .some((entry) => entry.personalProjectId === context.project.id && entry.status === 'active');
+  if (!agent || !assigned) {
+    throw new EmployeeError('Assign this Agent to the project before making it the project manager', 409, 'project_manager_not_assigned');
+  }
+  if (isPeerRoleAgent({ agentId, agentType: agent.profile?.agentType, capabilities: agent.profile?.capabilities ?? [] })) {
+    throw new EmployeeError('Jefa, Bole, Tonborg and AR are peers, not a project\'s own manager; choose a project Agent', 409, 'project_manager_peer_role');
+  }
 }
 
 function requestsHumanAcceptance(value, depth = 0) {
