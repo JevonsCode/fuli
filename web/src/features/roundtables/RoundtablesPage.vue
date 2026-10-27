@@ -8,7 +8,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { Button } from '@/components/ui/button'
-import { UiEmpty } from '@/ui'
+import { UiEmpty, UiNotice } from '@/ui'
 import { subscribeChatUpdates } from '@/features/project-agents/task-updates'
 import {
   appendChatPage, listChats, listThreads, readChat, readThread,
@@ -417,13 +417,14 @@ const lastFrom = (item: RoundtableThreadSummary) => item.last?.from ?? t('roundt
   <section class="view roundtable-view" :class="{ 'has-selection': hasSelection }">
    <!-- One canvas: the list of conversations, or the open one with a way back; never both side by side. -->
    <div class="roundtable-canvas mx-auto flex w-full max-w-(--layout-max) flex-col">
-    <p v-if="accessNotice" role="alert" class="roundtable-notice">
-      {{ t('roundtable.accessLost') }} <Button size="sm" variant="ghost" @click="reloadAll">{{ t('roundtable.retry') }}</Button>
-    </p>
-    <p v-if="liveDisconnected" :role="reloadFailed ? 'alert' : 'status'" class="roundtable-notice" data-roundtable-live>
+    <UiNotice v-if="accessNotice" tone="error" class="roundtable-notice">
+      {{ t('roundtable.accessLost') }}
+      <template #actions><Button size="sm" variant="ghost" @click="reloadAll">{{ t('roundtable.retry') }}</Button></template>
+    </UiNotice>
+    <UiNotice v-if="liveDisconnected" :tone="reloadFailed ? 'error' : 'warning'" class="roundtable-notice" data-roundtable-live>
       {{ t('roundtable.liveDisconnected') }}<template v-if="reloadFailed"> {{ t('roundtable.reloadFailed') }}</template>
-      <Button size="sm" variant="ghost" :loading="reconnecting" :loading-label="t('roundtable.reloading')" @click="reconnected">{{ t('roundtable.reload') }}</Button>
-    </p>
+      <template #actions><Button size="sm" variant="ghost" :loading="reconnecting" :loading-label="t('roundtable.reloading')" @click="reconnected">{{ t('roundtable.reload') }}</Button></template>
+    </UiNotice>
     <GrowthLoading v-if="listLoading && !hasSelection" :label="t('roundtable.loading')" />
     <div v-else-if="listsFailed && !hasSelection" class="roundtable-empty" role="alert" data-roundtable-lists-failed>
       <strong>{{ t('roundtable.loadFailed') }}</strong>
@@ -514,8 +515,8 @@ const lastFrom = (item: RoundtableThreadSummary) => item.last?.from ?? t('roundt
 .roundtable-empty strong { font-size: 16px; font-weight: 600; }
 .roundtable-empty p { margin-top: 8px; color: var(--color-muted); }
 .roundtable-empty-action { margin-top: 16px; }
-.roundtable-notice { margin: 0 0 8px; font-size: 13px; }
-.roundtable-waiting { color: var(--color-warning); font-weight: 600; }
+.roundtable-notice { margin: 0 0 8px; }
+.roundtable-waiting { color: var(--color-warning); font-weight: var(--weight-medium); }
 .roundtable-remote-note { margin: 0; }
 .roundtable-more { justify-self: start; }
 .roundtable-list-count { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; color: var(--color-ink-soft); font-size: var(--text-control); }

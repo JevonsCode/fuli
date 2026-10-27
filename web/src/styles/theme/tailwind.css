@@ -68,6 +68,7 @@
 @theme {
   --color-*: initial;
   --text-*: initial;
+  --font-weight-*: initial;
   --radius-*: initial;
   --shadow-*: initial;
 
@@ -88,10 +89,17 @@
   --text-sm--line-height: 1.4;
   --text-base: var(--text-body);
   --text-base--line-height: 1.55;
+  /* md is a card's title, lg a section's, xl the page's (base.css). */
+  --text-md: var(--text-card-title);
+  --text-md--line-height: var(--leading-heading);
   --text-lg: var(--text-section);
-  --text-lg--line-height: 1.4;
+  --text-lg--line-height: var(--leading-heading);
   --text-xl: var(--text-title);
-  --text-xl--line-height: 1.25;
+  --text-xl--line-height: var(--leading-title);
+  /* Three weights: font-normal, font-medium (controls), font-semibold (headings). */
+  --font-weight-normal: var(--weight-regular);
+  --font-weight-medium: var(--weight-medium);
+  --font-weight-semibold: var(--weight-strong);
   --radius-sm: calc(var(--radius-control) - 4px);
   --radius-md: var(--radius-control);
   --radius-lg: var(--radius-card);

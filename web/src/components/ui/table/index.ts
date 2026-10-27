@@ -6,7 +6,7 @@
 // - Table takes `containerClass` for its scroll container, so a page can make
 //   that container the one scroller (both axes) and keep the header sticky;
 //   horizontal scrolling then stays inside the table, never the page.
-// - FULI metrics: 13px body, 12px/600 muted headings, 12px cell insets, the
+// - FULI metrics: 13px body, 12px/500 muted headings, 12px cell insets, the
 //   hover surface for rows. Cells may wrap (no forced nowrap), so a long
 //   Chinese name grows the row instead of widening the page; a page sets
 //   `whitespace-nowrap` on short columns.

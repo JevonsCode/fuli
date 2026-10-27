@@ -19,6 +19,11 @@ const props = defineProps<{
   blocker: ProjectAgentTaskBlocker
   /** The task's last recorded change, for the hint on a block with no progress. */
   updatedAt?: string | null
+  /**
+   * Where the no-progress hint goes: under the button, or only in its tooltip
+   * when the page already says it once for many blocked cards (工作台).
+   */
+  hint?: 'inline' | 'tooltip'
 }>()
 const emit = defineEmits<{ cleared: [task: ProjectAgentTaskRecord] }>()
 
@@ -56,10 +61,10 @@ async function confirm() {
 
 <template>
   <div class="task-blocker-clear" data-blocker-clear>
-    <Button variant="outline" size="sm" data-term="work.unblock" data-blocker-clear-open @click.stop.prevent="start">
+    <Button variant="outline" size="sm" data-term="work.unblock" :title="stale ? t('taskBlocker.clear.stale') : undefined" data-blocker-clear-open @click.stop.prevent="start">
       {{ t('taskBlocker.clear.action') }}
     </Button>
-    <small v-if="stale" class="task-blocker-clear-hint" data-blocker-stale>{{ t('taskBlocker.clear.stale') }}</small>
+    <small v-if="stale && hint !== 'tooltip'" class="task-blocker-clear-hint" data-blocker-stale>{{ t('taskBlocker.clear.stale') }}</small>
     <UiDialog :open="open" :title="t('taskBlocker.clear.action')" size="sm" :busy="busy" :error="error" form
       @close="open = false" @submit="confirm">
       <p class="task-blocker-clear-task"><strong>{{ title }}</strong> · {{ blockerReasonText(blocker) }}</p>

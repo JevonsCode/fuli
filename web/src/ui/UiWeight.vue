@@ -20,7 +20,7 @@ const band = computed(() => weightBand(value.value, props.confirmedByPerson))
 </template>
 
 <style scoped>
-.ui-weight { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; }
+.ui-weight { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: var(--weight-medium); }
 .ui-weight-track { position: relative; width: 44px; height: 6px; overflow: hidden; border-radius: var(--radius-pill); background: var(--color-surface-subtle); }
 .ui-weight-fill { position: absolute; inset: 0; transform-origin: left center; border-radius: inherit; transition: transform var(--motion-medium) var(--motion-ease); }
 .ui-weight.is-pending { color: var(--color-muted); }

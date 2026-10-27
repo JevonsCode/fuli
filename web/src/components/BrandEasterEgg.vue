@@ -295,7 +295,7 @@ onBeforeUnmount(() => {
   color: var(--color-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   letter-spacing: .02em;
   white-space: nowrap;
   min-width: 0;
@@ -394,7 +394,7 @@ onBeforeUnmount(() => {
   margin-top: 9px;
   color: var(--color-ink);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: var(--weight-medium);
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }

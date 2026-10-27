@@ -4,7 +4,7 @@
 .ui-badge {
   display: inline-flex; align-items: center; gap: 5px; width: fit-content;
   padding: 2px 8px; border-radius: 999px; background: var(--color-surface-subtle);
-  color: var(--color-ink-soft); font-size: 12px; font-weight: 500; line-height: 1.5; white-space: nowrap;
+  color: var(--color-ink-soft); font-size: 12px; font-weight: var(--weight-medium); line-height: 1.5; white-space: nowrap;
 }
 .ui-badge--accent { color: var(--color-accent); background: var(--color-accent-soft); }
 .ui-badge--success { color: var(--color-success); background: var(--color-success-soft); }
@@ -12,19 +12,22 @@
 .ui-badge--danger { color: var(--color-danger); background: var(--color-danger-soft); }
 .ui-muted { color: var(--color-muted); }
 .ui-meta { color: var(--color-muted); font-size: var(--text-meta); }
+/* A paragraph people read: capped at the measure (about 72 characters) with an
+   open line height. Tables, grids and one-line rows are never capped. */
+.ui-prose { max-width: var(--measure); line-height: var(--leading-prose); }
 .ui-num { font-variant-numeric: tabular-nums; }
 .ui-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .ui-empty { padding: 48px 24px; color: var(--color-muted); text-align: center; font-size: 14px; }
-.ui-field { display: grid; gap: 6px; min-width: 0; color: var(--color-ink-soft); font-size: 13px; font-weight: 500; }
-.ui-field > :is(input, textarea, select, .ui-select) { width: 100%; font-weight: 400; }
+.ui-field { display: grid; gap: 6px; min-width: 0; color: var(--color-ink-soft); font-size: 13px; font-weight: var(--weight-medium); }
+.ui-field > :is(input, textarea, select, .ui-select) { width: 100%; font-weight: var(--weight-regular); }
 .ui-check { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 9px; color: var(--color-ink); font-size: 13px; line-height: 1.5; cursor: pointer; }
-.ui-field-hint { color: var(--color-muted); font-size: 12px; font-weight: 400; }
+.ui-field-hint { color: var(--color-muted); font-size: 12px; font-weight: var(--weight-regular); }
 .ui-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* Disclosure */
 /* Spacing alone sets a disclosure apart; no rule above it. */
 .ui-disclosure { padding-block: 14px; }
-.ui-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; color: var(--color-ink); font-size: 14px; font-weight: 600; }
+.ui-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-strong); }
 .ui-disclosure > summary::-webkit-details-marker { display: none; }
 .ui-disclosure > summary::after { content: ''; width: 7px; height: 7px; border: solid var(--color-muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); margin: 0 4px 4px; transition: transform var(--motion-fast); }
 .ui-disclosure[open] > summary::after { transform: rotate(225deg); margin-top: 5px; }
@@ -45,7 +48,7 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 @keyframes ui-dialog-in { from { opacity: 0; transform: translateY(6px) scale(.99); } }
 .ui-dialog__shell { display: flex; flex-direction: column; max-height: calc(100dvh - 50px); min-height: 0; }
 .ui-dialog__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 24px 0; }
-.ui-dialog__header h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.ui-dialog__header h2 { margin: 0; font-size: var(--text-section); font-weight: var(--weight-strong); letter-spacing: -.01em; }
 .ui-dialog__header p { margin-top: 4px; color: var(--color-muted); font-size: 13px; }
 .ui-dialog__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px; }
 .ui-dialog__footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--color-border); background: var(--color-bg); }
@@ -58,7 +61,7 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 .ui-segmented { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--color-surface-subtle); }
 .ui-segmented > button {
   min-height: 28px; padding: 3px 12px; border: 0; border-radius: 7px;
-  color: var(--color-muted); background: transparent; font-size: 13px; font-weight: 500; cursor: pointer;
+  color: var(--color-muted); background: transparent; font-size: var(--text-control); font-weight: var(--weight-medium); cursor: pointer;
   transition: background-color var(--motion-fast), color var(--motion-fast);
 }
 .ui-segmented > button:hover { color: var(--color-ink); }
@@ -66,12 +69,12 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
   color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-xs);
 }
 .ui-segmented-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; vertical-align: -1px; }
-.ui-segmented small { margin-left: 4px; color: var(--color-faint); font-variant-numeric: tabular-nums; }
+.ui-segmented small { margin-left: 4px; color: var(--color-muted); font-variant-numeric: tabular-nums; }
 
 /* Page rhythm shared by list pages: one-line lede, list titles. */
-.page-lede { margin: -4px 0 0; color: var(--color-muted); font-size: 13px; line-height: 1.6; }
-.list-title { display: inline-flex; align-items: baseline; gap: 8px; margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 650; }
-.list-title span { color: var(--color-faint); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.page-lede { max-width: var(--measure); margin: -4px 0 0; color: var(--color-muted); font-size: 13px; line-height: var(--leading-prose); }
+.list-title { display: inline-flex; align-items: baseline; gap: 8px; margin: 0; color: var(--color-ink); font-size: var(--text-section); font-weight: var(--weight-strong); }
+.list-title span { color: var(--color-muted); font-size: var(--text-control); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
 
 /* A page section (rec#38): a small label, then one list or card at the
    column's full width. Sections stack in one column; never side by side. */
@@ -87,9 +90,9 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 .ui-list-row { display: flex; align-items: flex-start; gap: 16px; padding: 14px 16px; }
 .ui-list-row + .ui-list-row { border-top: 1px solid var(--color-border); }
 .ui-list-main { display: grid; flex: 1; gap: 6px; min-width: 0; }
-.ui-list-heading { color: var(--color-ink); font-size: 14px; font-weight: 600; line-height: 1.45; }
-.ui-list-text { margin: 0; color: var(--color-ink-soft); font-size: 13px; line-height: 1.6; }
-.ui-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: var(--color-faint); font-size: 12px; }
+.ui-list-heading { color: var(--color-ink); font-size: var(--text-card-title); font-weight: var(--weight-strong); line-height: var(--leading-heading); }
+.ui-list-text { max-width: var(--measure); margin: 0; color: var(--color-ink-soft); font-size: 13px; line-height: var(--leading-prose); }
+.ui-list-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: var(--color-muted); font-size: var(--text-meta); }
 .ui-list-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 @media (max-width: 720px) { .ui-list-row { flex-direction: column; gap: 10px; } }
 
@@ -107,12 +110,12 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 .ui-conversation-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; color: var(--color-muted); font-size: var(--text-meta); }
 .ui-conversation-item-meta > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-conversation-item-meta > :not(:first-child) { flex-shrink: 0; }
-.ui-conversation-item-title { font-size: var(--text-body); font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
-.ui-conversation-item-sub { display: -webkit-box; overflow: hidden; color: var(--color-muted); font-size: var(--text-control); line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.ui-conversation-item-title { font-size: var(--text-card-title); font-weight: var(--weight-strong); line-height: var(--leading-heading); overflow-wrap: anywhere; }
+.ui-conversation-item-sub { display: -webkit-box; overflow: hidden; color: var(--color-muted); font-size: var(--text-control); line-height: var(--leading-prose); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* Sized by its content, up to the canvas; a long conversation scrolls inside. */
 .ui-conversation-detail { display: flex; flex: 0 1 auto; max-height: 100%; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
 .ui-conversation-detail-head { display: grid; flex: 0 0 auto; gap: 6px; padding: 18px 28px 14px; border-bottom: 1px solid var(--color-border); }
-.ui-conversation-detail-head h2 { width: fit-content; max-width: 100%; margin: 0; font-size: 16px; font-weight: 650; overflow-wrap: anywhere; }
+.ui-conversation-detail-head h2 { width: fit-content; max-width: 100%; margin: 0; font-size: var(--text-section); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
 .ui-conversation-detail-body { flex: 1; min-height: 0; padding: 20px 28px 32px; overflow-y: auto; overscroll-behavior: contain; }
 @media (max-width: 480px) {
   .ui-conversation-detail-head { padding: 14px 16px 12px; }

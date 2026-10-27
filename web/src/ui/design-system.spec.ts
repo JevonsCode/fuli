@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ICONS } from './icons'
-import { UiAvatar, UiChipRow, UiEmpty, UiIcon, UiIconButton, UiSegmented, UiToggle, UiWeight, weightBand } from './index'
+import { UiAvatar, UiChipRow, UiEmpty, UiIcon, UiIconButton, UiNotice, UiSegmented, UiToggle, UiWeight, weightBand } from './index'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -65,5 +65,16 @@ describe('design system', () => {
     expect(grid.text()).toBe('')
     expect(grid.attributes('aria-label')).toBe('卡片')
     expect(grid.attributes('aria-pressed')).toBe('true')
+  })
+
+  it('shows a status line with its tone icon, announcing only errors at once', () => {
+    const warning = mount(UiNotice, { props: { tone: 'warning' }, slots: { default: '实时更新已断开', actions: '<button>重新读取</button>' } })
+    expect(warning.attributes('role')).toBe('status')
+    expect(warning.attributes('data-tone')).toBe('warning')
+    expect(warning.get('svg').attributes('aria-hidden')).toBe('true')
+    expect(warning.get('.ui-notice__text').text()).toBe('实时更新已断开')
+    expect(warning.get('.ui-notice__actions button').text()).toBe('重新读取')
+    expect(mount(UiNotice, { props: { tone: 'error' }, slots: { default: 'x' } }).attributes('role')).toBe('alert')
+    expect(mount(UiNotice, { slots: { default: 'x' } }).find('.ui-notice__actions').exists()).toBe(false)
   })
 })

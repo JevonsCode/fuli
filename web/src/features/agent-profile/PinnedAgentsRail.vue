@@ -51,13 +51,13 @@ function retry() {
 .pinned-rail { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 2px 0 4px; padding: 0; list-style: none; }
 .pinned-rail.is-expanded { display: grid; align-items: stretch; gap: 2px; }
 .pinned-rail-link {
-  display: grid; width: 36px; height: 36px; place-items: center; border-radius: 10px; color: var(--color-faint); text-decoration: none;
+  display: grid; width: 36px; height: 36px; place-items: center; border-radius: 10px; color: var(--color-muted); text-decoration: none;
   transition: color var(--motion-fast), background var(--motion-fast);
 }
 /* Same column and weight as the other second-level rows; the portrait starts where the parent name starts. */
 .pinned-rail.is-expanded .pinned-rail-link {
   display: flex; align-items: center; gap: 6px; width: 100%; height: 32px; padding: 0 10px 0 38px;
-  font-size: 13px; font-weight: 500; line-height: 1;
+  font-size: 13px; font-weight: var(--weight-regular); line-height: 1;
 }
 .pinned-rail-link:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .pinned-rail-link.is-active { color: var(--color-accent); background: var(--color-accent-soft); }

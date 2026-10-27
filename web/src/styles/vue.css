@@ -2,9 +2,6 @@
   height: 100%;
 }
 
-.feedback-message { display: flex; align-items: center; gap: 12px; }
-.feedback-message > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
-
 .view-loading {
   min-height: 240px;
   display: grid;
@@ -25,7 +22,6 @@
   overflow-wrap: anywhere;
 }
 
-.feedback,
 .knowledge-row {
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
@@ -56,7 +52,7 @@
   color: var(--color-muted);
   font: inherit;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: var(--weight-medium);
   cursor: pointer;
 }
 

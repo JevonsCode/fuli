@@ -12,7 +12,7 @@ import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { t } from '@/i18n'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
-import { UiIconButton } from '@/ui'
+import { UiIconButton, UiNotice } from '@/ui'
 import NavRail from './NavRail.vue'
 import SectionTabs from './SectionTabs.vue'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
@@ -101,10 +101,11 @@ watchEffect(() => {
       </header>
       <NavigationRecovery />
       <div v-if="store.feedback" class="app-feedback-row">
-        <div class="feedback feedback-message" :class="{ success: store.feedback.tone === 'success' }"
-          :role="store.feedback.tone === 'error' ? 'alert' : 'status'" :aria-live="store.feedback.tone === 'error' ? 'assertive' : 'polite'">
-          <span>{{ store.feedback.message }}</span>
-          <UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" />
+        <div class="app-feedback-inner">
+          <UiNotice class="feedback-message" :tone="store.feedback.tone">
+            {{ store.feedback.message }}
+            <template #actions><UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" /></template>
+          </UiNotice>
         </div>
       </div>
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
@@ -122,10 +123,9 @@ watchEffect(() => {
 .app-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .app-topbar { flex: 0 0 auto; padding: 10px var(--page-gutter); }
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-height: 44px; }
-.app-title { min-width: 0; margin: 0; font-size: var(--text-title); font-weight: 700; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.app-title { min-width: 0; margin: 0; font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.01em; overflow-wrap: anywhere; }
 .app-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .app-feedback-row { flex: 0 0 auto; padding: 0 var(--page-gutter) 8px; }
-.feedback-message { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; }
 /* Canvas and form pages: the top bar and feedback line up with the page's
    centred column. Both rows reserve the same scrollbar gutter as the page's
    scroll container, so the title starts exactly where the content does. A
@@ -135,7 +135,7 @@ watchEffect(() => {
    its top bar stays at the page width, so switching tabs never moves it. */
 .app-main[data-layout="form"] { --layout-max: var(--form-measure); }
 .app-main[data-layout] :is(.app-topbar, .app-feedback-row) { overflow: hidden; scrollbar-gutter: stable; }
-.app-main[data-layout] :is(.app-topbar-inner, .feedback-message) { max-width: var(--canvas-max); margin-inline: auto; }
+.app-main[data-layout] :is(.app-topbar-inner, .app-feedback-inner) { max-width: var(--canvas-max); margin-inline: auto; }
 .app-main[data-layout] .app-title { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* A long record name wraps inside its own column instead of pushing the tabs
    and actions onto a second row, so the bar stays short on a laptop. */

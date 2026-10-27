@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import base from './base.css?raw'
+import elements from './elements.css?raw'
 import components from './components.css?raw'
 import semantic from './semantic.css?raw'
 import skins from './skins.css?raw'
@@ -61,5 +62,18 @@ describe('theme layers', () => {
     }
     // Tailwind's own palette and rem-based scales are switched off.
     expect(block(tailwind, '@theme')).toMatch(/--color-\*:\s*initial/)
+  })
+
+  it('keeps one type scale: size leads, three weights, nothing bold', () => {
+    const scale = Object.fromEntries(declarations(base).map(({ name, value }) => [name, value]))
+    expect([scale['--text-title'], scale['--text-section'], scale['--text-card-title'], scale['--text-body'], scale['--text-meta']])
+      .toEqual(['24px', '16px', '15px', '14px', '12px'])
+    expect([scale['--weight-regular'], scale['--weight-medium'], scale['--weight-strong']]).toEqual(['400', '500', '600'])
+    // Tailwind's weight utilities are exactly those three; headings use the scale.
+    const preset = block(tailwind, '@theme inline reference')
+    expect(declarations(preset).filter(({ name }) => name.startsWith('--font-weight-')).map(({ value }) => value))
+      .toEqual(['var(--weight-regular)', 'var(--weight-medium)', 'var(--weight-strong)'])
+    expect(block(tailwind, '@theme')).toMatch(/--font-weight-\*:\s*initial/)
+    for (const heading of ['h1', 'h2', 'h3']) expect(block(elements, heading), heading).toContain('font-weight: var(--weight-strong)')
   })
 })

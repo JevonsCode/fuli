@@ -13,11 +13,12 @@ onBeforeUnmount(() => observer?.disconnect())
 <template>
   <div class="overview-excerpt">
     <p ref="content" :class="{ 'is-clamped': !expanded }">{{ text }}</p>
-    <Button v-if="overflows || expanded" variant="ghost" :aria-expanded="expanded" @click="expanded = !expanded">{{ t(expanded ? 'overview.read.less' : 'overview.read.more') }}</Button>
+    <Button v-if="overflows || expanded" variant="link" size="sm" :aria-expanded="expanded" @click="expanded = !expanded">{{ t(expanded ? 'overview.read.less' : 'overview.read.more') }}</Button>
   </div>
 </template>
 <style scoped>
-p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+p { max-width: var(--measure); margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: var(--leading-prose); }
 .is-clamped { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.overview-excerpt :deep(button) { min-height: 44px; margin-top: 4px; }
+.overview-excerpt :deep(button) { padding-inline: 0; }
+@media (pointer: coarse) { .overview-excerpt :deep(button) { min-height: 44px; } }
 </style>
