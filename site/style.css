@@ -186,6 +186,9 @@ figure.window figcaption { padding: 0 20px; }
 .principles h3 { font-size: 18px; font-weight: 650; }
 .principles p { margin-top: 10px; color: var(--ink-soft); }
 .preview-changes { row-gap: clamp(36px, 6vh, 64px); }
+.changes-intro { grid-column: 1 / -1; max-width: 720px; }
+.changes-intro h2 { margin: 0; }
+.changes-intro p { margin-top: 14px; }
 .preview-changes ul { margin: 12px 0 0; padding-left: 1.1em; color: var(--ink-soft); }
 .preview-changes li + li { margin-top: 8px; }
 
