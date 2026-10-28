@@ -120,3 +120,7 @@ native/win32/fuli-win-helper.exe
 native/win32/build/
 native/win32/fuli-win-helper/bin/
 native/win32/fuli-win-helper/obj/
+
+# Flutter desktop client (desktop/flutter): build output and tool state
+desktop/flutter/build/
+desktop/flutter/.dart_tool/
