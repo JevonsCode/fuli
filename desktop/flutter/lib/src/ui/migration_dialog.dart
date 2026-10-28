@@ -143,7 +143,7 @@ class _MigrationDialogState extends State<MigrationDialog> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Palette.surfaceSubtle, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: FuliColors.surfaceSubtle, borderRadius: BorderRadius.circular(FuliSize.radiusCard)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -155,7 +155,7 @@ class _MigrationDialogState extends State<MigrationDialog> {
           Text(store.undoAvailable ? s.migrationUndoAvailable : s.migrationUndoRestoreOnly, style: TypeScale.meta),
           if (store.warning != null) ...[
             const SizedBox(height: 6),
-            Text(store.warning!, style: TypeScale.secondary.copyWith(color: Palette.danger)),
+            Text(store.warning!, style: TypeScale.secondary.copyWith(color: FuliColors.danger)),
           ],
         ],
       ),
@@ -164,6 +164,6 @@ class _MigrationDialogState extends State<MigrationDialog> {
 
   Widget _line(String text, {bool error = false}) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
-        child: Text(text, style: TypeScale.body.copyWith(color: error ? Palette.danger : Palette.ink)),
+        child: Text(text, style: TypeScale.body.copyWith(color: error ? FuliColors.danger : FuliColors.ink)),
       );
 }

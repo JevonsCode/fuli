@@ -22,8 +22,8 @@ class PendingLine extends StatelessWidget {
             SizedBox.square(
               dimension: 14,
               child: still
-                  ? const DecoratedBox(decoration: BoxDecoration(color: Palette.accent, shape: BoxShape.circle))
-                  : const CircularProgressIndicator(strokeWidth: 2, color: Palette.accent),
+                  ? const DecoratedBox(decoration: BoxDecoration(color: FuliColors.accent, shape: BoxShape.circle))
+                  : const CircularProgressIndicator(strokeWidth: 2, color: FuliColors.accent),
             ),
             const SizedBox(width: 10),
             Flexible(child: Text(label, style: TypeScale.body)),
