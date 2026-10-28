@@ -94,7 +94,7 @@
         <div class="chapters">
           <section class="chapter hero-chapter" data-scene="scatter" aria-labelledby="hero-title">
             <div class="chapter-copy">
-              <p class="eyebrow"><span data-i18n="next.eyebrow">抢先体验 · npm beta</span> <span data-preview-version>0.22.0-beta.4</span></p>
+              <p class="eyebrow"><span data-i18n="next.eyebrow">抢先体验 · npm beta</span> <span data-preview-version>0.23.0-beta.1</span></p>
               <h1 data-i18n-html="hero.title" id="hero-title">让每一次协作，<br>都产生<em>复利</em>。</h1>
               <p data-i18n="hero.description" class="lede">这是下一版的公开预览，给愿意先试新功能的人用。下面列出它相对稳定版 0.22.0 的全部变化。</p>
               <div class="hero-actions">
@@ -246,13 +246,17 @@
       <section class="principles preview-changes" data-preview-baseline="0.22.0" aria-labelledby="changes-title" id="changes">
         <div class="changes-intro"><h2 data-i18n="next.changes" id="changes-title">相对稳定版 0.22.0 的全部变化</h2><p data-i18n="next.description">这里列出这个预览版相对当前稳定版 0.22.0 的全部新功能和变化，不只是比上一个 beta 多了什么。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。</p></div>
         <div><h3 data-i18n="next.c.features">新功能</h3><ul>
-          <li data-i18n="next.c.features.1">下一个预览版的新功能会列在这里。</li>
+          <li data-i18n="next.c.features.1">体检：FULI 自己检查客户端连接是否过期、迁移是否在等你、会话是否还在用旧版、上次更新有没有做完；能自动修的点一下就修好，修不了的告诉你去哪里处理。控制台顶部显示「有 N 件事需要你」。</li>
+          <li data-i18n="next.c.features.2">Windows 安装包的托盘换成 FULI 桌面客户端：一句话告诉你 FULI 是否正常，每件事一张卡片一个按钮，托盘圆点变色，情况变差时发系统通知；默认开机启动，可在托盘菜单关闭。</li>
+          <li data-i18n="next.c.features.3">一键更新和回退会先关掉客户端，做完再打开；卸载会关掉它并删掉开机启动项。从 0.22 的旧托盘一键更新过来，打开的就是新客户端。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.changes">变化</h3><ul>
-          <li data-i18n="next.c.changes.1">相对稳定版改了什么、去掉了什么，会列在这里。</li>
+          <li data-i18n="next.c.changes.1">完成的数据迁移提醒最多显示 7 次，可以单独关闭；彩色终端里突出显示可以复制的地址和命令。</li>
+          <li data-i18n="next.c.changes.2">控制台里所有开关换成同一种组件；客户端的颜色和字号来自控制台主题。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.upgrade">升级前要知道</h3><ul>
-          <li data-i18n="next.c.upgrade.1">数据格式有没有变化、怎么退回，会写在这里。</li>
+          <li data-i18n="next.c.upgrade.1">新增一个兼容的本地存储 format-notice-delivery.json，从 0.22.0 升级不需要确认迁移。</li>
+          <li data-i18n="next.c.upgrade.2">桌面客户端还没在真实桌面上验证过托盘、通知和开机启动；macOS 版客户端还不在发布包里。</li>
         </ul></div>
       </section>
 
@@ -265,7 +269,7 @@
           <code>npm install --global fuli-context@beta &amp;&amp; fuli setup<span>npm</span></code>
         </div>
         <p data-i18n="next.switchBack">想回到稳定版：去掉 FULI_NPM_PACKAGE_SPEC 再运行一次安装脚本。稳定版的版本号更低，原生 Provider 需要 fuli setup --allow-provider-downgrade。预览版升级过的数据（自动升级的，和你确认过的迁移），旧版本打不开，只能用升级前的备份恢复。</p>
-        <p class="start-links"><a data-i18n="next.release" data-preview-release class="button" href="https://github.com/JevonsCode/fuli/releases/tag/v0.22.0-beta.4">这一版的更新说明</a><a data-i18n="next.stable" data-i18n-href="next.stableUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到稳定版</a></p>
+        <p class="start-links"><a data-i18n="next.release" data-preview-release class="button" href="https://github.com/JevonsCode/fuli/releases/tag/v0.23.0-beta.1">这一版的更新说明</a><a data-i18n="next.stable" data-i18n-href="next.stableUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到稳定版</a></p>
       </section>
     </main>
 
