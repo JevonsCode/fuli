@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, symlinkSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -279,5 +279,10 @@ test('the tray package takes a complete desktop client build into client/, besid
     assert.equal(await readFile(join(output, 'client', name), 'utf8'), await readFile(join(release, name), 'utf8'));
   }
   await assert.rejects(copyDesktopClient(release, join(release, 'nested')), /separate from the tray output/);
+  // Another spelling of the same folder (a junction here; 8.3 short names on CI runners) is the same folder.
+  const alias = join(f.root, 'release-alias');
+  symlinkSync(release, alias, 'junction');
+  await assert.rejects(copyDesktopClient(release, join(alias, 'nested')), /separate from the tray output/);
+  await assert.rejects(copyDesktopClient(alias, join(release, 'nested')), /separate from the tray output/);
   await assert.rejects(copyDesktopClient('flutter-release', output), /absolute --client/);
 });

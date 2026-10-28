@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateTrayDataDir } from '../src/desktop/windows-controller.js';
+import { canonicalWindowsInstallPath } from '../src/desktop/windows-installation-context.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../src/native-runtime/windows-assets.js';
 import { isMainModule } from '../src/system/main-module.js';
 import { assertShortBuildPath } from './windows-build-path.js';
@@ -35,7 +36,9 @@ const CLIENT_REQUIRED = ['FULI.exe', 'flutter_windows.dll', 'data/icudtl.dat', '
 export async function copyDesktopClient(client, output) {
   if (typeof client !== 'string' || !isAbsolute(client)) throw new Error('Expected an absolute --client path.');
   const source = await realpath(client);
-  if (contains(source, output) || contains(output, source)) throw new Error('The desktop client must be separate from the tray output.');
+  // Both resolved: a short (8.3) or junction spelling of one must not hide the overlap.
+  const resolvedOutput = canonicalWindowsInstallPath(output);
+  if (contains(source, resolvedOutput) || contains(resolvedOutput, source)) throw new Error('The desktop client must be separate from the tray output.');
   for (const name of CLIENT_REQUIRED) {
     if (!existsSync(join(source, name))) throw new Error('The desktop client build is incomplete; missing ' + name + '. Pass the Release folder of flutter build windows.');
   }
