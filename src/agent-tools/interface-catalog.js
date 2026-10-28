@@ -44,6 +44,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('PUT /api/client-links/auto-update', 'Whether the client link manifest updates itself once a day is the person\'s setting.'),
   local('POST /api/system/update', 'Updating FULI stops its services, installs the newest package and starts them again; the person starts it from the console\'s update notice on this computer (or with fuli update). An Agent can only mention that an update is available.'),
   local('POST /api/system/client-connection/connect','Local device client configuration writes require a local user operation.'),
+  local('POST /api/system/doctor/repair', 'The doctor\'s 「自动修复」 rewrites client configurations on this computer; the person starts it from the console\'s banner. An Agent can read GET /api/system/doctor and tell the person what it found.'),
   agent('POST /api/capture', 'capture_session_knowledge'),
   agent('POST /api/subscriptions', 'subscribe_public_project'),
   agent('DELETE /api/subscriptions/:projectId', 'unsubscribe_public_project'),
@@ -165,7 +166,7 @@ export function agentInterfaceCatalog() {
       { domain: 'standing-assignments', toolNames: ['register_standing_assignment', 'find_agents'], readRoutes: ['GET /api/standing-assignments'], guidance: 'The person\'s confirmed names for kinds of work, each sent to one project and Agent. Register, correct or end one only on the person\'s words, through preview and their yes.' },
       { domain: 'agent-services', toolNames: ['report_agent_service'], readRoutes: ['GET /api/agent-services', 'GET /api/agent-services/:serviceId/log'], guidance: 'Register each long-running server you start (address, purpose, pid, command) and update it when you stop or restart it. Agent app workbenches are recorded by FULI. Only the person stops a service through FULI, deletes a record or clears a log, in the console.' },
       { domain: 'session-records', toolNames: ['read_session_records'], readRoutes: ['GET /api/session-records'], guidance: 'Only the session of the calling task. Records a turn of this session made in another project are never returned, not even as a count; the person opens the console list for them.' },
-      { domain: 'policy-and-health', toolNames: ['get_capture_policy', 'explain_settings', 'get_project_agent_coordination_policy', 'get_project_agent_recruitment_policy', 'get_graphiti_status'] },
+      { domain: 'policy-and-health', toolNames: ['get_capture_policy', 'explain_settings', 'get_project_agent_coordination_policy', 'get_project_agent_recruitment_policy', 'get_graphiti_status'], readRoutes: ['GET /api/system/doctor'], guidance: 'The doctor (体检) lists what keeps FULI from working and who fixes it: fix auto items are repaired by the person\'s 「自动修复」 in the console (POST /api/system/doctor/repair is local_user_only); fix person items need the person, such as confirming a data format migration or restarting client sessions. Read only; never confirm a migration or restart a session for them.' },
     ],
   };
 }

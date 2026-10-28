@@ -9,6 +9,7 @@ Use these as sequencing hints only. Always call `list_agent_interfaces` and insp
 | Change capture behavior (global, client or project mode; "这个项目以后别记了" is `recordProjects` with the current project's ID) | `get_capture_policy` with `projectPath` | `update_capture_policy` (with the current `taskContextToken`) saves nothing and returns `preview` and `confirmUrl`: show both word for word; the person confirms or cancels in the FULI console. No Agent call can complete it | `get_capture_policy` after the person says they confirmed |
 | Pause or resume recording of this session ("这次别记" / "继续记") | none | `update_capture_policy` with only `sessionPaused` and the current `taskContextToken`, at once and without confirmation | end the reply with the returned `agent_receipt` |
 | Turn FULI off or on for this session | none | no Agent tool: tell the person to type `/fuli stop` or `fuli stop` (`start`, `restart`, `status`) | the hook's answer is shown to the person |
+| Check whether FULI works and what needs fixing (体检) | the `policy-and-health` workflow names the read-only doctor route, `GET /api/system/doctor` on the local console | none: its 「自动修复」 (reconnecting clients that were connected before) is `local_user_only`; tell the person what the console banner lists. Items with `fix: person` (confirming a data format migration, restarting client sessions) stay theirs | the person's banner after they repair; never confirm a migration or restart a session for them |
 | Add or change durable knowledge | the narrowest knowledge search/read tool | the matching knowledge submission or decision tool | read the exact item and confirm scope/version |
 | Send a kind of work to its own project from now on ("以后 iDev 工时都交给 X") | none | `register_standing_assignment` `preview` writes nothing and returns one `restatement`: ask the user once; after a clear yes, `confirm` with the same input and `confirmationDigest` | the result says registered and assigned, not executed; do the current request, if any, as usual |
 | Correct or end such a rule ("工时以后交给 ops" / "iDev 不用再交给 X 了") | none | the same tool with `change` `retire`, `reassign` (`projectName`, `leadAgentId`; default that project's lead) or `edit_terms` (`addTerms`, `removeTerms`), naming the assignment by one of its terms in `term`: `preview`, ask once, `confirm` with the digest. Removing every term is refused; retire instead | the result's `assignment`; the project's own lead is unchanged. The person can also do it in the local console (loopback only) |
@@ -34,6 +35,7 @@ The following controls are deliberately local-user-only unless the current inter
 
 - Agent-access policy
 - device/runtime settings
+- the doctor's automatic repair of client connections
 - human preference-conflict completion
 - preference-scope confirmation
 - batch knowledge confirmation

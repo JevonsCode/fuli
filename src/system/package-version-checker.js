@@ -68,5 +68,12 @@ export function createPackageVersionChecker({
     return inFlight;
   }
 
-  return { check };
+  // The last answer without waiting on the network (null before the first
+  // one); an expired answer starts a check in the background.
+  function peek() {
+    if (!cached || now() >= expiresAt) void check();
+    return cached;
+  }
+
+  return { check, peek };
 }
