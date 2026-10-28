@@ -15,7 +15,9 @@ export async function packageWindowsTrayRelease({ tray, output } = {}) {
   for (const [name, path] of Object.entries({ tray, output })) {
     if (typeof path !== 'string' || !isAbsolute(path)) throw new Error('Expected an absolute --' + name + ' path.');
   }
-  trayInventory(tray);
+  const { entries } = trayInventory(tray);
+  // A release ships the desktop client as its tray app (scripts/build-windows-tray.js).
+  if (!entries.some(([name]) => name === 'client/FULI.exe')) throw new Error('The tray candidate has no desktop client (client/FULI.exe).');
   const version = JSON.parse(await readFile(join(tray, 'package.json'), 'utf8')).version;
   const name = trayArchiveName(version);
   const archive = join(output, name);

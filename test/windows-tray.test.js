@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, symlinkSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -260,4 +260,29 @@ test('tray asset reuse ignores only the root package version in the lockfile', a
   const changed = JSON.parse(lock('0.12.4'));
   changed.packages['node_modules/zod'].version = '3.25.77';
   assert.notDeepEqual(dependencyLock(lock('0.12.4')), dependencyLock(Buffer.from(JSON.stringify(changed))));
+});
+
+test('the tray package takes a complete desktop client build into client/, beside the launcher', async t => {
+  const { copyDesktopClient } = await import('../scripts/build-windows-tray.js');
+  const f = await fixture(t);
+  const release = join(f.root, 'flutter-release');
+  const output = join(f.root, 'tray-output');
+  await mkdir(join(release, 'data', 'flutter_assets'), { recursive: true });
+  await mkdir(output);
+  for (const name of ['FULI.exe', 'flutter_windows.dll', 'tray_manager_plugin.dll', 'data/icudtl.dat']) await writeFile(join(release, name), name);
+  await assert.rejects(copyDesktopClient(release, output), /incomplete; missing data\/app\.so/);
+  assert.equal(existsSync(join(output, 'client')), false);
+  await writeFile(join(release, 'data', 'app.so'), 'aot');
+  await writeFile(join(release, 'data', 'flutter_assets', 'AssetManifest.bin'), 'assets');
+  assert.equal(await copyDesktopClient(release, output), join(output, 'client'));
+  for (const name of ['FULI.exe', 'tray_manager_plugin.dll', 'data/app.so', 'data/flutter_assets/AssetManifest.bin']) {
+    assert.equal(await readFile(join(output, 'client', name), 'utf8'), await readFile(join(release, name), 'utf8'));
+  }
+  await assert.rejects(copyDesktopClient(release, join(release, 'nested')), /separate from the tray output/);
+  // Another spelling of the same folder (a junction here; 8.3 short names on CI runners) is the same folder.
+  const alias = join(f.root, 'release-alias');
+  symlinkSync(release, alias, 'junction');
+  await assert.rejects(copyDesktopClient(release, join(alias, 'nested')), /separate from the tray output/);
+  await assert.rejects(copyDesktopClient(alias, join(release, 'nested')), /separate from the tray output/);
+  await assert.rejects(copyDesktopClient('flutter-release', output), /absolute --client/);
 });

@@ -74,10 +74,29 @@ void main() {
       expect(parseControllerReply('').error, isNotNull);
     });
 
-    test('context names the data directory', () {
-      expect(parseControllerDataDir(jsonEncode({'ok': true, 'dataDir': r'D:\FuliData', 'logDir': r'D:\FuliData\logs'})),
-          r'D:\FuliData');
-      expect(parseControllerDataDir(jsonEncode({'ok': false, 'status': 'unknown', 'error': 'x'})), isNull);
+    test('context names the data directory and the one-client lock key', () {
+      final key = 'a' * 32;
+      final context = parseControllerContext(
+          jsonEncode({'ok': true, 'dataDir': r'D:\FuliData', 'logDir': r'D:\FuliData\logs', 'instanceKey': key}));
+      expect(context?.dataDir, r'D:\FuliData');
+      expect(context?.instanceKey, key);
+      expect(parseControllerContext(jsonEncode({'ok': false, 'status': 'unknown', 'error': 'x'})), isNull);
+      // A key that is not the controller's hex digest never names a lock.
+      expect(parseControllerContext(jsonEncode({'ok': true, 'dataDir': r'D:\FuliData', 'instanceKey': r'x\..\y'})), isNull);
+      expect(parseControllerContext(jsonEncode({'ok': true, 'dataDir': r'D:\FuliData'})), isNull);
+    });
+
+    test('a port change says what changed; a start on a reserved port says the port change fixes it', () {
+      final moved = parseControllerReply(jsonEncode({'ok': true, 'action': 'change-port', 'status': 'running',
+          'notice': 'Fuli now uses port 4321 (was 2727).',
+          'state': {'status': 'running', 'console': {'url': 'http://127.0.0.1:4321'}}}));
+      expect(moved.notice, 'Fuli now uses port 4321 (was 2727).');
+      expect(moved.consolePort, 4321);
+      expect(moved.portBlocked, isFalse);
+      final blocked = parseControllerReply(
+          jsonEncode({'ok': false, 'action': 'start', 'status': 'stopped', 'error': 'EACCES', 'portBlocked': true}));
+      expect(blocked.portBlocked, isTrue);
+      expect(blocked.error, 'EACCES');
     });
 
     test('fuli status --json is read through login-shell noise', () {

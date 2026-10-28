@@ -14,13 +14,16 @@ dependencies:
   window_manager: ^0.5.2
   local_notifier: ^0.1.6
   url_launcher: ^6.3.3
+  ffi: ^2.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  image: ^4.12.0
 
 flutter:
   uses-material-design: true
   assets:
     - assets/tray/
+    - assets/app/

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fuli_desktop/src/api/fuli_api.dart';
 import 'package:fuli_desktop/src/app/fuli_condition.dart';
@@ -13,6 +15,16 @@ const zh = Strings(chinese: true);
 
 const codexOutdated = DoctorItem(id: 'client-codex', kind: 'client_outdated', severity: DoctorSeverity.warning,
     fix: DoctorFix.auto, data: {'clientId': 'codex', 'label': 'Codex'});
+
+/// A runtime whose start finishes when the test says so.
+class _GatedRuntime extends FixedRuntime {
+  _GatedRuntime(this.started) : super(const RuntimeReport(RuntimeState.stopped));
+
+  final Future<RuntimeReport> started;
+
+  @override
+  Future<RuntimeReport> start() => started;
+}
 
 void main() {
   late RecordingNotifier notifier;
@@ -166,6 +178,47 @@ void main() {
     expect(controller.notice!.error, isTrue);
     expect(controller.notice!.text, '没有启动成功：port 4100 is in use');
     expect(controller.pending, isNull);
+  });
+
+  test('a start on a port Windows reserves points to the port change', () async {
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'EACCES 127.0.0.1:2727', portBlocked: true));
+    final controller = controllerFor(DemoFuliApi()..reachable = false, runtime);
+    await controller.start();
+    expect(controller.notice!.error, isTrue);
+    expect(controller.notice!.text, contains('换一个端口'));
+    expect(controller.notice!.text, contains('EACCES 127.0.0.1:2727'));
+  });
+
+  test('the port change runs the controller, reports the new port and checks there', () async {
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.running, notice: '已改用端口 4321（原 2727）。'), port: 4321);
+    final ports = <int>[];
+    final controller = controllerFor(DemoFuliApi(), runtime, ports: ports);
+    await controller.changePort();
+    expect(runtime.calls.first, 'change-port');
+    expect(controller.notice!.error, isFalse);
+    expect(controller.notice!.text, '已改用端口 4321（原 2727）。');
+    expect(ports.last, 4321);
+
+    runtime.report = const RuntimeReport(RuntimeState.stopped, error: 'Fuli 尚未设置');
+    await controller.changePort();
+    expect(controller.notice!.error, isTrue);
+    expect(controller.notice!.text, '没有换成端口：Fuli 尚未设置');
+  });
+
+  test('an update waits for a running start before the client exits, not for other work', () async {
+    final release = Completer<RuntimeReport>();
+    final runtime = _GatedRuntime(release.future);
+    final controller = controllerFor(DemoFuliApi()..reachable = false, runtime);
+    await controller.runtimeIdle();
+    final starting = controller.start();
+    var idle = false;
+    final waiting = controller.runtimeIdle().then((_) => idle = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(idle, isFalse);
+    release.complete(const RuntimeReport(RuntimeState.running));
+    await waiting;
+    expect(idle, isTrue);
+    await starting;
   });
 
   test('applying a migration sends the digest that was shown', () async {

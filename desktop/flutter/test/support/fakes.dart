@@ -46,4 +46,13 @@ class FixedRuntime implements FuliRuntime {
     calls.add('stop');
     return report;
   }
+
+  @override
+  bool get canChangePort => true;
+
+  @override
+  Future<RuntimeReport> changePort() async {
+    calls.add('change-port');
+    return report;
+  }
 }

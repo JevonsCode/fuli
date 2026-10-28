@@ -43,6 +43,9 @@ class Strings {
   String get openFuli => _t('打开 FULI', 'Open FULI');
   String get quit => _t('退出', 'Quit');
   String get installPage => _t('打开安装页', 'Open the install page');
+  // Windows tray menu only
+  String get changePort => _t('换一个端口', 'Use another port');
+  String get launchAtLogin => _t('开机时启动', 'Launch at login');
 
   // What is running right now
   String reconnecting(String client) => _t('正在重新接入 $client…', 'Reconnecting $client…');
@@ -51,12 +54,13 @@ class Strings {
   String repairingMany(int count) => _t('正在修复 $count 件事…', 'Fixing ${_things(count)}…');
   String get starting => _t('正在启动 FULI…', 'Starting FULI…');
   String get stopping => _t('正在停止 FULI…', 'Stopping FULI…');
+  String get changingPort => _t('正在换端口并重启 FULI…', 'Moving FULI to another port and restarting it…');
   String get checkingAfterUpdate => _t('正在检查更新后的 FULI…', 'Checking FULI after the update…');
   // The steps the core reports (src/system/console-update.js).
   String updateStep(String? step, String version) => switch (step) {
         'downloading' => _t('正在下载 v$version 的安装包…', 'Downloading the v$version package…'),
         'verifying' => _t('正在校验 v$version 的安装包…', 'Verifying the v$version package…'),
-        'exitingTray' => _t('正在退出 FULI 托盘…', 'Exiting the FULI tray…'),
+        'exitingTray' => _t('正在关闭 FULI 客户端，更新后会重新打开…', 'Closing the FULI client; it opens again after the update…'),
         'installing' => _t('正在安装 v$version，FULI 会停止并重新启动…', 'Installing v$version; FULI stops and starts again…'),
         _ => _t('正在更新到 v$version…', 'Updating to v$version…'),
       };
@@ -73,6 +77,11 @@ class Strings {
       _t('FULI 还没有重新应答，稍后会再检查。', 'FULI has not answered again yet; it is checked again shortly.');
   String startFailed(String reason) => _t('没有启动成功：$reason', 'FULI did not start: $reason');
   String stopFailed(String reason) => _t('没有停止成功：$reason', 'FULI did not stop: $reason');
+  // Windows reserves some ports; the controller can move FULI to a free one.
+  String startFailedPortBlocked(String reason) => _t('没有启动成功：Windows 保留了 FULI 的端口。在托盘菜单选「换一个端口」再试。$reason',
+      'FULI did not start: Windows reserves its port. Choose Use another port in the tray menu and try again. $reason');
+  String get portChanged => _t('已换端口并重启 FULI。', 'FULI moved to another port and restarted.');
+  String portChangeFailed(String reason) => _t('没有换成端口：$reason', 'The port did not change: $reason');
   String actionFailed(String reason) => _t('没有完成：$reason', 'Did not finish: $reason');
   String sentences(String first, String second) => chinese ? '$first$second' : '$first $second';
 

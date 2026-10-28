@@ -1,17 +1,27 @@
 name: Desktop client
 
-# The Flutter desktop client (desktop/flutter). Builds are workflow artifacts
-# for testing, not release assets; they are unsigned.
+# The Flutter desktop client (desktop/flutter), and the Windows tray package
+# that ships it (.github/actions/windows-tray, the same build a release
+# attaches). Builds are workflow artifacts for testing, not release assets;
+# they are unsigned.
 on:
   pull_request:
     paths:
-      - desktop/flutter/**
+      - desktop/**
+      - scripts/build-windows-*.js
+      - scripts/package-windows-tray-release.js
+      - src/desktop/**
+      - .github/actions/windows-tray/**
       - .github/workflows/desktop-client.yml
   push:
     branches:
       - main
     paths:
-      - desktop/flutter/**
+      - desktop/**
+      - scripts/build-windows-*.js
+      - scripts/package-windows-tray-release.js
+      - src/desktop/**
+      - .github/actions/windows-tray/**
       - .github/workflows/desktop-client.yml
   workflow_dispatch:
 
@@ -75,3 +85,38 @@ jobs:
           path: desktop/flutter/build/FULI-macos.zip
           if-no-files-found: error
           retention-days: 14
+
+  # The zip a release attaches, built from this commit: the desktop client
+  # must be its only tray app (client/FULI.exe, started by the root Fuli.exe).
+  windows-tray:
+    needs: test
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci
+      - id: tray
+        uses: ./.github/actions/windows-tray
+      - name: Check the packaged tray app
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $zip = Get-ChildItem "${{ steps.tray.outputs.release }}" -Filter *.zip | Select-Object -First 1
+          $names = & "$env:SystemRoot\System32\tar.exe" -tf $zip.FullName | ForEach-Object { $_ -replace '^\./', '' }
+          foreach ($required in 'Fuli.exe', 'client/FULI.exe', 'client/flutter_windows.dll', 'client/data/app.so') {
+            if ($names -notcontains $required) { throw "The tray package is missing $required" }
+          }
+          if ($names | Where-Object { $_ -match '(?i)FuliTray|ControllerRunner' }) { throw 'The retired C# tray is still packaged' }
+          Write-Output "$($zip.Name): $($names.Count) entries; Fuli.exe launches client/FULI.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fuli-windows-tray
+          path: ${{ steps.tray.outputs.release }}
+          if-no-files-found: error
+          retention-days: 7

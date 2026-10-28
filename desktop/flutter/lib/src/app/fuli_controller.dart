@@ -69,6 +69,8 @@ class FuliController extends ChangeNotifier {
   int? _runtimePort;
   Timer? _timer;
   Future<void>? _checking;
+  // The start, stop or port change running now.
+  Future<RuntimeReport>? _runtimeCall;
   bool _disposed = false;
 
   /// Null until the first check finished.
@@ -222,18 +224,43 @@ class FuliController extends ChangeNotifier {
   Future<void> start() {
     _stoppedByPerson = false;
     return _operate(strings.starting, () async {
-      final report = await runtime.start();
-      if (report.error != null) _notice = Notice(strings.startFailed(report.error!), error: true);
+      final report = await _call(runtime.start);
+      final error = report.error;
+      if (error == null) return;
+      _notice = Notice(report.portBlocked && runtime.canChangePort ? strings.startFailedPortBlocked(error) : strings.startFailed(error),
+          error: true);
     });
   }
 
   Future<void> stop() {
     _stoppedByPerson = true;
     return _operate(strings.stopping, () async {
-      final report = await runtime.stop();
+      final report = await _call(runtime.stop);
       if (report.error != null) _notice = Notice(strings.stopFailed(report.error!), error: true);
     });
   }
+
+  /// Moves the console to a port Windows does not reserve and restarts FULI.
+  Future<void> changePort() {
+    if (!runtime.canChangePort) return Future.value();
+    _stoppedByPerson = false;
+    return _operate(strings.changingPort, () async {
+      final report = await _call(runtime.changePort);
+      // The settings file names the new port now.
+      _runtimePort = null;
+      final error = report.error;
+      _notice = error != null ? Notice(strings.portChangeFailed(error), error: true) : Notice(report.notice ?? strings.portChanged);
+    });
+  }
+
+  /// Completes once no start, stop or port change is running, so the client
+  /// can exit for an update without leaving one half done.
+  Future<void> runtimeIdle() async {
+    final call = _runtimeCall;
+    if (call != null) await call.then((_) {}, onError: (_) {});
+  }
+
+  Future<RuntimeReport> _call(Future<RuntimeReport> Function() action) => _runtimeCall = action();
 
   /// Starts the console's own update, follows its real steps and, once the
   /// new version answers, checks again and runs the automatic repairs.

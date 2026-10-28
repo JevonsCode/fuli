@@ -6,6 +6,8 @@ import { writeJsonFileAtomic } from '../storage/json-file.js';
 import { parseWindowsCommandOptions } from './windows-command-options.js';
 import { planWindowsUpdate, updateWindowsInstallation } from './windows-update.js';
 
+export const LOGIN_LAUNCH_NOT_UPDATED = '开机启动项没有跟着换版本；请在 Windows 设置的「启动应用」里检查 FULI。 / The launch-at-login entry did not follow the version change; check FULI under Startup apps in Windows Settings.';
+
 export async function runWindowsUpdateCommand(args = [], dependencies = {}) {
   const { options, yes, preview } = parseWindowsCommandOptions(args, dependencies, 'Update');
   const { resultFile, stopPids = [], ...updateOptions } = options;
@@ -18,7 +20,7 @@ export async function runWindowsUpdateCommand(args = [], dependencies = {}) {
   try {
     const plan = (dependencies.plan ?? planWindowsUpdate)(updateOptions);
     if (plan.downgrade) write('这是降版替换（--allow-downgrade）：程序换成更低的版本号，数据不变；更新前请先备份数据目录。 / This replaces Fuli with a lower version (--allow-downgrade); data is kept. Back up the data folder first.');
-    write(`更新 / Update: ${plan.current.applicationVersion} → ${plan.applicationVersion}\n程序 / Application: ${plan.installRoot}\n保留数据 / Keep data: ${plan.current.dataDir}\n请先退出 Fuli 托盘；服务会自动停止后重启。 / Exit the tray first; services will be stopped and restarted.`);
+    write(`更新 / Update: ${plan.current.applicationVersion} → ${plan.applicationVersion}\n程序 / Application: ${plan.installRoot}\n保留数据 / Keep data: ${plan.current.dataDir}\n正在运行的 FULI 桌面客户端会先关闭；服务会自动停止后重启。 / A running FULI desktop client closes first; services are stopped and restarted.`);
     const upgrade = plan.neo4jUpgrade;
     if (upgrade) write(`Neo4j ${upgrade.from} → ${upgrade.to}：切换前先备份图谱；升级后不能回退到 ${upgrade.from}。 / The graph is backed up before the switch; rolling back to Neo4j ${upgrade.from} afterwards is refused.`);
     if (preview) return { status: 'preview' };
@@ -30,7 +32,10 @@ export async function runWindowsUpdateCommand(args = [], dependencies = {}) {
     const result = await (dependencies.update ?? updateWindowsInstallation)({ ...updateOptions,
       expectedInstallationId: plan.current.installationId, expectedInventorySha256: plan.inventorySha256 }, { write, stopping });
     report({ status: 'updated', applicationVersion: result.applicationVersion, packageRoot: result.packageRoot, clients: result.clients });
-    write('已更新 / Updated: ' + result.applicationVersion + '\n请从桌面或开始菜单重新打开 Fuli。 / Reopen Fuli from Desktop or Start menu.');
+    write('已更新 / Updated: ' + result.applicationVersion);
+    write(result.desktopClient === 'reopened' ? 'FULI 桌面客户端已重新打开。 / The FULI desktop client is open again.'
+      : '可从桌面或开始菜单打开 FULI。 / Open FULI from the Desktop or Start menu.');
+    if (result.loginLaunch === 'failed') write(LOGIN_LAUNCH_NOT_UPDATED);
     // Clients keep the MCP server they started; only a restart loads this version.
     write('已打开的 Claude Code / Codex 等会话需要重启才会用上新版（更省 Token）。 / Restart open Claude Code, Codex and other client sessions to load the new version (it uses fewer tokens).');
     if (result.clients !== 'reconnected') write('客户端重新连接未完成；请检查后运行新版 setup。 / Client reconnection did not finish; inspect the installation and run setup from the new version.');

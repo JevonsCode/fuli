@@ -8,7 +8,7 @@ import 'demo_fuli.dart';
 /// Composition root of the web preview: the real window over a synthetic FULI
 /// (a browser cannot send the Host header the console requires, and has no
 /// tray). `?state=ok|needs|degraded|stopped|notfound|old` picks the scenario.
-Future<AppServices> createServices(Strings strings) async {
+Future<AppServices> createServices(Strings strings, List<String> args) async {
   final (api, runtime) = demoScenario(Uri.base.queryParameters['state'] ?? 'needs');
   final controller = FuliController(
     apiFor: (_) => api,

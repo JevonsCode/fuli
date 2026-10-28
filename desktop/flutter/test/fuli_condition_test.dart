@@ -41,6 +41,17 @@ void main() {
     expect(trayViewOf(snapshot(FuliCondition.ok), busy: true, strings: zh).toggleEnabled, isFalse);
   });
 
+  test('the port change and launch at login appear only where the platform offers them', () {
+    final plain = trayViewOf(snapshot(FuliCondition.ok), busy: false, strings: zh);
+    expect(plain.changePortEnabled, isNull);
+    expect(plain.launchAtLogin, isNull);
+    final windows = trayViewOf(snapshot(FuliCondition.ok), busy: false, strings: zh, canChangePort: true, launchAtLogin: false);
+    expect(windows.changePortEnabled, isTrue);
+    expect(windows.launchAtLogin, isFalse);
+    expect(trayViewOf(snapshot(FuliCondition.ok), busy: true, strings: zh, canChangePort: true).changePortEnabled, isFalse);
+    expect(trayViewOf(null, busy: false, strings: zh, canChangePort: true, launchAtLogin: true).launchAtLogin, isTrue);
+  });
+
   group('NotificationGate', () {
     test('stays silent on the first check, even when FULI is already broken', () {
       expect(NotificationGate().observe(FuliCondition.notRunning), isFalse);

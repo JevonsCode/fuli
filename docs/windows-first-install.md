@@ -6,12 +6,53 @@ asset bundle with the identical shrinkwrap. Keep `--output` to 80 characters or
 fewer (for example `T:\fb\tray`); a longer root leaves no room for the bundled
 Python files under Windows' 260-character limit. The builder still refreshes
 application, management page and embedded Provider source from the checkout.
+`--client` names the Release folder of the desktop client
+(`desktop/flutter`, `flutter build windows --release`, i.e.
+`desktop\flutter\build\windows\x64\runner\Release`); without the Visual Studio C++
+tools, download the `fuli-desktop-windows` artifact of the Desktop client workflow
+instead. CI builds the same package with `.github/actions/windows-tray`, for releases
+and for pull requests that touch the desktop code (artifact `fuli-windows-tray`).
+
+## Desktop client
+
+The package's tray app is the FULI desktop client: `client\FULI.exe` with its engine,
+plugin DLLs and `data\` folder, started by `Fuli.exe` at the package root. The
+launcher stays at the root because shortcuts, the launch-at-login entry and older
+versions' one-click updates open `<package>\Fuli.exe`; it accepts only
+`--background`. The retired FuliTray.exe is no longer built.
+
+- One client per Windows user and data directory. It holds the mutex
+  `Global\FuliTray-<user SID>-<instanceKey>` (`instanceKey` from
+  `windows-controller.js context`), the same name the old tray used, so updates and
+  older versions on either side find each other. A second launch sets
+  `<name>-open` (the running client shows its window) and exits.
+- Updates set `<name>-exit`; the client finishes a running start, stop or port change,
+  then exits. `Update-Fuli.cmd`, `Rollback-Fuli.cmd` and the console's one-click
+  update close a running client first and open the installed version's client
+  afterwards; `Uninstall-Fuli.cmd` closes it and does not reopen it.
+- Launch at login is on for an installed client until the person turns off
+  「开机时启动」 in the tray menu (`HKCU\Software\Fuli\DesktopClient\LaunchAtLogin`).
+  The entry is `HKCU\...\CurrentVersion\Run\FULI` =
+  `"<package>\Fuli.exe" --background` (tray icon only). Each client start points it
+  at its own version; an update or rollback points an existing entry at the version
+  it installs, or removes it when that version has no desktop client (the old tray
+  takes no arguments). Uninstall removes the entry, the client settings key and the
+  notification identity `HKCU\Software\Classes\AppUserModelId\FULI`.
+- Windows notifications use that registered identity, never a Start-menu shortcut:
+  stamping one into `Fuli.lnk` would change the installer's shortcut, and updates
+  refuse a changed shortcut.
+- The tray menu keeps the old tray's 「换一个端口」 (`windows-controller.js
+  change-port`); a start that fails on a port Windows reserves says to use it.
+- Icons come from `site/assets/fuli-logo.png` with a green, amber or red status dot:
+  `dart run tool/make_icons.dart` in `desktop/flutter`.
+
+## Installation
 
 Run `Install-Fuli.cmd` in the resulting directory and confirm its displayed paths.
 No administrator permission is requested. Defaults:
 
 - Application: `%LOCALAPPDATA%\Programs\Fuli\versions\<installation-id>`.
-- Data: `%LOCALAPPDATA%\Fuli`, created only by an explicit first tray start.
+- Data: `%LOCALAPPDATA%\Fuli`, created only by an explicit first start from the desktop client.
 - Shortcuts: current user's Windows Desktop and Start menu Programs folders.
 
 `planFirstWindowsInstall(options)` performs a read-only validation and preview.
@@ -21,7 +62,8 @@ Options are `source`, optional absolute `installRoot`/`dataDir`, and optional
 `shortcutDirectories: { desktop, startMenu }`. The bundled installer CLI exposes
 `--install-root`, `--data-dir`, `--desktop-dir`, `--start-menu-dir` and `--yes`, so
 acceptance can use isolated temporary paths. Neither entry starts services,
-configures clients, modifies PATH nor enables login startup.
+configures clients nor modifies PATH; launch at login is the desktop client's own
+(see above).
 
 `installation.json` outside the version slot and `installed-context.json` inside
 must agree on installation ID, absolute package/data paths and inventory digest.
@@ -62,6 +104,6 @@ identities created by that attempt, then removes its empty directories. Replaced
 shortcuts and unrelated files are preserved. No installed record is published
 until both shortcuts succeed. A process crash can leave an incomplete directory;
 rerunning refuses it instead of adopting or deleting it. Retain it for inspection
-or move it aside manually before retrying. Data is never removed. The existing
-tray's exit-only action continues to leave Fuli running; its stop-and-exit action
-requires the runtime to confirm a stopped state.
+or move it aside manually before retrying. Data is never removed. The desktop
+client's 「退出」 leaves Fuli running; 「停止 FULI」 requires the runtime to confirm a
+stopped state.

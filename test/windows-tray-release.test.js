@@ -105,3 +105,10 @@ test('the release script\'s zip round-trips through the update download', { skip
   const source = await downloadWindowsTrayRelease('0.12.4', scratch(t), release(files));
   assert.equal(readFileSync(join(source, 'package.json'), 'utf8'), readFileSync(join(f.source, 'package.json'), 'utf8'));
 });
+
+test('the release script refuses a tray candidate without the desktop client', { skip: process.platform !== 'win32' }, async (t) => {
+  const f = fixture(t);
+  const inventory = JSON.parse(readFileSync(join(f.source, 'tray-files.sha256.json'), 'utf8'));
+  writeFileSync(join(f.source, 'tray-files.sha256.json'), JSON.stringify(inventory.filter(([name]) => name !== 'client/FULI.exe')));
+  await assert.rejects(packageWindowsTrayRelease({ tray: f.source, output: scratch(t) }), /no desktop client/);
+});

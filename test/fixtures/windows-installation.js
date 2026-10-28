@@ -23,7 +23,7 @@ export function windowsInstallationFixture(t) {
     'runtime/python/python.exe': '', 'runtime/python/python312.zip': '',
     'runtime/python/python312._pth': 'python312.zip\n.\nLib/site-packages\nimport site\n',
     'runtime/python/Lib/site-packages/fuli_graph/app.py': '', 'runtime/node/node.exe': '',
-    'node_modules/example/index.js': '', 'src/cli.js': '', 'src/desktop/windows-controller.js': '', 'Fuli.exe': ''
+    'node_modules/example/index.js': '', 'src/cli.js': '', 'src/desktop/windows-controller.js': '', 'Fuli.exe': '', 'client/FULI.exe': ''
   };
   for (const [name, text] of Object.entries(files)) {
     mkdirSync(dirname(join(source, name)), { recursive: true }); writeFileSync(join(source, name), text);
@@ -59,8 +59,16 @@ export function installedWindowsFixture(t) {
   for (const entry of inventory) entry[1] = installationSha256(readFileSync(join(source, entry[0])));
   writeFileSync(join(source, 'tray-files.sha256.json'), JSON.stringify(inventory));
   const calls = [];
-  return { ...f, current, source, calls, options: { source, env: f.env },
-    deps: { ...f.deps, acquireLock: async () => ({ assertHeld() {}, async release() {} }), runCli: async (root, args) => { calls.push({ root, args }); return { code: 0 }; },
+  // No desktop client is open; client.events records what the switch asked of it.
+  const client = { events: [], state: 'absent' };
+  const desktopClient = {
+    close: async dataDir => { client.events.push(['close', dataDir]); return client.state; },
+    reopen: installRoot => client.events.push(['reopen', installRoot]),
+    followSwitch: async (installRoot, packageRoot) => { client.events.push(['followSwitch', installRoot, packageRoot]); return 'unchanged'; },
+    unregister: async installRoot => { client.events.push(['unregister', installRoot]); return 'removed'; }
+  };
+  return { ...f, current, source, calls, client, options: { source, env: f.env },
+    deps: { ...f.deps, desktopClient, acquireLock: async () => ({ assertHeld() {}, async release() {} }), runCli: async (root, args) => { calls.push({ root, args }); return { code: 0 }; },
       // A refused stop is retried without the production pause.
       stopping: { wait: async () => {} } } };
 }

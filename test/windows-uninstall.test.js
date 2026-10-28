@@ -120,3 +120,11 @@ test('an install root given in different case is the same installation on Window
   const plan = planWindowsUninstall({ ...f.uninstall, installRoot: f.current.installRoot.toUpperCase(), readShortcut: f.deps.readShortcut });
   assert.equal(plan.current.installationId, f.current.installationId);
 });
+
+test('uninstall closes the desktop client first and removes its Windows entries without reopening it', async t => {
+  const f = installed(t);
+  f.client.state = 'exited';
+  const result = await uninstallWindowsInstallation(f.uninstall, f.deps);
+  assert.deepEqual(f.client.events, [['close', f.current.dataDir], ['unregister', f.current.installRoot]]);
+  assert.equal(result.registrations, 'removed');
+});
