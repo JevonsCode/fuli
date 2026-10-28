@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -134,11 +135,10 @@ async function loadPolicy() {
 
 async function updatePolicy(
   field: 'askBeforeRecruitment' | 'autoReusePreviousAgent' | 'autoGrowTeam',
-  event: Event,
+  checked: boolean,
 ) {
   if (busy.value || loadError.value) return
   const previous = { ...policy.value }
-  const checked = (event.currentTarget as HTMLInputElement).checked
   policy.value = { ...policy.value, [field]: checked }
   await persistPolicy(previous)
 }
@@ -256,34 +256,24 @@ function stringValue(value: unknown) {
           <strong>{{ t('projectAgents.coordination.autoReuse') }}</strong>
           <small>{{ t('projectAgents.coordination.autoReuseMeta') }}</small>
         </span>
-        <input
-          :checked="policy.autoReusePreviousAgent"
-          :disabled="busy || !!loadError"
-          type="checkbox"
-          role="switch"
-          @change="updatePolicy('autoReusePreviousAgent', $event)"
-        />
+        <Switch :model-value="policy.autoReusePreviousAgent" :disabled="busy || !!loadError"
+          @update:model-value="updatePolicy('autoReusePreviousAgent', $event)" />
       </label>
       <label>
         <span>
           <strong>{{ t('projectAgents.coordination.askBeforeRecruitment') }}</strong>
           <small>{{ t('projectAgents.coordination.askBeforeRecruitmentMeta') }}</small>
         </span>
-        <input
-          :checked="policy.askBeforeRecruitment"
-          :disabled="busy || !!loadError"
-          type="checkbox"
-          role="switch"
-          @change="updatePolicy('askBeforeRecruitment', $event)"
-        />
+        <Switch :model-value="policy.askBeforeRecruitment" :disabled="busy || !!loadError"
+          @update:model-value="updatePolicy('askBeforeRecruitment', $event)" />
       </label>
       <label>
         <span>
           <strong>{{ t('projectAgents.team.autoGrow') }}</strong>
           <small>{{ t('projectAgents.team.autoGrowMeta') }}</small>
         </span>
-        <input :checked="policy.autoGrowTeam" :disabled="busy || !!loadError"
-          type="checkbox" role="switch" @change="updatePolicy('autoGrowTeam', $event)" />
+        <Switch :model-value="policy.autoGrowTeam" :disabled="busy || !!loadError"
+          @update:model-value="updatePolicy('autoGrowTeam', $event)" />
       </label>
     </div>
 
@@ -401,37 +391,6 @@ function stringValue(value: unknown) {
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
-.project-agent-policy-options input {
-  position: relative;
-  width: 34px;
-  height: 19px;
-  margin: 0;
-  appearance: none;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
-  background: var(--color-surface-subtle);
-  cursor: pointer;
-  transition: background-color 140ms ease-out, border-color 140ms ease-out;
-}
-.project-agent-policy-options input::after {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--color-surface);
-  box-shadow: var(--shadow-xs);
-  content: '';
-  transition: transform 140ms ease-out;
-}
-.project-agent-policy-options input:checked { border-color: var(--color-ink); background: var(--color-muted); }
-.project-agent-policy-options input:checked::after { transform: translateX(15px); }
-.project-agent-policy-options input:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 3px;
-}
-.project-agent-policy-options input:disabled { cursor: wait; opacity: .62; }
 .project-agent-policy-feedback {
   min-height: 14px;
   padding-inline: 16px;

@@ -4,7 +4,7 @@ import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { Button } from '@/components/ui/button'
-import UiToggle from '@/ui/UiToggle.vue'
+import { Switch } from '@/components/ui/switch'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { useClientLinks } from '@/features/client-links/client-links-store'
@@ -77,7 +77,7 @@ async function setAutoUpdate(enabled: boolean) {
 
       <div class="client-links-row">
         <span>{{ t('clientLinks.autoUpdate') }}</span>
-        <UiToggle :model-value="state.autoUpdate" :label="t('clientLinks.autoUpdate')" data-client-links-auto
+        <Switch :model-value="state.autoUpdate" :aria-label="t('clientLinks.autoUpdate')" data-client-links-auto
           @update:model-value="setAutoUpdate" />
       </div>
       <small>{{ t('clientLinks.autoUpdateHint') }}</small>

@@ -4,7 +4,8 @@ import { t } from '@/i18n'
 import { motionPreference, setMotionPreference } from '@/lib/motion-preference'
 import { PALETTES, palettePreference, setPalettePreference } from '@/lib/palette-preference'
 import { Button } from '@/components/ui/button'
-import { UiIconButton, UiSegmented, UiToggle } from '@/ui'
+import { Switch } from '@/components/ui/switch'
+import { UiIconButton, UiSegmented } from '@/ui'
 import { LAB_CHOICES, PAGE_TRANSITIONS, designLab, resetDesignLab, type LabChoice } from './design-lab'
 import { WORKBENCH_VARIANTS } from './workbench-variants'
 import './design-lab.css'
@@ -118,7 +119,7 @@ function reset() {
       <span class="design-lab-label">{{ t('designLab.motion') }}</span>
       <label class="design-lab-row">
         <span>{{ t('designLab.reduceMotion') }}</span>
-        <UiToggle :model-value="motionPreference === 'reduced'" :label="t('designLab.reduceMotion')"
+        <Switch :model-value="motionPreference === 'reduced'" :aria-label="t('designLab.reduceMotion')"
           @update:model-value="value => setMotionPreference(value ? 'reduced' : 'system')" />
       </label>
       <div class="design-lab-row">
@@ -131,7 +132,7 @@ function reset() {
       </div>
       <label class="design-lab-row">
         <span>{{ t('designLab.cardLift') }}</span>
-        <UiToggle v-model="designLab.cardLift" data-lab-lift :label="t('designLab.cardLift')" />
+        <Switch v-model="designLab.cardLift" data-lab-lift :aria-label="t('designLab.cardLift')" />
       </label>
     </div>
 

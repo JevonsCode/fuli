@@ -9,7 +9,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { pickerOrder, projectDisplayName, isFormalProject } from '@/features/projects/project-origin'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
-import UiToggle from '@/ui/UiToggle.vue'
+import { Switch } from '@/components/ui/switch'
 import type { CapturePolicyChange } from '@/types'
 import {
   changedProjectSwitches, failedSaveMessage, PROJECT_MODES, projectMode, projectOffSinceDay, projectRecorded,
@@ -114,7 +114,7 @@ const pendingLabel = computed(() => {
 
     <label class="capture-projects-row" data-capture-unregistered>
       <span><strong>{{ t('capture.settings.unregistered') }}</strong><small>{{ t('capture.settings.unregisteredHint') }}</small></span>
-      <UiToggle :model-value="recordsUnregistered" :label="t('capture.settings.unregistered')" :disabled="pending !== null"
+      <Switch :model-value="recordsUnregistered" :aria-label="t('capture.settings.unregistered')" :disabled="pending !== null"
         @update:model-value="value => save({ kind: 'unregistered', record: value }, { unregisteredDirectories: value ? 'capture' : 'skip' })" />
     </label>
 
