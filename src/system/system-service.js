@@ -18,6 +18,9 @@ import { createClientConnectionObserver } from './client-connection-status.js';
 import { createClientInstaller } from './client-connection-install.js';
 import { createSettingsApplier } from './settings-apply.js';
 import { consoleUpdate } from './console-update.js';
+import { createDoctor } from './doctor.js';
+import { createDoctorRepair } from './doctor-repair.js';
+import { liveMcpProcesses } from '../mcp/process-registry.js';
 
 export function createSystemService({
   paths,
@@ -49,6 +52,8 @@ export function createSystemService({
   executorAdapters = new Map(),
   versionChecker = createPackageVersionChecker(),
   update = consoleUpdate(paths.dataDir),
+  // The data format plan (migration-plan.js) the doctor reads; null without a local installation.
+  previewDataFormats = null,
   runtimeBroker = createAdaptiveRuntimeBroker({
     paths,
     settings: readAdaptiveRuntimeSettings(paths.adaptiveRuntimeSettingsPath),
@@ -98,6 +103,11 @@ export function createSystemService({
     return result;
   }
 
+  const observeClients = () => clientObserver.observe();
+  const doctor = createDoctor({ observeClients, previewDataFormats,
+    liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
+    lastUpdate: () => update.status() });
+
   return {
     getSettings,
     updateSettings,
@@ -106,7 +116,7 @@ export function createSystemService({
     clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
       format, clientConnectionConfig({ mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
-    clientConnectionStatus: () => clientObserver.observe(),
+    clientConnectionStatus: observeClients,
     connectClient: clientInstaller,
     resources: () => resourceMonitor.sample(),
     // updateKind: how the console's one-click update installs it (console-update.js).
@@ -116,6 +126,10 @@ export function createSystemService({
       const version = await versionChecker.check();
       return update.start({ version: version.updateAvailable ? version.latestVersion : null, stopProcesses });
     },
+    // FULI's 体检 and its repair of what needs no person (doctor.js, doctor-repair.js).
+    doctor: () => doctor.check(),
+    repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
+      recordClientsReconnected: (id) => update.recordClientsReconnected(id) }),
     runtimeStatus: () => runtimeBroker.status(),
     acquireRuntimeLease: (input) => runtimeBroker.acquire(input),
     refreshRuntimeLease: (leaseId) => runtimeBroker.refresh(leaseId),

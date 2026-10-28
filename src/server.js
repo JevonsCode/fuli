@@ -191,7 +191,8 @@ export async function createServer(options = {}) {
           runtimeConfigPath: localOptions.runtimeConfigPath,
           activePort: port,
           activeLan: lanEnabled,
-          executorAdapters: options.executorAdapters
+          executorAdapters: options.executorAdapters,
+          previewDataFormats: dataFormatMigrations ? () => dataFormatMigrations.preview() : null
         })
       : null);
     if (options.workerRuntimeBindings !== undefined) {

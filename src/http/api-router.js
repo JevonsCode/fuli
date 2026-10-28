@@ -5,6 +5,7 @@ import { handleGraphApiRequest } from './graph-api-router.js';
 import { handleEmployeeApiRequest } from './employee-api-router.js';
 import { handleAgentAppApiRequest } from './agent-app-api-router.js';
 import { handleDataFormatApiRequest } from './data-format-api-router.js';
+import { handleDoctorApiRequest } from './doctor-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
 import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
 import { handleProjectHierarchyRequest } from './project-hierarchy-api-router.js';
@@ -158,6 +159,10 @@ export async function handleApiRequest({
     }
     return true;
   }
+
+  // Outside the graph runtime lease: polling the doctor never wakes a
+  // sleeping provider (its graph format plan then reads as unavailable).
+  if (await handleDoctorApiRequest({ request, response, url, system })) return true;
 
   if (system && url.pathname === '/api/system/runtime' && request.method === 'GET') {
     sendJson(response, 200, system.runtimeStatus());

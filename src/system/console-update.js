@@ -32,11 +32,16 @@ export function consoleUpdate(dataDir, { packageRoot = PACKAGE_ROOT, platform = 
     const current = job.read();
     return current && { id: current.id, status: current.status, kind: current.kind ?? 'npm', fromVersion: current.fromVersion,
       targetVersion: current.targetVersion ?? null, version: current.version ?? null, step: current.step ?? null,
-      started: current.started ?? null, error: current.error ?? null, blockers: current.blockers ?? null };
+      started: current.started ?? null, error: current.error ?? null, blockers: current.blockers ?? null,
+      clients: current.clients ?? null };
   }
   return {
     kind,
     status,
+    // The doctor's repair reconnected the clients an update left unconnected.
+    recordClientsReconnected(id) {
+      return job.amend(id, { clients: 'reconnected' });
+    },
     // version: the newer version found; a tray installation downloads exactly that one.
     // stopProcesses: "PID:created" of processes the last failed update named, which the person chose to stop.
     start({ version = null, stopProcesses = [] } = {}) {
@@ -69,7 +74,10 @@ export async function runConsoleUpdate(paths, id, { update = runUpdateCommand, u
       ? await updateTray({ installation: installation(PACKAGE_ROOT), version: job.targetVersion, stopPids: job.stopPids,
         progress: step => record({ step }) })
       : await update(['--yes', ...dataDirArgs], { env, write: () => {} });
-    record({ status: result.status === 'updated' ? 'updated' : 'unchanged', version: result.version ?? null });
+    // clients: a tray update reports whether it reconnected the connected
+    // clients; an npm update fails instead when its setup does not finish.
+    record({ status: result.status === 'updated' ? 'updated' : 'unchanged', version: result.version ?? null,
+      ...(result.clients ? { clients: result.clients } : {}) });
   } catch (error) {
     record({ status: 'failed', error: String(error?.message ?? error).split('\n')[0],
       ...(error?.blockers ? { blockers: error.blockers } : {}) });

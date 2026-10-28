@@ -62,6 +62,35 @@ test('package version checker fails closed and briefly caches registry errors', 
   assert.equal(requests, 2);
 });
 
+test('peek answers at once from the cache and refreshes an expired answer in the background', async () => {
+  let now = Date.UTC(2026, 8, 3, 8);
+  let requests = 0;
+  let release;
+  const checker = createPackageVersionChecker({
+    currentVersion: '0.7.7',
+    now: () => now,
+    fetchImpl: async () => {
+      requests += 1;
+      await new Promise((resolve) => { release = resolve; });
+      return { ok: true, json: async () => ({ version: '0.7.8' }) };
+    }
+  });
+
+  // Nothing is cached yet: no answer, and the check runs without being awaited.
+  assert.equal(checker.peek(), null);
+  assert.equal(requests, 1);
+  release();
+  await checker.check();
+  assert.equal(checker.peek().latestVersion, '0.7.8');
+  assert.equal(requests, 1);
+
+  now += 6 * 60 * 60 * 1_000;
+  assert.equal(checker.peek().latestVersion, '0.7.8');
+  assert.equal(requests, 2);
+  release();
+  await checker.check();
+});
+
 test('package version checker ignores invalid registry versions', async () => {
   const checker = createPackageVersionChecker({
     currentVersion: '0.7.7',

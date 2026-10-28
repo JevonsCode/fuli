@@ -69,6 +69,20 @@ test('the tray worker journals each real step, the new version, and nothing abou
   assert.deepEqual({ status: update.status().status, version: update.status().version }, { status: 'updated', version: '99.0.0' });
 });
 
+test('the journal keeps whether a tray update reconnected the clients until a repair reconnects them', async (t) => {
+  const root = dataDir(t);
+  const update = consoleUpdate(root, { platform: 'win32', installation: () => TRAY, spawnWorker: fakeWorker([]) });
+  const { id } = update.start({ version: '99.0.0' });
+  assert.equal(update.recordClientsReconnected(id), false, 'a running update is never amended');
+  await runConsoleUpdate({ dataDir: root }, id, { env: {}, installation: () => TRAY,
+    updateTray: async () => ({ status: 'updated', version: '99.0.0', clients: 'not_reconnected' }),
+    control: { consoleRunning: async () => assert.fail('not checked'), start: async () => assert.fail('not started') } });
+  assert.deepEqual({ status: update.status().status, clients: update.status().clients }, { status: 'updated', clients: 'not_reconnected' });
+  assert.equal(update.recordClientsReconnected('another-update'), false);
+  assert.equal(update.recordClientsReconnected(id), true);
+  assert.deepEqual({ status: update.status().status, clients: update.status().clients }, { status: 'updated', clients: 'reconnected' });
+});
+
 test('a tray update blocked by a FULI process names it, and only that process may be picked to stop on the next try', async (t) => {
   const root = dataDir(t);
   const spawned = [];

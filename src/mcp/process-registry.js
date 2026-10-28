@@ -21,21 +21,27 @@ export function registerMcpProcess(runtimeConfigPath, { sourceApplication, versi
   return () => { try { rmSync(path, { force: true }); } catch { /* best effort */ } };
 }
 
-// Live servers of this client that run a different version; files of exited
-// processes are removed on the way.
-export function outdatedMcpProcesses(runtimeConfigPath, { sourceApplication, version, isAlive = alive }) {
+// Every live server's record ({ pid, version, sourceApplication, startedAt });
+// files of exited processes are removed on the way.
+export function liveMcpProcesses(runtimeConfigPath, { isAlive = alive } = {}) {
   let names;
   try { names = readdirSync(directory(runtimeConfigPath)); } catch { return []; }
-  const outdated = [];
+  const live = [];
   for (const name of names.filter(item => /^\d+\.json$/.test(item))) {
     const path = join(directory(runtimeConfigPath), name);
     try {
       const record = JSON.parse(readFileSync(path, 'utf8'));
       if (!isAlive(record.pid)) { rmSync(path, { force: true }); continue; }
-      if (record.sourceApplication === sourceApplication && record.version !== version) outdated.push(record);
+      live.push(record);
     } catch { /* unreadable entry: skip */ }
   }
-  return outdated;
+  return live;
+}
+
+// Live servers of this client that run a different version.
+export function outdatedMcpProcesses(runtimeConfigPath, { sourceApplication, version, isAlive = alive }) {
+  return liveMcpProcesses(runtimeConfigPath, { isAlive })
+    .filter(record => record.sourceApplication === sourceApplication && record.version !== version);
 }
 
 // The one-time notice for this session, or null. Shown again only when the

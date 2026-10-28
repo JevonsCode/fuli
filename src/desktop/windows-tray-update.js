@@ -19,7 +19,7 @@ const TRAY_EXIT_TIMEOUT_MS = 200_000;
 const UPDATE_TIMEOUT_MS = 30 * 60_000;
 
 // installation: the installed record (installation.json) of this package.
-// Returns { status: 'updated', version }; throws with .blockers when running
+// Returns { status: 'updated', version, clients }; throws with .blockers when running
 // FULI processes blocked the switch.
 export async function updateWindowsTrayFromRelease({ installation, version, stopPids = [], progress = () => {} }, {
   download = downloadWindowsTrayRelease, exitTray = requestWindowsTrayExit, runUpdate = runPackagedUpdate,
@@ -38,7 +38,9 @@ export async function updateWindowsTrayFromRelease({ installation, version, stop
     const code = await runUpdate(source, ['--yes', '--install-root', installation.installRoot, '--result-file', resultFile,
       ...(stopPids.length ? ['--stop-pid', stopPids.join(',')] : [])]);
     const result = readJsonFile(resultFile, null);
-    if (result?.status === 'updated') return { status: 'updated', version: result.applicationVersion };
+    // clients: whether Update-Fuli reconnected the already connected clients
+    // ('reconnected' or 'not_reconnected'); the console's doctor reads it from the journal.
+    if (result?.status === 'updated') return { status: 'updated', version: result.applicationVersion, clients: result.clients ?? null };
     throw Object.assign(new Error(result?.error ?? `The update ended without an outcome (exit ${code}); nothing was reported.`),
       result?.blockers ? { blockers: result.blockers } : {});
   } finally {

@@ -31,6 +31,7 @@ beforeEach(() => {
     if (url === '/api/agent-pins?personalSpaceId=personal-1') return { revision: 1, agentIds: pinnedIds }
     if (url === '/api/project-agents/agent-a?personalSpaceId=personal-1')
       return { agentId: 'agent-a', personalSpaceId: 'personal-1', profile: { name: 'Ada', displayName: 'Ada' } }
+    if (url === '/api/system/doctor') return { checkedAt: '', version: '0.20.0', overall: 'ok', items: [], unchecked: [] }
     if (url === '/api/system/version') return { status: 'unavailable', currentVersion: '0.20.0', latestVersion: null, updateAvailable: false, packageUrl: '', checkedAt: '' }
     throw new Error(`Unexpected request: ${url}`)
   })
