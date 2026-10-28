@@ -4,10 +4,9 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateTrayDataDir } from '../src/desktop/windows-controller.js';
-import { canonicalWindowsInstallPath } from '../src/desktop/windows-installation-context.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../src/native-runtime/windows-assets.js';
 import { isMainModule } from '../src/system/main-module.js';
 import { assertShortBuildPath } from './windows-build-path.js';
@@ -35,9 +34,10 @@ const CLIENT_REQUIRED = ['FULI.exe', 'flutter_windows.dll', 'data/icudtl.dat', '
 
 export async function copyDesktopClient(client, output) {
   if (typeof client !== 'string' || !isAbsolute(client)) throw new Error('Expected an absolute --client path.');
+  // Both resolved by the same native realpath, which also expands 8.3 short
+  // names (realpathSync keeps them): no spelling of one may hide the overlap.
   const source = await realpath(client);
-  // Both resolved: a short (8.3) or junction spelling of one must not hide the overlap.
-  const resolvedOutput = canonicalWindowsInstallPath(output);
+  const resolvedOutput = await resolvedFuturePath(output);
   if (contains(source, resolvedOutput) || contains(resolvedOutput, source)) throw new Error('The desktop client must be separate from the tray output.');
   for (const name of CLIENT_REQUIRED) {
     if (!existsSync(join(source, name))) throw new Error('The desktop client build is incomplete; missing ' + name + '. Pass the Release folder of flutter build windows.');
@@ -45,6 +45,15 @@ export async function copyDesktopClient(client, output) {
   const target = join(output, CLIENT_DIRECTORY);
   await cp(source, target, { recursive: true, dereference: true, errorOnExist: true, force: false });
   return target;
+}
+
+// A path that may not exist yet, through the real path of its nearest existing ancestor.
+async function resolvedFuturePath(path) {
+  try { return await realpath(path); }
+  catch (error) {
+    if (error.code !== 'ENOENT' || dirname(path) === path) throw error;
+    return join(await resolvedFuturePath(dirname(path)), basename(path));
+  }
 }
 
 export async function buildWindowsTray({ assetBundle, client, output, dataDir, compiler } = {}) {
