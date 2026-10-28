@@ -1,0 +1,77 @@
+name: Desktop client
+
+# The Flutter desktop client (desktop/flutter). Builds are workflow artifacts
+# for testing, not release assets; they are unsigned.
+on:
+  pull_request:
+    paths:
+      - desktop/flutter/**
+      - .github/workflows/desktop-client.yml
+  push:
+    branches:
+      - main
+    paths:
+      - desktop/flutter/**
+      - .github/workflows/desktop-client.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: desktop/flutter
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.9
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.9
+          cache: true
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fuli-desktop-windows
+          path: desktop/flutter/build/windows/x64/runner/Release/
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.9
+          cache: true
+      - run: flutter pub get
+      - run: flutter build macos --release
+      # Zipped with ditto: an artifact upload would drop the framework symlinks inside FULI.app.
+      - run: ditto -c -k --keepParent build/macos/Build/Products/Release/FULI.app build/FULI-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fuli-desktop-macos
+          path: desktop/flutter/build/FULI-macos.zip
+          if-no-files-found: error
+          retention-days: 14
