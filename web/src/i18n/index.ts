@@ -40,6 +40,7 @@ import { captureMessages } from './messages/capture'
 import { clientLinksMessages } from './messages/client-links'
 import { taskBlockerMessages } from './messages/task-blocker'
 import { taskReasonMessages } from './messages/task-reason'
+import { doctorMessages } from './messages/doctor'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -113,6 +114,7 @@ export const messages = {
     clientLinks: clientLinksMessages['zh-CN'],
     taskBlocker: taskBlockerMessages['zh-CN'],
     taskReason: taskReasonMessages['zh-CN'],
+    doctor: doctorMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
     common: commonMessages['zh-CN'],
@@ -157,6 +159,7 @@ export const messages = {
     clientLinks: clientLinksMessages['en-US'],
     taskBlocker: taskBlockerMessages['en-US'],
     taskReason: taskReasonMessages['en-US'],
+    doctor: doctorMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],
     common: commonMessages['en-US'],

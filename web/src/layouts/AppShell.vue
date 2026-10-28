@@ -6,6 +6,7 @@ import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
 import DesignLabPanel from '@/features/design-lab/DesignLabPanel.vue'
+import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
@@ -99,6 +100,9 @@ watchEffect(() => {
           </div>
         </div>
       </header>
+      <div class="app-feedback-row app-doctor-row">
+        <div class="app-feedback-inner"><DoctorBanner /></div>
+      </div>
       <NavigationRecovery />
       <div v-if="store.feedback" class="app-feedback-row">
         <div class="app-feedback-inner">
@@ -126,6 +130,8 @@ watchEffect(() => {
 .app-title { min-width: 0; margin: 0; font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.01em; overflow-wrap: anywhere; }
 .app-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .app-feedback-row { flex: 0 0 auto; padding: 0 var(--page-gutter) 8px; }
+/* The doctor's row takes no space while FULI needs nothing from the person. */
+.app-doctor-row:has(> .app-feedback-inner:empty) { display: none; }
 /* Canvas and form pages: the top bar and feedback line up with the page's
    centred column. Both rows reserve the same scrollbar gutter as the page's
    scroll container, so the title starts exactly where the content does. A
