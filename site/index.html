@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f6f5f1">
     <title data-i18n="meta.title">FULI 复利 · AI Agent 记忆与跨客户端协作</title>
-    <meta data-i18n-content="meta.description" name="description" content="FULI 复利通过标准 MCP 连接 AI 客户端，让长期 Agent 延续身份、记忆与项目职责。内置 Jefa 项目经理、Bole AR（Agent Resources）和决策员 Tonborg，按你的偏好协作。">
+    <meta data-i18n-content="meta.description" name="description" content="FULI 复利通过标准 MCP 连接 AI 客户端，让长期 Agent 延续身份、记忆与项目职责。任何目录都能叫到你的 Agent，圆桌像聊天一样，每个项目自带经理和看板，Tonborg 每次判断都说明原因。">
     <meta data-i18n-content="meta.title" property="og:title" content="FULI 复利 · AI Agent 记忆与跨客户端协作">
-    <meta data-i18n-content="meta.social" property="og:description" content="换工具不换搭档。长期 Agent 保留记忆，圆桌连接协作，Tonborg 按你的偏好协助判断。">
+    <meta data-i18n-content="meta.social" property="og:description" content="换工具不换搭档。任何目录都能叫到你的 Agent，圆桌像聊天一样，Tonborg 每次判断都说明原因。">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://xn--8ovp9s.xn--m8txu.com/fuli/">
     <meta property="og:image" content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/fuli-logo.png">
@@ -73,7 +73,7 @@
           <div class="diagram-overlay team-overlay" data-overlay="team">
             <svg class="links" aria-hidden="true"><path data-from="0" data-to="9" /><path data-from="3" data-to="9" /><path data-from="6" data-to="9" /><path data-from="9" data-to="10" /><path data-from="9" data-to="11" /></svg>
             <span data-i18n="diagram.pm" class="tag tag-fixed" data-anchor="0">Jefa · 项目经理</span>
-            <span data-i18n="diagram.hr" class="tag tag-fixed" data-anchor="3">Bole · AR</span>
+            <span data-i18n="diagram.hr" class="tag tag-fixed" data-anchor="3">Bole · Agent 资源</span>
             <span data-i18n="diagram.judge" class="tag tag-fixed" data-anchor="6">Tonborg · 判断</span>
             <span data-i18n-html="diagram.lead" class="tag tag-lead" data-anchor="9" data-place="right">项目小组<small>负责人带队</small></span>
             <span data-i18n="diagram.members" class="tag" data-anchor="10" data-place="below">成员按专长协作 · 各自保留记忆</span>
@@ -95,7 +95,7 @@
             <div class="chapter-copy">
 
               <h1 data-i18n-html="hero.title" id="hero-title">让每一次协作，<br>都产生<em>复利</em>。</h1>
-              <p data-i18n="hero.description" class="lede">Fuli 给你的每个任务安排一位长期 Agent。它记得你的品味与判断，在接入的 AI 客户端之间接续工作，遇到问题还能直接去问别的 Agent。</p>
+              <p data-i18n="hero.description" class="lede">Fuli 给你的每个任务安排一位长期 Agent，在任何目录都能叫到它。圆桌像聊天一样，项目有自己的经理和看板，Tonborg 每次判断都说明原因。</p>
               <div class="hero-actions">
                 <div class="terminal" data-copy="npm install --global fuli-context && fuli setup">
                   <code><span>$</span> npm install --global fuli-context</code>
@@ -111,14 +111,14 @@
 
           <section class="chapter" id="agents" data-scene="owner" aria-labelledby="agents-title">
             <div class="chapter-copy">
-              <p data-i18n="agents.eyebrow" class="eyebrow">每个任务</p>
-              <h2 data-i18n-html="agents.title" id="agents-title">散落的经验，<br><em>拼成一位负责的 Agent。</em></h2>
-              <p data-i18n="agents.description">在项目目录里直接提需求。Fuli 登记项目、请 AR（Agent Resources）安排一位负责人，之后这个项目的任务都由它接手。做完时，回复最后一行写清楚谁负责、谁协助。</p>
+              <p data-i18n="agents.eyebrow" class="eyebrow">你的 Agent</p>
+              <h2 data-i18n-html="agents.title" id="agents-title">在哪个目录，<br><em>都能叫到你的 Agent。</em></h2>
+              <p data-i18n="agents.description">在任何目录里用 @名字 或 #FLA，让你的某位 Agent 接着做；Agent 卡片上可以「复制 #FLA」，还给出几句可以直接用的说法。每个新 Agent 都有不重复的人名和固定的角色头像，岗位写在职业和职责里。说一次「以后这类工作交给某个项目」，确认后，命中关键词的任务都交给它的组长。</p>
             </div>
             <figure data-i18n-aria-label="agents.example" class="window static-figure" aria-label="示例：接入 Fuli 的 AI 客户端中一次任务的结尾">
               <div class="window-bar"><i></i><i></i><i></i><span data-i18n="agents.client">AI 客户端 · 示例</span></div>
               <div class="window-body">
-                <p data-i18n="agents.request" class="msg user">修一下登录页记住密码失效的问题</p>
+                <p data-i18n="agents.request" class="msg user">@Milo Reed 修一下登录页记住密码失效的问题</p>
                 <p data-i18n-html="agents.reply" class="msg agent">已修复：<code>session.ts</code> 在刷新令牌时覆盖了 remember 标记。补了 2 个测试，均通过。</p>
                 <p data-i18n-html="agents.receipt" class="receipt">FULI Agent：负责人 <a>Milo Reed</a> · 协作 <a>Jefa</a>、<a>Nova Lane</a></p>
               </div>
@@ -130,7 +130,7 @@
             <div class="chapter-copy">
               <p data-i18n="handoff.eyebrow" class="eyebrow">跨工具接续</p>
               <h2 data-i18n-html="handoff.title" id="handoff-title">换 AI 工具，<br><em>不用换搭档。</em></h2>
-              <p data-i18n="handoff.description">同一位 Agent 的职责、工作记忆和已保存的对话都留在 Fuli。换到另一个已接入的 MCP 客户端，用名字或 FLA 编号找到它，就能取回相关脉络，接着做。</p>
+              <p data-i18n="handoff.description">同一位 Agent 的职责、工作记忆和对话都留在 FULI。OpenCode 2.x 通过插件进入任务入口和收尾，有自己的来源（它的对话还不会自动采集）。WSL 里的客户端路径会正确转换，可以连到 Windows 上的 FULI；控制台里每个客户端旁边有「更新接入」和「重新接入」。</p>
             </div>
             <figure data-i18n-aria-label="handoff.example" class="handoff static-figure" aria-label="示例：在两个已接入的 MCP 客户端之间继续工作">
               <div class="window small">
@@ -141,7 +141,7 @@
               <div class="window small">
                 <div class="window-bar"><i></i><i></i><i></i><span data-i18n="diagram.clientB">AI 客户端 B</span></div>
                 <div class="window-body">
-                  <p data-i18n="handoff.request" class="msg user">找 Milo Reed，继续昨天的登录重构</p>
+                  <p data-i18n="handoff.request" class="msg user">@Milo Reed 继续昨天的登录重构</p>
                   <p data-i18n="handoff.reply" class="msg agent">接着做：接口已拆好，剩前端接入和回归测试。</p>
                 </div>
               </div>
@@ -151,17 +151,17 @@
           <section class="chapter roundtable-chapter" id="roundtable" data-scene="roundtable" aria-labelledby="roundtable-title">
             <div class="chapter-copy">
               <p data-i18n="nav.roundtable" class="eyebrow">圆桌</p>
-              <h2 data-i18n-html="roundtable.title" id="roundtable-title">Agent 之间，<br><em>直接对话。</em></h2>
-              <p data-i18n="roundtable.description">Agent 可以在圆桌向另一位 Agent 提问，往来全程留痕。客户端支持唤醒时，Fuli 带回原会话的回答；否则消息留在收件箱，等对方下次接手。不用建群，也不用你转述。</p>
+              <h2 data-i18n-html="roundtable.title" id="roundtable-title">圆桌，<br><em>像聊天一样。</em></h2>
+              <p data-i18n="roundtable.description">对话变成聊天界面：你的消息在右边，每位 Agent 的在左边。「留言板」等它下次工作时回复，「即时对话」马上唤醒它回答。每条消息写明每位收件人的实际状态，唤醒不了时说明原因。用 @FLG 一次请 2–4 位 Agent，在圆桌里各自只读作答。</p>
             </div>
             <figure data-i18n-aria-label="roundtable.example" class="thread static-figure" aria-label="示例：两个 Agent 之间的对话记录">
               <div class="thread-msg">
                 <span class="face">M</span>
-                <div><p data-i18n-html="roundtable.from" class="by"><b>Milo Reed</b><em>客户端 A</em> 发给 Nova Lane</p><p data-i18n="roundtable.question" class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
+                <div><p data-i18n-html="roundtable.from" class="by"><b>Milo Reed</b><em>即时对话</em> 发给 Nova Lane</p><p data-i18n="roundtable.question" class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
               </div>
               <div class="thread-msg reply">
                 <span class="face">N</span>
-                <div><p data-i18n-html="roundtable.to" class="by"><b>Nova Lane</b><em>客户端 B</em> 接手后回答</p><p data-i18n="roundtable.answer" class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
+                <div><p data-i18n-html="roundtable.to" class="by"><b>Nova Lane</b><em>已唤醒</em> 马上回答</p><p data-i18n="roundtable.answer" class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
               </div>
               <figcaption data-i18n="roundtable.caption">人名与内容均为示例</figcaption>
             </figure>
@@ -170,8 +170,8 @@
           <section class="chapter" id="taste" data-scene="taste" aria-labelledby="taste-title">
             <div class="chapter-copy">
               <p data-i18n="nav.preferences" class="eyebrow">偏好</p>
-              <h2 data-i18n-html="taste.title" id="taste-title">Tonborg，<br><em>帮你做判断。</em></h2>
-              <p data-i18n="taste.description">品味、个性与取舍原则按全局或项目保存。Tonborg 依据这些偏好，在你设定的自主程度内协助审核，并建议用什么客户端、什么模型。每次判断都有记录，点赞、点踩或补一句理由，帮助它改进后续判断。</p>
+              <h2 data-i18n-html="taste.title" id="taste-title">Tonborg，<br><em>每次判断都说明原因。</em></h2>
+              <p data-i18n="taste.description">默认判断方式可以按项目单独设置。每张等你处理的卡片都写明为什么要你确认，判断记录可以搜索全部历史。命中已知注入格式时，批准会被拦下交给你；这只是很窄的补充检查，不算注入防护。内置 Agent 的模型密钥直接在页面里填，只写不显示，每次改动都有记录。</p>
             </div>
             <figure data-i18n-aria-label="taste.example" class="layers static-figure" aria-label="偏好分为个人全局和项目两层">
               <div class="layer">
@@ -182,7 +182,7 @@
               </div>
               <div class="layer project">
                 <h3 data-i18n="taste.project">项目：shop-web</h3>
-                <p data-i18n-html="taste.rule"><span class="chip judgment">判断</span>未经确认不要推送到 main</p>
+                <p data-i18n-html="taste.rule"><span class="chip judgment">判断</span>默认判断方式：这个项目先问我</p>
                 <p data-i18n-html="taste.copy"><span class="chip taste">品味</span>文案短句，不用感叹号</p>
               </div>
             </figure>
@@ -190,13 +190,13 @@
 
           <section class="chapter" id="team" data-scene="team" aria-labelledby="team-title">
             <div class="chapter-copy">
-              <p data-i18n="team.eyebrow" class="eyebrow">团队</p>
-              <h2 data-i18n-html="team.title" id="team-title">三位专职，<br><em>一起支持项目。</em></h2>
-              <p data-i18n="team.description">每个空间自带三位专职 Agent：Jefa 项目经理管目标与进展，Bole AR（Agent Resources）负责招募与人员安排，Tonborg 负责判断。项目由一位负责人带队，成员按分工协作，各自保留记忆。</p>
+              <p data-i18n="team.eyebrow" class="eyebrow">项目管理</p>
+              <h2 data-i18n-html="team.title" id="team-title">每个项目，<br><em>自带经理和看板。</em></h2>
+              <p data-i18n="team.description">每个空间自带三位专职：Jefa 管项目，Bole 负责 Agent 资源，Tonborg 负责判断。项目可以配自己的项目经理和看板：自定义列对应内置状态，或者链接外部看板；Jefa 的看板随 FULI 安装。阻塞的任务写明在等什么、从什么时候、在哪个会话，能直接打开那个会话，在原会话继续后自动解除。「服务」页列出 Agent 启动的服务，只有你能停止。</p>
             </div>
             <div class="team static-figure">
               <div class="member"><span>🧭</span><b>Jefa</b><small data-i18n="team.pm">项目经理</small></div>
-              <div class="member"><span>🔎</span><b>Bole</b><small data-i18n="team.ar">AR（Agent Resources）</small></div>
+              <div class="member"><span>🔎</span><b>Bole</b><small data-i18n="team.ar">Agent 资源</small></div>
               <div class="member"><span>T</span><b>Tonborg</b><small data-i18n="team.judge">决策员</small></div>
               <div class="member lead"><span>M</span><b>Milo Reed</b><small data-i18n="team.owner">项目负责人 · 示例</small></div>
               <div class="member"><span>N</span><b>Nova Lane</b><small data-i18n="team.review">评审 · 示例</small></div>
@@ -206,9 +206,9 @@
 
           <section class="chapter" id="memory" data-scene="memory" aria-labelledby="memory-title">
             <div class="chapter-copy">
-              <p data-i18n="memory.eyebrow" class="eyebrow">记忆</p>
-              <h2 data-i18n-html="memory.title" id="memory-title">记住工作要点，<br><em>接着上次继续。</em></h2>
-              <p data-i18n="memory.description">每次任务的结果都会进摘要。对话攒到一定量，较早的消息折叠成要点，最近的保留原文。原始记录始终在本机，需要时再取回。</p>
+              <p data-i18n="memory.eyebrow" class="eyebrow">按需取回</p>
+              <h2 data-i18n-html="memory.title" id="memory-title">先给标题，<br><em>需要时再读正文。</em></h2>
+              <p data-i18n="memory.description">修改类的请求附上命中知识的标题索引，Agent 需要时再读正文。开始一次会话只要一次 Provider 请求；Claude Code 的任务入口按预览上限裁剪可选内容，硬规则和收尾字段始终保留。对话记忆里，较早的消息折叠成要点，最近的保留原文。</p>
             </div>
             <figure data-i18n-aria-label="memory.example" class="memory static-figure" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
               <div class="memory-digest"><b data-i18n="memory.summary">摘要</b><span data-i18n="memory.taskOne">10/08 完成 · 接口拆分</span><span data-i18n="memory.taskTwo">10/09 完成 · 补测试</span><span data-i18n="memory.earlier">更早的请求 · 6 条</span></div>
@@ -219,8 +219,8 @@
           <section class="chapter database-chapter" id="database" data-scene="database" aria-labelledby="database-title">
             <div class="chapter-copy">
               <p data-i18n="nav.database" class="eyebrow">数据库</p>
-              <h2 data-i18n-html="database.title" id="database-title">一张图，<br><em>记住所有关系。</em></h2>
-              <p data-i18n="database.description">偏好、项目、Agent、对话以及它们之间的关系，都存在你本机的 Neo4j 图数据库里，每次变化都留有历史。Agent 通过 CLI、MCP 或 HTTP 取用，每次只取当前任务需要的那一小部分。</p>
+              <h2 data-i18n-html="database.title" id="database-title">升级之前，<br><em>先知道会变什么。</em></h2>
+              <p data-i18n="database.description">从 0.20.1 升级时，图谱有一步迁移要你在「设置 → 数据格式迁移」确认，确认之前图谱只读；另一步结构变化和圆桌存储升级，会在备份后自动完成。升级后的数据旧版本打不开，退回需要升级前的备份。数据全部在你本机的 Neo4j 图数据库里，每次变化都留有历史。</p>
             </div>
             <figure data-i18n-aria-label="database.example" class="stack static-figure" aria-label="Fuli 的四层结构">
               <div><span data-i18n="architecture.clients">接入</span><b data-i18n="architecture.compatibleClients">兼容 MCP 的客户端</b></div>
@@ -232,7 +232,7 @@
         </div>
 
         <nav data-i18n-aria-label="chapters.label" class="chapter-nav" aria-label="故事章节" hidden>
-          <a data-i18n-aria-label="chapters.start" href="#top" aria-label="开始"><i></i></a><a data-i18n-aria-label="chapters.owner" href="#agents" aria-label="负责人"><i></i></a><a data-i18n-aria-label="chapters.handoff" href="#handoff" aria-label="接续"><i></i></a><a data-i18n-aria-label="chapters.roundtable" href="#roundtable" aria-label="圆桌"><i></i></a><a data-i18n-aria-label="chapters.preferences" href="#taste" aria-label="偏好"><i></i></a><a data-i18n-aria-label="chapters.team" href="#team" aria-label="团队"><i></i></a><a data-i18n-aria-label="chapters.memory" href="#memory" aria-label="记忆"><i></i></a><a data-i18n-aria-label="chapters.database" href="#database" aria-label="数据库"><i></i></a>
+          <a data-i18n-aria-label="chapters.start" href="#top" aria-label="开始"><i></i></a><a data-i18n-aria-label="chapters.owner" href="#agents" aria-label="你的 Agent"><i></i></a><a data-i18n-aria-label="chapters.handoff" href="#handoff" aria-label="接续"><i></i></a><a data-i18n-aria-label="chapters.roundtable" href="#roundtable" aria-label="圆桌"><i></i></a><a data-i18n-aria-label="chapters.preferences" href="#taste" aria-label="偏好"><i></i></a><a data-i18n-aria-label="chapters.team" href="#team" aria-label="项目管理"><i></i></a><a data-i18n-aria-label="chapters.memory" href="#memory" aria-label="按需取回"><i></i></a><a data-i18n-aria-label="chapters.database" href="#database" aria-label="升级"><i></i></a>
         </nav>
       </div>
 

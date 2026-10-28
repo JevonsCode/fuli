@@ -3,12 +3,15 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parseHTML } from 'linkedom';
 import { createSitePages } from '../scripts/build-site.js';
-import { messages as homeMessages, sceneMessages as homeScenes } from '../site/translations.js';
+import { sceneMessages as homeScenes } from '../site/translations.js';
 import { messages, sceneMessages } from '../site/next/translations.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
-const { version } = JSON.parse(read('../package.json'));
-const files = createSitePages({ home: read('../site/index.html'), preview: read('../site/next/index.html'), version });
+// The preview page is built only while the package version is a prerelease, so these
+// tests build a synthetic one; the stable package version gets the no-preview page.
+const version = '0.23.0-beta.1';
+const pages = siteVersion => createSitePages({ home: read('../site/index.html'), preview: read('../site/next/index.html'), version: siteVersion });
+const files = pages(version);
 const base = 'https://xn--8ovp9s.xn--m8txu.com/fuli/';
 const home = parseHTML(read('../site/index.html')).document;
 const installers = [
@@ -17,7 +20,7 @@ const installers = [
   'npm install --global fuli-context@beta && fuli setup',
 ];
 
-test('the preview page is built at /next/ in Chinese by default and in English, with the packaged version', () => {
+test('the preview page is built at /next/ in Chinese by default and in English, with its prerelease version', () => {
   for (const [route, locale, prefix] of [['', 'zh-CN', '../'], ['zh/', 'zh-CN', '../../'], ['en/', 'en', '../../']]) {
     const { document } = parseHTML(files.get(`next/${route}index.html`));
     assert.equal(document.documentElement.lang, locale);
@@ -51,7 +54,7 @@ test('the preview page has every part of the home page and its scroll story', ()
   assert.ok(document.querySelector('#motion-toggle'));
 });
 
-test('the preview copy covers both languages and every scene, and changes the home copy', () => {
+test('the preview copy covers both languages and every scene', () => {
   assert.deepEqual(Object.keys(messages.en).sort(), Object.keys(messages['zh-CN']).sort());
   const { document } = parseHTML(read('../site/next/index.html'));
   for (const element of document.querySelectorAll('*')) {
@@ -63,9 +66,6 @@ test('the preview copy covers both languages and every scene, and changes the ho
   for (const locale of ['en', 'zh-CN']) {
     assert.deepEqual(Object.keys(sceneMessages[locale]).sort(), Object.keys(homeScenes[locale]).sort());
     for (const labels of Object.values(sceneMessages[locale])) assert.equal(labels.length, 12);
-    for (const chapter of ['agents', 'roundtable', 'taste', 'team', 'memory', 'database']) {
-      assert.notEqual(messages[locale][chapter + '.description'], homeMessages[locale][chapter + '.description'], chapter);
-    }
   }
   assert.doesNotMatch(JSON.stringify(sceneMessages.en), /[㐀-鿿]/);
 });
@@ -103,4 +103,19 @@ test('the stable page links to the preview page in its own language', () => {
   }
   assert.equal(messages['zh-CN']['start.previewUrl'], base + 'next/');
   assert.equal(messages.en['start.previewUrl'], base + 'next/en/');
+});
+
+test('a stable version has no newer preview, so /next/ says so and links home in its language', () => {
+  const site = pages('0.22.0');
+  for (const [route, locale] of [['', 'zh-CN'], ['zh/', 'zh-CN'], ['en/', 'en']]) {
+    const { document } = parseHTML(site.get(`next/${route}index.html`));
+    assert.equal(document.documentElement.lang, locale);
+    assert.match(document.querySelector('meta[name="robots"]').content, /noindex/);
+    assert.equal(document.querySelector('link[rel="canonical"]').href, base + route);
+    assert.ok(document.querySelector('main p').textContent.includes('0.22.0'));
+    assert.deepEqual([...document.querySelectorAll('a')].map(link => link.href), [base + route]);
+    assert.equal(document.querySelector('.preview-changes, [data-preview-version], .terminal'), null);
+    if (locale === 'en') assert.doesNotMatch(document.documentElement.textContent, /[㐀-鿿]/);
+  }
+  assert.doesNotMatch(site.get('sitemap.xml'), /\/next\//);
 });
