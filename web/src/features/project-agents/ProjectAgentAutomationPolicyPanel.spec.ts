@@ -28,18 +28,18 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     patchJson.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     const wrapper = mountPanel()
     await flushPromises()
-    await switchFor(wrapper, 'projectAgents.coordination.autoReuse').setValue(false)
+    await switchFor(wrapper, 'projectAgents.coordination.autoReuse').trigger('click')
     await wrapper.setProps({ personalProjectId: 'project-b' })
     await flushPromises()
     finish({ autoReusePreviousAgent: false })
     await flushPromises()
-    expect(switchFor(wrapper, 'projectAgents.coordination.autoReuse').element.checked).toBe(true)
+    expect(switchFor(wrapper, 'projectAgents.coordination.autoReuse').attributes('aria-checked')).toBe('true')
   })
   it('disables writes when the policy could not be read', async () => {
     getJson.mockRejectedValueOnce(new Error('offline'))
     const wrapper = mountPanel()
     await flushPromises()
-    expect(wrapper.findAll<HTMLInputElement>('input[role="switch"]').every(input => input.element.disabled)).toBe(true)
+    expect(wrapper.findAll('[role="switch"]').every(input => input.attributes('disabled') !== undefined)).toBe(true)
   })
   beforeEach(() => {
     getJson.mockReset()
@@ -77,9 +77,9 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     expect(getJson).toHaveBeenCalledWith(
       '/api/project-agent-coordination-policy?personalSpaceId=personal-1&personalProjectId=activity-intake',
     )
-    expect(wrapper.findAll<HTMLInputElement>('input[role="switch"]')).toHaveLength(3)
-    expect(wrapper.findAll<HTMLInputElement>('input[role="switch"]').every(
-      ({ element }) => element.checked,
+    expect(wrapper.findAll('[role="switch"]')).toHaveLength(3)
+    expect(wrapper.findAll('[role="switch"]').every(
+      sw => sw.attributes('aria-checked') === 'true',
     )).toBe(true)
   })
 
@@ -87,7 +87,7 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await switchFor(wrapper, 'projectAgents.coordination.autoReuse').setValue(false)
+    await switchFor(wrapper, 'projectAgents.coordination.autoReuse').trigger('click')
     await flushPromises()
 
     expect(patchJson).toHaveBeenCalledWith('/api/project-agent-coordination-policy', {
@@ -106,17 +106,17 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     await flushPromises()
 
     const reuseSwitch = switchFor(wrapper, 'projectAgents.coordination.autoReuse')
-    await reuseSwitch.setValue(false)
+    await reuseSwitch.trigger('click')
     await flushPromises()
 
-    expect(reuseSwitch.element.checked).toBe(true)
+    expect(reuseSwitch.attributes('aria-checked')).toBe('true')
     expect(wrapper.get('[role="alert"]').text()).toContain('策略暂时无法保存')
   })
 
   it('can disable automatic team growth without changing selection or recruitment', async () => {
     const wrapper = mountPanel()
     await flushPromises()
-    await switchFor(wrapper, 'projectAgents.team.autoGrow').setValue(false)
+    await switchFor(wrapper, 'projectAgents.team.autoGrow').trigger('click')
     await flushPromises()
     expect(patchJson.mock.lastCall?.[1]).toMatchObject({ autoGrowTeam: false,
       autoReusePreviousAgent: true, askBeforeRecruitment: true })
@@ -219,7 +219,7 @@ function saveButton(wrapper: ReturnType<typeof mountPanel>) {
 }
 
 function switchFor(wrapper: ReturnType<typeof mountPanel>, key: string) {
-  return wrapper.findAll('label').find(label => label.text().includes(t(key)))!.get<HTMLInputElement>('input[role="switch"]')
+  return wrapper.findAll('label').find(label => label.text().includes(t(key)))!.get('[role="switch"]')
 }
 
 function agent(id: string, agentType: 'durable' | 'temporary' = 'durable'): ProjectAgentRecord {

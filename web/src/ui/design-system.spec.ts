@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ICONS } from './icons'
-import { UiAvatar, UiChipRow, UiEmpty, UiIcon, UiIconButton, UiNotice, UiSegmented, UiToggle, UiWeight, weightBand } from './index'
+import { UiAvatar, UiChipRow, UiEmpty, UiIcon, UiIconButton, UiNotice, UiSegmented, UiWeight, weightBand } from './index'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -33,14 +33,6 @@ describe('design system', () => {
     const idle = mount(UiAvatar, { props: { name: 'bole', status: 'idle' } })
     expect(idle.attributes('style') ?? '').not.toContain('--avatar-phase')
     expect(idle.attributes('data-status')).toBe('idle')
-  })
-
-  it('switches with real switch semantics', async () => {
-    const toggle = mount(UiToggle, { props: { modelValue: false, label: 'Capture' } })
-    const button = toggle.get('[role="switch"]')
-    expect(button.attributes('aria-checked')).toBe('false')
-    await button.trigger('click')
-    expect(toggle.emitted('update:modelValue')?.[0]).toEqual([true])
   })
 
   it('maps weights to the user-decided bands and marks a person confirmation', () => {

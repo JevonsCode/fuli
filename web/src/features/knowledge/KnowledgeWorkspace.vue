@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import UiSelect from '@/ui/UiSelect.vue'
-import { UiToggle } from '@/ui'
+import { Switch } from '@/components/ui/switch'
 import { filterListedProjectGraph, isListedProject } from '@/features/projects/project-list-visibility'
 import {
   isLoadingPreviewEnabled,
@@ -1047,11 +1047,11 @@ function queryValues(value: unknown) {
         @update:model-value="changeSpace"
       />
       <label v-if="personalProjectsOnly" class="project-visibility-toggle">
-        <UiToggle v-model="showTemporaryProjects" :label="t('knowledge.workspace.workspace.view.showTemporaryProjects')" />
+        <Switch v-model="showTemporaryProjects" :aria-label="t('knowledge.workspace.workspace.view.showTemporaryProjects')" />
         <span>{{ t('knowledge.workspace.workspace.view.showTemporaryProjects') }}</span>
       </label>
       <label v-if="organizeAvailable" class="project-visibility-toggle">
-        <UiToggle :model-value="organize.enabled" :label="t('projects.organize.toggle')" @update:model-value="organize.setEnabled" />
+        <Switch :model-value="organize.enabled" :aria-label="t('projects.organize.toggle')" @update:model-value="organize.setEnabled" />
         <span>{{ t('projects.organize.toggle') }}</span>
       </label>
       <CreateProjectEntry v-if="personalProjectsOnly && spaceId" :space-id="spaceId" />

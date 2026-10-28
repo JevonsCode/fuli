@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 // Pages compose the design system instead of hand-building controls. These
 // counts may only go down: lower them in the same change that rebuilds a page
-// on Button / UiIconButton / UiToggle or a shadcn-vue component. 2026-10-20:
+// on Button / UiIconButton or a shadcn-vue component. 2026-10-20:
 // 43 / 3 after action buttons moved to the shared Button; 42 / 3 after the
 // Agent profile tabs moved to shadcn-vue Tabs; 36 / 3 after the knowledge view tabs
 // moved to Tabs and the preferences page's "show more" to Button, and 编排's
@@ -10,9 +10,11 @@ import { describe, expect, it } from 'vitest'
 // 28 / 3 after Bole's views moved to Tabs and its role filter to UiSegmented, and
 // Tonborg's filter moved to UiSegmented and its feedback votes to Button;
 // 27 / 3 after the task board's drag handle moved to Button (2026-10-21).
+// 27 / 0 after UiToggle and the Agent policy checkboxes moved to the shared
+// Switch (2026-10-28).
 // The rest are controls deliberately deferred to their own components (tabs,
 // toggle groups, list rows, cards, pickers).
-const BASELINE = { button: 27, switch: 3 }
+const BASELINE = { button: 27, switch: 0 }
 const HEAVY_WEIGHT_BASELINE = 114
 const templates = import.meta.glob<string>('../**/*.vue', { query: '?raw', import: 'default', eager: true })
 const outsideDesignSystem = Object.entries(templates).filter(([file]) => !file.startsWith('./')).map(([, source]) => source)
@@ -26,7 +28,7 @@ describe('design system adoption', () => {
     const button = outsideDesignSystem.reduce((sum, source) => sum + (source.match(/<button\b/g)?.length ?? 0), 0)
     const toggle = outsideDesignSystem.reduce((sum, source) => sum + (source.match(/role="switch"/g)?.length ?? 0), 0)
     expect(button, 'use Button (components/ui/button) or UiIconButton instead of a new <button>').toBeLessThanOrEqual(BASELINE.button)
-    expect(toggle, 'use Switch (components/ui/switch) or UiToggle instead of a new switch').toBeLessThanOrEqual(BASELINE.switch)
+    expect(toggle, 'use Switch (components/ui/switch) instead of a new switch').toBeLessThanOrEqual(BASELINE.switch)
   })
 
   it('keeps one button system: no legacy button classes anywhere', () => {
