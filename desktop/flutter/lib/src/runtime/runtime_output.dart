@@ -4,7 +4,8 @@ import 'fuli_runtime.dart';
 
 // Reading what FULI's own entry points print:
 // - src/desktop/windows-controller.js prints one JSON line
-//   ({ok, status, state, error} for an action, {ok, dataDir} for `context`);
+//   ({ok, status, state, error, notice, portBlocked} for an action,
+//   {ok, dataDir, logDir, instanceKey} for `context`);
 // - `fuli status --json` prints one pretty JSON object; a login shell may add
 //   its own lines around it.
 
@@ -13,17 +14,32 @@ RuntimeReport parseControllerReply(String stdout) {
   if (reply == null) return const RuntimeReport(RuntimeState.unknown, error: 'The FULI tray controller printed no result.');
   final state = reply['state'];
   final error = reply['error'];
+  final notice = reply['notice'];
   return RuntimeReport(
     _state(reply['status']),
     consolePort: state is Map ? _consolePort(state) : null,
     error: reply['ok'] == true ? null : (error is String ? error : null),
+    notice: notice is String && notice.isNotEmpty ? notice : null,
+    portBlocked: reply['portBlocked'] == true,
   );
 }
 
-String? parseControllerDataDir(String stdout) {
+/// The installation's data directory and the key of its one-client lock.
+class ControllerContext {
+  const ControllerContext({required this.dataDir, required this.instanceKey});
+
+  final String dataDir;
+  final String instanceKey;
+}
+
+ControllerContext? parseControllerContext(String stdout) {
   final reply = _lastJsonLine(stdout);
   final dataDir = reply?['dataDir'];
-  return reply?['ok'] == true && dataDir is String && dataDir.isNotEmpty ? dataDir : null;
+  final instanceKey = reply?['instanceKey'];
+  if (reply?['ok'] != true || dataDir is! String || dataDir.isEmpty) return null;
+  // windows-controller.js: the first 32 hex digits of the data directory's SHA-256.
+  if (instanceKey is! String || !RegExp(r'^[0-9a-f]{32}$').hasMatch(instanceKey)) return null;
+  return ControllerContext(dataDir: dataDir, instanceKey: instanceKey);
 }
 
 RuntimeReport parseCliStatus(String stdout) {

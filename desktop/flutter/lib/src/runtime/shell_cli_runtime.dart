@@ -59,6 +59,13 @@ class ShellCliRuntime implements FuliRuntime {
   @override
   Future<RuntimeReport> stop() => _command('fuli stop');
 
+  // The CLI has no port change; on macOS a reserved port is not a known problem.
+  @override
+  bool get canChangePort => false;
+
+  @override
+  Future<RuntimeReport> changePort() async => const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
+
   // `fuli start` and `fuli stop` print text, not JSON; the state afterwards
   // comes from `fuli status --json`.
   Future<RuntimeReport> _command(String command) async {

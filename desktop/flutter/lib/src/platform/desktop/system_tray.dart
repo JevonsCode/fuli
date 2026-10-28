@@ -7,7 +7,7 @@ import '../../l10n/strings.dart';
 import '../ports.dart';
 
 /// The tray (Windows) or menu bar (macOS) icon in three states, with the menu
-/// 打开 FULI · 打开控制台 · 启动/停止 · 退出.
+/// 打开 FULI · 打开控制台 · 启动/停止 · (Windows: 换一个端口 · 开机时启动) · 退出.
 class SystemTray with TrayListener implements TrayController {
   SystemTray({
     required this.strings,
@@ -15,6 +15,8 @@ class SystemTray with TrayListener implements TrayController {
     required this.onOpenConsole,
     required this.onToggle,
     required this.onQuit,
+    this.onChangePort,
+    this.onLaunchAtLogin,
   }) {
     trayManager.addListener(this);
   }
@@ -24,6 +26,8 @@ class SystemTray with TrayListener implements TrayController {
   final VoidCallback onOpenConsole;
   final VoidCallback onToggle;
   final VoidCallback onQuit;
+  final VoidCallback? onChangePort;
+  final ValueChanged<bool>? onLaunchAtLogin;
   TrayView? _shown;
 
   @override
@@ -37,6 +41,12 @@ class SystemTray with TrayListener implements TrayController {
       MenuItem(key: 'open', label: strings.openFuli),
       MenuItem(key: 'console', label: strings.openConsole),
       MenuItem(key: 'toggle', label: view.toggleLabel, disabled: !view.toggleEnabled),
+      if (view.changePortEnabled != null)
+        MenuItem(key: 'port', label: strings.changePort, disabled: !view.changePortEnabled!),
+      if (view.launchAtLogin != null) ...[
+        MenuItem.separator(),
+        MenuItem.checkbox(key: 'login', label: strings.launchAtLogin, checked: view.launchAtLogin),
+      ],
       MenuItem.separator(),
       MenuItem(key: 'quit', label: strings.quit),
     ]));
@@ -74,6 +84,10 @@ class SystemTray with TrayListener implements TrayController {
         onOpenConsole();
       case 'toggle':
         onToggle();
+      case 'port':
+        onChangePort?.call();
+      case 'login':
+        onLaunchAtLogin?.call(menuItem.checked != true);
       case 'quit':
         onQuit();
     }

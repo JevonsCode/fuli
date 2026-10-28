@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { compareSemanticVersions } from '../semantic-version.js';
+import { windowsDesktopClient, withWindowsClientClosed } from './windows-desktop-client.js';
 import { canonicalWindowsInstallPath } from './windows-installation-context.js';
 import { createWindowsShortcut, readWindowsShortcut, trayInventory } from './windows-installation.js';
 import { assertInstallationUnchanged, runInstalledCli, stageWindowsShortcuts, stopAndSwitchWindowsInstallation } from './windows-installation-switch.js';
@@ -21,12 +22,17 @@ export function planWindowsRollback({ installRoot, env = process.env, readShortc
 
 export async function rollbackWindowsInstallation(options, {
   runCli = runInstalledCli, createShortcut = createWindowsShortcut, readShortcut = readWindowsShortcut,
-  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping
+  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping, desktopClient = windowsDesktopClient
 } = {}) {
   const plan = planWindowsRollback({ ...options, readShortcut });
   if (options.expectedInstallationId && options.expectedInstallationId !== plan.current.installationId) {
     throw new Error('The installation changed after confirmation; review the rollback again.');
   }
+  return withWindowsClientClosed(plan, desktopClient,
+    () => switchToKeptVersion(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping }));
+}
+
+async function switchToKeptVersion(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping }) {
   const lock = await acquireLock(plan.current.dataDir);
   try {
     lock.assertHeld();

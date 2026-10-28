@@ -11,15 +11,18 @@ import 'tray_install.dart';
 // controller itself bounds each CLI call at five minutes.
 const _controllerTimeout = Duration(minutes: 10);
 
-/// Runs the tray's controller (`node.exe windows-controller.js <action>`), the
-/// same entry point FuliTray.exe uses, and reads its one-line JSON answer.
+/// Runs the tray's controller (`node.exe windows-controller.js <action>`) of
+/// the installation this client ships in, and reads its one-line JSON answer.
 class WindowsTrayRuntime implements FuliRuntime {
   WindowsTrayRuntime({required this.exeDir, required this.env});
 
   final String exeDir;
   final Map<String, String> env;
   String? _root;
-  String? _dataDir;
+  ControllerContext? _context;
+
+  /// The installation's data directory and lock key; null without one.
+  Future<ControllerContext?> context() async => await locate() ? _context : null;
 
   @override
   Future<bool> locate() async {
@@ -27,13 +30,13 @@ class WindowsTrayRuntime implements FuliRuntime {
     if (root != _root) {
       _root = root;
       // The installation names its data directory; ask once per installation.
-      _dataDir = root == null ? null : parseControllerDataDir(await _run(root, 'context'));
+      _context = root == null ? null : parseControllerContext(await _run(root, 'context'));
     }
     return root != null;
   }
 
   @override
-  Future<int> consolePort() => readConsolePort(_dataDir ?? defaultDataDir(os: 'windows', env: env));
+  Future<int> consolePort() => readConsolePort(_context?.dataDir ?? defaultDataDir(os: 'windows', env: env));
 
   @override
   Future<RuntimeReport> status() => _action('status');
@@ -43,6 +46,12 @@ class WindowsTrayRuntime implements FuliRuntime {
 
   @override
   Future<RuntimeReport> stop() => _action('stop');
+
+  @override
+  bool get canChangePort => true;
+
+  @override
+  Future<RuntimeReport> changePort() => _action('change-port');
 
   Future<RuntimeReport> _action(String action) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);

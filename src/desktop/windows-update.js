@@ -5,6 +5,7 @@ import { compareSemanticVersions } from '../semantic-version.js';
 import { canonicalWindowsInstallPath, installationSha256, readWindowsInstallation, windowsInstallPathsOverlap } from './windows-installation-context.js';
 import { createWindowsShortcut, readWindowsShortcut, trayInventory } from './windows-installation.js';
 import { assertInstallationUnchanged, installedWindowsShortcuts, runInstalledCli, stageWindowsShortcuts, stopAndSwitchWindowsInstallation } from './windows-installation-switch.js';
+import { windowsDesktopClient, withWindowsClientClosed } from './windows-desktop-client.js';
 import { acquireWindowsUpdateLock } from './windows-update-lock.js';
 import { snapshotWindowsUpdateRuntime } from './windows-update-runtime.js';
 
@@ -46,13 +47,18 @@ export function planWindowsUpdate({ source, installRoot, env = process.env, read
 
 export async function updateWindowsInstallation(options, {
   runCli = runInstalledCli, createShortcut = createWindowsShortcut, readShortcut = readWindowsShortcut,
-  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping, backupGraph
+  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping, backupGraph, desktopClient = windowsDesktopClient
 } = {}) {
   const plan = planWindowsUpdate({ ...options, readShortcut });
   if ((options.expectedInstallationId && options.expectedInstallationId !== plan.current.installationId)
       || (options.expectedInventorySha256 && options.expectedInventorySha256 !== plan.inventorySha256)) {
     throw new Error('The installation or update package changed after confirmation; review the update again.');
   }
+  return withWindowsClientClosed(plan, desktopClient,
+    () => stageAndSwitch(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping, backupGraph }));
+}
+
+async function stageAndSwitch(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping, backupGraph }) {
   const lock = await acquireLock(plan.current.dataDir);
   try {
     lock.assertHeld();

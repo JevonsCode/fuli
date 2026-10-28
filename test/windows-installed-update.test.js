@@ -192,3 +192,24 @@ test('an ordinary upgrade never passes the downgrade switch', async t => {
   await updateWindowsInstallation(f.options, f.deps);
   assert.ok(f.calls.every(call => !call.args.includes('--allow-provider-downgrade')));
 });
+
+test('an open desktop client is closed before the switch, its launch entry follows the new version and it comes back', async t => {
+  const f = fixture(t);
+  f.client.state = 'exited';
+  const next = await updateWindowsInstallation(f.options, f.deps);
+  assert.deepEqual(f.client.events, [['close', f.current.dataDir], ['followSwitch', f.current.installRoot, next.packageRoot],
+    ['reopen', f.current.installRoot]]);
+  assert.equal(next.desktopClient, 'reopened');
+  assert.equal(next.loginLaunch, 'unchanged');
+});
+
+test('a desktop client that does not close stops the update before the lock or any service action', async t => {
+  const f = fixture(t);
+  let locked = 0;
+  const desktopClient = { ...f.deps.desktopClient, close: async () => { throw new Error('The FULI desktop client did not close; nothing was changed.'); } };
+  await assert.rejects(updateWindowsInstallation(f.options, { ...f.deps, desktopClient,
+    acquireLock: async () => { locked++; return { assertHeld() {}, async release() {} }; } }), /did not close/);
+  assert.equal(locked, 0);
+  assert.deepEqual(f.calls, []);
+  assert.equal(readWindowsInstallation(f.current.packageRoot).applicationVersion, '0.12.4');
+});

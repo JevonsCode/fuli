@@ -129,6 +129,12 @@ class DemoRuntime implements FuliRuntime {
     api.reachable = false;
     return RuntimeReport(_state);
   }
+
+  @override
+  bool get canChangePort => false;
+
+  @override
+  Future<RuntimeReport> changePort() async => RuntimeReport(_state);
 }
 
 /// The preview scenarios, by name (?state=… in the web preview).

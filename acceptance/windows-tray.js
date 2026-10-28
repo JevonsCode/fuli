@@ -35,16 +35,19 @@ let running = false;
 try {
   const files = JSON.parse(await readFile(join(bundle, 'tray-files.sha256.json'), 'utf8'));
   await verifyFiles(files);
-  const exe = await readFile(join(bundle, 'Fuli.exe'));
-  assert.equal(exe.toString('ascii', 0, 2), 'MZ');
-  const pe = exe.readUInt32LE(0x3c);
-  assert.equal(exe.readUInt16LE(pe + 4), 0x8664, 'The tray shell is Windows x64');
-  assert.equal(exe.readUInt16LE(pe + 24 + 68), 2, 'The tray uses the GUI subsystem, without a console window');
+  // The launcher and the desktop client it starts.
+  for (const name of ['Fuli.exe', 'client/FULI.exe']) {
+    const exe = await readFile(join(bundle, name));
+    assert.equal(exe.toString('ascii', 0, 2), 'MZ');
+    const pe = exe.readUInt32LE(0x3c);
+    assert.equal(exe.readUInt16LE(pe + 4), 0x8664, name + ' is Windows x64');
+    assert.equal(exe.readUInt16LE(pe + 24 + 68), 2, name + ' uses the GUI subsystem, without a console window');
+  }
   const initial = await action('status');
   assert.equal(initial.ok, true);
   assert.equal(initial.status, 'not_configured');
   assert.equal(existsSync(context.dataDir), false);
-  check('complete candidate hashes and x64 GUI executable verified; status leaves a fresh external data directory absent');
+  check('complete candidate hashes and x64 GUI launcher and desktop client verified; status leaves a fresh external data directory absent');
 
   await mkdir(context.dataDir);
   await writeFile(join(context.dataDir, 'runtime-settings.json'), JSON.stringify({ ...DEFAULT_RUNTIME_SETTINGS,

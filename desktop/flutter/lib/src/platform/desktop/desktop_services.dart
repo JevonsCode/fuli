@@ -14,39 +14,89 @@ import '../url_opener.dart';
 import 'desktop_window.dart';
 import 'os_notifier.dart';
 import 'system_tray.dart';
+import 'windows_instance.dart';
+import 'windows_login_launch.dart';
 
 /// Composition root on Windows and macOS: wires the real HTTP API, FULI's
 /// own start/stop entry points, the window, the tray and notifications.
-Future<AppServices> createServices(Strings strings) async {
+/// `--background` (Windows launch at login) starts with the tray icon only.
+Future<AppServices> createServices(Strings strings, List<String> args) async {
+  final background = args.contains('--background');
+  final exeDir = File(Platform.resolvedExecutable).parent.path;
+  final runtime = _runtime(exeDir);
+  final instance = runtime is WindowsTrayRuntime ? await _claimInstance(runtime, handOver: !background) : null;
   final window = DesktopWindow();
-  await window.open();
+  await window.open(show: !background);
   const opener = BrowserUrlOpener();
   final client = http.Client();
   final controller = FuliController(
     apiFor: (port) => HttpFuliApi(port: port, client: client),
-    runtime: _runtime(),
-    notifier: await OsNotifier.create(onClick: window.show),
+    runtime: runtime,
+    notifier: await OsNotifier.create(
+        onClick: window.show, windowsIcon: '$exeDir\\data\\flutter_assets\\assets\\app\\fuli.png'),
     strings: strings,
   );
+  final loginLaunch = Platform.isWindows ? WindowsLoginLaunch.forClient(exeDir) : null;
+  bool? launchAtLogin = await _choice(loginLaunch?.apply());
   late final SystemTray tray;
+  void showTray() => tray.show(trayViewOf(controller.snapshot,
+      busy: controller.pending != null,
+      strings: strings,
+      canChangePort: runtime.canChangePort,
+      launchAtLogin: launchAtLogin));
+  Future<void> quit() async {
+    await tray.remove();
+    instance?.release();
+    await window.quit();
+  }
+
   tray = SystemTray(
     strings: strings,
     onOpen: window.show,
     onOpenConsole: () => opener.open(controller.consoleUri),
     onToggle: () => controller.snapshot?.running == true ? controller.stop() : controller.start(),
-    onQuit: () async {
-      await tray.remove();
-      await window.quit();
-    },
+    onQuit: quit,
+    onChangePort: runtime.canChangePort ? controller.changePort : null,
+    onLaunchAtLogin: loginLaunch == null
+        ? null
+        : (on) async {
+            launchAtLogin = await _choice(loginLaunch.setEnabled(on)) ?? launchAtLogin;
+            showTray();
+          },
   );
-  void showTray() => tray.show(trayViewOf(controller.snapshot, busy: controller.pending != null, strings: strings));
   controller.addListener(showTray);
   showTray();
   window.onVisibilityChanged = controller.setVisible;
+  if (background) controller.setVisible(false);
+  // An update closes the client once a start, stop or port change it runs has finished.
+  instance?.listen(onOpen: window.show, onExit: () async {
+    await controller.runtimeIdle();
+    await quit();
+  });
   controller.startPolling();
   return AppServices(controller: controller, strings: strings, opener: opener);
 }
 
-FuliRuntime _runtime() => Platform.isWindows
-    ? WindowsTrayRuntime(exeDir: File(Platform.resolvedExecutable).parent.path, env: Platform.environment)
+FuliRuntime _runtime(String exeDir) => Platform.isWindows
+    ? WindowsTrayRuntime(exeDir: exeDir, env: Platform.environment)
     : ShellCliRuntime(os: Platform.operatingSystem, env: Platform.environment);
+
+// One client per installation's data directory. A second launch shows the
+// running client's window and exits; without an installation there is
+// nothing to share and no lock.
+Future<WindowsInstance?> _claimInstance(WindowsTrayRuntime runtime, {required bool handOver}) async {
+  final context = await runtime.context();
+  if (context == null) return null;
+  final (claim, instance) = WindowsInstance.claim(context.instanceKey, handOver: handOver);
+  if (claim != InstanceClaim.owner) exit(0);
+  return instance;
+}
+
+// The registry may refuse; the menu entry then stays as it was.
+Future<bool?> _choice(Future<bool>? pending) async {
+  try {
+    return await pending;
+  } on ProcessException {
+    return null;
+  }
+}

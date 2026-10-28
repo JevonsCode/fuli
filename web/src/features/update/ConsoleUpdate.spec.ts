@@ -67,11 +67,11 @@ describe('ConsoleUpdate', () => {
     expect(label()).toBe('正在下载 v0.8.0 的 Windows 安装包…')
     api.getJson.mockResolvedValueOnce({ update: job('updating', { kind: 'windows-tray', step: 'exitingTray' }) })
     await vi.advanceTimersByTimeAsync(3000)
-    expect(label()).toBe('正在退出 FULI 托盘，当前托盘操作结束后继续…')
+    expect(label()).toBe('正在关闭 FULI 桌面客户端，它手上的操作结束后继续…')
     // FULI is stopped while the new version is installed; the last real step stays.
     api.getJson.mockRejectedValueOnce(new TypeError('Failed to fetch'))
     await vi.advanceTimersByTimeAsync(3000)
-    expect(label()).toBe('正在退出 FULI 托盘，当前托盘操作结束后继续…')
+    expect(label()).toBe('正在关闭 FULI 桌面客户端，它手上的操作结束后继续…')
     expect(wrapper.findAllComponents(GrowthLoading)).toHaveLength(1)
     api.getJson.mockResolvedValueOnce({ update: job('updated', { kind: 'windows-tray', version: '0.8.0' }) })
     await vi.advanceTimersByTimeAsync(3000)

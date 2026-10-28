@@ -22,7 +22,7 @@ test('Windows updater excludes another owner and releases its tray mutex', { ski
   } finally { rmSync(dataDir, { recursive: true, force: true }); }
 });
 
-// A stand-in tray: holds the tray mutex and exits when its "-exit" event is set, as FuliTray.cs does.
+// A stand-in tray: holds the tray mutex and exits when its "-exit" event is set, as the desktop client does (windows_instance.dart).
 function standInTray(dataDir) {
   const key = createHash('sha256').update(dataDir.toLowerCase()).digest('hex').slice(0, 32);
   const script = '$name="Global\\FuliTray-"+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value+"-' + key + '"; '

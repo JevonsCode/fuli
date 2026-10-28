@@ -92,9 +92,9 @@ BEGIN
             VALUE "CompanyName", "com.fuli" "\0"
             VALUE "FileDescription", "FULI" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "fuli_desktop" "\0"
+            VALUE "InternalName", "FULI" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.fuli. All rights reserved." "\0"
-            VALUE "OriginalFilename", "fuli_desktop.exe" "\0"
+            VALUE "OriginalFilename", "FULI.exe" "\0"
             VALUE "ProductName", "FULI" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END

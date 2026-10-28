@@ -107,3 +107,13 @@ test('the rollback command previews, asks, and binds the reviewed installation',
   assert.equal(calls[0].expectedInstallationId, 'id');
   await assert.rejects(runWindowsRollbackCommand(['--yes', '--yes'], deps), /Duplicate rollback option/);
 });
+
+test('rollback closes an open desktop client and reopens the kept version\'s app afterwards', async t => {
+  const f = await updated(t);
+  f.client.events.length = 0;
+  f.client.state = 'exited';
+  const result = await rollbackWindowsInstallation(f.rollback, f.deps);
+  assert.deepEqual(f.client.events, [['close', f.current.dataDir], ['followSwitch', f.current.installRoot, f.current.packageRoot],
+    ['reopen', f.current.installRoot]]);
+  assert.equal(result.desktopClient, 'reopened');
+});

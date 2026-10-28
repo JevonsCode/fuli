@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, rmdirSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { windowsDesktopClient } from './windows-desktop-client.js';
 import { windowsInstallPathsOverlap } from './windows-installation-context.js';
 import { readWindowsShortcut } from './windows-installation.js';
 import { assertInstallationUnchanged, requireInstalledCli, runInstalledCli } from './windows-installation-switch.js';
@@ -10,8 +11,9 @@ import { acquireWindowsUpdateLock } from './windows-update-lock.js';
 
 const SLOT = /^[a-f0-9-]{36}$/;
 
-// Removes the per-user application: services stop, Agent client integrations are
-// removed, then the record, own shortcuts and version slots. Data is never touched.
+// Removes the per-user application: the desktop client closes, services stop,
+// Agent client integrations are removed, then the record, own shortcuts, the
+// client's Windows entries and version slots. Data is never touched.
 export function planWindowsUninstall({ installRoot, env = process.env, readShortcut = readWindowsShortcut } = {}) {
   const installed = readCurrentWindowsInstallation({ installRoot, env, readShortcut, keepForeignShortcuts: true });
   const versions = join(installed.installRoot, 'versions');
@@ -23,13 +25,16 @@ export function planWindowsUninstall({ installRoot, env = process.env, readShort
 
 export async function uninstallWindowsInstallation(options, {
   runCli = runInstalledCli, readShortcut = readWindowsShortcut, acquireLock = acquireWindowsUpdateLock,
-  write = () => {}, removeAfterExit = removeWindowsDirectoriesAfterExit, runningFrom = process.execPath
+  write = () => {}, removeAfterExit = removeWindowsDirectoriesAfterExit, runningFrom = process.execPath,
+  desktopClient = windowsDesktopClient
 } = {}) {
   const plan = planWindowsUninstall({ ...options, readShortcut });
   const { current } = plan;
   if (options.expectedInstallationId && options.expectedInstallationId !== current.installationId) {
     throw new Error('The installation changed after confirmation; review the uninstall again.');
   }
+  // The running client would hold its version folder open and could start Fuli again.
+  await desktopClient.close(current.dataDir);
   const lock = await acquireLock(current.dataDir);
   try {
     lock.assertHeld();
@@ -53,6 +58,7 @@ export async function uninstallWindowsInstallation(options, {
         unlinkSync(path);
       } catch { keptShortcuts.push(path); }
     }
+    const registrations = await desktopClient.unregister(plan.installRoot);
     const pending = [];
     for (const slot of plan.slots) {
       // The running node.exe locks its own slot; it is removed once this process exits.
@@ -63,7 +69,7 @@ export async function uninstallWindowsInstallation(options, {
     for (const path of containers) removeIfEmpty(path);
     if (pending.length) await removeAfterExit(pending, containers);
     return { status: pending.length ? 'removing_after_exit' : 'removed', applicationVersion: current.applicationVersion,
-      dataDir: current.dataDir, installRoot: plan.installRoot, keptShortcuts,
+      dataDir: current.dataDir, installRoot: plan.installRoot, keptShortcuts, registrations,
       leftover: existsSync(plan.installRoot) && !pending.length ? plan.installRoot : null };
   } finally { await lock.release(); }
 }
