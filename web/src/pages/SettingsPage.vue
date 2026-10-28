@@ -10,7 +10,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { apiErrorReason, getJson, putJson } from '@/api/client'
 import UiSelect from '@/ui/UiSelect.vue'
-import UiToggle from '@/ui/UiToggle.vue'
+import { Switch } from '@/components/ui/switch'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
@@ -423,18 +423,18 @@ async function submitSettings(event: Event) {
                 <div class="setting-list">
                   <label class="setting-row">
                     <span><strong>{{ t('settings.behavior.capture') }}</strong><small>{{ t('settings.behavior.captureMeta') }}</small></span>
-                    <UiToggle :model-value="captureEnabled" :label="t('settings.behavior.capture')" @update:model-value="toggleCapture" />
+                    <Switch :model-value="captureEnabled" :aria-label="t('settings.behavior.capture')" @update:model-value="toggleCapture" />
                   </label>
                   <template v-if="captureEnabled">
                     <p class="setting-note">{{ t('settings.behavior.captureClientsMeta') }}</p>
                     <label v-for="[source, label] in CAPTURE_CLIENTS" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
                       <span><strong>{{ label }}</strong></span>
-                      <UiToggle :model-value="!captureSourceOff(captureSources, source)" :label="label" @update:model-value="toggleClientCapture(source, $event)" />
+                      <Switch :model-value="!captureSourceOff(captureSources, source)" :aria-label="label" @update:model-value="toggleClientCapture(source, $event)" />
                     </label>
                   </template>
                   <label class="setting-row" data-recall-answer-from-confirmed>
                     <span><strong>{{ t('settings.behavior.answerFromConfirmed') }}</strong><small>{{ t('settings.behavior.answerFromConfirmedMeta') }}</small></span>
-                    <UiToggle :model-value="answerFromConfirmed" :label="t('settings.behavior.answerFromConfirmed')" @update:model-value="toggleAnswerFromConfirmed" />
+                    <Switch :model-value="answerFromConfirmed" :aria-label="t('settings.behavior.answerFromConfirmed')" @update:model-value="toggleAnswerFromConfirmed" />
                   </label>
                 </div>
               </Card>
@@ -450,7 +450,7 @@ async function submitSettings(event: Event) {
                 <div class="setting-list">
                   <label class="setting-row">
                     <span><strong>{{ t('settings.behavior.agentAccess') }}</strong><small>{{ t('settings.behavior.agentAccessMeta') }}</small></span>
-                    <UiToggle :model-value="agentAccessEnabled" :label="t('settings.behavior.agentAccess')" @update:model-value="toggleAgentAccess" />
+                    <Switch :model-value="agentAccessEnabled" :aria-label="t('settings.behavior.agentAccess')" @update:model-value="toggleAgentAccess" />
                   </label>
                 </div>
               </Card>
@@ -506,7 +506,7 @@ async function submitSettings(event: Event) {
                             </span>
                             <label class="conversation-launcher-switch">
                               <span>{{ t('settings.conversationLaunchers.enabled') }}</span>
-                              <UiToggle v-model="form.conversationLaunchers[application].enabled" :label="t('settings.conversationLaunchers.enabled')" />
+                              <Switch v-model="form.conversationLaunchers[application].enabled" :aria-label="t('settings.conversationLaunchers.enabled')" />
                             </label>
                           </div>
                           <small v-if="form.conversationLaunchers[application].enabled && application === 'codex'" class="conversation-launcher-note">
@@ -568,7 +568,7 @@ async function submitSettings(event: Event) {
                 <div class="setting-list">
                   <label class="setting-row">
                     <span><strong>{{ t('settings.behavior.lanAccess') }}</strong><small>{{ t('settings.behavior.lanAccessMeta') }}</small></span>
-                    <UiToggle v-model="form.lanAccess" :label="t('settings.behavior.lanAccess')" />
+                    <Switch v-model="form.lanAccess" :aria-label="t('settings.behavior.lanAccess')" />
                   </label>
                 </div>
               </Card>
@@ -623,7 +623,7 @@ async function submitSettings(event: Event) {
                   </div>
                   <label class="setting-row">
                     <span><strong>{{ t('settings.behavior.reduceMotion') }}</strong><small>{{ t('settings.behavior.reduceMotionMeta') }}</small></span>
-                    <UiToggle data-reduce-motion :model-value="motionPreference === 'reduced'" :label="t('settings.behavior.reduceMotion')" @update:model-value="toggleReducedMotion" />
+                    <Switch data-reduce-motion :model-value="motionPreference === 'reduced'" :aria-label="t('settings.behavior.reduceMotion')" @update:model-value="toggleReducedMotion" />
                   </label>
                 </div>
               </Card>

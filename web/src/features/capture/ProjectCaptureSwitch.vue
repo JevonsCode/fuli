@@ -4,7 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
-import UiToggle from '@/ui/UiToggle.vue'
+import { Switch } from '@/components/ui/switch'
 import { failedSaveMessage, projectOffSinceDay, projectRecorded } from './project-capture'
 
 // "记忆这个项目" on a project page (rec#5 C4-1): the switch moves at once, the
@@ -46,7 +46,7 @@ async function setRecorded(value: boolean) {
   <section class="project-capture-switch" :data-project-capture="projectId" :data-recorded="recorded">
     <label class="project-capture-row">
       <strong>{{ t('capture.project.label') }}</strong>
-      <UiToggle :model-value="recorded" :label="t('capture.project.label')" :disabled="requested !== null"
+      <Switch :model-value="recorded" :aria-label="t('capture.project.label')" :disabled="requested !== null"
         @update:model-value="setRecorded" />
     </label>
     <GrowthLoading v-if="requested !== null" variant="inline" data-project-capture-pending

@@ -3,7 +3,7 @@
 // an upgrading dependency; compare with `npx shadcn-vue@2.8.2 diff switch`.
 // Local changes:
 // - `cn` comes from @/lib/class-names.
-// - FULI switch metrics in px, as UiToggle draws it (38x22 track, 16px thumb
+// - FULI switch metrics in px, as the retired UiToggle drew it (38x22 track, 16px thumb
 //   3px from the edge); upstream's 1.15rem drifts with the 14px root.
 // - The off track is the strong border colour and the thumb is the card
 //   surface with a light shadow; the on track is primary.
