@@ -41,6 +41,14 @@ export function detachedJob(path, { worker, running, spawnWorker = spawn, now = 
         }
       } catch { fail(); }
       return read();
+    },
+    // Adds fields to the job with this ID once its worker is done; false when
+    // the journal now holds another job.
+    amend(id, fields) {
+      const job = readJsonFile(path, null);
+      if (job?.id !== id || running.has(job.status)) return false;
+      writeJsonFileAtomic(path, { ...job, ...fields });
+      return true;
     }
   };
 }

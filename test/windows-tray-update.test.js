@@ -50,7 +50,7 @@ test('download, verify, exit the tray, run the package\'s own update, then reope
     outcome: () => ({ status: 'updated', applicationVersion: '0.13.0', packageRoot: newRoot, clients: 'reconnected' }) });
   const result = await updateWindowsTrayFromRelease({ installation: install.value, version: '0.13.0', progress: (step) => progress.push(step) },
     { ...deps, tempRoot: install.root });
-  assert.deepEqual(result, { status: 'updated', version: '0.13.0' });
+  assert.deepEqual(result, { status: 'updated', version: '0.13.0', clients: 'reconnected' });
   assert.deepEqual(progress, ['downloading', 'verifying', 'exitingTray', 'installing']);
   assert.deepEqual(events, [['download', '0.13.0'], ['exitTray', install.value.dataDir], ['update', ['--yes', '--install-root']],
     ['tray', newRoot]]);
@@ -80,4 +80,13 @@ test('a tray that does not exit stops the update before anything is installed; n
     /without an outcome \(exit 1\)/);
   assert.equal(absent.events.some(([name]) => name === 'tray'), false);
   assert.equal(existsSync(join(install.root, 'Programs')), true);
+});
+
+test('an update that installed the new version but did not reconnect the clients says so', async (t) => {
+  const install = installation(t);
+  const newRoot = join(install.value.installRoot, 'versions', 'new');
+  const { deps } = steps({ record: install.record,
+    outcome: () => ({ status: 'updated', applicationVersion: '0.13.0', packageRoot: newRoot, clients: 'not_reconnected' }) });
+  const result = await updateWindowsTrayFromRelease({ installation: install.value, version: '0.13.0' }, { ...deps, tempRoot: install.root });
+  assert.deepEqual(result, { status: 'updated', version: '0.13.0', clients: 'not_reconnected' });
 });
