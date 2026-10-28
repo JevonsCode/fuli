@@ -52,6 +52,12 @@ export interface MigrationPlan {
   undoable: UndoableMigration[]
   // The one budget format backups and graph undo journals share.
   retention?: { keep: number; maxBytes: number } | null
+  notice?: MigrationNotice
+}
+
+export interface MigrationNotice {
+  active: { id: string; migrationId: string; remaining: number }[]
+  unavailable?: boolean
 }
 
 export interface MigrationResult {
@@ -88,6 +94,8 @@ export function pruneAuditError(pruned: PruneEntry[] | undefined): string {
 
 export const readMigrationPlan = (signal?: AbortSignal) => getJson<MigrationPlan>('/api/data-format', { signal })
 export const applyMigrationPlan = (digest: string) => postJson<ApplyOutcome>('/api/data-format/apply', { digest })
+export const dismissMigrationNotices = (ids: string[]) =>
+  postJson<{ notice: MigrationNotice }>('/api/data-format/dismiss-notices', { ids })
 export const undoMigration = (label: string, migrationId: string) =>
   postJson<{ status: string; version: number; pruned?: PruneEntry[] }>('/api/data-format/rollback', { label, migrationId })
 

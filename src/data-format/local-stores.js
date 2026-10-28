@@ -35,6 +35,7 @@ import { MODEL_USAGE_FORMAT } from '../model-backends/usage-ledger.js';
 import { inspectJsonStore } from '../storage/json-format.js';
 import { APPLY_RECEIPTS_FORMAT } from './apply-receipts.js';
 import { FORMAT_OPERATIONS_FORMAT } from './operations-log.js';
+import { FORMAT_NOTICE_DELIVERY_FORMAT } from './notice-delivery.js';
 import { MODEL_SECRETS_FORMAT } from '../model-backends/secret-store.js';
 import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
@@ -89,6 +90,7 @@ const jsonStores = () => [
   ['model-secrets.json', MODEL_SECRETS_FORMAT],
   ['client-connection-observations.json', CLIENT_CONNECTION_HISTORY_FORMAT],
   ['format-operations.json', FORMAT_OPERATIONS_FORMAT],
+  ['format-notice-delivery.json', FORMAT_NOTICE_DELIVERY_FORMAT],
   ['format-apply-receipts.json', APPLY_RECEIPTS_FORMAT],
   // A person's permanent deletes, content-free: their state and the fence local stores check (rec#5 C9).
   [HARD_DELETE_LEDGER_FILE, HARD_DELETE_LEDGER_FORMAT],

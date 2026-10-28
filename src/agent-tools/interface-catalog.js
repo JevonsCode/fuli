@@ -117,6 +117,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('PATCH /employee-workspaces/:templateId/:projectId/api/work-items/:itemId/status', 'Completing a Jefa work item records explicit human acceptance in the native workbench.'),
   local('PATCH /employee-workspaces/:templateId/:projectId/api/projects/:projectId/sharing', 'Changing public project visibility requires explicit local human approval; the read-only report never grants access to private tasks.'),
   local('POST /api/data-format/apply', 'Applying a data format migration rewrites real local data; a person confirms the previewed plan in the local console or at a terminal (fuli migrate apply). Agents may run fuli migrate status or preview, which only read.'),
+  local('POST /api/data-format/dismiss-notices', 'The local person dismisses the completed-migration reminders shown in the console; this does not change pending migration warnings.'),
   local('POST /api/data-format/rollback', 'Undoing a data format migration changes real local data and is confirmed by a person in the local console or with fuli migrate rollback.'),
   local('POST /api/data-format/prune', 'Pruning format backups and graph undo journals deletes what a later undo or restore could use; the person checks an unverified prune in the local console or with fuli migrate prune.'),
   local('POST /api/data-format/restore', 'A whole-store restore discards every change made after the backup and restarts FULI; the person confirms exactly what it discards in the local console, or runs fuli migrate restore with FULI stopped.'),

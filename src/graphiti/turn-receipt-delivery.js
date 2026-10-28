@@ -3,6 +3,7 @@ import { deferredTurnReceipt, MAX_LIST_EPISODES, readEpisodeReceipts, readTurnRe
 import { withReceiptLines, withTurnReceipt } from '../agents/identity-receipt.js';
 import { taskKnowledgeReader } from './knowledge-reader.js';
 import { formalTask, sessionMigrationLine, sessionMigrationOffer } from './session-knowledge-migration.js';
+import { receiptFormatNotices } from '../data-format/format-notices.js';
 
 // When a turn's receipt reaches a reply, exactly once (rec#20). The Provider
 // marks a checkpoint that saved knowledge as unread. Its own reply claims it
@@ -44,6 +45,8 @@ async function savedTurnReceipt(application, task, results, { memory, agentName 
 // never showed, then the offer to migrate what the session's temporary project
 // holds once the session linked to a formal project (rec#20 part 2).
 export async function entryAgentReceipt(application, task, receipt) {
+  const format = await receiptFormatNotices(application, { taskId: task.token, includePending: false });
+  if (format.length) receipt = { ...receipt, markdown: [receipt.markdown, ...format].join(' · ') };
   const late = await unreadTurnReceipt(application, task);
   const migration = await sessionMigrationOffer(application, task);
   return withReceiptLines(withTurnReceipt(receipt, late), migration ? [migration] : []);

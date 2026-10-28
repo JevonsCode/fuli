@@ -95,7 +95,7 @@ export async function readTaskPreferences(application, {
     agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
       agentId: task.projectAgentId, name: rawAgent.profile?.display_name ?? null, role: rawAgent.profile?.name ?? null, sourceApplication: task.sourceApplication,
       notices: [...receiptNotices(await captureDecision(application, taskCaptureScope(task)), [],
-        { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application)] }),
+        { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })] }),
     preference_delivery: { status: 'complete' }, preferences_complete: true,
     same_task_recovery_available: true, truncated: false
   };

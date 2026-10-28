@@ -78,6 +78,7 @@ async function setup(t, { args = [], interactive, answer = null }) {
     write: line => lines.push(line),
     beginFirstRun: beginFirstRunCapture,
     captureOnboarding: captureOnboardingFor,
+    shadowedLaunchers: () => null,
     ensureRuntime: async () => ({ status: 'started', url: CONSOLE, pid: 1 }),
     interactive: () => interactive,
     askCaptureScope: async () => { asked += 1; return answer; }
@@ -119,6 +120,7 @@ test('setup of an existing installation says nothing about the question', async 
   const lines = [];
   await runSetupCommand([], { planSetup: () => ({ paths, agents: [] }), confirm: async () => true,
     write: line => lines.push(line), beginFirstRun: beginFirstRunCapture, captureOnboarding: captureOnboardingFor,
+    shadowedLaunchers: () => null,
     ensureRuntime: async () => ({ status: 'started', url: CONSOLE, pid: 1 }), interactive: () => true,
     askCaptureScope: async () => assert.fail('an existing user is never asked') });
   assert.equal(lines.some(line => line.startsWith('Recording:')), false);

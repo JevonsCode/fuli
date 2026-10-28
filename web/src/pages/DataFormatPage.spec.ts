@@ -42,6 +42,52 @@ const mountPage = async () => {
 }
 
 describe('DataFormatPage', () => {
+  it('lets the person close the current completion reminders without hiding future migrations', async () => {
+    const id = 'a'.repeat(64)
+    api.getJson.mockResolvedValue({ ...plan(), notice: { active: [{ id,
+      migrationId: 'graph/12-builtin-occupations', remaining: 6 }] } })
+    api.postJson.mockResolvedValue({ notice: { active: [] } })
+    const wrapper = await mountPage()
+
+    expect(wrapper.get('[data-format-completed-notice]').text()).toContain('graph/12-builtin-occupations')
+    expect(wrapper.get('[data-format-completed-notice]').text()).toContain('剩余 6 次')
+    await wrapper.get('[data-dismiss-format-notices]').trigger('click')
+    await flushPromises()
+    expect(api.postJson).toHaveBeenCalledWith('/api/data-format/dismiss-notices', { ids: [id] })
+    expect(wrapper.find('[data-format-completed-notice]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-store-plan]')).toHaveLength(2)
+  })
+
+  it('keeps the reminder visible if dismissing it fails', async () => {
+    api.getJson.mockResolvedValue({ ...plan(), notice: { active: [{ id: 'a'.repeat(64),
+      migrationId: 'graph/12-builtin-occupations', remaining: 6 }] } })
+    api.postJson.mockRejectedValue(new Error('disk refused'))
+    const wrapper = await mountPage()
+    await wrapper.get('[data-dismiss-format-notices]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-format-completed-notice]').text()).toContain('graph/12-builtin-occupations')
+    expect(wrapper.get('[role="alert"]').text()).toContain('disk refused')
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('[data-format-completed-notice]').exists()).toBe(true)
+  })
+
+  it('closes only the chosen reminder when several migrations are shown', async () => {
+    const first = { id: 'a'.repeat(64), migrationId: 'graph/12-example', remaining: 6 }
+    const second = { id: 'b'.repeat(64), migrationId: 'graph/13-example', remaining: 4 }
+    api.getJson.mockResolvedValue({ ...plan(), notice: { active: [first, second] } })
+    api.postJson.mockResolvedValue({ notice: { active: [second] } })
+    const wrapper = await mountPage()
+    const notices = wrapper.findAll('[data-format-completed-notice]')
+    expect(notices).toHaveLength(2)
+    await notices[0].get('[data-dismiss-format-notices]').trigger('click')
+    await flushPromises()
+    expect(api.postJson).toHaveBeenCalledWith('/api/data-format/dismiss-notices', { ids: [first.id] })
+    expect(wrapper.findAll('[data-format-completed-notice]')).toHaveLength(1)
+    expect(wrapper.get('[data-format-completed-notice]').text()).toContain(second.migrationId)
+  })
+
   it('says what a deleting step loses before the confirm control', async () => {
     const restoreOnly = plan()
     restoreOnly.stores[1] = { ...restoreOnly.stores[1], undo: 'restore_only',

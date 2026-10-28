@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { listAgentTools } from '../src/agent-tools.js';
@@ -227,13 +230,11 @@ const BASELINE = Object.freeze({
   // one line (with its separator) after the task entry; the always-loaded Codex bootstrap
   // dropped its dead `/flreview` bridge for it (962 -> 910 B).
   codexReviewGuidanceBytes: 101,
-  // rec#17 part 2: the receipt's data format notice, with its separator. Nothing waits and nothing
-  // was applied in the last day: no bytes at all. One step waiting for a person, or one migration
-  // applied: one short line naming the step (and the read-only preview command). The sample step
-  // is agent-apps/7-identity-keys since task schedules were removed (3 characters shorter).
+  // Data-format completion reminders add the remaining count and local dismissal link:
+  // 37 -> 104 characters, only for up to seven task receipts per completed migration.
   migrationReceiptNoneChars: 0,
   migrationReceiptPendingChars: 59,
-  migrationReceiptAppliedChars: 37,
+  migrationReceiptAppliedChars: 104,
   // rec#20 part 2: the link to a session's batch migration, with its separator. Nothing waits, or
   // the session already worked in this project: no bytes. The session's first task in a formal
   // project while its temporary project holds items: one line with the count (152 chars with a
@@ -371,18 +372,21 @@ async function migrationReceiptChars() {
   const app = { config: { personal: { spaceId: 'space' } } };
   const owner = { projectId: 'sample', agentId: 'lead-sample', name: 'Synthetic lead' };
   const plain = taskAgentReceipt(app, owner).markdown;
+  const root = mkdtempSync(join(tmpdir(), 'fuli-notice-budget-'));
   const added = async (notices, operations) => {
-    const dataFormatNotice = dataFormatReceiptNotice('/synthetic', { notices: () => notices,
+    const dataFormatNotice = dataFormatReceiptNotice(root, { notices: () => notices,
       operations: () => operations, now: () => Date.parse('2026-10-21T00:00:00Z') });
-    const notice = await dataFormatNotice();
+    const notice = await dataFormatNotice({ taskId: 'budget-task', closeUrl: 'http://127.0.0.1:2727/settings/data-format' });
     const receipt = taskAgentReceipt(app, { ...owner, notices: notice ? [notice] : [] });
     return receipt.markdown.length - plain.length;
   };
   const step = 'agent-apps/7-identity-keys';
-  return { migrationReceiptNoneChars: await added([], []),
-    migrationReceiptPendingChars: await added([{ store: 'agent-apps', label: 'agent-apps/registry.sqlite',
-      state: 'pending_confirmation', steps: [step] }], []),
-    migrationReceiptAppliedChars: await added([], [{ kind: 'applied', migrationId: step, at: '2026-10-20T12:00:00Z' }]) };
+  try {
+    return { migrationReceiptNoneChars: await added([], []),
+      migrationReceiptPendingChars: await added([{ store: 'agent-apps', label: 'agent-apps/registry.sqlite',
+        state: 'pending_confirmation', steps: [step] }], []),
+      migrationReceiptAppliedChars: await added([], [{ kind: 'applied', migrationId: step, at: '2026-10-20T12:00:00Z' }]) };
+  } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
 // A synthetic turn through the real receipt renderer and the identity receipt it follows.

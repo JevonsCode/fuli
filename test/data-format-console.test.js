@@ -22,6 +22,7 @@ function migrations(calls, { applyError = null } = {}) {
     apply: async (input) => { calls.push(['apply', input]); if (applyError) throw applyError; return { status: 'applied', results: [], skipped: [] }; },
     rollback: async (input) => { calls.push(['rollback', input]); return { status: 'rolled_back', version: 2 }; },
     prune: () => [],
+    dismissNotices: async (ids) => { calls.push(['dismiss', ids]); return { notice: { active: [] } }; },
     retain: async () => { calls.push(['retain']); return [{ kind: 'pruned', store: 'graph' }]; },
     restore: {
       choices: () => [{ label: 'task-schedules.sqlite', store: 'task-schedules', kind: 'sqlite',
@@ -55,6 +56,23 @@ test('the console previews, applies with the digest and undoes, as entrypoint ht
   assert.deepEqual(calls, [['apply', { digest: PLAN.digest, actor: { entrypoint: 'http' } }],
     ['rollback', { label: 'agent-apps/registry.sqlite', migrationId: 'agent-apps/7-identity-keys',
       actor: { entrypoint: 'http' } }]]);
+});
+
+test('the console dismisses exactly the notices the person saw, only on this computer', async () => {
+  const calls = [];
+  const id = 'a'.repeat(64);
+  await withServer(migrations(calls), async (url) => {
+    const response = await post(`${url}/api/data-format/dismiss-notices`, { ids: [id] });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { notice: { active: [] } });
+    assert.equal((await post(`${url}/api/data-format/dismiss-notices`, { ids: [] })).status, 400);
+  });
+  const sent = [];
+  const response = { setHeader() {}, writeHead(status) { sent.push(status); return this; }, end() {} };
+  await handleDataFormatApiRequest({ request: { method: 'POST', headers: {}, socket: { remoteAddress: '192.168.1.20' } },
+    response, url: new URL('http://lan/api/data-format/dismiss-notices'), migrations: migrations(calls) });
+  assert.deepEqual(sent, [403]);
+  assert.deepEqual(calls, [['dismiss', [id]]]);
 });
 
 test('a stale confirmation is a 409 the page can read again', async () => {

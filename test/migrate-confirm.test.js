@@ -13,6 +13,7 @@ import {
 import { personalGraphFormat } from '../src/data-format/graph-format-client.js';
 import { EXTERNAL_WRITERS_NOTICE } from '../src/data-format/external-writers.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
+import { applyMigrations } from '../src/data-format/migration-operations.js';
 import { holdDataDirectory } from '../src/data-format/maintenance-lock.js';
 import { readFormatOperations } from '../src/data-format/operations-log.js';
 import { createServer } from '../src/server.js';
@@ -109,6 +110,23 @@ test('changing data needs an interactive terminal and an exact, confirmed digest
   assert.deepEqual(snapshot(root), before);
 });
 
+test('an unavailable graph is reported as unreadable rather than an empty migration plan', async (t) => {
+  const root = dataDir(t);
+  const graph = { preview: async () => ({ plan: { store: 'graph', kind: 'neo4j', action: 'unavailable',
+    steps: [], reason: 'Provider is sleeping' }, undoable: [] }) };
+  const preview = await migrate(root, ['preview'], { graph });
+  const apply = await migrate(root, ['apply', '--digest', 'a'.repeat(64)], { graph });
+  for (const output of [preview.output, apply.output]) {
+    assert.match(output, /graph \(personal\)[\s\S]*Provider is sleeping/);
+    assert.doesNotMatch(output, /Nothing waits for a confirmation/);
+  }
+  assert.equal(apply.questions.length, 0);
+  assert.equal(apply.exitCode, 1);
+  await assert.rejects(applyMigrations({ dataDir: root, digest: 'a'.repeat(64), graph,
+    actor: { entrypoint: 'http' } }), (error) => error.code === 'data_format_stale_preview'
+      && /graph \(personal\)/.test(error.message) && /Provider is sleeping/.test(error.message));
+});
+
 test('apply migrates both stores after a backup, logs it, and the receipt names it', async (t) => {
   const root = dataDir(t);
   legacyDataDir(root);
@@ -131,9 +149,10 @@ test('apply migrates both stores after a backup, logs it, and the receipt names 
     ['applied', 'agent-apps/7-identity-keys', 'cli'], ['applied', 'external-knowledge/2-binding-targets', 'cli']]);
   assert.doesNotMatch(JSON.stringify(operations), /sentinel|Sentinel/);
   assert.equal((await migrate(root, ['preview', '--json'])).plan.digest, null);
-  assert.equal(await dataFormatReceiptNotice(root)(),
-    '数据格式已迁移：external-knowledge/2-binding-targets 等 2 项');
-  assert.equal(await dataFormatReceiptNotice(root, { now: () => Date.now() + 25 * 3600 * 1000 })(), null);
+  assert.equal(await dataFormatReceiptNotice(root)({ taskId: 'task-1' }),
+    '数据格式已迁移：external-knowledge/2-binding-targets 等 2 项（本次后还提示 6 次）');
+  assert.equal(await dataFormatReceiptNotice(root, { now: () => Date.now() + 25 * 3600 * 1000 })({ taskId: 'task-2' }),
+    '数据格式已迁移：external-knowledge/2-binding-targets 等 2 项（本次后还提示 5 次）');
 
   const undone = await migrate(root, ['rollback', '--store', 'agent-apps/registry.sqlite',
     '--migration', 'agent-apps/7-identity-keys']);

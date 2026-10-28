@@ -15,8 +15,9 @@ import {
 import { resolveSetupPaths } from '../setup/paths.js';
 import { acquireMaintenance, holdDataDirectory } from '../data-format/maintenance-lock.js';
 import { localRuntimeControl } from './local-runtime-control.js';
-import { confirmInTerminal, writeLine } from './terminal-io.js';
+import { confirmInTerminal, copyableValueStyle, writeLine } from './terminal-io.js';
 import { reconcileLocalKnowledge, knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconcile-local.js';
+import { quoteShellArgument } from './shell-argument.js';
 
 // `fuli migrate` (rec#17 D-09): data formats of one data directory.
 // - status, preview: read only, safe while FULI runs, fine for an Agent to run.
@@ -61,6 +62,7 @@ export async function runMigrateCommand(args, dependencies = {}) {
   const env = dependencies.env ?? process.env;
   const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
   const context = { options, paths, env, write: dependencies.write ?? writeLine,
+    copy: copyableValueStyle({ output: dependencies.output, env }),
     reconcileKnowledge: dependencies.reconcileKnowledge ?? reconcileLocalKnowledge,
     confirm: dependencies.confirm ?? confirmInTerminal, fetchImpl: dependencies.fetchImpl ?? fetch,
     graph: dependencies.graph ?? personalGraphFormat(paths.dataDir, { fetchImpl: dependencies.fetchImpl ?? fetch }),
@@ -100,13 +102,13 @@ const ACTIONS = Object.freeze({
     return { exitCode: UNREADABLE_EXIT_CODE, report };
   },
 
-  async preview({ options, paths, write, graph }) {
+  async preview({ options, paths, write, graph, copy }) {
     const plan = await previewMigrations({ dataDir: paths.dataDir, graph });
-    write(options.json ? JSON.stringify(plan, null, 2) : formatPlan(plan, paths.dataDir));
+    write(options.json ? JSON.stringify(plan, null, 2) : formatPlan(plan, paths.dataDir, { copy }));
     return { exitCode: 0, plan };
   },
 
-  async apply({ options, paths, write, confirm, graph, maintenance }) {
+  async apply({ options, paths, write, confirm, graph, maintenance, copy }) {
     if (!options.digest) throw new TypeError(`${USAGE}\nRun fuli migrate preview first; apply needs its digest.`);
     const plan = await previewMigrations({ dataDir: paths.dataDir, graph });
     const started = plan.digest !== options.digest && startedApply(paths.dataDir, options.digest);
@@ -116,11 +118,12 @@ const ACTIONS = Object.freeze({
         + `${started.stores.map((store) => `${store.label} ${store.migrationId}`).join(', ')}`);
     } else if (plan.digest !== options.digest) {
       write(plan.digest ? 'The stores changed since that preview. Nothing was changed; this is the current plan:'
-        : 'Nothing waits for a confirmation now. Nothing was changed.');
-      if (plan.digest) write(formatPlan(plan, paths.dataDir));
+        : plan.blocked.length ? 'The migration plan could not be checked. Nothing was changed:'
+          : 'Nothing waits for a confirmation now. Nothing was changed.');
+      if (plan.digest || plan.blocked.length) write(formatPlan(plan, paths.dataDir, { copy }));
       return { exitCode: FAILED_EXIT_CODE, status: 'stale' };
     }
-    if (!started) write(formatPlan(plan, paths.dataDir, { confirming: true }));
+    if (!started) write(formatPlan(plan, paths.dataDir, { confirming: true, copy }));
     write(externalWritersLines().join('\n'));
     if (!await confirm('Apply exactly these migrations? Recorded as entrypoint cli, presence unverified. [y/N] ',
       { defaultYes: false })) {
@@ -235,10 +238,10 @@ function wholeNumber(value, name) {
   return number;
 }
 
-function formatPlan(plan, dataDir, { confirming = false } = {}) {
+function formatPlan(plan, dataDir, { confirming = false, copy = String } = {}) {
   const lines = [confirming ? 'FULI data format migrations to apply' : 'FULI data format migrations (preview; '
     + 'nothing was changed)', `Data directory: ${dataDir}`, ''];
-  if (!plan.stores.length) lines.push('Nothing waits for a confirmation.');
+  if (!plan.stores.length && !plan.blocked.length) lines.push('Nothing waits for a confirmation.');
   for (const store of plan.stores) {
     const { step } = store;
     lines.push(`${store.label}  [${store.store}, ${store.kind}]  version ${step.fromVersion} → ${step.toVersion}`,
@@ -259,7 +262,7 @@ function formatPlan(plan, dataDir, { confirming = false } = {}) {
   if (plan.digest) {
     lines.push('', `Plan digest: ${plan.digest}`);
     if (!confirming) {
-      lines.push(`Apply exactly this plan: fuli migrate apply --digest ${plan.digest}`,
+      lines.push(`Apply exactly this plan: ${copy(`fuli migrate apply --digest ${plan.digest} --data-dir ${quoteShellArgument(dataDir)}`)}`,
         'It is checked again before anything changes; the digest is not a permission.');
     }
   }

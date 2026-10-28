@@ -8,7 +8,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import {
-  applyMigrationPlan, moreRecords, pruneAgain, pruneAuditError, pruneCheckOutcome, pruneUnverified, readMigrationPlan, refusalCode,
+  applyMigrationPlan, dismissMigrationNotices, moreRecords, pruneAgain, pruneAuditError, pruneCheckOutcome, pruneUnverified, readMigrationPlan, refusalCode,
   refusalMessage, sampleChips, shortDigest, undoMigration, type ApplyOutcome, type MigrationPlan, type MigrationResult,
   type UndoableMigration,
 } from '@/features/data-format/model'
@@ -30,6 +30,8 @@ const applying = ref(false)
 const stale = ref(false)
 const applyError = ref('')
 const outcome = ref<ApplyOutcome | null>(null)
+const dismissingNotice = ref<string | null>(null)
+const noticeError = ref('')
 const undoTarget = ref<UndoableMigration | null>(null)
 const undoing = ref<UndoableMigration | null>(null)
 const undoMessage = ref('')
@@ -58,6 +60,7 @@ async function load() {
   reading = new AbortController()
   loading.value = true
   loadError.value = ''
+  noticeError.value = ''
   try {
     plan.value = await readMigrationPlan(reading.signal)
     reviewed.value = false
@@ -91,6 +94,20 @@ async function apply() {
     }
   } finally {
     applying.value = false
+  }
+}
+
+async function dismissNotice(id: string) {
+  if (dismissingNotice.value) return
+  dismissingNotice.value = id
+  noticeError.value = ''
+  try {
+    const result = await dismissMigrationNotices([id])
+    if (plan.value) plan.value = { ...plan.value, notice: result.notice }
+  } catch (cause) {
+    noticeError.value = refusalMessage(cause)
+  } finally {
+    dismissingNotice.value = null
   }
 }
 
@@ -156,6 +173,22 @@ onBeforeUnmount(() => reading?.abort())
       </Card>
 
       <template v-else-if="plan">
+        <UiNotice v-for="item in plan.notice?.active ?? []" :key="item.id" data-format-completed-notice>
+          {{ t('dataFormat.completedNotice', { id: item.migrationId, count: item.remaining }) }}
+          <template #actions>
+            <Button variant="outline" data-dismiss-format-notices :disabled="dismissingNotice !== null"
+              :loading="dismissingNotice === item.id" :loading-label="t('dataFormat.dismissingNotices')"
+              @click="dismissNotice(item.id)">
+              {{ t('dataFormat.dismissNotices') }}
+            </Button>
+          </template>
+        </UiNotice>
+        <UiNotice v-if="noticeError || plan.notice?.unavailable" tone="error">
+          {{ noticeError || t('dataFormat.noticeUnavailable') }}
+          <template #actions>
+            <Button variant="ghost" @click="load">{{ t('dataFormat.retry') }}</Button>
+          </template>
+        </UiNotice>
         <UiNotice v-if="stale" tone="error">{{ t('dataFormat.stale') }}</UiNotice>
         <section v-if="outcome" class="data-format-results" :aria-label="t('dataFormat.results')" role="status">
           <p v-for="result in outcome.results" :key="result.label" :data-result="result.status">

@@ -9,12 +9,13 @@ import {
   DEFAULT_RUNTIME_SETTINGS,
   runtimeSettingsWithOverrides
 } from '../system/runtime-settings.js';
-import { confirmInTerminal, interactiveTerminal, writeLine } from './terminal-io.js';
+import { confirmInTerminal, copyableValueStyle, interactiveTerminal, writeLine } from './terminal-io.js';
 import { askCaptureScope, captureScopeSummary } from './capture-scope-prompt.js';
 import { captureOnboardingFor } from '../setup/first-run-capture.js';
 import { setupMigrationNotice } from '../data-format/format-notices.js';
 import { knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconcile-local.js';
 import { formatShadowedLaunchers, inspectUpdateInstallation } from './update-installation.js';
+import { quoteShellArgument } from './shell-argument.js';
 
 export async function runSetupCommand(args, dependencies = {}) {
   const options = parseSetupOptions(args);
@@ -24,6 +25,7 @@ export async function runSetupCommand(args, dependencies = {}) {
     ?? (() => confirmInTerminal('Only the items above will change. Continue? [Y/n] ', { defaultYes: true }));
   const selectAgents = dependencies.selectAgents ?? promptAgentSelection;
   const write = dependencies.write ?? writeLine;
+  const copy = copyableValueStyle({ output: dependencies.output, env: dependencies.env });
   let plan = planSetup(options, dependencies);
   if (options.connectedOnly) {
     plan = applyAgentSelection(plan, plan.agents.filter((agent) =>
@@ -33,7 +35,7 @@ export async function runSetupCommand(args, dependencies = {}) {
     const detected = plan.agents.filter(({ available }) => available);
     plan = applyAgentSelection(plan, await selectAgents(detected));
   }
-  write(formatSetupPreview(plan, options));
+  write(formatSetupPreview(plan, options, copy));
 
   if (!options.yes && !await confirm()) {
     write('Cancelled. No changes were made.');
@@ -44,7 +46,7 @@ export async function runSetupCommand(args, dependencies = {}) {
     ...dependencies,
     onProgress: write
   });
-  write(formatSetupResult(result, plan));
+  write(formatSetupResult(result, plan, copy));
   // Stubbed setups in tests never read the data directory they name.
   const onboardingFor = dependencies.captureOnboarding ?? (applySetup === applyLocalSetup ? captureOnboardingFor : null);
   const captureScope = onboardingFor && plan.paths
@@ -53,7 +55,7 @@ export async function runSetupCommand(args, dependencies = {}) {
   // Stubbed setups in tests name no real data directory either.
   const migrationNotice = dependencies.migrationNotice ?? (applySetup === applyLocalSetup ? setupMigrationNotice : null);
   const waiting = migrationNotice && plan.paths?.dataDir ? await migrationNotice(plan.paths.dataDir) : null;
-  if (waiting) write(waiting);
+  if (waiting) write(waiting.replaceAll('fuli migrate preview', copy('fuli migrate preview')));
   // Stubbed setups in tests leave the host PATH alone too.
   const shadowedLaunchers = dependencies.shadowedLaunchers ?? (applySetup === applyLocalSetup
     ? () => formatShadowedLaunchers(inspectUpdateInstallation({ env: dependencies.env ?? process.env })) : null);
@@ -72,7 +74,7 @@ async function firstRunCaptureScope(onboarding, options, result, dependencies) {
   return captureScopeSummary(outcome, result.runtime?.url ?? null);
 }
 
-export function formatSetupPreview(plan, options) {
+export function formatSetupPreview(plan, options, copy = String) {
   const available = plan.agents.filter(({ available }) => available);
   const selected = available.filter(({ selected }) => selected !== false);
   const agentSummary = options.skipAgents || (available.length > 0 && selected.length === 0)
@@ -99,9 +101,9 @@ export function formatSetupPreview(plan, options) {
       'disabled; graph services stay running'}`,
     `Management UI: ${options.noStart
       ? 'will not start'
-      : `http://127.0.0.1:${runtimeSettings.ports.console}`}`,
+      : copy(`http://127.0.0.1:${runtimeSettings.ports.console}`)}`,
     `Automatic client setup: ${agentSummary}`,
-    'Other MCP clients: connect after setup with fuli connect (no model required)'
+    `Other MCP clients: connect after setup with ${copy('fuli connect')} (no model required)`
   ];
   if (
     runtimeMode !== 'native' &&
@@ -120,20 +122,20 @@ export function formatSetupPreview(plan, options) {
   return lines.join('\n');
 }
 
-export function formatSetupResult(result, plan) {
+export function formatSetupResult(result, plan, copy = String) {
   const lines = [result.status === 'ready'
     ? 'Fuli is ready.'
     : result.knowledgeRecovery?.status === 'pending'
       ? 'Fuli setup needs knowledge recovery before local stores are ready.'
       : 'Fuli started, but one or more Agents are not connected.'];
   if (result.knowledgeRecovery) lines.push(knowledgeReconciliationMessage(result.knowledgeRecovery));
-  if (result.runtime.url) lines.push(`Open: ${result.runtime.url}`);
+  if (result.runtime.url) lines.push(`Open: ${copy(result.runtime.url)}`);
   if (result.runtime.lan === true) {
     lines.push(
       'LAN URLs:',
-      ...result.runtime.lanUrls.map((url) => `  ${url}`),
-      `Username: ${result.runtime.lanAccess.username}`,
-      `Temporary access code: ${result.runtime.lanAccess.accessCode}`,
+      ...result.runtime.lanUrls.map((url) => `  ${copy(url)}`),
+      `Username: ${copy(result.runtime.lanAccess.username)}`,
+      `Temporary access code: ${copy(result.runtime.lanAccess.accessCode)}`,
       'Use only on trusted Wi-Fi. Restarting LAN mode rotates the access code.'
     );
   }
@@ -162,8 +164,8 @@ export function formatSetupResult(result, plan) {
     lines.push('After a package upgrade, reconnect Fuli in already-open clients or restart the clients, then open a new task. Existing MCP processes are not replaced automatically.');
   }
   const dataDir = plan?.paths?.dataDir;
-  lines.push('Other MCP clients: run fuli connect and merge the fuli entry into your MCP settings.');
-  if (dataDir) lines.push(`For this installation, use --data-dir ${JSON.stringify(dataDir)}.`);
+  lines.push(`Other MCP clients: run ${copy('fuli connect')} and merge the fuli entry into your MCP settings.`);
+  if (dataDir) lines.push(`For this installation, use ${copy(`--data-dir ${quoteShellArgument(dataDir)}`)}.`);
   lines.push('MCP provides tools and memory. Automatic conversation capture and wake/resume require a client adapter.');
   return lines.join('\n');
 }

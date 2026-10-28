@@ -19,9 +19,10 @@ const BODIES = Object.freeze({
   apply: z.object({ digest: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
   rollback: z.object({ label, migrationId: z.string().min(1).max(128) }).strict(),
   prune: z.object({}).strict(),
+  'dismiss-notices': z.object({ ids: z.array(z.string().regex(/^[0-9a-f]{64}$/)).min(1).max(200) }).strict(),
   restore: z.object({ label, backupRef, currentDigest: z.string().min(1).max(128).nullable() }).strict()
 });
-const ACTIONS = /^\/api\/data-format\/(apply|rollback|prune|restore)$/;
+const ACTIONS = /^\/api\/data-format\/(apply|rollback|prune|restore|dismiss-notices)$/;
 const RESTORE_READS = new Set(['/api/data-format/restore', '/api/data-format/restore/status']);
 
 export async function handleDataFormatApiRequest({ request, response, url, migrations }) {
@@ -58,6 +59,7 @@ const ACTION_HANDLERS = Object.freeze({
   rollback: (migrations, body) => migrations.rollback({ label: body.label, migrationId: body.migrationId,
     actor: LOCAL_CONSOLE }),
   prune: async (migrations) => ({ pruned: await migrations.retain() }),
+  'dismiss-notices': (migrations, body) => migrations.dismissNotices(body.ids),
   restore: (migrations, body) => restorePort(migrations.restore).start(body)
 });
 

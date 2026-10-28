@@ -3,7 +3,8 @@ import { backupRetentionPolicy, pruneFormatBackups } from './backup-retention.js
 import { pruneFormatRetention } from './format-retention.js';
 import { GRAPH_LABEL, localStore, localStoresWithEngines, previewMigrations } from './migration-plan.js';
 import { findApplyReceipt, recordApplyReceipt } from './apply-receipts.js';
-import { recordFormatOperations } from './operations-log.js';
+import { readFormatOperations, recordFormatOperations } from './operations-log.js';
+import { dismissAppliedFormatNotices, listAppliedFormatNotices } from './notice-delivery.js';
 
 // A person's confirmed data format operations on one data directory (rec#17
 // D-09 part 2). Callers are `fuli migrate` at an interactive terminal and the
@@ -39,7 +40,10 @@ export async function applyMigrations({ dataDir, digest, actor, graph, now = () 
       throw new DataFormatError('data-format', 'data_format_stale_preview', plan.digest
         ? 'The stores no longer match the preview that was confirmed. Nothing was changed; run the preview again '
           + 'and confirm what it shows.'
-        : 'Nothing waits for a confirmation now. Nothing was changed.');
+        : plan.blocked.length
+          ? `The migration plan could not be checked: ${plan.blocked.map((store) =>
+            `${store.label} — ${store.reason}`).join('; ')}. Nothing was changed; run the preview again.`
+          : 'Nothing waits for a confirmation now. Nothing was changed.');
     }
     stores = started.stores;
   } else {
@@ -172,9 +176,17 @@ function pruneQuietly(prune, dataDir) {
 // whole-store restore (console-restore.js), which restarts FULI around it.
 export function dataFormatMigrations(dataDir, { graph, restore = null, prune = pruneFormatBackups,
   now = () => new Date() } = {}) {
+  const notice = () => {
+    try { return { active: listAppliedFormatNotices(dataDir, readFormatOperations(dataDir), now().getTime()) }; }
+    catch { return { active: [], unavailable: true }; }
+  };
   return {
     // With the retention budget, so the console says the one `fuli migrate prune` uses.
-    preview: async () => ({ ...await previewMigrations({ dataDir, graph }), retention: retentionPolicyOrNull() }),
+    preview: async () => ({ ...await previewMigrations({ dataDir, graph }), retention: retentionPolicyOrNull(), notice: notice() }),
+    dismissNotices: (ids) => {
+      dismissAppliedFormatNotices(dataDir, readFormatOperations(dataDir), ids, now().getTime());
+      return { notice: notice() };
+    },
     apply: ({ digest, actor }) => applyMigrations({ dataDir, digest, actor, graph }),
     rollback: ({ label, migrationId, actor }) => rollbackMigration({ dataDir, label, migrationId, actor, graph }),
     // The person's check of a graph prune whose answer never came: the same

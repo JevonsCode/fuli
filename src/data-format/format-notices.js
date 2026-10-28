@@ -1,9 +1,11 @@
 import { dirname } from 'node:path';
 
+import { receiptConsoleUrl } from '../agents/identity-receipt.js';
 import { externalWritersLines } from './external-writers.js';
 import { PERSONAL_GRAPH_LABEL, personalGraphFormatState } from './format-status.js';
 import { inspectLocalStores } from './local-stores.js';
 import { readFormatOperations } from './operations-log.js';
+import { claimAppliedFormatNotices } from './notice-delivery.js';
 
 // The local stores this FULI cannot use as they are, by store and step, for
 // the console's startup log and /api/health (rec#17 D-09). Read only, like
@@ -56,13 +58,11 @@ export function dataFormatNoticeLine({ store, label, state, steps }) {
     + 'Run `fuli migrate status` for details.';
 }
 
-// How long an applied migration is still mentioned in a receipt.
-const APPLIED_NOTICE_MS = 24 * 60 * 60 * 1000;
 const GRAPH_STATE_TTL_MS = 60_000;
 
 // The receipt's data format notice (rec#17 D-09 part 2, rec#20), from the
 // same notices the console reports plus the operations log: a step waiting
-// for a person, or a migration applied in the last day. null — no bytes at
+// for a person, or a migration claimed for this task. null — no bytes at
 // all — when there is neither. graphState() resolves the personal graph's
 // format state from its provider health ({ state, pending }) or null.
 export function dataFormatReceiptNotice(dataDir, { notices = dataFormatNotices(dataDir),
@@ -76,16 +76,23 @@ export function dataFormatReceiptNotice(dataDir, { notices = dataFormatNotices(d
     }
     return graphCache.steps;
   };
-  return async () => {
-    const pending = [...notices().filter((notice) => notice.state === 'pending_confirmation')
-      .flatMap((notice) => notice.steps.length ? notice.steps : [notice.store]), ...await graphPending()];
-    const applied = operations().filter((event) => event.kind === 'applied'
-      && now() - Date.parse(event.at) < APPLIED_NOTICE_MS).map((event) => event.migrationId);
+  return async ({ taskId = null, includePending = true, closeUrl = null } = {}) => {
+    const pending = includePending ? [...notices().filter((notice) => notice.state === 'pending_confirmation')
+      .flatMap((notice) => notice.steps.length ? notice.steps : [notice.store]), ...await graphPending()] : [];
+    let applied = [];
+    try { applied = claimAppliedFormatNotices(dataDir, operations(), taskId, now()); } catch { /* A notice cannot block a task. */ }
     return [
       pending.length ? `数据格式待确认：${several(pending)}（fuli migrate preview）` : null,
-      applied.length ? `数据格式已迁移：${several(applied.reverse())}` : null
+      ...appliedNoticeLines(applied),
+      closeUrl && applied.some((item) => item.remaining > 0) ? `[关闭提醒](<${closeUrl}>)` : null
     ].filter(Boolean).join(' · ') || null;
   };
+}
+
+function appliedNoticeLines(applied) {
+  const groups = new Map();
+  for (const item of applied) groups.set(item.remaining, [...(groups.get(item.remaining) ?? []), item.migrationId]);
+  return [...groups].map(([remaining, ids]) => `数据格式已迁移：${several(ids)}（本次后还提示 ${remaining} 次）`);
 }
 
 function several(ids) {
@@ -107,8 +114,9 @@ function applicationFormatNotice(application) {
   return APPLICATION_NOTICES.get(application);
 }
 
-export async function receiptFormatNotices(application) {
-  const notice = await applicationFormatNotice(application)?.();
+export async function receiptFormatNotices(application, options = {}) {
+  const closeUrl = `${receiptConsoleUrl(application).replace(/\/$/, '')}/settings/data-format`;
+  const notice = await applicationFormatNotice(application)?.({ ...options, closeUrl });
   return notice ? [notice] : [];
 }
 

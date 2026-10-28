@@ -14,7 +14,7 @@ import {
   runtimeSettingsWithOverrides
 } from '../system/runtime-settings.js';
 import { parseLocalRuntimeOptions } from './local-runtime-options.js';
-import { writeLine } from './terminal-io.js';
+import { copyableValueStyle, writeLine } from './terminal-io.js';
 
 export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
   const options = parseLocalRuntimeOptions(command, args);
@@ -63,7 +63,8 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
   if (command === 'status' && options.json) {
     write(JSON.stringify(outputResult, null, 2));
   } else {
-    write(formatLocalRuntimeResult(command, outputResult));
+    write(formatLocalRuntimeResult(command, outputResult,
+      copyableValueStyle({ output: dependencies.output, env })));
   }
   return {
     ...result,
@@ -74,15 +75,15 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
   };
 }
 
-export function formatLocalRuntimeResult(command, result) {
+export function formatLocalRuntimeResult(command, result, copy = String) {
   if (command === 'start') {
     const title = result.status === 'running'
       ? 'Fuli local services are already running.'
       : 'Fuli local services started.';
-    return formatStartedRuntime(title, result);
+    return formatStartedRuntime(title, result, copy);
   }
   if (command === 'restart') {
-    return formatStartedRuntime('Fuli local services restarted.', result);
+    return formatStartedRuntime('Fuli local services restarted.', result, copy);
   }
   if (command === 'stop') {
     if (result.status === 'partial') {
@@ -95,21 +96,21 @@ export function formatLocalRuntimeResult(command, result) {
       ? 'Fuli local services have not been initialized.'
       : 'Fuli local services stopped. Graph data was preserved.';
   }
-  if (command === 'open') return `Opened: ${result.url}`;
-  if (command === 'status') return formatStatus(result);
+  if (command === 'open') return `Opened: ${copy(result.url)}`;
+  if (command === 'status') return formatStatus(result, copy);
   throw new TypeError(`Unknown local runtime command: ${command}`);
 }
 
-function formatStartedRuntime(title, result) {
-  const lines = [title, `Management UI: ${result.url}`];
+function formatStartedRuntime(title, result, copy) {
+  const lines = [title, `Management UI: ${copy(result.url)}`];
   const agentSetupNotice = formatAgentSetupNotice(result.agentSetupCheck);
   if (agentSetupNotice) lines.push(agentSetupNotice);
   if (result.lan === true) {
     lines.push(
       'LAN URLs:',
-      ...result.lanUrls.map((url) => `  ${url}`),
-      `Username: ${result.lanAccess.username}`,
-      `Temporary access code: ${result.lanAccess.accessCode}`,
+      ...result.lanUrls.map((url) => `  ${copy(url)}`),
+      `Username: ${copy(result.lanAccess.username)}`,
+      `Temporary access code: ${copy(result.lanAccess.accessCode)}`,
       'Use only on trusted Wi-Fi. Restarting LAN mode rotates the access code.'
     );
   }
@@ -169,7 +170,7 @@ function agentNeedsSetup(agent) {
   return outdated.join(', ') || 'integration update available';
 }
 
-function formatStatus(result) {
+function formatStatus(result, copy) {
   const labels = {
     running: 'running',
     degraded: 'degraded',
@@ -186,7 +187,7 @@ function formatStatus(result) {
     : labels.not_connected;
   const lines = [
     `Fuli local status: ${labels[result.status] ?? result.status}`,
-    `Management UI: ${labels[result.console.status] ?? result.console.status} · ${result.console.url}`,
+    `Management UI: ${labels[result.console.status] ?? result.console.status} · ${copy(result.console.url)}`,
     `Personal graph: ${providerLabel(result.personal.status, labels)}`,
     `Shared services: ${publicSummary}`
   ];

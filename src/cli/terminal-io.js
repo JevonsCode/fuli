@@ -5,6 +5,13 @@ export function writeLine(value) {
   process.stdout.write(`${value}\n`);
 }
 
+// Keep redirected output and machines that opt out of color free of escapes.
+// Labels remain present so copying or reading the plain output still works.
+export function copyableValueStyle({ output = process.stdout, env = process.env } = {}) {
+  const color = output.isTTY === true && env.TERM !== 'dumb' && !env.NO_COLOR;
+  return (value) => color ? `\u001b[1;36m${value}\u001b[0m` : String(value);
+}
+
 const ENTER = new Set(['\r', '\n', '\u0004']);
 const ERASE = new Set(['\u007f', '\b']);
 const CANCEL = '\u0003';
