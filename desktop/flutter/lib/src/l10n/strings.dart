@@ -33,6 +33,8 @@ class Strings {
   String get autoRepair => _t('自动修复', 'Fix automatically');
   String autoRepairHint(int count) =>
       _t('$count 件事可以自动修复', '${_things(count)} can be fixed automatically');
+  String get sectionNeedsYou => _t('需要你处理', 'Needs you');
+  String get sectionNotes => _t('提示', 'For your information');
   String get review => _t('查看并确认', 'Review and confirm');
   String updateTo(String version) => _t('更新到 v$version', 'Update to v$version');
   String get openConsole => _t('打开控制台', 'Open console');
