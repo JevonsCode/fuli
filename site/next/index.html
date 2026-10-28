@@ -74,7 +74,7 @@
           <div class="diagram-overlay team-overlay" data-overlay="team">
             <svg class="links" aria-hidden="true"><path data-from="0" data-to="9" /><path data-from="3" data-to="9" /><path data-from="6" data-to="9" /><path data-from="9" data-to="10" /><path data-from="9" data-to="11" /></svg>
             <span data-i18n="diagram.pm" class="tag tag-fixed" data-anchor="0">Jefa · 项目经理</span>
-            <span data-i18n="diagram.hr" class="tag tag-fixed" data-anchor="3">Bole · AR</span>
+            <span data-i18n="diagram.hr" class="tag tag-fixed" data-anchor="3">Bole · Agent 资源</span>
             <span data-i18n="diagram.judge" class="tag tag-fixed" data-anchor="6">Tonborg · 判断</span>
             <span data-i18n-html="diagram.lead" class="tag tag-lead" data-anchor="9" data-place="right">项目小组<small>负责人带队</small></span>
             <span data-i18n="diagram.members" class="tag" data-anchor="10" data-place="below">成员按专长协作 · 各自保留记忆</span>
@@ -96,7 +96,7 @@
             <div class="chapter-copy">
               <p class="eyebrow"><span data-i18n="next.eyebrow">抢先体验 · npm beta</span> <span data-preview-version>0.22.0-beta.4</span></p>
               <h1 data-i18n-html="hero.title" id="hero-title">让每一次协作，<br>都产生<em>复利</em>。</h1>
-              <p data-i18n="hero.description" class="lede">Fuli 给你的每个任务安排一位长期 Agent。它记得你的品味与判断，在接入的 AI 客户端之间接续工作，遇到问题还能直接去问别的 Agent。</p>
+              <p data-i18n="hero.description" class="lede">这是下一版的公开预览，给愿意先试新功能的人用。下面列出它相对稳定版 0.22.0 的全部变化。</p>
               <div class="hero-actions">
                 <div class="terminal" data-copy="npm install --global fuli-context@beta && fuli setup">
                   <code><span>$</span> npm install --global fuli-context@beta</code>
@@ -112,14 +112,14 @@
 
           <section class="chapter" id="agents" data-scene="owner" aria-labelledby="agents-title">
             <div class="chapter-copy">
-              <p data-i18n="agents.eyebrow" class="eyebrow">每个任务</p>
-              <h2 data-i18n-html="agents.title" id="agents-title">散落的经验，<br><em>拼成一位负责的 Agent。</em></h2>
-              <p data-i18n="agents.description">在项目目录里直接提需求。Fuli 登记项目、请 AR（Agent Resources）安排一位负责人，之后这个项目的任务都由它接手。做完时，回复最后一行写清楚谁负责、谁协助。</p>
+              <p data-i18n="agents.eyebrow" class="eyebrow">你的 Agent</p>
+              <h2 data-i18n-html="agents.title" id="agents-title">在哪个目录，<br><em>都能叫到你的 Agent。</em></h2>
+              <p data-i18n="agents.description">在任何目录里用 @名字 或 #FLA，让你的某位 Agent 接着做；Agent 卡片上可以「复制 #FLA」，还给出几句可以直接用的说法。每个新 Agent 都有不重复的人名和固定的角色头像，岗位写在职业和职责里。说一次「以后这类工作交给某个项目」，确认后，命中关键词的任务都交给它的组长。</p>
             </div>
             <figure data-i18n-aria-label="agents.example" class="window static-figure" aria-label="示例：接入 Fuli 的 AI 客户端中一次任务的结尾">
               <div class="window-bar"><i></i><i></i><i></i><span data-i18n="agents.client">AI 客户端 · 示例</span></div>
               <div class="window-body">
-                <p data-i18n="agents.request" class="msg user">修一下登录页记住密码失效的问题</p>
+                <p data-i18n="agents.request" class="msg user">@Milo Reed 修一下登录页记住密码失效的问题</p>
                 <p data-i18n-html="agents.reply" class="msg agent">已修复：<code>session.ts</code> 在刷新令牌时覆盖了 remember 标记。补了 2 个测试，均通过。</p>
                 <p data-i18n-html="agents.receipt" class="receipt">FULI Agent：负责人 <a>Milo Reed</a> · 协作 <a>Jefa</a>、<a>Nova Lane</a></p>
               </div>
@@ -131,7 +131,7 @@
             <div class="chapter-copy">
               <p data-i18n="handoff.eyebrow" class="eyebrow">跨工具接续</p>
               <h2 data-i18n-html="handoff.title" id="handoff-title">换 AI 工具，<br><em>不用换搭档。</em></h2>
-              <p data-i18n="handoff.description">同一位 Agent 的职责、工作记忆和已保存的对话都留在 Fuli。换到另一个已接入的 MCP 客户端，用名字或 FLA 编号找到它，就能取回相关脉络，接着做。</p>
+              <p data-i18n="handoff.description">同一位 Agent 的职责、工作记忆和对话都留在 FULI。OpenCode 2.x 通过插件进入任务入口和收尾，有自己的来源（它的对话还不会自动采集）。WSL 里的客户端路径会正确转换，可以连到 Windows 上的 FULI；控制台里每个客户端旁边有「更新接入」和「重新接入」。</p>
             </div>
             <figure data-i18n-aria-label="handoff.example" class="handoff static-figure" aria-label="示例：在两个已接入的 MCP 客户端之间继续工作">
               <div class="window small">
@@ -142,7 +142,7 @@
               <div class="window small">
                 <div class="window-bar"><i></i><i></i><i></i><span data-i18n="diagram.clientB">AI 客户端 B</span></div>
                 <div class="window-body">
-                  <p data-i18n="handoff.request" class="msg user">找 Milo Reed，继续昨天的登录重构</p>
+                  <p data-i18n="handoff.request" class="msg user">@Milo Reed 继续昨天的登录重构</p>
                   <p data-i18n="handoff.reply" class="msg agent">接着做：接口已拆好，剩前端接入和回归测试。</p>
                 </div>
               </div>
@@ -152,17 +152,17 @@
           <section class="chapter roundtable-chapter" id="roundtable" data-scene="roundtable" aria-labelledby="roundtable-title">
             <div class="chapter-copy">
               <p data-i18n="nav.roundtable" class="eyebrow">圆桌</p>
-              <h2 data-i18n-html="roundtable.title" id="roundtable-title">Agent 之间，<br><em>直接对话。</em></h2>
-              <p data-i18n="roundtable.description">Agent 可以在圆桌向另一位 Agent 提问，往来全程留痕。客户端支持唤醒时，Fuli 带回原会话的回答；否则消息留在收件箱，等对方下次接手。不用建群，也不用你转述。</p>
+              <h2 data-i18n-html="roundtable.title" id="roundtable-title">圆桌，<br><em>像聊天一样。</em></h2>
+              <p data-i18n="roundtable.description">对话变成聊天界面：你的消息在右边，每位 Agent 的在左边。「留言板」等它下次工作时回复，「即时对话」马上唤醒它回答。每条消息写明每位收件人的实际状态，唤醒不了时说明原因。用 @FLG 一次请 2–4 位 Agent，在圆桌里各自只读作答。</p>
             </div>
             <figure data-i18n-aria-label="roundtable.example" class="thread static-figure" aria-label="示例：两个 Agent 之间的对话记录">
               <div class="thread-msg">
                 <span class="face">M</span>
-                <div><p data-i18n-html="roundtable.from" class="by"><b>Milo Reed</b><em>客户端 A</em> 发给 Nova Lane</p><p data-i18n="roundtable.question" class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
+                <div><p data-i18n-html="roundtable.from" class="by"><b>Milo Reed</b><em>即时对话</em> 发给 Nova Lane</p><p data-i18n="roundtable.question" class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
               </div>
               <div class="thread-msg reply">
                 <span class="face">N</span>
-                <div><p data-i18n-html="roundtable.to" class="by"><b>Nova Lane</b><em>客户端 B</em> 接手后回答</p><p data-i18n="roundtable.answer" class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
+                <div><p data-i18n-html="roundtable.to" class="by"><b>Nova Lane</b><em>已唤醒</em> 马上回答</p><p data-i18n="roundtable.answer" class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
               </div>
               <figcaption data-i18n="roundtable.caption">人名与内容均为示例</figcaption>
             </figure>
@@ -171,8 +171,8 @@
           <section class="chapter" id="taste" data-scene="taste" aria-labelledby="taste-title">
             <div class="chapter-copy">
               <p data-i18n="nav.preferences" class="eyebrow">偏好</p>
-              <h2 data-i18n-html="taste.title" id="taste-title">Tonborg，<br><em>帮你做判断。</em></h2>
-              <p data-i18n="taste.description">品味、个性与取舍原则按全局或项目保存。Tonborg 依据这些偏好，在你设定的自主程度内协助审核，并建议用什么客户端、什么模型。每次判断都有记录，点赞、点踩或补一句理由，帮助它改进后续判断。</p>
+              <h2 data-i18n-html="taste.title" id="taste-title">Tonborg，<br><em>每次判断都说明原因。</em></h2>
+              <p data-i18n="taste.description">默认判断方式可以按项目单独设置。每张等你处理的卡片都写明为什么要你确认，判断记录可以搜索全部历史。命中已知注入格式时，批准会被拦下交给你；这只是很窄的补充检查，不算注入防护。内置 Agent 的模型密钥直接在页面里填，只写不显示，每次改动都有记录。</p>
             </div>
             <figure data-i18n-aria-label="taste.example" class="layers static-figure" aria-label="偏好分为个人全局和项目两层">
               <div class="layer">
@@ -183,7 +183,7 @@
               </div>
               <div class="layer project">
                 <h3 data-i18n="taste.project">项目：shop-web</h3>
-                <p data-i18n-html="taste.rule"><span class="chip judgment">判断</span>未经确认不要推送到 main</p>
+                <p data-i18n-html="taste.rule"><span class="chip judgment">判断</span>默认判断方式：这个项目先问我</p>
                 <p data-i18n-html="taste.copy"><span class="chip taste">品味</span>文案短句，不用感叹号</p>
               </div>
             </figure>
@@ -191,13 +191,13 @@
 
           <section class="chapter" id="team" data-scene="team" aria-labelledby="team-title">
             <div class="chapter-copy">
-              <p data-i18n="team.eyebrow" class="eyebrow">团队</p>
-              <h2 data-i18n-html="team.title" id="team-title">三位专职，<br><em>一起支持项目。</em></h2>
-              <p data-i18n="team.description">每个空间自带三位专职 Agent：Jefa 项目经理管目标与进展，Bole AR（Agent Resources）负责招募与人员安排，Tonborg 负责判断。项目由一位负责人带队，成员按分工协作，各自保留记忆。</p>
+              <p data-i18n="team.eyebrow" class="eyebrow">项目管理</p>
+              <h2 data-i18n-html="team.title" id="team-title">每个项目，<br><em>自带经理和看板。</em></h2>
+              <p data-i18n="team.description">每个空间自带三位专职：Jefa 管项目，Bole 负责 Agent 资源，Tonborg 负责判断。项目可以配自己的项目经理和看板：自定义列对应内置状态，或者链接外部看板；Jefa 的看板随 FULI 安装。阻塞的任务写明在等什么、从什么时候、在哪个会话，能直接打开那个会话，在原会话继续后自动解除。「服务」页列出 Agent 启动的服务，只有你能停止。</p>
             </div>
             <div class="team static-figure">
               <div class="member"><span>🧭</span><b>Jefa</b><small data-i18n="team.pm">项目经理</small></div>
-              <div class="member"><span>🔎</span><b>Bole</b><small data-i18n="team.ar">AR（Agent Resources）</small></div>
+              <div class="member"><span>🔎</span><b>Bole</b><small data-i18n="team.ar">Agent 资源</small></div>
               <div class="member"><span>T</span><b>Tonborg</b><small data-i18n="team.judge">决策员</small></div>
               <div class="member lead"><span>M</span><b>Milo Reed</b><small data-i18n="team.owner">项目负责人 · 示例</small></div>
               <div class="member"><span>N</span><b>Nova Lane</b><small data-i18n="team.review">评审 · 示例</small></div>
@@ -207,9 +207,9 @@
 
           <section class="chapter" id="memory" data-scene="memory" aria-labelledby="memory-title">
             <div class="chapter-copy">
-              <p data-i18n="memory.eyebrow" class="eyebrow">记忆</p>
-              <h2 data-i18n-html="memory.title" id="memory-title">记住工作要点，<br><em>接着上次继续。</em></h2>
-              <p data-i18n="memory.description">每次任务的结果都会进摘要。对话攒到一定量，较早的消息折叠成要点，最近的保留原文。原始记录始终在本机，需要时再取回。</p>
+              <p data-i18n="memory.eyebrow" class="eyebrow">按需取回</p>
+              <h2 data-i18n-html="memory.title" id="memory-title">先给标题，<br><em>需要时再读正文。</em></h2>
+              <p data-i18n="memory.description">修改类的请求附上命中知识的标题索引，Agent 需要时再读正文。开始一次会话只要一次 Provider 请求；Claude Code 的任务入口按预览上限裁剪可选内容，硬规则和收尾字段始终保留。对话记忆里，较早的消息折叠成要点，最近的保留原文。</p>
             </div>
             <figure data-i18n-aria-label="memory.example" class="memory static-figure" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
               <div class="memory-digest"><b data-i18n="memory.summary">摘要</b><span data-i18n="memory.taskOne">10/08 完成 · 接口拆分</span><span data-i18n="memory.taskTwo">10/09 完成 · 补测试</span><span data-i18n="memory.earlier">更早的请求 · 6 条</span></div>
@@ -220,8 +220,8 @@
           <section class="chapter database-chapter" id="database" data-scene="database" aria-labelledby="database-title">
             <div class="chapter-copy">
               <p data-i18n="nav.database" class="eyebrow">数据库</p>
-              <h2 data-i18n-html="database.title" id="database-title">一张图，<br><em>记住所有关系。</em></h2>
-              <p data-i18n="database.description">偏好、项目、Agent、对话以及它们之间的关系，都存在你本机的 Neo4j 图数据库里，每次变化都留有历史。Agent 通过 CLI、MCP 或 HTTP 取用，每次只取当前任务需要的那一小部分。</p>
+              <h2 data-i18n-html="database.title" id="database-title">升级之前，<br><em>先知道会变什么。</em></h2>
+              <p data-i18n="database.description">从 0.20.1 升级时，图谱有一步迁移要你在「设置 → 数据格式迁移」确认，确认之前图谱只读；另一步结构变化和圆桌存储升级，会在备份后自动完成。升级后的数据旧版本打不开，退回需要升级前的备份。数据全部在你本机的 Neo4j 图数据库里，每次变化都留有历史。</p>
             </div>
             <figure data-i18n-aria-label="database.example" class="stack static-figure" aria-label="Fuli 的四层结构">
               <div><span data-i18n="architecture.clients">接入</span><b data-i18n="architecture.compatibleClients">兼容 MCP 的客户端</b></div>
@@ -233,7 +233,7 @@
         </div>
 
         <nav data-i18n-aria-label="chapters.label" class="chapter-nav" aria-label="故事章节" hidden>
-          <a data-i18n-aria-label="chapters.start" href="#top" aria-label="开始"><i></i></a><a data-i18n-aria-label="chapters.owner" href="#agents" aria-label="负责人"><i></i></a><a data-i18n-aria-label="chapters.handoff" href="#handoff" aria-label="接续"><i></i></a><a data-i18n-aria-label="chapters.roundtable" href="#roundtable" aria-label="圆桌"><i></i></a><a data-i18n-aria-label="chapters.preferences" href="#taste" aria-label="偏好"><i></i></a><a data-i18n-aria-label="chapters.team" href="#team" aria-label="团队"><i></i></a><a data-i18n-aria-label="chapters.memory" href="#memory" aria-label="记忆"><i></i></a><a data-i18n-aria-label="chapters.database" href="#database" aria-label="数据库"><i></i></a>
+          <a data-i18n-aria-label="chapters.start" href="#top" aria-label="开始"><i></i></a><a data-i18n-aria-label="chapters.owner" href="#agents" aria-label="你的 Agent"><i></i></a><a data-i18n-aria-label="chapters.handoff" href="#handoff" aria-label="接续"><i></i></a><a data-i18n-aria-label="chapters.roundtable" href="#roundtable" aria-label="圆桌"><i></i></a><a data-i18n-aria-label="chapters.preferences" href="#taste" aria-label="偏好"><i></i></a><a data-i18n-aria-label="chapters.team" href="#team" aria-label="项目管理"><i></i></a><a data-i18n-aria-label="chapters.memory" href="#memory" aria-label="按需取回"><i></i></a><a data-i18n-aria-label="chapters.database" href="#database" aria-label="升级"><i></i></a>
         </nav>
       </div>
 
@@ -243,92 +243,29 @@
         <div><h3 data-i18n="principles.context">按需取回</h3><p data-i18n="principles.contextBody">不会把全部历史塞给模型，只取与当前任务有关、仍然有效的内容。</p></div>
       </section>
 
-      <section class="principles preview-changes" data-preview-baseline="0.20.1" aria-labelledby="changes-title" id="changes">
-        <div class="changes-intro"><h2 data-i18n="next.changes" id="changes-title">相对稳定版 0.20.1 的全部变化</h2><p data-i18n="next.description">这是下一版的公开预览，给愿意先试新功能的人用。下面列出它相对当前稳定版 0.20.1 的全部新功能和变化（包括 0.21 和 0.22 两轮），不只是比上一个 beta 多了什么。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。</p></div>
-        <div><h3 data-i18n="next.c.console">控制台点一下就行</h3><ul>
-          <li data-i18n="next.c.console.1">删除恢复没完成时，控制台会自己重新核对，不用你做什么。</li>
-          <li data-i18n="next.c.console.2">「数据格式」页一键重新核对；整库恢复先列出会丢掉什么，再「停止 FULI 并恢复」。</li>
-          <li data-i18n="next.c.console.3">内置 Agent 的模型密钥直接在页面里填，只写不显示。</li>
-          <li data-i18n="next.c.console.4">每个客户端旁边有「更新接入」「重新接入」。</li>
-          <li data-i18n="next.c.console.5">更新提示上有「更新到 vX」按钮；Windows 托盘版从 0.22 起也能一键更新。</li>
-          <li data-i18n="next.c.console.6">控制台不做登录：FULI 是本机工具。</li>
+      <section class="principles preview-changes" data-preview-baseline="0.22.0" aria-labelledby="changes-title" id="changes">
+        <div class="changes-intro"><h2 data-i18n="next.changes" id="changes-title">相对稳定版 0.22.0 的全部变化</h2><p data-i18n="next.description">这里列出这个预览版相对当前稳定版 0.22.0 的全部新功能和变化，不只是比上一个 beta 多了什么。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。</p></div>
+        <div><h3 data-i18n="next.c.features">新功能</h3><ul>
+          <li data-i18n="next.c.features.1">下一个预览版的新功能会列在这里。</li>
         </ul></div>
-        <div><h3 data-i18n="next.c.agents">你的 Agent</h3><ul>
-          <li data-i18n="next.c.agents.1">在任何目录里用 @名字 或 #FLA，让你的某位 Agent 接着做。</li>
-          <li data-i18n="next.c.agents.2">Agent 卡片上可以「复制 #FLA」，还给出几句可以直接用的说法。</li>
-          <li data-i18n="next.c.agents.3">@FLG 请 2–4 位 Agent：在当前会话里载入它们的上下文索引，或在圆桌里各自只读作答。</li>
-          <li data-i18n="next.c.agents.4">每个新 Agent 都有不重复的人名，岗位写在职业和职责里；已有的 Agent 不会被自动改名。</li>
-          <li data-i18n="next.c.agents.5">生成的 Agent 有固定的角色头像；内置 Agent 的默认介绍跟随界面语言。</li>
-          <li data-i18n="next.c.agents.6">长期职责：说一次「以后这类工作交给某个项目」，确认后，命中关键词的任务都交给它的组长。</li>
-          <li data-i18n="next.c.agents.7">设置里可以写一句「Agent 取名风格」，新 Agent 按它起名，名字仍然不重复。</li>
-        </ul></div>
-        <div><h3 data-i18n="next.c.roundtable">圆桌像聊天一样</h3><ul>
-          <li data-i18n="next.c.roundtable.1">对话变成聊天界面：你的消息在右边，每位 Agent 的在左边。</li>
-          <li data-i18n="next.c.roundtable.2">「留言板」等它下次工作时回复，「即时对话」马上唤醒它回答。</li>
-          <li data-i18n="next.c.roundtable.3">每条消息写明每位收件人的实际状态，唤醒不了时说明原因。</li>
-          <li data-i18n="next.c.roundtable.4">另一台设备发来的提问失败时，会写明原因，例如共享项目换了负责人。</li>
-        </ul></div>
-        <div><h3 data-i18n="next.c.work">任务和项目管理</h3><ul>
-          <li data-i18n="next.c.work.1">阻塞的任务写明在等什么、从什么时候、在哪个会话，能打开那个会话；在原会话继续后自动解除。</li>
-          <li data-i18n="next.c.work.2">各客户端打开会话的链接清单可以在设置里检查更新，先看差异再应用。</li>
-          <li data-i18n="next.c.work.3">项目可以有自己的项目经理和看板：自定义列对应内置状态，或者链接外部看板。</li>
-          <li data-i18n="next.c.work.4">Jefa 的看板随 FULI 安装，不用另装；「聘请 Agent」按钮已移除。</li>
-          <li data-i18n="next.c.work.5">回执写全协作者；负责人收尾后才到的执行者报告不再丢失。</li>
-          <li data-i18n="next.c.work.6">定时任务已移除：它只会新建任务卡，没有东西去执行。</li>
-          <li data-i18n="next.c.work.7">阻塞的任务可以由你「标记为已解除」；阻塞卡片只写一行原因和已阻塞几天。</li>
-        </ul></div>
-        <div><h3 data-i18n="next.c.services">服务、职业和项目图谱</h3><ul>
-          <li data-i18n="next.c.services.1">新的「服务」页列出 Agent 启动的服务和 Agent 应用的工作台，可以搜索和筛选；只有你能停止，停止前核对进程身份。</li>
-          <li data-i18n="next.c.services.2">Bole 的职业改为「Agent 资源」；职业页改成表格，默认只显示在用的职业。</li>
-          <li data-i18n="next.c.services.3">项目图谱的节点和名字不再重叠或被裁掉；「调整层级」可以把项目拖到另一个项目下面。</li>
-        </ul></div>
-        <div><h3 data-i18n="next.c.tonborg">Tonborg 和内置 Agent</h3><ul>
-          <li data-i18n="next.c.tonborg.1">判断记录可以搜索全部历史，分页加载。</li>
-          <li data-i18n="next.c.tonborg.2">默认判断方式可以按项目单独设置。</li>
-          <li data-i18n="next.c.tonborg.3">每张等你处理的卡片都说明为什么要你确认。</li>
-          <li data-i18n="next.c.tonborg.4">注入格式预检：命中已知注入格式时拦下批准、交给你。这只是很窄的补充检查，不算注入防护。</li>
-          <li data-i18n="next.c.tonborg.5">内置 Agent 的建议集中在「设置 → 模型与用量 → 建议记录」。</li>
-          <li data-i18n="next.c.tonborg.6">内置 Agent 的模型设置每次改动都有记录，密钥只记为「已更改」。</li>
-        </ul></div>
-        <div><h3 data-i18n="next.c.entry">入口、工具和客户端</h3><ul>
-          <li data-i18n="next.c.entry.1">Claude Code 的任务入口按预览上限裁剪可选内容，硬规则和收尾字段保留。</li>
-          <li data-i18n="next.c.entry.2">修改类的请求附上命中知识的标题索引，需要时再读正文。</li>
-          <li data-i18n="next.c.entry.3">开始一次会话只需要一次 Provider 请求。</li>
-          <li data-i18n="next.c.entry.4">所有经过会话检查的工具都能带当前任务令牌；可以预期的输入错误报 invalid_input。</li>
-          <li data-i18n="next.c.entry.5">WSL 客户端的路径会正确转换，可以访问 Windows 上的 FULI。</li>
-          <li data-i18n="next.c.entry.6">OpenCode 2.x 通过插件接入任务入口和收尾，有自己的来源；它的对话还不会自动采集。</li>
-        </ul></div>
-        <div><h3 data-i18n="next.c.interface">界面</h3><ul>
-          <li data-i18n="next.c.interface.1">所有页面统一 1888px 宽、同一种滚动条，分割线更少。</li>
-          <li data-i18n="next.c.interface.2">「?」说明模式能解释每个标签页和侧栏入口，右键或 Esc 退出。</li>
-          <li data-i18n="next.c.interface.3">任务状态只用一套颜色：阻塞和失败是红色。</li>
-          <li data-i18n="next.c.interface.4">去掉单独的「品味」页和 Agent 页上的「问 AR」；偏好计数写清楚两个数。</li>
-          <li data-i18n="next.c.interface.5">界面上不再出现内部代码和英文类型名，原始信息收在详情里；知识目录只有一个滚动条。</li>
-          <li data-i18n="next.c.interface.6">字号和字重重新整理，层次更清楚；宽屏和笔记本屏幕上，列表随屏宽变成多列卡片，表单内容控制在易读宽度。</li>
-        </ul></div>
-        <div><h3 data-i18n="next.c.local">Windows 和本机运行</h3><ul>
-          <li data-i18n="next.c.local.1">端口被 Windows 保留时，托盘会说明是哪一段，并能一键换到空闲端口；第一次安装会避开保留的端口。</li>
-          <li data-i18n="next.c.local.2">更新可以把 Neo4j 升到同一版本线的新补丁，切换前先备份图谱；之后不能再退回旧补丁。</li>
-          <li data-i18n="next.c.local.3">本地服务的日志每次启动时超过 50 MB 就轮换，Provider 不再记录 Neo4j 的提示。</li>
+        <div><h3 data-i18n="next.c.changes">变化</h3><ul>
+          <li data-i18n="next.c.changes.1">相对稳定版改了什么、去掉了什么，会列在这里。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.upgrade">升级前要知道</h3><ul>
-          <li data-i18n="next.c.upgrade.1">图谱有一步迁移要你在「设置 → 数据格式迁移」确认，确认之前图谱只读。</li>
-          <li data-i18n="next.c.upgrade.2">另一步图谱结构变化和圆桌存储升级，会在备份后自动完成；另外新增几个本地存储。</li>
-          <li data-i18n="next.c.upgrade.3">升级后的数据旧版本打不开，退回需要升级前的备份。</li>
-          <li data-i18n="next.c.upgrade.4">fuli setup 等待就绪改为真正的截止时间，超时会说明哪些在运行、怎么重试。</li>
+          <li data-i18n="next.c.upgrade.1">数据格式有没有变化、怎么退回，会写在这里。</li>
         </ul></div>
       </section>
 
       <section class="start" id="start" aria-labelledby="start-title">
         <h2 data-i18n="next.installTitle" id="start-title">一条命令装上预览版</h2>
-        <p data-i18n="next.installDescription">已经装了 FULI 的话，先运行 fuli stop，并备份数据目录。下面的命令用原来的安装脚本，只是把安装的包换成 fuli-context@beta，装完会接着运行 fuli setup。这一版的图谱有一步迁移要你在「设置 → 数据格式迁移」里确认，确认之前图谱只读。</p>
+        <p data-i18n="next.installDescription">已经装了 FULI 的话，先运行 fuli stop，并备份数据目录。下面的命令用原来的安装脚本，只是把安装的包换成 fuli-context@beta，装完会接着运行 fuli setup。</p>
         <div class="oneliner">
           <code>curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | FULI_NPM_PACKAGE_SPEC=fuli-context@beta sh<span>macOS / Linux</span></code>
           <code>$env:FULI_NPM_PACKAGE_SPEC='fuli-context@beta'; irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex<span>Windows PowerShell</span></code>
           <code>npm install --global fuli-context@beta &amp;&amp; fuli setup<span>npm</span></code>
         </div>
         <p data-i18n="next.switchBack">想回到稳定版：去掉 FULI_NPM_PACKAGE_SPEC 再运行一次安装脚本。稳定版的版本号更低，原生 Provider 需要 fuli setup --allow-provider-downgrade。预览版升级过的数据（自动升级的，和你确认过的迁移），旧版本打不开，只能用升级前的备份恢复。</p>
-        <p class="start-links"><a data-i18n="next.release" data-preview-release class="button" href="https://github.com/JevonsCode/fuli/releases/tag/v0.22.0-beta.4">这一版的更新说明</a><a data-i18n="next.releasePrevious" data-release-notes="0.21.0" href="https://github.com/JevonsCode/fuli/blob/main/docs/releases/0.21.0.md">0.21 的更新说明</a><a data-i18n="next.stable" data-i18n-href="next.stableUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到稳定版</a></p>
+        <p class="start-links"><a data-i18n="next.release" data-preview-release class="button" href="https://github.com/JevonsCode/fuli/releases/tag/v0.22.0-beta.4">这一版的更新说明</a><a data-i18n="next.stable" data-i18n-href="next.stableUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到稳定版</a></p>
       </section>
     </main>
 

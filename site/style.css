@@ -207,6 +207,9 @@ figure.window figcaption { padding: 0 20px; }
 .start-links .button { background: #e9f1ee; color: var(--night); }
 .start-links .button:hover { background: #8bc1a8; }
 .start-links a:not(.button) { color: #cfe3da; }
+/* The /next/ page while no preview is ahead of the stable release (scripts/build-site.js). */
+.no-preview { box-sizing: border-box; min-height: 100vh; }
+.no-preview h1 { margin: 0; color: #fff; font-size: clamp(30px, 3.6vw, 52px); }
 
 .footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 28px var(--gutter); color: var(--muted); font-size: 14px; }
 .footer a { margin-left: 18px; color: var(--muted); }
