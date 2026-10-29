@@ -174,6 +174,21 @@ test('Claude keeps text/tool pairs but skips thinking and foreign sessions', () 
   assert.ok(!JSON.stringify(events).includes('private'));
 });
 
+test('a client compaction summary is stored as its own kind, never as something the user said', () => {
+  const claude = { sessionId: 'current', type: 'user', isCompactSummary: true, message: { role: 'user', content: 'Synthetic summary' } };
+  assert.deepEqual(normalizeClaudeRecord(claude, 'current'),
+    [{ role: 'summary', kind: 'compaction_summary', content: 'Synthetic summary' }]);
+  const blocks = { ...claude, message: { content: [{ type: 'text', text: 'Part one' }, { type: 'text', text: 'Part two' }] } };
+  assert.deepEqual(normalizeClaudeRecord(blocks, 'current'), [{ role: 'summary', kind: 'compaction_summary', content: 'Part one\nPart two' }]);
+  assert.deepEqual(normalizeClaudeRecord({ ...claude, message: { content: '' } }, 'current'), []);
+  assert.deepEqual(normalizeClaudeRecord(claude, 'other'), []);
+  assert.deepEqual(normalizeCodexRecord({ type: 'compacted', payload: { message: 'Synthetic local summary' } }),
+    [{ role: 'summary', kind: 'compaction_summary', content: 'Synthetic local summary' }]);
+  // Remote compaction leaves the message empty and keeps only an encrypted item.
+  assert.deepEqual(normalizeCodexRecord({ type: 'compacted', payload: { message: '', replacement_history: [{ type: 'compaction', encrypted_content: 'opaque' }] } }), []);
+  assert.deepEqual(normalizeCodexRecord({ type: 'compacted', payload: {} }), []);
+});
+
 test('oversized normalized rows emit an omission and do not trap later records', async t => {
   const path = await fixture(t, row('assistant', 'many') + row('assistant', 'after'));
   const many = { ...adapter, normalize(record, session) {

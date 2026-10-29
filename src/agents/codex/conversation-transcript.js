@@ -1,5 +1,11 @@
 // Codex rollout v1: visible response items only; event_msg mirrors are omitted.
 export function normalizeCodexRecord(record) {
+  // A locally written compaction summary; remote compaction leaves the message
+  // empty and keeps only an encrypted item, which is never stored.
+  if (record?.type === 'compacted') {
+    const message = record.payload?.message;
+    return typeof message === 'string' && message.trim() ? [{ role: 'summary', kind: 'compaction_summary', content: message }] : [];
+  }
   if (record?.type !== 'response_item') return [];
   const item = record.payload;
   if (item?.type === 'message' && ['user', 'assistant'].includes(item.role)) {

@@ -171,11 +171,11 @@ function date(value: string) {
   return Number.isNaN(parsed.getTime()) ? t('projectAgents.notReported') : new Intl.DateTimeFormat(currentLocale(), { dateStyle: 'short', timeStyle: 'short' }).format(parsed)
 }
 function role(value: string) {
-  return ['user', 'assistant', 'tool'].includes(value) ? t(`projectAgents.conversations.${value}`) : value
+  return ['user', 'assistant', 'tool', 'summary'].includes(value) ? t(`projectAgents.conversations.${value}`) : value
 }
 function content(value: unknown) { return typeof value === 'string' ? value : JSON.stringify(value, null, 2) }
 function entryKind(value: string) {
-  return t(`projectAgents.conversations.kinds.${['request', 'decision', 'correction', 'open', 'method'].includes(value) ? value : 'request'}`)
+  return t(`projectAgents.conversations.kinds.${value === 'compaction' ? value : 'request'}`)
 }
 function client(value?: string) {
   return t(`projectAgents.clients.${['codex', 'claude', 'claude_code', 'cursor', 'gemini_cli', 'kiro', 'opencode'].includes(value ?? '') ? value : 'other'}`)

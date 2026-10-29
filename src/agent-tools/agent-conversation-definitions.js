@@ -16,6 +16,6 @@ export const AGENT_CONVERSATION_DEFINITIONS = [
     description: 'Read the compaction threshold, recovery context budget and capture switch. Defaults: fold older messages into a digest after 64 KB of unfolded text; recover 4000 conservative UTF-8 bytes. Raw messages are always retained.',
     inputSchema: objectSchema(scope, required) },
   { name: 'update_agent_conversation_policy', title: 'WRITE · Conversation policy',
-    description: 'Configure this Agent’s scoped conversation capture and recovery. No LLM runs during capture or compaction. Raw data is retained; compaction only shortens default recovery.',
+    description: 'Configure this Agent’s scoped conversation capture and recovery. No LLM runs during capture or compaction. Raw data is retained; folding only indexes history.',
     inputSchema: objectSchema({ ...scope, compactAfterKb: integerSchema({ minimum: 8, maximum: 1024 }), contextBudget: integerSchema({ minimum: 512, maximum: 16000 }), enabled: booleanSchema() }, [...required, 'compactAfterKb', 'contextBudget', 'enabled']) }
 ];

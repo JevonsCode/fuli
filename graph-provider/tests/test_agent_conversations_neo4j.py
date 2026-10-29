@@ -44,6 +44,36 @@ def test_context_proofs_name_only_the_asking_sessions_own_native_events():
     asyncio.run(scenario())
 
 
+def test_recovery_carries_the_newest_client_compaction_summary():
+    """A client's own compaction summary is stored as its own event kind, never
+    as a user message, and recovery points at (or carries) the newest one."""
+    async def scenario():
+        async with provider_client(fixture_settings()) as (client, _):
+            space = (await client.post('/v1/spaces', json={'name':'Synthetic compaction', 'kind':'personal'})).json()['id']
+            project = 'compaction-' + uuid4().hex[:10]
+            await seed_agent(client, space, project=project, allowed_clients=['claude_code'])
+            scope = dict(personal_space_id=space, personal_project_id=project, agent_id='engineer', source_application='claude_code')
+            token = 'fuli-task-' + uuid4().hex
+            assert (await client.put('/v1/task-contexts', json=dict(personal_space_id=space, personal_project_id=project,
+                project_agent_id='engineer', session_id='native', source_application='claude_code', token=token))).status_code == 200
+            base = {**scope, 'session_id': 'native', 'task_context_token': token}
+            events = [dict(event_id='early', role='user', content='Synthetic early request'),
+                      dict(event_id='older-summary', role='summary', kind='compaction_summary', content='Older synthetic summary'),
+                      dict(event_id='newer-summary', role='summary', kind='compaction_summary', content='Newer synthetic summary'),
+                      *[dict(event_id=f'turn-{index}', role='user', content=f'Later synthetic turn {index}') for index in range(4)]]
+            saved = await client.post('/v1/agent-conversations/append', json={**base, 'events': events})
+            assert saved.status_code == 200, saved.text
+            cid = saved.json()['conversation_id']
+            context = (await client.post('/v1/agent-conversations/query', json={**scope, 'conversation_id': cid,
+                'mode': 'context'})).json()['context']
+            assert context['compaction_summary'] == {'sequence': 3, 'bytes': 23, 'content': 'Newer synthetic summary'}
+            assert all(message['role'] == 'user' and 'summary' not in message['content'] for message in context['messages'])
+            page = (await client.post('/v1/agent-conversations/query', json={**scope, 'conversation_id': cid,
+                'mode': 'events', 'limit': 50})).json()
+            assert [event['kind'] for event in page['events'] if event['role'] == 'summary'] == ['compaction_summary'] * 2
+    asyncio.run(scenario())
+
+
 def test_conversation_cross_client_replay_isolation_and_policy():
     async def scenario():
         async with provider_client(fixture_settings()) as (client, _):
