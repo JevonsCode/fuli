@@ -15,7 +15,8 @@ export async function searchCurrentProjectKnowledge(
     limitPerQuery = 12,
     includeHistorical = false,
     includePending = false,
-    cursor = null, sourceApplication = null
+    cursor = null, sourceApplication = null,
+    view = 'full', ids = null
   }
 ) {
   const projectResolution = agentProjectResolution(resolution);
@@ -64,7 +65,7 @@ export async function searchCurrentProjectKnowledge(
     related_project_suggestions: relatedProjects.suggestions,
     related_project_suggestions_status: relatedProjects.status,
     related_project_guidance: relatedProjectGuidance(relatedProjects.suggestions)
-  }, { cursor, consoleUrl: application.consoleUrl, toolName: 'search_current_project_knowledge',
+  }, { cursor, view, ids, consoleUrl: application.consoleUrl, toolName: 'search_current_project_knowledge',
     context: { personalSpaceId: application.config.personal.spaceId,
       personalProjectId: resolution.personalProjectId, queries, limitPerQuery, includeHistorical, includePending } });
 }

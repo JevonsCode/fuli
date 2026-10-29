@@ -21,7 +21,9 @@ export async function searchFederatedKnowledge(application, {
   agentToolName = 'search_knowledge_graph',
   sourceApplication = null,
   sourceSessionId = null,
-  cursor = null
+  cursor = null,
+  view = 'full',
+  ids = null
 }, { workspaceFor, recordAgentViews }) {
   if (personalSpaceId !== application.config.personal.spaceId) {
     throw new TypeError('Search must use the active personal space');
@@ -172,7 +174,7 @@ export async function searchFederatedKnowledge(application, {
     relatedProjectGuidance: relatedProjectGuidance(relatedProjects.suggestions)
   };
   return agentInvocation && agentToolName === 'search_knowledge_graph'
-    ? budgetKnowledgeSearch(result, { cursor, consoleUrl: application.consoleUrl,
+    ? budgetKnowledgeSearch(result, { cursor, view, ids, consoleUrl: application.consoleUrl,
       context: { personalSpaceId, query, personalProjectId, projectAgentId, contextPersonalProjectIds,
         personalProjectScope, projectIds, limit, includeHistorical, includePending } }) : result;
 }
