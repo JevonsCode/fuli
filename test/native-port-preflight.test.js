@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { createServer } from 'node:net';
+import { once } from 'node:events';
+import { connect, createServer } from 'node:net';
 import test from 'node:test';
 
 import { createNativeGraphServices } from '../src/native-runtime/runtime.js';
@@ -78,13 +79,16 @@ test('Windows port preflight reports a real listener on any local address with i
     const server = createServer(socket => socket.destroy());
     await new Promise((resolve, reject) => server.once('error', reject).listen(0, host, resolve));
     const { port } = server.address();
+    // A connected client socket on the same local port is not a listener.
+    const client = connect(port, '127.0.0.1');
+    await once(client, 'connect');
     try {
       await assert.rejects(assertWindowsNativePortFree(port), error => {
         assert.match(error.message, new RegExp(`already in use .*: ${port} \\(owner PIDs: ${process.pid} \\(node\\)\\)`));
         assert.match(error.message, /owning process was not touched and the service for this port was not started/);
         return true;
       });
-    } finally { await new Promise(resolve => server.close(resolve)); }
+    } finally { client.destroy(); await new Promise(resolve => server.close(resolve)); }
     await assertWindowsNativePortFree(port);
   }
   await assert.rejects(assertWindowsNativePortFree(0), /Invalid native service port/);

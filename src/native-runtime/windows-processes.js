@@ -48,8 +48,11 @@ export async function windowsNativeProcessMatches(pid, command, entry, options) 
 // would also answer 127.0.0.1 is visible, not only an exact loopback bind.
 async function listeningOwners(port) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid native service port');
-  return powershell('$owners = @(Get-NetTCPConnection -State Listen -LocalPort ' + port
-    + ' -ErrorAction SilentlyContinue | ForEach-Object {[pscustomobject]@{pid=[int]$_.OwningProcess;'
+  // A listening socket has no remote endpoint. Some Windows builds report its
+  // State as empty or Closed, so the State filter alone misses real listeners.
+  return powershell('$owners = @(Get-NetTCPConnection -LocalPort ' + port
+    + ' -ErrorAction SilentlyContinue | Where-Object {$_.RemotePort -eq 0 -and @(\'0.0.0.0\',\'::\') -contains $_.RemoteAddress}'
+    + ' | ForEach-Object {[pscustomobject]@{pid=[int]$_.OwningProcess;'
     + 'name=(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName}} | Sort-Object pid -Unique);'
     + 'ConvertTo-Json -InputObject $owners -Compress');
 }
