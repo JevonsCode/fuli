@@ -16,11 +16,14 @@ const _maxWidth = 600.0;
 /// The whole window: whether FULI works, what needs the person, and the
 /// buttons that fix it. One column; items are grouped by who acts on them.
 class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.controller, required this.strings, required this.opener});
+  const HomePage(
+      {super.key, required this.controller, required this.strings, required this.opener, this.consoleLink = true});
 
   final FuliController controller;
   final Strings strings;
   final UrlOpener opener;
+  // Off where the window itself shows the console once it answers.
+  final bool consoleLink;
 
   @override
   Widget build(BuildContext context) {
@@ -218,7 +221,7 @@ class HomePage extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: _maxWidth),
           child: Row(
             children: [
-              TextButton.icon(
+              if (consoleLink) TextButton.icon(
                 onPressed: snapshot.reached ? () => opener.open(controller.consoleUri) : null,
                 icon: const Icon(Icons.open_in_new_rounded, size: 16),
                 label: Text(strings.openConsole),

@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fuli_desktop/src/app/app_services.dart';
 import 'package:fuli_desktop/src/app/fuli_controller.dart';
@@ -13,7 +14,8 @@ const zh = Strings(chinese: true);
 void main() {
   late RecordingOpener opener;
 
-  Future<(DemoFuliApi, FuliController)> showScenario(WidgetTester tester, String name) async {
+  Future<(DemoFuliApi, FuliController)> showScenario(WidgetTester tester, String name,
+      {Widget Function(Uri)? consoleView}) async {
     opener = RecordingOpener();
     final (api, runtime) = demoScenario(name);
     final controller = FuliController(
@@ -23,7 +25,7 @@ void main() {
       strings: zh,
       wait: (_) async {},
     );
-    await tester.pumpWidget(FuliApp(services: AppServices(controller: controller, strings: zh, opener: opener)));
+    await tester.pumpWidget(FuliApp(services: AppServices(controller: controller, strings: zh, opener: opener, consoleView: consoleView)));
     expect(find.text('正在检查 FULI…'), findsOneWidget);
     await controller.refresh();
     await tester.pump();
@@ -120,5 +122,26 @@ void main() {
 
     expect(find.text('FULI 现在不能正常使用'), findsOneWidget);
     expect(find.text('Knowledge 的数据格式 FULI 不能自动处理，请在控制台的「数据格式迁移」里查看原因。'), findsOneWidget);
+  });
+
+  Widget console(Uri uri) => Text('console $uri');
+
+  testWidgets('with a WebView the window is the console once it answers', (tester) async {
+    final (_, controller) = await showScenario(tester, 'needs', consoleView: console);
+
+    // The console's own banner shows the findings; no status page beside it.
+    expect(find.text('console ${controller.consoleUri}'), findsOneWidget);
+    expect(find.text('有 3 件事需要你'), findsNothing);
+  });
+
+  testWidgets('with a WebView, a stopped FULI shows the status page until it is started', (tester) async {
+    final (_, controller) = await showScenario(tester, 'stopped', consoleView: console);
+
+    expect(find.text('FULI 没有运行'), findsOneWidget);
+    expect(find.text('打开控制台'), findsNothing);
+    await tester.tap(find.text('启动 FULI'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('console ${controller.consoleUri}'), findsOneWidget);
   });
 }
