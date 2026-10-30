@@ -247,16 +247,22 @@
         <div class="changes-intro"><h2 data-i18n="next.changes" id="changes-title">相对稳定版 0.22.1 的全部变化</h2><p data-i18n="next.description">这里列出这个预览版相对当前稳定版 0.22.1 的全部新功能和变化，不只是比上一个 beta 多了什么。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。</p></div>
         <div><h3 data-i18n="next.c.features">新功能</h3><ul>
           <li data-i18n="next.c.features.1">体检：FULI 自己检查客户端连接是否过期、迁移是否在等你、会话是否还在用旧版、上次更新有没有做完；能自动修的点一下就修好，修不了的告诉你去哪里处理。控制台顶部显示「有 N 件事需要你」。</li>
-          <li data-i18n="next.c.features.2">Windows 安装包的托盘换成 FULI 桌面客户端：一句话告诉你 FULI 是否正常，每件事一张卡片一个按钮，托盘圆点变色，情况变差时发系统通知；默认开机启动，可在托盘菜单关闭。</li>
+          <li data-i18n="next.c.features.2">Windows 安装包的托盘换成 FULI 桌面客户端（Beta）：控制台能连上时，窗口里直接就是控制台，不用再开浏览器；连不上时一句话告诉你 FULI 怎么了，每件事一张卡片一个按钮。托盘圆点变色，情况变差时发系统通知；默认开机启动，可在托盘菜单关闭。</li>
           <li data-i18n="next.c.features.3">一键更新和回退会先关掉客户端，做完再打开；卸载会关掉它并删掉开机启动项。从 0.22 的旧托盘一键更新过来，打开的就是新客户端。</li>
+<li data-i18n="next.c.features.4">FLA 自己的工作台：有任务或工作流的 FLA，首页第一个标签就是工作台，看得到派给它的任务看板和它自己的工作流。工作流由它从经常重复的工作里提议，你确认后才生效；不会自动执行，也不会塞进上下文。</li>
+<li data-i18n="next.c.features.5">「#FLA 姓名」也能叫内置角色 Bole、Jefa、Tonborg 和 Astro；句中随口提到 #FLA 不再误弹选人；叫不到时说明原因和处理办法。控制台里 Bole、Tonborg 的负责项目可以保存了。</li>
+<li data-i18n="next.c.features.6">知识检索可以先看索引（标题和大致 Token 数），再按 ID 读选中的几条全文，更省 Token。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.changes">变化</h3><ul>
           <li data-i18n="next.c.changes.1">旧的 FuliTray 托盘不再提供，桌面和开始菜单的 Fuli 快捷方式打开新客户端；想回到旧托盘，可以用 Rollback-Fuli 回到更新前的版本。</li>
           <li data-i18n="next.c.changes.2">控制台里所有开关换成同一种组件；客户端的颜色和字号来自控制台主题。</li>
+<li data-i18n="next.c.changes.3">会话折叠改为保留 Claude Code、Codex 自己压缩对话时写的摘要，不再按关键词挑句子。</li>
+<li data-i18n="next.c.changes.4">开始使用共享组件 agent-session-launcher / agent-installer（这一版只读，不改任何客户端配置）；ID 含特殊字符的会话不再显示「打开会话」链接。</li>
+<li data-i18n="next.c.changes.5">修复某些 Windows 更新之后 FULI 无法启动、更新失败也无法回滚的问题；依赖安全更新。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.upgrade">升级前要知道</h3><ul>
-          <li data-i18n="next.c.upgrade.1">数据格式没有变化，从 0.22.1 升级不需要确认迁移。</li>
-          <li data-i18n="next.c.upgrade.2">桌面客户端还没在真实桌面上验证过托盘、通知和开机启动；macOS 版客户端还不在发布包里。</li>
+          <li data-i18n="next.c.upgrade.1">新增两个本地存储（agent-workflows.sqlite、session-clients/），第一次使用时创建；从 0.22.1 升级不需要确认迁移。</li>
+          <li data-i18n="next.c.upgrade.2">桌面客户端是 Beta：内嵌控制台在一台 Windows 11 电脑上实际用过，托盘、通知和开机启动还没完整验证；macOS 版客户端还不在发布包里。</li>
         </ul></div>
       </section>
 
