@@ -17,7 +17,7 @@ import { agentManagementPath } from "@/features/project-agents/orchestration-fil
 import { statusTone } from "@/features/project-agents/task-labels";
 import { agentPinsText } from "./agent-pins";
 import AgentMentionCopy from "./AgentMentionCopy.vue";
-import { isMentionableFla } from "./fla-mention";
+import { mentionKind } from "./fla-mention";
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentDisplayName, agentResponsibility, profileProjectIds } from "./profile-model";
 
@@ -122,7 +122,7 @@ const pinLabel = computed(() =>
       </div>
     </dl>
     <DialogFooter class="border-t pt-4">
-      <AgentMentionCopy v-if="isMentionableFla(agent)" class="sm:mr-auto" size="default" :name="name" :partner="mentionPartner" />
+      <AgentMentionCopy v-if="mentionKind(agent)" :kind="mentionKind(agent)" class="sm:mr-auto" size="default" :name="name" :partner="mentionPartner" />
       <slot name="actions">
         <Button
           variant="outline"

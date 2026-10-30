@@ -7,7 +7,7 @@ import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-colo
 import { agentDisplayName, agentResponsibility } from '@/features/agent-profile/profile-model'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import AgentMentionCopy from '@/features/agent-profile/AgentMentionCopy.vue'
-import { isMentionableFla } from '@/features/agent-profile/fla-mention'
+import { mentionKind } from '@/features/agent-profile/fla-mention'
 import { t } from '@/i18n'
 import type { ProjectAgentRecord } from '@/types'
 import AgentHand from './AgentHand.vue'
@@ -100,7 +100,7 @@ function surfaceClick(event: MouseEvent) {
         <span v-if="!chips.length" class="agent-card-no-project">{{ t('employees.noAssignedProjects') }}</span>
       </div>
       <div class="flex shrink-0 items-center gap-1.5">
-        <AgentMentionCopy v-if="isMentionableFla(agent)" :name="name" :partner="mentionPartner" />
+        <AgentMentionCopy v-if="mentionKind(agent)" :kind="mentionKind(agent)" :name="name" :partner="mentionPartner" />
         <Button
           variant="ghost"
           size="sm"

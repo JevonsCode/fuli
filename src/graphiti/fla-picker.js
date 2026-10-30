@@ -1,4 +1,5 @@
 import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
+import { FIXED_EMPLOYEE_AGENT_TYPES, employeeAgentId, employeeCapability } from '../employees/manifest.js';
 import { identityKey } from '../text/name-identity.js';
 import { termIndex } from '../standing-assignments/term-match.js';
 import { agentUnavailableReason } from './agent-availability.js';
@@ -35,11 +36,31 @@ const FUZZY = 2;
 // project (its global scope); undefined is one whose projects all ended.
 export function flaCandidates(roster, projects, personalSpaceId) {
   const named = new Map(projects.map(project => [project.project_id, project]));
-  return roster.filter(agent => (!agent.personal_space_id || agent.personal_space_id === personalSpaceId)
-    && agent.agent_id !== ASSISTANT_AGENT_ID && !NOT_PICKABLE_TYPES.has(agent.profile?.agent_type)
+  return inSpace(roster, personalSpaceId).filter(agent => agent.agent_id !== ASSISTANT_AGENT_ID
+    && !NOT_PICKABLE_TYPES.has(agent.profile?.agent_type)
     && !isPeerRoleAgent({ agentId: agent.agent_id, agentType: agent.profile?.agent_type,
       capabilities: agent.profile?.capabilities ?? [] }))
     .flatMap(agent => placements(agent, named).map(placement => candidate(agent, placement)));
+}
+
+// FULI's own roles (rec#58): Jefa, Bole and Tonborg work in the folder's
+// project (projectId undefined outside one), Astro globally. They are named
+// only exactly, with `#FLA <name>`, never listed in the picker; the Provider
+// and the role's own project scope still decide whether one may work there.
+export function roleCandidates(roster, projects, personalSpaceId, currentProjectId) {
+  const current = projects.find(project => project.project_id === currentProjectId);
+  return inSpace(roster, personalSpaceId).filter(isFixedRole).map(agent => ({ ...candidate(agent,
+    { project: agent.agent_id === ASSISTANT_AGENT_ID ? null : current, assignment: null }), role: true }));
+}
+
+function inSpace(roster, personalSpaceId) {
+  return roster.filter(agent => !agent.personal_space_id || agent.personal_space_id === personalSpaceId);
+}
+
+// The Provider's own identity of a fixed role, not an Agent reusing its id.
+function isFixedRole(agent) {
+  return Object.keys(FIXED_EMPLOYEE_AGENT_TYPES).some(id => agent.agent_id === employeeAgentId(id)
+    && (agent.profile?.capabilities ?? []).includes(employeeCapability(id)));
 }
 
 function placements(agent, named) {
@@ -64,8 +85,8 @@ function candidate(agent, { project, assignment }) {
 
 // Whether this client may continue the candidate now, or why not.
 export function unavailableReason(candidate, sourceApplication) {
-  return agentUnavailableReason(candidate, sourceApplication)
-    ?? (candidate.projectId === undefined ? 'no_project' : null);
+  const placement = candidate.role ? 'needs_project' : 'no_project';
+  return agentUnavailableReason(candidate, sourceApplication) ?? (candidate.projectId === undefined ? placement : null);
 }
 
 // This session's own FLA first, then the current project's FLAs, then the

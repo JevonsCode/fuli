@@ -121,6 +121,7 @@ export const employeeMessages = {
       reactivation_required: '这位 Agent 已停用，请明确恢复后再分配。',
       assignment_scope_conflict: '负责范围已在别处改变。请重新读取，确认后再保存。',
       assignment_update_incomplete: '负责范围没能全部保存，请刷新后核对。',
+      system_managed_employee: '这位内置 Agent 由 FULI 自动维护：Astro 不负责具体项目，其他内置 Agent 要先就绪才能调整负责项目。',
     },
   },
   'en-US': {
@@ -244,6 +245,7 @@ export const employeeMessages = {
       reactivation_required: 'This Agent is inactive. Explicitly reactivate it before assigning.',
       assignment_scope_conflict: 'Project assignments changed elsewhere. Reload, review, and save again.',
       assignment_update_incomplete: 'Not everything was saved. Reload and check.',
+      system_managed_employee: 'This built-in Agent is maintained by FULI: Astro takes no projects, and the others must be ready before their projects change.',
     },
   },
 } as const

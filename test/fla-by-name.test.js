@@ -107,10 +107,22 @@ function fixture({ roster = [ADA, JAMIE, JADE, JEFA, TEMP], leads = LEADS, holdB
 const owner = entry => [entry.context.personal_project_id, entry.context.project_agent_id];
 const bytes = value => Buffer.byteLength(JSON.stringify(compactTaskContext(value)));
 
-test('parsing: leading @name, #FLA anywhere, release and choice; emails, decorators and scopes are not FLAs, @FLG is a group', () => {
+test('parsing: leading @name, #FLA at a start or after a request word, release and choice; emails, decorators and scopes are not FLAs, @FLG is a group', () => {
   assert.deepEqual(parseFlaMention('@Jamie Ash 继续刚才的任务'), { explicit: false, query: 'Jamie Ash 继续刚才的任务' });
   assert.deepEqual(parseFlaMention('  #FLA 小林 测试 继续'), { explicit: true, query: '小林 测试 继续' });
-  assert.deepEqual(parseFlaMention('请让 #FLA Jamie Ash 看一下'), { explicit: true, query: 'Jamie Ash 看一下' });
+  assert.deepEqual(parseFlaMention('背景在上面\n  #FLA Jamie Ash 继续'), { explicit: true, query: 'Jamie Ash 继续' });
+  // After a request word `#FLA` takes an exact name only (inline): it never opens the picker.
+  for (const [prompt, query] of [['请让 #FLA Jamie Ash 看一下', 'Jamie Ash 看一下'], ['帮我 #FLA 小林 看下数据', '小林 看下数据'],
+    ['麻烦，#FLA Bole 招一个前端', 'Bole 招一个前端'], ['please #FLA Jamie Ash review this', 'Jamie Ash review this'],
+    ['Could you ask #FLA Jamie Ash', 'Jamie Ash']]) {
+    assert.deepEqual(parseFlaMention(prompt), { explicit: true, query, inline: true }, prompt);
+  }
+  // rec#58: prose, quotes, code and questions about the syntax are text.
+  for (const text of ['希望内置角色也可以用 #FLA Bole，解释一下这些写法', '`#FLA Bole` 是什么意思？',
+    '“#FLA Bole” 和 @Bole 有什么区别？', '请让 "#FLA Jamie Ash" 看一下', '请让「#FLA Jamie Ash」看一下',
+    'fix the parser for #FLA', 'the outlet #FLA Jamie', '改一下\n```\n#FLA Jamie Ash\n```']) {
+    assert.equal(parseFlaMention(text), null, text);
+  }
   assert.deepEqual(parseFlaMention('@FLA'), { explicit: true, query: '' });
   assert.deepEqual(parseFlaMention('#fla 2'), { choice: 2 });
   for (const release of ['@FLA 结束', '#FLA end', '@fla release。']) assert.deepEqual(parseFlaMention(release), { release: true });
@@ -426,14 +438,16 @@ test('a release outside any project does not leave the session in the FLA\'s pro
 });
 
 test('a dismissed or client-restricted FLA is reported with its reason; nobody else is loaded', async () => {
+  // Each with the shortest legal fix the person has, if any.
   for (const [agent, reason, text] of [
-    [{ ...JAMIE, profile: { ...JAMIE.profile, status: 'archived' } }, 'dismissed', '已被解雇'],
-    [{ ...JAMIE, profile: { ...JAMIE.profile, allowed_clients: ['cursor'] } }, 'client_not_allowed', '不允许在当前客户端使用']]) {
+    [{ ...JAMIE, profile: { ...JAMIE.profile, status: 'archived' } }, 'dismissed', '已被解雇，未改用其他 FLA'],
+    [{ ...JAMIE, profile: { ...JAMIE.profile, allowed_clients: ['cursor'] } }, 'client_not_allowed',
+      '不允许在当前客户端使用，未改用其他 FLA；可在控制台为 Jamie Ash 允许当前客户端']]) {
     const { run, memoryReads } = fixture({ roster: [ADA, agent] });
     const entry = await run('@Jamie Ash 继续');
     assert.equal(entry.fla.status, 'unavailable');
     assert.equal(entry.fla.reason, reason);
-    assert.equal(entry.fla.notice, `Jamie Ash（Beta）无法继续：${text}，未改用其他 FLA`);
+    assert.equal(entry.fla.notice, `Jamie Ash（Beta）无法继续：${text}`);
     assert.equal(entry.agent_receipt.owner, null);
     assert.deepEqual(memoryReads(), [], reason);
   }
@@ -467,6 +481,86 @@ test('an FLA the Provider will not let this reader reach is reported as such, wi
   assert.equal(entry.project_agent_context.role, undefined);
   assert.deepEqual(memoryReads(), []);
   assert.ok(calls.filter(([kind]) => kind === 'preferences').every(([, , agent]) => agent === null));
+});
+
+// rec#58: FULI's own roles, as the Provider provisions them (their id and capability).
+function builtIn(id, name, projectId, type = 'durable') {
+  const agent = fla(`employee.${id}`, name, '内置角色', projectId, { type });
+  agent.profile.capabilities = [`fuli.employee:${id}`];
+  return agent;
+}
+const BOLE = builtIn('bole', 'Bole', 'project-a', 'hr');
+const ASTRO = builtIn('assistant', 'Astro', null);
+
+// The roles' own project scope (src/employees/recruitment.js authorize), refusing as it does.
+function withScope(setup, allowed = () => true) {
+  const authorized = [];
+  setup.app.employees = { authorize: async input => {
+    authorized.push([input.templateId, input.personalProjectId]);
+    if (!allowed(input)) throw Object.assign(new Error('Recruit this employee into the selected project first'),
+      { status: 403, code: 'assignment_required' });
+    return { agentId: `employee.${input.templateId}` };
+  }, taskEntry: async () => ({ status: 'ready', managers: [], worker_started: false }) };
+  return { ...setup, authorized };
+}
+
+test('#FLA names a built-in role in this folder\'s project, through its own scope check; the picker never lists roles', async () => {
+  for (const prompt of ['#FLA Bole 招一个前端', '@FLA bole 招一个前端', '帮我 #FLA Bole 招一个前端']) {
+    const { run, authorized } = withScope(fixture({ roster: [ADA, JAMIE, BOLE, ASTRO] }));
+    const entry = await run(prompt);
+    assert.deepEqual(owner(entry), ['project-a', 'employee.bole'], prompt);
+    assert.equal(entry.fla.notice, '本会话由 Bole 继续项目 Alpha 的工作', prompt);
+    assert.deepEqual(authorized, [['bole', 'project-a']], prompt);
+  }
+  const picker = await withScope(fixture({ roster: [ADA, JAMIE, BOLE, ASTRO] })).run('#FLA');
+  assert.deepEqual(picker.human_interaction.options, ['1. Ada Lead — Alpha — 负责人', '2. Jamie Ash — Beta — 开发']);
+  // Astro works globally.
+  const astro = await withScope(fixture({ roster: [ADA, BOLE, ASTRO] })).run('#FLA Astro 帮我想想');
+  assert.deepEqual(owner(astro), [null, 'employee.assistant']);
+  assert.equal(astro.fla.notice, '本会话由 Astro 继续其全局工作');
+  // An Agent that only reuses a role's id is not that role.
+  const impostor = await withScope(fixture({ roster: [ADA, JEFA] })).run('#FLA Jefa 看下进度');
+  assert.equal(impostor.fla.reason, 'no_match');
+});
+
+test('a built-in role outside its scope or outside any project says why and how to fix it, never substituting', async () => {
+  const refused = withScope(fixture({ roster: [ADA, BOLE] }), () => false);
+  const entry = await refused.run('#FLA Bole 招一个前端');
+  assert.equal(entry.fla.reason, 'not_responsible');
+  assert.equal(entry.fla.notice, 'Bole（Alpha）无法继续：没有负责这个项目，未改用其他 FLA；可在控制台 Bole 的「管理负责项目」里加上 Alpha');
+  assert.equal(entry.context.project_agent_id, null);
+  assert.deepEqual(refused.memoryReads(), []);
+  assert.match(entry.agent_receipt.markdown, /指定 Agent 未负责此项目/);
+  const outside = withScope(fixture({ roster: [ADA, BOLE] }));
+  outside.app.projectPathResolver = () => ({ status: 'not_provided', basis: null, personalProjectId: null });
+  const nowhere = await outside.run('#FLA Bole 招一个前端', { projectPath: null });
+  assert.equal(nowhere.fla.reason, 'needs_project');
+  assert.equal(nowhere.fla.notice, 'Bole无法继续：只在项目里工作，当前会话不属于任何项目，未改用其他 FLA；请在项目文件夹里再叫 Bole');
+  assert.deepEqual(outside.authorized, []);
+});
+
+test('an FLA sharing a built-in role\'s name is asked about, never guessed', async () => {
+  const entry = await withScope(fixture({ roster: [ADA, BOLE, fla('bole-fla', 'Bole', '招聘', 'project-b')] }))
+    .run('#FLA Bole 招一个前端');
+  assert.equal(entry.fla.reason, 'same_name');
+  assert.equal(entry.human_interaction.options.length, 2);
+  assert.equal(entry.context.project_agent_id, null);
+});
+
+test('prose about the syntax stays an ordinary prompt; a leading @Bole keeps the folder\'s rule and binds nothing', async () => {
+  for (const prompt of ['希望内置角色也可以用 #FLA Bole，解释一下这些写法', '让 #FLA 支持内置角色', '`#FLA Bole` 怎么用？']) {
+    const { run, calls } = withScope(fixture({ roster: [ADA, BOLE] }));
+    const entry = await run(prompt);
+    assert.deepEqual(owner(entry), ['project-a', 'ada'], prompt);
+    assert.equal(entry.fla, undefined, prompt);
+    assert.equal(entry.human_interaction, undefined, prompt);
+    assert.equal(calls.some(([kind, project]) => kind === 'roster' && project === null), prompt.startsWith('让'), prompt);
+  }
+  const { run } = withScope(fixture({ roster: [ADA, BOLE] }));
+  const bare = await run('@Bole 看下人员分布');
+  assert.deepEqual(owner(bare), ['project-a', 'employee.bole']);
+  assert.equal(bare.fla, undefined);
+  assert.deepEqual(owner(await run('继续')), ['project-a', 'ada']);
 });
 
 test('a member is held by its project lead as the requested Agent, and the sentence says so', async () => {

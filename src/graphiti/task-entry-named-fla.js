@@ -1,7 +1,7 @@
 import { receiptText } from '../agents/identity-receipt.js';
 import { choiceNumber, parseFlaMention } from './fla-mention.js';
-import { flaCandidates, flaChoice, namedAtOpening, namedByWord, narrowedByPartial, rankCandidates, typedWord,
-  unavailableReason } from './fla-picker.js';
+import { flaCandidates, flaChoice, namedAtOpening, namedByWord, narrowedByPartial, rankCandidates, roleCandidates,
+  typedWord, unavailableReason } from './fla-picker.js';
 import { resolveTaskAgentMention } from './project-agent-mention.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects } from './task-entry-project-mention.js';
@@ -50,7 +50,18 @@ const CHOOSE_GUIDANCE = 'Ask this now with the host native single-choice UI (a n
 const REASONS = Object.freeze({
   dismissed: '已被解雇', inactive: '已停用', no_project: '目前没有在任的项目',
   client_not_allowed: '不允许在当前客户端使用', not_assigned: '已不在该项目任职', not_found: '已不存在',
-  access_denied: '无权访问该 FLA 或其项目', substituted: '服务没有选中它', unavailable: '暂时无法恢复'
+  access_denied: '无权访问该 FLA 或其项目', substituted: '服务没有选中它', unavailable: '暂时无法恢复',
+  not_responsible: '没有负责这个项目', needs_project: '只在项目里工作，当前会话不属于任何项目'
+});
+// The shortest legal way back, where the person has one (rec#58). Nothing here
+// changes a scope or a client list: the person does that in the console.
+const FIXES = Object.freeze({
+  client_not_allowed: ({ name }) => `可在控制台为 ${name} 允许当前客户端`,
+  inactive: ({ name }) => `可在控制台恢复 ${name}`,
+  no_project: ({ name }) => `可在控制台为 ${name} 分配项目`,
+  not_assigned: ({ name, project }) => `可在控制台把 ${name} 分配到 ${project}`,
+  not_responsible: ({ name, project }) => `可在控制台 ${name} 的「管理负责项目」里加上 ${project}`,
+  needs_project: ({ name }) => `请在项目文件夹里再叫 ${name}`
 });
 const QUESTIONS = Object.freeze({
   list: '要在本会话继续哪位 FLA？', partial: '找到这些 FLA，要继续哪一位？',
@@ -87,20 +98,22 @@ export async function namedFlaRequest(application, resolution, input, readSessio
     projectAgentId: home.projectAgentId ?? null } };
   let hint = null;
   if (mention || number !== null) {
-    let candidates = null;
-    try { candidates = await personCandidates(application); }
-    catch { if (mention?.explicit || number !== null) return { state: 'unavailable', reason: 'unavailable', ...asked }; }
-    if (candidates) {
-      const ranked = rankCandidates(candidates, { currentProjectId: resolution.personalProjectId ?? null,
-        recentAgentId: previous?.agentId ?? null });
+    const currentProjectId = resolution.personalProjectId ?? null;
+    let roster = null;
+    try { roster = await spaceRoster(application); }
+    catch { if ((mention?.explicit && !mention.inline) || number !== null) return { state: 'unavailable', reason: 'unavailable', ...asked }; }
+    if (roster) {
+      const ranked = rankCandidates(flaCandidates(roster.agents, roster.projects, roster.spaceId),
+        { currentProjectId, recentAgentId: previous?.agentId ?? null });
       const request = number !== null ? choose(open(ranked, input), 'choice_unknown')
-        : mention.explicit ? explicitRequest(mention.query, ranked, resolution, input)
+        : mention.explicit ? explicitRequest(mention, ranked,
+          roleCandidates(roster.agents, roster.projects, roster.spaceId, currentProjectId), resolution, input)
           : bareRequest(mention.query, ranked, resolution, input);
       if (request) return { ...request, ...asked };
       // D-68: a bare `@word` that only starts a name stays an ordinary
       // prompt; at most it says how to choose one.
       const word = [...typedWord(mention.query)].slice(0, HINT_WORD_LIMIT).join('');
-      if ([...word].length >= 2 && narrowedByPartial(word, open(ranked, input)).close) hint = word;
+      if (!mention.explicit && [...word].length >= 2 && narrowedByPartial(word, open(ranked, input)).close) hint = word;
     }
   }
   if (!previous) return hint ? { state: 'hint', query: hint } : null;
@@ -200,19 +213,23 @@ export function namedFlaReceiptNotices(task) {
 }
 
 function unavailable(target, reason, markers) {
-  const notice = target ? `${target.name}（${target.project ?? '全局'}）无法继续：${REASONS[reason] ?? REASONS.unavailable}，未改用其他 FLA`
+  const fix = target && FIXES[reason]?.(target);
+  const notice = target ? `${target.name}${target.project ? `（${target.project}）` : ''}无法继续：`
+    + `${REASONS[reason] ?? REASONS.unavailable}，未改用其他 FLA${fix ? `；${fix}` : ''}`
     : reason === 'no_flas' ? '还没有可以继续的 FLA' : `无法读取你的 FLA：${REASONS[reason] ?? REASONS.unavailable}`;
   return { view: { status: 'unavailable', reason, notice, guidance: UNAVAILABLE_GUIDANCE }, notice,
     selection: { status: 'agent_unavailable', reason, worker_started: false }, markers };
 }
 
-// `#FLA …` / `@FLA …`: the picker, narrowed by a partial name; a single close
-// fit continues directly, letters in order only narrow (D-68).
-function explicitRequest(query, ranked, resolution, input) {
+// `#FLA …` / `@FLA …`: an exact name of an FLA or of one of FULI's roles
+// (rec#58), else the picker over FLAs, narrowed by a partial name; a single
+// close fit continues directly, letters in order only narrow (D-68). An
+// inline `#FLA` takes an exact name only: anything else is ordinary text.
+function explicitRequest({ query, inline }, ranked, roles, resolution, input) {
+  const exact = query ? exactRequest(namedAtOpening(query, [...ranked, ...roles]), resolution, input) : null;
+  if (exact || inline) return exact;
   const available = open(ranked, input);
   if (!query) return choose(available, 'list');
-  const exact = exactRequest(namedAtOpening(query, ranked), resolution, input);
-  if (exact) return exact;
   const { close, items } = narrowedByPartial(query, available);
   if (close && items.length === 1) return { state: 'continue', target: target(items[0]), origin: 'named' };
   return items.length ? choose(items, 'partial') : choose(available, 'no_match');
@@ -283,11 +300,16 @@ async function resolvesInFolder(application, resolution, input) {
 // Every FLA of the person's own space as candidates (fla-picker.js); the
 // group discussion's member choice reads the same roster.
 export async function personCandidates(application) {
+  const { agents, projects, spaceId } = await spaceRoster(application);
+  return flaCandidates(agents, projects, spaceId);
+}
+
+// One read of the person's whole roster and nameable projects.
+async function spaceRoster(application) {
   const spaceId = application.config.personal.spaceId;
   const [roster, projects] = await Promise.all([application.personal.listProjectAgents(spaceId, null),
     nameableProjects(application)]);
-  const agents = Array.isArray(roster) ? roster : roster?.agents ?? roster?.items ?? [];
-  return flaCandidates(agents, projects, spaceId);
+  return { agents: Array.isArray(roster) ? roster : roster?.agents ?? roster?.items ?? [], projects, spaceId };
 }
 
 // Read only when the FLA could not continue: its own record says why.

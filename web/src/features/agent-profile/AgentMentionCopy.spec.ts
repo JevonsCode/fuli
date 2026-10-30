@@ -66,7 +66,16 @@ describe('AgentMentionCopy', () => {
     await flushPromises()
     expect(writeText).toHaveBeenCalledWith('@FLG Jamie Ash、Nova Lane，一起讨论 ')
     expect(rows[1]!.textContent).toContain('已复制')
-    expect(card()?.textContent).toContain('@FLG 要写在开头')
+    expect(card()?.textContent).toContain('@FLG 问题：请几位一起讨论，只写在开头')
+    expect(card()?.textContent).toContain('@姓名 仍可用')
+    wrapper.unmount()
+  })
+
+  it('offers a built-in role only alone, never in a group (rec#58)', async () => {
+    const wrapper = render({ name: 'Bole', partner: 'Nova Lane', kind: 'role' })
+    await hover(wrapper)
+    const rows = [...document.body.querySelectorAll('[data-mention-phrasing] .agent-mention-text')].map((row) => row.textContent)
+    expect(rows).toEqual(['#FLA Bole 在这里继续'])
     wrapper.unmount()
   })
 

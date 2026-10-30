@@ -30,7 +30,7 @@ import {
 } from "@/features/agent-profile/profile-model";
 import AgentMentionCopy from "@/features/agent-profile/AgentMentionCopy.vue";
 import AgentRenameHint from "@/features/agent-profile/AgentRenameHint.vue";
-import { isMentionableFla } from "@/features/agent-profile/fla-mention";
+import { mentionKind } from "@/features/agent-profile/fla-mention";
 import { isAgentTaskDataComplete, taskHasAgent } from "@/features/agent-profile/agent-work-summary";
 import { useAgentRecords } from "@/features/agent-profile/useAgentRecords";
 import { CURRENT_WORK_STATUSES } from "@/features/overview/overview-data";
@@ -356,7 +356,7 @@ onMounted(() => {
             </div>
           </div>
           <div class="agent-profile-actions">
-            <AgentMentionCopy v-if="isMentionableFla(agent)" size="default" :name="agentDisplayName(agent)" :partner="partner" />
+            <AgentMentionCopy v-if="mentionKind(agent)" :kind="mentionKind(agent)" size="default" :name="agentDisplayName(agent)" :partner="partner" />
             <Button v-if="workbench" as-child variant="outline">
               <RouterLink :to="`/employees/${encodeURIComponent(workbench.id)}`">
                 {{ t("agentProfiles.workbench") }}

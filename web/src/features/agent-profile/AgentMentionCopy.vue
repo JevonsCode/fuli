@@ -4,15 +4,16 @@ import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { t } from "@/i18n";
 import UiIcon from "@/ui/UiIcon.vue";
-import { clipboardText, flaMention, mentionPhrasings } from "./fla-mention";
+import { clipboardText, flaMention, mentionPhrasings, type MentionKind } from "./fla-mention";
 
-// Calls an FLA into a chat: one click copies `#FLA <name>` and says so;
+// Calls an Agent into a chat: one click copies `#FLA <name>` and says so;
 // hovering or focusing the button shows ready-to-use phrasings, each copied
-// with one click. `partner` is another FLA to name in the pair phrasing.
+// with one click. `partner` is another FLA to name in the pair phrasing; a
+// built-in role (`kind` role) is only called alone (rec#58).
 // `size` matches the buttons beside it (cards and quick look: sm; profile: default).
 const props = withDefaults(
-  defineProps<{ name: string; partner?: string | null; size?: "sm" | "default" }>(),
-  { partner: null, size: "sm" },
+  defineProps<{ name: string; partner?: string | null; size?: "sm" | "default"; kind?: MentionKind | null }>(),
+  { partner: null, size: "sm", kind: "fla" },
 );
 
 const COPIED_MS = 1800;
@@ -25,7 +26,7 @@ let reset: ReturnType<typeof setTimeout> | undefined;
 
 const mention = computed(() => flaMention(props.name));
 const phrasings = computed(() =>
-  mentionPhrasings(props.name, props.partner, (key, values) => t(`agentProfiles.mention.${key}`, values)),
+  mentionPhrasings(props.name, props.partner, (key, values) => t(`agentProfiles.mention.${key}`, values), props.kind ?? "fla"),
 );
 const status = computed(() =>
   failed.value ? t("agentProfiles.mention.copyFailed") : copied.value ? t("agentProfiles.mention.copied") : "",

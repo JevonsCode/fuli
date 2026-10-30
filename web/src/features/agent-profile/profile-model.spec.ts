@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { setLocale } from '@/i18n'
 import { fuzzyMatch, agentProfilePath, agentResponsibility, collaboratorsFor, mentionPartner } from './profile-model'
-import { isMentionableFla } from './fla-mention'
+import { isMentionableFla, mentionKind } from './fla-mention'
 import type { ProjectAgentRecord, ProjectAgentTaskRecord } from '@/types'
 describe('Agent profile model', () => {
   afterEach(() => setLocale('zh-CN', { persist: false }))
@@ -39,6 +39,16 @@ describe('Agent profile model', () => {
       fla('employee.jefa'), fla('employee.assistant'), fla('custom', { capabilities: ['FULI.employee:tonborg'] })]) {
       expect(isMentionableFla(agent)).toBe(false)
     }
+  })
+  it('calls a built-in role alone by name, and nothing that only reuses its id (rec#58)', () => {
+    const agent = (agentId: string, profile: Record<string, unknown> = {}) =>
+      ({ agentId, profile: { name: 'r', status: 'active', capabilities: [], ...profile } }) as unknown as ProjectAgentRecord
+    expect(mentionKind(agent('lyra'))).toBe('fla')
+    for (const id of ['jefa', 'bole', 'tonborg', 'assistant'])
+      expect(mentionKind(agent(`employee.${id}`, { capabilities: [`fuli.employee:${id}`], agentType: id === 'bole' ? 'hr' : 'durable' }))).toBe('role')
+    for (const other of [agent('employee.bole'), agent('employee.bole', { capabilities: ['fuli.employee:bole'], status: 'inactive' }),
+      agent('fuli-project-hr', { agentType: 'hr' }), agent('lyra', { agentType: 'temporary' })])
+      expect(mentionKind(other)).toBeNull()
   })
   it('names a partner FLA from a shared project first, else any other FLA', () => {
     const fla = (agentId: string, displayName: string, project: string, profile: Record<string, unknown> = {}) => ({
