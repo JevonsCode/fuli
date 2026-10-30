@@ -38,6 +38,7 @@ const NAMES = [
   'get_model_usage', 'role_work',
   'get_agent_score_card',
   'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
+  'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
   'read_task_preferences',
   'begin_task_context',
   'checkpoint_task_knowledge',
@@ -342,8 +343,10 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     roleWork: { claim: input => calls.push(['role-work-claim', input]), submit: input => calls.push(['role-work-submit', input]) },
     registerStandingAssignment: async input => calls.push(['standing-assignment', input]),
     config: { personal: { spaceId: 'space-a' } },
-    taskContextRegistry: { context: async () => ({ sessionId: 'session-a', personalProjectId: null, projectAgentId: null, sourceApplication: 'other' }) },
+    taskContextRegistry: { context: async () => ({ sessionId: 'session-a', personalProjectId: null, projectAgentId: 'fla-probe', sourceApplication: 'other' }) },
     agentServices: { register: async (owner, input) => calls.push(['service-register', input]) },
+    agentWorkflows: Object.fromEntries(['propose', 'index', 'read', 'recordRun']
+      .map(name => [name, async (owner, input) => calls.push([`workflow-${name}`, input])])),
     controlProjectAgentTaskRun: async input => calls.push(['task-run-control', input]),
     queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
     resumeAgentConversation: async input => calls.push(['conversation-resume', input]),
@@ -528,7 +531,9 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     for (const name of NAMES.filter((value) => !ROUNDTABLE_TOOL_NAMES.includes(value))) {
       // A tag change and a service report name their write; every other probe is the bare tool name.
       const probe = { change_knowledge_tags: { action: 'create' },
-        report_agent_service: { action: 'register', taskContextToken: 'fuli-task-probe' } }[name];
+        report_agent_service: { action: 'register', taskContextToken: 'fuli-task-probe' },
+        ...Object.fromEntries(['propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run']
+          .map(tool => [tool, { taskContextToken: 'fuli-task-probe' }])) }[name];
       await callAgentTool(app, name, { probe: name, ...probe });
     }
   assert.deepEqual(calls.map(([name]) => name), [
@@ -541,6 +546,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-update-policy', 'defer-preference-conflict', 'delete-public-project',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call', 'app-submit', 'app-list',
     'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'model-usage', 'role-work-claim', 'agent-score-card', 'task-run-control', 'standing-assignment', 'service-register',
+    'workflow-propose', 'workflow-index', 'workflow-read', 'workflow-recordRun',
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',

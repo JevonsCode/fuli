@@ -8,10 +8,11 @@ import { employeeTemplates } from '@/features/employees/catalog'
 import type { ProjectAgentRecord } from '@/types'
 import { pageTitle } from '@/layouts/page-title'
 import { SYNTHETIC_OCCUPATIONS } from '@/test-support/occupation-fixtures'
+import { ApiError } from '@/api/client'
 import AgentProfilePage from './AgentProfilePage.vue'
 
 const { getJson, postJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn(), putJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson, postJson, putJson, patchJson: vi.fn() }))
+vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), getJson, postJson, putJson, patchJson: vi.fn() }))
 vi.mock('@/features/project-agents/task-updates', () => ({ subscribeTaskUpdates: () => () => {} }))
 const mounted: Array<{ unmount: () => void }> = []
 const person = (id: string): ProjectAgentRecord => ({ agentId: id, personalSpaceId: 'space-a',
@@ -53,6 +54,7 @@ beforeEach(() => {
     if (parsed.pathname === '/api/project-agent-assignments') return [assignment(id), assignment(id, 'ended', 'project-old')]
     if (parsed.pathname === '/api/project-agent-tasks') return [task('done', id, 'Completed evidence'), task('queued', id, 'Only scheduled', 'queued')]
     if (parsed.pathname === '/api/project-team') return teamView('beta', 'Birch', [['alpha', 'Aster'], ['gamma', 'Cedar']])
+    if (parsed.pathname === '/api/agent-workflows') return { workflows: [] }
     if (parsed.pathname === '/api/executors') return []
     if (parsed.pathname === '/api/occupations') return SYNTHETIC_OCCUPATIONS
     if (parsed.pathname === '/api/employee-templates') return { templates: [] }
@@ -248,27 +250,29 @@ describe('Agent profile integration', () => {
     const tabs = () => wrapper.findAll('[role="tab"]')
     // One tab stop: Tab reaches the list, which hands focus to the open tab; arrows move between tabs.
     expect(wrapper.get('[role="tablist"]').attributes('tabindex')).toBe('0')
-    expect(tabs().map((tab) => tab.attributes('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '-1', '-1'])
+    expect(tabs().map((tab) => tab.attributes('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '-1', '-1', '-1'])
     const selected = () => wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')
+    // An Agent with tasks opens on its workbench.
+    expect(selected()).toBe('workbench')
 
     const first = tabs()[0]!
     ;(first.element as HTMLButtonElement).focus()
     await first.trigger('keydown', { key: 'ArrowRight' })
     await flushPromises()
-    expect(selected()).toBe('history')
-    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="history"]').element)
+    expect(selected()).toBe('overview')
+    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="overview"]').element)
     // The open tab is part of the URL, so a refresh or a shared link lands on it.
-    expect(router.currentRoute.value.query.tab).toBe('history')
+    expect(router.currentRoute.value.query.tab).toBe('overview')
 
-    await wrapper.get('[data-profile-tab="history"]').trigger('keydown', { key: 'End' })
+    await wrapper.get('[data-profile-tab="overview"]').trigger('keydown', { key: 'End' })
     await flushPromises()
     expect(selected()).toBe('management')
     expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="management"]').element)
 
     await wrapper.get('[data-profile-tab="management"]').trigger('keydown', { key: 'Home' })
     await flushPromises()
-    expect(selected()).toBe('overview')
-    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="overview"]').element)
+    expect(selected()).toBe('workbench')
+    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="workbench"]').element)
     expect(router.currentRoute.value.query.tab).toBeUndefined()
   })
 
@@ -452,5 +456,100 @@ describe('Agent profile integration', () => {
     expect(wrapper.find('.agent-simple-settings').exists()).toBe(true)
     expect(wrapper.get('.agent-profile-actions button[aria-expanded]').attributes('aria-expanded')).toBe('true')
     expect(wrapper.get('.agent-expectation').text()).toContain('Explain verification evidence.')
+  })
+})
+
+// rec#60 D-78: an Agent's home is its workbench, a view of its tasks plus its own workflows.
+const workflowVersion = (version: number, name: string) => ({ workflowId: 'wf-1', version, name, purpose: 'Synthetic repeated check',
+  steps: [{ title: 'Read the synthetic issue' }, { title: 'Run the focused tests' }], source: 'candidate:c-1', createdBy: 'agent', createdAt: '2026-10-30T00:00:00Z' })
+const proposed = { workflowId: 'wf-1', status: 'proposed', personalProjectId: 'project-a', versionCount: 1, active: null,
+  pending: workflowVersion(1, 'Synthetic check flow'), recentRuns: [], createdAt: '2026-10-30T00:00:00Z', updatedAt: '2026-10-30T00:00:00Z' }
+
+describe('Agent workbench', () => {
+  function answer(routes: { tasks?: unknown[]; workflows?: unknown[] }) {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (routes.tasks && url.startsWith('/api/project-agent-tasks?')) return Promise.resolve(routes.tasks)
+      if (routes.workflows && url.startsWith('/api/agent-workflows?')) return Promise.resolve({ workflows: routes.workflows })
+      return normal(url)
+    })
+  }
+  async function settle() { await vi.dynamicImportSettled(); await flushPromises() }
+  const workflowReads = () => getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/agent-workflows?')).length
+
+  it('opens an Agent with tasks on its workbench: the board shows its tasks, a cancelled one stays off', async () => {
+    answer({ tasks: [task('t-run', 'alpha', 'Synthetic running work', 'running'), task('t-review', 'alpha', 'Synthetic review work', 'awaiting_review'),
+      task('t-cancel', 'alpha', 'Synthetic cancelled work', 'cancelled')] })
+    const { router, wrapper } = await setup()
+    await settle()
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('workbench')
+    expect(router.currentRoute.value.query.tab).toBeUndefined()
+    const board = wrapper.get('[data-workbench-board]')
+    expect(board.get('[data-board-column="active"]').text()).toContain('Synthetic running work')
+    expect(board.get('[data-board-column="review"]').text()).toContain('Synthetic review work')
+    expect(board.text()).not.toContain('Synthetic cancelled work')
+    // A view of the Agent's tasks: no card moves and nothing is created here.
+    expect(board.find('[data-move-control]').exists()).toBe(false)
+    await board.get('[data-board-task] button').trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/project-agents/manage/space-a/alpha')
+  })
+
+  it('unmounts the workbench when another tab opens', async () => {
+    const { wrapper } = await setup()
+    await settle()
+    expect(wrapper.find('[data-workbench-board]').exists()).toBe(true)
+    await openTab(wrapper, 'overview')
+    expect(wrapper.find('[data-workbench-board]').exists()).toBe(false)
+  })
+
+  it('gives an Agent with no tasks and no workflows no workbench', async () => {
+    answer({ tasks: [task('t-cancel', 'alpha', 'Synthetic cancelled work', 'cancelled')], workflows: [] })
+    const { wrapper } = await setup()
+    await settle()
+    expect(wrapper.find('[data-profile-tab="workbench"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('overview')
+  })
+
+  it('shows a proposed workflow and sends the person\'s answer for the version shown', async () => {
+    answer({ tasks: [], workflows: [proposed] })
+    postJson.mockImplementation(async () => ({ status: 'confirmed' }))
+    const { wrapper } = await setup()
+    await settle()
+    expect(wrapper.find('[data-workbench-board]').exists()).toBe(false)
+    const card = wrapper.get('[data-workflow="wf-1"]')
+    expect(card.text()).toContain('Synthetic check flow')
+    expect(card.text()).toContain('待你确认')
+    expect(card.findAll('[data-workflow-steps="pending"] li').map((step) => step.text())).toEqual(['Read the synthetic issue', 'Run the focused tests'])
+    const reads = workflowReads()
+    await card.get('[data-workflow-action="confirm"]').trigger('click'); await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/agent-workflows/wf-1/decision', { decision: 'confirm', version: 1 })
+    expect(workflowReads()).toBe(reads + 1)
+  })
+
+  it('reads the workflow again when it changed since it was shown', async () => {
+    answer({ tasks: [], workflows: [proposed] })
+    postJson.mockRejectedValue(new ApiError('Conflict', 409, JSON.stringify({ code: 'version_conflict' })))
+    const { wrapper } = await setup()
+    await settle()
+    const reads = workflowReads()
+    await wrapper.get('[data-workflow-action="reject"]').trigger('click'); await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/agent-workflows/wf-1/decision', { decision: 'reject', version: 1 })
+    expect(wrapper.get('[data-workflow-notice]').text()).toContain('新版本')
+    expect(workflowReads()).toBe(reads + 1)
+  })
+
+  it('keeps a built-in role\'s own workbench page and adds no second Workbench', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (isAgentRead(url)) return agentRead(url, [person('employee.tonborg')])
+      if (url.startsWith('/api/employee-templates?')) return Promise.resolve({ templates: [{
+        id: 'tonborg', name: 'Tonborg', agentId: 'employee.tonborg', agentStatus: 'active', workbench: { kind: 'native', view: 'judgment' },
+      }] })
+      return normal(url)
+    })
+    const { wrapper } = await setup('/agents/space-a/employee.tonborg')
+    await settle()
+    expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(true)
+    expect(wrapper.find('[data-profile-tab="workbench"]').exists()).toBe(false)
   })
 })

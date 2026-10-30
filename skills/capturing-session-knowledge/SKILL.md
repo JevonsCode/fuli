@@ -98,6 +98,13 @@ leave it running, call `report_agent_service` with `action: register`, the curre
 its address, purpose, pid and command. When you stop or restart it, call it again with `action: update`,
 the `serviceId` and `state` (and the new `pid`). The person sees and manages these in FULI's Services page.
 
+## Work You Repeat
+
+When you are a task's FLA and notice work you keep doing the same way (a repeated
+`list_workflow_candidates` candidate, or steps you have followed across sessions), propose it as your
+own workflow with `propose_agent_workflow` instead of capturing the steps as knowledge. It waits for
+the person to confirm on your home page; until then it is not active.
+
 ## More Detail, Only When Needed
 
 Open these files next to this skill only when the task reaches that step; ordinary tasks need none of them.

@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ActivityOriginBadge from "@/features/agent-profile/ActivityOriginBadge.vue";
 import { agentAvatarUrl } from "@/features/agent-profile/agent-avatar";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, defineComponent, h, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { getJson } from "@/api/client";
 import { useConsoleStore } from "@/stores/console";
@@ -51,8 +51,18 @@ import { readProjectTeam, type ProjectTeam } from "@/features/projects/project-t
 import { usePageTitle } from "@/layouts/page-title";
 import { taskStatusTone } from "@/features/project-agents/task-labels";
 import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
+import { isBoardTask } from "@/features/agent-workbench/agent-task-board";
+import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/features/agent-workbench/agent-workflows";
+
+// The workbench (board and workflows) loads only when its tab opens (rec#60 D-78).
+const AgentWorkbench = defineAsyncComponent({
+  loader: () => import("@/features/agent-workbench/AgentWorkbench.vue"),
+  loadingComponent: defineComponent(() => () => h(GrowthLoading, { variant: "compact", label: t("agentWorkbench.opening") })),
+  delay: 0,
+});
 
 type ProfileTab =
+  | "workbench"
   | "overview"
   | "history"
   | "style"
@@ -91,12 +101,21 @@ const teams = ref<
     error: boolean;
   }>
 >([]);
+const workflows = ref<AgentWorkflow[]>([]);
 const detailsLoading = ref(false);
+// The tasks and workflows were read, so whether this Agent has a workbench is known.
+const workKnown = ref(false);
 const partial = ref(false);
 const showSettings = ref(false);
 
+// A built-in role's workbench is its own page (the header's 工作台); another
+// Agent's is the first tab here, and only when it has tasks or workflows.
+const hasWorkbench = computed(() => !workbench.value
+  && (tasks.value.some(isBoardTask) || openWorkflows(workflows.value).length > 0));
+const defaultTab = computed<ProfileTab>(() => (hasWorkbench.value ? "workbench" : "overview"));
 const profileTabs = computed(() => {
   const tabs: Array<{ id: ProfileTab; label: string }> = [
+    ...(hasWorkbench.value ? [{ id: "workbench" as const, label: t("agentProfiles.workbench") }] : []),
     { id: "overview", label: t("agentProfiles.overviewTab") },
     { id: "history", label: t("agentProfiles.experience") },
     { id: "style", label: t("agentProfiles.about") },
@@ -104,7 +123,7 @@ const profileTabs = computed(() => {
     { id: "management", label: t("agentProfiles.advanced") },
   ];
   if (agent.value?.memoryScope === "reviewed_agent") {
-    tabs.splice(4, 0, {
+    tabs.splice(tabs.length - 1, 0, {
       id: "conversations",
       label: t("projectAgents.conversations.title"),
     });
@@ -116,13 +135,16 @@ const profileTabs = computed(() => {
 const activeTab = computed<ProfileTab>({
   get: () => {
     const tab = route.query.tab;
-    return profileTabs.value.find((item) => item.id === tab)?.id ?? "overview";
+    return profileTabs.value.find((item) => item.id === tab)?.id ?? defaultTab.value;
   },
   set: (tab) => {
     const { tab: _previous, ...query } = route.query;
-    void router.replace({ query: tab === "overview" ? query : { ...query, tab } });
+    void router.replace({ query: tab === defaultTab.value ? query : { ...query, tab } });
   },
 });
+// Without ?tab the first tab depends on the tasks and workflows: wait for them
+// instead of opening 概览 and jumping.
+const tabsReady = computed(() => Boolean(route.query.tab) || workKnown.value);
 // The shell's one H1 is this Agent's real name; the route title is only the
 // fallback while it loads or when the Agent is unavailable.
 usePageTitle(() => (agent.value ? agentDisplayName(agent.value) : ""));
@@ -211,6 +233,8 @@ watch(
     const person = agent.value;
     const current = ++generation;
     tasks.value = [];
+    workflows.value = [];
+    workKnown.value = false;
     assignments.value = undefined;
     teams.value = [];
     partial.value = false;
@@ -228,12 +252,15 @@ watch(
       personalSpaceId: person.personalSpaceId,
       agentId: person.agentId,
     });
-    const results = await Promise.allSettled([
-      getJson<unknown>(`/api/project-agent-tasks?${params}&limit=200`),
+    const assignmentRead = Promise.allSettled([
       getJson<unknown>(`/api/project-agent-assignments?${assignmentParams}`),
     ]);
+    // Which tab opens first waits for the tasks and workflows only.
+    const [taskResult, workflowResult] = await Promise.allSettled([
+      getJson<unknown>(`/api/project-agent-tasks?${params}&limit=200`),
+      readAgentWorkflows(person.personalSpaceId, person.agentId),
+    ]);
     if (current !== generation) return;
-    const [taskResult, assignmentResult] = results;
     if (taskResult.status === "fulfilled") {
       const value = taskResult.value;
       const record = unknownRecord(value);
@@ -256,6 +283,11 @@ watch(
           ),
         );
     } else partial.value = true;
+    if (workflowResult.status === "fulfilled") workflows.value = workflowResult.value;
+    else partial.value = true;
+    workKnown.value = true;
+    const [assignmentResult] = await assignmentRead;
+    if (current !== generation) return;
     if (assignmentResult.status === "fulfilled") {
       const value = assignmentResult.value;
       const record = unknownRecord(value);
@@ -292,6 +324,15 @@ watch(
   },
   { immediate: true },
 );
+
+// After the person's decision on a workflow, its current state.
+async function reloadWorkflows() {
+  const person = agent.value;
+  if (!person) return;
+  const current = generation;
+  const next = await readAgentWorkflows(person.personalSpaceId, person.agentId).catch(() => null);
+  if (current === generation && next) workflows.value = next;
+}
 
 function saved(person: ProjectAgentRecord) {
   if (agent.value) self.put(routeAgentId.value, { ...agent.value, ...person });
@@ -396,7 +437,13 @@ onMounted(() => {
           @saved="saved"
         />
 
-        <Tabs v-model="activeTab" :unmount-on-hide="false" class="agent-profile-tabs mt-2 min-w-0">
+        <GrowthLoading
+          v-if="!tabsReady"
+          variant="compact"
+          :label="t('agentProfiles.detailLoading')"
+        />
+        <!-- Hidden, not unmounted, while the first tab is unknown: switching Agents keeps one set of panels. -->
+        <Tabs v-show="tabsReady" v-model="activeTab" :unmount-on-hide="false" class="agent-profile-tabs mt-2 min-w-0">
           <TabsList :aria-label="agentDisplayName(agent)">
             <TabsTrigger v-for="tab in profileTabs" :key="tab.id" :value="tab.id" :data-profile-tab="tab.id">
               {{ tab.label }}
@@ -411,6 +458,21 @@ onMounted(() => {
           <p v-if="partial" class="agent-profile-partial" role="status">
             {{ t("agentProfiles.partial") }}
           </p>
+
+          <TabsContent v-if="hasWorkbench" value="workbench" class="agent-profile-panel" data-profile-panel="workbench">
+            <!-- Mounted only while open, so its board and drag handlers leave with the tab. -->
+            <AgentWorkbench
+              v-if="activeTab === 'workbench'"
+              :key="agent.agentId"
+              :personal-space-id="agent.personalSpaceId"
+              :agent-id="agent.agentId"
+              :tasks="tasks"
+              :project-name="projectName"
+              :workflows="workflows"
+              :incomplete="partial"
+              @workflows-changed="reloadWorkflows"
+            />
+          </TabsContent>
 
           <TabsContent value="overview" class="agent-profile-panel" data-profile-panel="overview">
             <div class="agent-profile-primary-grid">
