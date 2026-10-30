@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -12,7 +12,8 @@ import { agentKitAsset } from '../../src/agent-kits/pins.js';
 const LAUNCHER = 'agent-session-launcher';
 
 function directory(t) {
-  const root = mkdtempSync(join(tmpdir(), 'fuli-agent-kit-exe-'));
+  // Real path: macOS's temporary directory is reached through a symlink.
+const root = realpathSync(mkdtempSync(join(tmpdir(), 'fuli-agent-kit-exe-')));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return root;
 }
