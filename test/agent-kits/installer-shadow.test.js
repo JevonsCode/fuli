@@ -86,8 +86,10 @@ test('the real installer\'s status beside FULI\'s own inspection of clients FULI
     sessionCommandSkillPath: join(skills, 'fuli') };
   const discover = (options) => discoverAgents({ ...options, platform: process.platform, env, homeDir: home,
     commandExists: () => false, commandVersion: () => null });
-  // FULI's own writers set up these clients in the temporary home.
-  const connected = ['claude-code', 'codex', 'cursor', 'gemini', 'claude-desktop'];
+  // FULI's own writers set up these clients in the temporary home. Claude
+  // Desktop exists only on macOS and Windows.
+  const desktop = process.platform === 'darwin' || process.platform === 'win32' ? ['claude-desktop'] : [];
+  const connected = ['claude-code', 'codex', 'cursor', 'gemini', ...desktop];
   for (const agent of discover({ includeUnavailable: true, dataDir }).filter(({ id }) => connected.includes(id))) {
     mkdirSync(dirname(agent.configPath), { recursive: true });
     const result = await installAgent(agent, context, { ...context, backupDir: join(dataDir, 'backups', 'agents') });
@@ -104,7 +106,7 @@ test('the real installer\'s status beside FULI\'s own inspection of clients FULI
   t.diagnostic(`installer shadow: ${JSON.stringify(summary)}`);
   // Clients FULI never set up, and the MCP-only clients it did, agree.
   for (const id of ['kiro', 'qwen-code', 'opencode']) assert.deepEqual(summary[id], ['not_connected', 'not_connected', []], id);
-  for (const id of ['claude-desktop', 'gemini']) assert.deepEqual(summary[id], ['connected', 'connected', []], id);
+  for (const id of ['gemini', ...desktop]) assert.deepEqual(summary[id], ['connected', 'connected', []], id);
   // Clients with hooks: FULI says connected; the installer writes hook
   // commands in its own quoting (and PowerShell for Codex on Windows), so it
   // reads FULI's hooks as outdated. Nothing else differs: MCP, Skills (adopted
