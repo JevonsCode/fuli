@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { isMainModule } from '../src/system/main-module.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../src/native-runtime/windows-assets.js';
 import { assertShortBuildPath } from './windows-build-path.js';
+import { bundleAgentKits } from './agent-kits-bundle.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DOWNLOADS = {
@@ -79,6 +80,8 @@ export async function buildWindowsPortable({ output, assetRoot, buildPython, cac
     await cp(join(assetRoot, 'neo4j'), join(runtime, 'neo4j'), { recursive: true, dereference: true,
       filter: source => !['data', 'logs', 'run', 'certificates'].includes(relative(join(assetRoot, 'neo4j'), source).split(/[\\/]/)[0]) });
     await cp(join(assetRoot, 'jre21'), join(runtime, 'jre21'), { recursive: true, dereference: true });
+    progress('Bundling the pinned session launcher and client installer');
+    const kits = await bundleAgentKits({ output, cacheDir });
 
     progress('Building a non-editable Provider wheel and vendoring dependencies');
     const wheels = join(scratch, 'wheels');
@@ -115,7 +118,7 @@ export async function buildWindowsPortable({ output, assetRoot, buildPython, cac
 
     const manifest = { version: 1, platform: 'win32', arch: 'x64', providerPackaging: 'embedded',
       neo4jHome: 'runtime/neo4j', javaHome: 'runtime/jre21', providerPython: 'runtime/python/python.exe',
-      providerSource: 'runtime/python/Lib/site-packages', dataDir: 'data' };
+      providerSource: 'runtime/python/Lib/site-packages', dataDir: 'data', agentKits: kits.agentKits };
     await writeFile(join(output, 'native-bundle.json'), JSON.stringify(manifest, null, 2) + '\n');
     const resolvedBundle = resolveWindowsNativeBundle(readWindowsNativeBundle(output));
     await writeFile(join(output, 'fuli.cmd'), '@echo off\r\n"%~dp0runtime\\node\\node.exe" "%~dp0src\\cli.js" %*\r\n');
@@ -124,7 +127,7 @@ export async function buildWindowsPortable({ output, assetRoot, buildPython, cac
       await writeFile(join(output, name), portableLauncher(action), 'utf8');
     }
     const inventory = { version: 1, applicationVersion: JSON.parse(await readFile(join(output, 'package.json'), 'utf8')).version,
-      status: 'local-candidate', downloads: DOWNLOADS, pythonPackages,
+      status: 'local-candidate', downloads: DOWNLOADS, agentKits: kits.inventory, pythonPackages,
       versions: { node: '24.18.0', python: '3.12.10', neo4j: resolvedBundle.neo4jVersion, java: resolvedBundle.javaVersion },
       suppliedAssets: ['neo4j', 'jre21'].map((name, index) => ({ name,
         source: 'provided read-only .tools/' + name, fileCount: assetBefore[index].length,
@@ -241,6 +244,7 @@ function thirdPartyNotices(neo4jVersion) {
     '- CPython 3.12.10 embeddable: runtime/python/LICENSE.txt; official Python.org archive.\n' +
     `- Neo4j Community ${neo4jVersion}: runtime/neo4j/LICENSE.txt, LICENSES.txt, NOTICE.txt and licenses/.\n` +
     '- Provided Eclipse Temurin Java 21 jlink image: runtime/jre21/release and legal/ (included image provenance, not a newly downloaded JDK).\n' +
+    '- agent-session-launcher and agent-installer (MIT): runtime/agent-kits/*.exe, pinned release downloads listed in portable-inventory.json; licenses in src/agent-kits/vendor/*/LICENSE.\n' +
     '- Python/Graphiti dependencies: runtime/python/Lib/site-packages/*.dist-info metadata/licenses; exact versions, origins and archive hashes in portable-inventory.json.\n' +
     '- Node dependencies: node_modules/*/package.json and their included LICENSE/NOTICE files; npm-shrinkwrap.json pins the dependency graph.\n';
 }

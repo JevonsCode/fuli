@@ -249,6 +249,7 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/setup/agents/opencode/config-writer.js', 'OpenCode configuration and FULI\'s plugin file, owned by the client'],
   ['src/setup/codex-config.js', 'Codex configuration and hooks, owned by the client'],
   ['src/setup/codex-bootstrap.js', 'Codex configuration, owned by the client'],
+  ['src/agent-kits/derived-file.js', 'the session launcher\'s host configuration and the installer\'s product manifest, regenerated from settings and packs'],
   ['src/desktop/windows-installation-switch.js', 'installation record and shortcuts, checked by content before each replace'],
   ['src/desktop/windows-update-runtime.js', 'a byte snapshot of the installation record, restored as it was'],
   ['src/desktop/windows-update-command.js', 'the outcome of one update run, handed to the tray that started it and read once'],

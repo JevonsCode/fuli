@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
+import { AGENT_KIT_COMPONENTS } from '../agent-kits/pins.js';
+
 export function readWindowsNativeBundle(packageRoot) {
   const path = join(packageRoot, 'native-bundle.json');
   if (!existsSync(path)) return null;
@@ -11,19 +13,34 @@ export function readWindowsNativeBundle(packageRoot) {
   }
   const root = realpathSync(packageRoot);
   const paths = Object.fromEntries(['neo4jHome', 'javaHome', 'providerPython', 'providerSource', 'dataDir']
-    .map(key => {
-      const value = manifest[key];
-      if (typeof value !== 'string' || !value.trim() || isAbsolute(value)) {
-        throw new Error('Portable bundle paths must be relative: ' + key);
-      }
-      const resolved = resolve(root, value);
-      const local = relative(root, resolved);
-      if (!local || local.startsWith('..') || isAbsolute(local)) {
-        throw new Error('Portable bundle paths must stay inside the bundle: ' + key);
-      }
-      return [key, resolved];
-    }));
-  return { ...paths, bundleRoot: root, providerPackaging: 'embedded', assetSource: 'portable' };
+    .map(key => [key, bundlePath(root, manifest[key], key)]));
+  return { ...paths, ...bundledAgentKits(root, manifest.agentKits), bundleRoot: root,
+    providerPackaging: 'embedded', assetSource: 'portable' };
+}
+
+function bundlePath(root, value, key) {
+  if (typeof value !== 'string' || !value.trim() || isAbsolute(value)) {
+    throw new Error('Portable bundle paths must be relative: ' + key);
+  }
+  const resolved = resolve(root, value);
+  const local = relative(root, resolved);
+  if (!local || local.startsWith('..') || isAbsolute(local)) {
+    throw new Error('Portable bundle paths must stay inside the bundle: ' + key);
+  }
+  return resolved;
+}
+
+// The shared client components' executables (src/agent-kits/pins.js). A
+// bundle built before they were bundled has no `agentKits`; FULI then
+// downloads them on first need.
+function bundledAgentKits(root, agentKits) {
+  if (agentKits === undefined) return {};
+  if (!agentKits || typeof agentKits !== 'object' || Array.isArray(agentKits)
+      || Object.keys(agentKits).some(component => !AGENT_KIT_COMPONENTS.includes(component))) {
+    throw new Error('The portable bundle lists unknown agent kit executables.');
+  }
+  return { agentKits: Object.fromEntries(Object.entries(agentKits)
+    .map(([component, value]) => [component, bundlePath(root, value, 'agentKits.' + component)])) };
 }
 
 // This accepts supplied assets; downloading and installer defaults are separate.

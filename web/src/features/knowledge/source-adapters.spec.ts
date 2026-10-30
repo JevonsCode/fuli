@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_CONVERSATION_LAUNCHERS,
   copySourceSession,
+  sessionLaunchKey,
   sourceApplicationLabel,
   sourceLinkForEvidence,
   sourceLauncherStatus,
@@ -61,5 +62,21 @@ describe('knowledge source adapters', () => {
     })).toBeNull()
     await expect(copySourceSession({}, { writeText })).resolves.toBe(false)
     expect(writeText).not.toHaveBeenCalled()
+  })
+
+  it('follows the session launcher when it answered, and the template when it could not', () => {
+    const codex = { source_application: 'codex', session_id: '123e4567-e89b-42d3-a456-426614174000' }
+    const offer = (answer: 'link' | 'none' | 'fuli', href?: string) => ({
+      sourceApplication: 'codex' as const, sessionId: codex.session_id, client: 'codex', offer: answer, href,
+    })
+
+    expect(sessionLaunchKey(codex)).toBe('codex:123e4567-e89b-42d3-a456-426614174000')
+    expect(sessionLaunchKey({ source_kind: 'Cursor conversation', session_id: ' cursor-7 ' })).toBe('cursor:cursor-7')
+    expect(sessionLaunchKey({ source_application: 'codex' })).toBeNull()
+    expect(sourceLinkForEvidence(codex, DEFAULT_CONVERSATION_LAUNCHERS, offer('link', 'codex://threads/planned')))
+      .toBe('codex://threads/planned')
+    expect(sourceLinkForEvidence(codex, DEFAULT_CONVERSATION_LAUNCHERS, offer('none'))).toBeNull()
+    expect(sourceLinkForEvidence(codex, DEFAULT_CONVERSATION_LAUNCHERS, offer('fuli')))
+      .toBe('codex://threads/123e4567-e89b-42d3-a456-426614174000')
   })
 })

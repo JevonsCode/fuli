@@ -1,11 +1,10 @@
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { access, lstat, mkdir, mkdtemp, realpath, rename, rm, stat } from 'node:fs/promises';
+import { access, lstat, mkdir, mkdtemp, realpath, rename, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+
+import { sha256File } from '../security/digest.js';
+import { downloadResumable } from './resumable-download.js';
 
 // Immutable, versioned assets only. Instance data lives outside this directory.
 export async function installNativeNeo4j({ paths, home, url, sha256 }, {
@@ -63,22 +62,6 @@ async function extractArchive(archive, destination) {
   }, error => error ? reject(new Error('Neo4j archive extraction failed.', { cause: error })) : resolveRun()));
 }
 
-async function downloadFile(url, destination) {
-  const partial = `${destination}.partial`;
-  let existingBytes = 0;
-  try { existingBytes = (await stat(partial)).size; } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const response = await fetch(url, {
-    headers: existingBytes > 0 ? { range: `bytes=${existingBytes}-` } : {},
-    signal: AbortSignal.timeout(30 * 60_000)
-  });
-  if (!response.ok || !response.body) throw new Error(`Neo4j download failed with HTTP ${response.status}.`);
-  const resumed = existingBytes > 0 && response.status === 206;
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(partial, { mode: 0o600, flags: resumed ? 'a' : 'w' }));
-  await rename(partial, destination);
-}
-
-async function sha256File(path) {
-  const hash = createHash('sha256');
-  await pipeline(createReadStream(path), hash);
-  return hash.digest('hex');
+function downloadFile(url, destination) {
+  return downloadResumable(url, destination, { what: 'Neo4j' });
 }

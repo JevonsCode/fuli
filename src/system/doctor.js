@@ -5,12 +5,14 @@ import { FULI_VERSION } from '../package-metadata.js';
 // (doctor-repair.js) acts on the items marked fix 'auto'. The console's banner
 // and the desktop client read the same answer (GET /api/system/doctor):
 //
-//   { checkedAt, version, overall, items: [{ id, kind, severity, fix, data }], unchecked }
+//   { checkedAt, version, overall, items: [{ id, kind, severity, fix, data }], unchecked, internal? }
 //
 // overall: 'degraded' when any item is blocking, else 'needs_person' when any
 // is a warning, else 'ok'; info items never change it. unchecked names the
 // sources that could not be read this time, so a missing item is never read
-// as a healthy one.
+// as a healthy one. internal carries developer-facing comparisons that never
+// change the items or overall (the client installer's shadow status, rec#11
+// D-79); the console and desktop client do not show it.
 
 // A client with FULI's integration left behind in an older or partial form.
 const OUTDATED_CLIENT = new Set(['changed', 'skills_left']);
@@ -31,8 +33,9 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // liveProcesses: live MCP server records (process-registry.js).
 // latestVersion: the version checker's last answer without waiting, or null.
 // lastUpdate: the console update journal's status (console-update.js), or null.
+// internalDetails: returns the report's internal section without waiting, or null.
 export function createDoctor({ observeClients, previewDataFormats = null, liveProcesses, latestVersion, lastUpdate,
-  version = FULI_VERSION, now = () => new Date() }) {
+  internalDetails = null, version = FULI_VERSION, now = () => new Date() }) {
   async function check() {
     const unchecked = [];
     const read = async (source, readSource) => {
@@ -49,7 +52,8 @@ export function createDoctor({ observeClients, previewDataFormats = null, livePr
       ...sessionItems(processes ?? [], version),
       ...updateItems(latest, update, version)
     ].sort((left, right) => SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity]);
-    return { checkedAt: now().toISOString(), version, overall: overallOf(items), items, unchecked: [...new Set(unchecked)] };
+    return { checkedAt: now().toISOString(), version, overall: overallOf(items), items, unchecked: [...new Set(unchecked)],
+      ...(internalDetails ? { internal: internalDetails() } : {}) };
   }
   return { check };
 }

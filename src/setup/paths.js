@@ -44,6 +44,9 @@ export function resolveSetupPaths({
     standingAssignmentsPath: join(resolvedDataDir, 'standing-assignments.sqlite'),
     modelEvaluationsPath: join(resolvedDataDir, 'model-evaluations.json'),
     clientLinksPath: join(resolvedDataDir, 'client-links.json'),
+    // Derived from FULI's settings and descriptor packs for the shared client components (src/agent-kits/).
+    launcherHostConfigPath: join(resolvedDataDir, 'agent-kits', 'launcher.json'),
+    installerManifestPath: join(resolvedDataDir, 'agent-kits', 'fuli-installer.json'),
     nativeRuntimeDir,
     nativeRuntimeManifestPath: join(nativeRuntimeDir, 'manifest.json'),
     nativeProcessStatePath: join(nativeRuntimeDir, 'processes.json'),

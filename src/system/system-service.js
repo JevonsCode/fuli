@@ -21,6 +21,11 @@ import { consoleUpdate } from './console-update.js';
 import { createDoctor } from './doctor.js';
 import { createDoctorRepair } from './doctor-repair.js';
 import { liveMcpProcesses } from '../mcp/process-registry.js';
+import { inspectAgentInstallations } from '../setup/agent-installation-status.js';
+import { agentKitPorts } from '../agent-kits/ports.js';
+import { sessionClientRecords } from '../agent-kits/session-clients.js';
+import { createSessionOffers } from '../agent-kits/session-offers.js';
+import { createInstallerShadow, runInstallerShadow } from '../agent-kits/installer-shadow.js';
 
 export function createSystemService({
   paths,
@@ -34,20 +39,10 @@ export function createSystemService({
   settingsApplier = createSettingsApplier({ paths, writeSettings }),
   clientObserver = createClientConnectionObserver({
     discover: discoverAgents,
-    // The same expected integration that `fuli setup` installs.
-    context: {
-      dataDir: paths.dataDir,
-      nodePath: process.execPath,
-      mcpServerPath: paths.mcpServerPath,
-      runtimeConfigPath,
-      sessionSkillPath: paths.sessionSkillPath,
-      projectSkillPath: paths.projectSkillPath,
-      reviewSkillPath: paths.reviewSkillPath,
-      operationSkillPath: paths.operationSkillPath,
-      sessionCommandSkillPath: paths.sessionCommandSkillPath
-    },
+    context: expectedIntegration(paths, runtimeConfigPath),
     historyPath: join(paths.dataDir, 'client-connection-observations.json')
   }),
+  agentKits = agentKitPorts(paths),
   clientInstaller = createClientInstaller({ paths, runtimeConfigPath }),
   executorAdapters = new Map(),
   versionChecker = createPackageVersionChecker(),
@@ -79,9 +74,17 @@ export function createSystemService({
     });
   }
 
+  const configuredSettings = () => readSettings(paths.runtimeSettingsPath, { fallback: activeSettings() });
+  const sessionOffers = createSessionOffers({ launcher: agentKits.sessionLauncher, configPath: paths.launcherHostConfigPath,
+    readLaunchers: () => configuredSettings().conversationLaunchers, records: sessionClientRecords(paths.dataDir) });
+  // The launcher's host configuration follows the settings whenever they are
+  // read or written; a failure to write it only leaves the launcher on the last one.
+  const syncLauncherConfig = () => { try { sessionOffers.syncHostConfig(); } catch { /* next read retries */ } };
+
   function getSettings() {
     const active = activeSettings();
     const configured = readSettings(paths.runtimeSettingsPath, { fallback: active });
+    syncLauncherConfig();
     return { ...settingsResult(configured, active), apply: settingsApplier.status() };
   }
 
@@ -99,14 +102,19 @@ export function createSystemService({
       });
     } else {
       writeSettings(paths.runtimeSettingsPath, configured);
+      syncLauncherConfig();
     }
     return result;
   }
 
   const observeClients = () => clientObserver.observe();
+  // agent-installer's status beside FULI's own inspection, never shown to the person (rec#11 D-79).
+  const installerShadow = createInstallerShadow({ run: () => runInstallerShadow({ installer: agentKits.clientInstaller,
+    manifestPath: paths.installerManifestPath, context: expectedIntegration(paths, runtimeConfigPath),
+    discover: discoverAgents, inspect: inspectAgentInstallations }) });
   const doctor = createDoctor({ observeClients, previewDataFormats,
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
-    lastUpdate: () => update.status() });
+    lastUpdate: () => update.status(), internalDetails: () => ({ installerShadow: installerShadow.latest() }) });
 
   return {
     getSettings,
@@ -117,6 +125,8 @@ export function createSystemService({
       format, clientConnectionConfig({ mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
     clientConnectionStatus: observeClients,
+    // Whether the console offers to open recorded sessions (session-offers.js).
+    sessionLaunchOffers: (sessions) => sessionOffers.offers(sessions),
     connectClient: clientInstaller,
     resources: () => resourceMonitor.sample(),
     // updateKind: how the console's one-click update installs it (console-update.js).
@@ -143,6 +153,21 @@ export function createSystemService({
       operation
     ),
     close: () => runtimeBroker.close()
+  };
+}
+
+// The same expected integration that `fuli setup` installs.
+function expectedIntegration(paths, runtimeConfigPath) {
+  return {
+    dataDir: paths.dataDir,
+    nodePath: process.execPath,
+    mcpServerPath: paths.mcpServerPath,
+    runtimeConfigPath,
+    sessionSkillPath: paths.sessionSkillPath,
+    projectSkillPath: paths.projectSkillPath,
+    reviewSkillPath: paths.reviewSkillPath,
+    operationSkillPath: paths.operationSkillPath,
+    sessionCommandSkillPath: paths.sessionCommandSkillPath
   };
 }
 
