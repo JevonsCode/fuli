@@ -1,4 +1,7 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// The one window. Closing it hides it to the tray; only 退出 quits. The
@@ -10,13 +13,24 @@ class DesktopWindow with WindowListener {
   Future<void> open({bool show = true}) async {
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
-    const options = WindowOptions(size: Size(640, 760), minimumSize: Size(460, 520), title: 'FULI', center: true);
+    final options = WindowOptions(size: await _openingSize(), minimumSize: const Size(460, 520), title: 'FULI', center: true);
     await windowManager.waitUntilReadyToShow(options, () async {
       if (!show) return;
       await windowManager.show();
       await windowManager.focus();
     });
     await windowManager.setPreventClose(true);
+  }
+
+  // The window holds the console: wide enough for its pages, never larger
+  // than 90% of a laptop screen's usable area.
+  static Future<Size> _openingSize() async {
+    try {
+      final display = await screenRetriever.getPrimaryDisplay();
+      return openingSize(display.visibleSize ?? display.size);
+    } on Object {
+      return const Size(1100, 760);
+    }
   }
 
   Future<void> show() async {
@@ -43,3 +57,6 @@ class DesktopWindow with WindowListener {
   @override
   void onWindowRestore() => onVisibilityChanged?.call(true);
 }
+
+/// 1280×860 where it fits, else 90% of the screen's usable [area].
+Size openingSize(Size area) => Size(min(1280, area.width * 0.9), min(860, area.height * 0.9));

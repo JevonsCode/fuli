@@ -7,12 +7,11 @@ import '../../l10n/strings.dart';
 import '../ports.dart';
 
 /// The tray (Windows) or menu bar (macOS) icon in three states, with the menu
-/// 打开 FULI · 打开控制台 · 启动/停止 · (Windows: 换一个端口 · 开机时启动) · 退出.
+/// 打开 FULI · 启动/停止 · (Windows: 换一个端口 · 开机时启动) · 退出.
 class SystemTray with TrayListener implements TrayController {
   SystemTray({
     required this.strings,
     required this.onOpen,
-    required this.onOpenConsole,
     required this.onToggle,
     required this.onQuit,
     this.onChangePort,
@@ -23,7 +22,6 @@ class SystemTray with TrayListener implements TrayController {
 
   final Strings strings;
   final VoidCallback onOpen;
-  final VoidCallback onOpenConsole;
   final VoidCallback onToggle;
   final VoidCallback onQuit;
   final VoidCallback? onChangePort;
@@ -39,7 +37,6 @@ class SystemTray with TrayListener implements TrayController {
     await trayManager.setToolTip(view.tooltip);
     await trayManager.setContextMenu(Menu(items: [
       MenuItem(key: 'open', label: strings.openFuli),
-      MenuItem(key: 'console', label: strings.openConsole),
       MenuItem(key: 'toggle', label: view.toggleLabel, disabled: !view.toggleEnabled),
       if (view.changePortEnabled != null)
         MenuItem(key: 'port', label: strings.changePort, disabled: !view.changePortEnabled!),
@@ -80,8 +77,6 @@ class SystemTray with TrayListener implements TrayController {
     switch (menuItem.key) {
       case 'open':
         onOpen();
-      case 'console':
-        onOpenConsole();
       case 'toggle':
         onToggle();
       case 'port':

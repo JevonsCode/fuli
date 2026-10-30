@@ -11,6 +11,7 @@ import '../../runtime/fuli_runtime.dart';
 import '../../runtime/shell_cli_runtime.dart';
 import '../../runtime/windows_tray_runtime.dart';
 import '../url_opener.dart';
+import 'console_webview.dart';
 import 'desktop_window.dart';
 import 'os_notifier.dart';
 import 'system_tray.dart';
@@ -28,6 +29,7 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   final window = DesktopWindow();
   await window.open(show: !background);
   const opener = BrowserUrlOpener();
+  final console = await ConsoleWebView.create(opener);
   final client = http.Client();
   final controller = FuliController(
     apiFor: (port) => HttpFuliApi(port: port, client: client),
@@ -53,7 +55,6 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   tray = SystemTray(
     strings: strings,
     onOpen: window.show,
-    onOpenConsole: () => opener.open(controller.consoleUri),
     onToggle: () => controller.snapshot?.running == true ? controller.stop() : controller.start(),
     onQuit: quit,
     onChangePort: runtime.canChangePort ? controller.changePort : null,
@@ -74,7 +75,7 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
     await quit();
   });
   controller.startPolling();
-  return AppServices(controller: controller, strings: strings, opener: opener);
+  return AppServices(controller: controller, strings: strings, opener: opener, consoleView: console?.build);
 }
 
 FuliRuntime _runtime(String exeDir) => Platform.isWindows

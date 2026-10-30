@@ -1,7 +1,15 @@
 # FULI desktop client
 
-A small Windows and macOS app that shows whether FULI works and fixes what it can with buttons, for
-people who do not use a terminal. It is one window and a tray (menu bar) icon.
+A Windows and macOS app for people who do not use a terminal: one window and a tray (menu bar) icon.
+
+- Whenever the console answers, the window is the console itself, in a WebView (WebView2 on Windows,
+  WKWebView on macOS; `lib/src/platform/desktop/console_webview.dart`). Its own banner already shows the
+  doctor's findings, repair, update and data-format confirmation. Only console pages load there; other
+  links open in the default browser. WebView2 keeps its data in `%LOCALAPPDATA%\FULI Desktop\WebView2`,
+  outside the versioned program folder. Without a WebView runtime the window keeps the status page
+  below and its 「打开控制台」 opens the browser.
+- The status page is shown while there is no console to show (not started, not installed, not
+  answering): it says whether FULI works and fixes what it can with buttons.
 
 - Reads `GET /api/system/doctor` from the local console at `http://127.0.0.1:<port>` and shows one
   sentence for FULI's state plus one card per item. On an older FULI without the doctor it falls back
