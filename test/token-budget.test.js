@@ -148,7 +148,12 @@ const BASELINE = Object.freeze({
   // instead of paging every full one. Descriptions stay as they were: an overflowing page's
   // continuation_guidance names the index view when it is useful. 193,488 -> 193,798 B (+310 B),
   // measured. Instructions and entry are unchanged.
-  fullToolSchemaBytes: 193798,
+  // rec#60 D-78 Agent workflows: four full-profile tools (propose, index, read, record a run), each
+  // bound to the task's Agent by its token; workflows themselves are never put into a context, the
+  // index names each one's approxTokens and one is read only when needed (chat reaches them through
+  // list_agent_interfaces/fuli_call): 193,798 -> 196,089 B (+2,291 B), measured. Chat, instructions
+  // and entry are unchanged.
+  fullToolSchemaBytes: 196089,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

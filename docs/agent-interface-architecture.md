@@ -128,6 +128,31 @@ The following operations intentionally remain local-user-only:
 - confirming preference visibility scope;
 - batch confirmation of knowledge.
 - Jefa task completion that records explicit human acceptance (other task updates remain available through the employee tools).
+- confirming, rejecting or retiring an Agent's workflow (`POST /api/agent-workflows/:workflowId/decision`).
+
+## Agent workflows and the Agent home (rec#60 D-78)
+
+An Agent's home page (`/agents/:spaceId/:agentId`) opens on its 「工作台 / Workbench」 tab when it
+has tasks or workflows; an Agent with neither gets no empty workbench, and a built-in role keeps
+its own workbench page. The tab is loaded only when opened, unmounted when left, and never polls.
+Its board is a view of the tasks assigned to the Agent (`GET /api/project-agent-tasks?agentId=`)
+on the shared task board: one project shows that project's own columns, several projects the
+built-in five. Cards open the task; the board stores nothing and moves nothing.
+
+Workflows are the Agent's own repeated work as named, ordered steps, in
+`agent-workflows.sqlite` (format 1). The task's bound Agent, read from the current
+`taskContextToken`, is the only owner a tool acts for:
+
+- `propose_agent_workflow` proposes a workflow from a `list_workflow_candidates` candidate that
+  repeated often enough across sessions, or from the Agent's own steps; with `workflowId` it
+  proposes a change. Every proposal is a new version and older versions are kept.
+- `list_agent_workflows` is the index (name, purpose, step count, `approxTokens`, status, last
+  run); `read_agent_workflow` returns the confirmed steps of one active workflow;
+  `record_agent_workflow_run` records the outcome of a run the Agent did.
+
+Only the person confirms, rejects or retires a workflow, on the Agent's home page, at the
+version the page showed. Nothing is active until confirmed, nothing runs by itself, and
+workflows are never put into an entry or other context.
 
 These are trust boundaries, not missing interfaces. An Agent may explain where the user can perform the action, but must not substitute direct HTTP, storage, shell, or browser scripting.
 

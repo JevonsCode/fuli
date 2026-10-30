@@ -37,6 +37,7 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'dismiss_project_agent',
   // The task token is resolved for this client; its session is the conversation recorded.
   'register_standing_assignment', 'report_agent_service',
+  'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
   'record_project_agent_task_activity',
   'preflight_executor',
   'report_executor_health',

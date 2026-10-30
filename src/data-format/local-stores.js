@@ -10,6 +10,7 @@ import { ADAPTIVE_RUNTIME_SETTINGS_FORMAT } from '../adaptive-runtime/settings.j
 import { ADAPTIVE_RUNTIME_STATE_FORMAT } from '../adaptive-runtime/state.js';
 import { AGENT_APP_FORMAT } from '../agent-apps/store.js';
 import { AGENT_SERVICES_FORMAT } from '../agent-services/store.js';
+import { AGENT_WORKFLOWS_FORMAT } from '../agent-workflows/store.js';
 import { EMPLOYEE_MANAGEMENT_FORMAT } from '../employees/management-policy.js';
 import { JEFA_BOARD_FORMAT } from '../employees/builtin/jefa/board-store.js';
 import { PREFERENCE_SESSION_FORMAT } from '../conversations/preference-session.js';
@@ -62,6 +63,8 @@ const sqliteStores = () => [
   ['agent-apps/registry.sqlite', AGENT_APP_FORMAT],
   // The services FULI Agents started and their logs (rec#11 D-71); absent until the first one.
   ['agent-services.sqlite', AGENT_SERVICES_FORMAT],
+  // Each Agent's own workflows, their versions, the person's decisions and runs (rec#60 D-78).
+  ['agent-workflows.sqlite', AGENT_WORKFLOWS_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
   // Jefa's built-in task board: tasks, their revisions, sharing and session titles.
   ['employees/data/jefa/board.sqlite', JEFA_BOARD_FORMAT],

@@ -8,6 +8,10 @@
       "version": 1,
       "fingerprint": "b7dbb1739e11817936d3be0ea5e72739fd6b5b96dda8922f6985a6d947a93c4d"
     },
+    "agent-workflows": {
+      "version": 1,
+      "fingerprint": "06df8214c5bd340c01c85b7a6deba63e25e0ffa44ea3c8ef3b02bcb0bb800fcf"
+    },
     "employee-management": {
       "version": 1,
       "fingerprint": "ac51af848f3e7277f38e13ba68567a10d187ee6558249c3230eec4493c53bf9b"

@@ -29,6 +29,7 @@ If an expected capability is absent from `list_agent_interfaces`, report an Agen
 - Use environment-variable references for connector secrets. Never request, print, store, or copy secret values into knowledge records, logs, Skill files, or tool arguments that expect only a reference.
 - Stay inside the exact FULI workspace and registered project scopes. Do not use home-directory-wide discovery as a fallback.
 - Record every long-running server you start with `report_agent_service` and update it when you stop it. Stopping a service through FULI, deleting its record and clearing its log are the person's actions in the console.
+- Your own workflows: call `list_agent_workflows` first and `read_agent_workflow` only for the one the task needs. `propose_agent_workflow` (a repeated `list_workflow_candidates` candidate or your own steps) only proposes; the person alone confirms, rejects or retires it on your home page. Never follow a workflow that is not active, never describe a proposal as active, and record a run you did with `record_agent_workflow_run`.
 - Browser automation may be used only for optional visual verification after a structured operation. It must not be the mechanism that changes FULI data.
 
 ## Selecting tools

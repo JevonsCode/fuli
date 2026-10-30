@@ -14,6 +14,7 @@ import {
   openRoleTrustAndHistory
 } from '../model-backends/runtime.js';
 import { createStandingAssignments } from '../standing-assignments/port.js';
+import { createAgentWorkflows } from '../agent-workflows/port.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
@@ -54,6 +55,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.roleSuggestions = openRoleSuggestionLog(paths, { recoveryGate: app.knowledgeRecoveryGate });
   // Opens its file on the first registration; reads before that find none.
   app.standingAssignments = createStandingAssignments({ path: paths.standingAssignmentsPath });
+  // Each Agent's own workflows (rec#60 D-78); the file is created by the first proposal.
+  app.agentWorkflows = createAgentWorkflows({ path: join(dataDir, 'agent-workflows.sqlite') });
   app.roundtableHost = createFuliRoundtableHost(app);
   app.peer = createPeerPort({ dataDir, host: app.roundtableHost });
   app.roundtable = createAgentRoundtable({
@@ -68,6 +71,7 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
 export function closeLocalRuntimes(app) {
   app.judgment?.close();
   app.standingAssignments?.close();
+  app.agentWorkflows?.close();
   app.roleWork?.close();
   app.roleSuggestions?.close();
   app.modelTrust?.close();
