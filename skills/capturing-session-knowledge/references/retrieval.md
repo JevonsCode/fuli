@@ -44,6 +44,13 @@ bounded page (`next_cursor` present), a query with nothing on that page shows on
 `total_items`; its records arrive on a later page. Long project ID lists name a prefix and count
 the rest in `project_ids_omitted`.
 
+When a search has more results than one page, prefer choosing over paging: repeat it with
+`view: "index"` to list each record by identity, a short title and `approx_tokens` (the rough cost
+of reading its full record), then repeat the same search with `ids` set to the records the task
+needs. `ids` only narrows that scoped search; ids outside its results come back in
+`ids_not_found` and are never read another way. `search_knowledge_graph` and
+`search_current_project_knowledge` both accept these fields.
+
 Pending knowledge is eligible for on-demand retrieval and must remain visibly marked.
 `agent_confirmed` knowledge is usable but ranks below user or authoritative-source
 confirmation.

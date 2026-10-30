@@ -143,7 +143,12 @@ const BASELINE = Object.freeze({
   // right before proposing a new Agent's name (the style is never put in an entry), and a one-line
   // displayName pointer to it in the three schemas that create Agents: 192,809 -> 193,488 B (+679 B),
   // measured. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 193488,
+  // Search index view (claude-mem's index-then-fetch): search_knowledge_graph and
+  // search_current_project_knowledge take optional view and ids, so an Agent reads chosen records
+  // instead of paging every full one. Descriptions stay as they were: an overflowing page's
+  // continuation_guidance names the index view when it is useful. 193,488 -> 193,798 B (+310 B),
+  // measured. Instructions and entry are unchanged.
+  fullToolSchemaBytes: 193798,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
@@ -157,7 +162,9 @@ const BASELINE = Object.freeze({
   // rec#20: the same remember scope unsure, 8,302 -> 8,311 B (+9 B), measured.
   // rec#15 D-27.8: the same remember constraint/workKind/tasteDomain, 8,311 -> 8,426 B
   // (+115 B), measured bytes from the real tools/list.
-  chatToolSchemaBytes: 8426,
+  // Search index view: the same optional view and ids on search_current_project_knowledge,
+  // 8,426 -> 8,641 B (+215 B, about 55 tokens a request), measured from the real tools/list.
+  chatToolSchemaBytes: 8641,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.

@@ -44,6 +44,11 @@ const decisionActor = objectSchema({
   kind: enumSchema(['user', 'agent', 'authoritative_source']),
   label: nullableStringSchema()
 }, ['kind']);
+// A search's index view and its follow-up read of chosen records.
+const searchSelection = {
+  view: enumSchema(['full', 'index']),
+  ids: arraySchema(id, { minItems: 1, maxItems: 20 })
+};
 const humanChangeStatus = enumSchema([
   'all', 'human_changed', 'unseen', 'viewed', 'reviewed'
 ]);
@@ -274,6 +279,7 @@ export const KNOWLEDGE_DEFINITIONS = [
       personalProjectScope: enumSchema(['bounded', 'all_local_confirmed']),
       projectIds: arraySchema(id, { maxItems: 32 }),
       cursor: boundedString(128),
+      ...searchSelection,
       limit: integerSchema({ minimum: 1, maximum: 100 }),
       includeHistorical: booleanSchema(),
       includePending: booleanSchema()
@@ -334,6 +340,7 @@ export const KNOWLEDGE_DEFINITIONS = [
       personalProjectId: nullableStringSchema(),
       queries: arraySchema(shortText, { minItems: 1, maxItems: 10 }),
       cursor: boundedString(128),
+      ...searchSelection,
       limitPerQuery: integerSchema({ minimum: 1, maximum: 50 }),
       includeHistorical: booleanSchema(),
       includePending: booleanSchema()

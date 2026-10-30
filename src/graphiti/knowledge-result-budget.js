@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { ApplicationError } from '../app/application-error.js';
 import { createFuliSourceMarker } from './source-marker.js';
 import { utf8Preview } from '../text/utf8-preview.js';
+import { approxTokens } from '../text/token-estimate.js';
 
 export const AUTOMATIC_RECALL_BYTES = 4 * 1024;
 export const SEARCH_PAGE_BYTES = 8 * 1024;
@@ -61,11 +62,64 @@ export function budgetAutomaticRecall(value, { consoleUrl, compare }) {
   return render();
 }
 
+// view 'index' lists each record by identity, a short title and approx_tokens
+// (the reading cost of its full record); ids then reads only the chosen
+// records. Both narrow the same scoped search, never widen it: an id outside
+// this search's results is named in ids_not_found, not read.
+export function budgetKnowledgeSearch(value, { cursor, context, consoleUrl,
+  toolName = 'search_knowledge_graph', view = 'full', ids = null } = {}) {
+  value = safeSearchValue(value);
+  const selection = ids?.length ? selectIds(value, ids) : null;
+  if (selection) value = selection.value;
+  if (view === 'index') value = indexValue(value);
+  const notes = { ...(view === 'index' ? { retrieval_view: 'index', index_guidance: INDEX_GUIDANCE } : {}),
+    ...(selection?.missing.length ? { ids_not_found: selection.missing } : {}) };
+  const page = pageKnowledgeSearch(value, { cursor, consoleUrl, toolName,
+    context: { ...context, view, ids }, limit: SEARCH_PAGE_BYTES - jsonBytes(notes) });
+  return { ...page, ...notes };
+}
+
+const INDEX_GUIDANCE = 'Titles only. Pick the records this task needs by approx_tokens and relevance, '
+  + 'then repeat the same search and scope with ids set to them for the full records.';
+const INDEX_TITLE_BYTES = 120;
+
+// What a record's content is, without the scores and view counters a read
+// itself updates.
+function stableBody(item) {
+  const { score, weight, weight_percent, confirmed_by_person, last_agent_viewed_at, ...body } = item;
+  return body;
+}
+
+function indexItem(item) {
+  const view = itemPreview(identityPreview(item), INDEX_TITLE_BYTES);
+  delete view.source_uris;
+  delete view.source_uris_omitted;
+  return { ...view, approx_tokens: approxTokens(JSON.stringify(stableBody(item))) };
+}
+
+function mapGroups(value, map) {
+  const group = item => ({ ...item, ...Object.fromEntries(['facts', 'entities']
+    .filter(kind => Array.isArray(item[kind])).map(kind => [kind, map(item[kind])])) });
+  return Array.isArray(value.results) ? { ...value, results: value.results.map(group) } : group(value);
+}
+
+function indexValue(value) {
+  return mapGroups(value, items => items.map(indexItem));
+}
+
+function selectIds(value, ids) {
+  const wanted = new Set(ids), found = new Set();
+  const selected = mapGroups(value, items => items.filter(item => {
+    if (!wanted.has(item.id)) return false;
+    found.add(item.id);
+    return true;
+  }));
+  return { value: selected, missing: [...wanted].filter(id => !found.has(id)) };
+}
+
 // Cursor contents are opaque hashes and offsets, never a cached authorization
 // or a local path. Every continuation re-runs the same scoped search first.
-export function budgetKnowledgeSearch(value, { cursor, context, consoleUrl,
-  toolName = 'search_knowledge_graph' } = {}) {
-  value = safeSearchValue(value);
+function pageKnowledgeSearch(value, { cursor, context, consoleUrl, toolName, limit }) {
   const compound = Array.isArray(value.results);
   const groups = compound ? value.results : [value];
   const lists = groups.map(group => {
@@ -82,7 +136,7 @@ export function budgetKnowledgeSearch(value, { cursor, context, consoleUrl,
   for (const entry of entries) {
     // Search scores/view counters are volatile; the record body stays stable
     // while a read itself updates those counters.
-    const { score, weight, weight_percent, confirmed_by_person, last_agent_viewed_at, ...body } = entry.item;
+    const body = stableBody(entry.item);
     entry.serialized = JSON.stringify(body);
   }
   const digest = createHash('sha256').update(JSON.stringify({ context,
@@ -98,7 +152,7 @@ export function budgetKnowledgeSearch(value, { cursor, context, consoleUrl,
   }
   const whole = { ...(compound ? sharedScope(value, value.results) : value),
     retrieval_budget: { limit_bytes: SEARCH_PAGE_BYTES, complete: true } };
-  if (!cursor && jsonBytes(whole) <= SEARCH_PAGE_BYTES) return whole;
+  if (!cursor && jsonBytes(whole) <= limit) return whole;
   const top = compound ? sharedScope(searchMetadata(value), groups.map(searchMetadata)) : null;
   const bases = compound ? top.results : [searchMetadata(value)];
   const selected = [];
@@ -119,13 +173,13 @@ export function budgetKnowledgeSearch(value, { cursor, context, consoleUrl,
       retrieval_budget: { limit_bytes: SEARCH_PAGE_BYTES, complete: !next, returned_items: selected.length,
         total_items: entries.length },
       ...(next ? { next_cursor: next, continuation_tool: 'fuli_call', continuation_tool_name: toolName,
-        continuation_guidance: 'Repeat the same search and scope with next_cursor as cursor through fuli_call; do not widen scope.' } : {}) };
+        continuation_guidance: 'Repeat the same search and scope with next_cursor as cursor through fuli_call; do not widen scope. To read only some records, repeat with view index, then with their ids.' } : {}) };
   };
   for (; index < entries.length; index++, offset = 0) {
     const entry = entries[index];
     if (!offset) {
       selected.push({ ...entry, view: entry.item });
-      if (jsonBytes(render(index + 1)) <= SEARCH_PAGE_BYTES) continue;
+      if (jsonBytes(render(index + 1)) <= limit) continue;
       selected.pop();
       if (selected.length) return render(index);
     }
@@ -142,14 +196,14 @@ export function budgetKnowledgeSearch(value, { cursor, context, consoleUrl,
     let low = 0, high = points.length - offset;
     while (low < high) {
       const middle = Math.ceil((low + high) / 2);
-      if (jsonBytes(fragment(middle)) <= SEARCH_PAGE_BYTES) low = middle;
+      if (jsonBytes(fragment(middle)) <= limit) low = middle;
       else high = middle - 1;
     }
     if (!low) throw new ApplicationError('result_too_large', 'Search metadata exceeds the page budget; use fewer focused queries or project scopes');
     return fragment(low);
   }
   const result = render(index);
-  if (jsonBytes(result) > SEARCH_PAGE_BYTES) throw new ApplicationError('result_too_large', 'Search metadata exceeds the page budget; use fewer focused queries');
+  if (jsonBytes(result) > limit) throw new ApplicationError('result_too_large', 'Search metadata exceeds the page budget; use fewer focused queries');
   return result;
 }
 

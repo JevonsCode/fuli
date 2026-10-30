@@ -291,3 +291,53 @@ test('exact MCP delivery keeps more than twenty small search results', async () 
     assert.equal(result.structuredContent.truncated, undefined);
   } finally { await client.close(); await server.close(); }
 });
+
+test('an index view lists every record with its reading cost, and ids read only the chosen ones', async () => {
+  const app = application([record(), record('-two'), record('-three')]);
+  const input = { queries: ['Aurora 发布流程'], limitPerQuery: 3 };
+  const index = await searchCurrentProjectKnowledge(app, resolution, { ...input, view: 'index' });
+  assert.ok(bytes(index) <= 8 * 1024, `Index grew to ${bytes(index)} B`);
+  assert.equal(index.retrieval_view, 'index');
+  assert.equal(index.next_cursor, undefined, 'Three large records fit one index page');
+  const listed = index.results[0].entities;
+  assert.deepEqual(listed.map(item => item.id), ['aurora-runbook', 'aurora-runbook-two', 'aurora-runbook-three']);
+  for (const item of listed) {
+    assert.ok(item.approx_tokens > 1800, 'The cost counts the full record, not the shown title');
+    assert.ok(Buffer.byteLength(JSON.stringify(item.summary)) <= 120);
+    assert.equal(item.attributes, undefined);
+    assert.equal(item.source_uris, undefined);
+  }
+
+  const chosen = await searchCurrentProjectKnowledge(app, resolution,
+    { ...input, ids: ['aurora-runbook-two', 'foreign-record'] });
+  assert.deepEqual(chosen.ids_not_found, ['foreign-record']);
+  assert.ok(bytes(chosen) <= 8 * 1024);
+  assert.equal(chosen.retrieval_budget.total_items, 1);
+  assert.ok(chosen.results[0].entities.every(item => item.id === 'aurora-runbook-two'));
+  assert.ok(app.calls.every(call => call.personalProjectId === 'aurora'), 'ids never widen the scoped search');
+});
+
+test('an ids read continues with its own cursor and rejects a cursor from another selection', async () => {
+  const app = application([record(), record('-two')]);
+  const input = { queries: ['Aurora 发布流程'], limitPerQuery: 3, ids: ['aurora-runbook-two'] };
+  const first = await searchCurrentProjectKnowledge(app, resolution, input);
+  assert.ok(first.next_cursor);
+  await assert.rejects(searchCurrentProjectKnowledge(app, resolution,
+    { ...input, ids: ['aurora-runbook'], cursor: first.next_cursor }), /cursor|restart|changed/i);
+  const next = await searchCurrentProjectKnowledge(app, resolution, { ...input, cursor: first.next_cursor });
+  assert.equal(next.results[0].entities[0].id, 'aurora-runbook-two');
+  assert.ok(next.results[0].entities[0].details_fragment.offset > 0);
+});
+
+test('general search offers the same index view', async () => {
+  const { app, ports } = federatedApplication({ recordsPerQuery: 30 });
+  const input = { personalSpaceId: 'space', personalProjectId: 'aurora', query: 'Aurora', limit: 30, agentInvocation: true };
+  const full = await searchFederatedKnowledge(app, input, ports);
+  assert.ok(full.next_cursor);
+  assert.match(full.continuation_guidance, /view index/);
+  const index = await searchFederatedKnowledge(app, { ...input, view: 'index' }, ports);
+  assert.ok(bytes(index) <= 8 * 1024);
+  assert.ok(index.retrieval_budget.returned_items >= 3 * full.retrieval_budget.returned_items,
+    `Index carried ${index.retrieval_budget.returned_items} records, a full page ${full.retrieval_budget.returned_items}`);
+  assert.ok(index.entities.every(item => Number.isInteger(item.approx_tokens)));
+});
