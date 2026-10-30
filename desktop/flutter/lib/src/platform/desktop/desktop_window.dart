@@ -10,10 +10,10 @@ import 'package:window_manager/window_manager.dart';
 class DesktopWindow with WindowListener {
   ValueChanged<bool>? onVisibilityChanged;
 
-  Future<void> open({bool show = true}) async {
+  Future<void> open({required String title, bool show = true}) async {
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
-    final options = WindowOptions(size: await _openingSize(), minimumSize: const Size(460, 520), title: 'FULI', center: true);
+    final options = WindowOptions(size: await _openingSize(), minimumSize: const Size(460, 520), title: title, center: true);
     await windowManager.waitUntilReadyToShow(options, () async {
       if (!show) return;
       await windowManager.show();

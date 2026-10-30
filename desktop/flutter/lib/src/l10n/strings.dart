@@ -13,6 +13,8 @@ class Strings {
   String _things(int count) => count == 1 ? '1 thing' : '$count things';
 
   // Status sentence
+  // The desktop client is a Beta feature for now: its window and tray say so.
+  String get appName => 'FULI Beta';
   String get checking => _t('正在检查 FULI…', 'Checking FULI…');
   String get statusOk => _t('FULI 正常工作', 'FULI is working');
   String statusNeedsPerson(int count) =>
