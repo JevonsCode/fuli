@@ -149,6 +149,53 @@ configuration, hooks, transcript parsing, or execution, never a second version o
 and role rules. Missing enhancements must remain explicit; a generic connection must not claim
 automatic capture or wake.
 
+## Shared client components
+
+Two components FULI shares with other products recognize clients, open their sessions and install
+into them (rec#11 D-79): [agent-session-launcher](https://github.com/JevonsCode/agent-session-launcher)
+and [agent-installer](https://github.com/JevonsCode/agent-installer). FULI runs each as a pinned
+native executable through its own ports (`src/agent-kits/session-launcher.js`,
+`src/agent-kits/client-installer.js`); their Node bindings are vendored unchanged under
+`src/agent-kits/vendor/`. This first stage changes nothing a person sees, except as noted below:
+
+- **Session links.** Settings → conversation launchers are written as the launcher's host
+  configuration (`agent-kits/launcher.json` in the data directory, one `fuli-<application>` deep-link
+  client per template the launcher can express) whenever the settings are read or saved. Before a
+  knowledge record shows 「打开会话」, the console asks `GET /api/session-launch/offers`, which uses
+  the launcher's `clients` and `inspect`. The link itself is the same href as before. Differences:
+  an `any` ID format is the launcher's `safe` format (letters, digits, `.`, `_`, `:`, `-`), so a
+  session ID with other characters gets no link. A template the launcher cannot express (for
+  example `https://…`), a missing launcher or a failed request keeps FULI's own rules. Nothing
+  opens a client yet: no route calls the launcher's `open`.
+- **Which Claude client.** Claude Code's hooks record, once per session, the raw
+  `CLAUDE_CODE_ENTRYPOINT` (`cli`, `claude-desktop`, …) and a source label in `session-clients/`
+  in the data directory. A hook starts no process and never waits on the launcher. When the
+  console needs the client (the offers route), it asks the launcher's `classify` and keeps the
+  answer (`claude-code`, `claude-desktop` or the ambiguous `claude-code-unknown`) in the same
+  record. Sessions recorded before this have no record and are classified from their source
+  application alone.
+- **Installer status in shadow.** The console runs the installer's read-only `status` against
+  FULI's product manifest (`src/agent-kits/fuli-installer-manifest.json`, composed into
+  `agent-kits/fuli-installer.json`) beside FULI's own inspection, at most every ten minutes and
+  never in the doctor's way. Per-client agreement is in the doctor report's `internal.installerShadow`
+  (state codes only); the doctor's items and overall are unchanged. FULI's own writers still set
+  up every client.
+
+**Where the executables come from**, first match wins: the developer override
+`FULI_AGENT_SESSION_LAUNCHER` / `FULI_AGENT_INSTALLER` (an absolute path), the Windows portable or
+tray bundle (`runtime/agent-kits/*.exe`, listed under `agentKits` in `native-bundle.json` and in the
+portable and tray inventories), then a copy downloaded into `native-runtime/agent-kits/` of the data
+directory the first time the console needs it (never at import time, never from a hook). Downloads
+use the pinned URL and are published only after their SHA-256 matches the pin; a copy that no longer
+matches is refused, not replaced. Offline or on a platform without a release asset the component is
+unavailable and FULI keeps its own behaviour.
+
+**Bumping a component.** Release the component, then in one change: copy the new tag's
+`bindings/node/index.mjs`, `index.d.ts` and `LICENSE` into `src/agent-kits/vendor/<component>/` and
+update that README's tag and commit; set `version` and every platform's SHA-256 in
+`src/agent-kits/pins.js` from the release's `SHA256SUMS`; run `test/agent-kits/` (the pin, bundle,
+launcher and shadow tests download and verify the new assets).
+
 ## Common failure recovery
 
 | Symptom | What to try |

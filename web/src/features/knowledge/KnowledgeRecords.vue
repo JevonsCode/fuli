@@ -4,14 +4,17 @@ import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import type { ConversationLauncherConfiguration, EvidenceRecord, KnowledgeItem } from '@/types'
 import { formatTime, revisionActionLabel, knowledgeAuditActionLabel } from './model'
-import { copySourceSession, sourceApplicationLabel, sourceLinkForEvidence, sourceLauncherAppName } from './source-adapters'
+import { copySourceSession, sessionLaunchKey, sourceApplicationLabel, sourceLinkForEvidence, sourceLauncherAppName } from './source-adapters'
 import { useConversationLauncherConfiguration } from './conversation-launcher-settings'
+import { useSessionLaunchOffers } from './session-launch-offers'
 const props = defineProps<{ item: KnowledgeItem; conversationLaunchers?: ConversationLauncherConfiguration; rawFields?: boolean }>()
 const copiedEvidenceKey = ref('')
 const copyError = ref('')
 const stored = useConversationLauncherConfiguration()
 const launchers = computed(() => props.conversationLaunchers ?? stored.value)
-const conversationLink = (evidence: EvidenceRecord) => sourceLinkForEvidence(evidence, launchers.value)
+const offers = useSessionLaunchOffers(computed(() => props.item.evidence))
+const conversationLink = (evidence: EvidenceRecord) =>
+  sourceLinkForEvidence(evidence, launchers.value, offers.value.get(sessionLaunchKey(evidence) ?? ''))
 const conversationAppName = (evidence: EvidenceRecord) => sourceLauncherAppName(evidence, launchers.value)
 const evidenceKey = (evidence: EvidenceRecord, index: number) => `${index}:${evidence.id ?? evidence.session_id ?? ''}`
 let copyVersion = 0

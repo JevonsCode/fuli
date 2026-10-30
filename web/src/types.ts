@@ -769,6 +769,20 @@ export type ConversationLauncherConfiguration = Record<
   ConversationLauncherRule
 >
 
+// GET /api/session-launch/offers (src/agent-kits/session-offers.js). `fuli`:
+// the launcher cannot express the link, so the console's own rules decide.
+export interface SessionLaunchOffer {
+  sourceApplication: ConversationSourceApplication
+  sessionId: string
+  client: string | null
+  offer: 'link' | 'none' | 'fuli'
+  href?: string
+}
+
+export type SessionLaunchOffers =
+  | { launcher: 'available'; offers: SessionLaunchOffer[] }
+  | { launcher: 'unavailable'; reason?: string }
+
 export interface RuntimeSettings {
   version: 1
   graphRuntimeMode: 'container' | 'native'

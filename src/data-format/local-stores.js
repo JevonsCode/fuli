@@ -42,6 +42,7 @@ import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
+import { SESSION_CLIENT_FORMAT } from '../agent-kits/session-clients.js';
 
 // Every FULI store kept in one data directory, by the path its owner opens
 // (rec#17 D-09). Labels are relative to the data directory, so a report names
@@ -112,7 +113,9 @@ const jsonDirectories = () => [
   ['capture-session-pause', CAPTURE_SESSION_PAUSE_FORMAT],
   // The default each session started under (rec#5 C3b), one record per session.
   ['capture-session-pause/pins/on', CAPTURE_SESSION_PAUSE_FORMAT],
-  ['capture-session-pause/pins/off', CAPTURE_SESSION_PAUSE_FORMAT]
+  ['capture-session-pause/pins/off', CAPTURE_SESSION_PAUSE_FORMAT],
+  // Which client each session ran in, as the session launcher classified it (rec#11 D-79).
+  ['session-clients', SESSION_CLIENT_FORMAT]
 ];
 // The worst state of a directory's records names the directory's state.
 const STATE_ORDER = ['unavailable', 'newer_format', 'half_applied', 'pending_confirmation', 'unsupported',

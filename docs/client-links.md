@@ -8,6 +8,10 @@ of code and keeps no per-client branches.
 
 Public copy: `https://raw.githubusercontent.com/JevonsCode/fuli/main/registry/client-links.json`
 
+The 「打开会话」 link on a knowledge record's evidence is a different setting (Settings →
+conversation launchers); agent-session-launcher checks it, see
+[Shared client components](client-connections.md#shared-client-components).
+
 ## Format (formatVersion 1)
 
 ```json

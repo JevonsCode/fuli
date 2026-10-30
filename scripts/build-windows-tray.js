@@ -10,6 +10,7 @@ import { validateTrayDataDir } from '../src/desktop/windows-controller.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../src/native-runtime/windows-assets.js';
 import { isMainModule } from '../src/system/main-module.js';
 import { assertShortBuildPath } from './windows-build-path.js';
+import { bundleAgentKits } from './agent-kits-bundle.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sha256 = value => createHash('sha256').update(value).digest('hex');
@@ -104,7 +105,9 @@ export async function buildWindowsTray({ assetBundle, client, output, dataDir, c
   const assetInventory = index.has('portable-inventory.json')
     ? JSON.parse(await verifiedFile('portable-inventory.json'))
     : JSON.parse(await verifiedFile('tray-inventory.json')).reusedAssets.sourceInventory;
-  const selected = [...index.values()].filter(([name]) => name.startsWith('runtime/') || name.startsWith('node_modules/'));
+  // The shared client components come from this checkout's pins, not from the reused bundle.
+  const selected = [...index.values()].filter(([name]) => (name.startsWith('runtime/') && !name.startsWith('runtime/agent-kits/'))
+    || name.startsWith('node_modules/'));
   if (!selected.some(([name]) => name.startsWith('runtime/'))
       || !selected.some(([name]) => name.startsWith('node_modules/'))) throw new Error('The complete portable runtime and production dependencies are required.');
   const scratch = await mkdtemp(join(tmpdir(), 'fuli-tray-build-'));
@@ -126,7 +129,9 @@ export async function buildWindowsTray({ assetBundle, client, output, dataDir, c
         await writeFile(target, bytes);
       }));
     }
-    await writeFile(join(output, 'native-bundle.json'), nativeManifest);
+    const kits = await bundleAgentKits({ output, cacheDir: scratch });
+    await writeFile(join(output, 'native-bundle.json'),
+      JSON.stringify({ ...JSON.parse(nativeManifest), agentKits: kits.agentKits }, null, 2) + '\n');
     const providerSource = await refreshEmbeddedProvider(output);
     resolveWindowsNativeBundle(readWindowsNativeBundle(output));
     await writeFile(join(output, 'tray-config.json'), JSON.stringify({
@@ -153,6 +158,7 @@ export async function buildWindowsTray({ assetBundle, client, output, dataDir, c
       reusedAssets: { prefixes: ['runtime/', 'node_modules/'], files: selected.length,
         sourceChecksumInventorySha256: sha256(sourceManifest), sourceInventory: assetInventory },
       applicationSource: 'current checkout npm pack, management page and embedded Provider source', providerSource,
+      agentKits: kits.inventory,
       iconSource: APP_ICON, buildTime: new Date().toISOString()
     }, null, 2) + '\n');
     const files = await hashTree(output);

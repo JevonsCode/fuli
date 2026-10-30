@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "product": "fuli",
+  "name": "FULI",
+  "version": "{fuliVersion}",
+  "mcp": {
+    "name": "fuli",
+    "command": "{nodePath}",
+    "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "other", "--tool-profile", "chat"],
+    "markers": ["--runtime-config"],
+    "preserveArgs": ["--tool-profile"]
+  },
+  "hooks": {
+    "markers": ["--fuli-"],
+    "events": {
+      "userPromptSubmit": {
+        "command": ["{nodePath}", "{claudeHook}", "--fuli-claude-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "UserPromptSubmit", "--timeout-ms", "28000"],
+        "timeoutSec": 30, "statusMessage": "Loading Fuli task context"
+      },
+      "stop": {
+        "command": ["{nodePath}", "{claudeHook}", "--fuli-claude-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "Stop", "--timeout-ms", "28000"],
+        "timeoutSec": 30, "statusMessage": "Checking Fuli task checkpoint"
+      },
+      "sessionStart": {
+        "command": ["{nodePath}", "{claudeHook}", "--fuli-claude-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "SessionStart", "--timeout-ms", "28000"],
+        "timeoutSec": 30, "statusMessage": "Refreshing Fuli context generation"
+      },
+      "preCompact": {
+        "command": ["{nodePath}", "{claudeHook}", "--fuli-claude-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "PreCompact", "--timeout-ms", "28000"],
+        "timeoutSec": 30, "statusMessage": "Refreshing Fuli context generation"
+      }
+    }
+  },
+  "skills": [
+    { "name": "capturing-session-knowledge", "source": "{skillsDir}/capturing-session-knowledge",
+      "adopt": { "file": "SKILL.md", "contains": "name: capturing-session-knowledge" } },
+    { "name": "grilling-project", "source": "{skillsDir}/grilling-project",
+      "adopt": { "file": "SKILL.md", "contains": "name: grilling-project" } },
+    { "name": "flreview", "source": "{skillsDir}/flreview",
+      "adopt": { "file": "SKILL.md", "contains": "name: flreview" } },
+    { "name": "operating-fuli", "source": "{skillsDir}/operating-fuli",
+      "adopt": { "file": "SKILL.md", "contains": "name: operating-fuli" } }
+  ],
+  "permissions": {
+    "allow": ["mcp__fuli__get_collaboration_preferences", "mcp__fuli__checkpoint_task_knowledge"]
+  },
+  "clients": {
+    "claude-code": {
+      "mcp": { "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "claude_code", "--tool-profile", "chat"] },
+      "instructions": null,
+      "skills": [
+        { "name": "capturing-session-knowledge", "source": "{skillsDir}/capturing-session-knowledge",
+          "adopt": { "file": "SKILL.md", "contains": "name: capturing-session-knowledge" } },
+        { "name": "grilling-project", "source": "{skillsDir}/grilling-project",
+          "adopt": { "file": "SKILL.md", "contains": "name: grilling-project" } },
+        { "name": "flreview", "source": "{skillsDir}/flreview",
+          "adopt": { "file": "SKILL.md", "contains": "name: flreview" } },
+        { "name": "operating-fuli", "source": "{skillsDir}/operating-fuli",
+          "adopt": { "file": "SKILL.md", "contains": "name: operating-fuli" } },
+        { "name": "fuli", "source": "{skillsDir}/fuli", "adopt": { "file": "SKILL.md", "contains": "name: fuli" } }
+      ]
+    },
+    "claude-desktop": {
+      "mcp": { "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "claude", "--tool-profile", "chat"] }
+    },
+    "codex": {
+      "mcp": {
+        "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "codex", "--tool-profile", "chat"],
+        "extra": { "enabled": true, "required": true, "startup_timeout_sec": 30, "tool_timeout_sec": 120, "default_tools_approval_mode": "auto" }
+      },
+      "hooks": {
+        "markers": ["--fuli-lifecycle"],
+        "events": {
+          "userPromptSubmit": { "command": ["{nodePath}", "{codexHook}", "--fuli-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "UserPromptSubmit"], "timeoutSec": 30 },
+          "stop": { "command": ["{nodePath}", "{codexHook}", "--fuli-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "Stop"], "timeoutSec": 30 },
+          "sessionStart": { "command": ["{nodePath}", "{codexHook}", "--fuli-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "SessionStart"], "timeoutSec": 30 },
+          "preCompact": { "command": ["{nodePath}", "{codexHook}", "--fuli-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "PreCompact"], "timeoutSec": 30 }
+        }
+      },
+      "instructions": {
+        "markdown": "{codexInstructions}",
+        "begin": "<!-- BEGIN FULI MANAGED INSTRUCTIONS -->",
+        "end": "<!-- END FULI MANAGED INSTRUCTIONS -->"
+      }
+    },
+    "cursor": {
+      "mcp": { "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "cursor"] },
+      "hooks": {
+        "markers": ["--fuli-lifecycle"],
+        "events": {
+          "sessionStart": { "command": ["{nodePath}", "{cursorHook}", "--fuli-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "sessionStart"], "timeoutSec": 30 },
+          "userPromptSubmit": { "command": ["{nodePath}", "{cursorHook}", "--fuli-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "beforeSubmitPrompt"], "timeoutSec": 30 },
+          "stop": { "command": ["{nodePath}", "{cursorHook}", "--fuli-lifecycle", "--runtime-config", "{runtimeConfigPath}", "--event", "stop"], "timeoutSec": 30, "extra": { "loop_limit": 2 } },
+          "preCompact": null
+        }
+      },
+      "skills": [
+        { "name": "capturing-session-knowledge", "source": "{skillsDir}/capturing-session-knowledge",
+          "adopt": { "file": "SKILL.md", "contains": "name: capturing-session-knowledge" } },
+        { "name": "grilling-project", "source": "{skillsDir}/grilling-project",
+          "adopt": { "file": "SKILL.md", "contains": "name: grilling-project" } },
+        { "name": "flreview", "source": "{skillsDir}/flreview",
+          "adopt": { "file": "SKILL.md", "contains": "name: flreview" } },
+        { "name": "operating-fuli", "source": "{skillsDir}/operating-fuli",
+          "adopt": { "file": "SKILL.md", "contains": "name: operating-fuli" } },
+        { "name": "fuli", "source": "{skillsDir}/fuli", "adopt": { "file": "SKILL.md", "contains": "name: fuli" } }
+      ]
+    },
+    "gemini-cli": {
+      "mcp": { "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "other", "--tool-profile", "chat"] }
+    },
+    "kiro": {
+      "mcp": {
+        "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "kiro", "--tool-profile", "chat"],
+        "extra": { "disabled": false }
+      }
+    },
+    "qwen-code": {
+      "mcp": { "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "other", "--tool-profile", "chat"] }
+    },
+    "opencode": {
+      "mcp": { "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "opencode", "--tool-profile", "chat"] }
+    }
+  }
+}

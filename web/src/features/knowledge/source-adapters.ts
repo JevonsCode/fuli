@@ -5,6 +5,7 @@ import type {
   ConversationLauncherRule,
   ConversationSourceApplication,
   EvidenceRecord,
+  SessionLaunchOffer,
 } from '@/types'
 
 export const CONVERSATION_SOURCE_APPLICATIONS: readonly ConversationLauncherApplication[] = [
@@ -103,6 +104,12 @@ export function sourceApplication(
   return 'other'
 }
 
+// The key the session launch offers use for this evidence's session, or null without one.
+export function sessionLaunchKey(evidence: EvidenceRecord = {}) {
+  const sessionId = evidence.session_id?.trim()
+  return sessionId ? `${sourceApplication(evidence)}:${sessionId}` : null
+}
+
 export function sourceApplicationLabel(evidence: EvidenceRecord) {
   const application = sourceApplication(evidence)
   return application === 'other'
@@ -114,10 +121,15 @@ export function sourceApplicationName(application: ConversationSourceApplication
   return APPLICATION_LABELS[application]
 }
 
+// offer: the session launcher's answer for this evidence's session, when the
+// console has one; without it (or for 'fuli') the configured template decides.
 export function sourceLinkForEvidence(
   evidence: EvidenceRecord = {},
   configuration: ConversationLauncherConfiguration = DEFAULT_CONVERSATION_LAUNCHERS,
+  offer?: SessionLaunchOffer,
 ) {
+  if (offer?.offer === 'link') return offer.href ?? null
+  if (offer?.offer === 'none') return null
   if (sourceLauncherStatus(evidence, configuration) !== 'available') return null
   const rule = launcherRule(configuration, evidence)!
   const sessionId = evidence.session_id!.trim()
