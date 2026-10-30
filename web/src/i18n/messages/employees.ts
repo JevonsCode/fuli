@@ -245,7 +245,7 @@ export const employeeMessages = {
       reactivation_required: 'This Agent is inactive. Explicitly reactivate it before assigning.',
       assignment_scope_conflict: 'Project assignments changed elsewhere. Reload, review, and save again.',
       assignment_update_incomplete: 'Not everything was saved. Reload and check.',
-      system_managed_employee: 'FULI maintains this built-in Agent: Astro takes no projects, and the others must be ready before their projects change.',
+      system_managed_employee: 'This built-in Agent is maintained by FULI: Astro takes no projects, and the others must be ready before their projects change.',
     },
   },
 } as const
