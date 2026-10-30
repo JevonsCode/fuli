@@ -72,17 +72,17 @@ it('shows compacted extraction with source references distinct from originals', 
   await open(wrapper)
   postJson.mockResolvedValueOnce({ events: [{ role: 'user', content: 'Title\nDecision: use port 3000', sequence: 1, kind: 'message' }],
     next_cursor: 1, has_more: false, digest: { tasks: [], notes: ['Legacy request'], omitted: 4, entries: [
-      { kind: 'decision', text: 'Decision: use port 3000', sources: [{ role: 'user', sequence: 1 }] },
-      { kind: 'correction', text: 'Correction: use port 4000 instead', sources: [{ role: 'assistant', sequence: 7 }], truncated: true },
+      { kind: 'request', text: 'Title', sources: [{ role: 'user', sequence: 1 }] },
+      { kind: 'compaction', text: 'Synthetic client compaction summary', sources: [{ role: 'summary', sequence: 7 }], truncated: true },
     ] } })
   await wrapper.get('[data-read-conversation]').trigger('click')
   await flushPromises()
   const digest = wrapper.get('[data-conversation-digest]')
-  expect(digest.text()).toContain('自动摘录，未经核实')
-  expect(digest.text()).toContain('决定')
-  expect(digest.text()).toContain('Decision: use port 3000')
+  expect(digest.text()).toContain('较早消息折叠后的索引')
+  expect(digest.text()).toContain('客户端压缩摘要')
+  expect(digest.text()).toContain('Synthetic client compaction summary')
   expect(digest.text()).toContain('用户 #1')
-  expect(digest.text()).toContain('Agent #7')
+  expect(digest.text()).toContain('摘要 #7')
   expect(digest.text()).toContain('已截断')
   expect(digest.text()).toContain('Legacy request')
   expect(digest.text()).toContain('4')
@@ -97,9 +97,9 @@ it('reports omissions even when nothing was extracted and keeps shared-prefix en
   await wrapper.get('[data-read-conversation]').trigger('click')
   await flushPromises()
   expect(wrapper.get('[data-conversation-digest]').text()).toContain('另有 2 行')
-  const shared = { kind: 'decision', text: 'Decision: same synthetic prefix…', truncated: true }
+  const shared = { kind: 'compaction', text: 'Synthetic shared prefix…', truncated: true }
   postJson.mockResolvedValueOnce({ events: [], has_more: false, digest: { omitted: 0, entries: [
-    { ...shared, sources: [{ role: 'user', sequence: 1 }] }, { ...shared, sources: [{ role: 'assistant', sequence: 2 }] }] } })
+    { ...shared, sources: [{ role: 'summary', sequence: 1 }] }, { ...shared, sources: [{ role: 'summary', sequence: 2 }] }] } })
   await wrapper.get('[data-read-conversation]').trigger('click')
   await flushPromises()
   expect(wrapper.findAll('[data-conversation-digest] li')).toHaveLength(2)

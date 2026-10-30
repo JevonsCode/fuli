@@ -39,7 +39,8 @@ class ConversationEvent(StrictModel):
     event_id: str = Field(min_length=1, max_length=256)
     role: Literal['user', 'assistant', 'tool', 'summary']
     content: str = Field(min_length=1, max_length=131072)
-    kind: Literal['message', 'tool_call', 'tool_result', 'checkpoint'] = 'message'
+    # compaction_summary: the summary an Agent client wrote when it compacted its own context.
+    kind: Literal['message', 'tool_call', 'tool_result', 'checkpoint', 'compaction_summary'] = 'message'
 
     @model_validator(mode='after')
     def reject_secrets(self):

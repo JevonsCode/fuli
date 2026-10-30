@@ -2,6 +2,9 @@
 export function normalizeClaudeRecord(record, sessionId) {
   if (record?.sessionId !== sessionId || !['user', 'assistant'].includes(record.type)) return [];
   const content = record.message?.content;
+  // The summary Claude Code writes after compacting is stored as a user
+  // record; it is the host's own words, never something the user said.
+  if (record.isCompactSummary === true) return compactionSummary(content);
   if (typeof content === 'string') return content ? [{ role: record.type, kind: 'message', content }] : [];
   if (!Array.isArray(content)) return [];
   return content.flatMap(block => {
@@ -14,6 +17,11 @@ export function normalizeClaudeRecord(record, sessionId) {
     }) }];
     return [];
   });
+}
+function compactionSummary(content) {
+  const text = typeof content === 'string' ? content
+    : Array.isArray(content) ? content.filter(block => block.type === 'text').map(block => block.text ?? '').join('\n') : '';
+  return text ? [{ role: 'summary', kind: 'compaction_summary', content: text }] : [];
 }
 export function verifyClaudeTranscript(firstRecord, sessionId) {
   return firstRecord?.sessionId === sessionId;

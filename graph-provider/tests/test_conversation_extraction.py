@@ -1,8 +1,8 @@
-"""Deterministic extractive compaction; all fixtures are synthetic test data."""
+"""Deterministic folding and recovery; all fixtures are synthetic test data."""
 import json
 
 from fuli_graph.conversation_context import (
-    ENTRY_BYTES, add_task_result, fold_messages, pack_context, render_digest,
+    DIGEST_VERSION, ENTRY_BYTES, add_task_result, fold_messages, note_compaction, pack_context, refold_digest,
 )
 
 
@@ -10,172 +10,136 @@ def message(sequence, role, content, kind='message'):
     return {'sequence': sequence, 'role': role, 'content': content, 'kind': kind}
 
 
+def summary(sequence, content):
+    return message(sequence, 'summary', content, 'compaction_summary')
+
+
 def texts(digest):
     return [entry['text'] for entry in digest['entries']]
 
 
-def test_keeps_decision_after_title_line_and_assistant_method():
+def packed_bytes(value):
+    return len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode())
+
+
+def test_keeps_only_user_request_titles_not_marker_lines():
     digest = fold_messages({}, [
         message(1, 'user', 'Synthetic login redirect\nWe decided to keep the session cookie.\nunrelated chatter'),
-        message(2, 'assistant', 'Sure.\nMethod: replay the redirect with a fixture token.\nok'),
+        message(2, 'assistant', 'Sure.\nDecision: replay the redirect.\nTODO: check the fixture.\nok'),
         message(3, 'tool', 'Decision: tool output is never retained'),
+        message(4, 'summary', 'Synthetic checkpoint', 'checkpoint'),
     ])
-    assert 'Synthetic login redirect' in texts(digest)
-    decision = next(entry for entry in digest['entries'] if entry['text'].startswith('We decided'))
-    assert decision['kind'] == 'decision'
-    assert decision['sources'] == [{'role': 'user', 'sequence': 1}]
-    method = next(entry for entry in digest['entries'] if entry['kind'] == 'method')
-    assert method['text'] == 'Method: replay the redirect with a fixture token.'
-    assert method['sources'] == [{'role': 'assistant', 'sequence': 2}]
-    assert not any('tool output' in text for text in texts(digest))
-    assert not any(text in ('Sure.', 'ok', 'unrelated chatter') for text in texts(digest))
-    assert digest['omitted'] == 3
+    assert digest['entries'] == [{'kind': 'request', 'text': 'Synthetic login redirect',
+                                  'sources': [{'role': 'user', 'sequence': 1}]}]
+    # Two later user lines and four assistant lines are left out; tool and checkpoint events are not lines.
+    assert digest['omitted'] == 6
+    assert digest['version'] == DIGEST_VERSION
 
 
-def test_later_correction_and_unresolved_work_do_not_erase_older_sources():
-    digest = fold_messages({}, [message(1, 'user', 'Plan\nDecision: use port 3000.')])
-    digest = fold_messages(digest, [
-        message(5, 'user', 'Status\nCorrection: actually use port 4000 instead.'),
-        message(6, 'assistant', 'Done\nTODO: migrate the remaining fixture config.'),
-    ])
-    kinds = {entry['text']: entry['kind'] for entry in digest['entries']}
-    assert kinds['Decision: use port 3000.'] == 'decision'
-    assert kinds['Correction: actually use port 4000 instead.'] == 'correction'
-    assert kinds['TODO: migrate the remaining fixture config.'] == 'open'
-    text = render_digest(digest)
-    assert text.index('port 3000') < text.index('port 4000')
-    assert 'user #1' in text and 'user #5' in text and 'assistant #6' in text
+def test_client_compaction_summary_folds_to_one_bounded_preview():
+    text = 'This session continues an earlier synthetic conversation.\n\n1. Primary request: ' + '保留原始记录' * 60
+    digest = fold_messages({}, [message(1, 'user', 'Synthetic title'), summary(2, text)])
+    entry = digest['entries'][1]
+    assert entry['kind'] == 'compaction' and entry['sources'] == [{'role': 'summary', 'sequence': 2}]
+    assert entry['text'].startswith('This session continues an earlier synthetic conversation. 1. Primary request:')
+    assert len(entry['text'].encode()) <= ENTRY_BYTES and entry['truncated'] is True
+    entry['text'].encode().decode()  # never splits a code point
+    assert digest['omitted'] == 0
 
 
-def test_repeated_compaction_dedups_additively_and_stays_bounded():
+def test_summaries_with_a_shared_opening_stay_separate():
+    opening = 'This session continues an earlier synthetic conversation. ' * 6
+    digest = fold_messages({}, [summary(3, opening + 'first window'), summary(9, opening + 'second window')])
+    assert [entry['sources'] for entry in digest['entries']] == [[{'role': 'summary', 'sequence': 3}],
+                                                                [{'role': 'summary', 'sequence': 9}]]
+
+
+def test_repeated_titles_dedup_additively_and_stay_bounded():
     digest = {}
     for round_index in range(30):
         base = round_index * 10
         digest = fold_messages(digest, [
-            message(base + 1, 'user', f'Synthetic round {round_index} ' + 'context ' * 25 + '\nDecision: keep raw history.'),
-            message(base + 2, 'assistant', f'Note {round_index}\nUnresolved: verify round {round_index}.'),
+            message(base + 1, 'user', 'Rerun the synthetic suite'),
+            message(base + 2, 'user', f'Synthetic round {round_index} ' + 'context ' * 25),
         ])
-    decision = [entry for entry in digest['entries'] if entry['text'] == 'Decision: keep raw history.']
-    assert len(decision) == 1
-    assert decision[0]['sources'][-1] == {'role': 'user', 'sequence': 291}
-    assert len(decision[0]['sources']) <= 4
-    size = sum(len(entry['text'].encode()) for entry in digest['entries'])
-    assert size <= 6000
+    repeated = [entry for entry in digest['entries'] if entry['text'] == 'Rerun the synthetic suite']
+    assert len(repeated) == 1
+    assert repeated[0]['sources'][0] == {'role': 'user', 'sequence': 1}
+    assert repeated[0]['sources'][-1] == {'role': 'user', 'sequence': 291}
+    assert len(repeated[0]['sources']) <= 4
+    assert sum(len(entry['text'].encode()) for entry in digest['entries']) <= 6000
     assert digest['omitted'] > 0
-    # Open work outranks request titles, so old titles are evicted first.
-    assert 'Unresolved: verify round 29.' in texts(digest)
-    assert 'Unresolved: verify round 0.' in texts(digest)
     assert not any(text.startswith('Synthetic round 0 ') for text in texts(digest))
     assert any(text.startswith('Synthetic round 29 ') for text in texts(digest))
 
 
-def test_unicode_lines_are_bounded_by_utf8_bytes_and_marked_truncated():
-    digest = fold_messages({}, [message(1, 'user', '决定：' + '保留原始记录' * 100)])
-    entry = digest['entries'][0]
-    assert entry['kind'] == 'decision'
-    assert len(entry['text'].encode()) <= ENTRY_BYTES
-    assert entry['text'].endswith('…') and entry['truncated'] is True
-    entry['text'].encode().decode()  # never splits a code point
-
-
-def test_legacy_digest_remains_readable_and_new_entries_append():
-    legacy = {'tasks': [], 'notes': ['修复登录跳转']}
-    legacy = add_task_result(legacy, '2026-10-01T00:00:00+00:00', 'completed', 'Synthetic result')
-    digest = fold_messages(legacy, [message(9, 'user', 'Next: confirm the 待办 list')])
-    assert digest['notes'] == ['修复登录跳转']
-    text = render_digest(digest)
-    assert text.startswith('[2026-10-01 completed] Synthetic result')
-    assert 'Earlier requests:\n- 修复登录跳转' in text
-    assert '- Next: confirm the 待办 list [open, user #9]' in text
-    assert 'not verified' in text
-
-
-def test_render_budget_prefers_decisions_and_reports_omissions():
-    events = [message(index, 'user', f'Context line number {index} ' + 'x' * 120) for index in range(1, 30)]
-    events.append(message(40, 'assistant', 'Final\nDecision: ship the extractive digest.'))
+def test_compaction_previews_outlive_request_titles_under_eviction():
+    events = [message(index, 'user', f'Synthetic title {index} ' + 'x' * 200) for index in range(1, 40)]
+    events.append(summary(50, 'Synthetic client summary that must survive byte eviction.'))
+    events.append(message(51, 'user', 'Newest title ' + 'y' * 200))
     digest = fold_messages({}, events)
-    text = render_digest(digest, 600)
-    assert len(text.encode()) <= 600
-    assert 'Decision: ship the extractive digest. [decision, assistant #40]' in text
-    assert 'omitted' in text
-    packed = pack_context(render_digest(digest, 1000), [], 2000)
-    assert len(json.dumps(packed, ensure_ascii=False, separators=(',', ':')).encode()) <= 2000
+    kept = texts(digest)
+    assert 'Synthetic client summary that must survive byte eviction.' in kept
+    assert kept[-1] == 'Newest title ' + 'y' * 200
+    assert kept[0] != 'Synthetic title 1 ' + 'x' * 200
+    assert sum(len(text.encode()) for text in kept) <= 6000
+    assert digest['omitted'] == 41 - len(kept)
 
 
-def test_truncated_lines_with_shared_prefix_are_not_conflated():
-    prefix = 'Decision: ' + 'shared synthetic prefix ' * 12
-    digest = fold_messages({}, [
-        message(1, 'user', f'Title\n{prefix} keep the A path'),
-        message(2, 'assistant', f'Title two\n{prefix} keep the B path'),
-    ])
-    decisions = [entry for entry in digest['entries'] if entry['kind'] == 'decision']
-    assert len(decisions) == 2
-    assert [entry['sources'] for entry in decisions] == [[{'role': 'user', 'sequence': 1}],
-                                                        [{'role': 'assistant', 'sequence': 2}]]
-
-
-def test_same_source_is_not_repeated_and_fenced_code_counts_as_omitted():
-    digest = fold_messages({}, [message(3, 'user', 'Decision: keep it.\nDecision: keep it.\n```\nprint(1)\n```')])
-    assert digest['entries'][0]['sources'] == [{'role': 'user', 'sequence': 3}]
+def test_fenced_code_is_omitted_and_never_a_title():
+    digest = fold_messages({}, [message(3, 'user', '```\nprint(1)\n```\nSynthetic title after code')])
+    assert texts(digest) == ['Synthetic title after code']
     assert digest['omitted'] == 1  # the code line; fence markers are not content
-    digest = fold_messages(digest, [message(3, 'user', 'Decision: keep it.')])
-    assert digest['entries'][0]['sources'] == [{'role': 'user', 'sequence': 3}]
-
-
-def test_render_budget_bounds_oversized_tasks_and_keeps_newer_decisions():
-    oversized = {'tasks': [{'at': '2026-10-01', 'status': 'completed', 'summary': 'Synthetic long summary ' * 100}]}
-    text = render_digest(oversized, 600)
-    assert len(text.encode()) <= 600
-    assert 'Synthetic long summary' in text and '…' in text
-    assert 'truncated' in text
-    mixed = add_task_result({}, '2026-10-01T00:00:00+00:00', 'completed', 'Synthetic result ' * 60)
-    for index in range(10):
-        mixed = add_task_result(mixed, f'2026-10-{index + 2:02d}T00:00:00+00:00', 'completed', f'Task {index} ' * 20)
-    mixed = fold_messages({**mixed, 'notes': ['Legacy synthetic note']}, [
-        message(50, 'assistant', 'Wrap\nDecision: keep the newest decision visible.')])
-    text = render_digest(mixed, 800)
-    assert len(text.encode()) <= 800
-    assert 'Decision: keep the newest decision visible. [decision, assistant #50]' in text
-    assert '[2026-10-11 completed] Task 9' in text
-    assert 'omitted' in text
 
 
 def test_dedup_keeps_case_and_internal_whitespace_distinct():
     digest = fold_messages({}, [
-        message(1, 'user', 'Decision: use case-sensitive key ABC'),
-        message(2, 'user', 'Decision: use case-sensitive key abc'),
-        message(3, 'assistant', 'Decision: set value "a  b"'),
-        message(4, 'assistant', 'Decision: set value "a b"'),
-        message(5, 'user', 'Decision: use case-sensitive key ABC'),
+        message(1, 'user', 'Use synthetic key ABC'),
+        message(2, 'user', 'Use synthetic key abc'),
+        message(3, 'user', 'Set value "a  b"'),
+        message(4, 'user', 'Set value "a b"'),
+        message(5, 'user', 'Use synthetic key ABC'),
     ])
-    assert texts(digest) == ['Decision: use case-sensitive key ABC', 'Decision: use case-sensitive key abc',
-                             'Decision: set value "a  b"', 'Decision: set value "a b"']
+    assert texts(digest) == ['Use synthetic key ABC', 'Use synthetic key abc', 'Set value "a  b"', 'Set value "a b"']
     assert digest['entries'][0]['sources'] == [{'role': 'user', 'sequence': 1}, {'role': 'user', 'sequence': 5}]
 
 
-def test_large_batch_evicts_by_priority_and_recency_and_counts_omissions():
-    # Synthetic batch: one message with thousands of unique open-work lines.
-    lines = '\n'.join(f'TODO: synthetic item {index:05d}' for index in range(20000))
-    digest = fold_messages({}, [
-        message(1, 'user', 'Synthetic title\nDecision: keep the oldest decision.'),
-        message(2, 'assistant', 'Method: an early method.'),
-        message(3, 'user', lines),
-    ])
-    kept = texts(digest)
-    assert len(kept) == 80
-    assert sum(len(text.encode()) for text in kept) <= 6000
-    # Title and method are evicted first; then the oldest equal-priority lines, so the decision too.
-    assert kept == [f'TODO: synthetic item {index:05d}' for index in range(19920, 20000)]
-    assert digest['omitted'] == 20003 - 80
+def test_refold_keeps_tasks_and_the_compaction_pointer_and_drops_marker_entries():
+    older = add_task_result({}, '2026-10-01T00:00:00+00:00', 'completed', 'Synthetic result')
+    older = note_compaction(older, 7, 1200)
+    older = {**older, 'version': 2, 'entries': [
+        {'kind': 'decision', 'text': 'Sure, I decided to look first.', 'sources': [{'role': 'assistant', 'sequence': 2}]}]}
+    rebuilt = refold_digest(older, [message(1, 'user', 'Synthetic title\nI decided to look first.'),
+                                    message(2, 'assistant', 'Sure, I decided to look first.')])
+    assert rebuilt['tasks'] == older['tasks']
+    assert rebuilt['compaction'] == {'sequence': 7, 'bytes': 1200}
+    assert texts(rebuilt) == ['Synthetic title']
+    assert rebuilt['version'] == DIGEST_VERSION
 
 
-def test_eviction_keeps_display_order_and_high_priority_when_bytes_bound():
-    events = [message(index, 'user', f'Synthetic title {index} ' + 'x' * 200) for index in range(1, 40)]
-    events.append(message(50, 'assistant', 'Decision: survive byte eviction.'))
-    events.append(message(51, 'user', 'Newest title ' + 'y' * 200))
-    digest = fold_messages({}, events)
-    kept = texts(digest)
-    assert kept[-2:] == ['Decision: survive byte eviction.', 'Newest title ' + 'y' * 200]
-    assert kept[:-2] == [f'Synthetic title {index} ' + 'x' * 200 for index in range(42 - len(kept), 40)]
-    assert sum(len(text.encode()) for text in kept) <= 6000
-    assert digest['omitted'] == 41 - len(kept)
+def test_recovery_carries_the_whole_compaction_summary_when_it_fits():
+    events = [message(1, 'user', 'Synthetic question'), message(2, 'assistant', 'Synthetic answer')]
+    packed = pack_context('', events, 4000, compaction={'sequence': 5, 'content': 'Synthetic client summary'})
+    assert packed['compaction_summary'] == {'sequence': 5, 'bytes': 24, 'content': 'Synthetic client summary'}
+    assert [item['sequence'] for item in packed['messages']] == [1, 2]
+    assert packed_bytes(packed) <= 4000
+
+
+def test_recent_raw_wins_and_an_oversized_summary_leaves_only_its_pointer():
+    events = [message(index, 'user', f'Synthetic turn {index} ' + 'x' * 300) for index in range(1, 6)]
+    text = '摘要' * 2000
+    packed = pack_context('', events, 2000, compaction={'sequence': 9, 'content': text})
+    assert packed['compaction_summary'] == {'sequence': 9, 'bytes': len(text.encode())}
+    assert packed['messages'] and packed['messages'][-1]['sequence'] == 5
+    assert packed_bytes(packed) <= 2000
+    without = pack_context('', events, 2000)
+    assert 'compaction_summary' not in without
+    # The pointer may cost one older message, never the newest.
+    assert len(without['messages']) - len(packed['messages']) <= 1
+
+
+def test_a_budget_too_tight_for_the_pointer_drops_it():
+    packed = pack_context('', [], 300, {'status': 'completed', 'summary': 'Synthetic checkpoint ' * 40},
+                          compaction={'sequence': 9, 'content': 'Synthetic client summary'})
+    assert 'compaction_summary' not in packed
+    assert packed_bytes(packed) <= 300

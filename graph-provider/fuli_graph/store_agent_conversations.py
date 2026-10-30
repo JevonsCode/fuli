@@ -6,7 +6,8 @@ import json
 from fastapi import HTTPException
 from .agent_conversation_models import ConversationPolicy, ConversationWrite
 from .conversation_context import (
-    DIGEST_VERSION, add_delivery_proofs, add_task_result, fold_messages, message_bytes, pack_context, refold_digest, render_digest,
+    COMPACTION_KIND, DIGEST_VERSION, add_delivery_proofs, add_task_result, fold_messages, message_bytes, note_compaction,
+    pack_context, refold_digest,
 )
 from .project_agent_access import authorize_project_agent
 from .conversation_scope import conversation_binding_id, conversation_scope_id, started_conversation_id
@@ -157,12 +158,23 @@ class StoreAgentConversations:
         checkpoint = {'status': record.get('status') or 'reported', 'summary': record.get('summary')}
         context = pack_context('', decoded, policy.context_budget, checkpoint,
             conversation_id=record['id'], revision=record['revision'],
-            omitted_sequence=omitted, scan_truncated=scan_truncated)
+            omitted_sequence=omitted, scan_truncated=scan_truncated,
+            compaction=await self._latest_compaction(record))
         # A session's task entry asks with its own ID; the host strips these
         # proofs once it knows what that session has already seen.
         if request.session_id is not None and request.source_application is not None:
             add_delivery_proofs(context, decoded, request.source_application, request.session_id)
         return {**self._conversation_view(record, policy), 'context': context}
+
+    async def _latest_compaction(self, record):
+        """The newest client compaction summary within this revision, or None."""
+        pointer = json.loads(record['digest']).get('compaction') if record.get('digest') else None
+        if not pointer or pointer['sequence'] > record['revision']:
+            return None
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent {sequence: $sequence}) '
+            'RETURN e.payload AS payload, e.sequence AS sequence', id=record['id'], sequence=pointer['sequence'])
+        return decode_event(rows[0]) if rows else None
 
     async def _current_digest(self, record):
         """The stored digest, rebuilt once from raw events when older folding rules made it."""
@@ -226,17 +238,6 @@ class StoreAgentConversations:
             'compacted_through': record.get('compacted_through') or 0,
             'unfolded_bytes': record.get('unfolded_bytes') or 0,
             'policy': policy.model_dump(), 'raw_retained': True}
-
-    @staticmethod
-    def _digest_text(record, budget=None):
-        """Historical recovery text; the latest checkpoint is returned separately."""
-        if not record.get('digest'):
-            return ''
-        digest = json.loads(record['digest'])
-        tasks = digest.get('tasks', [])
-        if tasks and tasks[-1]['summary'] == record.get('summary'):
-            digest = {**digest, 'tasks': tasks[:-1]}
-        return render_digest(digest, budget)
 
     async def _compact_conversation(self, conversation_id, policy):
         """Fold older messages into the digest, keeping recent ones verbatim."""
@@ -307,6 +308,7 @@ class StoreAgentConversations:
                 "c.last_activity=$now, c.summary='', c.status='reported' "
                 'SET c.serial=coalesce(c.serial,0)+1', id=conversation_id, scope=scope, now=now)
             new_summary = False
+            compaction = None
             unfolded = 0
             for event in request.events:
                 digest, payload = encode_event(event)
@@ -320,19 +322,28 @@ class StoreAgentConversations:
                 if event.kind == 'checkpoint':
                     new_summary = True
                 unfolded += message_bytes(event.model_dump())
-                await store.runtime.driver.execute_query(
+                created, _, _ = await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) SET c.revision=c.revision+1, c.last_activity=$now '
                     'CREATE (e:FuliConversationEvent {id: $event_id, digest: $digest, payload: $payload, '
                     'sequence: c.revision, source_application: $source, task_context_token: $task, '
                     'session_id: $session, created_at: $created_at}) '
-                    'CREATE (c)-[:HAS_EVENT]->(e)', id=conversation_id, event_id=event_id,
+                    'CREATE (c)-[:HAS_EVENT]->(e) RETURN e.sequence AS sequence', id=conversation_id, event_id=event_id,
                     digest=digest, payload=payload, now=now, source=request.source_application,
                     task=request.task_context_token, session=request.session_id, created_at=created_at)
+                if event.kind == COMPACTION_KIND:
+                    compaction = (created[0]['sequence'], len(event.content.encode()))
             if unfolded:
                 await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) '
                     'SET c.unfolded_bytes=coalesce(c.unfolded_bytes,0)+$bytes',
                     id=conversation_id, bytes=unfolded)
+            if compaction:
+                rows, _, _ = await store.runtime.driver.execute_query(
+                    'MATCH (c:FuliConversation {id: $id}) RETURN c.digest AS digest', id=conversation_id)
+                digest = json.loads(rows[0]['digest']) if rows[0]['digest'] else {}
+                await store.runtime.driver.execute_query(
+                    'MATCH (c:FuliConversation {id: $id}) SET c.digest=$digest', id=conversation_id,
+                    digest=json.dumps(note_compaction(digest, *compaction), ensure_ascii=False))
             if request.summary is not None and new_summary:
                 rows, _, _ = await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) RETURN c.digest AS digest', id=conversation_id)

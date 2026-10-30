@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from fuli_graph.agent_conversation_models import ConversationPolicy, ConversationEvent
 from fuli_graph.conversation_context import (
-    add_delivery_proofs, add_task_result, fold_messages, pack_context, render_digest,
+    add_delivery_proofs, add_task_result, fold_messages, pack_context,
 )
 
 
@@ -55,11 +55,9 @@ def test_digest_keeps_task_results_bounded_and_legacy_request_notes_readable():
         {'role': 'user', 'content': '\n  新请求标题\n附带日志', 'sequence': 3},
         {'role': 'tool', 'content': 'tool output', 'sequence': 4},
     ])
-    text = render_digest(digest)
-    assert text.startswith('[2026-10-09 completed] result 8')
-    assert 'Earlier requests:\n- 修复登录跳转' in text
-    assert '- 新请求标题 [request, user #3]' in text
-    assert 'tool output' not in text
+    assert digest['tasks'][0]['summary'] == 'result 8'
+    assert digest['notes'] == ['修复登录跳转']
+    assert digest['entries'] == [{'kind': 'request', 'text': '新请求标题', 'sources': [{'role': 'user', 'sequence': 3}]}]
 
 
 def test_context_budget_counts_multibyte_and_never_returns_tool_payloads():

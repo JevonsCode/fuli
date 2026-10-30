@@ -1,38 +1,28 @@
 """Deterministic conversation compaction and recovery: no model calls.
 
 Older messages fold into a bounded digest once the unfolded text passes a size
-threshold; raw events are always retained. Folding is extractive: it keeps the
-first line of each user request plus user/assistant lines that match explicit
-decision, correction, open-work or method markers, each with its source role
-and sequence. It does not understand meaning, so it can miss unmarked content
-and mislabel marked lines; omissions are counted and the raw history remains the
-authority. Default recovery carries the latest checkpoint and recent raw, not
-the digest; its whole serialized JSON is bounded in UTF-8 bytes.
+threshold; raw events are always retained. Folding is an index, not a summary:
+it keeps the first line of each user request and points at each compaction
+summary the Agent client wrote for its own context, with source role and
+sequence. Keyword-picked lines were dropped: on blind-labelled sessions
+they were almost all chatter. Default recovery carries the latest checkpoint,
+recent raw and the latest client compaction summary, bounded in UTF-8 bytes.
 """
 import json
-import re
 
 from .provider_values import sha256_text
 
 # Bump when the folding rules change; an older digest is rebuilt from raw events.
-DIGEST_VERSION = 2
+DIGEST_VERSION = 3
 DIGEST_TASKS = 12
 DIGEST_BYTES = 6000
 DIGEST_ENTRIES = 80
 ENTRY_BYTES = 240
 ENTRY_SOURCES = 4
+COMPACTION_KIND = 'compaction_summary'
 
-# Checked in order: a correction that also names a method stays a correction.
-MARKERS = (
-    ('correction', re.compile(r'\b(correction|actually|instead|rather than|no longer|was wrong)\b'
-                              r'|更正|纠正|改为|改成|不再|其实', re.I)),
-    ('decision', re.compile(r'\b(decided?|decision|agreed|we will|chose)\b|决定|决策|确定|采用|约定', re.I)),
-    ('open', re.compile(r'\b(todo|unresolved|open question|pending|blocked|remaining|follow[- ]up|not yet)\b'
-                        r'|\bnext(\s+steps?)?\s*:|待办|未解决|待确认|下一步|遗留|阻塞|未完成', re.I)),
-    ('method', re.compile(r'\b(method|approach|steps?|workaround|procedure|how to)\b|方法|步骤|方案|做法', re.I)),
-)
 # Lower value is evicted first; within a priority, the least recently seen goes first.
-PRIORITY = {'request': 0, 'method': 1, 'decision': 2, 'correction': 2, 'open': 2}
+PRIORITY = {'request': 0, 'compaction': 1}
 
 
 def message_bytes(event):
@@ -54,8 +44,18 @@ def add_task_result(digest, at, status, summary):
     return {**digest, 'tasks': tasks[-DIGEST_TASKS:]}
 
 
+def note_compaction(digest, sequence, size):
+    """Point at the newest client compaction summary; recovery reads it by sequence."""
+    return {**digest, 'compaction': {'sequence': sequence, 'bytes': size}}
+
+
 def extract_lines(event):
     """Yield (kind, line) candidates and the count of lines left out."""
+    if event['role'] == 'summary' and event.get('kind') == COMPACTION_KIND:
+        # One preview per summary; its full text stays in the raw event.
+        return [('compaction', ' '.join(event['content'].split()))], 0
+    if event['role'] not in ('user', 'assistant') or event.get('kind', 'message') != 'message':
+        return [], 0
     lines, fenced, omitted = [], False, 0
     for part in event['content'].splitlines():
         line = part.strip()
@@ -66,16 +66,9 @@ def extract_lines(event):
             omitted += 1  # code is never extracted, but it is still left out
         elif line:
             lines.append(line)
-    found = []
-    for index, line in enumerate(lines):
-        kind = next((name for name, pattern in MARKERS if pattern.search(line)), None)
-        if kind is None and index == 0 and event['role'] == 'user':
-            kind = 'request'
-        if kind is None:
-            omitted += 1
-        else:
-            found.append((kind, line))
-    return found, omitted
+    if event['role'] == 'user' and lines:
+        return [('request', lines[0])], omitted + len(lines) - 1
+    return [], omitted + len(lines)
 
 
 def last_sequence(entry):
@@ -83,7 +76,7 @@ def last_sequence(entry):
 
 
 def evict_order(entries):
-    return sorted(range(len(entries)), key=lambda i: (PRIORITY[entries[i]['kind']], last_sequence(entries[i])))
+    return sorted(range(len(entries)), key=lambda i: (PRIORITY.get(entries[i]['kind'], 0), last_sequence(entries[i])))
 
 
 def fold_messages(digest, events):
@@ -93,8 +86,6 @@ def fold_messages(digest, events):
     index = {entry['text']: entry for entry in entries if not entry.get('truncated')}
     omitted = digest.get('omitted', 0)
     for event in events:
-        if event['role'] not in ('user', 'assistant') or event.get('kind', 'message') != 'message':
-            continue
         found, skipped = extract_lines(event)
         omitted += skipped
         source = {'role': event['role'], 'sequence': event['sequence']}
@@ -130,64 +121,11 @@ def fold_messages(digest, events):
 def refold_digest(digest, events):
     """Rebuild extracted entries with the current rules from the raw events they came from.
 
-    Task results come from checkpoints, not from raw events, so they are kept.
+    Task results come from checkpoints and the compaction pointer from appends,
+    not from the folded events, so both are kept.
     """
-    return fold_messages({'tasks': digest.get('tasks', [])}, events)
-
-
-def entry_line(entry):
-    sources = ', '.join(f"{source['role']} #{source['sequence']}" for source in entry['sources'])
-    return f"- {entry['text']} [{entry['kind']}, {sources}]"
-
-
-def render_digest(digest, budget=None):
-    """Render recovery text; a byte budget bounds the whole text, dropping
-    legacy notes, request titles and methods, then the oldest task results,
-    and only then decisions, corrections and open work."""
-    tasks = list(digest.get('tasks', []))
-    notes = list(digest.get('notes', []))
-    entries = list(digest.get('entries', []))
-    omitted = digest.get('omitted', 0)
-    truncated = 0
-
-    def task_line(task):
-        nonlocal truncated
-        summary = task['summary']
-        if budget is not None:
-            summary, cut = bounded_text(summary)
-            truncated += cut
-        return f"[{task['at'][:10]} {task['status']}] {summary}"
-
-    def text():
-        nonlocal truncated
-        truncated = 0
-        lines = [task_line(task) for task in tasks]
-        if notes:
-            lines += ['Earlier requests:', *(f'- {note}' for note in notes)]
-        if entries:
-            lines += ['Extracted from earlier messages (not verified working memory; originals retained):',
-                      *map(entry_line, entries)]
-        if omitted or truncated:
-            lines.append(f'({omitted} earlier lines omitted, {truncated} task results truncated; '
-                         'read the original history for details)')
-        return '\n'.join(lines)
-
-    if budget is None:
-        return text()
-    while len(text().encode()) > budget:
-        low = [i for i in evict_order(entries) if PRIORITY[entries[i]['kind']] < PRIORITY['decision']]
-        if notes:
-            notes.pop(0)
-        elif low:
-            entries.pop(low[0])
-        elif tasks:
-            tasks.pop(0)
-        elif entries:
-            entries.pop(evict_order(entries)[0])
-        else:
-            return bounded_text(text(), budget)[0]
-        omitted += 1
-    return text()
+    kept = {key: digest[key] for key in ('tasks', 'compaction') if key in digest}
+    return fold_messages(kept, events)
 
 
 def json_bytes(value):
@@ -208,9 +146,11 @@ def _fit_prefix(text, target, key, fits):
 
 
 def pack_context(summary, events, budget, checkpoint=None, *, conversation_id=None, revision=None,
-                 omitted_sequence=None, scan_truncated=False):
+                 omitted_sequence=None, scan_truncated=False, compaction=None):
     # Keep the old empty summary fields for readers; digests remain in history,
     # never compete with the latest checkpoint and visible raw messages here.
+    # `compaction` is the newest client compaction summary ({sequence, content}):
+    # its pointer goes in first, its text only into what recent raw leaves free.
     latest = ({'status': checkpoint['status'], 'summary': checkpoint['summary'], 'truncated': False}
               if checkpoint and checkpoint.get('summary') else None)
     result = {'summary': '', 'messages': [], 'truncated': omitted_sequence is not None or scan_truncated,
@@ -221,6 +161,12 @@ def pack_context(summary, events, budget, checkpoint=None, *, conversation_id=No
 
     def fits():
         return json_bytes(result) <= budget
+
+    if compaction:
+        result['compaction_summary'] = {'sequence': compaction['sequence'],
+                                        'bytes': len(compaction['content'].encode())}
+        if not fits():
+            del result['compaction_summary']
 
     def fit_checkpoint():
         if latest and not fits():
@@ -256,6 +202,10 @@ def pack_context(summary, events, budget, checkpoint=None, *, conversation_id=No
             else:
                 result['messages'].clear()
         break
+    if 'compaction_summary' in result:
+        result['compaction_summary']['content'] = compaction['content']
+        if not fits():
+            del result['compaction_summary']['content']
     return result
 
 
