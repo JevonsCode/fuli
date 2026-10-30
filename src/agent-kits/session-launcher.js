@@ -4,7 +4,7 @@ import { createLauncher, defaultExtensionsDirectory } from './vendor/agent-sessi
 
 const COMPONENT = 'agent-session-launcher';
 // classify, clients and inspect only plan; none opens a client.
-const DEFAULT_TIMEOUT_MS = 8000;
+const TIMEOUT_MS = 8000;
 
 // FULI's port to agent-session-launcher, read-only in this stage: it never
 // calls `open` (rec#11 D-79). Every answer is { status: 'available', ... } or
@@ -18,13 +18,12 @@ const DEFAULT_TIMEOUT_MS = 8000;
 export function createSessionLauncherPort({
   executables,
   configPath = null,
-  extensionsDir = defaultExtensionsDirectory(),
-  timeoutMs = DEFAULT_TIMEOUT_MS
+  extensionsDir = defaultExtensionsDirectory()
 }) {
   async function withLauncher({ download = false } = {}, call) {
     const executable = download ? await executables.ensure(COMPONENT) : await executables.resolve(COMPONENT);
     if (executable.status !== 'available') return executable;
-    const launcher = createLauncher({ executable: executable.path, timeoutMs, extensionsDir,
+    const launcher = createLauncher({ executable: executable.path, timeoutMs: TIMEOUT_MS, extensionsDir,
       ...(configPath && existsSync(configPath) ? { configPath } : {}) });
     try {
       return { status: 'available', ...await call(launcher) };

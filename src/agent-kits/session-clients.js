@@ -4,11 +4,12 @@ import { sha256Bytes } from '../security/digest.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
-// Which client a session ran in, as the session launcher classified it when
-// the session's hook first ran (rec#11 D-79): one small record per session,
-// keyed by FULI's source application and the session ID. A session recorded
-// before this existed has no record; its client is classified from the source
-// application alone when it is needed.
+// How a session was started and which client it ran in (rec#11 D-79): one
+// small record per session, keyed by FULI's source application and the
+// session ID. An Agent's hook writes the label and entry point without asking
+// the launcher; the console classifies the client the first time it needs it
+// and keeps the answer here. A session recorded before this existed has no
+// record; its client is classified from the source application alone.
 export const SESSION_CLIENT_FORMAT = jsonFormat({ store: 'session-clients', versions: [1] });
 const RECORD_VERSION = 1;
 // The longest label or entry point name kept; Claude Code's entry points are short words like `cli`.
@@ -44,9 +45,8 @@ export function sessionClientRecords(dataDir) {
           || record.sessionId !== sessionId) return null;
       return { client: record.client ?? null, source: record.source ?? null, entrypoint: record.entrypoint ?? null };
     },
-    // source: the label the Agent's adapter gave the launcher; client: the
-    // launcher's answer, or null when it could not be asked. The label and
-    // entry point are kept so the client can be classified later.
+    // source: the label for the launcher's classify; entrypoint: the client's
+    // own start signal, if any; client: the launcher's answer, once known.
     record(sourceApplication, sessionId, { client = null, source, entrypoint = null }) {
       writeVersionedJsonFileAtomic(pathOf(sourceApplication, sessionId), {
         version: RECORD_VERSION, sourceApplication, sessionId, client, source: source.slice(0, MAX_TEXT),

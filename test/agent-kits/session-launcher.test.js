@@ -9,6 +9,7 @@ import { launcherHostConfig } from '../../src/agent-kits/launcher-host-config.js
 import { sessionClientRecords } from '../../src/agent-kits/session-clients.js';
 import { createSessionLauncherPort } from '../../src/agent-kits/session-launcher.js';
 import { createSessionOffers } from '../../src/agent-kits/session-offers.js';
+import { recordClaudeSessionClient } from '../../src/agents/claude-code/session-client.js';
 import { DEFAULT_CONVERSATION_LAUNCHERS, normalizeConversationLaunchers } from '../../src/system/runtime-settings.js';
 import { isolateHomeEnvironment, realAgentKitExecutable } from '../../test-support/agent-kit-binaries.js';
 
@@ -73,8 +74,11 @@ test('the real launcher decides which recorded sessions get a link', async (t) =
   const root = directory(t);
   mkdirSync(join(root, 'extensions'));
   const { offers, records, launcher } = harness(root, executable);
-  records.record('claude_code', 'desktop-session', { client: 'claude-desktop', source: 'Claude Code', entrypoint: 'claude-desktop' });
-  records.record('claude_code', 'hook-without-launcher', { source: 'Claude Code CLI', entrypoint: 'cli' });
+  // What Claude Code's hooks left: the raw entry point, no client yet.
+  const runtimeConfigPath = join(root, 'data', 'graph-runtime.json');
+  recordClaudeSessionClient({ runtimeConfigPath, sessionId: 'desktop-session', env: { CLAUDE_CODE_ENTRYPOINT: 'claude-desktop' } });
+  recordClaudeSessionClient({ runtimeConfigPath, sessionId: 'terminal-session', env: { CLAUDE_CODE_ENTRYPOINT: 'cli' } });
+  records.record('claude_code', 'classified-earlier', { client: 'claude-desktop', source: 'Claude Code', entrypoint: 'claude-desktop' });
 
   const answer = await offers.offers([
     { sourceApplication: 'codex', sessionId: THREAD },
@@ -82,7 +86,8 @@ test('the real launcher decides which recorded sessions get a link', async (t) =
     { sourceApplication: 'cursor', sessionId: 'cursor-session-7' },
     { sourceApplication: 'kiro', sessionId: 'kiro-session' },
     { sourceApplication: 'claude_code', sessionId: 'desktop-session' },
-    { sourceApplication: 'claude_code', sessionId: 'hook-without-launcher' },
+    { sourceApplication: 'claude_code', sessionId: 'terminal-session' },
+    { sourceApplication: 'claude_code', sessionId: 'classified-earlier' },
     { sourceApplication: 'claude_code', sessionId: 'recorded-before-the-launcher' },
     { sourceApplication: 'opencode', sessionId: 'ses_synthetic' }
   ]);
@@ -93,10 +98,16 @@ test('the real launcher decides which recorded sessions get a link', async (t) =
     ['cursor-session-7', 'cursor', 'link', 'cursor://open/session?id=cursor-session-7'],
     ['kiro-session', 'unknown', 'fuli', undefined],
     ['desktop-session', 'claude-desktop', 'none', undefined],
-    ['hook-without-launcher', 'claude-code', 'none', undefined],
+    ['terminal-session', 'claude-code', 'none', undefined],
+    ['classified-earlier', 'claude-desktop', 'none', undefined],
     ['recorded-before-the-launcher', 'claude-code-unknown', 'none', undefined],
     ['ses_synthetic', 'opencode', 'fuli', undefined]
   ]);
+  // The console's answers are kept with the hook's records; an old session gets no record.
+  assert.deepEqual(records.read('claude_code', 'desktop-session'),
+    { client: 'claude-desktop', source: 'Claude Code', entrypoint: 'claude-desktop' });
+  assert.deepEqual(records.read('claude_code', 'terminal-session'), { client: 'claude-code', source: 'Claude Code CLI', entrypoint: 'cli' });
+  assert.equal(records.read('claude_code', 'recorded-before-the-launcher'), null);
   assert.deepEqual((await launcher.clients()).clients.filter(({ origin }) => origin === 'host')
     .map(({ id, enabled, kind }) => [id, enabled, kind]),
   [['fuli-codex', true, 'uri'], ['fuli-claude-code', false, 'uri'], ['fuli-cursor', true, 'uri']]);

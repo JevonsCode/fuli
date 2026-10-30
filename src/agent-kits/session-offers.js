@@ -40,7 +40,12 @@ export function createSessionOffers({ launcher, readLaunchers, configPath, recor
         const answer = await launcher.classify(source, { claudeEntrypoint: record?.entrypoint ?? undefined });
         classified.set(key, answer.status === 'available' ? answer.client : null);
       }
-      return classified.get(key);
+      const client = classified.get(key);
+      // A hook's record keeps the answer, so each session is classified once.
+      if (record && client) {
+        try { records.record(sourceApplication, sessionId, { ...record, client }); } catch { /* asked again next time */ }
+      }
+      return client;
     };
     const offerFor = async ({ sourceApplication, sessionId }) => {
       const hostClient = hostClients[sourceApplication];

@@ -138,11 +138,13 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
   );
   const ledger = runtimeConfigPath && typeof input?.session_id === 'string' && input.session_id.trim()
     ? transcriptCaptureLedger(runtimeConfigPath, input, 'claude_code') : null;
-  // Which client this session runs in (Claude Desktop or the CLI), once per
-  // session. It never decides this turn's answer, so a failure is only skipped.
+  // How this session was started (Claude Desktop or the CLI), once per
+  // session and without starting any process. It never decides this turn's
+  // answer, so a failure is only skipped.
   if (ledger) {
-    await recordClaudeSessionClient({ runtimeConfigPath,
-      sessionId: input.session_id, env: dependencies.env ?? process.env }).catch(() => {});
+    try {
+      recordClaudeSessionClient({ runtimeConfigPath, sessionId: input.session_id, env: dependencies.env ?? process.env });
+    } catch { /* the console classifies the session from its source application */ }
   }
   // Noted before the entry runs, so an answer at the deadline carries it too.
   const notice = noteEntryNotice(() => outdatedMcpNotice(runtimeConfigPath,

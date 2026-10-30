@@ -4,12 +4,10 @@ import { createSessionLauncherPort } from './session-launcher.js';
 
 // The shared client components for one data directory (setup paths), wired
 // once: where their executables are found and the ports FULI calls them through.
-// launcherTimeoutMs: a shorter wait for a caller with its own budget (a hook).
-export function agentKitPorts(paths, { env = process.env, launcherTimeoutMs } = {}) {
+export function agentKitPorts(paths, { env = process.env } = {}) {
   const executables = agentKitExecutables({ nativeRuntimeDir: paths.nativeRuntimeDir, bundleRoot: paths.portableRoot, env });
   return {
-    sessionLauncher: createSessionLauncherPort({ executables, configPath: paths.launcherHostConfigPath,
-      ...(launcherTimeoutMs ? { timeoutMs: launcherTimeoutMs } : {}) }),
+    sessionLauncher: createSessionLauncherPort({ executables, configPath: paths.launcherHostConfigPath }),
     clientInstaller: createClientInstallerPort({ executables, manifestPath: paths.installerManifestPath })
   };
 }

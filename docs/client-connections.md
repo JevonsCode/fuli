@@ -167,12 +167,13 @@ native executable through its own ports (`src/agent-kits/session-launcher.js`,
   session ID with other characters gets no link. A template the launcher cannot express (for
   example `https://…`), a missing launcher or a failed request keeps FULI's own rules. Nothing
   opens a client yet: no route calls the launcher's `open`.
-- **Which Claude client.** Claude Code's hooks read `CLAUDE_CODE_ENTRYPOINT` (`cli`,
-  `claude-desktop`, …) and record, once per session, the launcher's client ID
-  (`claude-code`, `claude-desktop` or the ambiguous `claude-code-unknown`) in
-  `session-clients/` in the data directory. A hook never downloads the launcher; without one the
-  label and entry point are kept and the console classifies them later. Sessions recorded before
-  this have no record and are classified from their source application alone.
+- **Which Claude client.** Claude Code's hooks record, once per session, the raw
+  `CLAUDE_CODE_ENTRYPOINT` (`cli`, `claude-desktop`, …) and a source label in `session-clients/`
+  in the data directory. A hook starts no process and never waits on the launcher. When the
+  console needs the client (the offers route), it asks the launcher's `classify` and keeps the
+  answer (`claude-code`, `claude-desktop` or the ambiguous `claude-code-unknown`) in the same
+  record. Sessions recorded before this have no record and are classified from their source
+  application alone.
 - **Installer status in shadow.** The console runs the installer's read-only `status` against
   FULI's product manifest (`src/agent-kits/fuli-installer-manifest.json`, composed into
   `agent-kits/fuli-installer.json`) beside FULI's own inspection, at most every ten minutes and
