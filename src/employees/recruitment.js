@@ -6,6 +6,10 @@ import {
 } from './project-selection.js';
 import { managementFor, managementWithoutRevision, parseEmployeeManagement, policyAllowsProject } from './management-policy.js';
 import { coversClient } from '../agents/source-applications.js';
+import { ASSISTANT_AGENT_ID } from '../graphiti/assistant-identity.js';
+
+// The global assistant (Astro) answers outside projects; it has no project scope.
+const globalOnly = manifest => employeeAgentId(manifest.id) === ASSISTANT_AGENT_ID;
 
 export function createEmployeeRecruitment({ app, registry, managementStore }) {
   const locks = new Map();
@@ -41,7 +45,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
       const owned = agent?.profile.capabilities.includes(employeeCapability(manifest.id));
       const stored = managementStore.read(spaceId, manifest.id);
       const management = managementFor(manifest, owned ? agent : null, stored);
-      const managedProjects = manifest.id !== 'assistant' && owned && agent.profile.status === 'active' ? projects
+      const managedProjects = !globalOnly(manifest) && owned && agent.profile.status === 'active' ? projects
         .filter(entry => entry.profile?.lifecycle !== 'archived' && policyAllowsProject(management, entry.project_id)
           && (management.mode === 'all' || activeEmployeeAssignments(agent).some(a => a.personalProjectId === entry.project_id)))
         .map(entry => ({ id: entry.project_id, name: entry.profile.name })) : [];
@@ -64,8 +68,8 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
   async function recruit(input) {
     assertSpace(input);
     const { manifest } = registry.get(input.templateId);
-    if (manifest.workbench?.kind === 'native') {
-      throw new EmployeeError('This built-in role is provisioned by the Provider and does not require recruitment', 409, 'system_managed_employee');
+    if (globalOnly(manifest)) {
+      throw new EmployeeError('The global assistant works outside projects and takes no project assignments', 409, 'system_managed_employee');
     }
     const selection = parseEmployeeProjectSelection(input);
     const agentId = employeeAgentId(manifest.id);
@@ -79,6 +83,11 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
       let changed = false;
       if (agent && !agent.profile.capabilities.includes(employeeCapability(manifest.id))) {
         throw new EmployeeError('This Agent identifier is already in use; the existing Agent was not modified', 409, 'identity_conflict');
+      }
+      // A native built-in role (Bole, Tonborg) is provisioned by the Provider:
+      // this only edits the projects of its existing identity (rec#58).
+      if (manifest.workbench?.kind === 'native' && agent?.profile.status !== 'active') {
+        throw new EmployeeError('This built-in role is provisioned by the Provider; only its projects can be changed once it is active', 409, 'system_managed_employee');
       }
       if (agent && agent.profile.status !== 'active' && input.reactivate !== true) {
         throw new EmployeeError('Confirm reactivation of this employee first', 409, 'reactivation_required');

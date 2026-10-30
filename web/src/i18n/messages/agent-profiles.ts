@@ -100,7 +100,7 @@ export const agentProfileMessages = {
       pair: "{name}、{partner}，一起讨论",
       recommend: "让 {name} 参加，再推荐一位",
       copyPhrasing: "复制：{text}",
-      hint: "#FLA 写在句中也算；{'@'}FLG 要写在开头。",
+      hint: "#FLA 姓名：叫一位接着做，写在开头或「请、让、帮我」后面；{'@'}FLG 问题：请几位一起讨论，只写在开头；{'@'}姓名 仍可用。",
     },
     rename: {
       title: "建议改个名字",
@@ -213,7 +213,7 @@ export const agentProfileMessages = {
       pair: "{name}, {partner}: discuss",
       recommend: "with {name}, recommend one more for",
       copyPhrasing: "Copy: {text}",
-      hint: "#FLA works anywhere in a prompt; {'@'}FLG only at its start.",
+      hint: "#FLA name: one Agent continues, at the start or after please/ask/let; {'@'}FLG question: several discuss, only at the start; {'@'}name still works.",
     },
     rename: {
       title: "Consider a name of its own",

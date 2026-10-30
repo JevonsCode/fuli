@@ -2,8 +2,13 @@
 // (rec#55). Parsing only: which FLA a name means is decided against the
 // person's roster (fla-picker.js), and whether it may work by the Provider.
 //
-// - `#FLA <name>` or `@FLA <name>`: the explicit form. `#FLA` also counts
-//   later in the prompt as a whole word outside code; `@FLA` only at the start.
+// - `#FLA <name>` or `@FLA <name>` at the very start: the explicit form. It
+//   names one of the person's FLAs or one of FULI's own roles (Bole, Jefa,
+//   Tonborg, Astro; rec#58). `#FLA` also counts at the start of a line, and
+//   right after a request word (`请让 #FLA Jamie Ash 看一下`, `帮我 #FLA 小林 …`,
+//   `please #FLA …`), where it takes only an exact name (`inline`) and never
+//   opens the picker. Anywhere else, in quotes or in code it is text, such as
+//   a question about the syntax.
 // - `@<name>` at the very start of the prompt. An `@` later in the prompt,
 //   inside quotes or code, never addresses an FLA.
 // - A bare `#FLA` / `@FLA` asks for the picker; `#FLA 2` answers it;
@@ -22,7 +27,8 @@
 // file name (`@README.md`).
 
 const KEYWORD = /^[#@]FLA(?=$|\s)/iu;
-const HASH_KEYWORD = /(?:^|\s)#FLA(?=$|\s)/iu;
+const LINE_KEYWORD = /\n[ \t]*#FLA(?=$|\s)/iu;
+const REQUEST_KEYWORD = /(?:请|让|帮我|麻烦|交给|(?<![\p{L}\p{N}_])(?:please|ask|let))[ \t,，:：]*#FLA(?=$|\s)/iu;
 const GROUP = /^[#@]FLG(?=$|[\s:：,，])/iu;
 const RELEASE = /^(?:结束|释放|解除|退出|停止|end|release|stop)\s*[。.!！]?\s*$/iu;
 const CHOICE = /^(\d{1,2})\s*[.、)）]?\s*$/u;
@@ -38,8 +44,8 @@ const MODE = String.raw`(?:(${SESSION_MODE})|(${ROUNDTABLE_MODE}))`;
 const CHOICES = new RegExp(String.raw`^(\d{1,2}(?:\s*[,，、\s]\s*\d{1,2})*)\s*[,，。]?\s*(?:开始|确认|go|start|ok)?`
   + String.raw`\s*[,，]?\s*${MODE}?\s*[。.!！]?\s*$`, 'iu');
 const CONFIRM = new RegExp(String.raw`^(开始吧|开始|确认|go|start)?\s*[,，]?\s*${MODE}?\s*[。.!！]?\s*$`, 'iu');
-// Inline code and fenced blocks are quoted text, never an address.
-const CODE = /```[\s\S]*?(?:```|$)|`[^`\n]*`/gu;
+// Inline code, fenced blocks and quotes are quoted text, never an address.
+const QUOTED = /```[\s\S]*?(?:```|$)|`[^`\n]*`|"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』/gu;
 // An identifier called like a function (`@Component(`) or a dotted name
 // (`@pytest.mark`, `@README.md`). A trailing dot alone (`@J.R.`) is a name.
 const CALLED = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\(/u;
@@ -56,15 +62,16 @@ const STABLE = /^\{([^{}\s]+)\}(?=$|[\s,，:：])/u;
 // null, { release: true }, { choice: n }, { handoff: agentId } for the
 // portable `@{agentId}` form (a hand-off's continuation prompt),
 // { explicit, query }: the text after the keyword or `@`, which may name an
-// FLA and continue with the task, or { group } for `@FLG …` (groupMention).
+// FLA and continue with the task (`inline: true` after a request word), or
+// { group } for `@FLG …` (groupMention).
 export function parseFlaMention(prompt) {
   const text = typeof prompt === 'string' ? prompt.trimStart() : '';
   const group = GROUP.exec(text);
   if (group) return { group: groupMention(text.slice(group[0].length)) };
-  // `#FLA` later in the prompt counts outside code only; blanking keeps positions.
-  const keyword = KEYWORD.exec(text) ?? HASH_KEYWORD.exec(text.replace(CODE, code => ' '.repeat(code.length)));
+  const keyword = KEYWORD.exec(text) ?? laterKeyword(text);
   if (keyword) {
     const rest = text.slice(keyword.index + keyword[0].length).trim().slice(0, ADDRESS_LIMIT);
+    if (keyword.inline) return { explicit: true, query: rest, inline: true };
     if (RELEASE.test(rest)) return { release: true };
     const choice = CHOICE.exec(rest);
     if (choice) return { choice: Number(choice[1]) };
@@ -76,6 +83,16 @@ export function parseFlaMention(prompt) {
   const stable = stableAddress(address);
   if (stable) return stable.agentId ? { handoff: stable.agentId } : null;
   return address.startsWith('{') ? null : { explicit: false, query: address };
+}
+
+// `#FLA` after the start, outside code and quotes (blanking keeps positions):
+// at a line start, or inline after a request word, whichever comes first.
+function laterKeyword(text) {
+  const plain = text.replace(QUOTED, quoted => ' '.repeat(quoted.length));
+  const line = LINE_KEYWORD.exec(plain);
+  const request = REQUEST_KEYWORD.exec(plain);
+  if (line && (!request || line.index < request.index)) return line;
+  return request ? Object.assign(request, { inline: true }) : null;
 }
 
 // What follows `@FLG`: { release } (stop the discussion), the answer to its

@@ -163,3 +163,22 @@ test('lead conversation ownership keeps the unstaffed execution decision visible
   assert.equal(staffed, false);
   assert.ok(result.match_basis.some(item => item.includes('coordinate_project_agent_task')));
 });
+
+test('a built-in role outside its project scope says so; a client refusal is checked first and keeps its own reason', async () => {
+  const bole = role('employee.bole', 'Bole');
+  const calls = [];
+  for (const [clients, refusal, reason] of [[['cursor'], 'assignment_required', 'not_responsible'],
+    [['codex'], 'assignment_required', 'client_not_allowed'], [['cursor'], 'project_not_found', undefined]]) {
+    const { run, app } = fixture([{ ...bole, profile: { ...bole.profile, allowed_clients: clients } }]);
+    app.employees = { authorize: async input => {
+      calls.push(input);
+      throw Object.assign(new Error('Synthetic refusal'), { status: 403, code: refusal });
+    } };
+    const result = await run('@Bole 看下人员分布');
+    assert.equal(result.status, 'agent_unavailable');
+    assert.equal(result.reason, reason);
+    assert.equal(result.agent, undefined);
+  }
+  // Only the two Cursor runs reached the scope check, with this project.
+  assert.deepEqual(calls.map(input => [input.templateId, input.personalProjectId]), [['bole', 'sample'], ['bole', 'sample']]);
+});

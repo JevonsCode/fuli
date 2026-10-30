@@ -87,13 +87,18 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
         agent = projectAgentRecord(standing.agent);
       }
     }
+    // The client and status come first, so a scope refusal below means the scope.
+    const refused = agent && agentUnavailableReason(agent.profile, input.sourceApplication);
+    if (refused) return { status: 'agent_unavailable', reason: refused, worker_started: false };
     const employeeId = /^employee\.([a-z][a-z0-9-]{0,63})$/.exec(agent?.agentId ?? '')?.[1];
     if (employeeId && application.employees) {
       try { await application.employees.authorize({ templateId: employeeId, personalProjectId: resolution.personalProjectId }); }
-      catch { return { status: 'agent_unavailable', worker_started: false }; }
+      catch (error) {
+        // A built-in role outside its project scope says so (rec#58); other failures stay unexplained.
+        return { status: 'agent_unavailable', ...(error?.code === 'assignment_required' ? { reason: 'not_responsible' } : {}),
+          worker_started: false };
+      }
     }
-    const refused = agent && agentUnavailableReason(agent.profile, input.sourceApplication);
-    if (refused) return { status: 'agent_unavailable', reason: refused, worker_started: false };
     return { ...value, agent, worker_started: false, ...(standingAgentUnreached ? { standingAgentUnreached } : {}) };
   } catch {
     // Preferences remain useful during an older/offline Provider upgrade, but

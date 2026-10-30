@@ -36,6 +36,10 @@ projects, standing responsibilities, latest tasks and matching knowledge titles;
 is withheld). Checkpoint the task as the session's own Agent only: never list a member as a
 collaborator, never write a member's `agentMemory`, and capture a fact learned from a member's
 context only after reading the full item it comes from.
+`#FLA <name>` naming a built-in role (Jefa, Bole, Tonborg, Astro) is not coordination either: the
+session continues as that role in the folder's project (Astro globally) only after the Provider and
+the role's own project scope allow it, and the role is the task's owner, not a collaborator. A refusal
+(`fla.status: unavailable`, such as `not_responsible`) restores nothing; never checkpoint as that role.
 Do not forward the parent's task token. The coordinator alone checkpoints the shared host task
 after integrating worker results; a worker's completion is not that task's completion.
 

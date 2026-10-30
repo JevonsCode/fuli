@@ -154,6 +154,7 @@ function unassignedReceipt(status, reason) {
         : 'FULI Agent：分配失败（项目归属未能恢复）';
   }
   if (reason === 'assistant_unavailable') return 'FULI Agent：待归属会话（助理尚未就绪）';
+  if (status === 'agent_unavailable' && reason === 'not_responsible') return 'FULI Agent：分配失败（指定 Agent 未负责此项目）';
   const labels = {
     unavailable: '分配失败（服务或身份恢复不可用）',
     agent_unavailable: '分配失败（指定 FLA 不可用）',

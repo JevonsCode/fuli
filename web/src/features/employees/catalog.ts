@@ -115,7 +115,7 @@ export function employeeErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   try {
     const body = JSON.parse(message) as { code?: string; error?: string }
-    if (body.code && ['runtime_unavailable', 'assignment_required', 'project_not_found', 'identity_conflict', 'reactivation_required', 'assignment_scope_conflict', 'assignment_update_incomplete'].includes(body.code)) {
+    if (body.code && ['runtime_unavailable', 'assignment_required', 'project_not_found', 'identity_conflict', 'reactivation_required', 'assignment_scope_conflict', 'assignment_update_incomplete', 'system_managed_employee'].includes(body.code)) {
       return t(`employees.errors.${body.code}`)
     }
     return body.error || t('employees.loadError')

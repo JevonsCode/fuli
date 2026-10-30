@@ -422,6 +422,39 @@ test('global assistant is fixed and cannot be recruited into projects', async ()
   assert.deepEqual(entry.managedProjects, []);
 });
 
+test('a native built-in role edits its projects through the scope save, read back, with audit and conflicts kept (rec#58)', async t => {
+  const bole = parseEmployeeManifest(JSON.parse(readFileSync(new URL('../src/employees/catalog/bole.json', import.meta.url))));
+  const { service, agents, writes } = fixture(bole);
+  t.after(() => service.close());
+  // Before the Provider provisions Bole, nothing is created here.
+  await assert.rejects(service.recruit({ templateId: 'bole', personalProjectId: 'project-a' }), { code: 'system_managed_employee' });
+  assert.equal(writes.length, 0);
+  agents.set('employee.bole', { agentId: 'employee.bole', assignments: [], profile: {
+    status: 'active', allowedClients: ['codex'], capabilities: [...bole.capabilities, 'fuli.employee:bole'],
+    responsibility: bole.description, workKinds: bole.workKinds } });
+  const [before] = (await service.list()).templates;
+  assert.equal(before.management.mode, 'all');
+  // The console's scope dialog: only project-a, replacing the all rule at the version it read.
+  const saved = await service.recruit({ templateId: 'bole', management: { mode: 'selected', projectIds: ['project-a'] },
+    replaceAssignments: true, expectedAssignmentsVersion: before.assignmentsVersion });
+  assert.deepEqual(saved.assignments.map(entry => entry.personalProjectId), ['project-a']);
+  assert.match(writes.find(write => write.personalProjectId === 'project-a').reason, /^Recruit employee template bole@/);
+  assert.equal(writes.some(write => write.profile), false, 'the provisioned identity is never rewritten');
+  const [after] = (await service.list()).templates;
+  assert.deepEqual([after.management.mode, after.management.projectIds], ['selected', ['project-a']]);
+  assert.deepEqual(after.managedProjects.map(project => project.id), ['project-a']);
+  await service.authorize({ templateId: 'bole', personalProjectId: 'project-a' });
+  await assert.rejects(service.authorize({ templateId: 'bole', personalProjectId: 'project-b' }), { code: 'assignment_required' });
+  // A save from a stale read is refused; nothing changes.
+  await assert.rejects(service.recruit({ templateId: 'bole', management: { mode: 'all' }, replaceAssignments: true,
+    expectedAssignmentsVersion: before.assignmentsVersion }), { code: 'assignment_scope_conflict' });
+  assert.equal((await service.list()).templates[0].management.mode, 'selected');
+  // An inactive role is not reactivated here either.
+  agents.get('employee.bole').profile.status = 'inactive';
+  await assert.rejects(service.recruit({ templateId: 'bole', personalProjectId: 'project-b', reactivate: true }),
+    { code: 'system_managed_employee' });
+});
+
 test('custom employee creation requires and forwards a primary occupation', async () => {
   const custom = { ...manifest, id: 'sample-helper' };
   const { service, writes } = fixture(custom);

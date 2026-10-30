@@ -124,6 +124,40 @@ describe('employee project scope', () => {
     expect(postJson.mock.calls[0]![1]).toMatchObject({ management: { mode: 'selected', projectIds: ['project-a', 'project-b'], excludedProjectIds: [] } })
   })
 
+  it('saves a built-in role\'s projects and shows the saved scope read back (rec#58)', async () => {
+    entry = { ...fresh(), id: 'bole', name: 'Bole', role: 'AR', runtime: null, agentId: 'employee.bole', agentStatus: 'active',
+      management: { mode: 'all', projectIds: [], excludedProjectIds: [], titleMode: 'suggest', titleStyle: 'emoji' } }
+    const { wrapper } = await setup(projects, { templateId: 'bole' })
+    expect(wrapper.get('h2').text()).toBe('管理 Bole 的项目')
+    await wrapper.get('[data-scope="selected"]').trigger('click')
+    await wrapper.get('input[value="project-b"]').setValue(false)
+    postJson.mockImplementation(async () => {
+      entry.management = { mode: 'selected', projectIds: ['project-a'], excludedProjectIds: [], titleMode: 'suggest', titleStyle: 'emoji' }
+      entry.assignments = [{ assignmentId: 'assignment-a', agentId: 'employee.bole', personalSpaceId: 'space-a', personalProjectId: 'project-a', responsibility: 'AR', status: 'active', assignedAt: '2026-10-31T00:00:00Z', updatedAt: '2026-10-31T00:00:00Z' }]
+      entry.assignmentsVersion = 'version-1'
+      return { templateId: 'bole', agent: { agentId: 'employee.bole' }, assignment: null, assignments: entry.assignments, endedAssignments: [], assignmentsVersion: 'version-1', idempotent: false }
+    })
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/employee-templates/bole/recruit', { personalSpaceId: 'space-a',
+      management: { mode: 'selected', projectIds: ['project-a'], excludedProjectIds: [], titleMode: 'suggest', titleStyle: 'emoji' },
+      replaceAssignments: true, expectedAssignmentsVersion: 'version-0' })
+    expect(wrapper.text()).toContain('负责范围已保存')
+    // Read back: the saved selection is the new baseline at its new version.
+    expect(wrapper.get('[data-scope="selected"]').attributes('aria-checked')).toBe('true')
+    expect((wrapper.get('input[value="project-b"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.get('footer a').attributes('href')).toBe('/employees/bole?project=project-a')
+  })
+
+  it('says why FULI keeps a built-in Agent\'s scope when the save is refused', async () => {
+    const { wrapper } = await setup()
+    await wrapper.get('input[value="project-a"]').setValue(true)
+    postJson.mockRejectedValueOnce(new Error(JSON.stringify({ code: 'system_managed_employee' })))
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('由 FULI 自动维护')
+  })
+
   it('keeps an existing fixed scope until the user explicitly enables all-project management', async () => {
     entry.agentId = 'employee.jefa'
     entry.agentStatus = 'active'

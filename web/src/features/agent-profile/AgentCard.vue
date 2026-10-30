@@ -21,7 +21,7 @@ import {
 import type { AgentWorkbenchEntry } from "./agent-workbench";
 import { agentPinsText } from "./agent-pins";
 import AgentMentionCopy from "./AgentMentionCopy.vue";
-import { isMentionableFla } from "./fla-mention";
+import { mentionKind } from "./fla-mention";
 import { agentIdentityStyle } from "./agent-identity-color";
 import { loopPhaseDelay } from "@/lib/motion-phase";
 import { occupationLabels } from "./agent-occupation";
@@ -256,7 +256,7 @@ function surfaceClick(event: MouseEvent) {
         <span v-else class="agent-card-no-project">{{ t("agentProfiles.noProject") }}</span>
       </div>
       <div class="flex shrink-0 items-center gap-1.5">
-        <AgentMentionCopy v-if="isMentionableFla(agent)" :name="name" :partner="mentionPartner" />
+        <AgentMentionCopy v-if="mentionKind(agent)" :kind="mentionKind(agent)" :name="name" :partner="mentionPartner" />
         <Button
           variant="ghost"
           size="sm"

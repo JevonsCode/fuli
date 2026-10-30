@@ -153,9 +153,11 @@ describe('AgentCard projects', () => {
         reason: 'recruitment cancelled: synthetic reason' } })
     expect(waiting.get('[data-status-detail]').text()).toBe('已暂停：招聘已取消，任务在等待重新安排')
   })
-  it('offers the #FLA copy only on an FLA, never on a FULI role', () => {
+  it('offers the #FLA copy on an FLA and on a FULI role (rec#58), not on an Agent reusing a role\'s id', () => {
     expect(render().find('[data-agent-mention-copy]').exists()).toBe(false)
     const fla = render({ agent: { ...agent, agentId: 'custom', profile: { ...agent.profile, name: 'PPT 专责', displayName: 'Iris Vale' } } })
     expect(fla.get('[data-agent-mention-copy]').attributes('aria-label')).toBe('复制 #FLA Iris Vale')
+    const jefa = render({ agent: { ...agent, profile: { ...agent.profile, capabilities: ['fuli.employee:jefa'] } } })
+    expect(jefa.get('[data-agent-mention-copy]').attributes('aria-label')).toBe('复制 #FLA Jefa')
   })
 })
