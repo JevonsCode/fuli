@@ -27,7 +27,7 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   final runtime = _runtime(exeDir);
   final instance = runtime is WindowsTrayRuntime ? await _claimInstance(runtime, handOver: !background) : null;
   final window = DesktopWindow();
-  await window.open(show: !background);
+  await window.open(title: strings.appName, show: !background);
   const opener = BrowserUrlOpener();
   final console = await ConsoleWebView.create(opener);
   final client = http.Client();

@@ -2,10 +2,11 @@
 // - assets/tray/{ok,needs_person,broken}.{png,ico}: the logo on a light disc,
 //   so it reads on light and dark taskbars and menu bars, with a green, amber
 //   or red status dot in the lower right;
-// - assets/app/fuli.png: the logo for Windows notifications;
+// - assets/app/fuli.png: the logo on a light rounded square, for Windows notifications;
 // - windows/runner/resources/app_icon.ico: the client's and the Fuli.exe
-//   launcher's icon (scripts/build-windows-tray.js);
-// - macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_*.png.
+//   launcher's icon (scripts/build-windows-tray.js), on the same rounded square;
+// - macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_*.png, the rounded
+//   square inset by the margin macOS app icons keep.
 // Run from desktop/flutter: dart run tool/make_icons.dart
 import 'dart:io';
 import 'dart:math' as math;
@@ -38,11 +39,24 @@ void main() {
     File('assets/tray/$name.png').writeAsBytesSync(img.encodePng(_icon(logo, _trayPng, dot: rgb)));
     File('assets/tray/$name.ico').writeAsBytesSync(_ico([for (final size in _trayIco) _icon(logo, size, dot: rgb)]));
   }
-  File('assets/app/fuli.png').writeAsBytesSync(img.encodePng(_icon(logo, 256)));
-  File('windows/runner/resources/app_icon.ico').writeAsBytesSync(_ico([for (final size in _appIco) _icon(logo, size)]));
+  File('assets/app/fuli.png').writeAsBytesSync(img.encodePng(_appIcon(logo, 256)));
+  File('windows/runner/resources/app_icon.ico').writeAsBytesSync(_ico([for (final size in _appIco) _appIcon(logo, size)]));
   for (final size in _macApp) {
-    File('macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_$size.png').writeAsBytesSync(img.encodePng(_icon(logo, size)));
+    File('macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_$size.png').writeAsBytesSync(img.encodePng(_appIcon(logo, size, margin: 0.1)));
   }
+}
+
+// The app icon: the logo on a light rounded square. [margin] (a share of the
+// size) leaves the transparent border macOS expects around app icons.
+img.Image _appIcon(img.Image logo, int size, {double margin = 0}) {
+  final canvas = img.Image(width: size, height: size, numChannels: 4);
+  final inset = size * margin;
+  final side = size - 2 * inset;
+  _paintRoundedSquare(canvas, inset, side, side * 0.225, _backdrop);
+  final inner = (side * 0.74).round();
+  final scaled = img.copyResize(logo, width: inner, height: inner, interpolation: img.Interpolation.average);
+  img.compositeImage(canvas, scaled, dstX: ((size - inner) / 2).round(), dstY: ((size - inner) / 2).round());
+  return canvas;
 }
 
 // The logo inside a light disc; with [dot], a status dot in a light ring at the lower right.
@@ -64,20 +78,37 @@ img.Image _icon(img.Image logo, int size, {int? dot}) {
 }
 
 // An antialiased disc (supersampled coverage) blended over the canvas.
-void _paintDisc(img.Image canvas, double cx, double cy, double radius, int rgb) {
+void _paintDisc(img.Image canvas, double cx, double cy, double radius, int rgb) =>
+    _paint(canvas, cx - radius, cy - radius, 2 * radius, rgb, (dx, dy) => dx * dx + dy * dy <= radius * radius,
+        cx: cx, cy: cy);
+
+// An antialiased square of [side] at ([at], [at]) with corners of [radius].
+void _paintRoundedSquare(img.Image canvas, double at, double side, double radius, int rgb) {
+  final c = at + side / 2;
+  final half = side / 2 - radius;
+  _paint(canvas, at, at, side, rgb, (dx, dy) {
+    final ox = math.max(dx.abs() - half, 0.0), oy = math.max(dy.abs() - half, 0.0);
+    return ox * ox + oy * oy <= radius * radius;
+  }, cx: c, cy: c);
+}
+
+// Blends [rgb] over the [side]-square at ([left], [top]) wherever [inside] holds for
+// a sample's offset from ([cx], [cy]).
+void _paint(img.Image canvas, double left, double top, double side, int rgb, bool Function(double dx, double dy) inside,
+    {required double cx, required double cy}) {
   final r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
-  for (var y = math.max(0, (cy - radius).floor()); y < math.min(canvas.height, (cy + radius).ceil()); y++) {
-    for (var x = math.max(0, (cx - radius).floor()); x < math.min(canvas.width, (cx + radius).ceil()); x++) {
-      var inside = 0;
+  for (var y = math.max(0, top.floor()); y < math.min(canvas.height, (top + side).ceil()); y++) {
+    for (var x = math.max(0, left.floor()); x < math.min(canvas.width, (left + side).ceil()); x++) {
+      var covered = 0;
       for (var sy = 0; sy < _samples; sy++) {
         for (var sx = 0; sx < _samples; sx++) {
           final dx = x + (sx + 0.5) / _samples - cx;
           final dy = y + (sy + 0.5) / _samples - cy;
-          if (dx * dx + dy * dy <= radius * radius) inside++;
+          if (inside(dx, dy)) covered++;
         }
       }
-      if (inside == 0) continue;
-      final alpha = inside / (_samples * _samples);
+      if (covered == 0) continue;
+      final alpha = covered / (_samples * _samples);
       final under = canvas.getPixel(x, y);
       final underAlpha = under.a / 255;
       final outAlpha = alpha + underAlpha * (1 - alpha);

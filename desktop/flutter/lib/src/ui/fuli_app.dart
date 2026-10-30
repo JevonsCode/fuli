@@ -12,7 +12,7 @@ class FuliApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'FULI',
+      title: services.strings.appName,
       debugShowCheckedModeBanner: false,
       theme: fuliTheme(),
       home: _Window(services: services),

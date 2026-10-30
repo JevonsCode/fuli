@@ -7,7 +7,7 @@ import 'fuli_condition.dart';
 TrayView trayViewOf(FuliSnapshot? snapshot,
     {required bool busy, required Strings strings, bool canChangePort = false, bool? launchAtLogin}) {
   if (snapshot == null) {
-    return TrayView(icon: TrayIcon.needsPerson, tooltip: 'FULI · ${strings.checking}',
+    return TrayView(icon: TrayIcon.needsPerson, tooltip: '${strings.appName} · ${strings.checking}',
         toggleLabel: strings.startFuli, toggleEnabled: false,
         changePortEnabled: canChangePort ? false : null, launchAtLogin: launchAtLogin);
   }
@@ -17,7 +17,7 @@ TrayView trayViewOf(FuliSnapshot? snapshot,
       FuliCondition.needsPerson => TrayIcon.needsPerson,
       _ => TrayIcon.broken,
     },
-    tooltip: 'FULI · ${snapshot.sentence(strings)}',
+    tooltip: '${strings.appName} · ${snapshot.sentence(strings)}',
     toggleLabel: snapshot.running ? strings.stopFuli : strings.startFuli,
     toggleEnabled: snapshot.installed && !busy,
     changePortEnabled: canChangePort ? snapshot.installed && !busy : null,

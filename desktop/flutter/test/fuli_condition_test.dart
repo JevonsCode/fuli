@@ -37,7 +37,7 @@ void main() {
     final stopped = trayViewOf(snapshot(FuliCondition.notRunning, running: false), busy: false, strings: zh);
     expect(stopped.icon, TrayIcon.broken);
     expect(stopped.toggleLabel, '启动 FULI');
-    expect(stopped.tooltip, 'FULI · FULI 没有运行');
+    expect(stopped.tooltip, 'FULI Beta · FULI 没有运行');
     expect(trayViewOf(snapshot(FuliCondition.ok), busy: true, strings: zh).toggleEnabled, isFalse);
   });
 
