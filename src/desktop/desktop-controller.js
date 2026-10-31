@@ -87,7 +87,12 @@ export async function runTrayAction(action, context, {
     if (action === 'start' || action === 'start-open') {
       starting = true;
       if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
-        await command(['setup', '--yes', '--skip-agents', '--personal-only', '--runtime-mode', 'native']);
+        const setup = await invoke(['setup', '--yes', '--skip-agents', '--personal-only', '--runtime-mode', 'native']);
+        // A setup that failed names its error on stderr. One that finished but
+        // reports "partial" exits 1 silently: right after the first start its
+        // knowledge-recovery check can race the console's own, which the
+        // console repeats by itself. Whether FULI runs decides below.
+        if (setup.code !== 0 && String(setup.stderr ?? '').trim()) throw cliError(setup);
       } else {
         const before = await inspect();
         if (before.status !== 'running') await command(['start']);

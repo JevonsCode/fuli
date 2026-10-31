@@ -74,6 +74,20 @@ test('first explicit start/open scopes setup, skips Agent integration, then open
   assert.deepEqual(calls.map(args => args[0]), ['setup', 'status', 'open', 'status']);
 });
 
+test('a first setup that reports partial still counts when FULI runs; one that failed does not', async t => {
+  const f = await fixture(t);
+  const start = (setup, state) => runTrayAction('start', f.context, { portBlocked: async () => false,
+    runCli: async (context, args) => args[0] === 'setup' ? setup : reply(state) });
+  const partial = { code: 1, stdout: 'Knowledge recovery is pending.', stderr: '' };
+  assert.equal((await start(partial, running)).ok, true);
+  const stillStopped = await start(partial, stopped);
+  assert.equal(stillStopped.ok, false);
+  assert.match(stillStopped.error, /running state/);
+  const failed = await start({ code: 1, stdout: '', stderr: 'Native Neo4j did not open its local Bolt port.' }, running);
+  assert.equal(failed.ok, false);
+  assert.match(failed.error, /Bolt port/);
+});
+
 test('opening an already running selection preserves its processes; open-only never starts', async t => {
   const f = await fixture(t);
   await configured(f);
