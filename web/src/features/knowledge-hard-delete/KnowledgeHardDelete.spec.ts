@@ -120,7 +120,8 @@ describe('permanent delete on the item page', () => {
   })
 
   it('导出并删除 saves what the dialog listed as a local file, then deletes the same preview', async () => {
-    postJson.mockResolvedValueOnce(preview()).mockResolvedValueOnce(deletedResult())
+    const full = { ...preview(), removed_episodes: [{ episode_id: 'ep-full', content: 'synthetic full source' }] }
+    postJson.mockResolvedValueOnce(preview()).mockResolvedValueOnce(full).mockResolvedValueOnce(deletedResult())
     const saved: { name: string; text: Promise<string> }[] = []
     const create = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
       saved.push({ name: '', text: (blob as Blob).text() })
@@ -139,10 +140,26 @@ describe('permanent delete on the item page', () => {
     const exported = JSON.parse(await saved[0].text)
     expect(exported).toMatchObject({ format: 'fuli-deleted-knowledge', personal_space_id: 'space', item_id: 'item-2' })
     expect(exported).not.toHaveProperty('preview_id')
+    expect(exported.source_text).toBe('full')
+    expect(exported.removed_episodes[0].content).toBe('synthetic full source')
+    expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/entity/item-2/hard-delete/export',
+      { personalSpaceId: 'space', previewId: 'a'.repeat(64) }])
     expect(postJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-2/hard-delete', {
       personalSpaceId: 'space', previewId: 'a'.repeat(64), confirmation: '删除' })
     expect(wrapper.get('[data-hard-deleted]').attributes('data-hard-deleted-state')).toBe('complete')
     create.mockRestore(); revoke.mockRestore(); click.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('keeps the dialog open and does not delete when export fails', async () => {
+    postJson.mockResolvedValueOnce(preview()).mockRejectedValueOnce(new Error('synthetic export failure'))
+    const wrapper = await open()
+    await openDialog(wrapper)
+    dialog()!.querySelector<HTMLButtonElement>('[data-hard-delete-export]')!.click()
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledTimes(2)
+    expect(dialog()!.querySelector('[data-hard-delete-error]')!.textContent).toContain('没能导出，没有删除')
+    expect(wrapper.find('[data-hard-deleted]').exists()).toBe(false)
     wrapper.unmount()
   })
 

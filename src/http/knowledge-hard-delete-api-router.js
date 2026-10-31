@@ -12,7 +12,7 @@ import { readJson, sendJson } from './response.js';
 // Agent tool reaches these routes; an Agent can only suggest the person opens
 // the item's page (the interface catalog marks them local_user_only).
 
-const PATH = /^\/api\/knowledge\/(entity|relationship|episode|session)\/([^/]+)\/hard-delete(?:\/(preview|status))?$/;
+const PATH = /^\/api\/knowledge\/(entity|relationship|episode|session)\/([^/]+)\/hard-delete(?:\/(preview|export|status))?$/;
 
 export async function handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete }) {
   const match = url.pathname.match(PATH);

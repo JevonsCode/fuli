@@ -29,6 +29,11 @@ class KnowledgeHardDeleteConfirm(KnowledgeHardDeleteRef):
     confirmation: str = Field(min_length=1, max_length=512)
 
 
+class KnowledgeHardDeleteExport(KnowledgeHardDeleteRef):
+    item_kind: KnowledgeItemKind
+    preview_id: str = Field(pattern=PREVIEW_ID_PATTERN)
+
+
 class KnowledgeHardDeleteItem(StrictModel):
     """One stored item that goes: the item, another version of it, or (for an
     entity) a relationship that cannot stand without it."""

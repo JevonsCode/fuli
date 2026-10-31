@@ -111,6 +111,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('POST /api/knowledge/entity/:itemId/project-action/preview', 'preview_personal_project_action'),
   agent('POST /api/knowledge/entity/:itemId/project-action', 'apply_personal_project_action'),
   local('POST /api/knowledge/:itemKind/:itemId/hard-delete/preview', 'Permanently deleting knowledge is a person\'s own right over their data (rec#5 C9); its preview is part of that console-only decision. An Agent may only suggest the person opens the item page.'),
+  local('POST /api/knowledge/:itemKind/:itemId/hard-delete/export', 'The full-text export of a permanent deletion preview is part of the person\'s console-only decision (rec#5 C9). An Agent may only suggest the person opens the item page.'),
   local('POST /api/knowledge/:itemKind/:itemId/hard-delete/status', 'Settling a permanent delete whose answer was lost, and finishing its local cleanup, belongs to the local console that started it.'),
   local('POST /api/knowledge/:itemKind/:itemId/hard-delete', 'A permanent delete needs the person\'s second confirmation of the exact preview in the local console; no Agent or MCP tool can perform or confirm it.'),
   local('POST /api/knowledge/batch-confirmation', 'Batch confirmation asserts human confirmation and requires local user presence.'),

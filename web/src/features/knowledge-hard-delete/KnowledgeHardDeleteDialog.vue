@@ -11,7 +11,7 @@ import { evidenceApplicationLabel, evidenceKindLabel, itemEditPath, versionStatu
   type KnowledgeItemSummary } from '@/features/knowledge-quick-edit/model'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
-import { confirmHardDelete, previewHardDelete, confirmSourceDelete, previewSourceDelete } from './hard-delete-api'
+import { confirmHardDelete, exportHardDelete, previewHardDelete, confirmSourceDelete, previewSourceDelete } from './hard-delete-api'
 import SourceDeleteSelections from './SourceDeleteSelections.vue'
 import SourceDeleteMemory from './SourceDeleteMemory.vue'
 import { sourcePreviewDetails, sourceSelection, type SourceDeletePreview, type SourceDeleteSelection,
@@ -39,6 +39,7 @@ const loading = ref(false)
 const reloading = ref(false)
 const reloadCause = ref<'selection' | 'submission' | 'changed'>('changed')
 const deleting = ref(false)
+const exporting = ref(false)
 watch(deleting, value => emit('pending', value), { flush: 'sync' })
 const notice = ref('')
 const error = ref('')
@@ -94,8 +95,8 @@ function recheckSubmissions() {
 
 // 导出并删除 saves what this preview lists as a local file first; a delete
 // follows only once the browser has been handed the file.
-function saveExport(listed: HardDeletePreview | SourceDeletePreview) {
-  const { filename, json } = deletionExport(listed, props.spaceId, new Date())
+function saveExport(listed: HardDeletePreview | SourceDeletePreview, sourceText: 'full' | 'excerpts') {
+  const { filename, json } = deletionExport(listed, props.spaceId, new Date(), sourceText)
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json;charset=utf-8' }))
   const link = document.createElement('a')
   link.href = url; link.download = filename
@@ -109,9 +110,15 @@ async function submit(exportFirst = false) {
   error.value = ''
   notice.value = ''
   try {
-    if (exportFirst) saveExport(rawPreview.value)
+    if (exportFirst) {
+      exporting.value = true
+      const listed = sourceTarget.value ? rawPreview.value : await exportHardDelete(props.spaceId, rawPreview.value as HardDeletePreview)
+      saveExport(listed, sourceTarget.value ? 'excerpts' : 'full')
+      exporting.value = false
+    }
   } catch (cause) {
     error.value = t('knowledgeHardDelete.dialog.exportFailed', { error: apiErrorReason(cause) })
+    exporting.value = false
     deleting.value = false
     return
   }
@@ -265,7 +272,7 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
         <Button type="button" variant="outline" :disabled="deleting" @click="emit('cancel')">{{ t('knowledgeHardDelete.dialog.cancel') }}</Button>
         <Button type="button" variant="outline" :disabled="!ready || deleting" data-hard-delete-export @click="submit(true)">{{ t('knowledgeHardDelete.dialog.exportAndDelete') }}</Button>
         <Button type="submit" variant="destructive" :disabled="!ready" :loading="deleting"
-          :loading-label="t(sourceTarget ? 'knowledgeHardDelete.source.deleting' : 'knowledgeHardDelete.dialog.deleting')" data-hard-delete-submit>{{ t('knowledgeHardDelete.dialog.submit') }}</Button>
+          :loading-label="t(exporting ? 'knowledgeHardDelete.dialog.exporting' : sourceTarget ? 'knowledgeHardDelete.source.deleting' : 'knowledgeHardDelete.dialog.deleting')" data-hard-delete-submit>{{ t('knowledgeHardDelete.dialog.submit') }}</Button>
       </DialogFooter>
     </form>
   </div>

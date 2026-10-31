@@ -76,8 +76,31 @@ test('no MCP or Agent tool module reaches a hard delete, and no tool is named fo
   const entries = agentInterfaceCatalog().uiMutationParity.filter((item) => item.route.includes('/hard-delete'));
   assert.deepEqual(entries.map((item) => [item.route, item.access]), [
     ['POST /api/knowledge/:itemKind/:itemId/hard-delete/preview', 'local_user_only'],
+    ['POST /api/knowledge/:itemKind/:itemId/hard-delete/export', 'local_user_only'],
     ['POST /api/knowledge/:itemKind/:itemId/hard-delete/status', 'local_user_only'],
     ['POST /api/knowledge/:itemKind/:itemId/hard-delete', 'local_user_only']]);
+});
+
+test('export is loopback-only, bound to the active space and preview, and uses human review', async t => {
+  const calls = [];
+  const port = knowledgeHardDelete(dataDirectory(t), { localStores: [], send: async (path, payload, options) => {
+    calls.push({ path, payload, options });
+    return { ok: true, status: 200, payload: { item_id: 'item/1', items: [{ content: 'full synthetic content' }] } };
+  } });
+  const path = '/api/knowledge/entity/item%2F1/hard-delete/export';
+  const body = { personalSpaceId: SPACE, previewId: PREVIEW_ID };
+  assert.equal((await route(path, body, { hardDelete: port, remoteAddress: '192.0.2.1' })).status, 403);
+  assert.equal((await route(path, { ...body, personalSpaceId: 'other' }, { hardDelete: port })).status, 400);
+  assert.equal((await route(path, { ...body, previewId: 'invalid' }, { hardDelete: port })).status, 400);
+  const result = await route(path, body, { hardDelete: port });
+  assert.equal(result.body.items[0].content, 'full synthetic content');
+  assert.deepEqual(calls.map(({ path, payload, options }) => [path, payload, options.review]), [
+    ['/v1/knowledge/items/item%2F1/hard-delete/export',
+      { personal_space_id: SPACE, item_kind: 'entity', preview_id: PREVIEW_ID }, true]]);
+  const stale = knowledgeHardDelete(dataDirectory(t), { localStores: [], send: async () => ({ ok: false, status: 409,
+    payload: { detail: { code: 'hard_delete_preview_stale', message: 'synthetic stale preview' } } }) });
+  const refusal = await route(path, body, { hardDelete: stale });
+  assert.deepEqual([refusal.status, refusal.body.code], [409, 'hard_delete_preview_stale']);
 });
 
 test('an Agent revising knowledge cannot reach a hard delete through revise_personal_knowledge', async () => {

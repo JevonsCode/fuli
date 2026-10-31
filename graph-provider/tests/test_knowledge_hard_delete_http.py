@@ -45,6 +45,8 @@ async def call(app, path, body, headers):
 
 
 PREVIEW = ('/v1/knowledge/items/item-1/hard-delete/preview', {'personal_space_id': 'space', 'item_kind': 'entity'})
+EXPORT = ('/v1/knowledge/items/item-1/hard-delete/export', {
+    'personal_space_id': 'space', 'item_kind': 'entity', 'preview_id': 'a' * 64})
 DELETE = ('/v1/knowledge/items/item-1/hard-delete', {
     'personal_space_id': 'space', 'item_kind': 'entity', 'preview_id': 'a' * 64, 'confirmation': '删除'})
 
@@ -56,7 +58,7 @@ ASKS = [(path, {'personal_space_id': 'space'}) for path in (
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('route', [PREVIEW, DELETE, *ASKS])
+@pytest.mark.parametrize('route', [PREVIEW, EXPORT, DELETE, *ASKS])
 @pytest.mark.parametrize('headers', [{}, {'x-fuli-human-review-token': 'synthetic-wrong-token-000000000000000'}])
 async def test_an_agent_access_token_alone_cannot_preview_or_delete(route, headers):
     driver = UntouchedDriver()

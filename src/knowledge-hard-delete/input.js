@@ -17,15 +17,17 @@ const confirmation = {
 // Status deliberately needs no source identity: recovery may have only the
 // durable operation and route target after the source itself disappeared.
 export function parseHardDeleteInput({ action, itemKind, itemId, body, personalSpaceId }) {
-  if (!['preview', 'confirm', 'status'].includes(action) || !kind.safeParse(itemKind).success
+  if (!['preview', 'export', 'confirm', 'status'].includes(action) || !kind.safeParse(itemKind).success
       || !targetId.safeParse(itemId).success) throw new TypeError('Invalid permanent deletion target or action');
   const source = itemKind === 'episode' || itemKind === 'session';
+  if (source && action === 'export') throw new TypeError('Source export is not supported by this route');
   const fields = { personalSpaceId: space };
   if (source && action !== 'status') {
     Object.assign(fields, { include: selection(z.union([rowKey, memoryKey])), exclude: selection(rowKey) });
     if (itemKind === 'session') Object.assign(fields, { sourceApplication: identity(128), sessionId: identity(512) });
   }
   if (action === 'confirm') Object.assign(fields, confirmation);
+  if (action === 'export') fields.previewId = confirmation.previewId;
   const parsed = z.object(fields).strict().safeParse(body);
   if (!parsed.success) throw new TypeError('Invalid permanent deletion request');
   if (parsed.data.personalSpaceId !== personalSpaceId) throw new TypeError('Knowledge is deleted in the active personal space');

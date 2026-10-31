@@ -12,6 +12,10 @@ export function previewHardDelete(spaceId: string, item: Pick<KnowledgeItemSumma
   return postJson<HardDeletePreview>(`${path(item)}/preview`, { personalSpaceId: spaceId })
 }
 
+export function exportHardDelete(spaceId: string, preview: HardDeletePreview) {
+  return postJson<HardDeletePreview>(`${path(preview)}/export`, { personalSpaceId: spaceId, previewId: preview.preview_id })
+}
+
 /** Where this item's delete stands; it settles a lost answer and finishes local cleanup, never deletes again. */
 export function hardDeleteStatus(spaceId: string, item: { item_kind: HardDeleteKind; item_id: string }) {
   return postJson<HardDeleteResult>(`${path(item)}/status`, { personalSpaceId: spaceId })
