@@ -6,8 +6,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiSelect from '@/ui/UiSelect.vue'
-import ProjectScopePicker from './ProjectScopePicker.vue'
+import { projectSelectOptions } from './project-options'
 import { employeeAvatarUrl } from './avatars'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
@@ -19,6 +18,8 @@ import {
   employeeRoleLabel, employeeTemplates, fetchEmployeeCatalog, refreshEmployeeCatalog,
   employeeErrorMessage, type EmployeeRecruitmentResult, type EmployeeTemplate,
 } from './catalog'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionListbox } from '@/components/ui/listbox'
 
 const props = defineProps<{
   open: boolean
@@ -194,15 +195,15 @@ function scopeKeydown(event: KeyboardEvent) {
         </div>
         <p class="ui-meta" role="status">{{ scopeMode === 'all' ? t('employees.scope.allHint', { name: selected.name }) : t('employees.scope.selectedHint') }}</p>
       </div>
-      <ProjectScopePicker v-model="selectionIds" :projects="projectOptions" inline :hint="scopeMode === 'all' ? t('employees.scope.excludeHint') : undefined" :disabled="busy || selectionLoading || requiresReload" />
+      <OptionListbox v-model="selectionIds" :options="projectSelectOptions(projectOptions)" :label="t('employees.scope.label')" :hint="scopeMode === 'all' ? t('employees.scope.excludeHint') : t('employees.scope.snapshotHint')" :disabled="busy || selectionLoading || requiresReload" />
       <p v-if="scopeMode === 'all' && excludedIds.length" class="ui-meta">{{ t('employees.scope.excludedCount', { count: excludedIds.length }) }}</p>
       <p v-if="!projectOptions.length" class="ui-meta">{{ t('employees.noProjects') }} <RouterLink :to="personalProjectsPath(personalSpaceId, 'directory')" @click="close">{{ t('employees.createProject') }}</RouterLink></p>
       <p v-if="removals.length && !success" class="ui-meta">{{ t('employees.scopeRemoved', { count: removals.length }) }}</p>
       <section v-if="supportsPolicy && selected.permissions.includes('session.title')" class="employee-title-settings" :aria-label="t('employees.titles.heading')">
         <h3>{{ t('employees.titles.heading') }}</h3>
         <div class="employee-title-controls">
-          <UiSelect v-model="titleMode" field control-id="employee-title-mode" :label="t('employees.titles.mode')" :options="titleModeOptions" :disabled="busy || selectionLoading || requiresReload" />
-          <UiSelect v-model="titleStyle" field control-id="employee-title-style" :label="t('employees.titles.style')" :options="titleStyleOptions" :disabled="busy || selectionLoading || requiresReload || titleMode === 'off'" />
+          <OptionSelect v-model="titleMode" field control-id="employee-title-mode" :label="t('employees.titles.mode')" :options="titleModeOptions" :disabled="busy || selectionLoading || requiresReload" />
+          <OptionSelect v-model="titleStyle" field control-id="employee-title-style" :label="t('employees.titles.style')" :options="titleStyleOptions" :disabled="busy || selectionLoading || requiresReload || titleMode === 'off'" />
         </div>
         <p class="ui-meta">{{ t('employees.titles.example') }} <span class="employee-title-example">【P1｜{{ titleStyle === 'emoji' ? '🔧 ' : '' }}FIX｜{{ t('employees.titles.exampleTask') }}】</span></p>
         <p class="ui-meta">{{ t('employees.titles.boundary') }}</p>

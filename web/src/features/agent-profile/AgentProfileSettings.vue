@@ -3,9 +3,9 @@ import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from "vue";
 import { getJson, putJson } from "@/api/client";
 import GrowthLoading from "@/components/GrowthLoading.vue";
-import UiSelect from "@/ui/UiSelect.vue";
 import { t } from "@/i18n";
 import type { ProjectAgentRecord, ProjectAgentExecutorRef } from "@/types";
+import { OptionSelect } from '@/components/ui/select'
 const props = defineProps<{ agent: ProjectAgentRecord }>();
 const emit = defineEmits<{ saved: [agent: ProjectAgentRecord] }>();
 const executors = ref<ProjectAgentExecutorRef[]>([]);
@@ -155,13 +155,13 @@ async function save() {
       <small>{{ t("agentProfiles.locked") }}</small>
     </div>
     <div v-else class="agent-platform-field">
-      <UiSelect
+      <OptionSelect
         v-model="platform"
         field
         :label="t('agentProfiles.platform')"
         :options="platformOptions"
         :disabled="locked || saving"
-      />
+ />
       <small>{{
         t(locked ? "agentProfiles.locked" : "agentProfiles.platformHint")
       }}</small>

@@ -4,11 +4,12 @@ import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import { employeeErrorMessage, taskReadFailure } from './catalog'
 import type { EmployeeBoardItem } from './EmployeeTaskBoard.vue'
 import { boardTaskPeekId, type BoardTaskRef } from './board-task-peek'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 type Task = EmployeeBoardItem & { acceptanceCriteria?: string[] }
 const props = defineProps<{ open: boolean; item: BoardTaskRef | null; projects: { id: string; name: string }[]; defaultProjectId?: string; personalSpaceId: string; canWrite: boolean }>()
@@ -86,11 +87,11 @@ function close() { if (!busy.value) emit('close') }
     <GrowthLoading v-if="loading" variant="compact" :label="t('employees.loadingTask')" />
     <div v-if="error" class="ui-dialog__error employee-dialog-error" role="alert"><p>{{ error }}</p><Button variant="outline" size="sm" :disabled="busy" @click="load">{{ t('employees.task.reload') }}</Button></div>
     <template v-if="!loading">
-      <UiSelect v-model="project" field :label="t('employees.task.project')" :placeholder="t('employees.task.chooseProject')" :options="projectOptions" :disabled="Boolean(item) || busy || !canWrite" required />
+      <OptionCombobox v-model="project" field :label="t('employees.task.project')" :placeholder="t('employees.task.chooseProject')" :options="projectOptions" :disabled="Boolean(item) || busy || !canWrite" required />
       <label class="ui-field">{{ t('employees.task.title') }}<input v-model="title" autofocus minlength="2" maxlength="180" required :readonly="!canWrite" :disabled="busy" /></label>
       <p v-if="baseline" class="ui-meta">{{ t(`employees.allProjects.status.${baseline.status}`) }}</p>
       <label class="ui-field">{{ t('employees.task.summary') }}<textarea v-model="summary" rows="4" maxlength="2000" :readonly="!canWrite" :disabled="busy" /></label>
-      <UiSelect v-model="priority" field :label="t('employees.task.priority')" :options="priorityOptions" :disabled="!canWrite || busy" />
+      <OptionSelect v-model="priority" field :label="t('employees.task.priority')" :options="priorityOptions" :disabled="!canWrite || busy" />
       <label class="ui-field">{{ t('employees.task.criteria') }}<textarea v-model="criteria" rows="3" :readonly="!canWrite" :disabled="busy" /></label>
       <label class="ui-field">{{ t('employees.task.tags') }}<input v-model="tags" :readonly="!canWrite" :disabled="busy" /></label>
     </template>

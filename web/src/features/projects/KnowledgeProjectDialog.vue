@@ -5,11 +5,12 @@ import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeItem, KnowledgeNode, PersonalProject } from '@/types'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 type ProjectMode = 'create' | 'existing'
 type ConflictResolution = 'defer' | 'keep_target' | 'use_source' | 'coexist'
@@ -352,14 +353,14 @@ function fail(message: string) {
           <textarea v-model="newProjectPurpose" maxlength="4096" rows="3" />
         </label>
       </section>
-      <UiSelect v-else v-model="targetProjectId" field :options="availableProjectOptions" :label="t('projects.knowledgeDialog.targetPersonalProject')" searchable required />
+      <OptionCombobox v-else v-model="targetProjectId" field :options="availableProjectOptions" :label="t('projects.knowledgeDialog.targetPersonalProject')" required />
 
       <section v-if="sourceProjectId" class="knowledge-project-relation">
         <label class="ui-check">
           <input v-model="keepSourceRelation" type="checkbox" />
           <span><strong>{{ t('projects.knowledgeDialog.preserveRelation') }}</strong><small class="ui-meta">{{ t('projects.knowledgeDialog.preserveRelationCopy') }}</small></span>
         </label>
-        <UiSelect v-model="relationType" field :options="relationOptions" :label="t('projects.knowledgeDialog.projectRelation')" :disabled="!keepSourceRelation" />
+        <OptionSelect v-model="relationType" field :options="relationOptions" :label="t('projects.knowledgeDialog.projectRelation')" :disabled="!keepSourceRelation" />
       </section>
 
       <section class="knowledge-project-preview">

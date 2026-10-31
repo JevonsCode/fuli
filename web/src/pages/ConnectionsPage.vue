@@ -7,8 +7,7 @@ import { Card, CardTitle } from '@/components/ui/card'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
-import UiSelect from '@/ui/UiSelect.vue'
-import type { UiSelectOption } from '@/ui/UiSelect.vue'
+import type { SelectOption } from '@/components/ui/select'
 import TextField from '@/components/TextField.vue'
 import { currentLocale, t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
@@ -22,6 +21,8 @@ import type {
   PublicProject,
   Subscription,
 } from '@/types'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 type ConflictMode = KnowledgeConflictPolicy['mode']
 
@@ -108,14 +109,14 @@ const availableProjectOptions = computed(() =>
     search: identitySearchText(project.id),
   })),
 )
-const connectorOptions = computed<UiSelectOption[]>(() =>
+const connectorOptions = computed<SelectOption[]>(() =>
   connectors.value.map((connector) => ({
     value: connector.type,
     label: connector.name,
     meta: connector.description,
   })),
 )
-const personalProjectOptions = computed<UiSelectOption[]>(() =>
+const personalProjectOptions = computed<SelectOption[]>(() =>
   personalProjects.value.map((project) => ({
     value: project.project_id,
     label: project.profile.name,
@@ -123,20 +124,20 @@ const personalProjectOptions = computed<UiSelectOption[]>(() =>
     search: identitySearchText(project.project_id),
   })),
 )
-const bindingModeOptions = computed<UiSelectOption[]>(() => [
+const bindingModeOptions = computed<SelectOption[]>(() => [
   { value: 'hybrid', label: t('pages.connections.mode.hybrid'), disabled: !connectorSupportsMode(form.connectorType, 'hybrid') },
   { value: 'mirror', label: t('pages.connections.mode.mirror'), disabled: !connectorSupportsMode(form.connectorType, 'mirror') },
   { value: 'live', label: t('pages.connections.mode.live'), disabled: !connectorSupportsMode(form.connectorType, 'live') },
 ])
-const mcpTransportOptions = computed<UiSelectOption[]>(() => [
+const mcpTransportOptions = computed<SelectOption[]>(() => [
   { value: 'http', label: 'Streamable HTTP' },
   { value: 'stdio', label: 'stdio' },
 ])
-const feishuRegionOptions = computed<UiSelectOption[]>(() => [
+const feishuRegionOptions = computed<SelectOption[]>(() => [
   { value: 'cn', label: 'Feishu' },
   { value: 'global', label: 'Lark' },
 ])
-const conflictModeOptions = computed<UiSelectOption[]>(() => [
+const conflictModeOptions = computed<SelectOption[]>(() => [
   { value: 'ask_human', label: t('pages.connections.askHuman') },
   { value: 'agent_decide', label: t('pages.connections.agentDecide') },
 ])
@@ -522,7 +523,7 @@ function firstSupportedMode(type: string): ExternalKnowledgeMode {
     .find((mode) => connectorSupportsMode(type, mode)) ?? 'live'
 }
 
-function targetModeOptions(connectorType: string): UiSelectOption[] {
+function targetModeOptions(connectorType: string): SelectOption[] {
   return (['hybrid', 'mirror', 'live'] as ExternalKnowledgeMode[]).map((mode) => ({
     value: mode,
     label: t(`pages.connections.mode.${mode}`),
@@ -657,16 +658,15 @@ function readmeHelpUrl(fragment: string) {
           <div v-if="editingBindingId === binding.id" class="external-binding-editor">
             <label>
               <span>{{ t('pages.connections.targetProjects') }}</span>
-              <UiSelect multiple
+              <OptionCombobox multiple
                 v-model="editingProjectIds"
                 :control-id="`external-projects-${binding.id}`"
                 :label="t('pages.connections.targetProjects')"
                 :options="personalProjectOptions"
                 :disabled="externalBusy"
                 required
-                searchable
-                @change="updateEditingProjects"
-              />
+                @update:model-value="updateEditingProjects"
+ />
             </label>
             <div class="external-target-mode-list">
               <div
@@ -675,14 +675,14 @@ function readmeHelpUrl(fragment: string) {
                 class="external-target-mode-row"
               >
                 <span>{{ projectName(projectId) }}</span>
-                <UiSelect
+                <OptionSelect
                   :model-value="editingTargetModes[projectId] ?? binding.mode"
                   :control-id="`external-target-mode-${binding.id}-${projectId}`"
                   :label="t('pages.connections.bindingMode')"
                   :options="targetModeOptions(binding.connectorType)"
                   :disabled="externalBusy"
                   @update:model-value="setEditingTargetMode(projectId, $event)"
-                />
+ />
               </div>
             </div>
             <div class="external-binding-editor-actions">
@@ -699,50 +699,49 @@ function readmeHelpUrl(fragment: string) {
         <TextField v-model="form.name" :label="t('pages.connections.bindingName')" data-testid="external-name" required />
         <label>
           <span>{{ t('pages.connections.connector') }}</span>
-          <UiSelect
+          <OptionSelect
             v-model="form.connectorType"
             control-id="external-connector"
             :label="t('pages.connections.connector')"
             :options="connectorOptions"
             :disabled="externalBusy"
             required
-          />
+ />
         </label>
         <label>
           <span>{{ t('pages.connections.targetProjects') }}</span>
-          <UiSelect multiple
+          <OptionCombobox multiple
             v-model="form.personalProjectIds"
             control-id="external-projects"
             :label="t('pages.connections.targetProjects')"
             :options="personalProjectOptions"
             :disabled="externalBusy"
             required
-            searchable
-          />
+ />
         </label>
         <label>
           <span>{{ t('pages.connections.bindingMode') }}</span>
-          <UiSelect
+          <OptionSelect
             v-model="form.mode"
             control-id="external-binding-mode"
             :label="t('pages.connections.bindingMode')"
             :options="bindingModeOptions"
             :disabled="externalBusy"
             required
-          />
+ />
         </label>
 
         <template v-if="form.connectorType === 'mcp'">
           <label>
             <span>{{ t('pages.connections.transport') }}</span>
-            <UiSelect
+            <OptionSelect
               v-model="form.mcpTransport"
               control-id="external-mcp-transport"
               :label="t('pages.connections.transport')"
               :options="mcpTransportOptions"
               :disabled="externalBusy"
               required
-            />
+ />
           </label>
           <TextField v-if="form.mcpTransport === 'http'" v-model="form.mcpUrl" label="MCP URL" data-testid="mcp-url" type="url" required />
           <TextField v-else v-model="form.mcpCommand" :label="t('pages.connections.command')" required />
@@ -761,14 +760,14 @@ function readmeHelpUrl(fragment: string) {
           <TextField v-model="form.feishuTokenEnv" :label="t('pages.connections.tokenEnv')" required />
           <label>
             <span>{{ t('pages.connections.region') }}</span>
-            <UiSelect
+            <OptionSelect
               v-model="form.feishuRegion"
               control-id="external-feishu-region"
               :label="t('pages.connections.region')"
               :options="feishuRegionOptions"
               :disabled="externalBusy"
               required
-            />
+ />
           </label>
           <TextField v-model="form.feishuSpaceId" label="Space ID" />
           <TextField v-model="form.feishuRootNodeToken" label="Root Node Token" />
@@ -820,26 +819,26 @@ function readmeHelpUrl(fragment: string) {
       <div class="conflict-policy-controls">
         <label>
           <span>{{ t('pages.connections.targetProject') }}</span>
-          <UiSelect
+          <OptionCombobox
             v-model="conflictProjectId"
             control-id="external-conflict-project"
             :label="t('pages.connections.targetProject')"
             :options="personalProjectOptions"
             :disabled="conflictBusy"
             required
-          />
+ />
         </label>
         <label>
           <span>{{ t('pages.connections.conflictAction') }}</span>
-          <UiSelect
+          <OptionSelect
             v-model="conflictMode"
             control-id="external-conflict-mode"
             :label="t('pages.connections.conflictAction')"
             :options="conflictModeOptions"
             :disabled="conflictBusy || conflictLoading || conflictError || !conflictProjectId"
             required
-            @change="updateConflictPolicy"
-          />
+            @update:model-value="updateConflictPolicy"
+ />
         </label>
       </div>
       <GrowthLoading v-if="conflictLoading" variant="compact" :label="t('pages.connections.loadingConflictPolicy')" />
@@ -866,15 +865,14 @@ function readmeHelpUrl(fragment: string) {
         <div v-if="!subscriptions.length" class="py-4 text-xs text-muted-foreground">{{ t('pages.connections.noSubscriptions') }}</div>
       </div>
       <form class="subscription-form" @submit.prevent="subscribe">
-        <UiSelect
+        <OptionCombobox
           v-model="selectedProjectKey"
           :options="availableProjectOptions"
           :label="t('pages.connections.sharedProjectLabel')"
           :placeholder="t('pages.connections.choosePublicProject')"
-          searchable
           required
           :disabled="subscriptionBusy"
-        />
+ />
         <Button type="submit" :disabled="subscriptionBusy || !selectedProjectKey || !store.activePersonalSpace">{{ t('pages.connections.subscribe') }}</Button>
       </form>
       </div>

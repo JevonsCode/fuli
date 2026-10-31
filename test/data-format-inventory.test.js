@@ -14,6 +14,7 @@ import { AgentAppStore } from '../src/agent-apps/store.js';
 import { AgentServiceStore } from '../src/agent-services/store.js';
 import { AgentWorkflowStore } from '../src/agent-workflows/store.js';
 import { AgentAvatarStore } from '../src/agent-avatars/store.js';
+import { WorkSurfaceStore } from '../src/work-surfaces/store.js';
 import { localStoreFiles } from '../src/data-format/local-stores.js';
 import { EmployeeManagementStore } from '../src/employees/management-policy.js';
 import { JefaBoardStore } from '../src/employees/builtin/jefa/board-store.js';
@@ -36,6 +37,7 @@ const SQLITE_STORES = {
   'agent-services': (path) => { const store = new AgentServiceStore(path); void store.db; return () => store.close(); },
   'agent-workflows': (path) => { const store = new AgentWorkflowStore(path); void store.db; return () => store.close(); },
   'agent-avatars': (path) => { const store = new AgentAvatarStore(path); void store.db; return () => store.close(); },
+  'work-surfaces': (path) => { const store = new WorkSurfaceStore(path); void store.db; return () => store.close(); },
   'employee-management': (path) => {
     const store = new EmployeeManagementStore(path); store.read('space', 'template'); return () => store.close();
   },

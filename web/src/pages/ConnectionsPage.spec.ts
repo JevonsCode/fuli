@@ -11,7 +11,8 @@ vi.mock('@/api/client', () => ({ deleteJson, getJson, patchJson, postJson }))
 
 import { useConsoleStore } from '@/stores/console'
 import { setLocale } from '@/i18n'
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
+import { closeCombobox, openCombobox, setOption } from '@/test-support/option-pickers'
 import ConnectionsPage from './ConnectionsPage.vue'
 
 describe('ConnectionsPage', () => {
@@ -69,7 +70,7 @@ describe('ConnectionsPage', () => {
     const wrapper = mount(ConnectionsPage, {
       global: {
         plugins: [pinia],
-        stubs: { UiSelect: UiSelectStub },
+        stubs: { ...optionSelectStubs },
       },
     })
 
@@ -102,6 +103,7 @@ describe('ConnectionsPage', () => {
       + '&providerUrl=https%3A%2F%2Fprovider.example',
     )
     expect(refresh).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
   })
 
   it('creates and syncs an MCP binding and persists the project conflict switch', async () => {
@@ -184,9 +186,10 @@ describe('ConnectionsPage', () => {
       subscriptions: [],
     }
     const wrapper = mount(ConnectionsPage, {
+      attachTo: document.body,
       global: {
         plugins: [pinia],
-        stubs: { UiSelect: UiSelectStub },
+        stubs: { ...optionSelectStubs },
       },
     })
     await flushPromises()
@@ -208,8 +211,9 @@ describe('ConnectionsPage', () => {
       'Project B · 仅实时',
     )
     await wrapper.get('[data-testid="external-name"]').setValue('Engineering docs')
-    await wrapper.get('[data-select-id="external-projects"] .ui-select__trigger').trigger('click')
-    await wrapper.findAll('[data-select-id="external-projects"] [role="option"]')[1].trigger('click')
+    await openCombobox(wrapper.get('[data-select-id="external-projects"]'))
+    await setOption(wrapper, 'project-b', true)
+    await closeCombobox(wrapper.get('[data-select-id="external-projects"]'))
     await wrapper.get('[data-testid="mcp-url"]').setValue('https://mcp.example.test')
     await wrapper.get('[data-testid="mcp-token-env"]').setValue('MCP_READ_TOKEN')
     await wrapper.get('[data-testid="mcp-resource-prefix"]').setValue(
@@ -243,8 +247,9 @@ describe('ConnectionsPage', () => {
     await wrapper.findAll('.external-binding-actions')[0].findAll('button')[2].trigger('click')
     await flushPromises()
     const editor = wrapper.get('.external-binding-editor')
-    await editor.get('.ui-select__trigger').trigger('click')
-    await editor.findAll('[role="option"]')[1].trigger('click')
+    await openCombobox(editor)
+    await setOption(editor, 'project-b', false)
+    await closeCombobox(editor)
     await editor.get('.external-binding-editor-actions [data-variant="default"]').trigger('click')
     await flushPromises()
     expect(patchJson).toHaveBeenCalledWith(
@@ -284,6 +289,7 @@ describe('ConnectionsPage', () => {
     expect(wrapper.get('[data-testid="conflict-policy-help"]').attributes('href')).toBe(
       'https://github.com/JevonsCode/fuli/blob/main/README.md#external-knowledge-conflict-policy',
     )
+    wrapper.unmount()
   })
 
   it('ignores a late policy from the previous project and prevents edits while loading', async () => {
@@ -383,6 +389,6 @@ function mountConflictPage() {
     projects: [], subscriptions: [],
   }
   return mount(ConnectionsPage, { global: {
-    plugins: [pinia], stubs: { UiSelect: UiSelectStub },
+    plugins: [pinia], stubs: { ...optionSelectStubs },
   } })
 }

@@ -116,6 +116,17 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
       updatedAt: workflow.updatedAt })) };
   }
 
+  // Every Agent's workflows in one space, for the work-surfaces table
+  // (rec#11 D-85): the name shown and the state, no steps.
+  function listSpace({ personalSpaceId }) {
+    return store.listForSpace(personalSpaceId).map((workflow) => {
+      const shown = store.version(workflow.workflowId, workflow.activeVersion ?? workflow.pendingVersion ?? workflow.latestVersion);
+      return { workflowId: workflow.workflowId, agentId: workflow.agentId, personalProjectId: workflow.personalProjectId,
+        name: shown.name, status: workflow.status, awaitingPerson: Boolean(workflow.pendingVersion),
+        updatedAt: workflow.updatedAt };
+    });
+  }
+
   // The person's answer to the version the console showed: confirm or reject
   // the one waiting, or retire the active one. A version that is no longer the
   // one in question is refused with 409, so the page reads again.
@@ -145,7 +156,7 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
     });
   }
 
-  return { propose, index, read, recordRun, overview, decide, close: () => store.close() };
+  return { propose, index, read, recordRun, overview, listSpace, decide, close: () => store.close() };
 }
 
 function proposalFields(input) {

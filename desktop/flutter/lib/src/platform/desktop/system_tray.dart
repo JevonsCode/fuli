@@ -7,12 +7,13 @@ import '../../l10n/strings.dart';
 import '../ports.dart';
 
 /// The tray (Windows) or menu bar (macOS) icon in three states, with the menu
-/// 打开 FULI · 启动/停止 · (Windows: 换一个端口 · 开机时启动) · 退出.
+/// 打开 FULI · 启动/停止 · (Windows: 换一个端口) · 导出诊断包… · (Windows: 开机时启动) · 退出.
 class SystemTray with TrayListener implements TrayController {
   SystemTray({
     required this.strings,
     required this.onOpen,
     required this.onToggle,
+    required this.onExportDiagnostics,
     required this.onQuit,
     this.onChangePort,
     this.onLaunchAtLogin,
@@ -23,6 +24,7 @@ class SystemTray with TrayListener implements TrayController {
   final Strings strings;
   final VoidCallback onOpen;
   final VoidCallback onToggle;
+  final VoidCallback onExportDiagnostics;
   final VoidCallback onQuit;
   final VoidCallback? onChangePort;
   final ValueChanged<bool>? onLaunchAtLogin;
@@ -40,6 +42,7 @@ class SystemTray with TrayListener implements TrayController {
       MenuItem(key: 'toggle', label: view.toggleLabel, disabled: !view.toggleEnabled),
       if (view.changePortEnabled != null)
         MenuItem(key: 'port', label: strings.changePort, disabled: !view.changePortEnabled!),
+      MenuItem(key: 'diagnostics', label: strings.exportDiagnostics),
       if (view.launchAtLogin != null) ...[
         MenuItem.separator(),
         MenuItem.checkbox(key: 'login', label: strings.launchAtLogin, checked: view.launchAtLogin),
@@ -81,6 +84,8 @@ class SystemTray with TrayListener implements TrayController {
         onToggle();
       case 'port':
         onChangePort?.call();
+      case 'diagnostics':
+        onExportDiagnostics();
       case 'login':
         onLaunchAtLogin?.call(menuItem.checked != true);
       case 'quit':

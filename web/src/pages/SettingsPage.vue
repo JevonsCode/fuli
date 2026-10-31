@@ -9,13 +9,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { apiErrorReason, getJson, putJson } from '@/api/client'
-import UiSelect from '@/ui/UiSelect.vue'
 import { Switch } from '@/components/ui/switch'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
+import DiagnosticsSettings from '@/features/settings/DiagnosticsSettings.vue'
 import CaptureProjectSettings from '@/features/capture/CaptureProjectSettings.vue'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
 import { captureSourceOff, withCaptureSource } from '@/features/capture/capture-sources'
@@ -37,6 +37,7 @@ import type {
   RuntimeSettings,
   SystemSettingsResult,
 } from '@/types'
+import { OptionSelect } from '@/components/ui/select'
 
 const store = useConsoleStore()
 const route = useRoute()
@@ -524,13 +525,13 @@ async function submitSettings(event: Event) {
                           <div v-if="form.conversationLaunchers[application].enabled" class="conversation-launcher-fields">
                             <label>
                               <span>{{ t('settings.conversationLaunchers.idFormat') }}</span>
-                              <UiSelect
+                              <OptionSelect
                                 v-model="form.conversationLaunchers[application].idFormat"
                                 class="launcher-select"
                                 :control-id="`settings-conversation-${application}-id-format`"
                                 :options="conversationIdFormatOptions"
                                 :label="t('settings.conversationLaunchers.idFormat')"
-                              />
+ />
                             </label>
                             <label>
                               <span>{{ t('settings.conversationLaunchers.appName') }}</span>
@@ -621,14 +622,14 @@ async function submitSettings(event: Event) {
                 <div class="setting-list">
                   <div class="setting-row select-row">
                     <span><strong>{{ t('settings.behavior.language') }}</strong></span>
-                    <UiSelect
+                    <OptionSelect
                       class="settings-select"
                       control-id="settings-language"
                       :model-value="locale"
                       :options="localeOptions"
                       :label="t('settings.behavior.language')"
                       @update:model-value="updateLocale"
-                    />
+ />
                   </div>
                   <label class="setting-row">
                     <span><strong>{{ t('settings.behavior.reduceMotion') }}</strong><small>{{ t('settings.behavior.reduceMotionMeta') }}</small></span>
@@ -650,25 +651,25 @@ async function submitSettings(event: Event) {
                           mode: t(`settings.behavior.runtimeModes.${settings?.active.graphRuntimeMode ?? form.graphRuntimeMode}`),
                         }) }}</small>
                     </span>
-                    <UiSelect
+                    <OptionSelect
                       class="settings-select"
                       control-id="settings-runtime-mode"
                       :model-value="form.graphRuntimeMode"
                       :options="runtimeModeOptions"
                       :label="t('settings.behavior.runtimeMode')"
                       @update:model-value="updateRuntimeMode"
-                    />
+ />
                   </div>
                   <div class="setting-row select-row">
                     <span><strong>{{ t('settings.resources.refresh') }}</strong></span>
-                    <UiSelect
+                    <OptionSelect
                       class="settings-select"
                       control-id="settings-refresh-interval"
                       :model-value="String(form.resourceRefreshSeconds)"
                       :options="refreshOptions"
                       :label="t('settings.resources.refresh')"
                       @update:model-value="updateRefreshInterval"
-                    />
+ />
                   </div>
                 </div>
               </Card>
@@ -741,6 +742,7 @@ async function submitSettings(event: Event) {
                   </Accordion>
                 </template>
               </Card>
+              <DiagnosticsSettings />
             </TabsContent>
           </fieldset>
           <p v-if="loadError" class="settings-error" role="alert">{{ loadError }}</p>

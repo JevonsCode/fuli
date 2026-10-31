@@ -1,4 +1,4 @@
-import { listAgentWorkbenches } from './project-agent-task-sheets.js';
+import { listAgentWorkbenches, listTeamWorkbenches } from './project-agent-task-sheets.js';
 import { withOccupationDemand } from './occupation-staffing.js';
 import { occupationCatalog } from './occupation-catalog.js';
 import { workerRunRecord } from './worker-run-view.js';
@@ -274,6 +274,11 @@ export class ProjectAgentControlPlaneApplication {
   async listAgentWorkbenches(input) {
     this.#assertSpace(input.personalSpaceId);
     return listAgentWorkbenches(this, input);
+  }
+
+  async listTeamWorkbenches(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return listTeamWorkbenches(this, input);
   }
 
   async viewProjectAgentTask(input) {

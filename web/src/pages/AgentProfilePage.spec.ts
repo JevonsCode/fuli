@@ -10,6 +10,7 @@ import { pageTitle } from '@/layouts/page-title'
 import { SYNTHETIC_OCCUPATIONS } from '@/test-support/occupation-fixtures'
 import { ApiError } from '@/api/client'
 import AgentProfilePage from './AgentProfilePage.vue'
+import { closeCombobox, openCombobox, optionLabels } from '@/test-support/option-pickers'
 
 const { getJson, postJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn(), putJson: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api/client')>()), getJson, postJson, putJson, patchJson: vi.fn() }))
@@ -205,8 +206,9 @@ describe('Agent profile integration', () => {
     expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'alpha', mode: 'list', limit: 20 })
     expect(getJson).toHaveBeenCalledWith('/api/project-agents/alpha/memory?personalSpaceId=space-a&personalProjectId=project-a')
     expect(details.get('[data-working-memory]').text()).toContain('当前范围还没有经过检查点保存的工作记忆')
-    await details.get('[role="combobox"]').trigger('click')
-    expect(details.findAll('[role="option"]').map(option => option.text())).toEqual(['全局', 'Synthetic active project'])
+    await openCombobox(details)
+    expect(optionLabels(details)).toEqual(['全局', 'Synthetic active project'])
+    await closeCombobox(details)
     const settings = details.get('[data-memory-settings]')
     ;(settings.element as HTMLDetailsElement).open = true
     await settings.trigger('toggle')

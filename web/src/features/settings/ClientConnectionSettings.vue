@@ -4,12 +4,12 @@ import { getJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import UiDisclosure from '@/components/UiDisclosure.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 
 import { connectActionKey, type Format, type ClientStatus, type ClientObservation, type ConnectionStatus,
   type ConnectionResult } from './client-connection-model'
+import { OptionSelect } from '@/components/ui/select'
 // Re-read configuration this often while the card is open and the page visible.
 const RECHECK_MS = 15_000
 
@@ -203,7 +203,7 @@ async function copy() {
     </div>
     <template v-if="configuration">
       <div class="connection-toolbar">
-        <UiSelect control-id="client-connection-format" :model-value="format" :options="options"
+        <OptionSelect control-id="client-connection-format" :model-value="format" :options="options"
           :label="t('settings.connection.format')" @update:model-value="select" />
         <Button variant="outline" size="icon" class="connection-copy" data-copy-connection
           :title="t('settings.connection.copy')" :aria-label="t('settings.connection.copy')" @click="copy">
@@ -222,7 +222,7 @@ async function copy() {
 <style scoped>
 .connection-settings p { color: var(--color-muted); font-size: 13px; line-height: 1.6; margin: 12px 0; }
 .connection-toolbar { display: flex; align-items: center; gap: 12px; margin: 16px 0 10px; }
-.connection-toolbar :deep(.ui-select) { min-width: 0; flex: 1; max-width: 300px; }
+.connection-toolbar :deep(:is([data-slot=option-select], [data-slot=option-combobox])) { min-width: 0; flex: 1; max-width: 300px; }
 .connection-copy { width: 40px; height: 40px; flex: 0 0 40px; padding: 9px; }
 .connection-copy svg { width: 20px; height: 20px; }
 textarea { display: block; box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; font: 12px/1.65 var(--font-mono, monospace); overflow-wrap: anywhere; }

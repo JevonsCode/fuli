@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -27,6 +27,15 @@ const configured = {
 
 // The open tab lives in the URL, so the page needs a router.
 const settingsRouter = () => createRouter({ history: createMemoryHistory(), routes: [{ path: '/:any(.*)*', component: { template: '<div />' } }] })
+
+// Picks an option the way the select reports it; reka-ui renders the list in a portal.
+async function chooseOption(wrapper: VueWrapper, controlId: string, label: string) {
+  const select = wrapper.findAllComponents({ name: 'OptionSelect' }).find((candidate) => candidate.props('controlId') === controlId)!
+  const option = (select.props('options') as Array<{ value: string, label: string }>).find((candidate) => candidate.label === label)
+  expect(option).toBeDefined()
+  select.vm.$emit('update:modelValue', option!.value)
+  await flushPromises()
+}
 
 describe('SettingsPage', () => {
   afterEach(() => {
@@ -439,22 +448,10 @@ describe('SettingsPage', () => {
     expect(cursorInputs).toHaveLength(2)
     await cursorInputs[1]?.setValue('cursor://conversation/{id}')
 
-    const refreshSelect = wrapper.get('[data-select-id="settings-refresh-interval"]')
-    await refreshSelect.get('[role="combobox"]').trigger('click')
-    const tenSecondOption = refreshSelect
-      .findAll('[role="option"]')
-      .find((option) => option.text() === '10 秒')
-    expect(tenSecondOption).toBeDefined()
-    await tenSecondOption?.trigger('click')
+    await chooseOption(wrapper, 'settings-refresh-interval', '10 秒')
 
     expect(wrapper.text()).toContain('推荐原生模式')
-    const runtimeSelect = wrapper.get('[data-select-id="settings-runtime-mode"]')
-    await runtimeSelect.get('[role="combobox"]').trigger('click')
-    const nativeOption = runtimeSelect
-      .findAll('[role="option"]')
-      .find((option) => option.text() === '原生（低内存）')
-    expect(nativeOption).toBeDefined()
-    await nativeOption?.trigger('click')
+    await chooseOption(wrapper, 'settings-runtime-mode', '原生（低内存）')
 
     await wrapper.get('input[type="number"]').setValue(3030)
     await wrapper.get('form').trigger('submit')

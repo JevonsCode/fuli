@@ -16,6 +16,7 @@ import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedCon
 import { projectBoardFilterKey } from '@/features/employees/project-board-filter'
 import { pageTitle } from '@/layouts/page-title'
 import { employeeMessages } from '@/i18n/messages/employees'
+import { isChosen, openCombobox, selectionAction, setOption } from '@/test-support/option-pickers'
 
 beforeEach(() => resetEmployeeWorkbench({ getJson, patchJson, postJson }))
 afterEach(() => { unmountEmployeeWorkbenches(); vi.useRealTimers() })
@@ -93,16 +94,17 @@ describe('employee workbench', () => {
 
   it('restores saved filters through the real board and only clears them on reset', async () => {
     const first = await setup('/employees/jefa?project=project-a')
-    await first.get('.employee-all-projects-filter .project-scope-trigger').trigger('click')
-    await first.get('.employee-all-projects-filter input[value="project-a"]').setValue(false)
+    await openCombobox(first.get('.employee-all-projects-filter'))
+    await setOption(first.get('.employee-all-projects-filter'), 'project-a', false)
     await flushPromises()
     first.unmount()
     const reopened = await setup('/employees/jefa?project=all')
     expect(reopened.getComponent(EmployeeTaskBoard).props('visibleProjectIds')).toEqual([])
-    expect(reopened.get('.project-scope-trigger').text()).toContain('已选 0 / 共 1 个项目')
+    expect(reopened.get('.employee-all-projects-filter').text()).toContain('已选 0 / 共 1 个项目')
     expect(JSON.parse(localStorage.getItem(projectBoardFilterKey('space-a'))!).projectIds).toEqual([])
-    await reopened.get('.project-scope-trigger').trigger('click')
-    await reopened.get('.project-scope-reset').trigger('click')
+    await openCombobox(reopened)
+    document.querySelector<HTMLElement>('[data-project-filter-reset]')!.click()
+    await flushPromises()
     await flushPromises()
     expect(reopened.getComponent(EmployeeTaskBoard).props('visibleProjectIds')).toEqual(['project-a'])
     expect(reopened.vm.$route.query.project).toBe('all')
@@ -121,7 +123,7 @@ describe('employee workbench', () => {
     const wrapper = await setup('/employees/jefa')
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.get('.employee-all-projects-heading h2').text()).toBe('任务看板')
-    expect(wrapper.get('.employee-all-projects-filter .project-scope-trigger').text()).toContain('已选 1 / 共 1 个项目')
+    expect(wrapper.get('.employee-all-projects-filter').text()).toContain('已选 1 / 共 1 个项目')
     expect(wrapper.vm.$route.query.project).toBe('all')
   })
   it('keeps a single-project Jefa view on the native all-project board', async () => {
@@ -214,15 +216,15 @@ describe('employee workbench', () => {
     }))
     const wrapper = await setup('/employees/jefa?project=__all__')
     expect(wrapper.vm.$route.query.project).toBe('all')
-    await wrapper.get('.employee-all-projects-filter .project-scope-trigger').trigger('click')
-    await wrapper.get('.employee-all-projects-filter input[value="project-b"]').setValue(false)
+    await openCombobox(wrapper.get('.employee-all-projects-filter'))
+    await setOption(wrapper.get('.employee-all-projects-filter'), 'project-b', false)
     expect(wrapper.text()).toContain('整理验收')
     expect(wrapper.text()).not.toContain('准备发布')
-    await wrapper.get('.employee-all-projects-filter .project-scope-bulk button').trigger('click')
+    await selectionAction(wrapper, 'invert')
     expect(wrapper.text()).not.toContain('整理验收')
     expect(wrapper.text()).toContain('准备发布')
-    await wrapper.get('.employee-all-projects-filter .project-scope-all input').setValue(true)
-    await wrapper.get('.employee-all-projects-filter .project-scope-all input').setValue(false)
+    await selectionAction(wrapper, 'all')
+    await selectionAction(wrapper, 'clear')
     expect(wrapper.text()).toContain('没有显示任何项目')
     await flushPromises()
     expect(wrapper.vm.$route.query.empty).toBe('1')
@@ -406,7 +408,8 @@ describe('employee workbench', () => {
   })
   it('keeps Jefa project filtering on the native board while retaining the responsibility editor', async () => {
     const wrapper = await setup('/employees/jefa?project=project-a')
-    expect(wrapper.find('[role="combobox"]').exists()).toBe(false)
+    // The board's own project filter is the only project picker on the page.
+    expect(wrapper.findAll('[role="combobox"]').map((field) => field.element.closest('.employee-all-projects-filter'))).not.toContain(null)
     expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(true)
     expect(wrapper.find('iframe').exists()).toBe(false)
     const boardCallsBefore = postJson.mock.calls.filter(([, body]) => body.tool === 'read_board').length
@@ -414,8 +417,8 @@ describe('employee workbench', () => {
     await flushPromises()
     const dialog = wrapper.getComponent(EmployeeScopeDialog)
     expect(dialog.props('templateId')).toBe('jefa')
-    expect(dialog.find('.project-scope-trigger').exists()).toBe(false)
-    expect((dialog.get('input[value="project-a"]').element as HTMLInputElement).checked).toBe(true)
+    expect(dialog.find('input[role="combobox"]').exists()).toBe(false)
+    expect(isChosen(dialog, 'project-a')).toBe(true)
     expect(postJson.mock.calls.filter(([, body]) => body.tool === 'read_board')).toHaveLength(boardCallsBefore)
     expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(true)
   })

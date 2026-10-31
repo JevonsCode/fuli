@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { computed, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { OptionSelect } from '@/components/ui/select'
 
 import { judgmentText } from './judgment-copy'
 import { loadJudgmentPolicy, saveJudgmentPolicy } from './judgment-api'
@@ -128,18 +129,10 @@ function undo() {
         </label>
 
         <div v-if="draft.mode !== 'manual'" class="judgment-progressive-fields">
-          <label>
-            <span>{{ judgmentText('quality.title') }}</span>
-            <select v-model="draft.quality" data-select="judgment-quality" @change="save()">
-              <option v-for="quality in JUDGMENT_QUALITIES" :key="quality" :value="quality">{{ judgmentText(`quality.${quality}`) }}</option>
-            </select>
-          </label>
-          <label>
-            <span>{{ judgmentText('client.title') }}</span>
-            <select v-model="draft.client" data-select="judgment-client" @change="save()">
-              <option v-for="client in JUDGMENT_CLIENTS" :key="client" :value="client">{{ judgmentText(`client.${client}`) }}</option>
-            </select>
-          </label>
+          <OptionSelect v-model="draft.quality" field data-select="judgment-quality" :label="judgmentText('quality.title')"
+            :options="JUDGMENT_QUALITIES.map(value => ({ value, label: judgmentText(`quality.${value}`) }))" :disabled="!canEdit" @update:model-value="save()" />
+          <OptionSelect v-model="draft.client" field data-select="judgment-client" :label="judgmentText('client.title')"
+            :options="JUDGMENT_CLIENTS.map(value => ({ value, label: judgmentText(`client.${value}`) }))" :disabled="!canEdit" @update:model-value="save()" />
         </div>
 
         <div class="judgment-policy-actions">
@@ -160,8 +153,6 @@ function undo() {
 .judgment-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .judgment-panel-heading h3 { margin: 0; color: var(--color-ink); font-size: 16px; }
 .judgment-panel-heading p { margin: 6px 0 0; color: var(--color-muted); font-size: 13px; line-height: 1.55; }
-.judgment-progressive-fields label > span { color: var(--color-muted); font-size: 12px; }
-.judgment-progressive-fields select { min-height: var(--control-height); padding: 7px 10px; border: 1px solid var(--color-control-border); border-radius: var(--radius-control); color: var(--color-ink); background: var(--color-surface); font: inherit; }
 .judgment-policy-fields { display: grid; gap: 10px; min-width: 0; padding: 0; border: 0; }
 .judgment-policy-fields legend { margin-bottom: 2px; color: var(--color-muted); font-size: 12px; }
 .judgment-mode-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-control); cursor: pointer; }
@@ -171,7 +162,6 @@ function undo() {
 .judgment-mode-option strong { color: var(--color-ink); font-size: 13px; }
 .judgment-mode-option small { color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 .judgment-progressive-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
-.judgment-progressive-fields label { display: grid; gap: 6px; }
 .judgment-policy-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 .judgment-policy-saved { color: var(--color-muted); font-size: 12px; }
 .judgment-policy-error { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }

@@ -3,9 +3,10 @@ import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
+import { OptionListbox } from '@/components/ui/listbox'
 import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
-import ProjectScopePicker from './ProjectScopePicker.vue'
+import { projectSelectOptions } from './project-options'
 import { employeeErrorMessage } from './catalog'
 import { publicProjectReport, reportUrl } from './shared-report'
 type ShareState = { id: string; publicShareEnabled: boolean; publicShareSlug?: string }
@@ -103,7 +104,7 @@ function close() { if (!busy.value) emit('close') }
 <template>
   <UiDialog :open="open" class="employee-dialog employee-share-dialog" :title="t('employees.share.title')" :description="t('employees.share.disclosure')" :busy="busy" @close="close">
     <GrowthLoading v-if="loading" variant="compact" :label="t('employees.loadingShare')" />
-    <fieldset :disabled="busy || loading"><ProjectScopePicker v-model="selected" :projects="projects" :disabled="busy || loading" inline :label="t('employees.share.projects')" :hint="t('employees.share.scopeHint')" /></fieldset>
+    <fieldset :disabled="busy || loading"><OptionListbox v-model="selected" :options="projectSelectOptions(projects)" :disabled="busy || loading" :label="t('employees.share.projects')" :hint="t('employees.share.scopeHint')" /></fieldset>
     <p v-if="selected.length && !loading" class="employee-share-preview" role="status">
       {{ selectedCount === null ? t('employees.shareContent.verifyContent') : t('employees.shareContent.publicCount', { count: selectedCount }) }}
       <Button size="sm" variant="ghost" :disabled="busy || loading" @click="load(true)">{{ t('common.actions.refresh') }}</Button>

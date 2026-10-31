@@ -15,15 +15,6 @@ export const commonMessages = {
       remove: '移除',
       viewDetails: '查看详情',
     },
-    searchableSelect: {
-      placeholder: '请选择',
-      searchPlaceholder: '搜索',
-      searchAria: '搜索{label}',
-      noMatches: '没有匹配项',
-      selectedCount: '已选 {count} 项',
-      invert: '反选',
-      clear: '清空',
-    },
     errors: {
       loadFailed: '读取失败，请重试。',
       knowledgeRecoveryPending: '正在等待图谱确认删除记录，这部分内容暂时读不到。FULI 正在自动重新核对，请稍后再试。',
@@ -69,15 +60,6 @@ export const commonMessages = {
       cancel: 'Cancel',
       remove: 'Remove',
       viewDetails: 'View details',
-    },
-    searchableSelect: {
-      placeholder: 'Select an option',
-      searchPlaceholder: 'Search',
-      searchAria: 'Search {label}',
-      noMatches: 'No matching options',
-      selectedCount: '{count} selected',
-      invert: 'Invert',
-      clear: 'Clear',
     },
     errors: {
       knowledgeRecoveryPending: 'Waiting for the graph to confirm deletion records; this content cannot be read yet. FULI is checking again by itself; try again in a moment.',

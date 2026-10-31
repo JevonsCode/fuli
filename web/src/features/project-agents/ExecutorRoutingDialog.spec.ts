@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const putJson = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', () => ({ putJson }))
 
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import type { PersonalProject, ProjectAgentExecutorRef } from '@/types'
 import ExecutorRoutingDialog from './ExecutorRoutingDialog.vue'
 
@@ -49,7 +49,7 @@ describe('ExecutorRoutingDialog', () => {
         open: true, mode: 'rule', personalSpaceId: 'personal-1', projects,
         availableExecutors: [executor],
       },
-      global: { stubs: { UiSelect: UiSelectStub } },
+      global: { stubs: { ...optionSelectStubs } },
     })
     await wrapper.get('select').setValue('project')
     await wrapper.get('[aria-label="所属项目"]').setValue('project-a')

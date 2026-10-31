@@ -22,7 +22,9 @@ import { formatDate, sourceLabel } from '@/features/project-agents/task-labels'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConversationSourceApplication } from '@/types'
-import { UiDialog, UiIcon, UiSelect } from '@/ui'
+import { UiDialog, UiIcon } from '@/ui'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 // 服务管理 (rec#11 D-71): every service an FLA started and each Agent's
 // workbench, with the state checked live on each read. Stopping a process
@@ -193,13 +195,13 @@ async function confirmDelete() {
           <input type="search" maxlength="120" :value="tableQuery.search" :placeholder="t('agentServices.search')"
             data-service-search @input="setTableQuery({ search: ($event.target as HTMLInputElement).value })" />
         </label>
-        <UiSelect class="agent-services-select" :model-value="tableQuery.agent" :options="agentOptions" :label="t('agentServices.filter.agent')"
+        <OptionCombobox class="agent-services-select" :model-value="tableQuery.agent" :options="agentOptions" :label="t('agentServices.filter.agent')"
           data-service-agent-filter @update:model-value="setTableQuery({ agent: String($event) })" />
-        <UiSelect class="agent-services-select" :model-value="tableQuery.project" :options="projectOptions" :label="t('agentServices.filter.project')"
+        <OptionCombobox class="agent-services-select" :model-value="tableQuery.project" :options="projectOptions" :label="t('agentServices.filter.project')"
           data-service-project-filter @update:model-value="setTableQuery({ project: String($event) })" />
-        <UiSelect class="agent-services-select" :model-value="tableQuery.kind" :options="kindOptions" :label="t('agentServices.filter.kind')"
+        <OptionSelect class="agent-services-select" :model-value="tableQuery.kind" :options="kindOptions" :label="t('agentServices.filter.kind')"
           data-service-kind-filter @update:model-value="setTableQuery({ kind: $event as ServiceTableQuery['kind'] })" />
-        <UiSelect class="agent-services-select" :model-value="tableQuery.state" :options="stateOptions" :label="t('agentServices.filter.state')"
+        <OptionSelect class="agent-services-select" :model-value="tableQuery.state" :options="stateOptions" :label="t('agentServices.filter.state')"
           data-service-state-filter @update:model-value="setTableQuery({ state: $event as ServiceTableQuery['state'] })" />
         <div class="ml-auto flex items-center gap-2">
           <GrowthLoading v-if="loading && services.length" variant="inline" :label="t('agentServices.loading')" />
