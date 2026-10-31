@@ -57,7 +57,7 @@ const total = computed(() => fill(props.sheet.progress))
         <span class="team-meta">
           <template v-if="sheet.personalProjectId">{{ projectName(sheet.personalProjectId) }} · </template>{{ t('teamWork.card.flas', { count: sheet.shares.length }) }}
         </span>
-        <span v-if="now || sheet.blocker" class="team-now" :class="{ 'is-blocked': sheet.blocker }"><span class="team-now-dot" aria-hidden="true" />{{ sheet.blocker ? (sheet.blocker.summary || t('teamWork.card.blocked')) : now }}</span>
+        <span v-if="now || sheet.blocker" class="team-now" :data-tone="sheet.blocker ? statusTone('blocked') : undefined"><span class="team-now-dot" aria-hidden="true" />{{ sheet.blocker ? (sheet.blocker.summary || t('teamWork.card.blocked')) : now }}</span>
       </span>
       <span class="team-total">
         <template v-if="total !== null">
@@ -120,8 +120,8 @@ const total = computed(() => fill(props.sheet.progress))
 /* What is happening now, under the title: a gold dot that breathes, red and still when the task is blocked. */
 .team-now { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--color-ink-soft); font-size: var(--text-meta); text-overflow: ellipsis; white-space: nowrap; }
 .team-now-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--color-gold); animation: team-dot var(--motion-pulse) ease-in-out infinite; }
-.team-now.is-blocked { color: var(--color-danger); }
-.team-now.is-blocked .team-now-dot { background: var(--color-danger); animation: none; }
+.team-now[data-tone="danger"] { color: var(--color-danger); }
+.team-now[data-tone="danger"] .team-now-dot { background: var(--color-danger); animation: none; }
 @keyframes team-dot { 50% { opacity: .35; transform: scale(.8); } }
 .team-total, .team-share-state { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .team-bar { position: relative; width: 72px; height: 5px; overflow: hidden; border-radius: 5px; background: var(--color-surface-hover); }
