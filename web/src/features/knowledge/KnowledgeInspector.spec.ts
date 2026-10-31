@@ -172,6 +172,26 @@ describe('KnowledgeInspector', () => {
     wrapper.unmount()
   })
 
+  it('puts delete one click away on the item and on each of its facts, only in the console (D-88)', () => {
+    const node = { id: 'synthetic-node', name: 'Synthetic', type: 'Concept', summary: 'Synthetic body' }
+    const other = { id: 'synthetic-other', name: 'Other', type: 'Concept' }
+    const edge = { id: 'synthetic-edge', source: node.id, target: other.id, type: 'RELATES_TO', fact: 'Synthetic fact' }
+    const props = { item: knowledgeItemFromNode(node), graph: { nodes: [node, other], edges: [edge] }, editable: true }
+    const wrapper = mount(KnowledgeInspector, { props: { ...props, spaceId: 'space' } })
+    expect(wrapper.findAll('.inspector-relation [data-hard-delete-open]')).toHaveLength(1)
+    expect(wrapper.findAll('.inspector-actions [data-hard-delete-open]')).toHaveLength(1)
+    expect(wrapper.get('.inspector-actions [data-hard-delete-open]').text()).toBe('删除…')
+    wrapper.unmount()
+    // Without the console's space, or for a project node, nothing offers it.
+    const noSpace = mount(KnowledgeInspector, { props })
+    expect(noSpace.find('[data-hard-delete-open]').exists()).toBe(false)
+    noSpace.unmount()
+    const project = { ...node, type: 'PersonalProject' }
+    const projectView = mount(KnowledgeInspector, { props: { ...props, item: knowledgeItemFromNode(project), spaceId: 'space' } })
+    expect(projectView.find('.inspector-actions [data-hard-delete-open]').exists()).toBe(false)
+    projectView.unmount()
+  })
+
   it('names the exact project in a project-scoped preference detail', () => {
     const preference = {
       id: 'preference-project-scope',

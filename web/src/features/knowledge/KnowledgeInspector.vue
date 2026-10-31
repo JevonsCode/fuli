@@ -5,6 +5,8 @@ import PreferenceDetail from './PreferenceDetail.vue'
 import { computed } from 'vue'
 
 import UiDisclosure from '@/components/UiDisclosure.vue'
+import KnowledgeDeleteButton from '@/features/knowledge-hard-delete/KnowledgeDeleteButton.vue'
+import type { HardDeletedState } from '@/features/knowledge-hard-delete/model'
 import { t } from '@/i18n'
 import {
   agentConfirmationBlockingText,
@@ -50,6 +52,8 @@ const props = defineProps<{
   preferenceScopeLabel?: string
   preferenceStatusLabel?: string
   conversationLaunchers?: ConversationLauncherConfiguration
+  // The console's personal space; without it nothing here can be deleted.
+  spaceId?: string
 }>()
 
 const emit = defineEmits<{
@@ -62,6 +66,7 @@ const emit = defineEmits<{
   openGraph: [item: KnowledgeItem]
   openReplacement: [item: KnowledgeItem]
   manageProject: [item: KnowledgeItem]
+  deleted: [target: { itemKind: 'entity' | 'relationship'; id: string }, state: HardDeletedState]
 }>()
 
 const rawNode = computed(() =>
@@ -101,6 +106,9 @@ const canCreateProject = computed(() =>
   && !managementItem.value,
 )
 const canEdit = computed(() => props.editable && !managementItem.value)
+// rec#11 D-88: every item and fact is one click from its delete dialog;
+// projects and their materials have their own management.
+const canDelete = computed(() => props.editable && Boolean(props.spaceId) && !managementItem.value && !projectItem.value)
 const canConfirm = computed(() =>
   props.editable
   && !managementItem.value
@@ -116,6 +124,7 @@ const canManageProjectMaterial = computed(() =>
 const hasActions = computed(() =>
   canCreateProject.value
   || canEdit.value
+  || canDelete.value
   || canConfirm.value
   || canManageProjectMaterial.value
   || Boolean(props.mode)
@@ -347,6 +356,8 @@ function preferenceScopeLabel(item: KnowledgeItem) {
           <div v-for="edge in related" :key="edge.id" class="inspector-relation">
             <strong class="relation-type" :title="edge.type">{{ relationVisual(edge.type).label }}</strong>
             <p class="relation-target">{{ edge.fact || t('knowledge.workspace.inspector.relationshipFallback') }}</p>
+            <KnowledgeDeleteButton v-if="canDelete" :item="{ item_kind: 'relationship', item_id: edge.id }" :space-id="spaceId!" size="sm"
+              @deleted="emit('deleted', { itemKind: 'relationship', id: edge.id }, $event)" />
           </div>
         </div>
       </template>
@@ -408,6 +419,8 @@ function preferenceScopeLabel(item: KnowledgeItem) {
             ? t('knowledge.workspace.inspector.correctPreference')
             : t('knowledge.workspace.inspector.correctOrAssign') }}
         </Button>
+        <KnowledgeDeleteButton v-if="canDelete" :item="{ item_kind: item.itemKind, item_id: item.id }" :space-id="spaceId!" size="sm"
+          @deleted="emit('deleted', { itemKind: item.itemKind, id: item.id }, $event)" />
       </div>
     </template>
   </div>
