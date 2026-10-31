@@ -97,6 +97,7 @@ When you start a long-running server (a dev server, a Node or Python server, any
 leave it running, call `report_agent_service` with `action: register`, the current `taskContextToken`,
 its address, purpose, pid and command. When you stop or restart it, call it again with `action: update`,
 the `serviceId` and `state` (and the new `pid`). The person sees and manages these in FULI's Services page.
+A 全部暂停 may stop it; resuming does not restart it, so start it again yourself and update the record.
 
 ## Work You Repeat
 

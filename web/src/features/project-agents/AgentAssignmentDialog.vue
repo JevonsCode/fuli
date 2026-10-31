@@ -4,9 +4,9 @@ import { computed, ref, watch } from 'vue'
 import { postJson } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { PersonalProject, ProjectAgentAssignmentRecord, ProjectAgentRecord } from '@/types'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 type AssignmentAction = 'assign' | 'end' | 'replace'
 
@@ -138,11 +138,11 @@ function createIdempotencyKey() {
   <UiDialog :open="open" class="project-agent-assignment-dialog" form :busy="busy" :error="error"
     :title="t(`projectAgents.assignmentDialog.${editing ? action : 'assign'}Title`)" @close="emit('close')" @submit="save">
     <div class="project-agent-assignment-fields">
-      <UiSelect v-if="!editing" v-model="projectId" field control-id="project-agent-assignment-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="busy" required />
+      <OptionCombobox v-if="!editing" v-model="projectId" field control-id="project-agent-assignment-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="busy" required />
       <label v-else class="ui-field">{{ t('projectAgents.fields.project') }}
         <input :value="props.assignment ? props.assignment.personalProjectId : ''" disabled />
       </label>
-      <UiSelect v-if="editing && action === 'replace'" v-model="replacementAgentId" field control-id="project-agent-assignment-replacement" :options="replacementOptions" :label="t('projectAgents.assignmentDialog.replacement')" :placeholder="t('projectAgents.assignmentDialog.replacementPlaceholder')" :disabled="busy" required />
+      <OptionCombobox v-if="editing && action === 'replace'" v-model="replacementAgentId" field control-id="project-agent-assignment-replacement" :options="replacementOptions" :label="t('projectAgents.assignmentDialog.replacement')" :placeholder="t('projectAgents.assignmentDialog.replacementPlaceholder')" :disabled="busy" required />
       <label v-if="!editing" class="ui-field project-agent-assignment-wide">{{ t('projectAgents.fields.responsibility') }}
         <textarea v-model="responsibility" rows="3" maxlength="4096" :disabled="busy" required />
       </label>

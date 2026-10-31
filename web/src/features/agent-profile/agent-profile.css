@@ -74,6 +74,7 @@
 .unassigned-conversation-main { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 240px; min-width: 0; }
 .unassigned-conversation-line { min-width: 0; overflow: hidden; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .unassigned-conversation-actions, .unassigned-conversation-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.unassigned-conversation-project { flex: 0 1 260px; }
 .directory-project-lead { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2, 8px); margin-bottom: var(--space-3, 12px); font-size: 13px; }
 .directory-project-lead p { display: flex; align-items: center; gap: 8px; margin: 0; }
 .agent-card-occupation { font-weight: 600; }
@@ -257,38 +258,9 @@
   font-size: 13px;
 }
 
-.agent-current-work-list {
-  display: grid;
-  gap: var(--space-2, 8px);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.agent-current-work-list > li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3, 12px);
-  min-width: 0;
-  padding: var(--space-3, 12px);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 10px);
-}
-
-.agent-current-work-list [data-slot="badge"],
 .agent-work-timeline .agent-section-heading > span {
   flex: 0 0 auto;
   white-space: nowrap;
-}
-
-.agent-current-work-list a {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--color-accent);
-  font-weight: 600;
-  text-decoration: none;
 }
 
 .agent-muted,
@@ -517,11 +489,6 @@
     flex-basis: 56px;
     border-radius: 16px;
     font-size: 28px;
-  }
-
-  .agent-current-work-list > li {
-    align-items: flex-start;
-    grid-template-columns: 1fr;
   }
 }
 

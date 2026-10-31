@@ -16,12 +16,13 @@ vi.mock('@/features/project-agents/task-updates', () => ({ subscribeTaskUpdates:
 
 import { useConsoleStore } from '@/stores/console'
 import { pageTitle } from '@/layouts/page-title'
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import { orchestrationAgents as agents, orchestrationResponse, orchestrationState } from '@/test-support/orchestration-fixtures'
 import ProjectAgentDetailPage from './ProjectAgentDetailPage.vue'
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
 import { refreshEmployeeCatalog } from '@/features/employees/catalog'
+import { setOption, selectionCount, selectionAction } from '@/test-support/option-pickers'
 
 const AGENT_PAGE = '/project-agents/manage/personal-1/shared-agent'
 const mounted: Array<{ unmount: () => void }> = []
@@ -491,12 +492,12 @@ describe('ProjectAgentDetailPage', () => {
     expect(dialog.props('templateId')).toBe('concierge')
     expect(dialog.props('open')).toBe(true)
     expect(dialog.get('h2').text()).toContain('Concierge')
-    expect(dialog.findAll('.project-scope-list input[type="checkbox"]')).toHaveLength(2)
-    expect(dialog.find('.project-scope-trigger').exists()).toBe(false)
+    expect(dialog.findAll('[data-slot="option-listbox"] [role="option"]')).toHaveLength(2)
+    expect(dialog.find('input[role="combobox"]').exists()).toBe(false)
     expect(wrapper.getComponent(AgentAssignmentDialog).props('open')).toBe(false)
-    await dialog.get('.project-scope-all input').setValue(true)
-    await dialog.get('input[value="project-b"]').setValue(false)
-    expect(dialog.get('.project-scope-count').text()).toContain('1 / 共 2')
+    await selectionAction(dialog, 'all')
+    await setOption(dialog, 'project-b', false)
+    expect(selectionCount(dialog)).toContain('1 / 共 2')
     expect(postJson).not.toHaveBeenCalled()
     await dialog.get('.ui-dialog__header button').trigger('click')
     await wrapper.get('[data-detail-section="assignments"]').findAll('button')
@@ -1087,7 +1088,7 @@ async function mountPage(bootstrap = false, path = AGENT_PAGE, history = createM
     { path: '/inbox', component: { template: '<div />' } },
   ] })
   await router.push(path)
-  const wrapper = mount(RouterView, { global: { plugins: [pinia, router], stubs: { UiSelect: UiSelectStub } } })
+  const wrapper = mount(RouterView, { global: { plugins: [pinia, router], stubs: { ...optionSelectStubs } } })
   mounted.push(wrapper)
   return { store, initialState, router, wrapper }
 }

@@ -8,7 +8,7 @@ const postJson = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', () => ({ getJson, postJson }))
 
 import { useConsoleStore } from '@/stores/console'
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import PublishQueue from './PublishQueue.vue'
 
 type Deferred<T> = {
@@ -89,7 +89,7 @@ function mountReview() {
   const wrapper = mount(PublishQueue, {
     global: {
       plugins: [pinia],
-      stubs: { UiSelect: UiSelectStub },
+      stubs: { ...optionSelectStubs },
     },
   })
   return { store, refresh, wrapper }

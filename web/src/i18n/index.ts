@@ -24,6 +24,7 @@ import { occupationsMessages } from './messages/occupations'
 import { agentServicesMessages } from './messages/agent-services'
 import { flasMessages } from './messages/flas'
 import { teamWorkMessages } from './messages/team-work'
+import { flaPageMessages } from './messages/fla-page'
 import { agentWorkbenchMessages } from './messages/agent-workbench'
 import { dataFormatMessages } from './messages/data-format'
 import { modelSettingsMessages } from './messages/model-settings'
@@ -101,6 +102,7 @@ export const messages = {
     agentServices: agentServicesMessages['zh-CN'],
     flas: flasMessages['zh-CN'],
     teamWork: teamWorkMessages['zh-CN'],
+    flaPage: flaPageMessages['zh-CN'],
     agentWorkbench: agentWorkbenchMessages['zh-CN'],
     dataFormat: dataFormatMessages['zh-CN'],
     modelSettings: modelSettingsMessages['zh-CN'],
@@ -147,6 +149,7 @@ export const messages = {
     agentServices: agentServicesMessages['en-US'],
     flas: flasMessages['en-US'],
     teamWork: teamWorkMessages['en-US'],
+    flaPage: flaPageMessages['en-US'],
     agentWorkbench: agentWorkbenchMessages['en-US'],
     dataFormat: dataFormatMessages['en-US'],
     modelSettings: modelSettingsMessages['en-US'],

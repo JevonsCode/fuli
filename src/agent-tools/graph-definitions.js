@@ -5,6 +5,7 @@ import { MODEL_BACKEND_DEFINITIONS } from './model-backend-definitions.js';
 import { STANDING_ASSIGNMENT_DEFINITIONS } from './standing-assignment-definitions.js';
 import { AGENT_SERVICE_DEFINITIONS } from './agent-service-definitions.js';
 import { AGENT_WORKFLOW_DEFINITIONS } from './agent-workflow-definitions.js';
+import { WORK_SURFACE_DEFINITIONS } from './work-surface-definitions.js';
 import { TASK_RUN_DEFINITIONS } from './task-run-definitions.js';
 import { TASK_PREFERENCE_DEFINITIONS } from './task-preference-definitions.js';
 import { AGENT_INTERFACE_DEFINITIONS } from './interface-definitions.js';
@@ -31,6 +32,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...STANDING_ASSIGNMENT_DEFINITIONS,
   ...AGENT_SERVICE_DEFINITIONS,
   ...AGENT_WORKFLOW_DEFINITIONS,
+  ...WORK_SURFACE_DEFINITIONS,
   ...TASK_PREFERENCE_DEFINITIONS,
   ...TASK_ENTRY_DEFINITIONS,
   ...KNOWLEDGE_DEFINITIONS,

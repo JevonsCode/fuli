@@ -54,6 +54,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
   taggedTerm('tonborg', 'escalate', 'judgment.workbench.outcome.escalate', 'glossary.tonborg.escalate'),
   term('setting', 'agentNamingStyle', 'settings.agentNaming.title', 'glossary.setting.agentNamingStyle'),
   term('setting', 'topicPromotion', 'settings.topicPromotion.title', 'glossary.setting.topicPromotion'),
+  term('setting', 'diagnostics', 'settings.diagnostics.title', 'glossary.setting.diagnostics'),
 ]
 
 const byId = new Map(GLOSSARY_TERMS.map(entry => [entry.id, entry]))

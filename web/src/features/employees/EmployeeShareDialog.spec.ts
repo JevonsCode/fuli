@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import EmployeeShareDialog from './EmployeeShareDialog.vue'
 import { reportProjects, reportUrl } from './shared-report'
+import { setOption, selectionAction } from '@/test-support/option-pickers'
 const { getJson, patchJson } = vi.hoisted(() => ({ getJson: vi.fn(), patchJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, patchJson }))
 const projects = [{ id: 'project-a', name: 'Alpha' }, { id: 'project-b', name: 'Beta' }]
@@ -27,7 +28,7 @@ describe('share scope', () => {
       return { snapshot: { projects: [{ id, publicShareEnabled: true, publicShareSlug: 'share-00000000-0000-0000-0000-000000000001' }], workItems: [{ id: 'private-task', title: 'PRIVATE', privacy: 'personal' }] } }
     })
     const wrapper = await setup()
-    await wrapper.get('.project-scope-all input').setValue(true)
+    await selectionAction(wrapper, 'all')
     expect(wrapper.get('.employee-share-preview').text()).toContain('0 条公开任务')
     expect(wrapper.get('.employee-share-empty').text()).toContain('所选项目暂无公开任务')
     expect(wrapper.get('footer [data-variant="default"]').attributes('disabled')).toBeDefined()
@@ -35,7 +36,7 @@ describe('share scope', () => {
     expect(patchJson).not.toHaveBeenCalled()
     const before = getJson.mock.calls.length
     await wrapper.setProps({ projects: projects.map(project => ({ ...project, name: `${project.name}!` })) })
-    expect(wrapper.get('.project-scope-all input').element).toHaveProperty('checked', true)
+    expect(wrapper.get('[data-select-action="all"]').attributes('disabled')).toBeDefined()
     expect(getJson.mock.calls).toHaveLength(before)
   })
 
@@ -44,7 +45,7 @@ describe('share scope', () => {
     getJson.mockImplementation(async (url: string) => url.includes('/api/public/')
       ? { project: { id: url.includes('/project-a/') ? 'project-a' : 'project-b', name: 'Synthetic' }, items: [] } : original(url))
     const wrapper = await setup()
-    await wrapper.get('.project-scope-all input').setValue(true)
+    await selectionAction(wrapper, 'all')
     await wrapper.get('footer [data-variant="default"]').trigger('click')
     await flushPromises()
     expect(patchJson).toHaveBeenCalledTimes(2)
@@ -68,7 +69,7 @@ describe('share scope', () => {
     const wrapper = await setup()
     expect(patchJson).not.toHaveBeenCalled()
     expect(wrapper.get('footer [data-variant="default"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('.project-scope-all input').setValue(true)
+    await selectionAction(wrapper, 'all')
     await wrapper.get('footer [data-variant="default"]').trigger('click'); await flushPromises()
     expect(patchJson).toHaveBeenCalledTimes(2)
     const link = (wrapper.get('[aria-label="分享链接"]').element as HTMLInputElement).value
@@ -77,7 +78,7 @@ describe('share scope', () => {
   })
   it('shows the generation phase in the share button until the delayed request completes', async () => {
     const wrapper = await setup()
-    await wrapper.get('input[value="project-a"]').setValue(true)
+    await setOption(wrapper, 'project-a', true)
     let resolvePatch!: (value: unknown) => void
     patchJson.mockImplementationOnce(() => new Promise((resolve) => { resolvePatch = resolve }))
 
@@ -121,12 +122,12 @@ describe('share scope', () => {
   })
   it('supports project inversion without enabling excluded projects', async () => {
     const wrapper = await setup()
-    await wrapper.get('input[value="project-a"]').setValue(true)
-    await wrapper.get('.project-scope-bulk button').trigger('click')
+    await setOption(wrapper, 'project-a', true)
+    await selectionAction(wrapper, 'invert')
     await wrapper.get('footer [data-variant="default"]').trigger('click'); await flushPromises()
     expect(patchJson).toHaveBeenCalledExactlyOnceWith('/employee-workspaces/jefa/project-b/api/projects/project-b/sharing', { publicShareEnabled: true, acceptsPublicRequests: false })
     expect(reportProjects(new URL((wrapper.get('[aria-label="分享链接"]').element as HTMLInputElement).value).hash)).toHaveLength(1)
-    await wrapper.get('input[value="project-a"]').setValue(true)
+    await setOption(wrapper, 'project-a', true)
     expect(wrapper.find('[aria-label="分享链接"]').exists()).toBe(false)
   })
   it('does not claim a complete link when only some writes succeed and supports revocation', async () => {
@@ -135,7 +136,7 @@ describe('share scope', () => {
       return { project: { id: 'project-a', ...body, publicShareSlug: body.publicShareEnabled ? 'share-00000000-0000-0000-0000-000000000001' : undefined } }
     })
     const wrapper = await setup()
-    await wrapper.get('.project-scope-all input').setValue(true)
+    await selectionAction(wrapper, 'all')
     await wrapper.get('footer [data-variant="default"]').trigger('click'); await flushPromises()
     expect(wrapper.find('[aria-label="分享链接"]').exists()).toBe(false)
     expect(wrapper.get('[role="alert"]').text()).toContain('部分项目')

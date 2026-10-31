@@ -154,6 +154,25 @@ Only the person confirms, rejects or retires a workflow, on the Agent's home pag
 version the page showed. Nothing is active until confirmed, nothing runs by itself, and
 workflows are never put into an entry or other context.
 
+## Work surfaces: one table, pause all, resume (rec#11 D-85)
+
+Every FLA's Agent services, Agent apps, workflows and workbenches (one row per FLA share of a
+task sheet) are listed in one table with kind, name, owning FLA, project, state and last change,
+filtered by FLA, project, kind, state or text (`GET /api/work-surfaces`, `list_work_surfaces`).
+The person (`POST /api/work-surfaces/pauses`, `POST /api/work-surfaces/pauses/:pauseId/resume`,
+`latest` for the newest) and Agents (`pause_work_surfaces`, `resume_work_surfaces`) may both pause
+and resume; there is no approval step. A pause first records each matching item's on/off state in
+`work-surfaces.sqlite` (format 1), then turns off the ones that were on; a resume reopens exactly
+those. Each pause and resume is recorded with who, when and each item's result
+(`GET /api/work-surfaces/pauses`); nothing there is changed or deleted.
+
+Turning off reuses each owner's own switch: an Agent service is stopped through the services
+port (the recorded PID, after its identity check), an Agent app through its runner's stop, and
+resumed with the runner's start and run gate. FULI did not start an Agent service, so a resume
+reports `restart_required` with its recorded command instead of starting it. Workflows (nothing
+runs by itself) and workbenches (stopping a run revokes it; a retry is a new task) have no safe
+off switch and are only listed.
+
 These are trust boundaries, not missing interfaces. An Agent may explain where the user can perform the action, but must not substitute direct HTTP, storage, shell, or browser scripting.
 
 ## External knowledge

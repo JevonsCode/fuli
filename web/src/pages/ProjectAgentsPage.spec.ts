@@ -13,11 +13,12 @@ vi.mock('@/api/client', () => ({ getJson, patchJson, postJson, deleteJson, putJs
 
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import { orchestrationAgents as agents, orchestrationResponse, orchestrationState } from '@/test-support/orchestration-fixtures'
 import ProjectAgentDialog from '@/features/projects/ProjectAgentDialog.vue'
 import ProjectAgentsPage from './ProjectAgentsPage.vue'
 import { refreshEmployeeCatalog } from '@/features/employees/catalog'
+import { openCombobox, setOption, selectionAction } from '@/test-support/option-pickers'
 
 const mounted: Array<{ unmount: () => void }> = []
 const dialog = () => document.querySelector('[data-agent-peek-dialog]') as HTMLElement | null
@@ -134,18 +135,17 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     await flushPromises()
 
     const filter = wrapper.get('.project-agents-project-filter')
-    await filter.get('.project-scope-trigger').trigger('click')
-    await filter.get('input[value="project-a"]').setValue(false)
+    await openCombobox(filter)
+    await setOption(filter, 'project-a', false)
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/project-agents/manage?project=project-b')
     expect(wrapper.findAll('.project-agent-card')).toHaveLength(1)
     expect(wrapper.get('.project-agent-automation-policy').text()).toContain('设计项目')
 
-    await filter.get('.project-scope-all input').setValue(true)
+    await selectionAction(filter, 'all')
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({})
     expect(wrapper.find('.project-agent-automation-policy').exists()).toBe(false)
-    await filter.get('.project-scope-footer button').trigger('click')
     await wrapper.get('.project-agents-status-filter button:nth-child(2)').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ status: 'active' })
@@ -170,7 +170,7 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     await flushPromises()
     expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('可用性')
     expect(wrapper.get('.project-agents-status-filter [aria-pressed="true"]').text()).toBe('停用')
-    expect(wrapper.get('.project-scope-trigger').text()).toContain('设计项目')
+    expect(wrapper.get('.project-agents-project-filter').text()).toContain('设计项目')
     // The merged Agent is active, so an inactive filter has nothing to show.
     expect(wrapper.findAll('.project-agent-card')).toHaveLength(0)
   })
@@ -180,17 +180,17 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     store.state = { ...store.state!, personalProjects: [...store.state!.personalProjects!, { project_id: 'project-c', personal_space_id: 'personal-1', profile: { name: '第三个项目', sources: [], boundaries: [] } }] }
     await flushPromises()
     const filter = wrapper.get('.project-agents-project-filter')
-    await filter.get('.project-scope-trigger').trigger('click')
-    await filter.get('input[value="project-c"]').setValue(false)
+    await openCombobox(filter)
+    await setOption(filter, 'project-c', false)
     await flushPromises()
-    expect(filter.get('.project-scope-trigger').text()).toContain('已选 2 个项目')
+    expect(filter.findAll('[data-select-chip]').map((chip) => chip.text())).toEqual(['活动项目', '设计项目'])
     expect(wrapper.findAll('.project-agent-card')).toHaveLength(1)
     expect(wrapper.find('.project-agent-automation-policy').exists()).toBe(false)
-    await filter.get('.project-scope-bulk button').trigger('click')
+    await selectionAction(filter, 'invert')
     await flushPromises()
-    expect(filter.get('.project-scope-trigger').text()).toContain('第三个项目')
+    expect(filter.text()).toContain('第三个项目')
     expect(wrapper.findAll('.project-agent-card')).toHaveLength(0)
-    await filter.get('.project-scope-all input').setValue(true)
+    await selectionAction(filter, 'all')
     await flushPromises()
     expect(wrapper.findAll('.project-agent-card')).toHaveLength(1)
     expect(postJson).not.toHaveBeenCalled()
@@ -207,8 +207,8 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     expect(wrapper.get('.project-agent-row-projects').text()).toContain('尚未分配项目')
     expect(wrapper.get('.project-agents-header-meta').text()).toContain('0 个分配')
     const filter = wrapper.get('.project-agents-project-filter')
-    await filter.get('.project-scope-trigger').trigger('click')
-    await filter.get('input[value="project-b"]').setValue(false)
+    await openCombobox(filter)
+    await setOption(filter, 'project-b', false)
     await flushPromises()
     expect(wrapper.findAll('.project-agent-card')).toHaveLength(0)
   })
@@ -416,7 +416,7 @@ async function mountPage(bootstrap = false, path = '/project-agents/manage') {
     { path: '/inbox', component: { template: '<div />' } },
   ] })
   await router.push(path)
-  const wrapper = mount(RouterView, { attachTo: document.body, global: { plugins: [pinia, router], stubs: { UiSelect: UiSelectStub } } })
+  const wrapper = mount(RouterView, { attachTo: document.body, global: { plugins: [pinia, router], stubs: { ...optionSelectStubs } } })
   mounted.push(wrapper)
   return { store, initialState, router, wrapper }
 }

@@ -77,6 +77,8 @@ const SETTING_LABELS: Record<string, string> = {
   lanAccess: 'settings.behavior.lanAccess',
   ports: 'settings.ports.title',
   runtimeMode: 'settings.behavior.runtimeMode',
+  // The desktop client's tray 「导出诊断包…」 opens ?tab=system&setting=diagnostics.
+  diagnostics: 'settings.diagnostics.title',
 }
 
 export function settingSearchTerm(key: unknown, translate: (key: string) => string): string {

@@ -4,13 +4,14 @@ import { computed, reactive, ref, watch } from 'vue'
 import { patchJson, postJson } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import { quadrantLabel } from './model'
 import { useKnowledgeWriteLifecycle } from './knowledge-write-lifecycle'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeEdge, KnowledgeItem, KnowledgeNode, PersonalProject } from '@/types'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 type PendingAction =
   | 'correction'
@@ -446,9 +447,9 @@ function fail(message: string) {
             <label v-if="!relationship" class="ui-field">{{ t('knowledge.dialogs.edit.description') }}<textarea v-model="form.summary" maxlength="4096" rows="5" /></label>
             <label v-else class="ui-field">{{ t('knowledge.dialogs.edit.fact') }}<textarea v-model="form.fact" maxlength="8192" rows="5" /></label>
             <div class="knowledge-field-row">
-              <UiSelect v-model="form.currentQuadrant" field :options="quadrantOptions" :label="t('knowledge.dialogs.edit.classification')" />
-              <UiSelect v-model="form.confirmationStatus" field :options="confirmationStatusOptions" :label="t('knowledge.dialogs.edit.confirmationStatus')" />
-              <UiSelect v-model="form.profileAspect" field :options="profileAspectOptions" :label="t('knowledge.dialogs.edit.preferenceDimension')" />
+              <OptionSelect v-model="form.currentQuadrant" field :options="quadrantOptions" :label="t('knowledge.dialogs.edit.classification')" />
+              <OptionSelect v-model="form.confirmationStatus" field :options="confirmationStatusOptions" :label="t('knowledge.dialogs.edit.confirmationStatus')" />
+              <OptionSelect v-model="form.profileAspect" field :options="profileAspectOptions" :label="t('knowledge.dialogs.edit.preferenceDimension')" />
             </div>
             <p class="ui-meta">{{ t('knowledge.dialogs.edit.originQuadrant', { quadrant: quadrantLabel(item.originQuadrant) }) }}</p>
             <p v-if="!item.classificationExplicit" class="knowledge-warning">{{ t('knowledge.dialogs.edit.missingQuadrant') }}</p>
@@ -457,10 +458,10 @@ function fail(message: string) {
               <label class="ui-field">{{ t('knowledge.dialogs.edit.whyExists') }}<textarea v-model="form.existenceReason" maxlength="4096" rows="3" required /></label>
               <label class="ui-field">{{ t('knowledge.dialogs.edit.whyQuadrant') }}<textarea v-model="form.quadrantReason" maxlength="4096" rows="3" required /></label>
               <div class="knowledge-field-row knowledge-field-row--pair">
-                <UiSelect v-model="form.proposedByKind" field :options="proposerOptions" :label="t('knowledge.dialogs.edit.proposer')" />
+                <OptionSelect v-model="form.proposedByKind" field :options="proposerOptions" :label="t('knowledge.dialogs.edit.proposer')" />
                 <label class="ui-field">{{ t('knowledge.dialogs.edit.proposerDescription') }}<input v-model="form.proposedByLabel" maxlength="160" :placeholder="t('knowledge.dialogs.edit.proposerPlaceholder')" /></label>
                 <template v-if="form.confirmationStatus === 'confirmed'">
-                  <UiSelect v-model="form.confirmedByKind" field :options="confirmerOptions" :label="t('knowledge.dialogs.edit.confirmer')" />
+                  <OptionSelect v-model="form.confirmedByKind" field :options="confirmerOptions" :label="t('knowledge.dialogs.edit.confirmer')" />
                   <label class="ui-field">{{ t('knowledge.dialogs.edit.confirmerDescription') }}<input v-model="form.confirmedByLabel" maxlength="160" :placeholder="t('knowledge.dialogs.edit.confirmerPlaceholder')" /></label>
                 </template>
               </div>
@@ -468,13 +469,13 @@ function fail(message: string) {
             </fieldset>
             <fieldset v-if="!profilePreference" class="knowledge-editor-section">
               <legend>{{ t('knowledge.dialogs.edit.crossProjectInheritance') }}</legend>
-              <UiSelect v-model="form.inheritanceMode" field :options="inheritanceModeOptions" :label="t('knowledge.dialogs.edit.inheritanceScope')" />
-              <UiSelect v-if="form.inheritanceMode === 'selected_projects'" v-model="inheritanceProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.inheritedProjects')" searchable />
+              <OptionSelect v-model="form.inheritanceMode" field :options="inheritanceModeOptions" :label="t('knowledge.dialogs.edit.inheritanceScope')" />
+              <OptionCombobox v-if="form.inheritanceMode === 'selected_projects'" v-model="inheritanceProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.inheritedProjects')" />
               <p class="ui-meta">{{ t('knowledge.dialogs.edit.inheritanceBoundary') }}</p>
             </fieldset>
             <fieldset class="knowledge-editor-section">
               <legend>{{ invalid ? t('knowledge.dialogs.edit.replacement') : t('knowledge.dialogs.edit.optionalReplacement') }}</legend>
-              <UiSelect v-model="replacementItemKey" field :options="replacementOptions" searchable
+              <OptionCombobox v-model="replacementItemKey" field :options="replacementOptions" 
                 :label="invalid ? t('knowledge.dialogs.edit.historicalReplacement') : t('knowledge.dialogs.edit.activeReplacement')" />
               <p class="ui-meta">{{ t('knowledge.dialogs.edit.replacementBoundary') }}</p>
             </fieldset>
@@ -499,7 +500,7 @@ function fail(message: string) {
         <p class="ui-meta">{{ t('knowledge.dialogs.edit.ownershipCopy') }}</p>
         <form class="knowledge-editor-form" @submit.prevent="saveAssignment">
           <fieldset class="knowledge-editor-group" :disabled="busy || locked">
-            <UiSelect v-model="targetProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.targetProject')" searchable required />
+            <OptionCombobox v-model="targetProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.targetProject')" required />
             <label class="ui-field">{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="assignmentReason" maxlength="2000" rows="3" required /></label>
             <div class="knowledge-editor-actions">
               <Button type="submit" :disabled="projects.length === 0" :loading="pendingAction === 'ownership'" :loading-label="t('knowledge.dialogs.edit.changingOwnership')">{{ t('knowledge.dialogs.edit.adjustOwnership') }}</Button>
@@ -513,8 +514,8 @@ function fail(message: string) {
         <p class="ui-meta">{{ t('knowledge.dialogs.edit.preferenceScopeCopy') }}</p>
         <form class="knowledge-editor-form" @submit.prevent="savePreferenceScope">
           <fieldset class="knowledge-editor-group" :disabled="busy || locked">
-            <UiSelect v-model="preferenceScope" field :options="preferenceScopeOptions" :label="t('knowledge.dialogs.edit.effectiveScope')" />
-            <UiSelect v-if="preferenceScope === 'project'" v-model="preferenceProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.personalProject')" searchable />
+            <OptionSelect v-model="preferenceScope" field :options="preferenceScopeOptions" :label="t('knowledge.dialogs.edit.effectiveScope')" />
+            <OptionCombobox v-if="preferenceScope === 'project'" v-model="preferenceProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.personalProject')" />
             <label class="ui-field">{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="preferenceReason" maxlength="2000" rows="3" required /></label>
             <div class="knowledge-editor-actions">
               <Button type="submit" :loading="pendingAction === 'scope'" :loading-label="t('knowledge.dialogs.edit.savingScope')">{{ t('knowledge.dialogs.edit.saveScope') }}</Button>

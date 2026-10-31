@@ -7,9 +7,10 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { OptionSelect } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { t } from '@/i18n'
-import { UiDialog, UiSelect } from '@/ui'
+import { UiDialog } from '@/ui'
 import type { PersonalProject } from '@/types'
 import ModelKeyEntry from './ModelKeyEntry.vue'
 import {
@@ -87,14 +88,14 @@ async function save() {
 
       <div class="model-role-grid">
         <Field>
-          <FieldLabel>{{ t('modelSettings.connection') }}</FieldLabel>
-          <UiSelect :model-value="draft.connectionId" :label="t('modelSettings.connection')" :options="connectionOptions"
+          <FieldLabel for="model-role-connection">{{ t('modelSettings.connection') }}</FieldLabel>
+          <OptionSelect control-id="model-role-connection" :model-value="draft.connectionId" :label="t('modelSettings.connection')" :options="connectionOptions"
             :disabled="frozen" data-model-connection @update:model-value="chooseConnection" />
           <FieldDescription v-if="sharing">{{ t('modelSettings.sharedWith', { names: sharing }) }}</FieldDescription>
         </Field>
         <Field>
-          <FieldLabel>{{ t('modelSettings.protocol') }}</FieldLabel>
-          <UiSelect v-model="draft.protocol" :label="t('modelSettings.protocol')" :options="protocolOptions" :disabled="frozen" />
+          <FieldLabel for="model-role-protocol">{{ t('modelSettings.protocol') }}</FieldLabel>
+          <OptionSelect control-id="model-role-protocol" v-model="draft.protocol" :label="t('modelSettings.protocol')" :options="protocolOptions" :disabled="frozen" />
         </Field>
         <Field class="model-role-wide">
           <FieldLabel for="model-role-endpoint">{{ t('modelSettings.endpoint') }}</FieldLabel>
@@ -106,8 +107,8 @@ async function save() {
           <Input id="model-role-model" v-model="draft.model" autocomplete="off" :disabled="frozen" data-model-name />
         </Field>
         <Field v-if="draft.protocol === 'openai_chat'">
-          <FieldLabel>{{ t('modelSettings.reasoningEffort') }}</FieldLabel>
-          <UiSelect v-model="draft.reasoningEffort" :label="t('modelSettings.reasoningEffort')" :options="effortOptions" :disabled="frozen" />
+          <FieldLabel for="model-role-effort">{{ t('modelSettings.reasoningEffort') }}</FieldLabel>
+          <OptionSelect control-id="model-role-effort" v-model="draft.reasoningEffort" :label="t('modelSettings.reasoningEffort')" :options="effortOptions" :disabled="frozen" />
         </Field>
         <Field class="model-role-wide">
           <FieldLabel for="model-role-secret-ref">{{ t('modelSettings.secretRef') }}</FieldLabel>

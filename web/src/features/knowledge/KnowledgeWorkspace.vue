@@ -8,7 +8,6 @@ import UiDisclosure from '@/components/UiDisclosure.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import UiSelect from '@/ui/UiSelect.vue'
 import { Switch } from '@/components/ui/switch'
 import { filterListedProjectGraph, isListedProject } from '@/features/projects/project-list-visibility'
 import {
@@ -66,6 +65,8 @@ import {
   extractFrequentProjects,
   filterFormalProjectGraph,
 } from './project-relation-weights'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 const props = withDefaults(defineProps<{
   personalProjectsOnly?: boolean
@@ -1045,14 +1046,13 @@ function queryValues(value: unknown) {
 
     <template v-else>
     <div class="graph-toolbar">
-      <UiSelect
+      <OptionCombobox
         :model-value="selectedChoiceKey"
         :options="spaceSelectOptions"
         :label="t('knowledge.workspace.workspace.view.graphSpace')"
         control-id="graph-space"
-        searchable
         @update:model-value="changeSpace"
-      />
+ />
       <label v-if="personalProjectsOnly" class="project-visibility-toggle">
         <Switch v-model="showTemporaryProjects" :aria-label="t('knowledge.workspace.workspace.view.showTemporaryProjects')" />
         <span>{{ t('knowledge.workspace.workspace.view.showTemporaryProjects') }}</span>
@@ -1130,34 +1130,34 @@ function queryValues(value: unknown) {
 
     <UiDisclosure v-if="mode === 'directory' && directorySection === 'knowledge'" class="knowledge-filter-disclosure" :title="t('ui.filters')" :open="filters.type !== 'all' || filters.quadrant !== 'all' || filters.profile !== 'all' || filters.humanChange !== 'all'">
       <div class="knowledge-filter-controls">
-        <UiSelect
+        <OptionSelect
           :model-value="filters.type"
           :options="typeSelectOptions"
           :label="t('knowledge.workspace.workspace.view.contentType')"
           control-id="knowledge-type-filter"
           @update:model-value="updateQuery('type', $event)"
-        />
-        <UiSelect
+ />
+        <OptionSelect
           :model-value="filters.quadrant"
           :options="quadrantSelectOptions"
           :label="t('knowledge.workspace.workspace.view.discoveryQuadrant')"
           control-id="knowledge-quadrant-filter"
           @update:model-value="updateQuery('quadrant', $event)"
-        />
-        <UiSelect
+ />
+        <OptionSelect
           :model-value="filters.profile"
           :options="profileSelectOptions"
           :label="t('knowledge.workspace.workspace.view.classification')"
           control-id="knowledge-profile-filter"
           @update:model-value="updateQuery('profile', $event)"
-        />
-        <UiSelect
+ />
+        <OptionSelect
           :model-value="filters.humanChange"
           :options="humanChangeSelectOptions"
           :label="t('knowledge.workspace.workspace.view.humanChangeStatus')"
           control-id="knowledge-human-change-filter"
           @update:model-value="updateQuery('human', $event)"
-        />
+ />
       </div>
     </UiDisclosure>
 

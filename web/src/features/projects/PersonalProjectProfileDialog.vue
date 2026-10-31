@@ -4,9 +4,9 @@ import { computed, ref, watch } from 'vue'
 import { putJson } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
+import { OptionSelect } from '@/components/ui/select'
 
 type SourceDraft = {
   key: string
@@ -204,7 +204,7 @@ async function save() {
       <label class="ui-field">{{ t('projects.profileDialog.projectName') }}
         <input v-model="name" name="project-name" maxlength="160" required />
       </label>
-      <UiSelect v-model="lifecycle" field name="project-lifecycle" :label="t('projects.profileDialog.lifecycle')" :options="lifecycleOptions" />
+      <OptionSelect v-model="lifecycle" field name="project-lifecycle" :label="t('projects.profileDialog.lifecycle')" :options="lifecycleOptions" />
       <label class="ui-field project-profile-wide-field">{{ t('projects.profileDialog.purpose') }}
         <textarea v-model="purpose" name="project-purpose" maxlength="4096" rows="4" :autofocus="materialType === 'ProjectPurpose'" :placeholder="t('projects.profileDialog.purposePlaceholder')" />
       </label>
@@ -233,14 +233,14 @@ async function save() {
           <label class="ui-field">{{ t('projects.profileDialog.sourceName') }}
             <input v-model="source.title" maxlength="512" required />
           </label>
-          <UiSelect v-model="source.kind" field :label="t('projects.profileDialog.sourceType')" :options="sourceKindOptions" />
+          <OptionSelect v-model="source.kind" field :label="t('projects.profileDialog.sourceType')" :options="sourceKindOptions" />
           <label class="ui-field project-source-wide-field">{{ t('projects.profileDialog.sourceUri') }}
             <input v-model="source.uri" maxlength="2048" :placeholder="t('projects.profileDialog.sourceUriPlaceholder')" />
           </label>
           <label class="ui-field project-source-wide-field">{{ t('projects.profileDialog.sourceSummary') }}
             <textarea v-model="source.summary" maxlength="4096" rows="2" />
           </label>
-          <UiSelect v-model="source.sensitivity" field :label="t('projects.profileDialog.sensitivity')" :options="sensitivityOptions" />
+          <OptionSelect v-model="source.sensitivity" field :label="t('projects.profileDialog.sensitivity')" :options="sensitivityOptions" />
           <Button class="project-source-remove" size="sm" variant="destructive" @click="removeSource(index)">{{ t('common.actions.remove') }}</Button>
         </article>
       </div>

@@ -10,12 +10,12 @@ import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
-import UiSelect from '@/ui/UiSelect.vue'
 import {
   editFailure, initialScopeDraft, isPreference, knowledgeWorkspaceItemPath, scopeChoices, scopeRequest,
   type EditFailure, type KnowledgeItemSummary, type ScopeChoice,
 } from './model'
 import { saveScope } from './quick-edit-api'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 // Where one item applies from now on: a preference to personal global, one or
 // more projects, or one FLA; other knowledge to one or more projects (rec#20
@@ -92,15 +92,15 @@ async function save() {
           </label>
         </RadioGroup>
       </Field>
-      <UiSelect v-if="draft.choice === 'projects'" v-model="draft.projectIds" field multiple
+      <OptionCombobox v-if="draft.choice === 'projects'" v-model="draft.projectIds" field multiple
         :label="t('knowledgeQuickEdit.scope.projectsField')" :options="projectOptions" :disabled="saving" data-scope-projects />
       <p v-if="!isPreference(item)" class="m-0 text-xs text-muted-foreground" data-scope-other-knowledge>
         {{ t('knowledgeQuickEdit.scope.otherKnowledge') }}
       </p>
       <template v-if="draft.choice === 'agent'">
-        <UiSelect v-model="draft.agentProjectId" field :label="t('knowledgeQuickEdit.scope.project')"
+        <OptionCombobox v-model="draft.agentProjectId" field :label="t('knowledgeQuickEdit.scope.project')"
           :options="projectOptions" :disabled="saving" data-scope-agent-project />
-        <UiSelect v-if="agents.length" v-model="draft.agentId" field :label="t('knowledgeQuickEdit.scope.agentLabel')"
+        <OptionCombobox v-if="agents.length" v-model="draft.agentId" field :label="t('knowledgeQuickEdit.scope.agentLabel')"
           :options="agents" :disabled="saving" data-scope-agent />
         <p v-else class="m-0 text-xs text-muted-foreground">{{ t('knowledgeQuickEdit.scope.noAgents') }}</p>
       </template>
