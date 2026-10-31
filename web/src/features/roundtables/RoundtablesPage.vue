@@ -8,7 +8,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { Button } from '@/components/ui/button'
-import { UiEmpty, UiNotice } from '@/ui'
+import { UiNotice } from '@/ui'
 import { subscribeChatUpdates } from '@/features/project-agents/task-updates'
 import {
   appendChatPage, listChats, listThreads, readChat, readThread,
@@ -341,12 +341,6 @@ const empty = computed(() => threadsState.value === 'ready' && chatsState.value 
 const listsFailed = computed(() => threadsState.value === 'failed' && chatsState.value === 'failed' && !threads.value.length && !chats.value.length && !accessNotice.value)
 function retryLists() { void loadThreads(); void loadChats() }
 const hasMoreChats = computed(() => Boolean(localNext.value || remoteNext.value))
-// A few conversations fill less than one row on a wide screen.
-const SPARSE_CONVERSATIONS = 3
-const sparse = computed(() => {
-  const count = threads.value.length + chats.value.length
-  return count > 0 && count <= SPARSE_CONVERSATIONS && !hasMoreChats.value
-})
 // A wide screen shows a thread's participants open; a phone keeps them folded.
 // It follows the breakpoint when the window is resized.
 const narrowQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(max-width: 860px)') : null
@@ -477,10 +471,6 @@ const lastFrom = (item: RoundtableThreadSummary) => item.last?.from ?? t('roundt
             <strong class="ui-conversation-item-title">{{ item.subject }}</strong>
             <span v-if="item.last" class="ui-conversation-item-sub">{{ lastFrom(item) }}：{{ item.last.body }}</span>
           </RouterLink>
-          <!-- A short list leaves the row half empty: the next slot invites a new conversation. -->
-          <UiEmpty v-if="sparse" class="roundtable-sparse" icon="chat" :text="t('roundtable.start.hint')">
-            <Button size="sm" variant="outline" data-roundtable-start-tile @click="starting = true">{{ t('roundtable.start.open') }}</Button>
-          </UiEmpty>
         </div>
         <p v-if="localMoreFailed" role="alert" class="roundtable-remote-note">{{ t('roundtable.localMoreFailed') }}</p>
         <Button v-if="hasMoreChats" class="roundtable-more" size="sm" variant="ghost" :loading="loadingMoreChats"
@@ -507,8 +497,9 @@ const lastFrom = (item: RoundtableThreadSummary) => item.last?.from ?? t('roundt
 
 <style scoped>
 .roundtable-view { display: flex; flex-direction: column; }
-/* The open conversation fills the canvas and scrolls inside; the list scrolls with the page. */
-.roundtable-view.has-selection { overflow: hidden; padding-bottom: 16px; }
+/* The open conversation fills the canvas and scrolls inside; the list scrolls with the page.
+   Both keep the shell's bottom clearance, so the composer never sits under the dock. */
+.roundtable-view.has-selection { overflow: hidden; }
 .roundtable-canvas { flex: 1 0 auto; }
 .has-selection .roundtable-canvas { flex: 1 1 0; min-height: 0; }
 .roundtable-empty { max-width: 520px; margin: 12vh auto 0; text-align: center; }
@@ -520,7 +511,6 @@ const lastFrom = (item: RoundtableThreadSummary) => item.last?.from ?? t('roundt
 .roundtable-remote-note { margin: 0; }
 .roundtable-more { justify-self: start; }
 .roundtable-list-count { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; color: var(--color-ink-soft); font-size: var(--text-control); }
-.roundtable-sparse { min-height: 100%; }
 .roundtable-back { align-self: flex-start; color: var(--color-muted); font-size: 13px; text-decoration: none; }
 .roundtable-back:hover { color: var(--color-ink); }
 .roundtable-detail-state { display: grid; align-content: start; gap: 12px; padding: 16px; }

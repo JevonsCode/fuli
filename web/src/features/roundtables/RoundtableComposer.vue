@@ -58,7 +58,7 @@ defineExpose({ clear: () => { body.value = '' } })
 </template>
 
 <style scoped>
-.roundtable-composer { display: grid; flex: 0 0 auto; gap: 8px; padding: 12px 28px 16px; border-top: 1px solid var(--color-border); background: var(--color-surface); }
+.roundtable-composer { display: grid; flex: 0 0 auto; gap: 8px; padding: 12px 28px 16px; border-top: 1px solid var(--color-border); }
 .roundtable-composer-modes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
 .roundtable-composer-mode { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: 13px; cursor: pointer; }
 .roundtable-composer-mode[data-selected] { color: var(--color-ink); font-weight: 600; }
