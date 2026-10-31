@@ -1,7 +1,6 @@
 // rec#11 D-07 part 2: the tag vocabulary page, its review queue and the person's governance.
 export const knowledgeTagsMessages = {
   'zh-CN': {
-    lede: '标签帮 Agent 只找相关的知识，不授予权限，也不代表知识已确认。Agent 只能提议；批准、合并、拆分、退役和撤销都由你在这里决定，每次改动都留历史。',
     tabs: { label: '标签视图', vocabulary: '词表', review: '待你审核' },
     search: '搜索名称、别名或说明',
     namespaceFilter: '范围',
@@ -159,7 +158,6 @@ export const knowledgeTagsMessages = {
     },
   },
   'en-US': {
-    lede: 'Tags help Agents find only the relevant knowledge; they grant no access and confirm nothing. Agents can only propose: you approve, merge, split, retire and undo here, and every change keeps its history.',
     tabs: { label: 'Tag views', vocabulary: 'Vocabulary', review: 'Waiting for you' },
     search: 'Search names, aliases or descriptions',
     namespaceFilter: 'Scope',

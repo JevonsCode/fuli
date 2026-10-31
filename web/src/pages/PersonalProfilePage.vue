@@ -788,8 +788,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
   gap: 12px;
   padding: 15px;
   border: 1px solid var(--color-border);
-  border-radius: 11px;
-  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  background: var(--card);
   box-shadow: var(--shadow-md);
 }
 
@@ -915,7 +915,6 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 
 .personal-profile-row.ai-resolved-conflict {
   border-color: var(--color-border-strong);
-  background: var(--color-surface);
 }
 
 .personal-profile-row.ai-resolved-conflict .personal-profile-origin strong {
@@ -951,7 +950,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 /* Each preference is a tile; wider canvases add columns instead of stretching the tile.
    Aspect and date head the tile, the preference reads in the middle and its
    status sits at the foot, so tiles in a row line up. */
-.personal-profile-row { display: grid; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.personal-profile-row { display: grid; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
 .personal-profile-open {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 1fr auto;
   grid-template-areas: "aspect time" "copy copy" "origin origin"; align-items: start; gap: 10px 12px;
