@@ -15,8 +15,9 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      # The runner context is not available in job-level env, so the path is set here.
-      - run: Add-Content $env:GITHUB_ENV "SMOKE_ROOT=$(Join-Path $env:RUNNER_TEMP 'fuli-update')"
+      # The runner context is not available in job-level env, and the script wants a
+      # direct child of TEMP (not RUNNER_TEMP), so the path is set here.
+      - run: Add-Content $env:GITHUB_ENV "SMOKE_ROOT=$(Join-Path $env:TEMP 'fuli-update')"
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
