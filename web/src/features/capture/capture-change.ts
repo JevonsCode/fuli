@@ -19,7 +19,7 @@ export interface CaptureChangePreview {
 }
 
 const CLIENT_NAMES: Record<string, string> = { codex: 'Codex', claude: 'Claude', claude_code: 'Claude Code',
-  cursor: 'Cursor', kiro: 'Kiro', opencode: 'OpenCode' }
+  cursor: 'Cursor', kiro: 'Kiro', opencode: 'OpenCode', antigravity: 'Antigravity' }
 const SHOWN_SESSION_CHARACTERS = 8
 
 export function clientName(source: string) {

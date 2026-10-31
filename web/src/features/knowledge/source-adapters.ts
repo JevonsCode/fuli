@@ -26,6 +26,7 @@ const APPLICATION_LABELS: Record<ConversationSourceApplication, string> = {
   gemini_cli: 'Gemini CLI',
   kiro: 'Kiro',
   opencode: 'OpenCode',
+  antigravity: 'Antigravity',
   other: 'Other Agent',
 }
 
@@ -97,6 +98,7 @@ export function sourceApplication(
     .toLocaleLowerCase()
   if (text.includes('claude')) return 'claude_code'
   if (text.includes('cursor')) return 'cursor'
+  if (text.includes('antigravity')) return 'antigravity'
   if (text.includes('gemini')) return 'gemini_cli'
   if (text.includes('kiro')) return 'kiro'
   if (text.includes('opencode')) return 'opencode'
@@ -156,10 +158,10 @@ export function sourceLauncherAppName(
   return rule?.enabled && rule.appName.trim() ? rule.appName.trim() : null
 }
 
-// The launcher of the evidence's application, or undefined when it has none (OpenCode).
+// The launcher of the evidence's application, or undefined when it has none (OpenCode, Antigravity).
 function launcherRule(configuration: ConversationLauncherConfiguration, evidence: EvidenceRecord): ConversationLauncherRule | undefined {
   const application = sourceApplication(evidence)
-  return application === 'opencode' ? undefined : configuration[application]
+  return application === 'opencode' || application === 'antigravity' ? undefined : configuration[application]
 }
 
 export async function copySourceSession(

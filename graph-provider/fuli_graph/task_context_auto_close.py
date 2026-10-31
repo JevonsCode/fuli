@@ -7,7 +7,7 @@ from .task_context_models import TaskContextCheckpoint
 
 
 AUTO_CLOSE_SUMMARY = 'Auto-closed at the next task entry: the Agent recorded no checkpoint for this routine fallback task.'
-NATIVE_APPLICATIONS = {'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode'}
+NATIVE_APPLICATIONS = {'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'antigravity'}
 
 
 def routine_fallback_eligible(record, *, protected=False, claimed=False):

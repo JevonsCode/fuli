@@ -749,11 +749,13 @@ export type ConversationSourceApplication =
   | 'gemini_cli'
   | 'kiro'
   | 'opencode'
+  | 'antigravity'
   | 'other'
 
-// Applications the console can open a conversation in. OpenCode has no
-// launcher yet: the stored runtime settings keep exactly these keys.
-export type ConversationLauncherApplication = Exclude<ConversationSourceApplication, 'opencode'>
+// Applications the console can open a conversation in. OpenCode and
+// Antigravity have no launcher yet: the stored runtime settings keep exactly
+// these keys.
+export type ConversationLauncherApplication = Exclude<ConversationSourceApplication, 'opencode' | 'antigravity'>
 
 export type ConversationIdFormat = 'any' | 'uuid'
 

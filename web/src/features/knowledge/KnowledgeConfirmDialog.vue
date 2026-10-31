@@ -127,6 +127,7 @@ function proposedByFromEvidence(evidence?: EvidenceRecord): ConfirmationActor {
     cursor: 'Cursor',
     kiro: 'Kiro',
     opencode: 'OpenCode',
+    antigravity: 'Antigravity',
     other: t('knowledge.domain.actors.otherAgent'),
   }[evidence?.source_application ?? '']
   return application

@@ -17,6 +17,11 @@ def test_unknown_claimed_and_internal_contexts_do_not_qualify(change):
     assert not routine_fallback_eligible({**BASE, **change})
 
 
+@pytest.mark.parametrize('source_application', ['kiro', 'antigravity'])
+def test_mcp_only_clients_with_their_own_source_qualify(source_application):
+    assert routine_fallback_eligible({**BASE, 'source_application': source_application})
+
+
 def test_employee_summary_requirement_accepts_only_a_reported_auto_close():
     assert routine_fallback_eligible({**BASE, 'work_log_required': True})
     assert not routine_fallback_eligible(BASE, protected=True)
