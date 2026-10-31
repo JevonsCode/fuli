@@ -90,7 +90,7 @@ export const router = createRouter({
     {
       path: '/project-agents',
       name: 'project-agents',
-      component: () => import('@/pages/AgentsDirectoryPage.vue'),
+      component: () => import('@/features/flas/FlasPage.vue'),
       meta: { title: 'routes.projectAgents.title', layout: 'canvas' },
     },
     { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { title: 'agentProfiles.profile', layout: 'column', detail: true } },

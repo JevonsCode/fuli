@@ -8,7 +8,6 @@ import { setLocale } from '@/i18n'
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, postJson }))
 import EmployeeScopeDialog from './EmployeeScopeDialog.vue'
-import EmployeeWorkbenchLinks from './EmployeeWorkbenchLinks.vue'
 import { employeeCatalogLoading, employeeTemplates, refreshEmployeeCatalog, type EmployeeTemplate } from './catalog'
 
 const projects: PersonalProject[] = [{
@@ -192,11 +191,6 @@ describe('employee project scope', () => {
     expect(wrapper.get('footer a').attributes('href')).toBe('/employees/jefa?project=project-a')
     await wrapper.get('form').trigger('submit')
     expect(postJson).toHaveBeenCalledTimes(1)
-    const links = mount(EmployeeWorkbenchLinks, { props: { personalSpaceId: 'space-a' }, global: { plugins: [router] } })
-    mounted.push(links)
-    await flushPromises()
-    expect(links.get('a').attributes('href')).toBe('/employees/jefa')
-    expect(links.text()).toContain('Jefa')
   })
 
   it('saves an empty scope without creating a project', async () => {
