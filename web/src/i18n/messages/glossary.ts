@@ -41,6 +41,7 @@ export const glossaryMessages = {
     setting: {
       agentNamingStyle: '你用一句话写下想要的 Agent 名字风格。之后新建 Agent 时，负责招聘的 Agent 按它起名，FULI 只保证名字不和已有 Agent 重复；重名就换一个同风格的，实在想不出会告诉你。已有 Agent 不改名；留空就用默认名字。',
       topicPromotion: '还没归到项目的对话，如果同一个话题 2 天里聊了 3 次以上，开着这项时 Astro 直接把它建成项目、配好负责人，并在回执里告诉你；你可以点链接改名、换上级或撤销（撤销后项目归档，话题再多聊几次才会再升级）。关掉时只提建议，由你在控制台决定。',
+      diagnostics: '一个 JSON 文件，装着开发者排查 FULI 问题需要的东西：版本和安装方式、系统和 Node 版本、不含个人内容的设置、体检结果和每个日志的最后约 400 行。用户目录、用户名、邮箱、令牌、密钥和网址参数在离开这台电脑前就被隐藏；不含知识、对话记录、记忆和项目内容。在设置的「系统」里生成，先预览再导出。',
     },
     destination: {
       constellation: '打开 FULI 的第一页：当前工作、等你处理的事和最近完成的工作。',
@@ -145,6 +146,7 @@ export const glossaryMessages = {
     setting: {
       agentNamingStyle: 'A sentence describing the names you want for Agents. When a new Agent is created, the recruiting Agent names it in this style and FULI only makes sure no other Agent already has the name; on a clash it picks another in the same style, and tells you if it cannot find one. Existing Agents keep their names; leave it empty for the default names.',
       topicPromotion: 'When conversations that belong to no project keep returning to one topic (3 times over 2 days), Astro forms the project and its lead by itself and says so in the receipt; its link lets you rename it, move it under another project or undo it (an undo archives the project, and the topic needs a few more conversations before it grows again). Turned off, Astro only suggests and you decide in the console.',
+      diagnostics: 'One JSON file with what the developers need to diagnose FULI: its version and install kind, the OS and Node versions, settings without personal values, the health check and about the last 400 lines of each log. Home folder, user name, emails, tokens, keys and URL parameters are hidden before anything leaves this computer; it holds no knowledge, conversations, memory or project content. Create it under Settings › System, preview it, then export it.',
     },
     destination: {
       constellation: 'The first page of FULI: current work, what needs you and what was just finished.',

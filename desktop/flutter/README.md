@@ -29,6 +29,8 @@ A Windows and macOS app for people who do not use a terminal: one window and a t
   browser. Only plain console paths pass: no other host, port, user info or fragment, no `.`/`..`
   segments or encoded slashes, printable ASCII only (percent-encode the rest), at most 2048
   characters. Anything else is ignored. A start for a console link keeps the window hidden.
+- 「导出诊断包…」 in the tray menu follows `fuli://settings?tab=system&setting=diagnostics`: the
+  settings page's 诊断包 card, where the person previews the redacted bundle and exports it.
 - Checks every 15 s while the window is visible and every 120 s while hidden, backing off when the
   console does not answer. One OS notification when FULI gets worse; closing the window hides it.
 

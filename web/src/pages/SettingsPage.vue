@@ -16,6 +16,7 @@ import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.v
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
+import DiagnosticsSettings from '@/features/settings/DiagnosticsSettings.vue'
 import CaptureProjectSettings from '@/features/capture/CaptureProjectSettings.vue'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
 import { captureSourceOff, withCaptureSource } from '@/features/capture/capture-sources'
@@ -741,6 +742,7 @@ async function submitSettings(event: Event) {
                   </Accordion>
                 </template>
               </Card>
+              <DiagnosticsSettings />
             </TabsContent>
           </fieldset>
           <p v-if="loadError" class="settings-error" role="alert">{{ loadError }}</p>
