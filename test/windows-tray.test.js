@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { loadTrayContext, runTrayAction, trayStateLabel, validateTrayDataDir } from '../src/desktop/windows-controller.js';
+import { loadTrayContext, validateTrayDataDir } from '../src/desktop/windows-controller.js';
+import { runTrayAction, trayStateLabel } from '../src/desktop/desktop-controller.js';
 import { refreshEmbeddedProvider } from '../scripts/build-windows-tray.js';
 
 async function fixture(t) {

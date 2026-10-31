@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The bundled Java 21 (runtime/jre21/bin/* and lib/jspawnhelper) that runs
+  Neo4j, under the hardened runtime of a Developer ID build
+  (scripts/sign-macos-app.js).
+  - allow-jit: HotSpot's JIT compilers generate code in MAP_JIT memory.
+  - allow-unsigned-executable-memory: HotSpot's code cache and interpreter
+    stubs; Temurin's own macOS builds carry it.
+  - disable-library-validation: Neo4j's dependencies (Netty, compression
+    codecs) unpack JNI libraries from their jars into a temporary directory and
+    load them; those files are not signed with the app's Team ID, so library
+    validation would refuse them. Remove this only after confirming on a
+    signed build that Neo4j starts and serves without it.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

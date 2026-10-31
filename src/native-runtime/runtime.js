@@ -26,6 +26,7 @@ import { neo4jPatchUpgrade } from './neo4j-version-policy.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { compareSemanticVersions } from '../semantic-version.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from './windows-assets.js';
+import { readMacosNativeBundle } from './macos-assets.js';
 import {
   assertWindowsNativePortFree, assertWindowsNativePortOwner, runWindowsNeo4j, spawnWindowsNativeDatabase,
   spawnWindowsNativeProvider, stopWindowsNativeProcess, windowsNativeProcessMatches,
@@ -438,15 +439,20 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
     try { owner = readFileSync(join(assetLock, 'owner'), 'utf8'); } catch { /* Incomplete ownership is blocked. */ }
     if (!owner || input.env?.FULI_NATIVE_ASSET_OPERATION !== owner) throw new Error('Native Neo4j lifecycle switch or recovery is in progress.');
   }
-  const javaHome = await deps.resolveJavaHome(input.env ?? process.env);
+  const env = input.env ?? process.env;
+  const packageRoot = dirname(input.paths.graphComposePath);
+  // The macOS app ships Java 21, the Neo4j archive and an installed Provider;
+  // an npm installation uses the system Java and builds the Provider with uv.
+  const bundle = deps.platform === 'darwin' ? deps.readMacosNativeBundle(packageRoot) : null;
+  const javaHome = await deps.resolveJavaHome(bundle ? { ...env, FULI_NATIVE_JAVA_HOME: bundle.javaHome } : env);
   if (!javaHome) throw nativeJavaError(deps.platform);
-  const uvCommand = await deps.resolveUvCommand(input.env ?? process.env);
-  if (!uvCommand) {
+  const uvCommand = bundle ? null : await deps.resolveUvCommand(env);
+  if (!bundle && !uvCommand) {
     throw new Error('Native graph mode requires uv with Python 3.12 support. Install uv, then run setup again.');
   }
 
-  const providerPython = join(input.paths.nativeProviderVenvPath, 'bin', 'python');
-  const providerSource = join(dirname(input.paths.graphComposePath), 'graph-provider');
+  const providerPython = bundle?.providerPython ?? join(input.paths.nativeProviderVenvPath, 'bin', 'python');
+  const providerSource = bundle?.providerSource ?? join(packageRoot, 'graph-provider');
   const providerFingerprint = await deps.providerSourceFingerprint(providerSource);
   if (!/^[a-f0-9]{64}$/.test(providerFingerprint)) {
     throw new Error('Native Graph Provider source fingerprint is invalid.');
@@ -486,14 +492,16 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
       paths: input.paths,
       home: neo4jHome,
       url: NATIVE_NEO4J_URL,
-      sha256: NATIVE_NEO4J_SHA256
+      sha256: NATIVE_NEO4J_SHA256,
+      ...(bundle ? { bundledArchive: bundle.neo4jArchive } : {})
     });
   }
-  if (
+  // A bundled Provider is complete as shipped; only its presence is checked below.
+  if (!bundle && (
     !deps.pathExists(providerPython) ||
     saved?.providerVersion !== expected.providerVersion ||
     saved?.providerFingerprint !== expected.providerFingerprint
-  ) {
+  )) {
     deps.onProgress(input, 'Installing the native Graph Provider…');
     await deps.installProvider({
       uvCommand,
@@ -574,6 +582,7 @@ function nativeDependencies(overrides) {
     resolveUvCommand,
     resolveWindowsNativeBundle,
     readWindowsNativeBundle,
+    readMacosNativeBundle,
     installNeo4j: installNativeNeo4j,
     installProvider,
     providerSourceFingerprint,

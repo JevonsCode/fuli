@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { isMainModule } from '../src/system/main-module.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../src/native-runtime/windows-assets.js';
 import { assertShortBuildPath } from './windows-build-path.js';
 import { bundleAgentKits } from './agent-kits-bundle.js';
+import {
+  PACKAGE_ROOT, buildEnvironment, buildProviderWheel, finishProviderSite, hashTree, packCurrentApplication,
+  pinnedArchive, progress, run, sha256
+} from './bundle-build.js';
 
-const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DOWNLOADS = {
   node: { filename: 'node-v24.18.0-win-x64.zip',
     url: 'https://nodejs.org/dist/v24.18.0/node-v24.18.0-win-x64.zip',
@@ -37,35 +37,15 @@ export async function buildWindowsPortable({ output, assetRoot, buildPython, cac
     throw new Error('Output must be outside the source checkout and supplied assets.');
   }
   const assetBefore = await Promise.all(['neo4j', 'jre21'].map(name => hashTree(join(assetRoot, name))));
-  const npm = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-  const env = { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1', PYTHONNOUSERSITE: '1',
-    PIP_INDEX_URL: 'https://pypi.org/simple', PIP_EXTRA_INDEX_URL: '', PIP_CONFIG_FILE: 'NUL',
-    npm_config_audit: 'false', npm_config_fund: 'false' };
+  const env = buildEnvironment('NUL');
   await mkdir(output, { recursive: true });
   await mkdir(cacheDir, { recursive: true });
   const scratch = await mkdtemp(join(cacheDir, 'build-'));
   try {
-    progress('Building application and web assets');
-    await run(process.execPath, [npm, 'run', 'build'], { cwd: PACKAGE_ROOT, env, capture: true });
-    const packed = JSON.parse(await run(process.execPath, [npm, 'pack', '--ignore-scripts', '--json',
-      '--pack-destination', scratch], { cwd: PACKAGE_ROOT, env, capture: true }))[0];
-    await run(join(process.env.SystemRoot, 'System32', 'tar.exe'), ['-xzf', join(scratch, packed.filename), '-C', scratch]);
-    await cp(join(scratch, 'package'), output, { recursive: true, dereference: true });
-    progress('Vendoring production Node dependencies');
-    await run(process.execPath, [npm, 'ci', '--omit=dev', '--ignore-scripts'], { cwd: output, env, capture: true });
+    await packCurrentApplication({ output, scratch, env, tar: join(process.env.SystemRoot, 'System32', 'tar.exe') });
 
     const archives = {};
-    for (const [key, artifact] of Object.entries(DOWNLOADS)) {
-      progress('Checking pinned ' + key + ' archive');
-      const archive = join(cacheDir, artifact.filename);
-      if (!existsSync(archive)) {
-        const response = await fetch(artifact.url, { signal: AbortSignal.timeout(300_000) });
-        if (!response.ok) throw new Error('Download failed: ' + artifact.url + ' HTTP ' + response.status);
-        await writeFile(archive, Buffer.from(await response.arrayBuffer()));
-      }
-      assert.equal(sha256(await readFile(archive)), artifact.sha256, key + ' archive checksum mismatch');
-      archives[key] = archive;
-    }
+    for (const [key, artifact] of Object.entries(DOWNLOADS)) archives[key] = await pinnedArchive(artifact, cacheDir, key);
     const runtime = join(output, 'runtime');
     await mkdir(runtime, { recursive: true });
     await expandZip(archives.node, join(scratch, 'node'));
@@ -84,29 +64,16 @@ export async function buildWindowsPortable({ output, assetRoot, buildPython, cac
     const kits = await bundleAgentKits({ output, cacheDir });
 
     progress('Building a non-editable Provider wheel and vendoring dependencies');
-    const wheels = join(scratch, 'wheels');
-    await mkdir(wheels);
-    await run(buildPython, ['-m', 'pip', 'wheel', '--quiet', '--no-deps', '--wheel-dir', wheels,
-      join(PACKAGE_ROOT, 'graph-provider')], { env });
-    const wheel = (await readdir(wheels)).find(name => name.startsWith('fuli_graph_provider-') && name.endsWith('.whl'));
-    if (!wheel) throw new Error('Provider wheel was not built.');
+    const wheel = await buildProviderWheel(buildPython, join(scratch, 'wheels'), env);
     const site = join(runtime, 'python', 'Lib', 'site-packages');
     const reportPath = join(scratch, 'python-install.json');
     await run(buildPython, ['-m', 'pip', 'install', '--quiet', '--only-binary=:all:', '--no-compile', '--target', site,
-      '--report', reportPath, join(wheels, wheel)], { env });
-    // pip creates host-specific executable wrappers and direct_url metadata.
+      '--report', reportPath, wheel], { env });
+    // pip creates host-specific executable wrappers.
     // Runtime uses python -m uvicorn and the bundled wheel's package files.
     for (const name of ['bin', 'Scripts']) await rm(join(site, name), { recursive: true, force: true });
-    for (const name of (await readdir(site)).filter(name => name.endsWith('.dist-info'))) {
-      await rm(join(site, name, 'direct_url.json'), { force: true });
-    }
-    await cp(join(PACKAGE_ROOT, 'graph-provider', 'pyproject.toml'), join(site, 'pyproject.toml'));
+    const pythonPackages = await finishProviderSite(site, reportPath, wheel);
     await writeFile(join(runtime, 'python', 'python312._pth'), 'python312.zip\n.\nLib/site-packages\nimport site\n');
-    const pythonPackages = JSON.parse(await readFile(reportPath, 'utf8')).install.map(item => ({
-      name: item.metadata.name, version: item.metadata.version, license: item.metadata.license ?? null,
-      source: item.download_info.url.startsWith('file:') ? wheel : item.download_info.url,
-      sha256: item.download_info.archive_info?.hashes?.sha256 ?? null
-    }));
     const python = join(runtime, 'python', 'python.exe');
     const probe = JSON.parse(await run(python, ['-I', '-B', '-c',
       'import json,sys,fuli_graph,graphiti_core,neo4j,uvicorn; print(json.dumps({"prefix":sys.prefix,"base_prefix":sys.base_prefix,"isolated":sys.flags.isolated,"user_site":sys.flags.no_user_site,"provider":fuli_graph.__file__}))'], { capture: true, env }));
@@ -148,19 +115,6 @@ export async function buildWindowsPortable({ output, assetRoot, buildPython, cac
     await rm(scratch, { recursive: true, force: true });
   }
 }
-
-async function hashTree(root, prefix = '') {
-  const files = [];
-  for (const entry of (await readdir(root, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
-    const name = prefix ? prefix + '/' + entry.name : entry.name;
-    if (entry.isDirectory()) files.push(...await hashTree(join(root, entry.name), name));
-    else files.push([name, sha256(await readFile(join(root, entry.name)))]);
-  }
-  return files;
-}
-
-const sha256 = value => createHash('sha256').update(value).digest('hex');
-const progress = message => process.stdout.write(message + '\n');
 
 async function expandZip(archive, destination) {
   await mkdir(destination, { recursive: true });
@@ -208,17 +162,6 @@ function portableLauncher(action) {
     'echo Native 日志 / Native logs: "%FULI_PORTABLE_ROOT%data\\native-runtime\\personal\\logs"',
     'echo 按任意键关闭 / Press any key to close.', 'pause >nul', 'exit /b %FULI_PORTABLE_EXIT%', ''
   ].join('\r\n');
-}
-
-function run(command, args, { cwd, env = process.env, capture = false } = {}) {
-  return new Promise((resolveRun, reject) => {
-    const child = execFile(command, args, { cwd, env, windowsHide: true, timeout: 20 * 60_000,
-      encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error) reject(new Error('Build command failed (' + error.code + '): ' + (stderr || stdout).slice(-4000)));
-      else resolveRun(stdout);
-    });
-    if (!capture) { child.stdout.pipe(process.stdout); child.stderr.pipe(process.stderr); }
-  });
 }
 
 function portableInstructions(version) {

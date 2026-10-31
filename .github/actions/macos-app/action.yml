@@ -1,0 +1,131 @@
+name: Build the macOS app disk image
+description: >-
+  Builds FULI.app for Apple silicon (the Flutter desktop client with Node,
+  a jlink Java 21, the pinned Neo4j archive and the Provider's Python inside,
+  scripts/build-macos-app.js) and the .dmg people drag it from, with its
+  SHA-256, in the release output folder. Unsigned (ad hoc) unless the
+  Developer ID inputs are all given; then the app is signed with the hardened
+  runtime and the image is signed, notarized and stapled. Expects a checkout
+  and npm ci already done on a macOS arm64 runner.
+inputs:
+  certificate-p12:
+    description: Base64 of the Developer ID Application certificate and key (.p12); empty for an unsigned build
+    required: false
+    default: ""
+  certificate-password:
+    description: Password of the .p12
+    required: false
+    default: ""
+  apple-id:
+    description: Apple ID that submits to the notary service
+    required: false
+    default: ""
+  team-id:
+    description: Apple Developer Team ID
+    required: false
+    default: ""
+  app-password:
+    description: App-specific password of the Apple ID
+    required: false
+    default: ""
+outputs:
+  release:
+    description: Folder holding the .dmg and its .sha256
+    value: ${{ steps.package.outputs.release }}
+  signed:
+    description: "true when the image is Developer ID signed and notarized"
+    value: ${{ steps.mode.outputs.signed }}
+runs:
+  using: composite
+  steps:
+    - id: mode
+      shell: bash
+      env:
+        P12: ${{ inputs.certificate-p12 }}
+        P12_PASSWORD: ${{ inputs.certificate-password }}
+        APPLE_ID: ${{ inputs.apple-id }}
+        TEAM_ID: ${{ inputs.team-id }}
+        APP_PASSWORD: ${{ inputs.app-password }}
+      run: |
+        if [ -n "$P12" ] && [ -n "$P12_PASSWORD" ] && [ -n "$APPLE_ID" ] && [ -n "$TEAM_ID" ] && [ -n "$APP_PASSWORD" ]; then
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "signed=false" >> "$GITHUB_OUTPUT"
+          echo "No complete Developer ID secrets: building an unsigned (ad hoc) app."
+        fi
+    - id: java
+      uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: "21"
+    - uses: subosito/flutter-action@v2
+      with:
+        channel: stable
+        flutter-version: 3.41.9
+        cache: true
+    - name: Build the desktop client
+      shell: bash
+      working-directory: desktop/flutter
+      run: |
+        flutter pub get
+        flutter build macos --release
+    - name: Build FULI.app with the bundled runtime
+      shell: bash
+      run: |
+        node scripts/build-macos-app.js --client "$GITHUB_WORKSPACE/desktop/flutter/build/macos/Build/Products/Release/FULI.app" \
+          --output "$RUNNER_TEMP/fuli-macos" --jdk "$JAVA_HOME" --cache-dir "$RUNNER_TEMP/fuli-macos-cache"
+    - name: Sign FULI.app with Developer ID
+      if: steps.mode.outputs.signed == 'true'
+      shell: bash
+      env:
+        P12: ${{ inputs.certificate-p12 }}
+        P12_PASSWORD: ${{ inputs.certificate-password }}
+      run: |
+        keychain="$RUNNER_TEMP/fuli-signing.keychain-db"
+        keychain_password="$(uuidgen)"
+        printf '%s' "$P12" | base64 --decode > "$RUNNER_TEMP/fuli-signing.p12"
+        security create-keychain -p "$keychain_password" "$keychain"
+        security set-keychain-settings -lut 21600 "$keychain"
+        security unlock-keychain -p "$keychain_password" "$keychain"
+        security import "$RUNNER_TEMP/fuli-signing.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+        rm -f "$RUNNER_TEMP/fuli-signing.p12"
+        security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" > /dev/null
+        security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+        identity="$(security find-identity -v -p codesigning "$keychain" | awk '/Developer ID Application/ { print $2; exit }')"
+        if [ -z "$identity" ]; then echo "No Developer ID Application identity in the certificate"; exit 1; fi
+        node scripts/sign-macos-app.js --app "$RUNNER_TEMP/fuli-macos/FULI.app" --identity "$identity" --keychain "$keychain"
+        echo "FULI_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+        echo "FULI_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+    - name: Create the disk image
+      shell: bash
+      run: node scripts/package-macos-dmg.js --app "$RUNNER_TEMP/fuli-macos/FULI.app" --output "$RUNNER_TEMP/fuli-macos-release"
+    - name: Sign, notarize and staple the disk image
+      if: steps.mode.outputs.signed == 'true'
+      shell: bash
+      env:
+        APPLE_ID: ${{ inputs.apple-id }}
+        TEAM_ID: ${{ inputs.team-id }}
+        APP_PASSWORD: ${{ inputs.app-password }}
+      run: |
+        dmg="$(ls "$RUNNER_TEMP"/fuli-macos-release/*.dmg)"
+        codesign --force --timestamp --sign "$FULI_SIGNING_IDENTITY" --keychain "$FULI_SIGNING_KEYCHAIN" "$dmg"
+        result="$(xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_PASSWORD" --wait --output-format json)"
+        echo "$result"
+        field() { printf '%s' "$result" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s)['$1']??''))"; }
+        if [ "$(field status)" != "Accepted" ]; then
+          xcrun notarytool log "$(field id)" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_PASSWORD" || true
+          exit 1
+        fi
+        xcrun stapler staple "$dmg"
+        spctl --assess --type open --context context:primary-signature --verbose "$dmg"
+    - name: Remove the signing keychain
+      if: always() && steps.mode.outputs.signed == 'true'
+      shell: bash
+      run: security delete-keychain "$RUNNER_TEMP/fuli-signing.keychain-db" || true
+    - name: Write the checksum
+      id: package
+      shell: bash
+      run: |
+        cd "$RUNNER_TEMP/fuli-macos-release"
+        for dmg in *.dmg; do shasum -a 256 "$dmg" > "$dmg.sha256"; done
+        echo "release=$RUNNER_TEMP/fuli-macos-release" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The bundled Python (runtime/python/bin/python3.12) that runs the Graph
+  Provider, under the hardened runtime of a Developer ID build
+  (scripts/sign-macos-app.js).
+  - allow-unsigned-executable-memory: ctypes and cffi callbacks in the
+    Provider's dependencies use libffi closures, which need writable and
+    executable memory.
+  Not granted: allow-jit (CPython 3.12 has no JIT) and
+  disable-library-validation (every extension module under site-packages is
+  signed with the app, and the Provider installs nothing at run time).
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+</dict>
+</plist>

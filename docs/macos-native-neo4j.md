@@ -1,9 +1,10 @@
 # macOS native Neo4j assets
 
 Fuli uses its existing npm/CLI native runtime, external instance data directories,
-and pinned Neo4j Community 5.26.28 Unix distribution. There is no macOS application
-installer in this workflow. Java 21 must already be installed and match the host
-architecture (arm64 or x64); these commands never install or upgrade Java.
+and pinned Neo4j Community 5.26.28 Unix distribution. Java 21 must already be installed and match the host
+architecture (arm64 or x64); these commands never install or upgrade Java. The macOS
+app (`docs/macos-app.md`) brings its own Java 21 and installs Neo4j from the archive
+it ships, into the same managed directories.
 
 ```sh
 fuli graph runtime install --preview
