@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { Button } from '@/components/ui/button'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { OptionCombobox } from '@/components/ui/combobox'
 import { t } from '@/i18n'
 import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 import type { PersonalProject } from '@/types'
@@ -32,6 +33,7 @@ const projectName = (projectId: string) => {
   return project ? projectDisplayName(project) : projectId
 }
 const addable = computed(() => spaceProjects.value.filter(project => !overrides.value.some(policy => policy.personalProjectId === project.project_id)))
+const addableOptions = computed(() => addable.value.map(project => ({ value: project.project_id, label: projectDisplayName(project) })))
 const addingLabel = computed(() => t('judgment.project.starting', { name: projectName(chosenProjectId.value) }))
 
 watch(() => props.personalSpaceId, () => { void load() }, { immediate: true })
@@ -96,10 +98,8 @@ function changed(value: JudgmentPolicy) {
           :personal-space-id="personalSpaceId" :project-id="policy.personalProjectId ?? ''" :project-name="projectName(policy.personalProjectId ?? '')"
           :heading="projectName(policy.personalProjectId ?? '')" :policy="policy" @change="changed" />
         <div v-if="addable.length" class="judgment-overrides-add">
-          <label class="ui-sr-only" for="judgment-override-project">{{ judgmentText('overrides.project') }}</label>
-          <select id="judgment-override-project" v-model="chosenProjectId" data-select="judgment-override-project" :disabled="adding">
-            <option v-for="project in addable" :key="project.project_id" :value="project.project_id">{{ projectDisplayName(project) }}</option>
-          </select>
+          <OptionCombobox v-model="chosenProjectId" class="judgment-overrides-project" control-id="judgment-override-project" data-select="judgment-override-project"
+            :label="judgmentText('overrides.project')" :options="addableOptions" :disabled="adding" />
           <Button size="sm" variant="outline" data-action="add-project-policy" :disabled="!chosenProjectId" :loading="adding" :loading-label="addingLabel" @click="add">
             {{ judgmentText('overrides.add') }}
           </Button>
@@ -121,6 +121,6 @@ function changed(value: JudgmentPolicy) {
 .judgment-overrides-default { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 .judgment-override { padding-top: 12px; border-top: 1px solid var(--color-border); }
 .judgment-overrides-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-border); }
-.judgment-overrides-add select { flex: 0 1 280px; min-width: 0; min-height: var(--control-height); padding: 6px 10px; border: 1px solid var(--color-control-border); border-radius: var(--radius-control); color: var(--color-ink); background: var(--color-surface); font: inherit; font-size: 13px; }
+.judgment-overrides-project { flex: 0 1 280px; }
 .judgment-overrides-error { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
 </style>

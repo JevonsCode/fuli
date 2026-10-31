@@ -7,7 +7,6 @@ const patchJson = vi.hoisted(() => vi.fn())
 vi.mock('@/api/client', () => ({ getJson, patchJson }))
 
 import ProjectAgentAutomationPolicyPanel from './ProjectAgentAutomationPolicyPanel.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type { ProjectAgentRecord } from '@/types'
 
@@ -146,8 +145,8 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     // A group needs a name and a sub-lead before the team can be saved.
     expect(saveButton(wrapper).attributes('disabled')).toBeDefined()
     await row.get('.sub-team-name').setValue('后端')
-    // The newest select on the panel is the group's sub-lead; UiSelect is generic, so its wrapper is typed loosely.
-    const subLead = wrapper.findAllComponents(UiSelect).at(-1) as unknown as { vm: { $emit: (event: string, value: string) => void } }
+    // The newest choice on the panel is the group's sub-lead.
+    const subLead = wrapper.findAllComponents({ name: 'OptionCombobox' }).at(-1)!
     subLead.vm.$emit('update:modelValue', 'backend')
     await flushPromises()
     await row.findAll('.sub-team-members input').find(input => input.attributes('value') === 'engineer')!.setValue(true)
@@ -165,7 +164,7 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     const wrapper = mountPanel([agent('lead'), agent('backend'), agent('engineer'), agent('designer')])
     await flushPromises()
     const row = wrapper.get('[data-sub-team-row]')
-    const subLead = wrapper.findAllComponents(UiSelect).at(-1) as unknown as { vm: { $emit: (event: string, value: string) => void } }
+    const subLead = wrapper.findAllComponents({ name: 'OptionCombobox' }).at(-1)!
     subLead.vm.$emit('update:modelValue', 'engineer')
     await flushPromises()
     // The former lead can step down into the same group in the same edit.

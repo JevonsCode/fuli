@@ -7,11 +7,12 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { OptionCombobox } from '@/components/ui/combobox'
 import UiSegmented from '@/ui/UiSegmented.vue'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import type { PersonalProject } from '@/types'
-import ProjectScopePicker from './ProjectScopePicker.vue'
+import { projectSelectOptions } from './project-options'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
 import AgentName from '@/features/agent-profile/AgentName.vue'
@@ -294,7 +295,7 @@ function formattedDate(value: string) {
       <div class="bole-controls">
         <div class="bole-filters">
           <Input v-model="search" type="search" class="bole-search" :aria-label="t('employees.bole.search')" :placeholder="t('employees.bole.search')" />
-          <ProjectScopePicker v-model="projectSelection" :projects="projectOptions" :label="t('employees.allProjects.projectFilter')" :all-label="t('employees.bole.allProjects')" :empty-label="t('employees.filterEmpty')" compact hint="" />
+          <OptionCombobox v-model="projectSelection" class="bole-project-filter" multiple :options="projectSelectOptions(projectOptions)" :label="t('employees.allProjects.projectFilter')" :all-label="t('employees.bole.allProjects')" :placeholder="t('employees.filterEmpty')" />
           <UiSegmented v-if="activeView === 'people'" v-model="workFilter" :label="t('employees.bole.workFilter')" :options="workFilterOptions" />
         </div>
         <div class="bole-role-filters">

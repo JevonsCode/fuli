@@ -175,7 +175,7 @@ describe('KnowledgeWorkspace', () => {
     const names = () => mode === 'graph'
       ? wrapper.getComponent({ name: 'GraphCanvasStub' }).props('graph').nodes.map((node: { name: string }) => node.name)
       : wrapper.findAll('.project-material-row').map(row => row.text())
-    const choices = () => wrapper.getComponent({ name: 'UiSelect' }).props('options').map((option: { value: string }) => JSON.parse(option.value)[2])
+    const choices = () => wrapper.getComponent({ name: 'OptionCombobox' }).props('options').map((option: { value: string }) => JSON.parse(option.value)[2])
     expect(names()).toHaveLength(1)
     expect(choices()).toEqual([null, 'formal'])
     const requests = getJson.mock.calls.length

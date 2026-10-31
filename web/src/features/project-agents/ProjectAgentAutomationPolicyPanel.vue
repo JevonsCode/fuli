@@ -4,10 +4,10 @@ import { Switch } from '@/components/ui/switch'
 import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import { agentResponsibility } from '@/features/agent-profile/profile-model'
 import type { ProjectAgentCoordinationPolicy, ProjectAgentRecord, ProjectSubTeamPolicy } from '@/types'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 const props = defineProps<{
   personalSpaceId: string
@@ -291,7 +291,7 @@ function stringValue(value: unknown) {
       </ul>
       <details>
         <summary>{{ t('projectAgents.team.edit') }}</summary>
-        <UiSelect v-model="teamLead" class="team-lead-field" field :label="t('projectAgents.team.lead')" :options="leaderOptions" :disabled="busy" />
+        <OptionCombobox v-model="teamLead" class="team-lead-field" field :label="t('projectAgents.team.lead')" :options="leaderOptions" :disabled="busy" />
         <fieldset :disabled="busy || !teamLead">
           <legend>{{ t('projectAgents.team.members') }}</legend>
           <label v-for="member in unavailableMembers" :key="member.id" class="unavailable-team-member">
@@ -305,7 +305,7 @@ function stringValue(value: unknown) {
           <p class="sub-team-hint">{{ t('projectAgents.team.subTeamsHint') }}</p>
           <div v-for="group in subTeams" :key="group.id" class="sub-team-row" data-sub-team-row>
             <input v-model="group.name" class="sub-team-name" type="text" maxlength="40" :placeholder="t('projectAgents.team.subTeamName')" :aria-label="t('projectAgents.team.subTeamName')" />
-            <UiSelect :model-value="group.leadAgentId" field @update:model-value="setSubLead(group, $event)" :label="t('projectAgents.team.subLead')" :options="subLeadOptions(group)" />
+            <OptionCombobox :model-value="group.leadAgentId" field @update:model-value="setSubLead(group, $event)" :label="t('projectAgents.team.subLead')" :options="subLeadOptions(group)" />
             <div class="sub-team-members">
               <label v-for="agent in groupMemberOptions(group)" :key="agent.agentId"><input v-model="group.memberAgentIds" type="checkbox" :value="agent.agentId" />{{ label(agent) }}</label>
             </div>

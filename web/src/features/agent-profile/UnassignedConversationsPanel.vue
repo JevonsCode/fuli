@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
+import { OptionCombobox } from '@/components/ui/combobox'
 import { computed, ref, watch } from "vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import CreateProjectDialog from "@/features/projects/CreateProjectDialog.vue";
@@ -222,15 +223,12 @@ async function handleProjectCreated(project: PersonalProject) {
           </template>
         </div>
         <div v-if="movingConversationId === item.conversationId" class="unassigned-conversation-picker">
-          <select v-model="targetProjectId" :aria-label="t('agentRedesign.unassigned.selectProject')">
-            <option
-              v-for="project in formalProjects"
-              :key="project.project_id"
-              :value="project.project_id"
-            >
-              {{ project.profile.name }}
-            </option>
-          </select>
+          <OptionCombobox
+            v-model="targetProjectId"
+            class="unassigned-conversation-project"
+            :label="t('agentRedesign.unassigned.selectProject')"
+            :options="formalProjects.map((project) => ({ value: project.project_id, label: project.profile.name }))"
+ />
           <Button size="sm" variant="ghost"
            
             data-unassigned-confirm-move

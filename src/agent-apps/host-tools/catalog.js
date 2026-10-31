@@ -105,6 +105,9 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   acquire_runtime_lease: LAUNCH,
   refresh_runtime_lease: LAUNCH,
   request_agent_attention: LAUNCH,
+  // Stops and starts other Agents' processes and apps.
+  pause_work_surfaces: LAUNCH,
+  resume_work_surfaces: LAUNCH,
 
   // Local, but a session, a local path, another Agent's records or the
   // person's own settings and reviews: not confined to an app's scope.
@@ -121,6 +124,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   list_agent_workflows: UNSCOPED,
   read_agent_workflow: UNSCOPED,
   record_agent_workflow_run: UNSCOPED,
+  list_work_surfaces: UNSCOPED,
   explain_settings: UNSCOPED,
   get_agent_naming_style: UNSCOPED,
   update_capture_policy: UNSCOPED,

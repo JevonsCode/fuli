@@ -74,6 +74,7 @@
 .unassigned-conversation-main { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 240px; min-width: 0; }
 .unassigned-conversation-line { min-width: 0; overflow: hidden; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .unassigned-conversation-actions, .unassigned-conversation-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.unassigned-conversation-project { flex: 0 1 260px; }
 .directory-project-lead { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2, 8px); margin-bottom: var(--space-3, 12px); font-size: 13px; }
 .directory-project-lead p { display: flex; align-items: center; gap: 8px; margin: 0; }
 .agent-card-occupation { font-weight: 600; }

@@ -3,9 +3,9 @@ import { Button } from '@/components/ui/button'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
 import { saveFile } from '@/lib/save-file'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 const props = defineProps<{ personalSpaceId: string; agentId: string; projects: Array<{ id: string; name: string }> }>()
 interface Policy { compact_after_kb: number; context_budget: number; enabled: boolean }
@@ -200,7 +200,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
   <section class="agent-conversations" :aria-label="t('projectAgents.conversations.title')">
     <!-- Always shown: an empty state is information, not something to hide behind a toggle. -->
     <h2 class="agent-conversations-title">{{ t('projectAgents.conversations.title') }}</h2>
-      <UiSelect :model-value="projectId" field @update:model-value="chooseScope" :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
+      <OptionCombobox :model-value="projectId" field @update:model-value="chooseScope" :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
       <p class="conversation-hint">{{ t('projectAgents.conversations.hint') }}</p>
       <section data-working-memory class="working-memory" :aria-label="t('projectAgents.conversations.memoryTitle')">
         <div class="memory-heading">

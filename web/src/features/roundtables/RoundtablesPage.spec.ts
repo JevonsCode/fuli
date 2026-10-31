@@ -171,7 +171,7 @@ describe('RoundtablesPage', () => {
     const short = await mountAt('/roundtables')
     // The count and the one start action share the list's head row; no tile repeats it.
     expect(short.findAll('[data-roundtable-start]')).toHaveLength(1)
-    await short.get('.ui-conversation-head [data-roundtable-start]').trigger('click')
+    await short.get('[data-roundtable-list-head]').element.parentElement!.querySelector<HTMLElement>('[data-roundtable-start]')!.click()
     await flushPromises()
     expect(short.text()).toContain('和 FLA 对话')
     short.unmount()
@@ -210,14 +210,19 @@ it('keeps a newer SSE chat refresh after an older initial response completes', a
 describe('RoundtablesPage on a phone and with paging', () => {
   beforeEach(() => { setLocale('zh-CN', { persist: false }); getJson.mockReset() })
 
-  it('keeps asks visible when chat rooms fail, and labels them as the latest 50', async () => {
+  it('keeps asks visible when chat rooms fail, and says the list is the latest 50 only once it is full', async () => {
+    let threads = [thread]
     getJson.mockImplementation(async (url: string) => {
-      if (url === '/api/roundtable/threads') return { threads: [thread] }
+      if (url === '/api/roundtable/threads') return { threads }
       throw new Error('chats down')
     })
     const wrapper = await mountAt('/roundtables')
     expect(wrapper.findAll('[data-testid="roundtable-thread"]')).toHaveLength(1)
-    expect(wrapper.text()).toContain('最近 50 条')
+    expect(wrapper.text()).not.toContain('最近 50 条')
+    threads = Array.from({ length: 50 }, (_, index) => ({ ...thread, id: `thread-${index}` }))
+    const full = await mountAt('/roundtables')
+    expect(full.text()).toContain('最近 50 条')
+    full.unmount()
     expect(wrapper.text()).toContain('群聊暂不可用')
     expect(wrapper.text()).not.toContain('还没有 Agent 之间的对话')
     wrapper.unmount()

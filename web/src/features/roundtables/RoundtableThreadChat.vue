@@ -7,21 +7,24 @@ import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-colo
 import { t } from '@/i18n'
 import { postMessage, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
 import { deliveryLabel, deliveryTone, reasonLabel, viaLabel } from './roundtable-delivery'
+import { chatRunMarks } from './chat-runs'
 import { chatBubbles, postRecipients, tableSeats, type ChatBubble } from './roundtable-model'
 import { gapToEnd, scrollToEnd, TAIL_FOLLOW_PX } from './roundtable-scroll'
 import RoundtableComposer from './RoundtableComposer.vue'
 import RoundtableSeats from './RoundtableSeats.vue'
 
-// One thread as a chat: the person's own messages on the right, each FLA's on
-// the left with its face, name and time, and under each message where it
-// stands for every recipient. The composer stays at the bottom.
-const props = defineProps<{ thread: RoundtableThread; time: (value: string) => string; stale?: boolean; wide?: boolean }>()
+// One thread as a chat, like Messages: the person's own messages in ink on
+// the right, each FLA's on the left under its name and portrait once per run,
+// a time between messages far apart, and under each message where it stands
+// for every recipient. The composer stays at the bottom.
+const props = defineProps<{ thread: RoundtableThread; time: (value: string) => string; stale?: boolean }>()
 const emit = defineEmits<{ updated: [RoundtableThread] }>()
 const CLIENTS: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor', claude: 'Claude', opencode: 'OpenCode' }
 
 const bubbles = computed(() => chatBubbles(props.thread))
 const seats = computed(() => tableSeats(props.thread.messages))
 const recipients = computed(() => postRecipients(props.thread))
+const marks = computed(() => chatRunMarks(bubbles.value.map(bubble => ({ from: bubble.mine ? 'me' : bubble.from.agentId ?? bubble.from.name ?? '?', at: bubble.createdAt }))))
 const subscribed = computed(() => Boolean(props.thread.subscribers?.length))
 const blocked = computed(() => mode.value === 'instant'
   ? (props.thread.subscribers ?? []).filter(item => item.instantBlocked) : [])
@@ -75,39 +78,49 @@ watch(() => props.thread.messages.length, async (length, previous) => {
 </script>
 
 <template>
-  <article class="ui-conversation-detail roundtable-thread-chat" data-testid="roundtable-timeline">
-    <header class="ui-conversation-detail-head">
-      <h2 tabindex="-1" class="roundtable-subject" data-roundtable-detail-title>{{ thread.subject }}</h2>
-      <p class="ui-list-meta">{{ t('roundtable.messages', { count: thread.messages.length }) }} · {{ time(thread.createdAt) }}</p>
-      <p v-if="stale" class="ui-meta" role="status">{{ t('roundtable.stale') }}</p>
-      <details class="roundtable-seats" :open="wide">
+  <article class="rt-chat roundtable-thread-chat" data-testid="roundtable-timeline">
+    <header class="rt-chat-head">
+      <span class="rt-chat-faces" aria-hidden="true">
+        <span v-for="seat in seats.slice(0, 4)" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><img
+          v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" alt="" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
+      </span>
+      <h2 tabindex="-1" class="rt-chat-title" data-roundtable-detail-title>{{ thread.subject }}</h2>
+      <p class="rt-chat-meta">{{ t('roundtable.messages', { count: thread.messages.length }) }} · {{ time(thread.createdAt) }}</p>
+      <p v-if="stale" class="rt-chat-meta" role="status">{{ t('roundtable.stale') }}</p>
+      <details class="rt-chat-people">
         <summary>{{ t('roundtable.participants', { count: seats.length }) }}</summary>
         <RoundtableSeats :seats="seats" />
       </details>
     </header>
-    <div ref="body" class="ui-conversation-detail-body">
-      <p v-if="!bubbles.length" class="ui-meta">{{ t('roundtable.emptyConversation') }}</p>
-      <ol v-else class="roundtable-bubbles">
-        <li v-for="bubble in bubbles" :key="bubble.id" class="roundtable-bubble-row" :class="{ 'is-mine': bubble.mine }"
+    <div ref="body" class="rt-chat-body">
+      <p v-if="!bubbles.length" class="rt-chat-empty">{{ t('roundtable.emptyConversation') }}</p>
+      <ol v-else class="rt-bubbles">
+        <li v-for="(bubble, index) in bubbles" :key="bubble.id" class="rt-msg" :class="{ 'is-mine': bubble.mine, 'is-run-start': marks[index]!.runStart }"
           data-roundtable-bubble :data-mine="bubble.mine || undefined">
-          <span v-if="!bubble.mine" class="roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true"><img
-            v-if="bubble.from.agentId" :src="agentAvatarUrl(bubble.from.agentId)" alt="" /><template v-else>{{ initial(bubble) }}</template></span>
-          <div class="roundtable-bubble-column">
-            <p class="roundtable-byline">
-              <strong>{{ sender(bubble) }}</strong>
-              <span v-if="client(bubble.from)" class="ui-badge">{{ client(bubble.from) }}</span>
-              <time class="ui-meta" :datetime="bubble.createdAt">{{ time(bubble.createdAt) }}</time>
-            </p>
-            <p class="roundtable-bubble">{{ bubble.body }}</p>
-            <p v-if="viaLabel(bubble.via) && bubble.kind === 'reply'" class="roundtable-delivery">{{ viaLabel(bubble.via) }}</p>
-            <ul v-if="bubble.deliveries.length" class="roundtable-deliveries">
-              <li v-for="delivery in bubble.deliveries" :key="delivery.messageId" :data-roundtable-delivery="delivery.state.kind"
-                :data-tone="deliveryTone(delivery)">
-                <GrowthLoading v-if="delivery.state.kind === 'replying'" variant="inline" :label="deliveryLabel(delivery, bubble.via)" />
-                <template v-else>{{ deliveryLabel(delivery, bubble.via) }}</template>
-              </li>
-            </ul>
-            <p v-if="cleanupWarning(bubble)" class="roundtable-cleanup" data-roundtable-cleanup>{{ cleanupWarning(bubble) }}</p>
+          <p v-if="marks[index]!.separator" class="rt-sep"><time :datetime="bubble.createdAt">{{ time(bubble.createdAt) }}</time></p>
+          <div class="rt-msg-row">
+            <template v-if="!bubble.mine">
+              <span v-if="marks[index]!.runStart" class="rt-face roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true"><img
+                v-if="bubble.from.agentId" :src="agentAvatarUrl(bubble.from.agentId)" alt="" /><template v-else>{{ initial(bubble) }}</template></span>
+              <span v-else class="rt-face-gap" aria-hidden="true" />
+            </template>
+            <div class="rt-msg-col">
+              <p v-if="marks[index]!.runStart && !bubble.mine" class="rt-byline">
+                <strong>{{ sender(bubble) }}</strong>
+                <span v-if="client(bubble.from)" class="rt-client">{{ client(bubble.from) }}</span>
+              </p>
+              <p v-else class="ui-sr-only">{{ sender(bubble) }}</p>
+              <p class="rt-bubble" :title="time(bubble.createdAt)">{{ bubble.body }}</p>
+              <p v-if="viaLabel(bubble.via) && bubble.kind === 'reply'" class="rt-status">{{ viaLabel(bubble.via) }}</p>
+              <ul v-if="bubble.deliveries.length" class="rt-statuses rt-status">
+                <li v-for="delivery in bubble.deliveries" :key="delivery.messageId" :data-roundtable-delivery="delivery.state.kind"
+                  :data-tone="deliveryTone(delivery)">
+                  <GrowthLoading v-if="delivery.state.kind === 'replying'" variant="inline" :label="deliveryLabel(delivery, bubble.via)" />
+                  <template v-else>{{ deliveryLabel(delivery, bubble.via) }}</template>
+                </li>
+              </ul>
+              <p v-if="cleanupWarning(bubble)" class="rt-status" data-tone="warning" data-roundtable-cleanup>{{ cleanupWarning(bubble) }}</p>
+            </div>
           </div>
         </li>
       </ol>
@@ -124,35 +137,10 @@ watch(() => props.thread.messages.length, async (length, previous) => {
   </article>
 </template>
 
+<style scoped src="./roundtable-chat.css"></style>
 <style scoped>
-/* The chat fills the canvas, so the composer stays at its bottom. */
-.roundtable-thread-chat { flex: 1 1 auto; }
-.roundtable-subject { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.roundtable-seats summary { cursor: pointer; color: var(--color-muted); font-size: 12px; }
-.roundtable-bubbles { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
-.roundtable-bubble-row { display: flex; align-items: flex-start; gap: 10px; max-width: min(760px, 88%); }
-.roundtable-bubble-row.is-mine { justify-self: end; flex-direction: row-reverse; }
-.roundtable-bubble-column { display: grid; min-width: 0; gap: 4px; }
-.is-mine .roundtable-bubble-column { justify-items: end; }
-.roundtable-avatar { display: grid; flex: 0 0 auto; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); font-size: 12px; font-weight: 650; }
-.roundtable-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-.roundtable-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
-.roundtable-byline > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
-.roundtable-byline strong { font-size: 13px; font-weight: 600; }
-.roundtable-bubble { margin: 0; padding: 10px 14px; border: 1px solid var(--color-border); border-radius: 4px 14px 14px 14px; background: var(--color-bg); color: var(--color-ink); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
-.is-mine .roundtable-bubble { border-color: transparent; border-radius: 14px 4px 14px 14px; background: var(--color-accent-soft); }
-.roundtable-deliveries { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--color-faint); font-size: 12px; }
-.is-mine .roundtable-deliveries { justify-items: end; text-align: right; }
-.roundtable-deliveries [data-tone="warning"] { color: var(--color-warning); }
-.roundtable-deliveries [data-tone="danger"] { color: var(--color-danger); }
-.roundtable-delivery { margin: 0; color: var(--color-faint); font-size: 12px; }
-.roundtable-cleanup { margin: 0; color: var(--color-warning); font-size: 12px; font-weight: 600; }
-.roundtable-blocked, .roundtable-recipients { margin: 0; padding: 8px 28px 0; font-size: 12px; }
+/* Who a message goes to, and an instant chat that cannot reach someone, sit just above the composer. */
+.roundtable-blocked, .roundtable-recipients { margin: 0; padding: 8px 28px 0; color: var(--color-muted); font-size: var(--text-meta); }
 .roundtable-blocked { color: var(--color-warning); }
-.ui-conversation-detail-head h2:focus { outline: none; }
-.ui-conversation-detail-head h2:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-@media (max-width: 480px) {
-  .roundtable-bubble-row { max-width: 100%; }
-  .roundtable-blocked, .roundtable-recipients { padding: 8px 16px 0; }
-}
+@media (max-width: 480px) { .roundtable-blocked, .roundtable-recipients { padding: 8px 16px 0; } }
 </style>

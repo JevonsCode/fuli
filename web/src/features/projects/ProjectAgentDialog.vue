@@ -4,7 +4,6 @@ import { computed, ref, watch } from 'vue'
 import { postJson, putJson } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type {
   PersonalProject,
@@ -15,6 +14,8 @@ import type {
   ProjectAgentStatus,
   ProjectAgentType,
 } from '@/types'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 const props = defineProps<{
   open: boolean
@@ -221,9 +222,9 @@ function isValidOccupationEmoji(value: string) {
     :title="editing ? t('projectAgents.dialog.editTitle') : t('projectAgents.dialog.createTitle')"
     @close="emit('close')" @submit="save">
     <div class="project-agent-fields">
-      <UiSelect v-model="projectId" field control-id="project-agent-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="editing || busy" />
-      <UiSelect v-model="status" field name="project-agent-status" :label="t('projectAgents.fields.status')" :options="statusOptions" :disabled="busy" />
-      <UiSelect v-model="agentType" field name="project-agent-type" :label="t('projectAgents.fields.agentType')" :options="agentTypeOptions" :disabled="busy" />
+      <OptionCombobox v-model="projectId" field control-id="project-agent-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="editing || busy" />
+      <OptionSelect v-model="status" field name="project-agent-status" :label="t('projectAgents.fields.status')" :options="statusOptions" :disabled="busy" />
+      <OptionSelect v-model="agentType" field name="project-agent-type" :label="t('projectAgents.fields.agentType')" :options="agentTypeOptions" :disabled="busy" />
       <label class="ui-field">{{ t('projectAgents.fields.agentId') }}
         <input v-model="agentId" name="project-agent-id" maxlength="128" required :disabled="editing || busy" :placeholder="t('projectAgents.dialog.agentIdPlaceholder')" />
         <small v-if="editing" class="ui-field-hint">{{ t('projectAgents.dialog.idLocked') }}</small>
@@ -248,8 +249,8 @@ function isValidOccupationEmoji(value: string) {
       </label>
       <fieldset class="project-agent-wide project-agent-strategy">
         <legend>{{ t('projectAgents.fields.defaultModelStrategy') }}</legend>
-        <UiSelect v-model="selectionMode" field name="project-agent-selection-mode" :label="t('projectAgents.fields.executorPolicy')" :options="selectionModeOptions" :disabled="busy" />
-        <UiSelect v-model="strategyMode" field name="project-agent-model-mode" :label="t('projectAgents.fields.modelIntent')" :options="strategyModeOptions" :disabled="busy" />
+        <OptionSelect v-model="selectionMode" field name="project-agent-selection-mode" :label="t('projectAgents.fields.executorPolicy')" :options="selectionModeOptions" :disabled="busy" />
+        <OptionSelect v-model="strategyMode" field name="project-agent-model-mode" :label="t('projectAgents.fields.modelIntent')" :options="strategyModeOptions" :disabled="busy" />
         <label class="ui-field project-agent-wide">{{ t('projectAgents.fields.allowList') }}
           <textarea v-model="allowList" name="project-agent-allow-list" rows="3" :disabled="busy" :placeholder="t('projectAgents.dialog.allowListPlaceholder')" />
         </label>

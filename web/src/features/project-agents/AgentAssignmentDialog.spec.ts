@@ -5,7 +5,7 @@ const postJson = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/client', () => ({ postJson }))
 
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import type { PersonalProject, ProjectAgentAssignmentRecord, ProjectAgentRecord } from '@/types'
 import AgentAssignmentDialog from './AgentAssignmentDialog.vue'
 
@@ -132,7 +132,7 @@ describe('AgentAssignmentDialog', () => {
         projects,
         defaultProjectId: 'project-a',
       },
-      global: { stubs: { UiSelect: UiSelectStub } },
+      global: { stubs: { ...optionSelectStubs } },
     })
 
     await wrapper.setProps({ open: true })
@@ -159,6 +159,6 @@ function mountDialog(options: { action?: 'assign' | 'end' | 'replace'; assignmen
       defaultProjectId: 'project-a',
       ...options,
     },
-    global: { stubs: { UiSelect: UiSelectStub } },
+    global: { stubs: { ...optionSelectStubs } },
   })
 }

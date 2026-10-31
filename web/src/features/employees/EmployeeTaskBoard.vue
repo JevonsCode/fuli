@@ -3,9 +3,10 @@ import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeU
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
+import { OptionCombobox } from '@/components/ui/combobox'
 import { t } from '@/i18n'
 import { UiIcon } from '@/ui'
-import ProjectScopePicker from './ProjectScopePicker.vue'
+import { projectSelectOptions } from './project-options'
 import { boardTaskPeekId, type BoardTaskRef } from './board-task-peek'
 import { bindBoardScroller, bindDraggableCard, bindDropColumn, monitorBoardDrag, type BoardDropLocation } from './task-board-dnd'
 import { boardColumns, columnKeyOf, isColumnMove, ownColumnLabel } from './project-board-layout'
@@ -73,6 +74,7 @@ const externalBoards = computed(() => props.boards.flatMap(({ project, projectBo
 const onlyExternal = computed(() => props.boards.length > 0 && externalBoards.value.length === props.boards.length)
 const projectSetups = computed(() => new Map(props.boards.map(({ project, projectBoard }) => [project.id, projectBoard?.board ?? null])))
 // Its own columns, when the board shows exactly that one project.
+const visibleProjectCount = computed(() => projectSelectOptions(props.projects).filter((option) => props.visibleProjectIds.includes(option.value)).length)
 const ownSetup = computed(() => props.visibleProjectIds.length === 1 && props.boards.length === 1
   && props.boards[0]!.project.id === props.visibleProjectIds[0] ? projectSetups.value.get(props.visibleProjectIds[0]!) ?? null : null)
 const allItems = computed(() => props.boards.filter(({ projectBoard }) => projectBoard?.board.kind !== 'external').flatMap(({ items }) => items))
@@ -383,19 +385,20 @@ onBeforeUnmount(() => {
       </div>
       <div class="employee-all-projects-controls">
         <Button v-if="canMoveTasks" class="employee-board-create" @click="emit('create-task')">+ {{ t('employees.task.create') }}</Button>
-        <ProjectScopePicker
+        <OptionCombobox
           class="employee-all-projects-filter"
           :model-value="visibleProjectIds"
-          :projects="projects"
-          compact
-          show-count
-          :resettable="resettableFilter"
+          :options="projectSelectOptions(projects)"
+          multiple
+          :summary="t('employees.scope.count', { selected: visibleProjectCount, total: projects.length })"
           :label="t('employees.allProjects.projectFilter')"
           :hint="t('employees.allProjects.projectFilterHint')"
-          :empty-label="t('employees.allProjects.noProjectsVisible')"
           @update:model-value="emit('update:visible-project-ids', $event)"
-          @reset="emit('reset-project-filter')"
-        />
+        >
+          <template v-if="resettableFilter" #actions>
+            <Button variant="ghost" size="xs" data-project-filter-reset @mousedown.prevent @click="emit('reset-project-filter')">{{ t('employees.scope.reset') }}</Button>
+          </template>
+        </OptionCombobox>
         <label class="employee-all-projects-search">
           <span>{{ t('employees.allProjects.search') }}</span>
           <input v-model="query" type="search" :placeholder="t('employees.allProjects.searchPlaceholder')" />
@@ -524,7 +527,6 @@ onBeforeUnmount(() => {
 .employee-all-projects-heading p { margin: 0; color: var(--color-muted); font-size: 13px; line-height: 1.5; }
 .employee-all-projects-controls { display: flex; flex: 0 1 660px; align-items: end; justify-content: flex-end; gap: 10px; min-width: 0; }
 .employee-all-projects-filter { flex: 0 1 270px; min-width: 240px; }
-.employee-all-projects-filter :deep(.project-scope-trigger) { min-height: 40px; }
 .employee-all-projects-search { display: grid; flex: 1 1 300px; min-width: 180px; gap: 5px; color: var(--color-ink); font-size: 12px; }
 .employee-all-projects-search input { width: 100%; min-height: 40px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: 14px; padding: 8px 11px; }
 .employee-all-projects-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }

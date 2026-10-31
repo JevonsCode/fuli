@@ -234,7 +234,7 @@ Codex、Claude Code 的宿主适配器增量读取宿主提供的当前 JSONL tr
 有明确计划时，通过 `record_project_agent_task_activity.executionPlan` 上报稳定步骤 ID、
 标题和状态；后续送完整快照，省略表示未更新，`steps: []` 撤回。没有计划不强制生成，
 不从内部思考推测进度或百分比，步骤完成不替代任务验收。步骤可以写 `agentId`（这一步属于哪位参与者），
-每位 FLA 的任务单（rec#11 D-82，`GET /api/project-agents/:agentId/workbenches`）按它数自己那一份：
+每位 FLA 的任务单（rec#11 D-82，`GET /api/project-agents/:agentId/workbenches`；几位 FLA 一起做的未完成任务见 `GET /api/workbenches`，团队卡片和悬浮岛用它）按它数自己那一份：
 每个它参与的任务一张单，列出负责人和协作者各自的分工、状态和步骤完成数；没有计划就不显示数字。
 
 Provider 保存活动后用 SSE 通知同一空间读取变化任务；共享连接、重连同步，无任务库轮询。

@@ -359,6 +359,10 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  if (url.pathname === '/api/workbenches' && request.method === 'GET') {
+    sendJson(response, 200, await app.listTeamWorkbenches({ personalSpaceId: url.searchParams.get('personalSpaceId') }));
+    return true;
+  }
   const workbenchesPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/workbenches$/);
   if (workbenchesPath && request.method === 'GET') {
     sendJson(response, 200, await app.listAgentWorkbenches({

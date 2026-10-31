@@ -4,7 +4,6 @@ import { computed, ref, watch } from 'vue'
 import { postJson } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import {
   batchConfirmationBasis,
   knowledgeTypeLabel,
@@ -18,6 +17,8 @@ import type {
   KnowledgeConfirmationGroup,
   KnowledgeItem,
 } from '@/types'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 const props = defineProps<{
   groups: KnowledgeConfirmationGroup[]
@@ -180,7 +181,7 @@ function fail(message: string) {
     @close="emit('close')" @submit="confirmBatch">
     <div class="batch-confirm-layout">
       <section class="batch-confirm-controls">
-        <UiSelect v-model="selectedGroupKey" field :options="groupOptions" :label="t('knowledge.dialogs.batch.range')" searchable />
+        <OptionCombobox v-model="selectedGroupKey" field :options="groupOptions" :label="t('knowledge.dialogs.batch.range')" />
         <div v-if="selectedGroup" class="batch-group-summary">
           <span class="ui-meta">{{ selectedGroup.kind === 'source' ? t('knowledge.dialogs.batch.sameSource') : t('knowledge.dialogs.batch.sameSession') }}</span>
           <strong>{{ selectedGroup.label }}</strong>
@@ -188,7 +189,7 @@ function fail(message: string) {
           <small class="ui-meta">#{{ compactIdentity(selectedGroup.value, 28) }}</small>
         </div>
         <div class="batch-confirmer-fields">
-          <UiSelect v-model="confirmerKind" field :options="confirmerOptions" :label="t('knowledge.dialogs.batch.confirmer')" />
+          <OptionSelect v-model="confirmerKind" field :options="confirmerOptions" :label="t('knowledge.dialogs.batch.confirmer')" />
           <label class="ui-field">{{ t('knowledge.dialogs.batch.confirmerDescription') }}
             <input v-model="confirmerLabel" maxlength="160" :required="confirmerKind === 'authoritative_source'"
               :placeholder="confirmerKind === 'user' ? t('knowledge.dialogs.batch.userPlaceholder') : t('knowledge.dialogs.batch.sourcePlaceholder')" />

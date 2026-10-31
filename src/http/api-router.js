@@ -6,6 +6,7 @@ import { handleEmployeeApiRequest } from './employee-api-router.js';
 import { handleAgentAppApiRequest } from './agent-app-api-router.js';
 import { handleDataFormatApiRequest } from './data-format-api-router.js';
 import { handleDoctorApiRequest } from './doctor-api-router.js';
+import { handleDiagnosticsApiRequest } from './diagnostics-api-router.js';
 import { handleSessionLaunchRequest } from './session-launch-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
 import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
@@ -17,6 +18,7 @@ import { handleClientLinksRequest } from './client-links-api-router.js';
 import { handleAgentServicesRequest } from './agent-services-api-router.js';
 import { handleAgentWorkflowsRequest } from './agent-workflows-api-router.js';
 import { handleAgentAvatarsRequest } from './agent-avatars-api-router.js';
+import { handleWorkSurfacesRequest } from './work-surfaces-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
@@ -168,6 +170,7 @@ export async function handleApiRequest({
   // Outside the graph runtime lease: polling the doctor never wakes a
   // sleeping provider (its graph format plan then reads as unavailable).
   if (await handleDoctorApiRequest({ request, response, url, system })) return true;
+  if (await handleDiagnosticsApiRequest({ request, response, url, app, system })) return true;
   if (await handleSessionLaunchRequest({ request, response, url, system })) return true;
 
   if (system && url.pathname === '/api/system/runtime' && request.method === 'GET') {
@@ -231,6 +234,7 @@ export async function handleApiRequest({
     await handleAgentServicesRequest({ request, response, url, app }) ||
     await handleAgentWorkflowsRequest({ request, response, url, app }) ||
     await handleAgentAvatarsRequest({ request, response, url, app }) ||
+    await handleWorkSurfacesRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
     await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads });
   if (system?.withGraphRuntimeLease && (

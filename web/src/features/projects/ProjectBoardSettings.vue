@@ -10,13 +10,15 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import type { ProjectBoardRecord } from '@/features/employees/project-board-layout'
 import { EMPLOYEE_BOARD_STATUSES } from '@/features/employees/task-board-model'
 import { t } from '@/i18n'
-import { UiIconButton, UiNotice, UiSelect } from '@/ui'
+import { UiIconButton, UiNotice } from '@/ui'
 import { bindColumnRow, monitorColumnReorder } from './board-column-dnd'
 import {
   boardFromDraft, builtinDraftColumns, draftFromRecord, draftProblem, managerCandidates, moveDraftColumn, newDraftColumn,
   projectBoardErrorMessage, readProjectBoard, recruitProjectManager, saveProjectBoard, type BoardDraft,
 } from './project-board-settings'
 import { readProjectTeam, type ProjectTeam } from './project-team-api'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 // 项目看板 on the project page: the project's own project manager and its
 // board (the person's columns, each standing for a built-in status, or an
@@ -174,7 +176,7 @@ onBeforeUnmount(() => stopMonitor())
 
     <form v-else class="project-board-form" @submit.prevent="save">
       <div class="project-board-manager">
-        <UiSelect v-model="managerId" field size="sm" name="project-board-manager" :label="t('employees.projectBoard.manager')"
+        <OptionCombobox v-model="managerId" field size="sm" name="project-board-manager" :label="t('employees.projectBoard.manager')"
           :options="managerOptions" :disabled="busy" />
         <p class="ui-meta">{{ t('employees.projectBoard.managerHint') }}</p>
         <UiNotice v-if="goneManager" tone="warning" data-manager-gone>
@@ -223,7 +225,7 @@ onBeforeUnmount(() => stopMonitor())
             </Button>
             <Input v-model="column.label" class="project-board-column-label" maxlength="40" :disabled="busy"
               :aria-label="t('employees.projectBoard.columnLabel')" data-column-label />
-            <UiSelect v-model="column.mapsTo" size="sm" :name="`project-board-maps-to-${index}`" :label="t('employees.projectBoard.columnMapsTo')"
+            <OptionSelect v-model="column.mapsTo" size="sm" :name="`project-board-maps-to-${index}`" :label="t('employees.projectBoard.columnMapsTo')"
               :options="statusOptions" :disabled="busy" />
             <span class="project-board-column-actions">
               <UiIconButton icon="chevron-up" size="sm" :label="t('employees.projectBoard.moveUp', { label: column.label })" :disabled="busy || index === 0"

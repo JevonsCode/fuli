@@ -1,6 +1,7 @@
 """Each Agent's own person-like name: generated, numbered or refused with free
 alternatives at write time, offered as a rename on read. Synthetic Agents only."""
 import json
+import re
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -224,7 +225,10 @@ def test_a_role_goes_back_to_its_own_name_and_other_agents_always_keep_one():
 def test_a_name_someone_is_called_by_is_refused_with_free_alternatives(agent_id, name):
     with pytest.raises(HTTPException) as refused:
         renamed_profile(ROSTER, agent_id, {'name': 'x'}, name)
-    assert refused.value.status_code == 409 and 'agent_name_taken' in refused.value.detail
+    assert refused.value.status_code == 409
+    # The console reads the free names from this exact wording (web agent-rename.ts freeNamesOffered).
+    match = re.fullmatch(r'agent_name_taken: .*; free names: (.+)\. Choose one or propose another\.', refused.value.detail)
+    assert match and all(is_generated(free) for free in match.group(1).split(', '))
 
 
 def test_an_agent_may_keep_or_respell_its_own_names():
