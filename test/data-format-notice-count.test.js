@@ -97,7 +97,8 @@ test('entry and checkpoint reuse one claim and link to the local dismissal contr
   const task = { token: 'fuli-task-1', unreadTurnReceipts: [] };
   const entry = await entryAgentReceipt(application, task, { markdown: 'FULI Agent：示例' });
   assert.match(entry.markdown, /本次后还提示 6 次/);
-  assert.match(entry.markdown, /\[关闭提醒\]\(<http:\/\/127\.0\.0\.1:2727\/settings\/data-format>\)/);
+  // A client that drops the link still shows where to close the reminder.
+  assert.match(entry.markdown, /关闭提醒：\[设置 → 数据格式迁移\]\(<http:\/\/127\.0\.0\.1:2727\/settings\/data-format>\)/);
   const checkpoint = await receiptFormatNotices(application, { taskId: task.token });
   assert.match(checkpoint[0], /本次后还提示 6 次/);
   assert.match((await receiptFormatNotices(application, { taskId: 'fuli-task-2' }))[0], /本次后还提示 5 次/);

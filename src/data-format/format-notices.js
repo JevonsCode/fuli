@@ -84,7 +84,8 @@ export function dataFormatReceiptNotice(dataDir, { notices = dataFormatNotices(d
     return [
       pending.length ? `数据格式待确认：${several(pending)}（fuli migrate preview）` : null,
       ...appliedNoticeLines(applied),
-      closeUrl && applied.some((item) => item.remaining > 0) ? `[关闭提醒](<${closeUrl}>)` : null
+      // Some clients show a link's text without the link, so the text names the place.
+      closeUrl && applied.some((item) => item.remaining > 0) ? `关闭提醒：[设置 → 数据格式迁移](<${closeUrl}>)` : null
     ].filter(Boolean).join(' · ') || null;
   };
 }
