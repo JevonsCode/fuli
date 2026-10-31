@@ -12,7 +12,6 @@ const _knownKinds = {
   'update_available',
   'update_left_work',
   'ports_moved',
-  'codex_hooks_review',
 };
 
 /// One doctor item the person acts on or reads: a tinted mark, a plain

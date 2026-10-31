@@ -58,7 +58,6 @@ void main() {
       'sessions_outdated': {'client': 'claude_code', 'count': 2, 'runningVersion': '0.21.0'},
       'update_available': {'latest': '0.23.0'},
       'update_left_work': {'clients': 'not_reconnected', 'version': '0.23.0'},
-      'codex_hooks_review': <String, Object?>{},
       'ports_moved': {
         'moves': [
           {'key': 'console', 'from': 2727, 'to': 2734, 'reason': 'reserved'}
@@ -73,6 +72,11 @@ void main() {
     expect(generic, isNot(contains('brand_new')));
     expect(zh.explain(item('sessions_outdated', known['sessions_outdated']!)), contains('Claude Code'));
     expect(en.explain(item('update_available', const {'latest': '0.23.0'})), 'FULI v0.23.0 is available.');
+    // A graph step remembered while the graph is idle says so.
+    final remembered = zh.explain(item('data_format_waiting',
+        const {'store': 'graph', 'label': 'graph (personal)', 'lastSeenAt': '2026-10-31T09:00:00.000Z'}));
+    expect(remembered, contains('空闲前的状态'));
+    expect(remembered, isNot(contains('lastSeenAt')));
     expect(en.explain(item('update_left_work', const {'status': 'failed', 'error': 'disk full'})),
         'The last update did not finish.');
     expect(zh.explain(item('ports_moved', known['ports_moved']!)), '端口 2727 被系统保留，FULI 已自动改用 2734，不用你做什么。');

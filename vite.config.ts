@@ -4,6 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig, type ProxyOptions } from 'vite'
 
+import { bundledPackagesPlugin } from './scripts/bundled-packages.js'
+
 const apiTarget = 'http://127.0.0.1:2727'
 const localApiProxy: ProxyOptions = {
   target: apiTarget,
@@ -19,7 +21,8 @@ const localApiProxy: ProxyOptions = {
 
 export default defineConfig({
   root: fileURLToPath(new URL('./web', import.meta.url)),
-  plugins: [vue(), tailwindcss()],
+  // The bundle's package record feeds the pull request audit gate (scripts/audit-shipped.js).
+  plugins: [vue(), tailwindcss(), bundledPackagesPlugin(fileURLToPath(new URL('.', import.meta.url)))],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./web/src', import.meta.url)),

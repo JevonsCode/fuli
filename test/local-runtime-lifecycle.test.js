@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 
 import {
   externalOpenInvocation,
@@ -8,6 +9,7 @@ import {
   startLocalRuntime,
   stopLocalRuntime
 } from '../src/local-runtime/lifecycle.js';
+import { FULI_VERSION } from '../src/package-metadata.js';
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 
 const PATHS = Object.freeze({
@@ -299,6 +301,37 @@ test('fl status treats adaptive graph sleep as healthy and does not probe the sl
     assert.equal(result.adaptiveRuntime.stage, 'sleeping');
     assert.equal(providerProbes, 0);
   });
+
+test('fl status compares the installed version with the console\'s cached npm answer, never npm itself', async (t) => {
+  const asked = [];
+  let cached = { status: 'ready', latestVersion: '999.0.0', checkedAt: '2026-11-01T08:00:00.000Z' };
+  const server = createServer((request, response) => {
+    asked.push(request.url);
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify(request.url === '/api/health'
+      ? { status: 'ready', service: 'fuli-local-console', pid: 27 }
+      : cached));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const inspect = () => inspectLocalRuntime(input(), {
+    readConfig: () => ({ personal: { providerUrl: 'http://127.0.0.1:8787' }, workspaces: [] }),
+    readState: () => ({ version: 4, pid: 27, url }),
+    isProcessAlive: () => true,
+    providerHealth: async (providerUrl) => ({ url: providerUrl, status: 'ready' })
+  });
+
+  assert.deepEqual((await inspect()).version, { installed: FULI_VERSION, latest: '999.0.0', updateAvailable: true,
+    checkedAt: '2026-11-01T08:00:00.000Z' });
+  assert.deepEqual(asked, ['/api/health', '/api/system/version?cached=1']);
+  cached = { status: 'unchecked' };
+  assert.deepEqual((await inspect()).version, { installed: FULI_VERSION, latest: null, updateAvailable: null, checkedAt: null });
+
+  const stopped = await inspectLocalRuntime(input(), {
+    readConfig: () => null, readState: () => null, consoleHealth: async () => false });
+  assert.deepEqual(stopped.version, { installed: FULI_VERSION, latest: null, updateAvailable: null, checkedAt: null });
+});
 
 test('console opening only targets a loopback Fuli URL', () => {
   assert.deepEqual(externalOpenInvocation('http://127.0.0.1:2727', 'darwin'), {

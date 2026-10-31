@@ -63,6 +63,21 @@ describe('DoctorBanner', () => {
     expect(wrapper.findAllComponents(RouterLinkStub).map(link => link.props('to'))).toEqual(['/settings/data-format'])
   })
 
+  it('says when a waiting graph step was last seen while the graph is idle', async () => {
+    const remembered = item('data_format_waiting:graph (personal)', 'data_format_waiting', 'blocking', 'person',
+      { store: 'graph', label: 'graph (personal)', steps: ['graph/12-builtin-occupations'], lastSeenAt: '2026-10-31T09:00:00.000Z' })
+    api.getJson.mockResolvedValue(report('degraded', [remembered]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    const text = wrapper.get('[data-doctor-items]').text()
+    expect(text).toContain('数据格式更新等你确认：graph (personal)')
+    expect(text).toContain('它现在空闲没有运行。确认之前 FULI 写不进图谱')
+    expect(text).toContain('2026')
+    expect(text).not.toMatch(/fuli |migrate|lastSeenAt/)
+    expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/settings/data-format')
+  })
+
   it('reads a kind it does not know yet as something to look at', async () => {
     api.getJson.mockResolvedValue(report('needs_person', [item('graph_offline', 'graph_offline', 'warning', 'person')]))
     const { wrapper } = mountBanner()

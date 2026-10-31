@@ -16,9 +16,12 @@ import {
   DEFAULT_RUNTIME_SETTINGS,
   managedProviderUrls
 } from '../system/runtime-settings.js';
+import { FULI_VERSION } from '../package-metadata.js';
+import { compareSemanticVersions, parseSemanticVersion } from '../semantic-version.js';
 import { isProcessAlive, stopProcess } from './processes.js';
 
 const CONSOLE_EXIT_TIMEOUT_MS = 15_000;
+const CONSOLE_VERSION_TIMEOUT_MS = 2_500;
 const STOPPING_CONSOLE_GRACE_MS = 3_000;
 // Stopping waits longer for the console's identity than status does: a
 // console busy for a few seconds is still the one to stop, and an answer
@@ -115,6 +118,7 @@ export async function inspectLocalRuntime(input, dependencies = {}) {
     state.pid,
     state.version
   );
+  const latest = consoleReady ? await deps.consoleLatestVersion(state.url) : null;
   const adaptiveSettings = deps.readAdaptiveSettings(pathsValue(
     input.paths.adaptiveRuntimeSettingsPath
   ));
@@ -164,8 +168,33 @@ export async function inspectLocalRuntime(input, dependencies = {}) {
     adaptiveRuntime: {
       enabled: adaptiveSettings.enabled,
       stage: adaptiveSettings.enabled ? adaptiveState?.stage ?? 'unknown' : 'always-on'
-    }
+    },
+    version: installedVersionStatus(latest)
   };
+}
+
+// The installed version beside the newest one the running console last heard
+// of from npm. Without a running console, or before its first answer, nothing
+// is known: status never asks npm itself.
+function installedVersionStatus(latest) {
+  if (!latest) return { installed: FULI_VERSION, latest: null, updateAvailable: null, checkedAt: null };
+  return { installed: FULI_VERSION, latest: latest.latestVersion,
+    updateAvailable: compareSemanticVersions(latest.latestVersion, FULI_VERSION) > 0, checkedAt: latest.checkedAt };
+}
+
+// The console's last npm answer (GET /api/system/version?cached=1), or null.
+async function readConsoleLatestVersion(url) {
+  try {
+    const response = await fetch(`${url}/api/system/version?cached=1`,
+      { signal: AbortSignal.timeout(CONSOLE_VERSION_TIMEOUT_MS) });
+    if (!response.ok) return null;
+    const body = await response.json();
+    if (body?.status !== 'ready') return null;
+    parseSemanticVersion(body.latestVersion);
+    return { latestVersion: body.latestVersion, checkedAt: typeof body.checkedAt === 'string' ? body.checkedAt : null };
+  } catch {
+    return null;
+  }
 }
 
 export async function openLocalConsole(input, dependencies = {}) {
@@ -213,6 +242,8 @@ function lifecycleDependencies(overrides) {
     beginFirstRun: overrides.ensureRuntime ? () => {} : beginFirstRunCapture,
     stopProviders: stopGraphProviders,
     consoleHealth: checkLocalConsoleHealth,
+    // A stubbed console is never asked over the network.
+    consoleLatestVersion: overrides.consoleHealth ? async () => null : readConsoleLatestVersion,
     providerHealth,
     readAdaptiveSettings: (path) => path
       ? readAdaptiveRuntimeSettings(path)

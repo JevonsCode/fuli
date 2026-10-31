@@ -144,8 +144,10 @@ export async function handleApiRequest({
     return true;
   }
 
+  // ?cached=1 answers from the checker's last answer and never waits on npm.
   if (system && url.pathname === '/api/system/version' && request.method === 'GET') {
-    sendJson(response, 200, await system.versionStatus());
+    sendJson(response, 200, url.searchParams.get('cached') === '1'
+      ? system.cachedVersionStatus() : await system.versionStatus());
     return true;
   }
 
