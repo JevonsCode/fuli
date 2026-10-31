@@ -155,6 +155,7 @@ class Strings {
         'gemini_cli' => 'Gemini CLI',
         'kiro' => 'Kiro',
         'opencode' => 'OpenCode',
+        'antigravity' => 'Antigravity',
         '' => 'Agent',
         _ => id,
       };

@@ -153,7 +153,9 @@ const BASELINE = Object.freeze({
   // index names each one's approxTokens and one is read only when needed (chat reaches them through
   // list_agent_interfaces/fuli_call): 193,798 -> 196,089 B (+2,291 B), measured. Chat, instructions
   // and entry are unchanged.
-  fullToolSchemaBytes: 196089,
+  // rec#11 D-77 Antigravity's own source application: "antigravity" joins each source enum the full
+  // profile lists (about 14 B each): 196,089 -> 196,369 B (+280 B), measured. Chat is unchanged.
+  fullToolSchemaBytes: 196369,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

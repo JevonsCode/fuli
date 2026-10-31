@@ -123,7 +123,7 @@ export function startupMessage(error) {
 
 function helpText() {
   return 'Usage: fuli mcp [--runtime-config <graph-runtime.json>] ' +
-    '[--source-application <codex|claude|claude_code|cursor|kiro|opencode|other>] [--tool-profile <full|chat>]\n' +
+    '[--source-application <codex|claude|claude_code|cursor|kiro|opencode|antigravity|other>] [--tool-profile <full|chat>]\n' +
     '       fuli mcp --tools\n' +
     '       fuli mcp --worker [--runtime-config <graph-runtime.json>]\n' +
     '       Worker mode requires host-only FULI_WORKER_DESCRIPTOR; never pass capabilities in arguments.\n' +

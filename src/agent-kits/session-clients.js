@@ -26,6 +26,7 @@ const SOURCE_LABELS = Object.freeze({
   gemini_cli: 'Gemini CLI',
   kiro: 'Kiro',
   opencode: 'OpenCode',
+  antigravity: 'Antigravity',
   other: 'unknown'
 });
 

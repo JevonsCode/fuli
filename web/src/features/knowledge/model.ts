@@ -502,6 +502,7 @@ function sessionLabel(evidence: EvidenceRecord) {
     cursor: 'Cursor',
     kiro: 'Kiro',
     opencode: 'OpenCode',
+    antigravity: 'Antigravity',
     other: t('knowledge.domain.confirmation.otherSource'),
   }[evidence.source_application ?? '']
   return application
@@ -517,6 +518,7 @@ function proposedByFromEvidence(evidence?: EvidenceRecord) {
     cursor: 'Cursor',
     kiro: 'Kiro',
     opencode: 'OpenCode',
+    antigravity: 'Antigravity',
     other: t('knowledge.domain.actors.otherAgent'),
   }[evidence?.source_application ?? '']
   return application

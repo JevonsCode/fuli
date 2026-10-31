@@ -45,6 +45,15 @@ describe('knowledge source adapters', () => {
     }, configuration)).toBe('cursor://conversation/123e4567-e89b-42d3-a456-426614174000')
   })
 
+  it('names Antigravity as its own client, apart from Gemini CLI, with no launcher', () => {
+    const antigravity = { source_application: 'antigravity', session_id: 'antigravity-session-1' }
+    expect(sourceApplicationLabel(antigravity)).toBe('Antigravity')
+    expect(sourceApplicationLabel({ source_kind: 'Antigravity conversation via Gemini' })).toBe('Antigravity')
+    expect(sessionLaunchKey(antigravity)).toBe('antigravity:antigravity-session-1')
+    expect(sourceLauncherStatus(antigravity)).toBe('disabled')
+    expect(sourceLinkForEvidence(antigravity)).toBeNull()
+  })
+
   it('keeps copying available independently from opening', async () => {
     const cursor = { source_kind: 'Cursor conversation', session_id: 'cursor-session-7' }
     const writeText = vi.fn().mockResolvedValue(undefined)
