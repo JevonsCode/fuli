@@ -73,6 +73,12 @@ async def confirm_knowledge_batch(
             'confirmationBasis': basis,
             # Confirmation lifts a negative-feedback block; previous keeps it.
             'negativeFeedbackBlock': None,
+            # A person's confirmation ends the attention flag; history keeps
+            # the negative evidence that raised it.
+            'requiresAttention': (
+                previous.get('requiresAttention') is True
+                and request.operation_actor != 'human'
+            ),
         }
         revision_id = _stable_uuid(
             space['id'],
@@ -124,6 +130,7 @@ async def confirm_knowledge_batch(
             reason=request.reason,
             created_by=actor['id'],
             confirmed_at=confirmed_at,
+            clear_attention=request.operation_actor == 'human',
         )
         if not records:
             raise HTTPException(
@@ -287,7 +294,10 @@ CALL {
   SET item.fuli_epistemic_status = 'confirmed',
       item.fuli_confirmation_status = 'confirmed',
       item.fuli_confirmation_basis_json = row.confirmation_basis_json,
-      item.fuli_negative_feedback_block_json = NULL
+      item.fuli_negative_feedback_block_json = NULL,
+      item.fuli_requires_attention = CASE
+        WHEN $clear_attention THEN false
+        ELSE item.fuli_requires_attention END
   CREATE (revision:FuliKnowledgeRevision {
     id: row.revision_id,
     space_id: $space_id,
@@ -311,7 +321,10 @@ CALL {
   SET item.fuli_epistemic_status = 'confirmed',
       item.fuli_confirmation_status = 'confirmed',
       item.fuli_confirmation_basis_json = row.confirmation_basis_json,
-      item.fuli_negative_feedback_block_json = NULL
+      item.fuli_negative_feedback_block_json = NULL,
+      item.fuli_requires_attention = CASE
+        WHEN $clear_attention THEN false
+        ELSE item.fuli_requires_attention END
   CREATE (revision:FuliKnowledgeRevision {
     id: row.revision_id,
     space_id: $space_id,

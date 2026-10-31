@@ -51,6 +51,8 @@ PREVIOUS = {
     'name': 'Use many headings', 'summary': 'Use many headings', 'originQuadrant': 'known_known',
     'confirmationStatus': 'agent_confirmed', 'usageGeneration': 3, 'qualifiedUseCount': 7,
     'distinctTaskCount': 4, 'utilityScore': 0.8, 'negativeEvidenceCount': 1,
+    'requiresAttention': True,
+    'lastFeedbackKind': 'rejected', 'lastFeedbackAt': '2026-10-20T08:00:00+00:00',
     'confirmationBasis': {'existence_reason': 'Agent use.', 'quadrant_reason': 'Stated in a task.',
                           'proposed_by': {'kind': 'agent'}},
     'negativeFeedbackBlock': {'audit_id': 'rejection', 'reported_by_kind': 'user'},
@@ -67,11 +69,14 @@ def test_a_persons_new_version_is_their_own_confirmed_statement_and_starts_unuse
     assert value['confirmationBasis']['quadrant_reason'] == 'Stated in a task.'
     assert value['negativeFeedbackBlock'] is None, 'the person states it, so the block does not carry'
     assert (value['usageGeneration'], value['qualifiedUseCount'], value['utilityScore'],
-            value['negativeEvidenceCount']) == (1, 0, 0.0, 0)
+            value['negativeEvidenceCount']) == (1, 0, 0.0, 1)
+    assert value['requiresAttention'] is False, 'the person answered the attention flag'
+    assert (value['lastFeedbackKind'], value['lastFeedbackAt']) == (
+        'rejected', '2026-10-20T08:00:00+00:00')
     assert value['invalidAt'] is None and value['replacedByItemId'] is None
 
 
-def test_an_agents_new_version_waits_for_a_person_and_keeps_the_block():
+def test_an_agents_new_version_waits_for_a_person_and_keeps_the_block_and_attention():
     value = version_value(PREVIOUS, PREVIOUS, explicit_confirmation=False, changed_by='agent',
                           reason='Rephrased.', created_at=NOW)
     assert value['confirmationStatus'] == 'pending'
@@ -79,6 +84,10 @@ def test_an_agents_new_version_waits_for_a_person_and_keeps_the_block():
                                           'proposed_by': {'kind': 'agent'}}
     assert value['negativeFeedbackBlock'] == PREVIOUS['negativeFeedbackBlock']
     assert value['qualifiedUseCount'] == 0
+    assert value['negativeEvidenceCount'] == 1
+    assert (value['lastFeedbackKind'], value['lastFeedbackAt']) == (
+        'rejected', '2026-10-20T08:00:00+00:00')
+    assert value['requiresAttention'] is True, 'only a person clears what negative feedback raised'
 
 
 def test_a_caller_that_names_the_confirmation_keeps_it():
@@ -86,6 +95,7 @@ def test_a_caller_that_names_the_confirmation_keeps_it():
     value = version_value(PREVIOUS, named, explicit_confirmation=True, changed_by='agent', reason='Merge.',
                           created_at=NOW)
     assert value['confirmationStatus'] == 'confirmed' and value['confirmationBasis'] == named['confirmationBasis']
+    assert value['requiresAttention'] is True, 'an Agent-side confirmation does not clear the flag'
 
 
 def test_marking_outdated_keeps_the_content_and_names_only_a_reason():
