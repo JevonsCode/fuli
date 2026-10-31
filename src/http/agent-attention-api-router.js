@@ -2,8 +2,9 @@ import { readJson, sendJson } from './response.js';
 
 export async function handleAgentAttentionRequest({ request, response, url, app }) {
   if (url.pathname === '/api/agent-attention' && request.method === 'GET') {
+    // The desktop client asks without a space: this console's own one.
     sendJson(response, 200, await app.listAgentAttention({
-      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalSpaceId: url.searchParams.get('personalSpaceId') ?? app.config?.personal?.spaceId ?? null,
       personalProjectId: url.searchParams.get('personalProjectId'),
       agentId: url.searchParams.get('agentId'),
       status: url.searchParams.get('status') ?? 'open',

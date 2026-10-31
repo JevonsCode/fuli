@@ -56,8 +56,12 @@ class HttpFuliApi implements FuliApi {
   Future<ApplyOutcome> applyMigration(String digest) async =>
       ApplyOutcome.fromJson(await _post('/api/data-format/apply', {'digest': digest}, _applyTimeout));
 
-  Future<Object?> _get(String path) =>
-      _send(() => _client.get(Uri.http(_authority, path), headers: {'host': _authority}), _readTimeout);
+  @override
+  Future<List<AttentionNotice>> openAttention() async => AttentionNotice.listFromJson(
+      await _get('/api/agent-attention', const {'status': 'open', 'limit': '20'}));
+
+  Future<Object?> _get(String path, [Map<String, String>? query]) =>
+      _send(() => _client.get(Uri.http(_authority, path, query), headers: {'host': _authority}), _readTimeout);
 
   Future<Object?> _post(String path, Object body, Duration timeout) => _send(
         () => _client.post(
