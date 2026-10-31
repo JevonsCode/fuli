@@ -5,6 +5,7 @@ import { getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
+import { saveFile } from '@/lib/save-file'
 
 const props = defineProps<{ personalSpaceId: string; agentId: string; projects: Array<{ id: string; name: string }> }>()
 interface Policy { compact_after_kb: number; context_budget: number; enabled: boolean }
@@ -110,11 +111,8 @@ async function exportMemory() {
     const value = await getJson<MemoryExport>(`/api/project-agents/${encodeURIComponent(props.agentId)}/memory/export?${query}`)
     if (current !== exportVersion) return
     if (typeof value?.markdown !== 'string' || typeof value.filename !== 'string') throw new Error('Invalid export')
-    const url = URL.createObjectURL(new Blob([value.markdown], { type: 'text/markdown;charset=utf-8' }))
-    const link = document.createElement('a')
-    link.href = url; link.download = value.filename
-    link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
+    await saveFile(value.filename, value.markdown, 'text/markdown;charset=utf-8')
+    if (current !== exportVersion) return
     exportFeedback.value = 'done'
   } catch { if (current === exportVersion) exportFeedback.value = 'failed' }
   finally { if (current === exportVersion) exporting.value = false }

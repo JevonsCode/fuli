@@ -31,6 +31,9 @@ class Strings {
   String get noAnswer => _t('FULI 在运行，但控制台没有应答。', 'FULI is running, but its console does not answer.');
   String consoleError(String detail) => _t('控制台回答出错：$detail', 'The console answered with an error: $detail');
 
+  // A file the console exported, saved by the client
+  String get fileSaved => _t('已保存到下载文件夹', 'Saved to Downloads');
+
   // Buttons and menu
   String get autoRepair => _t('自动修复', 'Fix automatically');
   String autoRepairHint(int count) =>
