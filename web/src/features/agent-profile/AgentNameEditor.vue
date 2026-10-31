@@ -113,4 +113,5 @@ async function save(next: string | null) {
 .agent-name-free { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .agent-name-free-label { color: var(--color-ink-soft); font-size: var(--text-meta); }
 @media (prefers-reduced-motion: reduce) { .agent-name-edit { transition: none; } }
+:root[data-motion="reduced"] .agent-name-edit { transition: none; }
 </style>

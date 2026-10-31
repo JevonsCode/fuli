@@ -135,5 +135,7 @@ async function save(look: LookChoice) {
 @media (prefers-reduced-motion: reduce) {
   .agent-look-badge, .agent-look-fade-enter-active, .agent-look-fade-leave-active { transition: none; }
 }
-:root[data-motion="reduced"] :is(.agent-look-badge, .agent-look-fade-enter-active, .agent-look-fade-leave-active) { transition: none; }
+:root[data-motion="reduced"] .agent-look-badge,
+:root[data-motion="reduced"] .agent-look-fade-enter-active,
+:root[data-motion="reduced"] .agent-look-fade-leave-active { transition: none; }
 </style>
