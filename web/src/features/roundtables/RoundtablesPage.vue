@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BackLink from '@/components/BackLink.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -48,12 +48,6 @@ const listPath = computed(() => router.resolve({ path: '/roundtables', query: ro
 const starting = ref(false)
 watch(rt.hasSelection, () => { starting.value = false })
 
-// A wide screen shows a thread's participants open; a phone keeps them folded.
-const narrowQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(max-width: 860px)') : null
-const wide = ref(!narrowQuery?.matches)
-const followBreakpoint = (event: MediaQueryListEvent) => { wide.value = !event.matches }
-onMounted(() => narrowQuery?.addEventListener?.('change', followBreakpoint))
-onBeforeUnmount(() => narrowQuery?.removeEventListener?.('change', followBreakpoint))
 
 // Times read like Messages: today shows the time, earlier days the date.
 function listTime(value: string) {
@@ -91,9 +85,9 @@ const roomPath = (item: RoundtableChatRoom) => `/roundtables/chat/${encodeURICom
       <!-- An open conversation: its own page with a way back. -->
       <template v-if="rt.hasSelection.value">
         <BackLink class="rt-back" :to="listPath" :from="openedFromList" data-roundtable-back>{{ t('roundtable.back') }}</BackLink>
-        <RoundtableThreadChat v-if="rt.thread.value" :thread="rt.thread.value" :time="time" :stale="rt.detailStale.value" :wide="wide" @updated="rt.threadUpdated" />
+        <RoundtableThreadChat v-if="rt.thread.value" :thread="rt.thread.value" :time="time" :stale="rt.detailStale.value" @updated="rt.threadUpdated" />
         <RoundtableRoom v-else-if="rt.room.value" :room="rt.room.value" :time="time" :loading-later="rt.loadingLater.value" :later-failed="rt.laterFailed.value"
-          :later-stuck="rt.laterStuck.value" :new-messages="rt.newMessages.value" :wide="wide" @later="rt.loadLater" />
+          :later-stuck="rt.laterStuck.value" :new-messages="rt.newMessages.value" @later="rt.loadLater" />
         <div v-else class="rt-state">
           <template v-if="rt.detailState.value === 'loading'">
             <GrowthLoading variant="compact" :label="t('roundtable.detailLoading')" />
@@ -190,7 +184,7 @@ const roomPath = (item: RoundtableChatRoom) => `/roundtables/chat/${encodeURICom
 @media (max-width: 860px) {
   /* A long title or participant list scrolls away with a room's messages instead of pushing them out of the card;
      a thread keeps its composer at the bottom, so only its messages scroll. */
-  .rt :deep(.ui-conversation-detail:not(.roundtable-thread-chat)) { overflow-y: auto; overscroll-behavior: contain; }
-  .rt :deep(.ui-conversation-detail:not(.roundtable-thread-chat) .ui-conversation-detail-body) { flex: 0 0 auto; min-height: auto; overflow: visible; }
+  .rt :deep(.rt-chat:not(.roundtable-thread-chat)) { overflow-y: auto; overscroll-behavior: contain; }
+  .rt :deep(.rt-chat:not(.roundtable-thread-chat) .rt-chat-body) { flex: 0 0 auto; min-height: auto; overflow: visible; }
 }
 </style>

@@ -1,0 +1,68 @@
+/*
+ * An open conversation (圆桌 重写, direction A), shared by a thread and an
+ * Agent room. It reads like Messages: a centred head, times between messages
+ * far apart, one name and portrait per sender's run, the person's own words in
+ * ink on the right and everyone else's on the left.
+ */
+.rt-chat {
+  display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
+  border-radius: var(--radius-shell); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border);
+}
+.rt-chat-head { display: grid; flex: 0 0 auto; justify-items: center; gap: 6px; padding: 22px 28px 16px; border-bottom: 1px solid var(--color-border); text-align: center; }
+.rt-chat-faces { display: flex; justify-content: center; }
+.rt-chat-faces > span {
+  display: grid; width: 36px; height: 36px; overflow: hidden; place-items: center; margin-left: -8px; border-radius: 50%;
+  color: var(--color-ink-soft); background: var(--agent-identity-soft, var(--color-surface-hover)); box-shadow: 0 0 0 2px var(--color-surface);
+  font-size: var(--text-meta); font-weight: var(--weight-strong);
+}
+.rt-chat-faces > span:first-child { margin-left: 0; }
+.rt-chat-faces img { width: 100%; height: 100%; object-fit: cover; }
+.rt-chat-title {
+  display: -webkit-box; max-width: 640px; margin: 0; overflow: hidden; font-size: var(--text-section); font-weight: var(--weight-strong);
+  line-height: var(--leading-heading); overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.rt-chat-title:focus { outline: none; }
+.rt-chat-title:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 4px; border-radius: 4px; }
+.rt-chat-meta { margin: 0; color: var(--color-faint); font-size: var(--text-meta); font-variant-numeric: tabular-nums; }
+.rt-chat-people > summary { cursor: pointer; color: var(--color-muted); font-size: var(--text-meta); list-style: none; }
+.rt-chat-people > summary::-webkit-details-marker { display: none; }
+.rt-chat-people[open] > summary { margin-bottom: 8px; }
+.rt-chat-body { flex: 1 1 auto; min-height: 0; padding: 18px 28px 24px; overflow-y: auto; overscroll-behavior: contain; }
+.rt-chat-empty { margin: 32px 0; color: var(--color-muted); text-align: center; }
+
+.rt-bubbles { display: grid; margin: 0; padding: 0; list-style: none; }
+.rt-msg { display: grid; padding-top: 2px; }
+.rt-msg.is-run-start { padding-top: 12px; }
+.rt-sep { margin: 14px 0 4px; color: var(--color-faint); font-size: var(--text-meta); text-align: center; font-variant-numeric: tabular-nums; }
+.rt-msg-row { display: flex; align-items: flex-end; gap: 8px; max-width: min(680px, 86%); }
+.rt-msg.is-mine .rt-msg-row { justify-self: end; flex-direction: row-reverse; }
+.rt-face, .rt-face-gap { flex: none; width: 28px; height: 28px; }
+.rt-face {
+  display: grid; overflow: hidden; place-items: center; align-self: flex-start; margin-top: 20px; border-radius: 50%;
+  color: var(--color-ink-soft); background: var(--agent-identity-soft, var(--color-surface-hover)); font-size: var(--text-meta); font-weight: var(--weight-strong);
+}
+.rt-face img { width: 100%; height: 100%; object-fit: cover; }
+.rt-msg-col { display: grid; justify-items: start; gap: 3px; min-width: 0; }
+.rt-msg.is-mine .rt-msg-col { justify-items: end; }
+.rt-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 1px 12px; color: var(--color-muted); font-size: var(--text-meta); }
+.rt-byline strong { color: var(--color-ink-soft); font-weight: var(--weight-medium); }
+.rt-client { padding: 0 6px; border-radius: var(--radius-pill); background: var(--color-surface-subtle); box-shadow: inset 0 0 0 1px var(--color-border); }
+.rt-bubble {
+  margin: 0; padding: 9px 14px; border-radius: 18px; color: var(--color-ink); background: var(--color-surface-hover);
+  font-size: var(--text-body); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.rt-msg.is-run-start .rt-bubble { border-top-left-radius: 6px; }
+.rt-msg.is-mine .rt-bubble { color: var(--color-on-accent); background: var(--color-accent); }
+.rt-msg.is-mine.is-run-start .rt-bubble { border-top-left-radius: 18px; border-top-right-radius: 6px; }
+.rt-status { margin: 0 6px; color: var(--color-faint); font-size: var(--text-meta); }
+.rt-status [data-tone="warning"], .rt-status[data-tone="warning"] { color: var(--color-warning); }
+.rt-status [data-tone="danger"], .rt-status[data-tone="danger"] { color: var(--color-danger); }
+.rt-statuses { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.rt-msg.is-mine .rt-statuses { justify-items: end; text-align: right; }
+.rt-chat-more { display: flex; justify-content: center; margin-top: 16px; }
+.rt-chat-jump { position: sticky; bottom: 12px; display: flex; margin: 16px auto 0; box-shadow: var(--shadow-md); }
+@media (max-width: 480px) {
+  .rt-chat-head { padding: 16px 16px 12px; }
+  .rt-chat-body { padding: 14px 14px 20px; }
+  .rt-msg-row { max-width: 100%; }
+}
