@@ -111,15 +111,14 @@ export function deletedState(result: HardDeleteResult): HardDeletedState {
  * provider still checks this word, so no delete is sent without it. */
 export const DELETE_CONFIRMATION = '删除'
 
-/** What 导出并删除 saves on this computer before the delete: everything the
- * dialog listed, with sources as the excerpts it showed. */
+/** Package the listed deletion for download; source deletions still use excerpts. */
 export function deletionExport(preview: Pick<HardDeletePreview, 'preview_id' | 'title'> & { item_kind: HardDeleteKind },
-  spaceId: string, exportedAt: Date) {
+  spaceId: string, exportedAt: Date, sourceText: 'full' | 'excerpts' = 'excerpts') {
   const { preview_id: _previewId, ...listed } = preview
   const stamp = exportedAt.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')
   const name = preview.title.trim().replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 48).replace(/^-+|-+$/g, '') || preview.item_kind
   const value = { format: 'fuli-deleted-knowledge', version: 1, exported_at: exportedAt.toISOString(),
-    personal_space_id: spaceId, source_text: 'excerpts', ...listed }
+    personal_space_id: spaceId, source_text: sourceText, ...listed }
   return { filename: `fuli-deleted-${name}-${stamp}.json`, json: `${JSON.stringify(value, null, 2)}\n` }
 }
 

@@ -31,6 +31,7 @@ from .knowledge_basis_review import apply_meaning
 from .knowledge_dependencies import dependents_of
 from .knowledge_hard_delete_models import (
     KnowledgeHardDeleteConfirm,
+    KnowledgeHardDeleteExport,
     KnowledgeHardDeleteOperation,
     KnowledgeHardDeleteCounts,
     KnowledgeHardDeleteDependent,
@@ -223,6 +224,44 @@ async def preview_hard_delete(store, actor, item_id, request: KnowledgeHardDelet
     return (await _plan_request(store, space, item_id, request))['preview']
 
 
+async def export_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteExport) -> dict:
+    """Read the named plan and its stored words without changing the graph."""
+    space = await _person_space(store, actor, request.personal_space_id)
+    plan = await _plan_request(store, space, item_id, request)
+    _require_preview(plan, request.preview_id)
+    preview = plan['preview'].model_dump(mode='json')
+    for kind in ('entity', 'relationship'):
+        ids = [item['item_id'] for item in preview['items'] if item['item_kind'] == kind]
+        if ids:
+            rows, _, _ = await store.runtime.driver.execute_query(
+                _ITEM_ROWS[kind], item_ids=ids, group_id=space['group_id'], routing_='r')
+            contents = {row['item_id']: row['content'] or '' for row in rows}
+            if set(contents) != set(ids):
+                raise HTTPException(409, detail={'code': 'hard_delete_preview_stale'})
+            for item in preview['items']:
+                if item['item_kind'] == kind:
+                    item['content'] = contents[item['item_id']]
+    ids = [episode['episode_id'] for episode in preview['removed_episodes']]
+    if ids:
+        rows, _, _ = await store.runtime.driver.execute_query('''
+            UNWIND $episode_ids AS id
+            MATCH (episode:Episodic {uuid: id, group_id: $group_id})
+            RETURN episode.uuid AS episode_id, episode.content AS content
+        ''', episode_ids=ids, group_id=space['group_id'], routing_='r')
+        contents = {row['episode_id']: row['content'] for row in rows}
+        if set(contents) != set(ids):
+            raise HTTPException(409, detail={'code': 'hard_delete_preview_stale'})
+        if any(contents[episode['episode_id']] is None or
+               (not contents[episode['episode_id']] and episode['excerpt'])
+               for episode in preview['removed_episodes']):
+            raise HTTPException(409, detail={'code': 'hard_delete_export_content_unavailable',
+                'message': 'the full stored source text is unavailable'})
+        for episode in preview['removed_episodes']:
+            episode['content'] = contents[episode['episode_id']]
+    _require_preview(await _plan_request(store, space, item_id, request), request.preview_id)
+    return preview
+
+
 async def apply_hard_delete(store, actor, item_id, request: KnowledgeHardDeleteConfirm) -> KnowledgeHardDeleteRecord:
     """One operation is decided once, under the space's knowledge lock: the
     lock captures, new versions and the outdated mark take, which an abort of
@@ -282,10 +321,7 @@ async def _checked_plan(scoped, space, item_id, request) -> dict:
     """The plan, if this request may run it; refusals are raised before any write."""
     plan = await _plan_request(scoped, space, item_id, request, lock=True)
     preview = plan['preview']
-    if preview.preview_id != request.preview_id:
-        raise HTTPException(status_code=409, detail={
-            'code': 'hard_delete_preview_stale',
-            'message': 'what this delete removes changed since the preview; read the preview again'})
+    _require_preview(plan, request.preview_id)
     if request.confirmation.strip() not in CONFIRMATION_WORDS | {preview.title.strip()}:
         raise HTTPException(status_code=422, detail={
             'code': 'hard_delete_unconfirmed',
@@ -293,6 +329,13 @@ async def _checked_plan(scoped, space, item_id, request) -> dict:
     if publication_draft_counts(plan['drafts'], now_utc())['submitting']:
         raise HTTPException(409, detail={'code': 'hard_delete_draft_submitting'})
     return plan
+
+
+def _require_preview(plan, preview_id):
+    if plan['preview'].preview_id != preview_id:
+        raise HTTPException(status_code=409, detail={
+            'code': 'hard_delete_preview_stale',
+            'message': 'what this delete removes changed since the preview; read the preview again'})
 
 
 async def _plan_request(store, space, item_id, request, *, lock=False):

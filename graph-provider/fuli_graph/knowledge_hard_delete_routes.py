@@ -9,11 +9,12 @@ from .knowledge_integrity import (
 )
 
 from .knowledge_hard_delete import (
-    abort_hard_delete, apply_hard_delete, hard_delete_status, hard_deletions, preview_hard_delete,
+    abort_hard_delete, apply_hard_delete, export_hard_delete, hard_delete_status, hard_deletions, preview_hard_delete,
     read_hard_delete_operation,
 )
 from .knowledge_hard_delete_models import (
     KnowledgeHardDeleteConfirm,
+    KnowledgeHardDeleteExport,
     KnowledgeHardDeleteOperation,
     KnowledgeHardDeletePreview,
     KnowledgeHardDeleteRecord,
@@ -33,6 +34,10 @@ def register_knowledge_hard_delete_routes(application, store, HumanReviewer: Any
                       response_model=SourceDeletePreview | KnowledgeHardDeletePreview)
     async def hard_delete_preview(item_id: str, request: SourceDeleteRef | KnowledgeHardDeleteRef, actor: HumanReviewer):
         return await preview_hard_delete(store, actor, item_id, request)
+
+    @application.post('/v1/knowledge/items/{item_id}/hard-delete/export')
+    async def hard_delete_export(item_id: str, request: KnowledgeHardDeleteExport, actor: HumanReviewer):
+        return await export_hard_delete(store, actor, item_id, request)
 
     @application.post('/v1/knowledge/items/{item_id}/hard-delete/status', response_model=KnowledgeHardDeleteStatus)
     async def hard_delete_state(item_id: str, request: KnowledgeHardDeleteRef, actor: HumanReviewer):

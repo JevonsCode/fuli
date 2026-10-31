@@ -151,6 +151,7 @@ export function knowledgeHardDelete(dataDir, {
   };
   return {
     preview,
+    export: input => request(item('/hard-delete/export', input), { ...ref(input), preview_id: input.previewId }),
     // { outcome: complete | local_pending | unknown, ...the deletion, local_stores }.
     // A refusal the graph answered (stale preview, missing confirmation) is
     // thrown: it is recorded under the operation, so it proves nothing was
