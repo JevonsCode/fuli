@@ -179,7 +179,8 @@ export async function searchFederatedKnowledge(application, {
         personalProjectScope, projectIds, limit, includeHistorical, includePending } }) : result;
 }
 
-// Console percentages are presentation metadata, not another Agent weight.
+// An Agent gets the score, which already multiplies relevance by the knowledge
+// weight; the console's percent and person mark would repeat it in tokens.
 function agentSearchItem(item) {
   const view = { ...item };
   delete view.weight_percent;

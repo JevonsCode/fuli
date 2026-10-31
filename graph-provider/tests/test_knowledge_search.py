@@ -307,22 +307,25 @@ def test_selected_agent_item_overrides_same_key_project_item():
 
 
 def test_confirmation_authority_affects_ranking_but_not_quadrants():
+    def basis(status, actor):
+        value = {'existence_reason': 'Synthetic.', 'quadrant_reason': 'Synthetic.',
+                 'proposed_by': {'kind': 'agent'}}
+        if actor:
+            value.update(confirmed_by={'kind': actor}, confirmed_at='2026-10-18T00:00:00Z')
+        if status == 'agent_confirmed':
+            value['agent_policy_version'] = 'agent-usage-v1'
+        return {'confirmation_status': status, 'confirmation_basis_json': json.dumps(value)}
+
     confirmed = _ranked_relevance(10, {
-        'confirmation_status': 'confirmed',
-        'confidence_score': 0.8,
-        'utility_score': 0.5,
+        **basis('confirmed', 'user'),
         'origin_quadrant': 'unknown_unknown',
     })
     agent_confirmed = _ranked_relevance(10, {
-        'confirmation_status': 'agent_confirmed',
-        'confidence_score': 0.8,
-        'utility_score': 0.5,
+        **basis('agent_confirmed', 'agent'),
         'origin_quadrant': 'known_known',
     })
     pending = _ranked_relevance(10, {
-        'confirmation_status': 'pending',
-        'confidence_score': 0.8,
-        'utility_score': 0.5,
+        **basis('pending', None),
         'origin_quadrant': 'known_known',
     })
 

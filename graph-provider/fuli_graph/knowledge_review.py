@@ -27,14 +27,17 @@ from .knowledge_visibility import (
     knowledge_reader,
     reader_parameter,
 )
+from .knowledge_weight import knowledge_weight
 from .personal_project_access import authorize_personal_project
 from .provider_values import native_datetime, stable_uuid
 from .store_transactions import query_store_transaction
 
 # These are Provider ranking conventions, not product requirements. Keeping them
 # here gives every Agent the same deterministic policy and makes tuning explicit.
-LOW_UTILITY_SCORE = 0.25
-LOW_CONFIDENCE_SCORE = 0.55
+# An item at or below this knowledge weight (knowledge_weight) is low_weight:
+# pending without much use, faded use, negative feedback, or any item flagged
+# for attention (attention halves even a person's 100%).
+LOW_WEIGHT_PERCENT = 50
 REPEATED_SESSION_COUNT = 3
 
 
@@ -694,6 +697,7 @@ def _normalize_item_row(row: dict[str, Any]) -> dict[str, Any]:
         'current_quadrant': row.get('current_quadrant') or 'known_known',
         'utility_score': _float_or_default(row.get('utility_score'), 0),
         'confidence_score': _float_or_default(row.get('confidence_score'), 0.5),
+        'weight_percent': knowledge_weight(row, evidence_ids=row.get('evidence_ids') or [])['weight_percent'],
         'qualified_use_count': int(row.get('qualified_use_count') or 0),
         'distinct_task_count': int(row.get('distinct_task_count') or 0),
         'negative_evidence_count': int(row.get('negative_evidence_count') or 0),
@@ -760,10 +764,7 @@ def _candidate_reasons(
         or item['negative_evidence_count'] > 0
     ):
         reasons.append('conflict_or_attention')
-    if (
-        item['utility_score'] <= LOW_UTILITY_SCORE
-        or item['confidence_score'] <= LOW_CONFIDENCE_SCORE
-    ):
+    if item['weight_percent'] <= LOW_WEIGHT_PERCENT:
         reasons.append('low_weight')
     if item['distinct_session_count'] >= REPEATED_SESSION_COUNT:
         reasons.append('repeated_cross_session')
@@ -787,7 +788,7 @@ def _candidate_sort_key(candidate: KnowledgeReviewCandidate) -> tuple:
         not candidate.requires_attention,
         -candidate.negative_evidence_count,
         -changed_at.timestamp(),
-        candidate.utility_score,
+        candidate.weight_percent,
         candidate.candidate_key,
     )
 
@@ -839,11 +840,13 @@ RETURN item.uuid AS item_id,
        collect(DISTINCT episode.fuli_personal_project_id) AS evidence_project_ids,
        collect(DISTINCT episode.fuli_project_agent_id) AS episode_project_agent_ids,
        collect(DISTINCT episode.fuli_session_id) AS session_ids,
+       collect(DISTINCT episode.uuid) AS evidence_ids,
        coalesce(item.fuli_confirmation_status, 'pending') AS confirmation_status,
        coalesce(item.fuli_utility_score, 0.0) AS utility_score,
        coalesce(item.fuli_confidence_score, 0.5) AS confidence_score,
        coalesce(item.fuli_qualified_use_count, 0) AS qualified_use_count,
        coalesce(item.fuli_distinct_task_count, 0) AS distinct_task_count,
+       item.fuli_last_used_at AS last_used_at,
        coalesce(item.fuli_negative_evidence_count, 0) AS negative_evidence_count,
        coalesce(item.fuli_requires_attention, false) AS requires_attention,
        item.fuli_last_feedback_kind AS last_feedback_kind,
@@ -897,11 +900,13 @@ RETURN item.uuid AS item_id,
        collect(DISTINCT episode.fuli_personal_project_id) AS evidence_project_ids,
        collect(DISTINCT episode.fuli_project_agent_id) AS episode_project_agent_ids,
        collect(DISTINCT episode.fuli_session_id) AS session_ids,
+       collect(DISTINCT episode.uuid) AS evidence_ids,
        coalesce(item.fuli_confirmation_status, 'pending') AS confirmation_status,
        coalesce(item.fuli_utility_score, 0.0) AS utility_score,
        coalesce(item.fuli_confidence_score, 0.5) AS confidence_score,
        coalesce(item.fuli_qualified_use_count, 0) AS qualified_use_count,
        coalesce(item.fuli_distinct_task_count, 0) AS distinct_task_count,
+       item.fuli_last_used_at AS last_used_at,
        coalesce(item.fuli_negative_evidence_count, 0) AS negative_evidence_count,
        coalesce(item.fuli_requires_attention, false) AS requires_attention,
        item.fuli_last_feedback_kind AS last_feedback_kind,

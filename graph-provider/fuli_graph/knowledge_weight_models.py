@@ -4,6 +4,6 @@ from .model_base import StrictModel
 
 
 class KnowledgeWeightView(StrictModel):
-    """Read-only display metadata; never used as an authorization input."""
-    weight_percent: int = Field(default=10, ge=10, le=100)
+    """The weight search ranks by (knowledge_weight); never an authorization input."""
+    weight_percent: int = Field(default=10, ge=0, le=100)
     confirmed_by_person: bool = False

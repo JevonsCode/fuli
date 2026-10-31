@@ -135,12 +135,13 @@ function scopeLabel(scope) {
   return scope.status === 'undetermined' ? `${label}·范围待确定` : label;
 }
 
-// The weight is FULI's display weight and its basis, never a model's confidence.
+// The weight FULI ranks by, and what it rests on; never a model's confidence.
 function weightLabel(weight) {
   if (!weight) return '暂无权重';
   const basis = weight.basis;
-  return basis.confirmed_by_person ? `权重${weight.percent}%（你已确认）`
-    : `权重${weight.percent}%（用${basis.qualified_use_count}次·${basis.source_count}个来源）`;
+  const reason = basis.confirmed_by_person ? '你已确认'
+    : `用${basis.qualified_use_count}次·${basis.source_count}个来源`;
+  return `权重${weight.percent}%（${reason}${basis.requires_attention ? '·待复核' : ''}）`;
 }
 
 function tagLabel(tags) {

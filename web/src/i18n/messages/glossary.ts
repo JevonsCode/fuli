@@ -97,9 +97,9 @@ export const glossaryMessages = {
       error: { label: '出错', body: '最近一次运行出错，需要查看。' },
     },
     weight: {
-      pending: { label: '待确认权重', body: '10–69%：随有效使用、不同任务和证据来源上升，遇到反例下降。' },
-      agent: { label: 'Agent 确认权重', body: '70–95%：Agent 依据使用和证据确认，仍随证据变化。' },
-      person: { label: '你确认', body: '100%：你亲自确认过，Agent 按原样使用。' },
+      pending: { label: '待确认权重', body: '10–69%：随有效使用、不同任务和来源上升，久未使用会回落，遇到反例下降。搜索按它排序。' },
+      agent: { label: 'Agent 确认权重', body: '70–95%：Agent 依据使用和证据确认，仍随使用、来源和反例变化。' },
+      person: { label: '你确认', body: '100%：你亲自确认过，搜索按满权重排序；被标记待复核时减半。' },
     },
   },
   'en-US': {
@@ -200,9 +200,9 @@ export const glossaryMessages = {
       error: { label: 'Error', body: 'The last run failed and needs a look.' },
     },
     weight: {
-      pending: { label: 'Pending weight', body: '10–69%: rises with qualified use, distinct tasks and evidence; drops with counter-evidence.' },
-      agent: { label: 'Agent-confirmed weight', body: '70–95%: confirmed by an Agent from use and evidence; still follows the evidence.' },
-      person: { label: 'Confirmed by you', body: '100%: you confirmed it yourself; Agents use it as is.' },
+      pending: { label: 'Pending weight', body: '10–69%: rises with qualified use, distinct tasks and sources, fades when unused, drops with counter-evidence. Search ranks by it.' },
+      agent: { label: 'Agent-confirmed weight', body: '70–95%: confirmed by an Agent from use and evidence; still moves with use, sources and counter-evidence.' },
+      person: { label: 'Confirmed by you', body: '100%: you confirmed it yourself, so search ranks it at full weight; halved while flagged for review.' },
     },
   },
 } as const

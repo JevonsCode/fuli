@@ -29,7 +29,7 @@ export interface ItemScope {
 export interface ItemWeight {
   percent: number
   basis: { confirmation_status: ConfirmationStatus; confirmed_by_person: boolean; qualified_use_count: number;
-    distinct_task_count: number; source_count: number; negative_evidence_count: number }
+    distinct_task_count: number; source_count: number; negative_evidence_count: number; requires_attention?: boolean }
 }
 
 /** project_id: the project whose vocabulary holds a project tag. */
@@ -213,12 +213,14 @@ export function scopeLabel(scope: ItemScope) {
 
 // What the weight was computed from, so its number is never a bare claim.
 export function weightBasisLabel(weight: ItemWeight) {
-  if (weight.basis.confirmed_by_person) return t('knowledgeQuickEdit.weight.person')
+  const attention = weight.basis.requires_attention ? t('knowledgeQuickEdit.weight.attention') : ''
+  if (weight.basis.confirmed_by_person) return t('knowledgeQuickEdit.weight.person', { percent: weight.percent }) + attention
   const basis = t('knowledgeQuickEdit.weight.basis', { uses: weight.basis.qualified_use_count,
     tasks: weight.basis.distinct_task_count, sources: weight.basis.source_count })
-  return weight.basis.negative_evidence_count
-    ? basis + t('knowledgeQuickEdit.weight.negative', { count: weight.basis.negative_evidence_count })
-    : basis
+  const negative = weight.basis.negative_evidence_count
+    ? t('knowledgeQuickEdit.weight.negative', { count: weight.basis.negative_evidence_count })
+    : ''
+  return basis + negative + attention
 }
 
 // The form starts from where the item applies now; temporary or unknown

@@ -20,7 +20,7 @@ from .search_projection import (
     read_edge_epistemic_metadata,
     source_uris_from_references,
 )
-from .knowledge_weight import knowledge_weight
+from .knowledge_weight import knowledge_weight, ranking_weight
 from .knowledge_tag_ranking import TagRanking
 from .knowledge_visibility import AgentReader, fla_endpoints_visible_cypher, fla_visible, reader_parameter
 
@@ -99,7 +99,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
             )
             for position, edge in enumerate(edges)
         ),
-        key=lambda item: item[0],
+        key=lambda item: (item[0], _tie_weight(epistemic.get(item[1].uuid, {}))),
         reverse=True,
     )
     ranked_edges = [item for item in ranked_edges if item[0] > 0]
@@ -492,7 +492,7 @@ async def _personal_entities(
             )
             for record in scoped_records
         ),
-        key=lambda item: (item[1], _timestamp(item[0].get('created_at'))),
+        key=lambda item: (item[1], _tie_weight(item[0]), _timestamp(item[0].get('created_at'))),
         reverse=True,
     )
     ranked = [item for item in ranked if item[1] > 0]
@@ -639,32 +639,13 @@ def _agent_scope_metadata(project_id: str, scope: dict, agent_id: str) -> dict:
 
 
 def _ranked_relevance(base_score: float, metadata) -> float:
+    """Relevance times the item's knowledge weight, the one people see."""
     if base_score <= 0:
         return 0.0
-    status_factor = {
-        'confirmed': 1.0,
-        'agent_confirmed': 0.88,
-        'pending': 0.72,
-    }.get(metadata.get('confirmation_status'), 0.72)
-    confidence = float(
-        metadata['confidence_score']
-        if metadata.get('confidence_score') is not None else 0.5
-    )
-    utility = float(metadata.get('utility_score') or 0)
     scope_distance = int(metadata.get('scope_distance') or 0)
-    confidence_factor = 0.75 + min(max(confidence, 0), 1) * 0.25
-    utility_factor = 0.95 + min(max(utility, 0), 1) * 0.1
     scope_factor = max(0.65, 1.0 - scope_distance * 0.15)
-    attention_factor = 0.6 if metadata.get('requires_attention') else 1.0
-    return round(
-        base_score
-        * status_factor
-        * confidence_factor
-        * utility_factor
-        * scope_factor
-        * attention_factor,
-        4,
-    )
+    weight = ranking_weight(metadata, evidence_ids=metadata.get('evidence_ids') or [])
+    return round(base_score * weight * scope_factor, 4)
 
 
 def _scope_precedence(
@@ -701,7 +682,7 @@ def _dedupe_ranked_edges(
             selected[key] = (quality, score, edge)
     return sorted(
         ((score, edge) for _, score, edge in selected.values()),
-        key=lambda item: (-item[0], _scope_precedence(
+        key=lambda item: (-item[0], -_tie_weight(metadata_by_id.get(item[1].uuid, {})), _scope_precedence(
             metadata_by_id.get(item[1].uuid, {}), active_project_id, project_agent_id), item[1].uuid),
     )
 
@@ -720,9 +701,14 @@ def _dedupe_ranked_entities(ranked, active_project_id, project_agent_id=None):
             selected[key] = (quality, record, score)
     return sorted(
         ((record, score) for _, record, score in selected.values()),
-        key=lambda item: (-item[1], _scope_precedence(
+        key=lambda item: (-item[1], -_tie_weight(item[0]), _scope_precedence(
             item[0], active_project_id, project_agent_id), item[0]['id']),
     )
+
+
+def _tie_weight(metadata) -> float:
+    """At equal score, the heavier item comes first."""
+    return ranking_weight(metadata, evidence_ids=metadata.get('evidence_ids') or [])
 
 
 def _entity_search_result(record, score: float, space_id: str) -> EntitySearchResult:

@@ -36,7 +36,9 @@ describe('knowledge quick edit model', () => {
   it('shows what the weight rests on and says it is computed', () => {
     expect(weightBasisLabel(item().weight!)).toBe('依据：用过 2 次 · 1 个任务 · 1 个来源')
     expect(weightBasisLabel({ percent: 100, basis: { ...item().weight!.basis, confirmed_by_person: true } }))
-      .toBe('你确认过，按 100% 使用。')
+      .toBe('你确认过 · 搜索按 100% 排序')
+    expect(weightBasisLabel({ percent: 50, basis: { ...item().weight!.basis, confirmed_by_person: true,
+      requires_attention: true } })).toBe('你确认过 · 搜索按 50% 排序 · 待复核，权重减半')
   })
 
   it('builds scope changes with the version the page read', () => {

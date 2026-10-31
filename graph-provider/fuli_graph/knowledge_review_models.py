@@ -105,6 +105,8 @@ class KnowledgeReviewCandidate(StrictModel):
     preference_project_id: str | None = None
     utility_score: float = Field(ge=0, le=1)
     confidence_score: float = Field(ge=0, le=1)
+    # The knowledge weight the console shows and search ranks by; low_weight reads it.
+    weight_percent: int = Field(ge=0, le=100)
     qualified_use_count: int = Field(ge=0)
     distinct_task_count: int = Field(ge=0)
     negative_evidence_count: int = Field(ge=0)
