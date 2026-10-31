@@ -66,7 +66,7 @@ evidence. Do not manufacture questions solely to fill a generic checklist. In ea
 
 Prefer project identity, purpose, scope, and privacy boundary before lower-impact metadata. Skip resolved categories. If the user rejects a recommendation, record their choice without repeatedly arguing.
 
-After a meaningful confirmed update, call `upsert_personal_project` with the complete current profile, not a partial patch. Preserve earlier confirmed fields and sources. Routine successful updates stay quiet.
+Before updating an existing project, call `list_personal_projects` with its exact `projectId` to read its full profile; check that the result is not truncated. After a meaningful confirmed update, call `upsert_personal_project` with the complete current profile, not a partial patch. Preserve earlier confirmed fields and sources. Routine successful updates stay quiet.
 
 ## Evidence coverage assessment
 

@@ -17,7 +17,8 @@ export async function listPersonalProjects(application, input = {}) {
   if (personalSpaceId !== application.config.personal.spaceId) {
     throw new TypeError('Personal projects must use the active personal space');
   }
-  return application.personal.listPersonalProjects(personalSpaceId);
+  const projects = await application.personal.listPersonalProjects(personalSpaceId);
+  return input.projectId === undefined ? projects : projects.filter(project => project.project_id === input.projectId);
 }
 
 export async function listProjectRelationWeights(application, input = {}) {
