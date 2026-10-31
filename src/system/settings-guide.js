@@ -38,6 +38,14 @@ export function describeSettings({ settings, capturePolicy, consoleUrl }) {
         settingsUrl: link('agentNamingStyle'),
       },
       {
+        key: 'topicPromotion',
+        value: settings.topicPromotion ?? 'auto',
+        options: ['auto', 'ask'],
+        effect: 'What happens when an unclaimed topic keeps coming back (3 conversations over 2 days): auto forms its project at once and the receipt says so with a link to rename, move or undo it; ask only proposes it for the person to accept in the console.',
+        changedBy: PERSON,
+        settingsUrl: link('topicPromotion'),
+      },
+      {
         key: 'resourceRefreshSeconds',
         value: settings.resourceRefreshSeconds,
         options: [5, 10, 30, 60],

@@ -6,7 +6,7 @@ from .agent_conversation_models import (
 )
 from .conversation_triage_models import (
     ConversationTriageWrite, ConversationTriageRead, ConversationTopicQuery, ConversationTopicFormation,
-    ConversationTopicDecline,
+    ConversationTopicDecline, ConversationTopicReopening,
 )
 
 
@@ -78,3 +78,7 @@ def register_agent_conversation_routes(application, store, Actor):
     @application.post('/v1/conversation-triage/form')
     async def form(request: ConversationTopicFormation, actor: Actor):
         return await store.form_conversation_topic(actor, request)
+
+    @application.post('/v1/conversation-triage/reopen')
+    async def reopen(request: ConversationTopicReopening, actor: Actor):
+        return await store.reopen_conversation_topic(actor, request)

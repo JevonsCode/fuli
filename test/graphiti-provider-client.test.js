@@ -20,6 +20,18 @@ test('hard-deletion watermark uses ordinary auth and sends only the personal spa
   assert.equal(calls[0].options.headers['x-fuli-human-review-token'], undefined);
 });
 
+test('conversation triage reaches every Provider operation, decline and reopen included', async () => {
+  const urls = [];
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url) => { urls.push(url); return jsonResponse(200, {}); } });
+  for (const operation of ['record', 'read', 'topics', 'form', 'decline', 'reopen']) {
+    await client.conversationTriage(operation, { personal_space_id: 'synthetic-space' });
+  }
+  assert.deepEqual(urls.map(url => url.replace('http://provider.test/v1/conversation-triage/', '')),
+    ['record', 'read', 'topics', 'form', 'decline', 'reopen']);
+  assert.throws(() => client.conversationTriage('delete', {}), /Unknown conversation triage operation/);
+});
+
 test('worker lookup and admission transmit capability only in a dedicated header', async () => {
   const calls = [];
   const capability = 'synthetic-worker-capability-never-in-payload';

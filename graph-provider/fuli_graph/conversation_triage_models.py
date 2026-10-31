@@ -38,6 +38,13 @@ class ConversationTopicFormation(StrictModel):
     personal_project_id: str = Field(min_length=1, max_length=128)
 
 
+class ConversationTopicReopening(StrictModel):
+    """Undo of a formed topic (rec#11 D-86): its conversations are open again."""
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    topic: str = Field(min_length=1, max_length=80)
+    personal_project_id: str = Field(min_length=1, max_length=128)
+
+
 class ConversationTriageRead(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     conversation_id: str = Field(min_length=1, max_length=128)

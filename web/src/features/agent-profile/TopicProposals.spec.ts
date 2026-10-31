@@ -1,5 +1,6 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { routeLocationKey } from 'vue-router'
 import TopicProposals from './TopicProposals.vue'
 import type { UnassignedConversationItem } from './unassigned-conversations'
 
@@ -18,6 +19,12 @@ const render = () => mount(TopicProposals, {
   props: { spaceId: 'space-a', items: [item('c1', 'Garden', 'Plan the beds'), item('c2', 'garden', 'Order seeds'),
     item('c3', 'Taxes', 'File the return')] },
   global: { stubs: { RouterLink: RouterLinkStub } },
+})
+
+const renderPromoted = () => mount(TopicProposals, {
+  props: { spaceId: 'space-a', items: [] },
+  global: { stubs: { RouterLink: RouterLinkStub },
+    provide: { [routeLocationKey as symbol]: { query: { promoted: 'garden', topic: 'Garden' } } } },
 })
 
 describe('Astro topic proposals', () => {
@@ -66,5 +73,21 @@ describe('Astro topic proposals', () => {
     expect(postJson).toHaveBeenLastCalledWith('/api/topic-proposals/decline', { personalSpaceId: 'space-a', topic: 'Garden' })
     expect(wrapper.find('[data-topic-proposal]').exists()).toBe(false)
     expect(wrapper.find('[data-topic-declined]').exists()).toBe(true)
+  })
+
+  it('opens on a project Astro formed by itself, links to rename or move it, and undoes it (D-86)', async () => {
+    getJson.mockResolvedValue({ proposals: [] })
+    postJson.mockResolvedValue({ project_archived: true, conversations: 3, ask_again_at: 6 })
+    const wrapper = renderPromoted()
+    await flushPromises()
+    const card = wrapper.get('[data-topic-promoted]')
+    expect(card.text()).toContain('Garden')
+    expect(card.findComponent(RouterLinkStub).props('to')).toBe('/personal/space-a/projects/garden/directory')
+    await card.get('[data-topic-promoted-undo]').trigger('click')
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/topic-proposals/undo',
+      { personalSpaceId: 'space-a', topic: 'Garden', personalProjectId: 'garden' })
+    expect(wrapper.find('[data-topic-promoted]').exists()).toBe(false)
+    expect(wrapper.get('[data-topic-undone]').text()).toContain('归档')
   })
 })

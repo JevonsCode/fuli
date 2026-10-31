@@ -163,6 +163,7 @@ export function openFederatedGraphApplication({
     app.explainSettings = () => describeSettings({ settings: readRuntimeSettings(paths.runtimeSettingsPath),
       capturePolicy: app.getCapturePolicy(), consoleUrl: app.consoleUrl });
     app.agentNamingStyle = () => readRuntimeSettings(paths.runtimeSettingsPath).agentNamingStyle;
+    app.topicPromotion = () => readRuntimeSettings(paths.runtimeSettingsPath).topicPromotion;
   }
   return app;
 }

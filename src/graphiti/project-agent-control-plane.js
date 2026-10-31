@@ -6,7 +6,7 @@ import { retryProjectAgentTask, stopProjectAgentTaskRun } from './project-agent-
 import { planAgentCollaboration, agentLoan, agentVerification } from './agent-collaboration.js';
 import { queryConversations, resumeConversation, updateConversationPolicy } from './agent-conversations.js';
 import { recordUserTriage } from './conversation-triage.js';
-import { acceptTopicProposal, declineTopicProposal, listTopicProposals } from './topic-proposals.js';
+import { acceptTopicProposal, declineTopicProposal, listTopicProposals, undoTopicPromotion } from './topic-proposals.js';
 import { registerStandingAssignment } from './standing-assignment-entry.js';
 import { agentProjectResolution } from './agent-project-resolution.js';
 import { listAgentAttention, getAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
@@ -93,6 +93,7 @@ export class ProjectAgentControlPlaneApplication {
     this.#assertSpace(input.personalSpaceId);
     if (operation === 'list') return listTopicProposals(this);
     if (operation === 'accept') return acceptTopicProposal(this, { topic: input.topic });
+    if (operation === 'undo') return undoTopicPromotion(this, { topic: input.topic, personalProjectId: input.personalProjectId });
     return declineTopicProposal(this, { topic: input.topic });
   }
   // The person's "from now on this work goes to that project" (rec#29 F2).

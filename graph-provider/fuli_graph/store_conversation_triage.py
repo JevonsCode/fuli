@@ -84,12 +84,14 @@ class StoreConversationTriage:
         count = await self._topic_count(space['id'], key)
         if not count:
             raise HTTPException(404, 'Open conversation topic not found')
+        await self._remember_decline(space['id'], key, request.topic, count)
+        return {'topic': ' '.join(request.topic.split()), 'declined_count': count}
+
+    async def _remember_decline(self, space_id, key, topic, count):
         await self.runtime.driver.execute_query(
             'MERGE (d:FuliConversationTopicDecline {space_id: $space_id, topic_key: $key}) '
             'SET d.topic = $topic, d.declined_count = $count, d.declined_at = $now',
-            space_id=space['id'], key=key, topic=' '.join(request.topic.split()), count=count,
-            now=now_utc().isoformat())
-        return {'topic': ' '.join(request.topic.split()), 'declined_count': count}
+            space_id=space_id, key=key, topic=' '.join(topic.split()), count=count, now=now_utc().isoformat())
 
     async def form_conversation_topic(self, actor, request):
         """Attach every open conversation of a topic to its formed project; idempotent."""
@@ -105,6 +107,25 @@ class StoreConversationTriage:
             now=now_utc().isoformat())
         return {'personal_project_id': request.personal_project_id,
                 'conversation_ids': [row['id'] for row in rows]}
+
+    async def reopen_conversation_topic(self, actor, request):
+        """Undo a formation (rec#11 D-86): the topic's conversations formed into
+        this project are open again, and the topic counts as declined at that
+        size, so it is not formed or proposed again until it grows."""
+        self._require_personal()
+        space = await self.authorize(actor, request.personal_space_id, 'maintainer')
+        key = topic_key(request.topic)
+        rows, _, _ = await self.runtime.driver.execute_query(
+            "MATCH (t:FuliConversationTriage {space_id: $space_id, topic_key: $key, kind: 'topic', "
+            'formed_project_id: $project}) REMOVE t.formed_project_id, t.formed_at '
+            'RETURN t.id AS id ORDER BY id',
+            space_id=space['id'], key=key, project=request.personal_project_id)
+        if not rows:
+            raise HTTPException(404, 'No conversation of this topic was formed into this project')
+        count = await self._topic_count(space['id'], key)
+        await self._remember_decline(space['id'], key, request.topic, count)
+        return {'topic': ' '.join(request.topic.split()), 'personal_project_id': request.personal_project_id,
+                'conversation_ids': [row['id'] for row in rows], 'declined_count': count}
 
     async def read_conversation_triage(self, actor, request):
         """One conversation's current attribution state, or None: the label (kind,
