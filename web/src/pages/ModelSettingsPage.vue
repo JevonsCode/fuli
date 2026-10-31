@@ -249,12 +249,12 @@ onBeforeUnmount(() => {
 /* One centred column; sections keep one rhythm (rec#38). */
 .model-settings-column { display: grid; gap: var(--space-8); width: 100%; max-width: var(--layout-max); margin-inline: auto; }
 .model-settings-column > :first-child { justify-self: start; margin-bottom: calc(var(--space-4) - var(--space-8)); }
-.model-role-list { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
-.model-role-row { position: relative; min-width: 0; background: var(--color-surface); transition: box-shadow var(--motion-fast); }
+.model-role-list { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
+.model-role-row { position: relative; min-width: 0; transition: box-shadow var(--motion-fast); }
 .model-role-row:first-child { border-start-start-radius: inherit; border-start-end-radius: inherit; }
 .model-role-row:last-child { border-end-start-radius: inherit; border-end-end-radius: inherit; }
 /* The row being edited lifts as a card above its neighbours. */
-.model-role-row--editing { z-index: 1; border-radius: var(--radius-card); outline: 1px solid var(--color-border-strong); }
+.model-role-row--editing { z-index: 1; border-radius: var(--radius-card); outline: 1px solid var(--color-border-strong); background: var(--color-surface); }
 .model-role-row :deep(.model-role-summary) { padding: 14px 16px; border-radius: inherit; color: var(--color-ink); font-size: 14px; font-weight: 400; }
 .model-role-row :deep(.model-role-summary:hover) { color: var(--color-ink); background: var(--color-surface-hover); }
 .model-role-heading { display: grid; gap: 4px; min-width: 0; }

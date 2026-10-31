@@ -145,6 +145,11 @@ describe('AppShell', () => {
     expect(dock.attributes('data-folded')).toBe('true')
     expect(dock.findAll('.app-dock-active')).toHaveLength(1)
     expect(dock.find('.app-dock-item.is-active [data-destination="memory"]').exists()).toBe(true)
+    // Settings is not in the dock: no current item to fold to, so it stays open.
+    await router.push('/settings')
+    await flushPromises()
+    expect(dock.attributes('data-folded')).toBe('false')
+    expect(dock.find('.app-dock-item.is-active').exists()).toBe(false)
     wrapper.unmount()
   })
 

@@ -114,7 +114,7 @@ function changed(value: JudgmentPolicy) {
 </template>
 
 <style scoped>
-.judgment-overrides { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.judgment-overrides { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
 .judgment-overrides summary { display: flex; align-items: center; gap: 10px; padding: 10px 14px; color: var(--color-ink); font-size: 13px; cursor: pointer; }
 .judgment-overrides-count { color: var(--color-muted); font-size: 12px; }
 .judgment-overrides-body { display: grid; gap: 14px; padding: 4px 14px 14px; }

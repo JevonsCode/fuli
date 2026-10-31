@@ -200,7 +200,7 @@ async function toggleScoreCard(view: SuggestionView) {
 .role-suggestions-note { margin: -4px 0 0; padding-inline: 4px; color: var(--color-muted); font-size: 13px; line-height: 1.6; }
 /* One grouped list; a row whose score card is open lifts as a card. */
 .role-suggestions-list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--color-border);
-  border-radius: var(--radius-card); background: var(--color-surface); }
+  border-radius: var(--radius-card); background: var(--card); }
 .role-suggestions-list > li { min-width: 0; border-radius: inherit; }
 .role-suggestions-list > li + li { border-top: 1px solid var(--color-border); }
 .role-suggestions-list > li:first-child { border-start-start-radius: inherit; border-start-end-radius: inherit; }

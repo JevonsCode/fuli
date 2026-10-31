@@ -17,7 +17,7 @@
 .external-binding-editor {
   grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr));
   align-items: end; gap: 10px; margin: 8px 0 16px; padding: 15px;
-  border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card);
 }
 .external-binding-editor > label {
   grid-column: 1 / 4; grid-row: 1; display: grid; gap: 5px; min-width: 0;
