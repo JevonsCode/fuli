@@ -59,6 +59,8 @@ Cards use a light border without decorative shadow. A selected or previewed card
 
 ## Motion
 
+Motion is named by meaning in `web/src/styles/theme/base.css`: `--motion-enter` (arriving, on the spring), `--motion-exit` (leaving, fast) and `--motion-move` (gliding to a new place). Rules use these pairs, never a literal duration. Motion never holds up the person: page transitions let clicks through to the new page, a leaving list item drops out of the flow and out of hit testing at once, and every transition can be interrupted mid-way. Collections animate through `<TransitionGroup name="ui-list">` (`web/src/styles/motion.css`), and disclosures open and close by their height where the browser can animate to `auto`.
+
 Motion is lively but brief. Things that appear or move use one spring with a small overshoot (`--motion-ease-spring` in CSS, `SPRING` for motion-v in `web/src/lib/motion.ts`); things that leave use a soft ease-out. Page changes cross-fade and rise through the View Transitions API while the top bar and dock stay put; an in-page tab change does not animate. The dock's ink pill glides to the current destination (a motion-v shared layout), pinned FLAs rise one after another, and popovers and dialogs pop in on the spring. GSAP is not used: its licence is not an open-source one. The system setting and the in-app switch both turn all of it off.
 
 ## Shapes

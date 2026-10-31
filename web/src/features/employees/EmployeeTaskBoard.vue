@@ -451,7 +451,7 @@ onBeforeUnmount(() => {
           <h3>{{ column.label }}</h3>
           <span :aria-label="t('employees.allProjects.taskCount', { count: column.taskCount })">{{ column.taskCount }}</span>
         </header>
-        <TransitionGroup name="employee-task-shift" tag="div" class="employee-all-projects-list" :data-status="column.status">
+        <TransitionGroup name="ui-list" tag="div" class="employee-all-projects-list" :data-status="column.status">
           <template v-for="slot in column.slots" :key="slot.key">
             <div v-if="slot.kind === 'placeholder'" class="employee-all-projects-slot" :style="{ height: `${slot.height}px` }" data-drag-placeholder="true" aria-hidden="true" />
             <article
@@ -564,10 +564,6 @@ onBeforeUnmount(() => {
 .employee-all-projects-saving { position: static; width: 100%; margin-top: -4px; padding: 0 12px 10px; box-sizing: border-box; color: var(--color-muted); font-size: 12px; text-align: left; }
 .employee-all-projects-saving :deep(.growth-loading__label) { font-size: 12px; white-space: normal; }
 /* The drop animation is FULI's: a moved card fades into its column; reduced motion settles it at once. */
-.employee-task-shift-move { transition: transform 220ms cubic-bezier(.2, 0, 0, 1); }
-.employee-task-shift-enter-active, .employee-task-shift-leave-active { transition: opacity 140ms ease, transform 180ms cubic-bezier(.2, 0, 0, 1); }
-.employee-task-shift-enter-from, .employee-task-shift-leave-to { opacity: 0; transform: scale(.98); }
-.employee-task-shift-leave-active { position: absolute; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .employee-all-projects-task strong { display: -webkit-box; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .employee-all-projects-project { overflow: hidden; color: var(--color-ink); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
@@ -597,10 +593,7 @@ onBeforeUnmount(() => {
   .employee-all-projects-board { grid-template-columns: repeat(var(--board-column-count, 5), minmax(82vw, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .employee-all-projects-column, .employee-task-shift-move, .employee-task-shift-enter-active, .employee-task-shift-leave-active { transition-duration: 1ms !important; }
+  .employee-all-projects-column { transition-duration: 1ms !important; }
 }
-:root[data-motion="reduced"] .employee-all-projects-column,
-:root[data-motion="reduced"] .employee-task-shift-move,
-:root[data-motion="reduced"] .employee-task-shift-enter-active,
-:root[data-motion="reduced"] .employee-task-shift-leave-active { transition-duration: 1ms !important; }
+:root[data-motion="reduced"] .employee-all-projects-column { transition-duration: 1ms !important; }
 </style>
