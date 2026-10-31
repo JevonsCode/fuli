@@ -63,6 +63,10 @@
     "standing-assignments": {
       "version": 1,
       "fingerprint": "c1d340c787a83a27babba7dfdea1de69ddb873aa6da9c57298e41a82e7cdeccc"
+    },
+    "work-surfaces": {
+      "version": 1,
+      "fingerprint": "4972c8b13efb1c57a3f5f2388d408687ba8ced3629921b0dadd46e2b65531189"
     }
   }
 }

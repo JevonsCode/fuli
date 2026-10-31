@@ -9,8 +9,10 @@ import { AgentServiceStore } from './store.js';
 
 // The services port (服务管理, rec#11 D-71): every long-running service a FULI
 // Agent started, with what it is for, whose it is and its live state.
-// - An Agent registers and updates its own services (agent-report.js); it
-//   never stops one through FULI and never reads another's.
+// - An Agent registers and updates its own services (agent-report.js) and
+//   never reads another's through them. Stopping one through FULI is the
+//   person's, or anyone's 全部暂停 over every FLA's work (rec#11 D-85,
+//   src/work-surfaces), which goes through the same stop below.
 // - An Agent app's workbench is recorded by FULI's own runner (workbench).
 // - The person reads them, stops one, deletes a record and clears a log in
 //   the local console. A service FULI does not own is stopped only when the
@@ -122,17 +124,18 @@ export function createAgentServices({
       liveOutput: tails.get(record.serviceId)?.text() ?? null };
   }
 
-  // The person stops a running service. A workbench goes through its
-  // runner; another process only when it is still exactly the one recorded
-  // and the PID is the one the person confirmed.
-  async function stop({ serviceId, pid }) {
+  // The person stops a running service, or a 全部暂停 does (actor agent when
+  // an Agent asked for it). A workbench goes through its runner; another
+  // process only when it is still exactly the one recorded and the PID is the
+  // one confirmed.
+  async function stop({ serviceId, pid, actor = 'person' }) {
     const record = existing(serviceId);
     const confirmed = positiveInteger(pid, 'pid', MAX_PID);
     if (record.kind === 'workbench') {
       // Only the instance this record names; an ended one is never a reason to stop the app's current one.
       if (record.state !== 'running') return { status: 'already_stopped', service: record };
       if (!stopWorkbench) throw new ApplicationError('agent_apps_unavailable', 'Agent apps need a local FULI installation', { status: 503 });
-      store.transaction(() => store.appendLog({ serviceId: record.serviceId, at: at(), action: 'stop_requested', actor: 'person', detail: null }));
+      store.transaction(() => store.appendLog({ serviceId: record.serviceId, at: at(), action: 'stop_requested', actor, detail: null }));
       await stopWorkbench(record.appId);
       return { status: 'stopped', service: store.get(record.serviceId) };
     }
@@ -152,15 +155,15 @@ export function createAgentServices({
     const verdict = sameProcess(record, current) ? await inspector.terminate(record) : 'mismatch';
     const time = at();
     if (verdict === 'mismatch') {
-      store.transaction(() => store.appendLog({ serviceId: record.serviceId, at: time, action: 'stop_refused', actor: 'person',
+      store.transaction(() => store.appendLog({ serviceId: record.serviceId, at: time, action: 'stop_refused', actor,
         detail: { pid: record.pid, reason: 'process_changed' } }));
       throw new ApplicationError('process_changed', `Process ${record.pid} is no longer the recorded one (its start time, `
         + 'executable or command line differ), so FULI did not stop it (进程已不是登记的那个，未结束)', { status: 409 });
     }
     store.transaction(() => {
-      if (verdict === 'stopped') store.update(record.serviceId, { state: 'stopped', stoppedAt: time, stopReason: 'stopped_by_person', updatedAt: time });
+      if (verdict === 'stopped') store.update(record.serviceId, { state: 'stopped', stoppedAt: time, stopReason: `stopped_by_${actor}`, updatedAt: time });
       store.appendLog({ serviceId: record.serviceId, at: time, action: verdict === 'stopped' ? 'stopped' : 'stop_requested',
-        actor: 'person', detail: { pid: record.pid, commandLine: record.commandLine } });
+        actor, detail: { pid: record.pid, commandLine: record.commandLine } });
     });
     return { status: verdict, service: store.get(record.serviceId) };
   }

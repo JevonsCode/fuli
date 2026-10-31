@@ -15,6 +15,8 @@ import {
 } from '../model-backends/runtime.js';
 import { createStandingAssignments } from '../standing-assignments/port.js';
 import { createAgentWorkflows } from '../agent-workflows/port.js';
+import { createWorkSurfaces } from '../work-surfaces/port.js';
+import { workSurfaceNames, workSurfaceSources } from '../work-surfaces/sources.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
@@ -57,6 +59,9 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.standingAssignments = createStandingAssignments({ path: paths.standingAssignmentsPath });
   // Each Agent's own workflows (rec#60 D-78); the file is created by the first proposal.
   app.agentWorkflows = createAgentWorkflows({ path: join(dataDir, 'agent-workflows.sqlite') });
+  // Every FLA's work surfaces in one table, with 全部暂停 and 恢复 (rec#11 D-85); the file is created by the first pause.
+  app.workSurfaces = createWorkSurfaces({ path: join(dataDir, 'work-surfaces.sqlite'), sources: workSurfaceSources(app),
+    names: (personalSpaceId) => workSurfaceNames(app, personalSpaceId) });
   app.roundtableHost = createFuliRoundtableHost(app);
   app.peer = createPeerPort({ dataDir, host: app.roundtableHost });
   app.roundtable = createAgentRoundtable({
@@ -72,6 +77,7 @@ export function closeLocalRuntimes(app) {
   app.judgment?.close();
   app.standingAssignments?.close();
   app.agentWorkflows?.close();
+  app.workSurfaces?.close();
   app.roleWork?.close();
   app.roleSuggestions?.close();
   app.modelTrust?.close();
