@@ -163,7 +163,7 @@ watchEffect(() => {
 /* Every page keeps its last lines clear of the floating dock. */
 .app-main :deep(.view) { padding-bottom: calc(40px + 72px); }
 .app-topbar { flex: 0 0 auto; padding: 12px var(--page-gutter) 8px; }
-.app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-height: 44px; }
+.app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; max-width: var(--canvas-max); min-height: 44px; margin-inline: auto; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .app-wordmark { color: var(--color-ink); font-size: 18px; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; }
 .app-runtime { display: inline-flex; align-items: center; gap: 6px; --runtime: var(--status-error); }
