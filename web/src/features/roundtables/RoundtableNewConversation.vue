@@ -85,20 +85,20 @@ onBeforeUnmount(() => controller.abort())
       <!-- To: the chosen FLAs as chips, then a field that narrows the list below. -->
       <div class="rt-new-to">
         <span class="rt-new-to-label">{{ t('roundtable.start.to') }}</span>
-        <button v-for="agent in chosenAgents" :key="agent.agentId" type="button" class="rt-chip" :disabled="sending"
+        <Button v-for="agent in chosenAgents" :key="agent.agentId" size="sm" class="rt-chip" :disabled="sending"
           :aria-label="t('roundtable.start.remove', { name: agent.name })" @click="toggle(agent.agentId, false)">
           {{ agent.name }}<UiIcon name="close" :size="12" />
-        </button>
+        </Button>
         <input v-model="query" class="rt-new-search" type="search" :placeholder="t('roundtable.start.search')" :aria-label="t('roundtable.start.who')" />
       </div>
       <ul class="rt-new-list" :aria-label="t('roundtable.start.who')">
         <li v-for="agent in shown" :key="agent.agentId" :data-roundtable-agent="agent.agentId">
-          <button type="button" class="rt-new-row" role="checkbox" :aria-checked="chosen.includes(agent.agentId)" :disabled="sending"
+          <Button variant="ghost" class="rt-new-row" role="checkbox" :aria-checked="chosen.includes(agent.agentId)" :disabled="sending"
             @click="toggle(agent.agentId, !chosen.includes(agent.agentId))">
             <span class="rt-new-face" :style="agentIdentityStyle(agent.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(agent.agentId)" alt="" /></span>
             <span class="rt-new-who"><strong>{{ agent.name }}</strong><small v-if="agent.responsibility">{{ agent.responsibility }}</small></span>
             <span class="rt-new-check" aria-hidden="true"><UiIcon v-if="chosen.includes(agent.agentId)" name="check" :size="14" /></span>
-          </button>
+          </Button>
         </li>
         <li v-if="!shown.length" class="rt-new-note">{{ t('roundtable.start.noMatch', { query: query.trim() }) }}</li>
       </ul>
@@ -136,7 +136,7 @@ onBeforeUnmount(() => controller.abort())
 .rt-new-list { flex: 1 1 auto; min-height: 0; max-height: 46vh; margin: 0; padding: 4px 0; overflow-y: auto; list-style: none; }
 .rt-new-list > li + li .rt-new-row::before { content: ''; position: absolute; top: 0; right: 0; left: 72px; height: 1px; background: var(--color-border); }
 .rt-new-row {
-  position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr) 22px; align-items: center; gap: 12px; width: 100%;
+  position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr) 22px; align-items: center; gap: 12px; width: 100%; height: auto; white-space: normal; border-radius: 0;
   padding: 10px 24px; border: 0; color: var(--color-ink); background: transparent; font: inherit; text-align: left; cursor: pointer; transition: background var(--motion-fast);
 }
 .rt-new-row:hover { background: var(--color-surface-subtle); }
