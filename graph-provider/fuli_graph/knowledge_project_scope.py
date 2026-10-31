@@ -25,6 +25,14 @@ from .project_knowledge import match_target_project, upsert_reference
 _UNRESOLVED_MATCHES = frozenset({'exact_duplicate', 'conflict'})
 
 
+def refused_for_match(error: Exception) -> bool:
+    """write_knowledge_projects refused a project that already has a match for
+    the entity. It refuses before writing anything, so a caller may keep that
+    item where it is and go on with others in the same transaction."""
+    return isinstance(error, HTTPException) and isinstance(error.detail, dict) \
+        and error.detail.get('code') == 'project_has_match'
+
+
 async def knowledge_project_ids(store, space, item_id, item_kind) -> list[str]:
     """The primary project (or the source projects) first, then each project
     an active reference adds."""
@@ -33,10 +41,13 @@ async def knowledge_project_ids(store, space, item_id, item_kind) -> list[str]:
     return list(dict.fromkeys([*primary, *await _reference_project_ids(store, space, item_id, item_kind)]))
 
 
-async def write_knowledge_projects(store, actor, space, item_id, item_kind, project_ids, *, current, reason):
+async def write_knowledge_projects(store, actor, space, item_id, item_kind, project_ids, *, current, reason,
+                                   scope_status=None):
     """Make the item apply to exactly `project_ids`, inside the caller's
     transaction. The primary project stays where it is when it is still
-    chosen; otherwise the first chosen project becomes primary."""
+    chosen; otherwise the first chosen project becomes primary. scope_status
+    is what the item's scope status becomes: None (set) unless an undo puts
+    an item back where its scope was still undetermined."""
     existing = await _read_assignment(store, space['id'], item_id, item_kind)
     sources = [] if existing else await _source_project_ids(store, space, item_id, item_kind)
     current_primary = existing.project_id if existing else None
@@ -53,9 +64,10 @@ async def write_knowledge_projects(store, actor, space, item_id, item_kind, proj
         match + '''
         SET item.fuli_ai_review_lock_version = coalesce(item.fuli_ai_review_lock_version, 0) + 1
         WITH item WHERE item.fuli_ai_review_lock_version = $expected_version + 1
-        SET item.fuli_scope_status = NULL
+        SET item.fuli_scope_status = $scope_status
         RETURN item.uuid AS item_id
-        ''', item_id=item_id, group_id=space['group_id'], expected_version=lock_version(current))
+        ''', item_id=item_id, group_id=space['group_id'], expected_version=lock_version(current),
+        scope_status=scope_status)
     if not records:
         raise HTTPException(status_code=409, detail={'code': 'stale_version',
                                                      'message': 'knowledge changed while its scope was being saved'})
