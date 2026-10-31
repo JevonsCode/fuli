@@ -14,3 +14,4 @@
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
+:root[data-motion="reduced"]::view-transition-group(*), :root[data-motion="reduced"]::view-transition-old(*), :root[data-motion="reduced"]::view-transition-new(*) { animation: none !important; }
