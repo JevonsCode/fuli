@@ -33,6 +33,7 @@ import { ProviderTaskContextRegistry } from '../mcp/provider-task-context-regist
 import { readTaskPreferences } from './task-preference-reader.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createNeedsPersonNotifier } from '../notifications/needs-person.js';
+import { fuliLinkOrigin } from '../desktop/fuli-links.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { describeSettings } from '../system/settings-guide.js';
 import {
@@ -148,6 +149,7 @@ export function openFederatedGraphApplication({
     recallPolicyStore: recallPolicyStore ?? new RecallPolicyStore(recallPolicyPathForRuntime(runtimeConfigPath)),
     tokenUsageResolver,
     consoleUrl: sourceConsoleUrl(runtimeConfigPath),
+    fuliLinkOrigin: fuliLinkOrigin(),
     runtimeConfigPath,
     providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env),
     refreshPersonalToken: personalTokenRefresher(runtimeConfigPath, resolved.personal)
@@ -187,6 +189,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     agentAccessPolicyStore = new AgentAccessPolicyStore(),
     recallPolicyStore = new RecallPolicyStore(),
     consoleUrl = sourceConsoleUrl(null),
+    // `fuli:/` when receipt links can be fuli:// links (src/desktop/fuli-links.js), else null.
+    fuliLinkOrigin = () => null,
     projectPathResolver = resolvePersonalProjectPath,
     taskContextRegistry = null,
     providerRequestTimeoutMs = undefined,
@@ -210,6 +214,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.agentAccessPolicyStore = agentAccessPolicyStore;
     this.recallPolicyStore = recallPolicyStore;
     this.consoleUrl = consoleUrl;
+    this.fuliLinkOrigin = fuliLinkOrigin;
     this.projectPathResolver = projectPathResolver;
     this.tokenUsageResolver = tokenUsageResolver;
     this.personal = new GraphitiProviderClient({

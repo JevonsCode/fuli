@@ -1,9 +1,10 @@
 import { sourceConsoleUrl } from '../graphiti/source-marker.js';
 import { agentLabel } from './agent-label.js';
 
-// The console origin every receipt link opens.
+// The console origin every receipt link opens: `fuli:/` once the desktop
+// client opens fuli:// links for this installation (src/desktop/fuli-links.js).
 export function receiptConsoleUrl(application) {
-  return application.consoleUrl ?? sourceConsoleUrl(null);
+  return application.fuliLinkOrigin?.() ?? application.consoleUrl ?? sourceConsoleUrl(null);
 }
 
 // The settings page where the person turns recording back on (rec#5 C10-3).
