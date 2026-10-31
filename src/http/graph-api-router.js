@@ -253,6 +253,16 @@ export async function handleGraphApiRequest({
   const agentMemoryPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/memory$/);
   const agentMemoryExportPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/memory\/export$/);
   const agentOccupationPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/occupation$/);
+  const agentNamePath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/name$/);
+  if (agentNamePath && request.method === 'PUT') {
+    const body = await readJson(request);
+    sendJson(response, 200, await app.renameProjectAgent({
+      personalSpaceId: body.personalSpaceId,
+      agentId: decodeURIComponent(agentNamePath[1]),
+      displayName: body.displayName ?? null
+    }));
+    return true;
+  }
   if (agentOccupationPath && request.method === 'PUT') {
     const body = await readJson(request);
     sendJson(response, 200, await app.updateProjectAgentOccupation({

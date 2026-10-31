@@ -523,6 +523,19 @@ test('#FLA names a built-in role in this folder\'s project, through its own scop
   assert.equal(impostor.fla.reason, 'no_match');
 });
 
+test('a built-in role the person renamed answers to its new name and still to its built-in one (D-89)', async () => {
+  const renamed = builtIn('bole', '伯乐', 'project-a', 'hr');
+  renamed.profile.name = 'Bole';
+  for (const prompt of ['#FLA 伯乐 招一个前端', '#FLA Bole 招一个前端', '#FLA bole 招一个前端']) {
+    const entry = await withScope(fixture({ roster: [ADA, JAMIE, renamed, ASTRO] })).run(prompt);
+    assert.deepEqual(owner(entry), ['project-a', 'employee.bole'], prompt);
+    assert.equal(entry.fla.notice, '本会话由 伯乐 继续项目 Alpha 的工作', prompt);
+  }
+  // The built-in name is the role's own; an FLA's role text is never a name it answers to.
+  const entry = await withScope(fixture({ roster: [ADA, JAMIE, renamed, ASTRO] })).run('#FLA 负责人 看下');
+  assert.equal(entry.fla.reason, 'no_match');
+});
+
 test('a built-in role outside its scope or outside any project says why and how to fix it, never substituting', async () => {
   const refused = withScope(fixture({ roster: [ADA, BOLE] }), () => false);
   const entry = await refused.run('#FLA Bole 招一个前端');

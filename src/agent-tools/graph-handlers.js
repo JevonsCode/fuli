@@ -177,6 +177,7 @@ const HANDLERS = Object.freeze({
   list_personal_projects: (app, input) => app.listPersonalProjects(input),
   upsert_project_agent: (app, input) => captureGuard(app, { sourceApplication: input?.sourceApplication,
     personalProjectId: input?.personalProjectId ?? null }, () => app.upsertProjectAgent(input)),
+  rename_project_agent: (app, input) => app.renameProjectAgent(input),
   list_project_agents: (app, input) => app.listCurrentProjectAgents(input),
   get_project_agent: (app, input) => app.getProjectAgent(input),
   dismiss_project_agent: (app, input) => app.dismissProjectAgent(input),

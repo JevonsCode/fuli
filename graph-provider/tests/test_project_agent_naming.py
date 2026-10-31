@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from fuli_graph.name_identity import identity_key
-from fuli_graph.project_agent_models import ProjectAgentProfile, ProjectAgentRecord, ProjectAgentUpsert
+from fuli_graph.project_agent_models import ProjectAgentProfile, ProjectAgentRecord, ProjectAgentRename, ProjectAgentUpsert
 from fuli_graph.project_agent_names import (
     FIRST_NAMES,
     LAST_NAMES,
@@ -19,7 +19,10 @@ from fuli_graph.project_agent_names import (
     title_like,
     unique_nickname,
 )
-from fuli_graph.store_project_agent_naming import require_free_proposed_name, with_person_name, with_rename_suggestion
+from fuli_graph.store_project_agent_naming import (
+    renamed_profile, require_free_proposed_name, with_person_name, with_rename_suggestion,
+)
+from fuli_graph.store_project_agent_rename import StoreProjectAgentRename
 
 
 class NamesStore:
@@ -193,3 +196,89 @@ async def test_no_suggestion_for_person_names_archived_or_system_agents(agent_id
     store = NamesStore({})
     result = await with_rename_suggestion(store, record(agent_id, display_name, **profile))
     assert result.name_suggestion is None and store.calls == 0
+
+
+ROSTER = {'employee.jefa': ('Jefa', None), 'employee.bole': ('Bole', '伯乐'), 'agent-ppt': ('PPT 专责', 'Iris Vale')}
+
+
+def test_any_agent_can_be_renamed_built_in_roles_included():
+    profile = {'name': 'Jefa', 'responsibility': '项目经理'}
+    assert renamed_profile(ROSTER, 'employee.jefa', profile, '小J') == {**profile, 'display_name': '小J'}
+    assert renamed_profile(ROSTER, 'agent-ppt', {'name': 'PPT 专责'}, 'Nova Park')['display_name'] == 'Nova Park'
+
+
+def test_a_role_goes_back_to_its_own_name_and_other_agents_always_keep_one():
+    assert 'display_name' not in renamed_profile(ROSTER, 'employee.bole', {'name': 'Bole', 'display_name': '伯乐'}, None)
+    with pytest.raises(HTTPException) as refused:
+        renamed_profile(ROSTER, 'agent-ppt', {'name': 'PPT 专责'}, None)
+    assert refused.value.status_code == 422
+
+
+@pytest.mark.parametrize('agent_id,name', [
+    ('agent-ppt', '伯乐'),       # another Agent's shown name
+    ('agent-ppt', 'bole'),       # a role's built-in name stays its second name
+    ('agent-ppt', 'TONBORG'),    # even a role nobody renamed
+    ('employee.jefa', 'Iris  vale'),
+    ('employee.jefa', 'Astro'),  # another role's built-in name
+])
+def test_a_name_someone_is_called_by_is_refused_with_free_alternatives(agent_id, name):
+    with pytest.raises(HTTPException) as refused:
+        renamed_profile(ROSTER, agent_id, {'name': 'x'}, name)
+    assert refused.value.status_code == 409 and 'agent_name_taken' in refused.value.detail
+
+
+def test_an_agent_may_keep_or_respell_its_own_names():
+    assert renamed_profile(ROSTER, 'employee.bole', {'name': 'Bole'}, 'BOLE')['display_name'] == 'BOLE'
+    assert renamed_profile(ROSTER, 'agent-ppt', {'name': 'PPT 专责'}, 'iris vale')['display_name'] == 'iris vale'
+
+
+@pytest.mark.parametrize('name', ['', '   ', 'two\nlines', 'x' * 65])
+def test_a_name_is_one_short_visible_line(name):
+    with pytest.raises(ValueError):
+        ProjectAgentRename(personal_space_id='space', display_name=name)
+    assert ProjectAgentRename(personal_space_id='space', display_name='  小林 ').display_name == '小林'
+
+
+class RenameStore(StoreProjectAgentRename):
+    """One Agent in a synthetic space; the write lands only over the profile it read."""
+
+    def __init__(self, profile, *, changed_meanwhile=False):
+        self.profile_json = json.dumps(profile)
+        self.writes = []
+
+        async def execute_query(query, **parameters):
+            if 'RETURN agent.agent_id AS agent_id, agent.profile_json' in query:
+                return [{'agent_id': 'employee.jefa', 'profile_json': self.profile_json}], None, None
+            if 'SET agent.profile_json' in query:
+                if changed_meanwhile or parameters['stored'] != self.profile_json:
+                    return [], None, None
+                self.writes.append(json.loads(parameters['profile_json']))
+                return [{'agent_id': parameters['agent_id']}], None, None
+            return [{'profile_json': self.profile_json}], None, None
+        self.runtime = SimpleNamespace(driver=SimpleNamespace(execute_query=execute_query))
+
+    def _require_personal(self):
+        pass
+
+    async def authorize(self, actor, space_id, role):
+        assert space_id == 'space' and role == 'maintainer'
+
+    async def get_project_agent(self, actor, space_id, project_id, agent_id):
+        return agent_id
+
+
+@pytest.mark.asyncio
+async def test_renaming_writes_only_the_shown_name():
+    store = RenameStore({'name': 'Jefa', 'responsibility': '项目经理', 'agent_type': 'coordinator'})
+    request = ProjectAgentRename(personal_space_id='space', display_name='小J')
+    assert await store.rename_project_agent({}, 'employee.jefa', request) == 'employee.jefa'
+    assert store.writes[0]['display_name'] == '小J' and store.writes[0]['name'] == 'Jefa'
+    assert store.writes[0]['agent_type'] == 'coordinator'
+
+
+@pytest.mark.asyncio
+async def test_a_rename_racing_another_edit_is_refused_not_lost():
+    store = RenameStore({'name': 'Jefa', 'responsibility': '项目经理'}, changed_meanwhile=True)
+    with pytest.raises(HTTPException) as refused:
+        await store.rename_project_agent({}, 'employee.jefa', ProjectAgentRename(personal_space_id='space', display_name='小J'))
+    assert refused.value.status_code == 409

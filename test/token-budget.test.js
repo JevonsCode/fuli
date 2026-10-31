@@ -161,7 +161,9 @@ const BASELINE = Object.freeze({
   // Exact projectId selection on list_personal_projects: 196,560 -> 196,632 B (+72 B), measured.
   // rec#11 D-82 task sheets: an execution-plan step may name its participant (agentId):
   // 196,632 -> 196,744 B (+112 B), measured; chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 196744,
+  // rec#11 D-89 rename_project_agent: any Agent's shown name, built-in roles included:
+  // 196,744 -> 197,563 B (+819 B), measured; chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 197563,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

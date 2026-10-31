@@ -63,6 +63,10 @@
     "standing-assignments": {
       "version": 1,
       "fingerprint": "c1d340c787a83a27babba7dfdea1de69ddb873aa6da9c57298e41a82e7cdeccc"
+    },
+    "agent-avatars": {
+      "version": 1,
+      "fingerprint": "463ba8cfed4245a307a29a59ddd0544138845cc0b2da11c171aa65e0105fef35"
     }
   }
 }

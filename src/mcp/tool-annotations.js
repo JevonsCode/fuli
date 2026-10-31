@@ -106,6 +106,7 @@ const WRITE_TOOLS = new Set([
   'review_human_knowledge_change',
   'upsert_personal_project',
   'upsert_project_agent',
+  'rename_project_agent',
   'dismiss_project_agent',
   'cleanup_test_project_agents',
   'create_project_agent_assignment',
@@ -171,6 +172,7 @@ export function annotationsFor(name) {
     destructiveHint: DESTRUCTIVE_TOOLS.has(name),
     idempotentHint: readOnly || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'role_work' || name === 'recruit_employee' || name === 'submit_agent_app_version' || name === 'upsert_personal_project' ||
       name === 'upsert_project_agent' ||
+      name === 'rename_project_agent' ||
       name === 'dismiss_project_agent' ||
       name === 'cleanup_test_project_agents' ||
       name === 'create_project_agent_assignment' ||
