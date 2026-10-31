@@ -36,7 +36,8 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
 
 <style scoped>
 .app-dock {
-  position: fixed; bottom: 20px; left: var(--page-gutter); z-index: var(--z-nav);
+  /* Left-aligned with the page canvas, which centres on very wide screens. */
+  position: fixed; bottom: 20px; left: max(var(--page-gutter), calc((100vw - var(--canvas-max)) / 2)); z-index: var(--z-nav);
   padding: 6px; border: 1px solid var(--edge-glass); border-radius: var(--radius-pill);
   background: var(--surface-glass-strong); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   box-shadow: var(--shadow-sm), var(--shadow-lg);

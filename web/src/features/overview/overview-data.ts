@@ -1,6 +1,5 @@
-import type { PersonalProject, ProjectAgentTaskRecord, ProjectAgentTaskStatus } from '@/types'
+import type { ProjectAgentTaskRecord, ProjectAgentTaskStatus } from '@/types'
 import { arrayOf, normalizeTask, unknownRecord } from '@/features/project-agents/task-evidence'
-import { projectDisplayName } from '@/features/projects/project-origin'
 import type { AgentAttention } from '@/features/project-agents/attention-store'
 
 export const CURRENT_WORK_STATUSES = new Set<ProjectAgentTaskStatus>([
@@ -12,13 +11,6 @@ export const CURRENT_WORK_STATUSES = new Set<ProjectAgentTaskStatus>([
   'blocked',
   'failed',
 ])
-
-export interface OverviewProject {
-  id: string
-  name: string
-  updatedAt: string | null
-  taskCount: number
-}
 
 export function normalizeOverviewTasks(value: unknown, personalSpaceId?: string) {
   const record = unknownRecord(value)
@@ -55,34 +47,6 @@ export function overviewOpenRequest(task: ProjectAgentTaskRecord, items: readonl
     && item.personalProjectId === task.personalProjectId && item.taskId === task.taskId)
 }
 
-export function recentProjects(
-  tasks: ProjectAgentTaskRecord[],
-  projects: PersonalProject[],
-  limit = 6,
-): OverviewProject[] {
-  const projectNames = new Map(projects.map((project) => [project.project_id, projectDisplayName(project)]))
-  const derived = new Map<string, OverviewProject>()
-  for (const task of tasks) {
-    const id = task.personalProjectId
-    if (!id) continue
-    const updatedAt = task.updatedAt ?? task.createdAt ?? null
-    const current = derived.get(id)
-    if (!current) {
-      derived.set(id, { id, name: projectNames.get(id) ?? id, updatedAt, taskCount: 1 })
-      continue
-    }
-    current.taskCount += 1
-    if (compareDates(updatedAt, current.updatedAt) < 0) current.updatedAt = updatedAt
-  }
-  if (derived.size) return [...derived.values()].sort(compareProjects).slice(0, limit)
-  return projects.slice(0, limit).map((project) => ({
-    id: project.project_id,
-    name: project.profile.name,
-    updatedAt: null,
-    taskCount: 0,
-  }))
-}
-
 export function overviewTaskHref(task: ProjectAgentTaskRecord) {
   const query = new URLSearchParams()
   const agentId = task.leadAgentId
@@ -94,30 +58,11 @@ export function overviewTaskHref(task: ProjectAgentTaskRecord) {
   return `/project-agents/manage?${query}#task-${encodeURIComponent(task.taskId)}`
 }
 
-export function overviewAttentionTaskHref(item: {
-  agentId: string
-  personalProjectId: string
-  taskId: string
-}) {
-  const query = new URLSearchParams({
-    agent: item.agentId,
-    project: item.personalProjectId,
-    task: item.taskId,
-  })
-  return `/project-agents/manage?${query}#task-${encodeURIComponent(item.taskId)}`
-}
-
 function compareTasks(left: ProjectAgentTaskRecord, right: ProjectAgentTaskRecord) {
   const rank = (task: ProjectAgentTaskRecord) => task.status === 'blocked' || task.status === 'failed' ? 0 : task.status === 'awaiting_review' ? 1 : 2
   return rank(left) - rank(right)
     || compareDates(left.updatedAt ?? left.createdAt ?? null, right.updatedAt ?? right.createdAt ?? null)
     || right.taskId.localeCompare(left.taskId)
-}
-
-function compareProjects(left: OverviewProject, right: OverviewProject) {
-  return compareDates(left.updatedAt, right.updatedAt)
-    || right.taskCount - left.taskCount
-    || left.name.localeCompare(right.name)
 }
 
 function compareDates(left: string | null | undefined, right: string | null | undefined) {
