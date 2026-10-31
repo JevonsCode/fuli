@@ -9,7 +9,6 @@ const { getJson } = vi.hoisted(() => ({ getJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson }))
 
 import BolePeoplePanel from './BolePeoplePanel.vue'
-import ProjectScopePicker from './ProjectScopePicker.vue'
 import { provideWorkbenchToolbarActions } from './workbench-toolbar'
 
 const projects = [
@@ -228,7 +227,7 @@ describe('Bole people panel', () => {
     await flushPromises()
     expect(wrapper.findAll('.bole-agent-card')).toHaveLength(3)
     expect(wrapper.findAll('.bole-agent-card')[0].text()).toContain('Jefa')
-    wrapper.getComponent(ProjectScopePicker).vm.$emit('update:modelValue', ['project-b'])
+    wrapper.getComponent({ name: 'OptionCombobox' }).vm.$emit('update:modelValue', ['project-b'])
     await flushPromises()
     expect(wrapper.findAll('.bole-agent-card')).toHaveLength(1)
     expect(wrapper.get('.bole-agent-card').text()).toContain('Researcher')
@@ -248,12 +247,12 @@ describe('Bole people panel', () => {
   it('supports no selected projects, unassigned Agents and clearing filters', async () => {
     const wrapper = mountPanel()
     await flushPromises()
-    const picker = wrapper.getComponent(ProjectScopePicker)
+    const picker = wrapper.getComponent({ name: 'OptionCombobox' })
     picker.vm.$emit('update:modelValue', [])
     await flushPromises()
     expect(wrapper.text()).toContain('没有匹配的记录')
-    const unassigned = picker.props('projects').find((item) => item.name === '未归属项目')!
-    picker.vm.$emit('update:modelValue', [unassigned.id])
+    const unassigned = (picker.props('options') as Array<{ value: string, label: string }>).find((item) => item.label === '未归属项目')!
+    picker.vm.$emit('update:modelValue', [unassigned.value])
     await flushPromises()
     expect(wrapper.get('.bole-agent-card').text()).toContain('Bole')
     await wrapper.get('.bole-clear').trigger('click')
@@ -267,7 +266,7 @@ describe('Bole people panel', () => {
     await wrapper.get('.bole-search').setValue('用户研究')
     expect(wrapper.findAll('.bole-timeline li')).toHaveLength(1)
     expect(wrapper.get('time').attributes('datetime')).toBe('2026-09-02T08:00:00.000Z')
-    wrapper.getComponent(ProjectScopePicker).vm.$emit('update:modelValue', ['project-a'])
+    wrapper.getComponent({ name: 'OptionCombobox' }).vm.$emit('update:modelValue', ['project-a'])
     await flushPromises()
     expect(wrapper.text()).toContain('没有匹配的记录')
     await wrapper.get('.bole-clear').trigger('click')

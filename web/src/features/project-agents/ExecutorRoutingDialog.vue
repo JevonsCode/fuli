@@ -4,13 +4,14 @@ import { computed, ref, watch } from 'vue'
 import { putJson } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
 import type {
   PersonalProject,
   ProjectAgentExecutorRef,
   ProjectAgentRoutingRule,
 } from '@/types'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 type EditorMode = 'executor' | 'rule'
 
@@ -163,9 +164,9 @@ async function save() {
         <p class="ui-meta executor-routing-wide">{{ t('projectAgents.routing.editor.evidenceNote') }}</p>
       </template>
       <template v-else>
-        <UiSelect v-model="scope" field :label="t('projectAgents.routing.editor.scope')" :options="scopeOptions" :disabled="busy" />
+        <OptionSelect v-model="scope" field :label="t('projectAgents.routing.editor.scope')" :options="scopeOptions" :disabled="busy" />
         <label class="ui-field">{{ t('projectAgents.routing.editor.priority') }}<input v-model.number="priority" type="number" min="1" max="1000000" :disabled="busy" required /></label>
-        <UiSelect v-if="scope === 'project' || scope === 'task'" v-model="projectId" field control-id="executor-rule-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :disabled="busy" />
+        <OptionCombobox v-if="scope === 'project' || scope === 'task'" v-model="projectId" field control-id="executor-rule-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :disabled="busy" />
         <label v-if="scope === 'task'" class="ui-field">{{ t('projectAgents.routing.editor.taskId') }}<input v-model="taskId" maxlength="128" :disabled="busy" /></label>
         <label class="ui-field">{{ t('projectAgents.routing.editor.workKind') }}<input v-model="workKind" maxlength="128" :disabled="busy" required /></label>
         <label class="ui-field executor-routing-wide">{{ t('projectAgents.routing.editor.executorIds') }}<textarea v-model="executorAllowList" rows="3" :placeholder="t('projectAgents.routing.editor.executorIdsPlaceholder')" :disabled="busy" required /></label>

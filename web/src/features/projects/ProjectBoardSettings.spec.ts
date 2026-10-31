@@ -56,7 +56,7 @@ describe('project board settings', () => {
   it('offers the project\'s own Agents as its manager and saves the person\'s columns in order', async () => {
     const wrapper = await setup()
     expect(wrapper.getComponent(RouterLinkStub).props('to')).toEqual({ path: '/employees/jefa', query: { project: 'project-a' } })
-    const manager = wrapper.findAllComponents({ name: 'UiSelect' })[0]!
+    const manager = wrapper.findAllComponents({ name: 'OptionCombobox' })[0]!
     expect(manager.props('options').map(({ label }: { label: string }) => label)).toEqual(['由 Jefa 直接管理', 'Lead', '活动经理'])
 
     await wrapper.get('[data-action="start-defaults"]').trigger('click')

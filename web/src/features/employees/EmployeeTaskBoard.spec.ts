@@ -4,6 +4,7 @@ import { defineComponent, h, ref } from 'vue'
 
 import { fireDrag, installDragEnvironment, nextDragFrame } from '@/test-support/drag-events'
 import EmployeeTaskBoard, { type BoardMoveTarget, type EmployeeBoardItem, type EmployeeBoardStatus, type EmployeeProjectBoard } from './EmployeeTaskBoard.vue'
+import { openCombobox, setOption } from '@/test-support/option-pickers'
 
 const task: EmployeeBoardItem = {
   id: 'task-1',
@@ -124,8 +125,8 @@ describe('employee task board', () => {
 
   it('keeps project filtering separate from assignment scope', async () => {
     const wrapper = track(setup())
-    await wrapper.get('.project-scope-trigger').trigger('click')
-    await wrapper.get('input[value="project-a"]').setValue(false)
+    await openCombobox(wrapper)
+    await setOption(wrapper, 'project-a', false)
     expect(wrapper.emitted('update:visible-project-ids')).toEqual([[[]]])
   })
 

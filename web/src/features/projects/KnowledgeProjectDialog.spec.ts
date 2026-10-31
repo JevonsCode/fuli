@@ -8,7 +8,7 @@ vi.mock('@/api/client', () => ({ postJson }))
 
 import { knowledgeItemFromNode } from '@/features/knowledge/model'
 import { useConsoleStore } from '@/stores/console'
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import KnowledgeProjectDialog from './KnowledgeProjectDialog.vue'
 
 describe('KnowledgeProjectDialog', () => {
@@ -70,7 +70,7 @@ describe('KnowledgeProjectDialog', () => {
       },
       global: {
         plugins: [pinia],
-        stubs: { UiSelect: UiSelectStub },
+        stubs: { ...optionSelectStubs },
       },
     })
 

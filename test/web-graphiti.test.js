@@ -157,7 +157,7 @@ test('all existing workspace areas have Vue pages and API actions', () => {
 });
 
 test('connection forms use the shared custom controls', () => {
-  assert.match(connections, /<UiSelect/);
+  assert.match(connections, /<Option(?:Select|Combobox)\b/);
   assert.match(connections, /<TextField/);
   assert.doesNotMatch(connections, /<(?:input|select|textarea)\b/);
 });

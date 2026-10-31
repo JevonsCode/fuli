@@ -4,12 +4,12 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { getJson, postJson } from '@/api/client'
 import { Button } from '@/components/ui/button'
-import UiSelect from '@/ui/UiSelect.vue'
 import { formatTime } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import type { ConsoleState, PublicProject } from '@/types'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 type ReviewEpisode = {
   name: string
@@ -375,8 +375,8 @@ onBeforeUnmount(() => {
     <div v-if="showShared" class="publish-queue-block">
       <div class="publish-queue-head">
         <h3 class="list-title">{{ t('pages.review.publicTitle') }} <span v-if="proposals.length">{{ proposals.length }}</span></h3>
-        <UiSelect v-if="maintainableProjects.length > 1" v-model="reviewProjectId" :options="reviewProjectOptions"
-          :label="t('pages.review.projectLabel')" control-id="review-project" searchable />
+        <OptionCombobox v-if="maintainableProjects.length > 1" v-model="reviewProjectId" :options="reviewProjectOptions"
+          :label="t('pages.review.projectLabel')" control-id="review-project" />
       </div>
       <div class="ui-list" data-review-queue="shared">
         <GrowthLoading v-if="sharedLoading" variant="compact" :label="t('pages.review.loadingPublic')" />

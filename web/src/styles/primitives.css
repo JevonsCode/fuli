@@ -19,7 +19,7 @@
 .ui-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .ui-empty { padding: 48px 24px; color: var(--color-muted); text-align: center; font-size: 14px; }
 .ui-field { display: grid; gap: 6px; min-width: 0; color: var(--color-ink-soft); font-size: 13px; font-weight: var(--weight-medium); }
-.ui-field > :is(input, textarea, select, .ui-select) { width: 100%; font-weight: var(--weight-regular); }
+.ui-field > :is(input, textarea, select, [data-slot=option-select], [data-slot=option-combobox]) { width: 100%; font-weight: var(--weight-regular); }
 .ui-check { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 9px; color: var(--color-ink); font-size: 13px; line-height: 1.5; cursor: pointer; }
 .ui-field-hint { color: var(--color-muted); font-size: 12px; font-weight: var(--weight-regular); }
 .ui-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

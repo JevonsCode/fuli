@@ -9,7 +9,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
 
 import { ApiError } from '@/api/client'
 import { useConsoleStore } from '@/stores/console'
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import ModelSettingsPage from './ModelSettingsPage.vue'
 
 // Synthetic settings and usage only; no real key, model or data directory.
@@ -64,7 +64,7 @@ beforeEach(() => {
 
 const mountPage = async () => {
   const wrapper = mount(ModelSettingsPage, { attachTo: document.body,
-    global: { stubs: { RouterLink: true, UiSelect: UiSelectStub } } })
+    global: { stubs: { RouterLink: true, ...optionSelectStubs } } })
   await flushPromises()
   return wrapper
 }

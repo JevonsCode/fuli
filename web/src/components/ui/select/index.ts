@@ -15,8 +15,21 @@
 // - Items use a pointer cursor, the FULI hover surface and a primary check;
 //   the disabled look is FULI's .45 opacity.
 // - Dark-mode utilities are dropped (dark mode is reserved, not offered).
+// - A chosen item also sits on the quiet muted surface beside its check; an
+//   item may add a `meta` slot (an ID, a count) in muted 12px after its text,
+//   outside the text the trigger shows.
 // - Not copied (nothing uses it yet): SelectItemText (SelectItem renders
 //   reka-ui's directly, as upstream does).
+// FULI additions:
+// - OptionSelect: these parts composed for a list of options (`option.ts`),
+//   the one way pages pick from a short fixed list. It takes the control's
+//   name as `label` (shown above with `field`), maps '' to an item value
+//   reka-ui accepts, and groups options under headings. An empty list says
+//   so; `loading` shows one inline GrowthLoading in the list instead.
+// - option.ts and SelectionActions (count, select all, invert, clear all) are
+//   shared with OptionCombobox and OptionListbox.
+export { default as OptionSelect } from "./OptionSelect.vue"
+export type { SelectOption } from "./option"
 export { default as Select } from "./Select.vue"
 export { default as SelectContent } from "./SelectContent.vue"
 export { default as SelectGroup } from "./SelectGroup.vue"

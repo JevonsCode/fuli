@@ -6,7 +6,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { getJson, postJson } from '@/api/client'
 import { readPersonalProfileGraph } from '@/api/personal-profile-graph'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { UiEmpty, UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import { reconcileKnowledgeWrites } from '@/features/knowledge/knowledge-write-lifecycle'
@@ -37,6 +36,7 @@ import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { versionStatusLabel } from '@/features/knowledge-quick-edit/model'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 const store = useConsoleStore()
 const graph = ref<KnowledgeGraph | null>(null)
@@ -542,13 +542,13 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 
     <UiToolbar>
       <UiSegmented v-model="activeAspect" data-profile-aspects :options="aspectSegments" :label="t('preferences.profile.filters.aspectAria')" />
-      <UiSelect
+      <OptionCombobox
         v-model="activeScope"
         class="personal-profile-scope-filter"
         control-id="personal-profile-scope"
         :label="t('preferences.profile.filters.scopeLabel')"
         :options="scopeOptions"
-      />
+ />
       <template #end>
         <span v-if="graph" data-profile-count data-term="memory.preferenceCount">{{ countText }}</span>
         <UiIconButton icon="refresh" size="sm" :label="t('common.actions.refresh')" :disabled="loading" @click="load()" />
