@@ -22,7 +22,8 @@ export async function listTeamWorkbenches(application, { personalSpaceId }) {
   const tasks = await application.listProjectAgentTasks({ personalSpaceId, limit: TASK_LIMIT });
   return { partial: tasks.length >= TASK_LIMIT,
     workbenches: tasks.filter(task => SHARED_WORK_STATUSES.has(task.status) && (task.participants ?? []).length >= 2)
-      .map(task => taskSheet(task)) };
+      .map(task => taskSheet(task))
+      .sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? ''))) };
 }
 
 export function taskSheet(task, agentId = null) {
@@ -32,7 +33,9 @@ export function taskSheet(task, agentId = null) {
     role: participant.role,
     status: participant.status,
     assignment: participant.assignmentSummary ?? null,
-    progress: steps ? progress(steps.filter(step => step.agentId === participant.agentId)) : null
+    progress: steps ? progress(steps.filter(step => step.agentId === participant.agentId)) : null,
+    // The share's step in progress, for the card to mark; null when none is.
+    currentStepId: steps?.find(step => step.agentId === participant.agentId && step.status === 'in_progress')?.id ?? null
   }));
   const owners = new Set(shares.map(share => share.agentId));
   return {
