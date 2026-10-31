@@ -10,8 +10,7 @@
 :root {
   --background: var(--color-bg);
   --foreground: var(--color-ink);
-  /* Cards are glass over the page wash (墨与金); popovers and dialogs stay opaque. */
-  --card: var(--surface-glass);
+  --card: var(--color-surface);
   --card-foreground: var(--color-ink);
   --popover: var(--color-surface);
   --popover-foreground: var(--color-ink);

@@ -55,7 +55,7 @@ The About page uses its dark ink treatment across the full page. Keep the closin
 
 ## Elevation & Depth
 
-Cards are glass over the page wash (`--card` is `--surface-glass`, 16px corners) with a light border and no decorative shadow; popovers, dialogs and form controls stay opaque. A filter bar that sticks over a collection floats on an opaque panel, since only the dock and the pins capsule blur live. A selected or previewed card lifts: full surface, a stronger hairline and a light shadow, never a side accent bar; the focus ring stays a separate outline. Reserve the shared popover and dialog shadows for floating surfaces. Avoid nested boxes around ordinary list rows.
+Cards use a light border without decorative shadow. A filter bar that sticks over a collection floats on an opaque panel, since only the dock and the pins capsule blur live. A selected or previewed card lifts: full surface, a stronger hairline and a light shadow, never a side accent bar; the focus ring stays a separate outline. Reserve the shared popover and dialog shadows for floating surfaces. Avoid nested boxes around ordinary list rows.
 
 ## Motion
 

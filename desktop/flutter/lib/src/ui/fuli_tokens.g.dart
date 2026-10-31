@@ -72,7 +72,7 @@ abstract final class FuliSize {
   static const controlHeight = 36.0;
   static const controlHeightSm = 30.0;
   static const radiusControl = 8.0;
-  static const radiusCard = 16.0;
+  static const radiusCard = 12.0;
   static const radiusDialog = 16.0;
   static const radiusPill = 999.0;
   static const radiusShell = 28.0;
