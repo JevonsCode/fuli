@@ -27,6 +27,9 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
   term('work', 'rawReason', 'taskReason.raw', 'glossary.work.rawReason'),
   // The person's own end of a block; tagged because the button text is an action.
   taggedTerm('work', 'unblock', 'taskBlocker.clear.action', 'glossary.work.unblock'),
+  // Team work: the card for a task several FLAs share, and the island above the dock.
+  taggedTerm('work', 'teamCard', 'teamWork.glossary.teamCard', 'glossary.work.teamCard'),
+  taggedTerm('work', 'island', 'teamWork.glossary.island', 'glossary.work.island'),
   ...['working', 'waiting', 'idle', 'error'].map(key =>
     term('presence', key, `glossary.presence.${key}.label`, `glossary.presence.${key}.body`)),
   ...['pending', 'agent', 'person'].map(key =>

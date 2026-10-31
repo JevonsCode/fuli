@@ -80,6 +80,8 @@ export const glossaryMessages = {
     },
     work: {
       running: 'Agent 正在处理这项任务。',
+      teamCard: '几位 FLA 一起做的一个任务。头像外的细圈是各自记录下来的进度（没有记录步骤就没有圈），正在做的那位会轻轻“呼吸”；点开看每个人的待办和进度。',
+      island: '有 FLA 正在一起做任务时，浮在底部导航上方的小条：谁在做、做什么、做到哪一步。点一下或停在上面会展开成团队卡片，不离开当前页面。',
       rawReason: 'FULI 记录下来的原文，通常是给排查问题用的代码和英文说明；上面那句是它的意思。',
       queued: '任务已排队，等前面的工作完成后开始。',
       backlog: '已经指派给人，但还没开工；改成排队后才会开始。',
@@ -184,6 +186,8 @@ export const glossaryMessages = {
     },
     work: {
       running: 'An Agent is working on this task.',
+      teamCard: 'One task several FLAs do together. The thin ring around each portrait is that FLA’s recorded progress (no ring when no steps are recorded), and whoever is on a step right now breathes softly. Open it for each FLA’s to-do list and progress.',
+      island: 'While FLAs are doing a task together, a small bar floats above the dock: who, what, and how far. Click or hover to open it into the team card without leaving the page.',
       rawReason: 'The text FULI recorded, usually a code and an English note for troubleshooting; the sentence above is what it means.',
       queued: 'Queued; it starts when earlier work finishes.',
       backlog: 'Assigned but not started; it starts once it is moved to the queue.',
