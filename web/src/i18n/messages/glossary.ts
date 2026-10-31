@@ -42,11 +42,11 @@ export const glossaryMessages = {
       agentNamingStyle: '你用一句话写下想要的 Agent 名字风格。之后新建 Agent 时，负责招聘的 Agent 按它起名，FULI 只保证名字不和已有 Agent 重复；重名就换一个同风格的，实在想不出会告诉你。已有 Agent 不改名；留空就用默认名字。',
     },
     destination: {
-      constellation: '打开 FULI 的第一页：待你处理的事、当前工作、最近项目和服务状态。',
-      agents: '你的 Agent 团队：全部 Agent、编排、服务和职业。',
-      chat: 'Agent 之间的对话记录，以及等你决定的请求。',
+      constellation: '打开 FULI 的第一页：当前工作、等你处理的事和最近完成的工作。',
+      agents: 'FLAs（FuLi Agents）：你的 Agent 团队，包括全部 FLA、编排、服务和职业。悬停可看到你置顶的 FLA。',
+      chat: '圆桌：Agent 之间的讨论，以及等你决定的请求。',
       projects: '只在本机的个人项目，以及可以订阅的公开项目。',
-      memory: 'FULI 为你记下的知识、偏好和标签，以及整理它们的地方。',
+      memory: '沉淀：FULI 为你记下的知识、偏好和标签，以及整理它们的地方。',
       settings: 'FULI 的设置、知识库连接和产品介绍。',
     },
     section: {
@@ -145,11 +145,11 @@ export const glossaryMessages = {
       agentNamingStyle: 'A sentence describing the names you want for Agents. When a new Agent is created, the recruiting Agent names it in this style and FULI only makes sure no other Agent already has the name; on a clash it picks another in the same style, and tells you if it cannot find one. Existing Agents keep their names; leave it empty for the default names.',
     },
     destination: {
-      constellation: 'The first page of FULI: what needs you, current work, recent projects and service status.',
-      agents: 'Your Agent team: every Agent, orchestration, services and occupations.',
-      chat: 'Conversations between Agents, and the requests waiting for your decision.',
+      constellation: 'The first page of FULI: current work, what needs you and what was just finished.',
+      agents: 'FLAs (FuLi Agents): your Agent team, with every FLA, orchestration, services and occupations. Hover to see the FLAs you pinned.',
+      chat: 'Roundtable: discussions between Agents, and the requests waiting for your decision.',
       projects: 'Your private projects on this computer, and public projects you can subscribe to.',
-      memory: 'The knowledge, preferences and tags FULI keeps for you, and where you tidy them.',
+      memory: 'Memory: the knowledge, preferences and tags FULI keeps for you, and where you tidy them.',
       settings: 'FULI settings, knowledge base connections and an introduction to the product.',
     },
     section: {

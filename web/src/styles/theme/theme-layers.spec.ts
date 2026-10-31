@@ -3,12 +3,9 @@ import base from './base.css?raw'
 import elements from './elements.css?raw'
 import components from './components.css?raw'
 import semantic from './semantic.css?raw'
-import skins from './skins.css?raw'
 import tailwind from './tailwind.css?raw'
 
-// The theme is layered: base → semantic → component tokens. A skin may only
-// re-point semantic tokens, so it recolours every page and every component
-// without touching component code.
+// The theme is layered: base, semantic, then component tokens.
 const declarations = (css: string) =>
   [...css.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map(([, name, value]) => ({ name: name!, value: value!.trim() }))
 const block = (css: string, selector: string) => {
@@ -18,8 +15,6 @@ const block = (css: string, selector: string) => {
 }
 const lightSemantic = new Set(declarations(semantic.slice(0, semantic.indexOf('@media'))).map(({ name }) => name))
 const componentNames = new Set(declarations(components).map(({ name }) => name))
-const skinBlocks = [...skins.matchAll(/:root\[data-palette="(\w+)"\]([^{]*)\{([^}]*)\}/g)]
-  .map(([, skin, guard, body]) => ({ skin: skin!, guard: guard!, body: body! }))
 const COLOUR_LITERAL = /#[0-9a-fA-F]{3,8}\b|\brgba?\(\s*\d|\bhsla?\(\s*\d/
 
 describe('theme layers', () => {
@@ -32,23 +27,6 @@ describe('theme layers', () => {
     for (const { name, value } of declarations(components)) {
       const source = value.match(/^var\((--[\w-]+)\)$/)?.[1]
       expect(source && lightSemantic.has(source), `${name}: ${value}`).toBe(true)
-    }
-  })
-
-  it('lets a skin re-point semantic tokens only, in light mode only', () => {
-    expect(skinBlocks.map(({ skin }) => skin)).toEqual(['ink', 'gold', 'indigo', 'sprout'])
-    for (const { skin, guard, body } of skinBlocks) {
-      expect(guard, skin).toContain(':not([data-theme="dark"])')
-      for (const { name } of declarations(body)) expect(lightSemantic.has(name), `${skin} sets ${name}`).toBe(true)
-    }
-  })
-
-  it('gives the second skin a clearly different page, text and accent', () => {
-    const jade = Object.fromEntries(declarations(block(semantic, ':root')).map(({ name, value }) => [name, value]))
-    const ink = Object.fromEntries(declarations(skinBlocks.find(({ skin }) => skin === 'ink')!.body).map(({ name, value }) => [name, value]))
-    for (const name of ['--color-bg', '--color-ink', '--color-accent', '--color-accent-soft', '--color-border']) {
-      expect(ink[name], name).toBeDefined()
-      expect(ink[name], name).not.toBe(jade[name])
     }
   })
 

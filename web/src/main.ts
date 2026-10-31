@@ -4,8 +4,10 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { i18n } from './i18n'
 import { initMotionPreference } from './lib/motion-preference'
-import { initPalettePreference } from './lib/palette-preference'
 import { router } from './router'
+// The bundled fonts (SIL OFL 1.1) register before the theme names them.
+import '@fontsource-variable/inter'
+import '@fontsource-variable/noto-sans-sc'
 // The theme comes first: it declares the cascade layer order.
 import './styles/theme/tailwind.css'
 import './styles/tokens.css'
@@ -18,7 +20,6 @@ import './styles/project-overview.css'
 import './styles/primitives.css'
 
 initMotionPreference()
-initPalettePreference()
 
 const app = createApp(App)
 app.use(createPinia())

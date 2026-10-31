@@ -4,7 +4,7 @@ import { ref } from 'vue'
 import type { ProjectAgentRecord } from '@/types'
 import AgentCard from './AgentCard.vue'
 import AgentPeek from './AgentPeek.vue'
-import PinnedAgentsRail from './PinnedAgentsRail.vue'
+import DockPins from './DockPins.vue'
 import { agentAvatarUrl } from './agent-avatar'
 
 const agent = {
@@ -17,7 +17,7 @@ vi.mock('vue-router', async (original) => ({
 }))
 vi.mock('./agent-pins', async (original) => ({
   ...await original<object>(),
-  useAgentPinsState: () => ({ agentIds: ref(['avatar-person']), error: ref('') }),
+  useAgentPinsState: () => ({ agentIds: ref(['avatar-person']), error: ref(''), savingAgentId: ref(null), setPinned: vi.fn() }),
 }))
 vi.mock('./useAgentRecords', () => ({
   useAgentRecords: () => ({ records: ref({ 'avatar-person': agent }), error: ref('') }),
@@ -31,17 +31,15 @@ const global = { stubs: { RouterLink: RouterLinkStub, AgentHand: true,
 } }
 
 describe('Shared portrait surfaces', () => {
-  it('uses the same local identity image in directory, quick look and both pinned rail modes', async () => {
+  it("uses the same local identity image in directory, quick look and the dock's pinned FLAs", async () => {
     const card = mount(AgentCard, { props: { agent, spaceId: 'space-a' }, global })
     const peek = mount(AgentPeek, { props: { agent, state: 'ready', projectNames: {} }, global })
-    const rail = mount(PinnedAgentsRail, { props: { spaceId: 'space-a', expanded: true }, global })
+    const rail = mount(DockPins, { props: { spaceId: 'space-a' }, global })
     const expected = agentAvatarUrl(agent.agentId)
     for (const wrapper of [card, peek, rail]) {
       expect(wrapper.get('img').attributes('src')).toBe(expected)
       expect(wrapper.get('img').attributes('alt')).toBe('')
     }
-    await rail.setProps({ expanded: false })
-    expect(rail.get('img').attributes('src')).toBe(expected)
     expect(rail.get('[data-pinned-agent]').attributes('aria-label')).toContain('Aster')
     for (const wrapper of [card, peek, rail]) wrapper.unmount()
   })

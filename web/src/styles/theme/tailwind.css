@@ -4,7 +4,6 @@
  *
  *   base.css        base tokens (font, type, spacing, radius, shadow, motion)
  *   semantic.css    semantic tokens for the default skin, plus reserved dark
- *   skins.css       other skins: re-point semantic tokens only
  *   components.css  shadcn-vue component tokens, mapped from semantic tokens
  *   elements.css    element defaults, in the base layer
  *
@@ -59,7 +58,6 @@
 
 @import "./base.css";
 @import "./semantic.css";
-@import "./skins.css";
 @import "./components.css";
 @import "./elements.css" layer(base);
 
