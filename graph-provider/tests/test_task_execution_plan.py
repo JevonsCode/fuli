@@ -22,6 +22,18 @@ def test_optional_plan_has_stable_unique_steps_and_explicit_status():
             ProjectAgentTaskActivityCreate(**activity(execution_plan={'steps': steps}))
 
 
+def test_a_step_owner_is_optional_and_an_unowned_step_serializes_as_before():
+    step = dict(id='verify', title='Verify the result', status='in_progress')
+    unowned = ProjectAgentTaskActivityCreate(**activity(execution_plan={'steps': [step]}))
+    assert json.loads(unowned.execution_plan.model_dump_json())['steps'] == [{**step, 'detail': None}]
+    assert 'agent_id' not in unowned.model_dump(mode='json')['execution_plan']['steps'][0]
+    owned = ProjectAgentTaskActivityCreate(**activity(execution_plan={'steps': [{**step, 'agent_id': 'engineer'}]}))
+    assert owned.execution_plan.steps[0].agent_id == 'engineer'
+    assert json.loads(owned.execution_plan.model_dump_json())['steps'][0]['agent_id'] == 'engineer'
+    with pytest.raises(ValidationError):
+        ProjectAgentTaskActivityCreate(**activity(execution_plan={'steps': [{**step, 'agent_id': ''}]}))
+
+
 def test_absent_plan_preserves_pre_upgrade_activity_fingerprint():
     from fuli_graph.store import GraphStore
     request = ProjectAgentTaskActivityCreate(**activity())
