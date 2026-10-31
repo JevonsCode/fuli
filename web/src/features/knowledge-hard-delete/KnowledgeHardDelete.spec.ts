@@ -73,15 +73,7 @@ async function open(read: () => unknown = () => view()) {
 const dialog = () => document.body.querySelector<HTMLElement>('[data-hard-delete-dialog]')
 
 async function openDialog(wrapper: Awaited<ReturnType<typeof open>>) {
-  await wrapper.get('[data-hard-delete-toggle] button').trigger('click')
   await wrapper.get('[data-hard-delete-open]').trigger('click')
-  await flushPromises()
-}
-
-async function type(value: string) {
-  const input = dialog()!.querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!
-  input.value = value
-  input.dispatchEvent(new Event('input'))
   await flushPromises()
 }
 
@@ -97,12 +89,11 @@ beforeEach(() => {
 })
 
 describe('permanent delete on the item page', () => {
-  it('sits collapsed at the end of the page and lists exactly what goes, what stays and what rests on it', async () => {
+  it('is one click from the end of the page and lists exactly what goes, what stays and what rests on it (D-88)', async () => {
     let answer: (value: unknown) => void = () => {}
     postJson.mockImplementation(() => new Promise((resolve) => { answer = resolve }))
     const wrapper = await open()
-    expect(wrapper.get('[data-hard-delete-toggle] button').attributes('aria-expanded')).toBe('false')
-    expect(wrapper.find('[data-hard-delete-open]').exists()).toBe(false)
+    expect(wrapper.get('[data-hard-delete-open]').text()).toBe('删除…')
     await openDialog(wrapper)
     expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/item-2/hard-delete/preview', { personalSpaceId: 'space' })
     expect(dialog()!.textContent).toContain('正在列出将彻底删除的内容')
@@ -119,12 +110,39 @@ describe('permanent delete on the item page', () => {
     expect([...shown.querySelectorAll('[data-hard-delete-count]')].map((row) => row.getAttribute('data-hard-delete-count')))
       .toEqual(['mentions', 'revisions', 'usage', 'change_audits', 'tags'])
     expect(shown.querySelector('[data-hard-delete-kept]')!.textContent).toContain('已经发布到公开项目的内容不会自动撤回')
-    const button = shown.querySelector<HTMLButtonElement>('[data-hard-delete-submit]')!
-    expect(button.disabled).toBe(true)
-    await type('ok')
-    expect(button.disabled).toBe(true)
-    await type('删除')
-    expect(button.disabled).toBe(false)
+    // One confirmation, three choices; nothing to type.
+    expect(shown.querySelector('input')).toBeNull()
+    expect([...shown.querySelectorAll('[data-slot="dialog-footer"] button, form button')].map((button) => button.textContent!.trim()))
+      .toEqual(['取消', '导出并删除', '确定删除'])
+    expect(shown.querySelector<HTMLButtonElement>('[data-hard-delete-submit]')!.disabled).toBe(false)
+    expect(shown.querySelector<HTMLButtonElement>('[data-hard-delete-export]')!.disabled).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('导出并删除 saves what the dialog listed as a local file, then deletes the same preview', async () => {
+    postJson.mockResolvedValueOnce(preview()).mockResolvedValueOnce(deletedResult())
+    const saved: { name: string; text: Promise<string> }[] = []
+    const create = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      saved.push({ name: '', text: (blob as Blob).text() })
+      return 'blob:synthetic'
+    })
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      saved.at(-1)!.name = this.download
+    })
+    const wrapper = await open()
+    await openDialog(wrapper)
+    dialog()!.querySelector<HTMLButtonElement>('[data-hard-delete-export]')!.click()
+    await flushPromises()
+    expect(saved).toHaveLength(1)
+    expect(saved[0].name).toMatch(/^fuli-deleted-.+\.json$/)
+    const exported = JSON.parse(await saved[0].text)
+    expect(exported).toMatchObject({ format: 'fuli-deleted-knowledge', personal_space_id: 'space', item_id: 'item-2' })
+    expect(exported).not.toHaveProperty('preview_id')
+    expect(postJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-2/hard-delete', {
+      personalSpaceId: 'space', previewId: 'a'.repeat(64), confirmation: '删除' })
+    expect(wrapper.get('[data-hard-deleted]').attributes('data-hard-deleted-state')).toBe('complete')
+    create.mockRestore(); revoke.mockRestore(); click.mockRestore()
     wrapper.unmount()
   })
 
@@ -134,7 +152,6 @@ describe('permanent delete on the item page', () => {
       : new Promise((resolve) => { finish = resolve }))
     const wrapper = await open()
     await openDialog(wrapper)
-    await type('删除')
     await submit()
     expect(postJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-2/hard-delete', {
       personalSpaceId: 'space', previewId: 'a'.repeat(64), confirmation: '删除' })
@@ -157,7 +174,7 @@ describe('permanent delete on the item page', () => {
     wrapper.unmount()
   })
 
-  it('a stale preview lists again from what is stored now and needs a new confirmation', async () => {
+  it('a stale preview lists again from what is stored now and is confirmed again', async () => {
     const fresh = 'b'.repeat(64)
     postJson.mockResolvedValueOnce(preview())
       .mockRejectedValueOnce(new ApiError('stale', 409, JSON.stringify({ code: 'hard_delete_preview_stale', error: 'changed' })))
@@ -168,13 +185,11 @@ describe('permanent delete on the item page', () => {
         local_stores: [{ store: 'judgment.sqlite', status: 'failed', reason: 'synthetic newer format' }] }))
     const wrapper = await open()
     await openDialog(wrapper)
-    await type('删除')
     await submit()
     expect(postJson).toHaveBeenCalledTimes(3)
     expect(dialog()!.querySelector('[data-hard-delete-notice]')!.textContent).toContain('预览之后内容有变化')
-    expect(dialog()!.querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!.value).toBe('')
-    expect(dialog()!.querySelector<HTMLButtonElement>('[data-hard-delete-submit]')!.disabled).toBe(true)
-    await type('删除')
+    // The new list needs the person's click again; nothing is sent by itself.
+    expect(postJson).toHaveBeenCalledTimes(3)
     await submit()
     expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/item-2/hard-delete', {
       personalSpaceId: 'space', previewId: fresh, confirmation: '删除' })
@@ -194,7 +209,6 @@ describe('permanent delete on the item page', () => {
     })
     const wrapper = await open()
     await openDialog(wrapper)
-    await type('删除')
     await submit()
     expect(dialog()).toBeNull()
     expect(wrapper.text()).not.toContain('没有删除')
@@ -217,7 +231,6 @@ describe('permanent delete on the item page', () => {
     })
     const wrapper = await open()
     await openDialog(wrapper)
-    await type('删除')
     await submit()
     expect(dialog()!.querySelector('[data-hard-delete-error]')!.textContent).toContain('没有删除')
     wrapper.unmount()
@@ -231,7 +244,6 @@ describe('permanent delete on the item page', () => {
     })
     const again = await open()
     await openDialog(again)
-    await type('删除')
     await submit()
     await flushPromises()
     expect(again.find('[data-hard-deleted]').exists()).toBe(false)
@@ -281,7 +293,6 @@ describe('permanent delete on the item page', () => {
     })
     const wrapper = await open()
     await openDialog(wrapper)
-    await type('删除')
     await submit()
     expect(dialog()!.querySelector('[data-hard-delete-error]')!.textContent).toContain('restoring it from a format backup')
     expect(wrapper.find('[data-hard-deleted]').exists()).toBe(false)
