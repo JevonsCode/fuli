@@ -13,7 +13,7 @@ import {
 } from '../src/desktop/windows-node-launcher.js';
 
 function temporaryRoot(t, prefix) {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return root;
 }
