@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { readWindowsInstallation } from './windows-installation-context.js';
 
-// Receipt links as `fuli://` links (rec#11 D-77): the FULI desktop client of
+// Receipt links as `fuli://` links (rec#11 D-80): the FULI desktop client of
 // this Windows installation registers the scheme for its user
 // (desktop/flutter windows_url_scheme.dart), opens the page with whatever port
 // the console uses now, and only navigates. Until the scheme opens this

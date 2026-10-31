@@ -31,7 +31,7 @@ function packagedImport(plugin) {
 }
 
 // Package-relative scripts are an installed Windows copy's: nodePath is the
-// launcher beside its installation.json (src/setup/paths.js, rec#11 D-77). The
+// launcher beside its installation.json (src/setup/paths.js, rec#11 D-80). The
 // hook runs through that launcher, and the plugin module is imported from the
 // version installation.json names when OpenCode loads the file, so an update or
 // rollback leaves this file as it is.

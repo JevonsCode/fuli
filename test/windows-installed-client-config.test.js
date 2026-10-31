@@ -1,5 +1,5 @@
 // An installed Windows copy's client configurations name the stable launcher at
-// its installation root (rec#11 D-77), so update and rollback leave them current.
+// its installation root (rec#11 D-80), so update and rollback leave them current.
 // Synthetic installation, data directory and client home only.
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';

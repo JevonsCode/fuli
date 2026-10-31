@@ -22,7 +22,7 @@ export function resolveSetupPaths({
   const installed = bundle ? readWindowsInstallation(root) : null;
   // An installed Windows copy's clients run the stable launcher at its installation
   // root with package-relative scripts: it starts the version installation.json
-  // names, so an update or rollback changes no client configuration (rec#11 D-77).
+  // names, so an update or rollback changes no client configuration (rec#11 D-80).
   // Elsewhere, and before an installation has the launcher, this Node runs this package.
   const launcher = installed ? installedWindowsNodeLauncher(installed.installRoot) : null;
   const resolvedDataDir = resolve(cwd, dataDir ?? installed?.dataDir ?? nonEmpty(env.FULI_DATA_DIR)
