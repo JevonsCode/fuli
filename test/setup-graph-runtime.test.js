@@ -8,6 +8,7 @@ import {
 } from '../src/setup/graph-runtime.js';
 import { FULI_VERSION } from '../src/package-metadata.js';
 import { DEFAULT_CONVERSATION_LAUNCHERS } from '../src/system/runtime-settings.js';
+import { recoverBlockedPorts } from '../src/system/blocked-port-recovery.js';
 
 const PATHS = Object.freeze({
   dataDir: 'C:/Fuli',
@@ -805,6 +806,8 @@ function dependencies(overrides = {}) {
     waitForExit: async () => true,
     // Never read this machine's reserved ports or probe a real port.
     consolePortProblem: async () => null,
+    recoverPorts: async (settings) => ({ settings, moves: [] }),
+    backupSettings() { throw new Error('No port moved, so the settings are not backed up'); },
     ...overrides
   };
 }
@@ -875,3 +878,140 @@ test('a stopped installation switches modes from its saved mode, not from the re
     assert.equal(writes.find(({ path }) =>
       path === PATHS.graphRuntimeConfigPath).value.personal.accessToken, 'native-token');
   });
+
+// Automatic port recovery (blocked-port-recovery.js) wired into the start: a
+// synthetic reserved range and probe, never this machine's ports.
+const RESERVED_AFTER_REBOOT = Object.freeze([{ start: 2634, end: 2733 }]);
+
+function recoverWith({ ranges = RESERVED_AFTER_REBOOT, refusals = {}, probed = [] } = {}) {
+  return (settings, options) => recoverBlockedPorts(settings, {
+    ...options,
+    platform: 'win32',
+    readRanges: () => ranges,
+    probe: async (port, host) => { probed.push([port, host]); return refusals[port] ?? null; }
+  });
+}
+
+function providerFetch(seen = []) {
+  return async (url) => {
+    seen.push(url);
+    if (url.endsWith('/health')) return response({ status: 'ready' });
+    if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
+    throw new Error(`Unexpected Provider request: ${url}`);
+  };
+}
+
+test('a console port Windows reserved since the last start moves nearby, is saved after a backup and reported', async () => {
+  const order = [];
+  let savedSettings = null;
+  let spawnedPort = null;
+  let writtenState = null;
+  const result = await ensureGraphRuntime({
+    paths: PATHS, personalSpaceName: '我', personalOnly: true, port: 2727, noStart: false
+  }, dependencies({
+    readConfig: configuredGraph,
+    fetch: providerFetch(),
+    recoverPorts: recoverWith(),
+    backupSettings(paths) { assert.equal(paths, PATHS); order.push('backup'); },
+    writeRuntimeSettings(path, settings) {
+      assert.equal(path, PATHS.runtimeSettingsPath);
+      order.push('save');
+      savedSettings = settings;
+    },
+    spawnWebRuntime(input) { spawnedPort = input.port; return { pid: 4100 }; },
+    isProcessAlive: (pid) => pid === 4100,
+    webHealth: async (url, pid) => url === 'http://127.0.0.1:2734' && pid === 4100,
+    writeState(_path, state) { writtenState = state; }
+  }));
+
+  const moves = [{ key: 'console', from: 2727, to: 2734, reason: 'reserved' }];
+  assert.deepEqual(order, ['backup', 'save']);
+  assert.equal(savedSettings.ports.console, 2734);
+  assert.equal(spawnedPort, 2734);
+  assert.equal(writtenState.url, 'http://127.0.0.1:2734', 'links built from the runtime state follow the move');
+  assert.deepEqual(writtenState.portMoves, moves);
+  assert.deepEqual(result, { status: 'started', url: 'http://127.0.0.1:2734', pid: 4100, portMoves: moves });
+});
+
+test('a console port another program holds moves to the next free one; the recorded console is never probed', async () => {
+  const probed = [];
+  const result = await ensureGraphRuntime({
+    paths: PATHS, personalSpaceName: '我', personalOnly: true, port: 2727, noStart: false
+  }, dependencies({
+    readConfig: configuredGraph,
+    fetch: providerFetch(),
+    recoverPorts: recoverWith({ ranges: [], refusals: { 2727: 'EADDRINUSE' }, probed }),
+    backupSettings() {},
+    spawnWebRuntime: () => ({ pid: 4100 }),
+    isProcessAlive: (pid) => pid === 4100,
+    // Nothing FULI answers on 2727: it is another program.
+    webHealth: async (url, pid) => url === 'http://127.0.0.1:2728' && pid === 4100,
+    writeState() {}
+  }));
+  assert.deepEqual(probed, [[2727, '127.0.0.1'], [2728, '127.0.0.1']]);
+  assert.deepEqual(result.portMoves, [{ key: 'console', from: 2727, to: 2728, reason: 'in_use' }]);
+
+  // The same data directory's own console on its saved port stays as it is.
+  const kept = [];
+  const running = await ensureGraphRuntime({
+    paths: PATHS, personalSpaceName: '我', personalOnly: true, port: 2727, noStart: false
+  }, dependencies({
+    readConfig: configuredGraph,
+    readState: () => ({ version: 4, pid: 2727, url: 'http://127.0.0.1:2727', port: 2727 }),
+    fetch: providerFetch(),
+    recoverPorts: recoverWith({ ranges: [], refusals: { 2727: 'EADDRINUSE' }, probed: kept }),
+    consoleVersion: async () => FULI_VERSION,
+    isProcessAlive: (pid) => pid === 2727,
+    webHealth: async (url, pid) => url === 'http://127.0.0.1:2727' && pid === 2727,
+    spawnWebRuntime() { throw new Error('The running console is kept'); }
+  }));
+  assert.deepEqual(kept, []);
+  assert.deepEqual(running, { status: 'running', url: 'http://127.0.0.1:2727', pid: 2727 });
+});
+
+test('another FULI console on the port is neither replaced nor joined by a second one', async () => {
+  const sideEffects = [];
+  await assert.rejects(ensureGraphRuntime({
+    paths: PATHS, personalSpaceName: '我', personalOnly: true, port: 2727, noStart: false
+  }, dependencies({
+    readConfig: configuredGraph,
+    fetch: providerFetch(),
+    recoverPorts: recoverWith({ ranges: [], refusals: { 2727: 'EADDRINUSE' } }),
+    // A FULI console of some other data directory answers there.
+    webHealth: async (url, pid) => url === 'http://127.0.0.1:2727' && pid === undefined,
+    writeRuntimeSettings() { sideEffects.push('settings'); },
+    startProviders() { sideEffects.push('providers'); },
+    spawnWebRuntime() { sideEffects.push('console'); return { pid: 4100 }; }
+  })), /Another FULI is already running on port 2727/);
+  assert.deepEqual(sideEffects, []);
+});
+
+test('a reserved Provider port moves, its URL is synchronized and the running console restarts to use it', async () => {
+  const seen = [];
+  let environment = '';
+  let writtenConfig = null;
+  const stopped = [];
+  const result = await ensureGraphRuntime({
+    paths: PATHS, personalSpaceName: '我', personalOnly: true, port: 2727, noStart: false
+  }, dependencies({
+    readConfig: configuredGraph,
+    readState: () => ({ version: 4, pid: 2727, url: 'http://127.0.0.1:2727', port: 2727 }),
+    fetch: providerFetch(seen),
+    recoverPorts: recoverWith({ ranges: [{ start: 8700, end: 8787 }] }),
+    backupSettings() {},
+    writeText(_path, body) { environment = body; },
+    writeConfig(path, value) { if (path === PATHS.graphRuntimeConfigPath) writtenConfig = value; },
+    consoleVersion: async () => FULI_VERSION,
+    stopProcess: (pid) => stopped.push(pid),
+    isProcessAlive: (pid) => pid === 2727 || pid === 4100,
+    webHealth: async (url, pid) => url === 'http://127.0.0.1:2727' && [2727, 4100].includes(pid),
+    spawnWebRuntime: () => ({ pid: 4100 }),
+    writeState() {}
+  }));
+  assert.match(environment, /^FULI_PERSONAL_PROVIDER_PORT=8789$/m, '8788 belongs to the shared-project Provider');
+  assert.ok(seen.includes('http://127.0.0.1:8789/health'));
+  assert.equal(writtenConfig.personal.providerUrl, 'http://127.0.0.1:8789');
+  assert.deepEqual(stopped, [2727]);
+  assert.equal(result.status, 'started');
+  assert.deepEqual(result.portMoves, [{ key: 'personalProvider', from: 8787, to: 8789, reason: 'reserved' }]);
+});

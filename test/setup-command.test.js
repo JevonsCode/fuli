@@ -60,6 +60,12 @@ test('setup reminds existing clients to reconnect after a manual package upgrade
   assert.match(output, /After a package upgrade, reconnect Fuli/);
 });
 
+test('setup says which port the start moved by itself before the address to open', () => {
+  const output = formatSetupResult({ status: 'ready', agents: [], runtime: { url: 'http://127.0.0.1:2728',
+    portMoves: [{ key: 'console', from: 2727, to: 2728, reason: 'in_use' }] } });
+  assert.match(output, /Another program uses port 2727, so the management UI now uses port 2728\. The new port is saved\.\nOpen: http:\/\/127\.0\.0\.1:2728/);
+});
+
 test('partial setup returns a failure exit code for automated updates', async () => {
   const result = await runSetupCommand(['--yes'], {
     planSetup: () => samplePlan(),

@@ -519,8 +519,10 @@ fuli open
 ```
 
 管理界面默认位于 `http://127.0.0.1:2727`。Windows 上 Hyper-V、WSL 和 winnat 会保留一些端口段，且每次开机可能不同
-（`netsh interface ipv4 show excludedportrange protocol=tcp` 可查看）。首次设置会避开这些端口段；管理界面因端口被保留而
-启动失败时，会说明是哪个端口段；Windows 托盘的「换一个端口」会改用附近一个可用端口、备份 `runtime-settings.json` 并重启 Fuli。
+（`netsh interface ipv4 show excludedportrange protocol=tcp` 可查看）。首次设置会避开这些端口段；之后每次 `fuli start`、
+`restart` 和 `setup` 都会再查一遍：Fuli 的端口如果被保留了，或者管理界面的端口被 Windows 拒绝、被别的程序占用，就自动换到最近的
+可用端口，先备份 `runtime-settings.json` 再保存新端口，照常启动，并只提示一次（命令输出、桌面客户端和管理界面里）。如果那个端口上
+是另一个正在运行的 Fuli，它不会换走，也不会再启动一个。Windows 托盘的「换一个端口」仍可按需改用默认端口附近的可用端口。
 已打开的 Agent 会话要重开后，Fuli 链接才会指向新地址。
 
 “设置”页集中管理 Fuli 使用的 7 个本机端口、图数据库运行方式、局域网访问、自动沉淀、

@@ -51,6 +51,8 @@ import {
 } from '../adaptive-runtime/state.js';
 import { nonEmptyText } from '../validation/values.js';
 import { reservedPortProblem } from '../system/reserved-ports.js';
+import { recoverBlockedPorts } from '../system/blocked-port-recovery.js';
+import { backupRuntimeSettings } from '../system/console-port-switch.js';
 
 export {
   dockerInfoIndicatesDaemon,
@@ -66,19 +68,18 @@ const CONSOLE_HEALTH_TIMEOUT_MS = 2500;
 
 export async function ensureGraphRuntime(input, dependencies = {}) {
   const deps = graphDependencies(dependencies);
-  const runtimeSettings = normalizeRuntimeSettings(input.runtimeSettings ??
+  const requestedSettings = normalizeRuntimeSettings(input.runtimeSettings ??
     runtimeSettingsWithOverrides(DEFAULT_RUNTIME_SETTINGS, {
       consolePort: input.port,
       lanAccess: input.lan === true
     }));
-  const urls = managedProviderUrls(runtimeSettings);
   const adaptiveRuntimeSettings = normalizeAdaptiveRuntimeSettings(
     input.adaptiveRuntimeSettings ?? (input.paths.adaptiveRuntimeSettingsPath
       ? deps.readAdaptiveSettings(input.paths.adaptiveRuntimeSettingsPath)
       : DEFAULT_ADAPTIVE_RUNTIME_SETTINGS)
   );
-  const lan = runtimeSettings.lanAccess;
-  const runtimeMode = input.runtimeMode ?? runtimeSettings.graphRuntimeMode;
+  const lan = requestedSettings.lanAccess;
+  const runtimeMode = input.runtimeMode ?? requestedSettings.graphRuntimeMode;
   const activeRuntimeState = deps.readState(input.paths.graphRuntimeStatePath);
   // `fuli stop` removes the runtime state, so the saved settings are the record of
   // the mode a stopped installation last used. Without it a mode switch would
@@ -94,7 +95,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     ? await deps.ensureNativeRuntime({
         paths: input.paths,
         env: input.env ?? process.env,
-        runtimeSettings,
+        runtimeSettings: requestedSettings,
         memoryProfile: input.memoryProfile,
         personalOnly: input.personalOnly === true,
         allowProviderDowngrade: input.allowProviderDowngrade === true,
@@ -104,6 +105,15 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
         env: input.env ?? process.env,
         onProgress: input.onProgress
       });
+  // A port Windows reserved since the last start, or one another program
+  // took, moves to the nearest free one before anything listens.
+  const recordedConsolePort = isGraphRuntimeState(activeRuntimeState) &&
+    deps.isProcessAlive(activeRuntimeState.pid) ? activeRuntimeState.port ?? null : null;
+  const { settings: runtimeSettings, moves: portMoves } = await deps.recoverPorts(requestedSettings, {
+    recordedConsolePort,
+    fuliConsoleAt: (port) => deps.webHealth(`http://127.0.0.1:${port}`)
+  });
+  const urls = managedProviderUrls(runtimeSettings);
   deps.ensureDirectory(input.paths.dataDir);
   const configSelection = selectRuntimeConfig({
     paths: input.paths,
@@ -123,6 +133,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     input.memoryProfile,
     deps
   );
+  if (portMoves.length) deps.backupSettings(input.paths, new Date(deps.now()));
   deps.writeRuntimeSettings(input.paths.runtimeSettingsPath, runtimeSettings);
   if (runtimeMode === 'native') {
     await deps.startNativeProviders(input.paths, input.paths.graphEnvPath, {
@@ -196,7 +207,10 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     deps.secureFile(activeProfilePath);
   }
 
-  if (input.noStart) return { status: 'initialized', url: null, pid: null };
+  // Moved ports are reported by the start that moved them; the console's
+  // 体检 reads them from the runtime state while that console runs.
+  const reportedMoves = portMoves.length ? { portMoves } : {};
+  if (input.noStart) return { status: 'initialized', url: null, pid: null, ...reportedMoves };
   const existing = activeRuntimeState;
   if (isGraphRuntimeState(existing) && deps.isProcessAlive(existing.pid)) {
     const healthy = await deps.webHealth(existing.url, existing.pid, existing.version);
@@ -204,6 +218,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     if (
       healthy &&
       existing.port === runtimeSettings.ports.console &&
+      portMoves.length === 0 &&
       exposureMatches(existing, { lan, lanAddresses }) &&
       await deps.consoleVersion(existing.url) === FULI_VERSION
     ) {
@@ -253,11 +268,12 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     managedProviders: input.personalOnly
       ? ['personal']
       : ['personal', 'development-workspace'],
-    startedAt: new Date().toISOString()
+    startedAt: new Date().toISOString(),
+    ...reportedMoves
   };
   deps.writeState(input.paths.graphRuntimeStatePath, state);
   deps.secureFile(input.paths.graphRuntimeStatePath);
-  return runtimeResult('started', state, lanAccessToken);
+  return { ...runtimeResult('started', state, lanAccessToken), ...reportedMoves };
 }
 
 function selectRuntimeConfig({ paths, previousRuntimeMode, runtimeMode, deps }) {
@@ -597,6 +613,8 @@ function graphDependencies(overrides) {
     stopProcess,
     webHealth: checkLocalConsoleHealth,
     consolePortProblem: (port, host) => reservedPortProblem(port, { host }),
+    recoverPorts: recoverBlockedPorts,
+    backupSettings: backupRuntimeSettings,
     consoleVersion: readLocalConsoleVersion,
     discoverLanAddresses,
     createLanAccessToken: secret,

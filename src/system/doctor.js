@@ -34,8 +34,10 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // latestVersion: the version checker's last answer without waiting, or null.
 // lastUpdate: the console update journal's status (console-update.js), or null.
 // internalDetails: returns the report's internal section without waiting, or null.
+// portMoves: the ports the running console's start moved by itself
+// ({ movedAt, moves }, blocked-port-recovery.js), or null.
 export function createDoctor({ observeClients, previewDataFormats = null, liveProcesses, latestVersion, lastUpdate,
-  internalDetails = null, version = FULI_VERSION, now = () => new Date() }) {
+  internalDetails = null, portMoves = () => null, version = FULI_VERSION, now = () => new Date() }) {
   async function check() {
     const unchecked = [];
     const read = async (source, readSource) => {
@@ -46,11 +48,13 @@ export function createDoctor({ observeClients, previewDataFormats = null, livePr
     const processes = await read('sessions', liveProcesses);
     const latest = await read('update', latestVersion);
     const update = await read('update', lastUpdate);
+    const moved = await read('runtime', portMoves);
     const items = [
       ...clientItems(clients?.clients ?? []),
       ...dataFormatItems(formats),
       ...sessionItems(processes ?? [], version),
-      ...updateItems(latest, update, version)
+      ...updateItems(latest, update, version),
+      ...portItems(moved)
     ].sort((left, right) => SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity]);
     return { checkedAt: now().toISOString(), version, overall: overallOf(items), items, unchecked: [...new Set(unchecked)],
       ...(internalDetails ? { internal: internalDetails() } : {}) };
@@ -99,6 +103,14 @@ function sessionItems(processes, version) {
     groups.set(key, group);
   }
   return [...groups].map(([key, group]) => item(`sessions_outdated:${key}`, 'sessions_outdated', 'warning', 'person', group));
+}
+
+// Ports this console's start moved because Windows reserved them or another
+// program held them. Nothing is left to do; the id names the start, so a
+// client says it once per move.
+function portItems(moved) {
+  if (!moved?.moves?.length) return [];
+  return [item(`ports_moved:${moved.movedAt}`, 'ports_moved', 'info', 'person', moved)];
 }
 
 function updateItems(latest, update, version) {

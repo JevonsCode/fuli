@@ -11,6 +11,7 @@ const _knownKinds = {
   'sessions_outdated',
   'update_available',
   'update_left_work',
+  'ports_moved',
   'codex_hooks_review',
 };
 

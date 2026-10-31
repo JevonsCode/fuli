@@ -65,6 +65,28 @@ test('fl start prints one stable local console address', async () => {
   assert.doesNotMatch(output[0], /[\p{Script=Han}]/u);
 });
 
+test('fl start says once which port it moved by itself, before the new address', async () => {
+  const output = [];
+  await runLocalRuntimeCommand('start', [], {
+    resolvePaths: () => ({ dataDir: 'C:/Fuli' }),
+    discoverAgents: () => [],
+    start: async () => ({
+      status: 'started',
+      url: 'http://127.0.0.1:2734',
+      pid: 27,
+      portMoves: [{ key: 'console', from: 2727, to: 2734, reason: 'reserved' }],
+      managesDevelopmentWorkspace: false
+    }),
+    write: (line) => output.push(line)
+  });
+
+  assert.deepEqual(output[0].split('\n').slice(0, 3), [
+    'Fuli local services started.',
+    'Port 2727 is reserved by Windows, so the management UI now uses port 2734. The new port is saved.',
+    'Management UI: http://127.0.0.1:2734'
+  ]);
+});
+
 test('fl start tells the user to run setup when an Agent integration is outdated', async () => {
   const output = [];
   const result = await runLocalRuntimeCommand('start', [], {

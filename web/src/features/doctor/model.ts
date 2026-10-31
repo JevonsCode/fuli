@@ -51,6 +51,24 @@ export interface DoctorItemView {
 
 const text = (value: unknown) => typeof value === 'string' ? value : ''
 
+// A port FULI's last start moved by itself (src/system/blocked-port-recovery.js).
+interface PortMove { key: string; from: number; to: number; reason: 'reserved' | 'refused' | 'in_use' }
+
+// The sentence the shell says once when the running console's start moved
+// ports: the console's own move when there is one, else the graph services'.
+// The id names that start, so a later start that moves again is said again.
+export function portsMovedNotice(report: DoctorReport | null): { id: string; message: string } | null {
+  const moved = report?.items.find(item => item.kind === 'ports_moved')
+  if (!moved) return null
+  const moves = Array.isArray(moved.data.moves) ? moved.data.moves as PortMove[] : []
+  const consoleMove = moves.find(move => move.key === 'console')
+  const message = consoleMove
+    ? t(consoleMove.reason === 'in_use' ? 'doctor.portsMoved.consoleInUse' : 'doctor.portsMoved.consoleReserved',
+      { from: consoleMove.from, to: consoleMove.to })
+    : t('doctor.portsMoved.services')
+  return { id: moved.id, message }
+}
+
 // One item in plain words: never its kind code. A kind this console does not
 // know yet still reads as something to look at.
 export function doctorItemView(item: DoctorItem): DoctorItemView {

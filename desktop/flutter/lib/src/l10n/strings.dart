@@ -130,10 +130,29 @@ class Strings {
           ? _t('上次更新没有完成。', 'The last update did not finish.')
           : _t('更新到 v${text('version')} 后，还有 Agent 没有重新接入 FULI。',
               'After the update to v${text('version')}, some Agents have not reconnected to FULI.'),
+      'ports_moved' => _portsMoved(data['moves']),
       'codex_hooks_review' => _t('FULI 给 Codex 的钩子有变化。在 Codex 里输入 /hooks 查看并信任后，Codex 才会自动带上 FULI。',
           "FULI's Codex hooks changed. Type /hooks in Codex to review and trust them so Codex brings FULI in automatically."),
       _ => _t('FULI 发现一件需要处理的事，打开控制台可以看到详情。', 'FULI found something to take care of; open the console for details.'),
     };
+  }
+
+  // The ports FULI's last start moved by itself (src/system/blocked-port-recovery.js):
+  // the console's own move when there is one, otherwise the graph services'.
+  String _portsMoved(Object? moves) {
+    final list = moves is List ? moves.whereType<Map>().toList() : const <Map>[];
+    final console = list.where((move) => move['key'] == 'console').firstOrNull;
+    if (console == null || console['from'] is! int || console['to'] is! int) {
+      return _t('有端口不能用，FULI 已自动给图谱服务换了端口，不用你做什么。',
+          'Some ports could not be used, so FULI moved its graph services to other ports by itself. Nothing to do.');
+    }
+    final from = console['from'];
+    final to = console['to'];
+    return console['reason'] == 'in_use'
+        ? _t('端口 $from 被别的程序占用，FULI 已自动改用 $to，不用你做什么。',
+            'Another program uses port $from, so FULI moved to port $to by itself. Nothing to do.')
+        : _t('端口 $from 被系统保留，FULI 已自动改用 $to，不用你做什么。',
+            'Port $from is reserved by the system, so FULI moved to port $to by itself. Nothing to do.');
   }
 
   String _sessionsOutdated(String client, Object? count, String version) {

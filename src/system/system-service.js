@@ -114,7 +114,11 @@ export function createSystemService({
     discover: discoverAgents, inspect: inspectAgentInstallations }) });
   const doctor = createDoctor({ observeClients, previewDataFormats,
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
-    lastUpdate: () => update.status(), internalDetails: () => ({ installerShadow: installerShadow.latest() }) });
+    lastUpdate: () => update.status(), internalDetails: () => ({ installerShadow: installerShadow.latest() }),
+    portMoves: () => {
+      const state = readJson(paths.graphRuntimeStatePath, null);
+      return state?.portMoves ? { movedAt: state.startedAt, moves: state.portMoves } : null;
+    } });
 
   return {
     getSettings,
