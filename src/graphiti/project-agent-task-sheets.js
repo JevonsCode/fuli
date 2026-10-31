@@ -10,8 +10,17 @@ const TASK_LIMIT = 200;
 
 export async function listAgentWorkbenches(application, { personalSpaceId, agentId }) {
   if (typeof agentId !== 'string' || !agentId) throw new TypeError('agentId is required');
+  return { agentId, ...await visibleTaskSheets(application, { personalSpaceId, agentId }) };
+}
+
+// Every FLA's task sheets in one space (rec#11 D-85, the work-surfaces table).
+export function listSpaceWorkbenches(application, { personalSpaceId }) {
+  return visibleTaskSheets(application, { personalSpaceId, agentId: null });
+}
+
+async function visibleTaskSheets(application, { personalSpaceId, agentId }) {
   const tasks = await application.listProjectAgentTasks({ personalSpaceId, agentId, limit: TASK_LIMIT });
-  return { agentId, partial: tasks.length >= TASK_LIMIT,
+  return { partial: tasks.length >= TASK_LIMIT,
     workbenches: tasks.filter(task => !HIDDEN_STATUSES.has(task.status)).map(task => taskSheet(task, agentId)) };
 }
 

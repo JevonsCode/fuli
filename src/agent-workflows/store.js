@@ -80,6 +80,12 @@ export class AgentWorkflowStore {
       ORDER BY created_at, workflow_id`).all(personalSpaceId, agentId).map(workflowView);
   }
 
+  listForSpace(personalSpaceId) {
+    if (!this.readable) return [];
+    return this.db.prepare(`SELECT * FROM agent_workflows WHERE personal_space_id = ?
+      ORDER BY created_at, workflow_id`).all(personalSpaceId).map(workflowView);
+  }
+
   // The Agent's workflow a candidate was first proposed from, if any.
   fromSource(personalSpaceId, agentId, source) {
     if (!this.readable) return null;

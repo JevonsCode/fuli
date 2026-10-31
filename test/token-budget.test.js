@@ -161,7 +161,11 @@ const BASELINE = Object.freeze({
   // Exact projectId selection on list_personal_projects: 196,560 -> 196,632 B (+72 B), measured.
   // rec#11 D-82 task sheets: an execution-plan step may name its participant (agentId):
   // 196,632 -> 196,744 B (+112 B), measured; chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 196744,
+  // rec#11 D-85 work surfaces: three full-profile tools (list every FLA's services, apps, workflows
+  // and workbenches; pause all matching; resume a pause) sharing one five-field filter:
+  // 196,744 -> 198,559 B (+1,815 B), measured. Chat reaches them through
+  // list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 198559,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
