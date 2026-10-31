@@ -1,6 +1,5 @@
 export const agentRedesignMessages = {
   "zh-CN": {
-    refreshing: "正在更新 Agent 名录",
     membershipStatus: "成员 · {status}",
     projects: {
       more: "全部项目 · {count}",
@@ -29,8 +28,6 @@ export const agentRedesignMessages = {
       runningFor: "已运行 {duration}",
       runningForUnknown: "运行时长未知",
       responsibility: "长期职责",
-      reorder: "按最新状态重新排序",
-      reorderHint: "工作状态已变化，列表保持原顺序以便阅读",
     },
     statusDetail: {
       blocked: "受阻：{reason}",
@@ -44,20 +41,6 @@ export const agentRedesignMessages = {
       unreportedRoster: "名录没有报告这名 Agent 的工作状态，可刷新再看",
       unreportedTasks: "最近 200 条任务里没有找到它的工作，状态不完整",
       unavailable: "工作状态读取失败，可在上方重试",
-    },
-    projectView: {
-      label: "查看方式",
-      agents: "按成员",
-      projects: "按项目",
-      members: "{count} 名成员",
-      running: "{count} 名运行中",
-      unknown: "{count} 名状态未知",
-      unassigned: "未分配项目",
-      lead: "负责人：{name}",
-      leadUnset: "待设负责人",
-      loadingLead: "正在读取项目负责人",
-      leadFailed: "项目负责人读取失败",
-      openProject: "打开项目",
     },
     unassigned: {
       count: "待归属 {count} 个会话",
@@ -125,7 +108,6 @@ export const agentRedesignMessages = {
     },
   },
   "en-US": {
-    refreshing: "Updating the Agent directory",
     membershipStatus: "Member · {status}",
     projects: {
       more: "All projects · {count}",
@@ -154,8 +136,6 @@ export const agentRedesignMessages = {
       runningFor: "Running for {duration}",
       runningForUnknown: "Running time unknown",
       responsibility: "Long-term responsibility",
-      reorder: "Re-sort by latest status",
-      reorderHint: "Work status changed; the list keeps its order while you read",
     },
     statusDetail: {
       blocked: "Blocked: {reason}",
@@ -169,20 +149,6 @@ export const agentRedesignMessages = {
       unreportedRoster: "The directory did not report this Agent's work status; refresh to check again",
       unreportedTasks: "Not found among the latest 200 tasks, so the status is incomplete",
       unavailable: "Could not read the work status; retry above",
-    },
-    projectView: {
-      label: "View",
-      agents: "By member",
-      projects: "By project",
-      members: "{count} members",
-      running: "{count} running",
-      unknown: "{count} status unknown",
-      unassigned: "No project",
-      lead: "Lead: {name}",
-      leadUnset: "No lead set",
-      loadingLead: "Loading project lead",
-      leadFailed: "Could not load the project lead",
-      openProject: "Open project",
     },
     unassigned: {
       count: "{count} unassigned conversations",

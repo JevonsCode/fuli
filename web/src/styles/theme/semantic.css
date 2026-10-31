@@ -1,50 +1,49 @@
 /*
  * Theme layer 2 · Semantic tokens: what a colour means (page, panel, text,
  * muted text, border, accent, danger, success, focus, status). This file is
- * the one skin, 墨与金 (ink and gold, chosen 2026-11-01): paper-grey page,
- * glass panels, ink for the main action and a line of champagne gold for
- * progress, links and shadows, in light mode. The reserved dark block below
- * re-points the same names. Component tokens (components.css) and page CSS
- * read only these names.
+ * the one skin, direction A 「素」 (chosen 2026-11-01): a neutral page, white
+ * surfaces split by hairlines, ink for the main action and the current place,
+ * and gold only for progress, in light mode. Character comes from type and
+ * restraint, not from texture. The reserved dark block below re-points the
+ * same names. Component tokens (components.css) and page CSS read only these
+ * names.
  */
 :root {
   color-scheme: light;
-  --color-bg: #ecebe6;
-  --color-surface: #fbfaf7;
-  --color-surface-subtle: #f2f0ea;
-  --color-surface-hover: #f5f3ee;
-  --color-sidebar: #efede7;
-  --color-ink: #1d1b18;
-  --color-ink-soft: #3d3933;
-  --color-muted: #5c5852; /* 4.5:1 or more on the page and subtle surfaces */
-  --color-faint: #9d978d;
-  --color-border: #e3dfd5;
-  --color-border-strong: #d3cdbf;
-  --color-control-border: #cbc4b5;
-  /* The main action is ink; gold carries progress, links and shadows. */
-  --color-accent: #1d1b18;
-  --color-accent-hover: #34302a;
-  --color-accent-soft: #ede5d3;
-  --color-accent-line: #d9c49a;
-  --color-gold: #b08d57;
-  --color-gold-soft: #ede5d3;
+  --color-bg: #f2f2ef;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f7f7f5;
+  --color-surface-hover: #ecece8;
+  --color-sidebar: #ededea;
+  --color-ink: #17171a;
+  --color-ink-soft: #3a3a40;
+  --color-muted: #66666d; /* 4.5:1 or more on the page and subtle surfaces */
+  --color-faint: #a3a3a8;
+  --color-border: #e6e6e1;
+  --color-border-strong: #d6d6d0;
+  --color-control-border: #c4c4bd;
+  /* The main action and the current place are ink; gold means progress, nothing else. */
+  --color-accent: #17171a;
+  --color-accent-hover: #2e2e33;
+  --color-accent-soft: #ecece7;
+  --color-accent-line: #d8c7a3;
+  --color-gold: #a8824a;
+  --color-gold-soft: #f1e9da;
   /* Deep gold: 4.5:1 on the page, so a link reads as a link next to ink text. */
-  --color-link: #7d5f2e;
+  --color-link: #7a5a28;
   --color-focus: var(--color-accent);
-  /* The page is a pre-blurred wash of these; panels are translucent glass over it. */
-  --backdrop-1: #e0dccf;
-  --backdrop-2: #d9d9d5;
-  --backdrop-3: #e6dec9;
-  --surface-glass: rgb(255 255 255 / 62%);
+  /* Frosted glass (Jevons, 11-01: the dock looks like macOS, not a black bar):
+     only what floats over the page uses it, with a live blur behind. */
+  --surface-glass: rgb(255 255 255 / 58%);
   --surface-glass-strong: rgb(255 255 255 / 82%);
-  --edge-glass: rgb(255 255 255 / 70%);
-  --color-success: #2f7a52;
+  --edge-glass: rgb(255 255 255 / 80%);
+  --color-success: #2e7d5b;
   --color-success-soft: #e8f2ec;
   --color-warning: #8a5a12;
   --color-warning-soft: #f8f0e0;
   --color-danger: #a8392e;
   --color-danger-soft: #f8e9e6;
-  --color-on-accent: #f3e6c8;
+  --color-on-accent: #ffffff;
   --color-chart-blue: #2f5f8a;
   --color-chart-teal: #3f7462;
   --color-chart-violet: #6b4f8f;
@@ -55,9 +54,9 @@
   --color-overlay: rgb(24 28 26 / 32%);
   /* Every modal scrim (native <dialog> and shadcn-vue Dialog) blurs the page the same. */
   --overlay-blur: 2px;
-  /* The one ink every shadow in base.css is built from: a warm gold-brown, so shadows read as gold, not grey. */
-  --shadow-rgb: 120 92 46;
-  --glow-accent: 0 0 0 3px var(--color-gold-soft);
+  /* The one ink every shadow in base.css is built from: a cool near-black, so a lifted card reads as paper, not glow. */
+  --shadow-rgb: 20 20 30;
+  --glow-accent: 0 0 0 3px var(--color-border);
   /* State is read from colour and motion first, text second. */
   --status-working: var(--color-gold);
   --status-waiting: var(--color-warning);

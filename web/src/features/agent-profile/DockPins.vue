@@ -90,8 +90,8 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 .dock-pins {
   display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; margin: 0; padding: 6px; list-style: none;
   border: 1px solid var(--edge-glass); border-radius: var(--radius-pill);
-  background: var(--surface-glass-strong); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  box-shadow: var(--shadow-sm), var(--shadow-lg);
+  background: var(--surface-glass); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 10%), 0 10px 30px -10px rgb(var(--shadow-rgb) / 28%);
 }
 .dock-pin {
   position: relative; display: grid; width: 40px; height: 40px; overflow: visible; place-items: center; border: 2px solid var(--color-surface); border-radius: 50%;
@@ -105,6 +105,7 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 .dock-pin::after {
   content: attr(data-name); position: absolute; top: 50%; left: calc(100% + 10px); padding: 4px 10px; transform: translateY(-50%);
   border: 1px solid var(--edge-glass); border-radius: var(--radius-pill); color: var(--color-ink); background: var(--surface-glass-strong);
+  backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); box-shadow: var(--shadow-md);
   font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; opacity: 0; pointer-events: none;
   translate: -4px 0; transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring);
 }

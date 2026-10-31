@@ -17,6 +17,7 @@ import '../fuli_link.dart';
 import '../url_opener.dart';
 import 'console_webview.dart';
 import 'desktop_window.dart';
+import 'download_saver.dart';
 import 'installed_package.dart';
 import 'link_inbox.dart';
 import 'os_notifier.dart';
@@ -41,13 +42,15 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   final window = DesktopWindow();
   await window.open(title: strings.appName, show: !quiet);
   const opener = BrowserUrlOpener();
-  final console = await ConsoleWebView.create(opener);
+  final notifier = await OsNotifier.create(
+      onClick: window.show, windowsIcon: '$exeDir\\data\\flutter_assets\\assets\\app\\fuli.png');
+  final console = await ConsoleWebView.create(opener,
+      saver: DownloadSaver(), onSaved: (file) => unawaited(notifier.notify(strings.fileSaved, file.path)));
   final client = http.Client();
   final controller = FuliController(
     apiFor: (port) => HttpFuliApi(port: port, client: client),
     runtime: runtime,
-    notifier: await OsNotifier.create(
-        onClick: window.show, windowsIcon: '$exeDir\\data\\flutter_assets\\assets\\app\\fuli.png'),
+    notifier: notifier,
     strings: strings,
   );
   final packageRoot = Platform.isWindows ? installedPackageRoot(exeDir) : null;

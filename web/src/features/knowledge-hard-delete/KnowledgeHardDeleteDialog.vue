@@ -11,6 +11,7 @@ import { evidenceApplicationLabel, evidenceKindLabel, itemEditPath, versionStatu
   type KnowledgeItemSummary } from '@/features/knowledge-quick-edit/model'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
+import { saveFile } from '@/lib/save-file'
 import { confirmHardDelete, exportHardDelete, previewHardDelete, confirmSourceDelete, previewSourceDelete } from './hard-delete-api'
 import SourceDeleteSelections from './SourceDeleteSelections.vue'
 import SourceDeleteMemory from './SourceDeleteMemory.vue'
@@ -94,14 +95,11 @@ function recheckSubmissions() {
 }
 
 // 导出并删除 saves what this preview lists as a local file first; a delete
-// follows only once the browser has been handed the file.
+// follows only once the file is saved (in the desktop client) or handed to
+// the browser.
 function saveExport(listed: HardDeletePreview | SourceDeletePreview, sourceText: 'full' | 'excerpts') {
   const { filename, json } = deletionExport(listed, props.spaceId, new Date(), sourceText)
-  const url = URL.createObjectURL(new Blob([json], { type: 'application/json;charset=utf-8' }))
-  const link = document.createElement('a')
-  link.href = url; link.download = filename
-  document.body.append(link); link.click(); link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
+  return saveFile(filename, json, 'application/json;charset=utf-8')
 }
 
 async function submit(exportFirst = false) {
@@ -113,7 +111,7 @@ async function submit(exportFirst = false) {
     if (exportFirst) {
       exporting.value = true
       const listed = sourceTarget.value ? rawPreview.value : await exportHardDelete(props.spaceId, rawPreview.value as HardDeletePreview)
-      saveExport(listed, sourceTarget.value ? 'excerpts' : 'full')
+      await saveExport(listed, sourceTarget.value ? 'excerpts' : 'full')
       exporting.value = false
     }
   } catch (cause) {
