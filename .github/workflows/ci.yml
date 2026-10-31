@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+  # dependency-audit.yml starts CI on its fix branch: a push made with the
+  # workflow token starts no workflow, a dispatch is the exception.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,8 +22,16 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
-      - run: npx --yes npm@11.13.0 audit --audit-level=low
       - run: npm test
+      # Only an advisory in what ships to users blocks a pull request: the
+      # production install and the packages built into the console bundle,
+      # which npm test recorded when it built the console (pretest). An
+      # advisory only in a test or build tool is left to dependency-audit.yml,
+      # which audits the whole tree daily and opens a fix pull request or an issue.
+      - name: Audit what ships to users
+        run: |
+          npx --yes npm@11.13.0 audit --json > "$RUNNER_TEMP/npm-audit.json" || true
+          node scripts/audit-shipped.js "$RUNNER_TEMP/npm-audit.json"
       - run: npm run test:package
 
   provider:
@@ -37,8 +48,9 @@ jobs:
       - run: docker compose -f compose.graphiti.yml config --quiet
 
   # rec#11 D-34.3: on a pull request the Neo4j jobs run only when a path they
-  # depend on changed; a push to main always runs them. test/ci-neo4j-paths.test.js
-  # fails when a Neo4j test starts depending on a path this list leaves out.
+  # depend on changed; a push to main or a manual run always runs them.
+  # test/ci-neo4j-paths.test.js fails when a Neo4j test starts depending on a
+  # path this list leaves out.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -76,7 +88,7 @@ jobs:
   # across jobs that each own a Neo4j rather than run in parallel on one graph.
   provider-neo4j-shards:
     needs: changes
-    if: github.event_name == 'push' || needs.changes.outputs.neo4j == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.neo4j == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -116,7 +128,7 @@ jobs:
 
   provider-neo4j-node:
     needs: changes
-    if: github.event_name == 'push' || needs.changes.outputs.neo4j == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.neo4j == 'true'
     runs-on: ubuntu-latest
     services:
       neo4j:
