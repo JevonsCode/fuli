@@ -5,7 +5,7 @@
 // `opencode` too. No stored list is rewritten. The graph Provider applies the
 // same rule in graph-provider/fuli_graph/client_coverage.py, the console in
 // web/src/lib/source-coverage.ts.
-export const SOURCE_APPLICATIONS = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other']);
+export const SOURCE_APPLICATIONS = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'antigravity', 'other']);
 
 const LEGACY_ALIASES = Object.freeze({ opencode: 'other' });
 

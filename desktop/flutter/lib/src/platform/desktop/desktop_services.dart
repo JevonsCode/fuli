@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:app_links/app_links.dart';
 import 'package:http/http.dart' as http;
 
 import '../../api/http_fuli_api.dart';
@@ -10,24 +12,33 @@ import '../../l10n/strings.dart';
 import '../../runtime/fuli_runtime.dart';
 import '../../runtime/shell_cli_runtime.dart';
 import '../../runtime/windows_tray_runtime.dart';
+import '../fuli_link.dart';
 import '../url_opener.dart';
 import 'console_webview.dart';
 import 'desktop_window.dart';
+import 'installed_package.dart';
+import 'link_inbox.dart';
 import 'os_notifier.dart';
 import 'system_tray.dart';
 import 'windows_instance.dart';
 import 'windows_login_launch.dart';
+import 'windows_url_scheme.dart';
 
 /// Composition root on Windows and macOS: wires the real HTTP API, FULI's
 /// own start/stop entry points, the window, the tray and notifications.
 /// `--background` (Windows launch at login) starts with the tray icon only.
+/// A `fuli://` link (on Windows the launcher passes it) is followed once the
+/// client runs; the window opens only when the link asks for it.
 Future<AppServices> createServices(Strings strings, List<String> args) async {
   final background = args.contains('--background');
+  final link = args.map(FuliLink.parse).nonNulls.firstOrNull;
+  final quiet = background || link?.opensClient == false;
   final exeDir = File(Platform.resolvedExecutable).parent.path;
   final runtime = _runtime(exeDir);
-  final instance = runtime is WindowsTrayRuntime ? await _claimInstance(runtime, handOver: !background) : null;
+  final claimed = runtime is WindowsTrayRuntime ? await _claimInstance(runtime, handOver: !background, link: link) : null;
+  final (instance, inbox) = (claimed?.instance, claimed?.inbox);
   final window = DesktopWindow();
-  await window.open(title: strings.appName, show: !background);
+  await window.open(title: strings.appName, show: !quiet);
   const opener = BrowserUrlOpener();
   final console = await ConsoleWebView.create(opener);
   final client = http.Client();
@@ -38,8 +49,10 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
         onClick: window.show, windowsIcon: '$exeDir\\data\\flutter_assets\\assets\\app\\fuli.png'),
     strings: strings,
   );
-  final loginLaunch = Platform.isWindows ? WindowsLoginLaunch.forClient(exeDir) : null;
-  bool? launchAtLogin = await _choice(loginLaunch?.apply());
+  final packageRoot = Platform.isWindows ? installedPackageRoot(exeDir) : null;
+  final loginLaunch = packageRoot == null ? null : WindowsLoginLaunch(packageRoot: packageRoot);
+  bool? launchAtLogin = await _registry(loginLaunch?.apply());
+  if (packageRoot != null) unawaited(_registry(WindowsUrlScheme(packageRoot: packageRoot).apply()));
   late final SystemTray tray;
   void showTray() => tray.show(trayViewOf(controller.snapshot,
       busy: controller.pending != null,
@@ -52,6 +65,10 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
     await window.quit();
   }
 
+  // A fuli:// link only navigates: to this window, or to a console page in the browser.
+  Future<void> follow(FuliLink link) async =>
+      link.opensClient ? window.show() : opener.open(link.consolePage(await controller.consolePort()));
+
   tray = SystemTray(
     strings: strings,
     onOpen: window.show,
@@ -61,19 +78,36 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
     onLaunchAtLogin: loginLaunch == null
         ? null
         : (on) async {
-            launchAtLogin = await _choice(loginLaunch.setEnabled(on)) ?? launchAtLogin;
+            launchAtLogin = await _registry(loginLaunch.setEnabled(on)) ?? launchAtLogin;
             showTray();
           },
   );
   controller.addListener(showTray);
   showTray();
   window.onVisibilityChanged = controller.setVisible;
-  if (background) controller.setVisible(false);
+  if (quiet) controller.setVisible(false);
+  // A second launch asks for the window or leaves its link in the inbox.
   // An update closes the client once a start, stop or port change it runs has finished.
-  instance?.listen(onOpen: window.show, onExit: () async {
+  instance?.listen(onOpen: () {
+    final links = inbox?.take() ?? const <FuliLink>[];
+    if (links.isEmpty) unawaited(window.show());
+    for (final link in links) {
+      unawaited(follow(link));
+    }
+  }, onExit: () async {
     await controller.runtimeIdle();
     await quit();
   });
+  // This launch's own link, and any left while no client ran (an update held the lock).
+  for (final link in [...?inbox?.take(), if (claimed?.linkLeft != true) ?link]) {
+    unawaited(follow(link));
+  }
+  // macOS hands links to the running app; the stream starts with the one that launched it.
+  if (Platform.isMacOS) {
+    AppLinks().stringLinkStream.map(FuliLink.parse).listen((link) {
+      if (link != null) unawaited(follow(link));
+    });
+  }
   controller.startPolling();
   return AppServices(controller: controller, strings: strings, opener: opener, consoleView: console?.build);
 }
@@ -82,19 +116,32 @@ FuliRuntime _runtime(String exeDir) => Platform.isWindows
     ? WindowsTrayRuntime(exeDir: exeDir, env: Platform.environment)
     : ShellCliRuntime(os: Platform.operatingSystem, env: Platform.environment);
 
-// One client per installation's data directory. A second launch shows the
-// running client's window and exits; without an installation there is
+// One client per installation's data directory. A launch leaves its link in
+// the inbox first: a second launch then signals the running client and
+// exits, the first one takes it back. Without an installation there is
 // nothing to share and no lock.
-Future<WindowsInstance?> _claimInstance(WindowsTrayRuntime runtime, {required bool handOver}) async {
+Future<({WindowsInstance instance, LinkInbox? inbox, bool linkLeft})?> _claimInstance(WindowsTrayRuntime runtime,
+    {required bool handOver, FuliLink? link}) async {
   final context = await runtime.context();
   if (context == null) return null;
+  final inbox = LinkInbox.forInstance(context.instanceKey, Platform.environment);
+  var linkLeft = false;
+  if (link != null && inbox != null) {
+    try {
+      inbox.put(link);
+      linkLeft = true;
+    } on FileSystemException {
+      // A second launch then only shows the running client's window.
+    }
+  }
   final (claim, instance) = WindowsInstance.claim(context.instanceKey, handOver: handOver);
   if (claim != InstanceClaim.owner) exit(0);
-  return instance;
+  return (instance: instance!, inbox: inbox, linkLeft: linkLeft);
 }
 
-// The registry may refuse; the menu entry then stays as it was.
-Future<bool?> _choice(Future<bool>? pending) async {
+// reg.exe may not run: the menu entry and the registrations stay as they
+// were, and the next start tries again.
+Future<T?> _registry<T>(Future<T>? pending) async {
   try {
     return await pending;
   } on ProcessException {

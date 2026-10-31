@@ -65,7 +65,7 @@ export function normalizeWorkerRuntime(value: unknown) {
   if (!value || typeof value !== 'object') return null
   const record = unknownRecord(value)
   const application = stringOf(record, 'application', 'application')
-  if (!['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other'].includes(application ?? '')) return null
+  if (!['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'antigravity', 'other'].includes(application ?? '')) return null
   return {
     application: application as ConversationSourceApplication,
     sessionId: stringOf(record, 'sessionId', 'session_id'),

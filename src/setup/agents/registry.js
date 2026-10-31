@@ -2,10 +2,11 @@ import { adapter as claudeDesktop } from './claude-desktop/index.js';
 import { adapter as gemini } from './gemini/index.js';
 import { adapter as qwenCode } from './qwen-code/index.js';
 import { adapter as kiro } from './kiro/index.js';
+import { adapter as antigravity } from './antigravity/index.js';
 import { descriptorAdapter } from './descriptor-adapter.js';
 import { loadClientDescriptorPacks } from './descriptor-packs.js';
 import { installedClientPacks } from './client-pack-store.js';
-const codeAdapters = [claudeDesktop, gemini, qwenCode, kiro];
+const codeAdapters = [claudeDesktop, gemini, qwenCode, kiro, antigravity];
 export const agentAdapters = Object.freeze([
   ...loadClientDescriptorPacks({ reservedIds: codeAdapters.map(({ id }) => id) }).map(descriptorAdapter), ...codeAdapters
 ]);
