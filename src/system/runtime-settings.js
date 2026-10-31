@@ -9,6 +9,8 @@ import { normalizeAgentNamingStyle } from '../agent-naming/naming-style.js';
 
 export const RUNTIME_SETTINGS_VERSION = 1;
 export const RUNTIME_SETTINGS_FORMAT = jsonFormat({ store: 'runtime-settings', versions: [RUNTIME_SETTINGS_VERSION] });
+// rec#11 D-86: a recurring topic becomes a project by itself, or is only proposed.
+export const TOPIC_PROMOTION_MODES = Object.freeze(['auto', 'ask']);
 export const RESOURCE_REFRESH_OPTIONS = Object.freeze([5, 10, 30, 60]);
 export const GRAPH_RUNTIME_MODES = Object.freeze(['container', 'native']);
 export const CONVERSATION_LAUNCHER_APPLICATIONS = Object.freeze([
@@ -92,7 +94,8 @@ export const DEFAULT_RUNTIME_SETTINGS = deepFreeze({
   resourceRefreshSeconds: 5,
   conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS,
   notifications: { needsPersonUrl: '' },
-  agentNamingStyle: ''
+  agentNamingStyle: '',
+  topicPromotion: 'auto'
 });
 
 export function readRuntimeSettings(path, {
@@ -156,6 +159,8 @@ export function normalizeRuntimeSettings(input, {
   );
   const notifications = normalizeNotifications(input.notifications, base.notifications);
   const agentNamingStyle = normalizeAgentNamingStyle(input.agentNamingStyle ?? base.agentNamingStyle ?? '');
+  const topicPromotion = input.topicPromotion ?? base.topicPromotion ?? 'auto';
+  if (!TOPIC_PROMOTION_MODES.includes(topicPromotion)) throw new TypeError('topicPromotion must be auto or ask');
   return {
     version: RUNTIME_SETTINGS_VERSION,
     graphRuntimeMode,
@@ -164,7 +169,8 @@ export function normalizeRuntimeSettings(input, {
     resourceRefreshSeconds,
     conversationLaunchers,
     notifications,
-    agentNamingStyle
+    agentNamingStyle,
+    topicPromotion
   };
 }
 

@@ -1,15 +1,20 @@
+import { receiptConsoleUrl } from '../agents/identity-receipt.js';
 import { createProjectNamed, projectByName } from './task-entry-project-mention.js';
 import { sourceConsoleUrl } from './source-marker.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 
-// Astro's suggestion to give a recurring topic its own project. A topic that
-// keeps coming back over several days is proposed, never formed on its own:
-// the person decides in the console, and "not yet" waits for more conversations.
-// Every rule reads stored triage counts; no model is called.
+// A topic that keeps coming back over several days grows into its own project.
+// With the setting topicPromotion 'auto' (rec#11 D-86, the default) Astro forms
+// it at once and the receipt says so with a link to rename, move or undo it;
+// with 'ask' it is only proposed and the person decides in the console. "Not
+// yet" and an undo both wait for more conversations. Every rule reads stored
+// triage counts; no model is called.
 export const PROPOSAL_MIN_CONVERSATIONS = 3;
 export const PROPOSAL_MIN_DAYS = 2;
 export const PROPOSAL_ASK_AGAIN_AFTER = 3;
 const PROPOSAL_LIMIT = 20;
+// Starts the purpose of a project Astro formed by itself; an undo archives only those.
+const PROMOTED_PURPOSE = 'Astro 自动升级';
 
 export function isProposable(stats) {
   if (!stats || stats.count < PROPOSAL_MIN_CONVERSATIONS || (stats.days ?? 0) < PROPOSAL_MIN_DAYS) return false;
@@ -33,23 +38,73 @@ export async function proposalForTopic(application, topic) {
     guidance: 'Add ask_user to the end of your reply. Only the person decides, in the console; never form the project yourself.' };
 }
 
+// For the conversation that was just labelled, by the person's setting: a
+// formed project to announce, a question to relay, or nothing yet.
+export async function topicOutcome(application, topic, { sourceApplication = 'other' } = {}) {
+  return application.topicPromotion?.() === 'auto'
+    ? promoteTopic(application, topic, { sourceApplication })
+    : proposalForTopic(application, topic);
+}
+
+// rec#11 D-86: the topic is formed without asking. A project of that name is
+// reused; two of that name fall back to asking, since only the person can pick.
+export async function promoteTopic(application, topic, { sourceApplication = 'other' } = {}) {
+  const [stats] = await topics(application, { topic, limit: 1 });
+  if (!isProposable(stats)) return null;
+  const existing = await projectByName(application, stats.topic);
+  if (existing?.ambiguous) return proposalForTopic(application, topic);
+  const reason = `${PROMOTED_PURPOSE}：话题「${stats.topic}」累计 ${stats.count} 个会话、跨 ${stats.days} 天`;
+  const formed = await formTopicProject(application, stats, existing, reason, sourceApplication);
+  const link = `${receiptConsoleUrl(application)}/employees/assistant?${new URLSearchParams({
+    promoted: formed.personal_project_id, topic: stats.topic })}`;
+  return { ...formed, status: 'promoted', proposed_by: 'employee.assistant',
+    notice: `FULI：话题「${stats.topic}」聊了 ${stats.count} 次、跨 ${stats.days} 天，已升级为项目「${stats.topic}」。`
+      + `[改名、换上级或撤销](<${link}>)`,
+    guidance: 'Add notice to the end of your reply, unchanged. The person can rename, move or undo it at its link.' };
+}
+
 // The person said yes: an AI-draft brief, a lead staffed through AR, and every
 // open conversation of the topic attached. The lead hires more people only when
 // the work needs them. People can rename, merge or split it afterwards.
 export async function acceptTopicProposal(application, { topic, sourceApplication = 'other' }) {
   const stats = await openTopic(application, topic);
-  const spaceId = application.config.personal.spaceId;
-  const reason = `你同意了 Astro 的建议：话题「${stats.topic}」累计 ${stats.count} 个会话、跨 ${stats.days} 天`;
   const existing = await projectByName(application, stats.topic);
   if (existing?.ambiguous) throw new ApplicationError(ApplicationErrorCode.VALIDATION,
     `More than one project is named ${stats.topic}; move the conversations to one of them instead`);
+  const reason = `你同意了 Astro 的建议：话题「${stats.topic}」累计 ${stats.count} 个会话、跨 ${stats.days} 天`;
+  return { ...await formTopicProject(application, stats, existing, reason, sourceApplication), status: 'formed' };
+}
+
+// Undo of a formation: the topic's conversations are open again and count as
+// declined at that size; a project Astro created by itself is archived (kept,
+// restorable), one that already existed is left as it was.
+export async function undoTopicPromotion(application, { topic, personalProjectId }) {
+  const name = typeof topic === 'string' ? topic.trim() : '';
+  if (!name || typeof personalProjectId !== 'string' || !personalProjectId) {
+    throw new ApplicationError(ApplicationErrorCode.VALIDATION, 'A topic and its project are required');
+  }
+  const spaceId = application.config.personal.spaceId;
+  const reopened = await application.personal.conversationTriage('reopen', {
+    personal_space_id: spaceId, topic: name, personal_project_id: personalProjectId });
+  const project = (await application.personal.listPersonalProjects(spaceId))
+    .find(entry => entry.project_id === personalProjectId);
+  const archive = Boolean(project?.profile?.purpose?.startsWith(PROMOTED_PURPOSE)) && project.profile.lifecycle !== 'archived';
+  if (archive) await application.upsertPersonalProject({ personalSpaceId: spaceId, projectId: personalProjectId,
+    profile: { ...project.profile, lifecycle: 'archived' } });
+  return { status: 'reopened', topic: reopened.topic, personal_project_id: personalProjectId,
+    conversations: reopened.conversation_ids.length, project_archived: archive,
+    ask_again_at: reopened.declined_count + PROPOSAL_ASK_AGAIN_AFTER };
+}
+
+async function formTopicProject(application, stats, existing, reason, sourceApplication) {
+  const spaceId = application.config.personal.spaceId;
   const project = existing ?? await createProjectNamed(application, stats.topic, `${reason}（AI 草稿，可编辑）`);
   const projectId = project.personalProjectId;
   const lead = await application.personal.staffDefaultProjectLead({ personal_space_id: spaceId,
     personal_project_id: projectId, source_application: sourceApplication }).catch(() => null);
   const attached = await application.personal.conversationTriage('form', {
     personal_space_id: spaceId, topic: stats.topic, personal_project_id: projectId });
-  return { status: 'formed', personal_project_id: projectId, topic: stats.topic, reason,
+  return { personal_project_id: projectId, topic: stats.topic, reason, created: !existing,
     lead_agent_id: lead?.agent?.agent_id ?? null, lead_status: lead?.status ?? 'unavailable',
     conversations: attached.conversation_ids.length };
 }

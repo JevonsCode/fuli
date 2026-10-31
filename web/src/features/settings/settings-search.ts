@@ -71,6 +71,7 @@ const SETTING_LABELS: Record<string, string> = {
   capture: 'settings.behavior.capture',
   notifications: 'settings.notifications.title',
   agentNamingStyle: 'settings.agentNaming.title',
+  topicPromotion: 'settings.topicPromotion.title',
   refresh: 'settings.resources.refresh',
   launchers: 'settings.conversationLaunchers.title',
   lanAccess: 'settings.behavior.lanAccess',

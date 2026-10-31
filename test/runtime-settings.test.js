@@ -140,3 +140,12 @@ test('runtime settings fills legacy launcher keys and round-trips the normalized
   assert.deepEqual(saved.conversationLaunchers.claude, DEFAULT_CONVERSATION_LAUNCHERS.claude);
   assert.deepEqual(normalizeRuntimeSettings(calls[0][2]), saved);
 });
+
+test('topic promotion defaults to auto and accepts only auto or ask (rec#11 D-86)', () => {
+  assert.equal(normalizeRuntimeSettings(DEFAULT_RUNTIME_SETTINGS).topicPromotion, 'auto');
+  assert.equal(normalizeRuntimeSettings({ ...DEFAULT_RUNTIME_SETTINGS, topicPromotion: 'ask' }).topicPromotion, 'ask');
+  const legacy = { ...DEFAULT_RUNTIME_SETTINGS };
+  delete legacy.topicPromotion;
+  assert.equal(normalizeRuntimeSettings(legacy, { base: legacy }).topicPromotion, 'auto');
+  assert.throws(() => normalizeRuntimeSettings({ ...DEFAULT_RUNTIME_SETTINGS, topicPromotion: 'never' }), /auto or ask/);
+});

@@ -7,6 +7,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('PUT /api/roundtable/threads/:threadId/mode', 'Whether the person\'s message wakes their FLAs at once or waits on the board is the person\'s choice.'),
   local('POST /api/topic-proposals/accept', 'Giving a recurring topic its own project and staff is a local owner decision; Agents only relay Astro\'s question.'),
   local('POST /api/topic-proposals/decline', 'Saying not yet to a project suggestion is a local owner decision.'),
+  local('POST /api/topic-proposals/undo', 'Undoing a project Astro formed from a recurring topic is the person\'s answer to its receipt notice; Agents relay the notice unchanged.'),
   local('POST /api/conversation-triage/record', 'Correcting where an unclaimed conversation belongs is a local owner decision; Agents label through checkpoint_task_knowledge.triage.'),
   local('POST /api/peer/coordinator', 'Opening a LAN listener on this device is a local device decision of its owner.'),
   local('POST /api/peer/invitations', 'Pairing invitations admit another device and are created by the local owner.'),

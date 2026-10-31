@@ -1,6 +1,6 @@
 import { projectByName, projectNames } from './task-entry-project-mention.js';
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
-import { PROPOSAL_MIN_CONVERSATIONS, proposalForTopic } from './topic-proposals.js';
+import { PROPOSAL_MIN_CONVERSATIONS, topicOutcome } from './topic-proposals.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 
 // Jefa's triage of conversations no project has claimed yet. The finishing
@@ -56,8 +56,10 @@ export async function recordTriage(application, task, conversation, label) {
     const result = { status: 'recorded', recorded_by: 'employee.jefa', ...recorded.triage,
       ...(recorded.kept ? { kept: recorded.kept } : {}) };
     if (!recorded.kept && label.kind === 'topic' && recorded.topic_count >= PROPOSAL_MIN_CONVERSATIONS) {
-      const proposal = await proposalForTopic(application, recorded.triage.topic).catch(() => null);
-      if (proposal) result.proposal = proposal;
+      // A formed project (D-86) is announced; otherwise the person is asked.
+      const outcome = await topicOutcome(application, recorded.triage.topic,
+        { sourceApplication: task?.sourceApplication ?? 'other' }).catch(() => null);
+      if (outcome) result[outcome.status === 'promoted' ? 'promotion' : 'proposal'] = outcome;
     }
     return result;
   } catch {

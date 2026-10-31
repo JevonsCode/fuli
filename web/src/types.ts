@@ -794,6 +794,7 @@ export interface RuntimeSettings {
   conversationLaunchers: ConversationLauncherConfiguration
   notifications: { needsPersonUrl: string }
   agentNamingStyle: string
+  topicPromotion: 'auto' | 'ask'
 }
 
 export interface SystemSettingsResult {

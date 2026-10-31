@@ -6,7 +6,8 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from fuli_graph.conversation_triage_models import (
-    ConversationTopicDecline, ConversationTopicFormation, ConversationTopicQuery, ConversationTriageWrite,
+    ConversationTopicDecline, ConversationTopicFormation, ConversationTopicQuery, ConversationTopicReopening,
+    ConversationTriageWrite,
 )
 from fuli_graph.provider_values import stable_uuid
 from fuli_graph.store_conversation_triage import StoreConversationTriage
@@ -58,6 +59,13 @@ class TriageDriver:
                 if label['space_id'] == p['space_id'] and label.get('topic_key') == p['key'] and \
                         label['kind'] == 'topic' and label.get('formed_project_id') in (None, p['project']):
                     label['formed_project_id'] = p['project']
+                    ids.append({'id': label['id']})
+            return sorted(ids, key=lambda row: row['id']), None, None
+        if 'REMOVE t.formed_project_id' in query:
+            ids = []
+            for label in self.labels.values():
+                if label['space_id'] == p['space_id'] and label.get('topic_key') == p['key'] and                         label['kind'] == 'topic' and label.get('formed_project_id') == p['project']:
+                    label.pop('formed_project_id'); label.pop('formed_at', None)
                     ids.append({'id': label['id']})
             return sorted(ids, key=lambda row: row['id']), None, None
         raise AssertionError(query)
@@ -157,6 +165,26 @@ async def test_formation_is_idempotent_and_closes_the_topic():
     again = await store.form_conversation_topic({}, request)
     assert first['conversation_ids'] == again['conversation_ids'] == ['c0', 'c1', 'c2']
     assert (await store.query_conversation_topics({}, ConversationTopicQuery(personal_space_id=SPACE))) == {'topics': []}
+
+
+@pytest.mark.asyncio
+async def test_reopening_undoes_a_formation_and_waits_for_the_topic_to_grow():
+    store = TriageStore({f'c{i}': PENDING for i in range(3)})
+    for i in range(3):
+        await store.record_conversation_triage({}, write(f'c{i}'))
+    await store.form_conversation_topic({}, ConversationTopicFormation(
+        personal_space_id=SPACE, topic='Garden Planning', personal_project_id='garden'))
+    reopened = await store.reopen_conversation_topic({}, ConversationTopicReopening(
+        personal_space_id=SPACE, topic='garden planning', personal_project_id='garden'))
+    assert reopened == {'topic': 'garden planning', 'personal_project_id': 'garden',
+                        'conversation_ids': ['c0', 'c1', 'c2'], 'declined_count': 3}
+    [garden] = (await store.query_conversation_topics({}, ConversationTopicQuery(personal_space_id=SPACE)))['topics']
+    assert (garden['count'], garden['declined_count']) == (3, 3)
+    # Only conversations formed into that project; a second undo finds none.
+    with pytest.raises(HTTPException) as error:
+        await store.reopen_conversation_topic({}, ConversationTopicReopening(
+            personal_space_id=SPACE, topic='garden planning', personal_project_id='garden'))
+    assert error.value.status_code == 404
 
 
 def test_a_label_carries_exactly_what_its_kind_needs():

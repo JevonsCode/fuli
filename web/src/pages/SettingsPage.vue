@@ -471,6 +471,15 @@ async function submitSettings(event: Event) {
                   </div>
                 </div>
               </Card>
+              <Card v-if="form.topicPromotion !== undefined" as="section" class="settings-card" aria-labelledby="settings-topic-promotion-title" data-topic-promotion-card>
+                <div class="setting-list">
+                  <label class="setting-row">
+                    <span><strong id="settings-topic-promotion-title">{{ t('settings.topicPromotion.title') }}</strong><small>{{ t('settings.topicPromotion.description') }}</small></span>
+                    <Switch :model-value="form.topicPromotion === 'auto'" :aria-label="t('settings.topicPromotion.title')"
+                      data-settings-field="topicPromotion" @update:model-value="form.topicPromotion = $event ? 'auto' : 'ask'" />
+                  </label>
+                </div>
+              </Card>
               <section class="settings-card judgment-settings-card">
                 <JudgmentPolicySettings />
               </section>
