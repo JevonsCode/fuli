@@ -35,7 +35,10 @@ export function run(command, args, { cwd, env = process.env, capture = false } =
 // `npm run build`, `npm pack` of this checkout unpacked into output, then its
 // production dependencies without install scripts. tar: the platform's tar.
 export async function packCurrentApplication({ output, scratch, env, tar }) {
-  const npm = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  // npm sits beside node.exe on Windows and under <prefix>/lib elsewhere.
+  const npm = [join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(dirname(dirname(process.execPath)), 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')].find(existsSync);
+  if (!npm) throw new Error('npm was not found beside the Node running the build.');
   progress('Building application and web assets');
   await run(process.execPath, [npm, 'run', 'build'], { cwd: PACKAGE_ROOT, env, capture: true });
   const packed = JSON.parse(await run(process.execPath, [npm, 'pack', '--ignore-scripts', '--json',
