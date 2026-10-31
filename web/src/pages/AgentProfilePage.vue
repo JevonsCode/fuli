@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -20,7 +19,7 @@ import AgentOccupationEditor from "@/features/agent-profile/AgentOccupationEdito
 import OccupationChip from "@/features/occupations/OccupationChip.vue";
 import { useOccupationCatalog } from "@/features/occupations/occupation-catalog";
 import AgentConversations from "@/features/project-agents/AgentConversations.vue";
-import TaskExecutionPlan from "@/features/project-agents/TaskExecutionPlan.vue";
+import FlaTaskSheets from "@/features/fla-page/FlaTaskSheets.vue";
 import {
   agentDisplayName,
   agentResponsibility,
@@ -33,7 +32,6 @@ import AgentRenameHint from "@/features/agent-profile/AgentRenameHint.vue";
 import { mentionKind } from "@/features/agent-profile/fla-mention";
 import { isAgentTaskDataComplete, taskHasAgent } from "@/features/agent-profile/agent-work-summary";
 import { useAgentRecords } from "@/features/agent-profile/useAgentRecords";
-import { CURRENT_WORK_STATUSES } from "@/features/overview/overview-data";
 import {
   arrayOf,
   normalizeAssignment,
@@ -49,7 +47,6 @@ import type {
 import { personalProjectsPath } from "@/router/paths";
 import { readProjectTeam, type ProjectTeam } from "@/features/projects/project-team-api";
 import { usePageTitle } from "@/layouts/page-title";
-import { taskStatusTone } from "@/features/project-agents/task-labels";
 import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
 import { isBoardTask } from "@/features/agent-workbench/agent-task-board";
 import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/features/agent-workbench/agent-workflows";
@@ -184,11 +181,6 @@ const visibleCurrentProjects = computed(() => currentProjects.value.slice(0, 4))
 const remainingCurrentProjects = computed(() => currentProjects.value.slice(4));
 const previousProjects = computed(() =>
   (assignments.value ?? []).filter((item) => item.status !== "active"),
-);
-const currentWork = computed(() =>
-  tasks.value
-    .filter((task) => CURRENT_WORK_STATUSES.has(task.status))
-    .slice(0, 6),
 );
 // Main role first, then tags; each chip opens the duties from the catalog.
 const occupationKeys = computed(() => {
@@ -476,28 +468,8 @@ onMounted(() => {
 
           <TabsContent value="overview" class="agent-profile-panel" data-profile-panel="overview">
             <div class="agent-profile-primary-grid">
-              <Card as="section" class="agent-resume-section agent-current-work-section" aria-labelledby="agent-current-work-heading">
-                <div class="agent-section-heading">
-                  <h2 id="agent-current-work-heading">{{ t("agentProfiles.working") }}</h2>
-                  <span v-if="currentWork.length">{{ currentWork.length }}</span>
-                </div>
-                <ul v-if="currentWork.length" class="agent-current-work-list">
-                  <li v-for="task in currentWork" :key="task.taskId">
-                    <RouterLink :to="{ path: agentManagementPath(agent.personalSpaceId, agent.agentId), query: { task: task.taskId } }">
-                      {{ task.title }}
-                    </RouterLink>
-                    <Badge :variant="taskStatusTone(task.status)">{{ t(`projectAgents.taskStatus.${task.status}`) }}</Badge>
-                    <ActivityOriginBadge :origin="task.activityOrigin" />
-                    <TaskExecutionPlan :task="task" :personal-space-id="space" :active="activeTab === 'overview'" />
-                  </li>
-                </ul>
-                <p v-else-if="!detailsLoading && !partial" class="agent-muted">
-                  {{ t("agentProfiles.idle") }}
-                </p>
-                <p v-else-if="!detailsLoading" class="agent-muted">
-                  {{ t("agentProfiles.partial") }}
-                </p>
-              </Card>
+              <!-- rec#11 D-82: every task this FLA takes part in, as a task sheet of shares. -->
+              <FlaTaskSheets :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :agent-name="agentDisplayName(agent)" :project-name="projectName" />
 
               <Card as="section" class="agent-resume-section agent-projects-section" aria-labelledby="agent-projects-heading">
                 <div class="agent-section-heading">
