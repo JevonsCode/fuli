@@ -8,6 +8,7 @@ const releaseWorkflow = readFileSync(
   'utf8'
 );
 const trayAction = readFileSync(new URL('../.github/actions/windows-tray/action.yml', import.meta.url), 'utf8');
+const installedUpdateWorkflow = readFileSync(new URL('../.github/workflows/windows-installed-update.yml', import.meta.url), 'utf8');
 
 test('release uses the same verified npm CLI pin as CI', () => {
   const ciPins = npmPins(ciWorkflow);
@@ -49,6 +50,19 @@ test('release attaches the Windows tray package the one-click update downloads, 
   assert.match(trayAction, /NATIVE_NEO4J_SHA256/, 'the bundled Neo4j is the pinned, checksum-verified archive');
   assert.match(trayAction, /flutter build windows --release/, 'the tray app is the desktop client built from this commit');
   assert.match(trayAction, /build-windows-tray\.js [^\n]*--client "[^"\n]*\\desktop\\flutter\\build\\windows\\x64\\runner\\Release"/);
+});
+
+test('all pull requests, including release branches, run the Windows installed update acceptance workflow', () => {
+  assert.match(installedUpdateWorkflow, /pull_request:\s*\n  workflow_dispatch:/);
+  assert.match(installedUpdateWorkflow, /runs-on: windows-latest/);
+  const prepare = installedUpdateWorkflow.indexOf('windows-installed-update.js prepare');
+  const build = installedUpdateWorkflow.indexOf('uses: ./.github/actions/windows-tray');
+  const update = installedUpdateWorkflow.indexOf('windows-installed-update.js update');
+  const stop = installedUpdateWorkflow.indexOf('windows-installed-update.js stop');
+  assert.ok(prepare >= 0 && prepare < build && build < update && update < stop);
+  assert.match(installedUpdateWorkflow, /if: always\(\)/);
+  assert.match(installedUpdateWorkflow, /if: failure\(\)/);
+  assert.match(installedUpdateWorkflow, /actions\/upload-artifact@v4/);
 });
 
 function npmPins(workflow) {
