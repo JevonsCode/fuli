@@ -3,7 +3,7 @@ import { createAvatar } from '@/vendor/fuli-avatar/avatar.js'
 import { agentLooks } from './agent-looks'
 
 // Identity is the stable Agent ID, never its editable name, job, project or status.
-// The pinned renderer includes VERSION 3 in its seed.
+// The pinned renderer (fuli-avatar 0.4.0) includes VERSION 4 in its seed.
 const drawn = (seed: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(createAvatar(seed))}`
 
 /** The look an Agent has when the person never changed it: its built-in portrait or its own drawing. */

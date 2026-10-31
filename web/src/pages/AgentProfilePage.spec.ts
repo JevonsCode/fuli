@@ -60,6 +60,8 @@ beforeEach(() => {
     if (parsed.pathname === '/api/occupations') return SYNTHETIC_OCCUPATIONS
     if (parsed.pathname === '/api/employee-templates') return { templates: [] }
     if (parsed.pathname === `/api/project-agents/${id}/memory`) return { revision: 0, current: null, history: [], workLog: [] }
+    const sheets = /^\/api\/project-agents\/([^/]+)\/workbenches$/.exec(parsed.pathname)
+    if (sheets) return { agentId: decodeURIComponent(sheets[1]!), partial: false, workbenches: [] }
     throw new Error(`Unexpected request: ${url}`)
   })
   putJson.mockImplementation(async (_url: string, payload: { profile: ProjectAgentRecord['profile'] }) => ({ ...person('alpha'), profile: payload.profile }))
@@ -114,16 +116,26 @@ describe('Agent profile integration', () => {
     expect(wrapper.text()).toContain('Completed evidence')
   })
 
-  it('shows an explicitly reported plan within the current work card', async () => {
+  it('shows each task as a sheet of shares: the FLA’s own share first, bars only from a recorded plan', async () => {
     const normal = getJson.getMockImplementation()!
-    getJson.mockImplementation((url: string) => url.startsWith('/api/project-agent-tasks?')
-      ? Promise.resolve([{ ...task('active-plan', 'alpha', 'Synthetic planned task', 'running'), events: [{
-        event_id: 'plan', task_id: 'active-plan', status: 'running', summary: 'Synthetic plan', created_at: '2026-10-13T01:00:00Z',
-        execution_plan: { steps: [{ id: 'check', title: '核对执行结果', status: 'in_progress' }] },
-      }] }]) : normal(url))
+    const share = (agentId: string, role: string, progress: { completed: number; total: number } | null) =>
+      ({ agentId, role, status: 'running', assignment: `Synthetic share of ${agentId}`, progress })
+    getJson.mockImplementation((url: string) => url.startsWith('/api/project-agents/alpha/workbenches?')
+      ? Promise.resolve({ agentId: 'alpha', partial: false, workbenches: [{
+        taskId: 'sheet-1', personalProjectId: 'project-a', title: 'Synthetic shared task', objective: 'Ship the synthetic thing', status: 'running',
+        leadAgentId: 'beta', role: 'collaborator', updatedAt: null, blocker: null, progress: { completed: 1, total: 3 }, steps: [], unassignedSteps: 1,
+        shares: [share('beta', 'lead', { completed: 1, total: 2 }), share('alpha', 'collaborator', null)],
+      }] }) : normal(url))
     const { wrapper } = await setup()
-    expect(wrapper.get('.agent-current-work-list [data-execution-plan]').text()).toContain('核对执行结果')
-    expect(wrapper.get('.agent-current-work-list [data-execution-plan]').text()).toContain('进行中')
+    const sheet = wrapper.get('[data-task-sheet="sheet-1"]')
+    expect(sheet.text()).toContain('Synthetic shared task')
+    expect(sheet.text()).toContain('Synthetic active project')
+    // Not the lead: its own share comes first, and without a plan count it shows only its status.
+    expect(sheet.findAll('[data-share]').map(item => item.attributes('data-share'))).toEqual(['alpha', 'beta'])
+    expect(sheet.get('[data-share="alpha"]').find('[role="progressbar"]').exists()).toBe(false)
+    expect(sheet.get('[data-share="beta"] [role="progressbar"]').attributes('aria-valuenow')).toBe('1')
+    expect(sheet.get('[data-share="beta"]').text()).toContain('负责人')
+    expect(sheet.text()).toContain('还有 1 步没有分给任何人')
   })
   it('loads a fixed role workbench on a direct profile visit without a cached catalog', async () => {
     const normal = getJson.getMockImplementation()!
@@ -302,10 +314,9 @@ describe('Agent profile integration', () => {
 
     const { wrapper } = await setup()
     const overview = wrapper.get('[data-profile-panel="overview"]')
-    expect(overview.findAll('.agent-resume-section').map((section) => section.classes())).toEqual([
-      expect.arrayContaining(['agent-current-work-section']),
-      expect.arrayContaining(['agent-projects-section']),
-    ])
+    // The task sheets come first, then the projects.
+    const sheets = overview.get('[data-task-sheets]').element
+    expect(sheets.compareDocumentPosition(overview.get('.agent-projects-section').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(overview.findAll('.agent-current-project-list > .agent-project-item')).toHaveLength(4)
     expect(overview.find('.agent-project-overflow').exists()).toBe(true)
     expect(overview.findAll('.agent-project-overflow .agent-project-item')).toHaveLength(3)
@@ -352,7 +363,7 @@ describe('Agent profile integration', () => {
       return normal(url)
     })
     const { wrapper } = await setup()
-    expect(wrapper.get('.agent-current-work-section').text()).toContain('Older relevant work')
+    expect(getJson.mock.calls.some(([url]) => String(url).startsWith('/api/project-agent-tasks?') && String(url).includes('agentId=alpha'))).toBe(true)
     expect(wrapper.find('.agent-profile-partial').exists()).toBe(false)
   })
 
@@ -374,10 +385,7 @@ describe('Agent profile integration', () => {
       return normal(url)
     })
     const { wrapper } = await setup()
-    expect(wrapper.findAll('.agent-current-work-list a')).toHaveLength(6)
     expect(wrapper.find('.agent-profile-partial').exists()).toBe(true)
-    expect(wrapper.find('.agent-current-work-section .agent-current-work-list').exists()).toBe(true)
-    expect(wrapper.get('.agent-current-work-section').text()).not.toContain('Foreign task')
   })
 
   it.each([
