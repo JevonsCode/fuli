@@ -187,12 +187,41 @@ async def test_new_direct_identity_without_role_is_blocked_before_merge():
     store.authorize = AsyncMock(return_value={'id': 'space'})
     store.settings = SimpleNamespace(provider_id='provider')
     store.runtime = SimpleNamespace(driver=SimpleNamespace(execute_query=AsyncMock(return_value=([], None, None))))
-    with pytest.raises(HTTPException, match='occupation.role'):
+    with pytest.raises(HTTPException) as denied:
         await store.upsert_project_agent({}, ProjectAgentUpsert(personal_space_id='space', agent_id='new',
             profile={'name': 'New', 'responsibility': 'Build'}))
-    query = store.runtime.driver.execute_query.call_args.args[0]
-    assert query.index('WHERE existing IS NOT NULL OR $occupation_role IS NOT NULL') < query.index('MERGE (agent:')
-    assert store.runtime.driver.execute_query.call_args.kwargs['occupation_role'] is None
+    detail = denied.value.detail
+    assert 'occupation.role' in detail
+    # The denial names the valid built-in roles and no other rule.
+    assert 'qa_automation' in detail
+    assert 'dedicated restore operation' not in detail
+    assert 'hand off' not in detail
+    identity = next(call for call in store.runtime.driver.execute_query.call_args_list
+                    if 'MERGE (agent:FuliProjectAgent' in call.args[0])
+    assert identity.args[0].index('WHERE existing IS NOT NULL OR $occupation_role IS NOT NULL') \
+        < identity.args[0].index('MERGE (agent:')
+    assert identity.kwargs['occupation_role'] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stored, denial', [
+    ({'agent_exists': True, 'status': 'archived', 'project_lead': False},
+     'archived Agents require a dedicated restore operation'),
+    ({'agent_exists': True, 'status': 'inactive', 'project_lead': True},
+     'project leads must hand off before deactivation'),
+])
+async def test_existing_identity_denial_names_only_its_rule(stored, denial):
+    store = StoreProjectAgents()
+    store._require_personal = lambda: None
+    store.authorize = AsyncMock(return_value={'id': 'space'})
+    store.settings = SimpleNamespace(provider_id='provider')
+    store.runtime = SimpleNamespace(driver=SimpleNamespace(execute_query=AsyncMock(
+        side_effect=[([], None, None), ([], None, None), ([stored], None, None)])))
+    with pytest.raises(HTTPException) as denied:
+        await store.upsert_project_agent({}, ProjectAgentUpsert(personal_space_id='space', agent_id='existing',
+            profile={'name': 'Existing', 'responsibility': 'Build'}))
+    assert denied.value.status_code == 409
+    assert denied.value.detail == denial
 
 
 @pytest.mark.asyncio

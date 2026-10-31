@@ -78,3 +78,13 @@ test('direct identity creation and legacy recruitment approval expose occupation
   }
   assert.deepEqual(providerProjectAgentRecruitmentDecision({ occupation: { role: 'research' } }).occupation, { role: 'research' });
 });
+
+test('the upsert tool says a new Agent needs a built-in role and active catalog tags', async () => {
+  const { GRAPH_TOOL_DEFINITIONS } = await import('../src/agent-tools/graph-definitions.js');
+  const tool = GRAPH_TOOL_DEFINITIONS.find(({ name }) => name === 'upsert_project_agent');
+  assert.match(tool.description, /occupation\.role, one built-in role key/);
+  assert.match(tool.description, /tags are optional/);
+  assert.match(tool.description, /occupation catalog/);
+  assert.match(tool.inputSchema.properties.occupation.description, /built-in role key/);
+  assert.match(tool.inputSchema.properties.occupation.description, /must already be active/);
+});
