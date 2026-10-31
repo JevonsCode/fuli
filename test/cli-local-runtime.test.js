@@ -46,6 +46,31 @@ test('fl status has a machine-readable view without secrets', async () => {
   assert.equal(JSON.parse(output[0]).status, 'running');
 });
 
+test('fl status says whether the installed version is outdated, from what the console already knows', async () => {
+  const status = async (version, consoleStatus = 'ready') => {
+    const output = [];
+    await runLocalRuntimeCommand('status', [], {
+      resolvePaths: () => ({ dataDir: 'C:/Fuli' }),
+      inspect: async () => ({
+        status: consoleStatus === 'ready' ? 'running' : 'stopped',
+        console: { status: consoleStatus, url: 'http://127.0.0.1:4100', pid: 27 },
+        personal: { status: 'ready', url: 'http://127.0.0.1:8787' },
+        public: { configured: false, status: 'not_connected', providers: [] },
+        version
+      }),
+      write: (line) => output.push(line)
+    });
+    return output[0].split('\n').at(-1);
+  };
+  assert.equal(await status({ installed: '0.23.0', latest: '0.24.0', updateAvailable: true, checkedAt: '2026-11-01T08:00:00.000Z' }),
+    'Version: 0.23.0 · v0.24.0 is available; run fuli update');
+  assert.equal(await status({ installed: '0.23.0', latest: '0.23.0', updateAvailable: false, checkedAt: '2026-11-01T08:00:00.000Z' }),
+    'Version: 0.23.0 (latest)');
+  const unknown = { installed: '0.23.0', latest: null, updateAvailable: null, checkedAt: null };
+  assert.equal(await status(unknown), 'Version: 0.23.0 (not compared with npm: the console has no answer yet)');
+  assert.equal(await status(unknown, 'stopped'), 'Version: 0.23.0 (not compared with npm: the console is not running)');
+});
+
 test('fl start prints one stable local console address', async () => {
   const output = [];
   await runLocalRuntimeCommand('start', [], {

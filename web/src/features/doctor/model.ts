@@ -1,7 +1,8 @@
 import { getJson, postJson } from '@/api/client'
 import { sourceApplicationName } from '@/features/knowledge/source-adapters'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
 import { tableLabel } from '@/i18n/label-table'
+import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import type { ConversationSourceApplication } from '@/types'
 
 // FULI's 体检 (src/system/doctor.js): whether it works and what needs fixing.
@@ -60,9 +61,12 @@ export function doctorItemView(item: DoctorItem): DoctorItemView {
     case 'client_outdated':
       return { title, subject: text(data.label), hint: t(item.fix === 'auto' ? 'doctor.hints.clientAuto' : 'doctor.hints.clientPerson'),
         to: item.fix === 'auto' ? null : '/settings?tab=clients' }
+    // lastSeenAt: the graph's answer from before its service went idle (src/system/doctor.js).
     case 'data_format_waiting':
     case 'data_format_blocked':
-      return { title, subject: text(data.label), hint: t('doctor.hints.dataFormat'), to: '/settings/data-format' }
+      return { title, subject: text(data.label), to: '/settings/data-format', hint: text(data.lastSeenAt)
+        ? t('doctor.hints.dataFormatLastSeen', { time: formatDateTime(text(data.lastSeenAt), currentLocale(), DATE_TIME_MINUTE, { missing: '' }) })
+        : t('doctor.hints.dataFormat') }
     case 'sessions_outdated':
       return { title, subject: sourceApplicationName(text(data.client) as ConversationSourceApplication) ?? t('doctor.otherClient'),
         hint: t('doctor.hints.sessions', { count: Number(data.count) || 0, version: text(data.runningVersion) }), to: null }
