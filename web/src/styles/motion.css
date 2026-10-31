@@ -1,0 +1,16 @@
+/*
+ * Page changes (lib/motion.ts installPageTransitions): the top bar and the
+ * dock keep their place while the page fades out and the next one rises in
+ * on the shared spring. The reduced-motion rules in primitives.css zero
+ * these like every other animation.
+ */
+.app-topbar { view-transition-name: app-topbar; }
+.app-dock { view-transition-name: app-dock; }
+::view-transition-group(app-topbar), ::view-transition-group(app-dock) { animation: none; }
+::view-transition-old(root) { animation: page-out var(--motion-fast) var(--motion-ease-out) both; }
+::view-transition-new(root) { animation: page-in var(--motion-spring) var(--motion-ease-spring) both; }
+@keyframes page-out { to { opacity: 0; } }
+@keyframes page-in { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}

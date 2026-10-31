@@ -135,11 +135,16 @@ describe('AppShell', () => {
     expect(dock.findAll('[data-destination]').map(link => link.attributes('data-destination'))).toEqual(['constellation', 'agents', 'chat', 'memory', 'projects'])
     expect(dock.findAll('[data-destination]').map(link => link.attributes('aria-label'))).toEqual(['工作台', 'FLAs', '圆桌', '沉淀', '项目'])
     expect(wrapper.get('.app-topbar [data-destination="settings"]').attributes('href')).toBe('/settings')
+    // One ink pill sits behind the current destination and moves with it.
+    expect(dock.findAll('.app-dock-active')).toHaveLength(1)
+    expect(dock.get('.app-dock-item.is-active .app-dock-active').exists()).toBe(true)
     // Open on the workbench, folded to the current destination anywhere else.
     expect(dock.attributes('data-folded')).toBe('false')
     await router.push('/preferences')
     await flushPromises()
     expect(dock.attributes('data-folded')).toBe('true')
+    expect(dock.findAll('.app-dock-active')).toHaveLength(1)
+    expect(dock.get('.app-dock-item.is-active [data-destination="memory"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

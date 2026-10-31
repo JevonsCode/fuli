@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, watch, watchEffect } from 'vue'
+import { MotionConfig } from 'motion-v'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
@@ -11,6 +12,7 @@ import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { t } from '@/i18n'
+import { SPRING, motionConfigReduced } from '@/lib/motion'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
 import { UiIcon, UiIconButton, UiNotice } from '@/ui'
@@ -89,6 +91,7 @@ watchEffect(() => {
 </script>
 
 <template>
+  <MotionConfig :reduced-motion="motionConfigReduced" :transition="SPRING">
   <div class="app-frame">
     <header class="app-topbar">
       <div class="app-topbar-inner">
@@ -139,6 +142,7 @@ watchEffect(() => {
     </main>
     <AppDock :destinations="dockDestinations" :active-key="destination?.key" :space-id="activeSpaceId" :folded="dockFolded" />
   </div>
+  </MotionConfig>
 </template>
 
 <style scoped>

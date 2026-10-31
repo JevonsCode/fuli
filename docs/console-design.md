@@ -57,6 +57,10 @@ The About page uses its dark ink treatment across the full page. Keep the closin
 
 Cards use a light border without decorative shadow. A selected or previewed card lifts: full surface, a stronger hairline and a light shadow, never a side accent bar; the focus ring stays a separate outline. Reserve the shared popover and dialog shadows for floating surfaces. Avoid nested boxes around ordinary list rows.
 
+## Motion
+
+Motion is lively but brief. Things that appear or move use one spring with a small overshoot (`--motion-ease-spring` in CSS, `SPRING` for motion-v in `web/src/lib/motion.ts`); things that leave use a soft ease-out. Page changes cross-fade and rise through the View Transitions API while the top bar and dock stay put; an in-page tab change does not animate. The dock's ink pill glides to the current destination (a motion-v shared layout), pinned FLAs rise one after another, and popovers and dialogs pop in on the spring. GSAP is not used: its licence is not an open-source one. The system setting and the in-app switch both turn all of it off.
+
 ## Shapes
 
 Controls, cards and dialogs use the shared 10/16/20px radii. Keep spacing on the 4px scale. Compact state badges may use smaller radii; do not invent a separate page-specific button system.

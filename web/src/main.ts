@@ -3,6 +3,7 @@ import { createApp } from 'vue'
 
 import App from './App.vue'
 import { i18n } from './i18n'
+import { installPageTransitions } from './lib/motion'
 import { initMotionPreference } from './lib/motion-preference'
 import { router } from './router'
 // The bundled fonts (SIL OFL 1.1) register before the theme names them.
@@ -18,6 +19,7 @@ import './styles/knowledge-graph.css'
 import './styles/vue.css'
 import './styles/project-overview.css'
 import './styles/primitives.css'
+import './styles/motion.css'
 
 initMotionPreference()
 
@@ -25,6 +27,7 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(i18n)
 app.use(router)
+installPageTransitions(router)
 
 // Mount the recovery UI even when the initial route's assets could not load.
 await router.isReady().catch(() => undefined)

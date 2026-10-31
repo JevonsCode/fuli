@@ -54,6 +54,12 @@
   --motion-pulse: 2400ms;
   --motion-blink: 1400ms;
   --motion-ease: cubic-bezier(.2, .8, .2, 1);
+  /* Lively motion (2026-11-01): a spring with a small overshoot for things
+     that appear or move, a soft ease-out for what leaves. linear() is the
+     CSS spring; motion-v uses the matching SPRING in lib/motion.ts. */
+  --motion-spring: 460ms;
+  --motion-ease-spring: linear(0, .009, .035 2.1%, .141 4.4%, .723 12.9%, .938 16.7%, 1.017 20.4%, 1.041 24.4%, 1.036 28.6%, 1.013 37.2%, .998 45.4%, 1);
+  --motion-ease-out: cubic-bezier(.22, 1, .36, 1);
   --z-nav: 20;
   --z-popover: 40;
   --z-dialog: 50;

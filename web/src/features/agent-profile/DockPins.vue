@@ -28,8 +28,11 @@ const isActive = (agentId: string) => route.path === agentProfilePath(props.spac
 // Read once per FLA while the console is open; a failed read is retried on the next open.
 type SurfaceState = { status: 'loading' } | { status: 'ready'; surfaces: AgentWorkSurfaces } | { status: 'error' }
 const surfaces = ref<Record<string, SurfaceState>>({})
+// The capsule stays up while a menu is open: focus has moved into the menu, outside the dock.
+const holding = ref(false)
 
 async function opened(open: boolean, agent: ProjectAgentRecord) {
+  holding.value = open
   const current = surfaces.value[agent.agentId]
   if (!open || current?.status === 'ready' || current?.status === 'loading') return
   surfaces.value[agent.agentId] = { status: 'loading' }
@@ -49,8 +52,8 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 </script>
 
 <template>
-  <ul v-if="spaceId && agents.length" class="dock-pins" :aria-label="agentPinsText('navigation.title', 'pin')">
-    <li v-for="agent in agents" :key="agent.agentId">
+  <ul v-if="spaceId && agents.length" class="dock-pins" :class="{ 'is-holding': holding }" :aria-label="agentPinsText('navigation.title', 'pin')">
+    <li v-for="(agent, index) in agents" :key="agent.agentId" :style="{ '--pin-index': index }">
       <ContextMenu @update:open="opened($event, agent)">
         <ContextMenuTrigger as-child>
           <RouterLink class="dock-pin" :class="{ 'is-active': isActive(agent.agentId) }" :to="agentProfilePath(spaceId, agent.agentId)"
@@ -93,19 +96,19 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 .dock-pin {
   position: relative; display: grid; width: 40px; height: 40px; overflow: visible; place-items: center; border: 2px solid var(--color-surface); border-radius: 50%;
   background: var(--agent-identity-soft, var(--color-accent-soft)); text-decoration: none;
-  transition: transform var(--motion-fast) var(--motion-ease);
+  transition: transform var(--motion-spring) var(--motion-ease-spring);
 }
 .dock-pin img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.dock-pin:hover, .dock-pin:focus-visible { transform: scale(1.08); }
+.dock-pin:hover, .dock-pin:focus-visible { transform: scale(1.12); }
 .dock-pin.is-active { box-shadow: 0 0 0 2px var(--color-gold); }
 /* The name appears beside the portrait on hover and focus; the link's label carries it for screen readers. */
 .dock-pin::after {
   content: attr(data-name); position: absolute; top: 50%; left: calc(100% + 10px); padding: 4px 10px; transform: translateY(-50%);
   border: 1px solid var(--edge-glass); border-radius: var(--radius-pill); color: var(--color-ink); background: var(--surface-glass-strong);
   font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; opacity: 0; pointer-events: none;
-  transition: opacity var(--motion-fast);
+  translate: -4px 0; transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring);
 }
-.dock-pin:hover::after, .dock-pin:focus-visible::after { opacity: 1; }
+.dock-pin:hover::after, .dock-pin:focus-visible::after { opacity: 1; translate: 0 0; }
 @media (prefers-reduced-motion: reduce) { .dock-pin, .dock-pin::after { transition: none; } }
 :root[data-motion="reduced"] .dock-pin, :root[data-motion="reduced"] .dock-pin::after { transition: none; }
 </style>
