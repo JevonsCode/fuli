@@ -18,6 +18,7 @@ import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedCon
 import { isFormalProject } from '@/features/projects/project-origin'
 import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import EmployeeShareDialog from '@/features/employees/EmployeeShareDialog.vue'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { useProjectBoardFilter } from '@/features/employees/project-board-filter'
 import { provideWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
@@ -375,7 +376,7 @@ async function projectsSaved() {
       <BackLink class="employee-workbench-back" to="/project-agents" :from="openedFromAgents">{{ t('agentProfiles.back') }}</BackLink>
       <div class="employee-workbench-identity">
         <span class="employee-workbench-mark" aria-hidden="true">
-          <img v-if="employeeAvatarUrl(templateId)" :src="employeeAvatarUrl(templateId)" alt="" />
+          <img v-if="employeeAvatarUrl(templateId)" :src="agentAvatarUrl(`employee.${templateId}`)" alt="" />
           <template v-else>{{ template?.name.slice(0, 1) ?? 'A' }}</template>
         </span>
         <span class="employee-workbench-role" data-employee-role>{{ employeeRoleLabel({ id: templateId, role: template?.role ?? '' }) }}</span>

@@ -8,6 +8,7 @@ import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiSelect from '@/ui/UiSelect.vue'
 import ProjectScopePicker from './ProjectScopePicker.vue'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { employeeAvatarUrl } from './avatars'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
@@ -176,7 +177,7 @@ function scopeKeydown(event: KeyboardEvent) {
     <template v-else>
       <div class="employee-profile">
         <span class="employee-avatar" aria-hidden="true">
-          <img v-if="employeeAvatarUrl(selected.id)" :src="employeeAvatarUrl(selected.id)" alt="" />
+          <img v-if="employeeAvatarUrl(selected.id)" :src="agentAvatarUrl(`employee.${selected.id}`)" alt="" />
           <template v-else>{{ selected.name.slice(0, 1) }}</template>
         </span>
         <div>

@@ -5,6 +5,7 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
+import { loadAgentLooks } from '@/features/agent-profile/agent-looks'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
@@ -50,6 +51,7 @@ const runtimeReady = computed(() => store.runtimeStatus === 'ready')
 // conversation, an opened knowledge item). Everything else uses the route's
 // meta.title.
 const recordTitle = computed(() => pageTitle.value.path === route.path ? pageTitle.value.text : '')
+const titleInPage = computed(() => pageTitle.value.path === route.path && pageTitle.value.inPage)
 const title = computed(() => recordTitle.value || (destination.value && destination.value.sections.length > 1 && section.value && !route.meta.detail
   ? t(`shell.destinations.${destination.value.key}`)
   : routeMetaText(route.meta.title, 'routes.overview.title')))
@@ -62,6 +64,8 @@ const sectionTabs = computed(() => route.meta.detail ? [] : destination.value?.s
 
 // Pins are shared by the dock, Agent cards and profiles.
 provide(AGENT_PINS_KEY, useAgentPins(activeSpaceId))
+// The looks the person chose for their Agents, read once for every portrait.
+watch(activeSpaceId, id => void loadAgentLooks(id), { immediate: true })
 
 // The waiting-requests badge in the top bar stays fresh while the page is visible.
 const attention = useAgentAttention()
@@ -107,7 +111,7 @@ watchEffect(() => {
             <span class="app-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
           </span>
         </div>
-        <h1 class="app-title">{{ title }}</h1>
+        <h1 v-if="!titleInPage" class="app-title">{{ title }}</h1>
         <SectionTabs :sections="sectionTabs" :active-key="section?.key" />
         <div class="app-actions">
           <GlossaryToggle />

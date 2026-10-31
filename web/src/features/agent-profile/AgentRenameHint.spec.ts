@@ -29,10 +29,8 @@ describe('AgentRenameHint', () => {
     expect(apply.text()).toBe('改名为 Iris Vale')
     await apply.trigger('click')
     await flushPromises()
-    expect(putJson).toHaveBeenCalledWith('/api/project-agents', {
-      personalSpaceId: 'space-a', personalProjectId: null, agentId: 'agent-ppt',
-      profile: { ...agent().profile, displayName: 'Iris Vale' },
-    })
+    // Only the name changes, through the rename route (rec#11 D-89).
+    expect(putJson).toHaveBeenCalledWith('/api/project-agents/agent-ppt/name', { personalSpaceId: 'space-a', displayName: 'Iris Vale' })
     expect(wrapper.emitted('saved')).toEqual([[saved]])
   })
 

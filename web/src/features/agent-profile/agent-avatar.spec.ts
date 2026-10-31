@@ -1,6 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
-import { agentAvatarUrl } from './agent-avatar'
+import { agentAvatarUrl, defaultAvatarUrl, generatedAvatarUrl } from './agent-avatar'
+import { agentLooks, forgetAgentLooks } from './agent-looks'
+
+afterEach(() => forgetAgentLooks())
 
 const svg = (url: string) => decodeURIComponent(url.slice(url.indexOf(',') + 1))
 
@@ -20,6 +23,17 @@ describe('Agent portraits', () => {
     expect(reloaded.agentAvatarUrl('agent-stable-001')).toBe(first)
     const portraits = new Set(['agent-a', 'agent-b', 'agent-c', 'agent-d'].map(agentAvatarUrl))
     expect(portraits.size).toBe(4)
+  })
+
+  it('shows the look the person chose: another drawing or their picture by its version', () => {
+    agentLooks.value = new Map([
+      ['agent-a', { agentId: 'agent-a', kind: 'generated', seed: 'seed-7', updatedAt: '2026-11-01T00:00:00Z' }],
+      ['employee.bole', { agentId: 'employee.bole', kind: 'image', imageVersion: 'abc123', updatedAt: '2026-11-01T00:00:00Z' }],
+    ])
+    expect(agentAvatarUrl('agent-a')).toBe(generatedAvatarUrl('seed-7'))
+    expect(agentAvatarUrl('agent-a')).not.toBe(defaultAvatarUrl('agent-a'))
+    expect(agentAvatarUrl('employee.bole')).toBe('/api/agent-avatars/employee.bole/image?v=abc123')
+    expect(agentAvatarUrl('agent-b')).toBe(defaultAvatarUrl('agent-b'))
   })
 
   it.each(['constructor', '__proto__', 'toString'])('generates a portrait for non-employee ID %s', (id) => {
