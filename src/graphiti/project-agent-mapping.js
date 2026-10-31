@@ -361,9 +361,22 @@ export function projectAgentTokenUsage(value) {
   };
 }
 
+// A plan step's owner travels as agent_id to the Provider and agentId back (D-82).
+function providerExecutionPlan(plan) {
+  if (!Array.isArray(plan?.steps)) return plan;
+  return { ...plan, steps: plan.steps.map(({ agentId, ...step }) =>
+    withoutUndefined({ ...step, agent_id: agentId ?? step.agent_id })) };
+}
+
+function executionPlanRecord(plan) {
+  if (!Array.isArray(plan?.steps)) return plan;
+  return { ...plan, steps: plan.steps.map(({ agent_id: agentId, ...step }) =>
+    agentId == null ? step : { ...step, agentId }) };
+}
+
 export function providerProjectAgentTaskActivity(input) {
   const result = withoutUndefined({
-    execution_plan: input.executionPlan ?? input.execution_plan,
+    execution_plan: providerExecutionPlan(input.executionPlan ?? input.execution_plan),
     artifact_revision: input.artifactRevision ?? input.artifact_revision,
     expected_verification_attempt_id: input.expectedVerificationAttemptId,
     judgment_task_context_token: input.judgmentTaskContextToken,
@@ -533,7 +546,7 @@ export function projectAgentTaskParticipantRecord(value = {}) {
 
 export function projectAgentTaskEventRecord(value = {}) {
   const result = {
-    ...(value.execution_plan != null ? { executionPlan: value.execution_plan } : {}),
+    ...(value.execution_plan != null ? { executionPlan: executionPlanRecord(value.execution_plan) } : {}),
     eventId: value.event_id,
     taskId: value.task_id,
     agentId: value.agent_id ?? null,

@@ -221,7 +221,8 @@ const executionPlan = objectSchema({
     id: boundedString(64),
     title: boundedString(240),
     status: enumSchema(['pending', 'in_progress', 'awaiting_review', 'completed', 'blocked', 'skipped']),
-    detail: { ...nullableStringSchema(), maxLength: 1000 }
+    detail: { ...nullableStringSchema(), maxLength: 1000 },
+    agentId: { ...id, description: 'Participant whose share this step is.' }
   }, ['id', 'title', 'status']), { maxItems: 40 })
 }, ['steps']);
 

@@ -370,6 +370,17 @@ class ProjectAgentPlanStep(StrictModel):
     title: str = Field(min_length=1, max_length=240)
     status: Literal['pending', 'in_progress', 'awaiting_review', 'completed', 'blocked', 'skipped']
     detail: str | None = Field(default=None, max_length=1000)
+    # rec#11 D-82: the FLA whose share of the task this step is, if any.
+    agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_serializer(mode='wrap')
+    def _omit_unowned(self, handler):
+        # A step without an owner serializes as before D-82, so stored plans
+        # and idempotency hashes of earlier activity stay the same.
+        data = handler(self)
+        if isinstance(data, dict) and data.get('agent_id') is None:
+            data.pop('agent_id', None)
+        return data
 
     @field_validator('id', 'title')
     @classmethod

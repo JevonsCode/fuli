@@ -349,6 +349,14 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  const workbenchesPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/workbenches$/);
+  if (workbenchesPath && request.method === 'GET') {
+    sendJson(response, 200, await app.listAgentWorkbenches({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      agentId: decodeURIComponent(workbenchesPath[1])
+    }));
+    return true;
+  }
   if (url.pathname === '/api/project-agent-tasks' && request.method === 'POST') {
     sendJson(response, 200, await app.submitProjectAgentTask(await readJson(request)));
     return true;
