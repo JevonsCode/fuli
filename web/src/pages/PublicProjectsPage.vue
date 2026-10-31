@@ -333,7 +333,6 @@ function formatDate(value?: string) {
   <section ref="scroller" class="view public-projects-view">
     <div class="@container mx-auto flex w-full max-w-(--layout-max) flex-col gap-4">
       <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <p class="page-lede m-0 text-sm text-muted-foreground">{{ t('pages.publicProjects.intro') }}</p>
         <p class="public-space-stats m-0 ml-auto flex gap-4 text-sm text-muted-foreground" :aria-label="t('pages.publicProjects.overviewAria')">
           <span><strong class="mr-1 text-foreground">{{ projects.length }}</strong>{{ t('pages.publicProjects.discoverable') }}</span>
           <span><strong class="mr-1 text-foreground">{{ store.state?.subscriptions.length ?? 0 }}</strong>{{ t('pages.publicProjects.subscribedCount') }}</span>
