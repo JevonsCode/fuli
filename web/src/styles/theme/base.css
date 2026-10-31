@@ -12,7 +12,7 @@
   /* One type scale (Bringhurst: few sizes, each step a clear role). Size
      leads the hierarchy; weight only separates a heading from its text, so
      headings are 600, controls 500, everything else 400. Nothing is 700. */
-  --text-title: 24px;       /* the page title, the shell's one H1 */
+  --text-title: 22px;       /* the page title, the shell's one H1 */
   --text-section: 16px;     /* a section of a page */
   --text-card-title: 15px;  /* a card's or a list row's own name */
   --text-body: 14px;
@@ -36,12 +36,12 @@
   --control-height: 36px;
   --control-height-sm: 30px;
   --radius-control: 8px;
-  --radius-card: 12px;
-  --radius-dialog: 16px;
+  --radius-card: 14px;
+  --radius-dialog: 20px;
   --radius-pill: 999px;
-  /* The client shell: the stage and the right column are large glass panels. */
-  --radius-shell: 28px;
-  --radius-panel: 22px;
+  /* The client shell: the workbench stage and the feed's groups. */
+  --radius-shell: 20px;
+  --radius-panel: 14px;
   /* Shadow geometry. The ink is the semantic --shadow-rgb, so a skin re-tints every shadow in one place. */
   --shadow-xs: 0 1px 2px rgb(var(--shadow-rgb) / 12%);
   --shadow-sm: 0 1px 3px rgb(var(--shadow-rgb) / 10%);

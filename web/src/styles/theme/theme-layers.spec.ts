@@ -45,7 +45,7 @@ describe('theme layers', () => {
   it('keeps one type scale: size leads, three weights, nothing bold', () => {
     const scale = Object.fromEntries(declarations(base).map(({ name, value }) => [name, value]))
     expect([scale['--text-title'], scale['--text-section'], scale['--text-card-title'], scale['--text-body'], scale['--text-meta']])
-      .toEqual(['24px', '16px', '15px', '14px', '12px'])
+      .toEqual(['22px', '16px', '15px', '14px', '12px'])
     expect([scale['--weight-regular'], scale['--weight-medium'], scale['--weight-strong']]).toEqual(['400', '500', '600'])
     // Tailwind's weight utilities are exactly those three; headings use the scale.
     const preset = block(tailwind, '@theme inline reference')

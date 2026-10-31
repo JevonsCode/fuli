@@ -89,12 +89,11 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 <style scoped>
 .dock-pins {
   display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; margin: 0; padding: 6px; list-style: none;
-  border: 1px solid var(--edge-glass); border-radius: var(--radius-pill);
-  background: var(--surface-glass-strong); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  box-shadow: var(--shadow-sm), var(--shadow-lg);
+  border-radius: var(--radius-pill); background: var(--color-ink);
+  box-shadow: 0 12px 30px -8px rgb(var(--shadow-rgb) / 45%);
 }
 .dock-pin {
-  position: relative; display: grid; width: 40px; height: 40px; overflow: visible; place-items: center; border: 2px solid var(--color-surface); border-radius: 50%;
+  position: relative; display: grid; width: 40px; height: 40px; overflow: visible; place-items: center; border: 2px solid var(--color-ink); border-radius: 50%;
   background: var(--agent-identity-soft, var(--color-accent-soft)); text-decoration: none;
   transition: transform var(--motion-spring) var(--motion-ease-spring);
 }
@@ -104,7 +103,7 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 /* The name appears beside the portrait on hover and focus; the link's label carries it for screen readers. */
 .dock-pin::after {
   content: attr(data-name); position: absolute; top: 50%; left: calc(100% + 10px); padding: 4px 10px; transform: translateY(-50%);
-  border: 1px solid var(--edge-glass); border-radius: var(--radius-pill); color: var(--color-ink); background: var(--surface-glass-strong);
+  border-radius: var(--radius-pill); color: var(--color-on-accent); background: var(--color-ink); box-shadow: var(--shadow-md);
   font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; opacity: 0; pointer-events: none;
   translate: -4px 0; transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring);
 }
