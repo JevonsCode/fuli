@@ -209,4 +209,5 @@ watchEffect(() => {
   .app-topbar-inner > .section-tabs { order: 3; flex-basis: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .app-round { transition: none; } }
+:root[data-motion="reduced"] .app-round { transition: none; }
 </style>

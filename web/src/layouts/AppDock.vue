@@ -85,5 +85,5 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
   .app-dock.is-folded:not(:hover, :focus-within) .app-dock-items { gap: 4px; }
 }
 @media (prefers-reduced-motion: reduce) { .app-dock-link, .app-dock-link::after, .app-dock-pins, .app-dock-item { transition: none; } }
-:root[data-motion="reduced"] :is(.app-dock-link, .app-dock-link::after, .app-dock-pins, .app-dock-item) { transition: none; }
+:root[data-motion="reduced"] .app-dock-link, :root[data-motion="reduced"] .app-dock-link::after, :root[data-motion="reduced"] .app-dock-pins, :root[data-motion="reduced"] .app-dock-item { transition: none; }
 </style>
