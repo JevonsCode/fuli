@@ -1,4 +1,5 @@
 """Triage store rules on a synthetic driver; Cypher shapes stay deliberately simple."""
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -19,12 +20,35 @@ PENDING = stable_uuid('global-conversation-scope', SPACE, 'employee.assistant')
 class TriageDriver:
     def __init__(self, conversations):
         self.conversations = conversations
+        # conversation id -> (client, host session) that wrote to it
+        self.sessions = {}
+        # the Assistant's scope changes that are still their item's newest
+        self.assistant_moves = []
         self.labels = {}
         self.declines = {}
         self.queries = []
 
+    @asynccontextmanager
+    async def transaction(self):
+        yield self
+
+    async def run(self, query, **p):
+        rows, _, _ = await self.execute_query(query, **p)
+
+        async def records():
+            for row in rows:
+                yield row
+        return records()
+
     async def execute_query(self, query, **p):
         self.queries.append(query)
+        if 'space._knowledge_lock' in query:
+            return [], None, None
+        if 'FuliConversationEvent' in query and 'UNION' in query:
+            pairs = {self.sessions[c] for c in p['conversation_ids'] if c in self.sessions}
+            return [{'source_application': client, 'session_id': session} for client, session in pairs], None, None
+        if "action: 'scope_change'" in query:
+            return list(self.assistant_moves), None, None
         if 'MERGE (t:FuliConversationTriage' in query:
             if self.conversations.get(p['id']) != p['scope']:
                 return [], None, None
@@ -80,7 +104,7 @@ class TriageStore(StoreConversationTriage):
         return None
 
     async def authorize(self, actor, space_id, role):
-        return {'id': space_id}
+        return {'id': space_id, 'group_id': f'group-{space_id}', 'kind': 'personal'}
 
     async def get_personal_project(self, actor, space_id, project_id):
         if project_id not in self.projects:
@@ -164,6 +188,7 @@ async def test_formation_is_idempotent_and_closes_the_topic():
     first = await store.form_conversation_topic({}, request)
     again = await store.form_conversation_topic({}, request)
     assert first['conversation_ids'] == again['conversation_ids'] == ['c0', 'c1', 'c2']
+    assert first['knowledge'] == {'moved': 0, 'kept': 0}, 'no session of these conversations holds anything'
     assert (await store.query_conversation_topics({}, ConversationTopicQuery(personal_space_id=SPACE))) == {'topics': []}
 
 
@@ -177,7 +202,8 @@ async def test_reopening_undoes_a_formation_and_waits_for_the_topic_to_grow():
     reopened = await store.reopen_conversation_topic({}, ConversationTopicReopening(
         personal_space_id=SPACE, topic='garden planning', personal_project_id='garden'))
     assert reopened == {'topic': 'garden planning', 'personal_project_id': 'garden',
-                        'conversation_ids': ['c0', 'c1', 'c2'], 'declined_count': 3}
+                        'conversation_ids': ['c0', 'c1', 'c2'], 'declined_count': 3,
+                        'knowledge': {'returned': 0, 'kept': 0}}
     [garden] = (await store.query_conversation_topics({}, ConversationTopicQuery(personal_space_id=SPACE)))['topics']
     assert (garden['count'], garden['declined_count']) == (3, 3)
     # Only conversations formed into that project; a second undo finds none.

@@ -29,7 +29,8 @@ export function acceptTopicProposal(personalSpaceId: string, topic: string) {
 
 /** rec#11 D-86: undo a project Astro formed from a recurring topic. */
 export function undoTopicPromotion(personalSpaceId: string, topic: string, personalProjectId: string) {
-  return postJson<{ project_archived: boolean, conversations: number, ask_again_at: number }>(
+  return postJson<{ project_archived: boolean, conversations: number, ask_again_at: number,
+    knowledge_returned: number, knowledge_kept: number }>(
     '/api/topic-proposals/undo', { personalSpaceId, topic, personalProjectId })
 }
 
