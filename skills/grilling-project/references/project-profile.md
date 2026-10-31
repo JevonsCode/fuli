@@ -18,6 +18,12 @@ Optional fields may be absent. Publication is never blocked by this guidance.
 
 Every source needs a stable `key`, `kind`, and `title`. Add `uri` and `summary` only when supported by evidence.
 
+For a `repository`, `frontend_repository`, or `backend_repository` source, use the repository's
+`origin` remote URL (without credentials) as `uri` when it is known. FULI resolves a separate clone
+of that repository under another folder name to this project only when exactly one registered
+project records the same remote; ssh and https forms of one repository are equal. Keep the source
+`private` unless the user approved the remote for public inclusion.
+
 Supported kinds:
 
 - `prd`

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -280,4 +282,91 @@ test('POSIX hosts resolve /mnt and /home paths unchanged', () => {
   assert.equal(resolvePersonalProjectPath('/mnt/t/work/fuli', PROJECTS, host).personalProjectId, 'fuli');
   assert.equal(resolvePersonalProjectPath('/home/me/projectb', PROJECTS, host).personalProjectId, 'projectb');
   assert.equal(findRepositoryRoot('/mnt/t/work/fuli', host), '/mnt/t/work/fuli');
+});
+
+// A separate clone under its own folder name: only the origin remote in its
+// synthetic .git/config names the project. Temporary directories only.
+function cloneFixture(t, folder, config, extraFiles = {}) {
+  const root = mkdtempSync(path.join(tmpdir(), 'fuli-remote-match-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const clone = path.join(root, folder);
+  mkdirSync(path.join(clone, '.git'), { recursive: true });
+  mkdirSync(path.join(clone, 'src'));
+  writeFileSync(path.join(clone, '.git', 'config'), config);
+  for (const [relative, text] of Object.entries(extraFiles)) {
+    mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    writeFileSync(path.join(root, relative), text);
+  }
+  return { root, clone };
+}
+
+const repositoryProject = (projectId, uri, extra = {}) => ({
+  project_id: projectId,
+  profile: { name: projectId, sources: [{ key: 'repo', kind: 'repository', title: 'GitHub', uri }] },
+  ...extra
+});
+
+const originConfig = (url) => '[core]\n\trepositoryformatversion = 0\n'
+  + '[remote "upstream"]\n\turl = https://github.com/other/fuli.git\n'
+  + `[remote "origin"]\n\turl = ${url}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n`;
+
+test('a clone under another folder name resolves by its origin remote', (t) => {
+  const { clone } = cloneFixture(t, 'fuli-ds-capture-flake', originConfig('git@github.com:JevonsCode/fuli.git'));
+  const projects = [repositoryProject('fuli', 'https://GitHub.com/JevonsCode/fuli'), { project_id: 'projectb' }];
+  assert.deepEqual(resolvePersonalProjectPath(path.join(clone, 'src'), projects), {
+    status: 'matched', basis: 'git_remote', personalProjectId: 'fuli'
+  });
+  for (const uri of ['ssh://git@github.com:22/JevonsCode/fuli.git', 'https://user@github.com/JevonsCode/fuli.git/',
+    'github.com:JevonsCode/fuli', 'git://github.com/JevonsCode/fuli']) {
+    assert.equal(resolvePersonalProjectPath(clone, [repositoryProject('fuli', uri)]).basis, 'git_remote', uri);
+  }
+});
+
+test('the folder name still wins over the remote, and the remote never matches partially', (t) => {
+  const { clone } = cloneFixture(t, 'projectb', originConfig('https://github.com/JevonsCode/fuli.git'));
+  assert.equal(resolvePersonalProjectPath(clone, [repositoryProject('fuli', 'https://github.com/JevonsCode/fuli'),
+    { project_id: 'projectb' }]).personalProjectId, 'projectb');
+  for (const uri of ['https://github.com/JevonsCode/fuli-web', 'https://github.com/JevonsCode', 'https://github.com/jevonscode/fuli',
+    'https://github.com/JevonsCode/fuli/tree/main', 'https://gitlab.com/JevonsCode/fuli']) {
+    assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('fuli', uri)]), {
+      status: 'unmatched', basis: null, personalProjectId: null, repositoryProjectId: 'projectb'
+    }, uri);
+  }
+});
+
+test('a remote shared by two projects is ambiguous, and temporary or non-repository sources never match', (t) => {
+  const { clone } = cloneFixture(t, 'task-clone', originConfig('https://github.com/JevonsCode/fuli.git'));
+  const uri = 'git@github.com:JevonsCode/fuli.git';
+  assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('fuli', uri), repositoryProject('fuli-old', uri)]), {
+    status: 'ambiguous', basis: null, personalProjectId: null, candidateCount: 2
+  });
+  assert.equal(resolvePersonalProjectPath(clone, [repositoryProject('fuli', uri),
+    repositoryProject('scratch', uri, { scope_type: 'temporary' })]).personalProjectId, 'fuli');
+  const runbook = repositoryProject('fuli', uri);
+  runbook.profile.sources[0].kind = 'runbook';
+  assert.equal(resolvePersonalProjectPath(clone, [runbook]).status, 'unmatched');
+});
+
+test('a worktree reads the origin remote from its common directory', (t) => {
+  const { root, clone } = cloneFixture(t, 'repo-copy', originConfig('https://github.com/JevonsCode/fuli'), {
+    'repo-copy/.git/worktrees/task/commondir': '../..\n'
+  });
+  const worktree = path.join(root, 'task-worktree');
+  mkdirSync(worktree);
+  writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(clone, '.git', 'worktrees', 'task')}\n`);
+  assert.deepEqual(resolvePersonalProjectPath(worktree, [repositoryProject('fuli', 'git@github.com:JevonsCode/fuli.git')]), {
+    status: 'matched', basis: 'git_remote', personalProjectId: 'fuli'
+  });
+  assert.equal(resolvePersonalProjectPath(worktree, [{ project_id: 'repo-copy' }]).basis, 'git_worktree_origin');
+  assert.equal(resolvePersonalProjectPath(worktree, [repositoryProject('fuli', 'https://github.com/JevonsCode/other')])
+    .repositoryProjectId, 'repo-copy');
+});
+
+test('a clone without an origin remote or with a local origin stays unmatched', (t) => {
+  const projects = [repositoryProject('fuli', 'https://github.com/JevonsCode/fuli')];
+  for (const config of ['[core]\n\tbare = false\n', '[remote "upstream"]\n\turl = https://github.com/JevonsCode/fuli\n',
+    originConfig('/srv/git/fuli.git'), originConfig('C:/git/fuli.git'), originConfig('file:///srv/github.com/JevonsCode/fuli')]) {
+    const { clone } = cloneFixture(t, 'task-clone', config);
+    assert.equal(resolvePersonalProjectPath(clone, projects).status, 'unmatched', config);
+  }
 });
