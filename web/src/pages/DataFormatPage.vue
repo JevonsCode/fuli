@@ -457,7 +457,7 @@ code {
   padding: 12px 16px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
-  background: var(--color-surface);
+  background: var(--card);
   font-size: 14px;
 }
 

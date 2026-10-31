@@ -525,7 +525,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
 .judgment-record-list { position: relative; width: 100%; }
 .judgment-record-row { position: absolute; top: 0; left: 0; width: 100%; }
 .judgment-record-more { display: flex; justify-content: center; padding: 12px 0 4px; }
-.judgment-record-card { display: grid; align-content: start; gap: 13px; padding: 18px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.judgment-record-card { display: grid; align-content: start; gap: 13px; padding: 18px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
 .judgment-record-card.is-human-needed { border-color: color-mix(in srgb, var(--color-warning) 48%, var(--color-border)); }
 .judgment-record-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .judgment-record-heading h3 { margin: 4px 0 0; color: var(--color-ink); font-size: 16px; overflow-wrap: anywhere; }

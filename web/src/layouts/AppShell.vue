@@ -38,8 +38,10 @@ const destination = computed(() => activeDestination(destinations.value, route.p
 const section = computed(() => activeSection(destination.value, route.path))
 const dockDestinations = computed(() => destinations.value.filter(item => item.placement === 'dock'))
 const settingsActive = computed(() => destination.value?.key === 'settings')
-// The dock stays open on the workbench and folds elsewhere.
-const dockFolded = computed(() => destination.value?.key !== 'constellation')
+// The dock stays open on the workbench and folds to the current destination
+// elsewhere. A page outside the dock (settings) has nothing to fold to, so the
+// dock stays open there instead of shrinking to an empty capsule.
+const dockFolded = computed(() => destination.value?.placement === 'dock' && destination.value.key !== 'constellation')
 const runtimeReady = computed(() => store.runtimeStatus === 'ready')
 // A page about one record names itself (an Agent's real name). Otherwise,
 // anywhere inside a section the tabs already name it, so the heading names

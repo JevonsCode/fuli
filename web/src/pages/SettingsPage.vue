@@ -782,10 +782,10 @@ async function submitSettings(event: Event) {
 .settings-card { min-width: 0; container-type: inline-size; }
 .settings-card :deep([data-slot="card-header"]) { padding-inline: 24px; }
 .setting-list, .settings-card > .settings-accordion { padding-inline: 24px; }
-.judgment-settings-card { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); padding: 24px; }
+.judgment-settings-card { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); padding: 24px; }
 /* The two feature cards render their own disclosure; give them the same surface. */
 .settings-panel > :deep(.connection-settings), .settings-panel > :deep(.peer-settings) {
-  border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); padding: 20px 24px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); padding: 20px 24px;
 }
 .settings-panel > :deep(.connection-settings) > summary, .settings-panel > :deep(.peer-settings) > summary { font-size: var(--text-section); }
 .settings-accordion :deep([data-slot="accordion-trigger"]) { font-size: 14px; }
@@ -793,7 +793,7 @@ async function submitSettings(event: Event) {
 .resource-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding-inline: 24px; }
 .resource-totals article {
   display: grid; align-content: center; gap: 7px; min-height: 108px; padding: 18px 20px;
-  border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card);
 }
 .resource-totals span { color: var(--color-muted); font-size: 12px; }
 .resource-totals strong { color: var(--color-ink); font-size: clamp(24px, 3vw, 32px); letter-spacing: -.04em; }
@@ -861,10 +861,12 @@ async function submitSettings(event: Event) {
 .setting-row-nested { min-height: 48px; padding-left: 20px; border-top-style: dashed; }
 .select-row .settings-select { flex: 0 0 180px; width: 180px; min-width: 0; }
 
+/* The save area floats over the form on an opaque panel (only the dock blurs live). */
 .settings-savebar {
-  position: sticky; bottom: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px;
-  margin-top: var(--space-2); padding: 12px 0 calc(16px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--color-border); background: var(--color-bg);
+  position: sticky; bottom: 12px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px;
+  margin-top: var(--space-2); padding: 10px 14px;
+  border: 1px solid var(--edge-glass); border-radius: var(--radius-panel);
+  background: var(--color-surface); box-shadow: inset 0 1px 0 var(--edge-glass), var(--shadow-sm), var(--shadow-lg);
 }
 .settings-save-invalid { color: var(--color-danger); }
 .settings-form .settings-field-error { color: var(--color-danger); font-size: 12px; line-height: 1.4; }
