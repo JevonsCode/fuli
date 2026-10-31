@@ -1,17 +1,43 @@
 /*
+ * The console's motion (docs/console-design.md, Motion). Every rule here uses
+ * the meaning tokens in theme/base.css, never blocks input or focus, and is
+ * zeroed by the reduced-motion rules in primitives.css like every other
+ * animation.
+ *
  * Page changes (lib/motion.ts installPageTransitions): the top bar and the
  * dock keep their place while the page fades out and the next one rises in
- * on the shared spring. The reduced-motion rules in primitives.css zero
- * these like every other animation.
+ * on the shared spring.
  */
 .app-topbar { view-transition-name: app-topbar; }
 .app-dock { view-transition-name: app-dock; }
 ::view-transition-group(app-topbar), ::view-transition-group(app-dock) { animation: none; }
-::view-transition-old(root) { animation: page-out var(--motion-fast) var(--motion-ease-out) both; }
-::view-transition-new(root) { animation: page-in var(--motion-spring) var(--motion-ease-spring) both; }
+::view-transition-old(root) { animation: page-out var(--motion-exit) both; }
+::view-transition-new(root) { animation: page-in var(--motion-enter) both; }
+/* The transition's overlay covers the viewport and would swallow clicks while
+   the new page rises; let them through to the page underneath. */
+::view-transition { pointer-events: none; }
 @keyframes page-out { to { opacity: 0; } }
 @keyframes page-in { from { opacity: 0; transform: translateY(10px); } }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
 :root[data-motion="reduced"]::view-transition-group(*), :root[data-motion="reduced"]::view-transition-old(*), :root[data-motion="reduced"]::view-transition-new(*) { animation: none !important; }
+
+/*
+ * Collections (<TransitionGroup name="ui-list">): an item that arrives rises
+ * in, one that leaves drops out of the flow at once and fades (so the rest
+ * slide to their places without waiting for it, and it takes no clicks), and
+ * moved items glide. Interrupting any of these just retargets the transition.
+ */
+.ui-list-move { transition: transform var(--motion-move); }
+.ui-list-enter-active { transition: opacity var(--motion-move), transform var(--motion-enter); }
+.ui-list-enter-from { opacity: 0; transform: translateY(6px) scale(.98); }
+.ui-list-leave-active { position: absolute; inline-size: 100%; pointer-events: none; transition: opacity var(--motion-exit); }
+.ui-list-leave-to { opacity: 0; }
+:has(> .ui-list-leave-active) { position: relative; }
+
+/* A disclosure opens and closes by its height where the browser can animate
+   to auto (::details-content); elsewhere it toggles at once. */
+.ui-disclosure { interpolate-size: allow-keywords; }
+.ui-disclosure::details-content { block-size: 0; overflow: clip; transition: block-size var(--motion-move), content-visibility var(--motion-medium) allow-discrete; }
+.ui-disclosure[open]::details-content { block-size: auto; }

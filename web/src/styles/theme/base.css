@@ -60,6 +60,11 @@
   --motion-spring: 460ms;
   --motion-ease-spring: linear(0, .009, .035 2.1%, .141 4.4%, .723 12.9%, .938 16.7%, 1.017 20.4%, 1.041 24.4%, 1.036 28.6%, 1.013 37.2%, .998 45.4%, 1);
   --motion-ease-out: cubic-bezier(.22, 1, .36, 1);
+  /* What a motion means, as a duration and easing pair: arriving rides the
+     spring, leaving fades fast so nothing waits for it, moving glides. */
+  --motion-enter: var(--motion-spring) var(--motion-ease-spring);
+  --motion-exit: var(--motion-fast) var(--motion-ease-out);
+  --motion-move: var(--motion-medium) var(--motion-ease-out);
   --z-nav: 20;
   --z-popover: 40;
   --z-dialog: 50;

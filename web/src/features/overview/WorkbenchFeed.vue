@@ -46,7 +46,7 @@ const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests
         </Button>
       </header>
       <OverviewReadStatus :state="requestsState" :label="t('overview.attention.loading')" :failed="t('overview.attention.loadFailed')" @retry="emit('retryRequests')" />
-      <ul class="workbench-rows">
+      <TransitionGroup name="ui-list" tag="ul" class="workbench-rows">
         <li v-for="item in requests" :key="item.requestId" class="workbench-row" data-workbench-request>
           <span class="workbench-face" :style="agentIdentityStyle(item.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(item.agentId)" alt="" /></span>
           <div class="workbench-row-text">
@@ -55,7 +55,7 @@ const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests
           </div>
           <Button as-child variant="outline" size="sm"><RouterLink :to="inboxLocation(item.agentId, item.requestId)">{{ t('overview.attention.respond') }}</RouterLink></Button>
         </li>
-      </ul>
+      </TransitionGroup>
     </section>
 
     <!-- With nothing else in progress the stage already says so; the card stays away. -->
@@ -80,7 +80,7 @@ const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests
 
     <section class="workbench-card" aria-labelledby="workbench-done-heading" data-workbench-done>
       <header class="workbench-card-head"><h2 id="workbench-done-heading">{{ t('overview.sections.recentlyDone') }}</h2></header>
-      <ul v-if="done.length" class="workbench-rows">
+      <TransitionGroup v-if="done.length" name="ui-list" tag="ul" class="workbench-rows">
         <li v-for="task in done" :key="taskKey(task)" class="workbench-row">
           <span class="workbench-done-mark" aria-hidden="true">✓</span>
           <div class="workbench-row-text">
@@ -89,7 +89,7 @@ const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests
           </div>
           <time class="workbench-meta" :datetime="task.completedAt ?? task.updatedAt ?? undefined">{{ formatTime(task.completedAt ?? task.updatedAt) }}</time>
         </li>
-      </ul>
+      </TransitionGroup>
       <p v-else-if="tasksState.data && !tasksState.loading" class="workbench-empty">{{ t('overview.done.empty') }}</p>
     </section>
   </div>
