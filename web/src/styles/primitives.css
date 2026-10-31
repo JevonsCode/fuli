@@ -51,7 +51,7 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 .ui-dialog__header h2 { margin: 0; font-size: var(--text-section); font-weight: var(--weight-strong); letter-spacing: -.01em; }
 .ui-dialog__header p { margin-top: 4px; color: var(--color-muted); font-size: 13px; }
 .ui-dialog__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px; }
-.ui-dialog__footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--color-border); background: var(--color-bg); }
+.ui-dialog__footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--color-border); background: var(--color-surface); }
 .ui-dialog__error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
 .ui-dialog__error p { margin: 0; }
 .ui-dialog__body textarea { resize: vertical; }

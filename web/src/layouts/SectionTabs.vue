@@ -19,13 +19,18 @@ defineProps<{ sections: readonly NavSection[]; activeKey?: string }>()
 </template>
 
 <style scoped>
-.section-tabs { display: flex; gap: 4px; padding: 3px; border-radius: var(--radius-pill); background: var(--color-surface-subtle); overflow-x: auto; scrollbar-width: none; }
+.section-tabs { display: flex; align-self: stretch; gap: 22px; overflow-x: auto; scrollbar-width: none; }
 .section-tab {
-  flex: 0 0 auto; padding: 6px 14px; border-radius: var(--radius-pill); color: var(--color-muted);
-  font-size: 13px; font-weight: var(--weight-medium); text-decoration: none; white-space: nowrap;
-  transition: color var(--motion-fast), background var(--motion-fast);
+  position: relative; display: flex; flex: 0 0 auto; align-items: center; padding: 6px 0; color: var(--color-muted);
+  font-size: var(--text-control); font-weight: var(--weight-medium); text-decoration: none; white-space: nowrap;
+  transition: color var(--motion-fast);
+}
+.section-tab::after {
+  content: ''; position: absolute; right: 0; bottom: 4px; left: 0; height: 2px; border-radius: 2px; background: var(--color-ink);
+  transform: scaleX(0); transition: transform var(--motion-move);
 }
 .section-tab:hover { color: var(--color-ink); }
-.section-tab.is-active { color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-sm); }
-.section-tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.section-tab.is-active { color: var(--color-ink); }
+.section-tab.is-active::after { transform: scaleX(1); }
+.section-tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
 </style>

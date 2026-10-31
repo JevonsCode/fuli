@@ -22,6 +22,7 @@ import { attentionMessages } from './messages/attention'
 import { shellMessages } from './messages/shell'
 import { occupationsMessages } from './messages/occupations'
 import { agentServicesMessages } from './messages/agent-services'
+import { flasMessages } from './messages/flas'
 import { flaPageMessages } from './messages/fla-page'
 import { agentWorkbenchMessages } from './messages/agent-workbench'
 import { dataFormatMessages } from './messages/data-format'
@@ -98,6 +99,7 @@ export const messages = {
     shell: shellMessages['zh-CN'],
     occupations: occupationsMessages['zh-CN'],
     agentServices: agentServicesMessages['zh-CN'],
+    flas: flasMessages['zh-CN'],
     flaPage: flaPageMessages['zh-CN'],
     agentWorkbench: agentWorkbenchMessages['zh-CN'],
     dataFormat: dataFormatMessages['zh-CN'],
@@ -143,6 +145,7 @@ export const messages = {
     shell: shellMessages['en-US'],
     occupations: occupationsMessages['en-US'],
     agentServices: agentServicesMessages['en-US'],
+    flas: flasMessages['en-US'],
     flaPage: flaPageMessages['en-US'],
     agentWorkbench: agentWorkbenchMessages['en-US'],
     dataFormat: dataFormatMessages['en-US'],
